@@ -22,7 +22,6 @@ import importlib.machinery
 import importlib.util
 import json
 import os
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -138,7 +137,7 @@ def test_story_names_real_push_time_and_real_gates(db):
     env = nar.render_story(SHA)
     assert env["available"] is True
     text = env["text"]
-    assert "Pushed at 08:00" in text
+    assert "pushed at 08:00" in text
     assert "merged at 08:07" in text
     # The narrator names failed gates or final state, never both at length.
     assert ("bdd" in text and "failed" in text) or (
@@ -174,7 +173,7 @@ def test_story_renders_unknown_status_verbatim(db):
     con.close()
     _write_reconcile(db, SHA, status="unknown")
     env = nar.render_story(SHA)
-    assert "reconcile unknown" in env["text"]
+    assert "reconcile: unknown" in env["text"]
 
 
 def test_story_blind_when_journey_missing(db):
@@ -221,7 +220,7 @@ def test_commentary_emits_one_line_per_transition(db):
     # At least one line per event of the journey (5 events + reconcile = 6).
     assert len(lines) >= 5
     # No consecutive lines for the same stage without a status change.
-    for prev, curr in zip(lines, lines[1:]):
+    for prev, curr in zip(lines, lines[1:], strict=False):
         if prev["stage"] == curr["stage"]:
             assert prev["status"] != curr["status"], (
                 f"commentary repeated stage {prev['stage']!r} with no change"
@@ -248,7 +247,7 @@ def test_cli_story_for_real_sha(db, capsys, monkeypatch):
         env={**os.environ, "ESTATE_DB": str(db)},
     )
     assert r.returncode == 0, r.stderr
-    assert "Pushed at 08:00" in r.stdout
+    assert "pushed at 08:00" in r.stdout
     assert "bdd" in r.stdout
 
 

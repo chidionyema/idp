@@ -1,0 +1,8 @@
+features/self-aware-platform/cp1_inventory_tool.feature
+features/self-aware-platform/cp2_get_workload_state.feature
+features/self-aware-platform/cp3_get_workload_logs.feature
+features/self-aware-platform/cp4_get_catalog_drift.feature
+features/self-aware-platform/cp5_event_aggregation.feature
+features/self-aware-platform/cp6_propose_execute_state_hash.feature
+features/self-aware-platform/cp7_token_receipt.feature
+features/self-aware-platform/cp8_k8s_adapter.feature

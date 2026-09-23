@@ -1,0 +1,5 @@
+platform/edge/cert-manager.yaml
+platform/edge/kustomization.yaml
+platform/edge/require-runasuser-with-nonroot.yaml
+platform/tailscale/operator.yaml
+tests/test_incident_20260831_nonroot_with_no_uid_is_a_permanent_kubelet_refusal.py

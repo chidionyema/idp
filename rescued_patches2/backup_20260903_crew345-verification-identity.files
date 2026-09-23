@@ -1,0 +1,6 @@
+.github/workflows/verify-drill.yml
+bin/idp-verify-drill
+docs/how-to/check-the-cluster-from-github.md
+docs/prose/verification-identity-live.feature
+drills/catalogue.yaml
+tests/test_incident_crew345_verification_runs_on_a_machine_identity.py

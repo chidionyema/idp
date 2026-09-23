@@ -1,0 +1,1182 @@
+diff --git a/backstage/Dockerfile b/backstage/Dockerfile
+new file mode 100644
+index 000000000..d17a20250
+--- /dev/null
++++ b/backstage/Dockerfile
+@@ -0,0 +1,168 @@
++# The estate catalogue, built into an image.
++#
++# WHY THIS EXISTS. Until 2026-08-24 the catalogue was started by `nohup yarn
++# start` from bin/idp-up: a development server, on a laptop, under launchd. That
++# has three properties a buyer's engineer finds in one sitting. It serves the
++# webpack dev server, which refuses any Host header that is not the one in
++# app.baseUrl -- measured the same day, the tailnet link returned 403. It binds
++# whatever Node feels like: the app landed on [::1] and the backend on
++# 127.0.0.1, two different address families for one product. And it cannot be
++# deployed anywhere, so the k8s migration would have started from nothing.
++#
++# Founder directive, 2026-08-24: "we also cannot accept the brittle yarn start
++# laptop hack ... containerize the application exactly as it will run in k8s".
++# This is Phase 1 of that. Phase 2 is Kustomize manifests over THIS SAME IMAGE,
++# and the interim is removed by deleting one compose file.
++#
++# WHY MULTI-STAGE AND NOT packages/backend/Dockerfile. The scaffolder's
++# Dockerfile is a host build: it requires `yarn install && yarn tsc && yarn
++# build:backend` to have been run on the machine first, with the same Node major
++# as the image. Measured on this machine 2026-08-24: host node is v26.7.0, the
++# image is node:24, and package.json declares `engines.node: 22 || 24`. The host
++# build is therefore not runnable here at all, and better-sqlite3 is a native
++# module, so a mismatch does not fail loudly -- it produces an image that
++# crashes at require() time. Multi-stage puts the toolchain inside the build,
++# where its version is a property of this file rather than of a laptop.
++# It is the alternative Backstage documents at backstage.io/docs/deployment/docker.
++#
++# WHY `yarn build:all` AND NOT `yarn --cwd packages/backend build`. The upstream
++# multi-stage example builds the backend only, and its own documentation says
++# the resulting bundle does not contain the frontend. This app runs
++# @backstage/plugin-app-backend (packages/backend/src/index.ts:13), which means
++# the backend serves the UI and there is no separate frontend container. Build
++# the backend alone and the image starts, answers /api/catalog, and serves a
++# blank page. `build:all` is `backstage-cli repo build --all`, already declared
++# in this repo's package.json.
++
++# --- stage 1: the dependency skeleton -----------------------------------------
++# Only package.json files, so a source edit does not invalidate `yarn install`.
++FROM node:24-trixie-slim AS packages
++WORKDIR /app
++COPY backstage.json package.json yarn.lock ./
++COPY .yarn ./.yarn
++COPY .yarnrc.yml ./
++COPY packages packages
++COPY plugins plugins
++RUN find packages \! -name "package.json" -mindepth 2 -maxdepth 2 -exec rm -rf {} \+
++
++# --- stage 2: install and build -----------------------------------------------
++FROM node:24-trixie-slim AS build
++# better-sqlite3 is a native module and is compiled here, against this image's
++# Node. It stays in the image because the scaffolder's dev config uses it; the
++# container itself runs on Postgres (app-config.container.yaml).
++RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
++    --mount=type=cache,target=/var/lib/apt,sharing=locked \
++    apt-get update && \
++    apt-get install -y --no-install-recommends libsqlite3-dev python3 build-essential && \
++    rm -rf /var/lib/apt/lists/*
++USER node
++WORKDIR /app
++COPY --from=packages --chown=node:node /app .
++# NO NATIVE MODULE MAY FAIL TO BUILD AND STILL SHIP.
++#
++# Until 2026-08-25 this install ended `Done with warnings`, and the warning was
++# `YN0009: keytar@npm:7.9.0 couldn't be built successfully (exit code 1)`. It was
++# printed on every build for as long as this image has existed. Nobody acted on
++# it, because acting on it took a dependency trace to find out whether it
++# mattered -- so the finding was that it was harmless, and the next session paid
++# for the same trace again. A warning that recurs and is always dismissed is not
++# an instrument, it is a cost with a habit attached.
++#
++# It is closed at the source instead: root package.json declares
++# `dependenciesMeta.keytar.built: false`, so yarn does not attempt the build and
++# emits nothing. That leaves this grep with exactly one job -- catching the NEXT
++# native module that fails, which today would have been lost in the noise of a
++# warning everyone had learned to skip past.
++#
++# It also prints the failing module's own compiler output, not just the YN0009
++# line. Yarn reports `logs can be found here: /tmp/xfs-.../build.log` -- a path
++# inside a container that no longer exists by the time anyone reads the failure,
++# so the one thing needed to act on it was the one thing thrown away. Three
++# attempts to reproduce it outside the build failed on environment differences
++# before this was added.
++#
++# `yarn install` exits 0 on YN0009, by design: a failed postinstall is not a
++# failed resolution. So the exit status cannot be the gate and the log has to be.
++# The log goes to a file rather than through `tee`, because RUN uses /bin/sh and
++# the base image's sh is dash: PIPESTATUS is a bashism and $? after a pipe is
++# tee's status, so a piped form would report success for a failed install.
++RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
++    yarn install --immutable >/tmp/yarn.log 2>&1; s=$?; cat /tmp/yarn.log; [ "$s" -eq 0 ] || exit "$s"; \
++    if grep -q 'YN0009' /tmp/yarn.log; then \
++      echo "FATAL: a native module failed to build." >&2; \
++      for f in /tmp/xfs-*/build.log; do \
++        [ -f "$f" ] || continue; echo "--- $f ---" >&2; tail -40 "$f" >&2; \
++      done; \
++      exit 1; \
++    fi
++COPY --chown=node:node . .
++RUN yarn tsc
++RUN yarn build:all
++RUN mkdir packages/backend/dist/skeleton packages/backend/dist/bundle \
++    && tar xzf packages/backend/dist/skeleton.tar.gz -C packages/backend/dist/skeleton \
++    && tar xzf packages/backend/dist/bundle.tar.gz -C packages/backend/dist/bundle
++
++# --- stage 3: the production dependency tree ----------------------------------
++# `yarn workspaces focus --all --production` does not just download packages, it
++# compiles three of them from C++ source: better-sqlite3, cpu-features and
++# keytar. Measured 2026-08-24, running it in the runtime image below: all three
++# reported "couldn't be built successfully (exit code 1)" and the build failed
++# after 12m39s, because that image carries libsqlite3-dev and no compiler -- the
++# header with nothing to read it. Installing build-essential into the runtime
++# image would fix the build by shipping a C++ toolchain to production, so the
++# install happens in this stage and only its output crosses the line.
++FROM node:24-trixie-slim AS deps
++RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
++    --mount=type=cache,target=/var/lib/apt,sharing=locked \
++    apt-get update && \
++    apt-get install -y --no-install-recommends libsqlite3-dev python3 build-essential && \
++    rm -rf /var/lib/apt/lists/*
++USER node
++WORKDIR /app
++COPY --from=build --chown=node:node /app/.yarn ./.yarn
++COPY --from=build --chown=node:node /app/.yarnrc.yml ./
++COPY --from=build --chown=node:node /app/backstage.json ./
++COPY --from=build --chown=node:node /app/yarn.lock /app/package.json /app/packages/backend/dist/skeleton/ ./
++# The same gate, and this is the one that mattered. `--production` does not drop
++# keytar: it arrives through @backstage/backend-defaults -> @backstage/cli-node,
++# a real runtime dependency of packages/backend, not a dev one. Measured
++# 2026-08-25 inside the shipped image: /app/node_modules/keytar is PRESENT and
++# build/Release holds no .node binary at all. The catalogue serves 297 entities
++# regardless, because nothing in the backend calls it -- but "ships a broken
++# native module and gets away with it" is not a property to rely on quietly.
++RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid=1000 \
++    yarn workspaces focus --all --production >/tmp/yarn.log 2>&1; s=$?; cat /tmp/yarn.log; [ "$s" -eq 0 ] || exit "$s"; \
++    if grep -q 'YN0009' /tmp/yarn.log; then \
++      echo "FATAL: a native module failed to build." >&2; \
++      for f in /tmp/xfs-*/build.log; do \
++        [ -f "$f" ] || continue; echo "--- $f ---" >&2; tail -40 "$f" >&2; \
++      done; \
++      exit 1; \
++    fi; \
++    rm -rf "$(yarn cache clean)"
++
++# --- stage 4: the runtime image -----------------------------------------------
++FROM node:24-trixie-slim
++RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
++    --mount=type=cache,target=/var/lib/apt,sharing=locked \
++    apt-get update && \
++    apt-get install -y --no-install-recommends libsqlite3-dev && \
++    rm -rf /var/lib/apt/lists/*
++# Least privilege. `node` is uid 1000 in this image and owns nothing it does not
++# need; the catalogue file is mounted read-only from the host.
++USER node
++WORKDIR /app
++# The whole of /app from deps: that stage's working directory holds exactly the
++# backend skeleton and the node_modules built against it, which is what this
++# stage used to produce for itself.
++COPY --from=deps --chown=node:node /app ./
++COPY --from=build --chown=node:node /app/packages/backend/dist/bundle/ ./
++COPY --chown=node:node app-config*.yaml ./
++# templates/ and examples/ are catalog locations, not decoration:
++# templates/estate-component is the only scaffolder template the portal offers,
++# and examples/org.yaml carries user:default/guest, which the guest auth
++# provider resolves through the catalog. Drop it and sign-in breaks.
++COPY --chown=node:node templates ./templates
++COPY --chown=node:node examples ./examples
++ENV NODE_ENV=production
++CMD ["node", "packages/backend", "--config", "app-config.yaml", "--config", "app-config.container.yaml"]
+diff --git a/backstage/Dockerfile.dockerignore b/backstage/Dockerfile.dockerignore
+new file mode 100644
+index 000000000..f788de8f6
+--- /dev/null
++++ b/backstage/Dockerfile.dockerignore
+@@ -0,0 +1,11 @@
++.git
++dist-types
++node_modules
++packages/*/dist
++packages/*/node_modules
++plugins/*/dist
++plugins/*/node_modules
++.yarn/cache
++.yarn/install-state.gz
++*.local.yaml
++.env
+diff --git a/backstage/app-config.container.yaml b/backstage/app-config.container.yaml
+new file mode 100644
+index 000000000..85922daa1
+--- /dev/null
++++ b/backstage/app-config.container.yaml
+@@ -0,0 +1,96 @@
++# What changes when the catalogue runs in a container instead of `yarn start`.
++#
++# Layered on top of app-config.yaml, which stays the source for everything that
++# is the same in both. Backstage replaces arrays rather than merging them, so
++# every `catalog.locations` entry has to be restated here, not just the one that
++# moves.
++
++app:
++  # One origin. Under `yarn start` the app was a separate dev server on 3100 and
++  # the backend was on 7107, which is why this repo carried two ports, two
++  # health probes and a CORS rule between its own halves. The image runs
++  # @backstage/plugin-app-backend, so the backend serves the UI: one process,
++  # one port, one bind, and CORS between the app and its own API stops being a
++  # thing that can be misconfigured.
++  baseUrl: http://localhost:3100
++
++auth:
++  providers:
++    guest:
++      # The image sets NODE_ENV=production, and Backstage refuses the guest
++      # provider outside development unless this is set. Measured on the first
++      # container boot, 2026-08-24: `POST /api/auth/guest/refresh` returned 403
++      # and every catalog read returned 401, while `GET /` returned 200 -- a
++      # portal that renders, serves no data, and cannot be signed into. Under
++      # `yarn start` NODE_ENV was development and this never appeared, which is
++      # the kind of difference containerising exists to surface.
++      #
++      # The flag is named "dangerously" because it makes anyone who can reach
++      # the port a signed-in user. Here that is decided one layer out, not by
++      # this file: compose publishes 127.0.0.1 only, and ADR 0003 puts identity
++      # at the gateway, which is what enforces OIDC in front of the tailnet
++      # address. This container is behind that boundary, not acting as it. When
++      # Phase 2 moves the catalogue into k3s the gateway is still the boundary,
++      # and this stays until the OIDC provider is wired directly.
++      dangerouslyAllowOutsideDevelopment: true
++
++backend:
++  baseUrl: http://localhost:3100
++  listen:
++    port: 3100
++    # 0.0.0.0 INSIDE the container, 127.0.0.1 on the host. These are not in
++    # conflict and the distinction is the whole point of R20 (the gateway is the
++    # only process that binds a non-loopback address).
++    #
++    # The container's network namespace is not the host's. A process that binds
++    # 127.0.0.1 inside a container is reachable only from that container -- the
++    # published port cannot forward to it and `docker compose up` produces a
++    # service nothing can reach. What R20 governs is the HOST bind, and compose.yml
++    # publishes `127.0.0.1:3100:3100`, so `lsof` on this machine sees the loopback
++    # and nothing on the LAN can reach the catalogue.
++    #
++    # It also removes the [::1] versus 127.0.0.1 split that made `curl
++    # 127.0.0.1:3100` return 000 while a browser on the same machine got 200.
++    host: 0.0.0.0
++  csp:
++    connect-src: ["'self'", 'http:', 'https:']
++  database:
++    # Postgres, not the in-memory sqlite of app-config.yaml. Two reasons, and
++    # neither is preference. `:memory:` means every restart re-ingests the whole
++    # estate from files and serves an empty catalogue until it finishes --
++    # measured 2026-08-24, ingestion took 124 seconds after boot, during which
++    # the portal renders and looks correct with nothing in it. And Postgres is
++    # what the k8s deployment will use, so Phase 2 changes where the database
++    # runs, not which database it is.
++    client: pg
++    connection:
++      host: ${POSTGRES_HOST}
++      port: ${POSTGRES_PORT}
++      user: ${POSTGRES_USER}
++      password: ${POSTGRES_PASSWORD}
++      database: ${POSTGRES_DB}
++
++catalog:
++  locations:
++    # The estate. Generated on the host by bin/catalog-gen from the LAW 39
++    # inventory, and bind-mounted read-only at /estate. It is deliberately not
++    # baked into the image: the image is a build artefact that Phase 2 ships to
++    # k8s unchanged, and the inventory changes hourly. Baking it in would make
++    # every inventory refresh an image rebuild.
++    - type: file
++      target: /estate/catalog-info.yaml
++      rules:
++        - allow: [Component, Resource, Domain, System, Group]
++
++    # The only scaffolder template the portal offers.
++    - type: file
++      target: /app/templates/estate-component/template.yaml
++      rules:
++        - allow: [Template]
++
++    # user:default/guest. The guest auth provider resolves it through the
++    # catalog, so this is sign-in, not example data.
++    - type: file
++      target: /app/examples/org.yaml
++      rules:
++        - allow: [User, Group]
+diff --git a/backstage/compose.yml b/backstage/compose.yml
+new file mode 100644
+index 000000000..add45e119
+--- /dev/null
++++ b/backstage/compose.yml
+@@ -0,0 +1,92 @@
++# The estate catalogue. Interim local deployment, 2026-08-24.
++#
++# THIS FILE IS TEMPORARY AND SAYS SO ON PURPOSE. Founder directive the same day:
++# the k3s cluster is being brought up in another lane and will be the final
++# home in about 48 hours. Until it is green, the catalogue still has to run, and
++# `nohup yarn start` was not an acceptable way to run it (see backstage/Dockerfile).
++#
++# The bridge is only legitimate because the artefact does not change. The image
++# built here is the image the Kustomize manifests will reference; Phase 2 points
++# ArgoCD at those manifests and this file is deleted. Nothing is ported, nothing
++# is rewritten, and removing the interim is one `git rm`. An interim that fails
++# that test is a second platform, which is the thing we are not building.
++#
++# WHAT IS PUBLISHED. 127.0.0.1:3100 and nothing else. Postgres has no `ports:`
++# key at all -- it is reachable on the compose network by the catalogue and by
++# nothing else on this machine (LAW 21, default closed). The catalogue is a map
++# of every asset the estate owns; it does not go on the LAN.
++#
++# SECRETS. backstage/.env, generated by bin/idp-up with `openssl rand` if it does
++# not exist, chmod 600, never printed and never committed -- idp/.gitignore has
++# covered `**/.env` since the llm/.env near-miss. There is no default password in
++# this file to forget to change.
++
++name: backstage
++
++services:
++  catalogue:
++    build:
++      context: .
++      dockerfile: Dockerfile
++    image: idp/backstage:local
++    # Build it, never try to fetch it. `idp/backstage` is not a registry
++    # namespace anyone owns, so the default policy sent compose to Docker Hub
++    # and `docker compose up` died on "pull access denied for idp/backstage"
++    # (measured 2026-08-24) even with the `build:` block right above. Phase 2
++    # publishes the image to a registry and this line goes with the file.
++    pull_policy: build
++    restart: unless-stopped
++    depends_on:
++      postgres:
++        condition: service_healthy
++    env_file: .env
++    environment:
++      POSTGRES_HOST: postgres
++      POSTGRES_PORT: '5432'
++      POSTGRES_USER: backstage
++      POSTGRES_DB: backstage
++    ports:
++      # host:container. The host half is pinned to the loopback address; the
++      # container half is the 0.0.0.0 bind explained in app-config.container.yaml.
++      - '127.0.0.1:3100:3100'
++    volumes:
++      # Read-only. The catalogue reads the estate inventory; it has no business
++      # writing to it, and :ro is the cheapest way to make that unrepresentable.
++      - ../catalog/catalog-info.yaml:/estate/catalog-info.yaml:ro
++    extra_hosts:
++      # colima, not Docker Desktop. Without this the container cannot resolve
++      # the host, which is how every other stack in this repo reaches the otel
++      # collector on 127.0.0.1:4318.
++      - 'host.docker.internal:host-gateway'
++    healthcheck:
++      # /healthcheck is served by the backend itself. `wget` because this is a
++      # slim image with no curl, and node -e would start a second Node runtime
++      # per check.
++      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3100/healthcheck || exit 1']
++      interval: 15s
++      timeout: 5s
++      start_period: 120s
++      retries: 5
++    mem_limit: 1g
++
++  postgres:
++    # Pinned to a minor, not `:latest` and not `:17`. An image tag that can move
++    # under a running service is the same class of defect as a floating version
++    # range in a manifest.
++    image: postgres:17.6-alpine
++    restart: unless-stopped
++    env_file: .env
++    environment:
++      POSTGRES_USER: backstage
++      POSTGRES_DB: backstage
++    volumes:
++      - pgdata:/var/lib/postgresql/data
++    healthcheck:
++      test: ['CMD-SHELL', 'pg_isready -U backstage -d backstage']
++      interval: 10s
++      timeout: 5s
++      retries: 10
++    mem_limit: 512m
++
++volumes:
++  pgdata:
+diff --git a/backstage/package.json b/backstage/package.json
+index 2ba197074..cda0db662 100644
+--- a/backstage/package.json
++++ b/backstage/package.json
+@@ -52,6 +52,14 @@
+     "@types/react": "^18",
+     "@types/react-dom": "^18"
+   },
++  "dependenciesMeta": {
++    "cpu-features": {
++      "built": false
++    },
++    "keytar": {
++      "built": false
++    }
++  },
+   "prettier": "@backstage/cli/config/prettier",
+   "lint-staged": {
+     "*.{js,jsx,ts,tsx,mjs,cjs}": [
+diff --git a/backstage/yarn.lock b/backstage/yarn.lock
+index 6a7539b39..578b947c6 100644
+--- a/backstage/yarn.lock
++++ b/backstage/yarn.lock
+@@ -27303,6 +27303,11 @@ __metadata:
+     node-gyp: "npm:^10.0.0"
+     prettier: "npm:^2.3.2"
+     typescript: "npm:~5.8.0"
++  dependenciesMeta:
++    cpu-features:
++      built: false
++    keytar:
++      built: false
+   languageName: unknown
+   linkType: soft
+ 
+diff --git a/bin/db-gen b/bin/db-gen
+index c27055c9c..f2afea2be 100755
+--- a/bin/db-gen
++++ b/bin/db-gen
+@@ -1,9 +1,14 @@
+ #!/usr/bin/env bash
+-# Estate inventory -> SQLite, for the fallback renderer.
++# Estate inventory -> SQLite, for commands that need to count it without
++# asking Backstage.
+ #
+-# The second of two renderings of the same source. bin/catalog-gen writes YAML
+-# for Backstage; this writes SQLite for Datasette. Neither is the source: the
+-# source is ~/.estate/state/inventory.json, which LAW 39 already produces.
++# This used to be the second of two renderings of the same source, feeding a
++# Datasette fallback portal on 8001. That second portal is gone (founder,
++# 2026-08-24: "ive seen 5 ui faces today"). What is left is a queryable file:
++# bin/idp-status reads it for the asset count, and it answers "how many assets
++# does the inventory hold" without a running service. Neither this nor the
++# YAML is the source -- the source is ~/.estate/state/inventory.json, which
++# LAW 39 already produces.
+ #
+ # It is deliberately sqlite-utils rather than a Python script. The transform is
+ # "put this JSON array in a table", which is the one thing sqlite-utils exists
+diff --git a/bin/idp-down b/bin/idp-down
+index 4270789f2..e021a5e9a 100755
+--- a/bin/idp-down
++++ b/bin/idp-down
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Stop both renderers and unpublish both ports. The off switch LAW 32 requires,
++# Stop the catalogue and unpublish its ports. The off switch LAW 32 requires,
+ # and the one thing the founder should be able to run without reading anything.
+ #
+ # It stops processes and removes tailscale listeners. It deletes nothing: the
+@@ -30,10 +30,19 @@ kill_port() {
+   stopped=$((stopped + 1))
+ }
+ 
+-echo "RENDERERS"
+-kill_port 3100 "Backstage app"
+-kill_port 7107 "Backstage backend"
+-kill_port 8001 "Datasette"
++echo "CATALOGUE"
++# `down`, not `down -v`. The Postgres volume holds the ingested catalogue and
++# survives on purpose: bringing the portal back should not mean waiting two
++# minutes for it to re-read the estate. Deleting the data is `docker compose -f
++# backstage/compose.yml down -v`, which is a deliberate sentence to type.
++if [ -f "$IDP/backstage/compose.yml" ]; then
++  docker compose -f "$IDP/backstage/compose.yml" down 2>&1 | sed 's/^/  /'
++  stopped=$((stopped + 1))
++fi
++# The pre-container leftovers. Harmless when nothing holds these; kept because
++# a machine that ran the old bin/idp-up before this change still has them.
++kill_port 3100 "Backstage app (pre-container)"
++kill_port 7107 "Backstage backend (pre-container)"
+ 
+ echo
+ echo "PUBLISHED PORTS"
+diff --git a/bin/idp-status b/bin/idp-status
+index ca5f4ff4c..40554f602 100755
+--- a/bin/idp-status
++++ b/bin/idp-status
+@@ -14,12 +14,24 @@ probe() {
+   case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
+ }
+ 
+-primary=$(probe http://127.0.0.1:3100)
+-fallback=$(probe http://127.0.0.1:8001/-/versions.json)
++# `localhost`, deliberately, and the reason changed today -- keep the name.
++#
++# It was written because the `yarn start` dev server bound [::1] only, so a
++# v4 probe returned 000 and this command called the catalogue down while a
++# browser on the same machine was reading it. That server is gone: the
++# catalogue is a container now, and compose publishes 127.0.0.1:3100, which
++# is v4. So the original reason is dead and the opposite failure is the live
++# one -- a hardcoded [::1] probe would now be the broken half.
++#
++# `localhost` survives both because it resolves to both families and curl
++# tries each in turn. That is the point: this probe should not encode which
++# address family today's deployment happens to use, because it has already
++# been wrong in both directions inside one day. Measured 2026-08-24 against
++# the container: curl 127.0.0.1:3100/healthcheck -> 200, curl localhost -> 200.
++catalogue=$(probe http://localhost:3100)
+ 
+-echo "RENDERER   LOCAL                  HTTP   PUBLISHED"
+-printf "%-10s %-22s %-6s %s\n" "primary"  "127.0.0.1:3100 backstage" "$primary"  "http://$host:8443/"
+-printf "%-10s %-22s %-6s %s\n" "fallback" "127.0.0.1:8001 datasette" "$fallback" "http://$host:10000/"
++echo "SURFACE    LOCAL                  HTTP   PUBLISHED"
++printf "%-10s %-22s %-6s %s\n" "catalogue" "localhost:3100 backstage" "$catalogue" "http://$host:8443/"
+ 
+ echo
+ echo "CATALOGUE"
+@@ -44,8 +56,8 @@ else
+   echo "  tailnet only -- not reachable from the public internet"
+ fi
+ 
+-# Exit non-zero when NOTHING is serving. One renderer down is the design
+-# working; both down is an outage, and a status command that returns 0 either
+-# way cannot be used as a check.
+-[ "$primary" = "down" ] && [ "$fallback" = "down" ] && exit 1
++# Exit non-zero when the catalogue is not serving. There is one surface now,
++# so "down" is an outage with no second opinion to soften it, and a status
++# command that returns 0 anyway cannot be used as a check.
++[ "$catalogue" = "down" ] && exit 1
+ exit 0
+diff --git a/bin/idp-switch b/bin/idp-switch
+deleted file mode 100755
+index 2be957272..000000000
+--- a/bin/idp-switch
++++ /dev/null
+@@ -1,50 +0,0 @@
+-#!/usr/bin/env bash
+-# Repoint the primary URL at the other renderer. This is the 10-second switch.
+-#
+-#   idp-switch fallback    http://<host>:8443/  ->  Datasette
+-#   idp-switch primary     http://<host>:8443/  ->  Backstage
+-#
+-# The 0-second switch needs no command at all: both renderers are already
+-# running at their own URLs, so the answer to "Backstage is broken" is to open
+-# the other link. This command exists for the case where the link itself has
+-# been handed to somebody -- a buyer, a page, a Telegram message -- and the
+-# thing behind it has to change without the link changing.
+-set -euo pipefail
+-
+-case "${1:-}" in
+-  primary|backstage) target=3100; name="Backstage" ;;
+-  fallback|datasette) target=8001; name="Datasette" ;;
+-  *) echo "usage: idp-switch primary|fallback" >&2; exit 2 ;;
+-esac
+-
+-# Refuse to point the public link at something that is not answering. A switch
+-# to a dead renderer is not a failover, it is a second outage.
+-# curl writes %{http_code} even on failure -- "000" -- so an `|| echo down`
+-# here produced "000down", which matched neither branch and let the switch
+-# proceed to a dead renderer. Read the code and decide on it.
+-code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 "http://127.0.0.1:$target" 2>/dev/null || true)
+-case "$code" in ""|000) code=down ;; esac
+-if [ "$code" = "down" ]; then
+-  echo "idp-switch: $name on 127.0.0.1:$target is not answering -- refusing to switch to it" >&2
+-  echo "            start it with bin/idp-up, or switch to the other one" >&2
+-  exit 1
+-fi
+-
+-# `|| echo` matters: on the first ever switch there is nothing on 8443, grep
+-# exits 1, and under `set -e` the script would die reporting nothing wrong.
+-before=$(tailscale serve status 2>/dev/null | grep -A1 '8443' | tail -1 | tr -s ' ' || true)
+-[ -n "$before" ] || before="(nothing was published on 8443)"
+-tailscale serve --bg --http=8443 "http://127.0.0.1:$target" >/dev/null
+-host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+-
+-echo "was:  $before"
+-echo "now:  http://$host:8443/  ->  $name (127.0.0.1:$target, HTTP $code)"
+-# Probed through the tailnet listener with an explicit Host header rather than
+-# by name. This Mac does not resolve its own MagicDNS name -- other devices on
+-# the tailnet do -- so resolving here would report a failure that is not one.
+-tsip=$(tailscale ip -4 2>/dev/null | head -1)
+-if [ -n "$tsip" ]; then
+-  curl -fsS -o /dev/null -w 'live: the tailnet listener answered %{http_code} in %{time_total}s\n' \
+-    --max-time 10 -H "Host: $host:8443" "http://$tsip:8443/" 2>/dev/null \
+-    || echo "live: the tailnet listener on 8443 did not answer"
+-fi
+diff --git a/bin/idp-up b/bin/idp-up
+index 58891443d..d8adc2461 100755
+--- a/bin/idp-up
++++ b/bin/idp-up
+@@ -1,80 +1,125 @@
+ #!/usr/bin/env bash
+-# Start both renderers over one catalogue, then publish them on the tailnet.
++# Start the catalogue and publish it on the tailnet.
+ #
+-# Two renderers run at once on purpose. That is the 0-second switch: if one is
+-# wrong, broken or mid-upgrade, the other is already serving the same facts at
+-# its own URL and nobody has to do anything. It is the same shape as Fly and
+-# this laptop -- the fallback is not a plan, it is already running.
++# ONE RENDERER. Founder ruling, 2026-08-24: "ive seen 5 ui faces today", and
++# "backstge is for catalog". Backstage is the catalogue and there is no second
++# one. The Datasette fallback this script used to start on 8001 served the same
++# facts under the title "Estate catalogue -- fallback renderer", which meant the
++# owner of the estate met two pages claiming to be the catalogue and had no way
++# to know which one to believe.
+ #
+-#   primary   Backstage   node    127.0.0.1:3100
+-#   fallback  Datasette   python  127.0.0.1:8001
++# The argument it was removed against was availability: a second renderer with
++# no shared runtime survives a broken node_modules or a Backstage upgrade. That
++# is a real property and it is not worth what it cost. A fallback nobody was
++# told about is not availability, it is a second source of truth that is right
++# by coincidence. If the portal being down during an upgrade becomes a real
++# problem, the answer is to make the upgrade not take it down.
+ #
+-# They share no runtime. A broken node_modules, a bad yarn install or a
+-# Backstage upgrade cannot take the fallback down, because the fallback has
+-# never heard of node.
++# IN A CONTAINER, NOT `yarn start`. Founder directive the same day: "we also
++# cannot accept the brittle yarn start laptop hack ... containerize the
++# application exactly as it will run in k8s". What this script used to do was
++# source nvm, pin a Node path that exists on exactly one machine, and background
++# a webpack dev server with nohup. The image is built by backstage/Dockerfile and
++# run by backstage/compose.yml; both explain themselves. The k3s cluster takes
++# the same image in Phase 2 and this script loses its compose lines.
++#
++#   catalogue   Backstage   container   127.0.0.1:3100
+ set -euo pipefail
+ 
+ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ RUN="$IDP/logs"; mkdir -p "$RUN"
+ PORT_PRIMARY=3100
+-PORT_FALLBACK=8001
++COMPOSE="$IDP/backstage/compose.yml"
++ENVFILE="$IDP/backstage/.env"
+ 
+ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+ 
+-# 1. Regenerate both renderings from the one source.
++# 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
++#    the queryable copy of the same facts, and dropping a renderer is not a
++#    reason to stop producing the data underneath it.
+ "$IDP/bin/catalog-gen"
+ "$IDP/bin/db-gen"
+ 
+-# 2. Fallback first. It starts in under a second and has no build step, so if
+-#    the primary is broken there is still something serving before we find out.
+-if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_FALLBACK/-/versions.json" 2>/dev/null; then
+-  nohup "$IDP/.venv/bin/datasette" serve "$IDP/catalog/estate.db" \
+-      --host 127.0.0.1 --port "$PORT_FALLBACK" \
+-      --metadata "$IDP/datasette-metadata.json" \
+-      --setting sql_time_limit_ms 5000 \
+-      --setting default_page_size 100 \
+-      > "$RUN/datasette.log" 2>&1 &
+-  echo $! > "$RUN/datasette.pid"
+-  log "fallback  starting on $PORT_FALLBACK (pid $(cat "$RUN/datasette.pid"))"
+-else
+-  log "fallback  already up on $PORT_FALLBACK"
++# 2. The database password. Generated once, here, so there is no default
++#    password in any file and nobody has to remember to change one. `umask 077`
++#    rather than a chmod after the fact: the file is never briefly world-readable.
++#    idp/.gitignore covers `**/.env`, and the value is never printed.
++#
++#    THE PASSWORD AND THE VOLUME ARE ONE PAIR, AND LOSING HALF BRICKS THE STACK.
++#    Postgres reads POSTGRES_PASSWORD only when it initialises an empty data
++#    directory. After that the password lives in the volume, and .env is the
++#    only copy of the matching half. So a missing .env next to an existing
++#    volume is not a fresh start -- it silently generates a password that
++#    cannot ever match, and every Backstage plugin then fails with `password
++#    authentication failed for user "backstage"`. Measured 2026-08-25: that is
++#    exactly what happened here, and the top-level report was "catalogue FAILED
++#    to become healthy" over 40 lines of plugin stack traces, none of which
++#    named the cause. It cost a full debugging round to attribute.
++#
++#    Refuse only that one combination. .env present is always fine (it matches,
++#    or it initialises); no .env and no volume is a genuine first boot.
++PROJECT="$(basename "$(dirname "$COMPOSE")")"
++PGVOL="${PROJECT}_pgdata"
++
++if [ ! -f "$ENVFILE" ] && docker volume inspect "$PGVOL" >/dev/null 2>&1; then
++  cat >&2 <<EOF
++FATAL  $ENVFILE is missing but the volume $PGVOL already exists.
++
++       Postgres took its password from that file when the volume was created,
++       and the file was the only copy. Generating a new one here would produce
++       a stack where every plugin fails authentication.
++
++       The volume holds no source of truth -- Backstage re-ingests the whole
++       catalogue from catalog/catalog-info.yaml on boot -- so the fix is to
++       discard it and let both halves be created together:
++
++           docker compose -f $COMPOSE down -v
++           $0
++
++       Do that only if you accept losing anything else in $PGVOL.
++EOF
++  exit 1
+ fi
+ 
+-# 3. Primary.
+-if [ -d "$IDP/backstage/node_modules" ]; then
+-  if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_PRIMARY" 2>/dev/null; then
+-    ( cd "$IDP/backstage"
+-      export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
+-      export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
+-      export PORT="$PORT_PRIMARY"
+-      nohup yarn start > "$RUN/backstage.log" 2>&1 &
+-      echo $! > "$RUN/backstage.pid" )
+-    log "primary   starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
+-  else
+-    log "primary   already up on $PORT_PRIMARY"
++if [ ! -f "$ENVFILE" ]; then
++  ( umask 077; printf 'POSTGRES_PASSWORD=%s\n' "$(openssl rand -base64 30 | tr -d '\n/+=')" > "$ENVFILE" )
++  log "secret    generated $ENVFILE (not printed, not committed)"
++fi
++
++# 3. The catalogue. `up -d` is idempotent -- compose reconciles to the declared
++#    state, so running this hourly under launchd cannot start a second copy.
++#    That is the whole reason the old probe-then-nohup shape is gone: it probed
++#    127.0.0.1 while the dev server bound [::1], concluded "down" on every run,
++#    and stacked another `yarn start` on a portal that was already serving.
++if ! docker compose -f "$COMPOSE" up -d --wait --wait-timeout 300 2>&1 | sed 's/^/          /'; then
++  log "catalogue FAILED to become healthy -- last 40 lines:"
++  docker compose -f "$COMPOSE" logs --tail 40 catalogue | sed 's/^/          /'
++  # Name the one cause the stack traces bury. Backstage reports a database
++  # auth failure once per plugin, so the real line is thirteen frames deep and
++  # reads like a code fault rather than a mismatched credential.
++  if docker compose -f "$COMPOSE" logs catalogue 2>/dev/null | grep -q 'password authentication failed'; then
++    log "cause     the password in $ENVFILE does not match the one inside $PGVOL."
++    log "fix       docker compose -f $COMPOSE down -v && $0"
+   fi
+-else
+-  log "primary   NOT BUILT ($IDP/backstage/node_modules missing) -- fallback is serving alone"
++  exit 1
+ fi
++log "catalogue up and healthy on 127.0.0.1:$PORT_PRIMARY"
+ 
+ # 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
+ #    every asset the estate owns, and LAW 21 says the default is closed. Going
+ #    public is bin/idp-publish, which is one command and the founder's call.
+ if command -v tailscale >/dev/null; then
+   # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
+-  # and re-pointing it at the primary every hour would silently undo a
+-  # bin/idp-switch fallback -- the link would go back on its own, which is the
+-  # worst kind of bug because it looks like it worked and then does not.
++  # and re-pointing it every hour would silently undo a hand-made change to
++  # where the published link goes -- the link would move back on its own, which
++  # is the worst kind of bug because it looks like it worked and then does not.
+   if tailscale serve status 2>/dev/null | grep -q ':8443'; then
+-    log "publish   8443 already points somewhere -- left alone (idp-switch owns it)"
++    log "publish   8443 already points somewhere -- left alone"
+   else
+     tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+   fi
+-  # 10000 is the fallback's own address and never moves, so it is always set.
+-  tailscale serve --bg --http=10000 "http://127.0.0.1:$PORT_FALLBACK" >/dev/null 2>&1 || true
+   host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+-  log "primary   http://$host:8443/"
+-  log "fallback  http://$host:10000/"
++  log "catalogue http://$host:8443/"
+ fi
+ 
+ "$IDP/bin/idp-status"
+diff --git a/bin/idp-verify b/bin/idp-verify
+index 699f7ba62..7fc5789e6 100755
+--- a/bin/idp-verify
++++ b/bin/idp-verify
+@@ -12,15 +12,15 @@
+ #   idp-verify          check once
+ #   idp-verify --wait   allow up to 180s for Backstage to finish ingesting
+ #
+-# Exit 0 only when every entity in the generated file is present in both
+-# renderers.
++# Exit 0 only when every entity in the generated file is present in the
++# catalogue. There is one catalogue: Backstage. Founder ruling 2026-08-24,
++# "backstge is for catalog" and "ive seen 5 ui faces today" -- the Datasette
++# fallback this script used to check as a second renderer is gone.
+ set -uo pipefail
+ 
+ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ YAML="$IDP/catalog/catalog-info.yaml"
+-DB="$IDP/catalog/estate.db"
+ BACKEND="http://127.0.0.1:7107"
+-FALLBACK="http://127.0.0.1:8001"
+ JQ=/usr/local/bin/jq
+ 
+ deadline=0
+@@ -95,22 +95,7 @@ PY
+   rm -rf "$split_dir"
+ fi
+ 
+-# --- fallback renderer --------------------------------------------------------
+-db_rows=$(sqlite3 "$DB" "select count(*) from assets" 2>/dev/null || echo 0)
+-http_rows=$(curl -sS --max-time 10 "$FALLBACK/estate/assets.json?_shape=array&_size=0" \
+-  -o /dev/null -w '%{http_code}' 2>/dev/null || echo 000)
+-# The row count the generator wrote and the row count Datasette serves are two
+-# different facts. 194 in the file and 194 over HTTP is what proves it serving.
+-served=$(curl -sS --max-time 10 "$FALLBACK/estate.json?sql=select+count(*)+as+n+from+assets&_shape=array" \
+-  2>/dev/null | $JQ -r '.[0].n // "none"' 2>/dev/null || echo none)
+-if [ "$served" = "$want" ]; then
+-  say "fallback  $served rows served over HTTP -- matches"
+-else
+-  say "FAIL      fallback serves '$served', expected $want (db has $db_rows, HTTP $http_rows)"
+-  fail=1
+-fi
+-
+-# --- primary renderer ---------------------------------------------------------
++# --- the catalogue ------------------------------------------------------------
+ ingested_names() {
+   local tok
+   tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null \
+@@ -128,11 +113,12 @@ wanted_names() {
+   ' "$YAML"
+ }
+ 
++# There is no second renderer to fall back to, so a backend that is not
++# answering is a failing verification, not a partial one. This used to exit 0
++# on the strength of Datasette serving the same rows.
+ if ! curl -sS -o /dev/null --max-time 4 "$BACKEND/api/catalog/entities" 2>/dev/null; then
+-  say "SKIP      primary (Backstage backend on 7107 is not answering)"
+-  say
+-  [ "$fail" -eq 0 ] && say "PARTIAL   fallback verified, primary not running" || say "FAIL"
+-  exit "$fail"
++  say "FAIL      the Backstage backend on 7107 is not answering -- nothing is serving the catalogue"
++  exit 1
+ fi
+ 
+ tmp_w=$(mktemp); tmp_i=$(mktemp)
+@@ -159,7 +145,7 @@ rm -f "$tmp_w" "$tmp_i"
+ 
+ say
+ if [ "$fail" -eq 0 ]; then
+-  say "PASS      both renderers agree with the inventory: $want entities"
++  say "PASS      the catalogue matches the inventory: $want entities"
+ else
+   say "FAIL      the portal does not match the inventory"
+ fi
+diff --git a/board/.gitignore b/board/.gitignore
+deleted file mode 100644
+index c222e9679..000000000
+--- a/board/.gitignore
++++ /dev/null
+@@ -1,3 +0,0 @@
+-# The board's SQLite database and uploads. Back this directory up; never commit it.
+-data/
+-plugins/
+diff --git a/board/MIGRATION.md b/board/MIGRATION.md
+deleted file mode 100644
+index 4f37755b2..000000000
+--- a/board/MIGRATION.md
++++ /dev/null
+@@ -1,118 +0,0 @@
+-# Board migration runbook: removing the login form
+-
+-Phase 1 artefact under founder ruling R19 (migration-as-code, 2026-08-24): *"first-time setup is
+-allowed to be manual, but it must generate a structured migration doc before automation is
+-written."* This is that doc. **No automation exists yet and nothing below has been run.**
+-
+-`idp/docs/decisions/0001-gateway-api-is-the-routing-standard.md` cited this file as the record of
+-the board's login blocker. The file did not exist. That is why the founder had to ask twice, and
+-it is tracked as crew#185.
+-
+-## Current state, measured 2026-08-24
+-
+-```
+-$ curl -sI http://localhost:3300/ | head -2
+-HTTP/1.1 302 Found
+-Location: http://localhost:3300/login
+-
+-$ docker ps --format '{{.Names}}\t{{.Ports}}' | grep kanboard
+-kanboard	443/tcp, 127.0.0.1:3300->80/tcp
+-```
+-
+-### Everything the running board depends on
+-
+-Read from `kanboard.yml` and `docker inspect kanboard` on 2026-08-24.
+-
+-| Thing | Value | Notes |
+-|---|---|---|
+-| Image | `kanboard/kanboard:v1.2.46` | pinned, AGPL-3.0 |
+-| Container | `kanboard` | compose project `board`, service `kanboard` |
+-| Compose file | `idp/board/kanboard.yml` | working dir `idp/board` |
+-| Published port | `127.0.0.1:3300 -> 80/tcp` | already loopback-only; compliant with R20 |
+-| Also exposed | `443/tcp` | container-internal only, not published |
+-| Volume | `./data -> /var/www/app/data` | **the entire database**, `db.sqlite`. gitignored |
+-| Volume | `./plugins -> /var/www/app/plugins` | currently empty |
+-| Memory cap | `512m` | the laptop is slow; this was deliberate |
+-| Restart policy | `unless-stopped` | |
+-| Env set today | `PLUGIN_INSTALLER=true` | **no auth or session variable is set at all** |
+-| API | JSON-RPC at `/jsonrpc.php` | token lives in the sops vault, never in the compose file |
+-
+-Confirmed by `docker inspect kanboard`: none of `REVERSE_PROXY_AUTH`, `REVERSE_PROXY_USER_HEADER`,
+-`SESSION_DURATION`, `REMEMBER_ME_AUTH` or `HIDE_LOGIN_FORM` is currently set.
+-
+-### The one piece of state that matters
+-
+-`idp/board/data/db.sqlite` is the whole board. It is gitignored and it is not backed up anywhere
+-else. **Every step below is preceded by copying it.** R19 law 2 — zero unintended side effects —
+-means this migration must not be able to lose a card.
+-
+-## Target state
+-
+-From `idp/docs/decisions/0003-identity-is-oidc-and-the-gateway-enforces-it.md`:
+-
+-```
+-browser -> Traefik (the only non-loopback bind) -> forward-auth subrequest -> Authelia
+-                          |  200 + Remote-User: <founder>
+-                          v
+-                    kanboard:80  (no published port at all)
+-```
+-
+-Kanboard needs no patch. Its own `config.default.php` carries the seam:
+-
+-| Constant | Ships as | Becomes | Why |
+-|---|---|---|---|
+-| `REVERSE_PROXY_AUTH` | `false` | `true` | trust the proxy's header |
+-| `REVERSE_PROXY_USER_HEADER` | `'REMOTE_USER'` | the header Authelia sets | Authelia sets `Remote-User` |
+-| `REVERSE_PROXY_DEFAULT_ADMIN` | `''` | the founder's username | auto-creates him as admin on first request |
+-| `HIDE_LOGIN_FORM` | `false` | `true` | there is no form left to meet |
+-| `SESSION_DURATION` | `0` (until browser closes) | unchanged | the proxy holds the session now |
+-| `REMEMBER_ME_AUTH` | `true` | unchanged | |
+-
+-## The ordering constraint — this is the part that can go wrong
+-
+-`REVERSE_PROXY_AUTH` **trusts a header**. Anyone who can reach Kanboard directly and set
+-`Remote-User` is the admin. So the port must be unreachable except through the proxy *before* the
+-flag is turned on. Turning it on first is strictly worse than the login form we are removing.
+-
+-Correct order, and it is not negotiable:
+-
+-1. Traefik is up and routing `board.localhost` to the container over the compose network.
+-2. Authelia is up and Traefik's forward-auth middleware is proving a 302-to-login for an
+-   unauthenticated request.
+-3. `ports:` is **removed** from `kanboard.yml` — the container publishes nothing.
+-4. Verified: `curl -sI http://127.0.0.1:3300/` returns nothing at all (connection refused).
+-5. Only then, the six constants above are set.
+-
+-## Phase 2 — the lifecycle script that does not exist yet
+-
+-Per R19, it needs four entry points. Written here so the automation has a spec, not prose.
+-
+-| Entry point | Must prove |
+-|---|---|
+-| `can_apply` | `db.sqlite` copied; Traefik reachable; Authelia `/api/verify` returns 401 for an anonymous request; port 3300 still loopback |
+-| `apply` | writes the six env vars, removes `ports:`, recreates the container |
+-| `healthcheck` | anonymous request to `http://board.localhost/` gets the Authelia login; an authenticated one gets HTTP 200 with **no** `Location: /login` |
+-| `rollback` | restores `kanboard.yml` and `db.sqlite`, recreates the container, `curl -sI http://localhost:3300/` returns the 302 it returns today |
+-
+-Idempotency test R19 law 1 demands: run `apply` twice. The second run exits 0, changes nothing,
+-and does not create a second admin user. Kanboard auto-creates the
+-`REVERSE_PROXY_DEFAULT_ADMIN` user on first request, so this is the specific place a duplicate
+-resource could appear — the test is a row count on the `users` table before and after.
+-
+-## Blocked on
+-
+-- Traefik is not deployed. ADR 0001 chose it; nothing has been booted.
+-- Authelia is not deployed. ADR 0003 chose it 2026-08-24; nothing has been booted.
+-- `board.localhost` needs an `/etc/hosts` line, which needs sudo, which needs the founder once
+-  (LAW 27). **Tested on this machine 2026-08-24, and the convenient assumption is false:**
+-
+-  ```
+-  $ ping -c1 -t1 board.localhost
+-  ping: cannot resolve board.localhost: Unknown host
+-  ```
+-
+-  macOS does not synthesise `*.localhost`. So the hosts line is genuinely required. Ask him once,
+-  for every hostname the estate will ever need, not once per service — that is what LAW 27 means
+-  here. The list comes from the Backstage catalog, so it is generated, not typed.
+-
+-Only the founder moves this to live (R16).
+diff --git a/board/kanboard.yml b/board/kanboard.yml
+deleted file mode 100644
+index a4f6f18f8..000000000
+--- a/board/kanboard.yml
++++ /dev/null
+@@ -1,38 +0,0 @@
+-# The founder's board. AGPL, self-hosted, one container, one SQLite file.
+-#
+-# WHY IT EXISTS, 2026-08-24. He asked for a visual board because he does not use the
+-# command line (LAW 31). A session published one to claude.ai; he opened it and got a 404:
+-#   "we need to nove off claude and pbecone agnostic our own prcesses and tooling"
+-#   "anything we generate bust be persisted in our patfron, else iot ends upn the void"
+-# So it runs on his machine, on his disk, under his docker. No session, no vendor, no account.
+-#
+-# WHY KANBOARD AND NOT WEKAN. Wekan needs MongoDB because Meteor needs MongoDB. That is a
+-# second database class in an estate that already runs Postgres and ClickHouse, plus a second
+-# backup and a second thing to break. Kanboard stores everything in one SQLite file. Founder,
+-# 2026-08-24: "the one with least frictino ad nintenance overhed".
+-#
+-# WHY PORT 3300. 8080 is already held on this machine by an ssh forward:
+-#   lsof -nP -iTCP:8080 -sTCP:LISTEN  ->  ssh 76583 ... TCP *:8080 (LISTEN)
+-#
+-# WHY THE MEMORY CAP. He has said three times today that the laptop is too slow.
+-#
+-# THE BACKUP IS ONE DIRECTORY: ~/dev/code/idp/board/data (gitignored, holds db.sqlite).
+-#
+-#   docker compose -f ~/dev/code/idp/board/kanboard.yml up -d
+-#   open http://localhost:3300
+-
+-services:
+-  kanboard:
+-    image: kanboard/kanboard:v1.2.46
+-    container_name: kanboard
+-    restart: unless-stopped
+-    mem_limit: 512m
+-    ports:
+-      - 127.0.0.1:3300:80
+-    volumes:
+-      - ./data:/var/www/app/data
+-      - ./plugins:/var/www/app/plugins
+-    environment:
+-      PLUGIN_INSTALLER: "true"
+-      # Agents write cards over the JSON-RPC API at /jsonrpc.php. The API token is read
+-      # from Settings -> API by the founder and stored in the sops vault, never here.
+diff --git a/catalog/ports.yaml b/catalog/ports.yaml
+index 98da62ee1..0f6160c04 100644
+--- a/catalog/ports.yaml
++++ b/catalog/ports.yaml
+@@ -15,23 +15,19 @@ blocks:
+   8600-8799: agents and product engines
+ ports:
+   - {port: 3000, service: prospector-store-web, compose: prospector}
+-  - {port: 3100, service: backstage-app,        compose: none, bind: '[::1]'}
++  - {port: 3100, service: backstage,            compose: backstage/compose.yml, bind: 127.0.0.1}
+   - {port: 3200, service: langfuse-web,         compose: observability/langfuse.yml}
+   - {port: 3210, service: dagster-webserver,    compose: none}
+-  - {port: 3300, service: kanboard,             compose: board/kanboard.yml}
+   - {port: 3310, service: agentgateway,         compose: mcp/agentgateway.yml}
+   - {port: 4000, service: litellm,              compose: llm/litellm.yml}
+   - {port: 4318, service: otel-fallback,        compose: observability/langfuse.yml}
+   - {port: 5291, service: prospector-store-api, compose: prospector}
+-  - {port: 7107, service: backstage-backend,    compose: none, bind: 127.0.0.1}
+-  - {port: 8001, service: datasette,            compose: none}
+   - {port: 8080, service: prospector-edge,      compose: prospector, bind: 127.0.0.1}
+   - {port: 8443, service: prospector-edge-tls,  compose: prospector, bind: 127.0.0.1}
+   - {port: 8611, service: prospector-engine,    compose: prospector}
+   - {port: 8765, service: consultd,             compose: none}
+   - {port: 8766, service: kimi_bridge,          compose: none}
+   - {port: 8767, service: kimi_bridge,          compose: none}
+-  - {port: 8787, service: board_serve,          compose: none}
+   - {port: 11434, service: ollama,              compose: none}
+ # Not ours, not gated: 53/54861 (lima), 5000/7000 (macOS ControlCenter), 49248 (rapportd),
+ # 49xxx ephemeral, 53145 (ssh forward to k3d API; owner: founder).
+diff --git a/docs/decisions/0004-the-catalogue-runs-as-a-container-and-the-interim-is-a-bridge.md b/docs/decisions/0004-the-catalogue-runs-as-a-container-and-the-interim-is-a-bridge.md
+new file mode 100644
+index 000000000..9698c42ca
+--- /dev/null
++++ b/docs/decisions/0004-the-catalogue-runs-as-a-container-and-the-interim-is-a-bridge.md
+@@ -0,0 +1,132 @@
++# 4. The catalogue runs as a container, and the interim is a bridge
++
++Date: 2026-08-24
++Status: accepted
++
++## Context
++
++The founder asked, on 2026-08-24: *"who made that decision?"* — about the
++catalogue running as a bare `yarn start` process on the laptop.
++
++The honest answer is that nobody recorded making it. `git log -- bin/idp-up`
++shows two commits, `9c380d8 feat: two-renderer portal over the estate inventory`
++and `f124792 feat: the portal starts itself and stops undoing the switch`, both
++authored "Chidi Onyema" because agent sessions commit under his git identity.
++There is no ADR, no Dockerfile for the app, and no line anywhere weighing the
++alternative. An agent picked the shape that was quickest to get on screen, and
++the shape stuck because nothing was written down that could be argued with.
++
++That is the defect this ADR exists to close, and it is a bigger one than the
++runtime it is about. The estate has 16 rows in `crew/docs/STANDARDS.md` and, as
++of this morning, three ADRs. Decisions taken by whichever session was open are
++invisible to the other five, so the next session inherits a choice with no
++reasoning attached and either obeys it or silently reverses it.
++
++What `yarn start` actually was, measured on this machine on 2026-08-24:
++
++- `bin/idp-up` sourced nvm and prepended `~/.nvm/versions/node/v22.13.1/bin` to
++  `PATH` — a path that exists on exactly one computer.
++- The webpack dev server refuses any `Host` header that is not `app.baseUrl`.
++  The tailnet link at `:8443` returned **403**; it had never worked from another
++  device, and nothing said so.
++- The app bound `[::1]:3100` and the backend bound `127.0.0.1:7107`. One product,
++  two address families. `curl 127.0.0.1:3100` returned `000` while a browser on
++  the same machine got `200`, which is why `bin/idp-up` concluded the portal was
++  down on every hourly run and started a second copy on top of the first.
++- The database was `better-sqlite3` at `:memory:`, so every restart re-ingested
++  the whole estate — 124 seconds, measured — and served a portal that rendered
++  correctly with nothing in it.
++- Nothing was deployable, so the k3s migration in the other lane would have
++  started from zero.
++
++Meanwhile the k3s cluster is being brought up by another session and is expected
++green in roughly 48 hours. The founder's constraint was explicit: *"We cannot
++wait 48 hours to have a working Backstage, but we also cannot accept the brittle
++yarn start laptop hack."*
++
++## Decision
++
++**The catalogue is a container image, built from source by
++`backstage/Dockerfile`, and it is the same image in every environment.**
++
++Locally it is run by `backstage/compose.yml`. In the cluster it is run by
++Kustomize manifests that ArgoCD reconciles. The compose file is deleted when the
++cluster takes over.
++
++**An interim is acceptable only when it is the same artefact as the destination
++and its removal is one delete.** This is the generalisable rule, and it is what
++separates a bridge from a second platform. `yarn start` fails it on both counts:
++it is a different artefact (a dev server, not an image) and removing it means
++rewriting the startup path. A container passes it on both.
++
++Three specifics, each of which was a real choice:
++
++1. **Multi-stage, not the scaffolder's `packages/backend/Dockerfile`.** That file
++   is a host build — it requires `yarn install && yarn tsc && yarn build:backend`
++   on the machine first, with the same Node major as the image. Host node here is
++   v26.7.0, the image is `node:24`, and `package.json` declares
++   `engines.node: 22 || 24`, so the host build is not runnable on this laptop at
++   all. `better-sqlite3` is a native module, so a Node mismatch does not fail
++   loudly — it yields an image that crashes at `require()`. Multi-stage puts the
++   toolchain inside the build, where its version is a property of a committed
++   file rather than of a laptop. Backstage documents this alternative itself.
++
++2. **`yarn build:all`, not `yarn --cwd packages/backend build`.** Backstage's own
++   multi-stage example builds the backend only and its documentation states that
++   bundle does not contain the frontend. This app runs
++   `@backstage/plugin-app-backend` (`packages/backend/src/index.ts:13`), so the
++   backend serves the UI. Building the backend alone produces an image that
++   starts, answers `/api/catalog`, and serves a blank page — a failure that looks
++   like success, which is the category this estate keeps paying for.
++
++3. **Postgres, not in-memory sqlite.** It is what the cluster will use, so Phase 2
++   changes where the database runs rather than which database it is, and it ends
++   the 124-second window where the portal is up and empty.
++
++## Consequences
++
++**Two ports become one.** The image serves the UI and the API on 3100, published
++as `127.0.0.1:3100` and nothing else. Port 7107 is removed from
++`catalog/ports.yaml`, and with it the CORS rule the portal needed in order to
++talk to its own backend.
++
++**The `0.0.0.0` bind inside the container does not violate R20.** R20 governs
++what this machine exposes. A container's network namespace is not the host's: a
++process binding `127.0.0.1` inside a container is reachable only from that
++container, and the published port cannot forward to it. `compose.yml` publishes
++`127.0.0.1:3100:3100`, so `lsof` on the host sees the loopback and the LAN sees
++nothing. `bin/port-gate --live` reads host binds and is the check that holds this.
++
++**`bin/idp-up` becomes a reconciler.** `docker compose up -d --wait` is
++idempotent, so the hourly launchd run converges instead of stacking copies. The
++probe-then-`nohup` shape that caused the duplicate-start bug is gone entirely
++rather than repaired.
++
++**There is no default password anywhere.** `bin/idp-up` generates the Postgres
++password with `openssl rand` under `umask 077` into `backstage/.env`, which
++`idp/.gitignore` already covers via `**/.env`. Postgres has no `ports:` key.
++
++**The tailnet 403 is expected to clear**, because the built app is static assets
++served by the backend rather than a dev server enforcing a Host allowlist. That
++is a consequence to verify after the first deploy, not a claim.
++
++**This ADR is the record the next session argues with.** If containerising was
++wrong, the reasoning is here to be attacked. That is the actual fix for *"who
++made that decision?"* — not this particular runtime.
++
++## Alternatives rejected
++
++**Keep `yarn start` for 48 hours and go straight to k8s.** Rejected: the
++migration would then have no image to migrate, so the cluster lane would have to
++invent the packaging under time pressure, and the 403, the split address family
++and the duplicate-start bug would all still be live in the meantime.
++
++**Use a published Backstage image.** There is none that fits. `ghcr.io/backstage/backstage`
++exists but is the upstream demo app; a Backstage deployment *is* your own source
++— your plugins, your `app-config.yaml`, your catalog. There is no vendor image
++that can serve this estate's catalogue, and `docker.io/library/backstage` and
++`spotify/backstage` do not exist (checked 2026-08-24).
++
++**Run Postgres on the host instead of in compose.** Rejected: it adds a host
++service to install, secure and back up that the cluster will not use, which is
++the definition of an interim that does not port.

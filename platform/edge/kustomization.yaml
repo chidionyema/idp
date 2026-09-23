@@ -6,7 +6,7 @@ resources:
   - status-page.yaml
   - require-catalogue-entity.yaml
   # OTel endpoint: mutation injects OTEL_EXPORTER_OTLP_ENDPOINT at admission (add-if-absent);
-  # validation then refuses anything that still lacks it. VENDOR exceptions in otel-endpoint-exception.yaml.
+  # validation refuses anything that slipped through without it.
   - inject-otel-endpoint.yaml
   - require-otel-endpoint.yaml
   - otel-endpoint-exception.yaml

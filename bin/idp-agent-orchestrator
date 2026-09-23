@@ -45,7 +45,7 @@ shopt -s nullglob
 
 PROG="${0##*/}"
 WORKSPACE_DIR="${AGENT_WORKSPACE_DIR:-$(cd "$(dirname "$0")/.." && pwd)/../agent-workspaces}"
-BASE_BRANCH="${AGENT_BASE_BRANCH:-consolidate/all-into-main}"
+BASE_BRANCH="${AGENT_BASE_BRANCH:-main}"
 BRANCH_PREFIX="${AGENT_BRANCH_PREFIX:-task-}"
 LOCK_FILENAME="${AGENT_LOCK_FILENAME:-.agent-locked}"
 DRY_RUN="${AGENT_DRY_RUN:-0}"

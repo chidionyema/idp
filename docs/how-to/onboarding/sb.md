@@ -5,10 +5,9 @@
 ## Once
 
 1. `cd ~/dev/code/idp && python3 -m venv sovereign/.venv && sovereign/.venv/bin/pip install -r sovereign/requirements.txt`
-2. `brew install temporal` (Windows: `winget install Temporal.CLI`).
-3. Set `ESTATE_HOME` (default `~/.estate`). Every other setting has a default; see `bin/sb config`.
-4. Install the launchd jobs from `launchd/ai.estate.temporal.plist.tmpl`, `ai.estate.sovereign-worker.plist.tmpl` and `ai.estate.cockpit.plist.tmpl` with `bin/idp-apply`.
-5. For the phone: `bin/sb install-plugin` symlinks the Otto plugin into `$HERMES_HOME/plugins`; `bin/sb menu` registers the cockpit Mini App (needs `ESTATE_PUBLIC_URL`).
+2. Set `ESTATE_HOME` (default `~/.estate`). Every other setting has a default; see `bin/sb config`.
+3. The bus runs in OKE (`platform/temporal/`), not on the laptop. `sb` reaches it through the mesh Service `temporal-frontend-mesh`; set `TEMPORAL_HOST`/`TEMPORAL_ADDRESS` to the tailnet-qualified name the operator provisions.
+4. For the phone: `bin/sb install-plugin` symlinks the Otto plugin into `$HERMES_HOME/plugins`; `bin/sb menu` registers the cockpit Mini App (needs `ESTATE_PUBLIC_URL`).
 
 ## Every day
 

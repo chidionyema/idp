@@ -1,0 +1,425 @@
+diff --git a/backstage/plugins/fleetview-backend/src/sessions.py b/backstage/plugins/fleetview-backend/src/sessions.py
+index 0252c6755..dbc1896af 100644
+--- a/backstage/plugins/fleetview-backend/src/sessions.py
++++ b/backstage/plugins/fleetview-backend/src/sessions.py
+@@ -34,7 +34,7 @@ from __future__ import annotations
+ import json
+ import os
+ from pathlib import Path
+-from typing import Any
++from typing import Any, Callable
+ 
+ # The route CP1's done-command names.
+ SESSIONS_ROUTE = "/api/fleetview/sessions"
+@@ -67,23 +67,50 @@ def _ledger_prefix() -> str:
+     return os.environ.get("ESTATE_STATE_PATH_PREFIX", DEFAULT_LEDGER_PREFIX)
+ 
+ 
++def _is_claude_code_row(doc: dict[str, Any]) -> bool:
++    """A ledger row whose path lives under the prompt ledger (claude-code's session store).
++
++    The trailing slash on either side is normalized before comparison: the catalogue generator
++    writes paths without a slash and the env var defaults to WITH one, so a naive `startswith`
++    would silently hide every row.
++    """
++    raw = ((doc.get("metadata") or {}).get("annotations") or {}).get("estate/path")
++    if not isinstance(raw, str):
++        return False
++    prefix = _ledger_prefix().rstrip("/")
++    return raw.rstrip("/").startswith(prefix)
++
++
++# A runtime registers its session-row filter here. The dispatcher accepts a catalogue row when
++# ANY runtime's filter accepts it, so the fleet page is not pinned to one runtime's data and
++# adding a runtime is one registry entry, not a rewrite of the filter. The first runtime in the
++# registry wins when more than one accepts a row -- a row that genuinely belongs to two runtimes
++# is a generator bug we want surfaced, not papered over.
++_RUNTIME_REGISTRY: list[tuple[str, Callable[[dict[str, Any]], bool]]] = [
++    ("claude-code", _is_claude_code_row),
++]
++
++
++def register_runtime(name: str, row_filter: Callable[[dict[str, Any]], bool]) -> None:
++    """Add a new runtime's session-row filter. Idempotent on (name, filter) so an adapter can
++    register itself on every import without duplicating entries.
++    """
++    if not any(n == name and f is row_filter for n, f in _RUNTIME_REGISTRY):
++        _RUNTIME_REGISTRY.append((name, row_filter))
++
++
+ def is_session_row(doc: dict[str, Any]) -> bool:
+-    """A catalogue document is a session row when it is a ledger whose file lives under the
+-    prompt ledger.
++    """A catalogue document is a session row when at least one runtime's filter accepts it.
+ 
+-    The filter is the PATH, not a tag. A tag can be renamed by a later generator (`estate-internal`
+-    arrived on 2026-09-07, after these rows existed) and the rows would silently stop being
+-    sessions; the path is the one field this dataset has always carried.
++    The filter is a dispatcher, not a single hardcoded rule, so the page accepts sessions from
++    every runtime the estate runs. The common shape (Resource / spec.type=ledger) is checked
++    once here; the per-runtime detail lives in each filter.
+     """
+     if doc.get("kind") != "Resource":
+         return False
+     if (doc.get("spec") or {}).get("type") != "ledger":
+         return False
+-    raw = ((doc.get("metadata") or {}).get("annotations") or {}).get("estate/path")
+-    if not isinstance(raw, str):
+-        return False
+-    prefix = _ledger_prefix().replace(HOME_TOKEN, HOME_TOKEN)
+-    return raw.replace(HOME_TOKEN, HOME_TOKEN).startswith(prefix)
++    return any(fn(doc) for _name, fn in _RUNTIME_REGISTRY)
+ 
+ 
+ def _project_from_slug(slug: str) -> str | None:
+@@ -209,6 +236,105 @@ def session_from_row(
+     }
+ 
+ 
++def list_claude_code_sessions(prefix: str | None = None) -> list[dict[str, Any]]:
++    """Every unique session across all prompt-ledger JSONL files, newest first.
++
++    A single JSONL file holds many sessions (each row's `session` field names one); this
++    function groups rows by session id and returns one record per unique session, ordered by
++    newest timestamp descending. The catalogue only carries rollup rows that point at the
++    directory, so without this enumerator the page shows the two directory entries and nothing
++    else.
++
++    A missing or unreadable directory is the empty list -- the page is honest about "no data
++    here" rather than returning a placeholder.
++    """
++    if prefix is None:
++        prefix = _ledger_prefix()
++    # The prefix may be HOME_TOKEN-relative (when the catalogue stores it that way) OR may use
++    # a literal `~` (the default). Both must resolve to the same on-disk directory, so we
++    # substitute HOME_TOKEN first and then expanduser for the literal `~`.
++    expanded = os.path.expanduser(prefix.replace(HOME_TOKEN, str(Path.home())))
++    base = Path(expanded)
++    if not base.is_dir():
++        return []
++    sessions_by_id: dict[str, list[dict[str, Any]]] = {}
++    file_for_session: dict[str, Path] = {}
++    for f in base.glob("*.jsonl"):
++        try:
++            with f.open() as fh:
++                for line in fh:
++                    line = line.strip()
++                    if not line:
++                        continue
++                    try:
++                        row = json.loads(line)
++                    except ValueError:
++                        continue
++                    if not isinstance(row, dict):
++                        continue
++                    sid = row.get("session")
++                    if not isinstance(sid, str) or not sid:
++                        continue
++                    if sid not in sessions_by_id:
++                        sessions_by_id[sid] = []
++                        file_for_session[sid] = f
++                    sessions_by_id[sid].append(row)
++        except OSError:
++            continue
++    out = [
++        _session_record_from_rows(sid, rows, file_for_session[sid])
++        for sid, rows in sessions_by_id.items()
++    ]
++    out.sort(
++        key=lambda r: (r.get("updated_at") or "", r.get("session_id") or ""),
++        reverse=True,
++    )
++    return out
++
++
++def _session_record_from_rows(
++    sid: str, rows: list[dict[str, Any]], file: Path
++) -> dict[str, Any]:
++    """Build a session record from the rows of one JSONL file that share a session id.
++
++    `task` is the newest user prompt (a person speaking, not an assistant reply). `state` is
++    derived from the file's mtime: a write in the last five minutes is the one real signal the
++    file carries that something is alive; older than that we say "unknown" rather than guess.
++    """
++    import time as _time
++
++    newest_user: tuple[str, str] | None = None
++    newest_ts: str | None = None
++    for row in rows:
++        ts = row.get("ts")
++        if isinstance(ts, str) and ts:
++            if newest_ts is None or ts > newest_ts:
++                newest_ts = ts
++        if row.get("source") == "user":
++            text = row.get("text")
++            if isinstance(text, str) and text.strip():
++                if newest_user is None or str(ts) > newest_user[0]:
++                    newest_user = (str(ts), text.strip())
++    try:
++        age_s = _time.time() - file.stat().st_mtime
++        state = "running" if age_s < 300 else "unknown"
++    except OSError:
++        state = "unknown"
++    return {
++        "session_id": sid,
++        "runtime": "claude-code",
++        "task": (newest_user[1] if newest_user else file.stem)[:200],
++        "state": state,
++        "repo": _project_from_slug(file.stem) or file.parent.name,
++        "step": None,
++        "updated_at": newest_ts,
++        "trace_url": None,
++        "spend_usd": None,
++        "pull_requests": [],
++        "ticket": None,
++    }
++
++
+ def list_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
+     """Every session row in the catalogue, as session records.
+ 
+@@ -315,6 +441,14 @@ def list_all_sessions(catalog: Path | None = None) -> list[dict[str, Any]]:
+     estate names everywhere else, and a bare `except: pass` here would be exactly that.
+     """
+     sessions = list_sessions(catalog)
++    cat_ids = {s.get("session_id") for s in sessions if s.get("session_id")}
++    try:
++        for rec in list_claude_code_sessions():
++            if rec["session_id"] not in cat_ids:
++                sessions.append(rec)
++                cat_ids.add(rec["session_id"])
++    except Exception:  # noqa: BLE001, S110 - an unreadable ledger dir contributes no rows
++        pass
+     unreachable: list[str] = []
+     for name, fn in (("sovereign", list_sovereign_sessions),):
+         try:
+diff --git a/tests/test_fleetview_session_filter.py b/tests/test_fleetview_session_filter.py
+new file mode 100644
+index 000000000..9fcea09e4
+--- /dev/null
++++ b/tests/test_fleetview_session_filter.py
+@@ -0,0 +1,224 @@
++"""Tests for the fleetview session filter and file enumerator.
++
++The fleet page showed zero rows on 2026-09-14 because:
++  1. The catalogue filter was pinned to a single runtime's path prefix, AND
++  2. The path-prefix comparison was broken by a trailing slash mismatch.
++
++Both are fixed in sessions.py. These tests are the guard: the trailing-slash mistake becomes a
++test the next session cannot walk past, and the file enumerator is proved to surface real rows
++instead of silently returning empty.
++"""
++
++from __future__ import annotations
++
++import importlib.util
++import json
++import pathlib
++
++import pytest
++
++# Tests use `assert` because pytest rewrites them with rich introspection on failure.
++# The bandit S101 "no assert" rule is a security lint for production code; tests are the
++# documented exception.
++# ruff: noqa: S101
++
++
++WORKTREE = pathlib.Path(
++    "/tmp/idp-fleetview/backstage/plugins/fleetview-backend/src/sessions.py"  # noqa: S108 - worktree path is intentional in a worktree-scoped test
++)
++
++
++@pytest.fixture(scope="module")
++def sessions_mod():
++    spec = importlib.util.spec_from_file_location("sessions_under_test", WORKTREE)
++    mod = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(mod)
++    return mod
++
++
++def _ledger_doc(path: str) -> dict:
++    return {
++        "kind": "Resource",
++        "spec": {"type": "ledger"},
++        "metadata": {"annotations": {"estate/path": path}},
++    }
++
++
++def test_is_session_row_accepts_prompt_ledger_without_trailing_slash(sessions_mod):
++    """The catalogue writes the path without a trailing slash; the filter accepts it whether or
++    not the prefix default has one."""
++    assert sessions_mod.is_session_row(_ledger_doc("~/.claude/state/prompt-ledger"))
++
++
++def test_is_session_row_accepts_paths_under_the_prefix(sessions_mod):
++    """A JSONL file living inside the prompt-ledger dir is also a session row, not just the
++    directory itself."""
++    assert sessions_mod.is_session_row(
++        _ledger_doc("~/.claude/state/prompt-ledger/-private-tmp-some-session.jsonl")
++    )
++
++
++def test_is_session_row_rejects_unrelated_paths(sessions_mod):
++    assert not sessions_mod.is_session_row(_ledger_doc("/var/log/syslog"))
++    assert not sessions_mod.is_session_row(
++        _ledger_doc("~/.claude/state/not-the-ledger")
++    )
++
++
++def test_is_session_row_rejects_non_ledger_rows(sessions_mod):
++    assert not sessions_mod.is_session_row(
++        {"kind": "Resource", "spec": {"type": "drill"}}
++    )
++
++
++def test_register_runtime_extends_dispatcher(sessions_mod):
++    """Adding a new runtime's filter makes its rows visible to the dispatcher -- no rewrite of
++    is_session_row, no global rename of the path prefix."""
++
++    def is_github_actions(doc):
++        path = ((doc.get("metadata") or {}).get("annotations") or {}).get(
++            "estate/path", ""
++        )
++        return path.startswith("~/.claude/state/github-actions/")
++
++    try:
++        assert not sessions_mod.is_session_row(
++            _ledger_doc("~/.claude/state/github-actions/run-123.jsonl")
++        )
++        sessions_mod.register_runtime("github-actions", is_github_actions)
++        assert sessions_mod.is_session_row(
++            _ledger_doc("~/.claude/state/github-actions/run-123.jsonl")
++        )
++        # claude-code still works (registry accumulates, not replaces).
++        assert sessions_mod.is_session_row(_ledger_doc("~/.claude/state/prompt-ledger"))
++    finally:
++        sessions_mod._RUNTIME_REGISTRY[:] = [
++            (n, f) for n, f in sessions_mod._RUNTIME_REGISTRY if n != "github-actions"
++        ]
++
++
++def test_list_claude_code_sessions_groups_rows_by_session_id(sessions_mod, tmp_path):
++    """The enumerator walks the prefix dir and returns one record per unique session id,
++    sorted newest-first. A file with two distinct session ids contributes two rows."""
++    f1 = tmp_path / "session-a.jsonl"
++    f1.write_text(
++        json.dumps(
++            {
++                "session": "alpha",
++                "ts": "2026-09-14T00:00:00Z",
++                "source": "user",
++                "text": "first",
++            }
++        )
++        + "\n"
++        + json.dumps(
++            {
++                "session": "beta",
++                "ts": "2026-09-14T00:01:00Z",
++                "source": "user",
++                "text": "second",
++            }
++        )
++        + "\n"
++    )
++    f2 = tmp_path / "session-b.jsonl"
++    f2.write_text(
++        json.dumps(
++            {
++                "session": "gamma",
++                "ts": "2026-09-14T00:02:00Z",
++                "source": "user",
++                "text": "third",
++            }
++        )
++        + "\n"
++    )
++
++    rows = sessions_mod.list_claude_code_sessions(str(tmp_path) + "/")
++    assert {r["session_id"] for r in rows} == {"alpha", "beta", "gamma"}
++    assert rows[0]["task"] in {"first", "second", "third"}
++    assert all(r["runtime"] == "claude-code" for r in rows)
++
++
++def test_session_record_uses_newest_user_prompt_as_task(sessions_mod, tmp_path):
++    """The task field is the newest user prompt (the person's own words), not an assistant
++    reply or queue entry."""
++    f = tmp_path / "s.jsonl"
++    f.write_text(
++        json.dumps(
++            {
++                "session": "s1",
++                "ts": "2026-09-14T00:00:00Z",
++                "source": "queue",
++                "text": "old queue entry",
++            }
++        )
++        + "\n"
++        + json.dumps(
++            {
++                "session": "s1",
++                "ts": "2026-09-14T00:01:00Z",
++                "source": "assistant",
++                "text": "assistant reply",
++            }
++        )
++        + "\n"
++        + json.dumps(
++            {
++                "session": "s1",
++                "ts": "2026-09-14T00:02:00Z",
++                "source": "user",
++                "text": "the actual task",
++            }
++        )
++        + "\n"
++    )
++    rows = sessions_mod.list_claude_code_sessions(str(tmp_path) + "/")
++    assert len(rows) == 1
++    assert rows[0]["task"] == "the actual task"
++
++
++def test_list_all_sessions_returns_combined_records(
++    sessions_mod, tmp_path, monkeypatch
++):
++    """The merge function picks up both the catalogue rollup rows and the file-derived rows,
++    de-duplicating by session id."""
++    # Build a fake catalogue with one rollup row whose id is the tmp_path itself.
++    catalog = tmp_path / "catalog-info.yaml"
++    catalog.write_text(
++        "kind: Resource\n"
++        "spec:\n"
++        "  type: ledger\n"
++        "metadata:\n"
++        "  name: rollup-row\n"
++        "  annotations:\n"
++        f"    estate/path: {str(tmp_path)}\n"
++        "---\n"
++        "kind: Resource\n"
++        "spec:\n"
++        "  type: drill\n"
++        "metadata:\n"
++        "  name: not-a-session\n"
++    )
++    # Make the prefix point at the same tmp_path so the file walk finds it.
++    monkeypatch.setenv("ESTATE_CATALOG_PATH", str(catalog))
++    monkeypatch.setenv("ESTATE_STATE_PATH_PREFIX", str(tmp_path) + "/")
++    f = tmp_path / "session-x.jsonl"
++    f.write_text(
++        json.dumps(
++            {
++                "session": "real-session-id",
++                "ts": "2026-09-14T00:00:00Z",
++                "source": "user",
++                "text": "real session",
++            }
++        )
++        + "\n"
++    )
++    sessions, unreachable = sessions_mod.list_all_sessions()
++    ids = {s["session_id"] for s in sessions}
++    # Catalogue row + file-derived row are both present (different ids).
++    assert "rollup-row" in ids
++    assert "real-session-id" in ids
++    # The non-session drill row is filtered out.
++    assert "not-a-session" not in ids

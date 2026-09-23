@@ -21,8 +21,11 @@ external label is exactly the kind of decision this estate's own doctrine (decis
 "agents hold no write on production") says must go through a proof chain, not get invented
 silently by whichever session happens to be watching Linear that day. This tool produces the
 proven, deduplicated INTAKE queue that a harness-invocation step -- still to be named -- would
-drain. Same shape as bin/idp-shadow-run's own split: "deterministic producer" vs. "the live seam
-the estate must separately approve" (bin/idp-shadow-run's own docstring, verbatim precedent).
+drain. It used to cite bin/idp-shadow-run as the precedent for that split -- "deterministic
+producer" vs. "the live seam the estate must separately approve". That precedent was deleted on
+2026-09-21: the "deterministic producer" there turned out to mint a green shadow-verify line from
+a JSON observation handed to it on the command line, so the split it modelled was a proof a
+process wrote about its own work. The boundary below stands on decision 0025 alone.
 
 TRIGGER: an open MUM-team issue carrying the label named by --label (default `agent-ready`).
 Whoever attaches that label is asserting the issue is scoped and safe to hand to the harness --

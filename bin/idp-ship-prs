@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# bin/idp-ship-prs -- open + arm all ready branches in one shot (2026-09-17)
+# Usage: bin/idp-ship-prs
+set -euo pipefail
+cd "$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+
+# 1. Andon cord branch -- open a fresh PR if none exists
+andon_pr=$(gh pr list --head fix/github-app-creds-split --json number -q '.[0].number' 2>/dev/null || true)
+if [ -z "$andon_pr" ]; then
+  andon_pr=$(gh pr create \
+    --base main \
+    --head fix/github-app-creds-split \
+    --title "enforcement: Andon cord -- main must be green, max 3 red PRs" \
+    --body "$(cat <<'BODY'
+## Summary
+- `bin/idp-main-green-gate` — refuses a new branch when main CI is red
+- `bin/idp-wip-gate` — refuses when ≥3 PRs are failing CI
+- `.githooks/pre-push` — both gates fire on first push of every new branch
+- `AGENTS.md` — Andon cord documented estate-wide (all agents, not just Claude Code)
+- `rules.yaml` — two new session-plane rows
+
+Also: `fix(flux): split github-app-creds out of alerts-github` (T009)
+
+## Why
+Five agent sessions opened new PRs while main was failing. This is the structural fix.
+
+**Emergency overrides (typed deliberately):**
+```
+IDP_MAIN_GREEN_GATE=0 git push
+IDP_WIP_GATE=0        git push
+```
+BODY
+)" | tail -1)
+  echo "opened: $andon_pr"
+fi
+
+# 2. ADR followup -- mark ready and arm
+gh pr ready 3561 2>/dev/null || true
+gh pr merge --squash --auto 3561
+
+# 3. PI token efficiency -- arm
+gh pr merge --squash --auto 3613
+
+# 4. Andon cord -- arm
+[ -n "$andon_pr" ] && gh pr merge --squash --auto "$andon_pr"
+
+echo "done: all three PRs armed for auto-merge on green CI"

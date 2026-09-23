@@ -1,0 +1,140 @@
+# bin/idp-pr-scope-audit: the scopes a Conventional Commits PR title may name, mapped to
+# the file prefixes that scope owns. A PR whose title reads `type(scope): ...` may touch
+# these prefixes without co-changes: declaration; anything else must be listed under a
+# `co-changes:` block in the PR body (one path per line, with a one-line reason).
+#
+# Founder principle (2026-09-17): "a vault-seed PR is not allowed to touch backstage's
+# PodDisruptionBudget without saying so". Every scope-mixed PR that this file catches is
+# a defect that would otherwise land silently.
+#
+# A scope with no `paths:` list is intentionally open (typed but scope-free, e.g. `chore`);
+# a title with no scope at all is refused by the gate unless the title is Conventional-
+# Commits compliant with `<type>: ` shape and `always_open` is true below.
+
+# scopes: type-prefix : { paths: [...] }
+scopes:
+  # ----- infra + platform -----
+  backstage:
+    paths:
+      - platform/backstage/
+      - backstage/
+      - clusters/oke/platform.yaml
+  edge:
+    paths:
+      - platform/edge/
+  monitoring:
+    paths:
+      - platform/monitoring/
+  observability:
+    paths:
+      - platform/observability/
+  identity:
+    paths:
+      - platform/identity/
+  scheduling:
+    paths:
+      - platform/scheduling/
+      - scheduler/
+  llm:
+    paths:
+      - llm/
+      - platform/llm/
+  mcp:
+    paths:
+      - mcp/
+      - platform/mcp/
+  idp-agent:
+    paths:
+      - platform/idp_agent/
+  hermes:
+    paths:
+      - platform/hermes-agent/
+      - hermes-agent/
+  # ----- secret / vault seeding -----
+  vault-seed:
+    paths:
+      - .github/workflows/vault-seed.yml
+      - bin/idp-estate-seed
+      - bin/idp-vault-put
+      - bin/idp-router-key
+      - platform/*-external-secret.yaml
+      - platform/**/*external-secret*.yaml
+  # ----- security -----
+  security:
+    paths:
+      - bin/idp-auth
+      - bin/idp-auth-verify
+      - bin/idp-ci-guarded-paths
+      - bin/idp-guarded-paths
+      - .githooks/
+      - docs/AUTH_CONTRACT.md
+      - docs/keys/
+      - .github/workflows/guarded-paths.yml
+  # ----- CI-parity / gates -----
+  ci-parity:
+    paths:
+      - bin/idp-ci-local
+      - platform/idp-ci-runner/
+  verifier:
+    paths:
+      - sovereign/verifier.py
+      - bin/idp-ci-verify
+      - bin/idp-bdd-proof-gate
+  # ----- workstation bootstrap -----
+  bootstrap:
+    paths:
+      - bin/idp-workstation-bootstrap
+      - bin/idp-bootstrap-estate
+      - bin/idp-oci-bootstrap
+      - bin/idp-install-hooks
+  # ----- rules / policy / docs -----
+  rules:
+    paths:
+      - rules.yaml
+      - bin/idp-rules
+  policy:
+    paths:
+      - docs/policy/
+      - policy/
+  docs:
+    paths:
+      - docs/
+      - AGENTS.md
+      - README.md
+  # ----- meta -----
+  consolidate:
+    # A consolidate PR by definition touches many scopes; require an explicit `co-changes:`
+    # block listing everything under a heading, but do not refuse per-file.
+    paths: ["**"]
+  ci:
+    paths:
+      - .github/workflows/
+      - .github/actions/
+  test:
+    paths:
+      - tests/
+      - sovereign/tests/
+  chore:
+    # `chore` is deliberately open — it is the scope for genuinely small housekeeping. A big
+    # chore PR is a defect this gate does not catch; that is what code review is for.
+    paths: ["**"]
+
+# Types (front half of `type(scope):`) — Conventional Commits + estate additions.
+types_allowed:
+  - feat
+  - fix
+  - docs
+  - chore
+  - refactor
+  - perf
+  - test
+  - security
+  - build
+  - ci
+  - revert
+
+# When a title is missing the (scope) — bare `type: message` — accept if type is in this list;
+# reject otherwise, because a change big enough to skip a scope is big enough to name one.
+always_open_types:
+  - chore
+  - revert

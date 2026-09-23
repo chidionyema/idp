@@ -1,0 +1,1898 @@
+diff --git a/backstage/platform/catalog-info.yaml b/backstage/platform/catalog-info.yaml
+index 80de8139a..bc6bb63ea 100644
+--- a/backstage/platform/catalog-info.yaml
++++ b/backstage/platform/catalog-info.yaml
+@@ -2250,6 +2250,31 @@ spec:
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
++metadata:
++  name: layer-via-negativa
++  title: 'Negative-constraint engine'
++  description: 'Sits in front of every LLM call, watches for repeat failures, and learns a short list of things not to do next time -- so the estate stops paying to make the same mistake twice instead of catching it after the fact.'
++  annotations:
++    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=via-negativa'
++    estate/flux-kustomization: 'via-negativa'
++    estate/path: './platform/via-negativa'
++    estate/cluster: 'oke'
++  tags: [platform, resilience]
++  links:
++    - url: https://signoz.${ESTATE_ZONE}
++      title: 'Live logs and metrics'
++spec:
++  type: platform-layer
++  lifecycle: production
++  owner: group:default/platform
++  system: resilience
++  dependsOn:
++    - component:default/layer-secret-store
++    - component:default/layer-llm
++    - component:default/layer-estate-db
++---
++apiVersion: backstage.io/v1alpha1
++kind: Component
+ metadata:
+   name: layer-weave-gitops
+   title: 'Deploy button'
+diff --git a/bin/catalog-platform b/bin/catalog-platform
+index a4080fcf7..29613cc80 100755
+--- a/bin/catalog-platform
++++ b/bin/catalog-platform
+@@ -439,6 +439,11 @@ LAYERS = {
+         "Agent memory",
+         "What the agents learned, kept between sessions.",
+     ),
++    "via-negativa": (
++        "resilience",
++        "Negative-constraint engine",
++        "Sits in front of every LLM call, watches for repeat failures, and learns a short list of things not to do next time -- so the estate stops paying to make the same mistake twice instead of catching it after the fact.",
++    ),
+     "estate-db-operator": (
+         "data",
+         "Database operator",
+diff --git a/bin/idp-estate-seed b/bin/idp-estate-seed
+index ce877d44e..11e12bfa7 100755
+--- a/bin/idp-estate-seed
++++ b/bin/idp-estate-seed
+@@ -33,6 +33,7 @@ MODE=${1:-mint}; ROTATE=""
+ case "$MODE" in
+   mint|--preflight) ;;
+   --rotate) ROTATE=${2:?entry to rotate}; MODE=mint ;;
++  -h|--help) sed -n 2,6p "$0"; exit 0 ;;
+   *) sed -n 2,6p "$0"; exit 2 ;;
+ esac
+ say()  { printf '%-7s %-24s %s\n' "$1" "$2" "$3"; }
+@@ -63,6 +64,7 @@ estate-db                 superuser-password         hex32
+ estate-db                 dagster-password           hex32
+ estate-db                 langfuse-password          hex32
+ estate-db                 research-password          hex32
++estate-db                 via-negativa-password      hex32
+ # the read side of the research database: one password, minted once, held by the cluster
+ # (as the research_reader role) and by the consumer that reads the evidence.
+ estate-db                 research-reader-password   hex32
+@@ -93,6 +95,7 @@ hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
+ hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
+ otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
+ agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
++via-negativa      LITELLM_API_KEY            groq
+ EOF
+ )
+ 
+diff --git a/bin/negative-constraints-proxy/Dockerfile b/bin/negative-constraints-proxy/Dockerfile
+new file mode 100644
+index 000000000..9865a33e2
+--- /dev/null
++++ b/bin/negative-constraints-proxy/Dockerfile
+@@ -0,0 +1,9 @@
++FROM golang:1.22-alpine AS build
++WORKDIR /src
++COPY go.mod main.go ./
++RUN go build -o /out/proxy .
++
++FROM gcr.io/distroless/static-debian12
++COPY --from=build /out/proxy /proxy
++EXPOSE 8080
++ENTRYPOINT ["/proxy"]
+diff --git a/bin/negative-constraints-proxy/go.mod b/bin/negative-constraints-proxy/go.mod
+new file mode 100644
+index 000000000..cf30729ac
+--- /dev/null
++++ b/bin/negative-constraints-proxy/go.mod
+@@ -0,0 +1,3 @@
++module via-negativa-proxy
++
++go 1.26.3
+diff --git a/bin/negative-constraints-proxy/main.go b/bin/negative-constraints-proxy/main.go
+new file mode 100644
+index 000000000..756657fac
+--- /dev/null
++++ b/bin/negative-constraints-proxy/main.go
+@@ -0,0 +1,501 @@
++// Command negative-constraints-proxy is Primitive A of the via-negativa engine
++// (docs/specs/2026-09-13-via-negativa-engine.md): a reverse proxy in front of
++// the LLM gateway that pre-flight rejects tool calls matching a known-bad
++// signature, instead of letting the model burn a turn on a failure it has
++// already made before.
++//
++// Contract proved by tests/test_via_negativa_engine.py:
++//   - go build -o <bin> . must succeed with zero external modules (no network
++//     access assumed at build time in CI), so the Redis client here is a
++//     ~40-line hand-rolled RESP client, not a fetched dependency.
++//   - a tool_call whose name matches a banned signature gets HTTP 422 and
++//     never reaches the upstream.
++//   - REDIS_URL unreachable must fail OPEN: the proxy keeps serving using
++//     whatever pattern set it last had (built-ins at minimum), it never
++//     blocks the whole pipeline because the ledger is down.
++package main
++
++import (
++	"bufio"
++	"bytes"
++	"encoding/json"
++	"fmt"
++	"io"
++	"log"
++	"net"
++	"net/http"
++	"net/http/httputil"
++	"net/url"
++	"os"
++	"regexp"
++	"strconv"
++	"strings"
++	"sync"
++	"time"
++)
++
++// builtinSignatures are the deterministic, non-negotiable bans (Primitive B):
++// no RCA run has to teach the proxy these, they ship with it.
++var builtinSignatures = []string{
++	"rm_rf",
++	"rm -rf /",
++	"drop table",
++	"drop database",
++	":(){ :|:& };:",
++	"git push --force origin main",
++	"git reset --hard",
++}
++
++// normalizeRe strips dynamic args (paths, timestamps, UUIDs, hex ids) before
++// matching, per the spec's "regex normalization" edge case -- otherwise every
++// distinct tmp path or timestamp mints a "new" signature that never repeats.
++var normalizeRe = []*regexp.Regexp{
++	regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`), // uuid
++	regexp.MustCompile(`\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})?`),         // timestamp
++	regexp.MustCompile(`/[\w./-]+`),            // paths
++	regexp.MustCompile(`\b[0-9a-fA-F]{12,}\b`), // long hex ids
++	regexp.MustCompile(`\s+`),                  // collapse whitespace
++}
++
++func normalize(s string) string {
++	s = strings.ToLower(s)
++	for _, re := range normalizeRe {
++		s = re.ReplaceAllString(s, " ")
++	}
++	return strings.TrimSpace(s)
++}
++
++// patternStore holds the live banned-signature set (Primitive A/B) and the
++// top-N negative-constraint summaries the RCA worker (Primitive D) has
++// ranked by failure_count (Primitive C, injected into the outbound prompt
++// below). Reads never block on Redis -- refresh() is best-effort per field
++// and a failure on either just keeps that field's old value.
++type patternStore struct {
++	mu          sync.RWMutex
++	patterns    []string
++	constraints []string
++}
++
++func newPatternStore() *patternStore {
++	return &patternStore{patterns: append([]string(nil), builtinSignatures...)}
++}
++
++func (p *patternStore) match(s string) (bool, string) {
++	norm := normalize(s)
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	for _, sig := range p.patterns {
++		if sig != "" && strings.Contains(norm, normalize(sig)) {
++			return true, sig
++		}
++	}
++	return false, ""
++}
++
++func (p *patternStore) topConstraints() []string {
++	p.mu.RLock()
++	defer p.mu.RUnlock()
++	return append([]string(nil), p.constraints...)
++}
++
++func (p *patternStore) refresh(redisURL, redisKey, constraintsKey string, topN int, timeout time.Duration) {
++	learned, err := redisSMembers(redisURL, redisKey, timeout)
++	if err != nil {
++		log.Printf("fail-open: redis refresh skipped (%v) -- serving %d cached signatures", err, len(p.patterns))
++	} else {
++		merged := append([]string(nil), builtinSignatures...)
++		merged = append(merged, learned...)
++		p.mu.Lock()
++		p.patterns = merged
++		p.mu.Unlock()
++		log.Printf("refreshed pattern set: %d built-in + %d learned", len(builtinSignatures), len(learned))
++	}
++
++	constraints, err := redisZRevRange(redisURL, constraintsKey, topN, timeout)
++	if err != nil {
++		log.Printf("fail-open: constraint refresh skipped (%v) -- serving %d cached constraints", err, len(p.constraints))
++		return
++	}
++	p.mu.Lock()
++	p.constraints = constraints
++	p.mu.Unlock()
++}
++
++// redisCommand issues one raw RESP command over a short-timeout TCP
++// connection and reads back an array-of-bulk-strings reply. No external
++// module: this whole proxy is stdlib-only so `go build .` never touches the
++// network.
++func redisCommand(redisURL string, args []string, timeout time.Duration) ([]string, error) {
++	u, err := url.Parse(redisURL)
++	if err != nil {
++		return nil, fmt.Errorf("parse REDIS_URL: %w", err)
++	}
++	addr := u.Host
++	if addr == "" {
++		addr = redisURL
++	}
++	conn, err := net.DialTimeout("tcp", addr, timeout)
++	if err != nil {
++		return nil, fmt.Errorf("dial: %w", err)
++	}
++	defer conn.Close()
++	_ = conn.SetDeadline(time.Now().Add(timeout))
++
++	var cmd strings.Builder
++	fmt.Fprintf(&cmd, "*%d\r\n", len(args))
++	for _, a := range args {
++		fmt.Fprintf(&cmd, "$%d\r\n%s\r\n", len(a), a)
++	}
++	if _, err := conn.Write([]byte(cmd.String())); err != nil {
++		return nil, fmt.Errorf("write: %w", err)
++	}
++
++	r := bufio.NewReader(conn)
++	line, err := r.ReadString('\n')
++	if err != nil {
++		return nil, fmt.Errorf("read reply header: %w", err)
++	}
++	line = strings.TrimRight(line, "\r\n")
++	if len(line) == 0 || line[0] != '*' {
++		return nil, fmt.Errorf("unexpected reply: %q", line)
++	}
++	var n int
++	if _, err := fmt.Sscanf(line, "*%d", &n); err != nil {
++		return nil, fmt.Errorf("parse array len: %w", err)
++	}
++	out := make([]string, 0, n)
++	for i := 0; i < n; i++ {
++		bulkHeader, err := r.ReadString('\n')
++		if err != nil {
++			return nil, fmt.Errorf("read bulk header: %w", err)
++		}
++		bulkHeader = strings.TrimRight(bulkHeader, "\r\n")
++		var blen int
++		if _, err := fmt.Sscanf(bulkHeader, "$%d", &blen); err != nil {
++			return nil, fmt.Errorf("parse bulk len: %w", err)
++		}
++		if blen < 0 {
++			continue
++		}
++		buf := make([]byte, blen+2) // payload + CRLF
++		if _, err := io.ReadFull(r, buf); err != nil {
++			return nil, fmt.Errorf("read bulk body: %w", err)
++		}
++		out = append(out, string(buf[:blen]))
++	}
++	return out, nil
++}
++
++// redisSMembers reads the banned-signature set the RCA worker's _persist()
++// writes to (Primitive B: SADD of a deterministic signature_regex).
++func redisSMembers(redisURL, key string, timeout time.Duration) ([]string, error) {
++	return redisCommand(redisURL, []string{"SMEMBERS", key}, timeout)
++}
++
++// redisZRevRange reads the top-N constraint summaries by failure_count the
++// RCA worker's _persist() ZINCRBYs on every repeat failure (Primitive C).
++func redisZRevRange(redisURL, key string, topN int, timeout time.Duration) ([]string, error) {
++	if topN < 1 {
++		return nil, nil
++	}
++	return redisCommand(redisURL, []string{"ZREVRANGE", key, "0", strconv.Itoa(topN - 1)}, timeout)
++}
++
++// sessionRejectionTracker implements the spec's deadlock-breaker edge case:
++// three CONSECUTIVE rejections for the same session/step must force a
++// clarification instead of letting the agent keep retrying variations of a
++// tool call this proxy has already told it is banned. In-memory and
++// per-replica by design -- a session pinned to one pod (the common case
++// behind a sticky-session LB) sees it exactly; unpinned traffic sees a
++// slightly higher threshold in effect, which is the safe direction to be
++// wrong in (a missed break, never a false one) given this pass does not add
++// a second shared store for one counter (THE HEADLINE).
++type sessionRejectionTracker struct {
++	mu     sync.Mutex
++	counts map[string]int
++}
++
++func newSessionRejectionTracker() *sessionRejectionTracker {
++	return &sessionRejectionTracker{counts: make(map[string]int)}
++}
++
++const deadlockBreakerThreshold = 3
++
++// recordRejection returns the new consecutive-rejection count for session.
++func (t *sessionRejectionTracker) recordRejection(session string) int {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	t.counts[session]++
++	n := t.counts[session]
++	if n >= deadlockBreakerThreshold {
++		delete(t.counts, session) // the break resets the loop; don't fire again next call
++	}
++	return n
++}
++
++// recordSuccess clears a session's streak: only CONSECUTIVE rejections count.
++func (t *sessionRejectionTracker) recordSuccess(session string) {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	delete(t.counts, session)
++}
++
++// sessionKey identifies the caller for the deadlock breaker: an explicit
++// header first (what a well-behaved agent harness sets), then the OpenAI
++// wire convention's top-level "user" field, then the TCP peer as an honest
++// last resort (LAW 46: no silent literal, this is a real fallback and it is
++// named as one in the log line that would explain a surprising break).
++func sessionKey(r *http.Request, body []byte) string {
++	if h := r.Header.Get("X-Via-Negativa-Session"); h != "" {
++		return h
++	}
++	var payload struct {
++		User string `json:"user"`
++	}
++	if json.Unmarshal(body, &payload) == nil && payload.User != "" {
++		return payload.User
++	}
++	return "addr:" + r.RemoteAddr
++}
++
++func deadlockBreakerResponse(w http.ResponseWriter, session string) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(http.StatusConflict)
++	_ = json.NewEncoder(w).Encode(map[string]string{
++		"error": "via_negativa_deadlock_breaker",
++		"detail": fmt.Sprintf(
++			"%d consecutive tool calls in this session were rejected for known-bad signatures; "+
++				"stop retrying variations of the same blocked action and ask the user for "+
++				"clarification instead of looping", deadlockBreakerThreshold,
++		),
++	})
++}
++
++// chatMessage is deliberately narrow: only the two fields injectConstraints
++// needs to touch. Every other field on the request round-trips untouched
++// because injectConstraints edits the "messages" array in place inside a
++// map[string]json.RawMessage, never a typed struct of the whole request.
++type chatMessage struct {
++	Role    string          `json:"role"`
++	Content json.RawMessage `json:"content"`
++}
++
++// injectConstraints is Primitive C: it prepends (or appends to an existing
++// system message) the ranked negative constraints the RCA worker has
++// learned, so the model sees "don't do X again" before it ever proposes X.
++// Fails open to the original, unmodified body on anything it doesn't
++// recognize (no constraints yet, unparseable JSON, or a system message whose
++// content isn't a plain string, e.g. multimodal parts) -- Primitive A's own
++// ban check still runs regardless, so a skipped injection never widens what
++// gets through, it only loses the softer nudge.
++func injectConstraints(body []byte, constraints []string) []byte {
++	if len(constraints) == 0 {
++		return body
++	}
++	var payload map[string]json.RawMessage
++	if json.Unmarshal(body, &payload) != nil {
++		return body
++	}
++	rawMessages, ok := payload["messages"]
++	if !ok {
++		return body
++	}
++	var messages []chatMessage
++	if json.Unmarshal(rawMessages, &messages) != nil {
++		return body
++	}
++
++	var addendum strings.Builder
++	addendum.WriteString("Known failure patterns to avoid (learned from prior sessions):\n")
++	for _, c := range constraints {
++		addendum.WriteString("- ")
++		addendum.WriteString(c)
++		addendum.WriteString("\n")
++	}
++
++	if len(messages) > 0 && messages[0].Role == "system" {
++		var text string
++		if json.Unmarshal(messages[0].Content, &text) != nil {
++			return body // non-string system content -- fail open, skip injection
++		}
++		encoded, err := json.Marshal(text + "\n\n" + addendum.String())
++		if err != nil {
++			return body
++		}
++		messages[0].Content = encoded
++	} else {
++		encoded, err := json.Marshal(addendum.String())
++		if err != nil {
++			return body
++		}
++		messages = append([]chatMessage{{Role: "system", Content: encoded}}, messages...)
++	}
++
++	newMessages, err := json.Marshal(messages)
++	if err != nil {
++		return body
++	}
++	payload["messages"] = newMessages
++	out, err := json.Marshal(payload)
++	if err != nil {
++		return body
++	}
++	return out
++}
++
++// toolCallNames extracts every tool/function name a chat-completions style
++// request is proposing to call, so it can be checked against the ban list
++// before a single token reaches the model or a shell.
++func toolCallNames(body []byte) []string {
++	var payload struct {
++		Tools []struct {
++			Function struct {
++				Name string `json:"name"`
++			} `json:"function"`
++		} `json:"tools"`
++		Messages []struct {
++			ToolCalls []struct {
++				Function struct {
++					Name      string `json:"name"`
++					Arguments string `json:"arguments"`
++				} `json:"function"`
++			} `json:"tool_calls"`
++		} `json:"messages"`
++	}
++	if err := json.Unmarshal(body, &payload); err != nil {
++		return nil
++	}
++	var names []string
++	for _, t := range payload.Tools {
++		if t.Function.Name != "" {
++			names = append(names, t.Function.Name)
++		}
++	}
++	for _, m := range payload.Messages {
++		for _, tc := range m.ToolCalls {
++			if tc.Function.Name != "" {
++				names = append(names, tc.Function.Name)
++				names = append(names, tc.Function.Arguments)
++			}
++		}
++	}
++	return names
++}
++
++func rejectResponse(w http.ResponseWriter, signature string) {
++	w.Header().Set("Content-Type", "application/json")
++	w.WriteHeader(http.StatusUnprocessableEntity)
++	_ = json.NewEncoder(w).Encode(map[string]string{
++		"error":     "via_negativa_rejected",
++		"signature": signature,
++		"detail":    "this tool call matches a known-bad signature and was blocked before reaching the model",
++	})
++}
++
++// resolveRedisURL reads REDIS_URL as-is, unless REDIS_PASSWORD_FILE names a mounted secret
++// file (Kyverno secrets-not-from-env-vars: the password never rides a pod env var, and the
++// distroless image this binary ships in has no shell to compose the URL before exec, so the
++// binary does it itself). A missing or unreadable file is logged and the URL is left
++// unauthenticated -- consistent with this proxy's existing fail-open posture: a store refresh
++// that then fails to authenticate degrades to an empty pattern set, never to refusing traffic.
++func resolveRedisURL(raw string) string {
++	path := getenv("REDIS_PASSWORD_FILE", "")
++	if path == "" {
++		return raw
++	}
++	password, err := os.ReadFile(path)
++	if err != nil {
++		log.Printf("REDIS_PASSWORD_FILE %q: %v (continuing without auth)", path, err)
++		return raw
++	}
++	u, err := url.Parse(raw)
++	if err != nil {
++		log.Printf("REDIS_URL %q: %v (continuing without auth)", raw, err)
++		return raw
++	}
++	u.User = url.UserPassword("", strings.TrimSpace(string(password)))
++	return u.String()
++}
++
++func main() {
++	listenAddr := getenv("LISTEN_ADDR", ":8080")
++	upstreamURL := getenv("UPSTREAM_URL", "http://litellm.llm.svc.cluster.local:4000")
++	redisURL := resolveRedisURL(getenv("REDIS_URL", "redis://127.0.0.1:6379"))
++	redisKey := getenv("REDIS_KEY", "via_negativa:banned_signatures")
++	constraintsKey := getenv("TOP_CONSTRAINTS_KEY", "via_negativa:top_constraints")
++	topN, err := strconv.Atoi(getenv("TOP_CONSTRAINTS_N", "5"))
++	if err != nil || topN < 0 {
++		topN = 5
++	}
++	refreshEvery := 10 * time.Second
++	redisTimeout := 500 * time.Millisecond
++
++	upstream, err := url.Parse(upstreamURL)
++	if err != nil {
++		log.Fatalf("invalid UPSTREAM_URL %q: %v", upstreamURL, err)
++	}
++	rp := httputil.NewSingleHostReverseProxy(upstream)
++
++	store := newPatternStore()
++	store.refresh(redisURL, redisKey, constraintsKey, topN, redisTimeout) // best-effort, fail-open
++	go func() {
++		for range time.Tick(refreshEvery) {
++			store.refresh(redisURL, redisKey, constraintsKey, topN, redisTimeout)
++		}
++	}()
++
++	tracker := newSessionRejectionTracker()
++
++	mux := http.NewServeMux()
++	mux.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
++		if r.Method != http.MethodPost {
++			rp.ServeHTTP(w, r)
++			return
++		}
++		body, err := io.ReadAll(r.Body)
++		if err != nil {
++			http.Error(w, "read body", http.StatusBadRequest)
++			return
++		}
++		session := sessionKey(r, body)
++
++		for _, name := range toolCallNames(body) {
++			if banned, sig := store.match(name); banned {
++				log.Printf("blocked path=%s signature=%q session=%q", r.URL.Path, sig, session)
++				if n := tracker.recordRejection(session); n >= deadlockBreakerThreshold {
++					log.Printf("deadlock breaker tripped session=%q after %d consecutive rejections", session, n)
++					deadlockBreakerResponse(w, session)
++					return
++				}
++				rejectResponse(w, sig)
++				return
++			}
++		}
++		tracker.recordSuccess(session)
++
++		body = injectConstraints(body, store.topConstraints())
++		r.Body = io.NopCloser(bytes.NewReader(body))
++		r.ContentLength = int64(len(body))
++		r.Header.Set("Content-Length", strconv.Itoa(len(body)))
++		rp.ServeHTTP(w, r)
++	})
++	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
++		w.WriteHeader(http.StatusOK)
++		_, _ = w.Write([]byte("ok"))
++	})
++	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
++		rp.ServeHTTP(w, r)
++	})
++
++	log.Printf("via-negativa proxy listening on %s -> %s (redis=%s)", listenAddr, upstreamURL, redisURL)
++	if err := http.ListenAndServe(listenAddr, mux); err != nil {
++		log.Fatal(err)
++	}
++}
++
++func getenv(key, def string) string {
++	if v := os.Getenv(key); v != "" {
++		return v
++	}
++	return def
++}
+diff --git a/bin/rca_worker/Dockerfile b/bin/rca_worker/Dockerfile
+new file mode 100644
+index 000000000..5857ea89c
+--- /dev/null
++++ b/bin/rca_worker/Dockerfile
+@@ -0,0 +1,6 @@
++FROM python:3.12-slim
++WORKDIR /app
++COPY requirements.txt ./
++RUN pip install --no-cache-dir -r requirements.txt
++COPY worker.py schema.sql ./
++ENTRYPOINT ["python", "worker.py"]
+diff --git a/bin/rca_worker/requirements.txt b/bin/rca_worker/requirements.txt
+new file mode 100644
+index 000000000..608fbd42b
+--- /dev/null
++++ b/bin/rca_worker/requirements.txt
+@@ -0,0 +1,5 @@
++pydantic>=2.0
++redis>=5.0
++asyncpg>=0.29
++instructor>=1.0
++openai>=1.0
+diff --git a/bin/rca_worker/schema.sql b/bin/rca_worker/schema.sql
+new file mode 100644
+index 000000000..4bdb71b24
+--- /dev/null
++++ b/bin/rca_worker/schema.sql
+@@ -0,0 +1,28 @@
++-- Ledger for the via-negativa engine (docs/specs/2026-09-13-via-negativa-engine.md).
++-- Source of truth for admitted negative constraints; bin/rca_worker/worker.py
++-- is the only writer (it applies this file to its own Postgres role on every start,
++-- run_forever() -- every statement is IF NOT EXISTS, so a rerun is a no-op) and
++-- bin/negative-constraints-proxy reads a Redis cache of `signature` (see REDIS_KEY /
++-- BANNED_SET_KEY) fed from this table.
++CREATE EXTENSION IF NOT EXISTS vector;
++
++CREATE TABLE IF NOT EXISTS rules (
++    id BIGSERIAL PRIMARY KEY,
++    scope TEXT NOT NULL,
++    signature TEXT NOT NULL UNIQUE, -- worker.py upserts on this: ON CONFLICT (signature)
++    confidence REAL NOT NULL,
++    failure_count INTEGER DEFAULT 0,
++    embedding vector(384),
++    created_at TIMESTAMPTZ DEFAULT now()
++);
++CREATE INDEX IF NOT EXISTS rules_signature_idx ON rules (signature);
++CREATE INDEX IF NOT EXISTS rules_embedding_idx ON rules USING ivfflat (embedding vector_cosine_ops);
++
++CREATE TABLE IF NOT EXISTS failures (
++    id BIGSERIAL PRIMARY KEY,
++    exit_code INTEGER,
++    stdout TEXT,
++    stderr TEXT,
++    ts TIMESTAMPTZ DEFAULT now()
++);
++CREATE INDEX IF NOT EXISTS failures_ts_idx ON failures (ts);
+diff --git a/bin/rca_worker/worker.py b/bin/rca_worker/worker.py
+new file mode 100644
+index 000000000..9135606f6
+--- /dev/null
++++ b/bin/rca_worker/worker.py
+@@ -0,0 +1,474 @@
++"""Primitive D of the via-negativa engine: the async RCA worker.
++
++Consumes failure events (a "session hit a dead end") off a Redis Stream,
++asks an LLM for a *structured, schema-enforced* root-cause signature via
++`instructor`, drops anything subjective or low-confidence, and persists
++what survives to the Postgres ledger (schema.sql) and to the Redis SET the
++proxy (Primitive A) reads for fast pre-flight rejection.
++
++Design split, on purpose: `NegativeConstraint`, `rule_allowed` and
++`build_prompt` are pure functions with zero I/O, so
++tests/test_via_negativa_engine.py can import and exercise them without a
++live Redis/Postgres/LLM -- only `run_forever()` below touches the network,
++and it imports redis/asyncpg/instructor lazily so a schema-only import
++(as the tests do) never requires infra credentials or those packages to
++even be reachable.
++"""
++
++from __future__ import annotations
++
++import asyncio
++import json
++import logging
++import os
++import re
++import signal
++import sys
++from pathlib import Path
++from typing import Any
++from urllib.parse import urlsplit, urlunsplit
++
++from pydantic import BaseModel, Field, field_validator
++
++logger = logging.getLogger("via_negativa.rca_worker")
++
++MIN_CONFIDENCE = 0.6
++
++# require-pod-probes (Kyverno) needs a real liveness signal, and this daemon has no HTTP
++# port to check -- same shape as dagster-daemon's own `dagster-daemon liveness-check`
++# (platform/dagster/dagster.yaml). run_forever()'s consume loop touches this file every
++# pass (at most every block=2000ms), so `--healthcheck` answers "is the consume loop still
++# turning", not merely "is the process alive". Written under the already-mounted `tmp`
++# emptyDir (rca.yaml runs readOnlyRootFilesystem: true, so /tmp is the only writable path).
++HEARTBEAT_PATH = Path(
++    os.environ.get("VN_HEARTBEAT_FILE", "/tmp/via-negativa-heartbeat")  # noqa: S108
++)
++HEARTBEAT_STALE_S = 30
++
++
++class NegativeConstraint(BaseModel):
++    """The one shape an LLM is allowed to hand back for a failure.
++
++    Enforced via `instructor` (Pydantic-schema-constrained generation), not
++    parsed out of free text -- the email's whole point: no hallucinated
++    root causes, no vague "it broke" rules reaching the ledger.
++    """
++
++    scope: str = Field(description="e.g. 'bash', 'python', 'kubectl'")
++    signature_regex: str = Field(
++        description="regex matching the failure, args normalized out"
++    )
++    semantic_summary: str = Field(description="one sentence: what NOT to do and why")
++    is_deterministic: bool = Field(
++        description="true only if this is a reproducible, mechanical failure "
++        "(a missing module, a bad flag) -- never an opinion"
++    )
++    confidence_score: float = Field(ge=0.0, le=1.0)
++
++    @field_validator("signature_regex")
++    @classmethod
++    def _must_compile(cls, v: str) -> str:
++        import re
++
++        re.compile(v)  # raises ValidationError-wrapped re.error if malformed
++        return v
++
++
++def rule_allowed(nc: NegativeConstraint) -> bool:
++    """The admission guard: subjective or low-confidence rules never reach the ledger.
++
++    Both thresholds are load-bearing per the founder spec -- a rule that
++    isn't reproducible, or one the model isn't confident about, does more
++    harm (false-positive blocks) than good.
++    """
++    if not nc.is_deterministic:
++        return False
++    if nc.confidence_score < MIN_CONFIDENCE:
++        return False
++    return True
++
++
++# --------------------------------------------------------------------------
++# Primitive B: deterministic regex pre-filter. Pure and zero-I/O like the
++# three functions above it -- a known, mechanical failure class gets a
++# NegativeConstraint WITHOUT ever calling the LLM: fewer tokens, and zero
++# hallucination risk for exactly the classes we can already prove out by
++# inspection. `_handle_one` below tries this FIRST and only falls back to
++# `_extract_constraint` (the LLM path) when nothing here matches.
++# --------------------------------------------------------------------------
++
++# (scope, pattern searched against "stderr\nstdout", semantic_summary). Order
++# matters only in that the first match wins; patterns are disjoint in
++# practice (each names a distinct, well-known failure mode) so this is not
++# load-bearing today.
++KNOWN_FAILURE_SIGNATURES: list[tuple[str, str, str]] = [
++    (
++        "python",
++        r"ModuleNotFoundError: No module named '[^']+'",
++        "Do not run a command that imports a module not yet installed in this environment.",
++    ),
++    (
++        "python",
++        r"ImportError: cannot import name '[^']+'",
++        "Do not import a name that does not exist in the target module without checking first.",
++    ),
++    (
++        "git",
++        r"fatal: not a git repository",
++        "Do not run a git command outside a git working tree.",
++    ),
++    (
++        "git",
++        r"fatal: [Aa] branch named '.+' already exists",
++        "Do not create a branch without first checking whether it already exists.",
++    ),
++    (
++        "git",
++        r"! \[rejected\].*non-fast-forward",
++        "Do not push without first fetching and reconciling upstream changes.",
++    ),
++    (
++        "shell",
++        r"[Pp]ermission denied",
++        "Do not run a command against a path this user cannot access without checking permissions first.",
++    ),
++    (
++        "shell",
++        r"[Nn]o such file or directory",
++        "Do not reference a path before confirming it exists.",
++    ),
++    (
++        "shell",
++        r"command not found",
++        "Do not invoke a binary without first confirming it is installed on this host.",
++    ),
++    (
++        "network",
++        r"[Cc]onnection refused|ECONNREFUSED",
++        "Do not assume a service is reachable without a live health check first.",
++    ),
++]
++
++_KNOWN_FAILURE_RE = [
++    (scope, re.compile(pattern), summary)
++    for scope, pattern, summary in KNOWN_FAILURE_SIGNATURES
++]
++
++REGEX_PREFILTER_CONFIDENCE = (
++    0.95  # deterministic by construction; above MIN_CONFIDENCE on purpose
++)
++
++
++def regex_extract_constraint(payload: dict[str, Any]) -> NegativeConstraint | None:
++    """Match a failure against KNOWN_FAILURE_SIGNATURES; None means "unknown class, ask the LLM".
++
++    Every hit is `is_deterministic=True` because the class itself was picked for being
++    mechanical and reproducible -- the same guarantee `rule_allowed` demands from an
++    LLM-extracted constraint, here established by inspection instead of a model's say-so.
++    """
++    text = f"{payload.get('stderr', '') or ''}\n{payload.get('stdout', '') or ''}"
++    for scope, compiled, summary in _KNOWN_FAILURE_RE:
++        if compiled.search(text):
++            return NegativeConstraint(
++                scope=scope,
++                signature_regex=compiled.pattern,
++                semantic_summary=summary,
++                is_deterministic=True,
++                confidence_score=REGEX_PREFILTER_CONFIDENCE,
++            )
++    return None
++
++
++def build_prompt(payload: dict[str, Any]) -> str:
++    """Render a failure event into the prompt handed to the LLM extractor.
++
++    Deliberately plain and inspectable (no template engine) -- the prompt
++    is itself part of what an auditor reviews when a bad rule slips through.
++    """
++    command = payload.get("command", "")
++    exit_code = payload.get("exit_code", "")
++    stderr = payload.get("stderr", "")
++    stdout = payload.get("stdout", "")
++    return (
++        "A command failed. Extract ONE deterministic negative constraint "
++        "(what an agent should never do again) from this failure, or say "
++        "it is not deterministic.\n\n"
++        f"command: {command}\n"
++        f"exit_code: {exit_code}\n"
++        f"stderr:\n{stderr}\n"
++        f"stdout:\n{stdout}\n\n"
++        "Rules: normalize away dynamic values (paths, timestamps, UUIDs) "
++        "from signature_regex. Set is_deterministic=false for anything "
++        "that looks like flaky infra, a timeout, or a one-off. Only give "
++        "confidence_score >= 0.6 when you would bet the constraint holds "
++        "for every future occurrence of this exact failure class."
++    )
++
++
++# --------------------------------------------------------------------------
++# Infra-touching pipeline below. Nothing above this line imports redis,
++# asyncpg or instructor's client machinery -- see module docstring.
++# --------------------------------------------------------------------------
++
++STREAM_KEY = os.environ.get("VN_FAILURE_STREAM", "via_negativa:failures")
++CONSUMER_GROUP = os.environ.get("VN_CONSUMER_GROUP", "rca-workers")
++DLQ_KEY = os.environ.get("VN_DLQ_STREAM", "via_negativa:failures:dlq")
++BANNED_SET_KEY = os.environ.get("VN_BANNED_SET", "via_negativa:banned_signatures")
++# Primitive C's supply: the proxy's ZREVRANGE target (bin/negative-constraints-proxy/main.go's
++# TOP_CONSTRAINTS_KEY), ranked by failure_count so the proxy injects the most-repeated lessons.
++TOP_CONSTRAINTS_KEY = os.environ.get(
++    "VN_TOP_CONSTRAINTS_KEY", "via_negativa:top_constraints"
++)
++MAX_ATTEMPTS = int(os.environ.get("VN_MAX_ATTEMPTS", "3"))
++
++
++async def _extract_constraint(
++    client: Any, payload: dict[str, Any], model: str
++) -> NegativeConstraint | None:
++    """Call the LLM through instructor's schema-enforced wrapper.
++
++    Returns None (not a dropped-confidence rule, an actual extraction
++    failure) on any error -- the caller routes those to the DLQ rather
++    than silently losing the failure event.
++    """
++    try:
++        return await client.chat.completions.create(
++            model=model,
++            response_model=NegativeConstraint,
++            messages=[{"role": "user", "content": build_prompt(payload)}],
++            max_retries=1,
++        )
++    except Exception:
++        logger.exception("LLM extraction failed for payload=%r", payload)
++        return None
++
++
++async def _persist(pg_pool: Any, redis_client: Any, nc: NegativeConstraint) -> None:
++    """Write an admitted rule to the durable ledger, then to the proxy's fast-path set.
++
++    Order matters: Postgres (the source of truth, with the pgvector column
++    for future semantic-dedup) is written first; the Redis SET is a cache
++    the proxy fail-opens around, so it's fine if this second write is what
++    fails and gets retried on the next cycle.
++    """
++    async with pg_pool.acquire() as conn:
++        await conn.execute(
++            """
++            INSERT INTO rules (scope, signature, confidence, failure_count)
++            VALUES ($1, $2, $3, 1)
++            ON CONFLICT (signature) DO UPDATE
++                SET failure_count = rules.failure_count + 1,
++                    confidence = GREATEST(rules.confidence, EXCLUDED.confidence)
++            """,
++            nc.scope,
++            nc.signature_regex,
++            nc.confidence_score,
++        )
++    await redis_client.sadd(BANNED_SET_KEY, nc.signature_regex)
++    # Primitive C: rank by repeat count so the proxy's top-N injection surfaces the lessons that
++    # keep recurring, not just the most recent one.
++    await redis_client.zincrby(TOP_CONSTRAINTS_KEY, 1, nc.semantic_summary)
++
++
++async def _handle_one(
++    entry_id: str,
++    fields: dict[str, str],
++    client: Any,
++    pg_pool: Any,
++    redis_client: Any,
++    model: str,
++) -> bool:
++    try:
++        payload = json.loads(fields.get("payload", "{}"))
++    except json.JSONDecodeError:
++        logger.warning("dropping malformed entry %s: not JSON", entry_id)
++        return True  # ack and move on; it will never parse on retry either
++
++    nc = regex_extract_constraint(
++        payload
++    )  # Primitive B: try the free, deterministic path first
++    if nc is None:
++        nc = await _extract_constraint(client, payload, model)
++    if nc is None:
++        return False  # let it retry / eventually DLQ
++
++    if not rule_allowed(nc):
++        logger.info(
++            "rule dropped (deterministic=%s confidence=%.2f): %s",
++            nc.is_deterministic,
++            nc.confidence_score,
++            nc.semantic_summary,
++        )
++        return True
++
++    await _persist(pg_pool, redis_client, nc)
++    logger.info(
++        "rule admitted scope=%s confidence=%.2f: %s",
++        nc.scope,
++        nc.confidence_score,
++        nc.semantic_summary,
++    )
++    return True
++
++
++def _read_secret_file(file_env: str) -> str | None:
++    """Read a mounted secret file named by an env var, or None if unset/unreadable.
++
++    Same Kyverno secrets-not-from-env-vars rationale as _with_password_from_file, for a
++    value that is not part of a URL (the router API key).
++    """
++    path = os.environ.get(file_env, "")
++    if not path:
++        return None
++    try:
++        return open(path).read().strip()  # noqa: PTH123 - one-shot secret read
++    except OSError as exc:
++        logging.warning("%s %r: %s (continuing without it)", file_env, path, exc)
++        return None
++
++
++def _with_password_from_file(url: str, file_env: str) -> str:
++    """Splice a mounted secret file's contents into `url` as the password.
++
++    Mirrors bin/negative-constraints-proxy/main.go's resolveRedisURL(): Kyverno
++    secrets-not-from-env-vars refuses a password as pod env, so it rides a mounted file
++    instead and the process folds it in itself. A missing or unreadable file leaves `url`
++    unchanged -- consistent with this worker's own fail-open posture elsewhere.
++    """
++    path = os.environ.get(file_env, "")
++    if not path:
++        return url
++    try:
++        password = open(path).read().strip()  # noqa: PTH123 - one-shot secret read, no filesystem API needed beyond this
++    except OSError as exc:
++        logging.warning("%s %r: %s (continuing without auth)", file_env, path, exc)
++        return url
++    parts = urlsplit(url)
++    user = parts.username or ""
++    netloc = f"{user}:{password}@{parts.hostname}"
++    if parts.port:
++        netloc += f":{parts.port}"
++    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, parts.fragment))
++
++
++async def run_forever(
++    model: str = os.environ.get("VN_LLM_MODEL", "gpt-4o-mini"),
++) -> None:
++    """The consume loop: Redis Streams in, Postgres+Redis out, DLQ on repeated failure.
++
++    Graceful SIGTERM shutdown (Kubernetes sends this on every pod restart):
++    the loop checks a stop flag between messages rather than being killed
++    mid-write, so a rollout never corrupts an in-flight ledger insert.
++    """
++    import asyncpg
++    import instructor
++    import redis.asyncio as redis
++    from openai import AsyncOpenAI
++
++    redis_url = _with_password_from_file(
++        os.environ.get("REDIS_URL", "redis://127.0.0.1:6379"), "REDIS_PASSWORD_FILE"
++    )
++    pg_dsn = _with_password_from_file(
++        os.environ.get("VN_LEDGER_DSN", "postgresql://localhost/via_negativa"),
++        "VN_LEDGER_DSN_PASSWORD_FILE",
++    )
++
++    openai_api_key = _read_secret_file("OPENAI_API_KEY_FILE") or os.environ.get(
++        "OPENAI_API_KEY"
++    )
++    openai_base_url = os.environ.get("OPENAI_BASE_URL")
++
++    redis_client = redis.from_url(redis_url, decode_responses=True)
++    pg_pool = await asyncpg.create_pool(pg_dsn, min_size=1, max_size=4)
++    # Every statement in schema.sql is IF NOT EXISTS, so applying it on every start is a
++    # no-op after the first: this is the ledger's only migration path, a brand new database
++    # with nothing to copy in (platform/estate-db/cluster/databases.yaml).
++    await pg_pool.execute((Path(__file__).with_name("schema.sql")).read_text())
++    client = instructor.from_openai(
++        AsyncOpenAI(api_key=openai_api_key, base_url=openai_base_url)
++    )
++
++    try:
++        await redis_client.xgroup_create(
++            STREAM_KEY, CONSUMER_GROUP, id="0", mkstream=True
++        )
++    except Exception as exc:  # BUSYGROUP if it already exists -- fine
++        if "BUSYGROUP" not in str(exc):
++            raise
++
++    stop = asyncio.Event()
++    loop = asyncio.get_running_loop()
++    for sig in (signal.SIGTERM, signal.SIGINT):
++        loop.add_signal_handler(sig, stop.set)
++
++    consumer_name = f"rca-worker-{os.getpid()}"
++    logger.info(
++        "rca worker %s starting, stream=%s group=%s",
++        consumer_name,
++        STREAM_KEY,
++        CONSUMER_GROUP,
++    )
++
++    while not stop.is_set():
++        HEARTBEAT_PATH.touch()
++        resp = await redis_client.xreadgroup(
++            CONSUMER_GROUP,
++            consumer_name,
++            {STREAM_KEY: ">"},
++            count=10,
++            block=2000,
++        )
++        for _stream, entries in resp or []:
++            for entry_id, fields in entries:
++                attempts = int(fields.get("attempts", "0"))
++                ok = await _handle_one(
++                    entry_id, fields, client, pg_pool, redis_client, model
++                )
++                if ok:
++                    await redis_client.xack(STREAM_KEY, CONSUMER_GROUP, entry_id)
++                elif attempts + 1 >= MAX_ATTEMPTS:
++                    logger.error(
++                        "entry %s exceeded %d attempts, routing to DLQ",
++                        entry_id,
++                        MAX_ATTEMPTS,
++                    )
++                    await redis_client.xadd(
++                        DLQ_KEY, {**fields, "attempts": str(attempts + 1)}
++                    )
++                    await redis_client.xack(STREAM_KEY, CONSUMER_GROUP, entry_id)
++                else:
++                    fields["attempts"] = str(attempts + 1)
++                    await redis_client.xadd(STREAM_KEY, fields)
++                    await redis_client.xack(STREAM_KEY, CONSUMER_GROUP, entry_id)
++
++    logger.info("rca worker %s shutting down cleanly", consumer_name)
++    await pg_pool.close()
++    await redis_client.aclose()
++
++
++def _healthcheck() -> int:
++    """`python3 worker.py --healthcheck` -- the exec probe body (LAW: no fake probes).
++
++    Fresh heartbeat = the consume loop is turning = exit 0. Missing or stale (the loop
++    hasn't reached the top of its while in HEARTBEAT_STALE_S, more than 10x the 2s
++    xreadgroup block) = exit 1, matching kubectl exec probe semantics.
++    """
++    import time
++
++    try:
++        age_s = time.time() - HEARTBEAT_PATH.stat().st_mtime
++    except OSError:
++        print(f"no heartbeat at {HEARTBEAT_PATH}")
++        return 1
++    if age_s > HEARTBEAT_STALE_S:
++        print(f"heartbeat stale: {age_s:.1f}s old (limit {HEARTBEAT_STALE_S}s)")
++        return 1
++    print(f"heartbeat fresh: {age_s:.1f}s old")
++    return 0
++
++
++if __name__ == "__main__":
++    if "--healthcheck" in sys.argv[1:]:
++        sys.exit(_healthcheck())
++    logging.basicConfig(level=logging.INFO)
++    asyncio.run(run_forever())
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index ffa9b60d5..8c8a16932 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -1574,6 +1574,30 @@ spec:
+   wait: false
+   timeout: 20m
+ ---
++# The via-negativa engine: Primitive A/C's interception proxy and Primitive D's async RCA
++# worker (docs/specs/2026-09-13-via-negativa-engine.md). Brand new, like research-engine below
++# it in git history -- no copy Job, estate-db not estate-db-migrate, because there is no legacy
++# server. llm because the proxy fronts litellm and the RCA worker's fallback LLM call is a
++# router key (llm/config.yaml's `groq` row).
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: via-negativa
++  namespace: flux-system
++spec:
++  interval: 10m
++  dependsOn:
++    - name: secret-store
++    - name: llm
++    - name: estate-db
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/via-negativa
++  prune: true
++  wait: true
++  timeout: 10m
++---
+ # crew#839: every namespace's request defaults and its ceiling, generated in one pass by
+ # bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml. A LimitRange lands beside every
+ # quota in the same file, because a quota that counts requests.cpu refuses every pod that declares
+diff --git a/platform/estate-db/cluster/databases.yaml b/platform/estate-db/cluster/databases.yaml
+index 35e2c6302..39581bf15 100644
+--- a/platform/estate-db/cluster/databases.yaml
++++ b/platform/estate-db/cluster/databases.yaml
+@@ -185,6 +185,31 @@ spec:
+   owner: lago
+   ensure: present
+ ---
++# The via-negativa engine's RCA ledger (Primitive D). Brand new, like lago and aevum-evidence
++# above -- there is no copy Job for it because the layer has never run and there is nothing to
++# move; its password is minted straight into this entry by bin/idp-estate-seed.
++#
++# bin/rca_worker/schema.sql embeds a rules.embedding vector(384) column (same reasoning as the
++# hindsight and otto-gateway entries above): pgvector is not a trusted extension, so the
++# `via_negativa` role cannot CREATE EXTENSION it however it is granted -- only a superuser can.
++# The operator issues the CREATE here; the worker's own `CREATE EXTENSION IF NOT EXISTS vector`
++# on every start then finds it present and does nothing, a notice rather than a permission error.
++apiVersion: postgresql.cnpg.io/v1
++kind: Database
++metadata:
++  name: via-negativa
++  namespace: estate-db
++spec:
++  cluster:
++    name: estate
++  name: via_negativa
++  owner: via_negativa
++  ensure: present
++  extensions:
++    - name: vector
++      ensure: present
++      schema: public
++---
+ # The evidence layer's ledger (decision 0028). Aevum writes its signed receipts here, in the
+ # estate's own Postgres, so the records outlive the tool that wrote them -- which is the whole
+ # reason this is not Aevum's in-memory default or its embedded store. Its factory calls
+diff --git a/platform/estate-db/cluster/secrets.yaml b/platform/estate-db/cluster/secrets.yaml
+index e6cff6020..16dd20e33 100644
+--- a/platform/estate-db/cluster/secrets.yaml
++++ b/platform/estate-db/cluster/secrets.yaml
+@@ -330,6 +330,26 @@ spec:
+ ---
+ apiVersion: external-secrets.io/v1
+ kind: ExternalSecret
++metadata:
++  name: estate-db-role-via-negativa
++  namespace: estate-db
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target:
++    name: estate-db-role-via-negativa
++    creationPolicy: Owner
++    template:
++      type: kubernetes.io/basic-auth
++      data:
++        username: "via_negativa"
++        password: "{{ .password }}"
++  data:
++    - secretKey: password
++      remoteRef: { key: estate-db, property: via-negativa-password }
++---
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
+ metadata:
+   name: estate-db-role-aevum
+   namespace: estate-db
+diff --git a/platform/image-automation/kustomization.yaml b/platform/image-automation/kustomization.yaml
+index 79b0748df..f8382340f 100644
+--- a/platform/image-automation/kustomization.yaml
++++ b/platform/image-automation/kustomization.yaml
+@@ -15,3 +15,4 @@ resources:
+   - controller.yaml
+   - runsc.yaml
+   - epistemic-ingest.yaml
++  - via-negativa.yaml
+diff --git a/platform/image-automation/via-negativa.yaml b/platform/image-automation/via-negativa.yaml
+new file mode 100644
+index 000000000..360b7a6a9
+--- /dev/null
++++ b/platform/image-automation/via-negativa.yaml
+@@ -0,0 +1,60 @@
++# The via-negativa engine's two images roll on every main build, the same wiring
++# router-events.yaml and epistemic-ingest.yaml use. build-multiarch pushes
++# ghcr.io/chidionyema/negative-constraints-proxy:main-<run>-<sha> and
++# ghcr.io/chidionyema/rca_worker:main-<run>-<sha>; the policy picks the highest run and the one
++# ImageUpdateAutomation (backstage.yaml, path ./) writes it into
++# platform/via-negativa/kustomization.yaml on flux/image-updates. Two automations on one push
++# branch collide (crew#406), so there is exactly one, shared by every image. The ImagePolicy
++# object here is named via-negativa-rca (not rca_worker -- Kubernetes names refuse the
++# underscore) while spec.image still names the real ghcr repository.
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: negative-constraints-proxy
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/negative-constraints-proxy
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: negative-constraints-proxy
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: negative-constraints-proxy
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: via-negativa-rca
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/rca_worker
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: via-negativa-rca
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: via-negativa-rca
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
+diff --git a/platform/via-negativa/external-secret.yaml b/platform/via-negativa/external-secret.yaml
+new file mode 100644
+index 000000000..df34c24f4
+--- /dev/null
++++ b/platform/via-negativa/external-secret.yaml
+@@ -0,0 +1,41 @@
++# The RCA worker's Postgres role password: bin/idp-estate-seed mints it straight into the
++# estate-db vault entry (it is a brand new consumer, same as lago and aevum-evidence -- no
++# legacy server, so no copy Job and no platform/estate-db/migrate row), and
++# platform/estate-db/cluster/secrets.yaml publishes the same value into estate-db so
++# CloudNativePG can mint the `via_negativa` role from it. This is that same value again, here,
++# because the RCA worker's own container composes VN_LEDGER_DSN from it (same shape as
++# platform/llm/litellm.yaml's DATABASE_URL) -- one value, two namespaces, never typed.
++#
++# Mounted as a file, never as pod env (Kyverno secrets-not-from-env-vars).
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: via-negativa-db
++  namespace: via-negativa
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target:
++    name: via-negativa-db
++    creationPolicy: Owner
++  data:
++    - secretKey: DB_PASSWORD
++      remoteRef: { key: estate-db, property: via-negativa-password }
++---
++# The RCA worker's own router key (LAW 34: the router is the only place a model credential
++# exists). Minted by bin/idp-estate-seed's router-key plan, scoped to `groq` alone -- Primitive
++# B's regex pre-filter is the free path (bin/rca_worker/worker.py, regex_extract_constraint());
++# this key is only ever reached on the fallback, so it is deliberately the cheapest lane
++# (llm/config.yaml's `groq` row), never minimax or gemini.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: via-negativa-router
++  namespace: via-negativa
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target: { name: via-negativa-router, creationPolicy: Owner }
++  data:
++    - secretKey: LITELLM_API_KEY
++      remoteRef: { key: via-negativa, property: LITELLM_API_KEY }
+diff --git a/platform/via-negativa/kustomization.yaml b/platform/via-negativa/kustomization.yaml
+new file mode 100644
+index 000000000..0768125ed
+--- /dev/null
++++ b/platform/via-negativa/kustomization.yaml
+@@ -0,0 +1,25 @@
++# The via-negativa engine: Primitive A/C's proxy, Primitive D's RCA worker, and their own
++# dedicated Redis and Postgres row -- plain Kustomize, the same shape every other first-party
++# service in platform/ uses (platform/llm, platform/epistemic-fabric, platform/router-events).
++# No Helm chart: this repo has none for first-party code (HelmRelease is reserved for
++# third-party infra, e.g. cert-manager).
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++namespace: via-negativa
++resources:
++  - namespace.yaml
++  - external-secret.yaml
++  - redis.yaml
++  - proxy.yaml
++  - rca.yaml
++images:
++  # Neither image has been built yet -- this PR is what makes build-multiarch discover
++  # `negative-constraints-proxy` and `rca_worker` for the first time (bin/dockerfiles).
++  # newTag is git's own null object id, not a real commit; the one ImageUpdateAutomation
++  # (platform/image-automation/backstage.yaml) overwrites these two lines with the real
++  # main-<run>-<sha> the first time CI pushes each image, the same way it already does for
++  # router-events and epistemic-ingest.
++  - name: ghcr.io/chidionyema/negative-constraints-proxy
++    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
++  - name: ghcr.io/chidionyema/rca_worker
++    newTag: main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+diff --git a/platform/via-negativa/namespace.yaml b/platform/via-negativa/namespace.yaml
+new file mode 100644
+index 000000000..73e57d17f
+--- /dev/null
++++ b/platform/via-negativa/namespace.yaml
+@@ -0,0 +1,20 @@
++# The via-negativa engine (bin/negative-constraints-proxy, bin/rca_worker): an interception
++# proxy that pre-flight-rejects banned tool-call signatures, an async worker that turns a real
++# agent failure into a negative constraint, and a Postgres ledger of what was learned. Own
++# namespace, own Redis (platform/llm/redis.yaml's own-dedicated-cache pattern, not a shared
++# store per THE HEADLINE), own row on the one Postgres (platform/estate-db).
++#
++# Restricted profile, default-deny NetworkPolicy + ResourceQuota + LimitRange from
++# platform/ns-fences (bin/idp-ns-fence-gen, allowances.yaml) -- not hand-written here, same
++# deferred-until-measured state platform/epistemic-fabric/namespace.yaml is in.
++apiVersion: v1
++kind: Namespace
++metadata:
++  annotations:
++    # Never garbage-collected by Flux (idp#648): a namespace dropped from git stays, with
++    # everything in it, and the next reconcile reads as a portability break.
++    kustomize.toolkit.fluxcd.io/prune: disabled
++  name: via-negativa
++  labels:
++    app.kubernetes.io/part-of: idp
++    pod-security.kubernetes.io/enforce: restricted
+diff --git a/platform/via-negativa/proxy.yaml b/platform/via-negativa/proxy.yaml
+new file mode 100644
+index 000000000..39b20f7c2
+--- /dev/null
++++ b/platform/via-negativa/proxy.yaml
+@@ -0,0 +1,75 @@
++# Primitive A (interception proxy: banned-signature pre-flight rejection, the deadlock breaker)
++# and the read side of Primitive C (top-constraints prompt injection). Sits in front of the
++# router, so every agent's tool calls pass through it before litellm ever sees them.
++apiVersion: v1
++kind: Service
++metadata:
++  name: via-negativa-proxy
++  namespace: via-negativa
++  labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: via-negativa }
++spec:
++  type: ClusterIP
++  selector: { app.kubernetes.io/name: via-negativa-proxy }
++  ports:
++    - { name: http, port: 80, targetPort: 8080 }
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: via-negativa-proxy
++  namespace: via-negativa
++  labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp }
++  annotations:
++    reloader.stakater.com/auto: "true"
++spec:
++  replicas: 2
++  selector:
++    matchLabels: { app.kubernetes.io/name: via-negativa-proxy }
++  template:
++    metadata:
++      labels: { app.kubernetes.io/name: via-negativa-proxy, app.kubernetes.io/part-of: idp }
++    spec:
++      automountServiceAccountToken: false
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 65532
++        runAsGroup: 65532
++        seccompProfile: { type: RuntimeDefault }
++      containers:
++        - name: proxy
++          image: ghcr.io/chidionyema/negative-constraints-proxy:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
++          # distroless/static: no shell to compose REDIS_URL before exec, and Kyverno
++          # secrets-not-from-env-vars refuses the password as pod env either way. The redis
++          # password rides a mounted file instead; REDIS_PASSWORD_FILE tells the binary itself
++          # where to read it and fold it into REDIS_URL (main.go, resolveRedisURL()).
++          ports:
++            - { name: http, containerPort: 8080 }
++          env:
++            - { name: LISTEN_ADDR, value: ":8080" }
++            - { name: UPSTREAM_URL, value: "http://litellm.llm.svc.cluster.local:4000" }
++            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
++            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
++            - { name: REDIS_KEY, value: "via_negativa:banned_signatures" }
++            - { name: TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
++            - { name: TOP_CONSTRAINTS_N, value: "5" }
++          readinessProbe:
++            httpGet: { path: /healthz, port: 8080 }
++            initialDelaySeconds: 2
++          livenessProbe:
++            httpGet: { path: /healthz, port: 8080 }
++            initialDelaySeconds: 5
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities: { drop: [ALL] }
++          resources:
++            requests: { cpu: 100m, memory: 64Mi }
++            limits: { cpu: 500m, memory: 128Mi }
++          volumeMounts:
++            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
++            - { name: tmp, mountPath: /tmp }
++      volumes:
++        - name: redis-secret
++          secret: { secretName: via-negativa-redis }
++        - name: tmp
++          emptyDir: {}
+diff --git a/platform/via-negativa/rca.yaml b/platform/via-negativa/rca.yaml
+new file mode 100644
+index 000000000..eeecb340b
+--- /dev/null
++++ b/platform/via-negativa/rca.yaml
+@@ -0,0 +1,88 @@
++# Primitive D: the async RCA worker. Consumes real agent failures off Redis Streams, extracts a
++# negative constraint (Primitive B's regex pre-filter first, an LLM-schema-enforced fallback
++# second), writes it to the Postgres ledger and ranks it into the top-constraints set the proxy
++# reads (Primitive C's write side).
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: via-negativa-rca
++  namespace: via-negativa
++  labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
++  annotations:
++    reloader.stakater.com/auto: "true"
++spec:
++  replicas: 1
++  selector:
++    matchLabels: { app.kubernetes.io/name: via-negativa-rca }
++  template:
++    metadata:
++      labels: { app.kubernetes.io/name: via-negativa-rca, app.kubernetes.io/part-of: idp }
++    spec:
++      automountServiceAccountToken: false
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 65532
++        runAsGroup: 65532
++        seccompProfile: { type: RuntimeDefault }
++      containers:
++        - name: rca
++          image: ghcr.io/chidionyema/rca_worker:main-0-0000000000000000000000000000000000000000 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
++          env:
++            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
++            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
++            # No password here -- estate-rw is the one Postgres (platform/estate-db); the
++            # worker itself folds VN_LEDGER_DSN_PASSWORD_FILE's contents in
++            # (worker.py, _with_password_from_file()), the same convention the proxy's
++            # REDIS_PASSWORD_FILE uses (Kyverno secrets-not-from-env-vars).
++            - { name: VN_LEDGER_DSN, value: "postgresql://via_negativa@estate-rw.estate-db.svc.cluster.local:5432/via_negativa" }
++            - { name: VN_LEDGER_DSN_PASSWORD_FILE, value: "/run/secrets/via-negativa/db/DB_PASSWORD" }
++            # Fallback only -- Primitive B's regex pre-filter is the free path and satisfies
++            # most failures without ever reaching this. `groq` is the cheapest lane
++            # (platform/llm/config.yaml), matching the router key's own scope below.
++            - { name: VN_LLM_MODEL, value: "groq" }
++            - { name: VN_FAILURE_STREAM, value: "via_negativa:failures" }
++            - { name: VN_CONSUMER_GROUP, value: "rca-workers" }
++            - { name: VN_DLQ_STREAM, value: "via_negativa:failures:dlq" }
++            - { name: VN_BANNED_SET, value: "via_negativa:banned_signatures" }
++            - { name: VN_TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
++            - { name: VN_MAX_ATTEMPTS, value: "3" }
++            - { name: OPENAI_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
++            - { name: OPENAI_API_KEY_FILE, value: "/run/secrets/via-negativa/router/LITELLM_API_KEY" }
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities: { drop: [ALL] }
++          # No HTTP port to probe -- this is a Redis Streams consumer, not a server. worker.py
++          # touches /tmp/via-negativa-heartbeat once per pass through its consume loop (at most
++          # every 2s); --healthcheck exits 0 only when that file is fresh, so a stuck event loop
++          # is caught same as a dead process. Precedent: platform/dagster/dagster.yaml's own
++          # `dagster-daemon liveness-check` exec probe, the same shape for the same reason.
++          livenessProbe:
++            exec: { command: ["python", "worker.py", "--healthcheck"] }
++            initialDelaySeconds: 30
++            periodSeconds: 20
++            timeoutSeconds: 10
++            failureThreshold: 3
++          readinessProbe:
++            exec: { command: ["python", "worker.py", "--healthcheck"] }
++            initialDelaySeconds: 10
++            periodSeconds: 15
++            timeoutSeconds: 10
++            failureThreshold: 3
++          resources:
++            requests: { cpu: 100m, memory: 128Mi }
++            limits: { cpu: 500m, memory: 256Mi }
++          volumeMounts:
++            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
++            - { name: db-secret, mountPath: /run/secrets/via-negativa/db, readOnly: true }
++            - { name: router-secret, mountPath: /run/secrets/via-negativa/router, readOnly: true }
++            - { name: tmp, mountPath: /tmp }
++      volumes:
++        - name: redis-secret
++          secret: { secretName: via-negativa-redis }
++        - name: db-secret
++          secret: { secretName: via-negativa-db }
++        - name: router-secret
++          secret: { secretName: via-negativa-router }
++        - name: tmp
++          emptyDir: {}
+diff --git a/platform/via-negativa/redis.yaml b/platform/via-negativa/redis.yaml
+new file mode 100644
+index 000000000..9cdf40600
+--- /dev/null
++++ b/platform/via-negativa/redis.yaml
+@@ -0,0 +1,114 @@
++# via-negativa's own memory: the proxy's banned-signature set and top-constraints ranking
++# (Primitives A and C) and the RCA worker's failure stream (Primitive D). One dedicated Redis,
++# not the shared llm cache -- THE HEADLINE's "never add a second store" is about not building a
++# second kind of store for one estate, not about sharing one cache instance across unrelated
++# components; the shape here is a direct copy of platform/llm/redis.yaml.
++#
++# The password is minted inside the cluster by the secret machinery's own password generator --
++# no vault entry, no console, no person ever sees it. refreshInterval 0h: minted once at
++# creation and stable, so the proxy and the worker can never disagree about it.
++apiVersion: generators.external-secrets.io/v1alpha1
++kind: Password
++metadata:
++  name: via-negativa-redis
++  namespace: via-negativa
++spec:
++  length: 42
++  digits: 10
++  symbols: 0
++  symbolCharacters: ""
++  noUpper: false
++  allowRepeat: true
++---
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: via-negativa-redis
++  namespace: via-negativa
++spec:
++  refreshInterval: 0h
++  target: { name: via-negativa-redis, creationPolicy: Owner }
++  dataFrom:
++    - sourceRef:
++        generatorRef:
++          apiVersion: generators.external-secrets.io/v1alpha1
++          kind: Password
++          name: via-negativa-redis
++      rewrite:
++        - transform: { template: "REDIS_PASSWORD" }
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: via-negativa-redis
++  namespace: via-negativa
++  labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: via-negativa }
++spec:
++  type: ClusterIP
++  selector: { app.kubernetes.io/name: via-negativa-redis }
++  ports:
++    - { name: redis, port: 6379, targetPort: 6379 }
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: via-negativa-redis
++  namespace: via-negativa
++  labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp }
++  annotations:
++    reloader.stakater.com/auto: "true"
++spec:
++  replicas: 1
++  # One memory: two caches behind one name would briefly disagree, so replace, never overlap.
++  # Losing it for the seconds of a replace is safe -- the proxy fails open (patternStore.match
++  # sees an empty set) and the worker's XREADGROUP simply resumes from its consumer group
++  # position once the store is back.
++  strategy: { type: Recreate }
++  selector:
++    matchLabels: { app.kubernetes.io/name: via-negativa-redis }
++  template:
++    metadata:
++      labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp }
++    spec:
++      automountServiceAccountToken: false
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 999   # redis uid in the alpine image
++        runAsGroup: 999
++        fsGroup: 999
++        seccompProfile: { type: RuntimeDefault }
++      containers:
++        - name: redis
++          image: docker.io/library/redis:7.4-alpine
++          command: ["/bin/sh", "-c"]
++          args:
++            - exec redis-server --requirepass "$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)" --maxmemory 192mb --maxmemory-policy allkeys-lru --save "" --appendonly no
++          ports:
++            - { containerPort: 6379, name: redis }
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities: { drop: [ALL] }
++          readinessProbe:
++            exec:
++              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)\" redis-cli ping"]
++            periodSeconds: 10
++          livenessProbe:
++            exec:
++              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)\" redis-cli ping"]
++            periodSeconds: 30
++            failureThreshold: 3
++          resources:
++            requests: { cpu: 25m, memory: 64Mi }
++            limits: { cpu: 250m, memory: 256Mi }
++          volumeMounts:
++            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
++            - { name: data, mountPath: /data }
++            - { name: tmp, mountPath: /tmp }
++      volumes:
++        - name: redis-secret
++          secret: { secretName: via-negativa-redis }
++        - name: data
++          emptyDir: { sizeLimit: 256Mi }
++        - name: tmp
++          emptyDir: {}
+diff --git a/tests/test_via_negativa_engine.py b/tests/test_via_negativa_engine.py
+new file mode 100644
+index 000000000..0db3b818f
+--- /dev/null
++++ b/tests/test_via_negativa_engine.py
+@@ -0,0 +1,168 @@
++"""Acceptance tests for the via-negativa engine.
++
++Per the founder 2026-09-13 spec: build the four primitives
++(A: Go proxy, B: regex hook, C: injection, D: async RCA worker)
++and prove they work end-to-end against the founder's pasted code.
++"""
++# ruff: noqa: S101
++
++from __future__ import annotations
++
++import importlib.util
++import json
++import os
++import pathlib
++import shutil
++import subprocess
++import time
++
++import pytest
++
++REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
++PROXY_DIR = REPO_ROOT / "bin" / "negative-constraints-proxy"
++WORKER_DIR = REPO_ROOT / "bin" / "rca_worker"
++GO_BIN = shutil.which("go")
++
++
++@pytest.mark.skipif(GO_BIN is None, reason="go is not installed")
++def test_go_proxy_compiles() -> None:
++    """Primitive A: the Go interception sidecar builds cleanly."""
++    result = subprocess.run(  # noqa: S603 - fixed argv built in this file, no shell
++        [GO_BIN, "build", "-o", "/tmp/via-negativa-proxy-test", "."],  # noqa: S108
++        cwd=str(PROXY_DIR),
++        capture_output=True,
++        text=True,
++        timeout=60,
++    )
++    assert result.returncode == 0, f"go build failed:\n{result.stderr}\n{result.stdout}"
++
++
++def test_go_proxy_returns_422_on_banned_tool() -> None:
++    """Primitive A: a tool_call whose name contains 'rm_rf' is blocked with 422."""
++    binary = "/tmp/via-negativa-proxy-test"  # noqa: S108
++    if not os.path.exists(binary):
++        pytest.skip("proxy binary not built (run test_go_proxy_compiles first)")
++
++    # Run a dummy upstream that just 200s; we only care about pre-flight block.
++    import http.server
++    import threading
++
++    class Upstream(http.server.BaseHTTPRequestHandler):
++        def do_POST(self):  # noqa: N802
++            self.send_response(200)
++            self.send_header("Content-Type", "application/json")
++            self.end_headers()
++            self.wfile.write(b'{"ok":true}')
++
++        def log_message(self, *_args):  # silence
++            pass
++
++    upstream = http.server.HTTPServer(("127.0.0.1", 0), Upstream)
++    upstream_port = upstream.server_address[1]
++    threading.Thread(target=upstream.serve_forever, daemon=True).start()
++
++    proxy = subprocess.Popen(  # noqa: S603 - fixed argv built in this file, no shell
++        [binary],
++        env={
++            **os.environ,
++            "LISTEN_ADDR": "127.0.0.1:18080",
++            "UPSTREAM_URL": f"http://127.0.0.1:{upstream_port}",
++            "REDIS_URL": "redis://127.0.0.1:1",  # unreachable — must fail-open per spec
++        },
++        stdout=subprocess.PIPE,
++        stderr=subprocess.PIPE,
++    )
++    try:
++        time.sleep(2)  # wait for startup
++        import urllib.request, urllib.error
++
++        body = json.dumps(
++            {
++                "messages": [{"role": "user", "content": "do it"}],
++                "tools": [{"function": {"name": "rm_rf_dangerous"}}],
++            }
++        ).encode()
++        req = urllib.request.Request(
++            "http://127.0.0.1:18080/v1/chat/completions",
++            data=body,
++            headers={"Content-Type": "application/json"},
++        )
++        with pytest.raises(urllib.error.HTTPError) as exc:
++            urllib.request.urlopen(req, timeout=5)  # noqa: S310 - fixed http:// literal above
++        assert exc.value.code == 422, f"expected 422, got {exc.value.code}"
++    finally:
++        proxy.terminate()
++        try:
++            proxy.wait(timeout=5)
++        except subprocess.TimeoutExpired:
++            proxy.kill()
++        upstream.shutdown()
++
++
++def test_python_worker_imports() -> None:
++    """Primitive D: the Python RCA worker module is importable."""
++    spec = importlib.util.spec_from_file_location(
++        "rca_worker_under_test",
++        WORKER_DIR / "worker.py",
++    )
++    assert spec is not None and spec.loader is not None
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    assert hasattr(module, "NegativeConstraint")
++    assert hasattr(module, "rule_allowed")
++    assert hasattr(module, "build_prompt")
++
++
++def test_negative_constraint_schema_rejects_subjective() -> None:
++    """Primitive D guard: subjective rules are dropped (is_deterministic=False)."""
++    from bin.rca_worker.worker import NegativeConstraint, rule_allowed
++
++    nc = NegativeConstraint(
++        scope="bash",
++        signature_regex="EVERYTHING IS BAD",
++        semantic_summary="code is broken",
++        is_deterministic=False,
++        confidence_score=0.99,
++    )
++    assert not rule_allowed(nc), "subjective rule must be dropped"
++
++
++def test_negative_constraint_schema_rejects_low_confidence() -> None:
++    """Primitive D guard: confidence < 0.6 is dropped per founder spec."""
++    from bin.rca_worker.worker import NegativeConstraint, rule_allowed
++
++    nc = NegativeConstraint(
++        scope="python",
++        signature_regex="ModuleNotFoundError: No module named 'foo'",
++        semantic_summary="don't pip install without --break-system-packages",
++        is_deterministic=True,
++        confidence_score=0.4,
++    )
++    assert not rule_allowed(nc), "low-confidence rule must be dropped"
++
++
++def test_negative_constraint_schema_accepts_deterministic_high_confidence() -> None:
++    """Primitive D: a deterministic, high-confidence rule passes the guard."""
++    from bin.rca_worker.worker import NegativeConstraint, rule_allowed
++
++    nc = NegativeConstraint(
++        scope="python",
++        signature_regex=r"ModuleNotFoundError: No module named '([^']+)'",
++        semantic_summary="declare missing modules in requirements.txt before importing",
++        is_deterministic=True,
++        confidence_score=0.92,
++    )
++    assert rule_allowed(nc), "deterministic high-confidence rule must be allowed"
++    assert nc.scope == "python"
++    assert 0.0 <= nc.confidence_score <= 1.0
++
++
++def test_build_prompt_includes_command_exit_stderr() -> None:
++    """Primitive D: the LLM prompt must contain command, exit code, stderr."""
++    from bin.rca_worker.worker import build_prompt
++
++    payload = {"command": "npm test", "exit_code": 1, "stderr": "FAIL: suite broken"}
++    prompt = build_prompt(payload)
++    assert "npm test" in prompt
++    assert "1" in prompt
++    assert "FAIL: suite broken" in prompt

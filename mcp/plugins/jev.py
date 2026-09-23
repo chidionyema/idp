@@ -465,6 +465,355 @@ def jev_noul(
 
 
 # ---------------------------------------------------------------------------
+# Test Impact Analysis -- which tests a diff actually needs
+# ---------------------------------------------------------------------------
+
+#: The default config: a task runs when its condition's probability is AT OR ABOVE this.
+#: The comparison is `>=` on purpose -- equality RUNS. A skipped task must be strictly below,
+#: so an ambiguous diff always pays the cost of the test rather than the cost of a missed
+#: regression. This is the fail-OPEN half of the estate's usual fail-closed discipline, and it
+#: is fail-open in the SAFE direction: an undecided answer runs the suite.
+AFFECTED_SKIP_BELOW = float(os.environ.get("JEV_AFFECTED_SKIP_BELOW", "0.3"))
+
+#: Where a repo declares its tasks and their conditions.
+AFFECTED_CONFIG = os.environ.get("JEV_AFFECTED_CONFIG", "jev-affected.yml")
+
+
+def _affected_config(repo: str) -> tuple[dict[str, Any], str | None]:
+    """Load `<repo>/jev-affected.yml`. Returns (config, reason-on-failure).
+
+    A missing or unreadable config returns an EMPTY task list and a reason, never an
+    exception: `jev_affected` is called before a test run, and a tool that cannot read its
+    own config must not stop the run -- it must say so and let the caller decide.
+    """
+    path = os.path.join(repo, AFFECTED_CONFIG)
+    if not os.path.isfile(path):
+        return {}, f"no {AFFECTED_CONFIG} at {path}"
+    try:
+        import yaml  # noqa: PLC0415 -- lazy: the estate MCP door may run without PyYAML
+
+        with open(path, encoding="utf-8") as fh:
+            return (yaml.safe_load(fh) or {}), None
+    except Exception as exc:  # noqa: BLE001 -- reported, never raised into the caller
+        return {}, f"{type(exc).__name__}: {exc}"
+
+
+def _changed_lines(repo: str, base: str) -> tuple[str, str | None]:
+    """The diff a task's condition is evaluated against: base...HEAD, unified.
+
+    Read-only. A repo that cannot produce a diff gets an empty one and a reason -- and an
+    empty diff makes every condition unlikely, so the tasks below run. That is the safe
+    direction: a diff we could not read cannot be used to skip a test.
+    """
+    import subprocess  # noqa: PLC0415
+
+    try:
+        out = subprocess.run(  # noqa: S603 -- argv is fixed; base is a caller-supplied ref
+            ["git", "-C", repo, "diff", f"{base}...HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except Exception as exc:  # noqa: BLE001 -- a diff we cannot read is reported, then empty
+        return "", f"{type(exc).__name__}: {exc}"
+    if out.returncode != 0:
+        return "", (out.stderr or "").strip() or f"git diff exited {out.returncode}"
+    return out.stdout, None
+
+
+def jev_affected(
+    repo: str,
+    base: str = "main",
+    skip_below: float | None = None,
+) -> dict[str, Any]:
+    """Which tasks a diff requires, decided by Jev from NATURAL-LANGUAGE conditions.
+
+    THE PROBLEM THIS SOLVES. Running the whole suite on every change is the cost that makes
+    agents slow and CI expensive; running only "the tests for the files I touched" is wrong
+    whenever a change crosses a seam no filename shows. Coverage-based selection needs a
+    baseline nobody maintains; a dependency graph needs a build nobody keeps current. A
+    condition like "could authentication, sessions or login behaviour change?" needs neither
+    -- Jev reads the diff and answers it.
+
+    THE CONTRACT (config, `<repo>/jev-affected.yml`):
+
+        tasks:
+          auth-e2e:
+            command: pytest tests/auth -q
+            when: Could authentication, sessions, cookies or login behaviour change?
+          typecheck:
+            command: npx tsc --noEmit
+            always: true
+
+    Each task carries EITHER `always: true` (never skipped) OR a `when:` condition.
+
+    THE SAFETY PROPERTY, STATED PLAINLY: a task is skipped ONLY when its condition's
+    probability is STRICTLY BELOW `skip_below`. Equality runs. A missing config, an
+    unreadable config, a git failure or a Jev escalation all produce RUN. There is no path
+    in this function that turns an unknown into a skip.
+
+    Returns {base, changed, tasks: [{name, command, run, probability, reason}], skipped,
+    ran, config_error, diff_error, escalated} -- a plan, never an execution. Running the
+    commands is the caller's decision.
+    """
+    if skip_below is None:
+        skip_below = AFFECTED_SKIP_BELOW
+
+    config, config_error = _affected_config(repo)
+    diff, diff_error = _changed_lines(repo, base)
+
+    raw_tasks = (config.get("tasks") or {}) if isinstance(config, dict) else {}
+    tasks: list[dict[str, Any]] = []
+    escalated = False
+
+    for name, spec in raw_tasks.items():
+        spec = spec or {}
+        command = str(spec.get("command") or "")
+        if spec.get("always"):
+            tasks.append(
+                {
+                    "name": name,
+                    "command": command,
+                    "run": True,
+                    "probability": 1.0,
+                    "reason": "always: true",
+                }
+            )
+            continue
+
+        condition = str(spec.get("when") or "").strip()
+        if not condition:
+            # A task with neither `always` nor `when` cannot be reasoned about. Run it:
+            # an unstated condition is not a reason to skip.
+            tasks.append(
+                {
+                    "name": name,
+                    "command": command,
+                    "run": True,
+                    "probability": None,
+                    "reason": "no condition declared -- running rather than guessing",
+                }
+            )
+            continue
+
+        # A RAISED CALL IS A RUN, NOT A CRASH. `jev_score` can raise when the layer is
+        # unreachable (a socket error, a timeout the SDK surfaces as an exception). That
+        # must not take the caller down mid-plan: an unreachable decision layer is exactly
+        # the "unknown" this function promises to resolve toward RUNNING.
+        try:
+            result = jev_score(
+                repo=repo,
+                layer="test-impact",
+                decision_id=f"affected:{name}",
+                context={"diff": diff[:20000]},
+                question=condition,
+                levels=["run", "skip"],
+                required_confidence=DEFAULT_FLOOR,
+            )
+        except Exception as exc:  # noqa: BLE001 -- reported as a run, never raised
+            escalated = True
+            tasks.append(
+                {
+                    "name": name,
+                    "command": command,
+                    "run": True,
+                    "probability": None,
+                    "reason": (
+                        f"decision layer unreachable ({type(exc).__name__}) "
+                        "-- running rather than guessing"
+                    ),
+                }
+            )
+            continue
+        if result.get("escalated"):
+            escalated = True
+        probs = result.get("probabilities") or {}
+        run_prob = probs.get("run") if isinstance(probs, dict) else None
+        if run_prob is None:
+            # No usable probability is not a low probability.
+            run = True
+            reason = "no probability returned -- running rather than guessing"
+        else:
+            run = not (float(run_prob) < skip_below)
+            reason = (
+                f"P(run)={float(run_prob):.3f} "
+                f"{'<' if not run else '>='} skip_below={skip_below}"
+            )
+        tasks.append(
+            {
+                "name": name,
+                "command": command,
+                "run": run,
+                "probability": run_prob,
+                "reason": reason,
+            }
+        )
+
+    ran = [t["name"] for t in tasks if t["run"]]
+    skipped = [t["name"] for t in tasks if not t["run"]]
+    return {
+        "base": base,
+        "changed": bool(diff.strip()),
+        "tasks": tasks,
+        "ran": ran,
+        "skipped": skipped,
+        "config_error": config_error,
+        "diff_error": diff_error,
+        "escalated": escalated,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pre-submission PR risk -- reject before the push, not after CI
+# ---------------------------------------------------------------------------
+
+#: The default risk config. Conditions a change is scored against before it is pushed.
+PR_RISK_CONFIG = os.environ.get("JEV_PR_RISK_CONFIG", "jev-pr-risk.yml")
+
+#: The tier that means "a person should look before this is pushed". Nothing above this
+#: exits non-zero on its own -- see the docstring for why the gate advises and the hook decides.
+PR_RISK_BLOCK_TIER = os.environ.get("JEV_PR_RISK_BLOCK_TIER", "high")
+
+
+def _risk_config(repo: str) -> tuple[dict[str, Any], str | None]:
+    """Load `<repo>/jev-pr-risk.yml`. Returns (config, reason-on-failure).
+
+    Missing or unreadable returns an empty condition set and a reason, never an exception:
+    a gate that cannot read its own rules must not be the reason a push stops -- it must say
+    what it could not check and let the caller decide (fail-open, toward human review).
+    """
+    path = os.path.join(repo, PR_RISK_CONFIG)
+    if not os.path.isfile(path):
+        return {}, f"no {PR_RISK_CONFIG} at {path}"
+    try:
+        import yaml  # noqa: PLC0415 -- lazy: the MCP door may run without PyYAML
+
+        with open(path, encoding="utf-8") as fh:
+            return (yaml.safe_load(fh) or {}), None
+    except Exception as exc:  # noqa: BLE001 -- reported, never raised into the caller
+        return {}, f"{type(exc).__name__}: {exc}"
+
+
+def jev_pr_risk(
+    repo: str,
+    base: str = "origin/main",
+    diff: str | None = None,
+) -> dict[str, Any]:
+    """Pre-submission PR risk: score a diff against declared conditions, BEFORE the push.
+
+    THE LAYER THIS FILLS. Every PR gate in the estate runs AFTER the branch exists and CI
+    has already spent minutes on it. This one answers the question the author actually has:
+    *will this be rejected?* -- from the diff, with no CI run and no PR opened. The estate
+    already has the parts that DECIDE at merge time (`bin/idp-pr-landable`, `idp-wip-gate`,
+    `idp-pr-scope-audit`); what was missing is the ADVISORY before submission, and it is the
+    same primitive as `jev_affected`: natural-language conditions, Jev-scored, fail-open.
+
+    THE CONTRACT (`<repo>/jev-pr-risk.yml`):
+
+        conditions:
+          touches-closed-files:
+            when: Does this change touch files maintainers have closed PRs on before?
+            weight: 3        # optional; how much this raises the tier (default 1)
+          policy-violation:
+            when: Does this PR violate a documented contribution policy in this repository?
+            weight: 3
+          oversized:
+            when: Is the patch size or file-type mix correlated with abandoned PRs here?
+            weight: 1
+
+    Returns {base, changed, tier, score, conditions: [{name, when, probability, weight,
+    contributed, escalated}], config_error, diff_error, escalated}.
+
+    THE DECISION RULE, stated so it can be argued with: each condition contributes its
+    probability times its weight to a score; the fraction of total weight that came back
+    likely is compared against fixed bands (low < 0.34, medium < 0.67, else high). A
+    condition with NO usable probability contributes as LIKELY, not as unlikely -- an
+    unknown is a reason to look, never a reason to relax.
+
+    WHAT THIS DOES NOT DO: it does not refuse anything. Refusal is `bin/idp-pr-risk-gate`'s
+    job at push time, and a person's job at the `high` tier. A scorer that silently blocked
+    pushes would be exactly the unaccountable gate this estate deletes.
+    """
+    config, config_error = _risk_config(repo)
+    if diff is None:
+        diff, diff_error = _changed_lines(repo, base)
+    else:
+        diff_error = None
+
+    raw = (config.get("conditions") or {}) if isinstance(config, dict) else {}
+    conditions: list[dict[str, Any]] = []
+    escalated = False
+    total_weight = 0.0
+    likely_weight = 0.0
+
+    for name, spec in raw.items():
+        spec = spec or {}
+        condition = str(spec.get("when") or "").strip()
+        if not condition:
+            continue
+        try:
+            weight = float(spec.get("weight", 1))
+        except (TypeError, ValueError):
+            weight = 1.0
+        total_weight += weight
+
+        likely = True
+        probability: float | None = None
+        try:
+            result = jev_score(
+                repo=repo,
+                layer="pr-risk",
+                decision_id=f"risk:{name}",
+                context={"diff": diff[:20000]},
+                question=condition,
+                levels=["likely", "unlikely"],
+                required_confidence=DEFAULT_FLOOR,
+            )
+            if result.get("escalated"):
+                escalated = True
+            probs = result.get("probabilities") or {}
+            probability = probs.get("likely") if isinstance(probs, dict) else None
+            # No usable probability is an unknown; for RISK, unknown counts as likely.
+            likely = True if probability is None else (float(probability) >= 0.5)
+        except Exception:  # noqa: BLE001 -- an unreachable layer means we cannot clear it
+            escalated = True
+            likely = True
+
+        if likely:
+            likely_weight += weight
+        conditions.append(
+            {
+                "name": name,
+                "when": condition,
+                "probability": probability,
+                "weight": weight,
+                "contributed": likely,
+                "escalated": escalated,
+            }
+        )
+
+    score = (likely_weight / total_weight) if total_weight else 0.0
+    if score < 0.34:
+        tier = "low"
+    elif score < 0.67:
+        tier = "medium"
+    else:
+        tier = "high"
+
+    return {
+        "base": base,
+        "changed": bool(diff.strip()),
+        "tier": tier,
+        "score": round(score, 3),
+        "conditions": conditions,
+        "config_error": config_error,
+        "diff_error": diff_error,
+        "escalated": escalated,
+    }
+
+
+# ---------------------------------------------------------------------------
 # MCP tool registration
 # ---------------------------------------------------------------------------
 
@@ -547,6 +896,22 @@ def register_mcp_tools(datasette, mcp) -> None:  # pragma: no cover - estate MCP
         """
         return jev_noul(repo, layer, decision_id, context, question, threshold)
 
+    async def _jev_affected(
+        repo: str,
+        base: str = "main",
+        skip_below: float | None = None,
+    ) -> dict[str, Any]:
+        return jev_affected(repo, base, skip_below)
+
+    async def _jev_pr_risk(
+        repo: str,
+        base: str = "origin/main",
+        diff: str | None = None,
+    ) -> dict[str, Any]:
+        return jev_pr_risk(repo, base, diff)
+
     mcp.add_tool(_jev_choice, name="jev_choice")
     mcp.add_tool(_jev_score, name="jev_score")
+    mcp.add_tool(_jev_affected, name="jev_affected")
+    mcp.add_tool(_jev_pr_risk, name="jev_pr_risk")
     mcp.add_tool(_jev_noul, name="jev_noul")

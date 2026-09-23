@@ -6,16 +6,12 @@ resources:
   - external-secret.yaml
   - redis.yaml
   - litellm.yaml
-  - zeroedge.yaml
-  - ollama.yaml
   - availability.yaml
   - httproute.yaml
   - edge-manners.yaml
   - spend-breaker-digest.yaml
-  # There is deliberately no pull-secret.yaml here. Every image this namespace runs is public
-  # (berriai/litellm-database, library/redis, ollama, ghcr.io/chidionyema/zeroedge), so `llm` mints
-  # no registry credential and the router's path to live crosses no Secret it does not already
-  # need for its own config. Re-adding one costs a Secret the cluster is 650 over its cap to give.
+  - pull-secret.yaml
+  - zeroedge.yaml
 images:
   # chidionyema/zeroedge build-image.yml pushes ghcr.io/chidionyema/zeroedge:main-<run>-<sha> on
   # a multiarch manifest list, Trivy-scanned before the push and cosign-signed after it. The tag
@@ -24,7 +20,7 @@ images:
   # image-automation-controller rewrites the newTag line from ImagePolicy flux-system/zeroedge
   # (platform/image-automation/zeroedge.yaml); the marker is how it finds the line.
   - name: ghcr.io/chidionyema/zeroedge
-    newTag: main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4 # {"$imagepolicy": "flux-system:zeroedge:tag"}
+    newTag: main-2-7a6da5a49d6ff75053ff03107667ec91737d906c # {"$imagepolicy": "flux-system:zeroedge:tag"}
 configMapGenerator:
   # The router config is the file, not a copy of it. tests/test_llm_row.py holds
   # platform/llm/config.yaml to llm/config.yaml model for model.
@@ -32,26 +28,15 @@ configMapGenerator:
     files:
       - config.yaml
   # The per-request ceiling, as a module the router imports. It is a ConfigMap and not a copied
-  # The ceiling and the two hook modules, as files the router imports. It is a ConfigMap and not a
-  # copied directory because the wheel or directory a ConfigMap generates is what the pod actually
-  # runs: a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
+  # directory because the wheel or directory a ConfigMap generates is what the pod actually runs:
+  # a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
   # 86,525,924 tokens went through one hour on 2026-09-13 with every existing guard reporting.
-  # `zeroedge_gateway.py` is a flat shim: the ZeroEdge package is not vendored here (a ConfigMap
-  # flattens keys, so a package cannot mount), it calls the ZeroEdge service named by ZEROEDGE_URL.
   - name: litellm-request-ceiling
     files:
       - request_ceiling.py
       - efficiency_gateway.py
-      - zeroedge_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
-images:
-  # Set by Flux image automation from platform/image-automation/zeroedge.yaml, exactly as jit,
-  # backstage, lago and the rest are. The one ImageUpdateAutomation (backstage.yaml) writes this
-  # marker, so the tag below is a starting point and never something to keep current by hand.
-  - name: ghcr.io/chidionyema/zeroedge
-    newTag: main-5-8fc1d21bb1c94e288bb51d44b877e86626d164e4 # {"$imagepolicy": "flux-system:zeroedge:tag"}
-
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #
 # 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI

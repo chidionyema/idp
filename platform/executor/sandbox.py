@@ -16,10 +16,9 @@ import json
 import os
 import shutil
 import subprocess
-import sys
+import tempfile
 import time
 import uuid
-from pathlib import Path
 
 
 def detect_backend() -> str:
@@ -31,10 +30,11 @@ def detect_backend() -> str:
         return "firecracker"
     if shutil.which("runsc"):
         return "gvisor"
-    if shutil.which("docker"):
+    docker_bin = shutil.which("docker")
+    if docker_bin:
         try:
-            r = subprocess.run(
-                ["docker", "info"],
+            r = subprocess.run(  # noqa: S603
+                [docker_bin, "info"],
                 capture_output=True,
                 text=True,
                 timeout=3,
@@ -68,8 +68,8 @@ def _run_firecracker(
     command: list[str], sandbox_path: str, timeout_sec: int
 ) -> tuple[int, str, str]:
     """Spec path: Firecracker microVM. Real on Linux+KVM; raises on anything else."""
-    vm_id = f"verifier-{uuid.uuid4().hex[:8]}"
-    socket_path = f"/tmp/{vm_id}.sock"
+    fc_dir = tempfile.mkdtemp(prefix="idp-fc-")
+    socket_path = os.path.join(fc_dir, "firecracker.sock")
     config = {
         "boot-source": {"kernel_image_path": "/var/lib/fc/vmlinux"},
         "drives": [
@@ -82,12 +82,18 @@ def _run_firecracker(
         ],
         "machine-config": {"vcpu_count": 1, "mem_size_mib": 512},
     }
-    config_path = f"/tmp/{vm_id}.json"
+    config_path = os.path.join(fc_dir, "fc-config.json")
     with open(config_path, "w") as f:
         json.dump(config, f)
     try:
-        fc = subprocess.Popen(
-            ["firecracker", "--api-sock", socket_path, "--config-file", config_path],
+        _ = subprocess.Popen(  # noqa: S603,F841
+            [
+                shutil.which("firecracker"),
+                "--api-sock",
+                socket_path,
+                "--config-file",
+                config_path,
+            ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
@@ -96,9 +102,7 @@ def _run_firecracker(
     except (OSError, FileNotFoundError) as exc:
         return 1, "", f"firecracker failed to start: {exc}"
     finally:
-        for p in (socket_path, config_path):
-            if os.path.exists(p):
-                os.unlink(p)
+        shutil.rmtree(fc_dir, ignore_errors=True)
 
 
 def _run_gvisor(
@@ -123,7 +127,10 @@ def _run_docker(
     """
     abs_sandbox = os.path.abspath(sandbox_path)
     container_name = f"idp-sandbox-{uuid.uuid4().hex[:8]}"
-    docker_cmd = ["docker", "run", "--rm", "--name", container_name]
+    docker_bin = shutil.which("docker")
+    if not docker_bin:
+        return 1, "", "docker binary not found"
+    docker_cmd = [docker_bin, "run", "--rm", "--name", container_name]
     if runtime:
         docker_cmd += ["--runtime", runtime]
     docker_cmd += [
@@ -145,7 +152,7 @@ def _run_docker(
         )
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             docker_cmd,
             capture_output=True,
             text=True,
@@ -177,7 +184,7 @@ def _run_temp_tree(
         )
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             command,
             cwd=sandbox_path,
             capture_output=True,

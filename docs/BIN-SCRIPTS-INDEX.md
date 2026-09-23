@@ -43,7 +43,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-cloud` | Primitive layer between estate operator scripts and cloud APIs |
 | `idp-cluster-state` | Read cluster's own state receipt from ObjectStore (crew#345) |
 | `idp-compile-helm` | Compile Helm charts |
-| `idp-conscience` | Ethical check for operations |
 | `idp-continuity-lane` | Maintain service continuity |
 | `idp-contract` | Contract verification |
 | `idp-convergence-proof` | Prove system convergence |
@@ -162,17 +161,13 @@ Core platform functionality, administration, and operational commands.
 | `idp-router-key` | Mint LiteLLM virtual key for consumer |
 | `idp-router-lanes` | Show router lanes snapshot (2026-09-03) |
 | `idp-router-rows-to-console` | Route rows to console output |
-| `idp-rule-coverage` | Measure rule coverage |
-| `idp-rules` | Manage/query policy rules |
 | `idp-sandbox-sweep` | End expired buyer sandbox |
 | `idp-science-facts` | Read cluster science-facts receipt (crew#516 CP5) |
 | `idp-scope-replay` | Replay scope operations |
 | `idp-script-compiles` | Verify script compiles |
 | `idp-session-bootstrap` | Initialize session environment (crew#654 CP1) |
-| `idp-session-gate` | Gate session operations |
 | `idp-set-root` | Set founder's root provider (crew#66) |
 | `idp-shadow` | Shadow mode operations |
-| `idp-shadow-run` | Run in shadow mode |
 | `idp-shadow-sync` | Sync shadow state |
 | `idp-shadow-verify` | Verify shadow mode |
 | `idp-shop-backup` | Backup shop database (crew#713 CP3) |
@@ -231,7 +226,6 @@ Estate platform administration and monitoring.
 | `estate-security-scan` | Scan security and generate evidence |
 | `estate-session-recorder` | Record session data |
 | `estate-showcase` | Showcase estate capabilities |
-| `estate-state-grader` | Grade estate state |
 | `estate-twin-runtime` | Query estate as code (ask graph not cluster) |
 | `estate-zone-gate` | Zone configuration gate (founder 2026-08-26) |
 
@@ -243,7 +237,6 @@ Backstage catalog and component management.
 
 | Script | Purpose |
 |--------|---------|
-| `catalog-dark-matter` | Find catalog dark matter (unmapped entities) |
 | `catalog-gen` | Generate catalog from inventory |
 | `catalog-links-check` | Validate catalog links |
 | `catalog-platform` | List catalog platform/tooling components |
@@ -291,11 +284,8 @@ Policy gates and verification logic.
 | `idp-envsubst-gate` | Environment substitution gate |
 | `idp-evidence-gate` | Evidence collection gate |
 | `idp-flux-subst-gate` | Flux substitution gate |
-| `idp-gate-demo` | Gate demonstration |
-| `idp-grader-exit-gate` | Grader exit validation |
 | `idp-mechanism-gate` | Mechanism validation gate |
 | `idp-reasoning-gateway-hook` | Session grading hook |
-| `idp-session-gate` | Session operation gate |
 | `idp-simulate-gate` | Simulate gate behavior |
 
 ---
@@ -311,7 +301,6 @@ Generic utilities and helpers.
 | `bind-audit` | List processes listening on ports |
 | `budget_governor.py` | Budget governance logic |
 | `build-image` | Single way to build estate images |
-| `conformity-report` | Annex VI internal-control assessment |
 | `contract_executor.py` | Contract execution logic |
 | `dockerfiles` | Single list of estate images |
 | `dod-live-claim-gate` | Live claim validation |
@@ -391,15 +380,6 @@ Located: `~/.pi/agent/scripts/`
 
 | Script | Type | Purpose |
 |--------|------|---------|
-| `canary.sh` | Shell | Canary testing |
-| `edit_workflow.py` | Python | Workflow editor |
-| `impl_plan.py` | Python | Implementation planner |
-| `incremental.py` | Python | Incremental processing |
-| `learning_loop.py` | Python | Learning feedback loop |
-| `model_router.py` | Python | Model routing logic |
-| `project_context.py` | Python | Project context manager |
-| `run-ultimate.sh` | Shell | Ultimate mode runner |
-| `test_spec.py` | Python | Specification tester |
 
 ---
 
@@ -409,13 +389,6 @@ Located: `~/.pi/agent/extensions/`
 
 | Extension | Purpose |
 |-----------|---------|
-| `breaker` | Circuit breaker logic |
-| `dispatch` | Task dispatch (symlink to `/private/tmp/idp-router-worktree/extensions/dispatch`) |
-| `executor-door` | Executor interface |
-| `feed-guard.ts` | Feed guard (TypeScript) |
-| `pi-crew` | Crew orchestration |
-| `pi-delegate` | Delegation handler |
-| `pi-governance` | Governance rules |
 
 ---
 
@@ -425,13 +398,6 @@ Located: `~/.pi/agent/workflows/`
 
 | Workflow | Purpose |
 |----------|---------|
-| `pev.yaml` | Preview evaluation workflow |
-| `probe-devstral-solo.yaml` | Devstral solo probe |
-| `probe-m3x2.yaml` | M3x2 probe configuration |
-| `probe-turns.yaml` | Turn-based probe |
-| `recon.yaml` | Reconnaissance workflow |
-| `review-fanout.yaml` | Fan-out review workflow |
-| `ultimate-code.workflow.json` | Ultimate code workflow |
 
 ---
 

@@ -99,8 +99,9 @@ data:
         # first write fails with UndefinedTable: relation "aevum_ledger" does not exist. Measured
         # 2026-09-12 -- the DDL constant is in the module but nothing executes it on construction.
         initialize_ledger_schema(conn)
+        ledger = PostgresLedger(conn, sigchain, threading.Lock())
         engine = Engine(
-            ledger=PostgresLedger(conn, sigchain, threading.Lock()),
+            ledger=ledger,
             # THE SIGCHAIN MUST BE THE SAME OBJECT AS THE LEDGER'S. Engine.verify_sigchain() is
             # `self._sigchain.verify_chain(self._ledger.all_events())`, so an Engine built without
             # sigchain= mints its own random one and verifies every stored event against the wrong
@@ -110,7 +111,86 @@ data:
             sigchain=sigchain,
             opa_url=settings.opa_url or None,
         )
-        return create_app(engine, settings=settings)
+        app = create_app(engine, settings=settings)
+
+        # THE EVIDENCE WRITE DOOR, wired here so the future-proof layer is operational and NOT a
+        # second copy of the signing key anywhere. Until 2026-09-20 nothing on the hot path
+        # recorded an agent action into this ledger -- the only producer was bin/idp-evidence-
+        # write's per-repo unsigned hash chain, which the founder's order ("get Aevum wired for
+        # all current and future repos") explicitly rejected. This route is the ONE bridge: a
+        # caller POSTs {event_type, actor, payload} and the pod's own ledger signs and chains
+        # it. The signing key never leaves this container, which is the recorder docstring's hard
+        # rule ("one key holder, one writer").
+        import json as _json
+
+        async def evidence(scope, receive, send):
+            """ASGI: only POST /v1/evidence is admitted. Everything else is 404/405.
+
+            Appends through the SAME ledger + sigchain the engine holds, so a record written
+            here verifies against the chain the server already exposes on /v1/verify. A write
+            that cannot append (bad JSON, missing field) is a 400, never a false green.
+            """
+            if scope["type"] != "http":
+                return
+            if scope["path"] != "/v1/evidence":
+                return await _http(send, 404, {"error": "no such door"})
+            if scope["method"] != "POST":
+                return await _http(send, 405, {"error": "POST only"})
+            body = b""
+            while True:
+                message = await receive()
+                if message["type"] == "http.request":
+                    body += message.get("body", b"")
+                    if not message.get("more_body", False):
+                        break
+            try:
+                data = _json.loads(body or b"{}")
+            except ValueError as exc:
+                return await _http(send, 400, {"error": f"bad JSON: {exc}"})
+            event_type = data.get("event_type")
+            actor = data.get("actor")
+            payload = data.get("payload", {})
+            if not isinstance(event_type, str) or not event_type.strip():
+                return await _http(send, 400, {"error": "event_type is required"})
+            if not isinstance(payload, dict):
+                return await _http(send, 400, {"error": "payload must be an object"})
+            try:
+                event = ledger.append(
+                    event_type=event_type,
+                    payload=payload,
+                    actor=actor or "unknown",
+                    correlation_id=data.get("correlation_id"),
+                    causation_id=data.get("causation_id"),
+                )
+                audit_id = event.audit_id
+                if callable(audit_id):
+                    audit_id = audit_id()
+            except Exception as exc:  # noqa: BLE001 - a write that fails must say so, not 500 silently
+                return await _http(send, 500, {"error": f"append failed: {exc}"})
+            return await _http(
+                send, 200, {"ok": True, "audit_id": audit_id, "event_type": event_type}
+            )
+
+        async def _http(send, status, body):
+            raw = _json.dumps(body).encode()
+            await send({
+                "type": "http.response.start",
+                "status": status,
+                "headers": [
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(raw)).encode()),
+                ],
+            })
+            await send({"type": "http.response.body", "body": raw})
+
+        # Mount before the server's own routes, so /v1/evidence resolves to this writer and not
+        # to a 404 from the stock app.
+        async def _wrapped(scope, receive, send):
+            if scope.get("type") == "http" and scope.get("path") == "/v1/evidence":
+                return await evidence(scope, receive, send)
+            await app(scope, receive, send)
+
+        return _wrapped
 ---
 apiVersion: v1
 kind: ConfigMap

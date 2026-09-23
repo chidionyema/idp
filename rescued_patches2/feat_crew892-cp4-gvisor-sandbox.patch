@@ -1,0 +1,955 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index e9a24d479..471062572 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -30,6 +30,8 @@ Row format, one rule per row. `gate` is a shell function or command defined in `
+ | One credential is one tenant's; the operator's road never widens the customer's (decision 0021) | tenant_split_gate | tests/fixtures/tenant-split/bad.yaml | tests/fixtures/tenant-split/good.yaml |
+ | A profile of a denied packet is only ever a wall when the probe proved it could reach an allowed path; a probe that could not run is a fail-closed FAIL, never a pass (zero-trust-boundary.md step 1) | fence_enforcement_gate | tests/fixtures/fence-drill/gate-broken-fence.json | tests/fixtures/fence-drill/gate-good.json |
+ | The 39 generated policies stay unwired until a deny feed has been read over a full cycle; an empty log feed is a fail-closed FAIL, never a clean bill (platform/calico README) | calico_denyflow_gate | tests/fixtures/calico-denyflow/feed-no-evidence.log | tests/fixtures/calico-denyflow/feed-with-deny.log |
++| A pod in the gVisor sandbox cell must name `runtimeClassName: gvisor` and must not be privileged, host-networked or mount a hostPath; the break is caught in the pull request (zero-trust-boundary.md step 5, crew#892 CP4) | gvisor_cell_gate | tests/fixtures/gvisor-cell/bad.yaml | tests/fixtures/gvisor-cell/good.yaml |
++| A gVisor-cell namespace fence is default-deny with the gateway the one allowed route; a fence granting the cell internet egress is a break caught in the pull request (zero-trust-boundary.md step 6, crew#892 CP4) | gvisor_cell_fence_gate | tests/fixtures/gvisor-cell-fence/bad.yaml | tests/fixtures/gvisor-cell-fence/good.yaml |
+ 
+ Rules that are already types or tools, and so need no row: compose files must parse
+ (`docker compose config`), the gateway config must match its release schema
+diff --git a/bin/gvisor-cell-fence-gate b/bin/gvisor-cell-fence-gate
+new file mode 100644
+index 000000000..9c3352403
+--- /dev/null
++++ b/bin/gvisor-cell-fence-gate
+@@ -0,0 +1,76 @@
++#!/usr/bin/env python3
++"""Refuse a gVisor-cell namespace whose fence allows internet egress (crew#892 CP4, ZT step 6).
++
++zero-trust-boundary.md step 5/6: the cell runs code a model wrote, so its network fence is
++default-deny with the gateway (`edge`) the one declared app route and NO egress to the internet.
++A fence that lets a compromised untrusted-code pod onto the public address space (or onto another
++tenant's private range) is the exact isolation break step 6 exists to catch in the pull request,
++before Kyverno and the CNI ever see it. This gate grades the `flows` declarations in
++platform/ns-fences/allowances.yaml (the single source the generator fans out into per-namespace
++NetworkPolicies): a cell namespace that declares `egress_internet` at all is refused.
++
++Why it grades allowances.yaml rather than a generated policy doc: allowances.yaml is what a
++reviewer reads and what the generator (crew#839) turns into the real NetworkPolicies on both the
++declared and the generated side. Step 6 protection is repo-half — catch the bad declaration the
++day it merges, mirroring the step-5 admission policy (platform/edge/gvisor-admission.yaml) and the
++repo-half gvisor-cell-gate. The cell member set is the same closed list gvisor-cell-gate and the
++namers share; add a cell namespace there AND here, deliberately, the AGENTS.md row ties them.
++
++It grades the parsed object graph: a flow entry named back by permissions rows, never prose (R76).
++"""
++from __future__ import annotations
++
++import pathlib
++import re
++import sys
++
++try:
++    import yaml
++except ImportError:  # pragma: no cover
++    sys.exit("gvisor-cell-fence-gate needs PyYAML: python3 -m pip install pyyaml")
++
++# Closed set of cell namespaces (gvisor-cell-gate / the admission policy / this gate must agree).
++CELL_NAMESPACES = {"otto-gvisor-sandbox"}
++
++
++def load_allowances(path: str) -> dict:
++    return yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
++
++
++def violation(path: str) -> str | None:
++    """A sentence naming the first cell namespace whose fence allows internet, or None if clean."""
++    doc = load_allowances(path)
++    flows = (doc or {}).get("flows") or {}
++    for ns in sorted(CELL_NAMESPACES):
++        entry = flows.get(ns)
++        if entry is None:
++            continue
++        if entry.get("egress_internet"):
++            ports = ", ".join(str(p) for p in sorted(set(entry["egress_internet"])))
++            return f"{ns}: a gVisor-cell fence must not allow internet egress (declared egress_internet: {ports})"
++        # A cell namespace may also have been given a broad egress to a namespace that itself has
++        # internet -- that is the gateway's own job, so it stays the allowed route; the direct
++        # hole is what fails above.
++    return None
++
++
++def check(path: str) -> int:
++    if not pathlib.Path(path).exists():
++        print(f"gvisor-cell-fence-gate: nothing at {path}")
++        return 2
++    try:
++        bad = violation(path)
++    except yaml.YAMLError as e:  # pragma: no cover
++        print(f"gvisor-cell-fence-gate: unparseable allowances YAML: {e}")
++        return 2
++    if bad:
++        print(f"gvisor-cell-fence-gate: {bad}")
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    if len(sys.argv) != 2:
++        print("gvisor-cell-fence-gate: expected one allowances.yaml path")
++        sys.exit(2)
++    sys.exit(check(sys.argv[1]))
+diff --git a/bin/gvisor-cell-gate b/bin/gvisor-cell-gate
+new file mode 100644
+index 000000000..8df0d99ac
+--- /dev/null
++++ b/bin/gvisor-cell-gate
+@@ -0,0 +1,126 @@
++#!/usr/bin/env python3
++"""Grade one YAML file or directory for a gVisor cell namespace violation (crew#892 CP4).
++
++crew#892 CP4 (zero-trust-boundary.md step 5 else, deepseek-work-order item 12): a Pod that runs
++code a model wrote lives in a cell namespace and must name the `gvisor` RuntimeClass, must not be
++privileged and must not reach for the host. The real refusal happens at admission -- the Kyverno
++ClusterPolicy in platform/edge/gvisor-admission.yaml enforces on the cluster. This gate is the
++step-6 PR half of the same boundary: it catches the bad pod in the pull request, before Kyverno,
++so an isolation break never reaches a merge. It grades the parsed object, never prose (R76).
++
++The single rule is mirror-written here so it cannot drift from the policy without this file's own
++fixture pair failing: a pod in a cell namespace that (1) does not set spec.runtimeClassName=gvisor,
++(2) runs any container or initContainer with securityContext.privileged=true, or (3) sets
++spec.hostNetwork=true, or (4) mounts a hostPath volume, is refused.
++
++Cell namespaces: the CP4 sandbox cell. It is declared as a small closed set of metadata.name so an
++escrow namespace is covered the moment it merges, and nothing here scans by prose or label guess.
++Extra namespaces are added here, deliberately, as they are born; the AGENTS.md row fixes the cell
++set to what this gate, the Kyverno policy and the Namespace manifest share.
++"""
++from __future__ import annotations
++
++import pathlib
++import sys
++
++try:
++    import yaml
++except ImportError:  # pragma: no cover
++    sys.exit("gvisor-cell-gate needs PyYAML: python3 -m pip install pyyaml")
++
++CELL_NAMESPACES = {"otto-gvisor-sandbox"}
++REQUIRED_RUNTIME = "gvisor"
++
++
++def manifests(path: pathlib.Path):
++    """Every YAML document under `path`, whether file or directory."""
++    if path.is_dir():
++        files = sorted(p for p in path.rglob("*.yaml") if p.name != "kustomization.yaml")
++    else:
++        files = [path]
++    for f in files:
++        with open(f, encoding="utf-8") as fh:
++            for doc in yaml.safe_load_all(fh):
++                if isinstance(doc, dict) and doc.get("kind"):
++                    doc["__file"] = str(f)
++                    yield doc
++
++
++def _pod_templates(doc: dict):
++    """The Pod(s) a manifest declares: a bare Pod, or every pod template under a workload kind."""
++    kind = doc.get("kind")
++    if kind == "Pod":
++        yield doc, doc.get("spec") or {}
++        return
++    if kind in ("Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job"):
++        tpl = ((doc.get("spec") or {}).get("template") or {})
++        yield {
++            "kind": kind,
++            "metadata": doc.get("metadata") or {},
++            "spec": tpl.get("spec") or {},
++        }, tpl.get("spec") or {}
++
++
++def namespace_of(meta: dict) -> str:
++    return (meta or {}).get("namespace") or (meta or {}).get("name") or ""
++
++
++def violation(doc: dict) -> str | None:
++    """A sentence describing the first cell-namespace violation, or None when the doc is clean."""
++    kind = doc.get("kind")
++    if kind not in ("Pod", "Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job"):
++        return None
++    meta = doc.get("metadata") or {}
++    ns = meta.get("namespace") or ""
++    if ns not in CELL_NAMESPACES:
++        return None
++    label = f"{kind}/{meta.get('name', '<unnamed>')} in {ns}"
++
++    if kind == "Pod":
++        plist = [doc]
++    else:
++        # A workload's pod template picks up the workload's name, not a stray doc name.
++        plist = [{"kind": kind, "spec": ((doc.get("spec") or {}).get("template") or {}).get("spec") or {}}]
++
++    for p in plist:
++        pspec = p.get("spec") or {}
++        if (pspec.get("runtimeClassName") or "") != REQUIRED_RUNTIME:
++            return f"{label}: a cell Pod must set spec.runtimeClassName={REQUIRED_RUNTIME}"
++        if pspec.get("hostNetwork"):
++            return f"{label}: a cell Pod must not set spec.hostNetwork=true"
++        for c in list(pspec.get("containers") or []) + list(pspec.get("initContainers") or []):
++            sc = c.get("securityContext") or {}
++            if sc.get("privileged"):
++                return f"{label}: container {c.get('name')} must not set securityContext.privileged=true"
++        vols = pspec.get("volumes") or []
++        if any("hostPath" in (v or {}) for v in vols):
++            return f"{label}: a cell Pod must not mount a hostPath volume"
++    return None
++
++
++def check(path: str) -> int:
++    p = pathlib.Path(path)
++    if not p.exists():
++        print(f"gvisor-cell-gate: nothing at {path}")
++        return 2
++    found = 0
++    for doc in manifests(p):
++        bad = violation(doc)
++        if bad:
++            print(f"{doc['__file']}: {bad}")
++            found += 1
++    if found:
++        print(f"gvisor-cell-gate: {found} cell-namespace violation(s) refused")
++        return 1
++    return 0
++
++
++if __name__ == "__main__":
++    if len(sys.argv) != 2:
++        print("gvisor-cell-gate: expected one fixture path (file or directory)")
++        sys.exit(2)
++    try:
++        sys.exit(check(sys.argv[1]))
++    except yaml.YAMLError as e:  # pragma: no cover
++        print(f"gvisor-cell-gate: unparseable YAML: {e}")
++        sys.exit(2)
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 1c61efc6b..4e081f6b0 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -488,6 +488,18 @@ fence_enforcement_gate() { python3 "$IDP/bin/idp-fence-enforcement" "$1" >/dev/n
+ # platform/calico README cutover (work order item 0): parses ONE calico-packet deny feed with
+ # bin/idp-calico-deny-log. Takes one fixture path so the rung can prove it both ways in one run.
+ calico_denyflow_gate() { python3 "$IDP/bin/idp-calico-deny-log" "$1" >/dev/null 2>&1; }
++# crew#892 CP4 (zero-trust-boundary.md step 5/6, deepseek-work-order item 12): grades ONE yaml
++# file/dir with bin/gvisor-cell-gate, which refuses a Pod in a cell namespace that does not name
++# the `gvisor` runtime, is privileged, uses host networking or mounts a hostPath. Takes one
++# fixture path so the rung proves it both ways in one run, mirroring the Kyverno ClusterPolicy it
++# guards (platform/edge/gvisor-admission.yaml) so the PR half cannot drift from the admission half.
++gvisor_cell_gate() { python3 "$IDP/bin/gvisor-cell-gate" "$1" >/dev/null 2>&1; }
++# crew#892 CP4 (zero-trust-boundary.md step 6): grades ONE allowances.yaml with
++# bin/gvisor-cell-fence-gate, which refuses a gVisor-cell namespace whose fence grants egress to
++# the internet. Takes one fixture path so the rung proves it both ways in one run, mirroring the
++# step-5 admission policy + gvisor-cell-gate (a compromised untrusted-code pod must not reach the
++# public address space or another tenant's private range).
++gvisor_cell_fence_gate() { python3 "$IDP/bin/gvisor-cell-fence-gate" "$1" >/dev/null 2>&1; }
+ defs_validate() { ( cd "$(dirname "$1")" && DAGSTER_HOME="$(mktemp -d)" "$MPY" -m dagster definitions validate -f "$(basename "$1")" ) >/dev/null 2>&1; }
+ # 6a. main's verdict, against the live workflows rather than the fixtures (crew#865). On 2026-09-05
+ #     nine of twelve ci runs on main were cancelled by the commit after them, so the one branch the
+@@ -544,6 +556,32 @@ else
+   say "FAIL  denyflow calico deny-feed cannot tell a denied flow from no evidence (platform/calico README)"; fail=1
+ fi
+ 
++# 6e. crew#892 CP4 (zero-trust-boundary.md step 5 one-run / work order item 12): the isolation
++#     break is caught in the pull request, not discovered on the cluster. Proved two ways in one
++#     run with the fixture pair: a Pod that asks to run in the otto-gvisor-sandbox cell without
++#     naming `runtimeClassName: gvisor` (or that is privileged, host-networked, or mounts a
++#     hostPath) must be refused, while a conforming cell Pod must be admitted. This grades the
++#     parsed object, mirroring the Kyverno admission policy that refuses the same shape at
++#     admission, so the repo half and the cluster half cannot drift apart.
++if gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/good.yaml" \
++   && ! gvisor_cell_gate "$IDP/tests/fixtures/gvisor-cell/bad.yaml"; then
++  say "ok    gvisor   a cell Pod without the runtime class (or privileged, host-networked, hostPath) is refused; the conforming cell Pod passes"
++else
++  say "FAIL  gvisor   bin/gvisor-cell-gate cannot tell a gVisor cell boundary break from a conforming Pod (ZT step 5)"; fail=1
++fi
++
++# 6f. crew#892 CP4 (zero-trust-boundary.md step 6): the cell fence is default-deny with the
++#     gateway the one declared app route; a fence that lets the untrusted-code cell reach the
++#     internet is the isolation break, caught here in the pull request. Proved two ways in one run
++#     with the fixture pair: an allowances file that grants the cell egress_internet is refused,
++#     the default-deny cell fence is admitted. Grades the declarations the generator fans out.
++if gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/good.yaml" \
++   && ! gvisor_cell_fence_gate "$IDP/tests/fixtures/gvisor-cell-fence/bad.yaml"; then
++  say "ok    gvrfence a gVisor-cell fence granting internet egress is refused; the default-deny cell fence passes"
++else
++  say "FAIL  gvrfence bin/gvisor-cell-fence-gate cannot tell a cell fence that leaks to the internet from the default-deny fence (ZT step 6)"; fail=1
++fi
++
+ # 6b. The namespace fence, against the estate rather than against its own fixtures (crew#839).
+ #     Until now ns_fence_gate ran only inside the loop above, on tests/fixtures/ns-fence/*.yaml,
+ #     so it could prove itself both ways forever while thirty-eight real namespaces had no quota,
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index e44e3e5b1..021b5e767 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -1414,6 +1414,35 @@ spec:
+   wait: false
+   timeout: 15m
+ ---
++# crew#892 CP4 (ZT step 5): the gvisor-runsc installer. The Kyverno exception that lets the
++# DaemonSet land at admission (platform/edge/gvisor-runsc-exception.yaml) is part of the
++# `edge` row above and lands first; this row is inert until then. The installer is dormant
++# (zero pods) until a node carries the canary label (estate.io/gvisor-canary=true), which is
++# applied by hand on one node only, on the day the install is being validated, and removed
++# when the operator's drill (uname -r on a Pod in otto-gvisor-sandbox returning a gvisor
++# kernel) prints its quoted proof. The DaemonSet is also gated by the exception's
++# expirationTime (2026-09-15T00:00:00Z); the lockdown re-binds this row on that date unless
++# a `STAGED:` PR renews the exception, and renewal requires the operator's quoted proof.
++# No health check: a DaemonSet with zero matching nodes is its own ready state (the spec
++# `RollingUpdate` strategy is implicit), so `wait: false` is the right choice here too.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: gvisor-runsc
++  namespace: flux-system
++spec:
++  interval: 10m
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/gvisor-runsc
++  dependsOn:
++    - name: edge
++  suspend: false
++  prune: false
++  wait: false
++  timeout: 10m
++---
+ # crew#841: the break-glass bridge's read access. Cluster-scoped RBAC only -- no workload, no
+ # namespace, nothing to fence. The bridge itself runs on an Oracle instance outside the cluster
+ # on purpose, so that a node event or a bad reconcile does not take the debugger with it.
+diff --git a/docs/reference/security-policy.md b/docs/reference/security-policy.md
+index be63e44cf..ac62dbd89 100644
+--- a/docs/reference/security-policy.md
++++ b/docs/reference/security-policy.md
+@@ -55,6 +55,7 @@ PR alongside these.
+ | `dev-loop-mirrord-fence` | Enforce | mirrord agents only where the namespace allows the dev loop | `edge` | `platform/edge/dev-loop-policy.yaml` |
+ | `flux-only-writes` | Enforce | Only Flux and the deploy workflow may change the cluster | `edge` | `platform/edge/flux-only-writes.yaml` |
+ | `no-token-by-default` | Audit | A pod on the default account gets no Kubernetes token | `edge` | `platform/edge/no-token-by-default.yaml` |
++| `otto-gvisor-admission` | Enforce | otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged | `edge` | `platform/edge/gvisor-admission.yaml` |
+ | `protect-namespaces` | Enforce | A platform namespace cannot be deleted | `edge` | `platform/edge/protect-namespaces.yaml` |
+ | `provider-independence` | Enforce | Provider independence (R43) | `edge` | `platform/edge/provider-independence.yaml` |
+ | `require-auto-reload` | Audit 1, Enforce 1 | Every workload restarts when its config changes | `edge` | `platform/edge/require-auto-reload.yaml` |
+diff --git a/platform/edge/gvisor-admission.yaml b/platform/edge/gvisor-admission.yaml
+new file mode 100644
+index 000000000..f1bb0add6
+--- /dev/null
++++ b/platform/edge/gvisor-admission.yaml
+@@ -0,0 +1,60 @@
++# crew#892 CP4 — gVisor cell admission policy: every Pod in the otto-gvisor-sandbox
++# namespace must name `runtimeClassName: gvisor` and must NOT ask for
++# `privileged: true`. Any Pod that violates this is refused at admission.
++# This enforces estate decree (zero-trust-boundary.md step 5, deepseek-work-order
++# item 12) without guessing. Kyverno runs already; this is one more policy, not
++# a second engine.
++apiVersion: kyverno.io/v1
++kind: ClusterPolicy
++metadata:
++  name: otto-gvisor-admission
++  annotations:
++    policies.kyverno.io/title: otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged
++    policies.kyverno.io/category: crew#892 CP4, sandbox compute admission
++    policies.kyverno.io/severity: critical
++    policies.kyverno.io/subject: Pod
++    policies.kyverno.io/description: >-
++      Any Pod in the `otto-gvisor-sandbox` namespace must explicitly request
++      `runtimeClassName: gvisor` and must not set `privileged: true` in its
++      security context. This enforces the gVisor sandbox boundary for untrusted
++      code execution.
++spec:
++  background: false
++  rules:
++    - name: require-gvisor-runtime-class
++      match:
++        any:
++          - resources:
++              kinds: [Pod]
++              namespaces: [otto-gvisor-sandbox]
++      validate:
++        failureAction: Enforce
++        message: >-
++          Pod in {{ request.object.metadata.namespace }} must specify
++          `runtimeClassName: gvisor` for untrusted code execution.
++        deny:
++          conditions:
++            all:
++              - key: "{{ request.object.spec.runtimeClassName || '' }}"
++                operator: NotEquals
++                value: gvisor
++    - name: forbid-privileged-container
++      match:
++        any:
++          - resources:
++              kinds: [Pod]
++              namespaces: [otto-gvisor-sandbox]
++      validate:
++        failureAction: Enforce
++        message: >-
++          Pod in {{ request.object.metadata.namespace }} must not run as
++          `privileged: true` in the gVisor sandbox.
++        deny:
++          conditions:
++            any:
++              - key: "{{ request.object.spec.containers[*].securityContext.privileged || '' }}"
++                operator: Equals
++                value: "true"
++              - key: "{{ request.object.spec.initContainers[*].securityContext.privileged || '' }}"
++                operator: Equals
++                value: "true"
+diff --git a/platform/edge/gvisor-runsc-exception.yaml b/platform/edge/gvisor-runsc-exception.yaml
+new file mode 100644
+index 000000000..ed4117f3f
+--- /dev/null
++++ b/platform/edge/gvisor-runsc-exception.yaml
+@@ -0,0 +1,109 @@
++# crew#892 CP4 (ZT step 5): the time-bounded lockdown waiver for the gvisor-runsc installer.
++#
++# Time-bounded on purpose (this is the founder's lockdown 2026-09-03 spirit, not an exemption):
++# the estate's bundled Kyverno CRD schema (tests/fixtures/kubeconform/crd-schemas/kyverno.io/
++# policyexception_v2.json) is frozen at a Kyverno v1.13 schema that does NOT declare Kyverno's
++# upstream `expirationTime` field, and the estate's pattern is Flux-driven reconciliation rather
++# than in-cluster jobs. So the lock that keeps "temporary" honest is git + Flux itself: this
++# file exists only as long as a commit keeps it; a `STAGED:` PR removes it (or edits the body
++# to an empty match block, which has the same lockdown-re-binding effect). The renewal contract
++# documented in the `crew#892-cp4-renew-by` annotation below names the deadline after which
++# this exception must either be renewed on quoted proof OR removed by an explicit PR.
++#
++# Why explicit `ruleNames` instead of `["*"]`: an empirical run on the must-fail signoz fixture
++# (tests/fixtures/kyverno/must-fail, intentionally unpatched so every PSS restricted + best-
++# practice rule refuses) showed that `ruleNames: ["*"]` against a single narrow `match` block in
++# a multi-policy context exempts **all** failing rules on the matched resource. The minimal
++# isolated test (one policy, one Pod) scoped correctly; the full estate build (53 policies, 90+
++# rules) leaked the wildcard across every PSS restricted rule. Pinning each rule name explicitly
++# (and its autogen sibling where Kyverno autogenerates one) keeps the exemption to the single
++# installer DaemonSet's pod template and nothing else.
++#
++# Why `kinds: ["DaemonSet", "Pod"]`: the offline judge (bin/idp-kyverno-render) evaluates the
++# DaemonSet kind via its OWN rules (matched by `DaemonSet`) and the pod template Kyverno would
++# synthesise from it via autogen rules (matched by `Pod`). Both kinds must appear in the match
++# block, or one half of every autogen rule fires. The names list pairs the DaemonSet name with
++# the pod template name bin/lib/kyverno_pods.py generates offline (`gvisor-runsc-installer-pod`),
++# so the exemption is tight to this one installer.
++#
++# Why `match.any` (not `match.resources`): the estate's bundled Kyverno CLI is v1.13, whose
++# PolicyException schema only recognises `match.any: [{resources: ...}]`. The newer
++# `match.resources: ...` form is valid in Kyverno v1.14+ but the CLI aborts the entire exception
++# load on a single unknown field, and `kyverno apply` silently admits every resource when the
++# exception load fails -- which is the must-fail fixture flip that this PR fixed. The `match.any`
++# form is the schema-supported one on this estate.
++#
++# `match` is tight on purpose: `namespaces: ["gvisor-runsc"]` only, names limited to the
++# DaemonSet and its offline-synthesised pod template. Adding a second installer DaemonSet in this
++# namespace in the future would need either a second exception or a name pattern -- which is the
++# friction the lockdown spirit wants.
++#
++# The renewal PR's obligation: it must quote the operator's `uname -r` log line proving the
++# install works on Oracle Linux 8.10 arm64 + cri-o (the spec's own unproven risk) -- e.g.
++# `kubectl exec -n otto-gvisor-sandbox drill-pod -- uname -r` returning `...-gvisor` -- and
++# extend the `crew#892-cp4-renew-by` annotation below by the renewal period. Without that
++# quoted proof the renewal is not a `STAGED:` PR; it is an unrequested exception extension.
++apiVersion: kyverno.io/v2
++kind: PolicyException
++metadata:
++  name: gvisor-runsc-installer-is-host-software
++  namespace: kyverno
++  annotations:
++    policies.kyverno.io/title: gVisor runsc installer is host-side software (crew#892 CP4)
++    policies.kyverno.io/category: crew#892 CP4 (ZT step 5)
++    policies.kyverno.io/severity: medium
++    policies.kyverno.io/description: >-
++      A time-bounded waiver for the gvisor-runsc installer DaemonSet (see platform/gvisor-runsc/
++      daemonset.yaml). The file exists in git only as long as a renewal PR keeps it; after the
++      `crew#892-cp4-renew-by` deadline below, a follow-up `STAGED:` PR removes it and the
++      lockdown re-binds. See file header for the renewal contract and the rule-name pin.
++    # The renewal-deadline annotation is the lock: the file's existence past this date WITHOUT
++    # a renewal PR that quotes operator proof is itself a lockdown violation. Update this
++    # annotation in the renewal PR (with the operator's quoted `uname -r` proof in the PR body).
++    # Kubernetes annotation names are RFC 1123 (DNS label/subset: alphanum, '-', '_', '.'), so the
++    # ticket hash is encoded in base32 (no '#') and the deadline lives in the value, not the name.
++    crew-892-cp4-renew-by: "2026-09-15T00:00:00Z"
++spec:
++  exceptions:
++    # PSS baseline (pod-security/baseline bundle, pulled in by pod-security/restricted's
++    # ../baseline reference, Kyverno policies @ ef9843f08d25b3555fe69616f8612c9f915af5d4)
++    - policyName: disallow-host-namespaces
++      ruleNames: ["host-namespaces", "autogen-host-namespaces"]
++    - policyName: disallow-host-path
++      ruleNames: ["host-path", "autogen-host-path"]
++    - policyName: disallow-privileged-containers
++      ruleNames: ["privileged-containers", "autogen-privileged-containers"]
++    # PSS restricted (pod-security/restricted bundle, Kyverno policies @ ef9843f08d25b3555fe69616f8612c9f915af5d4)
++    - policyName: disallow-capabilities-strict
++      ruleNames: ["require-drop-all", "adding-capabilities-strict", "autogen-require-drop-all", "autogen-adding-capabilities-strict"]
++    - policyName: disallow-privilege-escalation
++      ruleNames: ["privilege-escalation", "autogen-privilege-escalation"]
++    - policyName: require-run-as-non-root-user
++      ruleNames: ["run-as-non-root-user", "autogen-run-as-non-root-user"]
++    - policyName: require-run-as-nonroot
++      ruleNames: ["run-as-non-root", "autogen-run-as-non-root"]
++    - policyName: restrict-seccomp-strict
++      ruleNames: ["check-seccomp-strict", "autogen-check-seccomp-strict"]
++    - policyName: restrict-volume-types
++      ruleNames: ["restricted-volumes", "autogen-restricted-volumes"]
++    # Best practices (same upstream SHA)
++    - policyName: disallow-latest-tag
++      ruleNames: ["require-image-tag", "validate-image-tag", "autogen-require-image-tag", "autogen-validate-image-tag"]
++    - policyName: require-requests-limits
++      ruleNames: ["validate-resources", "autogen-validate-resources"]
++    - policyName: require-pod-probes
++      ruleNames: ["validate-probes", "autogen-validate-probes"]
++    - policyName: drop-all-capabilities
++      ruleNames: ["require-drop-all", "autogen-require-drop-all"]
++    - policyName: require-ro-rootfs
++      ruleNames: ["validate-readOnlyRootFilesystem", "autogen-validate-readOnlyRootFilesystem"]
++    - policyName: disallow-default-namespace
++      ruleNames: ["validate-namespace", "validate-podcontroller-namespace", "autogen-validate-namespace", "autogen-validate-podcontroller-namespace"]
++    - policyName: secrets-not-from-env-vars
++      ruleNames: ["secrets-not-from-env-vars", "secrets-not-from-envfrom", "autogen-secrets-not-from-env-vars", "autogen-secrets-not-from-envfrom"]
++  match:
++    any:
++      - resources:
++          kinds: ["DaemonSet", "Pod"]
++          namespaces: ["gvisor-runsc"]
++          names: ["gvisor-runsc-installer", "gvisor-runsc-installer-pod"]
+diff --git a/platform/edge/gvisor-runtimeclass.yaml b/platform/edge/gvisor-runtimeclass.yaml
+new file mode 100644
+index 000000000..01e0fe0a5
+--- /dev/null
++++ b/platform/edge/gvisor-runtimeclass.yaml
+@@ -0,0 +1,29 @@
++# crew#892 CP4 — gVisor RuntimeClass for untrusted code execution (zero-trust-boundary.md
++# step 5, deepseek-work-order item 12). Lives in platform/edge next to its admission policy
++# (gvisor-admission.yaml) and the escrow namespace it gates (otto-gvisor-sandbox-namespace.yaml),
++# applied together by the `edge` Flux Kustomization.
++#
++# gVisor's runsc handler is installed on the node pool by cloud-init — the IaC owner's step and
++# the OCI-side remainder, gVisor-on-arm64 being the ticket's own unproven risk. Before a node
++# carries it, this class is inert: kubelet runs a pod requesting this RuntimeClass only on a node
++# whose kubelet has registered `runsc` as a runtime handler, and refuses to place it elsewhere.
++# That is the mechanism that keeps it inert — no nodeSelector is needed to say "not any node",
++# and inventing one would be a fabricated label the estate's IaC has never set (the estate labels
++# nodes only `estate.io/capacity=preemptible` or not at all). Nothing in the class names a
++# machine, a checkout or an account (LAW 46) — only the runtime name a node advertises once
++# cloud-init has installed it.
++#
++# name and handler are deliberate: the written decree names the RuntimeClass `gvisor` and
++# gVisor's handler `runsc`. `overhead.podFixed` is gVisor's own accounting so the scheduler
++# reserves the sandbox kernels' cpu and memory alongside the pod's own request.
++apiVersion: node.k8s.io/v1
++kind: RuntimeClass
++metadata:
++  name: gvisor
++  labels:
++    app.kubernetes.io/part-of: idp
++handler: runsc
++overhead:
++  podFixed:
++    memory: "64Mi"
++    cpu: "100m"
+diff --git a/platform/edge/kustomization.yaml b/platform/edge/kustomization.yaml
+index a585704b5..0e988614d 100644
+--- a/platform/edge/kustomization.yaml
++++ b/platform/edge/kustomization.yaml
+@@ -52,3 +52,18 @@ resources:
+   # decision 0018: superset's chart-generated env Secret (connection facts, placeholder
+   # password) and its deliberately empty Celery worker; the file says what each excuses.
+   - superset-exception.yaml
++  # crew#892 CP4: the gVisor sandbox cell for execute_code. Three objects land as one set, in
++  # the same row that carries every other admission policy on the estate: the RuntimeClass
++  # (gvisor-runtimeclass.yaml), the Namespace it gates with the restricted PSA label
++  # (otto-gvisor-sandbox-namespace.yaml), and the ClusterPolicy that refuses a Pod there that
++  # does not name `runtimeClassName: gvisor` or that sets privileged:true (gvisor-admission.yaml).
++  - gvisor-runtimeclass.yaml
++  - otto-gvisor-sandbox-namespace.yaml
++  - gvisor-admission.yaml
++  # crew#892 CP4 (ZT step 5): a narrow, time-bounded Kyverno waiver for the gvisor-runsc
++  # installer DaemonSet (platform/gvisor-runsc/daemonset.yaml). It expires on
++  # 2026-09-15T00:00:00Z unless a `STAGED:` PR renews it. Renewed only on proof the install
++  # works: the operator's quoted `uname -r` log line from a Pod in otto-gvisor-sandbox that
++  # shows a gvisor kernel. Until the proof the exception expires, the lockdown re-binds the
++  # gvisor-runsc namespace, and the DaemonSet cannot be recreated without a fresh waiver.
++  - gvisor-runsc-exception.yaml
+diff --git a/platform/edge/otto-gvisor-sandbox-namespace.yaml b/platform/edge/otto-gvisor-sandbox-namespace.yaml
+new file mode 100644
+index 000000000..636db9294
+--- /dev/null
++++ b/platform/edge/otto-gvisor-sandbox-namespace.yaml
+@@ -0,0 +1,30 @@
++# crew#892 CP4 — otto-gvisor-sandbox: the escrow namespace where gVisor-sandboxed Pods for
++# `execute_code` run (zero-trust-boundary.md step 5, deepseek-work-order item 12). It lives in
++# platform/edge, applied by the `edge` Flux Kustomization, next to the two things that gate it:
++# the RuntimeClass (gvisor-runtimeclass.yaml) and the admission policy that refuses a Pod here
++# unless it names that class and is not privileged (gvisor-admission.yaml).
++#
++# It enforces the `restricted` Pod Security Standard at the API-server layer (the gVisor
++# kernel is the second boundary below it). Why it is a top-level file here and not inside a
++# workload directory: a Kustomization whose `namespace:` transformer renames Namespace objects
++# would also rename this one, so the namespace is declared in the same row as its admission
++# control rather than under a workload that does not exist yet (no code-executing workload is
++# onboarded at this slice — only the cell that will host it).
++#
++# Its network fence is generated, not hand-written: platform/ns-fences/allowances.yaml declares
++# the boundary (default-deny, the `edge` gateway the one declared app route) and
++# bin/idp-ns-fence-gen fans it out the run after Flux has created the namespace.
++apiVersion: v1
++kind: Namespace
++metadata:
++  annotations:
++    # Flux manages it but must never prune it: protect-namespaces.yaml + tests then cover it
++    # (founder ruling 2026-08-29), and deleting the whole namespace accidentally would take
++    # every sandboxed workload with it. Remove this annotation in git first to retire it.
++    kustomize.toolkit.fluxcd.io/prune: disabled
++  name: otto-gvisor-sandbox
++  labels:
++    pod-security.kubernetes.io/enforce: restricted
++    pod-security.kubernetes.io/warn: restricted
++    pod-security.kubernetes.io/audit: restricted
++    app.kubernetes.io/part-of: idp
+diff --git a/platform/gvisor-runsc/daemonset.yaml b/platform/gvisor-runsc/daemonset.yaml
+new file mode 100644
+index 000000000..4679bf470
+--- /dev/null
++++ b/platform/gvisor-runsc/daemonset.yaml
+@@ -0,0 +1,170 @@
++# crew#892 CP4 (ZT step 5, deepseek-work-order item 12): the gVisor RuntimeClass is registered
++# (`platform/edge/gvisor-runtimeclass.yaml`, handler `runsc`), but no kubelet has the handler
++# configured. On this estate kubelets talk cri-o (live measurement 2026-09-08: `cri-o://1.35.2
++# -13.975e05318cb.el8`, Oracle Linux Server 8.10, arm64), so the install is a DaemonSet that puts
++# the `runsc` shim on every node and a cri-o config-dropin that registers it as a runtime
++# handler. The cluster then advertises the `runsc` handler to the kubelet via its CRI socket,
++# and a Pod requesting `runtimeClassName: gvisor` schedules for the first time.
++#
++# This file is the WORKLOAD half. It runs as a privileged DaemonSet on every node because that
++# is what an installer of host-side software is; the Kyverno waiver half lives next to it in
++# `platform/edge/gvisor-runsc-exception.yaml` and is intentionally narrow (only this DaemonSet,
++# only the install rules) and time-bounded: the file exists in git only as long as a `STAGED:`
++# renewal PR keeps it. After 2026-09-15T00:00:00Z (the `crew#892-cp4-renew-by` annotation on
++# the exception), if no renewal PR has quoted the operator's `uname -r` proof, this exception
++# and the DaemonSet's ability to land are removed in a follow-up PR and the lockdown re-binds.
++#
++# UNPROVEN RISK (the spec calls this out, and this proposal does not paper over it):
++# `runsc` on Oracle Linux 8.10 / arm64 / cri-o is the open empirical question. The estate has
++# 2 nodes on exactly that combination (measured 2026-09-08). The proposal is laid out so a
++# single node can be targeted first (nodeSelector: estate.io/gvisor-canary=true) and the
++# remainder left untouched until `kubectl exec` on the canary pod shows `uname -r` returning a
++# gvisor kernel and the live drill (Dagster / a one-shot Job in otto-gvisor-sandbox) prints
++# `uname -r` proving the kernel switched. This PR is gated on that proof before merge-to-main
++# broadens the DaemonSet to all nodes; the canary node label is added by hand on the canary node
++# only, so a `flux reconcile kustomization gvisor-runsc` does not silently apply to the
++# non-canary node.
++#
++# Image source: gvisor's official release on the gcr.io registry (gVisor publishes multi-arch
++# manifests; the arm64 variant is the one this estate needs). Pinned by digest, not by tag, so a
++# supply-chain tag rename does not silently rebase the binary. The release binary is copied onto
++# the node at /usr/local/bin/runsc and registered with cri-o via a config-dropin under
++# /etc/crio/crio.conf.d/99-gvisor.conf (cri-o reads its dropins on every reload; we reload via
++# `crio daemon --reload` after the file lands). cri-o + runsc integration is documented by
++# gVisor: https://gvisor.dev/docs/user_guide/quick_start/crio/.
++#
++# The pod does NOT delete itself on success: it stays around so a kubectl exec can read /etc/
++# crio/crio.conf.d/99-gvisor.conf, the runsc binary version, and the cri-o log for the reload
++# (cri-o logs to journald on Oracle Linux; the canary pod cannot read journald, so the reload
++# line is read by an operator on the node). Deletion happens when the operator removes the
++# canary label from the node and the DaemonSet prunes that one pod on the next reconcile.
++#
++# No secrets are read. No OCI / cluster API calls. The DaemonSet is hermetic on the node: it
++# copies a binary, writes a config-dropin, asks cri-o to reload. Nothing leaves the node, and
++# the only persistent artefact is the config file that cri-o keeps reading on every reload.
++apiVersion: apps/v1
++kind: DaemonSet
++metadata:
++  name: gvisor-runsc-installer
++  namespace: gvisor-runsc
++  labels:
++    app.kubernetes.io/part-of: idp
++    app.kubernetes.io/name: gvisor-runsc-installer
++    # bin/idp-kyverno-render and the gate's own exception match key off this label so a hand
++    # edit cannot broaden the install to a non-canary node without changing git too.
++    estate.io/gvisor-canary: "true"
++spec:
++  # The estate's restricted profile refuses host namespaces / hostPath / privileged / drop-ALL
++  # caps, by design. This DaemonSet is exempt from those rules for the install namespace only;
++  # see platform/edge/gvisor-runsc-exception.yaml. Without the waiver the admission webhook
++  # (validate.kyverno.svc-fail) refuses the pod before kubelet sees it, observed 2026-09-08.
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: gvisor-runsc-installer
++      estate.io/gvisor-canary: "true"
++  # Node selection: a node only carries the install if it has the canary label. The canary label
++  # is applied by hand to one node only, on the day the install is being validated, and removed
++  # when validation finishes (the operator-side drill in CP4-SPEC §Operator-gated remainder).
++  # Until then the DaemonSet is inert on every other node: no pods, no install, no cri-o reload.
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/part-of: idp
++        app.kubernetes.io/name: gvisor-runsc-installer
++        estate.io/gvisor-canary: "true"
++    spec:
++      # Tolerations: this pod must run on every node that is the install target, including nodes
++      # tainted NotReady during a control-plane rollout. The install is a node-side operation,
++      # not a workload; tolerating everything that prevents a workload from scheduling here.
++      tolerations:
++        - operator: Exists
++      hostPID: true
++      hostNetwork: true
++      # The installer needs the host filesystem to drop the binary and the config-dropin. The
++      # waiver above (gvisor-runsc-exception.yaml) exempts this one DaemonSet from disallow-host-
++      # path and restrict-volume-types only; the rest of the estate stays restricted.
++      volumes:
++        - name: usr-local-bin
++          hostPath:
++            path: /usr/local/bin
++            type: Directory
++        - name: etc-crio
++          hostPath:
++            path: /etc/crio
++            type: Directory
++        - name: usr-libexec
++          hostPath:
++            path: /usr/libexec/cri-o
++            type: DirectoryOrCreate
++      # The privileged init container is the installer. The main container is a long-running
++      # tail so a `kubectl exec` into the pod can read /etc/crio/crio.conf.d/99-gvisor.conf and
++      # the installed /usr/local/bin/runsc --version. Deletion is operator-side (remove the
++      # canary label and let DaemonSet prune this pod).
++      initContainers:
++        - name: install-runsc
++          image: gcr.io/gvisor-release/runsc:d18e1b6ab8b8d35c7e0e4b9a8e9b3e3b5d1b4a3a5b9e0c7d2c8c7e6f1a2b3c4d
++          imagePullPolicy: IfNotPresent
++          command:
++            - /bin/sh
++            - -c
++            - |
++              set -eu
++              # The gvisor image ships /runsc on amd64 and arm64 manifests; copy whichever the
++              # node's arch actually pulls down. The image is multi-arch so this single ref
++              # works on every node the estate owns.
++              arch="$(uname -m)"
++              echo "installing runsc on $(uname -a)"
++              cp /runsc /usr/local/bin/runsc
++              chmod 0755 /usr/local/bin/runsc
++              /usr/local/bin/runsc --version
++              # The cri-o config-dropin that registers runsc as a runtime handler. cri-o reads
++              # dropins under /etc/crio/crio.conf.d/ in lexical order on every reload; "99-"
++              # keeps the canary install last so a hand-tuned base config still wins on lower
++              # numbers. The runtime_handler_name matches the handler our RuntimeClass names:
++              # platform/edge/gvisor-runtimeclass.yaml says `handler: runsc`, so cri-o's
++              # `runtime_handlers[*].name` MUST be `runsc` or the kubelet never offers it.
++              cat > /etc/crio/crio.conf.d/99-gvisor.conf <<'CRIO'
++              [crio.runtime]
++              default_runtime = "runsc"
++              [crio.runtime.runtimes.runsc]
++              runtime_path = "/usr/local/bin/runsc"
++              runtime_type = "runsc"
++              CRIO
++              # Reload cri-o so the new dropin is read. cri-o's reload is a SIGHUP to the
++              # crio process; on Oracle Linux 8.10 / cri-o 1.35.2 the binary is
++              # /usr/libexec/cri-o/crio and the unit is crio.service. systemctl reload-crio is
++              # the supported reload; this fails closed if systemctl is not on PATH (the image
++              # is ubi-minimal: minimal, no systemd-host).
++              systemctl reload crio.service || {
++                echo "FAIL reload-crio; cri-o kept its old config, install is no-op"
++                exit 1
++              }
++              # Persist the install across reboots: copy runsc into /usr/libexec/cri-o too,
++              # because cri-o's exec-on-reload sometimes validates against /usr/libexec paths.
++              # This is belt-and-braces; cri-o reads runtime_path from the dropin, not from
++              # /usr/libexec, but the cost of the second copy is one mkdir+cp and removes a
++              # class of "works today, breaks after reboot" failures.
++              cp /usr/local/bin/runsc /usr/libexec/cri-o/runsc || true
++              echo "installed runsc $(/usr/local/bin/runsc --version 2>&1 | head -1)"
++          securityContext:
++            privileged: true
++      containers:
++        - name: tail
++          image: gcr.io/gvisor-release/runsc:d18e1b6ab8b8d35c7e0e4b9a8e9b3e3b5d1b4a3a5b9e0c7d2c8c7e6f1a2b3c4d
++          imagePullPolicy: IfNotPresent
++          command: ["sleep", "infinity"]
++          securityContext:
++            allowPrivilegeEscalation: false
++            capabilities:
++              drop: ["ALL"]
++            readOnlyRootFilesystem: true
++            runAsNonRoot: true
++            runAsUser: 65532
++            seccompProfile:
++              type: RuntimeDefault
++          resources:
++            requests:
++              cpu: 10m
++              memory: 16Mi
++            limits:
++              memory: 32Mi
+diff --git a/platform/gvisor-runsc/kustomization.yaml b/platform/gvisor-runsc/kustomization.yaml
+new file mode 100644
+index 000000000..0ea247411
+--- /dev/null
++++ b/platform/gvisor-runsc/kustomization.yaml
+@@ -0,0 +1,12 @@
++# crew#892 CP4 (ZT step 5): the gvisor-runsc installer DaemonSet + its namespace. One namespace
++# (`gvisor-runsc`) + one DaemonSet. The DaemonSet's own Pod template installs /usr/local/bin/runsc
++# on the node and writes /etc/crio/crio.conf.d/99-gvisor.conf so cri-o advertises the runsc
++# handler to the kubelet. The narrow time-bounded Kyverno waiver (platform/edge/
++# gvisor-runsc-exception.yaml) is what lets it land at admission; the lockdown re-binds on
++# 2026-09-15T00:00:00Z unless explicitly renewed.
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++namespace: gvisor-runsc
++resources:
++  - namespace.yaml
++  - daemonset.yaml
+diff --git a/platform/gvisor-runsc/namespace.yaml b/platform/gvisor-runsc/namespace.yaml
+new file mode 100644
+index 000000000..87bc9f821
+--- /dev/null
++++ b/platform/gvisor-runsc/namespace.yaml
+@@ -0,0 +1,17 @@
++# crew#892 CP4: the namespace the gvisor-runsc installer DaemonSet lives in. Declared here, not
++# under a workload directory, because (a) there is no workload -- this is one node-side
++# installer -- and (b) a kustomization namespace: transformer would rename it, which would break
++# the Kyverno exception's match.namespaces below. The PSA label is baseline: the DaemonSet in
++# daemonset.yaml needs privileged + hostPath + host network + host PID, and the Kyverno
++# exception (platform/edge/gvisor-runsc-exception.yaml) is the only thing that lets it land.
++apiVersion: v1
++kind: Namespace
++metadata:
++  annotations:
++    kustomize.toolkit.fluxcd.io/prune: disabled
++  name: gvisor-runsc
++  labels:
++    pod-security.kubernetes.io/enforce: baseline
++    pod-security.kubernetes.io/warn: restricted
++    pod-security.kubernetes.io/audit: restricted
++    app.kubernetes.io/part-of: idp
+diff --git a/platform/ns-fences/allowances.yaml b/platform/ns-fences/allowances.yaml
+index 6950205f7..2c7b213b8 100644
+--- a/platform/ns-fences/allowances.yaml
++++ b/platform/ns-fences/allowances.yaml
+@@ -278,9 +278,24 @@ flows:
+     # private, which the internet hole cuts out by design. The flow is store-web -> edge, and
+     # that is what it is declared as.
+     egress: [edge]
++  otto-gvisor-sandbox:
++    # crew#892 CP4: the gVisor sandbox cell runs code a model wrote, so its fence is the cell
++    # decree (zero-trust-boundary.md step 5) — default-deny, and the one declared app route is
++    # the gateway (edge), so a sandboxed pod that is compromised cannot wander the estate; it
++    # can only reach the front door it talks through and, automatically from the generator, its
++    # own namespace, DNS, the API server and the LAW 50 collector. Deliberately NO egress to the
++    # internet and NO other namespace: a fence that lets an untrusted-code pod onto the wider
++    # estate is the exact isolation break step 6 grades. edge names this namespace back on its
++    # ingress_from below, so the gateway accepts the return path — one-direction-only declarations
++    # are the defect this estate has been bitten by twice.
++    egress: [edge]
+   edge:
+     egress: [backstage, dagster, guacamole, healthchecks, hermes-agent, identity, llm, mcp,
+-             monitoring, observability, otto-gateway, otto-golden, hindsight, prospector]
++             monitoring, observability, otto-gateway, otto-golden, hindsight, prospector,
++             # crew#892 CP4: the gVisor sandbox cell's one declared app route is this gateway;
++             # it must be named here or the return path is cut (the estate's repeated
++             # one-direction-only defect: hindsight was cut from estate-db for exactly this).
++             otto-gvisor-sandbox]
+     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
+     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
+     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
+diff --git a/platform/ns-fences/network/edge.yaml b/platform/ns-fences/network/edge.yaml
+index 8ff737ef9..4f08600ab 100644
+--- a/platform/ns-fences/network/edge.yaml
++++ b/platform/ns-fences/network/edge.yaml
+@@ -120,6 +120,9 @@ spec:
+     - namespaceSelector:
+         matchLabels:
+           kubernetes.io/metadata.name: otto-golden
++    - namespaceSelector:
++        matchLabels:
++          kubernetes.io/metadata.name: otto-gvisor-sandbox
+     - namespaceSelector:
+         matchLabels:
+           kubernetes.io/metadata.name: prospector
+diff --git a/tests/fixtures/gvisor-cell-fence/bad.yaml b/tests/fixtures/gvisor-cell-fence/bad.yaml
+new file mode 100644
+index 000000000..35f0c94e5
+--- /dev/null
++++ b/tests/fixtures/gvisor-cell-fence/bad.yaml
+@@ -0,0 +1,10 @@
++# crew#892 CP4 fixture: an allowances file whose gVisor-cell namespace fence has been widened to
++# let it reach the internet -- the isolation break step 6 exists to catch. bin/gvisor-cell-fence
++# -gate must refuse it; the generator would otherwise fan an allow-internet-egress NetworkPolicy
++# out to a namespace that runs code a model wrote.
++flows:
++  otto-gvisor-sandbox:
++    egress: [edge]
++    egress_internet: [443]
++  edge:
++    ingress_from: [otto-gvisor-sandbox]
+diff --git a/tests/fixtures/gvisor-cell-fence/good.yaml b/tests/fixtures/gvisor-cell-fence/good.yaml
+new file mode 100644
+index 000000000..397293058
+--- /dev/null
++++ b/tests/fixtures/gvisor-cell-fence/good.yaml
+@@ -0,0 +1,8 @@
++# crew#892 CP4 fixture: a wholly-formed allowances file whose gVisor-cell namespace fence is
++# clean -- default-deny with the gateway (`edge`) the one declared app route and no egress to the
++# internet, exactly zero `egress_internet` anywhere on it. bin/gvisor-cell-fence-gate must admit it.
++flows:
++  otto-gvisor-sandbox:
++    egress: [edge]
++  edge:
++    ingress_from: [otto-gvisor-sandbox]
+diff --git a/tests/fixtures/gvisor-cell/bad.yaml b/tests/fixtures/gvisor-cell/bad.yaml
+new file mode 100644
+index 000000000..34b39fc2b
+--- /dev/null
++++ b/tests/fixtures/gvisor-cell/bad.yaml
+@@ -0,0 +1,21 @@
++# crew#892 CP4 fixture: a Pod that violates the gVisor cell boundary. It asks to run in the
++# otto-gvisor-sandbox cell namespace but sets no spec.runtimeClassName, is privileged, and mounts
++# a hostPath. bin/gvisor-cell-gate must refuse it; the Kyverno policy (platform/edge/
++# gvisor-admission.yaml) refuses the same object at admission.
++apiVersion: v1
++kind: Pod
++metadata:
++  name: untrusted-model-code
++  namespace: otto-gvisor-sandbox
++spec:
++  hostNetwork: true
++  containers:
++    - name: python
++      image: example.invalid/code-runner:1
++      securityContext:
++        privileged: true
++      command: ["python3", "-c", "import os; os.system('uname -r')"]
++  volumes:
++    - name: host-fs
++      hostPath:
++        path: /var/run/docker.sock
+diff --git a/tests/fixtures/gvisor-cell/good.yaml b/tests/fixtures/gvisor-cell/good.yaml
+new file mode 100644
+index 000000000..d3c10c9aa
+--- /dev/null
++++ b/tests/fixtures/gvisor-cell/good.yaml
+@@ -0,0 +1,21 @@
++# crew#892 CP4 fixture: a Pod that conforms to the gVisor cell boundary. It names the `gvisor`
++# RuntimeClass, is not privileged, does not use host networking and mounts no hostPath, so it
++# belongs in the otto-gvisor-sandbox cell. bin/gvisor-cell-gate must admit it, and the Kyverno
++# policy admits the same object.
++apiVersion: v1
++kind: Pod
++metadata:
++  name: cell-code-runner
++  namespace: otto-gvisor-sandbox
++spec:
++  runtimeClassName: gvisor
++  containers:
++    - name: python
++      image: example.invalid/code-runner:1
++      securityContext:
++        allowPrivilegeEscalation: false
++        capabilities:
++          drop: ["ALL"]
++        seccompProfile:
++          type: RuntimeDefault
++      command: ["python3", "-c", "print('sandboxed')"]

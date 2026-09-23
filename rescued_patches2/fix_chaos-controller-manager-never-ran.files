@@ -1,0 +1,10 @@
+AGENTS.md
+bin/idp-helmrelease-drift-coverage
+docs/gates/helmrelease-drift-is-detectable.md
+docs/how-to/onboarding/helmrelease-drift.md
+docs/tutorials/demo/helmrelease-drift.md
+platform/chaos/mesh/helmrelease.yaml
+rules.yaml
+tests/bdd/test_helmrelease_drift_coverage.py
+tests/fixtures/helmrelease-drift/bad/helmreleases.json
+tests/fixtures/helmrelease-drift/good/helmreleases.json
