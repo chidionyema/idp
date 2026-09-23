@@ -1,46 +1,14 @@
-# AGENTS.md — the rules of this repository, and the gate that reads them
+# AGENTS.md — the rules of this repository
 
 This file is the version-controlled boundary for agent work in `idp` (crew #180, CP6).
-The estate's laws live in `~/AGENTS.md`; this file holds only what is specific to this
-repo. Each row names the gate that enforces it and the two fixtures that document what the
-gate calls bad and good.
+Estate-wide laws live in `~/AGENTS.md`; this file holds only what is specific to this repo.
 
-The rung that re-ran every gate against those two fixtures on every single run was deleted on
-2026-09-04 (founder: "run each of the nine gates in the AGENTS.md table against its two
-fixtures ... this is stupid"). It graded this file's own fixtures, so no defect in the estate
-could ever fail it and no change to the estate could ever pass it differently. The gates
-themselves still run, against the repository, where a real defect can trip them.
-
-Every rule lives in `rules.yaml`, one row each: the statement, the law it serves, the argv that
-grades it, the fixture pair that proves it both ways, and the planes it is enforced on (the
-repository's CI, a session hook, the cluster's admission controller). `bin/idp-rules` is the only
-thing that reads it -- `run` grades the repository, `cluster` checks the admission policy a row
-names is on disk, `session` grades the files a hook hands it, and `render-agents-md` writes the
-table below. The table is generated: edit `rules.yaml`, not these lines. `bin/idp-ci` runs
-`bin/idp-rules render-agents-md --check`, so a row and its rule cannot drift apart.
-
-Before 2026-09-07 each rule was a bash rung in `bin/idp-ci`, a hand-written row here and, for
-several, a third copy inside `bin/policy-test` -- so a rule could be worded one way, graded
-another, and listed a third. Fifteen fixtures under `policy/fixtures` were named by no runner at
-all. Founder, the Unification Move: "Ruthless Deletion ... Do not leave them as dead code. Do not
-deprecate them. Eradicate them."
-
-The full generated rule table (85 rows) lives in `docs/policy/rules-table.md`, not here --
-it is re-graded by CI every run but no longer re-injected into agent context every turn
-(founder, 2026-09-14: it was ~32KB of the ~37KB in this file, loaded on every single turn
-for no reason). Open it when you need to look up a specific gate.
-
-Rules that are already types or tools, and so need no row: compose files must parse
-(`docker compose config`), the gateway config must match its release schema
-(`check-jsonschema`), every catalog entity must match the Backstage schema, and every
-script must pass `shellcheck`, every generator must be idempotent (two runs over one
-inventory, byte-identical), the generated catalogue must carry a relationship graph, and
-every entity reference in it must resolve to an entity something defines
-(`bin/catalog-refcheck`, proved both ways in the same run). Those run unconditionally in
-`bin/idp-ci`.
-
-Adding a rule: add a row to `rules.yaml`, add both fixtures, run `bin/idp-rules render-agents-md`
-and `bin/idp-ci`. No new rung, no new gate script.
+Rules here are enforced as types or tools, run unconditionally by `bin/idp-ci`:
+`docker compose config`, `check-jsonschema` (gateway), Backstage schema, `shellcheck`
+(scripts), idempotent generators, the catalog relationship graph, and `bin/catalog-refcheck`
+(proved both ways). No `rules.yaml` — the 100-row registry was deleted 2026-09-20 because
+a registry that re-describes rules already enforced as types is a second copy that drifts.
+A rule is a rung in `bin/idp-ci`, not a row in a table.
 
 ## Andon cord: main must be green; never more than 3 red PRs (2026-09-17)
 
@@ -66,10 +34,29 @@ IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
 IDP_WIP_GATE=0        git push   # genuine emergency past the cap
 ```
 
-**The reason these rules exist:** Five agent sessions, one after another, each
-opened new PRs while existing ones were red and while main itself was failing.
-The pile-up made it impossible to tell whether any new code was broken or was
-just inheriting the baseline. This is the structural fix.
+## Done is operating, not pushed: a PR is only the beginning of done (2026-09-20)
+
+**Estate-wide. Applies to every agent, every tool, every workflow.**
+
+A commit is not done. A push is not done. **A PR open is only the beginning of
+done.** The only thing that ends a piece of work is the thing running in
+production, proven by a real log line — not by a green CI gate, not by an HTTP
+200, not by "the diff looks right."
+
+The full path: commit → push/PR → CI green → merge to `main` →
+`build-multiarch.yml` (amd64+arm64, Trivy, cosign) → Flux image-reflector →
+`image-automation` → `deploy-when-green` → **operating in the cluster,
+evidenced by a production log line.** Steps 1–7 are "built", step 8 is
+"operating" — different facts, never reported as one another (estate law:
+built and operating are different facts; proof, not assertion). A step is
+only reached when the one before it is measured green.
+
+## Gateway-as-floor: agents emit events, the gateway writes (2026-09-17)
+
+The gateway is the only writer; agents have no write capability and emit events to it. The full
+rule — the harness it replaces (judge, PRM, Aevum, dod-guard, pareval, shadow-verify), the
+break-glass protocol, and the agent-assisted cluster revival exception — is
+`docs/reference/gateway-as-floor.md`.
 
 ## Definition of Done — a PR is the beginning, not the end (2026-09-17)
 
@@ -82,49 +69,18 @@ A task is only done when all three are true:
 
 A PR that writes to GITHUB_STEP_SUMMARY, a JSONL ledger file, a Backstage TechDocs page, or an OrbStack log is not done. It is ghost code. The next step after every merge is always: wire it into the live execution path. If wiring is blocked, say so explicitly and name the blocker — do not move on to the next build task.
 
-## Agent security protocol: how agents access secrets and the cluster (2026-09-17)
+## SPIFFE primary: never ask the founder to log in (2026-09-23)
 
-This is the answer to why agents get BLIND when they need a secret or reach for the cluster. Every future agent reads this before asking why something does not work.
+**Estate-wide. Applies to every agent, every tool, every workflow.** Full architecture in `docs/reference/security-architecture.md`; every agent reads it before acting on estate security. The rules, one line each:
 
-### Cluster access — `bin/idp-kube`
+1. An agent never asks the founder to log in (Claude Code, OCI, `gh`, any LLM proxy).
+2. An agent never pastes a static key (no `LITELLM_API_KEY`, no OCI API key on disk). The credential arrives through SPIFFE or it does not arrive.
+3. An agent never tells the founder to "run this script" for security reasons. Hook install, workstation bootstrap, JIT enrollment, device-renew all run on the agent's own clock. The one-time per-Mac `bin/idp-jit enroll` is the only founder exception.
+4. The "executive" / CEO function is a JWT-SVID audience, not a phone tap. `bin/idp-jit ask` fires the broker, the broker validates a SPIFFE-issued JWT-SVID instead of pinging a phone.
 
-The only permitted path to the cluster. Never run bare `kubectl`. Resolves the agent kubeconfig in order:
+## Hooks first: the agent installs them, not the founder (2026-09-16)
 
-1. **Cached reader kubeconfig** at `~/.local/state/idp/kubeconfig-reader` (30-min TTL) — free, no network.
-2. **JIT broker**: `bin/idp-jit identity` mints a fresh reader token. Requires `JIT_AGENT_KEY` in env. No OCI session needed.
-3. **Fallback**: `bin/idp-cloud cluster kubeconfig` — needs a live OCI session from `bin/idp-oci-whoami`.
-
-Every agent runs as **`agent-reader`** (ServiceAccount, namespace `agents`, since WJ.1 2026-09-07). Can read all pods, logs, events, CRDs. Cannot read Secrets (LAW 21) or RBAC. Cannot write anything.
-
-**Write access**: `bin/idp-jit ask --grant <action> --why "..." --ttl 10m`. Founder approves via Telegram. Exit codes: 0=granted 3=denied 4=refused 5=failed 6=timeout. Requires `JIT_AGENT_KEY`.
-
-**Break-glass**: `bin/idp-kube --break-glass "reason" <kubectl args>` runs as the founder's identity. Prints a banner, appends to `~/.local/state/idp/break-glass.log`. Requires a live OCI session.
-
-### OCI vault access — `bin/idp-cloud secret get <name>`
-
-`bin/idp-cloud` sources `bin/idp-oci-whoami`, which scans `~/.oci/sessions/` for a live session token, tries to refresh expired ones, falls back to API-key profiles. If `~/.oci/sessions/` does not exist: BLIND.
-
-`bin/idp-oci-login` populates sessions. **Interactive-only**: checks `[ -t 0 ]`, exits BLIND if stdin is not a TTY (any agent or script). The founder runs it in a terminal. In CI, GitHub OIDC exchange replaces it — no session file, no manual step.
-
-### Secret locations
-
-| Secret | Location | Access chain |
-|--------|----------|--------------|
-| OCI API private key | `estate-secrets/secrets/dev/` (SOPS age-encrypted) | `bin/idp-oci-login` in a terminal (founder only) |
-| OCI session token | `~/.oci/sessions/` | Auto-discovered by `bin/idp-oci-whoami` |
-| `JIT_AGENT_KEY` | OCI vault as `jit-agent-key` | `bin/idp-cloud secret get jit-agent-key` (needs OCI session) |
-| `bitwarden-machine` | OCI vault | `bin/idp-cloud secret get bitwarden-machine` → BWS_ACCESS_TOKEN |
-| Linear API key | **Bitwarden Secrets Manager** (not OCI vault, not estate-secrets) | OCI session → `bin/idp-cloud secret get bitwarden-machine` → `bws secret get <id>` |
-| Telegram bot tokens | Bitwarden Secrets Manager | Same chain as Linear API key |
-| `LITELLM_LAPTOP_KEY` | `estate-secrets/secrets/dev/` (SOPS) | `source estate-secrets/scripts/secret-load dev LITELLM_LAPTOP_KEY KEY` |
-
-### The home rule (ADR 0017 + ADR 0019)
-
-Machine-minted secrets → **OCI vault**. Human-supplied secrets (vendor API keys, tokens from a portal) → **Bitwarden Secrets Manager**. Never both. The bridge: External Secrets Operator + `bitwarden-sdk-server` pod, reading via `ClusterSecretStore/human-vault`, authenticated by `bitwarden-machine` in the OCI vault. ADR 0019: the founder pastes exactly one token; code handles everything downstream.
-
-## Hooks first: bin/idp-install-hooks on every clone (2026-09-16)
-
-**Mandate: On any fresh checkout, run `bin/idp-install-hooks` before your first commit.**
+**Mandate: The agent runs `bin/idp-install-hooks` itself, on its first action in any fresh checkout, before its first commit. The founder is not asked to do this.**
 
 The estate's `.githooks/pre-push` is the hook the founder shipped (crew#584 CP2) to refuse a
 push whose session-plane rules would fail in CI seven minutes later. It only fires when
@@ -145,17 +101,13 @@ Why: Raw command output can exceed 50 lines and bloat the context window. `bin/i
 
 Usage: `bin/idp-exec cat large_file.log` instead of `cat large_file.log`
 
-## Container runtime: vendor-neutral, OCI-compliant only (2026-09-17)
+## Workstation bootstrap: the agent boots its own workstation (2026-09-17)
 
-**Mandate: the estate does not depend on any specific local container runtime by name. Production is an OCI-compliant image built by `bin/build-image`, published to GHCR, reconciled by Flux to OKE. Any OCI-compliant local runtime is acceptable for laptop iteration (containerd, Docker CE, Podman, OrbStack, Rancher Desktop, Lima). Do not scaffold code, workflows, or docs that require one runtime by name.**
+**Mandate: The agent runs `bin/idp-workstation-bootstrap` itself, once, on any fresh workstation it lands on. The founder is not asked to do this.**
 
-Why (founder 2026-09-17): "we must be able to run vendor independent". A prior draft of this section mandated OrbStack only; OrbStack is itself a proprietary vendor tool with an OS-version floor (macOS Sonoma+), and mandating it re-created the vendor-lock the estate is trying to escape.
+Why (founder 2026-09-17): "our system must be able to bootstrap itself in any env". The prior bootstrap chain (`bin/idp-bootstrap-estate`) assumed the tool set was already installed and did not wire local `gh`/`kubectl` conveniences, so a fresh macbook on 2026-09-17 had age identity but no OCI config, no kubeconfig, and unauthed `gh` — which blocked Lane E (PR #3599) on a laptop-only credential gap. This script closes Level 0 (portable tool install per OS family) and Level 3 (local `gh auth` + `~/.kube/config`) around the existing Level 2 estate bootstrap.
 
-How to apply:
-- Scripts and workflows that need a container runtime call `docker` (the OCI client name every runtime provides) via a PATH lookup, and BLIND out (LAW 38) if none is found — never install a specific runtime as a side effect.
-- Recommendations by OS are guidance, not policy: OrbStack or Docker CE on macOS, Podman or Docker CE on Linux, containerd in cluster/CI. A machine with none is a valid state; cluster ops via Flux + GH Actions do not need a local runtime.
-- `bin/build-image` is the only sanctioned image build path (R24: multi-arch amd64+arm64, refuses single-arch pushes). It uses `docker buildx` from any OCI runtime on PATH.
-- Any future "install runtime X" script belongs in personal dotfiles, not the estate — the estate has no runtime-install responsibility.
+The one hand a person still gives is the age identity restore (iCloud Keychain / paper / hardware key); this script refuses to proceed if `SOPS_AGE_KEY_FILE` is not readable.
 
 ## The estate twin: ask the graph, not the cluster (2026-09-12)
 
@@ -169,6 +121,22 @@ the default, not a failure; `stranded` is not serving. Full spec, rules and proo
 A question about estate state is one `mcp__estate__*` call, never a shell recon. A state-changing
 tool is two calls (propose, execute), execute refusing on a stale state hash. Extend `mcp/`; never
 add a second server. Full text: `docs/decisions/0006-the-platform-answers-for-itself-over-one-mcp.md`.
+
+### The tools, and how to call them when the door is shut
+
+`mcp/plugins/` exposes `get_estate_state`, `get_workload_state(app)`, `get_workload_logs(app, tail)`,
+`ask_holmes(q)`, `get_catalog_drift(rule)`, `recall`, and the propose/execute pairs. When
+`bin/idp-mcp-door` BLINDs on an unset `MCP_GATEWAY_KEY`, the plugin functions run against the
+local store — still one query, not a recon sweep. **When a peer's state is unknown, ask the peer**
+(the crew board), never their transcript: `~/.claude/projects/*.jsonl` records what a session
+believed, including beliefs it later corrected. Full text, with the 2026-09-19 incident that paid
+for it: `docs/reference/platform-queries.md`.
+
+## Zero-trust agent cluster access (WJ.1, 2026-09-17)
+
+Agents get **read-only** cluster access through the JIT broker — no OCI login, no kubeconfig paste:
+`bin/idp-kube get pods -n <namespace>`. Full path, provisioning, failure modes and the OTel
+injection exclusion that must never be removed: `docs/reference/agent-identity.md`.
 
 ## Living policy (crew#219 R38): the block below is code, not prose
 
@@ -195,7 +163,7 @@ usual env override (`sb config --lint` lists them).
 ```toml
 [capabilities]
 nondestructive = ["fs_commit", "fs_read", "git_status", "tool_result", "doc_commit", "budget_refill"]
-destructive = ["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind"]
+destructive = ["fs_delete", "git_push_force", "db_drop", "service_destroy", "rewind", "provision_paid_compute"]
 engine = ["fs_read", "fs_commit", "git_status", "tool_result", "doc_commit"]
 intake = ["fs_commit", "doc_commit"]
 shadow = ["fs_read"]
@@ -242,11 +210,59 @@ pending_owner_required_on = ["main"]
 "blind.halt_after_min" = 5
 "alerts.digest_over_per_hour" = 50
 "spiffe.max_missed_heartbeats" = 3
+
+[jev]
+default_confidence_floor = 0.7
+timeout_ms = 2000
+escalate_on_timeout = true
+model = "jev-1.13.0"
+force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
 
+## Jev first: bounded decisions go through the layer (ADR 0030)
+
+Before any bounded decision, call `jev_choice`, `jev_score`, or `jev_noul` via the MCP plugin.
+
+**What counts as a bounded decision:**
+- Tool selection when multiple tools could apply
+- Retry vs. escalate vs. abandon
+- Risk assessment (safe / warn / block)
+- Pass/fail judgment on a test or gate
+- Confidence thresholds (proceed / pause / ask)
+
+**Exempt (not bounded):**
+- Text generation (summaries, code, prose)
+- File reads and searches
+- Pure retrieval with no judgment attached
+
+**Enforcement:** The Stop-hook `jev_decision_gate.py` blocks turns that skip Jev for expensive
+operations (tool calls over the cost threshold, destructive ops, consensus triggers). The hook
+checks the turn's tool-call log; if a bounded decision was made without a preceding `jev_*` call,
+the turn is refused.
+
+**Rationale:** 193x faster, 444x cheaper than frontier-model deliberation, and every decision
+lands in the `jev_decisions` table with confidence, latency, and the input hash — an audit trail
+that survives the context window.
+
+References: ADR `docs/decisions/0030-jevlayer-unified-confidence-and-decision-service.md`,
+MCP plugin `mcp/plugins/jev.py`, policy config `[jev]` section above.
 
 THE EMPIRICAL PROOF RULE binds here too, verbatim, inherited from `~/AGENTS.md` — not repeated
 below to avoid loading the same block twice in one context (measured duplicate, 2026-09-14).
+
+## Three Planes: composition target (2026-09-22)
+
+The estate's 480+ capability surfaces (per `docs/synthesis/2026-09-20-full-capability-map.md` extended 2026-09-22) compose into three independent planes that run as concentric filters, not a linear pipeline:
+
+1. **Generative Swarm** (Inference & Memory) — agents think, route, and collaborate. ZeroEdge (cost/routing optimizer, off unless `ZEROEDGE_URL` set, fails open), LiteLLM (`platform/llm/config.yaml`), TTCS CRDT (`packages/idp_concurrency/src/idp_concurrency/ttcs/`, built unwired), Tuple Space (proposed), Efficiency Gateway's eight mechanisms (CacheGuardian, TokenKiller, MCPAdapter, TokenBudgetOrchestrator, SoLPi, DynamicContextPruning, CompactionManager, ToolPairValidator), growmos, .aevum/local.jsonl, Jev (decision service), the four forcing lints in `packages/idp_concurrency/lint/` (`no_ad_hoc`, `no_locks`, `no_unbounded`, `no_untraced`). Frictionless, stochastic, purely in-memory. Nothing here touches GitHub.
+
+2. **Adversarial Crucible** (Semantic Evaluation) — AI evaluates AI. JudgeWorker (four-dim transcript scoring: `tool_f1` 0.35, `arg_validity` 0.30, `result_utilization` 0.20, `error_recovery` 0.15), JudgeDriftSentinel (JS-divergence vs baseline, threshold 0.15), GoldSetCalibrator (Cohen's kappa bands), ParEvalLayer (paired A/B + bootstrap CI + coverage_score), AgentCircuitBreaker (real-time loop detection on turns 3-4), RedTeamLoop with PayloadGenerator / Mutator / Catalog / Validator / promoter / Go proxy (`bin/negative-constraints-proxy/main.go`), **`bin/idp-reversibility-gate` and `verify_inverse` at `platform/executor/daemon.py:1178` (the reverifier)**, `probes/mutations.py` (graduated probes, UNPROVEN until 1 FAIL + 1 PASS). Runs asynchronously over the Swarm's output. Failures kick back as tuples, not PRs.
+
+3. **Physics Engine** (Isolation & Proof) — cold, mathematical boundary, no LLMs. Kronos rings 0-4 (Firecracker ring0 built in a separate repo, **NOT operating on this machine**; the honest boundary today is `ISOLATION_KIND = "temp-tree-scrubbed-env"` at `sovereign/verifier.py:85`), gVisor/runsc + 12 hermes-agent arenas, `sovereign/verifier.py` four-stage gauntlet (compile / sqlite / Z3 / pytest in temp tree), Sigstore / Ed25519 attestation (fallback when `cosign` absent), Aevum (Ed25519 + ML-DSA-65 dual-signed COSE_Sign1, RFC 3161 timestamps, hash-chained), Flux + Kyverno admission.
+
+**Highest-priority unsealed gap (2026-09-22): the Universal Write Boundary.** The cluster engine writes straight to disk via `open().write()` at `platform/idp_agent/engine.py:311`, bypassing every gate in Plane 3. The laptop executor daemon mediates via the AF_UNIX socket — they meet only at `git push`, which is *after* attestation, not before. Closing this means: the cluster engine emits via the gateway, the daemon mediates via the existing mutation flow (`propose_patch` → `verify` → `seal` → `admit`), and no agent write reaches disk without gauntlet + Sigstore seal. Implementation requires verified premises (actual CI failure breakdown, actual Dockerfile state, actual BDD test names) and **must not** override existing gates (`.githooks/pre-push` Andon cord, `[invariants]` block above, JSON-lines protocol on the daemon socket).
+
+**Pre-condition for any Three Planes wiring:** the Andon Cord rule at the top of this file is non-negotiable. Main must be green by fixing failures, not by quarantining them as `xfail`. Quarantining failing tests as expected-failures to clear the gate is exactly the pattern the Andon Cord exists to prevent — it returns the estate to the pre-Andon state where the gate is theatre. Every BDD failure is a real signal; fixing it is the only path to green.
 
 <!-- growmos:start — managed by `growmos integrate`; edits inside this block will be overwritten -->
 ## growmos — living knowledge graph (shared memory for humans + agents)
