@@ -1,0 +1,80 @@
+{# deploy-observatory page -- three concentric rings, one per plane.
+   Zero chrome. The rings ARE the page. Soundtrack note per ring at the top.
+   Inner ring = Jev (decisions), middle = judges, outer = Physics (seals). #}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deploy observatory</title>
+<style>
+  :root {
+    --bg: #06080d; --ink: #d6dee8; --dim: #5a6577; --line: #1a2030;
+    --ring1: #c89a3a;   /* jev: amber - thought */
+    --ring2: #7da4d6;   /* judges: blue - evaluation */
+    --ring3: #54c08a;   /* physics: green - proof */
+    --fail: #d05656; --pass: #54c08a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+               background: var(--bg); color: var(--ink);
+               font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+               font-size: 13px; line-height: 1.4; }
+  body { display: grid; grid-template-rows: auto 1fr; gap: 16px;
+         padding: 24px 32px; }
+  h1 { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+       font-weight: 600; color: var(--dim); }
+  .legend { display: flex; gap: 32px; font-size: 11px; color: var(--dim);
+            letter-spacing: 0.04em; }
+  .legend span::before { content: ""; display: inline-block; width: 8px;
+                          height: 8px; border-radius: 50%; margin-right: 6px;
+                          vertical-align: 1px; }
+  .legend .jev::before    { background: var(--ring1); }
+  .legend .judges::before { background: var(--ring2); }
+  .legend .physics::before{ background: var(--ring3); }
+
+  svg { width: 100%; height: 100%; }
+  .ring-jev     { stroke: var(--ring1); fill: none; stroke-width: 0.8;
+                  opacity: 0.5; }
+  .ring-judges  { stroke: var(--ring2); fill: none; stroke-width: 0.8;
+                  opacity: 0.5; }
+  .ring-physics { stroke: var(--ring3); fill: none; stroke-width: 0.8;
+                  opacity: 0.5; }
+  .star         { stroke-linecap: round; }
+  .star.pass    { fill: var(--pass); stroke: var(--pass); }
+  .star.fail    { fill: var(--fail); stroke: var(--fail); }
+  .star.escalate{ fill: var(--ring1); stroke: var(--ring1); }
+  .label-jev    { fill: var(--ring1); font-size: 9px; letter-spacing: 0.08em;
+                  text-transform: uppercase; font-weight: 600; }
+  .label-judges { fill: var(--ring2); font-size: 9px; letter-spacing: 0.08em;
+                  text-transform: uppercase; font-weight: 600; }
+  .label-physics{ fill: var(--ring3); font-size: 9px; letter-spacing: 0.08em;
+                  text-transform: uppercase; font-weight: 600; }
+  .label-empty  { fill: var(--dim); font-size: 11px; text-anchor: middle; }
+</style>
+</head>
+<body>
+<h1>observatory — three planes</h1>
+<div class="legend">
+  <span class="jev">ring 1: jev decisions</span>
+  <span class="judges">ring 2: judges</span>
+  <span class="physics">ring 3: physics seals</span>
+</div>
+
+<svg viewBox="0 0 1200 640" preserveAspectRatio="xMidYMid meet">
+  <g transform="translate(600 320)">
+    <!-- Three concentric rings, outermost = physics, innermost = jev -->
+    <circle r="280" class="ring-physics"/>
+    <circle r="200" class="ring-judges"/>
+    <circle r="120" class="ring-jev"/>
+
+    <!-- Ring labels at 12 o'clock outside -->
+    <text x="0" y="-296" text-anchor="middle" class="label-physics">physics</text>
+    <text x="0" y="-216" text-anchor="middle" class="label-judges">judges</text>
+    <text x="0" y="-136" text-anchor="middle" class="label-jev">jev</text>
+
+    {{STARS_SVG}}
+
+    {{EMPTY_LABEL}}
+  </g>
+</svg>
+</body>
+</html>
