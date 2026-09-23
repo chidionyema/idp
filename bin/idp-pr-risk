@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""idp-pr-risk -- score a change BEFORE it is pushed: will this be rejected?
+
+THE LAYER THIS IS. Every other PR check in this estate runs after the branch exists and CI
+has already spent minutes on it. This one answers the author's actual question, from the
+diff, with no CI run and no pull request opened. It ADVISES; it refuses nothing. The refusal
+at push time is `bin/idp-pr-risk-gate`, and a decision to override it is a person's.
+
+    bin/idp-pr-risk                 # advise: tier + the conditions that drove it
+    bin/idp-pr-risk --json          # machine-readable, for a hook or an agent
+    bin/idp-pr-risk --base main     # score against another base ref
+
+EXIT CODES. 0 for low/medium, 1 for high. `--json` keeps the same codes, so a caller can
+read the tier AND branch on the exit status without parsing prose.
+
+FAIL-OPEN, STATED PLAINLY. The conditions live in `jev-pr-risk.yml`; if it is missing or
+unreadable the tool says so and returns tier `low` with `config_error` set -- a gate that
+cannot read its own rules is not evidence the change is risky, so it does not manufacture a
+refusal. The same is true of an unreachable decision layer: the conditions it could not
+answer count as LIKELY (a reason to look), never as cleared.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import json
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+JEV = REPO / "mcp" / "plugins" / "jev.py"
+
+
+def _load_jev():
+    """Load jev.py by path, the way every sibling MCP plugin is loaded (see idp-affected)."""
+    spec = importlib.util.spec_from_file_location("idp_jev_pr_risk", JEV)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {JEV}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["idp_jev_pr_risk"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="pre-submission PR risk")
+    ap.add_argument("--repo", default=str(REPO))
+    ap.add_argument("--base", default="origin/main")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    args = ap.parse_args()
+
+    jev = _load_jev()
+    result = jev.jev_pr_risk(args.repo, args.base)
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+        return 1 if result["tier"] == jev.PR_RISK_BLOCK_TIER else 0
+
+    if result.get("config_error"):
+        print(
+            f"idp-pr-risk: config: {result['config_error']} (advising low)",
+            file=sys.stderr,
+        )
+    if result.get("diff_error"):
+        print(f"idp-pr-risk: diff: {result['diff_error']}", file=sys.stderr)
+    if result.get("escalated"):
+        print(
+            "idp-pr-risk: note -- a condition escalated; it counts as likely",
+            file=sys.stderr,
+        )
+
+    print(
+        f"idp-pr-risk: base={result['base']} tier={result['tier']} score={result['score']}"
+    )
+    for c in result["conditions"]:
+        mark = "LIKELY" if c["contributed"] else "clear "
+        prob = "" if c["probability"] is None else f" P={float(c['probability']):.3f}"
+        print(f"  {mark} (w={c['weight']}) {c['name']}{prob}")
+        if c["contributed"]:
+            print(f"         {c['when']}")
+
+    if result["tier"] == jev.PR_RISK_BLOCK_TIER:
+        print(
+            "idp-pr-risk: HIGH -- a person should read this before it is pushed. "
+            "Override deliberately, not by habit.",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

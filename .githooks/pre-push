@@ -49,4 +49,26 @@ EOF
 fi
 
 echo "✅ idp-fast-gate: green"
+
+# ---------------------------------------------------------------------------
+# TRUNK ROUTING (advice, never a refusal).
+#
+# The dual-trunk model puts agent work on `agent-trunk`, which needs no PR, and leaves
+# `main` protected for batched review only. A push of a feature branch is CORRECT under
+# the model too -- the branch is incidental, and `agent-trunk-batch.yml` batches whatever
+# reaches agent-trunk. So this prints what trunk a push is aimed at and does not block:
+# a fence that refused every branch push would be an outage, not enforcement (LAW 38).
+#
+# The enforcement is elsewhere and is real: the ruleset on `main` (no direct push, no
+# force, no deletion), the ruleset on `agent-trunk` (no force, no deletion, linear), and
+# the gate above, which is what actually refuses a red push.
+while read -r local_ref local_sha remote_ref remote_sha; do
+	case "$remote_ref" in
+	refs/heads/main)
+		echo "⚠️  pre-push: pushing directly to main. Batch agent work to agent-trunk instead:"
+		echo "      git push origin HEAD:agent-trunk   # then agent-trunk-batch.yml opens one PR"
+		;;
+	esac
+done
+
 exit 0

@@ -665,6 +665,155 @@ def jev_affected(
 
 
 # ---------------------------------------------------------------------------
+# Pre-submission PR risk -- reject before the push, not after CI
+# ---------------------------------------------------------------------------
+
+#: The default risk config. Conditions a change is scored against before it is pushed.
+PR_RISK_CONFIG = os.environ.get("JEV_PR_RISK_CONFIG", "jev-pr-risk.yml")
+
+#: The tier that means "a person should look before this is pushed". Nothing above this
+#: exits non-zero on its own -- see the docstring for why the gate advises and the hook decides.
+PR_RISK_BLOCK_TIER = os.environ.get("JEV_PR_RISK_BLOCK_TIER", "high")
+
+
+def _risk_config(repo: str) -> tuple[dict[str, Any], str | None]:
+    """Load `<repo>/jev-pr-risk.yml`. Returns (config, reason-on-failure).
+
+    Missing or unreadable returns an empty condition set and a reason, never an exception:
+    a gate that cannot read its own rules must not be the reason a push stops -- it must say
+    what it could not check and let the caller decide (fail-open, toward human review).
+    """
+    path = os.path.join(repo, PR_RISK_CONFIG)
+    if not os.path.isfile(path):
+        return {}, f"no {PR_RISK_CONFIG} at {path}"
+    try:
+        import yaml  # noqa: PLC0415 -- lazy: the MCP door may run without PyYAML
+
+        with open(path, encoding="utf-8") as fh:
+            return (yaml.safe_load(fh) or {}), None
+    except Exception as exc:  # noqa: BLE001 -- reported, never raised into the caller
+        return {}, f"{type(exc).__name__}: {exc}"
+
+
+def jev_pr_risk(
+    repo: str,
+    base: str = "origin/main",
+    diff: str | None = None,
+) -> dict[str, Any]:
+    """Pre-submission PR risk: score a diff against declared conditions, BEFORE the push.
+
+    THE LAYER THIS FILLS. Every PR gate in the estate runs AFTER the branch exists and CI
+    has already spent minutes on it. This one answers the question the author actually has:
+    *will this be rejected?* -- from the diff, with no CI run and no PR opened. The estate
+    already has the parts that DECIDE at merge time (`bin/idp-pr-landable`, `idp-wip-gate`,
+    `idp-pr-scope-audit`); what was missing is the ADVISORY before submission, and it is the
+    same primitive as `jev_affected`: natural-language conditions, Jev-scored, fail-open.
+
+    THE CONTRACT (`<repo>/jev-pr-risk.yml`):
+
+        conditions:
+          touches-closed-files:
+            when: Does this change touch files maintainers have closed PRs on before?
+            weight: 3        # optional; how much this raises the tier (default 1)
+          policy-violation:
+            when: Does this PR violate a documented contribution policy in this repository?
+            weight: 3
+          oversized:
+            when: Is the patch size or file-type mix correlated with abandoned PRs here?
+            weight: 1
+
+    Returns {base, changed, tier, score, conditions: [{name, when, probability, weight,
+    contributed, escalated}], config_error, diff_error, escalated}.
+
+    THE DECISION RULE, stated so it can be argued with: each condition contributes its
+    probability times its weight to a score; the fraction of total weight that came back
+    likely is compared against fixed bands (low < 0.34, medium < 0.67, else high). A
+    condition with NO usable probability contributes as LIKELY, not as unlikely -- an
+    unknown is a reason to look, never a reason to relax.
+
+    WHAT THIS DOES NOT DO: it does not refuse anything. Refusal is `bin/idp-pr-risk-gate`'s
+    job at push time, and a person's job at the `high` tier. A scorer that silently blocked
+    pushes would be exactly the unaccountable gate this estate deletes.
+    """
+    config, config_error = _risk_config(repo)
+    if diff is None:
+        diff, diff_error = _changed_lines(repo, base)
+    else:
+        diff_error = None
+
+    raw = (config.get("conditions") or {}) if isinstance(config, dict) else {}
+    conditions: list[dict[str, Any]] = []
+    escalated = False
+    total_weight = 0.0
+    likely_weight = 0.0
+
+    for name, spec in raw.items():
+        spec = spec or {}
+        condition = str(spec.get("when") or "").strip()
+        if not condition:
+            continue
+        try:
+            weight = float(spec.get("weight", 1))
+        except (TypeError, ValueError):
+            weight = 1.0
+        total_weight += weight
+
+        likely = True
+        probability: float | None = None
+        try:
+            result = jev_score(
+                repo=repo,
+                layer="pr-risk",
+                decision_id=f"risk:{name}",
+                context={"diff": diff[:20000]},
+                question=condition,
+                levels=["likely", "unlikely"],
+                required_confidence=DEFAULT_FLOOR,
+            )
+            if result.get("escalated"):
+                escalated = True
+            probs = result.get("probabilities") or {}
+            probability = probs.get("likely") if isinstance(probs, dict) else None
+            # No usable probability is an unknown; for RISK, unknown counts as likely.
+            likely = True if probability is None else (float(probability) >= 0.5)
+        except Exception:  # noqa: BLE001 -- an unreachable layer means we cannot clear it
+            escalated = True
+            likely = True
+
+        if likely:
+            likely_weight += weight
+        conditions.append(
+            {
+                "name": name,
+                "when": condition,
+                "probability": probability,
+                "weight": weight,
+                "contributed": likely,
+                "escalated": escalated,
+            }
+        )
+
+    score = (likely_weight / total_weight) if total_weight else 0.0
+    if score < 0.34:
+        tier = "low"
+    elif score < 0.67:
+        tier = "medium"
+    else:
+        tier = "high"
+
+    return {
+        "base": base,
+        "changed": bool(diff.strip()),
+        "tier": tier,
+        "score": round(score, 3),
+        "conditions": conditions,
+        "config_error": config_error,
+        "diff_error": diff_error,
+        "escalated": escalated,
+    }
+
+
+# ---------------------------------------------------------------------------
 # MCP tool registration
 # ---------------------------------------------------------------------------
 
@@ -754,7 +903,15 @@ def register_mcp_tools(datasette, mcp) -> None:  # pragma: no cover - estate MCP
     ) -> dict[str, Any]:
         return jev_affected(repo, base, skip_below)
 
+    async def _jev_pr_risk(
+        repo: str,
+        base: str = "origin/main",
+        diff: str | None = None,
+    ) -> dict[str, Any]:
+        return jev_pr_risk(repo, base, diff)
+
     mcp.add_tool(_jev_choice, name="jev_choice")
     mcp.add_tool(_jev_score, name="jev_score")
     mcp.add_tool(_jev_affected, name="jev_affected")
+    mcp.add_tool(_jev_pr_risk, name="jev_pr_risk")
     mcp.add_tool(_jev_noul, name="jev_noul")
