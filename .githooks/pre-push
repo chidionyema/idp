@@ -13,11 +13,16 @@ cd "$repo_root"
 # Read-only force pushes and the WIP-gate override are out of scope for this rung --
 # the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
 # This rung only refuses the fast-gate class; everything else still flows.
-
-if [ "${IDP_FAST_GATE:-1}" = "0" ]; then
-  echo "idp-fast-gate: skipped (IDP_FAST_GATE=0)"
-  exit 0
-fi
+#
+# NO OFF SWITCH (founder, 2026-09-23). `IDP_FAST_GATE=0` used to sit here and exit 0. It was
+# used -- by this session -- to push past the rung, which is how four pushes went out in
+# nineteen minutes each revealing one more failure: a bypass that makes the gate report green
+# on a tree the gate never read is worse than no gate, because the green is believed.
+#
+# The two rules are enforced server-side instead, where no local action can skip them:
+# `bin/idp-main-green-gate` and `bin/idp-wip-gate` are wired in below, and the estate's
+# required-checks ruleset refuses on the server. A local hook is a convenience that saves a CI
+# cycle; it is never the guarantee, and it must not pretend to be one.
 
 if [ ! -x "$repo_root/bin/idp-ci" ]; then
   # No local CI script on this checkout (e.g. a partial clone). The remote is the
@@ -41,8 +46,11 @@ if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
      2) re-run IDP_CI_FAST=1 bin/idp-ci until green
      3) git push
 
-   To bypass (NOT recommended -- CI will still fail on these):
-     IDP_FAST_GATE=0 git push
+   The two rules that must never be bypassed are enforced SERVER-SIDE:
+     bin/idp-main-green-gate   refuses a push while main's last CI run is red
+     bin/idp-wip-gate          refuses a new PR past the 3-failing-PR cap
+   Their overrides are typed deliberately for genuine emergencies, and they are the
+   only overrides this hook has. This rung has none.
 
 EOF
   exit 1
