@@ -33,9 +33,101 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
+
+# CP6 spatial fast-path: when the user's intent is spatial (the one on the left,
+# the second from the right) we resolve to a sha WITHOUT calling the router.
+# This is the only path that lets a voice command name a target session without
+# the person knowing the sha. The resolver lives at lib/estate_spatial.py; the
+# live comets come from mcp/plugins/deploy_journeys.list_deploy_journeys -- the
+# same MCP plugin the board already reads, so the voice answers about the same
+# fleet the reader is looking at.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+for _p in (str(_REPO_ROOT / "lib"), str(_REPO_ROOT / "mcp" / "plugins")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import deploy_journeys as _deploy_journeys  # noqa: E402
+import estate_spatial as _spatial  # noqa: E402
+
+_SPATIAL_PATTERN = re.compile(
+    r"\b("
+    r"the\s+(?:one\s+)?(?:on|in)\s+the\s+(?:left|right|back\s+left|front\s+right)|"
+    r"(?:leftmost|rightmost|topmost|bottommost|left|right|top|bottom)|"
+    r"the\s+\d+(?:st|nd|rd|th)\s+(?:one|from\s+the\s+(?:left|right))|"
+    r"the\s+(?:first|second|third|fourth|fifth|last)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_spatial_intent(question: str) -> bool:
+    return bool(_SPATIAL_PATTERN.search(question or ""))
+
+
+def _live_comets(limit: int = 8) -> list[str]:
+    """The comets the user is looking at, oldest -> leftmost.
+
+    Falls back to last N merged journeys when the river is BLIND so the resolver
+    still has something concrete to point at. Never fabricates a sha."""
+    env = _deploy_journeys.list_deploy_journeys(limit=limit)
+    if not env.get("available"):
+        return []
+    shas = [j["sha"] for j in (env.get("journeys") or [])]
+    return list(reversed(shas))
+
+
+def spatial_fast_path(question: str) -> tuple[dict[str, Any], int] | None:
+    """If `question` is a spatial intent, resolve it without calling the LLM.
+
+    Returns None when the question is NOT spatial (the LLM path takes over).
+    Returns (envelope, status) when spatial applies:
+      - ({"answer": ..., "sha": ..., "rule": ...}, 200) when resolved
+      - ({"error": "...", "sha": None}, 200) for an honest miss
+      - ({"error": "no comets visible; ..."}, 503) when the river is BLIND
+
+    A miss is a 200, not an error: the user said something spatial but it didn't
+    resolve, and the caller can decide to fall through to the LLM or to ask the
+    user to clarify. A BLIND is a 503: the router wouldn't help here either.
+    """
+    if not _is_spatial_intent(question):
+        return None
+    comets = _live_comets()
+    resolved = _spatial.resolve(question, comets)
+    if not resolved.get("available"):
+        return (
+            {
+                "error": resolved.get("error", "spatial resolver BLIND"),
+                "sha": None,
+                "rule": "spatial-fast-path",
+            },
+            503,
+        )
+    if resolved.get("sha") is None:
+        return (
+            {
+                "error": resolved.get("error", "unresolvable spatial intent"),
+                "sha": None,
+                "rule": "spatial-fast-path",
+            },
+            200,
+        )
+    sha = resolved["sha"]
+    return (
+        {
+            "answer": f"the {resolved.get('rule', 'one')} you mean is {sha[:7]}.",
+            "sha": sha,
+            "rule": resolved.get("rule"),
+            "model": "spatial-fast-path",
+        },
+        200,
+    )
+
 
 # The whole instruction. Short on purpose: every token here is latency, and the rules that matter
 # are the four sentences at the end. Anything longer competes with the fleet summary for the
@@ -189,6 +281,15 @@ def ask(
     question = (question or "").strip()
     if not question:
         return {"error": "question is required"}, 400
+
+    # CP6: spatial intent ("the one on the left") routes without the LLM.
+    # Skipping the router for spatial phrases is the point: an LLM would
+    # either hallucinate a session id or refuse; the resolver names the
+    # real one. Falls through to the LLM path for non-spatial questions.
+    spatial = spatial_fast_path(question)
+    if spatial is not None:
+        return spatial
+
     if not router_key():
         return {
             "error": "no LITELLM_API_KEY on this deployment, so voice has no model",
@@ -297,6 +398,15 @@ def stream_ask(
     if not question:
         yield _sse("error", {"error": "question is required"})
         return
+
+    # CP6 spatial fast-path: same as ask() -- skip the LLM for spatial phrases.
+    spatial = spatial_fast_path(question)
+    if spatial is not None:
+        body, status = spatial
+        yield _sse("answer" if status == 200 else "error", body)
+        yield _sse("done", {"status": status})
+        return
+
     if not router_key():
         yield _sse(
             "error",

@@ -69,3 +69,14 @@ def test_plain_ordinal_resolves():
 def test_trailing_punctuation_ignored():
     r = spatial.resolve("the one on the left.", COMETS)
     assert r["sha"] == "sha_left"
+
+
+def test_verb_wrapped_phrases_resolve():
+    """Voice phrases arrive wrapped: 'tell the one on the left to stop',
+    'focus the 2nd from the right one'. The resolver must find the spatial
+    token WITHIN the phrase, not require exact match."""
+    assert (
+        spatial.resolve("tell the one on the left to stop", COMETS)["sha"] == "sha_left"
+    )
+    assert spatial.resolve("focus the rightmost comet", COMETS)["sha"] == "sha_right"
+    assert spatial.resolve("halt the 2nd from the right", COMETS)["sha"] == "sha_mid"

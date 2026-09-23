@@ -81,6 +81,10 @@ def resolve(intent: str, comets: Sequence[str]) -> dict:
             "rule": "rightmost",
         }
 
+    # Ordinals must run BEFORE the bare-word substring match below: a phrase
+    # like "the 2nd from the right" contains "the right" too, and the
+    # substring match would grab that and answer "rightmost" instead of the
+    # correct "second from the right".
     m = _ORIDINAL_FROM_LEFT.search(phrase)
     if m:
         n = int(m.group(1))
@@ -113,7 +117,7 @@ def resolve(intent: str, comets: Sequence[str]) -> dict:
             "error": f"{n}th from right out of range (have {len(comets)})",
         }
 
-    m = _PLAIN_ORDINAL.match(phrase)
+    m = _PLAIN_ORDINAL.search(phrase)
     if m:
         n = int(m.group(1))
         if 1 <= n <= len(comets):
@@ -128,6 +132,28 @@ def resolve(intent: str, comets: Sequence[str]) -> dict:
             "sha": None,
             "error": f"the {n}th one out of range (have {len(comets)})",
         }
+
+    # Voice phrases arrive with verb wrappers ("tell the one on the left to
+    # stop", "focus the rightmost comet"); the resolver finds the spatial
+    # token WITHIN the phrase as a last resort, after every more-specific
+    # rule above has been tried.
+    #
+    # Only multi-word candidates are matched here, never the bare words "left"
+    # / "right" / "top" / "bottom" -- those would falsely match incidental
+    # words ("halt the one on the right" would also match the "to" in "stop").
+    _LEFT_PHRASES = {"the one on the left", "leftmost", "the first", "the top one"}
+    _RIGHT_PHRASES = {"the one on the right", "rightmost", "the last", "the bottom one"}
+    for candidate in _LEFT_PHRASES:
+        if candidate in phrase:
+            return {"available": True, "sha": comets[0], "index": 0, "rule": "leftmost"}
+    for candidate in _RIGHT_PHRASES:
+        if candidate in phrase:
+            return {
+                "available": True,
+                "sha": comets[-1],
+                "index": len(comets) - 1,
+                "rule": "rightmost",
+            }
 
     return {
         "available": True,
