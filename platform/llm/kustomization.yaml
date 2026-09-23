@@ -26,7 +26,6 @@ configMapGenerator:
       - efficiency_gateway.py
 generatorOptions:
   disableNameSuffixHash: false
-
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
 #
 # 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
