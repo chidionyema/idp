@@ -127,6 +127,16 @@ const boardPage = PageBlueprint.make({
   },
 });
 
+// /board (docs/specs/2026-09-08-fleetview-live-mind-steering-and-the-board-view.md CP9):
+// the executive view -- fleet now, waiting on you, spend today, pull requests.
+const boardPage = PageBlueprint.make({
+  name: 'board',
+  params: {
+    path: '/board',
+    loader: () => import('./Board').then(m => <m.Board />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
   extensions: [

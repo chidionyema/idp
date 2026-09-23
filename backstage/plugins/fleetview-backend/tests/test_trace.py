@@ -35,7 +35,6 @@ def trace(monkeypatch):
 # Config guard tests
 # ---------------------------------------------------------------------------
 
-
 def test_no_langfuse_host_raises_trace_unavailable(monkeypatch):
     monkeypatch.delenv("LANGFUSE_HOST", raising=False)
     mod = _load(TRACE_MODULE, "fleetview_trace_no_host")
@@ -61,7 +60,6 @@ def test_blank_session_id_raises_trace_unavailable(trace):
 # Stub HTTP helper
 # ---------------------------------------------------------------------------
 
-
 def _stub_http(trace, monkeypatch, trace_resp, obs_resp):
     """Patch trace._http_get to return canned responses per URL path."""
 
@@ -77,7 +75,6 @@ def _stub_http(trace, monkeypatch, trace_resp, obs_resp):
 # Observation → node/edge mapping
 # ---------------------------------------------------------------------------
 
-
 def test_a_trace_with_no_observations_returns_empty_with_flag(trace, monkeypatch):
     _stub_http(trace, monkeypatch, {"id": "s1"}, {"data": []})
     result = trace.trace_graph("s1")
@@ -86,14 +83,9 @@ def test_a_trace_with_no_observations_returns_empty_with_flag(trace, monkeypatch
 
 def test_nodes_are_built_from_observations(trace, monkeypatch):
     obs = [
-        {
-            "id": "o1",
-            "name": "span-one",
-            "type": "SPAN",
-            "startTime": "2026-09-09T10:00:00Z",
-            "endTime": "2026-09-09T10:00:01Z",
-            "parentObservationId": None,
-        },
+        {"id": "o1", "name": "span-one", "type": "SPAN",
+         "startTime": "2026-09-09T10:00:00Z", "endTime": "2026-09-09T10:00:01Z",
+         "parentObservationId": None},
     ]
     _stub_http(trace, monkeypatch, {"id": "s1"}, {"data": obs})
     result = trace.trace_graph("s1")
@@ -108,18 +100,10 @@ def test_nodes_are_built_from_observations(trace, monkeypatch):
 
 def test_parent_child_link_creates_edge(trace, monkeypatch):
     obs = [
-        {
-            "id": "root",
-            "name": "root-span",
-            "type": "SPAN",
-            "parentObservationId": None,
-        },
-        {
-            "id": "child",
-            "name": "child-span",
-            "type": "SPAN",
-            "parentObservationId": "root",
-        },
+        {"id": "root", "name": "root-span", "type": "SPAN",
+         "parentObservationId": None},
+        {"id": "child", "name": "child-span", "type": "SPAN",
+         "parentObservationId": "root"},
     ]
     _stub_http(trace, monkeypatch, {"id": "s2"}, {"data": obs})
     result = trace.trace_graph("s2")
@@ -143,12 +127,7 @@ def test_nodes_without_parent_produce_no_edge(trace, monkeypatch):
 
 def test_y_positions_are_incremental(trace, monkeypatch):
     obs = [
-        {
-            "id": f"o{i}",
-            "name": f"span-{i}",
-            "type": "SPAN",
-            "parentObservationId": None,
-        }
+        {"id": f"o{i}", "name": f"span-{i}", "type": "SPAN", "parentObservationId": None}
         for i in range(3)
     ]
     _stub_http(trace, monkeypatch, {"id": "s4"}, {"data": obs})
@@ -168,9 +147,8 @@ def test_http_error_is_trace_unavailable(trace, monkeypatch):
 
 def test_available_false_envelope_on_unavailable(monkeypatch):
     """routes.py's trace_envelope returns available:False/503 on TraceUnavailable."""
-    routes_path = (
-        REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
-    )
+    from pathlib import Path as _Path
+    routes_path = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
     monkeypatch.setenv("LANGFUSE_HOST", "")
     routes = _load(routes_path, "fleetview_routes_trace_test")
     body, status = routes.trace_envelope("some-session")
