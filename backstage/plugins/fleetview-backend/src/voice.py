@@ -59,9 +59,10 @@ _SPATIAL_PATTERN = re.compile(
     r"\b("
     r"the\s+(?:one\s+)?(?:on|in)\s+the\s+(?:left|right|back\s+left|front\s+right)|"
     r"(?:leftmost|rightmost|topmost|bottommost|left|right|top|bottom)|"
-    r"the\s+\d+(?:st|nd|rd|th)\s+(?:one|from\s+the\s+(?:left|right))|"
+    r"the\s+\w+\s+(?:one|from\s+the\s+(?:left|right))|"
     r"the\s+(?:first|second|third|fourth|fifth|last)"
-    r")\b",
+    r")\b|"
+    r"\bthe\s+(red|green|blue|amber|grey|gray)\s+(?:one)?\b",
     re.IGNORECASE,
 )
 
@@ -70,16 +71,19 @@ def _is_spatial_intent(question: str) -> bool:
     return bool(_SPATIAL_PATTERN.search(question or ""))
 
 
-def _live_comets(limit: int = 8) -> list[str]:
+def _live_comets(limit: int = 8) -> list[dict]:
     """The comets the user is looking at, oldest -> leftmost.
 
-    Falls back to last N merged journeys when the river is BLIND so the resolver
-    still has something concrete to point at. Never fabricates a sha."""
+    Returns a list of {'sha': ..., 'state': ...} dicts so the resolver can
+    map colour phrases (the red one) to status. Returns [] when the river
+    is BLIND so the resolver can answer honestly rather than guess."""
     env = _deploy_journeys.list_deploy_journeys(limit=limit)
     if not env.get("available"):
         return []
-    shas = [j["sha"] for j in (env.get("journeys") or [])]
-    return list(reversed(shas))
+    journeys = env.get("journeys") or []
+    return list(
+        reversed([{"sha": j["sha"], "state": j.get("state")} for j in journeys])
+    )
 
 
 def spatial_fast_path(question: str) -> tuple[dict[str, Any], int] | None:
@@ -296,6 +300,14 @@ def ask(
             "fix": "source the estate vault (estate-secrets/scripts/secret-load), or set it in the pod",
         }, 503
 
+    try:
+        host = router_host()
+    except RuntimeError as exc:
+        return {
+            "error": str(exc),
+            "fix": "ESTATE_ZONE must be set; see voice.router_host",
+        }, 503
+
     payload = {
         "model": router_model(),
         "messages": [
@@ -313,7 +325,7 @@ def ask(
         "temperature": 0.2,
     }
     req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
-        f"{router_host()}/v1/chat/completions",
+        f"{host}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
@@ -414,6 +426,18 @@ def stream_ask(
         )
         return
 
+    try:
+        host = router_host()
+    except RuntimeError as exc:
+        yield _sse(
+            "error",
+            {
+                "error": str(exc),
+                "fix": "ESTATE_ZONE must be set; see voice.router_host",
+            },
+        )
+        return
+
     payload = {
         "model": router_model(),
         "messages": [
@@ -435,7 +459,7 @@ def stream_ask(
         "stream_options": {"include_usage": True},
     }
     req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
-        f"{router_host()}/v1/chat/completions",
+        f"{host}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
@@ -513,9 +537,8 @@ def stream_ask(
             # The region of the ROUTER, which is the only residency fact this deployment can
             # state. Naming a provider region it cannot verify would be a fabricated number in the
             # one line whose whole job is honesty.
-            region = (
-                _last_choice.get("region")
-                or (router_host().split("//")[-1].split("/")[0])
+            region = _last_choice.get("region") or (
+                host.split("//")[-1].split("/")[0] if host else "unknown"
             )
             usd = _last_choice.get("usd") or 0.0
         except Exception:  # noqa: BLE001

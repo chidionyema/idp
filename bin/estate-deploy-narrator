@@ -99,50 +99,83 @@ def _stage_label(stage: str) -> str:
     return stage.replace("-", " ")
 
 
+def _duration_since(prev: dt.datetime | None, curr: dt.datetime) -> str:
+    """A short phrase a person would speak: 'in one minute', 'in four minutes',
+    'in one hour', 'in one hour three minutes'. Returns '' when prev is None
+    or the delta is non-positive."""
+    if prev is None or curr <= prev:
+        return ""
+    secs = int((curr - prev).total_seconds())
+    if secs < 0:
+        return ""
+    if secs < 60:
+        return "in under a minute"
+    minutes = secs // 60
+    if minutes == 1:
+        return "in one minute"
+    if minutes < 60:
+        return f"in {minutes} minutes"
+    hours = minutes // 60
+    rem = minutes % 60
+    if rem == 0:
+        return "in one hour" if hours == 1 else f"in {hours} hours"
+    return f"in {hours}h{rem}m"
+
+
 def story(journey: dict) -> str:
-    """Story-mode narration for one journey. ONE or TWO sentences max -- the voice
-    service spec (backstage/plugins/fleetview-backend/src/voice.py SYSTEM) says no
-    markdown, no lists, plain words, spoken aloud. Every token is a real timestamp
-    or a real stage name from the ledger; nothing is interpolated."""
+    """Story-mode narration for one journey. ONE sentence, semicolon-joined
+    clauses -- the voice service spec (backstage/plugins/fleetview-backend/src/voice.py
+    SYSTEM) says no markdown, no lists, plain words, spoken aloud. Every token is
+    a real timestamp or a real stage name from the ledger; nothing is interpolated.
+
+    The clauses follow the events in seq order, lowercased throughout so the
+    BDD's substring checks land:
+      - pr_opened    -> "pushed at HH:MM"
+      - check:<name> -> "<name> passed in N minute(s)" (or "failed at HH:MM")
+      - merged       -> "merged at HH:MM"
+      - reconcile    -> "reconciled at HH:MM" (pass) or "reconcile: unknown" (verbatim)
+    """
     events = journey.get("events") or []
     if not events:
         return (
-            f"Journey for {journey.get('sha') or 'unknown sha'} has no recorded stages."
+            f"journey for {journey.get('sha') or 'unknown sha'} has no recorded stages."
         )
 
-    opened = next((e for e in events if e["stage"] == "pr_opened"), None)
-    opened_ts = _parse_ts(opened.get("ts")) if opened else None
-    merged = next((e for e in events if e["stage"] == "merged"), None)
-    merged_ts = _parse_ts(merged.get("ts")) if merged else None
-    failed = [e for e in events if e.get("status") == "fail"]
-    tail = next(
-        (
-            e
-            for e in events
-            if e["stage"] in ("reconcile", "pod_ready", "first_log_line")
-        ),
-        None,
-    )
+    clauses: list[str] = []
+    prev_ts: dt.datetime | None = None
+    for e in events:
+        stage = e["stage"]
+        status = (e.get("status") or "unknown").lower()
+        ts = _parse_ts(e.get("ts"))
+        label = _stage_label(stage)
 
-    head = f"Pushed at {_fmt_ts(opened_ts)}"
-    if merged_ts is not None:
-        head += f", merged at {_fmt_ts(merged_ts)}"
+        if stage == "pr_opened":
+            clauses.append(f"pushed at {_fmt_ts(ts)}")
+        elif stage == "merged":
+            clauses.append(f"merged at {_fmt_ts(ts)}")
+        elif stage == "reconcile":
+            if status == "pass":
+                clauses.append(f"reconciled at {_fmt_ts(ts)}")
+            elif status == "unknown":
+                clauses.append("reconcile: unknown")
+            else:
+                clauses.append(f"reconcile {status} at {_fmt_ts(ts)}")
+        elif status == "fail":
+            clauses.append(f"{label} failed at {_fmt_ts(ts)}")
+        elif status == "pass":
+            dur = _duration_since(prev_ts, ts) if ts else ""
+            if dur:
+                clauses.append(f"{label} passed {dur}")
+            else:
+                clauses.append(f"{label} passed at {_fmt_ts(ts)}")
+        elif status == "unknown":
+            clauses.append(f"{label}: unknown")
+        else:
+            clauses.append(f"{label} {status} at {_fmt_ts(ts)}")
+        if ts is not None:
+            prev_ts = ts
 
-    tail_clause = ""
-    if failed:
-        names = " and ".join(_stage_label(e["stage"]) for e in failed)
-        tail_clause = (
-            f"{len(failed)} gate{'s' if len(failed) != 1 else ''} failed ({names})"
-        )
-    elif tail:
-        tail_status = tail.get("status") or "unknown"
-        tail_clause = f"{_stage_label(tail['stage'])} {tail_status}"
-    elif merged_ts is None:
-        tail_clause = "not merged yet"
-
-    if tail_clause:
-        return f"{head}; {tail_clause}."
-    return f"{head}."
+    return "; ".join(clauses) + "."
 
 
 def commentary_line(prev: dict | None, curr: dict) -> str | None:

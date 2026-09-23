@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -114,7 +113,7 @@ def test_route_resolves_rightmost_to_newest(cli, db):
 
 
 def test_route_unrecognised_phrase_is_named_miss(cli, db):
-    r = cli.route("the red one", limit=8)
+    r = cli.route("the purple one", limit=8)
     assert r["available"] is True and r["sha"] is None
     assert "unrecognised" in r["error"]
 
@@ -133,7 +132,7 @@ def test_route_blind_when_store_empty(tmp_path, monkeypatch):
 
 def test_route_never_invents_sha(cli, db):
     """The CLI must never fabricate a sha when the resolver says miss."""
-    for phrase in ["the red one", "the 99th one", "", "   "]:
+    for phrase in ["the purple one", "the 99th one", "", "   "]:
         r = cli.route(phrase, limit=3)
         assert r.get("sha") is None, f"phrase {phrase!r} produced a sha: {r}"
 

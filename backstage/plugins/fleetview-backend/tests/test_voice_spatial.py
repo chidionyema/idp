@@ -13,7 +13,6 @@ when the comet list is empty or the phrase is unresolvable.
 from __future__ import annotations
 
 import importlib.util
-import sqlite3
 import sys
 from pathlib import Path
 
