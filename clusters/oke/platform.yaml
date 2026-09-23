@@ -1301,6 +1301,32 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  name: coroot
+  namespace: flux-system
+spec:
+  interval: 10m
+  # After monitoring, because the ServiceMonitor in ./platform/coroot is a
+  # monitoring.coreos.com/v1 object and those CRDs come from kube-prometheus-stack. Applying
+  # this row first would be a `no matches for kind "ServiceMonitor"` on a fresh cluster --
+  # the ordering failure crew#539 documents above, repeated.
+  dependsOn:
+    - name: monitoring
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  # LAYER 1 of the asymmetric collection pattern (founder blueprint, 2026-09-23): the
+  # zero-instrumentation service map. eBPF at the kernel, so every process on every node reports
+  # requests, latency, errors and its dependencies without being instrumented. Nothing sits in a
+  # request path, so this row being NotReady costs the map and never a call.
+  path: ./platform/coroot
+  prune: true
+  wait: true
+  timeout: 10m
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
   name: monitoring
   namespace: flux-system
 spec:

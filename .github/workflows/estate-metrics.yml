@@ -1,0 +1,89 @@
+# button: Agent and pipeline metrics from history
+# founder (2026-09-23): "Layer 2 -- for the numbers on branches, commits, PRs, agents, and CI,
+# you don't need instrumentation either. You scrape the history that already exists."
+#
+# LAYER 2 of the asymmetric collection pattern. Two collectors, one store:
+#
+#   agent metrics    `.claude/skills/metrics/collect_metrics.py` reads the session transcripts
+#                    on disk -- invocation rate, tool coverage, infrastructure review,
+#                    usage distribution -- and emits Prometheus. No agent reports anything.
+#   deploy journeys  `bin/estate-deploy-recorder` joins PRs, check-runs and Flux events into
+#                    the deploy_journeys ledger -- frequency, lead time, failure rate. No CI
+#                    job reports anything; it reads the API history.
+#
+# Both land in the same place the pipeline already publishes to, which is the spec's "both
+# layers feed one store". Coroot (Layer 1, platform/coroot) emits into Prometheus by
+# ServiceMonitor; these counters go to the same Prometheus scrape endpoint.
+#
+# REPORT, NEVER BLOCK. An audit-mode schedule like estate-inventory: a metric run that fails a
+# build on a red number teaches everyone to ignore it. The numbers are published; the gate is
+# a separate decision.
+name: estate-metrics
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/estate-metrics.yml"
+      - ".claude/skills/metrics/**"
+      - "bin/estate-deploy-recorder"
+      - "tests/test_agent_metrics_measure_what_they_claim.py"
+permissions:
+  contents: read
+  checks: read          # the deploy recorder reads check-runs through gh api
+  pull-requests: read
+concurrency:
+  group: estate-metrics
+  cancel-in-progress: false
+jobs:
+  metrics:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # The collector's own proofs. A metric that can silently read zero is worse than no
+      # metric, so the tests that pin the measurement run before it is trusted.
+      - name: the collector measures what it claims
+        run: python -m pytest -q tests/test_agent_metrics_measure_what_they_claim.py
+
+      # Layer 2a: agent usage from transcripts on disk. On a hosted runner there are no local
+      # session transcripts, so this reports zero sessions -- and that is the honest answer,
+      # printed as such. The collector runs here to prove the path; the real numbers come from
+      # bin/idp-host-drift's cron on a machine that has sessions.
+      - name: agent metrics (prometheus)
+        run: |
+          set -euo pipefail
+          python .claude/skills/metrics/collect_metrics.py --since 90 --output prometheus \
+            | tee agent-metrics.prom
+          python .claude/skills/metrics/collect_metrics.py --since 90 --output markdown \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      # Layer 2b: the deploy ledger. Real history from the GitHub API, on every run.
+      - name: deploy journeys (frequency, lead time, outcomes)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python bin/estate-deploy-recorder --limit 30
+          {
+            echo "## Deploy journeys"
+            echo ""
+            echo "| state | count |"
+            echo "|---|---|"
+            sqlite3 catalog/estate.db \
+              "select state, count(*) from deploy_journeys group by state order by 2 desc;" \
+              | sed 's/|/ | /g; s/^/| /; s/$/ |/'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: estate-metrics
+          path: agent-metrics.prom
+          retention-days: 30
