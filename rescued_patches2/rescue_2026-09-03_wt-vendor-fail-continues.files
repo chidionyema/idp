@@ -1,0 +1,2 @@
+bin/idp-bootstrap-vendors
+tests/test_incident_crew66_vendor_roots_are_named_secrets.py

@@ -1,0 +1,9 @@
+.githooks/pre-push
+.github/workflows/pr-ownership-watch.yml
+backstage/templates/founder-actions/pr-ownership-watch/template.yaml
+bin/idp-pr-ownership-check
+bin/idp-pr-ownership-record
+platform/backstage/base/catalogue.yaml
+rules.yaml
+tests/fixtures/pr-ownership/bad/board.jsonl
+tests/fixtures/pr-ownership/good/board.jsonl

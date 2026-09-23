@@ -1,0 +1,16 @@
+.github/workflows/kini-finish.yml
+.github/workflows/oke-check.yml
+backstage/founder/catalog-info.yaml
+bin/idp-kini-state
+docs/evidence/pr-280/20260827T003215Z-1.png
+docs/evidence/pr-280/20260827T004302Z-1.png
+docs/evidence/pr-280/20260827T004433Z-1.png
+drills/catalogue.yaml
+features/sovereign-bus/cp0d_kini_finish_trigger.feature
+platform/temporal/kini-finish.yaml
+platform/temporal/kini-state.yaml
+platform/temporal/kustomization.yaml
+sovereign/cli.py
+sovereign/engine/kini.py
+sovereign/tests/bdd/test_cp0d_kini_finish_trigger.py
+tests/test_incident_crew280_launchd_from_temp_checkout.py

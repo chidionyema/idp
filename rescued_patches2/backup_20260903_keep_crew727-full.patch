@@ -1,0 +1,2489 @@
+diff --git a/.github/workflows/vault-reads.yml b/.github/workflows/vault-reads.yml
+index 89c8d248e..577bbb935 100644
+--- a/.github/workflows/vault-reads.yml
++++ b/.github/workflows/vault-reads.yml
+@@ -19,7 +19,7 @@ jobs:
+     runs-on: ubuntu-latest
+     timeout-minutes: 15
+     steps:
+-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
+       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: "3.12"
+diff --git a/bin/catalog-platform b/bin/catalog-platform
+index e2a2c2fff..fa80af0ca 100755
+--- a/bin/catalog-platform
++++ b/bin/catalog-platform
+@@ -311,7 +311,7 @@ def kustomizations():
+     rows = []
+     for f in sorted(glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml"))):
+         for d in yaml.safe_load_all(open(f)):
+-            if d and d.get("kind") == "Kustomization":
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 rows.append(d)
+     return rows
+ 
+diff --git a/bin/idp-admission-policies b/bin/idp-admission-policies
+index 24440d572..4948c0638 100755
+--- a/bin/idp-admission-policies
++++ b/bin/idp-admission-policies
+@@ -30,7 +30,7 @@ def layers() -> dict[str, str]:
+             continue
+         with open(os.path.join(d, f), encoding="utf-8") as fh:
+             for doc in yaml.safe_load_all(fh):
+-                if doc and doc.get("kind") == "Kustomization":
++                if doc and doc.get("kind") == "Kustomization" and str(doc.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                     out[str((doc.get("spec") or {}).get("path", "")).lstrip("./")] = doc["metadata"]["name"]
+     return out
+ 
+diff --git a/bin/idp-alert-rows b/bin/idp-alert-rows
+index d2b2dd710..0673eb572 100755
+--- a/bin/idp-alert-rows
++++ b/bin/idp-alert-rows
+@@ -38,7 +38,7 @@ def helmrelease_namespaces() -> list[str]:
+     seen: set[str] = set()
+     for f in sorted(glob.glob(str(ROOT / "clusters/*/*.yaml"))):
+         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+-            if not d or d.get("kind") != "Kustomization":
++            if not d or d.get("kind") != "Kustomization" or not str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 continue
+             path = (ROOT / d["spec"]["path"]).resolve()
+             if not any((path / k).exists() for k in ("kustomization.yaml", "kustomization.yml", "Kustomization")):
+diff --git a/bin/idp-envsubst-gate b/bin/idp-envsubst-gate
+index 5b27f6bb9..4079de87a 100755
+--- a/bin/idp-envsubst-gate
++++ b/bin/idp-envsubst-gate
+@@ -56,7 +56,7 @@ def source_keys() -> dict[str, dict[str, str]]:
+ def kustomizations():
+     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+-            if d and d.get("kind") == "Kustomization" and d["spec"].get("postBuild", {}).get("substituteFrom"):
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("postBuild", {}).get("substituteFrom"):
+                 yield d
+ 
+ 
+diff --git a/bin/idp-estate-state-build b/bin/idp-estate-state-build
+index 934921a28..cfa46418f 100755
+--- a/bin/idp-estate-state-build
++++ b/bin/idp-estate-state-build
+@@ -64,11 +64,37 @@ def parse_cluster_receipt(
+     head, _, body = text.partition("\n")
+     m = RECEIPT_HEAD.match(head.strip())
+     if not m:
+-        return {"name": name, "role": role, "state": "BLIND", "flux_rows": []}
++        return {
++            "name": name,
++            "role": role,
++            "state": "BLIND",
++            "flux_rows": [],
++            "reconcile": [],
++        }
+     try:
+-        rows = json.loads(body.strip() or "{}").get("flux_not_ready") or []
++        body_doc = json.loads(body.strip() or "{}")
+     except json.JSONDecodeError:
+-        rows = []
++        body_doc = {}
++    rows = body_doc.get("flux_not_ready") or []
++    # crew#727 (founder 2026-08-31: "make the actual state visible instead of inferred"): the
++    # receipt's FULL flux table -- every Kustomization and HelmRelease, ready or not, with the
++    # applied revision and the Ready condition's last transition -- reaches the page, so what is
++    # reconciling, when it last ran and whether it is ready is a read. Chart/image polling kinds
++    # (HelmRepository, ImageRepository, ...) are a different knob and stay off this table; the
++    # red-row grader below (`flux_rows`) is unchanged.
++    reconcile = [
++        {
++            "kind": str(r.get("kind", "")),
++            "namespace": str(r.get("ns", "")),
++            "name": str(r.get("name", "")),
++            "ready": bool(r.get("ready", False)),
++            "since": r.get("since"),
++            "revision": r.get("revision"),
++            "message": "" if r.get("ready") else str(r.get("message") or "")[:300],
++        }
++        for r in (body_doc.get("flux") or [])
++        if r.get("kind") in ("Kustomization", "HelmRelease")
++    ]
+     flux_rows = [
+         {
+             "kind": str(r.get("kind", "")),
+@@ -90,6 +116,7 @@ def parse_cluster_receipt(
+         "state": state,
+         "revision": m.group("at"),
+         "flux_rows": flux_rows,
++        "reconcile": reconcile,
+     }
+ 
+ 
+diff --git a/bin/idp-features b/bin/idp-features
+index ba424604b..15804dddc 100755
+--- a/bin/idp-features
++++ b/bin/idp-features
+@@ -71,7 +71,7 @@ def kustomizations(cluster: str) -> dict[str, tuple[pathlib.Path, str | None, bo
+     out = {}
+     for f in cluster_files(cluster):
+         for doc in yaml.safe_load_all(f.read_text()):
+-            if not doc or doc.get("kind") != "Kustomization":
++            if not doc or doc.get("kind") != "Kustomization" or not str(doc.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 continue
+             spec = doc.get("spec", {})
+             out[doc["metadata"]["name"]] = (f, spec.get("path"), bool(spec.get("suspend", False)))
+diff --git a/clusters/oke/alerts.yaml b/clusters/oke/alerts.yaml
+index f7cd76263..0841818ae 100644
+--- a/clusters/oke/alerts.yaml
++++ b/clusters/oke/alerts.yaml
+@@ -15,7 +15,7 @@ spec:
+   path: ./platform/alerts
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   postBuild:
+     substituteFrom:
+       - kind: Secret
+@@ -37,7 +37,7 @@ spec:
+   path: ./platform/alerts-secret
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+ ---
+ # crew#406 row 4: the GitHub App (vault key github-app) was never created, so the github-app
+ # ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
+@@ -58,4 +58,4 @@ spec:
+   path: ./platform/alerts-github
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+diff --git a/clusters/oke/commerce.yaml b/clusters/oke/commerce.yaml
+index e0da8c420..5a57448db 100644
+--- a/clusters/oke/commerce.yaml
++++ b/clusters/oke/commerce.yaml
+@@ -16,7 +16,7 @@ metadata:
+   namespace: flux-system
+ spec:
+   suspend: true
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -31,7 +31,7 @@ spec:
+     # not created yet is refused by the API server and never schedules (crew#488 rung 4).
+     - name: priority-classes
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   healthChecks:
+     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-db, namespace: commerce }
+     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }
+@@ -43,7 +43,7 @@ metadata:
+   namespace: flux-system
+ spec:
+   suspend: true
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -65,7 +65,7 @@ metadata:
+   namespace: flux-system
+ spec:
+   suspend: true
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+diff --git a/clusters/oke/edge.yaml b/clusters/oke/edge.yaml
+index 02e34acdc..6627085a1 100644
+--- a/clusters/oke/edge.yaml
++++ b/clusters/oke/edge.yaml
+@@ -138,7 +138,7 @@ spec:
+   path: ./deploy/k8s/overlays/oke
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
+   # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
+   # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
+@@ -201,7 +201,7 @@ spec:
+   path: ./platform/dns
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   postBuild:
+     substituteFrom:
+       - kind: ConfigMap
+diff --git a/clusters/oke/image-automation.yaml b/clusters/oke/image-automation.yaml
+index b8bbf5176..d7c88e54b 100644
+--- a/clusters/oke/image-automation.yaml
++++ b/clusters/oke/image-automation.yaml
+@@ -20,7 +20,7 @@ spec:
+   path: ./platform/image-automation
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   healthChecks:
+     - apiVersion: image.toolkit.fluxcd.io/v1
+       kind: ImageRepository
+diff --git a/clusters/oke/kustomization.yaml b/clusters/oke/kustomization.yaml
+new file mode 100644
+index 000000000..3f782fc85
+--- /dev/null
++++ b/clusters/oke/kustomization.yaml
+@@ -0,0 +1,38 @@
++# crew#727 (founder 2026-08-31): the reconcile interval is not a number anyone has to know.
++#
++# One value, here, patched onto every Flux Kustomization in this build — a future file's
++# per-chart guess is overridden, not obeyed. 10m is DRIFT DETECTION: how often Flux re-asserts
++# git against the cluster when nothing changed. It is NOT time-to-land: a merged change lands
++# when the flux-system GitRepository (flux-system/gotk-sync.yaml, 1m poll) sees the new
++# revision, which triggers reconciliation immediately, whatever this interval says.
++# HelmRelease intervals cannot be patched from here (they live in builds this file never sees);
++# tests/test_incident_crew727_intervals_are_one_estate_value.py pins every one of them, and every
++# Kustomization literal, to the value in this patch.
++#
++# Every *.yaml beside this file MUST be listed below: an unlisted file is silently not applied
++# and, with prune, its objects are deleted from the cluster. The same test pins this list to the
++# directory, so adding a file without adding a row here is a red CI, never a silent prune.
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++resources:
++  - flux-system
++  - alerts.yaml
++  - catalog.yaml
++  - commerce.yaml
++  - edge.yaml
++  - estate-config.yaml
++  - image-automation.yaml
++  - platform.yaml
++  - secrets.yaml
++  - verification.yaml
++patches:
++  - target:
++      group: kustomize.toolkit.fluxcd.io
++      kind: Kustomization
++    patch: |-
++      apiVersion: kustomize.toolkit.fluxcd.io/v1
++      kind: Kustomization
++      metadata:
++        name: estate-reconcile-interval
++      spec:
++        interval: 10m
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index 7aad937dd..b4e9da360 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -13,14 +13,14 @@ metadata:
+   name: backstage-namespace
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+   path: ./platform/backstage/namespace/overlays/oke
+   prune: true
+   wait: true
+-  timeout: 2m
++  timeout: 10m
+ ---
+ # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
+ # file; everything below is what Flux then reconciles. Secrets reach the
+@@ -31,7 +31,7 @@ metadata:
+   name: backstage
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -56,7 +56,7 @@ spec:
+       - kind: ConfigMap
+         name: estate-config
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   healthChecks:
+     - apiVersion: apps/v1
+       kind: Deployment
+@@ -69,7 +69,7 @@ metadata:
+   name: chaos-mesh
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
+   # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
+   # Only `chaos` (the experiments that target the portal) depends on backstage.
+@@ -96,7 +96,7 @@ metadata:
+   name: chaos
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: chaos-mesh
+     # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
+@@ -121,7 +121,7 @@ metadata:
+ spec:
+   # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
+   # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: scheduling
+     - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
+@@ -158,7 +158,7 @@ spec:
+   # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
+   # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
+   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: scheduling
+     # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
+@@ -197,7 +197,7 @@ metadata:
+   name: identity
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -229,7 +229,7 @@ metadata:
+   name: healthchecks
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -259,7 +259,7 @@ metadata:
+   name: metrics-server
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -284,7 +284,7 @@ metadata:
+   name: reloader
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -306,7 +306,7 @@ metadata:
+   name: llm
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -336,7 +336,7 @@ metadata:
+   name: hermes-agent
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -373,7 +373,7 @@ metadata:
+   name: mcp
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -417,7 +417,7 @@ metadata:
+   name: cluster-state
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: scheduling
+     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+@@ -431,7 +431,7 @@ spec:
+   path: ./platform/state
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+ ---
+ # crew#396: the estate's one workflow engine, in the cluster instead of on the Mac.
+ # Suspended 2026-08-30 on the founder's word (crew#284): "what I spec'd was not what was built; I
+@@ -445,7 +445,7 @@ metadata:
+   namespace: flux-system
+ spec:
+   suspend: true
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: edge
+     - name: secret-store
+@@ -472,7 +472,7 @@ metadata:
+   name: spire
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: scheduling
+     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
+@@ -500,7 +500,7 @@ metadata:
+   name: keda
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: observability
+   sourceRef:
+@@ -528,7 +528,7 @@ metadata:
+   name: science
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: observability   # the clickhouse-auth Secret and the SigNoz backend
+   sourceRef:
+@@ -537,7 +537,7 @@ spec:
+   path: ./platform/science
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+ ---
+ # The Architect's memory (crew#524 CP1): Hindsight, the vendor chart on the pgvector Postgres
+ # beside it, LLM behind the estate router. After secret-store for the one Secret it reads and
+@@ -548,7 +548,7 @@ metadata:
+   name: hindsight
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: secret-store
+     - name: llm
+@@ -575,7 +575,7 @@ metadata:
+   name: guacamole
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -604,7 +604,7 @@ metadata:
+   name: autoscaler
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -613,7 +613,7 @@ spec:
+   dependsOn:
+     - name: secret-store
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   healthChecks:
+     - apiVersion: apps/v1
+       kind: Deployment
+@@ -628,14 +628,14 @@ metadata:
+   name: priority-classes
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+   path: ./platform/priority-classes
+   prune: true
+   wait: true
+-  timeout: 2m
++  timeout: 10m
+ ---
+ # crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
+ # honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
+@@ -647,7 +647,7 @@ metadata:
+   name: scheduling
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: edge
+     - name: priority-classes
+@@ -657,7 +657,7 @@ spec:
+   path: ./platform/scheduling
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+ ---
+ # crew#539 CP6/CP7: the self-healing loops. Descheduler rebalances after every node swap; K8sGPT
+ # explains a Pending wave through the estate's own router. After scheduling (it must not evict the
+@@ -668,7 +668,7 @@ metadata:
+   name: healing
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: scheduling
+     - name: llm
+@@ -698,7 +698,7 @@ metadata:
+   name: healing-analyzer
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: healing
+   sourceRef:
+@@ -707,7 +707,7 @@ spec:
+   path: ./platform/healing/analyzer
+   prune: true
+   wait: true
+-  timeout: 5m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
++  timeout: 10m  # test_incident_backstage_17h_unreported: a row with healthChecks must stall, never wait forever
+   # the object alone counts as Current; the analyzer the operator builds from it is the health
+   # (run 33233870612: 29h green with no analyzer). Name = the K8sGPT object's name.
+   healthChecks:
+@@ -723,7 +723,7 @@ metadata:
+   name: robusta
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: secret-store
+   sourceRef:
+@@ -748,7 +748,7 @@ metadata:
+   name: monitoring
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: edge
+     - name: secret-store
+@@ -798,7 +798,7 @@ metadata:
+   name: monitoring-rules
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   dependsOn:
+     - name: monitoring
+   sourceRef:
+@@ -821,7 +821,7 @@ metadata:
+   name: drills
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -832,7 +832,7 @@ spec:
+   dependsOn:
+     - name: alerts-github
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   postBuild:
+     substituteFrom:
+       - kind: ConfigMap
+@@ -848,7 +848,7 @@ metadata:
+   name: tailscale
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+@@ -876,11 +876,11 @@ metadata:
+   name: staging
+   namespace: flux-system
+ spec:
+-  interval: 1m
++  interval: 10m
+   sourceRef:
+     kind: GitRepository
+     name: flux-system
+   path: ./platform/staging
+   prune: true
+   wait: true
+-  timeout: 2m
++  timeout: 10m
+diff --git a/clusters/oke/secrets.yaml b/clusters/oke/secrets.yaml
+index 8a0bc9df8..1857ee950 100644
+--- a/clusters/oke/secrets.yaml
++++ b/clusters/oke/secrets.yaml
+@@ -33,7 +33,7 @@ spec:
+   path: ./platform/secret-store
+   prune: true
+   wait: true
+-  timeout: 5m
++  timeout: 10m
+   postBuild:
+     substituteFrom:
+       - kind: ConfigMap
+diff --git a/clusters/oke/verification.yaml b/clusters/oke/verification.yaml
+index 088dff2a5..049cae60b 100644
+--- a/clusters/oke/verification.yaml
++++ b/clusters/oke/verification.yaml
+@@ -18,7 +18,7 @@ spec:
+   path: ./platform/verification
+   prune: true
+   wait: false
+-  timeout: 2m
++  timeout: 10m
+   # external-secrets brings the CRD, secret-store the ClusterSecretStore the probe asks through,
+   # backstage-namespace the namespace the probe sits in beside its control (backstage-env).
+   dependsOn:
+diff --git a/platform/alerts-github/github-app.yaml b/platform/alerts-github/github-app.yaml
+index b06a02d4a..904ef8576 100644
+--- a/platform/alerts-github/github-app.yaml
++++ b/platform/alerts-github/github-app.yaml
+@@ -10,7 +10,7 @@ metadata:
+   name: github-app
+   namespace: flux-system
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: github-app
+diff --git a/platform/alerts-secret/flux-telegram.yaml b/platform/alerts-secret/flux-telegram.yaml
+index 8af13d5be..13f03b39e 100644
+--- a/platform/alerts-secret/flux-telegram.yaml
++++ b/platform/alerts-secret/flux-telegram.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: flux-telegram
+   namespace: flux-system
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: flux-telegram
+diff --git a/platform/backstage/overlays/oke/backstage-external-secret.yaml b/platform/backstage/overlays/oke/backstage-external-secret.yaml
+index 42159736e..7e5027d3a 100644
+--- a/platform/backstage/overlays/oke/backstage-external-secret.yaml
++++ b/platform/backstage/overlays/oke/backstage-external-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: backstage-env
+   namespace: backstage
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: backstage-env, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/backstage/overlays/oke/sunshine-egress.yaml b/platform/backstage/overlays/oke/sunshine-egress.yaml
+index ddbc0f16c..084954caf 100644
+--- a/platform/backstage/overlays/oke/sunshine-egress.yaml
++++ b/platform/backstage/overlays/oke/sunshine-egress.yaml
+@@ -32,7 +32,7 @@ metadata:
+   name: sunshine-auth
+   namespace: backstage
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: sunshine-auth, creationPolicy: Owner }
+   data:
+diff --git a/platform/chaos/mesh/helmrelease.yaml b/platform/chaos/mesh/helmrelease.yaml
+index 900870a61..ca83a5d03 100644
+--- a/platform/chaos/mesh/helmrelease.yaml
++++ b/platform/chaos/mesh/helmrelease.yaml
+@@ -57,7 +57,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-chaos
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: chaos-mesh
+diff --git a/platform/commerce/app/lago.yaml b/platform/commerce/app/lago.yaml
+index 6c3b0d364..27be2a32b 100644
+--- a/platform/commerce/app/lago.yaml
++++ b/platform/commerce/app/lago.yaml
+@@ -38,7 +38,7 @@ metadata:
+   name: lago
+   namespace: commerce
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+diff --git a/platform/commerce/data/external-secret.yaml b/platform/commerce/data/external-secret.yaml
+index f0a3bd0f9..b1712a133 100644
+--- a/platform/commerce/data/external-secret.yaml
++++ b/platform/commerce/data/external-secret.yaml
+@@ -14,7 +14,7 @@ metadata:
+   name: lago-credentials
+   namespace: commerce
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   # The chart reads one Secret by this name (global.existingSecret in lago 1.28.0 values.yaml,
+   # read from the chart tarball on 2026-08-29). Every `secretKeyRef` in its templates against
+@@ -35,7 +35,7 @@ metadata:
+   name: lago-encryption
+   namespace: commerce
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: lago-encryption, creationPolicy: Owner }
+   dataFrom:
+@@ -50,7 +50,7 @@ metadata:
+   name: commerce-payment-provider
+   namespace: commerce
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: commerce-payment-provider, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/dns/external-dns.yaml b/platform/dns/external-dns.yaml
+index a6243aee7..9ada6c4d1 100644
+--- a/platform/dns/external-dns.yaml
++++ b/platform/dns/external-dns.yaml
+@@ -54,7 +54,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-status-page
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: external-dns
+diff --git a/platform/edge/cert-manager.yaml b/platform/edge/cert-manager.yaml
+index fccaae33c..30bc68ffc 100644
+--- a/platform/edge/cert-manager.yaml
++++ b/platform/edge/cert-manager.yaml
+@@ -30,7 +30,7 @@ spec:
+     remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3, remediateLastFailure: true }
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: cert-manager
+diff --git a/platform/edge/traefik.yaml b/platform/edge/traefik.yaml
+index 1e724c210..59eb7517f 100644
+--- a/platform/edge/traefik.yaml
++++ b/platform/edge/traefik.yaml
+@@ -55,7 +55,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-status-page
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: traefik
+diff --git a/platform/estate-state/schema.json b/platform/estate-state/schema.json
+index 1b7e16cd6..d6af7abe3 100644
+--- a/platform/estate-state/schema.json
++++ b/platform/estate-state/schema.json
+@@ -4,93 +4,464 @@
+   "title": "estate-state",
+   "description": "The one structured document every session ingests at start (crew#648). Five sections, the same five the Backstage entity page uses (crew#627, founder 2026-08-30: adopt the categorisation so it is intuitive what belongs where): overview, delivery, runtime, docs_apis, security.",
+   "type": "object",
+-  "required": ["version", "generated_at", "overview", "delivery", "runtime", "docs_apis", "security"],
++  "required": [
++    "version",
++    "generated_at",
++    "overview",
++    "delivery",
++    "runtime",
++    "docs_apis",
++    "security"
++  ],
+   "additionalProperties": false,
+   "properties": {
+-    "version": {"type": "integer", "const": 1},
+-    "generated_at": {"type": "string", "format": "date-time", "description": "UTC, RFC 3339; the server compares it to now to set stale"},
+-    "generated_by": {"type": "string", "description": "workflow run URL or job name that produced the document (never a Mac)"},
++    "version": {
++      "type": "integer",
++      "const": 1
++    },
++    "generated_at": {
++      "type": "string",
++      "format": "date-time",
++      "description": "UTC, RFC 3339; the server compares it to now to set stale"
++    },
++    "generated_by": {
++      "type": "string",
++      "description": "workflow run URL or job name that produced the document (never a Mac)"
++    },
+     "overview": {
+       "type": "object",
+-      "required": ["freeze", "rulings", "sessions", "board"],
++      "required": [
++        "freeze",
++        "rulings",
++        "sessions",
++        "board"
++      ],
+       "additionalProperties": false,
+       "properties": {
+         "freeze": {
+-          "type": "object", "required": ["active"], "additionalProperties": false,
++          "type": "object",
++          "required": [
++            "active"
++          ],
++          "additionalProperties": false,
+           "properties": {
+-            "active": {"type": "boolean"},
+-            "since": {"type": "string", "format": "date-time"},
+-            "reason": {"type": "string"},
+-            "record": {"type": "string", "description": "issue or comment URL that declared it"}
++            "active": {
++              "type": "boolean"
++            },
++            "since": {
++              "type": "string",
++              "format": "date-time"
++            },
++            "reason": {
++              "type": "string"
++            },
++            "record": {
++              "type": "string",
++              "description": "issue or comment URL that declared it"
++            }
+           }
+         },
+         "rulings": {
+-          "type": "array", "description": "standing founder rulings, newest last",
+-          "items": {"type": "object", "required": ["id", "date", "text"], "additionalProperties": false,
+-            "properties": {"id": {"type": "string"}, "date": {"type": "string", "format": "date"}, "text": {"type": "string"}, "record": {"type": "string"}}}
++          "type": "array",
++          "description": "standing founder rulings, newest last",
++          "items": {
++            "type": "object",
++            "required": [
++              "id",
++              "date",
++              "text"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "id": {
++                "type": "string"
++              },
++              "date": {
++                "type": "string",
++                "format": "date"
++              },
++              "text": {
++                "type": "string"
++              },
++              "record": {
++                "type": "string"
++              }
++            }
++          }
+         },
+         "sessions": {
+-          "type": "array", "description": "active sessions and their lanes, from the feed",
+-          "items": {"type": "object", "required": ["id", "lane", "last_handoff_at"], "additionalProperties": false,
+-            "properties": {"id": {"type": "string"}, "lane": {"type": "string"}, "last_handoff_at": {"type": "string", "format": "date-time"}, "blocked": {"type": "string"}, "active": {"type": "string"}}}
++          "type": "array",
++          "description": "active sessions and their lanes, from the feed",
++          "items": {
++            "type": "object",
++            "required": [
++              "id",
++              "lane",
++              "last_handoff_at"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "id": {
++                "type": "string"
++              },
++              "lane": {
++                "type": "string"
++              },
++              "last_handoff_at": {
++                "type": "string",
++                "format": "date-time"
++              },
++              "blocked": {
++                "type": "string"
++              },
++              "active": {
++                "type": "string"
++              }
++            }
++          }
+         },
+         "board": {
+-          "type": "array", "description": "open board issues by owner",
+-          "items": {"type": "object", "required": ["repo", "number", "title"], "additionalProperties": false,
+-            "properties": {"repo": {"type": "string"}, "number": {"type": "integer"}, "title": {"type": "string"}, "owner": {"type": "string"}, "priority": {"type": "string"}}}
++          "type": "array",
++          "description": "open board issues by owner",
++          "items": {
++            "type": "object",
++            "required": [
++              "repo",
++              "number",
++              "title"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "repo": {
++                "type": "string"
++              },
++              "number": {
++                "type": "integer"
++              },
++              "title": {
++                "type": "string"
++              },
++              "owner": {
++                "type": "string"
++              },
++              "priority": {
++                "type": "string"
++              }
++            }
++          }
+         }
+       }
+     },
+     "delivery": {
+       "type": "object",
+-      "required": ["open_p0", "failed_runs"],
++      "required": [
++        "open_p0",
++        "failed_runs"
++      ],
+       "additionalProperties": false,
+       "properties": {
+-        "open_p0": {"type": "array", "items": {"type": "object", "required": ["repo", "number", "title", "opened_at"], "additionalProperties": false,
+-          "properties": {"repo": {"type": "string"}, "number": {"type": "integer"}, "title": {"type": "string"}, "opened_at": {"type": "string", "format": "date-time"}}}},
+-        "failed_runs": {"type": "array", "description": "workflow runs red in the last window, one row per workflow",
+-          "items": {"type": "object", "required": ["repo", "workflow", "failed", "window_hours"], "additionalProperties": false,
+-            "properties": {"repo": {"type": "string"}, "workflow": {"type": "string"}, "failed": {"type": "integer"}, "window_hours": {"type": "integer"}, "last_run": {"type": "string"}}}},
+-        "main_sha": {"type": "object", "additionalProperties": {"type": "string"}, "description": "repo -> head sha of main at generation"}
++        "open_p0": {
++          "type": "array",
++          "items": {
++            "type": "object",
++            "required": [
++              "repo",
++              "number",
++              "title",
++              "opened_at"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "repo": {
++                "type": "string"
++              },
++              "number": {
++                "type": "integer"
++              },
++              "title": {
++                "type": "string"
++              },
++              "opened_at": {
++                "type": "string",
++                "format": "date-time"
++              }
++            }
++          }
++        },
++        "failed_runs": {
++          "type": "array",
++          "description": "workflow runs red in the last window, one row per workflow",
++          "items": {
++            "type": "object",
++            "required": [
++              "repo",
++              "workflow",
++              "failed",
++              "window_hours"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "repo": {
++                "type": "string"
++              },
++              "workflow": {
++                "type": "string"
++              },
++              "failed": {
++                "type": "integer"
++              },
++              "window_hours": {
++                "type": "integer"
++              },
++              "last_run": {
++                "type": "string"
++              }
++            }
++          }
++        },
++        "main_sha": {
++          "type": "object",
++          "additionalProperties": {
++            "type": "string"
++          },
++          "description": "repo -> head sha of main at generation"
++        }
+       }
+     },
+     "runtime": {
+       "type": "object",
+-      "required": ["clusters", "surfaces"],
++      "required": [
++        "clusters",
++        "surfaces"
++      ],
+       "additionalProperties": false,
+       "properties": {
+-        "clusters": {"type": "array", "items": {"type": "object", "required": ["name", "role", "flux_rows"], "additionalProperties": false,
+-          "properties": {
+-            "name": {"type": "string"}, "role": {"type": "string", "enum": ["production", "staging", "other"]},
+-            "state": {"type": "string", "enum": ["ok", "FAIL", "BLIND"], "description": "bin/idp-cluster-state verdict"},
+-            "revision": {"type": "string"},
+-            "flux_rows": {"type": "array", "items": {"type": "object", "required": ["kind", "namespace", "name", "ready"], "additionalProperties": false,
+-              "properties": {"kind": {"type": "string"}, "namespace": {"type": "string"}, "name": {"type": "string"}, "ready": {"type": "boolean"}, "message": {"type": "string"}}}}
+-          }}},
+-        "surfaces": {"type": "array", "description": "routed doors and the last drill verdict",
+-          "items": {"type": "object", "required": ["name", "verdict"], "additionalProperties": false,
+-            "properties": {"name": {"type": "string"}, "verdict": {"type": "string", "enum": ["ok", "FAIL", "BLIND"]}, "checked_at": {"type": "string", "format": "date-time"}, "detail": {"type": "string"}}}}
++        "clusters": {
++          "type": "array",
++          "items": {
++            "type": "object",
++            "required": [
++              "name",
++              "role",
++              "flux_rows"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "name": {
++                "type": "string"
++              },
++              "role": {
++                "type": "string",
++                "enum": [
++                  "production",
++                  "staging",
++                  "other"
++                ]
++              },
++              "state": {
++                "type": "string",
++                "enum": [
++                  "ok",
++                  "FAIL",
++                  "BLIND"
++                ],
++                "description": "bin/idp-cluster-state verdict"
++              },
++              "revision": {
++                "type": "string"
++              },
++              "flux_rows": {
++                "type": "array",
++                "items": {
++                  "type": "object",
++                  "required": [
++                    "kind",
++                    "namespace",
++                    "name",
++                    "ready"
++                  ],
++                  "additionalProperties": false,
++                  "properties": {
++                    "kind": {
++                      "type": "string"
++                    },
++                    "namespace": {
++                      "type": "string"
++                    },
++                    "name": {
++                      "type": "string"
++                    },
++                    "ready": {
++                      "type": "boolean"
++                    },
++                    "message": {
++                      "type": "string"
++                    }
++                  }
++                }
++              },
++              "reconcile": {
++                "type": "array",
++                "items": {
++                  "type": "object",
++                  "required": [
++                    "kind",
++                    "namespace",
++                    "name",
++                    "ready"
++                  ],
++                  "additionalProperties": false,
++                  "properties": {
++                    "kind": {
++                      "type": "string"
++                    },
++                    "namespace": {
++                      "type": "string"
++                    },
++                    "name": {
++                      "type": "string"
++                    },
++                    "ready": {
++                      "type": "boolean"
++                    },
++                    "since": {
++                      "type": [
++                        "string",
++                        "null"
++                      ]
++                    },
++                    "revision": {
++                      "type": [
++                        "string",
++                        "null"
++                      ]
++                    },
++                    "message": {
++                      "type": "string"
++                    }
++                  }
++                }
++              }
++            }
++          }
++        },
++        "surfaces": {
++          "type": "array",
++          "description": "routed doors and the last drill verdict",
++          "items": {
++            "type": "object",
++            "required": [
++              "name",
++              "verdict"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "name": {
++                "type": "string"
++              },
++              "verdict": {
++                "type": "string",
++                "enum": [
++                  "ok",
++                  "FAIL",
++                  "BLIND"
++                ]
++              },
++              "checked_at": {
++                "type": "string",
++                "format": "date-time"
++              },
++              "detail": {
++                "type": "string"
++              }
++            }
++          }
++        }
+       }
+     },
+     "docs_apis": {
+       "type": "object",
+-      "required": ["standards_page", "diagrams"],
++      "required": [
++        "standards_page",
++        "diagrams"
++      ],
+       "additionalProperties": false,
+       "properties": {
+-        "standards_page": {"type": "string", "description": "where the standards rows live"},
+-        "diagrams": {"type": "array", "items": {"type": "object", "required": ["name", "url"], "additionalProperties": false,
+-          "properties": {"name": {"type": "string"}, "url": {"type": "string"}, "generated_at": {"type": "string", "format": "date-time"}}}},
+-        "runbooks_index": {"type": "string"}
++        "standards_page": {
++          "type": "string",
++          "description": "where the standards rows live"
++        },
++        "diagrams": {
++          "type": "array",
++          "items": {
++            "type": "object",
++            "required": [
++              "name",
++              "url"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "name": {
++                "type": "string"
++              },
++              "url": {
++                "type": "string"
++              },
++              "generated_at": {
++                "type": "string",
++                "format": "date-time"
++              }
++            }
++          }
++        },
++        "runbooks_index": {
++          "type": "string"
++        }
+       }
+     },
+     "security": {
+       "type": "object",
+-      "required": ["open_findings"],
++      "required": [
++        "open_findings"
++      ],
+       "additionalProperties": false,
+       "properties": {
+-        "open_findings": {"type": "array", "items": {"type": "object", "required": ["repo", "severity", "count"], "additionalProperties": false,
+-          "properties": {"repo": {"type": "string"}, "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"]}, "count": {"type": "integer"}, "source": {"type": "string"}}}},
+-        "secrets_in_git": {"type": "integer", "description": "open gitleaks findings (crew#240)"}
++        "open_findings": {
++          "type": "array",
++          "items": {
++            "type": "object",
++            "required": [
++              "repo",
++              "severity",
++              "count"
++            ],
++            "additionalProperties": false,
++            "properties": {
++              "repo": {
++                "type": "string"
++              },
++              "severity": {
++                "type": "string",
++                "enum": [
++                  "critical",
++                  "high",
++                  "medium",
++                  "low"
++                ]
++              },
++              "count": {
++                "type": "integer"
++              },
++              "source": {
++                "type": "string"
++              }
++            }
++          }
++        },
++        "secrets_in_git": {
++          "type": "integer",
++          "description": "open gitleaks findings (crew#240)"
++        }
+       }
+     }
+   }
+diff --git a/platform/event-bus/nats.yaml b/platform/event-bus/nats.yaml
+index b2798d13f..21b3d4dc3 100644
+--- a/platform/event-bus/nats.yaml
++++ b/platform/event-bus/nats.yaml
+@@ -28,7 +28,7 @@ metadata:
+   name: nats
+   namespace: event-bus
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   chart:
+     spec:
+diff --git a/platform/guacamole/external-secret.yaml b/platform/guacamole/external-secret.yaml
+index dc611988c..9ecd9b28a 100644
+--- a/platform/guacamole/external-secret.yaml
++++ b/platform/guacamole/external-secret.yaml
+@@ -9,7 +9,7 @@ metadata:
+   name: guacamole
+   namespace: guacamole
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: guacamole
+@@ -27,7 +27,7 @@ metadata:
+   name: guacamole-db
+   namespace: guacamole
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: guacamole-db
+diff --git a/platform/healing/descheduler.yaml b/platform/healing/descheduler.yaml
+index 5ab1980fe..3cb724317 100644
+--- a/platform/healing/descheduler.yaml
++++ b/platform/healing/descheduler.yaml
+@@ -42,7 +42,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-alerts
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   chart:
+     spec:
+diff --git a/platform/healing/external-secret.yaml b/platform/healing/external-secret.yaml
+index 9bc34f83a..7a1f48b60 100644
+--- a/platform/healing/external-secret.yaml
++++ b/platform/healing/external-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: k8sgpt
+   namespace: healing
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: k8sgpt, creationPolicy: Owner }
+   data:
+diff --git a/platform/healing/k8sgpt.yaml b/platform/healing/k8sgpt.yaml
+index 881dc958b..f3a43ff01 100644
+--- a/platform/healing/k8sgpt.yaml
++++ b/platform/healing/k8sgpt.yaml
+@@ -20,7 +20,7 @@ metadata:
+   name: k8sgpt-operator
+   namespace: healing
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   chart:
+     spec:
+diff --git a/platform/healthchecks/external-secret.yaml b/platform/healthchecks/external-secret.yaml
+index ebe12aa0b..a28803881 100644
+--- a/platform/healthchecks/external-secret.yaml
++++ b/platform/healthchecks/external-secret.yaml
+@@ -31,7 +31,7 @@ metadata:
+   name: healthchecks-db
+   namespace: healthchecks
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: healthchecks-db
+diff --git a/platform/hermes-agent/gateway.yaml b/platform/hermes-agent/gateway.yaml
+index 3df32d079..bcc36704c 100644
+--- a/platform/hermes-agent/gateway.yaml
++++ b/platform/hermes-agent/gateway.yaml
+@@ -47,7 +47,7 @@ metadata:
+ spec:
+   # 45m keeps every mint inside the token's 60-minute life (vendor page, generator/github: "Github
+   # tokens expire after 60 minutes ... choose a refreshInterval that is below this number").
+-  refreshInterval: 45m
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: hermes-agent-env, creationPolicy: Owner }
+   dataFrom:
+@@ -106,7 +106,7 @@ metadata:
+   name: hermes-agent-github-app-pem
+   namespace: hermes-agent
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: github-app-pem
+diff --git a/platform/hermes-agent/langfuse-key.yaml b/platform/hermes-agent/langfuse-key.yaml
+index a2ea01a7f..053abf531 100644
+--- a/platform/hermes-agent/langfuse-key.yaml
++++ b/platform/hermes-agent/langfuse-key.yaml
+@@ -10,7 +10,7 @@ metadata:
+   name: hermes-agent-langfuse
+   namespace: hermes-agent
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: hermes-agent-langfuse, creationPolicy: Owner }
+   data:
+diff --git a/platform/hermes-agent/mac-run-key.yaml b/platform/hermes-agent/mac-run-key.yaml
+index 91aebb741..452f80e0d 100644
+--- a/platform/hermes-agent/mac-run-key.yaml
++++ b/platform/hermes-agent/mac-run-key.yaml
+@@ -10,7 +10,7 @@ metadata:
+   name: hermes-agent-mac-run
+   namespace: hermes-agent
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: hermes-agent-mac-run
+diff --git a/platform/hermes-agent/mcp-key.yaml b/platform/hermes-agent/mcp-key.yaml
+index 84f9e8bf4..17b8c2784 100644
+--- a/platform/hermes-agent/mcp-key.yaml
++++ b/platform/hermes-agent/mcp-key.yaml
+@@ -9,7 +9,7 @@ metadata:
+   name: hermes-agent-mcp
+   namespace: hermes-agent
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: hermes-agent-mcp, creationPolicy: Owner }
+   data:
+diff --git a/platform/hermes-agent/tailscale.yaml b/platform/hermes-agent/tailscale.yaml
+index fcd0ba2c7..e97f8c9e3 100644
+--- a/platform/hermes-agent/tailscale.yaml
++++ b/platform/hermes-agent/tailscale.yaml
+@@ -21,7 +21,7 @@ metadata:
+   name: hermes-agent-tailscale
+   namespace: hermes-agent
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: hermes-agent-tailscale
+diff --git a/platform/hindsight/external-secret.yaml b/platform/hindsight/external-secret.yaml
+index e2dd7e300..302d242cb 100644
+--- a/platform/hindsight/external-secret.yaml
++++ b/platform/hindsight/external-secret.yaml
+@@ -8,7 +8,7 @@ metadata:
+   name: hindsight-env
+   namespace: hindsight
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: hindsight-env, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/hindsight/hindsight.yaml b/platform/hindsight/hindsight.yaml
+index a0cce7c87..d94287b48 100644
+--- a/platform/hindsight/hindsight.yaml
++++ b/platform/hindsight/hindsight.yaml
+@@ -19,7 +19,7 @@ metadata:
+   name: hindsight
+   namespace: hindsight
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+@@ -32,7 +32,7 @@ spec:
+     # crew#524 CP1 (2026-08-27): 4 installs failed on 'Deployment hindsight-api status Failed' and the
+     # release stalled with no pod evidence left; one more attempt per hour lets the 15-min
+     # cluster-state snapshot catch the pod's own reason (LAW 29: attribute before repair).
+-    remediation: { retries: 5 }
++    remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3 }
+   values:
+diff --git a/platform/identity/external-secret.yaml b/platform/identity/external-secret.yaml
+index 8136ea1d7..47a25fc72 100644
+--- a/platform/identity/external-secret.yaml
++++ b/platform/identity/external-secret.yaml
+@@ -12,7 +12,7 @@ metadata:
+   name: oauth2-proxy
+   namespace: identity
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: oauth2-proxy
+diff --git a/platform/identity/oauth2-proxy.yaml b/platform/identity/oauth2-proxy.yaml
+index ccb26347c..e5a880123 100644
+--- a/platform/identity/oauth2-proxy.yaml
++++ b/platform/identity/oauth2-proxy.yaml
+@@ -42,7 +42,7 @@ spec:
+                 labels:
+                   backstage.io/kubernetes-id: founder-login
+   interval: 10m
+-  timeout: 5m
++  timeout: 10m
+   chart:
+     spec:
+       chart: oauth2-proxy
+diff --git a/platform/image-automation/flux-writer.yaml b/platform/image-automation/flux-writer.yaml
+index ae5df3d53..7752eb82e 100644
+--- a/platform/image-automation/flux-writer.yaml
++++ b/platform/image-automation/flux-writer.yaml
+@@ -15,7 +15,7 @@ metadata:
+   name: flux-writer
+   namespace: flux-system
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: flux-writer
+diff --git a/platform/keda/keda.yaml b/platform/keda/keda.yaml
+index b161a6651..792493ac7 100644
+--- a/platform/keda/keda.yaml
++++ b/platform/keda/keda.yaml
+@@ -24,7 +24,7 @@ metadata:
+   name: keda
+   namespace: keda
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   chart:
+     spec:
+@@ -64,7 +64,7 @@ metadata:
+   name: keda-add-ons-http
+   namespace: keda
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   dependsOn:
+     - name: keda
+diff --git a/platform/kyverno/kyverno.yaml b/platform/kyverno/kyverno.yaml
+index 207e98cfd..000542e52 100644
+--- a/platform/kyverno/kyverno.yaml
++++ b/platform/kyverno/kyverno.yaml
+@@ -30,7 +30,7 @@ spec:
+     remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3, remediateLastFailure: true }
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: kyverno
+diff --git a/platform/llm/external-secret.yaml b/platform/llm/external-secret.yaml
+index a7b4615bf..65000561e 100644
+--- a/platform/llm/external-secret.yaml
++++ b/platform/llm/external-secret.yaml
+@@ -20,7 +20,7 @@ metadata:
+   name: litellm-upstream
+   namespace: llm
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: litellm-upstream, creationPolicy: Owner }
+   dataFrom:
+@@ -34,7 +34,7 @@ metadata:
+   name: litellm-langfuse
+   namespace: llm
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: litellm-langfuse
+@@ -59,7 +59,7 @@ metadata:
+   name: litellm-sso
+   namespace: llm
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: litellm-sso, creationPolicy: Owner }
+   data:
+diff --git a/platform/mcp/external-secret.yaml b/platform/mcp/external-secret.yaml
+index 22056f165..8a00fa1dd 100644
+--- a/platform/mcp/external-secret.yaml
++++ b/platform/mcp/external-secret.yaml
+@@ -9,7 +9,7 @@ metadata:
+   namespace: mcp
+ spec:
+   # Below the minted token's 60-minute life; each refresh mints a fresh installation token.
+-  refreshInterval: 45m
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: mcp-gateway, creationPolicy: Owner }
+   dataFrom:
+@@ -51,7 +51,7 @@ metadata:
+   name: mcp-github-app-pem
+   namespace: mcp
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: github-app-pem
+diff --git a/platform/mcp/pull-secret.yaml b/platform/mcp/pull-secret.yaml
+index 549d6a130..a8ae5fb68 100644
+--- a/platform/mcp/pull-secret.yaml
++++ b/platform/mcp/pull-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: ghcr-pull
+   namespace: mcp
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: ghcr-pull }
+   target:
+     name: ghcr-pull
+diff --git a/platform/metrics-server/metrics-server.yaml b/platform/metrics-server/metrics-server.yaml
+index f17dd4289..3ef8adb84 100644
+--- a/platform/metrics-server/metrics-server.yaml
++++ b/platform/metrics-server/metrics-server.yaml
+@@ -35,7 +35,7 @@ metadata:
+   name: metrics-server
+   namespace: metrics-server
+ spec:
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: metrics-server
+diff --git a/platform/monitoring/alertmanager-config.yaml b/platform/monitoring/alertmanager-config.yaml
+index 389b42747..9d54f4147 100644
+--- a/platform/monitoring/alertmanager-config.yaml
++++ b/platform/monitoring/alertmanager-config.yaml
+@@ -15,7 +15,7 @@ metadata:
+   name: alertmanager-telegram
+   namespace: monitoring
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: alertmanager-telegram
+diff --git a/platform/monitoring/blackbox.yaml b/platform/monitoring/blackbox.yaml
+index 0c9e14794..73b116c3d 100644
+--- a/platform/monitoring/blackbox.yaml
++++ b/platform/monitoring/blackbox.yaml
+@@ -30,7 +30,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-alerts
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   chart:
+     spec:
+diff --git a/platform/monitoring/kube-prometheus-stack.yaml b/platform/monitoring/kube-prometheus-stack.yaml
+index 1ee00f8af..ce558b2a9 100644
+--- a/platform/monitoring/kube-prometheus-stack.yaml
++++ b/platform/monitoring/kube-prometheus-stack.yaml
+@@ -46,7 +46,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-alerts
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+diff --git a/platform/observability/httproute.yaml b/platform/observability/httproute.yaml
+index fb16002b4..666402855 100644
+--- a/platform/observability/httproute.yaml
++++ b/platform/observability/httproute.yaml
+@@ -172,7 +172,7 @@ metadata:
+   name: otlp-ingest-users
+   namespace: observability
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: otlp-ingest-users, creationPolicy: Owner }
+   data:
+diff --git a/platform/observability/langfuse.yaml b/platform/observability/langfuse.yaml
+index dfdc730e4..7d1f0a35e 100644
+--- a/platform/observability/langfuse.yaml
++++ b/platform/observability/langfuse.yaml
+@@ -18,7 +18,7 @@ kind: ExternalSecret
+ metadata:
+   name: langfuse-init
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: langfuse-init
+@@ -63,7 +63,7 @@ kind: ExternalSecret
+ metadata:
+   name: langfuse-sso
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: langfuse-sso
+@@ -97,7 +97,7 @@ kind: ExternalSecret
+ metadata:
+   name: clickhouse-auth
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: clickhouse-auth
+@@ -146,7 +146,7 @@ kind: HelmRelease
+ metadata:
+   name: langfuse
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   # Incident 2026-08-26 (crew#325): langfuse-web crash-looped for four hours on
+   # `lookup signoz-clickhouse: no such host` while the signoz release had never become Ready.
+diff --git a/platform/observability/signoz.yaml b/platform/observability/signoz.yaml
+index 8f8d518e6..af39d6698 100644
+--- a/platform/observability/signoz.yaml
++++ b/platform/observability/signoz.yaml
+@@ -10,7 +10,7 @@ kind: HelmRelease
+ metadata:
+   name: signoz
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+@@ -211,7 +211,7 @@ kind: ExternalSecret
+ metadata:
+   name: signoz-root
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target:
+     name: signoz-root
+diff --git a/platform/oci/autoscaler/external-secret.yaml b/platform/oci/autoscaler/external-secret.yaml
+index d66f93c89..0b601845c 100644
+--- a/platform/oci/autoscaler/external-secret.yaml
++++ b/platform/oci/autoscaler/external-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: oke-autoscaler
+   namespace: kube-system
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: oke-autoscaler, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/prospector/cloudflare-external-secret.yaml b/platform/prospector/cloudflare-external-secret.yaml
+index 5c0ed29b7..2ea613b75 100644
+--- a/platform/prospector/cloudflare-external-secret.yaml
++++ b/platform/prospector/cloudflare-external-secret.yaml
+@@ -7,7 +7,7 @@ metadata:
+   name: cloudflare-api-token
+   namespace: edge
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef:
+     kind: ClusterSecretStore
+     name: estate-vault
+diff --git a/platform/prospector/engine-external-secret.yaml b/platform/prospector/engine-external-secret.yaml
+index b8505136c..fc2596ed9 100644
+--- a/platform/prospector/engine-external-secret.yaml
++++ b/platform/prospector/engine-external-secret.yaml
+@@ -8,7 +8,7 @@ metadata:
+   name: prospector-engine-env
+   namespace: prospector
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: prospector-engine-env, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/prospector/store-api-external-secret.yaml b/platform/prospector/store-api-external-secret.yaml
+index 03d2f3230..9f474316d 100644
+--- a/platform/prospector/store-api-external-secret.yaml
++++ b/platform/prospector/store-api-external-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: prospector-store-api-env
+   namespace: prospector
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: prospector-store-api-env, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/reloader/reloader.yaml b/platform/reloader/reloader.yaml
+index 7614e1f34..f1343793d 100644
+--- a/platform/reloader/reloader.yaml
++++ b/platform/reloader/reloader.yaml
+@@ -64,7 +64,7 @@ spec:
+     remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3, remediateLastFailure: true }
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: reloader
+diff --git a/platform/robusta/external-secret.yaml b/platform/robusta/external-secret.yaml
+index 45b9deb6c..47bdf7507 100644
+--- a/platform/robusta/external-secret.yaml
++++ b/platform/robusta/external-secret.yaml
+@@ -7,7 +7,7 @@ metadata:
+   name: robusta-telegram
+   namespace: robusta
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: robusta-telegram, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/robusta/robusta.yaml b/platform/robusta/robusta.yaml
+index 583faa2ed..8852a9de6 100644
+--- a/platform/robusta/robusta.yaml
++++ b/platform/robusta/robusta.yaml
+@@ -23,7 +23,7 @@ metadata:
+   name: robusta
+   namespace: robusta
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+diff --git a/platform/secrets/external-secrets.yaml b/platform/secrets/external-secrets.yaml
+index 8726532f5..5beede651 100644
+--- a/platform/secrets/external-secrets.yaml
++++ b/platform/secrets/external-secrets.yaml
+@@ -31,7 +31,7 @@ spec:
+     remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3, remediateLastFailure: true }
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: external-secrets
+diff --git a/platform/spire/helmrelease.yaml b/platform/spire/helmrelease.yaml
+index ed08f7300..8d73acbd9 100644
+--- a/platform/spire/helmrelease.yaml
++++ b/platform/spire/helmrelease.yaml
+@@ -44,7 +44,7 @@ spec:
+     remediation: { retries: 3 }
+   upgrade:
+     remediation: { retries: 3, remediateLastFailure: true }
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: spire-crds
+@@ -59,7 +59,7 @@ metadata:
+   name: spire
+   namespace: spire-mgmt
+ spec:
+-  interval: 1h
++  interval: 10m
+   timeout: 10m
+   dependsOn:
+     - name: spire-crds
+diff --git a/platform/state/cluster-state.yaml b/platform/state/cluster-state.yaml
+index 5f03f84b7..446e608dd 100644
+--- a/platform/state/cluster-state.yaml
++++ b/platform/state/cluster-state.yaml
+@@ -323,6 +323,11 @@ data:
+                 # every dark row into a cluster FAIL on the estate-state page.
+                 row["ready"] = True
+                 row["message"] = "suspended (dark switch)"
++            if kind in ("Kustomization", "HelmRelease"):
++                # crew#727: the founder's `flux get all -A` as a receipt -- the row names
++                # the revision actually applied, so "did my merge land" is a read, never
++                # arithmetic over intervals.
++                row["revision"] = st.get("lastAppliedRevision") or st.get("lastAttemptedRevision")
+             if kind == "HelmRelease":
+                 row.update(helm_last_attempt(st))
+             if kind == "ImagePolicy":
+diff --git a/platform/tailscale/external-secret.yaml b/platform/tailscale/external-secret.yaml
+index 129c6dea0..cc4a48c32 100644
+--- a/platform/tailscale/external-secret.yaml
++++ b/platform/tailscale/external-secret.yaml
+@@ -19,7 +19,7 @@ metadata:
+   name: tailscale-operator-secret
+   namespace: tailscale
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: operator-oauth, creationPolicy: Owner }
+   data:
+diff --git a/platform/tailscale/operator.yaml b/platform/tailscale/operator.yaml
+index cdca77e88..5ca11b286 100644
+--- a/platform/tailscale/operator.yaml
++++ b/platform/tailscale/operator.yaml
+@@ -57,7 +57,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-screen
+-  interval: 1h
++  interval: 10m
+   chart:
+     spec:
+       chart: tailscale-operator
+diff --git a/platform/temporal/external-secret.yaml b/platform/temporal/external-secret.yaml
+index a28e120c4..6c4e9fbc7 100644
+--- a/platform/temporal/external-secret.yaml
++++ b/platform/temporal/external-secret.yaml
+@@ -7,7 +7,7 @@ metadata:
+   name: temporal-db
+   namespace: temporal
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: temporal-db, creationPolicy: Owner }
+   dataFrom:
+diff --git a/platform/temporal/pull-secret.yaml b/platform/temporal/pull-secret.yaml
+index c237c5f87..9ea96ce86 100644
+--- a/platform/temporal/pull-secret.yaml
++++ b/platform/temporal/pull-secret.yaml
+@@ -6,7 +6,7 @@ metadata:
+   name: ghcr-pull
+   namespace: temporal
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: ghcr-pull }
+   target:
+     name: ghcr-pull
+diff --git a/platform/temporal/temporal.yaml b/platform/temporal/temporal.yaml
+index c46021f66..45b51d349 100644
+--- a/platform/temporal/temporal.yaml
++++ b/platform/temporal/temporal.yaml
+@@ -38,7 +38,7 @@ spec:
+                 name: every-interface-is-a-door
+                 labels:
+                   backstage.io/kubernetes-id: founder-temporal
+-  interval: 1h
++  interval: 10m
+   timeout: 15m
+   chart:
+     spec:
+diff --git a/platform/verification/verdict-key-wall.yaml b/platform/verification/verdict-key-wall.yaml
+index 9073dbf57..1cfda20a2 100644
+--- a/platform/verification/verdict-key-wall.yaml
++++ b/platform/verification/verdict-key-wall.yaml
+@@ -14,7 +14,7 @@ metadata:
+   annotations:
+     estate/expect-ready: "false"
+ spec:
+-  refreshInterval: 1h
++  refreshInterval: 10m
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+   target: { name: verdict-key-wall, creationPolicy: Owner }
+   data:
+diff --git a/tests/test_healthchecks_row.py b/tests/test_healthchecks_row.py
+index 083337ff5..bebe7f062 100644
+--- a/tests/test_healthchecks_row.py
++++ b/tests/test_healthchecks_row.py
+@@ -72,7 +72,7 @@ def test_flux_row_waits_on_the_deployment_after_the_front_door():
+     docs = [d for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text()) if d]
+     ks = next(d for d in docs if d["kind"] == "Kustomization" and d["metadata"]["name"] == "healthchecks")
+     assert {d["name"] for d in ks["spec"]["dependsOn"]} >= {"identity", "secret-store"}
+-    assert ks["spec"]["wait"] is True and ks["spec"]["interval"] == "1m"
++    assert ks["spec"]["wait"] is True  # the interval is the estate value; test_incident_crew727 owns it
+     assert ks["spec"]["healthChecks"] == [{"apiVersion": "apps/v1", "kind": "Deployment",
+                                           "name": "healthchecks", "namespace": "healthchecks"}]
+     assert {s["name"] for s in ks["spec"]["postBuild"]["substituteFrom"]} == {"estate-config"}
+diff --git a/tests/test_incident_backstage_17h_unreported.py b/tests/test_incident_backstage_17h_unreported.py
+index 8e3e1218e..47e42808d 100644
+--- a/tests/test_incident_backstage_17h_unreported.py
++++ b/tests/test_incident_backstage_17h_unreported.py
+@@ -33,7 +33,7 @@ def _namespace_of(path, doc):
+ 
+ def test_every_cluster_kustomization_with_health_checks_waits():
+     for f, d in _docs("clusters/*/*.yaml"):
+-        if d.get("kind") == "Kustomization" and d["spec"].get("healthChecks"):
++        if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("healthChecks"):
+             assert d["spec"].get("wait") is True, f"{f}: {d['metadata']['name']} has healthChecks but wait is not true"
+             assert d["spec"].get("timeout"), f"{f}: {d['metadata']['name']} has no timeout, so it never stalls"
+ 
+@@ -44,7 +44,7 @@ def test_every_health_checked_kustomization_reconciles_within_ten_minutes():
+     slow = []
+     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+         for d in yaml.safe_load_all(open(f)):
+-            if d and d.get("kind") == "Kustomization" and (
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and (
+                 d["spec"].get("healthChecks") or d["spec"].get("wait")
+             ):
+                 iv = d["spec"]["interval"]
+diff --git a/tests/test_incident_chaos_row_crd_before_cr.py b/tests/test_incident_chaos_row_crd_before_cr.py
+index b9091a2d2..ab2f04a28 100644
+--- a/tests/test_incident_chaos_row_crd_before_cr.py
++++ b/tests/test_incident_chaos_row_crd_before_cr.py
+@@ -78,7 +78,7 @@ def _rows():
+     out = {}
+     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+         for d in yaml.safe_load_all(open(f)):
+-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path"):
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path"):
+                 out[d["metadata"]["name"]] = (ROOT / d["spec"]["path"],
+                                               {x["name"] for x in d["spec"].get("dependsOn", [])})
+     return out
+@@ -102,7 +102,7 @@ def _foreign_rows():
+     out = set()
+     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
+         for d in yaml.safe_load_all(open(f)):
+-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path") \
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path") \
+                     and d["spec"].get("sourceRef", {}).get("name") != LOCAL_SOURCE:
+                 out.add(d["metadata"]["name"])
+     return out
+diff --git a/tests/test_incident_crew284_flux_envsubst_strict_variable.py b/tests/test_incident_crew284_flux_envsubst_strict_variable.py
+index add85336b..b4ecbeb8d 100644
+--- a/tests/test_incident_crew284_flux_envsubst_strict_variable.py
++++ b/tests/test_incident_crew284_flux_envsubst_strict_variable.py
+@@ -53,7 +53,7 @@ def undefined_variables(path_text: str, allowed: set[str]) -> set[str]:
+ def kustomizations():
+     for f in glob.glob(str(ROOT / "clusters" / "*" / "*.yaml")):
+         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path"):
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path"):
+                 yield d
+ 
+ 
+diff --git a/tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py b/tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py
+index dfe508661..8df1729dc 100644
+--- a/tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py
++++ b/tests/test_incident_crew325_kyverno_refused_cert_manager_and_langfuse.py
+@@ -46,7 +46,7 @@ def test_incident_crew325_every_policy_exception_lives_where_kyverno_reads() ->
+             d["spec"]["path"]
+             for f in ROOT.glob("clusters/oke/*.yaml")
+             for d in yaml.safe_load_all(f.read_text())
+-            if d and d.get("kind") == "Kustomization" and d["spec"].get("path", "").startswith("./platform/")
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("path", "").startswith("./platform/")
+         }
+     )
+     assert paths
+diff --git a/tests/test_incident_crew459_every_flux_layer_is_in_the_catalogue.py b/tests/test_incident_crew459_every_flux_layer_is_in_the_catalogue.py
+index 6795254bf..a1b625478 100644
+--- a/tests/test_incident_crew459_every_flux_layer_is_in_the_catalogue.py
++++ b/tests/test_incident_crew459_every_flux_layer_is_in_the_catalogue.py
+@@ -19,7 +19,7 @@ def _kustomizations():
+     names = set()
+     for f in glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml")):
+         for d in yaml.safe_load_all(open(f)):
+-            if d and d.get("kind") == "Kustomization":
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 names.add(d["metadata"]["name"])
+     return names
+ 
+diff --git a/tests/test_incident_crew488_cp5_root_reds_are_never_green.py b/tests/test_incident_crew488_cp5_root_reds_are_never_green.py
+index 5a9182db0..eaff08636 100644
+--- a/tests/test_incident_crew488_cp5_root_reds_are_never_green.py
++++ b/tests/test_incident_crew488_cp5_root_reds_are_never_green.py
+@@ -97,7 +97,7 @@ def test_every_clusterpolicy_in_the_tree_is_applied_by_a_layer_that_waits_on_kyv
+     deps = {}
+     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
+         for d in yaml.safe_load_all(f.read_text()):
+-            if d and d.get("kind") == "Kustomization":
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 deps[d["metadata"]["name"]] = [x["name"] for x in (d.get("spec") or {}).get("dependsOn", [])]
+ 
+     def waits_on_kyverno(layer: str, seen=()) -> bool:
+@@ -168,7 +168,7 @@ def test_the_drill_clusters_have_two_nodes_because_the_front_door_spreads():
+ def _spec(row: str) -> dict:
+     for f in sorted((ROOT / "clusters" / "oke").glob("*.yaml")):
+         for d in docs(f"clusters/oke/{f.name}"):
+-            if d.get("kind") == "Kustomization" and d["metadata"]["name"] == row:
++            if d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["metadata"]["name"] == row:
+                 return d["spec"]
+     raise AssertionError(f"no Kustomization {row}")
+ 
+diff --git a/tests/test_incident_crew727_intervals_are_one_estate_value.py b/tests/test_incident_crew727_intervals_are_one_estate_value.py
+new file mode 100644
+index 000000000..d1e40a32b
+--- /dev/null
++++ b/tests/test_incident_crew727_intervals_are_one_estate_value.py
+@@ -0,0 +1,185 @@
++"""crew#727: reconcile intervals are one estate value, and reconcile state is visible.
++
++Founder, 2026-08-31, verbatim: "it shouldn't be a number anyone has to know... the interval
++field and the time to land a change are different things, and nothing in your tooling says
++so... Set intervals consistently and deliberately across every HelmRelease and Kustomization.
++Not per-chart guesses. One value in the base patch — 10m for drift detection is a reasonable
++estate-wide default... Make the actual state visible instead of inferred."
++
++The distinction, stated once where CI can hold it: a Kustomization/HelmRelease `interval` is
++drift detection — how often Flux re-asserts git against the cluster when nothing changed.
++Time-to-land is the flux-system GitRepository poll (1m) plus the dependency chain: a new git
++revision triggers reconciliation immediately, whatever the drift interval says. Measured spread
++before this wave: Kustomizations 34x1m + 14x10m + 1x1m0s, HelmReleases 24x1h + 2x10m — three
++spellings of a decision nobody made.
++"""
++
++import glob
++import importlib.machinery
++import importlib.util
++import pathlib
++
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++KUST = ROOT / "clusters" / "oke" / "kustomization.yaml"
++
++
++def base_value() -> str:
++    doc = yaml.safe_load(KUST.read_text())
++    hits = [
++        p
++        for p in doc.get("patches", [])
++        if (p.get("target") or {}).get("group") == "kustomize.toolkit.fluxcd.io"
++        and (p.get("target") or {}).get("kind") == "Kustomization"
++    ]
++    assert len(hits) == 1, (
++        "exactly one estate interval patch, the one place the value lives"
++    )
++    return yaml.safe_load(hits[0]["patch"])["spec"]["interval"]
++
++
++def flux_docs():
++    files = glob.glob(
++        str(ROOT / "clusters" / "**" / "*.yaml"), recursive=True
++    ) + glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True)
++    for f in files:
++        if "flux-system/" in f:
++            continue  # gotk-*.yaml is flux-generated; the base patch overrides it in-cluster
++        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
++            if isinstance(d, dict):
++                yield f, d
++
++
++def test_every_kustomization_and_helmrelease_interval_is_the_one_estate_value():
++    v = base_value()
++    bad = []
++    for f, d in flux_docs():
++        kind = d.get("kind")
++        api = str(d.get("apiVersion", ""))
++        iv = (d.get("spec") or {}).get("interval")
++        if iv is None:
++            continue
++        if (kind == "Kustomization" and api.startswith("kustomize.toolkit")) or (
++            kind == "HelmRelease" and api.startswith("helm.toolkit")
++        ):
++            if str(iv) != str(v):
++                bad.append(
++                    f"{f}: {kind} {d['metadata'].get('name')} interval={iv} != {v}"
++                )
++    assert not bad, (
++        "per-chart guesses (founder 2026-08-31: one estate value):\n" + "\n".join(bad)
++    )
++
++
++def test_no_file_beside_the_base_patch_is_silently_dropped():
++    """With an explicit resources list, an unlisted file is not applied and prune deletes its
++    objects. The list is pinned to the directory: adding a file without a row here is red CI."""
++    doc = yaml.safe_load(KUST.read_text())
++    listed = set(doc["resources"])
++    on_disk = {p.name for p in (ROOT / "clusters" / "oke").glob("*.yaml")} - {
++        "kustomization.yaml"
++    }
++    on_disk |= {"flux-system"}
++    assert listed == on_disk, (
++        f"listed-but-missing={listed - on_disk} unlisted={on_disk - listed}"
++    )
++
++
++def test_landing_speed_is_the_source_poll_not_the_drift_interval():
++    """A merged change lands at GitRepository-poll speed; the 10m drift value never gates it.
++    If someone 'standardises' the source poll to 10m, changes land ten minutes late — red."""
++    docs = yaml.safe_load_all(
++        (ROOT / "clusters/oke/flux-system/gotk-sync.yaml").read_text()
++    )
++    git = next(
++        d for d in docs if isinstance(d, dict) and d.get("kind") == "GitRepository"
++    )
++    assert git["spec"]["interval"] in ("30s", "1m", "1m0s"), (
++        "the flux-system GitRepository poll is time-to-land; it stays at a minute, "
++        "not at the drift default"
++    )
++
++
++def test_the_receipt_row_says_which_revision_is_applied():
++    """Founder: make the actual state visible instead of inferred. The cluster receipt's
++    Kustomization and HelmRelease rows carry the applied revision, so 'did my merge land'
++    is a read, never an inference from interval arithmetic."""
++    text = (ROOT / "platform" / "state" / "cluster-state.yaml").read_text()
++    assert "lastAppliedRevision" in text and "lastAttemptedRevision" in text
++
++
++def _builder():
++    loader = importlib.machinery.SourceFileLoader(
++        "estate_state_build", str(ROOT / "bin" / "idp-estate-state-build")
++    )
++    spec = importlib.util.spec_from_loader("estate_state_build", loader)
++    mod = importlib.util.module_from_spec(spec)
++    loader.exec_module(mod)
++    return mod
++
++
++def test_the_state_page_carries_every_reconcile_row_not_only_the_failed():
++    """flux get all -A, as a graded receipt: ready rows appear in `reconcile` with revision and
++    since; `flux_rows` (the red-row grader) still carries only the not-ready ones."""
++    mod = _builder()
++    body = {
++        "flux": [
++            {
++                "kind": "Kustomization",
++                "ns": "flux-system",
++                "name": "edge",
++                "ready": True,
++                "message": "Applied revision: main@sha1:abc",
++                "since": "2026-08-31T05:00:00Z",
++                "revision": "main@sha1:abc",
++            },
++            {
++                "kind": "HelmRelease",
++                "ns": "tailscale",
++                "name": "tailscale-operator",
++                "ready": False,
++                "message": "Helm upgrade failed",
++                "since": "2026-08-31T04:00:00Z",
++                "revision": "1.102.3",
++            },
++            {
++                "kind": "HelmRepository",
++                "ns": "flux-system",
++                "name": "traefik",
++                "ready": True,
++                "message": "ok",
++                "since": "2026-08-31T05:00:00Z",
++            },
++        ],
++        "flux_not_ready": [
++            {
++                "kind": "HelmRelease",
++                "ns": "tailscale",
++                "name": "tailscale-operator",
++                "ready": False,
++                "message": "Helm upgrade failed",
++            }
++        ],
++    }
++    import json as _json
++
++    text = (
++        "FAIL cluster-state at 2026-08-31T05:00:00Z nodes=2 ready=2 flux_not_ready=1\n"
++        + _json.dumps(body)
++    )
++    got = mod.parse_cluster_receipt(text)
++    rec = got.get("reconcile")
++    assert rec is not None, "the receipt's full flux table must reach the state page"
++    kinds = {(r["kind"], r["name"]): r for r in rec}
++    assert ("Kustomization", "edge") in kinds, (
++        "a READY row is visible, not only the failed ones"
++    )
++    assert kinds[("Kustomization", "edge")]["revision"] == "main@sha1:abc"
++    assert kinds[("Kustomization", "edge")]["since"] == "2026-08-31T05:00:00Z"
++    assert ("HelmRepository", "traefik") not in kinds, (
++        "chart polling is a different knob"
++    )
++    assert [r["name"] for r in got["flux_rows"]] == ["tailscale-operator"], (
++        "the red-row grader is unchanged"
++    )
+diff --git a/tests/test_incident_crew727_scattered_knobs_are_deliberate.py b/tests/test_incident_crew727_scattered_knobs_are_deliberate.py
+new file mode 100644
+index 000000000..1b2a7c1f7
+--- /dev/null
++++ b/tests/test_incident_crew727_scattered_knobs_are_deliberate.py
+@@ -0,0 +1,145 @@
++"""crew#727 CP2: every scattered per-file knob is the estate default or a named exception.
++
++Follow-on from the interval wave, same founder directive (2026-08-31): a number nobody
++decided is not a configuration, it is a guess. Measured before this wave: HelmRelease and
++Kustomization timeouts in 7 spellings (including a 10s and a 15s helm upgrade timeout —
++impossible values), ExternalSecret refreshInterval 1h on 39 of 45 entries while the
++rotation strategy (crew#722, docs/policy/secrets-rotation.md) promises vault-to-pod in 25
++minutes, one stray remediation retries=5, one stray actions/checkout pin.
++
++The rule these tests hold: the default is one constant here; anything else is a row in an
++exceptions table with the value pinned and a reason. Drift in either direction — a new
++guess, or an exception silently changing — is red CI. Edits were raise-never-lower, so no
++running upgrade got a shorter deadline than it had.
++"""
++
++import glob
++import pathlib
++import re
++
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++DEFAULT_TIMEOUT = "10m"
++DEFAULT_REFRESH = (
++    "10m"  # rotation SLO is 25m vault-to-pod; an hourly refresh cannot honour it
++)
++DEFAULT_RETRIES = 3
++
++# (kind, name) -> pinned value. Reason per group:
++# - 15m/20m rows are CRD-heavy or migration-running stacks (monitoring, observability,
++#   temporal, commerce) sized above default before this wave; lower only with a measured
++#   upgrade run showing it fits.
++TIMEOUT_EXCEPTIONS = {
++    ("Kustomization", "commerce"): "15m",
++    ("Kustomization", "spire"): "15m",
++    ("Kustomization", "keda"): "15m",
++    ("Kustomization", "hindsight"): "15m",
++    ("Kustomization", "healing"): "15m",
++    ("Kustomization", "robusta"): "15m",
++    ("Kustomization", "observability"): "20m",
++    ("Kustomization", "temporal"): "20m",
++    ("Kustomization", "monitoring"): "20m",
++    ("HelmRelease", "lago"): "15m",
++    ("HelmRelease", "hindsight"): "15m",
++    ("HelmRelease", "kube-prometheus-stack"): "15m",
++    ("HelmRelease", "langfuse"): "15m",
++    ("HelmRelease", "signoz"): "15m",
++    ("HelmRelease", "robusta"): "15m",
++    ("HelmRelease", "temporal"): "15m",
++}
++
++# hermes-agent-a2a: the agent card is written once at bootstrap and never rotated by the
++# vault; refreshing it is a deliberate no ("0"), not a missed default.
++REFRESH_EXCEPTIONS = {"hermes-agent-a2a": "0"}
++
++
++def flux_docs():
++    files = glob.glob(
++        str(ROOT / "clusters" / "**" / "*.yaml"), recursive=True
++    ) + glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True)
++    for f in sorted(set(files)):
++        if "flux-system/" in f:
++            continue
++        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
++            if isinstance(d, dict):
++                yield f, d
++
++
++def test_every_flux_timeout_is_the_default_or_a_named_exception():
++    bad, seen = [], set()
++    for f, d in flux_docs():
++        kind = d.get("kind")
++        if kind not in ("Kustomization", "HelmRelease"):
++            continue
++        tv = (d.get("spec") or {}).get("timeout")
++        if tv is None:
++            continue
++        name = d["metadata"].get("name")
++        key = (kind, name)
++        if key in TIMEOUT_EXCEPTIONS:
++            seen.add(key)
++            if str(tv) != TIMEOUT_EXCEPTIONS[key]:
++                bad.append(
++                    f"{f}: {kind}/{name} exception drifted {tv} != {TIMEOUT_EXCEPTIONS[key]}"
++                )
++        elif str(tv) != DEFAULT_TIMEOUT:
++            bad.append(
++                f"{f}: {kind}/{name} timeout={tv} is a new guess (default {DEFAULT_TIMEOUT})"
++            )
++    stale = set(TIMEOUT_EXCEPTIONS) - seen
++    assert not bad and not stale, (
++        "timeouts (founder 2026-08-31: deliberate, never a guess):\n"
++        + "\n".join(bad)
++        + (f"\nstale exception rows (object gone): {sorted(stale)}" if stale else "")
++    )
++
++
++def test_every_remediation_retry_count_is_the_one_value():
++    bad = []
++    for f, d in flux_docs():
++        if d.get("kind") != "HelmRelease":
++            continue
++        for phase in ("install", "upgrade"):
++            r = (((d.get("spec") or {}).get(phase) or {}).get("remediation") or {}).get(
++                "retries"
++            )
++            if r is not None and r != DEFAULT_RETRIES:
++                bad.append(f"{f}: {d['metadata'].get('name')} {phase}.retries={r}")
++    assert not bad, f"remediation retries != {DEFAULT_RETRIES}:\n" + "\n".join(bad)
++
++
++def test_every_externalsecret_refresh_honours_the_rotation_slo():
++    """crew#722 promises vault-to-pod in 25 minutes; the refresh interval is the first leg.
++    39 ExternalSecrets at 1h made that promise arithmetic-impossible before this wave."""
++    bad, seen = [], set()
++    for f, d in flux_docs():
++        if d.get("kind") != "ExternalSecret":
++            continue
++        name = d["metadata"].get("name")
++        rv = str((d.get("spec") or {}).get("refreshInterval"))
++        if name in REFRESH_EXCEPTIONS:
++            seen.add(name)
++            if rv != REFRESH_EXCEPTIONS[name]:
++                bad.append(f"{f}: {name} exception drifted {rv}")
++        elif rv != DEFAULT_REFRESH:
++            bad.append(f"{f}: {name} refreshInterval={rv} (default {DEFAULT_REFRESH})")
++    stale = set(REFRESH_EXCEPTIONS) - seen
++    assert not bad and not stale, (
++        "refreshInterval:\n" + "\n".join(bad) + f"\nstale exceptions: {sorted(stale)}"
++        if stale
++        else "refreshInterval:\n" + "\n".join(bad)
++    )
++
++
++def test_one_checkout_pin_across_every_workflow():
++    pins = {}
++    for f in glob.glob(str(ROOT / ".github" / "workflows" / "*.yml")):
++        for m in re.finditer(
++            r"uses:\s*actions/checkout@(\S+)", pathlib.Path(f).read_text()
++        ):
++            pins.setdefault(m.group(1), []).append(pathlib.Path(f).name)
++    assert len(pins) == 1, (
++        "every workflow checks out with the same pinned action SHA; strays: "
++        + str({k: v for k, v in pins.items()})
++    )
+diff --git a/tests/test_incident_eso_controller_without_probes.py b/tests/test_incident_eso_controller_without_probes.py
+index 6518a2b7c..4a0d73556 100644
+--- a/tests/test_incident_eso_controller_without_probes.py
++++ b/tests/test_incident_eso_controller_without_probes.py
+@@ -48,5 +48,5 @@ def test_no_flux_kustomization_decrypts_with_sops() -> None:
+     # crew#227 CP3: with no sops files left, a decryption block is a dangling key reference.
+     for f in ROOT.glob("clusters/oke/*.yaml"):
+         for d in yaml.safe_load_all(f.read_text()):
+-            if d and d.get("kind") == "Kustomization":
++            if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit"):
+                 assert "decryption" not in d["spec"], f

@@ -1,0 +1,7 @@
+.github/workflows/trace-drill.yml
+bin/idp-trace-drill
+drills/catalogue.yaml
+platform/observability/httproute.yaml
+sovereign/tests/bdd/test_gate_front_door_login.py
+tests/test_front_door_every_route_is_behind_the_one_login.py
+tests/test_incident_crew325_trace_drill.py

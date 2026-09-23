@@ -1,0 +1,280 @@
+diff --git a/docs/demo/sb.md b/docs/demo/sb.md
+index cb06de1dc..3dce07d38 100644
+--- a/docs/demo/sb.md
++++ b/docs/demo/sb.md
+@@ -68,3 +68,12 @@ If the DAG directory goes read-only mid-write the legacy write still lands; the
+ ## Phase 2 — dual-read router (cp10)
+ 
+ Every read runs twice -- legacy DB, then the DAG walk from `shadow_main` -- and a `dualread` receipt records both hashes and both latencies. 1000 drained reads, measured 2026-08-25 on a disposable estate: p50 2.41ms, p95 4.57ms, p99 5.80ms overhead, all under `dualread.max_overhead_ms` (15ms default). An undrained row (write not yet drained into the DAG) is reported as a real mismatch, never a silent pass.
++
++## Phase 2 — consensus check (cp11)
++
++A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` line lands in the cockpit's existing Inbox (`ESTATE_ALERT_INBOX`, served at `/api/inbox`) with both hashes and the query, and the caller still gets the legacy answer, unblocked:
++
++    $ bin/sb consensus --json
++    {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
++    $ cat $ESTATE_HOME/alerts/inbox.jsonl
++    {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
+diff --git a/docs/onboarding/sb.md b/docs/onboarding/sb.md
+index 11f10323e..fff19589d 100644
+--- a/docs/onboarding/sb.md
++++ b/docs/onboarding/sb.md
+@@ -19,6 +19,7 @@
+ - `bin/sb config --json`, `bin/sb config set <key> <value>`, `bin/sb config --lint` (must print 0).
+ - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
+ - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
++- `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
+ 
+ ## When it breaks
+ 
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index 1869612f8..75c76dd5d 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -106,6 +106,15 @@ def cmd_root(args: argparse.Namespace) -> int:
+     return 0 if res.get("verified") else 1
+ 
+ 
++def cmd_consensus(args: argparse.Namespace) -> int:
++    """cp11: `sb consensus --json` -- {reads, matches, mismatches, rate}
++    aggregated from every cp10 dualread receipt on disk."""
++    from sovereign.sidecar import dualread
++
++    _emit(dualread.summary(), args.json)
++    return 0
++
++
+ def cmd_list(args: argparse.Namespace) -> int:
+     res = asyncio.run(engine_client.list_sessions())
+     _emit(res, args.json)
+@@ -371,6 +380,10 @@ def main(argv: list[str] | None = None) -> int:
+     _add_json(p)
+     p.set_defaults(func=cmd_root)
+ 
++    p = sub.add_parser("consensus", help="cp11 -- legacy versus DAG dual-read match rate")
++    _add_json(p)
++    p.set_defaults(func=cmd_consensus)
++
+     p = sub.add_parser("list", help="list sessions")
+     _add_json(p)
+     p.set_defaults(func=cmd_list)
+diff --git a/sovereign/config.py b/sovereign/config.py
+index 7e2aede22..bfdbadd00 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -12,9 +12,11 @@ resolved snapshot for convenience (recomputed at import time only).
+ from __future__ import annotations
+ 
+ import ast
++import fcntl
+ import json
+ import os
+ import socket
++import time
+ from dataclasses import dataclass, field
+ from pathlib import Path
+ from typing import Any, Callable
+@@ -425,6 +427,24 @@ def canonical_json(d: dict) -> bytes:
+     return json.dumps(d, sort_keys=True, separators=RECEIPTS_JSON_SEPARATORS).encode()
+ ESTATE_ALERT_INBOX: Path = Path(_R["estate.alert_inbox"].value)
+ 
++
++def append_alert(obj: dict) -> None:
++    """cp11: appends one JSON line to ESTATE_ALERT_INBOX, the file the
++    cockpit's `/api/inbox` already tails (sovereign/cockpit/server.py).
++    File-locked the same way sovereign.engine.receipts.append() locks the
++    receipt file, since more than one process (worker, CLI) can append
++    here. Alerts are informational, not the signed receipt chain -- no
++    hash, no signature -- so a lost alert is a missed notification, never
++    a broken audit trail."""
++    ESTATE_ALERT_INBOX.parent.mkdir(parents=True, exist_ok=True)
++    line = json.dumps({**obj, "ts": time.time()}, sort_keys=True, default=str)
++    with open(ESTATE_ALERT_INBOX, "a") as f:
++        fcntl.flock(f, fcntl.LOCK_EX)
++        try:
++            f.write(line + "\n")
++        finally:
++            fcntl.flock(f, fcntl.LOCK_UN)
++
+ TELEGRAM_BOT_TOKEN: str | None = _R["telegram.bot_token"].value
+ TELEGRAM_HOME_CHANNEL: str | None = _R["telegram.home_channel"].value
+ 
+diff --git a/sovereign/sidecar/dualread.py b/sovereign/sidecar/dualread.py
+index 9ff7ec510..929eab963 100644
+--- a/sovereign/sidecar/dualread.py
++++ b/sovereign/sidecar/dualread.py
+@@ -13,6 +13,13 @@ Row identity is the sqlite rowid, the same identity cp8's DAG nodes
+ already carry (sovereign/sidecar/core.py) -- the DAG walk here looks for
+ the first node for (table, rowid) walking backward from the shadow root,
+ which is exactly the DAG's current-state view of that row.
++
++cp11: a mismatch is an alert, never a freeze. read() appends one line to
++config.ESTATE_ALERT_INBOX (the file the cockpit's /api/inbox already
++tails) carrying both hashes and the query -- it never raises, never
++retries, never stops anything; the legacy answer above is still what the
++caller gets. summary() aggregates every dualread receipt on disk into
++{reads, matches, mismatches, rate} for `bin/sb consensus --json`.
+ """
+ from __future__ import annotations
+ 
+@@ -112,6 +119,20 @@ def read(conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None
+         }
+     )
+ 
++    if not match:
++        # cp11: an alert, never a freeze -- no exception, no service
++        # stopped, the legacy row above is still returned untouched.
++        config.append_alert(
++            {
++                "kind": "consensus_mismatch",
++                "table": table,
++                "rowid": rowid,
++                "query": {"table": table, "rowid": rowid},
++                "legacy_hash": legacy_hash,
++                "dag_hash": dag_hash,
++            }
++        )
++
+     overhead_ms = (time.perf_counter() - start) * config.MS_PER_SECOND - legacy_ms
+     return {
+         "row": legacy_row,
+@@ -120,3 +141,15 @@ def read(conn: sqlite3.Connection, table: str, rowid: int, dag_dir: Path | None
+         "dag_ms": dag_ms,
+         "overhead_ms": overhead_ms,
+     }
++
++
++def summary() -> dict[str, Any]:
++    """cp11: `bin/sb consensus --json` -- {reads, matches, mismatches,
++    rate} aggregated over every dualread receipt currently on disk.
++    rate is 1.0 on zero reads (nothing has disagreed, vacuously)."""
++    rows = [r for r in receipts_mod.read_all() if r.get("kind") == "dualread"]
++    reads = len(rows)
++    matches = sum(1 for r in rows if r.get("match"))
++    mismatches = reads - matches
++    rate = (matches / reads) if reads else 1.0
++    return {"reads": reads, "matches": matches, "mismatches": mismatches, "rate": rate}
+diff --git a/sovereign/sidecar/test_consensus.py b/sovereign/sidecar/test_consensus.py
+new file mode 100644
+index 000000000..209417705
+--- /dev/null
++++ b/sovereign/sidecar/test_consensus.py
+@@ -0,0 +1,118 @@
++"""unittest for cp11 -- consensus check (alert on mismatch, `sb consensus`).
++Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.sidecar.test_consensus -v
++
++Never opens maestro's real database -- every test builds its own
++disposable sqlite3 file, same pattern as test_dualread.py.
++"""
++from __future__ import annotations
++
++import json
++import sqlite3
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from sovereign import config
++from sovereign.engine import receipts
++from sovereign.sidecar import core as sidecar_core
++from sovereign.sidecar import dualread
++
++_FIXED_KEY = b"\x06" * 32
++
++
++class ConsensusTestBase(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        root = Path(self._tmp.name)
++        self.dag_dir = root / "dag"
++        self.inbox_path = root / "alerts" / "inbox.jsonl"
++        for name, val in (
++            ("SB_RECEIPTS", root / "receipts.jsonl"),
++            ("RECEIPTS_HEAD", root / "receipts.head"),
++            ("SHADOW_HEADS_DIR", root / "heads"),
++            ("ESTATE_ALERT_INBOX", self.inbox_path),
++        ):
++            p = patch.object(config, name, val)
++            p.start()
++            self.addCleanup(p.stop)
++        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
++        p.start()
++        self.addCleanup(p.stop)
++
++        self.db_path = root / "legacy.db"
++        self.conn = sqlite3.connect(str(self.db_path))
++        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
++        self.conn.commit()
++        self.addCleanup(self.conn.close)
++        self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.dag_dir)
++
++    def _insert(self, row_id: str, lane: str, note: str) -> int:
++        cur = self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
++        self.conn.commit()
++        return cur.lastrowid
++
++    def _inbox_lines(self) -> list[dict]:
++        if not self.inbox_path.exists():
++            return []
++        return [json.loads(line) for line in self.inbox_path.read_text().splitlines() if line.strip()]
++
++
++class ConsensusPropertyTest(ConsensusTestBase):
++    def test_property_summary_counts_match_the_reads_that_produced_them(self) -> None:
++        # 7 matched reads (drained first) + 3 mismatched reads (not drained).
++        for i in range(7):
++            rowid = self._insert(f"ep-match-{i}", "ops", f"m{i}")
++            self.sc.drain()
++            dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)
++        for i in range(3):
++            rowid = self._insert(f"ep-miss-{i}", "ops", f"x{i}")
++            dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)  # never drained -> mismatch
++
++        result = dualread.summary()
++        self.assertEqual(result, {"reads": 10, "matches": 7, "mismatches": 3, "rate": 0.7})
++
++    def test_summary_on_zero_reads_is_a_vacuous_rate_of_one(self) -> None:
++        self.assertEqual(dualread.summary(), {"reads": 0, "matches": 0, "mismatches": 0, "rate": 1.0})
++
++    def test_a_match_writes_no_alert(self) -> None:
++        rowid = self._insert("ep-ok", "ops", "fine")
++        self.sc.drain()
++        dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)
++        self.assertEqual(self._inbox_lines(), [])
++
++
++class ConsensusIncidentTest(ConsensusTestBase):
++    def test_incident_cp11_mismatch_alerts_but_never_freezes(self) -> None:
++        # Written but never drained -- guaranteed mismatch (cp10's own
++        # incident case). The point of cp11: this must reach the Inbox
++        # with both hashes and the query, the legacy answer must still
++        # come back to the caller, and nothing about this call may raise
++        # or otherwise behave like a stopped service.
++        rowid = self._insert("ep-undrained", "ops", "not drained yet")
++
++        result = dualread.read(self.conn, "episodes", rowid, dag_dir=self.dag_dir)  # must not raise
++
++        self.assertIsNotNone(result["row"], "the legacy answer is still returned to the caller")
++        self.assertFalse(result["match"])
++
++        alerts = self._inbox_lines()
++        self.assertEqual(len(alerts), 1, "exactly one alert reaches the Inbox")
++        alert = alerts[0]
++        self.assertEqual(alert["kind"], "consensus_mismatch")
++        self.assertIn("legacy_hash", alert)
++        self.assertIn("dag_hash", alert)
++        self.assertNotEqual(alert["legacy_hash"], alert["dag_hash"])
++        self.assertEqual(alert["query"], {"table": "episodes", "rowid": rowid})
++
++        # No service is stopped: the CLI-equivalent aggregation still
++        # works right after, in the same process, no restart needed.
++        summary = dualread.summary()
++        self.assertEqual(summary["reads"], 1)
++        self.assertEqual(summary["mismatches"], 1)
++
++
++if __name__ == "__main__":
++    unittest.main()

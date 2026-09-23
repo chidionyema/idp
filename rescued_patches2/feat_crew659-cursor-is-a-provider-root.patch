@@ -1,0 +1,99 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index d3824822e..067e13fc7 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -271,6 +271,7 @@ jobs:
+           SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+           SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+           SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
++          SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}
+           SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
+           SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
+           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
+diff --git a/bin/idp-set-root b/bin/idp-set-root
+index 6acad6601..a9346f198 100755
+--- a/bin/idp-set-root
++++ b/bin/idp-set-root
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env bash
+ # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
+-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe | telegram-hermes | telegram-alerts
++#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | cursor | stripe | telegram-hermes | telegram-alerts
+ #   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
+ #
+ # It opens the provider's page, says exactly what to click and what to type, then asks for each
+@@ -13,7 +13,7 @@ set -euo pipefail
+ REPO=${IDP_REPO:-chidionyema/idp}
+ IDP=$(cd "$(dirname "$0")/.." && pwd)
+ P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
+-ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts"
++ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa cursor stripe telegram-hermes telegram-alerts"
+ if [ "$P" = all ]; then
+   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
+   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
+@@ -72,7 +72,7 @@ T
+         5. "Continue to summary", "Create Token". Copy the token when asked below.
+ T
+     ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
+-  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|stripe)
++  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|cursor|stripe)
+     page=$(field "$P" page); name=$(field "$P" secret)
+     [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
+     echo "$P: one API key, once. The key page is opening."
+diff --git a/docs/reference/policy/credential-lifecycle.md b/docs/reference/policy/credential-lifecycle.md
+index b18dd9a10..bea3fa678 100644
+--- a/docs/reference/policy/credential-lifecycle.md
++++ b/docs/reference/policy/credential-lifecycle.md
+@@ -40,6 +40,7 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
+ | `LITELLM_LAPTOP_KEY` (the Mac reads it as `LITELLM_API_KEY`) | the estate router (LiteLLM, `platform/llm`) | `vault-seed.yml` entry `laptop`: `bin/idp-router-key laptop <lanes>` mints it from the router's master key, `estate-secrets/scripts/secret-add` vaults it; no console | model calls on the listed lanes only, `max_budget` per day (`bin/idp-router-key`); no vendor key, no admin | none; the daily budget is the ceiling | re-run `vault-seed.yml` entry `laptop`: a new virtual key, same secret name; the Mac picks it up through `scripts/secret-load` | delete the key in the router console (`/ui`, Virtual Keys) or set its budget to 0; the Mac has nothing else | router spend ledger (`oke-check.yml -f mode=break-glass -f playbook=router-spend`) per key alias `laptop` |
+ | `SEED_GROQ_API_KEY` | Groq | console, keys | model calls | none | as Anthropic | delete the key | Groq usage |
+ | `SEED_GEMINI_API_KEY` | Google | AI Studio, API key; restrict to Generative Language API | model calls | none | as Anthropic | delete the key | Google Cloud API key usage |
++| `SEED_CURSOR_API_KEY` | Cursor | dashboard, Integrations, API Keys (user key; `bin/idp-set-root cursor`) | Cloud Agents API on the founder's Cursor plan: start and read background agents on repositories his account can see; no model calls outside them | none by Cursor; the plan's monthly allowance is the ceiling | as Anthropic | delete the key in the dashboard | Cursor dashboard usage per key; the research ledger names the run, never the key |
+ | `SEED_EXA_API_KEY` | Exa | dashboard, API keys | search calls | none | as Anthropic | delete the key | Exa usage |
+ | `SEED_STRIPE_SECRET_KEY` | Stripe | dashboard, API keys; restricted key with the store's needs only | payments on the store account | none | new restricted key, same name, apply; roll the old key | roll the key in the dashboard | Stripe request log |
+ | `github-app` (vault bundle: app id, client id, private key) | GitHub | once, by `bin/idp-github-app convert <code>` after the App manifest flow; the bundle lands in the vault, never in a repository secret | mints installation tokens narrowed to one lane in `platform/github-app/lanes.json` (issues, checks, contents), each valid one hour | the private key never expires; every minted token dies in one hour | generate a new private key on the App (docs.github.com, managing private keys for GitHub Apps), `bin/idp-vault-put github-app pem_b64=<new>`, delete the old key on the App | delete the private key on the App, or uninstall the App from the organisation; every token minted from it stops at once | the App's recent deliveries on GitHub and the organisation audit log (`integration_installation` events); apply and workflow logs name lanes, never tokens |
+diff --git a/platform/vendors/consoles.yaml b/platform/vendors/consoles.yaml
+index f3481867d..88c5ef5a5 100644
+--- a/platform/vendors/consoles.yaml
++++ b/platform/vendors/consoles.yaml
+@@ -69,7 +69,8 @@ vendors:
+     kind: secret
+     secret: SEED_GEMINI_API_KEY
+     page: https://aistudio.google.com/apikey
+-    shape: "AIza[A-Za-z0-9_-]{35}"
++    # 2026-08-30: AI Studio issued the founder a key shaped AQ.<50 chars> that answers /v1beta/models; both shapes are real.
++    shape: "(AIza[A-Za-z0-9_-]{35}|AQ\\.[A-Za-z0-9_-]{40,})"
+     verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
+     targets:
+       - { entry: litellm-upstream, field: GEMINI_API_KEY }
+@@ -82,6 +83,18 @@ vendors:
+     targets:
+       - { entry: prospector-engine-env, field: EXA_API_KEY }
+       - { entry: hermes-agent-env, field: EXA_API_KEY }
++  cursor:
++    # Founder, 2026-08-30: "we also have cursor ... cursor can do science". The Cloud Agents API
++    # (api.cursor.com, public beta) runs an agent with web access on a repository under the founder's
++    # Cursor plan; the research worker uses it as its researcher while the frontier accounts are
++    # empty and the Mac cannot search. One user API key, made once at Cursor Dashboard -> API Keys.
++    kind: secret
++    secret: SEED_CURSOR_API_KEY
++    page: https://cursor.com/dashboard?tab=integrations
++    shape: "[A-Za-z0-9_-]{20,}"
++    verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
++    targets:
++      - { entry: science-env, field: CURSOR_API_KEY }
+   telegram:
+     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
+     kind: secret
+diff --git a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+index 5ee4de1ed..7eb4d54da 100644
+--- a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
++++ b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+@@ -27,6 +27,7 @@ FAKE = {
+     "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
+     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
+     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
++    "SEED_CURSOR_API_KEY": "key_" + "a" * 40,
+     "SEED_TELEGRAM_HERMES_BOT_TOKEN": "12345678:" + "C" * 35,
+     "SEED_TELEGRAM_ALERTS_BOT_TOKEN": "87654321:" + "D" * 35,
+     "SEED_STRIPE_SECRET_KEY": "sk_test_" + "E" * 24,

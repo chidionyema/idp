@@ -1,0 +1,76 @@
+diff --git a/.aevum/local.jsonl b/.aevum/local.jsonl
+index 72c09b9d6..cc8870948 100644
+--- a/.aevum/local.jsonl
++++ b/.aevum/local.jsonl
+@@ -122,3 +122,6 @@
+ {"seq":121,"ts":"2026-09-19T13:43:15Z","event":"commit.staged","tree":"d588f225cceacd5986abdd42c80682c3a7c1658e","author":"chidionyema333@gmail.com","staged":["platform/ns-fences/allowances.yaml","platform/ns-fences/network/demo-sandbox.yaml"],"payload_hash":"9b1801b870e01d57161e11933c8f1e61538550ccedd2e8ba00c4aaf3b3e6a9c9","prior_hash":"7aaf76cb84ac10df3de3a8a6b89ff34c6deea72ebd20e483fab7d706e87d770d"}
+ {"seq":122,"ts":"2026-09-21T20:12:49Z","event":"commit.staged","tree":"16b37023893f8f7a4ecf50456356b006cafe5faf","author":"chidionyema333@gmail.com","staged":[".githooks/commit-msg",".githooks/pre-commit"],"payload_hash":"c87e3ad2aec2aa7e383d1fd3d2481dee35c2792f4dc9830c9c7370d4eaf4c1b7","prior_hash":"1e4d30ae9b09e49964b71a1a66c999d86a225a7ca89dc6dd04aba9c4b44569e7"}
+ {"seq":123,"ts":"2026-09-21T20:15:36Z","event":"commit.staged","tree":"b9b7f08a4bc6f02c074fbc926d31969adf699388","author":"chidionyema333@gmail.com","staged":["docs/onboarding/claude-max-passthrough.md","llm/config.base.yaml","llm/config.yaml","platform/llm/config.base.yaml","platform/llm/config.yaml"],"payload_hash":"406af8bcb01014c5b6e6a925333c2672c2a98d6017a7f14b490cc80a425a3b96","prior_hash":"edf3fd3d47429979acdb1fb97071987211aa51ef517d993c82645fff492c42f4"}
++{"seq":124,"ts":"2026-09-22T02:11:59Z","event":"commit.staged","tree":"96099e7956739e0ae162bab802d74bf421a5be5a","author":"chidionyema333@gmail.com","staged":["platform/edge/inject-otel-endpoint.yaml"],"payload_hash":"93324259fd52a208cae34f523092e91a93111a0720e8855f188311438be276fc","prior_hash":"cd47fde3acca1d0c01d7f3b933b67850d605a5983495cfb05ca5df14257ac0a0"}
++{"seq":125,"ts":"2026-09-22T02:14:33Z","event":"commit.staged","tree":"397f6a69ac2b582d0836d5202b203996f01c6983","author":"chidionyema333@gmail.com","staged":[".aevum/local.jsonl","platform/edge/inject-otel-endpoint.yaml"],"payload_hash":"f4c23b53f62c77d6e69785f8e22938f621ec5241db02b6da42af231791225cfd","prior_hash":"2e77511c9bdccb9d0404c9381a031b56686aa1088106b01a7d67f08aa313470b"}
++{"seq":126,"ts":"2026-09-22T02:16:50Z","event":"commit.staged","tree":"b9e8a320ab08fa244a4bf0947ad4521ba222e5f9","author":"chidionyema333@gmail.com","staged":[".aevum/local.jsonl","platform/edge/inject-otel-endpoint.yaml"],"payload_hash":"7b42501d85fbab43c15a1cd41e4b2618710cede847fa23af32ecb4875de6e9c9","prior_hash":"4cddfea91169d333279c882affacdfcde49c933da1c0f02c2cba30f75fa9b910"}
+diff --git a/platform/edge/inject-otel-endpoint.yaml b/platform/edge/inject-otel-endpoint.yaml
+index 9b0e9c5e7..3808bdca0 100644
+--- a/platform/edge/inject-otel-endpoint.yaml
++++ b/platform/edge/inject-otel-endpoint.yaml
+@@ -1,6 +1,6 @@
+ # Injects OTEL_EXPORTER_OTLP_ENDPOINT into every estate workload container at admission.
+-# This is the platform's single point of OTel wiring — no manifest declares the env var;
+-# Kyverno adds it. A workload that already carries the key keeps its own value (add-if-absent).
++# This is the platform's single point of OTel wiring: a manifest need not declare the env var,
++# Kyverno adds it, and the value is always the estate's one collector.
+ #
+ # WHY MUTATION OVER DECORATION: the require-auto-reload pattern (crew#684 blueprint) proved
+ # the model — an annotation the policy injects cannot be forgotten, cannot drift, and is not
+@@ -26,8 +26,9 @@ metadata:
+     policies.kyverno.io/subject: Deployment, StatefulSet
+     policies.kyverno.io/description: >-
+       Every container in every estate Deployment and StatefulSet receives
+-      OTEL_EXPORTER_OTLP_ENDPOINT at admission. The mutation is add-if-absent:
+-      a container that already declares the variable keeps its value.
++      OTEL_EXPORTER_OTLP_ENDPOINT at admission, pointing at the estate's one
++      collector. A container that declares the variable itself has it rewritten
++      to that collector; every other variable it declares is left untouched.
+ spec:
+   background: false
+   rules:
+@@ -136,5 +137,38 @@ spec:
+                 containers:
+                   - (name): "*"
+                     env:
+-                      - +(name): OTEL_EXPORTER_OTLP_ENDPOINT
++                      # NO ANCHOR HERE. A plain list entry is a strategic merge keyed on
++                      # `name`: it adds this variable and touches nothing else. An anchor on
++                      # either key breaks that, in opposite directions, and both were measured
++                      # with `kyverno apply` on fixtures rather than reasoned about:
++                      #
++                      #   +(name)   -- what this file carried until now. The anchor lands on the
++                      #                `env` LIST, so the `value:` beside it is written onto
++                      #                EVERY existing entry:
++                      #                   IN   LITELLM_LOG=INFO  ZEROEDGE_BUDGET_ENFORCE=0
++                      #                   OUT  both = http://signoz-otel-collector...:4318
++                      #                That is what killed llm/litellm --
++                      #                   AttributeError: module 'logging' has no attribute
++                      #                   'HTTP://SIGNOZ-OTEL-COLLECTOR.OBSERVABILITY.SVC:4318'
++                      #                -- and it is also what produced the dry-run rejections
++                      #                the exclusion list below records: on a `valueFrom` entry
++                      #                it writes a `value:` beside the `valueFrom:`, which is an
++                      #                invalid container the API server refuses.
++                      #
++                      #   +(value)  -- preserves the other variables, but adds nothing: on a
++                      #                container that does not already declare the key, kyverno
++                      #                reports `skipped mutate policy` and the endpoint never
++                      #                arrives. A mutation that cannot mutate is not a fix.
++                      #
++                      #   (none)    -- adds the entry when absent, leaves LITELLM_LOG,
++                      #                ZEROEDGE_BUDGET_ENFORCE and a POD_NAMESPACE `valueFrom`
++                      #                exactly as written. This one.
++                      #
++                      # The cost of no anchor, stated plainly: a container that declares its own
++                      # endpoint has it rewritten to the collector below. That is the intended
++                      # reading of "single point of OTel wiring" -- the estate has one collector,
++                      # and a workload pointing somewhere else is a workload whose traces nobody
++                      # is looking at. It is not add-if-absent, and the description no longer
++                      # claims to be.
++                      - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                         value: "http://signoz-otel-collector.observability.svc:4318"

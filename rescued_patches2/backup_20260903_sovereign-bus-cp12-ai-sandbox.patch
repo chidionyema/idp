@@ -1,0 +1,768 @@
+diff --git a/docs/demo/sb.md b/docs/demo/sb.md
+index 3dce07d38..01d35b277 100644
+--- a/docs/demo/sb.md
++++ b/docs/demo/sb.md
+@@ -77,3 +77,21 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
+     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
+     $ cat $ESTATE_HOME/alerts/inbox.jsonl
+     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
++
++## Phase 2 — AI sandbox / zero-cost forks (cp12)
++
++A fork is a second head pointer under `.estate/heads/<name>`, copied from `shadow_main`'s current root -- one small JSON file, never a row of the legacy DB. Measured 2026-08-25 on a disposable estate:
++
++    $ bin/sb fork staging --json
++    {"elapsed_ms": 0.9058319992618635, "name": "staging", "root": null, "storage": "memory"}
++    $ cat $ESTATE_HOME/.estate/heads/staging
++    {"root": null, "storage": "memory"}
++
++Writes an agent makes against a fork's own connection (`sovereign.engine.fork.attach_sidecar(name, table)`) advance that fork's own root and chain into that fork's own receipts file (`fork.fork_receipts_paths(name)`) -- `sovereign.engine.receipts.append()`/`verify()` and `sovereign.engine.shadow_root.update_head()`/`verify()` all take the fork's paths as overrides now, so production's `shadow_main` and `receipts.jsonl` never move. The cap is a key, `fork.max_parallel` (default 3): the 4th fork open at once gets `"storage": "disk"` (`fork.dir`) instead of an in-memory connection, never a code change.
++
++    $ bin/sb switch staging --json
++    {"working": "staging"}
++    $ bin/sb drop staging --json
++    {"dropped": "staging"}
++
++`drop` removes only the pointer file; every DAG node and receipt line the fork ever wrote stays on disk, archived -- deleting a Merkle DAG node another branch's history might still reference is exactly the class of edit a hash chain exists to catch.
+diff --git a/docs/onboarding/sb.md b/docs/onboarding/sb.md
+index fff19589d..0b793a0cd 100644
+--- a/docs/onboarding/sb.md
++++ b/docs/onboarding/sb.md
+@@ -20,6 +20,7 @@
+ - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
+ - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
+ - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
++- `bin/sb fork <name> --json` makes a zero-cost branch off production, under `fork.max_ms`; `bin/sb switch <name>` moves the working pointer, `bin/sb drop <name>` removes it (its DAG nodes and receipts stay archived). More than `fork.max_parallel` (default 3) open at once spills new forks to disk instead of memory -- a config key, not a code path.
+ 
+ ## When it breaks
+ 
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index 75c76dd5d..2f948530b 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -115,6 +115,42 @@ def cmd_consensus(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
++def cmd_fork(args: argparse.Namespace) -> int:
++    """cp12: `sb fork <name> --json` -- a zero-cost, copy-on-write branch
++    pointer under .estate/heads/<name>, created in under fork.max_ms with
++    no row of the legacy DB touched."""
++    from sovereign.engine import fork
++
++    _emit(fork.create(args.name), args.json)
++    return 0
++
++
++def cmd_switch(args: argparse.Namespace) -> int:
++    """cp12: `sb switch <name>` -- moves the one working-branch pointer to
++    an existing fork or back to production (shadow_main)."""
++    from sovereign.engine import fork
++
++    try:
++        _emit(fork.switch(args.name), args.json)
++        return 0
++    except fork.UnknownForkError as exc:
++        print(f"no such branch: {exc}", file=sys.stderr)
++        return config.CLI_EXIT_USAGE_ERROR
++
++
++def cmd_drop(args: argparse.Namespace) -> int:
++    """cp12: `sb drop <name>` -- removes a fork's head pointer only; its
++    DAG nodes and receipts remain on disk, archived, never deleted."""
++    from sovereign.engine import fork
++
++    try:
++        _emit(fork.drop(args.name), args.json)
++        return 0
++    except fork.UnknownForkError as exc:
++        print(f"no such branch: {exc}", file=sys.stderr)
++        return config.CLI_EXIT_USAGE_ERROR
++
++
+ def cmd_list(args: argparse.Namespace) -> int:
+     res = asyncio.run(engine_client.list_sessions())
+     _emit(res, args.json)
+@@ -384,6 +420,21 @@ def main(argv: list[str] | None = None) -> int:
+     _add_json(p)
+     p.set_defaults(func=cmd_consensus)
+ 
++    p = sub.add_parser("fork", help="cp12 -- create a zero-cost, copy-on-write branch off production")
++    p.add_argument("name")
++    _add_json(p)
++    p.set_defaults(func=cmd_fork)
++
++    p = sub.add_parser("switch", help="cp12 -- move the working branch pointer to an existing fork or production")
++    p.add_argument("name")
++    _add_json(p)
++    p.set_defaults(func=cmd_switch)
++
++    p = sub.add_parser("drop", help="cp12 -- remove a fork's pointer; its DAG nodes and receipts stay archived")
++    p.add_argument("name")
++    _add_json(p)
++    p.set_defaults(func=cmd_drop)
++
+     p = sub.add_parser("list", help="list sessions")
+     _add_json(p)
+     p.set_defaults(func=cmd_list)
+diff --git a/sovereign/config.py b/sovereign/config.py
+index bfdbadd00..8865af1ee 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -140,6 +140,12 @@ KEYS: dict[str, KeySpec] = {
+     "dualread.latency_round_ndigits": KeySpec(4, "int", None, "cp10: decimal places dual-read latencies are rounded to before entering a receipt"),
+     "time.ms_per_second": KeySpec(1000, "int", None, "milliseconds per second, for every perf_counter() duration reported in ms"),
+ 
++    "fork.dir": KeySpec(str(_estate_home() / "sovereign" / "forks"), "path", "SB_FORK_DIR", "cp12: disk-backed fork state/dag/receipts root, used once fork.max_parallel is exceeded"),
++    "fork.max_ms": KeySpec(1000, "int", "SB_FORK_MAX_MS", "cp12: budget for `sb fork`'s elapsed_ms -- a fork is one pointer-file copy, never a data copy, so this is a correctness bound, not a target to tune toward"),
++    "fork.max_parallel": KeySpec(3, "int", "SB_FORK_MAX_PARALLEL", "cp12: in-memory forks allowed open at once before a new fork spills to fork.dir on disk"),
++    "fork.working_pointer_filename": KeySpec("working_branch", "str", None, "cp12: file under sovereign/ naming the branch `sb switch` last pointed at"),
++    "fork.memory_dsn": KeySpec(":memory:", "str", None, "cp12: sqlite3.connect() DSN for an in-memory fork, below fork.max_parallel"),
++
+     "telegram.bot_token": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_BOT_TOKEN"), "str", "TELEGRAM_BOT_TOKEN", "", secret=True),
+     "telegram.home_channel": KeySpec(_ENV_FILE_VALUES.get("TELEGRAM_HOME_CHANNEL"), "str", "TELEGRAM_HOME_CHANNEL", ""),
+ 
+@@ -411,6 +417,11 @@ SHADOW_HEAD_FILENAME: str = _R["shadow.head_filename"].value
+ DUALREAD_MAX_OVERHEAD_MS: int = _R["dualread.max_overhead_ms"].value
+ DUALREAD_LATENCY_ROUND_NDIGITS: int = _R["dualread.latency_round_ndigits"].value
+ MS_PER_SECOND: int = _R["time.ms_per_second"].value
++FORK_DIR: Path = Path(_R["fork.dir"].value)
++FORK_MAX_MS: int = _R["fork.max_ms"].value
++FORK_MAX_PARALLEL: int = _R["fork.max_parallel"].value
++FORK_WORKING_POINTER: Path = SOVEREIGN_HOME / _R["fork.working_pointer_filename"].value
++FORK_MEMORY_DSN: str = _R["fork.memory_dsn"].value
+ RECEIPTS_KEYCHAIN_SERVICE: str = _R["receipts.keychain_service"].value
+ RECEIPTS_KEYCHAIN_ACCOUNT: str = _R["receipts.keychain_account"].value
+ RECEIPTS_KEYCHAIN_TIMEOUT_S: int = _R["receipts.keychain_timeout_s"].value
+diff --git a/sovereign/engine/fork.py b/sovereign/engine/fork.py
+new file mode 100644
+index 000000000..07a8be907
+--- /dev/null
++++ b/sovereign/engine/fork.py
+@@ -0,0 +1,216 @@
++"""Sovereign fork (cp12): zero-cost AI sandboxes, production untouched.
++
++Founder: "sb fork staging creates a full copy of production state in
++under a second ... Zero database copies." A fork IS a second head
++pointer file under shadow.heads_dir, holding the same DAG root
++shadow_main already names -- creating one copies a few bytes of JSON,
++never a row of the legacy DB and never a DAG node file, which is why it
++is a-second-or-less regardless of how large the estate has grown
++(features/sovereign-bus/cp12_ai_sandbox.feature, "Fork under a second").
++
++A write against a fork never reaches production: attach_sidecar() wires
++a sovereign.sidecar.core.DBSidecar to a connection of the fork's own
++(open_connection()), a dag_dir of the fork's own (fork_dag_dir()), and a
++receipts file/head-anchor pair of the fork's own (fork_receipts_paths())
++-- sovereign.engine.receipts.append()/verify() and
++sovereign.engine.shadow_root.update_head()/verify() all take these as
++optional overrides now, defaulting to production's own when omitted, so
++every existing caller is unaffected and a fork's chain is never mixed
++with main's ("the fork's receipts are chained separately from main").
++
++Storage: `create()` decides "memory" or "disk" once, at fork-creation
++time, by counting the forks already open against config.FORK_MAX_PARALLEL
++-- the (max_parallel + 1)th fork and beyond gets a disk-backed sqlite
++file under config.FORK_DIR instead of `:memory:` ("The cap is a key").
++Either way only the target table's own CREATE TABLE statement is
++mirrored in, read from the legacy DB's sqlite_master -- schema only, no
++row of production's data is copied (cp12's "Zero database copies": a
++fork's rows come only from writes made against the fork itself).
++
++`drop()` removes a fork's head pointer only. It never touches
++config.SIDECAR_DAG_DIR, fork_dag_dir(), or a fork's receipts file --
++every DAG node a dropped fork ever pointed at stays on disk, archived,
++because deleting a Merkle DAG node a receipt or another fork's history
++might still reference is exactly the kind of edit a hash chain exists to
++catch (cp12: "its DAG nodes remain (archived, never deleted)").
++"""
++from __future__ import annotations
++
++import json
++import os
++import sqlite3
++import time
++from pathlib import Path
++from typing import Any
++
++from sovereign import config
++from sovereign.engine import shadow_root
++
++
++class UnknownForkError(ValueError):
++    """Raised by switch()/drop()/attach_sidecar() for a name that is
++    neither production's own shadow_main nor a fork present in
++    list_forks() -- never a bare KeyError or FileNotFoundError, so a
++    caller can catch this one class regardless of which of the three
++    operations it came from."""
++
++
++def _reserved_names() -> set[str]:
++    return {config.SHADOW_HEAD_FILENAME}
++
++
++def fork_head_path(name: str) -> Path:
++    return config.SHADOW_HEADS_DIR / name
++
++
++def list_forks() -> list[str]:
++    """Every branch pointer under shadow.heads_dir except production's
++    own (shadow_main) and any in-flight tmp file -- the exact set
++    `sb drop` can remove and `sb switch` can move to."""
++    if not config.SHADOW_HEADS_DIR.exists():
++        return []
++    reserved = _reserved_names()
++    return sorted(
++        p.name
++        for p in config.SHADOW_HEADS_DIR.iterdir()
++        if p.is_file() and p.name not in reserved and not p.name.endswith(".tmp")
++    )
++
++
++def _storage_for_new_fork() -> str:
++    return "disk" if len(list_forks()) >= config.FORK_MAX_PARALLEL else "memory"
++
++
++def fork_dag_dir(name: str) -> Path:
++    return config.FORK_DIR / name / "dag"
++
++
++def fork_receipts_paths(name: str) -> tuple[Path, Path]:
++    """(receipts_path, head_anchor_path) -- a fork's own hash-chained
++    receipts file and signed head anchor, isolated from production's
++    (config.SB_RECEIPTS, config.RECEIPTS_HEAD)."""
++    base = config.FORK_DIR / name
++    return base / "receipts.jsonl", base / "receipts.head"
++
++
++def fork_db_path(name: str) -> Path:
++    return config.FORK_DIR / name / "state.db"
++
++
++def create(name: str) -> dict[str, Any]:
++    """Zero-cost fork: copies production's current DAG root pointer into
++    a new head file under shadow.heads_dir/<name>. Reads exactly one
++    file (shadow_main's own head JSON, via shadow_root.verify()) and
++    writes exactly one file (name's own); no row of the legacy DB and no
++    DAG node file is read, written, or even opened."""
++    t0 = time.perf_counter()
++    prod_root = shadow_root.verify()["root"]
++    storage = _storage_for_new_fork()
++    config.SHADOW_HEADS_DIR.mkdir(parents=True, exist_ok=True)
++    dest = fork_head_path(name)
++    tmp = dest.with_suffix(dest.suffix + ".tmp")
++    tmp.write_text(json.dumps({"root": prod_root, "storage": storage}, sort_keys=True))
++    os.replace(tmp, dest)
++    elapsed_ms = (time.perf_counter() - t0) * config.MS_PER_SECOND
++    return {"name": name, "root": prod_root, "storage": storage, "elapsed_ms": elapsed_ms}
++
++
++def fork_storage(name: str) -> str:
++    if name not in list_forks():
++        raise UnknownForkError(name)
++    try:
++        return json.loads(fork_head_path(name).read_text()).get("storage", "memory")
++    except (OSError, json.JSONDecodeError):
++        return "memory"
++
++
++def current() -> str:
++    if config.FORK_WORKING_POINTER.exists():
++        return config.FORK_WORKING_POINTER.read_text().strip() or config.SHADOW_HEAD_FILENAME
++    return config.SHADOW_HEAD_FILENAME
++
++
++def switch(name: str) -> dict[str, Any]:
++    """Moves the one working-pointer file (config.FORK_WORKING_POINTER)
++    to name. name must already be production's own shadow_main or a
++    fork present in list_forks() -- switch() never creates a branch, it
++    only points at one that already exists."""
++    if name != config.SHADOW_HEAD_FILENAME and name not in list_forks():
++        raise UnknownForkError(name)
++    config.FORK_WORKING_POINTER.parent.mkdir(parents=True, exist_ok=True)
++    tmp = config.FORK_WORKING_POINTER.with_suffix(config.FORK_WORKING_POINTER.suffix + ".tmp")
++    tmp.write_text(name)
++    os.replace(tmp, config.FORK_WORKING_POINTER)
++    return {"working": name}
++
++
++def drop(name: str) -> dict[str, Any]:
++    """Removes name's head pointer from shadow.heads_dir -- the branch is
++    gone from list_forks() -- but every DAG node and receipt it ever
++    wrote stays on disk, archived (module docstring). If name was the
++    current working branch, switches back to production first, so the
++    working pointer is never left naming a branch that no longer
++    exists."""
++    if name not in list_forks():
++        raise UnknownForkError(name)
++    if current() == name:
++        switch(config.SHADOW_HEAD_FILENAME)
++    fork_head_path(name).unlink(missing_ok=True)
++    return {"dropped": name}
++
++
++def _mirror_ddl(table: str) -> str:
++    """Reads the target table's own CREATE TABLE statement from the
++    legacy DB's sqlite_master and nothing else -- no row is read here.
++    Schema-only replication is what makes a fork copy-on-write: a fork's
++    rows come from the writes an agent makes against it, not from a bulk
++    copy of production's data."""
++    db_path, _, _ = config.SIDECAR_TARGET.partition("#")
++    with sqlite3.connect(db_path) as legacy:
++        row = legacy.execute(
++            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?", (table,)
++        ).fetchone()
++    if row is None or row[0] is None:
++        raise UnknownForkError(f"no such legacy table: {table!r}")
++    return row[0]
++
++
++def open_connection(name: str, table: str, storage: str) -> sqlite3.Connection:
++    if storage == "disk":
++        path = fork_db_path(name)
++        path.parent.mkdir(parents=True, exist_ok=True)
++        conn = sqlite3.connect(str(path))
++    else:
++        conn = sqlite3.connect(config.FORK_MEMORY_DSN)
++    conn.execute(_mirror_ddl(table))
++    conn.commit()
++    return conn
++
++
++def attach_sidecar(name: str, table: str) -> tuple[sqlite3.Connection, Any]:
++    """Returns (connection, DBSidecar) wired entirely to name's own
++    storage: open_connection() for the data, fork_dag_dir(name) for the
++    DAG, fork_head_path(name) for the root pointer, and
++    fork_receipts_paths(name) for the receipt chain -- so every write an
++    agent makes against the returned connection advances name's own
++    root and chains into name's own receipts file, and touches nothing
++    production owns. Imports sovereign.sidecar.core lazily: that module
++    does not import this one, but importing it at module load here would
++    still tie fork.py's own import time to sidecar/core.py's, which
++    engine/shadow_root.py's own precedent (see its GENESIS_NODE_HASH
++    comment) treats as worth avoiding on principle, not just when a
++    cycle actually exists."""
++    from sovereign.sidecar.core import DBSidecar
++
++    storage = fork_storage(name)
++    conn = open_connection(name, table, storage)
++    receipts_path, receipts_head_path = fork_receipts_paths(name)
++    sidecar = DBSidecar(
++        conn,
++        table,
++        dag_dir=fork_dag_dir(name),
++        head_path=fork_head_path(name),
++        receipts_path=receipts_path,
++        receipts_head_path=receipts_head_path,
++    ).attach()
++    return conn, sidecar
+diff --git a/sovereign/engine/receipts.py b/sovereign/engine/receipts.py
+index 6de544db5..381065aab 100644
+--- a/sovereign/engine/receipts.py
++++ b/sovereign/engine/receipts.py
+@@ -103,8 +103,9 @@ def get_or_create_key() -> tuple[bytes, str]:
+     return bytes.fromhex(new_key), "software_file"
+ 
+ 
+-def _lock_path() -> Path:
+-    return config.SB_RECEIPTS.parent / (config.SB_RECEIPTS.name + ".lock")
++def _lock_path(receipts_path: Path | None = None) -> Path:
++    p = receipts_path or config.SB_RECEIPTS
++    return p.parent / (p.name + ".lock")
+ 
+ 
+ def _head_anchor(counter: int, line_hash: str, key: bytes) -> dict[str, Any]:
+@@ -113,34 +114,49 @@ def _head_anchor(counter: int, line_hash: str, key: bytes) -> dict[str, Any]:
+     return {"counter": counter, "hash": line_hash, "sig": sig}
+ 
+ 
+-def _write_head_anchor(anchor: dict[str, Any]) -> None:
++def _write_head_anchor(anchor: dict[str, Any], head_path: Path | None = None) -> None:
+     """Called only from inside append()'s own lock, so this never races the
+     next append. Written to a tmp file and moved into place with os.replace
+     so a crash mid-write leaves the old anchor (a stale-but-valid anchor
+     fails closed as "truncated", never a silent pass) rather than a
+     half-written one."""
+-    config.RECEIPTS_HEAD.parent.mkdir(parents=True, exist_ok=True)
+-    tmp = config.RECEIPTS_HEAD.with_suffix(config.RECEIPTS_HEAD.suffix + ".tmp")
++    hp = head_path or config.RECEIPTS_HEAD
++    hp.parent.mkdir(parents=True, exist_ok=True)
++    tmp = hp.with_suffix(hp.suffix + ".tmp")
+     tmp.write_text(json.dumps(anchor, sort_keys=True))
+-    os.replace(tmp, config.RECEIPTS_HEAD)
++    os.replace(tmp, hp)
+ 
+ 
+-def _read_head_anchor() -> dict[str, Any] | None:
+-    if not config.RECEIPTS_HEAD.exists():
++def _read_head_anchor(head_path: Path | None = None) -> dict[str, Any] | None:
++    hp = head_path or config.RECEIPTS_HEAD
++    if not hp.exists():
+         return None
+     try:
+-        return json.loads(config.RECEIPTS_HEAD.read_text())
++        return json.loads(hp.read_text())
+     except (OSError, json.JSONDecodeError):
+         return None
+ 
+ 
+-def append(record: dict[str, Any]) -> dict[str, Any]:
++def append(
++    record: dict[str, Any],
++    receipts_path: Path | None = None,
++    head_path: Path | None = None,
++) -> dict[str, Any]:
+     """Append one signed line. `record` carries the caller's fields
+     (session_id, kind, by, text, step, status, task, runner, ts, and
+     optionally state_hash); counter, prev_hash, hash, sig, backend are
+-    computed here under the lock."""
+-    config.SB_RECEIPTS.parent.mkdir(parents=True, exist_ok=True)
+-    lock_path = _lock_path()
++    computed here under the lock.
++
++    receipts_path/head_path default to production's config.SB_RECEIPTS/
++    config.RECEIPTS_HEAD -- every existing caller is unaffected. cp12
++    passes a fork's own pair so a fork's writes chain into their own
++    file, sharing nothing with production's chain except the same
++    signing key (get_or_create_key() is not itself forked -- a fork's
++    receipts are still verifiable, just never mixed with main's)."""
++    rp = receipts_path or config.SB_RECEIPTS
++    hp = head_path or config.RECEIPTS_HEAD
++    rp.parent.mkdir(parents=True, exist_ok=True)
++    lock_path = _lock_path(rp)
+     lock_path.parent.mkdir(parents=True, exist_ok=True)
+     with open(lock_path, "a") as lockf:
+         fcntl.flock(lockf, fcntl.LOCK_EX)
+@@ -148,8 +164,8 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
+             key, backend = get_or_create_key()
+             prev_hash = GENESIS_HASH
+             counter = 0
+-            if config.SB_RECEIPTS.exists():
+-                with open(config.SB_RECEIPTS) as f:
++            if rp.exists():
++                with open(rp) as f:
+                     last_line = None
+                     for raw_line in f:
+                         raw_line = raw_line.strip()
+@@ -170,9 +186,9 @@ def append(record: dict[str, Any]) -> dict[str, Any]:
+             if record.get("signed"):
+                 line["hw_sig"], line["hw_backend"] = HardwareTrustAnchor().sign(line_hash)
+             line["sig"] = hmac.new(key, line_hash.encode(), hashlib.sha256).hexdigest()
+-            with open(config.SB_RECEIPTS, "a") as out:
++            with open(rp, "a") as out:
+                 out.write(json.dumps(line, sort_keys=True) + "\n")
+-            _write_head_anchor(_head_anchor(counter, line_hash, key))
++            _write_head_anchor(_head_anchor(counter, line_hash, key), hp)
+             return line
+         finally:
+             fcntl.flock(lockf, fcntl.LOCK_UN)
+@@ -215,7 +231,7 @@ def episodes(kind: str | None = None) -> list[dict[str, Any]]:
+     return out
+ 
+ 
+-def verify(path: Path | None = None) -> dict[str, Any]:
++def verify(path: Path | None = None, head_path: Path | None = None) -> dict[str, Any]:
+     """A hash chain proves nothing about entries missing from its own tail
+     (see the module docstring): every prev_hash link among the rows that
+     are still present can be perfectly intact while the last N rows were
+@@ -249,7 +265,7 @@ def verify(path: Path | None = None) -> dict[str, Any]:
+         expected_prev = row["hash"]
+ 
+     last = rows[-1]
+-    anchor = _read_head_anchor()
++    anchor = _read_head_anchor(head_path)
+     if anchor is None:
+         return {"ok": False, "count": len(rows), "first_broken_counter": None, "reason": "no_anchor"}
+     expected_anchor = _head_anchor(int(last.get("counter", 0)), str(last.get("hash", "")), key)
+diff --git a/sovereign/engine/shadow_root.py b/sovereign/engine/shadow_root.py
+index 55c87f8d1..40422819b 100644
+--- a/sovereign/engine/shadow_root.py
++++ b/sovereign/engine/shadow_root.py
+@@ -31,29 +31,39 @@ from sovereign import config
+ GENESIS_NODE_HASH = "0" * config.RECEIPTS_HASH_HEX_LEN
+ 
+ 
+-def head_path() -> Path:
+-    return config.SHADOW_HEADS_DIR / config.SHADOW_HEAD_FILENAME
++def head_path(name: str | None = None) -> Path:
++    """`name` defaults to production's own shadow_main. cp12: a fork is a
++    second file under this same shadow.heads_dir, so head_path("staging")
++    is that fork's head pointer -- the identical file shape, in the
++    identical directory, at a different name."""
++    return config.SHADOW_HEADS_DIR / (name or config.SHADOW_HEAD_FILENAME)
+ 
+ 
+-def update_head(node_hash: str, dag_dir: Path) -> None:
++def update_head(node_hash: str, dag_dir: Path, head_path_override: Path | None = None) -> None:
+     """Called by cp8's DBSidecar right after it writes a DAG node --
+     the same "never blocks the legacy write" contract applies here: this
+     runs during drain(), after the legacy write already committed, so a
+     failure here is a sidecar-side degradation, not a legacy-write
+-    failure."""
+-    hp = head_path()
++    failure.
++
++    head_path_override defaults to production's own head_path() --
++    every existing caller is unaffected. cp12 passes a fork's own head
++    file so a fork's writes advance that fork's root, never
++    shadow_main's ("production's root is unchanged" while "staging's
++    root advanced")."""
++    hp = head_path_override or head_path()
+     hp.parent.mkdir(parents=True, exist_ok=True)
+     tmp = hp.with_suffix(hp.suffix + ".tmp")
+     tmp.write_text(json.dumps({"root": node_hash, "dag_dir": str(dag_dir)}, sort_keys=True))
+     os.replace(tmp, hp)
+ 
+ 
+-def verify() -> dict[str, Any]:
++def verify(head_path_override: Path | None = None) -> dict[str, Any]:
+     """Returns {root, parent, nodes, verified} -- the exact shape
+     `bin/sb root --json` reports. `nodes` counts every node walked from
+     the head back to (but not including) genesis; `parent` is the root
+     node's own prev_node_hash."""
+-    hp = head_path()
++    hp = head_path_override or head_path()
+     if not hp.exists():
+         return {"root": None, "parent": None, "nodes": 0, "verified": False}
+     try:
+diff --git a/sovereign/engine/test_fork.py b/sovereign/engine/test_fork.py
+new file mode 100644
+index 000000000..ea683f7de
+--- /dev/null
++++ b/sovereign/engine/test_fork.py
+@@ -0,0 +1,161 @@
++"""unittest for sovereign/engine/fork.py (cp12). Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.engine.test_fork -v
++
++Never opens maestro's real database -- every test builds its own
++disposable sqlite3 file and points config.SIDECAR_TARGET at that, same
++pattern as sovereign/sidecar/test_sidecar.py and test_dualread.py.
++"""
++from __future__ import annotations
++
++import json
++import sqlite3
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from sovereign import config
++from sovereign.engine import fork, receipts, shadow_root
++from sovereign.sidecar import core as sidecar_core
++
++_FIXED_KEY = b"\x0c" * 32
++
++
++class ForkTestBase(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        root = Path(self._tmp.name)
++        self.db_path = root / "legacy.db"
++        for name, val in (
++            ("SB_RECEIPTS", root / "receipts.jsonl"),
++            ("RECEIPTS_HEAD", root / "receipts.head"),
++            ("SHADOW_HEADS_DIR", root / "heads"),
++            ("SIDECAR_TARGET", f"{self.db_path}#episodes"),
++            ("FORK_DIR", root / "forks"),
++            ("FORK_WORKING_POINTER", root / "working_branch"),
++            ("FORK_MAX_PARALLEL", 3),
++            ("FORK_MAX_MS", 1000),
++        ):
++            p = patch.object(config, name, val)
++            p.start()
++            self.addCleanup(p.stop)
++        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
++        p.start()
++        self.addCleanup(p.stop)
++
++        self.conn = sqlite3.connect(str(self.db_path))
++        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
++        self.conn.commit()
++        self.addCleanup(self.conn.close)
++        self.prod_dag_dir = root / "dag"
++        self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=self.prod_dag_dir)
++        # establish a real, non-genesis production root before any test
++        # forks from it
++        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", ("seed", "ops", "n"))
++        self.conn.commit()
++        self.sc.drain()
++
++    def _prod_root(self) -> str | None:
++        return shadow_root.verify()["root"]
++
++    def _clear_forks(self) -> None:
++        for p in list(config.SHADOW_HEADS_DIR.glob("*")):
++            if p.name != config.SHADOW_HEAD_FILENAME:
++                p.unlink()
++
++
++class ForkCreationPropertyTest(ForkTestBase):
++    def test_property_fork_creation_is_fast_matches_prod_root_and_never_touches_legacy(self) -> None:
++        legacy_mtime_before = self.db_path.stat().st_mtime_ns
++        prod_root = self._prod_root()
++        for i in range(30):
++            name = f"fork-{i}"
++            result = fork.create(name)
++            self.assertLess(result["elapsed_ms"], config.FORK_MAX_MS, "fork under a second")
++            self.assertEqual(result["root"], prod_root)
++            on_disk = json.loads(fork.fork_head_path(name).read_text())
++            self.assertEqual(on_disk["root"], prod_root, ".estate/heads/<name> equals the current root")
++        self.assertEqual(
++            self.db_path.stat().st_mtime_ns, legacy_mtime_before, "no file under the legacy DB changed"
++        )
++
++    def test_property_storage_flips_to_disk_exactly_at_the_cap(self) -> None:
++        for cap in (1, 2, 3, 5):
++            self._clear_forks()
++            with patch.object(config, "FORK_MAX_PARALLEL", cap):
++                for i in range(cap):
++                    r = fork.create(f"f{cap}-{i}")
++                    self.assertEqual(r["storage"], "memory", f"fork {i} under cap {cap} must be memory")
++                over = fork.create(f"f{cap}-over")
++                self.assertEqual(over["storage"], "disk", "the cap is a key: crossing it flips storage")
++
++
++class ForkSwitchDropTest(ForkTestBase):
++    def test_switch_and_drop_moves_pointer_and_archives_dag_nodes(self) -> None:
++        fork.create("staging")
++        conn, sc = fork.attach_sidecar("staging", "episodes")
++        conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", ("s1", "ops", "note"))
++        conn.commit()
++        sc.drain()
++        conn.close()
++
++        dag_files_before = sorted(p.name for p in fork.fork_dag_dir("staging").glob("*.json"))
++        self.assertTrue(dag_files_before)
++
++        fork.switch("staging")
++        self.assertEqual(fork.current(), "staging", "the working pointer moved")
++
++        fork.drop("staging")
++        self.assertNotIn("staging", fork.list_forks(), "the branch is gone from heads/")
++        self.assertEqual(fork.current(), config.SHADOW_HEAD_FILENAME, "drop switches back to production")
++
++        dag_files_after = sorted(p.name for p in fork.fork_dag_dir("staging").glob("*.json"))
++        self.assertEqual(dag_files_after, dag_files_before, "its DAG nodes remain, archived, never deleted")
++
++    def test_switch_refuses_an_unknown_name(self) -> None:
++        with self.assertRaises(fork.UnknownForkError):
++            fork.switch("does-not-exist")
++
++    def test_drop_refuses_an_unknown_name(self) -> None:
++        with self.assertRaises(fork.UnknownForkError):
++            fork.drop("does-not-exist")
++
++
++class ForkIncidentTest(ForkTestBase):
++    def test_incident_cp12_fork_writes_never_reach_production_receipts_or_root(self) -> None:
++        """cp12's exact bar (features/sovereign-bus/cp12_ai_sandbox.feature,
++        "Agent writes land on the fork only"): ten writes against a fork
++        must leave production's root and receipts file untouched, and
++        chain into the fork's own receipts file instead -- verifiable on
++        its own signed head anchor, independent of production's."""
++        prod_root_before = self._prod_root()
++        prod_receipts_before = len(receipts.read_all())
++
++        fork.create("staging")
++        conn, sc = fork.attach_sidecar("staging", "episodes")
++        for i in range(10):
++            conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (f"fk-{i}", "ops", "n"))
++            conn.commit()
++        processed = sc.drain()
++        conn.close()
++
++        self.assertEqual(processed, 10)
++        self.assertEqual(self._prod_root(), prod_root_before, "production's root is unchanged")
++        self.assertEqual(
++            len(receipts.read_all()), prod_receipts_before, "production's receipts file gained no rows"
++        )
++
++        fork_receipts_path, fork_head_path = fork.fork_receipts_paths("staging")
++        write_receipts = [r for r in receipts.read_all(fork_receipts_path) if r.get("kind") == "sidecar_write"]
++        self.assertEqual(len(write_receipts), 10, "staging's receipts chained separately, ten entries")
++
++        staging_root = json.loads(fork.fork_head_path("staging").read_text())["root"]
++        self.assertNotEqual(staging_root, prod_root_before, "staging's root advanced")
++
++        result = receipts.verify(fork_receipts_path, fork_head_path)
++        self.assertTrue(result["ok"], "the fork's own chain verifies on its own signed head anchor")
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/sovereign/sidecar/core.py b/sovereign/sidecar/core.py
+index 79a494e84..411b67fe3 100644
+--- a/sovereign/sidecar/core.py
++++ b/sovereign/sidecar/core.py
+@@ -99,12 +99,29 @@ class DBSidecar:
+     features/sovereign-bus/cp8_db_sidecar.feature is INSERT-shaped and is
+     covered exactly."""
+ 
+-    def __init__(self, conn: sqlite3.Connection, table: str, dag_dir: Path | None = None) -> None:
++    def __init__(
++        self,
++        conn: sqlite3.Connection,
++        table: str,
++        dag_dir: Path | None = None,
++        head_path: Path | None = None,
++        receipts_path: Path | None = None,
++        receipts_head_path: Path | None = None,
++    ) -> None:
++        """head_path/receipts_path/receipts_head_path all default to
++        production's own (shadow_root.head_path(), config.SB_RECEIPTS,
++        config.RECEIPTS_HEAD) -- every existing caller is unaffected.
++        cp12's fork.attach_sidecar() passes a fork's own three files so a
++        fork's drain() advances that fork's root and chains into that
++        fork's own receipts, never production's."""
+         if not _IDENT_RE.match(table):
+             raise ValueError(f"not a safe table identifier: {table!r}")
+         self._conn = conn
+         self._table = table
+         self._dag_dir = dag_dir or config.SIDECAR_DAG_DIR
++        self._head_path = head_path
++        self._receipts_path = receipts_path
++        self._receipts_head_path = receipts_head_path
+         self._lock = threading.Lock()
+         self.missed = 0
+ 
+@@ -145,7 +162,11 @@ class DBSidecar:
+                 self.missed = len(rows) - processed
+                 return processed
+             if self.missed:
+-                receipts_mod.append({"kind": "sidecar_degraded", "table": self._table, "missed": self.missed})
++                receipts_mod.append(
++                    {"kind": "sidecar_degraded", "table": self._table, "missed": self.missed},
++                    self._receipts_path,
++                    self._receipts_head_path,
++                )
+                 self.missed = 0
+             return processed
+ 
+@@ -188,7 +209,9 @@ class DBSidecar:
+         (self._dag_dir / f"{node_hash}.json").write_text(json.dumps(body, sort_keys=True))
+         (self._dag_dir / config.SIDECAR_HEAD_FILENAME).write_text(json.dumps({"hash": node_hash}, sort_keys=True))
+         receipts_mod.append(
+-            {"kind": "sidecar_write", "table": self._table, "node_hash": node_hash, "op": op, "rowid": rowid}
++            {"kind": "sidecar_write", "table": self._table, "node_hash": node_hash, "op": op, "rowid": rowid},
++            self._receipts_path,
++            self._receipts_head_path,
+         )
+         # cp9: the shadow root advances exactly once per drained write --
+         # after the node + receipt it names both already exist, never
+@@ -197,9 +220,12 @@ class DBSidecar:
+         # fails, that must not re-queue the row (the write already
+         # happened, above) or drain() would double-write the node on
+         # retry, so it is swallowed here rather than propagated into
+-        # drain()'s except OSError.
++        # drain()'s except OSError. self._head_path is None for
++        # production (update_head() then defaults to shadow_main itself);
++        # cp12's fork sidecars pass their own fork's head file so this
++        # advances that fork's root, never production's.
+         try:
+-            shadow_root.update_head(node_hash, self._dag_dir)
++            shadow_root.update_head(node_hash, self._dag_dir, self._head_path)
+         except OSError:
+             pass
+ 

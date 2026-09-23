@@ -1,0 +1,11 @@
+.aevum/local.jsonl
+.github/workflows/ci.yml
+.github/workflows/guarded-paths.yml
+.github/workflows/webhook-diagnose-v2.yml
+.github/workflows/webhook-diagnose.yml
+AGENTS.md
+bin/idp-local-evidence-gate
+bin/idp-rules
+docs/reference/agent-identity.md
+platform/edge/inject-otel-endpoint.yaml
+sovereign/engine/client.py

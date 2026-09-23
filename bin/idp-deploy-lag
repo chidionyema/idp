@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Is what the cluster runs the thing that was built? (idp#1046)
+"""Has the tag that was built reached main, or is a deploy stuck? (idp#1046)
 
 WHY THIS EXISTS. On 2026-08-30 the estate stopped deploying and every instrument stayed green for
 thirteen hours. A deploy here is a pull request: image-automation-controller writes the new tag onto
@@ -11,8 +11,15 @@ request stopped merging at 2026-08-30T14:45Z. Nothing noticed, because nothing w
   login-drill               green -- it signs in to the portal, and the old portal signs in fine
   image-update-pr           RED, on a robot branch nobody reads
 
-Every one of those answers a question about a part. None of them answers the only question that
-matters to the person looking at the portal: is the thing I merged the thing that is running?
+Every one of those answers a question about a part. None of them answers whether the newest image
+the policy picked has actually reached main, which is the step that had stopped.
+
+WHAT IT DOES NOT GRADE, said plainly because the first draft of this file claimed it did. This is a
+git question and it is answered with git refs: it does not open a cluster session and it never
+reads a pod, so it cannot tell you what is running. Between a tag landing on main and a pod serving
+it there is a Flux reconcile and a rollout, and either can fail with this row green. The prover
+that reads the deployed pod is verdict-backstage.yml; this row is what tells you whether that
+prover has anything new to find.
 
 WHAT IT GRADES. For every image tag the automation owns -- the `newTag:` lines carrying an
 `$imagepolicy` marker under platform/ and clusters/ -- it compares main against the branch the
@@ -158,7 +165,8 @@ def main(argv):
         old = have.get(policy, (path, None))[1]
         if old == new:
             rows.append({"policy": policy, "state": "ok", "tag": new, "lag_hours": 0.0})
-            print(f"ok      deploy-lag  {policy} is running {new}")
+            # "main carries", not "is running": this compares two git refs and never reads a pod.
+            print(f"ok      deploy-lag  {policy} main carries {new}, the newest the policy picked")
             continue
         lag = age_hours(newest, path, now)
         if lag is None:
@@ -182,7 +190,7 @@ def main(argv):
         if state == "FAIL":
             rc = max(rc, 1)
             print(
-                f"FAIL    deploy-lag  {policy} is running {old} but {new} was built "
+                f"FAIL    deploy-lag  {policy} main still carries {old} but {new} was built "
                 f"{lag:.1f}h ago and has not reached main (bound {a.max_lag_hours:g}h); "
                 f"the deploy pull request from {a.branch} is not merging"
             )
