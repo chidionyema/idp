@@ -220,7 +220,7 @@ def test_commentary_emits_one_line_per_transition(db):
     # At least one line per event of the journey (5 events + reconcile = 6).
     assert len(lines) >= 5
     # No consecutive lines for the same stage without a status change.
-    for prev, curr in zip(lines, lines[1:]):
+    for prev, curr in zip(lines, lines[1:], strict=False):
         if prev["stage"] == curr["stage"]:
             assert prev["status"] != curr["status"], (
                 f"commentary repeated stage {prev['stage']!r} with no change"
