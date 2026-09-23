@@ -1,0 +1,36 @@
+# Coroot -> Prometheus. The spec's aggregation layer, stated as one line: "eBPF agents emit
+# Prometheus-format metrics, git scrapers emit counters, and everything lands in one place."
+#
+# Coroot already speaks Prometheus: its exporter projects the service map into metric families
+# a Prometheus scrape can read. This ServiceMonitor is what connects Layer 1 to the store that
+# Layer 2's counters also land in, so one Prometheus answers questions about both the
+# infrastructure and the pipeline.
+#
+# WHY A ServiceMonitor AND NOT A SECOND SCRAPE CONFIG. platform/monitoring/kube-prometheus-stack
+# is the estate's one Prometheus (AGENTS.md section 6 -- one of each layer). It discovers
+# ServiceMonitors by label, so this file is the whole integration: no second Prometheus, no
+# second scrape config, no second store.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: coroot
+  namespace: coroot
+  labels:
+    # The label kube-prometheus-stack's Prometheus selects on. Without it the object exists
+    # and is never scraped -- which is the exact failure mode this estate has paid for before.
+    release: kube-prometheus-stack
+    app.kubernetes.io/part-of: idp
+spec:
+  namespaceSelector:
+    matchNames: [coroot]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: coroot
+  endpoints:
+    # Coroot's Prometheus-compatible endpoint. Scraped every 30s: the service map's edges
+    # change on deploy, and a 30s resolution keeps the rollout comparison meaningful without
+    # making the scrape the busiest thing on the node.
+    - port: metrics
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

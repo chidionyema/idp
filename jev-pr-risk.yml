@@ -1,0 +1,50 @@
+# Pre-submission PR risk -- score a diff BEFORE the push, not after CI fails.
+#
+# Read by `jev_pr_risk(repo, base)` in mcp/plugins/jev.py. Each condition is a natural-language
+# question Jev answers against `git diff <base>...HEAD`. `weight` is how much an affirmative
+# answer raises the tier (default 1).
+#
+# The rule, stated so it can be argued with: each condition contributes P(likely) x weight; the
+# fraction of total weight that came back likely is banded low < 0.34, medium < 0.67, else high.
+# A condition with NO usable probability counts as LIKELY -- an unknown is a reason to look.
+#
+#   bin/idp-pr-risk            # advise: print the tier and the conditions that drove it
+#   bin/idp-pr-risk --json     # machine-readable, for a hook or an agent
+#
+# `bin/idp-pr-risk-gate` is the push-time caller; it refuses only at the block tier.
+conditions:
+  scope-creep:
+    when: >-
+      Does this change touch files unrelated to what its title or branch name declares,
+      beyond what its own co-changes block enumerates?
+    weight: 3
+
+  touches-closed-files:
+    when: >-
+      Does this change modify files, configs or rules that maintainers have previously
+      reverted, deleted, or explicitly closed pull requests against?
+    weight: 3
+
+  policy-violation:
+    when: >-
+      Does this change violate a documented contribution policy, a gate, or a law stated
+      in this repository's AGENTS.md?
+    weight: 3
+
+  oversized:
+    when: >-
+      Is this patch unusually large, or is its file-type mix of the kind correlated with
+      abandoned or high-maintenance pull requests in this repository?
+    weight: 1
+
+  gate-weakening:
+    when: >-
+      Does this change remove, weaken, quarantine, or skip an existing test, gate, or check
+      rather than fixing the failure it reports?
+    weight: 3
+
+  credentials:
+    when: >-
+      Does this change introduce a credential, token, key, or secret value anywhere other
+      than a reference to its name?
+    weight: 3

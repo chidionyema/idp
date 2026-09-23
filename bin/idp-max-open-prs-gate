@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""idp-max-open-prs-gate — refuses a push when the REPO already has > MAX open non-bot PRs.
+"""idp-max-open-prs-gate — refuses a push when the REPO already has >= MAX open non-bot PRs.
 
-Founder 2026-09-17 verbatim: "we should not even get here — limit no of open PRs 5 maximum" and
-"not author, this is repo not author based". REPO-WIDE cap: the estate as a whole holds no more
-than IDP_MAX_OPEN_PRS (default 5) open non-bot PRs at any time.
+Founder 2026-09-17: 10 open PRs was 'red signal', consolidated into one branch, and this gate
+ensures we never return to that state. This is a REPO-WIDE cap, not per-author: the estate as a
+whole holds no more than IDP_MAX_OPEN_PRS (default 5) open PRs at any time (bot lanes excluded).
 
 Bot lanes skipped (do not count against the cap):
   - branches starting with `flux/` (image-update loop)
@@ -70,7 +70,7 @@ def main():
     for p in counted:
         who = (p.get("user") or {}).get("login", "?")
         print(f"   #{p['number']:5d} by {who}  {p['title'][:80]}")
-    print("        run pr-consolidate workflow (hourly at :17, or workflow_dispatch) to land them in one branch, or close some manually before retrying.")
+    print("        run bin/idp-pr-consolidate-local, or dispatch the pr-consolidate workflow, then retry")
     sys.exit(1)
 
 

@@ -56,13 +56,16 @@
 {"alias": "voice-speculate-endpoint", "entity": "concept/voice-speculate-endpoint", "type": "CONCEPT"}
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
+{"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
+{"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
 {"alias": "Code mutation gate gap", "entity": "feature/code-mutation-gate-gap", "type": "FEATURE"}
 {"alias": "crew#892 CP4", "entity": "feature/crew-892-cp4", "type": "FEATURE"}
 {"alias": "Evidence Preservation", "entity": "feature/evidence-preservation", "type": "FEATURE"}
+{"alias": "jev_affected (Test Impact Analysis)", "entity": "feature/jev-affected-test-impact-analysis", "type": "FEATURE"}
 {"alias": "Observation Pack", "entity": "feature/observation-pack", "type": "FEATURE"}
 {"alias": "Online Context Compact", "entity": "feature/online-context-compact", "type": "FEATURE"}
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}

@@ -58,7 +58,6 @@ spec:
     api:
       env:
         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
-        OTEL_EXPORTER_OTLP_ENDPOINT: http://signoz-otel-collector.observability.svc:4318
         HINDSIGHT_API_LLM_PROVIDER: openai
         # `minimax` (MiniMax-M3), not gemini or deepseek. DeepSeek answers 401 from inside the router
         # pod (measured 2026-09-04 21:5xZ) and its row has left the config. Gemini was the cheap lane

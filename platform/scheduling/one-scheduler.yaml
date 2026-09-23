@@ -92,9 +92,6 @@ still_outside_dagster:
 - job: .github/workflows/wake-blocked.yml
   kind: GitHub Actions cron
   fold: 'pending: to be declared as a Dagster schedule'
-- job: launchd/ai.estate.cockpit.plist.tmpl
-  kind: launchd job on the laptop
-  fold: 'pending: to be declared as a Dagster schedule'
 - job: launchd/ai.estate.executor.plist.tmpl
   kind: launchd job on the laptop
   # Same argument as otto-home3 below: this is the daemon that holds the 60-second
@@ -120,9 +117,6 @@ still_outside_dagster:
     when the cluster is gone (THE MEDIC LAW). A scheduler that dies with the estate cannot
     own the estate''s last brain. It is a persistent daemon, not a recurring job.'
 - job: launchd/ai.estate.scheduler.plist.tmpl
-  kind: launchd job on the laptop
-  fold: 'pending: to be declared as a Dagster schedule'
-- job: launchd/ai.estate.sovereign-worker.plist.tmpl
   kind: launchd job on the laptop
   fold: 'pending: to be declared as a Dagster schedule'
 - job: platform/agent-workforce/cronjob.yaml

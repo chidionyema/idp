@@ -70,3 +70,11 @@ E2E review 2026-09-22 (follow-up): founder asked whether ttcs uses a daemon (no 
 ### 2026-09-22T21:01:31Z · agent
 
 Voice 2100 ship: closed the two remaining gaps in one branch (consolidate/fix-everything). Added POST /voice/speculate as the WebGPU-absent fallback (routes intent-speculative alias -> Groq/Ollama per deployment), onClarificationNeeded client callback at confidence<0.90, voice_clarify MCP tool, schema-v2 armor with prompt-injection refused fields not echoed back, and 12 tests covering both paths. Doc lives at docs/specs/2026-09-22-voice-2100-architecture.md so the architecture is in git, not chat.
+
+### 2026-09-23T17:14:25Z · agent
+
+Consolidation landing. consolidate/all-outstanding holds 20 clean merges + 8 cherry-picks (FleetView CP6-CP9, JevLayer, spiffe-primary-v3, zeroedge-flux, jit-enrollment-door, aevum-evidence-write-door, workstation-bootstrap, pi-token-efficiency) + 2 fixes (duplicate boardPage TS2451; crew#620 ruff findings). otel-enforcement proven already-in-base (files byte-identical). 9 dirty files from cherry-pick churn preserved as stash@{0}; sovereign/config.py in that stash is UNIQUE (matches no branch) -- do not drop. ruff IS installed (python3 -m ruff 0.15.18 for /usr/bin/python3); earlier 'ruff not installed' reports were wrong -- bin/idp-ruff invokes it as a module. Gate state at last run: py-strict FAIL (before the ruff fix commit).
+
+### 2026-09-23T17:31:42Z · agent
+
+Landed jev_affected (TIA) on the existing Jev layer + bin/idp-affected + jev-affected.yml + 6 fail-open tests. Chose to extend the estate's own decision layer over adopting jev-affected/chisel/coverage TIA as new dependencies (AGENTS.md section 6: one of each layer).

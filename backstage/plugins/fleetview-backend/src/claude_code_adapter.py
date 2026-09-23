@@ -117,6 +117,8 @@ async def run_claude_code_adapter(nats_url: str, prefix: str | None = None) -> N
                                 phase=phase,
                                 **extra,
                             )
+                        # S110: the tail keeps running on a failed publish by design -- one
+                        # bad event must not end the ledger tail for every later event.
                         except Exception:  # noqa: BLE001, S110 — one bad publish must not stop the tail
                             pass
                 except OSError:

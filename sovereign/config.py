@@ -108,7 +108,9 @@ def _vault_get(key: str) -> str | None:
     if not loader.is_file():
         return None
     try:
-        run = subprocess.run(  # noqa: S603 — args are internal, not user input
+        # S603: the argv is built here from a repo-relative path and an env-var NAME -- no
+        # shell, no untrusted string, no caller-supplied executable.
+        run = subprocess.run(  # noqa: S603
             [str(loader), _vault_env_name(), key, key],
             capture_output=True,
             text=True,
@@ -179,7 +181,10 @@ KEYS: dict[str, KeySpec] = {
         str(_estate_home() / "alerts" / "inbox.jsonl"), "path", "ESTATE_ALERT_INBOX", ""
     ),
     "temporal.host": KeySpec(
-        "localhost", "str", "TEMPORAL_HOST", "Temporal frontend host"
+        "temporal-frontend-mesh",
+        "str",
+        "TEMPORAL_HOST",
+        "Temporal frontend host (OKE mesh Service; the tailnet-qualified name is set via TEMPORAL_HOST/TEMPORAL_ADDRESS by the operator, not hardcoded)",
     ),
     "temporal.port": KeySpec(7233, "int", "TEMPORAL_PORT", "Temporal frontend port"),
     "temporal.address": KeySpec(
@@ -1324,7 +1329,7 @@ FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
 FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
 FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
 PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
+REBUILD_RECEIPT_TEMPLATE: str = (_R["rebuild.receipt_template"].value,)
 CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
 
 TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"

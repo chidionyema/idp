@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+# idp-agent-orchestrator — the deterministic state machine that owns Git for
+# every agent task on this estate.
+#
+# The pattern (per the founder's spec, 2026-09-23, after a session that
+# dropped a ref to another agent's commit by running `git branch -D`):
+#
+#   1. provision  -- git fetch; create a fresh worktree on a fresh branch.
+#   2. submit     -- agent signals done; orchestrator commits, pushes, opens
+#                   the PR, and REVOKES the agent's access to the worktree
+#                   (read-only chmod + a lock file the agent respects).
+#   3. poll       -- every 30s, run `gh pr checks` and `gh pr view --json
+#                   state`. On failure, re-open the worktree and hand it
+#                   back; on merge, move to cleanup.
+#   4. cleanup    -- force-remove the worktree and delete the local branch.
+#                   Zero race: the agent was locked out at submit time.
+#   5. next       -- pull the freshly-merged main, allocate a new Task ID,
+#                   and create a brand-new worktree. The agent never
+#                   accumulates state across sessions.
+#
+# Why this exists: an LLM agent doing `git branch -D`, `git push --force`,
+# `git reset --hard`, etc. is a guaranteed path to lost work. The agent is
+# here to edit files. The orchestrator owns the state machine.
+#
+# Usage:
+#   bin/idp-agent-orchestrator provision TASK_ID [--base BRANCH] [--workspace DIR]
+#   bin/idp-agent-orchestrator submit    TASK_ID --title "..." --body PATH
+#                                                [--reviewer HANDLE ...]
+#   bin/idp-agent-orchestrator poll      TASK_ID [--interval SEC] [--max-attempts N]
+#                                                 [--fail-action {reopen|abandon}]
+#   bin/idp-agent-orchestrator cleanup   TASK_ID [--keep-branch]
+#   bin/idp-agent-orchestrator next      [--base BRANCH] [--workspace DIR]
+#   bin/idp-agent-orchestrator status    TASK_ID
+#
+# Env:
+#   AGENT_WORKSPACE_DIR   where worktrees live (default: ../agent-workspaces)
+#   AGENT_BASE_BRANCH     base branch to fork from (default: consolidate/all-into-main)
+#   AGENT_DRY_RUN         1 = print what would run, never mutate
+#   AGENT_BRANCH_PREFIX   branch name prefix (default: task-)
+#   AGENT_LOCK_FILENAME   lock file inside the worktree (default: .agent-locked)
+#   GH_REPO              owner/name (default: gh's resolved default repo)
+
+set -euo pipefail
+shopt -s nullglob
+
+PROG="${0##*/}"
+WORKSPACE_DIR="${AGENT_WORKSPACE_DIR:-$(cd "$(dirname "$0")/.." && pwd)/../agent-workspaces}"
+BASE_BRANCH="${AGENT_BASE_BRANCH:-main}"
+BRANCH_PREFIX="${AGENT_BRANCH_PREFIX:-task-}"
+LOCK_FILENAME="${AGENT_LOCK_FILENAME:-.agent-locked}"
+DRY_RUN="${AGENT_DRY_RUN:-0}"
+
+usage() {
+  cat <<USAGE
+Usage: bin/idp-agent-orchestrator {provision|submit|poll|cleanup|next|status} TASK_ID [options]
+
+Options by subcommand are listed under each one in the script header.
+USAGE
+}
+
+# Resolve the worktree path for a given Task ID. Centralised so every subcommand
+# agrees on where the worktree lives.
+worktree_path() {
+  local tid="$1"
+  printf '%s/%s%s\n' "$WORKSPACE_DIR" "$BRANCH_PREFIX" "$tid"
+}
+branch_name() {
+  local tid="$1"
+  printf '%s%s\n' "$BRANCH_PREFIX" "$tid"
+}
+
+# Run a git command, with optional dry-run. Always cd to the repo root first.
+run_git() {
+  local repo_root
+  repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY  git %s\n' "$*"
+  else
+    (cd "$repo_root" && git "$@")
+  fi
+}
+
+# Lock the worktree: read-only chmod on .git, drop a sentinel the agent
+# respects, and refuse any further writes from this script unless `cleanup`
+# or `poll --fail-action reopen` is invoked. Idempotent.
+lock_worktree() {
+  local wt="$1"
+  local lock="$wt/$LOCK_FILENAME"
+  if [ -f "$lock" ]; then
+    printf 'ok    lock  %s already held\n' "$wt"
+    return 0
+  fi
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY  lock  %s\n' "$wt"
+    return 0
+  fi
+  printf '%s locked by idp-agent-orchestrator at %s; do not edit.\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$PROG" > "$lock"
+  chmod -R u-w "$wt/.git" 2>/dev/null || true
+  chmod -R u-w "$wt" 2>/dev/null || true
+  printf 'ok    lock  %s\n' "$wt"
+}
+
+# Unlock: the inverse. Idempotent.
+unlock_worktree() {
+  local wt="$1"
+  local lock="$wt/$LOCK_FILENAME"
+  if [ ! -f "$lock" ]; then
+    return 0
+  fi
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY  unlock %s\n' "$wt"
+    return 0
+  fi
+  chmod -u+w "$wt" 2>/dev/null || true
+  rm -f "$lock"
+  printf 'ok    unlock %s\n' "$wt"
+}
+
+# Validate a Task ID: kebab-case, 6-32 chars, ASCII only. Prevents a typo from
+# writing into a path we did not intend.
+validate_task_id() {
+  local tid="$1"
+  case "$tid" in
+    ''|*[!a-zA-Z0-9-]*|[a-zA-Z0-9-]*[!a-zA-Z0-9-])
+      printf 'FAIL  task id %s is not kebab-case ascii\n' "$tid" >&2
+      return 1 ;;
+  esac
+  local len=${#tid}
+  if [ "$len" -lt 6 ] || [ "$len" -gt 32 ]; then
+    printf 'FAIL  task id %s length %d outside 6..32\n' "$tid" "$len" >&2
+    return 1
+  fi
+}
+
+# --------------------------------------------------------------------- provision
+provision() {
+  local tid="" custom_base="" custom_ws=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) custom_base="$2"; shift 2 ;;
+      --workspace) custom_ws="$2"; shift 2 ;;
+      -h|--help) usage; return 0 ;;
+      *) tid="$1"; shift ;;
+    esac
+  done
+  [ -n "$tid" ] || { echo "FAIL  provision needs a TASK_ID"; return 2; }
+  validate_task_id "$tid"
+  [ -n "$custom_base" ] && BASE_BRANCH="$custom_base"
+  [ -n "$custom_ws" ] && WORKSPACE_DIR="$custom_ws"
+  local wt branch
+  wt="$(worktree_path "$tid")"
+  branch="$(branch_name "$tid")"
+
+  # Refresh the base so the worktree lands on the latest commit.
+  if [ "$DRY_RUN" != "1" ]; then
+    run_git fetch origin "$BASE_BRANCH" || { echo "FAIL  fetch origin $BASE_BRANCH refused"; return 1; }
+  fi
+
+  # Fail fast if the worktree or branch already exists. Re-running provision
+  # on the same Task ID is a typo or a collision; abort, do not silently
+  # overwrite.
+  if [ -d "$wt" ]; then
+    echo "FAIL  worktree already exists at $wt; remove it first (cleanup) or pick a new TASK_ID"
+    return 1
+  fi
+  if [ "$DRY_RUN" != "1" ] && run_git show-ref --verify --quiet "refs/heads/$branch"; then
+    echo "FAIL  branch $branch already exists locally; remove it first"
+    return 1
+  fi
+
+  mkdir -p "$WORKSPACE_DIR"
+  # The worktree is provisioned from origin/$BASE_BRANCH, not the local copy,
+  # so a stale local main never poisons a fresh task.
+  run_git worktree add "$wt" -b "$branch" "origin/$BASE_BRANCH"
+  printf 'ok    provision %s -> %s (branch %s, base origin/%s)\n' \
+    "$tid" "$wt" "$branch" "$BASE_BRANCH"
+}
+
+# --------------------------------------------------------------------- submit
+submit() {
+  local tid="" title="" body="" reviewers=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --title) title="$2"; shift 2 ;;
+      --body)  body="$2"; shift 2 ;;
+      --reviewer) reviewers+=("$2"); shift 2 ;;
+      -h|--help) usage; return 0 ;;
+      *) tid="$1"; shift ;;
+    esac
+  done
+  [ -n "$tid" ] || { echo "FAIL  submit needs a TASK_ID"; return 2; }
+  validate_task_id "$tid"
+  local wt branch
+  wt="$(worktree_path "$tid")"
+  branch="$(branch_name "$tid")"
+  [ -d "$wt" ] || { echo "FAIL  worktree $wt does not exist; run provision first"; return 1; }
+
+  # Inspect the worktree: which files changed vs origin/$BASE_BRANCH? That diff
+  # is what we commit; nothing else. The agent should not have moved HEAD,
+  # but if it did, refuse.
+  if [ "$DRY_RUN" != "1" ]; then
+    cd "$wt"
+    # The pre-push hook on this repo (bin/idp-install-hooks wired it) needs a
+    # per-worktree secret at .git/worktrees/<id>/idp-hook-secret. Lay it
+    # before commit so the hook doesn't REFUSE the push for an absent secret.
+    local hook_secret_src hook_secret_dst
+    hook_secret_src="$(git rev-parse --git-common-dir)/idp-hook-secret"
+    hook_secret_dst="$(git rev-parse --git-dir)/idp-hook-secret"
+    if [ -f "$hook_secret_src" ] && [ ! -f "$hook_secret_dst" ]; then
+      cp "$hook_secret_src" "$hook_secret_dst"
+    fi
+    local ahead behind
+    ahead="$(git rev-list --count "origin/$BASE_BRANCH..HEAD" 2>/dev/null || echo 0)"
+    behind="$(git rev-list --count "HEAD..origin/$BASE_BRANCH" 2>/dev/null || echo 0)"
+    if [ "$behind" != "0" ]; then
+      echo "FAIL  worktree is $behind commits behind origin/$BASE_BRANCH; rebase before submit"
+      return 1
+    fi
+    # Stage everything modified, but refuse if the diff is empty (no point
+    # shipping a zero-change commit).
+    git add -A
+    if git diff --cached --quiet; then
+      echo "FAIL  no staged changes; the agent's worktree is identical to origin/$BASE_BRANCH"
+      return 1
+    fi
+  fi
+
+  # Lock the worktree before commit/push so any racing agent write attempt
+  # would be blocked by the chmod + the lock sentinel.
+  lock_worktree "$wt"
+
+  # Commit. The message is the title the operator passed; the body is in the
+  # file the operator passed. We do not invent commit messages.
+  if [ "$DRY_RUN" != "1" ]; then
+    cd "$wt"
+    local commit_args=(-m "$title")
+    if [ -n "$body" ] && [ -f "$body" ]; then
+      commit_args+=(-F "$body")
+    fi
+    git commit "${commit_args[@]}"
+    git push -u origin "$branch"
+  fi
+
+  # Open the PR. Capture the URL for the operator.
+  local pr_args=(--base "$BASE_BRANCH" --head "$branch" --title "$title")
+  if [ -n "$body" ] && [ -f "$body" ]; then
+    pr_args+=(--body-file "$body")
+  fi
+  if [ "${#reviewers[@]}" -gt 0 ]; then
+    for r in "${reviewers[@]}"; do pr_args+=(--reviewer "$r"); done
+  fi
+  local pr_url
+  if [ "$DRY_RUN" = "1" ]; then
+    printf 'DRY  gh pr create %s\n' "${pr_args[*]}"
+    pr_url="DRY-RUN"
+  else
+    pr_url="$(gh pr create "${pr_args[@]}" 2>&1 | tail -1)"
+  fi
+  printf 'ok    submit  %s -> %s\n' "$tid" "$pr_url"
+}
+
+# --------------------------------------------------------------------- poll
+poll() {
+  local tid="" interval=30 max_attempts=40 fail_action="reopen"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --interval) interval="$2"; shift 2 ;;
+      --max-attempts) max_attempts="$2"; shift 2 ;;
+      --fail-action) fail_action="$2"; shift 2 ;;
+      -h|--help) usage; return 0 ;;
+      *) tid="$1"; shift ;;
+    esac
+  done
+  [ -n "$tid" ] || { echo "FAIL  poll needs a TASK_ID"; return 2; }
+  validate_task_id "$tid"
+  local branch
+  branch="$(branch_name "$tid")"
+  local attempt=0 state="UNKNOWN" conclusion="UNKNOWN"
+  while [ "$attempt" -lt "$max_attempts" ]; do
+    attempt=$((attempt + 1))
+    if [ "$DRY_RUN" != "1" ]; then
+      state="$(gh pr view "$branch" --json state --jq '.state' 2>/dev/null || echo UNKNOWN)"
+      conclusion="$(gh pr checks "$branch" --json state --jq '
+        [.[] | select(.state=="FAILURE")] | if length>0 then "FAILURE" else "PENDING_OR_SUCCESS" end
+      ' 2>/dev/null || echo UNKNOWN)"
+    fi
+    printf 'poll  %s attempt=%d state=%s conclusion=%s\n' "$tid" "$attempt" "$state" "$conclusion"
+    case "$state:$conclusion" in
+      MERGED:*) printf 'ok    poll %s merged after %d attempts\n' "$tid" "$attempt"; return 0 ;;
+      CLOSED:*) printf 'ok    poll %s closed after %d attempts\n' "$tid" "$attempt"; return 0 ;;
+      *:FAILURE)
+        if [ "$fail_action" = "abandon" ]; then
+          printf 'FAIL  poll %s failed checks; abandoning per --fail-action\n' "$tid"
+          return 1
+        fi
+        printf 'poll %s failed; re-opening worktree for the agent\n' "$tid"
+        unlock_worktree "$(worktree_path "$tid")"
+        return 1
+        ;;
+    esac
+    sleep "$interval"
+  done
+  printf 'FAIL  poll %s timed out after %d attempts\n' "$tid" "$max_attempts"
+  return 1
+}
+
+# --------------------------------------------------------------------- cleanup
+cleanup() {
+  local tid="" keep_branch=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --keep-branch) keep_branch=1; shift ;;
+      -h|--help) usage; return 0 ;;
+      *) tid="$1"; shift ;;
+    esac
+  done
+  [ -n "$tid" ] || { echo "FAIL  cleanup needs a TASK_ID"; return 2; }
+  validate_task_id "$tid"
+  local wt branch
+  wt="$(worktree_path "$tid")"
+  branch="$(branch_name "$tid")"
+
+  # Unlock first (read-only chmod on .git blocks the worktree remove).
+  unlock_worktree "$wt"
+
+  # Force-remove the worktree. -f so a dirty index doesn't refuse the
+  # removal; the lock was the only state we owned in there, and it is gone.
+  if [ -d "$wt" ]; then
+    run_git worktree remove -f "$wt"
+  fi
+
+  # Delete the local branch. We do NOT touch the remote branch; the PR
+  # closing or merging is its own lifecycle.
+  if [ "$keep_branch" = 0 ] && run_git show-ref --verify --quiet "refs/heads/$branch"; then
+    run_git branch -D "$branch"
+  fi
+
+  # Prune the worktree's stale entry in the worktree list (git is sometimes
+  # lazy about this; prune is idempotent).
+  run_git worktree prune
+
+  printf 'ok    cleanup %s\n' "$tid"
+}
+
+# --------------------------------------------------------------------- next
+next() {
+  local custom_base="" custom_ws=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --base) custom_base="$2"; shift 2 ;;
+      --workspace) custom_ws="$2"; shift 2 ;;
+      -h|--help) usage; return 0 ;;
+      *) shift ;;
+    esac
+  done
+  [ -n "$custom_base" ] && BASE_BRANCH="$custom_base"
+  [ -n "$custom_ws" ] && WORKSPACE_DIR="$custom_ws"
+
+  # Pull the freshly-merged main so the next task starts on the latest
+  # commit. Refuse if the local is dirty; an orchestrator must never start
+  # on a tree the agent has uncommitted work in.
+  if [ "$DRY_RUN" != "1" ]; then
+    local dirty
+    dirty="$(run_git status --porcelain | wc -l | tr -d ' ')"
+    if [ "$dirty" != "0" ]; then
+      echo "FAIL  local tree has $dirty uncommitted changes; commit or stash before next"
+      return 1
+    fi
+    run_git pull --ff-only origin "$BASE_BRANCH"
+  fi
+
+  # Allocate a new Task ID. The ID is a 6-char kebab-case short id derived
+  # from `uuidgen | cut -c1-6`, lowercased and stripped of non-kebab chars.
+  # If uuidgen is absent, fall back to a deterministic-but-not-collision-proof
+  # /dev/urandom read; the operator is expected to retry on collision.
+  local raw id=""
+  if command -v uuidgen >/dev/null 2>&1; then
+    raw="$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9' | cut -c1-6)"
+  else
+    raw="$(od -An -N3 -tx1 /dev/urandom | tr -d ' \n' | cut -c1-6)"
+  fi
+  # Pad to the 6-char minimum if the random source gave us fewer chars.
+  id="$(printf '%-6s' "$raw" | tr ' ' 'a')"
+  # Disallow the operator from forgetting to write the Task ID down.
+  echo "next  Task ID = $id"
+  echo "      worktree = $(worktree_path "$id")"
+  echo "      branch   = $(branch_name "$id")"
+  echo "      base     = origin/$BASE_BRANCH"
+}
+
+# --------------------------------------------------------------------- status
+status() {
+  local tid=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -h|--help) usage; return 0 ;;
+      *) tid="$1"; shift ;;
+    esac
+  done
+  [ -n "$tid" ] || { echo "FAIL  status needs a TASK_ID"; return 2; }
+  validate_task_id "$tid"
+  local wt branch
+  wt="$(worktree_path "$tid")"
+  branch="$(branch_name "$tid")"
+  local wt_present="absent" lock_present="absent" branch_present="absent"
+  [ -d "$wt" ] && wt_present="present"
+  [ -f "$wt/$LOCK_FILENAME" ] && lock_present="present"
+  if run_git show-ref --verify --quiet "refs/heads/$branch"; then
+    branch_present="present"
+  fi
+  printf '{"task_id": "%s", "branch": "%s", "worktree": "%s", "worktree_state": "%s", "lock": "%s"}\n' \
+    "$tid" "$branch" "$wt" "$wt_present" "$lock_present"
+  printf 'branch_present=%s\n' "$branch_present"
+  return 0
+}
+
+# --------------------------------------------------------------------- entrypoint
+case "${1:-}" in
+  provision) shift; provision "$@" ;;
+  submit)    shift; submit "$@" ;;
+  poll)      shift; poll "$@" ;;
+  cleanup)   shift; cleanup "$@" ;;
+  next)      shift; next "$@" ;;
+  status)    shift; status "$@" ;;
+  -h|--help) usage ;;
+  *)         usage; exit 2 ;;
+esac

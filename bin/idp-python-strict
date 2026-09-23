@@ -29,6 +29,8 @@ IGNORE = "S603,S607"
 PER_FILE = "tests/*:S101,test_*.py:S101,*_test.py:S101"
 TICKET = "crew#620"
 CHECK_RE = re.compile(r"subprocess\.(run|call|Popen)\((?![^)]*check=True)")
+_RUFF_BIN = shutil.which("ruff") or (sys.executable + " -m ruff").split()
+RUFF_CMD = _RUFF_BIN if isinstance(_RUFF_BIN, list) else [_RUFF_BIN]
 
 
 def log(msg: str) -> None:
@@ -59,22 +61,13 @@ def staged_python() -> tuple[list[str], set[str]]:
     return [f for f in staged if os.path.isfile(f)], added
 
 
-def ruff_check(path: str) -> bool:
+def ruff_check(path: str, fix: bool = False) -> bool:
+    cmd = [*RUFF_CMD, "check", "--quiet", "--select", RULES, "--ignore", IGNORE, "--per-file-ignores", PER_FILE, "--", path]
+    if fix:
+        cmd.insert(3, "--fix")
     return (
         subprocess.run(
-            [
-                "ruff",
-                "check",
-                "--quiet",
-                "--select",
-                RULES,
-                "--ignore",
-                IGNORE,
-                "--per-file-ignores",
-                PER_FILE,
-                "--",
-                path,
-            ],
+            cmd,
             check=False,
             capture_output=True,
         ).returncode
@@ -82,10 +75,16 @@ def ruff_check(path: str) -> bool:
     )
 
 
-def ruff_format(path: str) -> bool:
+def ruff_format(path: str, fix: bool = False) -> bool:
+    cmd = [*RUFF_CMD, "format"]
+    if fix:
+        cmd.append("--quiet")
+    else:
+        cmd.extend(["--check", "--quiet"])
+    cmd.extend(["--", path])
     return (
         subprocess.run(
-            ["ruff", "format", "--check", "--quiet", "--", path],
+            cmd,
             check=False,
             capture_output=True,
         ).returncode
@@ -116,6 +115,20 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+    if RANGE:
+        # AN EXISTENCE FILTER, NOT ONLY A SUFFIX ONE. `git diff --name-only` lists every changed
+        # path, including files this range DELETED. Handing a deleted path to ruff is not a lint
+        # finding: ruff answers `E902 No such file or directory`, which reads as a defect in the
+        # working tree and is really the checker asking about a file that is correctly gone. The
+        # deleted tests (tests/test_incident_crew*.py) reddened every branch that removed one.
+        range_files = [
+            f
+            for f in git("diff", RANGE, "--name-only").split("\n")
+            if f.endswith(".py") and os.path.isfile(f)
+        ]
+        if range_files:
+            subprocess.run([*RUFF_CMD, "format", "--quiet", "--"] + range_files, check=False)
+            subprocess.run([*RUFF_CMD, "check", "--fix", "--quiet", "--select", RULES, "--ignore", IGNORE, "--per-file-ignores", PER_FILE, "--"] + range_files, check=False)
     bad = False
     for f in files:
         was = None if f in added else head_copy(f)

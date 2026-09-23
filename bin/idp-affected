@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""idp-affected -- run only the tasks a change actually needs, decided by Jev.
+
+WHAT THIS IS. Test Impact Analysis on the estate's OWN decision layer. A repo declares its
+tasks in `jev-affected.yml`, each with a natural-language condition; Jev evaluates each
+condition against `git diff <base>...HEAD`; the tasks whose probability is not strictly
+below the threshold run. There is no coverage baseline to maintain and no dependency graph
+to keep current -- the condition IS the map, and Jev reads the diff to answer it.
+
+WHY NOT COVERAGE-BASED SELECTION. It needs a stored baseline per repo, and a stale baseline
+selects the wrong tests silently. Why not a dependency graph: it needs a build that is kept
+faithful, and it goes stale the moment someone adds an import the graph does not model.
+Neither failure is visible until a regression ships.
+
+THE SAFETY PROPERTY, and it is the whole point: a task is skipped ONLY when its condition's
+probability is strictly below `--skip-below` (default 0.3). EQUALITY RUNS. A missing config,
+an unreadable config, a git failure, or a Jev escalation all produce RUN. There is no path
+through this tool that turns an unknown into a skip -- it fails OPEN, toward running the
+test, which is the safe direction for a selector.
+
+    bin/idp-affected --plan              # what would run, and why; runs nothing
+    bin/idp-affected --run               # run the selected tasks, in order
+    bin/idp-affected --base origin/main  # diff against another base
+    bin/idp-affected --skip-below 0.5    # run more (a higher bar to skip)
+
+EXIT CODES. `--plan` exits 0. `--run` exits with the first failing task's code, or 0 when
+every selected task passes. `--run` with an empty selection exits 0 and says so -- "nothing
+to run" is a real answer, not a silent pass.
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.util
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+JEV = REPO / "mcp" / "plugins" / "jev.py"
+
+
+def _load_jev():
+    """Load jev.py by path -- the same way every sibling MCP plugin is loaded.
+
+    NOT a package import: `mcp/plugins/` is not a package, and the estate MCP server loads
+    these modules with `spec_from_file_location`, so a `from mcp.plugins import jev` would
+    work here and break there. One loader, one behaviour.
+    """
+    spec = importlib.util.spec_from_file_location("idp_jev_affected", JEV)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"cannot load {JEV}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["idp_jev_affected"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Jev test impact analysis")
+    ap.add_argument("--plan", action="store_true", help="print the plan; run nothing")
+    ap.add_argument("--run", action="store_true", help="run the selected tasks")
+    ap.add_argument(
+        "--repo", default=str(REPO), help="repo to analyse (default: this one)"
+    )
+    ap.add_argument("--base", default="origin/main", help="base ref to diff against")
+    ap.add_argument(
+        "--skip-below", type=float, default=None, help="skip only strictly below"
+    )
+    args = ap.parse_args()
+
+    if not args.plan and not args.run:
+        args.plan = True
+
+    jev = _load_jev()
+    plan = jev.jev_affected(args.repo, args.base, args.skip_below)
+
+    if plan.get("config_error"):
+        print(f"idp-affected: config: {plan['config_error']}", file=sys.stderr)
+    if plan.get("diff_error"):
+        print(f"idp-affected: diff: {plan['diff_error']}", file=sys.stderr)
+    if plan.get("escalated"):
+        print(
+            "idp-affected: note -- a condition escalated; those tasks run",
+            file=sys.stderr,
+        )
+
+    print(f"idp-affected: base={plan['base']} changed={plan['changed']}")
+    for t in plan["tasks"]:
+        mark = "RUN " if t["run"] else "SKIP"
+        prob = "" if t["probability"] is None else f"  P={float(t['probability']):.3f}"
+        print(f"  {mark} {t['name']}{prob}  -- {t['reason']}")
+
+    if args.plan:
+        print(
+            f"idp-affected: {len(plan['ran'])} to run, {len(plan['skipped'])} to skip"
+        )
+        return 0
+
+    if not plan["ran"]:
+        print("idp-affected: nothing to run")
+        return 0
+
+    by_name = {t["name"]: t for t in plan["tasks"]}
+    for name in plan["ran"]:
+        command = by_name[name]["command"]
+        if not command:
+            print(f"idp-affected: {name} has no command; skipping it", file=sys.stderr)
+            continue
+        print(f"idp-affected: RUN {name}: {command}", file=sys.stderr)
+        rc = subprocess.run(command, shell=True, cwd=args.repo).returncode  # noqa: S602
+        if rc != 0:
+            print(f"idp-affected: {name} FAILED (exit {rc})", file=sys.stderr)
+            return rc
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

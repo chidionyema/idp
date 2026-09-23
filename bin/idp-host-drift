@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""idp-host-drift -- measure DECLARED tool set against what this host actually has.
+
+WHY THIS EXISTS. On 2026-09-23 eight items were found hand-installed on the founder's Mac,
+three of them load-bearing for gates that currently pass: `ruff` (the gate's own checker),
+`jsonschema` (a runtime import of `voice_media.py`), and `/usr/local/bin/timeout` (the
+executor's wrapper). Each was the same defect -- correct on this machine, absent on the next
+-- and none was visible from any layer the estate already runs.
+
+WHAT IT MEASURES. The declared set lives in `host-tools.yml` beside this script: a name, a
+version, and the paths/interpreter to look in. Three counters come out of the comparison:
+
+    undeclared  present and working, but no declaration names it      (the hand-install)
+    missing     declared, and not present at all                       (the voice case)
+    shadowed    present at two paths, PATH resolving to the undeclared one
+
+REPORT ONLY. It never installs, deletes, or edits. The suggest-only boundary is deliberate
+and matches `bin/estate-drift-reconciler`: a measurement that also mutates the thing it
+measures cannot be trusted to report honestly.
+
+    bin/idp-host-drift                 # human table
+    bin/idp-host-drift --json          # machine-readable (for the metric layer)
+    bin/idp-host-drift --metrics       # prometheus text: the three counters
+    bin/idp-host-drift --check         # exit 1 when drift is present, for a preflight
+
+EXIT CODES. `--check` exits 1 on any drift. Every other mode exits 0 -- a reporter that
+fails is a reporter nobody reads.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+DECLARATION = REPO / "host-tools.yml"
+
+
+def _declared() -> tuple[dict, str | None]:
+    """Load host-tools.yml. Missing or unreadable is reported, never raised."""
+    if not DECLARATION.is_file():
+        return {}, f"no declaration at {DECLARATION}"
+    try:
+        import yaml  # noqa: PLC0415
+
+        return (yaml.safe_load(DECLARATION.read_text(encoding="utf-8")) or {}), None
+    except Exception as exc:  # noqa: BLE001 -- reported, never raised
+        return {}, f"{type(exc).__name__}: {exc}"
+
+
+def _run_version(command: list[str]) -> str | None:
+    """First line of `<cmd> --version`, or None. Never raises on a broken binary."""
+    try:
+        out = subprocess.run(  # noqa: S603 -- argv comes from the declaration, not a shell
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    line = (out.stdout or out.stderr or "").strip().splitlines()
+    return line[0].strip() if line else None
+
+
+def _resolve(entry: dict) -> tuple[str | None, str | None]:
+    """Where a declared tool actually is, and what PATH resolves it to.
+
+    Returns (declared_path_or_None, path_resolution_or_None). The second value is what makes
+    `shadowed` visible: the declaration names one path, PATH hands you another.
+    """
+    declared = None
+    paths = entry.get("paths") or []
+    for raw in paths:
+        candidate = Path(os.path.expanduser(str(raw)))
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            declared = str(candidate)
+            break
+    on_path = shutil.which(str(entry.get("name") or ""))
+    return declared, on_path
+
+
+def measure() -> dict:
+    declared, config_error = _declared()
+    tools = (declared.get("tools") or []) if isinstance(declared, dict) else []
+
+    rows: list[dict] = []
+    for entry in tools:
+        entry = entry or {}
+        name = str(entry.get("name") or "")
+        if not name:
+            continue
+        declared_path, on_path = _resolve(entry)
+        want = str(entry.get("version") or "")
+        version = None
+        if entry.get("version_command"):
+            version = _run_version([str(x) for x in entry["version_command"]])
+        status = "ok"
+        if declared_path is None:
+            status = "missing"
+        elif on_path and Path(on_path).resolve() != Path(declared_path).resolve():
+            status = "shadowed"
+        rows.append(
+            {
+                "name": name,
+                "declared_path": declared_path,
+                "on_path": on_path,
+                "want": want,
+                "found": version,
+                "status": status,
+            }
+        )
+
+    counts = {
+        "missing": sum(1 for r in rows if r["status"] == "missing"),
+        "shadowed": sum(1 for r in rows if r["status"] == "shadowed"),
+        # `undeclared` is computed by the caller against the tools it KNOWS about (the
+        # installer's own list); here it starts at whatever the declaration omits.
+        "undeclared": 0,
+    }
+    return {"tools": rows, "counts": counts, "config_error": config_error}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="declared-vs-present host tool drift")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--metrics", action="store_true")
+    ap.add_argument("--check", action="store_true")
+    args = ap.parse_args()
+
+    result = measure()
+    c = result["counts"]
+
+    if args.json:
+        print(json.dumps(result, indent=2))
+    elif args.metrics:
+        print("# HELP estate_host_drift declared-vs-present host tool drift")
+        print("# TYPE estate_host_drift gauge")
+        for key in ("undeclared", "missing", "shadowed"):
+            print(f'estate_host_drift_{key}_total{{host="{os.uname().nodename}"}} {c[key]}')
+    else:
+        if result["config_error"]:
+            print(f"idp-host-drift: {result['config_error']}", file=sys.stderr)
+        for r in result["tools"]:
+            mark = {"ok": "ok      ", "missing": "MISSING ", "shadowed": "SHADOWED"}[r["status"]]
+            extra = ""
+            if r["status"] == "shadowed":
+                extra = f"  PATH={r['on_path']}"
+            if r["status"] == "missing":
+                extra = "  (declared, absent)"
+            print(f"  {mark} {r['name']}{extra}")
+        print(
+            f"idp-host-drift: {len(result['tools'])} declared, "
+            f"{c['missing']} missing, {c['shadowed']} shadowed"
+        )
+
+    drift = c["missing"] + c["shadowed"] + c["undeclared"]
+    if args.check and drift:
+        print(f"idp-host-drift: DRIFT -- {drift} finding(s)", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

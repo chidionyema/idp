@@ -1,0 +1,405 @@
+#!/usr/bin/env python3
+"""The deploy-journey recorder: every commit's road to the cluster as one ledger row.
+
+THE GAP THIS FILLS (2026-09-23, crew#973). The Deploy River
+(docs/specs/2026-09-23-deploy-river.md) renders each commit as a journey -- push, PR,
+gates, merge, image, sign, reconcile, live. Every fact on that road already exists,
+scattered: GitHub check-runs, PR timestamps, Flux events. Nothing joined them into one
+row a renderer can replay. This is that join, in the posture of
+bin/estate-session-recorder: a reader, not a decider. Nothing is asked to cooperate;
+nothing is modified.
+
+WHAT IT READS.
+
+  github   gh pr list + gh api repos/{owner}/{repo}/commits/<sha>/check-runs
+  flux     FLUX_EVENTS_PATH (optional JSONL, one {"sha","stage","status","ts"} per line)
+
+WHAT IT WRITES. One `deploy_journeys` row per head sha (upserted, idempotent) and that
+sha's `deploy_journey_events` rows (derived: rewritten per sha per pass, so a second
+pass over the same sources is a no-op in effect -- replayable, never duplicated).
+
+THE HONESTY RULES (each a measured estate failure, applied):
+
+  * gh missing, unauthed, or refusing: BLIND, exit 2, naming the source -- a broken
+    reader and an empty pipeline must never look the same;
+  * a commit no PR claims still gets a journey: its PR stage is `unknown`, never
+    invented;
+  * a check-run with no conclusion yet is `pending`, never `pass`;
+  * no FLUX_EVENTS_PATH means the cluster stage is `unknown` with the reason stated --
+    the river shows a gap as a gap.
+
+CONFIG (LAW 46 -- every path and limit is an env var):
+  ESTATE_DB          the catalog to write (default <repo>/catalog/estate.db)
+  GH_REPO            owner/name (default: gh's resolved default repo)
+  RECORDER_PR_LIMIT  how many recent PRs to sweep (default 25)
+  FLUX_EVENTS_PATH   optional JSONL of cluster-stage events
+
+USAGE
+  bin/estate-deploy-recorder            # one pass over recent PRs, print what it wrote
+  bin/estate-deploy-recorder --sha X    # one commit's journey only
+  bin/estate-deploy-recorder --json     # machine-readable
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+
+def _repo_root() -> Path:
+    """The checkout this script lives in. Falls back to cwd when a loader gives no
+    __file__ (the test suite loads bin scripts through SourceFileLoader)."""
+    try:
+        return Path(__file__).resolve().parent.parent
+    except NameError:
+        return Path.cwd()
+
+
+ROOT = _repo_root()
+_DB_DEFAULT = ROOT / "catalog" / "estate.db"
+
+
+def _repo_slug() -> str:
+    """`owner/name` for the check-runs read.
+
+    MEASURED 2026-09-23: the call was built as `repos/{repo}/commits/<sha>/check-runs` and sent
+    LITERALLY -- `gh api` does not expand `{repo}` for a script, so it 404'd. Worse, `gh api`
+    exits 0 on a 404, so the runner parsed the error body, `.get("check_runs", [])` returned [],
+    and the journey recorded no gates at all while looking like a successful read. Every
+    `checks` stage in the ledger was dead for this one missing expansion.
+
+    GH_REPO wins (documented, never read); then gh's own resolution for the checkout; then
+    BLIND -- never a guessed slug.
+    """
+    env = os.environ.get("GH_REPO", "").strip()
+    if env:
+        return env
+    try:
+        proc = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(ROOT),
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    raise BlindError("cannot resolve owner/name for check-runs; set GH_REPO")
+
+
+# Owned here: IF NOT EXISTS throughout, so the recorder runs on a fresh machine and can
+# never alter a table another writer owns.
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS deploy_journeys (
+    sha          TEXT PRIMARY KEY,
+    branch       TEXT,
+    pr_number    INTEGER,
+    title        TEXT,
+    state        TEXT NOT NULL,   -- merged | in_flight | failed | abandoned
+    started_at   TIMESTAMP,
+    merged_at    TIMESTAMP,
+    metadata_json TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS deploy_journey_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sha         TEXT NOT NULL,
+    seq         INTEGER NOT NULL,
+    stage       TEXT NOT NULL,
+    status      TEXT NOT NULL,    -- pass | fail | pending | unknown
+    detail_json TEXT NOT NULL,
+    ts          TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS deploy_journey_events_sha ON deploy_journey_events (sha, seq);
+"""
+
+PASS, FAIL, PENDING, UNKNOWN = "pass", "fail", "pending", "unknown"
+
+
+def _db_path() -> Path:
+    return Path(os.environ.get("ESTATE_DB", str(_DB_DEFAULT)))
+
+
+def _connect() -> sqlite3.Connection:
+    con = sqlite3.connect(str(_db_path()))
+    con.row_factory = sqlite3.Row
+    con.executescript(_SCHEMA)
+    return con
+
+
+class BlindError(RuntimeError):
+    """A source that could not be read at all. Never confused with an empty answer."""
+
+
+Runner = Callable[[list[str]], Any]
+
+
+def _gh_runner(args: list[str]) -> Any:
+    """The one subprocess seam. Everything GitHub flows through here so tests stub the
+    boundary, never the dict. BLIND on absence or refusal."""
+    if shutil.which("gh") is None:
+        raise BlindError("gh is not on PATH; GitHub stages are unreadable")
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
+    if proc.returncode != 0:
+        raise BlindError(f"gh {args[0]} refused: {proc.stderr.strip()[:200]}")
+    try:
+        return json.loads(proc.stdout)
+    except json.JSONDecodeError as e:
+        raise BlindError(f"gh {args[0]} answered unparseably: {e}") from e
+
+
+_CHECK_CONCLUSION = {
+    "success": PASS,
+    "failure": FAIL,
+    "cancelled": FAIL,
+    "timed_out": FAIL,
+    "action_required": FAIL,
+    "neutral": PASS,
+    "skipped": PASS,
+}
+
+
+def _check_stage(cr: dict) -> dict:
+    """One check-run as a journey event. No conclusion yet is pending, never pass."""
+    conclusion = (cr.get("conclusion") or "").lower()
+    status = _CHECK_CONCLUSION.get(conclusion, UNKNOWN) if conclusion else PENDING
+    return {
+        "stage": f"check:{cr.get('name', 'unnamed')}",
+        "status": status,
+        "ts": cr.get("completedAt") or cr.get("startedAt"),
+        "detail": {
+            "conclusion": conclusion or None,
+            "url": cr.get("htmlUrl") or cr.get("url"),
+        },
+    }
+
+
+def journey_for_pr(pr: dict, runner: Runner, flux_events: list[dict]) -> dict:
+    """The whole road for one PR's head sha: opened, every gate, merged, cluster."""
+    sha = pr.get("headRefOid") or ""
+    events: list[dict] = [
+        {
+            "stage": "pr_opened",
+            "status": PASS,
+            "ts": pr.get("createdAt"),
+            "detail": {"number": pr.get("number"), "base": pr.get("baseRefName")},
+        }
+    ]
+    if sha:
+        try:
+            body = runner(["api", f"repos/{_repo_slug()}/commits/{sha}/check-runs"])
+            # `gh api` exits 0 on a 404 and prints {"message": "Not Found"}. `.get("check_runs",
+            # [])` turns that into an empty list, so an unreadable source looked identical to a
+            # commit with no checks -- the silent-zero an estate measurement is not allowed to
+            # produce. An error body with no check_runs key is BLIND, never zero.
+            if "check_runs" not in body:
+                raise BlindError(
+                    f"check-runs unreadable: {str(body.get('message', body))[:120]}"
+                )
+            runs = body["check_runs"]
+            events.extend(_check_stage(cr) for cr in runs)
+        except BlindError:
+            events.append(
+                {
+                    "stage": "checks",
+                    "status": UNKNOWN,
+                    "ts": None,
+                    "detail": {"error": "check-runs unreadable"},
+                }
+            )
+    else:
+        events.append(
+            {
+                "stage": "checks",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {"error": "no head sha"},
+            }
+        )
+
+    merged_at = pr.get("mergedAt")
+    if merged_at:
+        events.append(
+            {"stage": "merged", "status": PASS, "ts": merged_at, "detail": {}}
+        )
+
+    named = [fe for fe in flux_events if sha and fe.get("sha", "").startswith(sha[:12])]
+    for fe in named:
+        events.append(
+            {
+                "stage": fe.get("stage", "flux"),
+                "status": fe.get("status", UNKNOWN),
+                "ts": fe.get("ts"),
+                "detail": fe.get("detail") or {},
+            }
+        )
+    if not named:
+        events.append(
+            {
+                "stage": "reconcile",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {
+                    "error": "no flux events source"
+                    if not flux_events
+                    else "no flux event names this sha"
+                },
+            }
+        )
+
+    if merged_at:
+        state = "merged"
+    elif pr.get("state") == "CLOSED":
+        state = "abandoned"
+    elif any(e["status"] == FAIL for e in events):
+        state = "failed"
+    else:
+        state = "in_flight"
+
+    return {
+        "sha": sha,
+        "branch": pr.get("headRefName"),
+        "pr_number": pr.get("number"),
+        "title": pr.get("title"),
+        "state": state,
+        "started_at": pr.get("createdAt"),
+        "merged_at": merged_at,
+        "events": events,
+    }
+
+
+def lone_journey(sha: str) -> dict:
+    """A commit no PR claims: its PR stage is unknown, never invented."""
+    return {
+        "sha": sha,
+        "branch": None,
+        "pr_number": None,
+        "title": None,
+        "state": "in_flight",
+        "started_at": None,
+        "merged_at": None,
+        "events": [
+            {
+                "stage": "pr_opened",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {"error": "no pull request names this sha"},
+            }
+        ],
+    }
+
+
+def write_journey(con: sqlite3.Connection, j: dict) -> None:
+    con.execute(
+        "INSERT INTO deploy_journeys (sha, branch, pr_number, title, state, started_at,"
+        " merged_at, metadata_json) VALUES (?,?,?,?,?,?,?,?)"
+        " ON CONFLICT(sha) DO UPDATE SET branch=excluded.branch, pr_number=excluded.pr_number,"
+        " title=excluded.title, state=excluded.state, started_at=excluded.started_at,"
+        " merged_at=excluded.merged_at, metadata_json=excluded.metadata_json",
+        (
+            j["sha"],
+            j["branch"],
+            j["pr_number"],
+            j["title"],
+            j["state"],
+            j["started_at"],
+            j["merged_at"],
+            json.dumps({"event_count": len(j["events"])}),
+        ),
+    )
+    # Derived view: the sha's events are rewritten wholesale, so a re-run can never
+    # double a stage.
+    con.execute("DELETE FROM deploy_journey_events WHERE sha = ?", (j["sha"],))
+    for seq, e in enumerate(j["events"]):
+        con.execute(
+            "INSERT INTO deploy_journey_events (sha, seq, stage, status, detail_json, ts)"
+            " VALUES (?,?,?,?,?,?)",
+            (j["sha"], seq, e["stage"], e["status"], json.dumps(e["detail"]), e["ts"]),
+        )
+
+
+def load_flux_events() -> list[dict]:
+    path = os.environ.get("FLUX_EVENTS_PATH", "")
+    if not path:
+        return []
+    try:
+        with open(path) as f:
+            return [json.loads(line) for line in f if line.strip()]
+    except (OSError, json.JSONDecodeError) as e:
+        raise BlindError(f"FLUX_EVENTS_PATH unreadable: {e}") from e
+
+
+_PR_FIELDS = "number,title,headRefName,headRefOid,createdAt,mergedAt,state,baseRefName"
+
+
+def run(sha: str | None, limit: int, runner: Runner = _gh_runner) -> list[dict]:
+    flux_events = load_flux_events()
+    if sha:
+        prs = runner(
+            [
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--search",
+                sha,
+                "--limit",
+                "5",
+                "--json",
+                _PR_FIELDS,
+            ]
+        )
+        pr = next(
+            (p for p in prs if (p.get("headRefOid") or "").startswith(sha[:12])), None
+        )
+        return [journey_for_pr(pr, runner, flux_events) if pr else lone_journey(sha)]
+    prs = runner(
+        ["pr", "list", "--state", "all", "--limit", str(limit), "--json", _PR_FIELDS]
+    )
+    return [journey_for_pr(p, runner, flux_events) for p in prs if p.get("headRefOid")]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="deploy-journey recorder")
+    ap.add_argument("--sha", default=None)
+    ap.add_argument(
+        "--limit", type=int, default=int(os.environ.get("RECORDER_PR_LIMIT", "25"))
+    )
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    try:
+        journeys = run(args.sha, args.limit)
+    except BlindError as e:
+        print(f"BLIND estate-deploy-recorder: {e}", file=sys.stderr)
+        return 2
+
+    con = _connect()
+    with con:
+        for j in journeys:
+            write_journey(con, j)
+
+    if args.json:
+        print(json.dumps({"written": len(journeys), "db": str(_db_path())}))
+    else:
+        for j in journeys:
+            print(
+                f"ok    journey  {(j['sha'] or '(no sha)')[:9]}  {j['state']:<10} "
+                f"pr={j['pr_number']}  {len(j['events'])} stages  {(j['title'] or '')[:60]}"
+            )
+        print(
+            f"ok    estate-deploy-recorder  {len(journeys)} journey(s) -> {_db_path()}"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
