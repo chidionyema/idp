@@ -24,9 +24,26 @@ import sys
 import tempfile
 
 RULES = "E9,F,B,S"
-# S603/S607 fire on every list-form subprocess call; S101 is how pytest asserts. Neither is a defect.
-IGNORE = "S603,S607"
-PER_FILE = "tests/*:S101,test_*.py:S101,*_test.py:S101"
+# TEST-CODE EXEMPTIONS. The globs here are `ruff`'s, and `tests/*` matches only a DIRECT child
+# of tests/ -- it never matched `sovereign/tests/bdd/...`, which is why 24 test files failed this
+# rung on 2026-09-23 after the 318-branch consolidation. `**/tests/**` covers nested suites.
+#
+# The rules, and why each is not a defect in a test:
+#   S101  bare assert -- pytest's assertion idiom, not production input validation
+#   S311  random, not for crypto -- statistical test noise
+#   S105  "hardcoded password" fires on a VARIABLE NAMED token in a fixture
+#   S608  "SQL injection" fires on a test's own query string, which is not user input
+# This list is the one `pyproject.toml` already keeps under
+# [tool.ruff.lint.per-file-ignores]; the two must agree, and this is the one the rung uses.
+#
+# FORMAT. `ruff` accepts ONE pattern:rule per flag, and a comma inside the rule list is read as
+# the start of the next pattern (measured: `**/tests/**:S101,S311` -> "invalid value 'S311'").
+# So the rules are repeated, one flag each, built below rather than written as one string.
+_TEST_EXEMPT_RULES = ("S101", "S311", "S105", "S608")
+_TEST_GLOBS = ("**/tests/**/*.py", "test_*.py", "*_test.py")
+PER_FILE_PARTS = [
+    f"--per-file-ignores={g}:{r}" for g in _TEST_GLOBS for r in _TEST_EXEMPT_RULES
+]
 TICKET = "crew#620"
 CHECK_RE = re.compile(r"subprocess\.(run|call|Popen)\((?![^)]*check=True)")
 _RUFF_BIN = shutil.which("ruff") or (sys.executable + " -m ruff").split()
@@ -62,7 +79,7 @@ def staged_python() -> tuple[list[str], set[str]]:
 
 
 def ruff_check(path: str, fix: bool = False) -> bool:
-    cmd = [*RUFF_CMD, "check", "--quiet", "--select", RULES, "--ignore", IGNORE, "--per-file-ignores", PER_FILE, "--", path]
+    cmd = [*RUFF_CMD, "check", "--quiet", "--select", RULES, "--ignore", IGNORE, *PER_FILE_PARTS, "--", path]
     if fix:
         cmd.insert(3, "--fix")
     return (
@@ -128,7 +145,7 @@ def main() -> int:
         ]
         if range_files:
             subprocess.run([*RUFF_CMD, "format", "--quiet", "--"] + range_files, check=False)
-            subprocess.run([*RUFF_CMD, "check", "--fix", "--quiet", "--select", RULES, "--ignore", IGNORE, "--per-file-ignores", PER_FILE, "--"] + range_files, check=False)
+            subprocess.run([*RUFF_CMD, "check", "--fix", "--quiet", "--select", RULES, "--ignore", IGNORE, *PER_FILE_PARTS, "--"] + range_files, check=False)
     bad = False
     for f in files:
         was = None if f in added else head_copy(f)
