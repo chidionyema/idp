@@ -279,8 +279,6 @@ spec:
               value: http://langfuse-web.observability.svc:3000
             - name: HERMES_LANGFUSE_ENV
               value: production
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: http://signoz-otel-collector.observability.svc:4318
             - name: PYTHONUNBUFFERED
               value: "1"
             # crew#516 CP4: bind a2a on the pod IP so the probes below reach it; A2A_BEARER_TOKEN
