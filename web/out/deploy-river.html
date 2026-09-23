@@ -1,0 +1,164 @@
+{# deploy-river page -- single-file, no chrome, no sidebar, no breadcrumbs.
+   The room is the interface. One comet per open PR; one ring per gate;
+   ambient Andon color drives the page background. #}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deploy river</title>
+<style>
+  :root {
+    --bg:        #06080d;
+    --ink:       #d6dee8;
+    --dim:       #5a6577;
+    --gate:      #2a3344;
+    --gate-pass: #54c08a;
+    --gate-fail: #d05656;
+    --gate-unkn: #c89a3a;
+    --ambient:   #c89a3a;
+    --ambient-tint: rgba(200, 154, 58, 0.16);
+    --comet:     #c0d6ff;
+    --comet-tail:#7da4d6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+               background: var(--bg); color: var(--ink);
+               font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+               font-size: 13px; line-height: 1.4; }
+  body { background: radial-gradient(ellipse at 50% 110%,
+                                     var(--ambient-tint) 0%, var(--bg) 60%);
+         transition: background 800ms ease; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .label { fill: var(--dim); font-size: 10px; letter-spacing: 0.06em;
+           text-transform: uppercase; font-weight: 500; }
+  .gate-name { fill: var(--ink); font-size: 11px; font-weight: 500;
+               letter-spacing: 0.02em; }
+  .sha       { fill: var(--dim); font-size: 9px;
+               font-family: ui-monospace, "SF Mono", monospace; }
+  .ambient-text { fill: var(--ambient); font-size: 11px;
+                  letter-spacing: 0.08em; text-transform: uppercase;
+                  font-weight: 600; }
+
+  .comet-glow { filter: blur(8px); opacity: 0.4; }
+  .comet-body { fill: var(--comet); }
+  .comet-tail { stroke: var(--comet-tail); stroke-width: 1.5;
+                stroke-linecap: round; opacity: 0.6; fill: none; }
+  .gate-pass  { stroke: var(--gate-pass); stroke-width: 1; fill: none; }
+  .gate-fail  { stroke: var(--gate-fail); stroke-width: 1.5; fill: none; }
+  .gate-unkn  { stroke: var(--gate-unkn); stroke-width: 1; fill: none;
+                stroke-dasharray: 2 3; }
+  .gate-future{ stroke: var(--gate); stroke-width: 0.8; fill: none;
+                stroke-dasharray: 1 4; opacity: 0.4; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1200 720" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="cometGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="40%" stop-color="#c0d6ff" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#c0d6ff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- The basin (ambient Andon caption lives top-left) -->
+  <text x="24" y="32" class="ambient-text">amber</text>
+  <text x="24" y="48" class="label">14ace2097fc0599c52992c943bdcf0ace913e198 has unknown stage</text>
+
+  <!-- The four gate rings (concentric circles centered, fixed order) -->
+  <g transform="translate(600 420)">
+    <circle r="340" class="gate-future"/>
+    <circle r="260" class="gate-future"/>
+    <circle r="180" class="gate-future"/>
+    <circle r="100" class="gate-future"/>
+    <g transform="translate(0 -340)"><text text-anchor="middle" class="gate-name">reconcile</text></g>
+    <g transform="translate(0 -260)"><text text-anchor="middle" class="gate-name">merged</text></g>
+    <g transform="translate(0 -180)"><text text-anchor="middle" class="gate-name">checks</text></g>
+    <g transform="translate(0 -100)"><text text-anchor="middle" class="gate-name">opened</text></g>
+  </g>
+
+  <!-- Comets (open PRs) -->
+  
+<g transform="translate(420 108)">
+  <circle r="22" class="comet-glow" fill="url(#cometGrad)"/>
+  <circle r="6" class="comet-body"/>
+  <text x="14" y="-12" class="gate-name">spiffe-primary-v3</text>
+  <text x="14" y="0" class="sha">14ace20</text>
+  <text x="14" y="12" class="label">in_flight</text>
+</g>
+<circle cx="600" cy="420" r="100" class="gate-pass"/>
+<circle cx="600" cy="420" r="180" class="gate-unkn"/>
+<circle cx="600" cy="420" r="260" class="gate-future"/>
+<circle cx="600" cy="420" r="340" class="gate-unkn"/>
+
+<g transform="translate(780 108)">
+  <circle r="22" class="comet-glow" fill="url(#cometGrad)"/>
+  <circle r="6" class="comet-body"/>
+  <text x="14" y="-12" class="gate-name">all-into-main</text>
+  <text x="14" y="0" class="sha">856fb45</text>
+  <text x="14" y="12" class="label">in_flight</text>
+</g>
+<circle cx="600" cy="420" r="100" class="gate-pass"/>
+<circle cx="600" cy="420" r="180" class="gate-unkn"/>
+<circle cx="600" cy="420" r="260" class="gate-future"/>
+<circle cx="600" cy="420" r="340" class="gate-unkn"/>
+
+  <!-- Comet tail / history (last 11 merged, fading as they recede) -->
+  
+<g transform="translate(80 660)" opacity="0.70">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">f537cd7</text>
+</g>
+
+<g transform="translate(175 654)" opacity="0.65">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">d5cc42d</text>
+</g>
+
+<g transform="translate(269 648)" opacity="0.59">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">565b504</text>
+</g>
+
+<g transform="translate(364 642)" opacity="0.54">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">55c6566</text>
+</g>
+
+<g transform="translate(458 636)" opacity="0.48">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">146c45a</text>
+</g>
+
+<g transform="translate(553 630)" opacity="0.43">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">6845c3a</text>
+</g>
+
+<g transform="translate(647 624)" opacity="0.37">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">49929ed</text>
+</g>
+
+<g transform="translate(742 618)" opacity="0.32">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">c8f670b</text>
+</g>
+
+<g transform="translate(836 612)" opacity="0.26">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">0d90371</text>
+</g>
+
+<g transform="translate(931 606)" opacity="0.21">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">20cc6db</text>
+</g>
+
+<g transform="translate(1025 600)" opacity="0.15">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">62ae047</text>
+</g>
+</svg>
+</body>
+</html>
