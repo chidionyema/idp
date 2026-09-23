@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Sovereign Bus worker: `bin/sb worker` in the foreground. Depends on
+  ai.estate.temporal being reachable; the client retries its own connect,
+  so KeepAlive restarting this faster than Temporal comes up is harmless.
+
+  Install:    bin/idp-install-launchd
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.sovereign-worker
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.sovereign-worker</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/sb</string>
+		<string>worker</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>ThrottleInterval</key>
+	<integer>5</integer>
+	<key>StandardErrorPath</key>
+	<string>${HOME}/.estate/sovereign/logs/worker-launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>${HOME}/.estate/sovereign/logs/worker-launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
+</dict>
+</plist>
