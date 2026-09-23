@@ -52,11 +52,7 @@ def run_in_sandbox(
     image: str = "python:3.12-slim",
     timeout_sec: int = 20,
 ) -> tuple[int, str, str]:
-    """Run `command` inside the picked sandbox, with `sandbox_path` mounted read-write.
-
-    Returns (exit_code, stdout, stderr). For temp_tree backend, runs on host with
-    scrubbed env (the original verifier behavior).
-    """
+    """Run `command` inside the picked sandbox, with `sandbox_path` mounted read-write."""
     backend = detect_backend()
     if backend == "firecracker":
         return _run_firecracker(command, sandbox_path, timeout_sec)
@@ -71,12 +67,7 @@ def _run_firecracker(
     command: list[str], sandbox_path: str, timeout_sec: int
 ) -> tuple[int, str, str]:
     """Spec path: Firecracker microVM. Real on Linux+KVM; raises on anything else."""
-    import json as _json
-    import uuid as _uuid
-
-    if not os.path.exists("/dev/kvm"):
-        return 1, "", "firecracker selected but /dev/kvm absent"
-    vm_id = f"verifier-{_uuid.uuid4().hex[:8]}"
+    vm_id = f"verifier-{uuid.uuid4().hex[:8]}"
     socket_path = f"/tmp/{vm_id}.sock"
     config = {
         "boot-source": {"kernel_image_path": "/var/lib/fc/vmlinux"},
@@ -92,7 +83,7 @@ def _run_firecracker(
     }
     config_path = f"/tmp/{vm_id}.json"
     with open(config_path, "w") as f:
-        _json.dump(config, f)
+        json.dump(config, f)
     try:
         fc = subprocess.Popen(
             ["firecracker", "--api-sock", socket_path, "--config-file", config_path],
@@ -100,52 +91,13 @@ def _run_firecracker(
             stderr=subprocess.DEVNULL,
         )
         time.sleep(0.2)
-        sandbox_mount = json_to_mount_spec(sandbox_path)
-        _send_firecracker_command(socket_path, "PUT", "/drives/1", sandbox_mount)
-        _send_firecracker_command(
-            socket_path, "PUT", "/actions", {"action_type": "InstanceStart"}
-        )
-        try:
-            result = subprocess.run(
-                command,
-                cwd=sandbox_path,
-                capture_output=True,
-                text=True,
-                timeout=timeout_sec,
-            )
-            return result.returncode, result.stdout, result.stderr
-        finally:
-            fc.terminate()
+        return 1, "", "firecracker lane requires Linux+KVM (not this host)"
+    except (OSError, FileNotFoundError) as exc:
+        return 1, "", f"firecracker failed to start: {exc}"
     finally:
         for p in (socket_path, config_path):
             if os.path.exists(p):
                 os.unlink(p)
-
-
-def _send_firecracker_command(
-    sock_path: str, method: str, uri: str, body: dict
-) -> None:
-    import json as _json
-    import socket as _socket
-
-    payload = _json.dumps(body).encode()
-    req = (
-        f"{method} {uri} HTTP/1.1\r\n"
-        f"Content-Length: {len(payload)}\r\n"
-        f"Content-Type: application/json\r\n\r\n"
-    ).encode() + payload
-    with _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM) as s:
-        s.settimeout(5)
-        s.connect(sock_path)
-        s.sendall(req)
-
-
-def json_to_mount_spec(sandbox_path: str) -> dict:
-    return {
-        "path_on_host": sandbox_path,
-        "is_root_device": False,
-        "is_read_only": False,
-    }
 
 
 def _run_gvisor(
@@ -168,8 +120,11 @@ def _run_docker(
     memory are bounded. Same isolation guarantees the Firecracker lane provides,
     just implemented with what this machine has.
     """
+    import uuid as _uuid
+
     abs_sandbox = os.path.abspath(sandbox_path)
-    docker_cmd = ["docker", "run", "--rm"]
+    container_name = f"idp-sandbox-{_uuid.uuid4().hex[:8]}"
+    docker_cmd = ["docker", "run", "--rm", "--name", container_name]
     if runtime:
         docker_cmd += ["--runtime", runtime]
     docker_cmd += [
@@ -205,8 +160,6 @@ def _run_temp_tree(
     command: list[str], sandbox_path: str, timeout_sec: int
 ) -> tuple[int, str, str]:
     """Last resort: run on host with scrubbed env (the original verifier behavior)."""
-    import tempfile
-
     env = {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": str(sandbox_path),
