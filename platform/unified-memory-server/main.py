@@ -8,7 +8,12 @@ from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, sta
 from psycopg_pool import AsyncConnectionPool
 from psycopg.rows import dict_row
 
-from security_core import OWASPWriteGuard, MAPLEGuard, MemoryWritePayload, SecurityViolationException
+from security_core import (
+    OWASPWriteGuard,
+    MAPLEGuard,
+    MemoryWritePayload,
+    SecurityViolationException,
+)
 
 # LAW 4: secrets by name only, from the vault. No literal password in source.
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -17,6 +22,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 # Lifespan: Bounded AsyncConnectionPool with Connection Checks & Locks
 # ---------------------------------------------------------------------
 pool: Optional[AsyncConnectionPool] = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -34,8 +40,8 @@ async def lifespan(app: FastAPI):
             "keepalives": 1,
             "keepalives_idle": 30,
             "keepalives_interval": 10,
-            "keepalives_count": 5
-        }
+            "keepalives_count": 5,
+        },
     )
     await pool.open()
 
@@ -59,7 +65,9 @@ async def lifespan(app: FastAPI):
     if pool:
         await pool.close()
 
+
 app = FastAPI(title="Unified Model-Agnostic Agentic Memory Server", lifespan=lifespan)
+
 
 # ---------------------------------------------------------------------
 # Dependencies: Surface-Isolated Authentication & Connection Injection
@@ -68,11 +76,12 @@ async def get_db_conn():
     async with pool.connection() as conn:
         yield conn
 
+
 async def authenticate_surface(
     request: Request,
-    conn=Depends(get_db_conn),
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
     auth_header: Optional[str] = Header(None, alias="Authorization"),
-    token_query: Optional[str] = Query(None, alias="token")
+    token_query: Optional[str] = Query(None, alias="token"),
 ) -> Dict[str, Any]:
     raw_token = None
     if auth_header and auth_header.startswith("Bearer "):
@@ -83,7 +92,7 @@ async def authenticate_surface(
     if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication failed: No surface bearer token or query parameter provided"
+            detail="Authentication failed: No surface bearer token or query parameter provided",
         )
 
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
@@ -91,10 +100,15 @@ async def authenticate_surface(
     async with conn.cursor() as cur:
         # Rate Limiter Execution: 120 requests per 60-second window
         window = int(time.time() // 60)
-        await cur.execute("SELECT fn_hit_rate_limit(%s, %s, %s);", (token_hash, window, 120))
+        await cur.execute(
+            "SELECT fn_hit_rate_limit(%s, %s, %s);", (token_hash, window, 120)
+        )
         allowed = (await cur.fetchone())["fn_hit_rate_limit"]
         if not allowed:
-            raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Rate limit exceeded")
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Rate limit exceeded",
+            )
 
         # Verify token and resolve tenant mapping
         await cur.execute(
@@ -103,11 +117,14 @@ async def authenticate_surface(
             FROM surface_tokens
             WHERE token_hash = %s AND revoked_at IS NULL;
             """,
-            (token_hash,)
+            (token_hash,),
         )
         record = await cur.fetchone()
         if not record:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access token invalid or revoked")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access token invalid or revoked",
+            )
 
         # Set transaction-local RLS parameter
         tenant_id = str(record["tenant_id"])
@@ -119,6 +136,7 @@ async def authenticate_surface(
 # Endpoints: Stateless HTTP Transport Layer (SEP-2575)
 # ---------------------------------------------------------------------
 
+
 @app.put("/memories/{namespace}/{key}", status_code=status.HTTP_200_OK)
 async def memory_save(
     namespace: str,
@@ -126,8 +144,8 @@ async def memory_save(
     payload: MemoryWritePayload,
     request: Request,
     if_match: Optional[str] = Header(None, alias="If-Match"),
-    auth: Dict[str, Any] = Depends(authenticate_surface),
-    conn=Depends(get_db_conn)
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
 ):
     payload.namespace = namespace
     payload.key = key
@@ -136,15 +154,21 @@ async def memory_save(
     try:
         content_hash = OWASPWriteGuard.inspect(payload)
     except SecurityViolationException as e:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail={"code": e.code, "error": e.message})
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": e.code, "error": e.message},
+        ) from e
 
     # 2. Parse Expected Version for Concurrency
     expected_version = None
     if if_match:
         try:
             expected_version = int(if_match.strip('"'))
-        except ValueError:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid If-Match header value")
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid If-Match header value",
+            ) from e
     elif payload.expected_version is not None:
         expected_version = payload.expected_version
 
@@ -158,7 +182,7 @@ async def memory_save(
                 WHERE namespace = %s AND key = %s
                 FOR UPDATE;
                 """,
-                (namespace, key)
+                (namespace, key),
             )
             existing = await cur.fetchone()
 
@@ -171,15 +195,18 @@ async def memory_save(
                         detail={
                             "error": "VERSION_DRIFT_DETECTED",
                             "current_version": current_version,
-                            "provided_version": expected_version
-                        }
+                            "provided_version": expected_version,
+                        },
                     )
 
                 # Write-time gate: Protect immutable human assertions
-                if existing["trust_tier"] == "human_confirmed" and payload.trust_tier != "human_confirmed":
+                if (
+                    existing["trust_tier"] == "human_confirmed"
+                    and payload.trust_tier != "human_confirmed"
+                ):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail="ANTI_OUROBOROS: An automated agent cannot overwrite human_confirmed memory"
+                        detail="ANTI_OUROBOROS: An automated agent cannot overwrite human_confirmed memory",
                     )
 
                 # Update row: monotonic trigger automatically increments the version counter
@@ -193,10 +220,20 @@ async def memory_save(
                     WHERE id = %s
                     RETURNING id, version;
                     """,
-                    (payload.content, content_hash, payload.trust_tier, payload.provenance, existing["id"])
+                    (
+                        payload.content,
+                        content_hash,
+                        payload.trust_tier,
+                        payload.provenance,
+                        existing["id"],
+                    ),
                 )
                 updated = await cur.fetchone()
-                return {"status": "UPDATED", "id": str(updated["id"]), "version": updated["version"]}
+                return {
+                    "status": "UPDATED",
+                    "id": str(updated["id"]),
+                    "version": updated["version"],
+                }
 
             else:
                 # Insert fresh record
@@ -207,10 +244,22 @@ async def memory_save(
                     ) VALUES (%s, %s, %s, %s, %s, %s, %s)
                     RETURNING id, version;
                     """,
-                    (auth["tenant_id"], namespace, key, payload.content, content_hash, payload.trust_tier, payload.provenance)
+                    (
+                        auth["tenant_id"],
+                        namespace,
+                        key,
+                        payload.content,
+                        content_hash,
+                        payload.trust_tier,
+                        payload.provenance,
+                    ),
                 )
                 inserted = await cur.fetchone()
-                return {"status": "CREATED", "id": str(inserted["id"]), "version": inserted["version"]}
+                return {
+                    "status": "CREATED",
+                    "id": str(inserted["id"]),
+                    "version": inserted["version"],
+                }
 
 
 @app.post("/memories/search", status_code=status.HTTP_200_OK)
@@ -218,11 +267,14 @@ async def memory_search(
     query_vector: List[float],
     namespace: str = "default",
     limit: int = 10,
-    auth: Dict[str, Any] = Depends(authenticate_surface),
-    conn=Depends(get_db_conn)
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
 ):
     if len(query_vector) != 1536:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dimension mismatch: vector must be 1536d")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dimension mismatch: vector must be 1536d",
+        )
 
     async with conn.cursor() as cur:
         # Enforce Production HNSW Recall Configuration
@@ -242,7 +294,7 @@ async def memory_search(
             ORDER BY embedding <=> %s::vector
             LIMIT %s;
             """,
-            (query_vector_str, namespace, query_vector_str, limit * 2)
+            (query_vector_str, namespace, query_vector_str, limit * 2),
         )
         candidates = await cur.fetchall()
 
@@ -258,20 +310,22 @@ async def memory_search(
                 h=c["harm_h"],
                 taint=c["taint_level"],
                 scope=c["scope_risk"],
-                conditional_risk=conditional_risk
+                conditional_risk=conditional_risk,
             )
 
             # Check for retrieval-gate failure
             if final_score > 0.35:  # Gate acceptance cutoff
-                scored_results.append({
-                    "id": str(c["id"]),
-                    "key": c["key"],
-                    "content": c["content"],
-                    "trust_tier": c["trust_tier"],
-                    "version": c["version"],
-                    "maple_score": round(final_score, 4),
-                    "cosine_sim": round(sim, 4)
-                })
+                scored_results.append(
+                    {
+                        "id": str(c["id"]),
+                        "key": c["key"],
+                        "content": c["content"],
+                        "trust_tier": c["trust_tier"],
+                        "version": c["version"],
+                        "maple_score": round(final_score, 4),
+                        "cosine_sim": round(sim, 4),
+                    }
+                )
 
         # Re-sort based on the multi-factor MAPLE equation and truncate to requested limit
         scored_results.sort(key=lambda x: x["maple_score"], reverse=True)

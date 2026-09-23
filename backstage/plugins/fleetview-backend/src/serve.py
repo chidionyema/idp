@@ -114,7 +114,9 @@ def build_app(routes_path: Path) -> FastAPI:
                 asyncio.create_task(
                     cc_adapter.run_claude_code_adapter(nats_url, ledger_prefix)
                 )
-            except Exception:  # noqa: BLE001 — adapter startup failure must not break the app
+            # S110: the swallow is deliberate and already carries its reason on the line
+            # above -- an adapter that cannot start must not take the board down with it.
+            except Exception:  # noqa: BLE001, S110 — adapter startup failure must not break the app
                 pass
         yield
 
@@ -130,6 +132,7 @@ def build_app(routes_path: Path) -> FastAPI:
         nats_url = os.environ.get("NATS_URL", "")
 
         if nats_url:
+
             async def gen_nats():
                 # Initial frame: one event per current session so the page renders on connect.
                 body, _status = routes.sessions_envelope()
@@ -142,6 +145,7 @@ def build_app(routes_path: Path) -> FastAPI:
                     last_hb = asyncio.get_event_loop().time()
                     async for event in nats_module.subscribe_stream(nats_url):
                         import json as _json
+
                         yield f"data: {_json.dumps(event)}\n\n"
                         now = asyncio.get_event_loop().time()
                         if now - last_hb >= 30:
