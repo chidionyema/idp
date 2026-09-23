@@ -1,9 +1,43 @@
 {
   "hooks": {
-    "PreToolUse": [
+    "SessionStart": [
       {
-        "matcher": "Bash",
-        "hooks": [{"type": "command", "command": "python3 .claude/hooks/pre_tool_call.py"}]
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/bin/idp-session-bootstrap",
+            "timeout": 120,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "growmos hook session-start 2>/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "\"$CLAUDE_PROJECT_DIR\"/bin/idp-reasoning-gateway-hook --hook",
+            "timeout": 30,
+            "type": "command"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "command": "growmos hook stop 2>/dev/null || true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ]
   }
