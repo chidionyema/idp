@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ORIG_HOME="$HOME"
+DB="$ORIG_HOME/.estate/estate.db"
+
+CMD="${1:-list}"
+shift || true
+
+case "$CMD" in
+  list)
+    echo "Recent intent tickets:"
+    echo ""
+    sqlite3 -header -column "$DB" \
+      "SELECT id, intent, harness, status, steps_run, steps_failed, started_at
+       FROM intent_tickets ORDER BY started_at DESC LIMIT 20;"
+    ;;
+
+  show)
+    TICKET="${1:-}"; shift || true
+    if [[ -z "$TICKET" ]]; then echo "usage: estate-tickets show <ticket-id>"; exit 1; fi
+    echo "=== Ticket: $TICKET ==="
+    sqlite3 -header "$DB" "SELECT * FROM intent_tickets WHERE id='$TICKET';"
+    echo ""
+    echo "--- Steps ---"
+    sqlite3 -header "$DB" \
+      "SELECT step_idx, exit_code, duration_ms, ran_at, cmd
+       FROM step_runs WHERE ticket_id='$TICKET' ORDER BY step_idx;"
+    ;;
+
+  stats)
+    echo "=== Intent ticket stats ==="
+    echo ""
+    echo "By status:"
+    sqlite3 -header "$DB" \
+      "SELECT status, COUNT(*) as count FROM intent_tickets GROUP BY status;"
+    echo ""
+    echo "By intent:"
+    sqlite3 -header "$DB" \
+      "SELECT intent, COUNT(*) as runs, SUM(steps_run) as total_steps,
+              SUM(steps_failed) as failures
+       FROM intent_tickets GROUP BY intent ORDER BY runs DESC LIMIT 10;"
+    echo ""
+    echo "Failures:"
+    sqlite3 -header "$DB" \
+      "SELECT id, intent, harness, error, started_at
+       FROM intent_tickets WHERE status!='ok' ORDER BY started_at DESC LIMIT 10;"
+    ;;
+
+  *)
+    echo "usage: estate-tickets {list|show <id>|stats}"
+    ;;
+esac

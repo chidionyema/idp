@@ -1,0 +1,5 @@
+name: crystallize
+description: Crystallize an ephemeral pattern into a durable intent YAML. topic= command= description= dry_run=true force=false.
+steps:
+  - name: write
+    cmd: python3 ~/.estate/libexec/crystallize.py topic={{topic}} command={{command}} description={{description}} dry_run={{dry_run}} force={{force}}

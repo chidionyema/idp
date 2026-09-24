@@ -157,3 +157,71 @@ estate_invoke(intent="shell.parse", args={"file": "bin/idp-ci"})
 9. Agent calls `estate_invoke ci.run branch=fix/sc2086-550` → green → PR ready
 
 **The agent never runs arbitrary bash. It never calls `execute_command`. It never modifies a source file directly.**
+
+---
+
+## Day 90 Additions — 2026-09-24
+
+### Break-Glass CLI (`estate-break-glass`)
+
+JIT capability override with TTL ceiling and audit log.
+
+```
+estate-break-glass active          # list active grants
+estate-break-glass add <tool> --ttl=5m
+estate-break-glass revoke <tool>
+estate-break-glass status          # audit summary
+```
+
+- TTL floor: 30s, cap: 1h
+- Audit: every op → `~/.estate/estate.db break_glass_log`
+- Break-glass overrides the PATH restriction: `estate-break-glass add kubectl --ttl=5m` lets kubectl run for 5 minutes
+
+### pf Egress Lock (`/etc/pf.anchors/estate-session`)
+
+Default-deny outbound firewall on macOS, applied at session start.
+
+```
+block drop out all          # default deny
+pass out to 127.0.0.1       # loopback
+pass out to llm.mumchimp.com:443  # router
+pass out to github.com:{22,443}  # git
+pass out to pypi.org:443 / registry.npmjs.org:443  # packages
+pass out to .oraclecloud.com:443  # OKE
+```
+
+Executor loads anchor: `sudo pfctl -a estate-session -f /etc/pf.anchors/estate-session`
+Executor clears on exit: `sudo pfctl -a estate-session -F all`
+pf loading is best-effort (warns if sudo unavailable).
+
+### pi Extension (`estate-commands.ts`)
+
+TypeScript extension in `~/.pi/agent/extensions/` gives pi direct estate tools:
+
+| Tool | Description |
+|------|-------------|
+| `estate_list` | List available intents |
+| `estate_show` | Show intent definition |
+| `estate_invoke` | Invoke an intent |
+| `estate_git_status` | git status for idp |
+| `estate_git_log` | Last 15 commits |
+| `estate_run_ci` | Run verification gate |
+| `estate_run_pytest` | Run pytest |
+
+### Crystallize Intent
+
+Auto-promotes a successful ephemeral command into a durable intent YAML.
+
+```
+estate-execute crystallize topic="<name>" command="<cmd>" description="<desc>"
+```
+
+- Dry-run by default (`dry_run=true`) — preview before writing
+- `force=true` to overwrite existing
+- Danger patterns (exec, eval, source /dev/) blocked
+- Writes `~/.estate/intents/<name>.yaml`
+
+### Bug Fixes
+
+- **curl exit 56**: Removed `-f` flag from intent commands. Executor sets `SSL_CERT_FILE=/private/etc/ssl/cert.pem`. HOME is NOT restricted (prevents macOS SecureTransport cert lookup failure).
+- **YAML `{{ }}` interpolation**: Variables in intent YAML must use `{{var}}` (no spaces) — YAML 1.1 parses `{{ var }}` as a flow mapping.
