@@ -251,6 +251,16 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     os.environ["ESTATE_HARNESS"] = harness_name
     os.environ["ESTATE_TICKET"] = ticket_id
     os.environ["ESTATE_GOAL"] = goal or ""
+    # Propagate k8s.debug args as env vars so the helper script can read them
+    for _k8s_key, _k8s_val in [
+        ("K8S_DEBUG_NS", args.get("namespace", "")),
+        ("K8S_DEBUG_FOCUS", args.get("focus", "")),
+        ("K8S_DEBUG_DEPTH", args.get("depth", "full")),
+        ("K8S_DEBUG_SINCE", args.get("since", "1h")),
+        ("K8S_DEBUG_LOG_LINES", str(args.get("log_lines", 50))),
+    ]:
+        if _k8s_val:
+            os.environ[_k8s_key] = str(_k8s_val)
     agent_key = os.environ.get("ESTATE_AGENT_KEY", "")
     if agent_key:
         os.environ["OPENAI_API_KEY"] = agent_key

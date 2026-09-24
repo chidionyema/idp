@@ -1,9 +1,0 @@
-name: vault-ocid-get
-description: >
-  Get the current OCI Vault OCID from the estate-vars ConfigMap in flux-system.
-  Used to verify the vault-ocid in llm namespace matches.
-tools: []
-halt_on_failure: false
-steps:
-  - cmd: >
-      bash ~/.estate/libexec/vault-ocid-get.sh

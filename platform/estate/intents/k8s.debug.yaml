@@ -1,0 +1,18 @@
+name: k8s.debug
+description: >-
+  Dump everything needed to debug a Kubernetes cluster in one call:
+  node health, problem pods, degraded workloads, recent warning events,
+  failing pod logs, pending PVCs, services with no endpoints, and Flux state.
+  Scoped by namespace or focus on a single resource.
+args:
+  namespace: {type: string, default: ""}
+  focus:     {type: string, default: ""}
+  depth:     {type: string, default: "full"}
+  since:     {type: string, default: "1h"}
+  log_lines: {type: int,    default: 50}
+halt_on_failure: false
+steps:
+  - name: cluster-diagnostic
+    cmd: >
+      bash ~/.estate/libexec/k8s-debug.sh
+        "{{namespace}}" "{{focus}}" "{{depth}}" "{{since}}" {{log_lines}}

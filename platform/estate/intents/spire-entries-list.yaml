@@ -1,8 +1,0 @@
-name: spire-entries-list
-description: >
-  List ClusterSPIFFEID entries and their status, plus spire-server and agent pods.
-tools: []
-halt_on_failure: false
-steps:
-  - cmd: >
-      bash ~/.estate/libexec/spire-entries-list.sh
