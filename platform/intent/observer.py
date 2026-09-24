@@ -230,7 +230,11 @@ def _migrate(con: sqlite3.Connection) -> None:
     `signals.py` first, because `fleetview_signals` is ITS table and a contract's signal row
     references it; then the contracts table this module owns.
     """
-    _signals_impl()._ensure_schema(con)
+    # signals.py no longer exposes `_ensure_schema(con)` (2026-09-22 consolidation): its DDL now
+    # runs inside its own `_connect()`. Call it so the fleetview_signals table is created in the
+    # same ESTATE_DB file the Observer writes, then close the scratch connection -- the DDL is
+    # idempotent and file-visible, so the caller's `con` sees it immediately.
+    _signals_impl()._connect().close()
     con.execute(_MIGRATION)
     con.execute(_CONTRACTS_INDEX)
     con.commit()
