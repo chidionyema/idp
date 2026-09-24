@@ -370,29 +370,6 @@ spec:
         name: estate-config
   timeout: 10m
 ---
-# ACG (Asymmetric Compute Grid) — OpenAI-compatible inference gateway, 5-layer cascade.
-# After llm: shares the llm namespace's secret-store dependency and the edge Gateway.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
-kind: Kustomization
-metadata:
-  name: acg
-  namespace: flux-system
-spec:
-  interval: 10m
-  sourceRef:
-    kind: GitRepository
-    name: flux-system
-  path: ./platform/acg
-  prune: true
-  dependsOn:
-    - name: edge
-    - name: secret-store
-  postBuild:
-    substituteFrom:
-      - kind: ConfigMap
-        name: estate-config
-  timeout: 10m
----
 # The router's own event wiring (founder decision 2026-09-12: the database is the source of
 # truth and git is its backup, with nothing connected by a poll).
 #
