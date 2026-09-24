@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from typing import Any
 
 # The plugin's own module. Imported by path so the portal's build does not need a workspace entry
@@ -171,6 +172,10 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+# crew#973 CP2: Deploy River reads deploy journeys from estate.db directly,
+# written by bin/estate-deploy-recorder. Same pattern sessions.py uses for the prompt-ledger.
+JOURNEYS_PATH = "/journeys"
+_DEPLOY_DB_DEFAULT = Path(__file__).resolve().parents[4] / "catalog" / "estate.db"
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -447,3 +452,130 @@ def _now() -> str:
     import datetime as dt
 
     return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def _deploy_db_path() -> Path:
+    return Path(os.environ.get("ESTATE_DB", str(_DEPLOY_DB_DEFAULT)))
+
+
+def journeys_envelope(limit: int = 30) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/journeys`. crew#973 CP2: the Deploy River page."""
+    db_path = _deploy_db_path()
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT * FROM deploy_journeys ORDER BY started_at DESC LIMIT ?",
+            (max(1, min(int(limit), 100)),),
+        ).fetchall()
+    except (sqlite3.Error, OSError) as exc:
+        return {
+            "available": False,
+            "error": f"deploy store unreadable: {exc}",
+            "journeys": [],
+            "generated_at": _now(),
+        }, 503
+
+    journeys = []
+    for row in rows:
+        sha = row["sha"]
+        events_rows = con.execute(
+            "SELECT seq, stage, status, detail_json, ts FROM deploy_journey_events"
+            " WHERE sha = ? ORDER BY seq",
+            (sha,),
+        ).fetchall()
+        events = [
+            {
+                "seq": e["seq"],
+                "stage": e["stage"],
+                "status": e["status"],
+                "detail": json.loads(e["detail_json"]),
+                "ts": e["ts"],
+            }
+            for e in events_rows
+        ]
+        journeys.append(
+            {
+                "sha": sha,
+                "branch": row["branch"],
+                "pr_number": row["pr_number"],
+                "title": row["title"],
+                "state": row["state"],
+                "started_at": row["started_at"],
+                "merged_at": row["merged_at"],
+                "events": events,
+            }
+        )
+    con.close()
+    return {
+        "available": True,
+        "error": None,
+        "journeys": journeys,
+        "generated_at": _now(),
+    }, 200
+
+
+def deploy_journey_envelope(sha: str) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/journeys/:sha`. One commit's full journey."""
+    sha = (sha or "").strip().lower()
+    if not sha:
+        return {
+            "available": True,
+            "error": "sha is required",
+            "journey": None,
+            "generated_at": _now(),
+        }, 400
+    db_path = _deploy_db_path()
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        row = con.execute(
+            "SELECT * FROM deploy_journeys WHERE sha LIKE ? ORDER BY started_at DESC LIMIT 1",
+            (f"{sha}%",),
+        ).fetchone()
+    except (sqlite3.Error, OSError) as exc:
+        return {
+            "available": False,
+            "error": f"deploy store unreadable: {exc}",
+            "journey": None,
+            "generated_at": _now(),
+        }, 503
+    if row is None:
+        return {
+            "available": True,
+            "error": f"no journey for {sha!r}",
+            "journey": None,
+            "generated_at": _now(),
+        }, 200
+    real_sha = row["sha"]
+    events_rows = con.execute(
+        "SELECT seq, stage, status, detail_json, ts FROM deploy_journey_events"
+        " WHERE sha = ? ORDER BY seq",
+        (real_sha,),
+    ).fetchall()
+    events = [
+        {
+            "seq": e["seq"],
+            "stage": e["stage"],
+            "status": e["status"],
+            "detail": json.loads(e["detail_json"]),
+            "ts": e["ts"],
+        }
+        for e in events_rows
+    ]
+    con.close()
+    return {
+        "available": True,
+        "error": None,
+        "journey": {
+            "sha": row["sha"],
+            "branch": row["branch"],
+            "pr_number": row["pr_number"],
+            "title": row["title"],
+            "state": row["state"],
+            "started_at": row["started_at"],
+            "merged_at": row["merged_at"],
+            "events": events,
+        },
+        "generated_at": _now(),
+    }, 200
