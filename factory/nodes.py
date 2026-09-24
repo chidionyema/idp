@@ -6,6 +6,8 @@ import subprocess
 import urllib.request
 import urllib.error
 
+from factory.net import open_https, https_request
+
 TIMEOUT = int(os.environ.get("NODE_TIMEOUT", "20"))
 UA = "Mozilla/5.0 (Factory/1.0)"
 
@@ -26,8 +28,8 @@ def web_scrape(inp: dict) -> dict:
     else:
         target = m.group(0)
     try:
-        req = urllib.request.Request(target, headers={"User-Agent": UA})
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+        req = https_request(target, headers={"User-Agent": UA})
+        with open_https(req, timeout=TIMEOUT) as r:
             body = r.read(2_000_000).decode("utf-8", errors="ignore")
         return {"html": body, "url": target, "bytes": len(body)}
     except urllib.error.HTTPError as e:
@@ -96,9 +98,7 @@ def os_input(inp: dict) -> dict:
     if not any(cmd.startswith(s) for s in ("echo", "ls", "pwd", "date", "whoami")):
         return {"applied": False, "reason": "COMMAND_NOT_SAFE"}
     try:
-        r = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=TIMEOUT
-        )
+        r = subprocess.run(cmd.split(), capture_output=True, text=True, timeout=TIMEOUT)
         return {"applied": True, "stdout": r.stdout[:500], "rc": r.returncode}
     except Exception as e:
         return {"applied": False, "reason": type(e).__name__}

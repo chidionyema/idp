@@ -1,7 +1,10 @@
-import os, json, time, hashlib, urllib.request, urllib.error, urllib.parse
+import os, json, time, hashlib, logging, urllib.error, urllib.parse
 from pathlib import Path
 from .base import Surface
 from .. import llm, ledger
+from ..net import open_https, https_request
+
+log = logging.getLogger("factory.surfaces.telegram")
 
 API = "https://api.telegram.org/bot{token}/{method}"
 
@@ -28,18 +31,18 @@ class TelegramSurface(Surface):
         url = API.format(token=self.token, method=method)
         if params:
             url += "?" + urllib.parse.urlencode(params)
-        with urllib.request.urlopen(url, timeout=30) as r:
+        with open_https(url, timeout=30) as r:
             return json.loads(r.read())
 
     def _post(self, method, payload):
         url = API.format(token=self.token, method=method)
-        req = urllib.request.Request(
+        req = https_request(
             url,
             method="POST",
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
         )
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with open_https(req, timeout=30) as r:
             return json.loads(r.read())
 
     def intake(self):
@@ -51,7 +54,8 @@ class TelegramSurface(Surface):
                 if self._offset()
                 else self._get("getUpdates")
             )
-        except Exception:
+        except Exception as e:
+            log.warning("telegram getUpdates failed: %s", type(e).__name__)
             return None
         for u in data.get("result", []):
             self._save(u["update_id"] + 1)
@@ -144,7 +148,8 @@ class TelegramSurface(Surface):
                 if self._offset()
                 else self._get("getUpdates")
             )
-        except Exception:
+        except Exception as e:
+            log.warning("telegram receipt poll failed: %s", type(e).__name__)
             return None
         for u in data.get("result", []):
             self._save(u["update_id"] + 1)
@@ -162,8 +167,8 @@ class TelegramSurface(Surface):
                     "answerCallbackQuery",
                     {"callback_query_id": cb["id"], "text": "recorded"},
                 )
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug("answerCallbackQuery failed: %s", type(e).__name__)
             ledger.write(
                 "receipts",
                 {

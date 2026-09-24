@@ -1,6 +1,10 @@
 import json
+import logging
 import os
-import urllib.request
+
+from factory.net import open_https, https_request
+
+log = logging.getLogger("factory.llm")
 
 
 def decompose(expression: str, tenant: str) -> dict:
@@ -10,8 +14,8 @@ def decompose(expression: str, tenant: str) -> dict:
             return _call(
                 api, key, os.environ.get("LLM_MODEL", "gpt-4o-mini"), expression
             )
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("LLM decompose fell back to heuristic: %s", type(e).__name__)
     return _heuristic(expression)
 
 
@@ -22,7 +26,7 @@ def _call(api, key, model, expression):
         "Capability ids available: web-scrape, price-extract, alert-emit, army, os.input, oob.approval.\n"
         f"Expression: {expression}"
     )
-    req = urllib.request.Request(
+    req = https_request(
         f"{api}/chat/completions",
         method="POST",
         data=json.dumps(
@@ -34,7 +38,7 @@ def _call(api, key, model, expression):
         ).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
     )
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with open_https(req, timeout=60) as r:
         out = json.loads(r.read())
     return json.loads(out["choices"][0]["message"]["content"])
 

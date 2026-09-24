@@ -1,8 +1,11 @@
-import os, json, time, urllib.request, urllib.parse
+import os, json, logging, time, urllib.parse
 from pathlib import Path
 from datetime import datetime, timezone
 from .base import Surface
 from .. import llm, ledger
+from ..net import open_https, https_request
+
+log = logging.getLogger("factory.surfaces.gcal")
 
 
 class GoogleCalendarSurface(Surface):
@@ -17,7 +20,8 @@ class GoogleCalendarSurface(Surface):
         if self.state.exists():
             try:
                 return json.loads(self.state.read_text()).get("updatedMin", "")
-            except Exception:
+            except Exception as e:
+                log.debug("cannot read gcal state: %s", e)
                 return ""
         return ""
 
@@ -33,11 +37,9 @@ class GoogleCalendarSurface(Surface):
             f"{urllib.parse.quote(self.cal_id)}/events?"
             + urllib.parse.urlencode(params)
         )
-        req = urllib.request.Request(
-            url, headers={"Authorization": f"Bearer {self.token}"}
-        )
+        req = https_request(url, headers={"Authorization": f"Bearer {self.token}"})
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with open_https(req, timeout=30) as r:
                 data = json.loads(r.read())
         except Exception as e:
             ledger.write("errors", {"where": "gcal.poll", "err": str(e)[:200]})

@@ -11,8 +11,7 @@ INBOX.mkdir(parents=True, exist_ok=True)
 def listen(surface_id: str, adapter: str = "hci0"):
     """Uses bleak (BLE) or pybluez. Devices push GATT notifications → inbox."""
     try:
-        import asyncio
-        from bleak import BleakScanner, BleakClient
+        from bleak import BleakScanner
     except ImportError:
         import subprocess, sys
 

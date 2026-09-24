@@ -1,6 +1,8 @@
 """A surface we poll. IMAP, RSS, legacy APIs, anything that won't push."""
 
-import time, urllib.request
+import time
+
+from ..net import open_https, https_request
 
 
 class PollTransport:
@@ -14,6 +16,6 @@ class PollTransport:
         if time.time() - self.last < self.interval:
             return None
         self.last = time.time()
-        req = urllib.request.Request(self.url_fn(), headers=self.headers_fn())
-        with urllib.request.urlopen(req, timeout=30) as r:
+        req = https_request(self.url_fn(), headers=self.headers_fn())
+        with open_https(req, timeout=30) as r:
             return r.read()

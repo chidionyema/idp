@@ -5,9 +5,11 @@ Heuristics are explicit; every emitted terminal carries source & confidence.
 Never overwrites an existing capability.yaml without --force.
 """
 
-import argparse, os, re, sys
+import argparse, os, re, sys, logging
 from pathlib import Path
 from datetime import date
+
+log = logging.getLogger("factory.generate_capabilities")
 
 try:
     import yaml
@@ -76,7 +78,7 @@ def detect_python_tools(repo: Path) -> list[dict]:
             stem = f.stem
             if not re.match(r"^[a-z][a-z0-9_]*$", stem):
                 continue
-            cap_id = stem.replace("_", "-").rstrip("-tool").rstrip("-")
+            cap_id = stem.replace("_", "-").removesuffix("-tool").rstrip("-")
             if not cap_id:
                 continue
             out.append(
@@ -155,7 +157,8 @@ def detect_rust_crates(repo: Path) -> list[dict]:
             continue
         try:
             data = yaml.safe_load(cargo.read_text()) or {}
-        except Exception:
+        except Exception as e:
+            log.debug("cargo manifest %s unparseable: %s", cargo, e)
             continue
         name = (data.get("package") or {}).get("name") or cargo.parent.name
         out.append(
@@ -215,7 +218,8 @@ def detect_http_routes(repo: Path) -> list[dict]:
             continue
         try:
             text = py.read_text(errors="ignore")
-        except Exception:
+        except Exception as e:
+            log.debug("cannot read python file %s: %s", py, e)
             continue
         for m in route_re.finditer(text):
             method, path = m.group(2).upper(), m.group(3)

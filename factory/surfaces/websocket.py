@@ -1,8 +1,10 @@
-import os, json, hashlib, time
+import os, json, hashlib, time, logging
 from pathlib import Path
 from datetime import datetime, timezone
 from .base import Surface
 from .. import llm, ledger
+
+log = logging.getLogger("factory.surfaces.websocket")
 
 INBOX = Path("queue/ws_inbox")
 INBOX.mkdir(parents=True, exist_ok=True)
@@ -21,7 +23,8 @@ class WebSocketSurface(Surface):
         for f in sorted(INBOX.glob("websocket_*.json")):
             try:
                 data = json.loads(f.read_text())
-            except Exception:
+            except Exception as e:
+                log.debug("ws inbox %s unparseable: %s", f, e)
                 f.unlink()
                 continue
             f.unlink()
@@ -91,5 +94,6 @@ async def client_loop(surface_id, url, token=""):
                 for f in sorted(OUTBOX.glob(f"{surface_id}_*.json")):
                     await ws.send(f.read_text())
                     f.unlink()
-        except Exception:
+        except Exception as e:
+            log.warning("ws client_loop dropped connection: %s", type(e).__name__)
             continue

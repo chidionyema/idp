@@ -65,7 +65,10 @@ def resolve(order: dict, registry: dict) -> dict:
         )
 
     chain_errors = []
-    for a, b in zip(resolved, resolved[1:]):
+    # py3.9 runtime target cannot use zip(..., strict=); the offset pairing below
+    # is deliberate (resolved[i] feeds resolved[i+1]), so B905's truncation
+    # concern does not apply.
+    for a, b in zip(resolved, resolved[1:]):  # noqa: B905
         if not subsumes(a["output_shape"], b["input_shape"]):
             chain_errors.append(
                 {

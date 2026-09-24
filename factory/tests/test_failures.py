@@ -25,7 +25,7 @@ def fresh_env(tmp_path, monkeypatch, extra=None):
 
 
 def test_silent_customer_does_not_shed(tmp_path, monkeypatch):
-    L = fresh_env(tmp_path, monkeypatch)
+    fresh_env(tmp_path, monkeypatch)
     import importlib, factory.ledger
 
     importlib.reload(factory.ledger)

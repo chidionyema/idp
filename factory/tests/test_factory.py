@@ -32,7 +32,7 @@ def test_metrics_registered():
     assert comparable("accuracy", "coverage")
     try:
         family("bogus")
-        assert False
+        raise AssertionError("family('bogus') should have raised ValueError")
     except ValueError:
         pass
 
@@ -126,7 +126,7 @@ def test_resolver_refuses_stale():
     }
     try:
         resolve(order, reg)
-        assert False
+        raise AssertionError("resolve should have refused the stale order")
     except Refuse as e:
         assert "stale" in str(e)
 

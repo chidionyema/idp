@@ -1,5 +1,7 @@
-import os, json, subprocess, urllib.request, urllib.parse, re
+import os, json, subprocess, shutil, re
 from pathlib import Path
+
+from factory.net import open_https, https_request
 
 
 class SecretError(Exception):
@@ -60,8 +62,8 @@ def _hashicorp_vault(ref: str, path: str, tenant: str) -> str:
     if "#" in path:
         path, key = path.split("#", 1)
     url = addr.rstrip("/") + "/v1/" + path.lstrip("/")
-    req = urllib.request.Request(url, headers={"X-Vault-Token": token})
-    with urllib.request.urlopen(req, timeout=10) as r:
+    req = https_request(url, headers={"X-Vault-Token": token})
+    with open_https(req, timeout=10) as r:
         data = json.loads(r.read())
     node = data.get("data", {})
     if "data" in node:
@@ -80,15 +82,15 @@ def _sops_file(ref: str, path: str, tenant: str) -> str:
     p = Path(path).expanduser()
     if not p.exists():
         raise SecretUnavailable(f"sops file not found: {p}")
-    try:
-        r = subprocess.run(
-            ["sops", "-d", "--output-type", "yaml", str(p)],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except FileNotFoundError:
+    sops = shutil.which("sops")
+    if not sops:
         raise SecretUnavailable("sops CLI not installed")
+    r = subprocess.run(
+        [sops, "-d", "--output-type", "yaml", str(p)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     if r.returncode != 0:
         raise SecretError(f"sops failed: {r.stderr.strip()[:200]}")
     import yaml
@@ -105,12 +107,12 @@ def _sops_file(ref: str, path: str, tenant: str) -> str:
 
 
 def _onepassword(ref: str, path: str, tenant: str) -> str:
-    try:
-        r = subprocess.run(
-            ["op", "read", f"op://{path}"], capture_output=True, text=True, timeout=15
-        )
-    except FileNotFoundError:
+    op = shutil.which("op")
+    if not op:
         raise SecretUnavailable("1Password CLI (op) not installed")
+    r = subprocess.run(
+        [op, "read", f"op://{path}"], capture_output=True, text=True, timeout=15
+    )
     if r.returncode != 0:
         raise SecretError(f"op read failed: {r.stderr.strip()[:200]}")
     return r.stdout.strip()
@@ -141,13 +143,13 @@ def _jit_broker(ref: str, path: str, tenant: str) -> str:
     if not broker:
         raise SecretUnavailable("JIT_BROKER_URL not set")
     body = json.dumps({"ref": ref, "tenant": tenant}).encode()
-    req = urllib.request.Request(
+    req = https_request(
         broker.rstrip("/") + "/vend",
         method="POST",
         data=body,
         headers={"Content-Type": "application/json"},
     )
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with open_https(req, timeout=10) as r:
         data = json.loads(r.read())
     if "token" not in data:
         raise SecretError(f"jit-broker response missing token: {data}")
@@ -169,8 +171,8 @@ def _spiffe_svid(ref: str, path: str, tenant: str) -> str:
     )
     try:
         status = json.loads(st.stdout or "{}")
-    except json.JSONDecodeError:
-        status = {}
+    except json.JSONDecodeError as err:
+        raise SecretUnavailable(f"idp-jit status not JSON: {err}") from err
     if status.get("state") != "provisioned" or not status.get("has_key"):
         raise SecretUnavailable(
             "device not provisioned (bin/idp-jit status: "

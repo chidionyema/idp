@@ -3,10 +3,13 @@ import os
 import sys
 import json
 import time
+import logging
 import argparse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+log = logging.getLogger("factory.main")
 
 from factory.registry import collect, save
 from factory.resolver import resolve, Refuse
@@ -98,8 +101,10 @@ def cmd_loop(args):
                 r = s.receipt()
                 if r:
                     ledger.write("engagement", r)
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug(
+                    "surface %s receipt failed: %s", type(s).__name__, type(e).__name__
+                )
         if end and time.time() >= end:
             return
         time.sleep(args.interval)

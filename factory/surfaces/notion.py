@@ -1,6 +1,7 @@
-import os, json, urllib.request
+import os, json
 from .http_webhook_base import HTTPWebhookSurface
 from .. import ledger
+from ..net import open_https, https_request
 
 
 class NotionSurface(HTTPWebhookSurface):
@@ -32,7 +33,7 @@ class NotionSurface(HTTPWebhookSurface):
                 "rich_text": [{"type": "text", "text": {"content": message}}],
             }
         ).encode()
-        req = urllib.request.Request(
+        req = https_request(
             "https://api.notion.com/v1/comments",
             method="POST",
             data=body,
@@ -43,7 +44,7 @@ class NotionSurface(HTTPWebhookSurface):
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with open_https(req, timeout=30) as r:
                 resp = json.loads(r.read())
             ledger.write(
                 "deliveries",

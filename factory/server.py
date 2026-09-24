@@ -11,10 +11,12 @@ Serving layer. Stdlib only. Runs on :8080.
 
 from __future__ import annotations
 
-import hashlib, json, os, sys, time, threading, traceback, urllib.parse
+import hashlib, json, os, sys, time, threading, traceback, logging, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from datetime import datetime, timezone
+
+log = logging.getLogger("factory.server")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -54,8 +56,8 @@ def recent_orders(n=50) -> list[dict]:
     for f in files[:n]:
         try:
             out.append(json.loads(f.read_text()))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("order file %s unparseable: %s", f, e)
     return out
 
 
@@ -167,8 +169,8 @@ class Handler(BaseHTTPRequestHandler):
             reg = {}
             try:
                 reg = json.loads(REGISTRY_PATH.read_text())
-            except Exception:
-                pass
+            except Exception as e:
+                log.warning("health: registry unreadable: %s", e)
             reg_hash = hashlib.sha256(
                 json.dumps(reg.get("terminals", []), sort_keys=True).encode()
             ).hexdigest()[:12]
@@ -217,8 +219,8 @@ class Handler(BaseHTTPRequestHandler):
                         return self._json(401, {"error": "signature"})
                 except S.SecretUnavailable:
                     pass
-                except Exception:
-                    pass
+                except Exception as e:
+                    log.warning("webhook signature check failed: %s", type(e).__name__)
                 payload = json.loads(raw) if raw else {}
             except Exception:
                 payload = {"raw": raw.decode(errors="ignore")}
@@ -309,6 +311,8 @@ document.getElementById('f').addEventListener('submit', async e => {
 
 def main():
     port = int(os.environ.get("PORT", "8080"))
+    # Bind 127.0.0.1 by default; 0.0.0.0 is opt-in for containers behind a proxy.
+    bind_host = os.environ.get("BIND_HOST", "127.0.0.1")
     try:
         reg = collect(ROOT)
         save(reg, REGISTRY_PATH)
@@ -317,8 +321,8 @@ def main():
         )
     except Exception as e:
         print(f"[server] WARNING: initial collect failed: {e}", file=sys.stderr)
-    print(f"[server] listening on :{port}")
-    ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+    print(f"[server] listening on {bind_host}:{port}")
+    ThreadingHTTPServer((bind_host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

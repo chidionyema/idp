@@ -1,8 +1,11 @@
 """Bidirectional stream. AR glasses, browsers, live dashboards, telemetry."""
 
 import json
+import logging
 from pathlib import Path
 from datetime import datetime, timezone
+
+log = logging.getLogger("factory.transports.websocket")
 
 INBOX = Path("queue/ws_inbox")
 INBOX.mkdir(parents=True, exist_ok=True)
@@ -38,5 +41,6 @@ async def client_loop(surface_id: str, url: str, token: str = ""):
                     out = json.loads(f.read_text())
                     await ws.send(json.dumps(out))
                     f.unlink()
-        except Exception:
+        except Exception as e:
+            log.warning("ws client_loop dropped connection: %s", type(e).__name__)
             continue

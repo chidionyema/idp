@@ -1,6 +1,7 @@
-import os, json, urllib.request
+import os, json
 from .http_webhook_base import HTTPWebhookSurface
 from .. import ledger
+from ..net import open_https, https_request
 
 
 class GitHubSurface(HTTPWebhookSurface):
@@ -26,7 +27,7 @@ class GitHubSurface(HTTPWebhookSurface):
         repo, num = order["chat_id"].rsplit("#", 1)
         url = f"https://api.github.com/repos/{repo}/issues/{num}/comments"
         body = json.dumps({"body": message}).encode()
-        req = urllib.request.Request(
+        req = https_request(
             url,
             method="POST",
             data=body,
@@ -37,7 +38,7 @@ class GitHubSurface(HTTPWebhookSurface):
             },
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with open_https(req, timeout=30) as r:
                 resp = json.loads(r.read())
             ledger.write(
                 "deliveries",

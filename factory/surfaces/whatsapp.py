@@ -1,7 +1,10 @@
-import os, json, hashlib, time, urllib.request, urllib.parse, base64
+import os, json, hashlib, time, logging, urllib.parse, base64
 from pathlib import Path
 from .base import Surface
 from .. import llm, ledger
+from ..net import open_https, https_request
+
+log = logging.getLogger("factory.surfaces.whatsapp")
 
 
 class WhatsAppSurface(Surface):
@@ -19,7 +22,8 @@ class WhatsAppSurface(Surface):
         for f in sorted(Path("queue/whatsapp_in").glob("*.json")):
             try:
                 payload = json.loads(f.read_text())
-            except Exception:
+            except Exception as e:
+                log.debug("whatsapp inbox %s unparseable: %s", f, e)
                 f.unlink()
                 continue
             f.unlink()
@@ -58,7 +62,7 @@ class WhatsAppSurface(Surface):
         delay, last = 1.0, ""
         for attempt in range(5):
             try:
-                req = urllib.request.Request(
+                req = https_request(
                     url,
                     method="POST",
                     data=body,
@@ -67,7 +71,7 @@ class WhatsAppSurface(Surface):
                         "Content-Type": "application/x-www-form-urlencoded",
                     },
                 )
-                with urllib.request.urlopen(req, timeout=30) as r:
+                with open_https(req, timeout=30) as r:
                     resp = json.loads(r.read())
                 if resp.get("sid"):
                     ledger.write(
@@ -98,7 +102,8 @@ class WhatsAppSurface(Surface):
         for f in sorted(d.glob("*.json")):
             try:
                 payload = json.loads(f.read_text())
-            except Exception:
+            except Exception as e:
+                log.debug("whatsapp receipt %s unparseable: %s", f, e)
                 f.unlink()
                 continue
             f.unlink()

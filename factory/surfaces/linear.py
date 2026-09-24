@@ -1,6 +1,7 @@
-import os, json, urllib.request
+import os, json
 from .http_webhook_base import HTTPWebhookSurface
 from .. import ledger
+from ..net import open_https, https_request
 
 
 class LinearSurface(HTTPWebhookSurface):
@@ -32,14 +33,14 @@ class LinearSurface(HTTPWebhookSurface):
                 "variables": {"issueId": order["chat_id"], "body": message},
             }
         ).encode()
-        req = urllib.request.Request(
+        req = https_request(
             "https://api.linear.app/graphql",
             method="POST",
             data=body,
             headers={"Authorization": self.key, "Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with open_https(req, timeout=30) as r:
                 resp = json.loads(r.read())
             ok = resp.get("data", {}).get("commentCreate", {}).get("success", False)
             ledger.write(

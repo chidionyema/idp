@@ -5,12 +5,15 @@ Exit non-zero only if --once and drift found.
 """
 
 from __future__ import annotations
-import argparse, json, os, signal, sys, time, urllib.request
+import argparse, json, logging, os, signal, sys, time
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from factory import ledger, secrets as S
+from factory.net import open_https, https_request
+
+log = logging.getLogger("factory.reconcile")
 
 ROOT = Path(os.environ.get("FACTORY_ROOT", Path.home() / "Documents" / "code"))
 REGISTRY = Path(os.environ.get("FACTORY_REGISTRY", ROOT / "idp" / "registry.json"))
@@ -56,7 +59,8 @@ def check_shed_vs_registry() -> list[dict]:
         return []
     try:
         reg = json.loads(REGISTRY.read_text())
-    except Exception:
+    except Exception as e:
+        log.debug("registry unreadable in shed check: %s", e)
         return []
     current = {t["id"] for t in reg.get("terminals", []) if t.get("state") == "current"}
     shed = {
@@ -77,7 +81,8 @@ def check_secret_leaks() -> list[dict]:
                 continue
             try:
                 raw = p.read_bytes()
-            except Exception:
+            except Exception as e:
+                log.debug("cannot read %s: %s", p, e)
                 continue
             try:
                 S.refuse_literal_secrets(raw, f"{repo.name}/{name}")
@@ -95,7 +100,8 @@ def check_order_backlog(max_age_seconds: int = 900) -> list[dict]:
     for f in ORDERS.glob("ord_*.json"):
         try:
             order = json.loads(f.read_text())
-        except Exception:
+        except Exception as e:
+            log.debug("order %s unparseable: %s", f, e)
             continue
         created = order.get("created_at")
         if not created:
@@ -105,7 +111,8 @@ def check_order_backlog(max_age_seconds: int = 900) -> list[dict]:
                 datetime.now(timezone.utc)
                 - datetime.fromisoformat(created.replace("Z", "+00:00"))
             ).total_seconds()
-        except Exception:
+        except Exception as e:
+            log.debug("order %s bad created_at: %s", f, e)
             continue
         if age < max_age_seconds:
             continue
@@ -132,15 +139,15 @@ def alert(drift):
         return
     try:
         body = json.dumps({"source": "factory-reconcile", "drift": drift}).encode()
-        req = urllib.request.Request(
+        req = https_request(
             ALERT_URL,
             method="POST",
             data=body,
             headers={"Content-Type": "application/json"},
         )
-        urllib.request.urlopen(req, timeout=10).close()
-    except Exception:
-        pass
+        open_https(req, timeout=10).close()
+    except Exception as e:
+        log.warning("alert delivery failed: %s", type(e).__name__)
 
 
 def run_checks():
