@@ -9,6 +9,8 @@ Serving layer. Stdlib only. Runs on :8080.
   GET  /                  HTML form for humans to place orders
 """
 
+from __future__ import annotations
+
 import hashlib, json, os, sys, time, threading, traceback, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
