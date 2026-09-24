@@ -6,6 +6,6 @@ halt_on_failure: true
 max_turns: 3
 steps:
   - cmd: >
-      curl -sf https://llm.mumchimp.com/key/info
+      curl -s https://llm.mumchimp.com/key/info
       -H "Authorization: Bearer $ESTATE_AGENT_KEY"
     on_fail: halt
