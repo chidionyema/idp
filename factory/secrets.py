@@ -42,6 +42,7 @@ def _resolve(ref: str, tenant: str) -> str:
         "env": _env,
         "file": _file,
         "jit": _jit_broker,
+        "spiffe": _spiffe_svid,
     }.get(scheme)
     if fn is None:
         raise SecretError(f"unsupported secret scheme: {scheme}")
@@ -151,6 +152,64 @@ def _jit_broker(ref: str, path: str, tenant: str) -> str:
     if "token" not in data:
         raise SecretError(f"jit-broker response missing token: {data}")
     return data["token"]
+
+
+def _spiffe_svid(ref: str, path: str, tenant: str) -> str:
+    """spiffe://<grant-id> — vend a JWT-SVID via bin/idp-jit, never an env token.
+
+    SPIFFE-primary (docs/reference/security-architecture.md): the credential IS the
+    SVID minted by the SPIRE agent from the per-device key, refreshed by
+    bin/idp-jit-device-renew every 10 minutes. No env fallback by design.
+    """
+    idp_bin = Path(__file__).resolve().parent.parent / "bin" / "idp-jit"
+    if not idp_bin.exists():
+        raise SecretUnavailable("bin/idp-jit not present")
+    st = subprocess.run(
+        [str(idp_bin), "status"], capture_output=True, text=True, timeout=15
+    )
+    try:
+        status = json.loads(st.stdout or "{}")
+    except json.JSONDecodeError:
+        status = {}
+    if status.get("state") != "provisioned" or not status.get("has_key"):
+        raise SecretUnavailable(
+            "device not provisioned (bin/idp-jit status: "
+            f"{status.get('state', 'unknown')}) — run 'bin/idp-jit enroll' once per Mac, "
+            "or tap the Backstage device-access tile; no env fallback by design"
+        )
+    if path and path.strip():
+        grant = path.split(":", 1)[0]
+        r = subprocess.run(
+            [str(idp_bin), "ask", "--grant", grant],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if r.returncode != 0:
+            raise SecretError(
+                f"idp-jit ask {grant} refused: {(r.stderr or '').strip()[:200]}"
+            )
+        token = (
+            (r.stdout or "").strip().splitlines()[-1].strip()
+            if (r.stdout or "").strip()
+            else ""
+        )
+        if not token:
+            raise SecretError(f"idp-jit ask {grant} returned no token")
+        return token
+    r = subprocess.run(
+        [str(idp_bin), "renew"], capture_output=True, text=True, timeout=60
+    )
+    if r.returncode != 0:
+        raise SecretError(f"idp-jit renew failed: {(r.stderr or '').strip()[:200]}")
+    token = (
+        (r.stdout or "").strip().splitlines()[-1].strip()
+        if (r.stdout or "").strip()
+        else ""
+    )
+    if not token:
+        raise SecretError("idp-jit renew returned no token")
+    return token
 
 
 SECRET_PATTERNS = [
