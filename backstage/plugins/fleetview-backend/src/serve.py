@@ -369,13 +369,13 @@ def build_app(routes_path: Path) -> FastAPI:
                 frames = routes.journeys_tail_frames(last_sha)
                 for frame in frames:
                     yield frame
-                    # Track the newest sha we've emitted
+                    # Track the newest sha we've emitted; a malformed frame is ignored.
                     try:
                         import json as _json
 
                         data = _json.loads(frame[6:])  # strip "data: "
                         last_sha = data.get("sha", last_sha)
-                    except Exception:  # noqa: BLE001
+                    except _json.JSONDecodeError:
                         pass
                 yield ": heartbeat\n\n"
                 await asyncio.sleep(15)
