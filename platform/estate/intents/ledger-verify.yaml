@@ -1,0 +1,16 @@
+name: ledger-verify
+description: Confirm router is reachable and reporting spend rows.
+tools: [curl]
+models: []
+halt_on_failure: true
+max_turns: 3
+steps:
+  - cmd: >
+      curl -sf https://llm.mumchimp.com/v1/models
+      -H "Authorization: Bearer $ESTATE_AGENT_KEY" -o /dev/null
+      -w "models HTTP:%{http_code}\n"
+    on_fail: halt
+  - cmd: >
+      curl -sf https://llm.mumchimp.com/key/info
+      -H "Authorization: Bearer $ESTATE_AGENT_KEY"
+    on_fail: halt
