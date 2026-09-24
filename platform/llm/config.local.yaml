@@ -1,0 +1,182 @@
+# Local laptop config: minimax + deepseek only, efficiency callbacks active.
+# Derived from config.yaml — same callbacks, no cluster dependencies.
+# Keys come from ~/.pi/agent/auth.json exported as env vars below.
+#
+# Vault (OCI) reference for spire-key-broker in cluster:
+#   vault_ocid: ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa
+#   vault_region: uk-london-1
+#   secret_name: litellm-upstream
+#   secret_ocid: ocid1.vaultsecret.oc1.uk-london-1.amaaaaaapixfknia3kpkqsgu2aisv4p7dsrq2bbtdaa4ncei5iovfqmkws2q
+# The broker (platform/llm/spire-key-broker/) fetches this via SPIRE SVID.
+# The router calls broker:8080/keys/minimax with X-SPIFFE-ID: spiffe://estate.internal/ns/llm/sa/idp-router
+
+model_list:
+  - model_name: minimax
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 5
+      num_retries: 0
+      max_tokens: 8192
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+    model_info:
+      max_input_tokens: 512000
+
+  - model_name: minimax_m27
+    litellm_params:
+      model: openai/MiniMax-M2.7
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+    model_info:
+      max_input_tokens: 204800
+
+  - model_name: minimax_json
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+      response_format: { type: json_schema, json_schema: { name: estate_json, schema: { type: object, additionalProperties: true } } }
+    model_info:
+      max_input_tokens: 512000
+
+  - model_name: default
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+    model_info:
+      max_input_tokens: 512000
+  - model_name: default
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_base: https://llm.mumchimp.com/v1
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 200000
+
+  - model_name: fast
+    litellm_params:
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      input_cost_per_token: 0.0000003
+      output_cost_per_token: 0.0000012
+    model_info:
+      max_input_tokens: 512000
+  - model_name: fast
+    litellm_params:
+      model: deepseek/deepseek-v4-flash
+      api_base: https://llm.mumchimp.com/v1
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 200000
+
+  - model_name: groq
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 131072
+
+  - model_name: cerebras
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY
+      timeout: 60
+      max_tokens: 8192
+    model_info:
+      max_input_tokens: 65536
+
+  - model_name: embed
+    litellm_params:
+      model: openrouter/openai/text-embedding-3-small
+      api_key: os.environ/OPENROUTER_API_KEY
+      dimensions: 1536
+      timeout: 120
+    model_info:
+      mode: embedding
+
+  - model_name: vision
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+      tpm: 150000
+
+  - model_name: image
+    litellm_params:
+      model: gemini/gemini-3.1-flash-image
+      api_key: os.environ/GEMINI_API_KEY
+      timeout: 300
+
+router_settings:
+  fallbacks:
+    - minimax: [deepseek, groq]
+    - default: [minimax, groq]
+    - fast: [minimax, groq]
+    - embed: [embed-cohere]
+  num_retries: 2
+  allowed_fails: 3
+  cooldown_time: 60
+  routing_strategy: cost-based-routing
+  enable_pre_call_checks: true
+  # Redis disabled for local run (no cluster cache). Cooldowns stay in-process.
+  # Redis disabled — no daemon available on laptop. Cooldowns are per-process.
+  # Re-enable with a local redis-server to share state across workers.
+
+litellm_settings:
+  # The two efficiency callbacks — these are the point of the local router.
+  # request_ceiling runs first (REFUSES oversized requests).
+  # efficiency_gateway runs second (OPTIMISES what passes).
+  callbacks:
+    - request_ceiling.proxy_handler_instance
+    - efficiency_gateway.proxy_handler_instance
+  # Langfuse and postgres disabled — cluster-only observability backends.
+  success_callback: []
+  failure_callback: []
+  drop_params: true
+  turn_off_message_logging: true
+  # Cache disabled — no Redis available locally. Response reuse is off.
+  cache: false
+  cache_params:
+    type: null
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: true
+  max_budget: 5.0
+  budget_duration: 1d
+  background_health_checks: false
+
+  pass_through_endpoints:
+    - path: /minimax/image
+      target: https://api.minimax.io/v1/image_generation
+      auth: true
+      methods: ["POST"]
+      headers:
+        Authorization: Bearer os.environ/MINIMAX_API_KEY
+        content-type: application/json
+      timeout: 120
