@@ -88,7 +88,7 @@ def run_order(
     if shape.get("subcommand") is None:
         return "no_runtime", f"no run subcommand; found: {shape.get('subcommands')}"
     if shape.get("order_fields") is None:
-        return "shape_mismatch", f"could not find a working order shape"
+        return "shape_mismatch", "could not find a working order shape"
     fields = shape["order_fields"]
     order_obj: dict = {}
     for f in fields:
