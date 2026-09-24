@@ -1,0 +1,7 @@
+.github/workflows/vault-seed.yml
+backstage/packages/app/src/global.d.ts
+backstage/templates/founder-actions/vault-seed/template.yaml
+docs/reference/security-policy.md
+platform/backstage/base/catalogue.yaml
+sovereign/tests/bdd/test_gate_vault_seed.py
+tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py

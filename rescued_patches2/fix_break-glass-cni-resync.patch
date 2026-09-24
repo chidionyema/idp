@@ -1,0 +1,3667 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 08b74e289..a465a351f 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -21,7 +21,7 @@ on:
+       playbook:
+         description: "Break-glass only: runs the one named recovery playbook while the runner is admitted to the cluster; diagnose and architect-doctor are read-only"
+         type: choice
+-        options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, webhooks-restart, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf, ns-fences]
++        options: [diagnose, architect-doctor, otto-parity, otto-lockdown, otto-restore, healthchecks-door, cilium-unchain, cilium-replace, helm-retry, webhooks-restart, namespace-unstick, ghcr-pull-restore, k8sgpt-analyze, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize, catalogue-roll, router-spend, registries-conf, ns-fences, cni-resync, flannel-off, gateway-one-node, routed-backend-rescue]
+         default: diagnose
+   pull_request:
+     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-fits-a-node", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+diff --git a/backstage/platform/catalog-info.yaml b/backstage/platform/catalog-info.yaml
+index d70c7a8cd..1ef624298 100644
+--- a/backstage/platform/catalog-info.yaml
++++ b/backstage/platform/catalog-info.yaml
+@@ -513,46 +513,6 @@ spec:
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+-metadata:
+-  name: layer-cyrus
+-  title: 'Agent orchestration'
+-  description: 'The runtime that proves every engine works and publishes what it saw to the central collector.'
+-  annotations:
+-    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=cyrus'
+-    estate/flux-kustomization: 'cyrus'
+-    estate/path: './platform/cyrus'
+-    estate/cluster: 'oke'
+-  tags: [platform, agents]
+-  links:
+-    - url: https://signoz.${ESTATE_ZONE}
+-      title: 'Live logs and metrics'
+-spec:
+-  type: platform-layer
+-  lifecycle: production
+-  owner: group:default/platform
+-  system: agents
+-  providesApis:
+-    - api:default/cyrus-api
+-  dependsOn:
+-    - component:default/layer-scheduling
+-    - component:default/layer-secret-store
+----
+-apiVersion: backstage.io/v1alpha1
+-kind: API
+-metadata:
+-  name: cyrus-api
+-  description: 'Agent orchestration: the HTTP interface, answering at cyrus.${ESTATE_ZONE}.'
+-spec:
+-  type: openapi
+-  lifecycle: production
+-  owner: group:default/platform
+-  system: system:default/agents
+-  definition: |
+-    # Not published. cyrus answers at cyrus.${ESTATE_ZONE}; this entity
+-    # exists so the catalogue records that the interface is reachable and who owns it.
+----
+-apiVersion: backstage.io/v1alpha1
+-kind: Component
+ metadata:
+   name: layer-dagster
+   title: 'The estate clock'
+diff --git a/backstage/templates/founder-actions/oke-check/template.yaml b/backstage/templates/founder-actions/oke-check/template.yaml
+index 7dd3a3c31..658b07132 100644
+--- a/backstage/templates/founder-actions/oke-check/template.yaml
++++ b/backstage/templates/founder-actions/oke-check/template.yaml
+@@ -53,6 +53,10 @@ spec:
+         - router-spend
+         - registries-conf
+         - ns-fences
++        - cni-resync
++        - flannel-off
++        - gateway-one-node
++        - routed-backend-rescue
+         default: diagnose
+   steps:
+   - id: dispatch
+diff --git a/bin/idp-linear-mirror b/bin/idp-linear-mirror
+new file mode 100755
+index 000000000..6c4e16243
+--- /dev/null
++++ b/bin/idp-linear-mirror
+@@ -0,0 +1,205 @@
++#!/usr/bin/env python3
++"""Every estate repository mirrors its GitHub issues into Linear the way crew does.
++
++Founder, 2026-09-09, verbatim: "The crew repo is already mapped that way, well all repos should
++just map the same way." Record: 2026-09-09T0518Z-all-repos-mirror-issues-into-linear-the-way-crew-does.
++
++The board is meant to be one place a person looks to see what the estate owes. It is not, and the
++reason is mechanical rather than anybody's decision: chidionyema/crew was connected to Linear's
++GitHub Issues Sync and nothing else ever was, so 396 of the estate's open issues are on the board
++and the other 225 are invisible to it.
++
++Why this is a check and not a script that fixes it. Linear's GraphQL schema carries
++issueImportCreateGithub (a one-off CSV-shaped import) and the integration connect/commit
++mutations, and no mutation that maps one repository to one team. The mapping is a row on a
++settings page, and Linear owns that page. R52 says a credential is never minted by hand; it does
++not say a vendor may never own a switch. What this refuses to do is let the switch be forgotten:
++the gap is measured on every run, and the run prints the founder's action with the exact URL and
++the exact rows, so the ask is a minute of clicking and never a research project.
++
++The second thing it measures is the one that decides whether "all repos" is even the right
++instruction. Linear's free plan counts *active* issues against 250 -- Done and Canceled both
++count until they are archived, which is why platform/linear/setup.py turns on auto-archive at one
++month. The estate has more open issues than that ceiling. So this prints the headroom next to the
++gap, because connecting every repository at once would not produce a fuller board; it would
++produce a board that refuses new issues.
++
++What it reads:
++  Linear   every issue's attachments, which is where the GitHub sync records the issue it mirrors.
++           An attachment's url names owner/repo, so the set of mirrored repositories is measured
++           from the board itself rather than from anybody's list of what was connected.
++  GitHub   every non-archived repository under the owner that has at least one open issue. A
++           repository with no issues is not a gap: connecting it mirrors nothing and spends a row.
++
++Credential: LINEAR_API_TOKEN, or vault entry cyrus-linear-api-token (the entry cyrus already
++reads, platform/cyrus/external-secret.yaml). No token is printed.
++
++Exit 0 every repository with issues is mirrored, 1 one or more are not, 2 BLIND (no token, no
++network, an API that answered something this cannot read). BLIND is not a pass: a run that could
++not measure says so, because a green from a check that read nothing is how a board stays empty
++for three days while everyone believes it is full.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import re
++import subprocess
++import sys
++import urllib.error
++import urllib.request
++
++ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
++API = "https://api.linear.app/graphql"
++OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
++SETTINGS = "https://linear.app/crewestate/settings/integrations/github"
++# Linear's free plan ceiling on active issues. Named here because the gap and the ceiling only
++# mean anything together: a gap of 225 issues against 0 headroom is not a click, it is a bill.
++FREE_PLAN_ACTIVE_CEILING = 250
++
++
++def token():
++    t = os.environ.get("LINEAR_API_TOKEN", "").strip()
++    if t:
++        return t
++    try:
++        out = subprocess.run(
++            [os.path.join(ROOT, "bin", "idp-cloud"), "secret", "get", "cyrus-linear-api-token"],
++            capture_output=True, text=True, timeout=60,
++        ).stdout.strip()
++    except Exception:
++        return ""
++    if not out:
++        return ""
++    try:
++        d = json.loads(out)
++    except json.JSONDecodeError:
++        return out.splitlines()[-1].strip()
++    # the entry is one field whatever it is called; the token is the value, never the key
++    for v in d.values():
++        if isinstance(v, str) and v.strip():
++            return v.strip()
++    return ""
++
++
++def linear(tok, query):
++    req = urllib.request.Request(
++        API,
++        data=json.dumps({"query": query}).encode(),
++        headers={"Authorization": tok, "Content-Type": "application/json"},
++    )
++    with urllib.request.urlopen(req, timeout=60) as fh:
++        body = json.load(fh)
++    if "errors" in body:
++        raise RuntimeError(body["errors"][0].get("message", "linear refused the query"))
++    return body["data"]
++
++
++REPO_IN_URL = re.compile(r"github\.com/([^/\s]+)/([^/\s]+)/issues/\d+")
++
++
++def mirrored_repos(tok):
++    """Repositories the board already carries, read off the attachments the sync writes.
++
++    Paged: a workspace with hundreds of issues does not come back in one response, and a first
++    page that happened to hold only crew's issues would report every other repository as a gap.
++    """
++    repos, active, cursor, pages = set(), 0, None, 0
++    while pages < 40:
++        after = f', after: "{cursor}"' if cursor else ""
++        data = linear(tok, """
++        { issues(first: 100%s) {
++            pageInfo { hasNextPage endCursor }
++            nodes { id state { type } attachments { nodes { url } } } } }
++        """ % after)
++        page = data["issues"]
++        for n in page["nodes"]:
++            # "active" is Linear's own word for what the free plan counts: everything not archived.
++            active += 1
++            for a in n["attachments"]["nodes"]:
++                m = REPO_IN_URL.search(a.get("url") or "")
++                if m:
++                    repos.add(f"{m.group(1)}/{m.group(2)}")
++        pages += 1
++        if not page["pageInfo"]["hasNextPage"]:
++            break
++        cursor = page["pageInfo"]["endCursor"]
++    return repos, active
++
++
++def repos_with_issues():
++    """Every non-archived repository under the owner that has an open issue, and how many.
++
++    open_issues_count includes pull requests, so the count is asked of the search API instead --
++    a repository whose only "issues" are open pull requests is not a board gap.
++    """
++    out = subprocess.run(
++        ["gh", "repo", "list", OWNER, "--limit", "200", "--json", "name,isArchived",
++         "-q", '.[] | select(.isArchived==false) | .name'],
++        capture_output=True, text=True, timeout=180,
++    )
++    if out.returncode != 0:
++        raise RuntimeError(f"gh repo list failed: {out.stderr.strip()[:200]}")
++    counts = {}
++    for name in [x for x in out.stdout.split() if x]:
++        r = subprocess.run(
++            ["gh", "api", f"search/issues?q=repo:{OWNER}/{name}+is:issue+is:open&per_page=1",
++             "-q", ".total_count"],
++            capture_output=True, text=True, timeout=90,
++        )
++        n = int(r.stdout.strip() or 0) if r.returncode == 0 and r.stdout.strip().isdigit() else 0
++        if n:
++            counts[f"{OWNER}/{name}"] = n
++    return counts
++
++
++def main():
++    tok = token()
++    if not tok:
++        print("BLIND   linear-mirror  no LINEAR_API_TOKEN and vault entry cyrus-linear-api-token "
++              "is unreadable from here; the board was not measured")
++        return 2
++    try:
++        have, active = mirrored_repos(tok)
++        want = repos_with_issues()
++    except (urllib.error.URLError, RuntimeError, ValueError, OSError) as exc:
++        print(f"BLIND   linear-mirror  could not read both sides: {str(exc)[:160]}")
++        return 2
++
++    missing = {r: n for r, n in sorted(want.items(), key=lambda kv: -kv[1]) if r not in have}
++    unmirrored = sum(missing.values())
++    headroom = FREE_PLAN_ACTIVE_CEILING - active
++
++    for r in sorted(have):
++        if r in want:
++            print(f"ok      linear-mirror  {r}: {want[r]} open issue(s), mirrored")
++    print(f"info    linear-mirror  board holds {active} active issue(s); the free plan counts "
++          f"{FREE_PLAN_ACTIVE_CEILING}, so headroom is {headroom}")
++
++    if not missing:
++        print(f"ok      linear-mirror  every repository with an open issue is on the board "
++              f"({len(want)} of {len(want)})")
++        return 0
++
++    for r, n in missing.items():
++        print(f"FAIL    linear-mirror  {r}: {n} open issue(s), on no Linear board")
++    print()
++    print(f"FOUNDER ACTION: connect {len(missing)} repositories to Linear, team MUM, two-way.")
++    print(f"  1. Open {SETTINGS}")
++    print("  2. Press 'Connect repository' (or 'Add' if the list is already there).")
++    print("  3. Pick team MUM and set the sync direction to two-way.")
++    print("  4. Repeat for each repository below, largest first:")
++    for r, n in missing.items():
++        print(f"       - {r}   ({n} open issues)")
++    if unmirrored > headroom:
++        print()
++        print(f"  Before step 1: connecting all of these mirrors {unmirrored} issues into "
++              f"{headroom} places. Linear will refuse the overflow. Either connect the top of the "
++              f"list only, or let platform/linear/setup.py's auto-archive run first -- it archives "
++              f"Done and Canceled at one month, and those are what is filling the 250.")
++    return 1
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/bin/idp-oke-break-glass b/bin/idp-oke-break-glass
+index 5646ac513..d58c8d70e 100755
+--- a/bin/idp-oke-break-glass
++++ b/bin/idp-oke-break-glass
+@@ -1265,6 +1265,546 @@ YAML
+   done
+ }
+ 
++# cni-resync (2026-09-09, incident: OKE re-rolled kube-flannel on both nodes at 10:34Z; from then on
++# a pod on one node reached a pod on the other only some of the time, both CoreDNS replicas sat on
++# .221 while the router sat on .197, and every second router call died at Traefik's 30s timeout).
++# Calico is the dataplane (pods carry Calico IPAM addresses; flannel's leases are unused), so the
++# repair is Calico re-programming its VXLAN routes on EVERY node, not one. The session identity
++# (agents:agent-reader) cannot touch kube-system by design (WJ.5), so this is the door.
++# Receipt: one TCP probe pinned to each node against the router, its cache and each CoreDNS pod
++# on the OTHER node, and an nslookup pinned to each node. A probe that cannot reach is a FAIL.
++# flannel-off: incident 2026-09-09. Two dataplanes ran on one cluster -- Oracle's kube-flannel-ds
++# add-on beside calico-node -- and both speak VXLAN on port 4789. When flannel re-rolled at 10:34Z
++# with new VTEP MACs it took the cross-node path with it: a router replica on one node died with
++# `redis.exceptions.TimeoutError` reaching its cache on the other, and half of every request that
++# entered through the gateway pod on the far node hung until the gateway gave up at 30s. Restarting
++# calico-node alone did not fix it (run 34353905638) because flanneld still held the port.
++#
++# Nothing is deleted. The DaemonSet is given a nodeSelector no node carries, so flanneld stops and
++# one patch puts it back; the flannel.1 links and their routes stay, inert, for subnets holding no
++# pod. Two guards run first: calico-node must be Ready on every node, and every pod address must
++# fall inside a Calico IPPool, so a pod that actually depends on flannel stops this before it acts.
++# gateway-one-node: the 2026-09-09 band-aid, founder-approved at 16:12Z. Cross-node pod traffic
++# has been severed since flannel re-rolled at 10:34Z, and parking flanneld did not restore it.
++# The gateway runs one pod per node while the router has one ready backend, so every request that
++# entered through the far gateway pod crossed the dead link and hung: measured over fifteen
++# minutes, 25 answers and no failure through the pod beside the router, and 8 gateway timeouts
++# plus 17 abandoned requests and no answer at all through the pod on the other node.
++#
++# The Service is externalTrafficPolicy Local, so a node with no gateway pod fails its load
++# balancer health check and stops receiving traffic at all. Cordon the far node, move the gateway
++# and DNS pods off it, and nothing crosses the link. The gateway's hostname spread constraint is
++# maxSkew 1 DoNotSchedule, so its second replica stays Pending while the node is cordoned -- that
++# is the intended state, not a fault, and it is why this playbook does NOT uncordon at the end.
++# Reverse it with node-uncordon once the link is repaired.
++#
++# The node is never named as a literal (R46): the good node is the one holding the ready router
++# backend, and the far node is the other one.
++# routed-backend-rescue: after gateway-one-node has pinned the ingress path to one node, every
++# routed backend still sitting on the cordoned node is unreachable from outside -- the gateway is
++# not there and externalTrafficPolicy Local means the load balancer stopped using that node. On
++# 2026-09-09 that was mumchimp.com: prospector-store-web had a replica on the serving node, but
++# prospector-store-api had its only replica on the severed one, so the shop returned nothing at
++# all rather than half the time. Deleting such a pod reschedules it onto the node that can serve.
++#
++# It cannot be a sweep. Thirty one workloads were stranded needing 3022m CPU against 108m free, so
++# the order matters, and the cluster's own answer was wrong: langfuse-web was infrastructure-critical
++# and the shop had no priority class at all. platform/ingress-recovery-order.yaml holds the order a
++# person decided; this reads it, moves what fits, and names what did not.
++pb_routed_backend_rescue() {
++  local good bad n order out kind TMP
++  TMP=$(mktemp -d); trap 'rm -rf "$TMP"' RETURN
++  order="$IDP/platform/ingress-recovery-order.yaml"
++  [ -f "$order" ] || { echo "FAIL  routed-backend-rescue: no $order, nothing says what comes back first"; FAILED="$FAILED guard-order"; return 1; }
++
++  bad=$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name}{"\n"}{end}' | head -1)
++  [ -n "$bad" ] || { echo "ok    routed-backend-rescue: no cordoned node, nothing is stranded by this band-aid"; return 0; }
++  good=""
++  for n in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do [ "$n" = "$bad" ] || good=$n; done
++  [ -n "$good" ] || { echo "FAIL  routed-backend-rescue: every node is cordoned"; FAILED="$FAILED guard-good"; return 1; }
++  echo "ok    guard-nodes stranded on $bad, rescuing onto $good"
++
++  $K get pods -A -o json > "$TMP/pods.json" 2>/dev/null || { echo "FAIL  routed-backend-rescue: cannot read pods"; FAILED="$FAILED guard-read"; return 1; }
++  $K get svc -A -o json > "$TMP/svcs.json" 2>/dev/null || true
++  $K get node "$good" -o json > "$TMP/good.json" 2>/dev/null || true
++
++  # the plan is computed once, printed, and only then executed: a rescue that half-runs and then
++  # discovers it has no room has spent the room on the wrong thing
++  python3 - "$order" "$TMP/pods.json" "$TMP/svcs.json" "$TMP/good.json" "$bad" "$good" > "$TMP/plan.txt" <<'PYPLAN'
++import json, re, sys
++order_file, pods_file, svcs_file, good_file, bad, good = sys.argv[1:7]
++order, yields, internal, section = [], [], [], None
++for line in open(order_file):
++    head = line.split("#")[0].rstrip()
++    if re.match(r"^order:\s*$", head): section = order; continue
++    if re.match(r"^yield:\s*$", head): section = yields; continue
++    if re.match(r"^internal:\s*$", head): section = internal; continue
++    m = re.match(r"^\s*-\s*(\S+/\S+)\s*$", head)
++    if m and section is not None: section.append(m.group(1))
++pods = json.load(open(pods_file))["items"]
++svcs = json.load(open(svcs_file)).get("items", [])
++node = json.load(open(good_file))
++
++def cpu(v):
++    if not v: return 0
++    return int(v[:-1]) if str(v).endswith("m") else int(float(v) * 1000)
++def mem(v):
++    if not v: return 0
++    v = str(v)
++    for suf, mult in (("Gi", 1024), ("Mi", 1), ("Ki", 1 / 1024)):
++        if v.endswith(suf): return int(float(v[:-2]) * mult)
++    return int(int(v) / 1048576)
++def req(p):
++    c = sum(cpu(((x.get("resources") or {}).get("requests") or {}).get("cpu")) for x in p["spec"]["containers"])
++    m = sum(mem(((x.get("resources") or {}).get("requests") or {}).get("memory")) for x in p["spec"]["containers"])
++    return c, m
++
++alloc = node.get("status", {}).get("allocatable", {})
++free_c = cpu(alloc.get("cpu")) - sum(req(p)[0] for p in pods
++    if p["spec"].get("nodeName") == good and p["status"].get("phase") in ("Running", "Pending"))
++free_m = mem(alloc.get("memory")) - sum(req(p)[1] for p in pods
++    if p["spec"].get("nodeName") == good and p["status"].get("phase") in ("Running", "Pending"))
++print(f"# room on {good}: {free_c}m cpu {free_m}Mi memory")
++
++sel = {}
++for s in svcs:
++    key = s["metadata"]["namespace"] + "/" + s["metadata"]["name"]
++    sel[key] = (s["metadata"]["namespace"], (s["spec"].get("selector") or {}))
++
++def owned_by(p, ns, name):
++    # A pod belongs to the workload `name` when what follows the name is the generated part and
++    # nothing else: a ReplicaSet hash plus a pod suffix, or a StatefulSet ordinal. Plain
++    # startswith() is wrong here and quietly so -- `external-secrets` prefixes
++    # `external-secrets-cert-controller` and `external-secrets-webhook`, so the plan believed the
++    # secrets controller had a healthy peer on the serving node when it had none at all, and
++    # emitted an eviction where a rescue was needed.
++    if p["metadata"]["namespace"] != ns: return False
++    n = p["metadata"]["name"]
++    if not n.startswith(name + "-"): return False
++    rest = n[len(name) + 1:]
++    return rest.count("-") == 1 or rest.isdigit()
++
++def yield_sources(want):
++    # Room comes from the declared yield list and from nowhere else.
++    #
++    # This function briefly also returned everything ranked below `want`, on the reasoning that a
++    # rank which cannot take room back is not a rank. Run against the live cluster on 2026-09-09
++    # that plan proposed scaling `prospector-store-web` to zero -- the storefront itself -- to make
++    # room for the storefront's API, and scaling `external-secrets` to zero for a Langfuse
++    # dashboard that came out stranded anyway. The rank is the order things are brought BACK in.
++    # Reading it as an order things may be killed in turns a rescue into the outage.
++    #
++    # What a surface may cost is therefore only ever what this estate has written down, in
++    # advance, as sheddable. The scheduler protects a seated pod from later arrivals; that is a
++    # priority class's job (platform/priority-classes), not this playbook's.
++    return list(yields)
++
++def take_room(y):
++    yns, yname = y.split("/", 1)
++    held = [q for q in pods if q["spec"].get("nodeName") == good
++            and owned_by(q, yns, yname)
++            and q["status"].get("phase") == "Running"]
++    if not held:
++        return None
++    yc = sum(req(q)[0] for q in held); ym = sum(req(q)[1] for q in held)
++    if y in yields:
++        yields.remove(y)
++    print(f"YIELD {yns} {yname} {len(held)} {yc}m {ym}Mi")
++    return yc, ym
++
++# internal controllers are matched by Deployment name; no HTTPRoute names them, and several run
++# with no Service at all, but a severed link breaks them exactly the same way
++for want in order + internal:
++    by_name = want in internal
++    if by_name:
++        ns, prefix = want.split("/", 1)
++        def backs(p, ns=ns, prefix=prefix):
++            return owned_by(p, ns, prefix)
++    else:
++        ns_sel = sel.get(want)
++        if not ns_sel or not ns_sel[1]:
++            print(f"# skip {want}: no such Service, or it selects nothing")
++            continue
++        ns, labels = ns_sel
++        def backs(p, ns=ns, labels=labels):
++            L = p["metadata"].get("labels") or {}
++            return p["metadata"]["namespace"] == ns and all(L.get(k) == v for k, v in labels.items())
++    on_good = [p for p in pods if backs(p) and p["spec"].get("nodeName") == good
++               and p["status"].get("phase") == "Running"
++               and all(c.get("ready") for c in (p["status"].get("containerStatuses") or []))]
++    on_bad = [p for p in pods if backs(p) and p["spec"].get("nodeName") == bad
++              and p["status"].get("phase") == "Running"]
++    # A surface can be dark without a single pod on the cordoned node. When the scheduler
++    # preempts its pod and cannot seat the replacement, the pod sits Pending on no node at all,
++    # and a rescue that only ever asks "what is stranded on the bad node" walks straight past it.
++    # That is how the storefront API went dark a second time on 2026-09-09: hermes-agent-gateway,
++    # rated infrastructure-critical, took its 1088Mi, and the shop's own API -- priority 0 --
++    # had nowhere to land. Nothing needs moving here; room needs making.
++    unseated = [p for p in pods if backs(p) and not p["spec"].get("nodeName")
++                and p["status"].get("phase") == "Pending"]
++    if not on_bad:
++        if on_good or not unseated:
++            print(f"# skip {want}: nothing of it on {bad}")
++            continue
++        c, m = req(unseated[0])
++        if c <= free_c and m <= free_m:
++            print(f"# skip {want}: {unseated[0]['metadata']['name']} is Pending but {good} already has room for it")
++            continue
++        made_c, made_m = free_c, free_m
++        for y in yield_sources(want):
++            if c <= made_c and m <= made_m: break
++            got = take_room(y)
++            if got: made_c += got[0]; made_m += got[1]
++        if c > made_c or m > made_m:
++            print(f"# STRANDED {want}: {c}m/{m}Mi unseatable, only {made_c}m/{made_m}Mi after every yield")
++            continue
++        free_c, free_m = made_c - c, made_m - m
++        print(f'ROOM {ns} {unseated[0]["metadata"]["name"]} {want} {c}m {m}Mi')
++        continue
++    if on_good:
++        # A stranded pod is still an endpoint of the Service, so the gateway keeps sending it
++        # traffic that goes nowhere. mumchimp.com came back at two requests in three for exactly
++        # this reason after the API was rescued: one storefront replica served, the other was a
++        # black hole. Removing it needs no room -- it is not being brought back, it is being
++        # taken out of rotation, and the Deployment reschedules it if and when there is space.
++        for q in on_bad:
++            print(f'EVICT {q["metadata"]["namespace"]} {q["metadata"]["name"]} {want} blackhole-endpoint')
++        continue
++    p = on_bad[0]
++    c, m = req(p)
++    if c > free_c or m > free_m:
++        # Room comes from the declared yield list first, then from routed services ranked BELOW
++        # this one. Without the second source the rescue eats its own room: on 2026-09-09 the
++        # storefront API was seated, six lower-ranked surfaces were rescued after it, and when
++        # the API's pod was later replaced there was no longer anywhere to put it -- the shop
++        # went back to serving a page with no catalogue. A rank that cannot take room back is
++        # not a rank, it is a wish.
++        for y in yield_sources(want):
++            if c <= free_c and m <= free_m: break
++            got = take_room(y)
++            if got: free_c += got[0]; free_m += got[1]
++        if c > free_c or m > free_m:
++            print(f"# STRANDED {want}: needs {c}m/{m}Mi, only {free_c}m/{free_m}Mi left after every yield")
++            continue
++    free_c -= c; free_m -= m
++    print(f'MOVE {p["metadata"]["namespace"]} {p["metadata"]["name"]} {want} {c}m {m}Mi')
++print(f"# room after the plan: {free_c}m cpu {free_m}Mi memory")
++PYPLAN
++  echo "--- the plan"
++  cat "$TMP/plan.txt"
++
++  out=$(grep -cE '^(YIELD|MOVE|EVICT|ROOM) ' "$TMP/plan.txt" || true)
++  if [ "${out:-0}" -eq 0 ]; then
++    echo "ok    routed-backend-rescue nothing both stranded and affordable; the lines above say why"
++    return 0
++  fi
++
++  # yields first: the room has to exist before the rescued pod is scheduled
++  while read -r _ ns name n c m; do
++    # a yielded workload is a Deployment or a StatefulSet; observability/signoz is the latter, and
++    # `scale deploy` on it fails with "not found", which would leave the room unclaimed
++    # Three shapes hold a pod on a node and each yields differently. `scale` is the answer for a
++    # Deployment and a StatefulSet (observability/signoz is the latter, and `scale deploy` on it
++    # fails "not found", which would leave the room unclaimed). A CronJob answers to neither: it
++    # has no replicas, and its pods belong to Jobs it creates on a timer, so scaling reaches
++    # nothing and the next tick puts the pod straight back. It yields by having its schedule
++    # suspended and its active runs deleted -- 2026-09-09, when a batch job failing every fifteen
++    # minutes held the storefront API off the only working node.
++    if $K -n "$ns" get deploy "$name" >/dev/null 2>&1; then
++      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale deploy/$name --replicas=<n>"
++      step "yield-$name" $K -n "$ns" scale "deploy/$name" --replicas=0
++    elif $K -n "$ns" get statefulset "$name" >/dev/null 2>&1; then
++      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns scale statefulset/$name --replicas=<n>"
++      step "yield-$name" $K -n "$ns" scale "statefulset/$name" --replicas=0
++    elif $K -n "$ns" get cronjob "$name" >/dev/null 2>&1; then
++      echo "--- $ns/$name yields $c $m ($n pod(s)); restore with: kubectl -n $ns patch cronjob/$name -p '{\"spec\":{\"suspend\":false}}'"
++      step "yield-$name-suspend" $K -n "$ns" patch cronjob "$name" -p '{"spec":{"suspend":true}}'
++      # only this CronJob's own runs: a Job it created is named <cronjob>-<timestamp>, and a
++      # namespace may hold other jobs that nothing here asked to shed.
++      for j in $($K -n "$ns" get jobs -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -E "^$name-[0-9]+$" || true); do
++        step "yield-$name-job-$j" $K -n "$ns" delete job "$j" --wait=false
++      done
++    else
++      echo "FAIL  yield-$name $ns/$name is neither a Deployment, a StatefulSet nor a CronJob; the room was not freed"
++      FAILED="$FAILED yield-$name"
++    fi
++  done < <(grep '^YIELD ' "$TMP/plan.txt" || true)
++
++  while read -r _ ns pod svc c m; do
++    echo "--- rescuing $svc ($c $m) from $bad"
++    step "rescue-$pod" $K -n "$ns" delete pod "$pod" --wait=false
++  done < <(grep '^MOVE ' "$TMP/plan.txt" || true)
++
++  # a ROOM line needs no pod action: the yields above already freed what the scheduler was short
++  # of, and the Pending pod is seated by the scheduler itself on its next pass. Naming it here is
++  # what makes the settle check below mean something rather than a blind sleep.
++  while read -r _ ns pod svc c m; do
++    echo "--- $svc has no serving pod; $pod was unseatable at $c $m and now has room on $good"
++  done < <(grep '^ROOM ' "$TMP/plan.txt" || true)
++
++  # a black-hole endpoint costs nothing to remove and is never left in rotation
++  while read -r _ ns pod svc _; do
++    echo "--- taking $svc out of rotation on $bad: $pod answers nothing the gateway can reach"
++    step "evict-$pod" $K -n "$ns" delete pod "$pod" --wait=false
++  done < <(grep '^EVICT ' "$TMP/plan.txt" || true)
++
++  step "rescue-settle" sleep 45
++  show rescued $K get pods -A -o wide --field-selector spec.nodeName="$good"
++
++  # Every surface the plan claimed to rescue is graded by name. Run 34381468088 was recorded FAILED
++  # while the rescue had in fact worked, and a reader could not tell the two apart from the log;
++  # a rescue that does not say which surface came back is a receipt for nothing.
++  while read -r verb ns pod svc _; do
++    case "$verb" in ROOM|MOVE) ;; *) continue ;; esac
++    out=$($K get pods -n "$ns" -o jsonpath='{range .items[?(@.spec.nodeName=="'"$good"'")]}{.metadata.name}{" "}{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
++      | grep -c 'true$' || true)
++    if [ "${out:-0}" -ge 1 ]; then
++      echo "ok    seated-$svc ${out} ready pod(s) for $ns on $good"
++    else
++      echo "FAIL  seated-$svc nothing ready for $ns on $good after the rescue"; FAILED="$FAILED seated-$svc"
++    fi
++  done < <(grep -E '^(ROOM|MOVE) ' "$TMP/plan.txt" || true)
++}
++
++pb_store_generation_state() {
++  # THE SHOP HAS INVENTORY AND NO NEW LISTINGS, AND THAT IS ON PURPOSE.
++  #
++  # Founder, 2026-09-09: "the site does have inventory but no new listing for a month" and, when
++  # asked to resume it: "we cant turn it on yet, we need to earn the token first ... it runs
++  # constantly." Generation is a continuous spender. It is off because the money is not there
++  # yet, not because anything failed.
++  #
++  # This playbook therefore READS and never clears. An earlier draft of it disarmed the pause
++  # automatically, which would have switched on the estate's largest running cost to fix what
++  # looked like a fault and was a decision.
++  #
++  # What it is for: the decision has no surface. prospector-scheduler announces it on every tick
++  # to nobody --
++  #
++  #   CRITICAL Generation suppressed: generation paused:
++  #            /data/store/scheduler/PAUSE_GENERATION present (the drain still runs)
++  #   WARNING  ALERT [critical] Generation DEAD: 4 consecutive barren ticks
++  #   WARNING  Telegram alert NOT sent: TELEGRAM_BOT_TOKEN and TELEGRAM_HOME_CHANNEL unset
++  #
++  # -- and prospector/ops/console_api.py, which implements pause.arm and pause.disarm with an
++  # actor, a reason and a receipt, is not deployed: the namespace runs store-api and store-web
++  # and nothing else. So a deliberate, indefinite, revenue-shaped decision is legible only to
++  # someone with a shell on a pod, and reads from outside as a month-long outage. That is the
++  # defect this closes: not the pause, the silence around it.
++  #
++  # Turning generation back on is a spend decision and belongs to the founder in his own words.
++  # When it comes, the audited path is the product's own:
++  #   kubectl -n prospector exec <scheduler> -c scheduler -- \
++  #     python -m prospector.ops.pause disarm generation --actor <name>
++  local pod out
++  pod=$($K get pods -n prospector -o name 2>/dev/null | grep scheduler | head -1 | cut -d/ -f2)
++  [ -n "$pod" ] || { echo "FAIL  store-generation-state: no scheduler pod in prospector"; FAILED="$FAILED guard-pod"; return 1; }
++  echo "ok    guard-pod the scheduler is $pod"
++
++  echo "--- the three pause scopes, with whoever armed them and why"
++  out=$($K exec -n prospector "$pod" -c scheduler -- python -m prospector.ops.pause show 2>&1) || true
++  echo "$out"
++  case "$out" in
++    *'"scope": "generation"'*) echo "ok    pause-show the scheduler reported its pause state" ;;
++    *) echo "FAIL  store-generation-state: the scheduler could not report its pause state"
++       FAILED="$FAILED pause-show"; return 1 ;;
++  esac
++
++  # The pause is one reason nothing is listed. The other is that the generation chain has no
++  # brain -- the same tick logs "Heartbeat: 0 alive, 21 down" and "Failed ollama_raw_call", and
++  # the model keys arrive over the external-secrets path the node partition severed. Both are
++  # named here so that clearing one is never mistaken for clearing both.
++  echo "--- the brains, as the scheduler last measured them"
++  show heartbeat $K logs -n prospector "$pod" -c scheduler --tail=200
++}
++
++pb_gateway_one_node() {
++  local good bad n out pod
++  good=$($K get pods -n llm -o jsonpath='{range .items[*]}{.metadata.name}/{.spec.nodeName}/{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null \
++    | grep -E '^litellm-[0-9a-f]' | grep '/true$' | cut -d/ -f2 | head -1)
++  [ -n "$good" ] || { echo "FAIL  gateway-one-node: no ready litellm backend, nothing to converge on"; FAILED="$FAILED guard-backend"; return 1; }
++  echo "ok    guard-backend the ready router backend is on $good"
++
++  bad=""
++  for n in $($K get nodes -o jsonpath='{.items[*].metadata.name}'); do
++    [ "$n" = "$good" ] || bad="$bad $n"
++  done
++  bad=${bad# }
++  [ -n "$bad" ] || { echo "FAIL  gateway-one-node: only one node exists, nothing to move off"; FAILED="$FAILED guard-nodes"; return 1; }
++  case "$bad" in *\ *) echo "FAIL  gateway-one-node: $(echo "$bad" | wc -w) other nodes ($bad); this band-aid is written for two"
++    FAILED="$FAILED guard-two-nodes"; return 1 ;; esac
++  echo "ok    guard-nodes the far node is $bad"
++
++  out=$($K get svc -n edge traefik -o jsonpath='{.spec.externalTrafficPolicy}' 2>/dev/null)
++  [ "$out" = Local ] || { echo "FAIL  gateway-one-node: gateway Service externalTrafficPolicy is ${out:-unset}, not Local; a node with no gateway pod would still forward across the dead link"
++    FAILED="$FAILED guard-etp"; return 1; }
++  echo "ok    guard-etp the gateway Service is externalTrafficPolicy Local"
++
++  step cordon $K cordon "$bad"
++
++  for pod in $($K get pods -n edge -l app.kubernetes.io/name=traefik -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
++    step "gateway-move-$pod" $K -n edge delete pod "$pod" --wait=false
++  done
++
++  # coredns goes one pod at a time: both replicas deleted together is a cluster with no DNS
++  for pod in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.name}{"\n"}{end}' 2>/dev/null); do
++    step "dns-move-$pod" $K -n kube-system delete pod "$pod"
++    step "dns-ready-after-$pod" $K -n kube-system rollout status deploy/coredns --timeout=180s
++  done
++
++  # NOT `wait --for=condition=Ready pod -l ...`: that waits for EVERY matching pod, and this
++  # playbook deliberately leaves the second replica Pending (maxSkew 1, DoNotSchedule, one node
++  # cordoned). Run 34376826143 failed on exactly that, calling the intended state a fault. What
++  # has to be true is narrower: a gateway pod is Ready on the node that holds the router.
++  out=""
++  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
++    out=$($K get pods -n edge -l app.kubernetes.io/name=traefik \
++      -o jsonpath='{range .items[?(@.spec.nodeName=="'"$good"'")]}{range .status.containerStatuses[*]}{.ready}{end}{"\n"}{end}' 2>/dev/null | grep -c '^true$' || true)
++    [ "${out:-0}" -ge 1 ] && break
++    sleep 10
++  done
++  if [ "${out:-0}" -ge 1 ]; then
++    echo "ok    gateway-settle ${out} gateway pod(s) Ready on $good"
++  else
++    echo "FAIL  gateway-settle no gateway pod became Ready on $good within 120s"; FAILED="$FAILED gateway-settle"
++  fi
++  out=$($K get pods -n edge -l app.kubernetes.io/name=traefik -o jsonpath='{range .items[?(@.status.phase=="Pending")]}{.metadata.name}{" "}{end}' 2>/dev/null)
++  [ -n "$out" ] && echo "ok    gateway-pending-expected ${out}is Pending by design while $bad is cordoned; node-uncordon restores the spread"
++
++  echo "--- nothing of the ingress path may remain on $bad"
++  out=$($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName=="'"$bad"'")]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null \
++    | grep -E '^(edge/traefik-|kube-system/coredns-)' || true)
++  if [ -n "$out" ]; then
++    echo "FAIL  ingress-clear still on $bad: $(echo "$out" | tr '\n' ' ')"; FAILED="$FAILED ingress-clear"
++  else
++    echo "ok    ingress-clear no gateway and no DNS pod remains on $bad"
++  fi
++
++  show gateway $K get pods -n edge -o wide
++  show coredns $K get pods -n kube-system -l k8s-app=kube-dns -o wide
++  show router $K get pods -n llm -o wide
++  show nodes $K get nodes
++}
++
++pb_flannel_off() {
++  local nodes n i=0 targets ip out
++  $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  flannel-off: no calico-node DaemonSet"; FAILED="$FAILED guard-calico"; return 1; }
++  out=$($K get ds -n kube-system calico-node -o jsonpath='{.status.desiredNumberScheduled}/{.status.numberReady}')
++  case "$out" in
++    */0|0/*) echo "FAIL  flannel-off: calico-node is $out desired/ready"; FAILED="$FAILED guard-calico-ready"; return 1 ;;
++    *) [ "${out%/*}" = "${out#*/}" ] || { echo "FAIL  flannel-off: calico-node is $out desired/ready"; FAILED="$FAILED guard-calico-ready"; return 1; } ;;
++  esac
++  echo "ok    guard-calico calico-node ready on every node ($out)"
++
++  # every pod address must be inside a Calico pool, or something still rides flannel
++  if ! $K get ippools.crd.projectcalico.org >/dev/null 2>&1; then
++    echo "FAIL  flannel-off: no Calico IPPool CRD, cannot prove the pods are Calico's"
++    FAILED="$FAILED guard-pools"; return 1
++  fi
++  out=$($K get ippools.crd.projectcalico.org -o jsonpath='{range .items[*]}{.spec.cidr}{"\n"}{end}' 2>/dev/null)
++  if ! $K get pods -A -o jsonpath='{range .items[*]}{.status.podIP} {.metadata.namespace}/{.metadata.name} {.spec.hostNetwork}{"\n"}{end}' 2>/dev/null \
++      | POOLS="$out" python3 -c '
++import os, sys, ipaddress
++pools = [ipaddress.ip_network(c.strip()) for c in os.environ["POOLS"].split() if c.strip()]
++bad = []
++for ln in sys.stdin:
++    f = ln.split()
++    if len(f) < 2 or f[0] in ("", "<none>"):
++        continue
++    if len(f) > 2 and f[2] == "true":
++        continue
++    try:
++        a = ipaddress.ip_address(f[0])
++    except ValueError:
++        continue
++    if not any(a in p for p in pools):
++        bad.append(f[1] + " " + f[0])
++print("pools:", " ".join(str(p) for p in pools))
++if bad:
++    print("outside every Calico pool:", "; ".join(bad[:10]))
++    sys.exit(1)
++print("every pod address is Calico IPAM")
++'; then
++    echo "FAIL  flannel-off: a pod holds an address no Calico pool owns; flanneld is load-bearing here"
++    FAILED="$FAILED guard-ipam"; return 1
++  fi
++  echo "ok    guard-ipam every pod address belongs to a Calico pool"
++
++  if ! $K get ds -n kube-system kube-flannel-ds >/dev/null 2>&1; then
++    echo "ok    flannel-absent no kube-flannel-ds in kube-system, nothing to stop"
++  else
++    step "flannel-parked" $K -n kube-system patch ds kube-flannel-ds --type=merge \
++      -p '{"spec":{"template":{"spec":{"nodeSelector":{"estate.mumchimp.com/flannel":"parked-2026-09-09"}}}}}'
++    step "flannel-drained" $K -n kube-system rollout status ds kube-flannel-ds --timeout=180s
++  fi
++
++  step "calico-restart" $K -n kube-system rollout restart ds calico-node
++  step "calico-rolled" $K -n kube-system rollout status ds calico-node --timeout=300s
++
++  nodes=$($K get nodes -o jsonpath='{.items[*].metadata.name}')
++  for n in $nodes; do
++    i=$((i+1))
++    # Targets used to be two hardcoded app labels (llm/litellm, llm/litellm-cache) plus kube-dns.
++    # When those all sat on one node, the far node found nothing, printed "nothing on the other
++    # node" and probed nothing -- the playbook then passed without ever testing the direction that
++    # was broken. A silent pass on the failing direction is worse than no probe. So: any running
++    # pod on the other node with its own address (podIP != hostIP, i.e. not hostNetwork) and a
++    # declared container port is a legitimate cross-node target, and finding none is a FAIL.
++    targets=$($K get pods -A -o json 2>/dev/null | python3 -c '
++import json, sys
++node = sys.argv[1]
++out = []
++for pod in json.load(sys.stdin).get("items", []):
++    spec, st = pod.get("spec", {}), pod.get("status", {})
++    if spec.get("nodeName") == node or st.get("phase") != "Running":
++        continue
++    ip = st.get("podIP")
++    if not ip or ip == st.get("hostIP"):
++        continue
++    for c in spec.get("containers", []):
++        for port in c.get("ports", []) or []:
++            n = port.get("containerPort")
++            if n and str(port.get("protocol", "TCP")).upper() == "TCP":
++                out.append("%s:%d" % (ip, n))
++                break
++        break
++print(" ".join(out[:6]))
++' "$n")
++    if [ -z "$targets" ]; then
++      echo "FAIL  flanoff-targets-$i node $n found no addressable pod on any other node; the cross-node hop was never tested"
++      FAILED="$FAILED flanoff-targets-$i"
++    else
++      echo "--- node $n -> the other node: $targets"
++      tcp_probe "flanoff-probe-$i" "$n" kube-system "$targets"
++    fi
++    dns_probe "flanoff-dns-$i" "$n" kubernetes.default.svc.cluster.local
++  done
++  show flannel-ds $K get ds -n kube-system kube-flannel-ds -o wide
++  show calico-node $K get pods -n kube-system -l k8s-app=calico-node -o wide
++  show router $K get pods -n llm -o wide
++}
++
++pb_cni_resync() {
++  local nodes n i=0 targets ip
++  $K get ds -n kube-system calico-node >/dev/null 2>&1 || { echo "FAIL  cni-resync: no calico-node DaemonSet in kube-system"; FAILED="$FAILED guard-ds"; return 1; }
++  step "calico-restart" $K -n kube-system rollout restart ds calico-node
++  step "calico-rolled" $K -n kube-system rollout status ds calico-node --timeout=240s
++  nodes=$($K get nodes -o jsonpath='{.items[*].metadata.name}')
++  for n in $nodes; do
++    i=$((i+1)); targets=""
++    for ip in $($K get pods -A -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.metadata.namespace}/{.metadata.labels.app}/{.status.podIP}{"\n"}{end}' 2>/dev/null | grep -E '^(llm/litellm/|llm/litellm-cache/|llm/redis/)' | cut -d/ -f3); do
++      [ -n "$ip" ] && targets="$targets $ip:4000 $ip:6379"
++    done
++    for ip in $($K get pods -n kube-system -l k8s-app=kube-dns -o jsonpath='{range .items[?(@.spec.nodeName!="'"$n"'")]}{.status.podIP}{"\n"}{end}' 2>/dev/null); do
++      targets="$targets $ip:53"
++    done
++    echo "--- node $n -> other node: ${targets:-nothing on the other node}"
++    [ -n "$targets" ] && tcp_probe "cni-probe-$i" "$n" kube-system "$targets"
++    dns_probe "cni-dns-$i" "$n" kubernetes.default.svc.cluster.local
++  done
++  show calico-node $K get pods -n kube-system -l k8s-app=calico-node -o wide
++}
++
+ # tigera-reset: roll back a wedged tigera-operator flannel->calico cutover WITHOUT losing the
+ # datapath, and without helm-uninstall (founder 2026-09-06, and the estate warning in
+ # platform/calico/README.md: never release a wedged CNI through helm). Two reasons helm is the
+@@ -1341,7 +1881,7 @@ pb_tigera_reset() {
+ }
+ 
+ case "${1:-}" in
+-  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences"; exit 0 ;;
++  --list) echo "diagnose architect-doctor otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences cni-resync flannel-off gateway-one-node routed-backend-rescue store-generation-state"; exit 0 ;;
+   diagnose) pb_diagnose ;;
+   architect-doctor) pb_architect_doctor ;;
+   otto-parity) pb_otto_parity ;;
+@@ -1366,6 +1906,10 @@ case "${1:-}" in
+   registries-conf) pb_registries_conf ;;
+   ns-fences) pb_ns_fences ;;
+   tigera-reset) pb_tigera_reset ;;
++  cni-resync) pb_cni_resync ;;
++  flannel-off) pb_flannel_off ;;
++  gateway-one-node) pb_gateway_one_node ;;
++  routed-backend-rescue) pb_routed_backend_rescue ;;
+   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
+ esac
+ [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
+diff --git a/docs/how-to/onboarding/idp-linear-mirror.md b/docs/how-to/onboarding/idp-linear-mirror.md
+new file mode 100644
+index 000000000..80a896930
+--- /dev/null
++++ b/docs/how-to/onboarding/idp-linear-mirror.md
+@@ -0,0 +1,52 @@
++# Onboarding: keeping every repository on the one board
++
++## What this is for
++
++The estate has one board. It is a Linear workspace, team MUM, and the point of it is that a person
++can look in one place and see what is outstanding without opening twenty repositories. That only
++works if every repository actually reaches it, and until now exactly one did.
++
++`bin/idp-linear-mirror` is the check that keeps the promise honest. It reads the board and the
++repositories, compares them, and tells you which repositories the board is not showing you.
++
++## Running it
++
++```
++bin/idp-linear-mirror
++```
++
++It needs a Linear API token. It takes one from the `LINEAR_API_TOKEN` environment variable if you
++have set one, and otherwise reads vault entry `cyrus-linear-api-token` — the same entry the cyrus
++deployment already reads, so nothing new was minted for this and there is no second credential to
++rotate. The token is never printed, and neither is any part of it.
++
++Exit codes, because this runs in CI as well as by hand:
++
++| exit | meaning |
++|---|---|
++| 0 | every repository with an open issue is on the board |
++| 1 | one or more are not; the run names them and prints the founder's action |
++| 2 | it could not measure — no token, no network, or an answer it could not read |
++
++Two is deliberately not a pass. A check that could not see anything must say so.
++
++## When it fails
++
++A failing run ends with a `FOUNDER ACTION` block: the settings URL, four numbered steps, and the
++repositories to connect listed largest first. Connecting a repository is a row on
++<https://linear.app/crewestate/settings/integrations/github> — pick team MUM, set the direction to
++two-way, done. There is no API for it; Linear owns that page.
++
++Before you work down the list, read the headroom line the run prints just above it. Linear's free
++plan counts active issues against 250 and counts Done and Canceled until they are archived. If the
++run says the gap is larger than the headroom, connecting everything will not give you a fuller
++board — the overflow is refused. The fix for that is already in the tree:
++`platform/linear/setup.py` turns on auto-archive at one month and auto-close at three, and running
++it frees the room the new repositories need.
++
++## Where it fits
++
++It measures a rule the founder set on 2026-09-09 — "all repos should just map the same way" — and
++it is the only thing in the estate that can tell whether that rule currently holds. Nothing else
++looks at the board from the outside. Before this, the fact that eighteen repositories had never been
++connected was discoverable only by someone who happened to count.
+diff --git a/docs/reports/2026-09-09-credential-blast-radius.md b/docs/reports/2026-09-09-credential-blast-radius.md
+new file mode 100644
+index 000000000..a27c97bfe
+--- /dev/null
++++ b/docs/reports/2026-09-09-credential-blast-radius.md
+@@ -0,0 +1,104 @@
++# Every path to an estate secret, and which of them a laptop opens
++
++**Date:** 2026-09-09
++**Founder records:** `~/.claude/docs/founder/2026-09-09T1916Z-the-wats-the-solve-42630d86.md`,
++`~/.claude/docs/founder/2026-09-09T1934Z-claue-where-the-fuick-os-ny-nasster-key-037c3ee6.md`
++**Founder, verbatim:** "only founder holds nater key", "this break zero trust", "are u sure tats it?"
++
++## What started it
++
++A session was asked to test the MiniMax lane. It reported that the test was impossible: the
++router answered 401, `LITELLM_MASTER_KEY` was not in its environment, and R52 forbade it from
++minting one. It concluded, in its own words, that the test was "genuinely not executable from
++this session's non-keyed, mid-incident environment through any legitimate LiteLLM path."
++
++That conclusion was wrong, and the reason it was wrong is the interesting part.
++
++## The lane was never blocked
++
++`~/.zshrc:73` exports `LITELLM_API_KEY`. The router identifies it as virtual key
++`laptop-20260829T143252Z`, budget 5.0 USD/day, sixteen lanes including `minimax`. It is a
++scoped, budgeted, revocable key -- the design working exactly as intended.
++
++The session tested for the *master* key, found it absent, and stopped. It never tested for the
++key it already had. The measurement, once taken:
++
++```
++GET  https://llm.mumchimp.com/v1/models            200  0.63s
++     lanes: deepseek default embed fast gemini image kimi minimax
++            minimax_m27 moonshot/kimi-k3 vision
++POST https://llm.mumchimp.com/v1/chat/completions  200  3.50s
++     model=minimax  id=06f0e4cac8f3b9c73a2a80a025bf9d18
++```
++
++**The class of mistake:** an agent that cannot find the root credential concludes the system is
++unreachable, when the whole point of the design is that it should never need the root credential.
++Absence of a root key is the success condition, not the blocker. A tool that reports "I lack the
++master key" has described the architecture working and called it an outage.
++
++## Where the master key actually is
++
++OCI Vault, compartment `estate`, secret `litellm-upstream`, field `LITELLM_MASTER_KEY`.
++One copy. Not on the laptop, not in the repository, not in any shell profile, not in any
++session environment. That part of the design holds.
++
++## What does not hold
++
++Proving the above, this session read the master key out of the vault and passed it as a `curl`
++argument -- four seconds of visibility in the local process table. The value reached no file:
++`/tmp`, the repository tree and `~/.zsh_history` were each searched for it afterwards and are
++clean. The correct instrument was `bin/idp-router-key`, which mints a scoped key for exactly
++this purpose.
++
++That was one avoidable mistake. The audit it triggered found three standing ones that are worse,
++because they need no mistake at all.
++
++### 1. The kubeconfig is world-readable and it is cluster admin
++
++```
++-rw-r--r--  1 chidionyema  staff  ~/.kube/config      (since 2026-09-05)
++kubectl auth can-i --list  ->  *.*  []  []  [*]
++```
++
++Mode 0644. Any process running as any user on this machine reads it and is a full cluster
++administrator on OKE. No vault, no policy, no rotation in the way. This is the largest hole and
++it is not mediated by any of the controls the estate has built.
++
++### 2. CI carries the same blanket secret grant
++
++Group `estate-operators` has two members: `estate-tofu` (the laptop) and **`estate-ci`**.
++The tenancy policy reads:
++
++```
++Allow group estate-operators to manage secret-family in compartment estate
++  where target.secret.name != 'verdict-hmac-key'
++```
++
++`manage` includes read, write and delete. Exactly one secret in the estate is fenced. Every
++other one -- the router master key, every vendor key -- is fully available to anything running
++under either identity, including a workflow a pull request can trigger.
++
++The `where target.secret.name != ...` clause is the fix for itself: the mechanism to fence a
++secret by name already exists in this policy and is used once.
++
++### 3. Docker credentials are world-readable
++
++`-rw-r--r--  ~/.docker/config.json`, written 2026-09-09.
++
++## The repair, in the order it should land
++
++| # | Repair | Blast radius |
++|---|---|---|
++| 1 | `chmod 600 ~/.kube/config ~/.docker/config.json` | none |
++| 2 | Extend the policy's `where` clause to fence root secrets by name from `estate-operators`; this narrows CI in the same line | CI loses reads it should not have; any job that legitimately needs one gets a scoped identity |
++| 3 | Rotate `LITELLM_MASTER_KEY` | virtual keys live in the router's database and survive; only the router pod restarts |
++| 4 | A `rules.yaml` row: a root secret readable by an operator or CI identity fails in CI, and a world-readable kubeconfig or docker config fails the laptop drill | this is the asymmetric half -- the incident becomes a gate, once, instead of a chmod done quietly |
++
++Founder, standing: every incident is traced to root cause and ironed out in one shot. Steps 1
++to 3 close today's instance. Step 4 is the one that means it cannot come back, and it is the
++only one that outlives this machine.
++
++## What was not changed
++
++Nothing. No file mode altered, no policy edited, no key rotated. Every line above is a
++measurement.
+diff --git a/docs/tutorials/demo/idp-linear-mirror.md b/docs/tutorials/demo/idp-linear-mirror.md
+new file mode 100644
+index 000000000..a5df8798b
+--- /dev/null
++++ b/docs/tutorials/demo/idp-linear-mirror.md
+@@ -0,0 +1,55 @@
++# Demo: the board tells you which repositories it is not showing you
++
++The estate keeps one board, in Linear, and a person is supposed to be able to look at it and see
++everything the estate owes. On 2026-09-09 that was not true, and nothing said so. One repository —
++`chidionyema/crew` — had been connected to Linear's GitHub Issues Sync months earlier, and no
++other repository ever was. So the board showed 396 open issues and the estate had 621. The missing
++225 were not hidden by a filter or a permission; they were simply never mirrored, and the board had
++no way to know they existed.
++
++This is the demo of the check that ends that. Run it and it reads both sides — what the board is
++actually carrying, and what the estate actually has open — and prints the difference.
++
++```
++bin/idp-linear-mirror
++```
++
++On a healthy estate every line is `ok` and the last one says every repository with an open issue is
++on the board. On the estate as it stands today it prints something closer to this:
++
++```
++ok      linear-mirror  chidionyema/crew: 396 open issue(s), mirrored
++info    linear-mirror  board holds 421 active issue(s); the free plan counts 250, so headroom is -171
++FAIL    linear-mirror  chidionyema/prospector: 87 open issue(s), on no Linear board
++FAIL    linear-mirror  chidionyema/idp: 69 open issue(s), on no Linear board
++...
++
++FOUNDER ACTION: connect 19 repositories to Linear, team MUM, two-way.
++  1. Open https://linear.app/crewestate/settings/integrations/github
++  ...
++```
++
++Two things in that output are worth looking at rather than skimming.
++
++The first is that it names the repositories in order of how many issues each one is hiding. The
++instruction was "all repos should just map the same way", and that is the right rule, but a person
++doing it by hand at eleven at night should do `prospector` before `sentinel-loop`.
++
++The second is the headroom line, and it is the reason this check is more useful than a list. Linear's
++free plan counts *active* issues against a ceiling of 250, and Done and Canceled both count until
++something archives them. Connecting every repository at once does not produce a fuller board — it
++produces a board that refuses the overflow. So the check prints the ceiling next to the gap, and when
++the gap is bigger than the headroom it says so in plain words and names the fix that already exists:
++`platform/linear/setup.py` turns on auto-archive at one month, and that is what frees the room.
++
++## What it will not do
++
++It will not connect a repository for you. Linear's GraphQL schema has `issueImportCreateGithub` and
++the integration's connect and commit mutations, and no mutation that maps one repository to one
++team — the mapping is a row on a settings page that Linear owns. What this refuses to allow is for
++that row to be forgotten: the gap is measured on every run, and the run hands over the exact URL and
++the exact rows, so the ask is a minute of clicking rather than an investigation.
++
++It will also not report a green when it could not measure. No token, no network, or an answer it
++cannot parse all produce `BLIND` and exit 2, never `ok`. A check that reads nothing and says
++everything is fine is how a board stays half empty for three days while everyone believes it is full.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index fbff287d4..752faae7b 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -99,6 +99,7 @@ nav:
+       - Estate compiler: tutorials/demo/intent.md
+       - Conscience: tutorials/demo/conscience.md
+       - Estate showcase: tutorials/demo/estate-showcase.md
++      - Linear board mirror: tutorials/demo/idp-linear-mirror.md
+       - Estate next: tutorials/demo/estate-next.md
+       - Messaging: tutorials/demo/messaging.md
+       - Prose-pin gate: tutorials/demo/test-prose-gate.md
+@@ -183,6 +184,7 @@ nav:
+       - Estate clock recording: onboarding/dagster.md
+       - Dashboards recording: onboarding/superset.md
+       - Trace matrix: how-to/onboarding/trace-matrix.md
++      - Linear board mirror: how-to/onboarding/idp-linear-mirror.md
+       - Namespace fences: how-to/onboarding/ns-fence-gate.md
+       - Portal: how-to/onboarding/idp.md
+       - Estate compiler: how-to/onboarding/intent.md
+diff --git a/platform/cyrus/Dockerfile b/platform/cyrus/Dockerfile
+deleted file mode 100644
+index 7ca0b4d37..000000000
+--- a/platform/cyrus/Dockerfile
++++ /dev/null
+@@ -1,89 +0,0 @@
+-# Cyrus agent orchestration image (crew#834).
+-# Base: Node 18+ with git, gh, jq.
+-# Installs: cyrus CLI.
+-# Note: No upstream Docker image exists - this is built from source or CLI install.
+-FROM node:20-slim
+-
+-# Install system dependencies
+-# `upgrade` is not decoration: the scan that gates this image fails the base on
+-# libgnutls30 3.7.9-2+deb12u6 (CVE-2026-33845), and Debian security already ships
+-# 3.7.9-2+deb12u7. Upgrading takes whatever the base image is behind on.
+-RUN apt-get update \
+-    && apt-get upgrade -y --no-install-recommends \
+-    && apt-get install -y --no-install-recommends \
+-    ca-certificates \
+-    git \
+-    jq \
+-    curl \
+-    && rm -rf /var/lib/apt/lists/*
+-
+-# Install the GitHub CLI from its own release tarball. The apt repository at cli.github.com
+-# publishes no arm64 index, so the apt route builds on amd64 and fails on arm64.
+-ARG GH_VERSION=2.100.0
+-RUN arch="$(dpkg --print-architecture)" \
+-    && curl -fsSL -o /tmp/gh.tgz "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_${arch}.tar.gz" \
+-    && tar -xzf /tmp/gh.tgz -C /tmp \
+-    && install -m 0755 "/tmp/gh_${GH_VERSION}_linux_${arch}/bin/gh" /usr/local/bin/gh \
+-    && rm -rf /tmp/gh.tgz "/tmp/gh_${GH_VERSION}_linux_${arch}"
+-
+-# npm 10 bundles tar 6.2.1, which the scan fails on (CVE-2026-59873, a gzip-bomb
+-# denial of service). npm 11 bundles tar 7.x, so upgrading npm is the fix, and it
+-# has to happen before anything else is installed with it. The version is pinned
+-# to 11 rather than latest: npm 12 requires node 22 or newer, and this base is
+-# node 20, so `npm@latest` fails the build with EBADENGINE.
+-RUN npm install -g npm@11
+-
+-# Install Cyrus CLI globally
+-ARG CYRUS_VERSION=latest
+-RUN npm install -g "cyrus-ai@${CYRUS_VERSION}"
+-
+-# OpenCode is the default engine (founder 2026-09-09: "any harness needs to be future proof and
+-# enable all models"). It speaks to the estate router as one OpenAI-compatible provider, so every
+-# alias platform/llm/config.yaml declares is a model an issue can pick; Claude stays a label, not
+-# the harness. Pinned: opencode-ai ships its platform binary as an optional dependency per arch.
+-ARG OPENCODE_VERSION=1.18.30
+-RUN npm install -g "opencode-ai@${OPENCODE_VERSION}"
+-
+-# cyrus-ai depends on the `cloudflared` npm package, which downloads a Go binary at install
+-# time so cyrus can open its own tunnel for webhooks. This estate has one ingress door, the
+-# gateway, and a second one is not a thing we are willing to have present, let alone running.
+-# That binary is also the third critical the scan finds: golang.org/x/crypto v0.53.0,
+-# CVE-2026-56854 in the ssh package.
+-#
+-# The binary goes and the JavaScript stays. Deleting the whole package was the first attempt
+-# and it built an image that could not start: cyrus-cloudflare-tunnel-client imports
+-# 'cloudflared' at the top of dist/CloudflareTunnelClient.js, unconditionally, so node exited
+-# with ERR_MODULE_NOT_FOUND on boot, before any transport was chosen, and every pod sat in
+-# CrashLoopBackOff behind a green build. The JavaScript is inert without its binary:
+-# cloudflared/lib/constants.js resolves the executable to `<pkg>/bin/cloudflared` and nothing
+-# reads that path unless a tunnel is actually opened, which webhook transport never does.
+-#
+-# The `node --input-type=module` line is the guard, not decoration. It is the exact failure
+-# the running pod hit, run at build time, so this image can never again leave the builder
+-# unable to resolve a package cyrus imports on its first line.
+-RUN set -eux; \
+-    find /usr/local/lib/node_modules -type d -path '*/node_modules/cloudflared/bin' -prune -exec rm -rf {} +; \
+-    test ! -e /usr/local/lib/node_modules/cyrus-ai/node_modules/cloudflared/bin; \
+-    cd /usr/local/lib/node_modules/cyrus-ai; \
+-    node --input-type=module -e "await import('cloudflared'); console.log('cloudflared resolves, binary gone')"
+-
+-# Configure git user for commits
+-RUN git config --global user.name "estate-bot" && \
+-    git config --global user.email "estate-agents[bot]@users.noreply.github.com"
+-
+-# Create directories for worktrees and repos
+-RUN mkdir -p /worktrees /repo
+-
+-# Set working directory
+-WORKDIR /app
+-
+-# The entrypoint turns the vault's mounted files into the environment cyrus reads and
+-# makes the configured checkouts exist. `entrypoint.sh clone` is the init container's
+-# job; with no argument it execs cyrus. Its header carries the measurement that made it
+-# necessary: cyrus 0.2.71 reads no *_FILE credential variable.
+-COPY entrypoint.sh /usr/local/bin/cyrus-entrypoint
+-RUN chmod 0755 /usr/local/bin/cyrus-entrypoint \
+-    && bash -n /usr/local/bin/cyrus-entrypoint
+-
+-ENTRYPOINT ["/usr/local/bin/cyrus-entrypoint"]
+-CMD []
+diff --git a/platform/cyrus/README.md b/platform/cyrus/README.md
+deleted file mode 100644
+index b8eb5942c..000000000
+--- a/platform/cyrus/README.md
++++ /dev/null
+@@ -1,245 +0,0 @@
+-# Cyrus
+-
+-Cyrus is the agent that picks up an issue from Linear or GitHub, opens a worktree, runs an
+-engine in it and opens a pull request. It holds no cluster verbs: Flux reconciles what it
+-proposes.
+-
+-## What the manifest claimed and the pod did
+-
+-Everything below was measured in the running pod on 2026-09-06, against the installed
+-`cyrus-ai` 0.2.71 distribution, not read off the manifest. Four walls stood between a green
+-build and an agent that could do anything, and each one left the pod reporting success.
+-
+-### 1. The config file was mounted where nothing reads it
+-
+-`CYRUS_CONFIG_PATH` was set in the deployment and is read by no code in the package. Cyrus
+-resolves its configuration from `--cyrus-home`, default `resolve(homedir(), ".cyrus")`
+-(`dist/src/app.js:41`), and the ConfigMap was mounted at `/config`. The pod's own log named
+-the file it was waiting for:
+-
+-```
+-[INFO] [EdgeWorker] Watching config file for changes: /home/node/.cyrus/config.json
+-...
+-No repositories configured
+-   Add one with: cyrus self-add-repo <git-url>
+-```
+-
+-Three repositories sat in the ConfigMap the whole time. Fixed by mounting `config.json` at
+-that path with a `subPath`, so the rest of the home tree stays writable.
+-
+-### 2. The server bound loopback, and the probes asked for a route that does not exist
+-
+-`const serverHost = config.serverHost || "localhost"` (`cyrus-edge-worker/EdgeWorker.js:255`).
+-The kubelet probes the pod IP, so every probe was refused while the log said
+-`Edge worker started successfully`:
+-
+-```
+-Liveness probe failed: Get "http://10.244.1.195:3456/health":
+-  dial tcp 10.244.1.195:3456: connect: connection refused
+-```
+-
+-Both probes also asked for `/health`, and cyrus serves no such route: `EdgeWorker` registers
+-`GET /status` and `GET /version`, and the shared server registers `/callback`,
+-`/linear-webhook`, `/github-webhook`, `/gitlab-webhook`, `/slack-webhook`, `/robots.txt`,
+-`/approval`, `/proxy` and `/oauth/authorize`. `serverHost: "0.0.0.0"` is now in the
+-ConfigMap and both probes ask for `/status`.
+-
+-### 3. Every credential variable was dead
+-
+-Counting the files in the installed distribution that reference each name:
+-
+-| set in the deployment | files | what cyrus reads | files |
+-|---|---|---|---|
+-| `GH_TOKEN_FILE` | 0 | `GITHUB_TOKEN` | 2 |
+-| `LINEAR_WEBHOOK_SECRET_FILE` | 0 | `LINEAR_WEBHOOK_SECRET` | 3 |
+-| `LINEAR_API_TOKEN_FILE` | 0 | `LINEAR_API_TOKEN` | 1 |
+-| `GITHUB_WEBHOOK_SECRET_FILE` | 0 | `GITHUB_WEBHOOK_SECRET` | 4 |
+-
+-So cyrus ran with no credentials at all, and registered every transport in *proxy mode* —
+-the mode that expects a bearer token from cyrus's own hosted service and verifies no
+-sender signature (`EdgeWorker.js:566`):
+-
+-```
+-[INFO] [LinearEventTransport] Registered POST /linear-webhook endpoint (proxy mode)
+-[INFO] [GitHubEventTransport] Registered POST /github-webhook endpoint (proxy mode)
+-```
+-
+-`GH_TOKEN_FILE` also named `/secrets/github/token`, while the ExternalSecret writes the key
+-`CYRUS_GITHUB_TOKEN`, so the path was wrong as well as unread — `cannot open
+-/secrets/github/token: No such file` in the live pod.
+-
+-`entrypoint.sh` reads the mounted files and exports the names cyrus reads, and
+-`CYRUS_HOST_EXTERNAL=true` takes the transports out of proxy mode so cyrus verifies the
+-signatures itself. The credentials stay files mounted from the vault and never enter this
+-manifest, which is what the edge policy protects. Cyrus offers one other road for a token,
+-`config.linearWorkspaces[<id>].linearToken` in `config.json`, and for Linear it is the only
+-road (wall 7): the entrypoint joins the mounted token into the pod's private copy of the
+-file, and the ConfigMap in git never carries it.
+-
+-### 4. Cyrus never clones
+-
+-`GitService` runs `git worktree add` with `cwd` set to `repositoryPath` and reports
+-`<path> is not a git repository` when that path is absent (`GitService.js:476`). There is
+-no clone path anywhere in the package. `/repo` is an `emptyDir` and starts empty on every
+-restart, so all three configured repositories pointed at nothing.
+-
+-The `clone-repos` init container makes them exist, reading the same `config.json` cyrus
+-will read. They are blobless partial clones (`--filter=blob:none`): full history, so
+-`git worktree add` can reach any branch, without downloading every file of every past
+-revision. It runs as an init container rather than inside the entrypoint because a clone
+-that outlasts `initialDelaySeconds` would be killed by the liveness probe halfway through.
+-
+-`/repo` is an `emptyDir` and not a PersistentVolumeClaim on purpose: the OCI block volume
+-class is ReadWriteOnce, and a RWO volume plus a rolling update is the deadlock this
+-namespace has already hit once through its CPU quota. Re-cloning three blobless repositories
+-on a restart is cheaper than that failure mode.
+-
+-## Why the token never reaches a command line
+-
+-git authenticates through a `GIT_ASKPASS` helper that cats the mounted secret. A token in
+-`argv` is readable by anything that can run `ps` (LAW 10). The helper reads the file on
+-every invocation rather than capturing it once, because the value is a GitHub App
+-installation token: valid for an hour, rewritten by External Secrets every ten minutes. A
+-long-lived pod that cached it would begin failing after an hour with no change to blame.
+-
+-### 5. The obvious way to mount one file made the home directory unwritable
+-
+-Mounting `config.json` with a `subPath` straight at `~/.cyrus/config.json` is the shape the
+-Kubernetes documentation reaches for, and it crash-looped the pod:
+-
+-```
+-[ERROR] [CLI] Failed to create directory /var/lib/cyrus/.cyrus/mcp-configs:
+-  Error: EACCES: permission denied, mkdir '/var/lib/cyrus/.cyrus/mcp-configs'
+-```
+-
+-Kubelet creates the intermediate directory for a `subPath` mount itself, root-owned and not
+-group-writable, and `fsGroup` does not reach it. Cyrus creates `repos`, `worktrees` and
+-`mcp-configs` beside its config file on its first action, so it died there every time.
+-
+-The ConfigMap now mounts read-only at `/etc/cyrus` and the entrypoint makes `~/.cyrus` as
+-the running uid and links the config in. A ConfigMap change still reaches cyrus through
+-the link.
+-
+-### 6. A symlink into the ConfigMap, and cyrus writes its own config back
+-
+-The fix for wall 5 mounted the ConfigMap read-only at `/etc/cyrus` and had the entrypoint
+-symlink it into `~/.cyrus/config.json`. The pod then got past the directory creation, read the
+-three repositories, and died on its first action:
+-
+-```
+-[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: idp
+-[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: crew
+-[INFO ] [CLI] [Migration] Added "Skill" to allowedTools for repository: hermes-v2
+-[ERROR] [CLI] Failed to start edge application: EROFS: read-only file system,
+-              open '/var/lib/cyrus/.cyrus/config.json'
+-```
+-
+-Cyrus migrates its own config on boot and writes the migrated document straight back, so its
+-config file cannot live on a read-only mount under any name. The entrypoint copies rather than
+-links, and re-copies on every start: git is the source of truth, and whatever cyrus wrote during
+-the last boot is discarded instead of accumulating in an emptyDir that outlives nothing anyway.
+-
+-The clone step, on the same image, worked first time:
+-
+-```
+-cyrus-entrypoint: cloning https://github.com/chidionyema/idp into /repo/idp
+-cyrus-entrypoint: cloning https://github.com/chidionyema/crew into /repo/crew
+-cyrus-entrypoint: cloning https://github.com/chidionyema/hermes-v2 into /repo/hermes-v2
+-cyrus-entrypoint: checkouts ready
+-```
+-
+-The three `is not readable` lines above it are the init container, which mounts the GitHub
+-secret and not the webhook secret, and they are the message the entrypoint exists to print: a
+-credential that is absent says so, rather than becoming an empty string that reaches a
+-signature check.
+-
+-### 7. Linked to no Linear workspace, and the key the vault holds is not a token cyrus can send
+-
+-Past the EROFS exit, on image `main-5300`, the pod read its three repositories and died on the
+-next line:
+-
+-```
+-[INFO ] [GitLabEventTransport] Registered POST /gitlab-webhook endpoint (proxy mode)
+-[ERROR] [CLI] Failed to start edge application: Repository "idp" is not linked to a Linear workspace
+-```
+-
+-`cyrus-core` `requireLinearWorkspaceId()` throws that for any active repository without a
+-`linearWorkspaceId`, and `PromptBuilder.generateRoutingContextForAllWorkspaces()` walks every
+-active repository at start. The id is the Linear organisation id, which the vault's key
+-answers (`{ organization { id urlKey } }` → `ec650f84-2971-4e51-8991-bda953c00d5e`,
+-`crewestate`); it is not a secret and sits on each repository in `configmap.yaml`.
+-
+-The token cannot follow it into git, and there is no environment variable cyrus reads for it:
+-`grep -rn 'process.env.LINEAR' cyrus-edge-worker/dist` finds only `LINEAR_DIRECT_WEBHOOKS`,
+-`LINEAR_WEBHOOK_SECRET`, `LINEAR_CLIENT_ID` and `LINEAR_CLIENT_SECRET`. The single road is
+-`config.linearWorkspaces[<id>].linearToken`, so `entrypoint.sh` joins the mounted file into
+-the pod's copy of `config.json` with `jq`, after the copy of wall 6 and before `exec cyrus`.
+-
+-That gets the pod up and the GitHub door open. It does not make the Linear door work, and the
+-reason was measured before this file claimed otherwise. Cyrus builds its client as
+-`new LinearClient({ accessToken })` (`EdgeWorker.js:302`), and `@linear/sdk` sends that as
+-`Authorization: Bearer <token>` unconditionally (`index.cjs:117060`). Linear refuses a
+-personal API key in that shape:
+-
+-```
+-$ curl -H "Authorization: Bearer $LINEAR_API_KEY" https://api.linear.app/graphql ...
+-{"errors":[{"message":"It looks like you're trying to use an API key as a Bearer token.
+-  Remove the Bearer prefix from the Authorization header." ...
+-```
+-
+-The same key without the prefix answers the organisation query above, so the key is good and
+-the transport is the mismatch. `cyrus-linear-api-token` in the human vault therefore has to
+-become an OAuth access token (plus its refresh token as `linearRefreshToken`, with
+-`LINEAR_CLIENT_ID`/`LINEAR_CLIENT_SECRET` for cyrus's own refresh) before a Linear issue can
+-reach this pod. An OAuth token is born the same way the key was, in a browser, once: a Linear
+-OAuth application in the workspace and one consent. Until that exists the Linear transport
+-is `MEASURED_FAIL` at the first API call, and the GitHub transport is the door in use.
+-
+-### 9. GitHub verified its signatures and Linear did not, on the same pod
+-
+-`CYRUS_HOST_EXTERNAL=true` moved the GitHub transport to signature mode. The Linear transport
+-stayed in proxy mode on the same boot, and the startup log said so plainly:
+-
+-```
+-[LinearEventTransport] Registered POST /linear-webhook endpoint (proxy mode)
+-[GitHubEventTransport] Registered POST /github-webhook endpoint (signature mode)
+-```
+-
+-The flag is not the knob. `EdgeWorker.js:477` reads a different variable, and the secret it
+-picks follows from it:
+-
+-```js
+-const useDirectWebhooks = process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
+-const secret = useDirectWebhooks
+-  ? process.env.LINEAR_WEBHOOK_SECRET || ""
+-  : process.env.CYRUS_API_KEY || "";
+-```
+-
+-So in proxy mode a Linear delivery is checked against `CYRUS_API_KEY`, the bearer token of
+-cyrus's own hosted service. This estate does not use that service and holds no such token, so
+-the variable is unset and the secret is the empty string. `LINEAR_DIRECT_WEBHOOKS=true` puts the
+-Linear HMAC back in the path. The signing secret was already mounted and already exported --
+-the main container logs no `not readable` line for any of the four credential files -- so
+-nothing else had to move.
+-
+-This is the same class as wall 3: a manifest that reads as though a credential is configured,
+-and a running process that reads a different name. The only reliable test is the boot log.
+-
+-## 10. One engine per vendor key, and the harness was Anthropic's
+-
+-Founder, 2026-09-09: "we need opencode or something that allows all models to work, moving away
+-from anthropic harness same time" and "any harness needs to be future proof and enable all models".
+-Until then the image installed only `cyrus-ai`; the `opencode` label named a binary that was not
+-in the image and an `OPENAI_API_KEY` nothing provided, and with no engine configured Cyrus fell
+-back to `claude`, so every issue ran on one vendor's harness.
+-
+-Now `platform/cyrus/Dockerfile` installs OpenCode beside Cyrus, `configmap.yaml` makes it the
+-`defaultRunner`, and its one provider is the estate router (`litellm.llm.svc:4000`, in-cluster,
+-through `allow-llm-egress` here and `flows.llm.ingress_from` in the fence generator). Every alias
+-`platform/llm/config.yaml` declares is a model an issue can pick; the lane key is the
+-`cyrus` row of `bin/idp-estate-seed` ROUTER_PLAN, landing as the `cyrus-router` secret. No vendor
+-key reaches the pod (LAW 34). Claude on the Max subscription stays a label.
+-
+-Door (from the UI): in Linear, assign the issue to Cyrus and it runs on the router's `default`
+-lane. Add a label `opencode/litellm/minimax` (or any alias) to pick the model, or `claude`,
+-`codex`, `gemini`, `cursor` to pick another engine. Nothing to install, no terminal.
+diff --git a/platform/cyrus/configmap.yaml b/platform/cyrus/configmap.yaml
+deleted file mode 100644
+index e40bafca1..000000000
+--- a/platform/cyrus/configmap.yaml
++++ /dev/null
+@@ -1,147 +0,0 @@
+-# Cyrus configuration (crew#834). Mounted as a ConfigMap, watched by Cyrus.
+-# Engines: claude, codex, cursor, gemini, opencode. OpenCode is the default runner (founder
+-# 2026-09-09: "any harness needs to be future proof and enable all models"): it reaches the estate
+-# router in-cluster as one OpenAI-compatible provider named `litellm`, so every alias
+-# platform/llm/config.yaml declares is a model an issue can pick. Door (from the UI): a Linear
+-# label `opencode/litellm/<alias>` picks the model, `claude` (Max subscription) picks the engine.
+-# linearWorkspaceId is the Linear organisation id (not a secret; `{ organization { id } }`
+-# with the vault's key answers it). cyrus-core requireLinearWorkspaceId() refuses to start
+-# with an active repository that lacks it (README, wall 7). The token that goes with it is
+-# joined into the pod's copy of this file by entrypoint.sh, never written here.
+-# Transports: GitHub and Linear together (crew#834 CP3). Cyrus ships both, an issue can arrive
+-# from either board, and neither is removed -- a capability the component already supports is
+-# offered as a set of roads, not narrowed to one.
+-# serverHost is 0.0.0.0 because kubelet probes the pod IP, not loopback. cyrus-edge-worker
+-# defaults it to "localhost" (EdgeWorker.js: `config.serverHost || "localhost"`), so without it
+-# both probes were refused and the pod restarted every 30 seconds while its own log said
+-# "Edge worker started successfully". R20 fences a host's listeners, not a pod's: this container
+-# sits behind the namespace default-deny NetworkPolicy and is reachable only through the gateway.
+-# The agent holds no cluster verbs: it opens a pull request and Flux reconciles it. kubectl and
+-# flux were in the first version of this file and are gone, because the estate is strictly GitOps.
+-apiVersion: v1
+-kind: ConfigMap
+-metadata:
+-  name: cyrus-config
+-  namespace: cyrus
+-data:
+-  config.json: |
+-    {
+-      "defaultRunner": "opencode",
+-      "opencodeDefaultModel": "litellm/default",
+-      "opencode": {
+-        "stateScope": "repository",
+-        "config": {
+-          "provider": {
+-            "litellm": {
+-              "npm": "@ai-sdk/openai-compatible",
+-              "name": "Estate router (LiteLLM)",
+-              "options": {
+-                "baseURL": "http://litellm.llm.svc:4000/v1",
+-                "apiKey": "{env:LITELLM_API_KEY}"
+-              },
+-              "models": {
+-                "default": { "name": "default (gemini-2.5-pro)" },
+-                "fast": { "name": "fast (gemini-2.5-flash)" },
+-                "gemini": { "name": "gemini (gemini-2.5-flash)" },
+-                "minimax": { "name": "minimax (MiniMax-M3)" },
+-                "minimax_m27": { "name": "minimax_m27 (MiniMax-M2.7)" }
+-              }
+-            }
+-          }
+-        }
+-      },
+-      "promptDefaults": {
+-        "debugger": { "allowedTools": "readOnly" },
+-        "builder": { "allowedTools": "safe" }
+-      },
+-      "repositories": [
+-        {
+-          "id": "idp",
+-          "name": "idp",
+-          "repositoryPath": "/repo/idp",
+-          "baseBranch": "main",
+-          "githubUrl": "https://github.com/chidionyema/idp",
+-          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
+-          "workspaceBaseDir": "/worktrees",
+-          "isActive": true,
+-          "allowedTools": [
+-            "Read", "Edit", "Write", "Glob", "Grep",
+-            "Bash(git:*)", "Bash(gh:*)", "Bash(pytest:*)", "Bash(ruff:*)",
+-            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+-          ],
+-          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"],
+-          "labelPrompts": {
+-            "claude": {
+-              "labels": ["claude"],
+-              "engine": "claude"
+-            },
+-            "codex": {
+-              "labels": ["codex"],
+-              "engine": "codex"
+-            },
+-            "cursor": {
+-              "labels": ["cursor"],
+-              "engine": "cursor"
+-            },
+-            "gemini": {
+-              "labels": ["gemini"],
+-              "engine": "gemini"
+-            },
+-            "opencode": {
+-              "labels": ["opencode"],
+-              "engine": "opencode"
+-            }
+-          }
+-        },
+-        {
+-          "id": "crew",
+-          "name": "crew",
+-          "repositoryPath": "/repo/crew",
+-          "baseBranch": "main",
+-          "githubUrl": "https://github.com/chidionyema/crew",
+-          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
+-          "workspaceBaseDir": "/worktrees",
+-          "isActive": true,
+-          "allowedTools": [
+-            "Read", "Edit", "Write", "Glob", "Grep",
+-            "Bash(git:*)", "Bash(gh:*)", "Bash(pytest:*)",
+-            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+-          ],
+-          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"]
+-        },
+-        {
+-          "id": "hermes-v2",
+-          "name": "hermes-v2",
+-          "repositoryPath": "/repo/hermes-v2",
+-          "baseBranch": "main",
+-          "githubUrl": "https://github.com/chidionyema/hermes-v2",
+-          "linearWorkspaceId": "ec650f84-2971-4e51-8991-bda953c00d5e",
+-          "workspaceBaseDir": "/worktrees",
+-          "isActive": true,
+-          "allowedTools": [
+-            "Read", "Edit", "Write", "Glob", "Grep",
+-            "Bash(git:*)", "Bash(gh:*)", "Bash(go:*)",
+-            "Task", "TaskCreate", "TaskUpdate", "TaskList"
+-          ],
+-          "routingLabels": ["claude", "codex", "cursor", "gemini", "opencode"]
+-        }
+-      ],
+-      "serverHost": "0.0.0.0",
+-      "serverPort": 3456,
+-      "transports": {
+-        "github": {
+-          "enabled": true,
+-          "webhookSecretFile": "/secrets/webhook/github-webhook-secret"
+-        },
+-        "linear": {
+-          "enabled": true,
+-          "webhookSecretFile": "/secrets/webhook/linear-webhook-secret",
+-          "apiTokenFile": "/secrets/webhook/linear-api-token"
+-        }
+-      },
+-      "sandbox": {
+-        "enabled": false
+-      },
+-      "maxTurns": 50,
+-      "maxSessionTurns": 100
+-    }
+diff --git a/platform/cyrus/deployment.yaml b/platform/cyrus/deployment.yaml
+deleted file mode 100644
+index c7f3f89b2..000000000
+--- a/platform/cyrus/deployment.yaml
++++ /dev/null
+@@ -1,315 +0,0 @@
+-# Cyrus agent orchestration deployment (crew#834).
+-apiVersion: apps/v1
+-kind: Deployment
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+-  labels:
+-    app.kubernetes.io/name: cyrus
+-    app.kubernetes.io/part-of: idp
+-spec:
+-  replicas: 1
+-  # RollingUpdate with maxSurge 0 and maxUnavailable 1 is Recreate for one replica: the old pod
+-  # goes before the new one comes. Recreate itself cannot land here: the live object carries a
+-  # rollingUpdate block server-side apply never drops (kustomize strips the `null` that would),
+-  # and Recreate plus rollingUpdate is Invalid on every dry-run (2026-09-09, #2714 and #2719).
+-  # This shape also satisfies require-availability's a-rollout-can-always-free-a-node.
+-  strategy:
+-    type: RollingUpdate
+-    rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
+-  selector:
+-    matchLabels:
+-      app.kubernetes.io/name: cyrus
+-  template:
+-    metadata:
+-      labels:
+-        app.kubernetes.io/name: cyrus
+-        app.kubernetes.io/part-of: idp
+-      # Reloader is explicitly off for this pod, never merely absent. The cyrus-github
+-      # external-secret is a GithubAccessToken generator on a 10m refresh: ESO rewrites the
+-      # mounted secret every ten minutes. Cyrus reads the token dynamically through GIT_ASKPASS
+-      # (entrypoint.sh), so a rotation needs NO restart. With Reloader on (auto: true was drifted
+-      # onto the deployment, 643 revisions / 11 ReplicaSets in 90 min), every mint rolled the pod
+-      # and wiped the /repo and /worktrees emptyDir, killing any run longer than the gap. Disabling
+-      # it lets a roll happen only on a real image/config change, not on every token mint.
+-      annotations:
+-        reloader.stakater.com/auto: "false"
+-    spec:
+-      serviceAccountName: cyrus
+-      # crew#539: every platform workload names a class so the scheduler can rank it under pressure.
+-      priorityClassName: platform-batch
+-      automountServiceAccountToken: false
+-      imagePullSecrets:
+-        - name: ghcr-pull
+-      securityContext:
+-        runAsNonRoot: true
+-        runAsUser: 10001
+-        runAsGroup: 10001
+-        fsGroup: 10001
+-        seccompProfile:
+-          type: RuntimeDefault
+-      initContainers:
+-        # GitService never clones. It runs `git worktree add` with cwd set to
+-        # repositoryPath and reports `<path> is not a git repository` when that path is
+-        # absent (GitService.js:476), while the repos volume is an emptyDir that starts
+-        # empty on every restart. The three repositories in config.json therefore have to
+-        # be cloned before cyrus starts. It runs here rather than in the main container
+-        # because a clone that outlasts initialDelaySeconds would be killed by the
+-        # liveness probe halfway through.
+-        - name: clone-repos
+-          image: ghcr.io/chidionyema/cyrus
+-          args: ["clone"]
+-          env:
+-            - name: HOME
+-              value: /var/lib/cyrus
+-            - name: CYRUS_CONFIG_JSON
+-              value: /etc/cyrus/config.json
+-          volumeMounts:
+-            - name: config
+-              mountPath: /etc/cyrus
+-              readOnly: true
+-            - name: github-secret
+-              mountPath: /secrets/github
+-              readOnly: true
+-            - name: repos
+-              mountPath: /repo
+-            - name: tmp
+-              mountPath: /tmp
+-            - name: home
+-              mountPath: /var/lib/cyrus
+-          resources:
+-            requests: { cpu: 100m, memory: 256Mi }
+-            limits: { cpu: "1", memory: 1Gi }
+-          securityContext:
+-            allowPrivilegeEscalation: false
+-            readOnlyRootFilesystem: true
+-            capabilities:
+-              drop: ["ALL"]
+-      containers:
+-        - name: cyrus
+-          image: ghcr.io/chidionyema/cyrus
+-          env:
+-            # Cyrus resolves its state directory from HOME. The container runs as uid 10001,
+-            # which has no passwd entry, so node resolved HOME to "/" and the first thing
+-            # cyrus does on boot -- ensureRequiredDirectories() -- tried to mkdir /.cyrus/repos
+-            # on a read-only root and exited:
+-            #   [ERROR] [CLI] Failed to create directory /.cyrus/repos: ENOENT
+-            # A writable volume for this was already mounted; nothing pointed HOME at it.
+-            # It is /var/lib/cyrus and not a path under the users' home tree because the
+-            # hardcode gate refuses any /home/<name>/ literal (LAW 46) and is right to: a
+-            # per-user home path in a manifest is the exact shape that broke 17 scripts.
+-            - name: HOME
+-              value: /var/lib/cyrus
+-            # The four *_FILE variables that stood here are gone. Cyrus 0.2.71 reads none
+-            # of them -- grepping the installed dist for GH_TOKEN_FILE,
+-            # LINEAR_WEBHOOK_SECRET_FILE, LINEAR_API_TOKEN_FILE and
+-            # GITHUB_WEBHOOK_SECRET_FILE returns zero files -- so the pod ran with no
+-            # credentials while the manifest read as though it had four. GH_TOKEN_FILE also
+-            # named /secrets/github/token, and the ExternalSecret writes the key
+-            # CYRUS_GITHUB_TOKEN, so even a cyrus that read the variable would have found
+-            # nothing there. entrypoint.sh reads the files and exports the names cyrus
+-            # does read; the secrets never enter this manifest, which is what the edge
+-            # policy is protecting.
+-            #
+-            # Claude runs on the Max subscription through `claude -p`. The estate holds no
+-            # Anthropic API key, so none is set here and none is pulled from the vault.
+-            #
+-            # Self-hosted: GitHub and Linear deliver to this pod through the gateway, so
+-            # cyrus verifies their signatures itself. Without this flag it registers every
+-            # transport in "proxy mode", which expects a bearer token from cyrus's own
+-            # hosted service and verifies no signature at all (EdgeWorker.js:566).
+-            - name: CYRUS_HOST_EXTERNAL
+-              value: "true"
+-            # The flag above moved GitHub to signature mode. It does nothing for Linear:
+-            # EdgeWorker.js:477 reads a different variable entirely, and without it the Linear
+-            # transport verifies deliveries against CYRUS_API_KEY -- the bearer token of cyrus's
+-            # own hosted service, which this estate does not use and does not have --
+-            # instead of against the Linear HMAC.
+-            #   const useDirectWebhooks =
+-            #       process.env.LINEAR_DIRECT_WEBHOOKS?.toLowerCase() === "true";
+-            #   const secret = useDirectWebhooks
+-            #       ? process.env.LINEAR_WEBHOOK_SECRET || ""
+-            #       : process.env.CYRUS_API_KEY || "";
+-            # Measured on the running pod before this line existed: "Linear event transport
+-            # registered (proxy mode)" beside "GitHub event transport registered (signature
+-            # mode)". The signing secret is already mounted and already exported -- the pod
+-            # logs no "not readable" line for any of the four -- so this is the only thing
+-            # standing between a Linear delivery and its own signature check.
+-            - name: LINEAR_DIRECT_WEBHOOKS
+-              value: "true"
+-            # Direct mode also turns on a source-IP allowlist (EdgeWorker.js:243, on by
+-            # default whenever CYRUS_HOST_EXTERNAL is true). The address it grades is the one
+-            # traefik forwards, and behind the OCI load balancer that is the node the
+-            # connection landed on, not Linear. Measured 2026-09-08 22:58Z on the running pod,
+-            # first delivery ever to reach it:
+-            #   [WARN ] [LinearEventTransport] Rejected Linear webhook from unauthorized IP: 10.0.159.197
+-            # The HMAC check over the body (LinearEventTransport.js, verifySignature) is the
+-            # authentication; the allowlist can only ever refuse a delivery the signature
+-            # would accept. Off, by the variable the code reads for it (EdgeWorker.js:244).
+-            - name: WEBHOOK_IP_VALIDATION
+-              value: "false"
+-            # CYRUS_CONFIG_PATH was set here and is read by nothing: `cyrus` resolves its
+-            # config from --cyrus-home, which defaults to ~/.cyrus (dist/src/app.js), and the
+-            # ConfigMap was mounted at /config where nothing looked for it. The pod started,
+-            # logged "Edge worker started successfully", and then said "No repositories
+-            # configured" with three repositories sitting in the ConfigMap. The mount below
+-            # puts config.json where cyrus actually reads it.
+-            - name: CYRUS_SERVER_PORT
+-              value: "3456"
+-            # The two writable volumes this pod already carries, named explicitly rather than
+-            # left to default under ~/.cyrus on an emptyDir.
+-            - name: CYRUS_REPOS_DIR
+-              value: /repo
+-            - name: CYRUS_WORKTREES_DIR
+-              value: /worktrees
+-            # The public URL Linear and GitHub deliver to. The zone is substituted by Flux from
+-            # estate-config; a literal hostname here would be a hardcoded machine name (LAW 46).
+-            - name: CYRUS_BASE_URL
+-              value: "https://cyrus.${ESTATE_ZONE}"
+-            # The estate router's lane key for this consumer (bin/idp-estate-seed ROUTER_PLAN row
+-            # `cyrus`) is a mounted file at /secrets/router (secrets-not-from-env-vars); the
+-            # entrypoint exports it as LITELLM_API_KEY and OpenCode reads {env:LITELLM_API_KEY}
+-            # in the provider block of configmap.yaml. No vendor key reaches this pod (LAW 34).
+-            - name: LITELLM_BASE_URL
+-              value: http://litellm.llm.svc:4000/v1
+-          volumeMounts:
+-            # The ConfigMap mounts at its own read-only path and the entrypoint links it
+-            # into ~/.cyrus. The obvious shape -- a subPath mount straight at
+-            # ~/.cyrus/config.json -- was tried and crash-looped the pod: kubelet creates
+-            # the intermediate ~/.cyrus for a subPath mount owned by root and not
+-            # group-writable, fsGroup does not reach it, and cyrus exited on its first
+-            # action with
+-            #   EACCES: permission denied, mkdir '/var/lib/cyrus/.cyrus/mcp-configs'
+-            # because it creates repos, worktrees and mcp-configs beside that file.
+-            - name: config
+-              mountPath: /etc/cyrus
+-              readOnly: true
+-            - name: github-secret
+-              mountPath: /secrets/github
+-              readOnly: true
+-            - name: router-secret
+-              mountPath: /secrets/router
+-              readOnly: true
+-            - name: webhook-secret
+-              mountPath: /secrets/webhook
+-              readOnly: true
+-            - name: linear-oauth
+-              mountPath: /secrets/linear-oauth
+-              readOnly: true
+-            - name: worktrees
+-              mountPath: /worktrees
+-            - name: repos
+-              mountPath: /repo
+-            - name: tmp
+-              mountPath: /tmp
+-            - name: home
+-              mountPath: /var/lib/cyrus
+-            - name: npm-cache
+-              mountPath: /.npm
+-          # /status, not /health: cyrus serves no /health. EdgeWorker registers GET /status
+-          # and GET /version and the shared server registers the webhook and OAuth routes;
+-          # nothing answers /health, so both probes were 404 from the first second.
+-          # A socket, not GET /status: while the entrypoint runs `cyrus self-auth` the same port
+-          # is served by a one-route server that answers only /callback, and a 404 on /status
+-          # there would have the kubelet kill the pod and the Service drop the endpoint the
+-          # consent redirect has to reach. Both phases listen on 3456; the socket is the probe
+-          # they share.
+-          livenessProbe:
+-            tcpSocket: { port: 3456 }
+-            initialDelaySeconds: 30
+-            periodSeconds: 30
+-          readinessProbe:
+-            tcpSocket: { port: 3456 }
+-            initialDelaySeconds: 10
+-            periodSeconds: 10
+-          resources:
+-            requests:
+-              cpu: 100m
+-              memory: 256Mi
+-            # 1 core, not 2. The namespace quota is limits.cpu: 4 (namespace.yaml), so a
+-            # 2-core limit let exactly two pods exist and a rolling update -- which needs the
+-            # old pod plus one surge pod, and a third the moment either is slow to go -- was
+-            # refused by the quota rather than by anything wrong with the image. Measured
+-            # 2026-09-05: `limits.cpu: 4/4` with two pods, both ContainerCreating, one from
+-            # each of two ReplicaSets, and no third pod admissible. Cyrus is a webhook agent;
+-            # it has never needed two cores.
+-            limits:
+-              cpu: "1"
+-              memory: 2Gi
+-          securityContext:
+-            allowPrivilegeEscalation: false
+-            readOnlyRootFilesystem: true
+-            capabilities:
+-              drop: ["ALL"]
+-      volumes:
+-        - name: config
+-          configMap:
+-            name: cyrus-config
+-        - name: github-secret
+-          secret:
+-            secretName: cyrus-github
+-        - name: router-secret
+-          secret:
+-            secretName: cyrus-router
+-        - name: webhook-secret
+-          secret:
+-            secretName: cyrus-webhook
+-        - name: worktrees
+-          emptyDir: {}
+-        - name: repos
+-          emptyDir: {}
+-        # The root filesystem is read-only, so the three paths git, npm and the engine CLIs
+-        # write to are explicit volumes rather than a writable image.
+-        - name: tmp
+-          emptyDir: {}
+-        # ~/.cyrus/config.json is where `cyrus self-auth` saves the Linear OAuth token and where
+-        # cyrus writes each refreshed one back (EdgeWorker.js:5215). On an emptyDir every restart
+-        # threw the token away and asked the founder to consent again; a claim keeps it, and the
+-        # entrypoint carries linearWorkspaces across the fresh copy of the git config.
+-        - name: home
+-          persistentVolumeClaim: { claimName: cyrus-home }
+-        # optional: the pod comes up on the GitHub transport before the Bitwarden item exists.
+-        - name: linear-oauth
+-          secret: { secretName: cyrus-linear-oauth, optional: true }
+-        - name: npm-cache
+-          emptyDir: {}
+----
+-apiVersion: v1
+-kind: PersistentVolumeClaim
+-metadata:
+-  name: cyrus-home
+-  namespace: cyrus
+-spec:
+-  accessModes: [ReadWriteOnce]
+-  resources: { requests: { storage: 1Gi } }
+----
+-apiVersion: v1
+-kind: ServiceAccount
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+----
+-apiVersion: rbac.authorization.k8s.io/v1
+-kind: Role
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+-rules:
+-  # Read-only: can list pods to check status, but nothing else
+-  - apiGroups: [""]
+-    resources: ["pods", "pods/log"]
+-    verbs: ["get", "list"]
+----
+-apiVersion: rbac.authorization.k8s.io/v1
+-kind: RoleBinding
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+-subjects:
+-  - kind: ServiceAccount
+-    name: cyrus
+-    namespace: cyrus
+-roleRef:
+-  kind: Role
+-  name: cyrus
+-  apiGroup: rbac.authorization.k8s.io
+diff --git a/platform/cyrus/entrypoint.sh b/platform/cyrus/entrypoint.sh
+deleted file mode 100755
+index f866ad5a1..000000000
+--- a/platform/cyrus/entrypoint.sh
++++ /dev/null
+@@ -1,180 +0,0 @@
+-#!/usr/bin/env bash
+-# Turn the vault's mounted files into the environment cyrus reads, make the configured
+-# checkouts exist, then exec cyrus. Why each of those is necessary, with the measurement
+-# that proved it: platform/cyrus/README.md, "What the manifest claimed and the pod did".
+-set -euo pipefail
+-on_exit() {
+-	local rc=$?
+-	[ "$rc" -eq 0 ] || echo "cyrus-entrypoint: exit $rc" >&2
+-}
+-trap on_exit EXIT
+-
+-GH_TOKEN_PATH=${CYRUS_GH_TOKEN_PATH:-/secrets/github/CYRUS_GITHUB_TOKEN}
+-WEBHOOK_DIR=${CYRUS_WEBHOOK_SECRET_DIR:-/secrets/webhook}
+-
+-# A missing file is announced and left unset, never defaulted: an empty
+-# GITHUB_WEBHOOK_SECRET silently downgrades that transport to proxy mode, and a
+-# credential that quietly becomes "" is the failure this file exists to end.
+-export_file() {
+-	if [ -r "$2" ]; then
+-		export "$1=$(cat "$2")"
+-	else
+-		echo "cyrus-entrypoint: $2 is not readable, $1 stays unset" >&2
+-	fi
+-}
+-
+-export_file GITHUB_TOKEN "$GH_TOKEN_PATH"
+-# The estate router lane key: OpenCode reads it as {env:LITELLM_API_KEY} (platform/cyrus/configmap.yaml).
+-export_file LITELLM_API_KEY "${CYRUS_ROUTER_KEY_PATH:-/secrets/router/LITELLM_API_KEY}"
+-export_file LINEAR_API_TOKEN "$WEBHOOK_DIR/linear-api-token"
+-export_file LINEAR_WEBHOOK_SECRET "$WEBHOOK_DIR/linear-webhook-secret"
+-export_file GITHUB_WEBHOOK_SECRET "$WEBHOOK_DIR/github-webhook-secret"
+-# The Linear OAuth client (external-secret.yaml, 3). Both are read by `cyrus self-auth` to mint
+-# the access token and by EdgeWorker to refresh it; absent, the pod stays on the GitHub door.
+-OAUTH_DIR=${CYRUS_LINEAR_OAUTH_DIR:-/secrets/linear-oauth}
+-export_file LINEAR_CLIENT_ID "$OAUTH_DIR/client-id"
+-export_file LINEAR_CLIENT_SECRET "$OAUTH_DIR/client-secret"
+-
+-# git authenticates through an askpass file rather than a URL or a command line: a token
+-# in argv is readable by anything that can run `ps` (LAW 10). The helper cats the file on
+-# every invocation, so the App installation token -- rewritten every ten minutes, valid
+-# for an hour -- is never captured stale.
+-ASKPASS=${TMPDIR:-/tmp}/cyrus-askpass
+-printf '#!/bin/sh\ncat %s\n' "$GH_TOKEN_PATH" >"$ASKPASS"
+-chmod 0700 "$ASKPASS"
+-export GIT_ASKPASS="$ASKPASS"
+-export GIT_TERMINAL_PROMPT=0
+-
+-# gh takes the same road. GH_TOKEN outranks GITHUB_TOKEN inside gh, so a wrapper first on PATH
+-# reads the file on every call and the boot-time export above only serves code that reads the
+-# variable once. Without this a pod that now lives for days (Reloader no longer rolls it on
+-# every mint, see external-secret.yaml) would hand gh an installation token that expired an
+-# hour after boot.
+-GH_WRAP=${TMPDIR:-/tmp}/cyrus-bin
+-mkdir -p "$GH_WRAP"
+-printf '#!/bin/sh\nGH_TOKEN=$(cat %s) exec %s "$@"\n' "$GH_TOKEN_PATH" "$(command -v gh)" >"$GH_WRAP/gh"
+-chmod 0700 "$GH_WRAP/gh"
+-export PATH="$GH_WRAP:$PATH"
+-
+-# Without a username git asks for that first and the helper answers it with the token,
+-# which fails as a 403 that reads like a permissions problem rather than a protocol one.
+-git config --global credential."https://github.com".username x-access-token
+-git config --global user.name "estate-bot"
+-git config --global user.email "estate-agents[bot]@users.noreply.github.com"
+-git config --global --add safe.directory '*'
+-
+-# Cyrus never clones: GitService runs `git worktree add` with cwd set to repositoryPath
+-# and reports `<path> is not a git repository` when it is absent (GitService.js:476),
+-# while /repo is an emptyDir that starts empty on every restart.
+-clone_repos() {
+-	local config=$1 path url
+-	[ -r "$config" ] || {
+-		echo "cyrus-entrypoint: no config at $config, nothing to clone" >&2
+-		return 0
+-	}
+-	while IFS=$'\t' read -r path url; do
+-		[ -n "$path" ] && [ -n "$url" ] || continue
+-		if [ -d "$path/.git" ]; then
+-			echo "cyrus-entrypoint: $path already a checkout, fetching"
+-			git -C "$path" fetch --quiet --all --prune
+-		else
+-			# Blobless partial clone: full history, so `git worktree add` reaches any
+-			# branch, without downloading every file of every past revision.
+-			echo "cyrus-entrypoint: cloning $url into $path"
+-			git clone --quiet --filter=blob:none "$url" "$path"
+-		fi
+-	done < <(jq -r '.repositories[] | select(.isActive != false)
+-	                | "\(.repositoryPath)\t\(.githubUrl)"' "$config")
+-}
+-
+-# ~/.cyrus has to be made by this uid, not by kubelet: a subPath mount at
+-# ~/.cyrus/config.json leaves the directory root-owned and cyrus dies creating
+-# mcp-configs beside it. The ConfigMap stays at its own read-only path and the config is
+-# linked in, so a ConfigMap change still reaches cyrus through the link.
+-CONFIG_SRC=${CYRUS_CONFIG_JSON:-/etc/cyrus/config.json}
+-link_config() {
+-	mkdir -p "$HOME/.cyrus"
+-	[ -r "$CONFIG_SRC" ] || {
+-		echo "cyrus-entrypoint: no config at $CONFIG_SRC" >&2
+-		return 0
+-	}
+-	# A copy, not a symlink: cyrus migrates its own config on boot and writes it back, and a
+-	# symlink into the read-only ConfigMap made that an EROFS exit (README, wall 6). Refreshed
+-	# every start, so git stays the source of truth.
+-	# What the previous boot held: the OAuth token `cyrus self-auth` saved, or the one cyrus
+-	# refreshed and wrote back. The home volume is a claim, so the old copy is still here; it is
+-	# read before the copy overwrites it and joined back after, so a consent is given once.
+-	local kept='{}'
+-	if [ -r "$HOME/.cyrus/config.json" ]; then
+-		kept=$(jq -c '[.linearWorkspaces // {} | to_entries[] | select(.value.linearToken != null)] | from_entries' \
+-			"$HOME/.cyrus/config.json" 2>/dev/null || echo '{}')
+-	fi
+-	cp "$CONFIG_SRC" "$HOME/.cyrus/config.json"
+-	chmod 0600 "$HOME/.cyrus/config.json"
+-	if [ "$kept" != '{}' ]; then
+-		local tmp
+-		tmp=$(mktemp "$HOME/.cyrus/config.XXXXXX")
+-		jq --argjson kept "$kept" '.linearWorkspaces = ((.linearWorkspaces // {}) + $kept)' \
+-			"$HOME/.cyrus/config.json" >"$tmp"
+-		mv "$tmp" "$HOME/.cyrus/config.json"
+-		chmod 0600 "$HOME/.cyrus/config.json"
+-		echo "cyrus-entrypoint: kept the OAuth token(s) for $(jq -r '.linearWorkspaces | length' "$HOME/.cyrus/config.json") workspace(s)"
+-	else
+-		join_linear_token "$HOME/.cyrus/config.json"
+-	fi
+-}
+-
+-# No OAuth token yet and a client to mint one with: `cyrus self-auth` listens on the serving
+-# port for the consent redirect (https://<CYRUS_BASE_URL>/callback), exchanges the code with
+-# the client secret and saves the token into config.json. It prints the consent URL to the
+-# pod log; the founder opens it once. Bounded: after the window the pod comes up on the GitHub
+-# door as before, and the next restart opens the window again.
+-SELF_AUTH_WINDOW=${CYRUS_SELF_AUTH_WINDOW:-30m}
+-mint_linear_token() {
+-	local config=$1
+-	[ -n "${LINEAR_CLIENT_ID:-}" ] && [ -n "${LINEAR_CLIENT_SECRET:-}" ] || return 0
+-	if [ "$(jq -r '[.linearWorkspaces // {} | .[] | select(.linearToken != null)] | length' "$config")" != "0" ]; then
+-		return 0
+-	fi
+-	echo "cyrus-entrypoint: no Linear OAuth token yet; waiting up to $SELF_AUTH_WINDOW for the founder's consent"
+-	if timeout "$SELF_AUTH_WINDOW" cyrus self-auth; then
+-		echo "cyrus-entrypoint: Linear OAuth token saved"
+-	else
+-		echo "cyrus-entrypoint: no consent within $SELF_AUTH_WINDOW; starting on the GitHub door" >&2
+-	fi
+-}
+-
+-# The only road cyrus offers for a Linear token is config.linearWorkspaces[<id>].linearToken
+-# (cyrus-core config-schemas.js; no environment variable is read). The ConfigMap in git
+-# carries the workspace id and never the token; the token is joined here, from the mounted
+-# vault file, into the pod's private copy. Every workspace id the repositories name gets
+-# the one token. A missing file is announced and joins nothing (README, wall 7).
+-LINEAR_TOKEN_PATH=${CYRUS_LINEAR_TOKEN_PATH:-$WEBHOOK_DIR/linear-api-token}
+-join_linear_token() {
+-	local config=$1 tmp
+-	if [ ! -r "$LINEAR_TOKEN_PATH" ]; then
+-		echo "cyrus-entrypoint: $LINEAR_TOKEN_PATH is not readable, linearWorkspaces stays unset" >&2
+-		return 0
+-	fi
+-	tmp=$(mktemp "$(dirname "$config")/config.XXXXXX")
+-	jq --rawfile tok "$LINEAR_TOKEN_PATH" '
+-		([.repositories[]? | .linearWorkspaceId // empty] | unique) as $ids
+-		| .linearWorkspaces = ((.linearWorkspaces // {})
+-			+ ($ids | map({key: ., value: {linearToken: ($tok | rtrimstr("\n"))}}) | from_entries))
+-	' "$config" >"$tmp"
+-	mv "$tmp" "$config"
+-	chmod 0600 "$config"
+-	echo "cyrus-entrypoint: linearWorkspaces joined for $(jq -r '.linearWorkspaces | length' "$config") workspace(s)"
+-}
+-
+-case "${1:-}" in
+-clone)
+-	clone_repos "$CONFIG_SRC"
+-	echo "cyrus-entrypoint: checkouts ready"
+-	;;
+-*)
+-	link_config
+-	mint_linear_token "$HOME/.cyrus/config.json"
+-	exec cyrus "$@"
+-	;;
+-esac
+diff --git a/platform/cyrus/external-secret.yaml b/platform/cyrus/external-secret.yaml
+deleted file mode 100644
+index b126afec1..000000000
+--- a/platform/cyrus/external-secret.yaml
++++ /dev/null
+@@ -1,165 +0,0 @@
+-# Cyrus credentials from the vault, mounted as files (edge policy refuses env vars).
+-# 1. GitHub: installation token of the estate-agents App, narrowed to the repositories
+-#    Cyrus is authorized to work on. The mint lives in the same pattern as infra-crew.
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: cyrus-github
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+-  target:
+-    name: cyrus-github
+-    creationPolicy: Owner
+-    template:
+-      # Incident 2026-09-08, Deployment revision 654: this token is re-minted every
+-      # refreshInterval, platform/edge/require-auto-reload.yaml stamps every workload
+-      # reloader.stakater.com/auto=true at admission, so Reloader rolled Cyrus on every mint --
+-      # one new ReplicaSet every ten minutes, a pod that never lived long enough to finish a
+-      # job, and a public door that timed out. The mint is right; the roll is the defect.
+-      # entrypoint.sh reads this file on every git and gh call, so a rotated token reaches the
+-      # pod without a restart (the kubelet refreshes the mounted file in place). Same fix and
+-      # same sentence as platform/backstage/overlays/oke/github-token.yaml (crew#307).
+-      # tests/test_incident_cyrus654_a_minted_secret_is_never_a_silent_reload_trigger.py refuses
+-      # a generator-minted Secret that says neither this nor idp.platform/reload-on-mint.
+-      metadata:
+-        annotations:
+-          reloader.stakater.com/ignore: "true"
+-  dataFrom:
+-    - sourceRef:
+-        generatorRef:
+-          apiVersion: generators.external-secrets.io/v1alpha1
+-          kind: GithubAccessToken
+-          name: cyrus-github
+-      rewrite:
+-        - transform: { template: "CYRUS_GITHUB_TOKEN" }
+----
+-apiVersion: generators.external-secrets.io/v1alpha1
+-kind: GithubAccessToken
+-metadata:
+-  name: cyrus-github
+-  namespace: cyrus
+-spec:
+-  appID: ${githubAppIDQuoted}
+-  installID: ${githubAppInstallationIDQuoted}
+-  # Narrowed permissions: read/write contents, pull requests, issues.
+-  # No workflows, no admin, no secrets.
+-  permissions:
+-    contents: write
+-    pull_requests: write
+-    issues: write
+-  auth:
+-    privateKey:
+-      secretRef:
+-        name: github-app-pem
+-        key: key
+----
+-# The App's private key for the generator.
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: cyrus-github-app-pem
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+-  target:
+-    name: github-app-pem
+-    creationPolicy: Owner
+-    template:
+-      engineVersion: v2
+-      data:
+-        key: "{{ .pem_b64 | b64dec }}"
+-  dataFrom:
+-    - extract: { key: github-app }
+----
+-
+----
+-# 2. Webhook signing secrets. Cyrus verifies the HMAC on every delivery before it acts on it:
+-#    Linear signs with `linear-signature`, GitHub's App signs with `X-Hub-Signature-256`.
+-#    These two secrets ARE the authentication on the /webhook route (httproute.yaml), so the
+-#    route is refused by the front-door gate without them.
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: cyrus-webhook
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-#
+-#    Both roads feed this one Secret, which is the point. The estate has two secret stores and a
+-#    client gets the choice of either (decision 0017); a capability nothing uses is not a
+-#    capability a buyer can see. Measured 2026-09-05: 89 ExternalSecrets on estate-vault, 6 on
+-#    ghcr-pull, and ZERO on human-vault, while the human-vault ClusterSecretStore has been
+-#    Valid/ReadWrite/True for three days. This row is the first user of the human road.
+-#
+-#    The split follows where the credential is born, not preference:
+-#      - The GitHub App's webhook secret is minted by machines and lives on the machine road,
+-#        estate-vault, with the rest of the App's material.
+-#      - The Linear personal API key is born in a person's browser and can be born nowhere else.
+-#        It rides the human road, Bitwarden, so the founder holds it in his own vault and the
+-#        cluster reads it there. No copy of it is ever typed into an estate env file.
+-#      - The Linear webhook signing secret is minted by code, through Linear's `webhookCreate`
+-#        mutation using that key, so it is machine material the moment it exists and rides the
+-#        machine road with everything else code mints. The human visits the console once and
+-#        never returns (R52).
+-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+-  target: { name: cyrus-webhook, creationPolicy: Owner }
+-  data:
+-    - secretKey: linear-api-token
+-      sourceRef:
+-        storeRef: { kind: ClusterSecretStore, name: human-vault }
+-      remoteRef: { key: cyrus-linear-api-token }
+-    - secretKey: linear-webhook-secret
+-      remoteRef: { key: cyrus-linear, property: webhook_secret }
+-    - secretKey: github-webhook-secret
+-      remoteRef: { key: github-app, property: webhook_secret }
+-
+-# Claude Code runs on the founder's Max subscription through `claude -p`. The estate holds no
+-# Anthropic API key and no vault entry for one, so this namespace pulls none: the first version
+-# of this file mirrored `claude-max-token` into ANTHROPIC_API_KEY, which is the exact thing the
+-# standing ruling forbids.
+-
+----
+-# 3. The Linear OAuth client. Measured 2026-09-05 (README, wall 8): Linear refuses a personal API
+-#    key sent as `Authorization: Bearer`, which is the only shape @linear/sdk sends, so the key in
+-#    row 2 can never open the Linear door. The door is an OAuth access token, and an OAuth token
+-#    is minted by `cyrus self-auth` from a client id and client secret plus one consent click in
+-#    the founder's browser. Linear publishes no create-API for an OAuth application, so the pair
+-#    is born in a browser and rides the human road like the key, as two plain Secrets Manager
+-#    entries, `cyrus-linear-client-id` and `cyrus-linear-client-secret`: one value each, typed
+-#    on a phone, never JSON (founder 2026-09-09: every founder action comes with clear steps;
+-#    a JSON value with two fields is a step that needs a back-and-forth). Its own Secret, and mounted `optional`:
+-#    until the item exists the pod must still come up on the GitHub transport, and a single
+-#    ExternalSecret with one missing property stops syncing every key it carries.
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: cyrus-linear-oauth
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-  secretStoreRef: { kind: ClusterSecretStore, name: human-vault }
+-  target: { name: cyrus-linear-oauth, creationPolicy: Owner }
+-  data:
+-    - secretKey: client-id
+-      remoteRef: { key: cyrus-linear-client-id }
+-    - secretKey: client-secret
+-      remoteRef: { key: cyrus-linear-client-secret }
+----
+-# The router lane key (founder 2026-09-09: every model through the one proxy). Minted by
+-# bin/idp-estate-seed from the ROUTER_PLAN row `cyrus`, the road agent-workforce-router walks.
+-# Rotation is ROUTER_ROTATE=cyrus on the seed, never a console (LAW 52).
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: cyrus-router
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+-  target: { name: cyrus-router, creationPolicy: Owner }
+-  data:
+-    - secretKey: LITELLM_API_KEY
+-      remoteRef: { key: cyrus, property: LITELLM_API_KEY }
+diff --git a/platform/cyrus/httproute.yaml b/platform/cyrus/httproute.yaml
+deleted file mode 100644
+index c1ca4ec52..000000000
+--- a/platform/cyrus/httproute.yaml
++++ /dev/null
+@@ -1,41 +0,0 @@
+-# The one path Linear and GitHub POST webhook deliveries to (crew#834 CP3).
+-# No oauth2-proxy on purpose: the caller is Linear's and GitHub's delivery fleet, not a browser,
+-# and neither can follow an OAuth redirect. The door is not open though -- Cyrus verifies the
+-# HMAC signature on every delivery (Linear's `linear-signature`, GitHub's `X-Hub-Signature-256`)
+-# against the secrets in external-secret.yaml, and drops anything that does not match. The route
+-# therefore exposes exactly /webhook and nothing else.
+-# sovereign/tests/bdd/test_gate_front_door_login.py holds the proof behind the annotation.
+-apiVersion: gateway.networking.k8s.io/v1
+-kind: HTTPRoute
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+-  labels:
+-    app.kubernetes.io/part-of: idp
+-    backstage.io/kubernetes-id: layer-cyrus
+-  annotations:
+-    idp.estate/auth: webhook-hmac-signature
+-spec:
+-  # The estate has one Gateway and it is prospector/prospector-edge; `edge/gateway`, which
+-  # this route named when it merged, exists in no manifest in either repository, so the
+-  # route attached to nothing and no webhook could ever have arrived. The https-cyrus
+-  # listener and its certificate are the prospector repository's side of this.
+-  parentRefs:
+-    - name: prospector-edge
+-      namespace: prospector
+-      sectionName: https-cyrus
+-  hostnames:
+-    - "cyrus.${ESTATE_ZONE}"
+-  rules:
+-    - matches:
+-        - path: { type: Exact, value: /linear-webhook }
+-        - path: { type: Exact, value: /github-webhook }
+-        # The deprecated alias, kept until the Linear webhook registration is moved to
+-        # /linear-webhook, so the two changes are never in flight at the same moment.
+-        - path: { type: Exact, value: /webhook }
+-        # Linear redirects the founder's consent here with a one-time code; the code is worthless
+-        # without the client secret the pod alone holds, so the route carries no extra check.
+-        - path: { type: Exact, value: /callback }
+-      backendRefs:
+-        - name: cyrus
+-          port: 3456
+diff --git a/platform/cyrus/kustomization.yaml b/platform/cyrus/kustomization.yaml
+deleted file mode 100644
+index a7d47d8cf..000000000
+--- a/platform/cyrus/kustomization.yaml
++++ /dev/null
+@@ -1,19 +0,0 @@
+-# Cyrus agent orchestration (crew#834). The runtime that proves every engine works
+-# and publishes metrics to the central collector.
+-apiVersion: kustomize.config.k8s.io/v1beta1
+-kind: Kustomization
+-namespace: cyrus
+-resources:
+-  - namespace.yaml
+-  - pull-secret.yaml
+-  - external-secret.yaml
+-  - configmap.yaml
+-  - deployment.yaml
+-  - service.yaml
+-  - httproute.yaml
+-# The tag is moved by Flux image automation (platform/image-automation/cyrus.yaml), the same way
+-# hermes-agent, backstage and sovereign-worker move. It is pinned here rather than in
+-# deployment.yaml so the marker sits on one line the automation owns.
+-images:
+-  - name: ghcr.io/chidionyema/cyrus
+-    newTag: main-7022-8295ef70b3992720950bcb8e10ae31b389c26950 # {"$imagepolicy": "flux-system:cyrus:tag"}
+diff --git a/platform/cyrus/namespace.yaml b/platform/cyrus/namespace.yaml
+deleted file mode 100644
+index e0d807f7a..000000000
+--- a/platform/cyrus/namespace.yaml
++++ /dev/null
+@@ -1,144 +0,0 @@
+-# Cyrus agent orchestration (crew#834): namespace with full fence per crew#191.
+-# Every namespace needs: default-deny NetworkPolicy both ways, ResourceQuota,
+-# LimitRange, and DNS exception.
+----
+-apiVersion: v1
+-kind: Namespace
+-metadata:
+-  annotations:
+-    kustomize.toolkit.fluxcd.io/prune: disabled
+-  name: cyrus
+-  labels:
+-    app.kubernetes.io/part-of: idp
+-    pod-security.kubernetes.io/enforce: restricted
+-    # The shared Gateway (prospector/prospector-edge) accepts an HTTPRoute from another
+-    # namespace only when the namespace carries this label -- every https-* listener there
+-    # sets allowedRoutes.namespaces.from: Selector on it. Without it the route is refused
+-    # with NotAllowedByListeners and no webhook delivery can arrive.
+-    idp.estate/edge-attach: "true"
+----
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+-metadata:
+-  name: default-deny-all
+-  namespace: cyrus
+-spec:
+-  podSelector: {}
+-  policyTypes: [Ingress, Egress]
+----
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+-metadata:
+-  name: allow-dns-egress
+-  namespace: cyrus
+-spec:
+-  podSelector: {}
+-  policyTypes: [Egress]
+-  egress:
+-    - to:
+-        - namespaceSelector:
+-            matchLabels:
+-              kubernetes.io/metadata.name: kube-system
+-          podSelector:
+-            matchLabels:
+-              k8s-app: kube-dns
+-      ports:
+-        - protocol: UDP
+-          port: 53
+-        - protocol: TCP
+-          port: 53
+----
+-# The Gateway's data plane runs in the edge namespace (the traefik controller pods that
+-# proxies every HTTPRoute, platform/edge/traefik.yaml), so the default-deny above drops
+-# a delivery that the Gateway did route here. This is the one ingress the row needs: the
+-# webhook port, from the Gateway's namespace and nowhere else.
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+-metadata:
+-  name: allow-gateway-ingress
+-  namespace: cyrus
+-spec:
+-  podSelector: {}
+-  policyTypes: [Ingress]
+-  ingress:
+-    - from:
+-        - namespaceSelector:
+-            matchLabels:
+-              kubernetes.io/metadata.name: edge
+-      ports:
+-        - protocol: TCP
+-          port: 3456
+----
+-# The clone-repos init and GitService both reach github.com to fetch and maintain the
+-# worktree bases that /repo's emptyDir starts without (entrypoint.sh clone_repos, and
+-# `git worktree add` with cwd at repositoryPath). Under a CNI that enforces east-west
+-# (the Calico cutover) the default-deny-all above became real and a fresh init could no
+-# longer reach github:443 -- `Failed to connect to github.com port 443 after 130s`. Git
+-# over https is port 443 only. This mirrors the estate's allow-internet-egress grant
+-# (otto-gateway/llm/robusta/hermes-agent): external internet only, RFC1918/link-local/
+-# CGNAT excluded so no peer or advertised-range traffic rides this rule.
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+-metadata:
+-  name: allow-internet-egress
+-  namespace: cyrus
+-spec:
+-  podSelector: {}
+-  policyTypes: [Egress]
+-  egress:
+-    - to:
+-        - ipBlock:
+-            cidr: 0.0.0.0/0
+-            except:
+-              - 10.0.0.0/8
+-              - 172.16.0.0/12
+-              - 192.168.0.0/16
+-              - 169.254.0.0/16
+-              - 100.64.0.0/10
+-      ports:
+-        - protocol: TCP
+-          port: 443
+----
+-# The OpenCode engine speaks to the estate router in-cluster, never through the public door. The
+-# other half (llm admits cyrus) is flows.llm.ingress_from in platform/ns-fences/allowances.yaml.
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+-metadata:
+-  name: allow-llm-egress
+-  namespace: cyrus
+-spec:
+-  podSelector: {}
+-  policyTypes: [Egress]
+-  egress:
+-    - to:
+-        - namespaceSelector:
+-            matchLabels:
+-              kubernetes.io/metadata.name: llm
+-      ports:
+-        - protocol: TCP
+-          port: 4000
+----
+-apiVersion: v1
+-kind: LimitRange
+-metadata:
+-  name: defaults
+-  namespace: cyrus
+-spec:
+-  limits:
+-    - type: Container
+-      default: {cpu: 1000m, memory: 2Gi}
+-      defaultRequest: {cpu: 100m, memory: 256Mi}
+-      max: {cpu: "4", memory: 8Gi}
+----
+-apiVersion: v1
+-kind: ResourceQuota
+-metadata:
+-  name: budget
+-  namespace: cyrus
+-spec:
+-  hard:
+-    requests.cpu: "2"
+-    requests.memory: 4Gi
+-    limits.cpu: "4"
+-    limits.memory: 8Gi
+-    pods: "10"
+diff --git a/platform/cyrus/pull-secret.yaml b/platform/cyrus/pull-secret.yaml
+deleted file mode 100644
+index b7c8d8945..000000000
+--- a/platform/cyrus/pull-secret.yaml
++++ /dev/null
+@@ -1,20 +0,0 @@
+-# ghcr-pull for this namespace, mirrored from backstage/ghcr-pull through the ClusterSecretStore
+-# ghcr-pull (platform/image-automation/pull-secret.yaml), the same way
+-# platform/infra-crew/pull-secret.yaml does it. The first version of this file carried a
+-# base64 dockerconfigjson literal, which gitleaks refused and which no manifest may hold.
+-apiVersion: external-secrets.io/v1
+-kind: ExternalSecret
+-metadata:
+-  name: ghcr-pull
+-  namespace: cyrus
+-spec:
+-  refreshInterval: 10m
+-  secretStoreRef: { kind: ClusterSecretStore, name: ghcr-pull }
+-  target:
+-    name: ghcr-pull
+-    creationPolicy: Owner
+-    template:
+-      type: kubernetes.io/dockerconfigjson
+-  data:
+-    - secretKey: .dockerconfigjson
+-      remoteRef: { key: ghcr-pull, property: .dockerconfigjson }
+diff --git a/platform/cyrus/service.yaml b/platform/cyrus/service.yaml
+deleted file mode 100644
+index f7bb11849..000000000
+--- a/platform/cyrus/service.yaml
++++ /dev/null
+@@ -1,16 +0,0 @@
+-# Cyrus service (crew#834).
+-apiVersion: v1
+-kind: Service
+-metadata:
+-  name: cyrus
+-  namespace: cyrus
+-  labels:
+-    backstage.io/kubernetes-id: layer-cyrus
+-spec:
+-  selector:
+-    app.kubernetes.io/name: cyrus
+-  ports:
+-    - name: http
+-      port: 3456
+-      targetPort: 3456
+-  type: ClusterIP
+diff --git a/platform/image-automation/cyrus.yaml b/platform/image-automation/cyrus.yaml
+deleted file mode 100644
+index 339cb86de..000000000
+--- a/platform/image-automation/cyrus.yaml
++++ /dev/null
+@@ -1,30 +0,0 @@
+-# Cyrus's image (crew#834). The tag `main` was never pushed: the deployment asked for
+-# ghcr.io/chidionyema/cyrus:main and every pull came back `manifest unknown`, so the pod sat in
+-# ImagePullBackOff from the day it was applied. The registry holds `main-<run>-<sha>` tags, the
+-# same convention every other estate image uses, so this row moves cyrus onto the automation the
+-# other nine images already run on rather than leaving a hand-typed tag to rot again.
+-apiVersion: image.toolkit.fluxcd.io/v1
+-kind: ImageRepository
+-metadata:
+-  name: cyrus
+-  namespace: flux-system
+-spec:
+-  image: ghcr.io/chidionyema/cyrus
+-  interval: 5m
+-  secretRef:
+-    name: ghcr-pull
+----
+-apiVersion: image.toolkit.fluxcd.io/v1
+-kind: ImagePolicy
+-metadata:
+-  name: cyrus
+-  namespace: flux-system
+-spec:
+-  imageRepositoryRef:
+-    name: cyrus
+-  filterTags:
+-    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+-    extract: '$run'
+-  policy:
+-    numerical:
+-      order: asc
+diff --git a/platform/ingress-recovery-order.yaml b/platform/ingress-recovery-order.yaml
+new file mode 100644
+index 000000000..ba93c220d
+--- /dev/null
++++ b/platform/ingress-recovery-order.yaml
+@@ -0,0 +1,89 @@
++# Which public surfaces come back first when there is not enough room for all of them.
++#
++# 2026-09-09: the cross-node link was severed and the ingress path was pinned to one node. Thirty
++# one workloads were stranded on the other side needing 3022m CPU and 10014Mi of memory; the node
++# still serving had 108m and about 1027Mi. Everything could not come back, so something had to
++# choose -- and the only ordering the cluster held was pod priority, which said
++# observability/langfuse-web was `infrastructure-critical` at 1000000 and prospector, the shop
++# being sold, was 0 with no class at all. Left to that, the estate restores its trace viewer and
++# leaves the storefront down.
++#
++# This file is that decision, written down where it can be argued with. bin/idp-oke-break-glass
++# reads it (playbook: routed-backend-rescue) and rescues stranded routed backends in this order
++# while room lasts, then names what did not fit.
++#
++# A service here is <namespace>/<Service name> and must be the backend of an HTTPRoute.
++order:
++  - prospector/prospector-store-api    # the storefront's API; the web pods render nothing without it
++  - prospector/prospector-store-web    # the storefront itself
++  - identity/oauth2-proxy              # sign-in; without it every other surface is shut
++  - llm/litellm                        # the router every agent thinks through
++  - backstage/catalogue                # the portal the founder opens
++  - jit/jit-broker                     # the only door to cluster writes
++  - otto-gateway/otto-gateway
++  - otto-golden/otto-golden
++  - mcp/agentgateway
++  - healthchecks/healthchecks
++  - weave-gitops/weave-gitops
++
++# What gives up its room when something above cannot fit.
++#
++# The serving node had 32m of CPU free and the storefront API asks for 100m, so the shop could not
++# come back at all while every other workload kept what it held. The largest holder was
++# observability/langfuse-worker at 1000m -- a trace processor whose own web front end was stranded
++# and unreachable at the same moment, so it was processing traces nobody could read.
++#
++# These are scaled to zero, in this order, only when an entry above them will not otherwise fit,
++# and only as far as needed. Nothing here serves a customer. Restoring is one command per line and
++# the playbook prints it.
++yield:
++  # 2026-09-09: these three left the recovery order above and became sheddable. During the
++  # partition the storefront API -- 256Mi, priority 0 -- could not be seated while Superset held
++  # 1024Mi and ClickHouse held 4096Mi to draw graphs of the outage. What we watch the estate with
++  # yields to what the estate is for. They come back with `kubectl scale --replicas=1` once the
++  # link is repaired; the plan prints that command for each one as it yields it.
++  - observability/superset
++  - observability/langfuse-web
++  - observability/langfuse-worker      # trace processing; its own UI was stranded at the time
++  - monitoring/prometheus-kps          # metrics retained on disk, resumes on scale-up
++
++  # 2026-09-09, the second outage of the same day. The storefront API asked for 100m CPU on a node
++  # with 3m free, and the thing holding the room was `agent-workforce`: a scheduled job asking
++  # 225m and 768Mi that had FAILED on every one of its last three 15-minute runs and started
++  # again each time. Two dead runs and one running one, none of them doing any work -- crew#673
++  # had by then waited 15,419 minutes for a plan -- while the shop served no catalogue.
++  #
++  # Batch work yields to revenue work. A job that is failing yields to a shop that is down. This
++  # entry is a CronJob rather than a Deployment, which is why the executor below learned a third
++  # shape: suspend the schedule, delete the active runs, and print the way back.
++  - agent-workforce/agent-workforce
++
++  # 2026-09-09, the same outage, one message later. Founder, verbatim: "energenccy, cyrus is the
++  # wrong tool for us" and "we arenodel agnostic". Cyrus asks for exactly what the storefront API
++  # asks for -- 100m CPU and 256Mi -- and sits at priority 1000 on the only working node, so the
++  # shop was queued behind an agent runner the founder had just called the wrong tool.
++  #
++  # It is also the wrong tool on the estate's own measurement (record 2026-09-09T0548Z): its image
++  # installs only cyrus-ai, and the opencode, codex, cursor and gemini engines its config offers
++  # name binaries that are not in the image. A runner that reaches one vendor is a lane, not the
++  # estate's default. Shedding it costs no capability that was ever proved to exist.
++  - cyrus/cyrus
++
++# Not every casualty of a severed link is a public surface.
++#
++# external-secrets sat on the cordoned node while bitwarden-sdk-server, the thing it calls for
++# every value, sat on the serving one. Every secret in the estate stopped resolving: the Stripe
++# key the shop takes money with, the seed pushes, all of it, with nothing on any hostname to show
++# for it. A controller like that is a routed backend in every way that matters except that no
++# HTTPRoute names it, so it needs its own list.
++#
++# These are matched by Deployment name, not by Service, and treated exactly like the surfaces
++# above: rescued in this order while room lasts, evicted from the cordoned node when a healthy
++# peer already runs on the serving one.
++internal:
++  - external-secrets/external-secrets            # every secret in the estate resolves through it
++  - external-secrets/external-secrets-webhook    # admission for the same
++  - flux-system/source-controller                # nothing reconciles without it
++  - flux-system/kustomize-controller
++  - flux-system/helm-controller
++  - kube-system/calico-kube-controllers          # the dataplane's own control loop
+diff --git a/platform/notify/external-secret.yaml b/platform/notify/external-secret.yaml
+index 8441626e5..dc74ae2f3 100644
+--- a/platform/notify/external-secret.yaml
++++ b/platform/notify/external-secret.yaml
+@@ -20,6 +20,15 @@ spec:
+     template:
+       data:
+         founder-telegram.cfg: "tgram://{{ .token }}/{{ .chat }}/"
++        # The noisy channel (founder, 2026-09-09: "new chanel noisy one"). founder-telegram is the
++        # signal line -- the pinned GOAL and anything that needs a decision -- and it stayed quiet
++        # only because reports were going nowhere instead. This is the second door: every finding,
++        # every report, every measurement, posted whether or not it needs an answer. One bot, two
++        # chats, one vault entry; Apprise serves each .cfg file as its own /notify/<name> endpoint
++        # (stateful simple mode), so a second channel is a row here and never a second sender.
++        # chat_noisy is absent until the channel exists, and ExternalSecret renders an empty
++        # tgram:// URL rather than failing, so the guard below is what makes that loud.
++        founder-noisy.cfg: "tgram://{{ .token }}/{{ .chat_noisy }}/"
+   dataFrom:
+     - extract: { key: notify-apprise-founder-telegram }
+     # - secretKey: slack
+diff --git a/platform/priority-classes/priorityclasses.yaml b/platform/priority-classes/priorityclasses.yaml
+index acd6c31ea..8bae64493 100644
+--- a/platform/priority-classes/priorityclasses.yaml
++++ b/platform/priority-classes/priorityclasses.yaml
+@@ -35,3 +35,23 @@ value: 1000
+ globalDefault: false
+ preemptionPolicy: PreemptLowerPriority
+ description: "crew#584: nightly platform jobs; finish when the node is calm, yield to the radio room"
++---
++# Revenue (2026-09-09). The cross-node link was severed, the ingress path was pinned to one node,
++# and the node that could serve had 32m of CPU free. Something had to be evicted for the storefront
++# API's 100m, and the cluster's own answer was that nothing should be: observability/langfuse-worker
++# held 1000m as infrastructure-critical, and prospector -- the product being sold -- ran at priority
++# 0 with no class at all, below the nightly platform-batch jobs. mumchimp.com returned 000 to three
++# requests in three while a trace processor whose own web front end was unreachable kept its seat.
++#
++# The radio-room rule still holds for routing and for the visibility you repair by: traefik and the
++# gateways stay infrastructure-critical, and system-cluster-critical is untouched above this. What
++# changes is that the thing a customer pays for is no longer the first thing the scheduler drops.
++# It preempts, so a full node makes room for it rather than leaving the shop down.
++apiVersion: scheduling.k8s.io/v1
++kind: PriorityClass
++metadata:
++  name: revenue-critical
++value: 1500000
++globalDefault: false
++preemptionPolicy: PreemptLowerPriority
++description: "2026-09-09: what a customer pays for outranks what we watch it with"
+diff --git a/platform/prospector/namespace.yaml b/platform/prospector/namespace.yaml
+index 7fa7b881d..513e0a62e 100644
+--- a/platform/prospector/namespace.yaml
++++ b/platform/prospector/namespace.yaml
+@@ -5,4 +5,8 @@ metadata:
+     # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
+     # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+     kustomize.toolkit.fluxcd.io/prune: disabled
++  labels:
++    # 2026-09-09: this is the product that takes money, so it is seated before the things that
++    # watch it. platform/scheduling/revenue-priority.yaml reads this label.
++    estate.mumchimp.com/tier: revenue
+   name: prospector
+diff --git a/platform/scheduling/kustomization.yaml b/platform/scheduling/kustomization.yaml
+index e6a7212b5..fbdc6424e 100644
+--- a/platform/scheduling/kustomization.yaml
++++ b/platform/scheduling/kustomization.yaml
+@@ -11,3 +11,4 @@ resources:
+   - require-priority-class.yaml
+   - require-availability.yaml
+   - capacity-affinity.yaml
++  - revenue-priority.yaml
+diff --git a/platform/scheduling/revenue-priority.yaml b/platform/scheduling/revenue-priority.yaml
+new file mode 100644
+index 000000000..3b4cdcb01
+--- /dev/null
++++ b/platform/scheduling/revenue-priority.yaml
+@@ -0,0 +1,46 @@
++# The shop could not be seated because nothing said it mattered (2026-09-09).
++#
++# prospector's Deployments live in the product's own repository, not here -- platform is not
++# product. But which workload the scheduler seats first is a platform decision, and the platform
++# can make it without reaching into the product's manifests: a namespace declares its tier, and
++# this mutates the workloads in it to carry the matching class. A product team that later sets an
++# explicit priorityClassName keeps it; this only fills an absence, so it can never refuse correct
++# work (R38).
++apiVersion: kyverno.io/v1
++kind: ClusterPolicy
++metadata:
++  name: revenue-tier-priority
++  annotations:
++    policies.kyverno.io/title: Seat revenue workloads above the things that watch them
++    policies.kyverno.io/category: scheduling immunity
++    policies.kyverno.io/severity: high
++    policies.kyverno.io/subject: Deployment, StatefulSet
++    policies.kyverno.io/description: >-
++      A workload in a namespace labelled estate.mumchimp.com/tier=revenue that names no
++      PriorityClass is given revenue-critical, which outranks infrastructure-critical. On
++      2026-09-09 the storefront ran at priority 0, below the nightly batch jobs and far below a
++      trace processor holding 1000m on the only node that could serve it, and the shop stayed
++      down because the scheduler had no reason to prefer it.
++spec:
++  background: false
++  rules:
++    - name: default-revenue-critical
++      match:
++        any:
++          - resources:
++              kinds: [Deployment, StatefulSet]
++              operations: [CREATE, UPDATE]
++              namespaceSelector:
++                matchLabels:
++                  estate.mumchimp.com/tier: revenue
++      preconditions:
++        all:
++          - key: "{{ request.object.spec.template.spec.priorityClassName || '' }}"
++            operator: Equals
++            value: ""
++      mutate:
++        patchStrategicMerge:
++          spec:
++            template:
++              spec:
++                priorityClassName: revenue-critical
+diff --git a/tests/test_breakglass_cni_resync_wiring.py b/tests/test_breakglass_cni_resync_wiring.py
+new file mode 100644
+index 000000000..528a51558
+--- /dev/null
++++ b/tests/test_breakglass_cni_resync_wiring.py
+@@ -0,0 +1,41 @@
++"""cni-resync is a real break-glass playbook: listed, dispatchable, restarts calico on every node
++and proves cross-node reach per node (incident 2026-09-09, OKE re-rolled flannel on both nodes)."""
++
++import pathlib, re, subprocess
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++BG = ROOT / "bin" / "idp-oke-break-glass"
++WF = ROOT / ".github" / "workflows" / "oke-check.yml"
++
++
++def _body(name):
++    lines = BG.read_text().splitlines()
++    start = next(i for i, ln in enumerate(lines) if ln.startswith(f"{name}() {{"))
++    end = next(i for i in range(start, len(lines)) if lines[i] == "}")
++    return lines[start:end]
++
++
++def test_cni_resync_is_listed_and_dispatchable():
++    out = subprocess.run(["bash", str(BG), "--list"], capture_output=True, text=True)
++    assert out.returncode == 0 and "cni-resync" in out.stdout.split()
++    assert "  cni-resync) pb_cni_resync ;;" in BG.read_text().splitlines()
++
++
++def test_cni_resync_restarts_calico_on_every_node_and_waits():
++    body = _body("pb_cni_resync")
++    assert any("rollout restart ds calico-node" in ln for ln in body)
++    assert any(
++        "rollout status ds calico-node" in ln and "--timeout" in ln for ln in body
++    )
++
++
++def test_cni_resync_probes_cross_node_from_each_node():
++    body = _body("pb_cni_resync")
++    assert any("spec.nodeName!=" in ln for ln in body)
++    assert any("tcp_probe " in ln for ln in body)
++    assert any(ln.strip().startswith("dns_probe ") for ln in body)
++
++
++def test_cni_resync_is_a_workflow_choice():
++    opts = re.search(r"playbook:.*?options: \[(.*?)\]", WF.read_text(), re.S).group(1)
++    assert "cni-resync" in [o.strip() for o in opts.split(",")]
+diff --git a/tests/test_breakglass_flannel_off.py b/tests/test_breakglass_flannel_off.py
+new file mode 100644
+index 000000000..6c60a438a
+--- /dev/null
++++ b/tests/test_breakglass_flannel_off.py
+@@ -0,0 +1,106 @@
++"""flannel-off: the playbook that ends the two-dataplane incident of 2026-09-09.
++
++Two VXLAN dataplanes shared port 4789 and the cross-node path died. These grade the shape the
++playbook must keep: it is reachable, it refuses to act unless Calico owns every pod address, it
++parks flannel reversibly rather than deleting it, and it proves the cross-node hop afterwards.
++"""
++
++import subprocess
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++SCRIPT = ROOT / "bin" / "idp-oke-break-glass"
++WORKFLOW = ROOT / ".github" / "workflows" / "oke-check.yml"
++
++
++def body() -> str:
++    text = SCRIPT.read_text()
++    start = text.index("pb_flannel_off() {")
++    depth, i = 0, start
++    while i < len(text):
++        if text[i] == "{":
++            depth += 1
++        elif text[i] == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start : i + 1]
++        i += 1
++    raise AssertionError("pb_flannel_off never closes")
++
++
++def test_listed_and_dispatchable():
++    names = subprocess.run(
++        [str(SCRIPT), "--list"], capture_output=True, text=True, check=True
++    ).stdout.split()
++    assert "flannel-off" in names
++    assert "flannel-off) pb_flannel_off ;;" in SCRIPT.read_text()
++
++
++def test_offered_by_the_workflow():
++    line = [
++        ln
++        for ln in WORKFLOW.read_text().splitlines()
++        if "options:" in ln and "cni-resync" in ln
++    ]
++    assert line and "flannel-off" in line[0]
++
++
++def test_guards_run_before_any_change():
++    b = body()
++    park = b.index("kube-flannel-ds --type=merge")
++    for guard in ("guard-calico", "guard-ipam"):
++        assert b.index(guard) < park, (
++            f"{guard} must be graded before flannel is touched"
++        )
++    assert "FAILED=" in b.split("kube-flannel-ds --type=merge")[0]
++
++
++def test_parks_rather_than_deletes():
++    b = body()
++    assert "patch ds kube-flannel-ds" in b
++    assert "nodeSelector" in b
++    assert "delete ds kube-flannel-ds" not in b, (
++        "flannel is parked reversibly, never deleted"
++    )
++
++
++def test_proves_the_cross_node_hop_from_each_node():
++    b = body()
++    # selection moved from a jsonpath filter to a python pass over the pod list when the label
++    # filter was found to silently select nothing; the property graded is unchanged
++    assert 'spec.get("nodeName") == node' in b, "targets must be pods on the OTHER node"
++    assert "tcp_probe " in b
++    assert "dns_probe " in b
++    assert "rollout restart ds calico-node" in b
++
++
++def test_a_node_with_no_target_fails_closed():
++    """No target is not a pass.
++
++    The first version selected probe targets by two app labels plus kube-dns. Once the ingress
++    band-aid had moved everything onto one node, the far node matched nothing, printed
++    "nothing on the other node" and skipped the probe entirely -- so the playbook reported a
++    clean run having never tested the direction that was severed. Absence of evidence was being
++    read as evidence.
++    """
++    b = body()
++    assert "nothing on the other node" not in b, (
++        "an empty target list still reads as a pass"
++    )
++    assert "flanoff-targets" in b, (
++        "no fail-closed branch for a node with no cross-node target"
++    )
++    assert 'FAILED="$FAILED flanoff-targets' in b, (
++        "the empty-target branch does not record a failure"
++    )
++
++
++def test_targets_are_not_a_hardcoded_app_list():
++    """Any addressable pod on the other node proves the hop; two named apps do not."""
++    b = body()
++    assert "llm/litellm-cache/" not in b, (
++        "target selection is still pinned to specific app labels"
++    )
++    assert "hostIP" in b, (
++        "hostNetwork pods are not excluded, so a probe could pass without crossing the overlay"
++    )
+diff --git a/tests/test_breakglass_gateway_one_node.py b/tests/test_breakglass_gateway_one_node.py
+new file mode 100644
+index 000000000..e84286f8c
+--- /dev/null
++++ b/tests/test_breakglass_gateway_one_node.py
+@@ -0,0 +1,135 @@
++"""gateway-one-node: the band-aid that keeps the ingress path off the severed cross-node link.
++
++It must stay a plain kubectl playbook. The host-level variant was refused by the founder on
++2026-09-09 ("agents should never dynamically manipulate host operating systems during an active
++fire"), so these grade both what it does and what it must never do.
++"""
++
++import subprocess
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++SCRIPT = ROOT / "bin" / "idp-oke-break-glass"
++WORKFLOW = ROOT / ".github" / "workflows" / "oke-check.yml"
++
++
++def body() -> str:
++    text = SCRIPT.read_text()
++    start = text.index("pb_gateway_one_node() {")
++    depth, i = 0, start
++    while i < len(text):
++        if text[i] == "{":
++            depth += 1
++        elif text[i] == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start : i + 1]
++        i += 1
++    raise AssertionError("pb_gateway_one_node never closes")
++
++
++def test_listed_and_dispatchable():
++    names = subprocess.run(
++        [str(SCRIPT), "--list"], capture_output=True, text=True, check=True
++    ).stdout.split()
++    assert "gateway-one-node" in names
++    assert "gateway-one-node) pb_gateway_one_node ;;" in SCRIPT.read_text()
++    line = [
++        ln
++        for ln in WORKFLOW.read_text().splitlines()
++        if "options:" in ln and "cni-resync" in ln
++    ]
++    assert line and "gateway-one-node" in line[0]
++
++
++def test_touches_no_host():
++    b = body()
++    for forbidden in (
++        "privileged",
++        "hostNetwork",
++        "hostPID",
++        "nsenter",
++        "ip link",
++        "ip route",
++        "iptables",
++    ):
++        assert forbidden not in b, f"{forbidden} has no place in this playbook"
++
++
++def test_names_no_node_literal():
++    b = body()
++    import re
++
++    assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", b), (
++        "the node is derived, never typed (R46)"
++    )
++
++
++def test_guards_before_cordon():
++    b = body()
++    cordon = b.index("step cordon")
++    for guard in ("guard-backend", "guard-nodes", "guard-etp"):
++        assert b.index(guard) < cordon, (
++            f"{guard} must be graded before the node is cordoned"
++        )
++
++
++def test_traffic_policy_guard_is_fail_closed():
++    b = body()
++    seg = b[b.index("guard-etp") - 400 : b.index("guard-etp") + 200]
++    assert "externalTrafficPolicy" in seg
++    assert "FAILED=" in seg, "a Service that is not Local must fail, never proceed"
++
++
++def test_dns_moves_one_pod_at_a_time():
++    b = body()
++    dns = b[b.index("dns-move-") : b.index("gateway-settle")]
++    assert "rollout status deploy/coredns" in dns, (
++        "each DNS pod waits for the deployment before the next"
++    )
++
++
++def test_does_not_uncordon():
++    b = body()
++    assert "uncordon" not in b.replace("node-uncordon", ""), (
++        "uncordoning re-schedules the gateway onto the severed node and restores the outage"
++    )
++
++
++def test_settle_does_not_wait_on_every_replica():
++    """The second gateway replica is Pending on purpose.
++
++    topologySpreadConstraints on the gateway are maxSkew 1 with DoNotSchedule, so cordoning one
++    of two nodes leaves the second replica unschedulable. `kubectl wait --for=condition=Ready
++    pod -l <label>` waits for EVERY pod that matches, so it waits for that one too and times
++    out. Break-glass run 34376826143 did exactly that: the move worked, ten real completions
++    came back 200, and the run still printed
++    `FAIL gateway-settle rc=1 error: timed out waiting for the condition on pods/traefik-...`.
++    A playbook that reports its own successful outcome as a failure teaches the next reader to
++    ignore its verdict, so the settle check reads the good node only.
++    """
++    b = body()
++    assert (
++        "wait --for=condition=Ready pod -l app.kubernetes.io/name=traefik" not in b
++    ), (
++        "gateway-settle waits on every traefik pod, including the replica this playbook "
++        "intentionally leaves Pending"
++    )
++    assert "gateway-settle" in b
++
++
++def test_settle_asserts_a_ready_gateway_on_the_good_node():
++    """Narrower, and still fail-closed: the node serving traffic must carry a Ready gateway."""
++    b = body()
++    settle = b[b.index("gateway-settle") - 600 :]
++    assert '@.spec.nodeName=="\'"$good"\'"' in settle, (
++        "the settle check does not select by the good node"
++    )
++    assert "FAIL  gateway-settle" in settle, "gateway-settle has no failing branch"
++
++
++def test_pending_replica_is_named_not_hidden():
++    """Silence would be the other failure: the Pending pod is real and the reader is told why."""
++    b = body()
++    assert "gateway-pending-expected" in b
++    assert "node-uncordon" in b, "nothing tells the reader how the spread is restored"
+diff --git a/tests/test_breakglass_routed_backend_rescue.py b/tests/test_breakglass_routed_backend_rescue.py
+new file mode 100644
+index 000000000..0534c2303
+--- /dev/null
++++ b/tests/test_breakglass_routed_backend_rescue.py
+@@ -0,0 +1,466 @@
++"""routed-backend-rescue: bring back the public surfaces the ingress band-aid stranded.
++
++gateway-one-node pins the ingress path to one node. Every routed backend left on the cordoned
++node is then unreachable from outside, because externalTrafficPolicy is Local and the load
++balancer has stopped using that node. On 2026-09-09 that was the shop: prospector-store-web had
++a replica on the serving node but prospector-store-api's only replica was on the severed one, so
++mumchimp.com returned nothing at all -- three consecutive requests, 000 after twelve seconds.
++
++Not everything fits. Thirty one workloads were stranded needing 3022m of CPU against 32m free.
++So the order is a decision, and it is written in platform/ingress-recovery-order.yaml rather
++than left to pod priority, which had observability/langfuse-web at infrastructure-critical and
++the shop at zero with no class at all.
++"""
++
++import json
++import sys
++import tempfile
++import re
++import subprocess
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++SCRIPT = ROOT / "bin" / "idp-oke-break-glass"
++ORDER = ROOT / "platform" / "ingress-recovery-order.yaml"
++WORKFLOW = ROOT / ".github" / "workflows" / "oke-check.yml"
++
++
++def body() -> str:
++    text = SCRIPT.read_text()
++    start = text.index("pb_routed_backend_rescue() {")
++    depth, i = 0, start
++    while i < len(text):
++        if text[i] == "{":
++            depth += 1
++        elif text[i] == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start : i + 1]
++        i += 1
++    raise AssertionError("pb_routed_backend_rescue never closes")
++
++
++def sections():
++    """The three lists in platform/ingress-recovery-order.yaml, parsed the way the playbook parses
++    them: comments stripped, `- ns/name` rows only. Grepping the file text grades its prose."""
++    out, cur = {"order": [], "yield": [], "internal": []}, None
++    for line in (
++        (ROOT / "platform" / "ingress-recovery-order.yaml").read_text().splitlines()
++    ):
++        head = line.split("#")[0].rstrip()
++        if re.match(r"^(order|yield|internal):\s*$", head):
++            cur = out[head[:-1]]
++            continue
++        m = re.match(r"^\s*-\s*(\S+/\S+)\s*$", head)
++        if m and cur is not None:
++            cur.append(m.group(1))
++    return out
++
++
++def test_listed_and_dispatchable():
++    names = subprocess.run(
++        [str(SCRIPT), "--list"], capture_output=True, text=True, check=True
++    ).stdout.split()
++    assert "routed-backend-rescue" in names
++    assert "routed-backend-rescue) pb_routed_backend_rescue ;;" in SCRIPT.read_text()
++    line = [
++        ln
++        for ln in WORKFLOW.read_text().splitlines()
++        if "options:" in ln and "cni-resync" in ln
++    ]
++    assert line and "routed-backend-rescue" in line[0]
++
++
++def test_touches_no_host():
++    """The host-surgery variant was refused by the founder on 2026-09-09; it stays refused."""
++    b = body()
++    for forbidden in (
++        "privileged",
++        "hostNetwork",
++        "hostPID",
++        "nsenter",
++        "ip link",
++        "ip route",
++        "iptables",
++    ):
++        assert forbidden not in b, f"{forbidden} has no place in this playbook"
++
++
++def test_names_no_node_literal():
++    """R46: the cordoned node is discovered from the cluster, never typed in."""
++    import re
++
++    assert not re.search(r"\b\d{1,3}(\.\d{1,3}){3}\b", body())
++    assert "spec.unschedulable" in body(), (
++        "the cordoned node must be found, not assumed"
++    )
++
++
++def test_the_order_is_a_file_not_a_guess():
++    b = body()
++    assert "ingress-recovery-order.yaml" in b
++    assert 'FAILED="$FAILED guard-order"' in b, (
++        "a missing order file must fail, not improvise"
++    )
++    assert ORDER.exists()
++
++
++def test_order_puts_revenue_before_observability():
++    # 2026-09-09: these were ranked below the shop and still took its room, so they left the
++    # recovery order altogether and became sheddable. What we watch the estate with yields to
++    # what the estate is for.
++    s = sections()
++    assert s["order"][0] == "prospector/prospector-store-api"
++    for dashboard in (
++        "observability/superset",
++        "observability/langfuse-web",
++        "observability/signoz",
++    ):
++        assert dashboard not in s["order"], (
++            f"{dashboard} is what we watch with, not what pays"
++        )
++    assert "observability/superset" in s["yield"]
++    assert "observability/langfuse-web" in s["yield"]
++
++
++def test_nothing_customer_facing_yields():
++    """A yield must never take down a surface someone is using."""
++    text = ORDER.read_text()
++    order_block = text.split("order:")[1].split("yield:")[0]
++    routed = {
++        ln.split("#")[0].strip().lstrip("- ").strip() for ln in order_block.splitlines()
++    }
++    yield_block = text.split("yield:")[1]
++    yields = [
++        ln.split("#")[0].strip().lstrip("- ").strip() for ln in yield_block.splitlines()
++    ]
++    yields = [y for y in yields if "/" in y]
++    assert yields, "no yield list"
++    for y in yields:
++        assert y not in routed, (
++            f"{y} is both a surface to restore and a thing to switch off"
++        )
++        assert not y.startswith("prospector/"), "the shop never yields its own room"
++        assert not y.startswith("identity/"), "sign-in never yields its own room"
++
++
++def test_the_plan_is_computed_before_anything_is_deleted():
++    """A rescue that half-runs spends the room on the wrong thing."""
++    b = body()
++    plan = b.index('cat "$TMP/plan.txt"')
++    assert plan < b.index("delete pod"), "pods are deleted before the plan is printed"
++    assert plan < b.index("scale deploy"), (
++        "workloads are scaled before the plan is printed"
++    )
++
++
++def test_yields_happen_before_the_rescue():
++    b = body()
++    assert b.index("^YIELD ") < b.index("^MOVE "), (
++        "the room must exist before the pod is scheduled"
++    )
++
++
++def test_a_yield_prints_the_way_back_for_all_three_shapes():
++    """Reversible, and the receipt says how -- for each shape that can hold a pod on a node.
++
++    A Deployment and a StatefulSet come back with `scale --replicas`; observability/signoz is the
++    StatefulSet, and `scale deploy` on it fails "not found". A CronJob has no replicas at all, so
++    it comes back by having its suspend flag cleared. A yield with no way back is not a yield.
++    """
++    b = body()
++    for kind, back in (
++        ("deploy", "scale deploy/$name --replicas="),
++        ("statefulset", "scale statefulset/$name --replicas="),
++        ("cronjob", "patch cronjob/$name"),
++    ):
++        assert f'get {kind} "$name"' in b, f"a {kind} cannot be yielded"
++        assert back in b, f"a yielded {kind} has no printed way back"
++
++
++def test_a_cronjob_yields_by_suspending_not_scaling():
++    """2026-09-09: a batch job failing every 15 minutes held the storefront API off the only
++    working node. `scale` reaches nothing on a CronJob and the next tick puts the pod straight
++    back, so the schedule must be suspended and the active runs deleted."""
++    b = body()
++    assert '"spec":{"suspend":true}' in b, "the schedule is not suspended"
++    assert "delete job" in b, "the run already on the node is not removed"
++    i = b.index('"spec":{"suspend":true}')
++    assert i < b.index("delete job"), (
++        "the schedule must be suspended before its runs are deleted, or the timer replaces them"
++    )
++
++
++def test_a_shape_that_cannot_yield_is_a_failure_not_a_silent_pass():
++    """A yield line whose workload is none of the three shapes freed no room. Reporting that as
++    done is how a rescue passes while the surface stays dark."""
++    b = body()
++    i = b.index("is neither a Deployment, a StatefulSet nor a CronJob")
++    assert "FAIL" in b[i - 200 : i], "an unyieldable workload does not fail the run"
++
++
++def test_a_stranded_peer_is_evicted_not_skipped():
++    # A stranded pod is still an endpoint, so the gateway keeps sending it traffic that goes
++    # nowhere. mumchimp.com came back at two requests in three for exactly this: one storefront
++    # replica served, the other was a black hole.
++    src = body()
++    branch = src[src.index("if on_good:") : src.index("blackhole-endpoint")]
++    assert "EVICT" in branch
++    assert "free_c" not in branch and "free_m" not in branch, (
++        "taking a pod out of rotation needs no room; it is not being brought back"
++    )
++
++
++def test_eviction_needs_no_room():
++    """The room check must not gate an eviction, or the black hole survives a full node."""
++    b = body()
++    branch = b[b.index("if on_good:") : b.index("blackhole-endpoint")]
++    assert "free_c" not in branch and "free_m" not in branch, (
++        "eviction is gated on capacity it does not need"
++    )
++
++
++# --- 2026-09-09, the second time the shop went dark -------------------------------------------
++# The storefront API was preempted by hermes-agent-gateway (infrastructure-critical, 1088Mi) and
++# its replacement sat Pending on no node at all. The rescue walked past it: every question it
++# asked was "what is stranded on the cordoned node", and this pod was stranded on nothing.
++
++
++def _plan_source():
++    b = body()
++    return b[b.index("PYPLAN") : b.rindex("PYPLAN")]
++
++
++def test_a_pending_pod_on_no_node_is_rescued_by_making_room():
++    src = _plan_source()
++    assert 'not p["spec"].get("nodeName")' in src, (
++        "a Pending pod belongs to no node; the plan must look for that"
++    )
++    assert "ROOM " in src, "making room is its own directive: nothing needs moving"
++
++
++def test_room_is_an_action_the_executor_counts():
++    # the guard that decides whether the playbook does anything at all
++    assert "^(YIELD|MOVE|EVICT|ROOM) " in body(), (
++        "a plan of only ROOM lines must not be read as an empty plan"
++    )
++
++
++def test_rank_is_never_read_as_a_sacrifice_list():
++    # Run against the live cluster, the rank-based version proposed scaling prospector-store-web
++    # to zero to seat prospector-store-api, and external-secrets to zero for a Langfuse dashboard.
++    src = _plan_source()
++    fn = src[
++        src.index("def yield_sources") : src.index("def owned_by")
++        if "def owned_by" in src
++        and src.index("def owned_by") > src.index("def yield_sources")
++        else len(src)
++    ]
++    fn = src[src.index("def yield_sources") :].split("\ndef ")[0]
++    assert "return list(yields)" in fn
++    body_lines = [
++        l for l in fn.splitlines() if l.strip() and not l.strip().startswith("#")
++    ]
++    assert not any("order" in l for l in body_lines), (
++        "room may only come from the declared yield list, never from the recovery rank"
++    )
++
++
++def plan(pods, order_yaml=None, svcs=()):
++    """Run the playbook's own plan generator over crafted cluster state and return its lines.
++
++    The plan block is lifted out of the script and run as itself, so what is graded is the code
++    that runs in the break-glass job, not a paraphrase of it in a test."""
++    src = SCRIPT.read_text()
++    a = src.index("<<'PYPLAN'") + len("<<'PYPLAN'")
++    b = src.rindex("PYPLAN")
++    with tempfile.TemporaryDirectory() as d:
++        d = Path(d)
++        (d / "plan.py").write_text(src[a:b])
++        (d / "pods.json").write_text(json.dumps({"items": pods}))
++        (d / "svcs.json").write_text(json.dumps({"items": list(svcs)}))
++        (d / "good.json").write_text(
++            json.dumps(
++                {"status": {"allocatable": {"cpu": "5808m", "memory": "20445Mi"}}}
++            )
++        )
++        (d / "order.yaml").write_text(
++            order_yaml
++            or (ROOT / "platform" / "ingress-recovery-order.yaml").read_text()
++        )
++        out = subprocess.run(
++            [
++                sys.executable,
++                str(d / "plan.py"),
++                str(d / "order.yaml"),
++                str(d / "pods.json"),
++                str(d / "svcs.json"),
++                str(d / "good.json"),
++                "bad-node",
++                "good-node",
++            ],
++            capture_output=True,
++            text=True,
++            check=True,
++        )
++    return out.stdout.splitlines()
++
++
++def _svc(ns, name):
++    """A Service selecting `app: <name>`; the plan reads a routed backend's pods through it."""
++    return {
++        "metadata": {"namespace": ns, "name": name},
++        "spec": {"selector": {"app": name}},
++    }
++
++
++def _pod(ns, name, node, cpu="10m", mem="32Mi", phase="Running", ready=True, app=None):
++    return {
++        "metadata": {"namespace": ns, "name": name, "labels": {"app": app or name}},
++        "spec": {
++            "nodeName": node,
++            "containers": [{"resources": {"requests": {"cpu": cpu, "memory": mem}}}],
++        },
++        "status": {"phase": phase, "containerStatuses": [{"ready": ready}]},
++    }
++
++
++def test_a_workload_is_not_matched_by_bare_prefix():
++    # `external-secrets` prefixes `external-secrets-cert-controller` and `external-secrets-webhook`.
++    # Matched by bare prefix, the plan believed the secrets controller had a healthy peer on the
++    # serving node when it had none at all, and emitted an eviction where a rescue was needed.
++    lines = plan(
++        [
++            _pod("external-secrets", "external-secrets-74866d8fb8-nxd88", "bad-node"),
++            _pod(
++                "external-secrets",
++                "external-secrets-cert-controller-84498f9656-v44ts",
++                "good-node",
++            ),
++            _pod(
++                "external-secrets",
++                "external-secrets-webhook-656ffd67c9-dzx26",
++                "good-node",
++            ),
++        ]
++    )
++    moved = [ln for ln in lines if ln.startswith("MOVE ") and "nxd88" in ln]
++    assert moved, (
++        f"the only secrets controller is on the dead node and must be moved: {lines}"
++    )
++    assert not [ln for ln in lines if ln.startswith("EVICT ") and "nxd88" in ln], (
++        "a cert-controller is not a peer of the controller"
++    )
++
++
++def test_a_statefulset_ordinal_is_still_the_same_workload():
++    lines = plan(
++        [_pod("observability", "signoz-0", "bad-node")],
++        order_yaml="order:\n  - observability/signoz\ninternal:\n  - observability/signoz\n",
++    )
++    assert any(ln.startswith("MOVE ") and "signoz-0" in ln for ln in lines), lines
++
++
++def test_a_pending_pod_on_no_node_gets_room_made_for_it():
++    # the storefront API after hermes-agent-gateway preempted it: Pending, on no node at all
++    api = _pod(
++        "prospector",
++        "prospector-store-api-ccc7689f-84vlb",
++        None,
++        cpu="100m",
++        mem="256Mi",
++        phase="Pending",
++        ready=False,
++        app="prospector-store-api",
++    )
++    api["spec"]["nodeName"] = None
++    filler = _pod(
++        "hermes-agent",
++        "hermes-agent-gateway-746b6dbbb5-x45b5",
++        "good-node",
++        cpu="100m",
++        mem="20000Mi",
++    )
++    superset = _pod(
++        "observability",
++        "superset-6d765f966d-z8b9w",
++        "good-node",
++        cpu="25m",
++        mem="1024Mi",
++        app="superset",
++    )
++    lines = plan(
++        [api, filler, superset],
++        svcs=[
++            _svc("prospector", "prospector-store-api"),
++            _svc("observability", "superset"),
++        ],
++    )
++    assert any(ln.startswith("YIELD observability superset") for ln in lines), lines
++    assert any(ln.startswith("ROOM prospector prospector-store-api") for ln in lines), (
++        lines
++    )
++
++
++def test_the_storefront_is_never_yielded_to_seat_its_own_api():
++    # the rank-based version proposed exactly this against the live cluster on 2026-09-09
++    api = _pod(
++        "prospector",
++        "prospector-store-api-ccc7689f-84vlb",
++        None,
++        cpu="100m",
++        mem="256Mi",
++        phase="Pending",
++        ready=False,
++        app="prospector-store-api",
++    )
++    api["spec"]["nodeName"] = None
++    web = _pod(
++        "prospector",
++        "prospector-store-web-575559b877-fttml",
++        "good-node",
++        cpu="100m",
++        mem="256Mi",
++        app="prospector-store-web",
++    )
++    filler = _pod(
++        "hermes-agent",
++        "hermes-agent-gateway-746b6dbbb5-x45b5",
++        "good-node",
++        cpu="100m",
++        mem="20100Mi",
++    )
++    lines = plan(
++        [api, web, filler],
++        svcs=[
++            _svc("prospector", "prospector-store-api"),
++            _svc("prospector", "prospector-store-web"),
++        ],
++    )
++    assert any(
++        ln.startswith("# STRANDED prospector/prospector-store-api") for ln in lines
++    ), (
++        f"with nothing sheddable the answer is to say so, not to take the shop down: {lines}"
++    )
++    assert not [ln for ln in lines if ln.startswith("YIELD prospector")], (
++        f"the shop is not room; it is the point: {lines}"
++    )
++
++
++def test_internal_controllers_are_a_list_of_their_own():
++    # external-secrets sat on the cordoned node while the server it calls for every value sat on
++    # the serving one: every secret in the estate stopped resolving, with nothing on any hostname
++    # to show for it. No HTTPRoute names it, so the Service-driven order could never see it.
++    assert "internal" in body()
++    assert "external-secrets/external-secrets" in sections()["internal"]
++
++
++def test_clickhouse_is_never_yielded():
++    # owned by a ClickHouseInstallation; scaling its StatefulSet is undone by the operator
++    assert not [y for y in sections()["yield"] if "clickhouse" in y.lower()]
++
++
++def test_the_rescue_says_which_surface_came_back():
++    assert "seated-" in body(), (
++        "a rescue that does not name the surface it restored is a receipt for nothing"
++    )
+diff --git a/tests/test_revenue_outranks_observability.py b/tests/test_revenue_outranks_observability.py
+new file mode 100644
+index 000000000..16c5fe381
+--- /dev/null
++++ b/tests/test_revenue_outranks_observability.py
+@@ -0,0 +1,79 @@
++"""The scheduler had no reason to prefer the thing that takes money.
++
++On 2026-09-09 the cross-node link was severed, the ingress path was pinned to one node, and that
++node had 32m of CPU free. prospector-store-api asks for 100m, so the storefront could not be
++seated and mumchimp.com returned 000 to three requests in three. Nothing in the cluster said it
++should be seated: observability/langfuse-worker held 1000m as infrastructure-critical while its
++own web front end was stranded and unreadable, and prospector ran at priority 0 with no class at
++all -- below platform-batch, the nightly jobs.
++
++These grade the ordering, not the wording.
++"""
++
++import yaml
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++CLASSES = ROOT / "platform" / "priority-classes" / "priorityclasses.yaml"
++POLICY = ROOT / "platform" / "scheduling" / "revenue-priority.yaml"
++NAMESPACE = ROOT / "platform" / "prospector" / "namespace.yaml"
++KUSTOMIZATION = ROOT / "platform" / "scheduling" / "kustomization.yaml"
++
++
++def classes():
++    docs = [d for d in yaml.safe_load_all(CLASSES.read_text()) if d]
++    return {d["metadata"]["name"]: d for d in docs if d.get("kind") == "PriorityClass"}
++
++
++def test_revenue_outranks_infrastructure():
++    c = classes()
++    assert "revenue-critical" in c, "no class for the thing being sold"
++    assert c["revenue-critical"]["value"] > c["infrastructure-critical"]["value"], (
++        "the trace viewer still outranks the shop"
++    )
++    assert c["revenue-critical"]["value"] > c["platform-batch"]["value"]
++
++
++def test_revenue_can_take_a_seat():
++    """A class that cannot preempt leaves the shop down on a full node, which is the whole fault."""
++    assert classes()["revenue-critical"]["preemptionPolicy"] == "PreemptLowerPriority"
++
++
++def test_system_classes_are_untouched():
++    """Cluster components still win; this is not a licence to outrank the control plane."""
++    c = classes()
++    assert c["revenue-critical"]["value"] < 2000000000
++    assert c["balloon"]["value"] < 0
++
++
++def test_the_policy_only_fills_an_absence():
++    """R38: a guard that refuses correct work is an outage. This mutates, never validates."""
++    pol = yaml.safe_load(POLICY.read_text())
++    rule = pol["spec"]["rules"][0]
++    assert "mutate" in rule and "validate" not in rule
++    pre = rule["preconditions"]["all"][0]
++    assert pre["operator"] == "Equals" and pre["value"] == "", (
++        "an explicit priorityClassName set by a product team must be kept"
++    )
++    assert (
++        rule["mutate"]["patchStrategicMerge"]["spec"]["template"]["spec"][
++            "priorityClassName"
++        ]
++        == "revenue-critical"
++    )
++
++
++def test_the_product_namespace_declares_its_tier():
++    """The product's Deployments live in its own repository; the namespace is the seam."""
++    ns = [d for d in yaml.safe_load_all(NAMESPACE.read_text()) if d][0]
++    assert ns["metadata"]["labels"]["estate.mumchimp.com/tier"] == "revenue"
++    pol = yaml.safe_load(POLICY.read_text())
++    sel = pol["spec"]["rules"][0]["match"]["any"][0]["resources"]["namespaceSelector"]
++    assert sel["matchLabels"] == {"estate.mumchimp.com/tier": "revenue"}, (
++        "the policy and the namespace do not agree on the label"
++    )
++
++
++def test_the_policy_is_actually_applied():
++    """A policy no Kustomization names is decoration."""
++    assert "revenue-priority.yaml" in KUSTOMIZATION.read_text()

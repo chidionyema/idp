@@ -1,0 +1,11 @@
+name: litellm-status
+description: >
+  Show litellm Deployment status, ExternalSecret sync state, and pod logs.
+  Use to check if the broker sidecar is running and Vault keys are present.
+args:
+  component: { type: string, default: "all", help: "all, deploy, externalsecret, pods, keys" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      bash ~/.estate/libexec/litellm-status.sh {{component}}

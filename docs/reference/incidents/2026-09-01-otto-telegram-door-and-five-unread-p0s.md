@@ -139,8 +139,12 @@ What this changes in the rows above: the door probe and the `Certificate Ready=F
 
 ## What is still not done
 
-- The door is still closed until the founder merges and deploys the prospector fix; cert-manager
-  then retries the order on its own. Runbook: `docs/runbooks/otto-telegram-webhook.md`.
+- The door is open. The exception merged at 13:34Z (`bee102db`), Flux applied it at 13:37Z, and
+  the edge certificate was issued at 13:38Z with `otto.mumchimp.com` among its eleven names, valid
+  to 2026-11-30. `https://otto.mumchimp.com/telegram` answers 405 to a GET and 403 to an unsigned
+  POST, which is the webhook refusing anything that is not Telegram. What is not proved from this
+  side: a real Telegram message reaching Otto; only the founder can send one.
+  Runbook: `docs/runbooks/otto-telegram-webhook.md`.
 - The three parts above are a decision record until the founder's word; this page names them so
   the next session does not rediscover them.
 - Class question he raised and this report does not settle: one fail-closed Kyverno webhook can

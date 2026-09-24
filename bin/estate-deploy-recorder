@@ -65,6 +65,37 @@ def _repo_root() -> Path:
 ROOT = _repo_root()
 _DB_DEFAULT = ROOT / "catalog" / "estate.db"
 
+
+def _repo_slug() -> str:
+    """`owner/name` for the check-runs read.
+
+    MEASURED 2026-09-23: the call was built as `repos/{repo}/commits/<sha>/check-runs` and sent
+    LITERALLY -- `gh api` does not expand `{repo}` for a script, so it 404'd. Worse, `gh api`
+    exits 0 on a 404, so the runner parsed the error body, `.get("check_runs", [])` returned [],
+    and the journey recorded no gates at all while looking like a successful read. Every
+    `checks` stage in the ledger was dead for this one missing expansion.
+
+    GH_REPO wins (documented, never read); then gh's own resolution for the checkout; then
+    BLIND -- never a guessed slug.
+    """
+    env = os.environ.get("GH_REPO", "").strip()
+    if env:
+        return env
+    try:
+        proc = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(ROOT),
+        )
+        if proc.returncode == 0 and proc.stdout.strip():
+            return proc.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    raise BlindError("cannot resolve owner/name for check-runs; set GH_REPO")
+
+
 # Owned here: IF NOT EXISTS throughout, so the recorder runs on a fresh machine and can
 # never alter a table another writer owns.
 _SCHEMA = """
@@ -111,7 +142,6 @@ class BlindError(RuntimeError):
 Runner = Callable[[list[str]], Any]
 
 
-
 def _gh_runner(args: list[str]) -> Any:
     """The one subprocess seam. Everything GitHub flows through here so tests stub the
     boundary, never the dict. BLIND on absence or refusal."""
@@ -127,8 +157,13 @@ def _gh_runner(args: list[str]) -> Any:
 
 
 _CHECK_CONCLUSION = {
-    "success": PASS, "failure": FAIL, "cancelled": FAIL, "timed_out": FAIL,
-    "action_required": FAIL, "neutral": PASS, "skipped": PASS,
+    "success": PASS,
+    "failure": FAIL,
+    "cancelled": FAIL,
+    "timed_out": FAIL,
+    "action_required": FAIL,
+    "neutral": PASS,
+    "skipped": PASS,
 }
 
 
@@ -140,7 +175,10 @@ def _check_stage(cr: dict) -> dict:
         "stage": f"check:{cr.get('name', 'unnamed')}",
         "status": status,
         "ts": cr.get("completedAt") or cr.get("startedAt"),
-        "detail": {"conclusion": conclusion or None, "url": cr.get("htmlUrl") or cr.get("url")},
+        "detail": {
+            "conclusion": conclusion or None,
+            "url": cr.get("htmlUrl") or cr.get("url"),
+        },
     }
 
 
@@ -148,32 +186,74 @@ def journey_for_pr(pr: dict, runner: Runner, flux_events: list[dict]) -> dict:
     """The whole road for one PR's head sha: opened, every gate, merged, cluster."""
     sha = pr.get("headRefOid") or ""
     events: list[dict] = [
-        {"stage": "pr_opened", "status": PASS, "ts": pr.get("createdAt"),
-         "detail": {"number": pr.get("number"), "base": pr.get("baseRefName")}}
+        {
+            "stage": "pr_opened",
+            "status": PASS,
+            "ts": pr.get("createdAt"),
+            "detail": {"number": pr.get("number"), "base": pr.get("baseRefName")},
+        }
     ]
     if sha:
         try:
-            runs = runner(["api", f"repos/{{repo}}/commits/{sha}/check-runs"]).get("check_runs", [])
+            body = runner(["api", f"repos/{_repo_slug()}/commits/{sha}/check-runs"])
+            # `gh api` exits 0 on a 404 and prints {"message": "Not Found"}. `.get("check_runs",
+            # [])` turns that into an empty list, so an unreadable source looked identical to a
+            # commit with no checks -- the silent-zero an estate measurement is not allowed to
+            # produce. An error body with no check_runs key is BLIND, never zero.
+            if "check_runs" not in body:
+                raise BlindError(
+                    f"check-runs unreadable: {str(body.get('message', body))[:120]}"
+                )
+            runs = body["check_runs"]
             events.extend(_check_stage(cr) for cr in runs)
         except BlindError:
-            events.append({"stage": "checks", "status": UNKNOWN, "ts": None,
-                           "detail": {"error": "check-runs unreadable"}})
+            events.append(
+                {
+                    "stage": "checks",
+                    "status": UNKNOWN,
+                    "ts": None,
+                    "detail": {"error": "check-runs unreadable"},
+                }
+            )
     else:
-        events.append({"stage": "checks", "status": UNKNOWN, "ts": None,
-                       "detail": {"error": "no head sha"}})
+        events.append(
+            {
+                "stage": "checks",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {"error": "no head sha"},
+            }
+        )
 
     merged_at = pr.get("mergedAt")
     if merged_at:
-        events.append({"stage": "merged", "status": PASS, "ts": merged_at, "detail": {}})
+        events.append(
+            {"stage": "merged", "status": PASS, "ts": merged_at, "detail": {}}
+        )
 
     named = [fe for fe in flux_events if sha and fe.get("sha", "").startswith(sha[:12])]
     for fe in named:
-        events.append({"stage": fe.get("stage", "flux"), "status": fe.get("status", UNKNOWN),
-                       "ts": fe.get("ts"), "detail": fe.get("detail") or {}})
+        events.append(
+            {
+                "stage": fe.get("stage", "flux"),
+                "status": fe.get("status", UNKNOWN),
+                "ts": fe.get("ts"),
+                "detail": fe.get("detail") or {},
+            }
+        )
     if not named:
-        events.append({"stage": "reconcile", "status": UNKNOWN, "ts": None,
-                       "detail": {"error": "no flux events source" if not flux_events
-                                  else "no flux event names this sha"}})
+        events.append(
+            {
+                "stage": "reconcile",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {
+                    "error": "no flux events source"
+                    if not flux_events
+                    else "no flux event names this sha"
+                },
+            }
+        )
 
     if merged_at:
         state = "merged"
@@ -185,19 +265,35 @@ def journey_for_pr(pr: dict, runner: Runner, flux_events: list[dict]) -> dict:
         state = "in_flight"
 
     return {
-        "sha": sha, "branch": pr.get("headRefName"), "pr_number": pr.get("number"),
-        "title": pr.get("title"), "state": state,
-        "started_at": pr.get("createdAt"), "merged_at": merged_at, "events": events,
+        "sha": sha,
+        "branch": pr.get("headRefName"),
+        "pr_number": pr.get("number"),
+        "title": pr.get("title"),
+        "state": state,
+        "started_at": pr.get("createdAt"),
+        "merged_at": merged_at,
+        "events": events,
     }
 
 
 def lone_journey(sha: str) -> dict:
     """A commit no PR claims: its PR stage is unknown, never invented."""
     return {
-        "sha": sha, "branch": None, "pr_number": None, "title": None, "state": "in_flight",
-        "started_at": None, "merged_at": None,
-        "events": [{"stage": "pr_opened", "status": UNKNOWN, "ts": None,
-                    "detail": {"error": "no pull request names this sha"}}],
+        "sha": sha,
+        "branch": None,
+        "pr_number": None,
+        "title": None,
+        "state": "in_flight",
+        "started_at": None,
+        "merged_at": None,
+        "events": [
+            {
+                "stage": "pr_opened",
+                "status": UNKNOWN,
+                "ts": None,
+                "detail": {"error": "no pull request names this sha"},
+            }
+        ],
     }
 
 
@@ -208,8 +304,16 @@ def write_journey(con: sqlite3.Connection, j: dict) -> None:
         " ON CONFLICT(sha) DO UPDATE SET branch=excluded.branch, pr_number=excluded.pr_number,"
         " title=excluded.title, state=excluded.state, started_at=excluded.started_at,"
         " merged_at=excluded.merged_at, metadata_json=excluded.metadata_json",
-        (j["sha"], j["branch"], j["pr_number"], j["title"], j["state"], j["started_at"],
-         j["merged_at"], json.dumps({"event_count": len(j["events"])})),
+        (
+            j["sha"],
+            j["branch"],
+            j["pr_number"],
+            j["title"],
+            j["state"],
+            j["started_at"],
+            j["merged_at"],
+            json.dumps({"event_count": len(j["events"])}),
+        ),
     )
     # Derived view: the sha's events are rewritten wholesale, so a re-run can never
     # double a stage.
@@ -239,20 +343,36 @@ _PR_FIELDS = "number,title,headRefName,headRefOid,createdAt,mergedAt,state,baseR
 def run(sha: str | None, limit: int, runner: Runner = _gh_runner) -> list[dict]:
     flux_events = load_flux_events()
     if sha:
-        prs = runner(["pr", "list", "--state", "all", "--search", sha, "--limit", "5",
-                      "--json", _PR_FIELDS])
-        pr = next((p for p in prs if (p.get("headRefOid") or "").startswith(sha[:12])), None)
+        prs = runner(
+            [
+                "pr",
+                "list",
+                "--state",
+                "all",
+                "--search",
+                sha,
+                "--limit",
+                "5",
+                "--json",
+                _PR_FIELDS,
+            ]
+        )
+        pr = next(
+            (p for p in prs if (p.get("headRefOid") or "").startswith(sha[:12])), None
+        )
         return [journey_for_pr(pr, runner, flux_events) if pr else lone_journey(sha)]
-    prs = runner(["pr", "list", "--state", "all", "--limit", str(limit),
-                  "--json", _PR_FIELDS])
+    prs = runner(
+        ["pr", "list", "--state", "all", "--limit", str(limit), "--json", _PR_FIELDS]
+    )
     return [journey_for_pr(p, runner, flux_events) for p in prs if p.get("headRefOid")]
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="deploy-journey recorder")
     ap.add_argument("--sha", default=None)
-    ap.add_argument("--limit", type=int,
-                    default=int(os.environ.get("RECORDER_PR_LIMIT", "25")))
+    ap.add_argument(
+        "--limit", type=int, default=int(os.environ.get("RECORDER_PR_LIMIT", "25"))
+    )
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
@@ -271,9 +391,13 @@ def main() -> int:
         print(json.dumps({"written": len(journeys), "db": str(_db_path())}))
     else:
         for j in journeys:
-            print(f"ok    journey  {(j['sha'] or '(no sha)')[:9]}  {j['state']:<10} "
-                  f"pr={j['pr_number']}  {len(j['events'])} stages  {(j['title'] or '')[:60]}")
-        print(f"ok    estate-deploy-recorder  {len(journeys)} journey(s) -> {_db_path()}")
+            print(
+                f"ok    journey  {(j['sha'] or '(no sha)')[:9]}  {j['state']:<10} "
+                f"pr={j['pr_number']}  {len(j['events'])} stages  {(j['title'] or '')[:60]}"
+            )
+        print(
+            f"ok    estate-deploy-recorder  {len(journeys)} journey(s) -> {_db_path()}"
+        )
     return 0
 
 

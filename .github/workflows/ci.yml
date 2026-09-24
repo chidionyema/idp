@@ -8,7 +8,7 @@ on:
     # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
     # (crew#267). The required checks run on that push, so the pull request that
     # image-update-pr.yml opens with GITHUB_TOKEN (which fires no pull_request run) is still graded.
-    branches: [main, flux/image-updates]
+    branches: [main, agent-trunk, "flux/image-updates"]
 # A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
@@ -228,6 +228,9 @@ jobs:
           # at the one gate that is the last thing before main, after the pull request had already
           # passed it strictly. Both spellings mean main.
           SB_BDD_STRICT: ${{ (github.base_ref == 'main' || github.event.merge_group.base_ref == 'refs/heads/main') && '1' || '0' }}
+          # CI never pays for live LLM tokens: the _real scenarios skip unless an operator
+          # clears this. Money is burned on cached responses, never on a runner's live calls.
+          IDP_NO_LIVE_LLM: "1"
           # test_gate_langfuse_render and test_gate_llm_admission run bin/idp-kyverno-render for
           # real, so this step is a judging step and needs the estate-only policies like the
           # others. Without it the script is BLIND (rc 2), which is the correct verdict and a
@@ -249,11 +252,21 @@ jobs:
       - name: ruff (crew#325 step 3; the rule set is pyproject.toml)
         if: matrix.suite == 'tests'
         run: pip install -q ruff==0.15.18 && ruff check .
-      - name: pytest tests (crew#325 step 2, every file under tests/ in one run)
+      - name: pytest tests (diff-scoped via bin/idp-tests-for)
         if: matrix.suite == 'tests'
         env:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
-        run: python -m pytest tests -q -p no:cacheprovider -n auto --durations=10   # crew#584: four cores; the ten slowest are printed
+          CI: "1"
+          # Selection only, never the blanket: CI must not re-run the whole tree on a
+          # one-line change. bin/idp-tests-for defaults to the blanket in CI (TESTS_FOR_ALL);
+          # this pin makes a commit pay only for the tests its diff actually reaches.
+          TESTS_FOR_ALL: "0"
+        run: |
+          # crew#325 step 2 was `pytest tests` -- every file on every commit. bin/idp-tests-for
+          # selects only the tests that name/read the changed files (plus the cheap set in CI) and
+          # runs nothing when the diff touches no test surface. This is the canonical scoper, not a
+          # hand-rolled grep, and it is the same selector the local fast-gate prints.
+          bin/idp-tests-for --base origin/main
 
   # The merge rule on main (repository ruleset, required_status_checks) waits for a check named
   # exactly `bdd`. GitHub publishes a matrix job's checks as `bdd (acceptance)` and `bdd (tests)`,

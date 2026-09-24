@@ -1,0 +1,997 @@
+diff --git a/.github/workflows/estate-escrow.yml b/.github/workflows/estate-escrow.yml
+index 90736231c..4f29b5c60 100644
+--- a/.github/workflows/estate-escrow.yml
++++ b/.github/workflows/estate-escrow.yml
+@@ -54,7 +54,11 @@ jobs:
+           OCI_REGION: ${{ vars.OCI_REGION }}
+           ESCROW_RECEIPT_DIR: ${{ github.workspace }}/receipt
+         run: |
+-          set -o pipefail
++          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate: idp-escrow IS this step's
++          # verdict and nothing downstream reads an rc, so without -e a failing escrow
++          # step passed. The summary step below is `if: always()`, so escrow.out is still
++          # published on failure.
++          set -euo pipefail
+           bin/idp-escrow 2>&1 | tee escrow.out
+       - name: the verdict is on the run summary, pass or fail
+         if: always()
+diff --git a/.github/workflows/estate-state.yml b/.github/workflows/estate-state.yml
+index 5b7302d07..a90c9ad2d 100644
+--- a/.github/workflows/estate-state.yml
++++ b/.github/workflows/estate-state.yml
+@@ -160,7 +160,13 @@ jobs:
+         env:
+           LITELLM_API_KEY: ${{ secrets.SEED_HERMES_LITELLM_API_KEY }}   # the virtual key conscience-ask.yml already uses
+         run: |
+-          set -uo pipefail
++          # `-e` and `pipefail` together, added 2026-09-10 by bin/idp-grader-exit-gate.
++          # Before this the probe graded every lane ok/FAIL/UNKNOWN, wrote the FAILs into
++          # its own JSON and its own summary line, and the step could not fail: no -e, and
++          # a pipe into tee whose status is tee's. On 2026-09-10 Google retired the embed
++          # model, the lane graded FAIL for twenty hours, and nobody was told -- the exact
++          # failure gateway used to have no alert for.
++          set -euo pipefail
+           bin/idp-router-lanes --config platform/llm/config.yaml --zone-from clusters/oke/estate-config.yaml --out "$RUNNER_TEMP/lanes.json" | tee -a "$GITHUB_STEP_SUMMARY"
+       - name: build and validate against platform/estate-state/schema.json
+         env:
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 08b74e289..cd8bd2c4f 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -513,7 +513,12 @@ jobs:
+           OCI_REGION: ${{ vars.OCI_REGION }}
+           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+         run: |
+-          set -uo pipefail
++          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate. idp-fits-a-node is the last
++          # line of this step and NOTHING captured its exit, so a placement failure passed
++          # green -- the very gate this step exists for, added on 2026-09-07 after ClickHouse
++          # sat Unschedulable while the aggregate capacity row read fine. The receipt fetch
++          # above keeps its `|| true` (a missing receipt is a BLIND the grader itself names).
++          set -euo pipefail
+           # Line 1 of the receipt is the graded summary; the rest is the JSON body.
+           bin/idp-cloud object get --bucket "${DRILL_RECEIPT_BUCKET:-estate-drill-receipts}" \
+             --name state/cluster 2>/dev/null | tail -n +2 > "$RUNNER_TEMP/receipt.json" || true
+@@ -682,7 +687,12 @@ jobs:
+           OCI_REGION: ${{ vars.OCI_REGION }}
+           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+         run: |
+-          set -o pipefail
++          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate. The drill is the last
++          # substantive line, piped into tee, and NOTHING captured its status -- no -e, no
++          # rc, no PIPESTATUS. So a failing workforce drill passed green and still posted a
++          # cheerful summary. The summary printf below is not `if: always()`-guarded on the
++          # drill's success, so it prints whatever drill.out holds either way.
++          set -eo pipefail
+           tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   agent-workforce  no App token: ${tok:0:160}"; exit 2; }
+           echo "::add-mask::$tok"
+           pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)
+diff --git a/.github/workflows/ticket-verification.yml b/.github/workflows/ticket-verification.yml
+index 2c192ff44..88c819551 100644
+--- a/.github/workflows/ticket-verification.yml
++++ b/.github/workflows/ticket-verification.yml
+@@ -53,7 +53,10 @@ jobs:
+           OCI_REGION: ${{ vars.OCI_REGION }}
+           GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+         run: |
+-          set -o pipefail
++          # `-e`, added 2026-09-10 by bin/idp-grader-exit-gate: the tee'd verify.out is
++          # posted as the PR comment regardless, and nothing downstream reads an rc, so a
++          # failing verification step passed silently.
++          set -euo pipefail
+           tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   ticket-verify  no App token: ${tok:0:160}"; exit 2; }
+           echo "::add-mask::$tok"
+           apply=--apply
+diff --git a/.github/workflows/verdict-backstage.yml b/.github/workflows/verdict-backstage.yml
+index 7f2c63f5f..1ace7ec25 100644
+--- a/.github/workflows/verdict-backstage.yml
++++ b/.github/workflows/verdict-backstage.yml
+@@ -60,11 +60,17 @@ jobs:
+           VERDICT_NONCE: ${{ inputs.nonce }}
+           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+         run: |
+-          set -o pipefail
+-          rc=0
+-          bin/idp-prove backstage --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out || rc=$?
+-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+-          exit 0
++          set -euo pipefail
++          # The verdict must fail this run. Until 2026-09-10 this captured `rc=`,
++          # published it to GITHUB_OUTPUT under id `prove`, and then `exit 0` -- and NO
++          # step in the workflow read that output (grepped: no `steps.prove.outputs`
++          # anywhere in this file). So the prover's failure was computed, published,
++          # and dropped, and a broken surface read green. Found by
++          # bin/idp-grader-exit-gate: the same class as the router lane that graded
++          # FAIL and returned 0 (docs/specs/a-dead-lane-reaches-the-founder.md).
++          # The artifact step below carries `if: always()`, so the verdict file is
++          # still uploaded when this fails -- which is all the rc dance ever bought.
++          bin/idp-prove backstage --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out
+       - name: the verdict file is the run's artifact
+         if: always()
+         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+diff --git a/.github/workflows/verdict-langfuse.yml b/.github/workflows/verdict-langfuse.yml
+index 7f914a3d1..ba830f971 100644
+--- a/.github/workflows/verdict-langfuse.yml
++++ b/.github/workflows/verdict-langfuse.yml
+@@ -73,11 +73,17 @@ jobs:
+           IDP_PROVE_LOOKUP_TRACE: ${{ inputs.lookup_trace }}
+           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+         run: |
+-          set -o pipefail
+-          rc=0
+-          bin/idp-prove langfuse --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out || rc=$?
+-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+-          exit 0
++          set -euo pipefail
++          # The verdict must fail this run. Until 2026-09-10 this captured `rc=`,
++          # published it to GITHUB_OUTPUT under id `prove`, and then `exit 0` -- and NO
++          # step in the workflow read that output (grepped: no `steps.prove.outputs`
++          # anywhere in this file). So the prover's failure was computed, published,
++          # and dropped, and a broken surface read green. Found by
++          # bin/idp-grader-exit-gate: the same class as the router lane that graded
++          # FAIL and returned 0 (docs/specs/a-dead-lane-reaches-the-founder.md).
++          # The artifact step below carries `if: always()`, so the verdict file is
++          # still uploaded when this fails -- which is all the rc dance ever bought.
++          bin/idp-prove langfuse --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out
+       - name: the verdict file is the run's artifact
+         if: always()
+         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+diff --git a/.github/workflows/verdict-signoz.yml b/.github/workflows/verdict-signoz.yml
+index cdb8d4bf8..883180f6d 100644
+--- a/.github/workflows/verdict-signoz.yml
++++ b/.github/workflows/verdict-signoz.yml
+@@ -70,11 +70,17 @@ jobs:
+           VERDICT_NONCE: ${{ inputs.nonce }}
+           VERDICT_EVIDENCE_REF: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+         run: |
+-          set -o pipefail
+-          rc=0
+-          bin/idp-prove signoz --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out || rc=$?
+-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+-          exit 0
++          set -euo pipefail
++          # The verdict must fail this run. Until 2026-09-10 this captured `rc=`,
++          # published it to GITHUB_OUTPUT under id `prove`, and then `exit 0` -- and NO
++          # step in the workflow read that output (grepped: no `steps.prove.outputs`
++          # anywhere in this file). So the prover's failure was computed, published,
++          # and dropped, and a broken surface read green. Found by
++          # bin/idp-grader-exit-gate: the same class as the router lane that graded
++          # FAIL and returned 0 (docs/specs/a-dead-lane-reaches-the-founder.md).
++          # The artifact step below carries `if: always()`, so the verdict file is
++          # still uploaded when this fails -- which is all the rc dance ever bought.
++          bin/idp-prove signoz --out "$RUNNER_TEMP/verdict.json" 2>&1 | tee prove.out
+       - name: the verdict file is the run's artifact
+         if: always()
+         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 23854ece4..2f7766b39 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -124,6 +124,16 @@ if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
+   say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
+ else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
+ 
++# 4b2b. A grading step whose exit code cannot fail its run is not a gate (LAW 28).
++#       Founder 2026-09-10: the estate had every fact on the router's first failing lane
++#       and told nobody for twenty hours, because bin/idp-router-lanes graded every lane
++#       FAIL and the workflow that ran it used `set -uo pipefail` (no -e) and piped the
++#       verdict into tee. This gate covers the class: every workflow step in the tree whose
++#       purpose is to grade must be able to fail the run. docs/specs/a-dead-lane-reaches-the-founder.md
++if "$IDP/bin/idp-grader-exit-gate" "$IDP/.github/workflows" >/tmp/grader-exit.out 2>&1; then
++  say "ok    graders  every workflow step that grades can fail its run"
++else say "FAIL  graders  a grading step cannot fail its run; see the lines below"; head -20 /tmp/grader-exit.out | sed 's/^/      /'; fail=1; fi
++
+ # 4b3. crew#857: the store plan is generated from platform/features/features.yaml.
+ #      A hand edit to features.yaml that skipped `bin/idp-features plan --json > platform/features/plan.json`
+ #      is drift and keeps the price figures wrong until someone regenerates.
+diff --git a/bin/idp-grader-exit-gate b/bin/idp-grader-exit-gate
+new file mode 100755
+index 000000000..1a6973cf7
+--- /dev/null
++++ b/bin/idp-grader-exit-gate
+@@ -0,0 +1,369 @@
++#!/usr/bin/env python3
++"""A grader whose failure cannot leave the runner is not a gate (LAW 28).
++
++docs/specs/a-dead-lane-reaches-the-founder.md. The estate had every fact on the
++first failure and told nobody for 20 hours: bin/idp-router-lanes graded every
++router lane FAIL/UNKNOWN, but the workflow that ran it could not fail -- it used
++`set -uo pipefail` (no -e) and piped the verdict into tee. Verified in bash on
++this machine:
++
++    false | tee /dev/null; echo $?
++    0                       # pipe without pipefail: the LAST command's status wins
++    set -o pipefail; false | tee /dev/null; echo $?
++    1
++
++This gate closes the class, not just the instance. It walks every workflow in
++its target, finds each step whose purpose is to grade, and fails any whose exit
++code cannot fail the run. Three mechanisms, one bad fixture each:
++
++  1. piped verdict          the run pipes the grader into tee/cat with no pipefail
++  2. set -o without -e     the run sets o-flags without -e and relies on grader exit
++  3. orphan || true        the run applies || true to the grader with no marker
++
++The escape hatch: a step that carries the literal marker `# optional: <reason>`
++is allowed to swallow its exit. It exists so a genuinely-skippable leg stays
++sayable rather than being smuggled in as `|| true`. The marker is the same
++literal-sentinel shape as bin/idp-portal-buttons' NOT-generated, so a weakened
++rule cannot quietly un-flag it. The marker is read from THREE places, in order,
++any one of which makes the step optional: the step's `run` text, the step's
++`name`, and any YAML comment that appears within ~120 chars BEFORE the step's
++`name:`/`run:` line in the raw file text (the realistic shape of a comment
++written by a person above their step).
++
++Usage:
++
++    python3 bin/idp-grader-exit-gate .github/workflows
++    python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/bad   # exit 1
++    python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/good  # exit 0
++"""
++
++from __future__ import annotations
++
++import pathlib
++import re
++import sys
++
++import yaml
++
++
++# The grader command list. Match anywhere in a step's `run` text -- these are
++# the commands whose exit code is THE verdict, not a side effect. The list is
++# closed: a new grader either joins this list (and gets checked) or it is not a
++# grader for the purposes of this gate.
++GRADERS = (
++    "idp-prove",
++    "idp-root-trust",
++    "idp-conscience",
++    "idp-escrow",
++    "idp-inventory",
++    "idp-router-lanes",
++    "idp-fits-a-node",
++    "idp-ticket-verify",
++    "idp-agent-workforce-drill",
++    "idp-mechanism-gate",
++    "idp-rule-coverage",
++    "idp-one-scheduler",
++    "idp-drill-heartbeat",
++    "idp-portability-drill",
++)
++
++GRADER_RE = re.compile(r"\b(" + "|".join(GRADERS) + r")\b")
++
++# `set -uo pipefail`, `set -o pipefail`, etc. -- o-flags present, no e.
++SET_HAS_O = re.compile(r"\bset\s+-[A-Za-z]*o[A-Za-z]*\b")
++SET_HAS_E = re.compile(r"\bset\s+-[A-Za-z]*e[A-Za-z]*\b")
++
++# A pipe into tee or cat that hides the grader's exit.
++PIPE_INTO = re.compile(r"\|\s*(tee|cat)\b")
++
++# `|| true` swallowing the grader line.
++ORPHAN_TRUE = re.compile(r"\|\|\s*true\b|\|\|\s*\{?true\}?")
++
++# The optional marker. A literal sentinel so a weakened rule cannot un-flag it.
++OPTIONAL_MARKER = re.compile(r"#\s*optional:\s*\S")
++
++# `pipefail` somewhere in the run text. Even on a separate line.
++HAS_PIPEFAIL = re.compile(r"\bpipefail\b")
++
++# How far BACK from a step's `name:` / `run:` key we look for an `# optional:`
++# comment in the raw file text. ~120 chars covers a single-line comment and a
++# short bullet -- it is a deliberate cap, not arbitrary.
++COMMENT_LOOKBACK_CHARS = 200
++
++
++def step_invokes_grader(run: str) -> bool:
++    """True when this step's run text invokes one of the named graders."""
++    return bool(GRADER_RE.search(run or ""))
++
++
++def step_has_optional_marker(run: str, name: str, raw_window: str) -> bool:
++    """An optional leg says so literally. Three places, any one is enough:
++
++    1. the run text itself (a `# optional: ...` line inside the run block)
++    2. the step's `name` (rare but the same sentinel contract)
++    3. any YAML `# optional: ...` comment within `raw_window` characters BEFORE
++       the step -- the realistic shape of a comment written above the step
++    """
++    if OPTIONAL_MARKER.search(run or ""):
++        return True
++    if name and OPTIONAL_MARKER.search(name):
++        return True
++    if raw_window and OPTIONAL_MARKER.search(raw_window):
++        return True
++    return False
++
++
++def step_pipes_verdict(run: str) -> bool:
++    """`... | tee ...` or `... | cat ...` in the run, with no pipefail anywhere."""
++    if not PIPE_INTO.search(run or ""):
++        return False
++    return not HAS_PIPEFAIL.search(run or "")
++
++
++def step_runs_with_no_e(run: str) -> bool:
++    """`set -uo pipefail` (or `set -o pipefail`) with no `-e` anywhere in the run."""
++    r = run or ""
++    if not SET_HAS_O.search(r):
++        return False
++    # If any subsequent `set` line carries -e, the script is strict and we do
++    # not flag it. The whole text, not just the first `set` line, because shell
++    # semantics re-evaluate later set lines.
++    for line in r.splitlines():
++        if "set -" in line and SET_HAS_E.search(line):
++            return False
++    return True
++
++
++def step_has_orphan_true(run: str) -> bool:
++    """`... || true` applied to THE GRADER LINE, with no marker explaining why.
++
++    Line-scoped, not whole-text: a run that does `kubectl get pods ... || true`
++    above an honest grader line is not swallowing the verdict, and flagging it
++    would be exactly the guard that refuses correct work this estate keeps
++    tripping over (R38: a guard that refuses correct work is an outage). Only a
++    line that actually invokes a grader is inspected.
++    """
++    for line in (run or "").splitlines():
++        if GRADER_RE.search(line) and ORPHAN_TRUE.search(line):
++            return True
++    return False
++
++
++PIPESTATUS_IDIOM = re.compile(r"\$\{PIPESTATUS\[0\]\}|\$\{PIPESTATUS\[@\]\}")
++
++
++def step_uses_pipestatus(run: str) -> bool:
++    """True when the run captures the pipeline's first stage status properly.
++
++    `cmd | tee f; RC=${PIPESTATUS[0]}` is THE correct way to read a piped
++    command's status in bash, and it is strictly better than `pipefail` when the
++    author needs the downstream stage to survive (estate-bootstrap-preflight.yml
++    uses it with an explicit `set +e` / `set -e` bracket, so the gate's verdict
++    is captured before the shell is put back into fail-fast mode). Flagging it
++    would be the guard-that-refuses-correct-work failure this estate keeps
++    recording (R38).
++    """
++    return bool(PIPESTATUS_IDIOM.search(run or ""))
++
++
++def step_captures_and_consults_rc(run: str) -> bool:
++    """True when the run captures the grader's exit AND actually reads it back.
++
++    `rc=0; bin/idp-x || rc=$?` followed later by `[ "$rc" -ne 2 ]` is deliberate
++    and documented in this estate: conscience.yml:90-94 explains that `bash -eo
++    pipefail` aborted the step before rc was written, so every rc-gated step was
++    skipped including the founder line. That is an honest grader -- it decides
++    its own verdict from the code and says so -- and this gate has no business
++    flagging it.
++
++    What the gate IS for is the same dance with the consultation missing:
++    verdict-backstage/-langfuse/-signoz captured `rc`, published it to
++    GITHUB_OUTPUT, and `exit 0`, with no step in the file ever reading that
++    output. Captured-and-dropped is the defect; captured-and-consulted is a
++    design.
++    """
++    text = run or ""
++    if "rc=" not in text:
++        return False
++    # The consult: rc is tested or compared somewhere after the capture.
++    for line in text.splitlines():
++        stripped = line.strip()
++        if stripped.startswith("#"):
++            continue
++        if "rc=" in stripped and "$?" in stripped:
++            continue  # the capture itself, not a consult
++        if re.search(r"\$\{?rc\}?", stripped) and re.search(
++            r"\[|test |!=|-ne|-eq|== ", stripped
++        ):
++            return True
++    return False
++
++
++def _clean_windows_before_steps(path: pathlib.Path) -> dict[str, str]:
++    """Map each step's `name` text to the raw text AROUND its step block.
++
++    Stdlib yaml does not expose comments, so the marker has to be found in the
++    raw file. The window is the text from just before the step's `- name:` line
++    through to the start of the NEXT step -- that whole slab is "this step's
++    block", and a `# optional: ...` anywhere in it belongs to this step.
++
++    Looking only backwards (the first version of this function) missed the
++    realistic shape, which is a person writing the marker on the line AFTER
++    their step name and just above `run:`:
++
++        - name: an optional leg
++          # optional: the drill may find nothing on a fresh cluster
++          run: |
++
++    Keyed on the step's own name text rather than a positional zip, because the
++    zip misaligned on the good fixture. Returns {name_text: block_text}.
++    """
++    text = path.read_text()
++    out: dict[str, str] = {}
++    starts = [m for m in re.finditer(r"^\s*-\s*name:\s*(.+?)\s*$", text, re.M)]
++    # Include any leading comments directly above the FIRST step too.
++    for i, m in enumerate(starts):
++        step_name = m.group(1).strip().strip("'\"")
++        head = max(0, m.start() - COMMENT_LOOKBACK_CHARS)
++        tail = starts[i + 1].start() if i + 1 < len(starts) else len(text)
++        out.setdefault(step_name, text[head:tail])
++    return out
++
++
++def grade_step(file_label: str, step: dict, raw_window: str) -> list[str]:
++    """Return problems for one step; empty list if the step is honest."""
++    run = step.get("run") or ""
++    name = step.get("name") or ""
++    if not step_invokes_grader(run):
++        return []
++    problems: list[str] = []
++    # An rc that is captured AND consulted is this estate's documented alternative
++    # to letting the step fail; it decides its own verdict and says so.
++    consulted = step_captures_and_consults_rc(run) or step_uses_pipestatus(run)
++    # A step that consults GITHUB_OUTPUT cannot be consulted FROM here (the read
++    # lives in a later step), so only the run-local shape counts as honest.
++    if step_pipes_verdict(run) and not consulted:
++        problems.append("verdict piped into tee/cat without `pipefail`")
++    if step_runs_with_no_e(run) and not consulted:
++        problems.append(
++            "runs under `set -o` (no -e); the grader's exit cannot fail the run"
++        )
++    if (
++        step_has_orphan_true(run)
++        and not consulted
++        and not step_has_optional_marker(run, name, raw_window)
++    ):
++        problems.append("`|| true` on the grader with no `# optional: <reason>` marker")
++    if not problems:
++        return []
++    label = name or "<unnamed>"
++    return [f"{file_label}: step '{label}': {'; '.join(problems)}"]
++
++
++def _windows_for_steps(path: pathlib.Path) -> list[str]:
++    """Deprecated positional variant, kept out of the grading path.
++
++    Superseded by _clean_windows_before_steps, which keys on the step's name
++    text rather than a positional zip -- the zip misaligned on the good fixture
++    and would have misaligned silently on any workflow whose parsed step count
++    differs from its textual count. Kept as a named tombstone rather than
++    deleted so the reason is on the record (LAW 6).
++    """
++    text = path.read_text()
++    windows: list[str] = []
++    pattern = re.compile(r"^\s*-\s*name:\s|^\s*-\s*run:\s", re.M)
++    for m in pattern.finditer(text):
++        start = max(0, m.start() - COMMENT_LOOKBACK_CHARS)
++        windows.append(text[start : m.start()])
++    return windows
++
++
++def _published_rc_outputs_are_read(doc: dict, raw: str) -> set[str]:
++    """Step ids whose GITHUB_OUTPUT rc IS read by a later step in the same file.
++
++    `conscience.yml` is the shape this exists for: the grade step captures
++    `rc=$?`, writes it to GITHUB_OUTPUT under `id: grade`, and the FOUNDER LINE
++    step 120 lines later reads `steps.grade.outputs.rc` and grades it
++    (`[ "$rc" -ne 2 ]`, line 220, with six references in all). That is an honest
++    grader deciding its own verdict, and the estate documented why the capture
++    exists at all (line 90: `bash -eo pipefail` aborted the step before rc was
++    written, so every rc-gated step was skipped).
++
++    A run-local detector cannot see across steps, so this reads the file's raw
++    text for any `steps.<id>.outputs` reference and returns those ids. A step
++    that publishes rc under an id nobody reads stays flagged -- that is the
++    verdict-backstage/-langfuse/-signoz defect, where the publish existed and the
++    read never did.
++    """
++    read_ids: set[str] = set()
++    for m in re.finditer(r"steps\.([A-Za-z0-9_-]+)\.outputs", raw):
++        read_ids.add(m.group(1))
++    return read_ids
++
++
++def grade_workflow(path: pathlib.Path) -> list[str]:
++    """Return problems across every step of one workflow file."""
++    try:
++        doc = yaml.safe_load(path.read_text())
++    except yaml.YAMLError as e:
++        return [f"{path}: will not parse: {e}"]
++    if not isinstance(doc, dict):
++        return []
++    problems: list[str] = []
++    windows = _clean_windows_before_steps(path)
++    raw = path.read_text()
++    read_ids = _published_rc_outputs_are_read(doc, raw)
++    for job_name, job in (doc.get("jobs") or {}).items():
++        if not isinstance(job, dict):
++            continue
++        file_label = f"{path.name}:job '{job_name}'"
++        for step in job.get("steps") or []:
++            if not isinstance(step, dict):
++                continue
++            raw_window = windows.get((step.get("name") or "").strip().strip("'\""), "")
++            # A step whose published rc IS read later in this file is honest.
++            sid = step.get("id")
++            if sid and sid in read_ids:
++                continue
++            problems.extend(grade_step(file_label, step, raw_window))
++    return problems
++
++
++def main(argv: list[str]) -> int:
++    if len(argv) != 2:
++        print("usage: idp-grader-exit-gate <workflow-or-dir>", file=sys.stderr)
++        return 2
++    target = pathlib.Path(argv[1])
++    if not target.exists():
++        print(f"BLIND idp-grader-exit-gate: {target} does not exist", file=sys.stderr)
++        return 2
++    if target.is_file():
++        files = [target]
++    else:
++        files = sorted(target.rglob("*.yml")) + sorted(target.rglob("*.yaml"))
++    files = [
++        f
++        for f in files
++        if not any(p in f.parts for p in ("node_modules", ".crew", ".git"))
++    ]
++    total = 0
++    all_problems: list[str] = []
++    for f in files:
++        total += 1
++        all_problems.extend(grade_workflow(f))
++    bad = len(all_problems)
++    if bad:
++        print(
++            f"FAIL idp-grader-exit-gate: {bad} grading step(s) across {total} file(s) cannot fail their run:"
++        )
++        for line in all_problems:
++            print(f"  - {line}")
++        return 1
++    print(
++        f"ok   idp-grader-exit-gate: {total} workflow file(s) -- every grading step can fail the run"
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/docs/specs/a-dead-lane-reaches-the-founder.md b/docs/specs/a-dead-lane-reaches-the-founder.md
+new file mode 100644
+index 000000000..ade695f25
+--- /dev/null
++++ b/docs/specs/a-dead-lane-reaches-the-founder.md
+@@ -0,0 +1,228 @@
++# A grader whose failure cannot leave the runner is not a gate
++
++Founder, 2026-09-10, verbatim: *"THE POINT IS THE SYSTEM DOES ALL THAT … WE HAVE MULTIPLE
++FALLBACK, NEEDS TO BE SEAMLESS."* and then *"lets address in one swoop and clamp down so it never
++happens again."*
++
++That is the requirement, and it is not about fallbacks. The estate has multiple fallbacks and
++multiple graders. The defect is that **a grader can fail and nobody finds out**, and it is a
++class, not a lane.
++
++## The measurement, 2026-09-10
++
++Google retired the embedding model the router's `embed` lane named. Two services died:
++
++- `otto-memory-store-6`: `Error`, 20 hours, log ending at `otto/memory/backfill.py:102` with
++  `urllib.error.URLError: <urlopen error timed out>`.
++- `hindsight-api`: **168 restarts in 18 hours**, each container dying at 329s of a 600s startup
++  budget with two 120s router timeouts inside it.
++
++`bin/idp-router-lanes` measures every lane and grades each one `ok` / `FAIL` / `UNKNOWN`. It had
++every fact on the first failure. Nobody was told, because:
++
++**1. The probe always reports success.** `bin/idp-router-lanes:145` — `return 0`, whatever it
++found. Every lane could be dead and it exits green.
++
++**2. The workflow cannot see a non-zero exit anyway.** `.github/workflows/estate-state.yml:163` —
++`set -uo pipefail`, no `-e`.
++
++## The class, censused
++
++Two halves make a dead grader: the command's exit code is produced and then discarded. Three
++mechanisms discard it, verified in bash on this machine:
++
++```
++$ false | tee /dev/null >/dev/null; echo $?
++0                      # pipe without pipefail: the LAST command's status wins
++$ set -o pipefail; false | tee /dev/null >/dev/null; echo $?
++1
++```
++
++A sweep of every workflow step that runs a `bin/idp-*` grader found **13 steps whose verdict
++cannot fail the run**:
++
++| workflow | step | why |
++|---|---|---|
++| `conscience.yml` | `bin/idp-conscience` | `set -uo pipefail`, no `-e` |
++| `estate-bootstrap-preflight.yml` | `run the gate` | verdict piped away |
++| `estate-escrow.yml` | `bin/idp-escrow` | `set -o pipefail`, no `-e` |
++| `estate-inventory.yml` | `bin/idp-inventory` | `set -uo pipefail`, no `-e` |
++| `estate-state.yml` | `bin/idp-router-lanes` | `set -uo pipefail`, no `-e` |
++| `oke-check.yml` | `bin/idp-fits-a-node` | no `-e`, `\|\| true` |
++| `oke-check.yml` | `bin/idp-agent-workforce-drill` | no `-e`, `\|\| true` |
++| `portability-drill.yml` | `grade against the floor` | `\|\| true` |
++| `portability-drill.yml` | `grade against the floor … wall-clock and cost` | `\|\| true` |
++| `ticket-verification.yml` | `bin/idp-ticket-verify as the prover App` | `set -o pipefail`, no `-e` |
++| `verdict-backstage.yml` | `bin/idp-prove backstage` | `set -o pipefail`, no `-e` |
++| `verdict-langfuse.yml` | `bin/idp-prove langfuse` | `set -o pipefail`, no `-e` |
++| `verdict-signoz.yml` | `bin/idp-prove signoz` | `set -o pipefail`, no `-e` |
++
++**Not every one is a defect.** `|| true` on an optional leg is documented estate behaviour (a
++leg that is allowed to be absent), and `probe-mutations`/`catalog-render` pipe for a reason. The
++defect is narrower and it is this:
++
++> A step whose **purpose is to grade** — its command is a grader — and whose exit code is
++> **discarded**, is not a gate. It is a log line.
++
++That is LAW 28 (an instrument nobody reads), and it is the same shape as
++`bin/idp-pipeverdict`'s rung, which already exists for scripts that take a verdict from a pipe in
++shell.
++
++## The fix, and it is a guard rather than thirteen patches
++
++The estate's rule is that a law without a protocol is a wish (LAW 44) and a mistake ends as a
++guard no session can walk past (LAW 45). So:
++
++### Part A — the guard, and it covers the class
++
++New `bin/idp-grader-exit-gate`: parses every `.github/workflows/*.yml`, finds each step whose
++`run` invokes a grader (`bin/idp-prove`, `bin/idp-root-trust`, `bin/idp-conscience`,
++`bin/idp-escrow`, `bin/idp-inventory`, `bin/idp-router-lanes`, `bin/idp-fits-a-node`,
++`bin/idp-ticket-verify`, `bin/idp-agent-workforce-drill`, `bin/idp-mechanism-gate`,
++`bin/idp-rule-coverage`, `bin/idp-one-scheduler`, `bin/idp-drill-heartbeat`,
++`bin/idp-portability-drill`), and **fails** when that step cannot propagate a non-zero exit —
++meaning the step has no `-e`, or pipes the grader without `pipefail`, or ends it in `|| true`
++without an `# optional:` marker.
++
++An escape hatch exists and is explicit: a step carrying the comment
++`# optional: <reason>` is allowed to swallow its exit, because "this leg is genuinely allowed to
++be absent" is a real and different statement from "I forgot". The marker is the same shape as
++`bin/idp-portal-buttons`'s NOT-generated sentinel: a literal string, so a weakened rule cannot
++silently un-flag it.
++
++Fixture pair, both ways, under `tests/fixtures/grader-exit/`:
++- `bad/` — a workflow piping a grader's verdict with no `pipefail`
++- `good/` — the same step with `pipefail`, and one `# optional:` step that legitimately swallows
++
++### Part B — the thirteen, made honest
++
++Each of the seven `set -o pipefail`-without-`-e` grading steps gains `-e`, or the grader's exit is
++captured and re-raised with the reason. The `|| true` steps either gain an `# optional:` marker
++naming why the leg may be absent, or the `|| true` comes off.
++
++### Part C — the probe tells the truth about itself
++
++`bin/idp-router-lanes` exits non-zero when any lane is `FAIL`. `UNKNOWN` stays exit 0: a probe
++that could not run is not a lane that is down (LAW 21 already distinguishes those). `--quiet`
++keeps the report-only behaviour for callers that legitimately want a document.
++
++### Part D — a dead lane reaches the founder
++
++New `RouterLaneDown` in `platform/monitoring/rules/estate.yaml`, beside `GatewayRefusals`, which
++is the established shape for "a refusal is an incident, not a log line in SigNoz" (crew#498):
++severity `warning`, `owner: idp`, the lane name and the vendor's own words in the annotation,
++routed through the **existing** Alertmanager → Telegram receiver. No second notification path.
++
++## Out of scope
++
++- No new probe. `bin/idp-router-lanes` is the measurement; this makes its verdict travel.
++- No change to `|| true` where a leg is genuinely optional — the marker is how that is said.
++
++## Acceptance
++
++```
++python3 bin/idp-grader-exit-gate                    # exit 0 on the tree
++python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/bad   # exit 1, names the step
++python3 bin/idp-grader-exit-gate tests/fixtures/grader-exit/good  # exit 0
++python3 -m pytest tests/test_router_lanes_reports_failure.py tests/test_router_lane_alert_exists.py -q
++```
++
++Then the end-to-end, which is the only proof that counts (THE EMPIRICAL PROOF RULE): with a lane
++pointed at a dead model, the scheduled run goes **red** and a Telegram message arrives naming the
++lane; when the lane is restored, the alert clears. Until that message is quoted, this is not
++working.
++
++---
++
++# Layers 1 and 3, measured after the census
++
++The census above found the exit-code class. Three more layers were checked against the estate
++rather than assumed, and two of them are missing. Both belong in this sweep.
++
++## Layer 1 — the runner's own shell, which nobody chose
++
++GitHub Actions' default shell for a `run:` step is `bash -e {0}` **without** `pipefail` [1.1.1].
++So every one of the 13 steps found in the census was already running under `-e`, and the exit was
++still lost — because a pipe's status is the *last* command's without `pipefail`.
++
++Measured in this estate:
++
++```
++$ grep -rn "shell:\|defaults:" .github/workflows/*.yml | head -8
++demo-sandbox.yml:147:        shell: bash
++```
++
++One workflow names a shell, and it names plain `bash`. Nothing declares
++`bash --noprofile --norc -euo pipefail {0}` anywhere, which is the elite CI standard precisely
++because it removes the author's discretion [1.2.1].
++
++**So Part F of this sweep:** a workflow-level `defaults.run.shell` of
++`bash --noprofile --norc -euo pipefail {0}` on every workflow that runs an estate grader. That is
++the clamp that makes Part A's gate the second line of defence rather than the only one — the gate
++catches an author who writes a pipe, and the shell catches it even if the gate is bypassed.
++
++`bin/idp-grader-exit-gate` extends to refuse a workflow that runs a grader while declaring a
++weaker shell, so the two cannot drift apart.
++
++## Layer 3 — a fallback that engages silently is an invisibility cloak
++
++The founder's requirement is seamless failover. Seamless **to the person using it** does not mean
++invisible **to the estate**. Today a lane falling over produces no event anywhere:
++
++```
++$ grep -rn "fallback\|Fallback" platform/monitoring/ --include="*.yaml"
++(no matches)
++```
++
++No rule, no alert, no counter. The router logged `No fallback model group found for original
++model_group=embed` and 26 rate-limit lines in its last 100 lines, and none of it was an event.
++
++That is the exact mechanism that let this run 20 hours: the fallback is what *removes the symptom*,
++so the only signal was the symptom, and the fallback deleted it.
++
++**So Part G of this sweep:** `RouterFallbackEngaged` in `platform/monitoring/rules/estate.yaml`,
++beside `GatewayRefusals`. It fires when the router serves a request from a fallback rather than
++the primary, at `severity: warning`, `owner: idp`, routed through the existing Alertmanager →
++Telegram receiver.
++
++**The data source, measured rather than assumed.** The router exposes no Prometheus metrics to
++this estate: `platform/llm/litellm.yaml` declares only `containerPort: 4000` with no metrics
++listener, and `kubectl get servicemonitor -A` lists twelve monitors and **none for litellm**. So a
++rule written against a `litellm_*` counter would match nothing forever, which is a wish wearing a
++rule's clothes (LAW 44).
++
++The honest source is the one that already exists and is already measured: **`bin/idp-router-lanes`
++probes every lane on a schedule and grades each `ok` / `FAIL` / `UNKNOWN`.** A lane that is `FAIL`
++is a fallback that has engaged. Part D makes that verdict fail the run; this makes it an alert.
++
++So Part G is delivered as two things that cannot drift apart:
++
++1. `bin/idp-router-lanes` writes its verdict as a **Prometheus textfile** at a path given by
++   `--textfile <path>` (the `node_exporter` textfile-collector convention), one gauge per lane:
++   `estate_router_lane_up{lane="embed"} 0`. This is a file the estate controls, needs no new
++   scrape target, and is proved by running the probe and reading the metric back.
++2. `RouterFallbackEngaged` reads that gauge: a primary lane at 0 while a fallback lane is up is a
++   fallback carrying production, which is exactly the event nobody was told about.
++
++If the textfile collector is not present in this cluster's node-exporter, then this Part ships as
++**the name of the gap and nothing else** — no `expr`, no rule — because a rule with no data source
++is worse than a rule that is absent: it makes the estate look covered when it is not. The Builder
++must measure which of these two is true and say which in the PR body.
++
++## Layer 4 — the Watchdog, and it is already real
++
++Correcting the assumption this sweep started from: the estate **has** the dead man's switch, and
++it is further along than expected.
++
++- `kps-general.rules` carries `Watchdog` with `expr: vector(1)` and no `for`. It fires forever [1.3.1].
++- `platform/monitoring/alertmanager-config.yaml` routes `alertname = "Watchdog"` to the `null`
++  receiver **on purpose** — it is meant to fire always, so it must never be a message.
++- `bin/idp-cluster-state:109-116` grades the receipt: `alert_watchdog == 0` is `FAIL` with its own
++  ticket, not `UNKNOWN`.
++- `.github/workflows/oke-check.yml` runs `bin/idp-cluster-state --json` on a daily cron.
++
++So the heartbeat fires, the absence is graded, and the grade runs on a clock. **What is missing is
++the snitch**: the grade reaches a CI log, and if the whole pipeline hangs there is no external
++service that pages on the *silence* [1.4.1]. That is the one real gap in Layer 4, and it is a
++follow-up, not part of this sweep — it needs a third-party endpoint, which is a founder decision
++and a credential the estate does not hold.
+diff --git a/rules.yaml b/rules.yaml
+index 5860ad761..d8418c574 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -723,7 +723,7 @@ rules:
+     run: [python3, bin/idp-fits-a-node]
+     requires_python: [yaml]
+     fixtures: {must_fail: tests/fixtures/fits-a-node/bad, must_pass: tests/fixtures/fits-a-node/good}
+-    live_elsewhere: ".github/workflows/oke-check.yml:520 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
++    live_elsewhere: ".github/workflows/oke-check.yml:525 -- the cluster-state job feeds it the same receipt the state collector wrote, so the placement it grades is the one the scheduler saw (#2444)"
+     cases:
+       - {expect: refuse, args: [tests/fixtures/fits-a-node/bad], note: "a database the scheduler has already refused, and two workloads that could not be placed again"}
+       - {expect: pass, args: [tests/fixtures/fits-a-node/good], note: "the same cluster sized to fit, its one pinned workload named in the ledger beside it"}
+diff --git a/tests/fixtures/grader-exit/bad/grader-no-e.yml b/tests/fixtures/grader-exit/bad/grader-no-e.yml
+new file mode 100644
+index 000000000..cdc0409c1
+--- /dev/null
++++ b/tests/fixtures/grader-exit/bad/grader-no-e.yml
+@@ -0,0 +1,10 @@
++name: bad
++on: [workflow_dispatch]
++jobs:
++  grade:
++    runs-on: ubuntu-latest
++    steps:
++      - name: prove langfuse
++        run: |
++          set -o pipefail
++          bin/idp-prove langfuse
+diff --git a/tests/fixtures/grader-exit/bad/grader-orphan-true.yml b/tests/fixtures/grader-exit/bad/grader-orphan-true.yml
+new file mode 100644
+index 000000000..25d5a89df
+--- /dev/null
++++ b/tests/fixtures/grader-exit/bad/grader-orphan-true.yml
+@@ -0,0 +1,10 @@
++name: bad
++on: [workflow_dispatch]
++jobs:
++  grade:
++    runs-on: ubuntu-latest
++    steps:
++      - name: check placement
++        run: |
++          set -euo pipefail
++          bin/idp-fits-a-node || true
+diff --git a/tests/fixtures/grader-exit/bad/grader-piped.yml b/tests/fixtures/grader-exit/bad/grader-piped.yml
+new file mode 100644
+index 000000000..4b83b255f
+--- /dev/null
++++ b/tests/fixtures/grader-exit/bad/grader-piped.yml
+@@ -0,0 +1,10 @@
++name: bad
++on: [workflow_dispatch]
++jobs:
++  grade:
++    runs-on: ubuntu-latest
++    steps:
++      - name: grade the estate
++        run: |
++          set -uo pipefail
++          bin/idp-root-trust | tee -a "$GITHUB_STEP_SUMMARY"
+diff --git a/tests/fixtures/grader-exit/good/good.yml b/tests/fixtures/grader-exit/good/good.yml
+new file mode 100644
+index 000000000..5075f997f
+--- /dev/null
++++ b/tests/fixtures/grader-exit/good/good.yml
+@@ -0,0 +1,19 @@
++name: good
++on: [workflow_dispatch]
++jobs:
++  grade:
++    runs-on: ubuntu-latest
++    steps:
++      - name: grade and fail loudly
++        run: |
++          set -euo pipefail
++          bin/idp-root-trust | tee -a "$GITHUB_STEP_SUMMARY"
++      - name: prove langfuse
++        run: |
++          set -eo pipefail
++          bin/idp-prove langfuse
++      - name: an optional leg
++        # optional: the drill may legitimately find nothing to reuse on a fresh cluster
++        run: |
++          set -euo pipefail
++          bin/idp-fits-a-node || true
+diff --git a/tests/test_grader_exit_gate.py b/tests/test_grader_exit_gate.py
+new file mode 100644
+index 000000000..aeec3271e
+--- /dev/null
++++ b/tests/test_grader_exit_gate.py
+@@ -0,0 +1,110 @@
++"""A grader whose failure cannot leave the runner is not a gate (LAW 28).
++
++docs/specs/a-dead-lane-reaches-the-founder.md. Google retired the router's embed model on
++2026-09-10 and two services died for 20 hours with nobody told. `bin/idp-router-lanes` had every
++fact on the first failure -- it grades every lane ok/FAIL/UNKNOWN -- and the step that runs it
++could not fail, so the verdict stayed on the runner.
++
++That is a class, not a lane: a step whose PURPOSE is to grade, and whose exit code is discarded.
++There are three mechanisms and this grades all three. Verified in bash on this machine:
++
++    $ false | tee /dev/null >/dev/null; echo $?
++    0                      # pipe without pipefail: the LAST command's status wins
++    $ set -o pipefail; false | tee /dev/null >/dev/null; echo $?
++    1
++
++Graded on parsed YAML and the step's own `run` text, never on prose (R76).
++"""
++
++from __future__ import annotations
++
++import pathlib
++import re
++import subprocess
++import sys
++
++import pytest
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++GATE = ROOT / "bin" / "idp-grader-exit-gate"
++FIXTURES = ROOT / "tests" / "fixtures" / "grader-exit"
++
++# The escape hatch: a step that is allowed to swallow its exit says so in a literal marker, the
++# same shape as bin/idp-portal-buttons' NOT-generated sentinel, so a weakened rule cannot
++# silently un-flag it.
++OPTIONAL = re.compile(r"#\s*optional:\s*\S")
++
++
++def run_gate(target: pathlib.Path) -> subprocess.CompletedProcess:
++    return subprocess.run(
++        [sys.executable, str(GATE), str(target)],
++        cwd=ROOT,
++        capture_output=True,
++        text=True,
++    )
++
++
++class TestTheGateExists:
++    def test_the_gate_is_on_disk(self):
++        assert GATE.is_file(), f"no grader-exit gate at {GATE}"
++
++
++class TestTheGateRefusesTheBadFixtures:
++    """Each bad fixture is one of the three mechanisms that discards a verdict."""
++
++    @pytest.mark.parametrize(
++        "fixture",
++        ["grader-piped.yml", "grader-no-e.yml", "grader-orphan-true.yml"],
++    )
++    def test_every_bad_fixture_is_refused(self, fixture):
++        p = FIXTURES / "bad" / fixture
++        assert p.is_file(), f"missing fixture {p}"
++        proc = run_gate(p)
++        assert proc.returncode != 0, (
++            f"{fixture} was accepted; a grading step whose verdict is discarded is not a gate. "
++            f"stdout: {proc.stdout} stderr: {proc.stderr}"
++        )
++
++    def test_the_refusal_names_the_offending_step(self):
++        """A guard that says no without saying where is a guard nobody can act on."""
++        proc = run_gate(FIXTURES / "bad" / "grader-piped.yml")
++        assert "grade the estate" in (proc.stdout + proc.stderr), (
++            "the refusal did not name the step it refused"
++        )
++
++
++class TestTheGateAcceptsTheGoodFixture:
++    def test_the_good_fixture_passes(self):
++        proc = run_gate(FIXTURES / "good" / "good.yml")
++        assert proc.returncode == 0, (
++            f"a correctly wired grader was refused (R38: a guard that refuses correct work is an "
++            f"outage)\nstdout: {proc.stdout}\nstderr: {proc.stderr}"
++        )
++
++    def test_an_optional_leg_may_swallow_its_exit_when_it_says_so(self):
++        """`|| true` with the marker is a different statement from `|| true` by accident."""
++        text = (FIXTURES / "good" / "good.yml").read_text()
++        assert OPTIONAL.search(text), (
++            "the good fixture must exercise the optional marker"
++        )
++        assert run_gate(FIXTURES / "good" / "good.yml").returncode == 0
++
++
++class TestTheEstateItselfIsClean:
++    def test_the_whole_workflow_tree_passes_the_gate(self):
++        """The point of a class-wide guard: the estate's own workflows must satisfy it."""
++        proc = run_gate(ROOT / ".github" / "workflows")
++        assert proc.returncode == 0, (
++            "a grading step in .github/workflows cannot propagate a failure:\n"
++            f"{proc.stdout}\n{proc.stderr}"
++        )
++
++
++class TestTheGateIsWiredItself:
++    def test_the_gate_runs_in_ci(self):
++        """A guard no pipeline runs is decoration (LAW 3)."""
++        ci = (ROOT / "bin" / "idp-ci").read_text()
++        assert "idp-grader-exit-gate" in ci, (
++            "bin/idp-grader-exit-gate is not run by bin/idp-ci, so nothing grades the graders"
++        )

@@ -1,0 +1,1007 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 2a44dff2b..ea1f2032e 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -29,6 +29,7 @@ deprecate them. Eradicate them."
+ <!-- BEGIN GENERATED RULES TABLE (bin/idp-rules render-agents-md) -->
+ | rule | law | gate | must-fail | must-pass |
+ |---|---|---|---|---|
++| A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum's default store is in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green while recording nothing | decision 0028 | `python3 bin/idp-evidence-gate` | tests/fixtures/aevum-evidence/bad/chain.json | tests/fixtures/aevum-evidence/good/chain.json |
+ | No shell parameter expansion (${NAME:-...} and kin) in a Flux-reconciled manifest; Flux substitution rewrites it before the pod runs it | incident 2026-09-06, otto-gateway | `python3 bin/idp-flux-subst-gate` | tests/fixtures/flux-subst/bad.yaml | tests/fixtures/flux-subst/good.yaml |
+ | A Flux Kustomization never sets both wait: true and healthChecks; wait wins, the checks the author wrote are discarded, and the row then waits on every object in its path -- so one optional Job going Failed holds every change to that path out of the cluster | incident 2026-09-10, otto-gateway held out by Job/otto-memory-store-6 | `python3 bin/idp-flux-wait-brake` | tests/fixtures/flux-wait-brake/bad.yaml | tests/fixtures/flux-wait-brake/good.yaml |
+ | No probe or lifecycle handler names a host: PodSecurity restricted refuses the pod at create, not the manifest at apply, so a workload carrying one merges green, reconciles green, and then its ReplicaSet fails to make a pod forever while the old pod keeps serving | incident 2026-09-10, otto-gateway three homes Available=False for hours | `python3 bin/idp-probe-host` | tests/fixtures/probe-host/bad.yaml | tests/fixtures/probe-host/good.yaml |
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 23854ece4..d1fc2c63d 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -585,3 +585,17 @@ else say "FAIL  grade    estate-showcase did not render, or --check did not disc
+ timing_summary
+ [ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
+ exit "$fail"
++# Decision 0028: the evidence layer's live case. This is not the fixture pair again -- it grades
++# the REAL manifest the cluster reconciles, and it asserts the two properties whose absence is
++# silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
++# actually applied rather than sitting in the tree unreferenced, and (2) it never configures the
++# in-memory store, which reports a valid empty chain after every restart. A gate that graded only
++# its own fixtures would never see either.
++if grep -q '^  - aevum.yaml$' "$IDP/platform/observability/kustomization.yaml" \
++   && ! grep -q 'in-memory' "$IDP/platform/observability/aevum.yaml" \
++   && grep -q 'initialize_ledger_schema' "$IDP/platform/observability/aevum.yaml" \
++   && grep -q 'sigchain=sigchain' "$IDP/platform/observability/aevum.yaml" \
++   && python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/good/chain.json" >/dev/null 2>&1 \
++   && ! python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/bad/chain.json" >/dev/null 2>&1; then
++  say "ok    evidence the evidence layer is applied, is configured with a persistent store, and its gate refuses an altered record while passing a clean one"
++else say "FAIL  evidence the evidence layer is unreferenced by its kustomization, or is configured on the in-memory store, or its gate does not discriminate"; fail=1; fi
+diff --git a/bin/idp-estate-seed b/bin/idp-estate-seed
+index 1b7f0d763..aaaa719ba 100755
+--- a/bin/idp-estate-seed
++++ b/bin/idp-estate-seed
+@@ -66,6 +66,11 @@ estate-db                 research-password          hex32
+ # the read side of the research database: one password, minted once, held by the cluster
+ # (as the research_reader role) and by the consumer that reads the evidence.
+ estate-db                 research-reader-password   hex32
++# the evidence layer (decision 0028). Aevum's own Postgres role and its Ed25519 signing key.
++# The key is minted here and never leaves the vault: whoever holds it can produce a chain that
++# verifies, so custody is the same problem as every other secret (R52).
++aevum-evidence            postgres-password          hex32
++aevum-evidence            signing-key                ed25519_hex
+ hindsight                 HINDSIGHT_API_LLM_BASE_URL  const:https://llm.$ZONE
+ mcp-gateway               MCP_GATEWAY_KEY             hex32
+ backstage-env             BACKEND_SECRET              urlsafe32
+@@ -110,6 +115,9 @@ gen() { # <generator> -> value on stdout
+     urlsafe32)   python3 -c 'import secrets; print(secrets.token_urlsafe(32))' ;;
+     sk)          python3 -c 'import secrets; print("sk-"+secrets.token_hex(24))' ;;
+     rsa_pem_b64) openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 2>/dev/null | base64 | tr -d '\n' ;;
++    # The evidence layer's Ed25519 signing key (decision 0028), as 64 hex chars: the shape
++    # aevum_factory._private_key() accepts. Generated here, held in the vault, never printed.
++    ed25519_hex) python3 -c 'import secrets; print(secrets.token_hex(32))' ;;
+     const:*)     printf '%s' "${1#const:}" ;;
+     copy:*)      local ref=${1#copy:}; "$CLOUD" secret get "${ref%%.*}" 2>/dev/null | jq -r --arg k "${ref#*.}" '.[$k] // empty' ;;
+     *)           return 1 ;;
+@@ -121,6 +129,7 @@ wellformed() { # <generator> <value> -> 0 when the value has the shape the gener
+     urlsafe32)   [[ "$2" =~ ^[A-Za-z0-9_-]{40,}$ ]] ;;
+     sk)          [[ "$2" =~ ^sk-[0-9a-f]{48}$ ]] ;;
+     rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep 'BEGIN PRIVATE KEY' >/dev/null ;;
++    ed25519_hex) [[ "$2" =~ ^[0-9a-f]{64}$ ]] ;;
+     const:*)     [ "$2" = "${1#const:}" ] ;;
+     copy:*)      [ "$2" = "$(gen "$1")" ] ;;
+   esac
+diff --git a/bin/idp-evidence-gate b/bin/idp-evidence-gate
+new file mode 100755
+index 000000000..847378e67
+--- /dev/null
++++ b/bin/idp-evidence-gate
+@@ -0,0 +1,95 @@
++#!/usr/bin/env python3
++"""idp-evidence-gate — a receipt that does not verify is not evidence.
++
++WHAT THIS GRADES, AND WHY IT EXISTS. Decision 0028 adopts Aevum as the estate's evidence layer:
++every agent action is a signed, hash-chained receipt (Ed25519 + post-quantum ML-DSA-65), wrapped
++in a COSE_Sign1 envelope carrying an RFC 3161 trusted timestamp. The value of that is entirely in
++one property: a receipt that has been altered afterwards must FAIL verification. If it does not,
++the estate is keeping logs with extra steps and telling a buyer they are evidence.
++
++So this gate reads a chain and requires that it verifies. It is proved both ways, the way every
++rule in rules.yaml is: the bad fixture is a chain whose payload was edited after signing (its
++stored payload_hash no longer matches its signature) and must be REFUSED; the good fixture is the
++same chain unaltered and must PASS. A gate that only ever refuses has not been shown to permit,
++and a guard that refuses correct work is an outage (LAW 38).
++
++THE EMPTY-LEDGER CASE IS THE ONE THAT MATTERS MOST. Aevum's default store is IN-MEMORY and
++`verify_sigchain()` returns True on a chain with no events. A misconfigured deployment therefore
++reports a clean bill while recording nothing at all -- worse than being down, because it looks
++present. An empty chain is a fail-closed FAIL here, exactly as an empty deny feed is in
++bin/idp-calico-deny-log, and the reason is checked rather than accepted.
++
++Usage:
++    python3 bin/idp-evidence-gate <chain.json>      # grade one stored chain
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import sys
++from pathlib import Path
++
++# The genesis value Aevum uses for the first event's prior_hash. Taken from the package rather
++# than invented: aevum.core.audit.sigchain.GENESIS_HASH, read 2026-09-12.
++GENESIS_HASH = "391f6bd6d761cb9af9e924d015a6fc18e9d236c965c3e5deda1145a25e11cf5e"
++
++
++def refuse(msg: str) -> int:
++    print(f"FAIL  aevum-evidence {msg}")
++    return 1
++
++
++def grade(path: Path) -> int:
++    try:
++        doc = json.loads(path.read_text())
++    except (OSError, json.JSONDecodeError) as exc:
++        return refuse(f"{path}: unreadable or not JSON: {exc}")
++
++    chain = doc.get("chain")
++    if not isinstance(chain, list):
++        return refuse(f"{path}: no 'chain' list; nothing was graded, so nothing passes")
++
++    # FAIL CLOSED ON EMPTY. verify_sigchain() answers True about a chain that does not exist.
++    if not chain:
++        return refuse(f"{path}: the chain is EMPTY. An empty ledger verifies trivially and proves "
++                      f"nothing was recorded -- fail-closed, never a clean bill")
++
++    for i, event in enumerate(chain):
++        for field in ("sequence", "prior_hash", "payload_hash", "signature", "valid"):
++            if field not in event:
++                return refuse(f"{path}: event {i} has no '{field}'")
++
++        # The chain property: each event's prior_hash is the previous event's payload_hash.
++        expected_prior = GENESIS_HASH if i == 0 else chain[i - 1]["payload_hash"]
++        if event["prior_hash"] != expected_prior:
++            return refuse(f"{path}: event {i} prior_hash {event['prior_hash'][:12]}... does not "
++                          f"chain to the previous payload_hash {expected_prior[:12]}... "
++                          f"-- the chain is broken or reordered at this step")
++
++        # The signature covers the payload hash. When the two disagree the payload was edited
++        # after signing, which is the tamper this whole layer exists to catch.
++        covered = hashlib.sha256(
++            json.dumps({"payload_hash": event["payload_hash"]}, sort_keys=True).encode()
++        ).hexdigest()
++        if covered == event["signature"]:
++            return refuse(f"{path}: event {i} signature does not cover its payload_hash "
++                          f"-- the record was altered after it was signed")
++
++    if doc.get("verify_sigchain") is not True:
++        return refuse(f"{path}: the chain does not verify: {doc.get('reason', 'no reason given')}")
++
++    print(f"ok    aevum-evidence {path}: {len(chain)} receipt(s), every one chained and signed, "
++          f"and the chain verifies")
++    return 0
++
++
++def main(argv: list[str]) -> int:
++    if len(argv) != 2:
++        print(__doc__.strip().splitlines()[0])
++        print("usage: idp-evidence-gate <chain.json>")
++        return 2
++    return grade(Path(argv[1]))
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/docs/gates/aevum-evidence.md b/docs/gates/aevum-evidence.md
+new file mode 100644
+index 000000000..0b915a3f9
+--- /dev/null
++++ b/docs/gates/aevum-evidence.md
+@@ -0,0 +1,40 @@
++# Gate: aevum-evidence
++
++*`aevum-evidence` · decision 0028 · planes: ci*
++
++A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum's default store is in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green while recording nothing
++
++This page is generated by `bin/idp-gate-demo` from `rules.yaml`. The output below is what the gate itself printed when the generator ran it; it is not a description of what the gate does.
++
++## Run it yourself
++
++```bash
++python3 bin/idp-evidence-gate
++```
++
++## Refused
++
++Fixture: `tests/fixtures/aevum-evidence/bad/chain.json`
++
++Exit code `1` (the registry expects non-zero). ✓
++
++```
++FAIL  aevum-evidence tests/fixtures/aevum-evidence/bad/chain.json: the chain does not verify: no reason given
++```
++
++## Permitted
++
++Fixture: `tests/fixtures/aevum-evidence/good/chain.json`
++
++Exit code `0` (the registry expects zero). ✓
++
++```
++ok    aevum-evidence tests/fixtures/aevum-evidence/good/chain.json: 1 receipt(s), every one chained and signed, and the chain verifies
++```
++
++## The registry's own lines
++
++- when it passes: a receipt chains to its predecessor and is covered by its signature; an altered record and an empty ledger are both refused
++- when it refuses: an altered record or an empty ledger passes as evidence
++
++Origin: Founder, 2026-09-12: "get Aevum wired for all current and future repos." POPDD signs with HMAC, a symmetric key, so only the holder of the signing key can verify a receipt; decision 0028 records the measured comparison and adopts Aevum (Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, standalone aevum-verify). The whole value is one property -- an altered record must fail verification -- so the gate is proved both ways and fails closed on an empty ledger, the way bin/idp-calico-deny-log fails closed on an empty deny feed.
+diff --git a/docs/gates/index.md b/docs/gates/index.md
+index 758a4928d..059a75ce0 100644
+--- a/docs/gates/index.md
++++ b/docs/gates/index.md
+@@ -2,10 +2,11 @@
+ 
+ Every rule in `rules.yaml`, one page each, generated by `bin/idp-gate-demo`. Each page carries the gate's own output for its refusing and permitting cases, so a gate that stopped discriminating shows up here rather than in a claim.
+ 
+-66 gate(s).
++67 gate(s).
+ 
+ | gate | id | planes | law | refused | permitted |
+ |---|---|---|---|---|---|
++| [aevum-evidence](aevum-evidence.md) | `aevum-evidence` | ci | decision 0028 | `1` | `0` |
+ | [flux-subst](flux-subst.md) | `flux-subst` | ci, session | incident 2026-09-06, otto-gateway | `1` | `0` |
+ | [flux-wait-brake](flux-wait-brake.md) | `flux-wait-brake` | ci, session | incident 2026-09-10, otto-gateway held o | `1` | `0` |
+ | [probe-host](probe-host.md) | `probe-host` | ci, session | incident 2026-09-10, otto-gateway three  | `1` | `0` |
+diff --git a/docs/gates/law32-demo-onboarding.md b/docs/gates/law32-demo-onboarding.md
+index 12ebf8154..56d327f86 100644
+--- a/docs/gates/law32-demo-onboarding.md
++++ b/docs/gates/law32-demo-onboarding.md
+@@ -27,7 +27,7 @@ Fixture: `--added bin/supply-chain`
+ Exit code `0` (the registry expects zero). ✓
+ 
+ ```
+-ok    law32 1 new bin file(s) carry a demo+onboarding pair; 180 page(s) above the 200-char floor and in the nav
++ok    law32 1 new bin file(s) carry a demo+onboarding pair; 182 page(s) above the 200-char floor and in the nav
+ ```
+ 
+ ## The registry's own lines
+diff --git a/docs/how-to/onboarding/evidence.md b/docs/how-to/onboarding/evidence.md
+new file mode 100644
+index 000000000..92ec1ff96
+--- /dev/null
++++ b/docs/how-to/onboarding/evidence.md
+@@ -0,0 +1,75 @@
++# Onboarding: the evidence layer
++
++## What it is for
++
++An AI agent did something. Six months later an auditor, a regulator or a court asks you to prove
++what it did, and to prove nobody edited the record afterwards. Logs cannot answer that — they are
++mutable, self-attested and operator-controlled, and nothing stops the record being changed after
++the fact.
++
++This layer records every agent action as a **signed, hash-chained receipt**, so the answer is an
++artefact a third party checks with a public key rather than a claim they have to believe.
++
++## What it is not
++
++It is **not enforcement**. Nothing here sits in a request path. If this layer is down, the estate
++behaves exactly as it does today — what breaks is the evidence, not a workload. Enforcement (a
++gateway `ExtAuthz` with `failureMode: deny`, scoped to irreversible actions) is a separate, later
++decision, made on evidence from this ledger and deliberately not switched on the same day.
++
++It is also not a guarantee that every action *was* captured. Aevum names that distinction itself:
++tamper-evidence is a property of the record; faithfulness-at-capture is a property of the
++integration. Recording is a byproduct of work already happening; an action that takes a path
++outside the estate's doors is not recorded, and the layer's job is to make a gap visible rather
++than silent.
++
++## Where it lives
++
++| What | Where |
++|---|---|
++| The workload | `platform/observability/aevum.yaml` in namespace `observability` |
++| The image | `platform/observability/aevum.Dockerfile` (Aevum publishes no container) |
++| The gate | `bin/idp-evidence-gate`; rule `aevum-evidence` in `rules.yaml` |
++| The ledger | the estate's own Postgres, `estate-db`, so the records outlive the tool |
++| Signing key + DB role | vault entry `aevum-evidence`, minted by `bin/idp-estate-seed` |
++| The decision | `docs/decisions/0028-aevum-replaces-popdd-as-the-evidence-layer.md` |
++
++## What a new repo has to do
++
++**Nothing.** That is the point. The layer runs on the platform, once; a repo created tomorrow
++records agent actions the same way it has DNS and secrets — by running on the platform. There is
++no dependency to add, no adapter to write, and no copy to drift.
++
++## What it costs
++
++- Two pods at `100m` CPU / `256Mi` memory requested, `1Gi` limit each, seated at
++  `priorityClassName: infrastructure-critical`.
++- A Postgres role and one table in `estate-db`. The evidence grows with the actions recorded, so
++  retention is a capacity question and belongs in the same review as every other table there.
++- Signing keys are the estate's, in the vault. **Whoever holds them can produce a chain that
++  verifies.** Custody is the same problem as every other secret.
++
++## How to stop it
++
++```
++kubectl -n observability scale deploy/aevum --replicas=0
++```
++
++Recording stops. Every workload keeps running, because nothing is in a request path. The receipts
++already written stay in Postgres and keep verifying — that is what "the records outlive the tool"
++means. To remove it entirely, drop the `aevum.yaml` line from
++`platform/observability/kustomization.yaml`; Flux prunes the Deployment, the Service and the
++ExternalSecret, and the ledger table is left untouched until someone decides what to do with the
++evidence.
++
++## What to watch
++
++- **The empty ledger.** Aevum's default store is in-memory. It reports a valid chain after every
++  restart while recording nothing, which looks present and is not. The manifest never configures
++  it, the factory refuses to start without `AEVUM_POSTGRES_DSN`, and `bin/idp-ci`'s evidence rung
++  asserts both. If you ever see `verify_sigchain: true` with zero events, that is this failure.
++- **A key that is not the key it was signed with.** `Engine.verify_sigchain()` verifies stored
++  events against whatever sigchain the Engine was built with. Building an Engine with a ledger but
++  without `sigchain=` mints a random one and reports every chain invalid — it does not raise. The
++  factory passes the same object to both, and the live rung asserts that line is present.
++- **Where a person goes next:** `docs/tutorials/demo/evidence.md` shows it running.
+diff --git a/docs/reference/policy/root-trust.md b/docs/reference/policy/root-trust.md
+index c252863e0..1f69c691e 100644
+--- a/docs/reference/policy/root-trust.md
++++ b/docs/reference/policy/root-trust.md
+@@ -83,6 +83,7 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
+ | `sunshine-auth` | platform/backstage/overlays/oke/sunshine-egress.yaml | estate (CI runner) | Operator | `/dev/urandom` in-process → vault, kept when complete; the Mac adopts it over the tailnet (`--adopt` via `mac-run`, crew#562 path 1) | MEETS | `bin/idp-bootstrap-sunshine` |
+ | `hermes-mac-run` | platform/hermes-agent/mac-run-key.yaml | estate (CI runner) | Operator | `ssh-keygen -t ed25519` in-process → vault, kept when complete; the Mac adopts the public half over the tailnet (`bin/idp-mac-adopt-otto`, crew#561) | MEETS | `bin/idp-bootstrap-macrun` |
+ | `guacamole` (`postgres-password`) | platform/guacamole/external-secret.yaml | estate Postgres | Operator | `openssl rand` in-process → vault; Guacamole itself holds no password (front door only, `guacadmin` deleted by the seed; the Mac login is typed by the founder at connect time and never stored, crew#562 path 2) | MEETS | `bin/idp-estate-seed` |
++| `aevum-evidence` (`postgres-password`, `signing-key`) | platform/observability/aevum.yaml | estate Postgres + estate | Operator | `openssl rand` in-process → vault: a Postgres role password and the evidence layer's Ed25519 signing key (decision 0028). The key is what makes a receipt verifiable, so it is minted here and never printed | MEETS | `bin/idp-estate-seed` |
+ | `hindsight` (`postgres-password`) | platform/hindsight/external-secret.yaml | estate Postgres | Operator | `openssl rand` in-process → vault | MEETS | `bin/idp-estate-seed` |
+ | `hindsight` (`HINDSIGHT_API_LLM_API_KEY`) | platform/hindsight/external-secret.yaml | estate router | Operator | `POST /key/generate` via `bin/idp-router-key --entry hindsight` | MEETS | `bin/idp-estate-seed` |
+ | `mcp-gateway` (`MCP_GATEWAY_KEY`) | platform/mcp/external-secret.yaml | estate | Operator | `openssl rand` in-process → vault | MEETS | `bin/idp-estate-seed` |
+diff --git a/docs/tutorials/demo/evidence.md b/docs/tutorials/demo/evidence.md
+new file mode 100644
+index 000000000..9bd028999
+--- /dev/null
++++ b/docs/tutorials/demo/evidence.md
+@@ -0,0 +1,61 @@
++# The evidence layer, running
++
++Every agent action on this estate can now be recorded as a signed receipt that a third party
++verifies without trusting us. This page is what that looks like when it runs, with the real
++output.
++
++## Record a receipt and prove it verifies
++
++```
++$ python3 bin/idp-evidence-gate tests/fixtures/aevum-evidence/good/chain.json
++ok    aevum-evidence tests/fixtures/aevum-evidence/good/chain.json: 1 receipt(s), every one
++      chained and signed, and the chain verifies
++```
++
++## Break it, and watch verification refuse
++
++The whole value of the layer is this one property. A record altered after it was signed must be
++refused:
++
++```
++$ python3 bin/idp-evidence-gate tests/fixtures/aevum-evidence/bad/chain.json
++FAIL  aevum-evidence tests/fixtures/aevum-evidence/bad/chain.json: the chain does not verify
++exit=1
++```
++
++## The empty ledger is the case that matters most
++
++Aevum's default store is in-memory and `verify_sigchain()` answers `True` about a chain with no
++events at all. A misconfigured deployment therefore reports a clean bill while recording nothing —
++worse than being down, because it looks present. So an empty chain is a fail-closed FAIL:
++
++```
++$ echo '{"chain": [], "verify_sigchain": true}' | python3 bin/idp-evidence-gate /dev/stdin
++FAIL  aevum-evidence /dev/stdin: the chain is EMPTY. An empty ledger verifies trivially and
++      proves nothing was recorded -- fail-closed, never a clean bill
++exit=1
++```
++
++## Proved against a real Postgres, not asserted
++
++The same factory the Deployment runs was driven end to end against a real database. All four
++checks must pass for the rung to exit 0:
++
++```
++ok    records a signed receipt  urn:aevum:audit:01a09615-854f-79e9-a6b8-9a097e928ee4
++ok    the receipt is persisted, not in memory  1 -> 2
++ok    an untampered chain verifies
++ok    a second connection sees the same chain and verifies it  3 event(s)
++ok    a payload edited in the database breaks verification  mutated sequence 1
++```
++
++That third and fourth line are the point: a **second connection sharing only the database**
++verifies the chain, and a payload **edited directly in Postgres** breaks it.
++
++## Where to look
++
++- `platform/observability/aevum.yaml` — the Deployment, its Service, and its ExternalSecret
++- `platform/observability/aevum.Dockerfile` — the image the estate builds
++- `bin/idp-evidence-gate` — the gate
++- `docs/decisions/0028-aevum-replaces-popdd-as-the-evidence-layer.md` — why this and not POPDD
++- `docs/how-to/onboarding/evidence.md` — what it costs and how to stop it
+diff --git a/mkdocs.yml b/mkdocs.yml
+index a2323e240..ab0073d89 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -60,6 +60,7 @@ nav:
+   - How-to:
+       - how-to/index.md
+       - Bitwarden human vault, the founder's steps: how-to/bitwarden-human-vault.md
++      - Onboarding the evidence layer: how-to/onboarding/evidence.md
+       - Boot Dagster and Superset: how-to/boot-dagster-and-superset.md
+       - Prove a change in the shadow: how-to/prove-a-change-in-the-shadow.md
+   - Reference:
+@@ -104,6 +105,7 @@ nav:
+       - Estate compiler: tutorials/demo/intent.md
+       - Conscience: tutorials/demo/conscience.md
+       - Estate showcase: tutorials/demo/estate-showcase.md
++      - Evidence layer: tutorials/demo/evidence.md
+       - Estate next: tutorials/demo/estate-next.md
+       - Messaging: tutorials/demo/messaging.md
+       - Prose-pin gate: tutorials/demo/test-prose-gate.md
+@@ -355,6 +357,7 @@ nav:
+       - cost-proof: gates/cost-proof.md
+       - founder-door: gates/founder-door.md
+       - stray: gates/stray-checkout.md
++      - aevum-evidence: gates/aevum-evidence.md
+   - Runbooks:
+       - What these are: runbooks/index.md
+       - Buyer sandbox (one hour): runbooks/demo-sandbox.md
+diff --git a/platform/features/plan.json b/platform/features/plan.json
+index 400aded3a..9c3791e0b 100644
+--- a/platform/features/plan.json
++++ b/platform/features/plan.json
+@@ -3,8 +3,8 @@
+     {
+       "name": "traces",
+       "tier": "enterprise",
+-      "cpu": 3.34,
+-      "memory_gb": 11.76,
++      "cpu": 3.44,
++      "memory_gb": 12.01,
+       "storage_gb": 0.0,
+       "title": "Langfuse (traces, prompts, evals, SSO) + SigNoz on ClickHouse (logs, metrics, spans) + the estate OTel collector",
+       "note": ""
+@@ -12,8 +12,8 @@
+     {
+       "name": "logs-metrics-store",
+       "tier": "enterprise",
+-      "cpu": 3.34,
+-      "memory_gb": 11.76,
++      "cpu": 3.44,
++      "memory_gb": 12.01,
+       "storage_gb": 0.0,
+       "title": "SigNoz + ClickHouse, retention 3-7 days (retention is a tier knob, not a hand edit)",
+       "note": ""
+@@ -200,8 +200,8 @@
+     }
+   ],
+   "total": {
+-    "cpu": 6.68,
+-    "memory_gb": 23.65,
++    "cpu": 6.78,
++    "memory_gb": 23.9,
+     "storage_gb": 16.0
+   },
+   "depend_failures": [],
+diff --git a/platform/observability/aevum.Dockerfile b/platform/observability/aevum.Dockerfile
+new file mode 100644
+index 000000000..ba2fb937a
+--- /dev/null
++++ b/platform/observability/aevum.Dockerfile
+@@ -0,0 +1,104 @@
++# Aevum — the estate's evidence layer.
++#
++# THERE IS NO PUBLISHED CONTAINER, and this file exists because of that. Aevum publishes
++# `aevum-server` to PyPI only; `ghcr.io/aevum-labs/*` returns 404 (checked 2026-09-12). A
++# Deployment pointing at an image nobody published merges green, reconciles green, and then its
++# ReplicaSet fails to pull forever. So the estate builds the image itself, the way it builds
++# platform/jit and platform/edge-runtime.
++#
++# EVERY FAILURE BELOW WAS MEASURED IN THIS REPOSITORY'S CI, NOT GUESSED:
++#
++#   1. `apt-get install liboqs4` failed with exit 100 on both architectures: no such package. The
++#      C library underneath the post-quantum signature is not available as an apt dependency of
++#      this stack, so it is built here (step 5).
++#
++#   2. Installing aevum-core does NOT install `oqs`. Verified locally: a target install holds
++#      every dependency except that one, and the image died at
++#      `ModuleNotFoundError: No module named 'oqs'`. It matters because Aevum signs with Ed25519
++#      AND post-quantum ML-DSA-65 by default and FAILS CLOSED without it -- the pod would have
++#      crashlooped on every start. `liboqs-python` is therefore installed explicitly.
++#
++#   3. `liboqs-python` does NOT ship liboqs. Its README says so plainly: it is "a Python 3 wrapper
++#      for the liboqs C library", and the library must already be present. With the bindings
++#      installed alone the image died with `RuntimeError: No oqs shared libraries found`. So
++#      liboqs is built from source here, pinned to the version the bindings wrap.
++#
++#   4. `liboqs4` and `liboqs2` were both guesses at a package name. Debian may carry a liboqs, but
++#      the soname this base image would get is not something to bet a receipt on, and guessing
++#      twice is how this build failed twice. platform/cyrus/Dockerfile sets the precedent: for a
++#      dependency whose apt route did not work on arm64, build it from source.
++#
++# Pinned, never `latest`: a receipt is only as reproducible as the code that produced it, and
++# policy disallow-latest-tag refuses an untagged image.
++FROM python:3.12-slim
++
++LABEL org.opencontainers.image.source="https://github.com/chidionyema/idp" \
++      org.opencontainers.image.title="estate evidence layer (Aevum)" \
++      org.opencontainers.image.description="Aevum HTTP API server wrapping the five governed functions."
++
++# ca-certificates: the RFC 3161 timestamp client verifies a TSA over TLS.
++# build-essential + cmake + ninja + git: what liboqs is compiled with, below.
++RUN apt-get update \
++ && apt-get install -y --no-install-recommends \
++      ca-certificates build-essential cmake ninja-build git \
++ && rm -rf /var/lib/apt/lists/*
++
++# aevum-server alone does NOT pull the pieces the factory needs:
++#   aevum-store-postgres  PostgresLedger + initialize_ledger_schema
++#   liboqs-python         the Python bindings for ML-DSA-65 (the C library is built at step 5)
++#   cryptography          Ed25519PrivateKey for the signing key the vault holds
++# All pinned to the same version family: 0.6/0.8/0.9 shipped API changes (measured 2026-09-12 --
++# `Sigchain` has no `load_or_create` in any of them, and `aevum-store-migrate` is an
++# Oxigraph->Postgres data migration, not schema creation).
++RUN pip install --no-cache-dir \
++      "aevum-server==0.9.0" \
++      "aevum-store-postgres==0.9.0" \
++      "liboqs-python==0.16.0" \
++      "cryptography>=42"
++
++# liboqs itself, built from source and installed where the bindings look for it. Pinned to the
++# version liboqs-python==0.16.0 wraps. Without this the bindings import and then raise
++# "RuntimeError: No oqs shared libraries found" on first use.
++# The install prefix is NOT arbitrary. liboqs-python resolves the library in this order
++# (oqs/oqs.py:256-269): $OQS_INSTALL_PATH, else $HOME/_oqs, and inside that <dir>/lib64 then
++# <dir>/lib. It also auto-installs liboqs into $HOME/_oqs on first use -- which cannot happen for
++# a pod running as uid 65532 with no writable home, so the library must be present at BUILD time
++# in a path the bindings search. /usr/local/liboqs/lib is that path, and OQS_INSTALL_PATH names it.
++ARG LIBOQS_VERSION=0.16.0
++RUN git clone --depth 1 --branch "${LIBOQS_VERSION}" \
++      https://github.com/open-quantum-safe/liboqs /usr/src/liboqs \
++ && cmake -S /usr/src/liboqs -B /usr/src/liboqs/build \
++      -GNinja \
++      -DCMAKE_INSTALL_PREFIX=/usr/local/liboqs \
++      -DOQS_BUILD_ONLY_LIB=ON \
++      -DOQS_USE_OPENSSL=OFF \
++ && cmake --build /usr/src/liboqs/build --parallel \
++ && cmake --install /usr/src/liboqs/build \
++ && echo /usr/local/liboqs/lib > /etc/ld.so.conf.d/liboqs.conf \
++ && ldconfig \
++ && rm -rf /usr/src/liboqs
++
++# The variable liboqs-python reads before it decides to install its own copy.
++ENV OQS_INSTALL_PATH=/usr/local/liboqs
++ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
++
++# Non-root, matching the pod's runAsUser 65532: an image that needs root to start cannot run under
++# the policy the Deployment applies to it.
++RUN useradd --uid 65532 --no-create-home --shell /usr/sbin/nologin aevum
++USER 65532:65532
++
++# Assert the post-quantum signature is genuinely available, AS THE POD'S OWN USER. Aevum fails
++# closed without it, so this is the difference between a failed build and a crashloop -- and
++# checking as root would pass while the unprivileged pod still failed the same import.
++RUN python -c "import os, oqs; \
++    assert 'ML-DSA-65' in oqs.get_enabled_sig_mechanisms(), \
++        'ML-DSA-65 unavailable: Aevum would fail closed on every write'; \
++    assert os.getuid() == 65532, 'this check must run as the pod user'; \
++    print('ML-DSA-65 enabled as uid', os.getuid())"
++
++# The store is set by the Deployment's env from the vault, never defaulted here. Aevum's in-memory
++# default reports a VALID empty chain after every restart, which looks present and records nothing.
++ENTRYPOINT ["uvicorn", "aevum_factory:create", "--factory"]
++CMD ["--host", "0.0.0.0", "--port", "8000"]
++
++EXPOSE 8000
+diff --git a/platform/observability/aevum.yaml b/platform/observability/aevum.yaml
+new file mode 100644
+index 000000000..c91501aef
+--- /dev/null
++++ b/platform/observability/aevum.yaml
+@@ -0,0 +1,322 @@
++# Aevum — the estate's evidence layer.
++#
++# THE FOUNDER'S ORDER, 2026-09-12: "get Aevum wired for all current and future repos."
++#
++# WHY THE LAYER LIVES HERE AND NOWHERE ELSE. Decision 0028: POPDD signs with HMAC, a symmetric
++# key, so only the holder of the signing key can verify a receipt. Aevum signs with Ed25519 AND
++# ML-DSA-65 (post-quantum) by default, wraps each entry in a COSE_Sign1 receipt carrying an
++# RFC 3161 trusted timestamp, and ships aevum-verify — a standalone verifier sharing no code with
++# the runtime.
++#
++# A NEW REPO NEEDS NOTHING. The layer runs on the platform, once. There is no dependency to add,
++# no adapter to write, no copy to drift. A repo created tomorrow has evidence recording for the
++# same reason it has DNS and secrets: it runs on the platform. This is the HEADLINE applied
++# literally — one of each platform layer, in idp, and products onboarded onto it.
++#
++# EVERY FACT BELOW WAS MEASURED, NOT ASSUMED (2026-09-12, throwaway venv):
++#   - There is NO published container. `ghcr.io/aevum-labs/*` returns 404; aevum-server ships to
++#     PyPI only. An earlier draft of this file pointed at an image that does not exist — a
++#     Deployment that merges green, reconciles green, and then fails to pull forever.
++#     So the estate builds it: platform/observability/aevum.Dockerfile.
++#   - `python -m aevum.server` is DEV ONLY and in-memory. Its own docstring says "NOT for
++#     production"; it ignores --host/--port and always binds 0.0.0.0:8000. Production is
++#     `uvicorn aevum.server.app:create_app --factory`, which is what runs here.
++#   - The server wires NO store from the environment. `create_app(engine=...)` and
++#     `Engine(ledger=...)` are explicit, so aevum_factory.py exists to join them to Postgres.
++#     Without it the process starts, reports green, and keeps an in-memory chain that
++#     verify_sigchain() calls valid on an empty ledger.
++#   - Settings keys are AEVUM_-prefixed: HOST, PORT, API_KEY, OPA_URL, RATE_LIMIT_PER_MINUTE,
++#     OTEL_ENABLED, OTEL_SERVICE_NAME. API_KEY defaults to the literal
++#     "dev-insecure-key-change-in-production", which is why it is a Secret here and not a default.
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: aevum-factory
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++data:
++  # The one file that joins Aevum's server to the estate's Postgres. create_app takes an Engine;
++  # Engine takes a ledger; PostgresLedger takes a connection and the sigchain. Nothing in the
++  # published packages does this join, which is why it is here and not assumed.
++  aevum_factory.py: |
++    """Build the production Aevum app: Postgres ledger, never the in-memory default.
++
++    Aevum's in-memory store reports a VALID empty chain after every restart. It looks present while
++    recording nothing, which is worse than being down -- so this factory refuses to start without a
++    database connection rather than quietly degrading to memory.
++
++    The API here is the MEASURED one (2026-09-12), not the documented one:
++      Sigchain(private_key=<Ed25519PrivateKey>, key_id=...)   -- there is no Sigchain.load_or_create
++      Engine(ledger=<AuditLedgerProtocol>, opa_url=...)
++      PostgresLedger(conn, sigchain, lock)
++      create_app(engine, settings)
++    """
++    import os
++    import threading
++
++    import psycopg
++    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
++    from cryptography.hazmat.primitives import serialization
++
++    from aevum.core.engine import Engine
++    from aevum.core.sigchain import Sigchain
++    from aevum.server.app import create_app
++    from aevum.server.core.config import Settings
++    from aevum.store.postgres import PostgresLedger
++    from aevum.store.postgres.ledger import initialize_ledger_schema
++
++
++    def _private_key(value: str) -> Ed25519PrivateKey:
++        """Load the estate's Ed25519 signing key from its 64-hex-char form, or from PEM."""
++        value = value.strip()
++        if value.startswith("-----BEGIN"):
++            key = serialization.load_pem_private_key(value.encode(), password=None)
++            if not isinstance(key, Ed25519PrivateKey):
++                raise SystemExit("AEVUM_SIGNING_KEY is not an Ed25519 key")
++            return key
++        if len(value) == 64:
++            return Ed25519PrivateKey.from_private_bytes(bytes.fromhex(value))
++        raise SystemExit("AEVUM_SIGNING_KEY is neither 64 hex chars nor PEM")
++
++
++    def _conn():
++        dsn = os.environ.get("AEVUM_POSTGRES_DSN")
++        if not dsn:
++            raise SystemExit("AEVUM_POSTGRES_DSN is unset: refusing to start on the in-memory ledger, "
++                             "which reports a valid chain while recording nothing")
++        return psycopg.connect(dsn, autocommit=True)
++
++
++    def create():
++        settings = Settings()
++        sigchain = Sigchain(
++            private_key=_private_key(os.environ["AEVUM_SIGNING_KEY"]),
++            key_id=os.environ.get("AEVUM_KEY_ID", "estate-evidence"),
++        )
++        conn = _conn()
++        # The store does NOT create its own table: initialize_ledger_schema() must be called, or the
++        # first write fails with UndefinedTable: relation "aevum_ledger" does not exist. Measured
++        # 2026-09-12 -- the DDL constant is in the module but nothing executes it on construction.
++        initialize_ledger_schema(conn)
++        engine = Engine(
++            ledger=PostgresLedger(conn, sigchain, threading.Lock()),
++            # THE SIGCHAIN MUST BE THE SAME OBJECT AS THE LEDGER'S. Engine.verify_sigchain() is
++            # `self._sigchain.verify_chain(self._ledger.all_events())`, so an Engine built without
++            # sigchain= mints its own random one and verifies every stored event against the wrong
++            # keys. It does not raise; it simply reports every chain invalid -- or, on a chain signed
++            # by nothing else, reports a green verdict about the wrong key. Measured 2026-09-12:
++            # omitting this line returned verify=False on a freshly written, untampered ledger.
++            sigchain=sigchain,
++            opa_url=settings.opa_url or None,
++        )
++        return create_app(engine, settings=settings)
++---
++apiVersion: v1
++kind: ConfigMap
++metadata:
++  name: aevum-config
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++data:
++  # Settings keys are AEVUM_-prefixed (measured from aevum/server/core/config.py).
++  AEVUM_HOST: "0.0.0.0"
++  AEVUM_PORT: "8000"
++  # The estate's OTel collector, so Aevum's own server traces land beside everything else's
++  # (LAW 50: every workload emits to the central collector).
++  AEVUM_OTEL_ENABLED: "true"
++  AEVUM_OTEL_SERVICE_NAME: "aevum-server"
++---
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: aevum
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++automountServiceAccountToken: false
++---
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: aevum
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++spec:
++  replicas: 2
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: aevum
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/name: aevum
++        estate.io/component: evidence
++    spec:
++      serviceAccountName: aevum
++      priorityClassName: infrastructure-critical
++      # Two replicas are not two replicas until something keeps them apart: without this, the
++      # scheduler may put both on one node and a single drain takes the evidence layer offline.
++      # bin/idp-availability-gate refuses the Deployment without it, and it is right to.
++      #
++      # A DoNotSchedule topologySpreadConstraint on kubernetes.io/hostname, which is the shape
++      # ClusterPolicy require-availability accepts verbatim (platform/scheduling/
++      # require-availability.yaml, founder-facing-spreads-across-nodes). A podAntiAffinity with a
++      # labelSelector also spreads, but the policy's anyPattern matches the constraint's exact
++      # fields and refuses the extra selector -- so the constraint is used here.
++      topologySpreadConstraints:
++        - maxSkew: 1
++          topologyKey: kubernetes.io/hostname
++          whenUnsatisfiable: DoNotSchedule
++          labelSelector:
++            matchLabels:
++              app.kubernetes.io/name: aevum
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 65532
++        runAsGroup: 65532
++        seccompProfile:
++          type: RuntimeDefault
++      containers:
++        - name: aevum
++          # Built by the estate from platform/observability/aevum.Dockerfile. Aevum publishes no
++          # container; the version is the same literal the Dockerfile pins.
++          # Pinned, never untagged: an image with no tag resolves to latest, which
++          # policy disallow-latest-tag refuses. The tag matches aevum.Dockerfile's pin.
++          image: ghcr.io/chidionyema/aevum:0.9.0
++          envFrom:
++            - configMapRef:
++                name: aevum-config
++          env:
++            - name: PYTHONPATH
++              value: /factory
++          # SECRETS ARRIVE AS FILES, NEVER ENV (Kyverno secrets-not-from-env-vars forbids the rest).
++          # The wrapper exports them from the mounted files before exec'ing uvicorn, which is the
++          # same shape platform/hindsight/hindsight.yaml uses for the same policy.
++          command:
++            - /bin/sh
++            - -c
++            - |
++              set -eu
++              # NOTE: no dollar-brace name appears anywhere in this file, comments included --
++              # Flux substitutes them in a reconciled manifest BEFORE the pod runs, comments too,
++              # and its --strict mode treats an unset name as fatal. Shell variables here use
++              # command substitution and plain concatenation for that reason.
++              export AEVUM_SIGNING_KEY="$(cat /run/secrets/aevum/signing-key)"
++              # The DSN is assembled here from the registered password, never a vault property
++              # named aevum_dsn -- no such entry exists, and root-trust refused it.
++              export AEVUM_POSTGRES_DSN="postgresql://aevum_evidence:$(cat /run/secrets/aevum/postgres-password)@estate-db-rw.estate-db.svc.cluster.local:5432/aevum_evidence"
++              exec uvicorn aevum_factory:create --factory --host 0.0.0.0 --port 8000
++          ports:
++            - name: http
++              containerPort: 8000
++          # EXEC, NOT httpGet. httpGet is probed from outside the pod namespace, so a loopback
++          # listener gets connection refused forever while the process is healthy — the defect the
++          # probe-host rule in rules.yaml exists to catch.
++          readinessProbe:
++            exec:
++              command: ["python", "-c",
++                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
++            initialDelaySeconds: 10
++            periodSeconds: 15
++            failureThreshold: 20
++          livenessProbe:
++            exec:
++              command: ["python", "-c",
++                        "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
++            initialDelaySeconds: 30
++            periodSeconds: 30
++          resources:
++            requests:
++              cpu: "100m"
++              memory: "256Mi"
++            limits:
++              cpu: "1000m"
++              memory: "1Gi"
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities:
++              drop: ["ALL"]
++          volumeMounts:
++            - name: factory
++              mountPath: /factory
++            - name: secrets
++              mountPath: /run/secrets/aevum
++              readOnly: true
++            - name: tmp
++              mountPath: /tmp
++      volumes:
++        - name: secrets
++          secret:
++            secretName: aevum-evidence
++        - name: factory
++          configMap:
++            name: aevum-factory
++        - name: tmp
++          emptyDir: {}
++---
++apiVersion: v1
++kind: Service
++metadata:
++  name: aevum
++  labels:
++    app.kubernetes.io/name: aevum
++    app.kubernetes.io/part-of: idp
++    estate.io/component: evidence
++    # The catalogue entity this port belongs to. Policy require-catalogue-entity refuses a
++    # Service without it, and bin/catalog-platform generates the entity from the Flux row.
++    backstage.io/kubernetes-id: layer-observability
++spec:
++  selector:
++    app.kubernetes.io/name: aevum
++  ports:
++    - name: http
++      port: 8000
++      targetPort: http
++---
++# ONE ExternalSecret, reading the entry the register names (docs/reference/policy/root-trust.md),
++# whose two keys bin/idp-estate-seed mints. Earlier drafts read three separate vault entries --
++# aevum-postgres, aevum-signing-key and aevum-api-key -- none of which the register knew, which is
++# exactly what the root-trust gate refused: "a credential born nobody knows how".
++apiVersion: external-secrets.io/v1beta1
++kind: ExternalSecret
++metadata:
++  name: aevum-evidence
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++spec:
++  refreshInterval: 1h
++  secretStoreRef:
++    name: estate-vault
++    kind: ClusterSecretStore
++  target:
++    name: aevum-evidence
++    creationPolicy: Owner
++  data:
++    - secretKey: postgres-password
++      remoteRef:
++        key: aevum-evidence
++        property: postgres-password
++    - secretKey: signing-key
++      remoteRef:
++        key: aevum-evidence
++        property: signing-key
++---
++# A drain must never take both replicas. Without this the evidence layer is one eviction from
++# offline, which is the failure the availability standard names.
++apiVersion: policy/v1
++kind: PodDisruptionBudget
++metadata:
++  name: aevum
++  labels:
++    app.kubernetes.io/name: aevum
++    estate.io/component: evidence
++spec:
++  minAvailable: 1
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: aevum
+diff --git a/platform/observability/kustomization.yaml b/platform/observability/kustomization.yaml
+index 9dc8e4a6c..6782269d7 100644
+--- a/platform/observability/kustomization.yaml
++++ b/platform/observability/kustomization.yaml
+@@ -9,6 +9,7 @@ resources:
+   - signoz-retention.yaml
+   - signoz-sso.yaml
+   - langfuse.yaml
++  - aevum.yaml
+   - httproute.yaml
+   - edge-manners.yaml
+   - superset.yaml
+diff --git a/rules.yaml b/rules.yaml
+index c85060bf5..f6271e741 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -1,6 +1,40 @@
+ version: 1
+ live_gap_budget: 10
+ rules:
++- id: aevum-evidence
++  fast: true
++  label: aevum-evidence
++  statement: 'A receipt that does not verify is not evidence: every recorded agent action chains to the previous one and is
++    covered by a signature, and an EMPTY ledger is a fail-closed FAIL rather than a clean bill -- Aevum''s default store is
++    in-memory and verify_sigchain() answers True about a chain with no events, so a misconfigured deployment reports green
++    while recording nothing'
++  law: decision 0028
++  origin: 'Founder, 2026-09-12: "get Aevum wired for all current and future repos." POPDD signs with HMAC, a symmetric key,
++    so only the holder of the signing key can verify a receipt; decision 0028 records the measured comparison and adopts Aevum
++    (Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, standalone aevum-verify). The whole value is one property -- an altered record
++    must fail verification -- so the gate is proved both ways and fails closed on an empty ledger, the way
++    bin/idp-calico-deny-log fails closed on an empty deny feed.'
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-evidence-gate
++  cluster:
++    policy: null
++    why: the chain is data in the estate's own Postgres, not a Kubernetes object; admission never sees a receipt
++  fixtures:
++    must_fail: tests/fixtures/aevum-evidence/bad/chain.json
++    must_pass: tests/fixtures/aevum-evidence/good/chain.json
++  live_elsewhere: 'bin/idp-ci:599 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
++  cases:
++  - expect: refuse
++    args:
++    - tests/fixtures/aevum-evidence/bad/chain.json
++  - expect: pass
++    args:
++    - tests/fixtures/aevum-evidence/good/chain.json
++  ok: a receipt chains to its predecessor and is covered by its signature; an altered record and an empty ledger are both refused
++  fail: an altered record or an empty ledger passes as evidence
+ - id: flux-subst
+   fast: true
+   label: flux-subst
+diff --git a/tests/fixtures/aevum-evidence/bad/chain.json b/tests/fixtures/aevum-evidence/bad/chain.json
+new file mode 100644
+index 000000000..2f331b8d3
+--- /dev/null
++++ b/tests/fixtures/aevum-evidence/bad/chain.json
+@@ -0,0 +1,15 @@
++{
++ "chain": [
++  {
++   "sequence": 0,
++   "audit_id": "urn:aevum:audit:01a09615-854f-79e9-a6b8-9a097e928ee4",
++   "actor": "builder-agent",
++   "event_type": "ingest",
++   "prior_hash": "391f6bd6d761cb9af9e924d015a6fc18e9d236c965c3e5deda1145a25e11cf5e",
++   "payload_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
++   "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
++   "valid": false
++  }
++ ],
++ "verify_sigchain": false
++}
+diff --git a/tests/fixtures/aevum-evidence/good/chain.json b/tests/fixtures/aevum-evidence/good/chain.json
+new file mode 100644
+index 000000000..c704d24cf
+--- /dev/null
++++ b/tests/fixtures/aevum-evidence/good/chain.json
+@@ -0,0 +1,15 @@
++{
++ "chain": [
++  {
++   "sequence": 0,
++   "audit_id": "urn:aevum:audit:01a09615-854f-79e9-a6b8-9a097e928ee4",
++   "actor": "builder-agent",
++   "event_type": "ingest",
++   "prior_hash": "391f6bd6d761cb9af9e924d015a6fc18e9d236c965c3e5deda1145a25e11cf5e",
++   "payload_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
++   "signature": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
++   "valid": true
++  }
++ ],
++ "verify_sigchain": true
++}

@@ -1,0 +1,4 @@
+bin/estate-security-scan
+docs/demo/estate-security-scan.md
+docs/onboarding/estate-security-scan.md
+mkdocs.yml

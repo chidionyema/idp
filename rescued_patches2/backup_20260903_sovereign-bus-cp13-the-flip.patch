@@ -1,0 +1,396 @@
+diff --git a/docs/demo/sb.md b/docs/demo/sb.md
+index 3dce07d38..8601c0539 100644
+--- a/docs/demo/sb.md
++++ b/docs/demo/sb.md
+@@ -77,3 +77,20 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
+     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
+     $ cat $ESTATE_HOME/alerts/inbox.jsonl
+     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
++
++## Phase 2 — the flip (cp13)
++
++`sb flip` sets the legacy DB file read-only at the filesystem level (`os.chmod`, not a per-connection PRAGMA a fresh connection could ignore) and records one signed receipt naming the DAG root and the legacy file's own sha256. `sb flip --rollback` restores write access, but refuses (`FlipError`) if that hash no longer matches the file on disk -- the one way a root-privileged bypass of the permission bit could go unnoticed. Measured 2026-08-25 on a disposable estate:
++
++    $ bin/sb flip --by founder --signed --json
++    {"downtime_ms": 0.548, "legacy": "readonly", "receipt_counter": 2, "root": "afaa402bfe167d2eb41622daf9a828b474f23440734d3e78b075aecacfddac90"}
++    $ stat -f "%Sp" $MAESTRO_DB
++    -r--r--r--
++    $ python3 -c "import sqlite3; sqlite3.connect('$MAESTRO_DB').execute(\"INSERT INTO episodes VALUES ('x','ops','n')\")"
++    sqlite3.OperationalError: attempt to write a readonly database
++    $ bin/sb flip --rollback --by founder --signed --json
++    {"consistent": true, "legacy": "writable", "receipt_counter": 3, "root": "afaa402bfe167d2eb41622daf9a828b474f23440734d3e78b075aecacfddac90"}
++    $ stat -f "%Sp" $MAESTRO_DB
++    -rw-r--r--
++
++0.548ms of chmod-plus-verify wall time, well under `flip.max_downtime_ms` (250ms default) -- reads are never blocked either way, so this bounds only the window before the flip itself is durable, not an outage. A second connection opened after the chmod is what the OS permission bit actually gates; a connection already open beforehand keeps its file descriptor and is unaffected until it reopens.
+diff --git a/docs/onboarding/sb.md b/docs/onboarding/sb.md
+index fff19589d..c5fe54a1f 100644
+--- a/docs/onboarding/sb.md
++++ b/docs/onboarding/sb.md
+@@ -20,6 +20,7 @@
+ - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
+ - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
+ - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
++- `bin/sb flip --by <who> --signed --json` chmods the legacy DB read-only and records a signed receipt naming the DAG root and the file's own sha256; `bin/sb flip --rollback --by <who> --signed --json` restores write access, refusing (`FlipError`) if that hash no longer matches -- a legacy file changed while flipped is never rolled back onto silently.
+ 
+ ## When it breaks
+ 
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index 75c76dd5d..0a23565fe 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -115,6 +115,23 @@ def cmd_consensus(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
++def cmd_flip(args: argparse.Namespace) -> int:
++    """cp13: `sb flip --by <who> --signed` sets the legacy DB read-only
++    and signs one "flip" receipt; `sb flip --rollback --by <who> --signed`
++    restores write access if nothing wrote to the file while flipped."""
++    from sovereign.engine import flip
++
++    try:
++        if args.rollback:
++            _emit(flip.rollback(by=args.by, signed=args.signed), args.json)
++        else:
++            _emit(flip.flip(by=args.by, signed=args.signed), args.json)
++        return 0
++    except flip.FlipError as exc:
++        print(f"flip refused: {exc}", file=sys.stderr)
++        return config.CLI_EXIT_USAGE_ERROR
++
++
+ def cmd_list(args: argparse.Namespace) -> int:
+     res = asyncio.run(engine_client.list_sessions())
+     _emit(res, args.json)
+@@ -384,6 +401,13 @@ def main(argv: list[str] | None = None) -> int:
+     _add_json(p)
+     p.set_defaults(func=cmd_consensus)
+ 
++    p = sub.add_parser("flip", help="cp13 -- flip the DAG to primary, legacy DB to read-only (or --rollback)")
++    p.add_argument("--rollback", action="store_true")
++    p.add_argument("--by", required=True)
++    p.add_argument("--signed", action="store_true")
++    _add_json(p)
++    p.set_defaults(func=cmd_flip)
++
+     p = sub.add_parser("list", help="list sessions")
+     _add_json(p)
+     p.set_defaults(func=cmd_list)
+diff --git a/sovereign/config.py b/sovereign/config.py
+index bfdbadd00..78afe784e 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -198,6 +198,12 @@ KEYS: dict[str, KeySpec] = {
+     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
+     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
+     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
++    "flip.readonly_mode": KeySpec(0o444, "int", None, "cp13: filesystem mode `sb flip` chmods the legacy DB file to"),
++    "flip.writable_mode": KeySpec(0o644, "int", None, "cp13: filesystem mode `sb flip --rollback` restores"),
++    "flip.max_downtime_ms": KeySpec(250, "int", "SB_FLIP_MAX_DOWNTIME_MS", "cp13: budget for the chmod + one shadow-root verify() a flip takes; reads are never blocked, this bounds the window before the flip is durable"),
++    "flip.receipt_template": KeySpec("[✓] FLIP | root:{root} | legacy:readonly", "str", "SB_FLIP_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
++    "flip.rollback_receipt_template": KeySpec("[✓] FLIP_ROLLBACK | root:{root} | legacy:writable", "str", "SB_FLIP_ROLLBACK_RECEIPT_TEMPLATE", "cp13 receipt line, exact format"),
++    "flip.hash_chunk_bytes": KeySpec(65536, "int", None, "cp13: read chunk size for the legacy DB's sha256 in flip.py -- a lint-exempt literal would trip config.py's own numeric-literal rule"),
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -490,6 +496,12 @@ STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].v
+ CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
+ CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
+ LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
++FLIP_READONLY_MODE: int = _R["flip.readonly_mode"].value
++FLIP_WRITABLE_MODE: int = _R["flip.writable_mode"].value
++FLIP_MAX_DOWNTIME_MS: int = _R["flip.max_downtime_ms"].value
++FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
++FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
++FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
+ 
+ TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
+ WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"
+diff --git a/sovereign/engine/flip.py b/sovereign/engine/flip.py
+new file mode 100644
+index 000000000..838946d8d
+--- /dev/null
++++ b/sovereign/engine/flip.py
+@@ -0,0 +1,125 @@
++"""The flip (cp13): the DAG becomes primary, the legacy DB becomes a
++read-only archive with a rollback path.
++
++Founder's shape (features/sovereign-bus/cp13_the_flip.feature):
++`bin/sb flip --by <who> --signed` sets the legacy DB file read-only at
++the filesystem level (os.chmod, flip.readonly_mode) -- not a
++per-connection PRAGMA a fresh connection could ignore -- so every future
++writer, in this process or any other, hits an OS PermissionError, never
++a silent bypass. Reads are unaffected: sqlite serves SELECTs from a
++read-only file exactly as it does from a writable one, so the "downtime"
++this module measures is the wall-clock the chmod plus one
++shadow_root.verify() takes -- flip.max_downtime_ms bounds it -- not an
++outage window; "zero-downtime cutover" is the design cp10's dual-read
++router already proved out, not a claim invented here.
++
++rollback() restores write permission. Because nothing could have
++written to the file while it was read-only (the OS enforced that, not
++this module's own bookkeeping), "consistent with the root at flip time"
++needs no data repair on rollback -- only a hash check that the file's
++own bytes still match the sha256 the flip receipt recorded, which
++catches the one way this could still be wrong: something with
++root/owner privilege bypassing the permission bit while flipped. A
++mismatch there raises FlipError and refuses the rollback rather than
++handing back a legacy DB rollback() cannot vouch for.
++"""
++from __future__ import annotations
++
++import hashlib
++import os
++import stat
++import time
++from pathlib import Path
++from typing import Any
++
++from sovereign import config
++from sovereign.engine import receipts as receipts_mod
++from sovereign.engine import shadow_root
++
++
++class FlipError(RuntimeError):
++    """Raised when a flip or rollback cannot proceed safely: rollback()
++    with no prior "flip" receipt to roll back, or a legacy-file hash
++    mismatch against what that receipt recorded."""
++
++
++def legacy_db_path() -> Path:
++    db_path, _, _ = config.SIDECAR_TARGET.partition("#")
++    return Path(db_path)
++
++
++def _sha256_file(path: Path) -> str:
++    h = hashlib.sha256()
++    with open(path, "rb") as f:
++        for chunk in iter(lambda: f.read(config.FLIP_HASH_CHUNK_BYTES), b""):
++            h.update(chunk)
++    return h.hexdigest()
++
++
++def is_read_only(path: Path | None = None) -> bool:
++    p = path or legacy_db_path()
++    return not (p.stat().st_mode & stat.S_IWUSR)
++
++
++def _last_flip_receipt() -> dict[str, Any] | None:
++    rows = [r for r in receipts_mod.read_all() if r.get("kind") in ("flip", "flip_rollback")]
++    return rows[-1] if rows else None
++
++
++def flip(by: str, signed: bool = False) -> dict[str, Any]:
++    """chmods the legacy DB read-only, then records one receipt naming
++    the DAG root at that moment and the legacy file's own sha256, so
++    rollback() can later verify nothing wrote to it while flipped."""
++    t0 = time.perf_counter()
++    path = legacy_db_path()
++    os.chmod(path, config.FLIP_READONLY_MODE)
++    root_state = shadow_root.verify()
++    legacy_hash = _sha256_file(path)
++    downtime_ms = (time.perf_counter() - t0) * config.MS_PER_SECOND
++
++    text = config.FLIP_RECEIPT_TEMPLATE.format(root=root_state["root"])
++    record = {
++        "session_id": "-", "kind": "flip", "by": by, "text": text,
++        "step": 0, "status": "flipped", "task": "", "runner": "",
++        "root": root_state["root"], "legacy_hash": legacy_hash, "legacy_path": str(path),
++    }
++    if signed:
++        record["signed"] = True
++    receipt = receipts_mod.append(record)
++    return {
++        "root": root_state["root"],
++        "legacy": "readonly",
++        "downtime_ms": downtime_ms,
++        "receipt_counter": receipt.get("counter"),
++    }
++
++
++def rollback(by: str, signed: bool = False) -> dict[str, Any]:
++    """Refuses (FlipError) unless the most recent flip/flip_rollback
++    receipt is a "flip" whose recorded legacy_hash still matches the
++    file on disk. Restores write permission and records one
++    "flip_rollback" receipt."""
++    last = _last_flip_receipt()
++    if last is None or last.get("kind") != "flip":
++        raise FlipError("no active flip to roll back")
++    path = legacy_db_path()
++    current_hash = _sha256_file(path)
++    if current_hash != last.get("legacy_hash"):
++        raise FlipError("legacy DB changed while flipped -- refusing to roll back onto it")
++
++    os.chmod(path, config.FLIP_WRITABLE_MODE)
++    text = config.FLIP_ROLLBACK_RECEIPT_TEMPLATE.format(root=last.get("root"))
++    record = {
++        "session_id": "-", "kind": "flip_rollback", "by": by, "text": text,
++        "step": 0, "status": "rolled_back", "task": "", "runner": "",
++        "root": last.get("root"), "legacy_hash": current_hash, "legacy_path": str(path),
++    }
++    if signed:
++        record["signed"] = True
++    receipt = receipts_mod.append(record)
++    return {
++        "root": last.get("root"),
++        "legacy": "writable",
++        "consistent": True,
++        "receipt_counter": receipt.get("counter"),
++    }
+diff --git a/sovereign/engine/test_flip.py b/sovereign/engine/test_flip.py
+new file mode 100644
+index 000000000..89045ad61
+--- /dev/null
++++ b/sovereign/engine/test_flip.py
+@@ -0,0 +1,150 @@
++"""unittest for sovereign/engine/flip.py (cp13). Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.engine.test_flip -v
++
++Never opens maestro's real database -- every test builds its own
++disposable sqlite3 file and points config.SIDECAR_TARGET at that, same
++pattern as sovereign/sidecar/test_sidecar.py.
++"""
++from __future__ import annotations
++
++import sqlite3
++import stat
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from sovereign import config
++from sovereign.engine import flip, receipts
++from sovereign.sidecar import core as sidecar_core
++
++_FIXED_KEY = b"\x0d" * 32
++
++
++class FlipTestBase(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        root = Path(self._tmp.name)
++        self.db_path = root / "legacy.db"
++        for name, val in (
++            ("SB_RECEIPTS", root / "receipts.jsonl"),
++            ("RECEIPTS_HEAD", root / "receipts.head"),
++            ("SHADOW_HEADS_DIR", root / "heads"),
++            ("SIDECAR_TARGET", f"{self.db_path}#episodes"),
++        ):
++            p = patch.object(config, name, val)
++            p.start()
++            self.addCleanup(p.stop)
++        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
++        p.start()
++        self.addCleanup(p.stop)
++
++        # HardwareTrustAnchor() with no backend override defaults to
++        # trust.backend="auto", which on Darwin shells out to `xcrun
++        # swiftc` to compile sovereign/trust/presence_helper.swift on
++        # first use (sovereign/trust/anchor.py:_ensure_swift_helper_
++        # compiled). In a non-interactive test/CI shell without Xcode's
++        # licence already accepted, that subprocess blocks forever on a
++        # licence prompt with no TTY to answer it -- confirmed via
++        # faulthandler.dump_traceback_later, which caught the test process
++        # parked in subprocess.communicate() inside anchor.py's
++        # _run_helper. Every other suite that signs (sovereign/trust/
++        # test_trust.py) already pins backend="software_key" per instance;
++        # this env override does the same for the instance receipts.append
++        # constructs internally, which this module has no other way to
++        # reach.
++        p = patch.dict("os.environ", {"SB_TRUST_BACKEND": "software_key"})
++        p.start()
++        self.addCleanup(p.stop)
++
++        self.conn = sqlite3.connect(str(self.db_path))
++        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
++        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES ('seed', 'ops', 'n')")
++        self.conn.commit()
++        self.addCleanup(self._close_conn)
++        self.sc = sidecar_core.attach(self.conn, "episodes", dag_dir=root / "dag")
++        self.sc.drain()
++
++    def _close_conn(self) -> None:
++        try:
++            self.conn.close()
++        except sqlite3.Error:
++            pass
++
++    def _restore_writable_for_cleanup(self) -> None:
++        # tempfile cleanup needs the dir/file writable regardless of
++        # what a test left it in
++        try:
++            self.db_path.chmod(0o644)
++        except OSError:
++            pass
++
++
++class FlipPropertyTest(FlipTestBase):
++    def test_property_flip_sets_readonly_fast_and_signs_the_exact_receipt_line(self) -> None:
++        self.addCleanup(self._restore_writable_for_cleanup)
++        for i in range(20):
++            self.assertFalse(flip.is_read_only(self.db_path), f"iteration {i}: starts writable")
++            result = flip.flip(by="founder", signed=True)
++            self.assertLess(result["downtime_ms"], config.FLIP_MAX_DOWNTIME_MS)
++            self.assertTrue(flip.is_read_only(self.db_path), "the legacy DB is set read-only")
++
++            last = receipts.read_all()[-1]
++            self.assertEqual(last["kind"], "flip")
++            self.assertEqual(last["text"], config.FLIP_RECEIPT_TEMPLATE.format(root=result["root"]))
++            self.assertIn("hw_sig", last, "--signed reaches receipts.append(signed=True)")
++
++            # a *fresh* writer's open() is what the OS permission bit
++            # gates -- self.conn already holds an fd opened before the
++            # chmod, so it must use a new connection to demonstrate the
++            # invariant the module docstring claims: "every future
++            # writer, in this process or any other, hits an OS
++            # PermissionError". Reads are unaffected either way.
++            self.conn.execute("SELECT * FROM episodes").fetchall()
++            fresh = sqlite3.connect(str(self.db_path))
++            self.addCleanup(fresh.close)
++            fresh.execute("SELECT * FROM episodes").fetchall()
++            with self.assertRaises(sqlite3.OperationalError):
++                fresh.execute("INSERT INTO episodes (id, lane, note) VALUES ('x', 'ops', 'n')")
++                fresh.commit()
++            fresh.close()
++
++            rb = flip.rollback(by="founder", signed=True)
++            self.assertEqual(rb["legacy"], "writable")
++            self.assertFalse(flip.is_read_only(self.db_path), "writable again after rollback")
++            last = receipts.read_all()[-1]
++            self.assertEqual(last["kind"], "flip_rollback")
++            self.assertEqual(last["text"], config.FLIP_ROLLBACK_RECEIPT_TEMPLATE.format(root=rb["root"]))
++
++
++class FlipRollbackTest(FlipTestBase):
++    def test_rollback_refuses_with_no_prior_flip(self) -> None:
++        with self.assertRaises(flip.FlipError):
++            flip.rollback(by="founder")
++
++    def test_incident_cp13_rollback_refuses_when_legacy_bytes_changed_while_flipped(self) -> None:
++        """cp13's own safety bar: rollback() must never hand back write
++        access to a legacy DB whose bytes no longer match the sha256 the
++        flip receipt recorded -- that is the one way "consistent with
++        the root at flip time" can be violated (something bypassing the
++        OS permission bit while flipped), and it must fail closed, not
++        silently."""
++        self.addCleanup(self._restore_writable_for_cleanup)
++        flip.flip(by="founder", signed=True)
++        self.assertTrue(flip.is_read_only(self.db_path))
++
++        # simulate an out-of-band bypass of the permission bit (e.g. root)
++        self.db_path.chmod(0o644)
++        with open(self.db_path, "r+b") as f:
++            f.seek(0)
++            f.write(b"\x00")
++        self.db_path.chmod(0o444)
++
++        with self.assertRaises(flip.FlipError):
++            flip.rollback(by="founder", signed=True)
++        self.assertTrue(flip.is_read_only(self.db_path), "refused rollback leaves the file exactly as it was")
++
++
++if __name__ == "__main__":
++    unittest.main()

@@ -1,0 +1,11 @@
+metric_registry:
+  id: metric.registry/v1
+  families:
+    - { name: accuracy,      polarity: maximize, scale: [0,1],   comparable_with: [accuracy, correctness, coverage] }
+    - { name: correctness,   polarity: maximize, scale: [0,1],   comparable_with: [correctness, accuracy] }
+    - { name: coverage,      polarity: maximize, scale: [0,1],   comparable_with: [coverage, accuracy] }
+    - { name: latency,       polarity: minimize, scale: seconds, comparable_with: [latency] }
+    - { name: convergence,   polarity: maximize, scale: [0,1],   comparable_with: [convergence] }
+    - { name: delivered,     polarity: maximize, scale: [0,1],   comparable_with: [delivered, engagement] }
+    - { name: engagement,    polarity: maximize, scale: [0,1],   comparable_with: [engagement, delivered] }
+    - { name: admission_test,polarity: maximize, scale: [0,1],   comparable_with: [admission_test] }

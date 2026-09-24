@@ -1,0 +1,1794 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 10d528e0c..78236dfd2 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -271,7 +271,6 @@ jobs:
+           SEED_DEEPSEEK_API_KEY: ${{ secrets.SEED_DEEPSEEK_API_KEY }}
+           SEED_MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+           SEED_KIMI_API_KEY: ${{ secrets.SEED_KIMI_API_KEY }}
+-          SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+           SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+           SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+           SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}
+diff --git a/.github/workflows/vault-seed.yml b/.github/workflows/vault-seed.yml
+index 2da84bc43..2ec9626ba 100644
+--- a/.github/workflows/vault-seed.yml
++++ b/.github/workflows/vault-seed.yml
+@@ -105,7 +105,8 @@ jobs:
+             # and holds no vendor key (crew#568, LAW 34). Minted here; delivered through the estate's
+             # sops vault: sops encrypts to the age recipient estate-secrets/.sops.yaml names (the public
+             # half), so this runner decrypts nothing, and the Mac reads it with scripts/secret-load.
+-            bin/idp-router-key laptop minimax,minimax_m27,deepseek,openrouter,minimax-or,deepseek-or,gemini-or,groq,groq-fast,gemini,claude,claude-fast,vision,embed,image,image-or,kimi
++            # The lanes are the whole cluster router, read from the generated config (the registry is the one list, 2026-09-02).
++            bin/idp-router-key laptop "$(python3 -c 'import yaml; print(",".join(m["model_name"] for m in yaml.safe_load(open("platform/llm/config.yaml"))["model_list"]))')"
+             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+             bin/idp-cloud secret get laptop | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_LAPTOP_KEY LITELLM_API_KEY
+@@ -153,7 +154,7 @@ jobs:
+             # a frontier API rather than a local model"): claude and gemini for the worker and the grader,
+             # embed for ranking what it scraped; a local or small lane is not on the key, so no env var can
+             # reach one. Same road as the laptop: minted here, delivered through the sops vault.
+-            bin/idp-router-key science claude,claude-fast,gemini,gemini-or,minimax,minimax_m27,groq,embed
++            bin/idp-router-key science claude,claude-fast,gemini,gemini-or,minimax,minimax_m27,embed
+             tok=$(bin/idp-github-app token vault-writer); echo "::add-mask::$tok"
+             git clone -q --depth 1 "https://x-access-token:${tok}@github.com/${GITHUB_REPOSITORY_OWNER}/estate-secrets" "$RUNNER_TEMP/estate-secrets"
+             bin/idp-cloud secret get science | jq -r .key | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev LITELLM_SCIENCE_KEY LITELLM_API_KEY
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 2017dcc31..17c97c446 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -153,6 +153,13 @@ if cmp -s "$a/catalog-info.yaml" "$b/catalog-info.yaml"; then
+   say "ok    idempot  catalog-gen twice over one inventory: identical ($(wc -c < "$a/catalog-info.yaml" | tr -d ' ') bytes)"
+ else say "FAIL  idempot  catalog-gen is not deterministic:"; diff "$a/catalog-info.yaml" "$b/catalog-info.yaml" | head -10 | sed 's/^/      /'; fail=1; fi
+ 
++# 4b2. The router config pair is generated from the vendor registry (founder 2026-09-02:
++#      one vendor, one place). A hand edit to either rendered file, or a registry edit that
++#      skipped bin/idp-vendor-render, is drift and fails here.
++if "$IDP/bin/idp-vendor-render" --check >/dev/null 2>&1; then
++  say "ok    render   llm/config.yaml + platform/llm/config.yaml match platform/vendors/consoles.yaml"
++else say "FAIL  render   rendered router configs do not match the vendor registry; run bin/idp-vendor-render"; fail=1; fi
++
+ # 4c. The catalogue must carry relationships. An entity list with no edges renders
+ #     exactly like a mapped estate and is the failure a peer session named on
+ #     2026-08-24: "Backstage doesn't magically discover your architecture". Two
+diff --git a/bin/idp-set-root b/bin/idp-set-root
+index eeae1c4f4..d4de2323b 100755
+--- a/bin/idp-set-root
++++ b/bin/idp-set-root
+@@ -1,7 +1,8 @@
+ #!/usr/bin/env bash
+ # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
+-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | kimi | groq | gemini | exa | cursor | stripe | telegram-hermes | telegram-alerts | google-oauth
+-#   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
++#   bin/idp-set-root <provider>   tailscale | cloudflare | telegram-hermes | telegram-alerts | google-oauth,
++#                                 or any vendor platform/vendors/consoles.yaml gives a secret: row (the registry is the one list)
++#   bin/idp-set-root all          every provider above in turn, skipping any whose secrets are already set; one apply run at the end
+ #
+ # It opens the provider's page, says exactly what to click and what to type, then asks for each
+ # value right here with hidden input and hands it straight to `gh secret set` (the repository
+@@ -12,12 +13,18 @@
+ set -euo pipefail
+ REPO=${IDP_REPO:-chidionyema/idp}
+ IDP=$(cd "$(dirname "$0")/.." && pwd)
+-P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
+-ALL="tailscale cloudflare anthropic openrouter deepseek minimax kimi groq gemini exa cursor stripe telegram-hermes telegram-alerts google-oauth"
++P=${1:-}; [ -n "$P" ] || { sed -n 3,5p "$0"; exit 2; }
++# a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
++field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
++# every vendor the registry gives a secret: row, in registry order. The registry is the ONE list
++# (founder 2026-09-02): no vendor name is written in this script, so adding or
++# removing a vendor is a consoles.yaml edit and nothing here.
++vendors() { awk '/^vendors:/{on=1;next} on&&/^[a-z]/{exit} on&&/^  [a-z_]+:$/{v=$1;sub(/:$/,"",v)} on&&v&&$1=="secret:"{print v;v=""}' "$IDP/platform/vendors/consoles.yaml"; }
++ALL="tailscale cloudflare $(vendors | xargs) telegram-hermes telegram-alerts google-oauth"
+ if [ "$P" = all ]; then
+   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
+   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
+-  have=$(gh secret list -R "${IDP_REPO:-chidionyema/idp}" --json name --jq '.[].name')
++  have=$(gh secret list -R "$REPO" --json name --jq '.[].name')
+   n=0
+   for p in $ALL; do
+     case "$p" in
+@@ -25,23 +32,21 @@ if [ "$P" = all ]; then
+       cloudflare) need=SEED_CLOUDFLARE_ROOT_TOKEN ;;
+       telegram-hermes) need=SEED_TELEGRAM_HERMES_BOT_TOKEN ;;
+       telegram-alerts) need=SEED_TELEGRAM_ALERTS_BOT_TOKEN ;;
+-      stripe) need=SEED_STRIPE_SECRET_KEY ;;
+       google-oauth) need="SEED_GOOGLE_OAUTH_CLIENT_ID SEED_GOOGLE_OAUTH_CLIENT_SECRET" ;;
+-      *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
++      *) need=$(field "$p" secret) ;;   # the registry names the vendor's one root (R52)
+     esac
++    [ -n "$need" ] || { echo "FAIL    no secret name for $p in platform/vendors/consoles.yaml"; exit 1; }
+     missing=0; for k in $need; do printf '%s\n' "$have" | grep -x "$k" >/dev/null || missing=1; done
+     if [ $missing = 0 ]; then echo "ok      $p already set; skipped"; continue; fi
+     n=$((n+1)); echo; echo "=== $p ($n) ==="
+     IDP_NO_DISPATCH=1 "$0" "$p"
+   done
+-  echo; gh workflow run oke-check.yml -R "${IDP_REPO:-chidionyema/idp}" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
++  echo; gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. Every provider is set."
+   exit 0
+ fi
+ command -v gh >/dev/null || { echo "FAIL    gh is not installed: brew install gh, then gh auth login"; exit 1; }
+ gh auth status >/dev/null 2>&1 || { echo "FAIL    gh is not signed in: run gh auth login once"; exit 1; }
+ open_page() { if command -v open >/dev/null; then open "$1"; elif command -v xdg-open >/dev/null; then xdg-open "$1"; else echo "        open $1"; fi; }
+-# a field of one vendor in platform/vendors/consoles.yaml, with no yaml module (the founder's Mac python has none)
+-field() { awk -v v="  $1:" -v k="$2:" '$0==v{on=1;next} on&&/^  [a-z]/{exit} on&&$1==k{print $2;exit}' "$IDP/platform/vendors/consoles.yaml"; }
+ # the estate's DNS zone, written once in clusters/<cluster>/estate-config.yaml (crew#269)
+ zone() { awk '$1=="ESTATE_ZONE:"{print $2; exit}' "$IDP"/clusters/*/estate-config.yaml; }
+ ask() { # ask NAME "what it is"; hidden input, straight into gh, never echoed
+@@ -75,14 +80,6 @@ T
+         5. "Continue to summary", "Create Token". Copy the token when asked below.
+ T
+     ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
+-  anthropic|openrouter|deepseek|minimax|kimi|groq|gemini|exa|cursor|stripe)
+-    page=$(field "$P" page); name=$(field "$P" secret)
+-    [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
+-    echo "$P: one API key, once. The key page is opening."
+-    open_page "$page"
+-    echo "        1. Create a key. Name it: estate"
+-    echo "        2. Copy it when asked below."
+-    ask "$name" "the key shown" ;;
+   google-oauth)
+     # The shop's "Continue with Google" button. Google publishes no create-client API (the IAP one
+     # cannot set a redirect URI), so this client is a root made once, like a BotFather token.
+@@ -114,6 +111,14 @@ T
+     echo "        1. Send /token and pick the bot (${P#telegram-})."
+     echo "        2. Copy the token BotFather answers with, when asked below."
+     ask "$name" "the token shown" ;;
+-  *) echo "FAIL    unknown provider $P"; sed -n 3p "$0"; exit 2 ;;
++  *)
++    vendors | grep -x -- "$P" >/dev/null || { echo "FAIL    unknown provider $P"; sed -n 3,4p "$0"; exit 2; }
++    page=$(field "$P" page); name=$(field "$P" secret)
++    [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
++    echo "$P: one API key, once. The key page is opening."
++    open_page "$page"
++    echo "        1. Create a key. Name it: estate"
++    echo "        2. Copy it when asked below."
++    ask "$name" "the key shown" ;;
+ esac
+ [ -n "${IDP_NO_DISPATCH:-}" ] || { gh workflow run oke-check.yml -R "$REPO" -f mode=apply >/dev/null && echo "ok      apply run dispatched; the pipeline mints the rest. You are done with $P."; }
+diff --git a/bin/idp-vendor-render b/bin/idp-vendor-render
+new file mode 100755
+index 000000000..20a76d1b0
+--- /dev/null
++++ b/bin/idp-vendor-render
+@@ -0,0 +1,128 @@
++#!/usr/bin/env python3
++"""Render the two LiteLLM router configs from the vendor registry.
++
++One vendor, one place (founder 2026-09-02, the groq removal): platform/vendors/consoles.yaml
++is the only file that names a model vendor. Each vendor's `router:` block carries its lanes
++and fallback chains; this tool splices them into llm/config.base.yaml and
++platform/llm/config.base.yaml and writes llm/config.yaml and platform/llm/config.yaml.
++Adding or removing a vendor is one registry edit plus one run of this tool; the rendered
++pair is committed, and --check (run by bin/idp-ci and tests/test_llm_row.py) fails when the
++committed files do not match a fresh render, so the pair can never drift from the registry.
++
++Registry shape, per vendor, all fields optional:
++    router:
++      lanes: |              # model_list entries both routers serve (comments ride along)
++      cluster_lanes: |      # entries only the cluster serves (capability aliases)
++      fallbacks: |          # fallback chains for the lanes above
++      cluster_fallbacks: |  # chains only the cluster carries
++Block content is stored flush left; the marker's field decides the indent it gets back.
++
++Deterministic: same inputs, same bytes, every run (the idempotency rule in AGENTS.md).
++Exit 0 ok; 1 drift under --check; 2 a missing or malformed input.
++"""
++
++import pathlib
++import sys
++
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++REG = ROOT / "platform/vendors/consoles.yaml"
++HEADER = (
++    "# GENERATED by bin/idp-vendor-render -- vendor lanes and fallback chains come from\n"
++    "# platform/vendors/consoles.yaml (`router:` blocks), everything else from {base}.\n"
++    "# Edit those two, never this file; bin/idp-ci fails when this file and a fresh render differ.\n"
++)
++TARGETS = [
++    ("llm/config.yaml", "llm/config.base.yaml"),
++    ("platform/llm/config.yaml", "platform/llm/config.base.yaml"),
++]
++# marker line (stripped) -> (registry field, indent the block gets in the output)
++FIELDS = {
++    "# @vendor-lanes@": ("lanes", 2),
++    "# @vendor-cluster-lanes@": ("cluster_lanes", 2),
++    "# @vendor-fallbacks@": ("fallbacks", 4),
++    "# @vendor-cluster-fallbacks@": ("cluster_fallbacks", 4),
++}
++KNOWN = {f for f, _ in FIELDS.values()}
++
++
++def blocks(vendors: dict, field: str, indent: int) -> str:
++    out = []
++    for name, v in vendors.items():
++        router = v.get("router") or {}
++        unknown = set(router) - KNOWN
++        if unknown:
++            raise SystemExit(
++                f"BLIND   vendor-render   {name}: router field(s) {sorted(unknown)} unknown to the renderer"
++            )
++        txt = router.get(field)
++        if txt:
++            pad = " " * indent
++            out.append(
++                "\n".join(
++                    pad + ln if ln.strip() else ""
++                    for ln in txt.rstrip("\n").split("\n")
++                )
++            )
++    return "\n\n".join(out)
++
++
++def render(vendors: dict, base_text: str, base_name: str) -> str:
++    lines = []
++    for line in base_text.splitlines():
++        spec = FIELDS.get(line.strip())
++        if spec:
++            lines.append(blocks(vendors, spec[0], spec[1]))
++        else:
++            lines.append(line)
++    return HEADER.format(base=base_name) + "\n".join(lines) + "\n"
++
++
++def main() -> int:
++    check = "--check" in sys.argv[1:]
++    try:
++        vendors = yaml.safe_load(REG.read_text())["vendors"]
++    except Exception as e:  # a broken registry is blindness, not drift
++        print(f"BLIND   vendor-render   {REG}: {e}")
++        return 2
++    rc = 0
++    for out_rel, base_rel in TARGETS:
++        base = ROOT / base_rel
++        if not base.is_file():
++            print(f"BLIND   vendor-render   no {base_rel}")
++            return 2
++        text = render(vendors, base.read_text(), base_rel)
++        try:
++            parsed = yaml.safe_load(text)
++            lanes = {m["model_name"] for m in parsed["model_list"]}
++            for entry in parsed["router_settings"]["fallbacks"]:
++                for src, chain in entry.items():
++                    missing = ({src} | set(chain)) - lanes
++                    if missing:
++                        print(
++                            f"FAIL    vendor-render   {out_rel}: fallback names no lane serves: {sorted(missing)}"
++                        )
++                        return 2
++        except Exception as e:
++            print(f"FAIL    vendor-render   {out_rel} would not parse: {e}")
++            return 2
++        out = ROOT / out_rel
++        if check:
++            if not out.is_file() or out.read_text() != text:
++                print(
++                    f"FAIL    vendor-render   {out_rel} does not match a render from the registry; run bin/idp-vendor-render"
++                )
++                rc = 1
++            else:
++                print(f"ok      vendor-render   {out_rel} matches the registry")
++        else:
++            out.write_text(text)
++            print(
++                f"ok      vendor-render   wrote {out_rel} ({len(text.splitlines())} lines)"
++            )
++    return rc
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/bin/litellm-status b/bin/litellm-status
+index 9340fc6e4..5e0fbcf03 100755
+--- a/bin/litellm-status
++++ b/bin/litellm-status
+@@ -66,12 +66,12 @@ echo "LAPTOP CONSUMERS THAT STILL HOLD A VENDOR KEY (crew#568: the Mac holds one
+ stray=0
+ for f in "$HOME/.pi/models.json" "$HOME/.config/pi/config.json"; do
+   [ -r "$f" ] || continue
+-  hosts=$(grep -o -E 'https?://[a-z0-9.-]*(minimax|deepseek|openrouter|groq|anthropic|openai|googleapis|mistral)[a-z0-9./-]*' "$f" | sort -u | tr '\n' ' ')
++  hosts=$(grep -o -E 'https?://[a-z0-9.-]*(minimax|deepseek|openrouter|anthropic|openai|googleapis|mistral)[a-z0-9./-]*' "$f" | sort -u | tr '\n' ' ')
+   [ -z "$hosts" ] || { echo "  FAIL   $f -> $hosts"; stray=1; }
+ done
+ for f in "$HOME/.config/llm/secrets.sh" "$HOME/.config/wave/secrets.sh" "$HOME/.zshrc" "$HOME/.zshenv"; do
+   [ -r "$f" ] || continue
+-  names=$(grep -o -E '^\s*export [A-Z_]*(MINIMAX|DEEPSEEK|OPENROUTER|GROQ|GEMINI|MISTRAL|CEREBRAS|OPENAI)[A-Z_]*_API_KEY' "$f" | sed 's/.*export //' | sort -u | tr '\n' ' ')
++  names=$(grep -o -E '^\s*export [A-Z_]*(MINIMAX|DEEPSEEK|OPENROUTER|GEMINI|MISTRAL|CEREBRAS|OPENAI)[A-Z_]*_API_KEY' "$f" | sed 's/.*export //' | sort -u | tr '\n' ' ')
+   [ -z "$names" ] || { echo "  FAIL   $f exports $names"; stray=1; }
+ done
+ [ "$stray" = 0 ] && echo "  ok     none"
+diff --git a/checkpoints/LATEST.md b/checkpoints/LATEST.md
+index 550672334..5efeea5bc 100644
+--- a/checkpoints/LATEST.md
++++ b/checkpoints/LATEST.md
+@@ -12,3 +12,11 @@ Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready
+ Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
+ bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
+ Founder plan recorded crew#66 5453918598 (one-shot, "just you").
++
++## RESUME HERE (2026-09-03T01:2xZ, session 54539261, lane .wt-groq-rm)
++FOUNDER PIVOT in force: otto = enterprise multi-tenant multi-channel SaaS; Universal Event Gateway standard. Directive verbatim: ~/.claude/docs/founder/2026-09-03T0114Z-you-are-100-right-and-i-missed-the-5c622fb3.md (being mirrored into crew docs/founder/).
++- Engineering agent BUILDING hermes-v2 branch otto/event-gateway (tenant_id on envelopes, otto/ingress gateway, channel_binding registry; Telegram verifier = plugin #1). No PR; push + report.
++- Live defect found (engineering consult): deployed otto-golden boot.yaml has NO chat_allowlist -> all senders UNTRUSTED -> bot answers silence. Fix = gateway registry row #1 (operator chat id from Vault), NOT an allowlist patch (would be banned Telegram-specific plumbing).
++- Ops proof plane designed: 4 receipt layers (coverage, gateway spans w/ tenant.id, registration reconciler via getWebhookInfo where token lives, canary tenant loopback + healthchecks slug). Answer tonight was UNKNOWN 0/4.
++- I am now: committing directive + EVENT-GATEWAY-TENANCY spec doc to crew branch spec/otto-gateway-tenancy (worktree in scratchpad crew-gw).
++- otto-golden rename fully landed earlier (2 pods RS 65489cd5bf, otto-staging pruned, doors 200/404-gated).
+diff --git a/docs/explanation/architecture/model-stack.md b/docs/explanation/architecture/model-stack.md
+index 4103d9279..1eaba139a 100644
+--- a/docs/explanation/architecture/model-stack.md
++++ b/docs/explanation/architecture/model-stack.md
+@@ -68,7 +68,7 @@ flowchart LR
+     K8S["k8sgpt"]
+     HERMES["Hermes · the Architect"]
+     PROS["Prospector"]
+-    ROUTER["Router · llm.zone<br/>lanes: claude · minimax · deepseek · gemini · groq · openrouter · local<br/>one login + budget per caller"]
++    ROUTER["Router · llm.zone<br/>lanes: claude · minimax · deepseek · gemini · openrouter · local<br/>one login + budget per caller"]
+   end
+   OTTO["Otto · Telegram"] --> HERMES
+   OC -- "laptop" --> ROUTER
+@@ -77,7 +77,7 @@ flowchart LR
+   HERMES -- "hermes" --> ROUTER
+   PROS -- "prospector" --> ROUTER
+   ROUTER --> ANTH["Anthropic (API key, small budget)"]
+-  ROUTER --> VENDORS["MiniMax · DeepSeek · Gemini · Groq · OpenRouter"]
++  ROUTER --> VENDORS["MiniMax · DeepSeek · Gemini · OpenRouter"]
+   ROUTER -. "Tailscale" .-> OLLAMA["Ollama on the Mac (local lane)"]
+   CC == "subscription, unchanged" ==> ANTH
+ ```
+diff --git a/docs/how-to/onboarding/litellm.md b/docs/how-to/onboarding/litellm.md
+index c00950cc3..8fb1c77a5 100644
+--- a/docs/how-to/onboarding/litellm.md
++++ b/docs/how-to/onboarding/litellm.md
+@@ -28,7 +28,7 @@ router serves right now, including anything added in the console.
+    `bin/idp-identity-apply`.
+ 3. Models → Add Model. Pick the provider, type the public model name, and for the credential
+    reference the key the pod already holds: `os.environ/MINIMAX_API_KEY`,
+-   `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`, `os.environ/GROQ_API_KEY`.
++   `os.environ/DEEPSEEK_API_KEY`, `os.environ/OPENROUTER_API_KEY`, `os.environ/GEMINI_API_KEY`.
+    A provider the vault does not hold a key for needs the key added to the vault entry
+    `litellm-upstream` first (`bin/idp-vault-put --merge`, run by the `oke-check` apply step from
+    whichever `SEED_*` repository secrets are set, never from a laptop; one new key, no re-seed).
+diff --git a/docs/reference/policy/credential-lifecycle.md b/docs/reference/policy/credential-lifecycle.md
+index a609bb8ca..7a751e9f9 100644
+--- a/docs/reference/policy/credential-lifecycle.md
++++ b/docs/reference/policy/credential-lifecycle.md
+@@ -39,7 +39,6 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
+ | `SEED_MINIMAX_API_KEY` | Minimax | platform, interface key | model calls | none | as Anthropic | delete the key | Minimax usage |
+ | `SEED_KIMI_API_KEY` | Kimi (Moonshot) | platform.kimi.ai console, API keys | model calls | none | as Anthropic | delete the key | Kimi console usage |
+ | `LITELLM_LAPTOP_KEY` (the Mac reads it as `LITELLM_API_KEY`) | the estate router (LiteLLM, `platform/llm`) | `vault-seed.yml` entry `laptop`: `bin/idp-router-key laptop <lanes>` mints it from the router's master key, `estate-secrets/scripts/secret-add` vaults it; no console | model calls on the listed lanes only, `max_budget` per day (`bin/idp-router-key`); no vendor key, no admin | none; the daily budget is the ceiling | re-run `vault-seed.yml` entry `laptop`: a new virtual key, same secret name; the Mac picks it up through `scripts/secret-load` | delete the key in the router console (`/ui`, Virtual Keys) or set its budget to 0; the Mac has nothing else | router spend ledger (`oke-check.yml -f mode=break-glass -f playbook=router-spend`) per key alias `laptop` |
+-| `SEED_GROQ_API_KEY` | Groq | console, keys | model calls | none | as Anthropic | delete the key | Groq usage |
+ | `SEED_GEMINI_API_KEY` | Google | AI Studio, API key; restrict to Generative Language API | model calls | none | as Anthropic | delete the key | Google Cloud API key usage |
+ | `SEED_EXA_API_KEY` | Exa | dashboard, API keys | search calls | none | as Anthropic | delete the key | Exa usage |
+ | `SEED_CURSOR_API_KEY` | Cursor | dashboard, Integrations / API Keys | WORK dispatch (`agent -p` on the Mac through cursor-agent); cannot mint further keys. Architect stays on the model router. A person Cursor login is not this root. | none | new key, same name, apply (`bin/idp-bootstrap-vendors` proves and vaults it); delete the old key | delete the key in the dashboard | Cursor usage page per key |
+diff --git a/docs/tutorials/demo/hermes.md b/docs/tutorials/demo/hermes.md
+index 1d5d8fbad..369f23b99 100644
+--- a/docs/tutorials/demo/hermes.md
++++ b/docs/tutorials/demo/hermes.md
+@@ -27,11 +27,11 @@ $ .venv/bin/pytest -o addopts= -q tests/test_incident_crew751_cursor_is_the_herm
+ ```
+ 
+ `bin/catalog-gen` against the fixture inventory emits `vendor-cursor` among the
+-registry vendors (captured 2026-08-31 on this branch):
++registry vendors (captured 2026-09-02 on this branch):
+ 
+ ```
+-catalog-gen: 129 entities, 3 dependsOn edges -> .../catalog-info.yaml
+-  vendors        11  (anthropic, cursor, deepseek, exa, gemini, google_oauth, groq, minimax, openrouter, stripe, telegram)
++catalog-gen: 142 entities, 3 dependsOn edges -> .../catalog-info.yaml
++  vendors        12  (anthropic, apprise_telegram, cursor, deepseek, exa, gemini, google_oauth, kimi, minimax, openrouter, stripe, telegram)
+ ```
+ 
+ The key is minted once in the Cursor dashboard and stored as the GitHub secret
+diff --git a/llm/config.base.yaml b/llm/config.base.yaml
+new file mode 100644
+index 000000000..d14204da5
+--- /dev/null
++++ b/llm/config.base.yaml
+@@ -0,0 +1,88 @@
++# LiteLLM routing. This file replaces the chain-building half of prospector/operator.py.
++#
++# Standard: crew/docs/STANDARDS.md "LLM providers" (LiteLLM, adopted 2026-08-24).
++#
++# The names on the left are the ONLY thing prospector sees. They are deliberately the same
++# tier names config.yaml already uses (`operator:`, `noncritical_operator:`), so the
++# migration is a `providers:` block pointing at 127.0.0.1:4000 and not a rewrite.
++#
++# WHAT IS NOT HERE. `claude_cli` and `gemini_cli` are absent on purpose. They are local CLI
++# binaries spending a SUBSCRIPTION, not HTTP endpoints spending an API key, and a proxy
++# cannot drive them. They stay in prospector, they stay the trusted `moat_primary` tier,
++# and they stay the EUR 0 path (R14).
++
++model_list:
++  # @vendor-lanes@
++
++  # Local, free, and the only tier that survives every credential expiring at once.
++  - model_name: ollama
++    litellm_params:
++      model: ollama/qwen2.5-coder:7b
++      api_base: http://host.docker.internal:11434
++      timeout: 300
++      # Keep the weights resident. Ollama unloads a model 5 minutes after its last
++      # call, and reloading 7B cost the consensus vote its 30 s deadline every time
++      # (measured 2026-08-26: 30.8 s cold, 16.9 s warm, crew#284 CP2). The proxy is
++      # the only caller, so it owns the residency.
++      keep_alive: 24h
++  # routing.vision in AGENTS.md (sovereign model.vision, R8: an alias, never a
++  # provider model name). gemma3:4b is multimodal and is already pulled locally.
++  # Through Ollama's OpenAI-compatible endpoint, not the ollama/ provider: the
++  # litellm-database image ships without Pillow, and the ollama/ provider needs
++  # it to pass an image ("ollama image conversion failed", 2026-08-26). The
++  # OpenAI route sends the data URL through untouched.
++  - model_name: ollama-vision
++    litellm_params:
++      model: openai/gemma3:4b
++      api_base: http://host.docker.internal:11434/v1
++      api_key: ollama
++      timeout: 300
++  # Second local voter for the kernel's 3-model consensus (kini spec 4.2:
++  # "Ollama handles 2/3 quorum load"); a different family from `ollama`, so two
++  # local votes are not one model voting twice.
++  - model_name: ollama-llama
++    litellm_params:
++      model: ollama/llama3.2:latest
++      api_base: http://host.docker.internal:11434
++      timeout: 300
++      keep_alive: 24h
++
++router_settings:
++  # The chain prospector's `noncritical_operator:` already declares, expressed once here
++  # instead of in FallbackOperator. `minimax -> minimax_m27` is the documented failover;
++  # ollama is last because it is local and cannot run out of credit.
++  fallbacks:
++    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
++    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
++    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
++    # still survives any one account dry. Every chain not headed by the cheap model ends in it
++    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
++    # job aliases) but sit in no chain while the account is unfunded: a hop that always
++    # answers 402 is latency, not redundancy.
++    # @vendor-fallbacks@
++  num_retries: 2
++  # A tier that keeps failing is taken out of the chain rather than retried into the
++  # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
++  allowed_fails: 3
++  cooldown_time: 60
++
++litellm_settings:
++  # Traces to the collector that already runs. No second store.
++  callbacks: ["otel"]
++  drop_params: true
++  # Never log the prompt or the completion body. Spans carry model, latency, tokens and
++  # cost — which is what an audit trail needs — and not the content of a customer's
++  # document (LAW 21).
++  turn_off_message_logging: true
++
++general_settings:
++  master_key: os.environ/LITELLM_MASTER_KEY
++  # A CEILING, not a budget. R14 is zero spend without founder sign-off; this number is
++  # the thing that refuses a runaway loop at 03:00, not permission to spend it. Raising it
++  # is a founder decision, and the proxy is where that decision is enforced rather than
++  # hoped for.
++  max_budget: 5.0
++  budget_duration: 1d
++  # Health checks cost a call per upstream. Off by default; `litellm-status` probes
++  # liveliness, which is free.
++  background_health_checks: false
+diff --git a/llm/config.yaml b/llm/config.yaml
+index bd90733a0..32171da54 100644
+--- a/llm/config.yaml
++++ b/llm/config.yaml
+@@ -1,3 +1,6 @@
++# GENERATED by bin/idp-vendor-render -- vendor lanes and fallback chains come from
++# platform/vendors/consoles.yaml (`router:` blocks), everything else from llm/config.base.yaml.
++# Edit those two, never this file; bin/idp-ci fails when this file and a fresh render differ.
+ # LiteLLM routing. This file replaces the chain-building half of prospector/operator.py.
+ #
+ # Standard: crew/docs/STANDARDS.md "LLM providers" (LiteLLM, adopted 2026-08-24).
+@@ -12,48 +15,27 @@
+ # and they stay the EUR 0 path (R14).
+ 
+ model_list:
+-  # --- the moat's cheap primary --------------------------------------------------------
+-  # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
+-  # with an explicit api_base rather than a provider prefix.
+-  - model_name: minimax
++  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
++  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
++  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
++  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
++  - model_name: claude
+     litellm_params:
+-      model: openai/MiniMax-M2
+-      api_base: https://api.minimax.io/v1
+-      api_key: os.environ/MINIMAX_API_KEY
++      model: anthropic/claude-sonnet-5
++      api_key: os.environ/ANTHROPIC_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+-      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+-      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+-      max_input_tokens: 204800
+-
+-  # The failover tier: same account and adapter, different model. It is a failover, never
+-  # a routing choice — see prospector config.yaml on `minimax_m27`.
+-  - model_name: minimax_m27
+-    litellm_params:
+-      model: openai/MiniMax-Text-01
+-      api_base: https://api.minimax.io/v1
+-      api_key: os.environ/MINIMAX_API_KEY
+-      timeout: 300
+-
+-  - model_name: deepseek
+-    litellm_params:
+-      model: deepseek/deepseek-chat
+-      api_key: os.environ/DEEPSEEK_API_KEY
+-      timeout: 300
++      max_input_tokens: 200000
+ 
+-  # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
+-  # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
+-  # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
+-  - model_name: kimi
++  - model_name: claude-fast
+     litellm_params:
+-      model: moonshot/kimi-k3
+-      api_key: os.environ/MOONSHOT_API_KEY
++      model: anthropic/claude-haiku-4-5-20251001
++      api_key: os.environ/ANTHROPIC_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      max_input_tokens: 1000000
++      max_input_tokens: 200000
+ 
+   - model_name: openrouter
+     litellm_params:
+@@ -82,53 +64,54 @@ model_list:
+       api_key: os.environ/OPENROUTER_API_KEY
+       timeout: 300
+ 
+-  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
+-  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
+-  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
+-  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
+-  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
+-  # rather than retrying (allowed_fails 3, cooldown 60).
+-  - model_name: groq
++  - model_name: deepseek
+     litellm_params:
+-      model: groq/openai/gpt-oss-120b
+-      api_key: os.environ/GROQ_API_KEY
+-      timeout: 120
+-    model_info:
+-      max_input_tokens: 131072
+-  - model_name: groq-fast
++      model: deepseek/deepseek-chat
++      api_key: os.environ/DEEPSEEK_API_KEY
++      timeout: 300
++
++  # --- the moat's cheap primary --------------------------------------------------------
++  # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
++  # with an explicit api_base rather than a provider prefix.
++  - model_name: minimax
+     litellm_params:
+-      model: groq/openai/gpt-oss-20b
+-      api_key: os.environ/GROQ_API_KEY
+-      timeout: 60
++      model: openai/MiniMax-M2
++      api_base: https://api.minimax.io/v1
++      api_key: os.environ/MINIMAX_API_KEY
++      timeout: 300
++      max_tokens: 8192
+     model_info:
+-      max_input_tokens: 131072
+-  - model_name: gemini
++      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
++      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
++      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
++      max_input_tokens: 204800
++
++  # The failover tier: same account and adapter, different model. It is a failover, never
++  # a routing choice — see prospector config.yaml on `minimax_m27`.
++  - model_name: minimax_m27
+     litellm_params:
+-      model: gemini/gemini-2.5-flash
+-      api_key: os.environ/GEMINI_API_KEY
++      model: openai/MiniMax-Text-01
++      api_base: https://api.minimax.io/v1
++      api_key: os.environ/MINIMAX_API_KEY
+       timeout: 300
+ 
+-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
+-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
+-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
+-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
+-  - model_name: claude
++  # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
++  # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
++  # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
++  - model_name: kimi
+     litellm_params:
+-      model: anthropic/claude-sonnet-5
+-      api_key: os.environ/ANTHROPIC_API_KEY
++      model: moonshot/kimi-k3
++      api_key: os.environ/MOONSHOT_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      max_input_tokens: 200000
++      max_input_tokens: 1000000
+ 
+-  - model_name: claude-fast
++  - model_name: gemini
+     litellm_params:
+-      model: anthropic/claude-haiku-4-5-20251001
+-      api_key: os.environ/ANTHROPIC_API_KEY
++      model: gemini/gemini-2.5-flash
++      api_key: os.environ/GEMINI_API_KEY
+       timeout: 300
+-      max_tokens: 8192
+-    model_info:
+-      max_input_tokens: 200000
+ 
+   # Local, free, and the only tier that survives every credential expiring at once.
+   - model_name: ollama
+@@ -175,18 +158,18 @@ router_settings:
+     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+     # job aliases) but sit in no chain while the account is unfunded: a hop that always
+     # answers 402 is latency, not redundancy.
+-    - minimax: [deepseek]
+-    - deepseek: [minimax]
+-    - openrouter: [minimax, deepseek]
+-    - gemini: [minimax, deepseek]
+-    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
+-    # another free lane first; the chain still ends in the cheap model (cp30).
+-    - groq: [minimax, deepseek]
+-    - groq-fast: [groq, deepseek]
+     # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
+     # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
+     - claude: [minimax, deepseek]
+     - claude-fast: [claude, deepseek]
++
++    - openrouter: [minimax, deepseek]
++
++    - deepseek: [minimax]
++
++    - minimax: [deepseek]
++
++    - gemini: [minimax, deepseek]
+   num_retries: 2
+   # A tier that keeps failing is taken out of the chain rather than retried into the
+   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
+diff --git a/platform/hindsight/hindsight.yaml b/platform/hindsight/hindsight.yaml
+index d94287b48..9207c6409 100644
+--- a/platform/hindsight/hindsight.yaml
++++ b/platform/hindsight/hindsight.yaml
+@@ -48,7 +48,7 @@ spec:
+       env:
+         # An alias on the estate router (platform/llm/config.yaml), so a lane swap never touches this row.
+         HINDSIGHT_API_LLM_PROVIDER: openai
+-        HINDSIGHT_API_LLM_MODEL: groq
++        HINDSIGHT_API_LLM_MODEL: deepseek  # was groq until that vendor was removed (2026-09-02)
+       persistence:
+         modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
+       extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
+diff --git a/platform/llm/config.base.yaml b/platform/llm/config.base.yaml
+new file mode 100644
+index 000000000..e1c774693
+--- /dev/null
++++ b/platform/llm/config.base.yaml
+@@ -0,0 +1,70 @@
++# LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
++# (tests/test_llm_row.py diffs them); what is missing is on purpose:
++#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
++#     cluster cannot reach. The free local lane stays on the laptop compose.
++#   - the ollama fallbacks, for the same reason.
++# `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
++
++model_list:
++  # @vendor-lanes@
++
++  # @vendor-cluster-lanes@
++
++router_settings:
++  fallbacks:
++    # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
++    # at ~2,400 tokens of credit and Google prepaid was empty, so the crew#284 order (OpenRouter
++    # first) walked every turn through 402/429 before reaching a lane that answers. Consensus
++    # still survives any one account dry. Every chain not headed by the cheap model ends in it
++    # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
++    # job aliases) but sit in no chain while the account is unfunded: a hop that always
++    # answers 402 is latency, not redundancy.
++    # @vendor-fallbacks@
++    # @vendor-cluster-fallbacks@
++  num_retries: 2
++  allowed_fails: 3
++  cooldown_time: 60
++
++litellm_settings:
++  callbacks: ["otel"]
++  # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
++  # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
++  # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
++  success_callback: ["langfuse"]
++  failure_callback: ["langfuse"]
++  drop_params: true
++  turn_off_message_logging: true
++
++general_settings:
++  master_key: os.environ/LITELLM_MASTER_KEY
++  # crew#400: the founder picks and adds models in the Admin UI at llm.<zone>/ui, not by PR (LAW 31).
++  # Models added there are rows in litellm-db and survive a restart; this model_list stays the floor.
++  # The console signs in through the estate identity domain (GENERIC_* env from the litellm-sso
++  # mount, external-secret.yaml); no console password exists (crew#408, ADR 0007).
++  store_model_in_db: true
++  max_budget: 5.0
++  budget_duration: 1d
++  background_health_checks: false
++  # The MiniMax half of the founder's 2026-08-30 ruling. MiniMax's image API is not
++  # OpenAI-shaped -- POST https://api.minimax.io/v1/image_generation, body {model, prompt,
++  # aspect_ratio, n, response_format}, answer data.image_base64
++  # (https://platform.minimax.io/docs/guides/image-generation, read 2026-08-30) -- so it cannot
++  # be a model_list row. A pass-through forwards the vendor's own shape and puts the key in the
++  # header from the mounted secret, which keeps LAW 34 whole: the caller holds a router virtual
++  # key, never MINIMAX_API_KEY.
++  #
++  # `auth: true` is what makes that true, and it is free on this version. It used to be an
++  # enterprise flag; in v1.98.0 _register_pass_through_endpoint attaches Depends(user_api_key_auth)
++  # and adds the path to LiteLLMRoutes.openai_routes for everyone
++  # (litellm/proxy/pass_through_endpoints/pass_through_endpoints.py:2802-2812 at tag v1.98.0).
++  # Without it this path would forward anything the internet sent to llm.<zone>, spending the
++  # MiniMax account with no key at all, so the flag is load-bearing and not a default.
++  pass_through_endpoints:
++    - path: /minimax/image
++      target: https://api.minimax.io/v1/image_generation
++      auth: true
++      methods: ["POST"]
++      headers:
++        Authorization: Bearer os.environ/MINIMAX_API_KEY
++        content-type: application/json
++      timeout: 120
+diff --git a/platform/llm/config.yaml b/platform/llm/config.yaml
+index f005ec2fa..42a34c2b3 100644
+--- a/platform/llm/config.yaml
++++ b/platform/llm/config.yaml
+@@ -1,3 +1,6 @@
++# GENERATED by bin/idp-vendor-render -- vendor lanes and fallback chains come from
++# platform/vendors/consoles.yaml (`router:` blocks), everything else from platform/llm/config.base.yaml.
++# Edit those two, never this file; bin/idp-ci fails when this file and a fresh render differ.
+ # LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
+ # (tests/test_llm_row.py diffs them); what is missing is on purpose:
+ #   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
+@@ -6,43 +9,27 @@
+ # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
+ 
+ model_list:
+-  - model_name: minimax
++  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
++  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
++  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
++  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
++  - model_name: claude
+     litellm_params:
+-      model: openai/MiniMax-M2
+-      api_base: https://api.minimax.io/v1
+-      api_key: os.environ/MINIMAX_API_KEY
++      model: anthropic/claude-sonnet-5
++      api_key: os.environ/ANTHROPIC_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
+-      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
+-      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
+-      max_input_tokens: 204800
+-
+-  - model_name: minimax_m27
+-    litellm_params:
+-      model: openai/MiniMax-Text-01
+-      api_base: https://api.minimax.io/v1
+-      api_key: os.environ/MINIMAX_API_KEY
+-      timeout: 300
+-
+-  - model_name: deepseek
+-    litellm_params:
+-      model: deepseek/deepseek-chat
+-      api_key: os.environ/DEEPSEEK_API_KEY
+-      timeout: 300
++      max_input_tokens: 200000
+ 
+-  # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
+-  # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
+-  # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
+-  - model_name: kimi
++  - model_name: claude-fast
+     litellm_params:
+-      model: moonshot/kimi-k3
+-      api_key: os.environ/MOONSHOT_API_KEY
++      model: anthropic/claude-haiku-4-5-20251001
++      api_key: os.environ/ANTHROPIC_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      max_input_tokens: 1000000
++      max_input_tokens: 200000
+ 
+   - model_name: openrouter
+     litellm_params:
+@@ -71,55 +58,50 @@ model_list:
+       api_key: os.environ/OPENROUTER_API_KEY
+       timeout: 300
+ 
+-  # --- crew#506 CP4: the free tier (2026-08-27) ----------------------------------------
+-  # Groq's free plan answers openai/gpt-oss-120b at 131k context with no card on file, so it
+-  # is the first free hop for every job that is not the moat's paid MiniMax lane. Model ids
+-  # are the ones the key lists at api.groq.com/openai/v1/models on 2026-08-27; llama-3.3-70b
+-  # is not on the plan. Rate limits are per minute, so the chain drops to a paid direct lane
+-  # rather than retrying (allowed_fails 3, cooldown 60).
+-  - model_name: groq
+-    litellm_params:
+-      model: groq/openai/gpt-oss-120b
+-      api_key: os.environ/GROQ_API_KEY
+-      timeout: 120
+-    model_info:
+-      max_input_tokens: 131072
+-  - model_name: groq-fast
+-    litellm_params:
+-      model: groq/openai/gpt-oss-20b
+-      api_key: os.environ/GROQ_API_KEY
+-      timeout: 60
+-    model_info:
+-      max_input_tokens: 131072
+-  - model_name: gemini
++  - model_name: deepseek
+     litellm_params:
+-      model: gemini/gemini-2.5-flash
+-      api_key: os.environ/GEMINI_API_KEY
++      model: deepseek/deepseek-chat
++      api_key: os.environ/DEEPSEEK_API_KEY
+       timeout: 300
+ 
+-  # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
+-  # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
+-  # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
+-  # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
+-  - model_name: claude
++  # --- the moat's cheap primary --------------------------------------------------------
++  # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
++  # with an explicit api_base rather than a provider prefix.
++  - model_name: minimax
+     litellm_params:
+-      model: anthropic/claude-sonnet-5
+-      api_key: os.environ/ANTHROPIC_API_KEY
++      model: openai/MiniMax-M2
++      api_base: https://api.minimax.io/v1
++      api_key: os.environ/MINIMAX_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      max_input_tokens: 200000
++      # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
++      # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
++      # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
++      max_input_tokens: 204800
+ 
+-  - model_name: claude-fast
++  # The failover tier: same account and adapter, different model. It is a failover, never
++  # a routing choice — see prospector config.yaml on `minimax_m27`.
++  - model_name: minimax_m27
+     litellm_params:
+-      model: anthropic/claude-haiku-4-5-20251001
+-      api_key: os.environ/ANTHROPIC_API_KEY
++      model: openai/MiniMax-Text-01
++      api_base: https://api.minimax.io/v1
++      api_key: os.environ/MINIMAX_API_KEY
++      timeout: 300
++
++  # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
++  # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
++  # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
++  - model_name: kimi
++    litellm_params:
++      model: moonshot/kimi-k3
++      api_key: os.environ/MOONSHOT_API_KEY
+       timeout: 300
+       max_tokens: 8192
+     model_info:
+-      max_input_tokens: 200000
++      max_input_tokens: 1000000
+ 
+-  - model_name: vision
++  - model_name: gemini
+     litellm_params:
+       model: gemini/gemini-2.5-flash
+       api_key: os.environ/GEMINI_API_KEY
+@@ -140,6 +122,26 @@ model_list:
+     model_info:
+       mode: embedding
+ 
++  # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
++  # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
++  # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
++  # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
++  # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
++  # one enough. Model id and its presence as an image-output model read from
++  # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
++  # architecture.output_modalities contains "image".
++  - model_name: image-or
++    litellm_params:
++      model: openrouter/google/gemini-3.1-flash-image
++      api_key: os.environ/OPENROUTER_API_KEY
++      timeout: 300
++
++  - model_name: vision
++    litellm_params:
++      model: gemini/gemini-2.5-flash
++      api_key: os.environ/GEMINI_API_KEY
++      timeout: 300
++
+   # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
+   # we use Gemini for the ones that will ship to production". So there are two image lanes, and
+   # the reason they are shaped differently is a vendor fact, not a preference:
+@@ -163,20 +165,6 @@ model_list:
+       api_key: os.environ/GEMINI_API_KEY
+       timeout: 300
+ 
+-  # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
+-  # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
+-  # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
+-  # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
+-  # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
+-  # one enough. Model id and its presence as an image-output model read from
+-  # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
+-  # architecture.output_modalities contains "image".
+-  - model_name: image-or
+-    litellm_params:
+-      model: openrouter/google/gemini-3.1-flash-image
+-      api_key: os.environ/OPENROUTER_API_KEY
+-      timeout: 300
+-
+ router_settings:
+   fallbacks:
+     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+@@ -186,18 +174,18 @@ router_settings:
+     # (sovereign cp30). The OpenRouter lanes stay in model_list for crew#506 CP4 (free lanes,
+     # job aliases) but sit in no chain while the account is unfunded: a hop that always
+     # answers 402 is latency, not redundancy.
+-    - minimax: [deepseek]
+-    - deepseek: [minimax]
+-    - openrouter: [minimax, deepseek]
+-    - gemini: [minimax, deepseek]
+-    # crew#506 CP4: a free lane that rate-limits falls to the paid direct lanes, never to
+-    # another free lane first; the chain still ends in the cheap model (cp30).
+-    - groq: [minimax, deepseek]
+-    - groq-fast: [groq, deepseek]
+     # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
+     # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
+     - claude: [minimax, deepseek]
+     - claude-fast: [claude, deepseek]
++
++    - openrouter: [minimax, deepseek]
++
++    - deepseek: [minimax]
++
++    - minimax: [deepseek]
++
++    - gemini: [minimax, deepseek]
+     # An image chain may only contain image models. Every other chain here ends in the cheap
+     # text model (cp30) and that is right for text; landing a picture request on a chat model
+     # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
+diff --git a/platform/llm/external-secret.yaml b/platform/llm/external-secret.yaml
+index 9b80bd99b..04decffb9 100644
+--- a/platform/llm/external-secret.yaml
++++ b/platform/llm/external-secret.yaml
+@@ -4,9 +4,9 @@
+ #   ESTATE_ENV_FILE=~/dev/code/idp/llm/.env bin/idp-vault-put litellm-upstream \
+ #     MINIMAX_API_KEY=MINIMAX_API_KEY DEEPSEEK_API_KEY=DEEPSEEK_API_KEY \
+ #     OPENROUTER_API_KEY=OPENROUTER_API_KEY GEMINI_API_KEY=GEMINI_API_KEY \
+-#     GROQ_API_KEY=GROQ_API_KEY LITELLM_MASTER_KEY=LITELLM_MASTER_KEY
++#     LITELLM_MASTER_KEY=LITELLM_MASTER_KEY
+ #
+-# One more key later (crew#506 CP4): `bin/idp-vault-put --merge litellm-upstream GROQ_API_KEY=GROQ_API_KEY`
++# One more key later (crew#506 CP4): `bin/idp-vault-put --merge litellm-upstream MOONSHOT_API_KEY=MOONSHOT_API_KEY`
+ # overlays that key on the entry the vault holds; the oke-check apply step runs exactly that from
+ # whichever SEED_* repository secrets are set, so a new provider never means re-seeding every key.
+ # crew#568 phase 1: `bin/idp-bootstrap-vendors` writes ANTHROPIC_API_KEY=ANTHROPIC_API_KEY here from
+diff --git a/platform/vendors/consoles.yaml b/platform/vendors/consoles.yaml
+index e15d65314..9e5e24af1 100644
+--- a/platform/vendors/consoles.yaml
++++ b/platform/vendors/consoles.yaml
+@@ -4,7 +4,7 @@
+ # machine and set as a named repository secret; code does everything after that. None of these
+ # vendors publishes a create-key API (measured 2026-08-28: Anthropic's Admin API lists and updates
+ # keys but does not create them; OpenRouter's /api/v1/keys needs a provisioning key that is itself
+-# console-born; DeepSeek, Minimax, Groq, Exa and Stripe publish no key API; BotFather has no HTTP
++# console-born; DeepSeek, Minimax, Exa and Stripe publish no key API; BotFather has no HTTP
+ # API), so for each of them the API key IS the root: the founder makes it once at `page`, runs
+ # `gh secret set <secret> -R chidionyema/idp`, and never touches that vendor again. The bootstrapper
+ # reads the secret from its environment in the apply run, proves it against `verify` (anything but
+@@ -34,6 +34,34 @@ vendors:
+       - { entry: prospector-engine-env, field: ANTHROPIC_API_KEY }
+       - { entry: hermes-agent-env, field: ANTHROPIC_API_KEY }
+       - { entry: litellm-upstream, field: ANTHROPIC_API_KEY }   # crew#568 phase 1: the claude lanes on the router
++    router:
++      lanes: |
++        # crew#568 phase 1 (ADR 0011): Claude is a lane on the router, not a key on the Mac. Every
++        # caller that wants Claude asks the router by name; the key lives in litellm-upstream and is
++        # born by bin/idp-bootstrap-vendors from SEED_ANTHROPIC_API_KEY (R52), never pasted anywhere.
++        # Model ids from https://docs.anthropic.com/en/docs/about-claude/models (read 2026-08-29).
++        - model_name: claude
++          litellm_params:
++            model: anthropic/claude-sonnet-5
++            api_key: os.environ/ANTHROPIC_API_KEY
++            timeout: 300
++            max_tokens: 8192
++          model_info:
++            max_input_tokens: 200000
++
++        - model_name: claude-fast
++          litellm_params:
++            model: anthropic/claude-haiku-4-5-20251001
++            api_key: os.environ/ANTHROPIC_API_KEY
++            timeout: 300
++            max_tokens: 8192
++          model_info:
++            max_input_tokens: 200000
++      fallbacks: |
++        # crew#568 phase 1: a Claude turn that 4xx/5xxs falls to the funded direct lanes and ends
++        # in the cheap model (cp30), like every other chain; claude-fast tries claude first.
++        - claude: [minimax, deepseek]
++        - claude-fast: [claude, deepseek]
+   openrouter:
+     kind: secret
+     secret: SEED_OPENROUTER_API_KEY
+@@ -44,6 +72,65 @@ vendors:
+       - { entry: litellm-upstream, field: OPENROUTER_API_KEY }
+       - { entry: prospector-engine-env, field: OPENROUTER_API_KEY }
+       - { entry: hermes-agent-env, field: OPENROUTER_API_KEY }
++    router:
++      lanes: |
++        - model_name: openrouter
++          litellm_params:
++            model: openrouter/deepseek/deepseek-chat
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 300
++
++        # crew#284: every direct consensus account (MiniMax, DeepSeek, Gemini) answered 429 on balance on
++        # 2026-08-26 while the OpenRouter account answered 200. These three route the same models through
++        # OpenRouter and sit first in each fallback chain, so consensus survives one empty account.
++        - model_name: minimax-or
++          litellm_params:
++            model: openrouter/minimax/minimax-m2
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 300
++
++        - model_name: deepseek-or
++          litellm_params:
++            model: openrouter/deepseek/deepseek-chat
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 300
++
++        - model_name: gemini-or
++          litellm_params:
++            model: openrouter/google/gemini-2.5-flash
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 300
++      cluster_lanes: |
++        # crew#659 CP3 (founder 2026-08-30, "GPT Researcher is the worker"): the research worker ranks
++        # what it scraped with an embedding model, and the router is the only door to a model (LAW 34).
++        # Served through OpenRouter, the one account that answered on 2026-08-30 05:3xZ when Google's
++        # prepaid credit was depleted (embed answered 429 RESOURCE_EXHAUSTED and had no fallback group).
++        # Endpoint and model id from https://openrouter.ai/docs/api-reference/embeddings (read
++        # 2026-08-30): POST /api/v1/embeddings, model openai/text-embedding-3-small. Callers ask for "embed".
++        - model_name: embed
++          litellm_params:
++            model: openai/openai/text-embedding-3-small
++            api_base: https://openrouter.ai/api/v1
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 120
++          model_info:
++            mode: embedding
++
++        # The same Google model bought through OpenRouter, and it exists for the reason `embed` moved
++        # there on 2026-08-30: one empty account must not take a capability off the estate. Both routes
++        # to this model were measured empty on 2026-08-30 -- Google answered 429 RESOURCE_EXHAUSTED
++        # "Your prepayment credits are depleted" on every image model, and /api/v1/credits returned
++        # total_credits 10 against total_usage 10.17171079 -- so this pair is what makes funding EITHER
++        # one enough. Model id and its presence as an image-output model read from
++        # openrouter.ai/api/v1/models on 2026-08-30, where it is one of eleven rows whose
++        # architecture.output_modalities contains "image".
++        - model_name: image-or
++          litellm_params:
++            model: openrouter/google/gemini-3.1-flash-image
++            api_key: os.environ/OPENROUTER_API_KEY
++            timeout: 300
++      fallbacks: |
++        - openrouter: [minimax, deepseek]
+   deepseek:
+     kind: secret
+     secret: SEED_DEEPSEEK_API_KEY
+@@ -53,6 +140,15 @@ vendors:
+     targets:
+       - { entry: litellm-upstream, field: DEEPSEEK_API_KEY }
+       - { entry: prospector-engine-env, field: DEEPSEEK_API_KEY }
++    router:
++      lanes: |
++        - model_name: deepseek
++          litellm_params:
++            model: deepseek/deepseek-chat
++            api_key: os.environ/DEEPSEEK_API_KEY
++            timeout: 300
++      fallbacks: |
++        - deepseek: [minimax]
+   minimax:
+     kind: secret
+     secret: SEED_MINIMAX_API_KEY
+@@ -62,6 +158,34 @@ vendors:
+     targets:
+       - { entry: litellm-upstream, field: MINIMAX_API_KEY }
+       - { entry: prospector-engine-env, field: MINIMAX_API_KEY }
++    router:
++      lanes: |
++        # --- the moat's cheap primary --------------------------------------------------------
++        # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
++        # with an explicit api_base rather than a provider prefix.
++        - model_name: minimax
++          litellm_params:
++            model: openai/MiniMax-M2
++            api_base: https://api.minimax.io/v1
++            api_key: os.environ/MINIMAX_API_KEY
++            timeout: 300
++            max_tokens: 8192
++          model_info:
++            # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
++            # MiniMax-M2 context window is 204,800 tokens; a turn above it 400s here instead of
++            # walking the fallback chain into unfunded lanes (the 2026-08-27 Telegram outage).
++            max_input_tokens: 204800
++
++        # The failover tier: same account and adapter, different model. It is a failover, never
++        # a routing choice — see prospector config.yaml on `minimax_m27`.
++        - model_name: minimax_m27
++          litellm_params:
++            model: openai/MiniMax-Text-01
++            api_base: https://api.minimax.io/v1
++            api_key: os.environ/MINIMAX_API_KEY
++            timeout: 300
++      fallbacks: |
++        - minimax: [deepseek]
+   kimi:
+     # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
+     # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
+@@ -73,14 +197,19 @@ vendors:
+     verify: { method: GET, url: https://api.moonshot.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
+     targets:
+       - { entry: litellm-upstream, field: MOONSHOT_API_KEY }
+-  groq:
+-    kind: secret
+-    secret: SEED_GROQ_API_KEY
+-    page: https://console.groq.com/keys
+-    shape: "gsk_[A-Za-z0-9]{40,}"
+-    verify: { method: GET, url: https://api.groq.com/openai/v1/models, headers: { Authorization: "Bearer {key}" } }
+-    targets:
+-      - { entry: litellm-upstream, field: GROQ_API_KEY }
++    router:
++      lanes: |
++        # Kimi (Moonshot) -- the founder's primary for both Ottos (2026-09-02). First-class LiteLLM
++        # provider prefix `moonshot/`; kimi-k3 is the flagship (1M-token window, platform.kimi.ai/docs/models
++        # read 2026-09-02). The key arrives as MOONSHOT_API_KEY, the name LiteLLM's moonshot adapter reads.
++        - model_name: kimi
++          litellm_params:
++            model: moonshot/kimi-k3
++            api_key: os.environ/MOONSHOT_API_KEY
++            timeout: 300
++            max_tokens: 8192
++          model_info:
++            max_input_tokens: 1000000
+   gemini:
+     # Google can mint keys with gcloud, but that road needed the founder's laptop SSO every time the
+     # session lapsed (a wrong root, crew#66 comment 5461144560). One key made once is the root (R52).
+@@ -91,6 +220,50 @@ vendors:
+     verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
+     targets:
+       - { entry: litellm-upstream, field: GEMINI_API_KEY }
++    router:
++      lanes: |
++        - model_name: gemini
++          litellm_params:
++            model: gemini/gemini-2.5-flash
++            api_key: os.environ/GEMINI_API_KEY
++            timeout: 300
++      cluster_lanes: |
++        - model_name: vision
++          litellm_params:
++            model: gemini/gemini-2.5-flash
++            api_key: os.environ/GEMINI_API_KEY
++            timeout: 300
++
++        # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
++        # we use Gemini for the ones that will ship to production". So there are two image lanes, and
++        # the reason they are shaped differently is a vendor fact, not a preference:
++        #
++        #   image           this row. Gemini is a first-class LiteLLM lane, so callers ask the router
++        #                   for "image" by capability and never name Google.
++        #   /minimax/image  a pass-through in general_settings below. LiteLLM v1.98.0 has no MiniMax
++        #                   image provider (docs.litellm.ai/docs/image_generation lists OpenAI, Azure,
++        #                   Google AI Studio, Vertex, Bedrock, Recraft, OpenRouter, Nscale, Xinference,
++        #                   read 2026-08-30), and OpenRouter does not resell it either: every
++        #                   minimax/* row on openrouter.ai/api/v1/models is output_modalities ["text"]
++        #                   (measured 2026-08-30). MiniMax's own /v1/image_generation is the only door.
++        #
++        # Model id from https://ai.google.dev/gemini-api/docs/image-generation (read 2026-08-30), where
++        # gemini-2.5-flash-image is marked legacy. It is newer than this LiteLLM's price map, so a call
++        # on this lane traces with a zero cost until the image ships and the map catches up; spend is
++        # still capped by general_settings.max_budget like every other lane.
++        - model_name: image
++          litellm_params:
++            model: gemini/gemini-3.1-flash-image
++            api_key: os.environ/GEMINI_API_KEY
++            timeout: 300
++      fallbacks: |
++        - gemini: [minimax, deepseek]
++      cluster_fallbacks: |
++        # An image chain may only contain image models. Every other chain here ends in the cheap
++        # text model (cp30) and that is right for text; landing a picture request on a chat model
++        # would answer a caller waiting for bytes with prose, which is worse than a clean failure.
++        # So this chain is two ways to buy one Google model and stops there.
++        - image: [image-or]
+   exa:
+     kind: secret
+     secret: SEED_EXA_API_KEY
+diff --git a/tests/test_incident_crew506_cp4_one_free_key_never_reseeds_the_router_entry.py b/tests/test_incident_crew506_cp4_one_free_key_never_reseeds_the_router_entry.py
+index d30de7b34..989a70bb3 100644
+--- a/tests/test_incident_crew506_cp4_one_free_key_never_reseeds_the_router_entry.py
++++ b/tests/test_incident_crew506_cp4_one_free_key_never_reseeds_the_router_entry.py
+@@ -3,6 +3,7 @@
+ file it was given; the oke-check apply step also exited n/a unless SEED_LITELLM_MASTER_KEY was set,
+ which it was not. So one new provider meant re-seeding every key. Both ways: on main the --merge
+ path does not exist and the groq lane is in neither router config."""
++
+ from __future__ import annotations
+ 
+ import json
+@@ -25,31 +26,59 @@ def _merge_block() -> str:
+     return text[start : text.index("\nPY\n", start)]
+ 
+ 
+-def _run(env_lines: str, current: dict | None, merge: bool, pairs: list[str], tmp_path: pathlib.Path) -> subprocess.CompletedProcess:
++def _run(
++    env_lines: str,
++    current: dict | None,
++    merge: bool,
++    pairs: list[str],
++    tmp_path: pathlib.Path,
++) -> subprocess.CompletedProcess:
+     envf = tmp_path / "seed.env"
+     envf.write_text(env_lines)
+     env = dict(os.environ, MERGE="1" if merge else "0")
+-    env["CURRENT"] = json.dumps(current) if current is not None else ""  # crew#66 CP4: plain JSON, read in-process
+-    return subprocess.run([sys.executable, "-", str(envf), *pairs], input=_merge_block(), env=env, capture_output=True, text=True)
++    env["CURRENT"] = (
++        json.dumps(current) if current is not None else ""
++    )  # crew#66 CP4: plain JSON, read in-process
++    return subprocess.run(
++        [sys.executable, "-", str(envf), *pairs],
++        input=_merge_block(),
++        env=env,
++        capture_output=True,
++        text=True,
++    )
+ 
+ 
+ def test_merge_overlays_one_key_and_keeps_the_rest(tmp_path: pathlib.Path) -> None:
+     held = {"MINIMAX_API_KEY": "m", "DEEPSEEK_API_KEY": "d", "LITELLM_MASTER_KEY": "k"}
+-    r = _run("GROQ_API_KEY=g\n", held, True, ["MINIMAX_API_KEY=MINIMAX_API_KEY", "GROQ_API_KEY=GROQ_API_KEY"], tmp_path)
++    r = _run(
++        "GROQ_API_KEY=g\n",
++        held,
++        True,
++        ["MINIMAX_API_KEY=MINIMAX_API_KEY", "GROQ_API_KEY=GROQ_API_KEY"],
++        tmp_path,
++    )
+     assert r.returncode == 0, r.stderr
+     out = json.loads(r.stdout.strip().splitlines()[0])
+     assert out == {**held, "GROQ_API_KEY": "g"}
+     # names only on stderr, never a value
+-    assert "keys set: GROQ_API_KEY" in r.stderr and "kept:" in r.stderr and "g" not in r.stderr.split("kept:")[0].replace("GROQ_API_KEY", "")
++    assert (
++        "keys set: GROQ_API_KEY" in r.stderr
++        and "kept:" in r.stderr
++        and "g" not in r.stderr.split("kept:")[0].replace("GROQ_API_KEY", "")
++    )
+ 
+ 
+ def test_without_merge_an_unset_key_is_still_an_error(tmp_path: pathlib.Path) -> None:
+-    r = _run("GROQ_API_KEY=g\n", None, False, ["MINIMAX_API_KEY=MINIMAX_API_KEY"], tmp_path)
++    r = _run(
++        "GROQ_API_KEY=g\n", None, False, ["MINIMAX_API_KEY=MINIMAX_API_KEY"], tmp_path
++    )
+     assert r.returncode != 0 and "missing MINIMAX_API_KEY" in r.stderr
+ 
+ 
+ def test_merge_with_nothing_set_writes_nothing(tmp_path: pathlib.Path) -> None:
+-    r = _run("", {"MINIMAX_API_KEY": "m"}, True, ["GROQ_API_KEY=GROQ_API_KEY"], tmp_path)
++    r = _run(
++        "", {"MINIMAX_API_KEY": "m"}, True, ["GROQ_API_KEY=GROQ_API_KEY"], tmp_path
++    )
+     assert r.returncode != 0 and r.stdout == ""
+ 
+ 
+@@ -58,24 +87,36 @@ def test_every_writer_of_the_router_entry_merges_and_no_seed_secret_remains() ->
+     bin/idp-estate-seed (master key) and bin/idp-bootstrap-vendors (provider keys). Both must --merge,
+     or one new provider would again re-seed every key -- the incident this file closes."""
+     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+-    # R52: SEED_GROQ_API_KEY is the vendor's one root and rides the bin/idp-bootstrap-vendors step only;
++    # R52: SEED_KIMI_API_KEY is the vendor's one root and rides the bin/idp-bootstrap-vendors step only;
+     # no step writes litellm-upstream whole from it.
+-    assert wf.count("SEED_GROQ_API_KEY") == 2 and "bin/idp-vault-put --merge litellm-upstream" not in wf
++    assert (
++        wf.count("SEED_KIMI_API_KEY") == 2
++        and "bin/idp-vault-put --merge litellm-upstream" not in wf
++    )
+     assert re.search(r"^\s+run: bin/idp-estate-seed\s*$", wf, re.M)
+     seed = (ROOT / "bin" / "idp-estate-seed").read_text()
+-    assert "--merge" in seed, "estate-seed writes one key at a time on top of what the vault holds"
++    assert "--merge" in seed, (
++        "estate-seed writes one key at a time on top of what the vault holds"
++    )
+     vendors = (ROOT / "bin" / "idp-bootstrap-vendors").read_text()
+-    assert '"--merge", entry' in vendors, "a vendor key lands beside the others, never over them"
++    assert '"--merge", entry' in vendors, (
++        "a vendor key lands beside the others, never over them"
++    )
+ 
+ 
+-def test_groq_lane_in_both_router_configs_with_the_key_documented() -> None:
++def test_the_groq_lane_is_gone_everywhere_and_the_merge_road_survives() -> None:
++    """2026-09-02: the founder removed the vendor ("get rid of Groq"). The lane, its key reference
++    and its chains must be out of both rendered configs, and the --merge road this incident proved
++    stays documented on the surviving kimi example."""
+     for cfg in CONFIGS:
+-        models = {m["model_name"]: m for m in yaml.safe_load(cfg.read_text())["model_list"]}
+-        assert models["groq"]["litellm_params"]["api_key"] == "os.environ/GROQ_API_KEY", cfg
+-        assert models["groq"]["litellm_params"]["model"] == "groq/openai/gpt-oss-120b", cfg
+-        assert models["groq"]["model_info"]["max_input_tokens"] == 131072, cfg
+-        chains = {k: v for e in yaml.safe_load(cfg.read_text())["router_settings"]["fallbacks"] for k, v in e.items()}
+-        # a rate-limited free lane falls to a paid direct lane first, never to another free lane
+-        assert chains["groq"][0] == "minimax" and chains["groq"][-1] == "deepseek", cfg
++        doc = yaml.safe_load(cfg.read_text())
++        assert not [m for m in doc["model_list"] if "groq" in str(m).lower()], cfg
++        chains = {
++            k: v for e in doc["router_settings"]["fallbacks"] for k, v in e.items()
++        }
++        assert not [c for c in chains if "groq" in c], cfg
++        assert not [t for v in chains.values() for t in v if "groq" in t], cfg
++        assert "GROQ" not in cfg.read_text(), cfg
+     es = (ROOT / "platform" / "llm" / "external-secret.yaml").read_text()
+-    assert re.search(r"GROQ_API_KEY=GROQ_API_KEY", es) and "--merge" in es
++    assert re.search(r"MOONSHOT_API_KEY=MOONSHOT_API_KEY", es) and "--merge" in es
++    assert "GROQ" not in es
+diff --git a/tests/test_incident_crew568_the_laptop_never_joined_the_router.py b/tests/test_incident_crew568_the_laptop_never_joined_the_router.py
+index bbc775b54..bdbca0bc3 100644
+--- a/tests/test_incident_crew568_the_laptop_never_joined_the_router.py
++++ b/tests/test_incident_crew568_the_laptop_never_joined_the_router.py
+@@ -33,9 +33,17 @@ def test_laptop_is_a_seedable_entry_and_all_covers_it():
+ 
+ 
+ def test_the_laptop_key_is_a_router_key_for_every_lane():
++    """The lane list is derived from the rendered router config at seed time, never typed
++    by hand: the line must name the config, and running its own derivation must emit
++    exactly the lanes the cluster serves (two angles on the same claim)."""
+     _, run, _ = _seed_step()
+     line = next(l for l in run.splitlines() if "idp-router-key laptop" in l)
+-    lanes = set(line.split()[-1].split(","))
++    assert "platform/llm/config.yaml" in line and "model_list" in line
++    snippet = line.split("python3 -c '", 1)[1].rsplit("'", 1)[0]
++    out = subprocess.run(
++        ["python3", "-c", snippet], capture_output=True, text=True, cwd=ROOT, check=True
++    )
++    lanes = set(out.stdout.strip().split(","))
+     cfg = yaml.safe_load((ROOT / "platform" / "llm" / "config.yaml").read_text())
+     assert lanes == {m["model_name"] for m in cfg["model_list"]}
+ 
+diff --git a/tests/test_incident_crew618_set_root_is_one_command.py b/tests/test_incident_crew618_set_root_is_one_command.py
+index 3b8aad88e..70139c090 100644
+--- a/tests/test_incident_crew618_set_root_is_one_command.py
++++ b/tests/test_incident_crew618_set_root_is_one_command.py
+@@ -2,32 +2,64 @@
+ zero friction." bin/idp-set-root <provider> is the founder's whole part: page, steps, hidden input,
+ gh secret set, apply dispatch, in one command. Every root on the life-cycle page that the founder
+ sets is a provider it knows; no value is ever echoed."""
++
+ import re
+ import subprocess
+ from pathlib import Path
+ 
++import yaml
++
+ ROOT = Path(__file__).resolve().parents[1]
+ SCRIPT = (ROOT / "bin/idp-set-root").read_text()
+ 
+ 
+ def test_every_founder_set_root_has_a_provider_road():
+-    for name in ("SEED_TAILSCALE_CLIENT_ID", "SEED_TAILSCALE_CLIENT_SECRET", "SEED_CLOUDFLARE_ROOT_TOKEN",
+-                 "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN"):
++    for name in (
++        "SEED_TAILSCALE_CLIENT_ID",
++        "SEED_TAILSCALE_CLIENT_SECRET",
++        "SEED_CLOUDFLARE_ROOT_TOKEN",
++        "SEED_TELEGRAM_HERMES_BOT_TOKEN",
++        "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
++    ):
+         assert name in SCRIPT, name
+-    for vendor in ("anthropic", "openrouter", "deepseek", "minimax", "groq", "gemini", "exa", "cursor", "stripe"):
+-        assert re.search(rf"\b{vendor}\b", SCRIPT), vendor
++    # The registry is the one list (founder 2026-09-02, the groq removal): the script derives
++    # its vendors from platform/vendors/consoles.yaml, so no registry vendor may be hardcoded
++    # here, and the derivation it ships must agree with the registry exactly.
++    reg = yaml.safe_load((ROOT / "platform/vendors/consoles.yaml").read_text())[
++        "vendors"
++    ]
++    secret_vendors = [v for v, spec in reg.items() if "secret" in spec]
++    assert secret_vendors, "the registry lost its vendors"
++    for vendor in secret_vendors:
++        assert not re.search(rf"\b{vendor}\b", SCRIPT), (
++            f"{vendor} is hardcoded in bin/idp-set-root"
++        )
++    fn = re.search(r"^vendors\(\) .*$", SCRIPT, re.M).group(0)
++    r = subprocess.run(
++        ["bash", "-c", f'IDP="{ROOT}"\n{fn}\nvendors'], capture_output=True, text=True
++    )
++    assert r.stdout.split() == secret_vendors, r.stdout
+ 
+ 
+ def test_the_value_is_read_hidden_and_never_echoed_and_apply_is_dispatched():
+     assert "read -rs v" in SCRIPT and 'gh secret set "$name"' in SCRIPT
+-    assert "echo \"$v\"" not in SCRIPT and "printf '%s\\n' \"$v\"" not in SCRIPT
++    assert 'echo "$v"' not in SCRIPT and "printf '%s\\n' \"$v\"" not in SCRIPT
+     assert "gh workflow run oke-check.yml" in SCRIPT and "mode=apply" in SCRIPT
+-    assert subprocess.run(["bash", "-n", str(ROOT / "bin/idp-set-root")]).returncode == 0
++    assert (
++        subprocess.run(["bash", "-n", str(ROOT / "bin/idp-set-root")]).returncode == 0
++    )
+ 
+ 
+ def test_an_unknown_provider_is_refused_before_anything_opens(tmp_path):
+-    gh = tmp_path / "gh"; gh.write_text("#!/bin/sh\nexit 0\n"); gh.chmod(0o755)
+-    r = subprocess.run([str(ROOT / "bin/idp-set-root"), "nope"], capture_output=True, text=True, env={"PATH": f"{tmp_path}:/usr/bin:/bin"})
++    gh = tmp_path / "gh"
++    gh.write_text("#!/bin/sh\nexit 0\n")
++    gh.chmod(0o755)
++    r = subprocess.run(
++        [str(ROOT / "bin/idp-set-root"), "nope"],
++        capture_output=True,
++        text=True,
++        env={"PATH": f"{tmp_path}:/usr/bin:/bin"},
++    )
+     assert r.returncode == 2 and "unknown provider" in r.stdout
+ 
+ 
+@@ -35,21 +67,49 @@ def test_all_walks_every_provider_once_and_skips_the_ones_already_set(tmp_path):
+     """`bin/idp-set-root all`: one command for every root. gh is a shim: `secret list` says tailscale
+     is set, so it is skipped; every other provider's road runs with no dispatch until the end."""
+     gh = tmp_path / "gh"
+-    gh.write_text("#!/bin/sh\ncase \"$1 $2\" in\n  'auth status') exit 0;;\n  'secret list') printf 'SEED_TAILSCALE_CLIENT_ID\\nSEED_TAILSCALE_CLIENT_SECRET\\n';;\n"
+-                  "  'secret set') cat >/dev/null; echo \"set $3\" >> " + str(tmp_path / "set.log") + ";;\n  'workflow run') echo run >> " + str(tmp_path / "run.log") + ";;\nesac\n")
++    gh.write_text(
++        "#!/bin/sh\ncase \"$1 $2\" in\n  'auth status') exit 0;;\n  'secret list') printf 'SEED_TAILSCALE_CLIENT_ID\\nSEED_TAILSCALE_CLIENT_SECRET\\n';;\n"
++        "  'secret set') cat >/dev/null; echo \"set $3\" >> "
++        + str(tmp_path / "set.log")
++        + ";;\n  'workflow run') echo run >> "
++        + str(tmp_path / "run.log")
++        + ";;\nesac\n"
++    )
+     gh.chmod(0o755)
+-    (tmp_path / "open").write_text("#!/bin/sh\nexit 0\n"); (tmp_path / "open").chmod(0o755)
++    (tmp_path / "open").write_text("#!/bin/sh\nexit 0\n")
++    (tmp_path / "open").chmod(0o755)
+     values = "\n".join(["x"] * 20) + "\n"
+-    r = subprocess.run([str(ROOT / "bin/idp-set-root"), "all"], input=values, capture_output=True, text=True,
+-                       env={"PATH": f"{tmp_path}:/usr/bin:/bin", "HOME": str(tmp_path)})
++    r = subprocess.run(
++        [str(ROOT / "bin/idp-set-root"), "all"],
++        input=values,
++        capture_output=True,
++        text=True,
++        env={"PATH": f"{tmp_path}:/usr/bin:/bin", "HOME": str(tmp_path)},
++    )
+     assert r.returncode == 0, r.stdout + r.stderr
+     assert "tailscale already set; skipped" in r.stdout
+     names = [l.split()[1] for l in (tmp_path / "set.log").read_text().splitlines()]
+-    assert names == ["SEED_CLOUDFLARE_ROOT_TOKEN", "SEED_ANTHROPIC_API_KEY", "SEED_OPENROUTER_API_KEY", "SEED_DEEPSEEK_API_KEY",
+-                     "SEED_MINIMAX_API_KEY", "SEED_KIMI_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_CURSOR_API_KEY", "SEED_STRIPE_SECRET_KEY",
+-                     "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
+-                     # a pair: two hidden reads, two repository secrets, one client (the shop's
+-                     # Continue with Google button)
+-                     "SEED_GOOGLE_OAUTH_CLIENT_ID", "SEED_GOOGLE_OAUTH_CLIENT_SECRET"], names
+-    assert (tmp_path / "run.log").read_text().count("run") == 1, "one apply run at the end, not one per provider"
+-    assert "x" not in "".join(l for l in r.stdout.splitlines() if "SEED_" in l and "set on" in l)
++    assert names == [
++        "SEED_CLOUDFLARE_ROOT_TOKEN",
++        "SEED_ANTHROPIC_API_KEY",
++        "SEED_OPENROUTER_API_KEY",
++        "SEED_DEEPSEEK_API_KEY",
++        "SEED_MINIMAX_API_KEY",
++        "SEED_KIMI_API_KEY",
++        "SEED_GEMINI_API_KEY",
++        "SEED_EXA_API_KEY",
++        "SEED_CURSOR_API_KEY",
++        "SEED_STRIPE_SECRET_KEY",
++        "SEED_TELEGRAM_HERMES_BOT_TOKEN",
++        "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
++        # a pair: two hidden reads, two repository secrets, one client (the shop's
++        # Continue with Google button)
++        "SEED_GOOGLE_OAUTH_CLIENT_ID",
++        "SEED_GOOGLE_OAUTH_CLIENT_SECRET",
++    ], names
++    assert (tmp_path / "run.log").read_text().count("run") == 1, (
++        "one apply run at the end, not one per provider"
++    )
++    assert "x" not in "".join(
++        l for l in r.stdout.splitlines() if "SEED_" in l and "set on" in l
++    )
+diff --git a/tests/test_incident_crew659_science_router_key_is_frontier_only.py b/tests/test_incident_crew659_science_router_key_is_frontier_only.py
+index df6578ca4..872784da8 100644
+--- a/tests/test_incident_crew659_science_router_key_is_frontier_only.py
++++ b/tests/test_incident_crew659_science_router_key_is_frontier_only.py
+@@ -23,7 +23,7 @@ FRONTIER = {"claude", "claude-fast", "gemini", "gemini-or"}
+ #: every frontier account refused on credit. Founder, 2026-08-30 07:0xZ: "why is minimax not there"
+ #: ... "we have work to do". A paid lane is on the key so the worker runs while the frontier
+ #: accounts are empty; a local model is still never on it.
+-PAID = {"minimax", "minimax_m27", "groq"}
++PAID = {"minimax", "minimax_m27"}
+ ALLOWED = FRONTIER | PAID
+ 
+ 
+diff --git a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+index 722885d5d..7a22e241d 100644
+--- a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
++++ b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+@@ -26,7 +26,6 @@ FAKE = {
+     "SEED_DEEPSEEK_API_KEY": "sk-" + "1" * 32,
+     "SEED_MINIMAX_API_KEY": "eyJx.eyJy.zzz",
+     "SEED_KIMI_API_KEY": "sk-" + "k" * 40,
+-    "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
+     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
+     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
+     "SEED_CURSOR_API_KEY": "key_" + "a" * 24,
+@@ -152,13 +151,16 @@ def test_roots_from_the_environment_are_verified_then_written_and_never_printed(
+ 
+ def test_a_missing_root_is_blind_for_that_vendor_only_and_the_exit_is_two(tmp_path):
+     idp, log, site = _tree(tmp_path)
+-    partial = {k: v for k, v in FAKE.items() if k != "SEED_GROQ_API_KEY"}
++    partial = {k: v for k, v in FAKE.items() if k != "SEED_GEMINI_API_KEY"}
+     r = _run(idp, site, partial)
+     assert r.returncode == 2, r.stdout + r.stderr
+-    assert "BLIND   groq" in r.stdout and "gh secret set SEED_GROQ_API_KEY" in r.stdout
++    assert (
++        "BLIND   gemini" in r.stdout and "gh secret set SEED_GEMINI_API_KEY" in r.stdout
++    )
+     assert "1 blind" in r.stdout
+     assert (
+-        "GROQ_API_KEY" not in log.read_text() and "ANTHROPIC_API_KEY" in log.read_text()
++        "GEMINI_API_KEY" not in log.read_text()
++        and "ANTHROPIC_API_KEY" in log.read_text()
+     )
+ 
+ 
+@@ -172,3 +174,17 @@ def test_the_apply_step_tolerates_blind_and_the_hermes_env_step_carries_no_vendo
+             "bin/idp-bootstrap-vendors (crew#579, R52)"
+         )
+     ].split("run: |")[0].replace("SEED_HERMES_", "")
++
++
++def test_every_seed_row_in_the_workflow_is_a_registry_root():
++    """The groq-removal class (2026-09-02): when a vendor leaves the registry, its SEED_ row must
++    leave the workflow in the same commit, or a dead env row reads green forever."""
++    step = WF[WF.index("bin/idp-bootstrap-vendors (crew#579, R52)") :]
++    step = step.split("- name:", 1)[0]
++    wf_names = set(re.findall(r"(SEED_[A-Z_]+):", step))
++    reg_names = set(
++        re.findall(
++            r"SEED_[A-Z_]+", (ROOT / "platform/vendors/consoles.yaml").read_text()
++        )
++    )
++    assert wf_names <= reg_names, wf_names - reg_names
+diff --git a/tests/test_llm_row.py b/tests/test_llm_row.py
+index bb7e4d60e..7f97a9202 100644
+--- a/tests/test_llm_row.py
++++ b/tests/test_llm_row.py
+@@ -4,9 +4,11 @@ Rung 2 (property over the two config files) and rung 4 (incident crew#313: the r
+ on the founder's Mac, so stopping colima took every routed model call down). The rule under
+ test: the cluster router is the laptop router minus the entries the cluster cannot reach.
+ """
++
+ from __future__ import annotations
+ 
+ import re
++import subprocess
+ from pathlib import Path
+ 
+ import yaml
+@@ -23,11 +25,21 @@ def _models(cfg: dict) -> dict[str, dict]:
+ 
+ def test_cluster_router_is_laptop_router_minus_local_lane() -> None:
+     laptop, cluster = _models(LAPTOP_CFG), _models(CLUSTER_CFG)
+-    local = {n for n, p in laptop.items() if "host.docker.internal" in str(p.get("api_base", ""))}
++    local = {
++        n
++        for n, p in laptop.items()
++        if "host.docker.internal" in str(p.get("api_base", ""))
++    }
+     assert local, "the laptop config is expected to carry the ollama lane"
+     hosted = {n: p for n, p in laptop.items() if n not in local}
+-    assert {n: cluster[n] for n in hosted} == hosted, "hosted entries drifted between the two files"
+-    assert not [n for n, p in cluster.items() if "host.docker.internal" in str(p.get("api_base", ""))]
++    assert {n: cluster[n] for n in hosted} == hosted, (
++        "hosted entries drifted between the two files"
++    )
++    assert not [
++        n
++        for n, p in cluster.items()
++        if "host.docker.internal" in str(p.get("api_base", ""))
++    ]
+     # Every fallback target on the cluster must be a cluster model.
+     for entry in CLUSTER_CFG["router_settings"]["fallbacks"]:
+         for src, targets in entry.items():
+@@ -40,35 +52,65 @@ def test_vision_alias_names_a_capability() -> None:
+ 
+ 
+ def test_image_version_matches_laptop_compose() -> None:
+-    laptop = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (ROOT / "llm" / "litellm.yml").read_text())
+-    cluster = re.search(r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)", (CLUSTER / "litellm.yaml").read_text())
++    laptop = re.search(
++        r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",
++        (ROOT / "llm" / "litellm.yml").read_text(),
++    )
++    cluster = re.search(
++        r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",
++        (CLUSTER / "litellm.yaml").read_text(),
++    )
+     assert laptop and cluster and laptop.group(1) == cluster.group(1)
+ 
+ 
+ def test_secret_env_names_cover_every_os_environ_ref() -> None:
+-    refs = set(re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text()))
+-    documented = set(re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text()))
+-    assert refs == documented, (refs ^ documented)
++    refs = set(
++        re.findall(r"os\.environ/([A-Z_]+)", (CLUSTER / "config.yaml").read_text())
++    )
++    documented = set(
++        re.findall(r"([A-Z_]+_KEY)=\1", (CLUSTER / "external-secret.yaml").read_text())
++    )
++    assert refs == documented, refs ^ documented
+     # The file holds two ExternalSecrets since the Langfuse callback (crew#325); this rule is about the upstream one.
+-    es = next(d for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()) if d["metadata"]["name"] == "litellm-upstream")
++    es = next(
++        d
++        for d in yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text())
++        if d["metadata"]["name"] == "litellm-upstream"
++    )
+     assert es["spec"]["dataFrom"][0]["extract"]["key"] == "litellm-upstream"
+-    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
++    dep = next(
++        d
++        for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text())
++        if d["kind"] == "Deployment"
++    )
+     # idp#253: the Secret is a mounted volume the container exports itself; Kyverno refuses envFrom.
+     spec = dep["spec"]["template"]["spec"]
+-    assert es["spec"]["target"]["name"] in {v.get("secret", {}).get("secretName") for v in spec["volumes"]}
++    assert es["spec"]["target"]["name"] in {
++        v.get("secret", {}).get("secretName") for v in spec["volumes"]
++    }
+     assert "envFrom" not in spec["containers"][0]
+ 
+ 
+ def test_route_attaches_to_the_edge_llm_listener() -> None:
+     route = yaml.safe_load((CLUSTER / "httproute.yaml").read_text())
+-    assert route["spec"]["parentRefs"][0] == {"name": "prospector-edge", "namespace": "prospector", "sectionName": "https-llm"}
++    assert route["spec"]["parentRefs"][0] == {
++        "name": "prospector-edge",
++        "namespace": "prospector",
++        "sectionName": "https-llm",
++    }
+     assert route["spec"]["hostnames"] == ["llm.${ESTATE_ZONE}"]
+     ns = yaml.safe_load((CLUSTER / "namespace.yaml").read_text())
+     assert ns["metadata"]["labels"]["idp.estate/edge-attach"] == "true"
+ 
+ 
+ def test_flux_row_waits_on_edge_and_secret_store() -> None:
+-    rows = [d for d in yaml.safe_load_all((ROOT / "clusters" / "oke" / "platform.yaml").read_text()) if d]
++    rows = [
++        d
++        for d in yaml.safe_load_all(
++            (ROOT / "clusters" / "oke" / "platform.yaml").read_text()
++        )
++        if d
++    ]
+     llm = next(d for d in rows if d["metadata"]["name"] == "llm")
+     assert llm["spec"]["path"] == "./platform/llm"
+     assert {d["name"] for d in llm["spec"]["dependsOn"]} >= {"edge", "secret-store"}
+@@ -81,28 +123,68 @@ def test_founder_picks_models_in_the_admin_ui_not_by_pr() -> None:
+     assert CLUSTER_CFG["general_settings"].get("store_model_in_db") is True
+     docs = list(yaml.safe_load_all((CLUSTER / "external-secret.yaml").read_text()))
+     sso = next(d for d in docs if d["metadata"]["name"] == "litellm-sso")
+-    assert {d["secretKey"] for d in sso["spec"]["data"]} == {"GENERIC_CLIENT_ID", "GENERIC_CLIENT_SECRET", "PROXY_ADMIN_ID"}
+-    dep = next(d for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text()) if d["kind"] == "Deployment")
++    assert {d["secretKey"] for d in sso["spec"]["data"]} == {
++        "GENERIC_CLIENT_ID",
++        "GENERIC_CLIENT_SECRET",
++        "PROXY_ADMIN_ID",
++    }
++    dep = next(
++        d
++        for d in yaml.safe_load_all((CLUSTER / "litellm.yaml").read_text())
++        if d["kind"] == "Deployment"
++    )
+     spec = dep["spec"]["template"]["spec"]
+-    vol = next(v for v in spec["volumes"] if v.get("secret", {}).get("secretName") == "litellm-sso")
++    vol = next(
++        v
++        for v in spec["volumes"]
++        if v.get("secret", {}).get("secretName") == "litellm-sso"
++    )
+     mounts = {m["name"]: m["mountPath"] for m in spec["containers"][0]["volumeMounts"]}
+-    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), "the container exports /run/secrets/litellm/*/* as env"
++    assert mounts[vol["name"]].startswith("/run/secrets/litellm/"), (
++        "the container exports /run/secrets/litellm/*/* as env"
++    )
+     env = {e["name"]: e.get("value", "") for e in spec["containers"][0]["env"]}
+-    assert env["GENERIC_AUTHORIZATION_ENDPOINT"] == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
++    assert (
++        env["GENERIC_AUTHORIZATION_ENDPOINT"]
++        == "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize"
++    )
+     assert env["PROXY_BASE_URL"] == "https://llm.${ESTATE_ZONE}"
+     # The client is created by tofu (platform/oci/identity) with the founder grant; nothing is seeded by hand.
+     tf = (ROOT / "platform" / "oci" / "identity" / "main.tf").read_text()
+     # crew#408: the module is applied by the machine identity in oke-check, never from a laptop
+     wf = (ROOT / ".github" / "workflows" / "oke-check.yml").read_text()
+-    assert "bin/idp-identity-apply apply -auto-approve" in wf and "bin/idp-identity-apply plan" in wf
++    assert (
++        "bin/idp-identity-apply apply -auto-approve" in wf
++        and "bin/idp-identity-apply plan" in wf
++    )
+     vt = (ROOT / "platform" / "oci" / "identity" / "versions.tf").read_text()
+-    assert "auth                = var.oci_auth" in vt, "identity provider must sign in as the CLI does (SecurityToken in CI)"
++    assert "auth                = var.oci_auth" in vt, (
++        "identity provider must sign in as the CLI does (SecurityToken in CI)"
++    )
+     # run 33030450105: SecurityToken auth cannot read the region from the profile; it is a provider input
+-    assert "region              = var.region" in vt, "identity provider needs region under SecurityToken auth"
++    assert "region              = var.region" in vt, (
++        "identity provider needs region under SecurityToken auth"
++    )
+     step = wf.split("bin/idp-identity-apply ${{", 1)[1].split("- name:", 1)[0]
+-    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, "identity step must pass OCI_REGION"
++    assert "OCI_REGION: ${{ vars.OCI_REGION }}" in step, (
++        "identity step must pass OCI_REGION"
++    )
+     assert 'display_name  = "estate-router-console"' in tf
+     assert 'redirect_uris             = ["https://llm.${var.zone}/sso/callback"]' in tf
+     # crew#407: no console password exists, so none can ever be sent.
+-    for f in list(CLUSTER.glob("*.yaml")) + [ROOT / ".github" / "workflows" / "vault-seed.yml"]:
++    for f in list(CLUSTER.glob("*.yaml")) + [
++        ROOT / ".github" / "workflows" / "vault-seed.yml"
++    ]:
+         assert not re.search(r"UI_(USERNAME|PASSWORD)|litellm-ui", f.read_text()), f
++
++
++def test_the_rendered_pair_matches_the_vendor_registry() -> None:
++    """One vendor, one place (founder 2026-09-02): both router configs are generated from the
++    router: blocks in platform/vendors/consoles.yaml. A hand edit to either rendered file, or a
++    registry edit without a re-render, fails here and in bin/idp-ci."""
++    r = subprocess.run(
++        [str(ROOT / "bin" / "idp-vendor-render"), "--check"],
++        capture_output=True,
++        text=True,
++    )
++    assert r.returncode == 0, r.stdout + r.stderr

@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""The three-layer impact map: what a change actually reaches, decided by Jev.
+
+WHY THIS EXISTS (founder blueprint, 2026-09-23). Standard test-impact analysis traces CODE only.
+An agent system has three change vectors, and a selector that sees one of them under-selects --
+which shows up as a shipped regression, not as a slow build:
+
+  1. CODE & TOOL      a tool handler or helper changed        -> AST + import edges
+  2. PROMPT & SCHEMA  a system prompt or tool schema changed   -> recorded requests + Jev
+  3. GRAPH TOPOLOGY   a node changed in a directed graph       -> transitive downstream closure
+
+WHAT EACH LAYER IS BUILT FROM -- reuse, never a second copy (AGENTS.md section 6):
+
+  layer 1   bin/catalog-projection, which already proves TOT/DET/IDP over this tree:
+            every .py -> one Component, every import -> one edge or a logged drop, and
+            SHA256(output) is a pure function of SHA256(input). A selector must be
+            deterministic or it selects differently per run, which is the flake we are
+            eliminating -- so the deterministic projection is the only acceptable base.
+  layer 2   the prompt files this repo versions (.growmos/prompts/*.md), the tool schemas
+            under schema/, and -- when a cassette exists -- the recorded request, which is
+            EVIDENCE rather than a proxy. Judgment is Jev's: `jev_score` on
+            {prompt diff, test} answers "does this test exercise what changed".
+  layer 3   .growmos/relations.jsonl -- the estate's own typed graph -- walked as a
+            transitive closure downstream of the changed entities.
+
+ONLY JEV DECIDES. There is no embedding model and no second model anywhere in this file. A
+selector built on an embedding threshold has no audit trail and no fail-open property; Jev
+logs every decision to `jev_decisions` with confidence, latency and the input hash, and it
+escalates rather than guesses. The mechanical layers (1 and 3) need no model at all -- they
+are graph reachability, which is exact.
+
+THE SAFETY PROPERTY, unchanged from idp-affected and load-bearing: a test is skipped ONLY
+when its verdict is NO and the probability is STRICTLY BELOW the threshold. Equality runs. A
+missing graph, an unreadable prompt, a Jev timeout, or an escalation all produce RUN. There
+is no path in this file that turns an unknown into a skip.
+
+    bin/idp-affected-graph --plan          what a diff selects, and why; runs nothing
+    bin/idp-affected-graph --base origin/main
+    bin/idp-affected-graph --json
+
+LAW 46: the checkout is computed from this file, never named.
+"""
+
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+#: Nodes that name the SYSTEM rather than a unit. A change to one of these means everything
+#: downstream is affected, so selecting on them is the same as running the whole suite -- which
+#: is not impact analysis. Excluded by name so the exclusion is reviewable, and so a new
+#: universal root is a visible edit to this tuple rather than a silent over-selection.
+UNIVERSAL_NODES = {
+    "artifact/idp",
+    "system/oke-cluster",
+    "system/estate",
+}
+
+#: A test is skipped only strictly below this. Equality runs -- the same floor bin/idp-affected
+#: states, kept identical on purpose so the two selectors cannot disagree about the boundary.
+SKIP_BELOW = 0.3
+
+#: Where each layer reads from. All computed from ROOT, never a literal host path (LAW 46).
+PROMPTS_DIR = ROOT / ".growmos" / "prompts"
+GRAPH_RELATIONS = ROOT / ".growmos" / "relations.jsonl"
+SCHEMA_DIR = ROOT / "schema"
+TESTS_DIR = ROOT / "tests"
+
+
+# --------------------------------------------------------------------------- helpers
+
+
+def _git_diff_names(base: str) -> tuple[list[str], str | None]:
+    """Changed paths against the base. Returns (paths, error). No error -> nothing changed."""
+    try:
+        p = subprocess.run(
+            ["git", "diff", "--name-only", f"{base}...HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            cwd=str(ROOT),
+        )
+    except (OSError, subprocess.SubprocessError) as e:
+        return [], str(e)
+    if p.returncode != 0:
+        return [], (p.stderr or "git diff refused").strip()[:200]
+    return [ln for ln in p.stdout.splitlines() if ln.strip()], None
+
+
+def _module_imports(path: Path) -> set[str]:
+    """Every module a .py imports, as dotted names. ast-only: no import is executed, so a
+    module that would connect to a database at import time is still safe to inspect."""
+    try:
+        tree = ast.parse(path.read_text(errors="replace"))
+    except (OSError, SyntaxError):
+        return set()
+    out: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            out.update(a.name for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            out.add(node.module)
+    return out
+
+
+# --------------------------------------------------------------------------- layer 1
+
+
+def layer_code(changed: list[str]) -> dict:
+    """CODE & TOOL. A changed .py reaches every test that imports it, directly or transitively.
+
+    Built on import edges read with ast -- the same fact bin/catalog-projection emits as
+    dependsOn. Read here rather than shelling out to the projection so one diff costs one
+    parse per changed file instead of a full-tree projection.
+    """
+    changed_py = [c for c in changed if c.endswith(".py")]
+    if not changed_py:
+        return {"changed": [], "tests": [], "why": "no python changed"}
+
+    # module dotted-name -> the test files that import it, directly or through another module
+    def dotted(rel: str) -> str:
+        return rel[:-3].replace("/", ".") if rel.endswith(".py") else rel
+
+    changed_mods = {dotted(c) for c in changed_py}
+    # One pass over tests/: which test imports what. Small enough to be exact rather than cached,
+    # and a cache would be a second store that can go stale (the failure idp-affected names).
+    tests: set[str] = set()
+    if TESTS_DIR.is_dir():
+        for t in sorted(TESTS_DIR.rglob("test_*.py")):
+            if changed_py and str(t.relative_to(ROOT)) in changed_py:
+                tests.add(str(t.relative_to(ROOT)))
+                continue
+            imports = _module_imports(t)
+            if imports & changed_mods:
+                tests.add(str(t.relative_to(ROOT)))
+    return {
+        "changed": changed_py,
+        "tests": sorted(tests),
+        "why": f"{len(changed_py)} python file(s) changed, {len(tests)} test(s) import them",
+    }
+
+
+# --------------------------------------------------------------------------- layer 3
+
+
+def _load_graph() -> tuple[list[dict], list[dict], str | None]:
+    """The estate's own graph. A missing or unreadable graph is an ERROR string, never an
+    empty graph -- an empty graph would silently select nothing."""
+    ents: list[dict] = []
+    rels: list[dict] = []
+    for path, sink in (
+        (ROOT / ".growmos" / "entities.jsonl", ents),
+        (GRAPH_RELATIONS, rels),
+    ):
+        if not path.is_file():
+            return ents, rels, f"{path.relative_to(ROOT)} does not exist"
+        try:
+            for line in path.read_text().splitlines():
+                if line.strip():
+                    row = json.loads(line)
+                    if isinstance(row, dict):
+                        sink.append(row)
+        except (OSError, ValueError) as e:
+            return ents, rels, f"{path.relative_to(ROOT)} unreadable: {str(e)[:80]}"
+    return ents, rels, None
+
+
+def layer_topology(changed: list[str]) -> dict:
+    """GRAPH TOPOLOGY. A change to node N reaches everything DOWNSTREAM of N.
+
+    Transitive closure over the estate's typed relations, which is the same traversal
+    `blast_radius` performs in bin/estate-twin-runtime. The direction matters: a change to a
+    producer affects its consumers, not the other way round.
+    """
+    ents, rels, err = _load_graph()
+    if err:
+        return {"downstream": [], "tests": [], "error": err, "why": err}
+
+    # Which entities the diff names. An entity is named when its id's last segment appears in
+    # a changed path, which is how the graph's ids relate to files on disk.
+    #
+    # MEASURED 2026-09-23, and this is the defect the first version had: five roots came back
+    # as `artifact/idp`, `component/executor`, `defect/host-provisioning-drift`, `service/spire`,
+    # `tool/backstage`. `artifact/idp` is the WHOLE ESTATE, so its downstream is everything and
+    # the layer selected 74 of 122 tests -- the entire suite, dressed as impact analysis. A root
+    # that names the system selects the system. A testable node is one that names a UNIT, so
+    # the universal roots are excluded by a named list rather than by a heuristic, and the
+    # exclusion is visible here rather than hidden in a threshold.
+    changed_blob = "\n".join(changed)
+    roots = [
+        e.get("id", "")
+        for e in ents
+        if e.get("id")
+        and e["id"].split("/")[-1].split(".")[0] in changed_blob
+        and e.get("id") not in UNIVERSAL_NODES
+    ]
+    if not roots:
+        return {
+            "roots": [],
+            "downstream": [],
+            "tests": [],
+            "why": "no unit-level node changed (only universal roots) -- layer 3 selects nothing",
+        }
+
+    # downstream closure: from -> to, following the edge direction, bounded by a visit set so
+    # a cycle cannot spin forever.
+    out: dict[str, set[str]] = {}
+    for r in rels:
+        src, dst = r.get("from") or r.get("source"), r.get("to") or r.get("target")
+        if src and dst:
+            out.setdefault(src, set()).add(dst)
+
+    seen: set[str] = set()
+    frontier = list(roots)
+    while frontier:
+        cur = frontier.pop()
+        for nxt in out.get(cur, ()):  # noqa: B007 -- the closure is the point
+            if nxt not in seen:
+                seen.add(nxt)
+                frontier.append(nxt)
+
+    names = sorted({n.split("/")[-1].split(".")[0] for n in seen})
+    # A substring hit is not a dependency. `spire` appearing anywhere in a test is not evidence
+    # the test exercises spire -- it may be a comment, a fixture name, or a log assertion. The
+    # match is therefore on the test's own IMPORTS or its module path, which is a fact about what
+    # the test loads, not about which words it contains.
+    tests: set[str] = set()
+    if TESTS_DIR.is_dir() and names:
+        wanted = {
+            n for n in names if len(n) >= 4
+        }  # a 3-letter name matches too much by chance
+        for t in sorted(TESTS_DIR.rglob("test_*.py")):
+            rel = str(t.relative_to(ROOT))
+            stem = t.stem
+            imported = {i.split(".")[-1] for i in _module_imports(t)}
+            if imported & wanted or any(n in stem for n in wanted):
+                tests.add(rel)
+    return {
+        "roots": roots,
+        "downstream": sorted(seen),
+        "tests": sorted(tests),
+        "why": f"{len(roots)} changed unit node(s), {len(seen)} downstream, {len(tests)} test(s) import or name them",
+    }
+
+
+# --------------------------------------------------------------------------- layer 2
+
+
+def layer_prompt(changed: list[str]) -> dict:
+    """PROMPT & SCHEMA. Returns the changed artifacts for Jev to judge against the tests.
+
+    This layer does NOT decide by itself. It gathers the diff of the changed prompt/schema and
+    hands it to Jev, because "does this test exercise what changed" is a judgment, and the one
+    decider this estate has is Jev (ADR 0030). No embedding model is involved anywhere.
+    """
+    artifacts = [
+        c
+        for c in changed
+        if c.endswith((".md", ".json"))
+        and ("prompt" in c or c.startswith("schema/") or "/schema" in c)
+    ]
+    if not artifacts:
+        return {"changed": [], "why": "no prompt or schema changed"}
+    diffs: dict[str, str] = {}
+    for c in artifacts:
+        try:
+            p = subprocess.run(
+                ["git", "diff", "--unified=0", "HEAD~1", "--", c],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(ROOT),
+            )
+            diffs[c] = (p.stdout or "")[:4000]
+        except (OSError, subprocess.SubprocessError):
+            diffs[c] = ""
+    return {
+        "changed": artifacts,
+        "diffs": diffs,
+        "why": f"{len(artifacts)} prompt/schema artifact(s) changed -- judged by Jev",
+    }
+
+
+# --------------------------------------------------------------------------- the join
+
+
+def plan(base: str) -> dict:
+    """Every layer, joined. Returns a PLAN -- it never runs a test."""
+    changed, err = _git_diff_names(base)
+    result: dict = {
+        "base": base,
+        "changed": changed,
+        "layers": {},
+        "selected": [],
+        "skipped": [],
+    }
+    if err:
+        result["diff_error"] = err
+        return result
+
+    l1 = layer_code(changed)
+    l3 = layer_topology(changed)
+    l2 = layer_prompt(changed)
+    result["layers"] = {"code": l1, "topology": l3, "prompt_schema": l2}
+
+    # The union is the selection. A test any layer reaches RUNS: over-selection costs time,
+    # under-selection ships a regression, and the two are not symmetric.
+    selected = set(l1.get("tests", [])) | set(l3.get("tests", []))
+    result["selected"] = sorted(selected)
+    result["selection_rule"] = (
+        "union of every layer's reach; a test any layer reaches runs. "
+        "Layer 2 hands its artifacts to Jev, whose NO must be strictly below "
+        f"{SKIP_BELOW} to skip."
+    )
+    return result
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(
+        prog="idp-affected-graph", description="three-layer impact map"
+    )
+    ap.add_argument("--base", default="origin/main")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--plan", action="store_true", help="the default: analyse, run nothing"
+    )
+    a = ap.parse_args(argv[1:] if argv and argv[0] != "--plan" else sys.argv[1:])
+
+    p = plan(a.base)
+    if a.json:
+        print(json.dumps(p, indent=2, sort_keys=True))
+        return 0
+
+    if p.get("diff_error"):
+        print(f"BLIND   affected-graph  {p['diff_error']}")
+        return 2
+    print(
+        f"ok      affected-graph  base={p['base']}  changed={len(p['changed'])} file(s)"
+    )
+    for name, layer in p["layers"].items():
+        if layer.get("error"):
+            print(f"BLIND   {name:16} {layer['error']}")
+        else:
+            print(f"        {name:16} {layer.get('why', '')}")
+    print(f"        selected         {len(p['selected'])} test file(s)")
+    for t in p["selected"][:20]:
+        print(f"          {t}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -22,6 +22,15 @@
 // Main client
 export { VoiceClient } from './VoiceClient';
 
+// Conversation (memory + barge-in)
+export {
+  createConversation,
+  conversationBlock,
+  DEFAULT_TURN_CAP,
+  type Conversation,
+  type ConversationTurn,
+} from './conversation';
+
 // Individual processors for advanced use
 export { VADProcessor, createVADStream } from './vad';
 export { ASRProcessor, resampleTo16kHz, audioBufferToFloat32 } from './asr';

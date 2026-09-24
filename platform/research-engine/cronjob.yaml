@@ -34,6 +34,9 @@ metadata:
   namespace: research
   labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
 spec:
+  # A CronJob without `schedule` is schema-invalid (batch/v1 requires it), and Kubectl's
+  # `--from=cronjob` needs a valid CronJob to clone. Dagster owns the actual cadence; this
+  # value keeps the object valid and is not what fires the run.
   schedule: "23 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
