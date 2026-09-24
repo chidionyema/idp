@@ -10,6 +10,27 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+# crew#1194: bin/idp-ci syntax error reached main undetected. shell-strict-default
+# checks staged files at commit time; this checks every shell file in the push.
+# Reads stdin into a temp file so the same lines can be used for trunk routing below.
+refs=$(mktemp)
+cat >"$refs"
+if [ -s "$refs" ]; then
+  bad=0
+  while read -r _ local_sha _ _; do
+    [ -n "$local_sha" ] || continue
+    for f in $(git diff --name-only "$local_sha"^ "$local_sha" 2>/dev/null | grep -E '\.(sh|bash)$' || true); do
+      [ -f "$f" ] || continue
+      bash -n -- "$f" 2>&1 || { echo "bash -n failed: $f" >&2; bad=1; }
+    done
+  done <"$refs"
+  if [ "$bad" -eq 1 ]; then
+    echo "pre-push REFUSED: one or more shell scripts fail bash -n" >&2
+    rm -f "$refs"
+    exit 1
+  fi
+fi
+
 # Read-only force pushes and the WIP-gate override are out of scope for this rung --
 # the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
 # This rung only refuses the fast-gate class; everything else still flows.
@@ -77,6 +98,7 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 		echo "      git push origin HEAD:agent-trunk   # then agent-trunk-batch.yml opens one PR"
 		;;
 	esac
-done
+done <"$refs"
 
+rm -f "$refs"
 exit 0
