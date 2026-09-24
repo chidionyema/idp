@@ -34,6 +34,20 @@ IDP_MAIN_GREEN_GATE=0 git push   # you are the fix for main
 IDP_WIP_GATE=0        git push   # genuine emergency past the cap
 ```
 
+## No new workflow files without founder approval (2026-09-24)
+
+**idp only. Applies to every agent.**
+
+A `.github/workflows/*.yml` file added to this repository is a CI gate that every PR
+in the estate will wait on. A workflow that fails blocks merges; a workflow that is
+deleted from `main` but still exists on a branch posts ghost failures to that PR
+every time CI runs. Both cases have caused multi-hour incidents.
+
+**Rule: an agent must not add `.github/workflows/` files without explicit founder approval.**
+This is not a governance discussion — it is a structural constraint. Any agent that
+needs a new CI gate must describe the gate, get founder sign-off, and then the
+founder adds it through the UI or a tracked PR.
+
 ## Done is operating, not pushed: a PR is only the beginning of done (2026-09-20)
 
 **Estate-wide. Applies to every agent, every tool, every workflow.**
