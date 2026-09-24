@@ -1,25 +1,26 @@
-// crew#973 CP2: the Deploy River page (/river).
+// crew#973 CP2+CP3: the Deploy River page (/river).
 //
-// The estate's Definition of Done rendered as a river of commits: each commit travels
+// CP2: The estate's Definition of Done rendered as a river of commits: each commit travels
 // through gates (push → auto-PR → fast-gate → crucible → merge → build-multiarch →
 // trivy → cosign → flux reflector → image-automation → deploy-when-green → reconcile →
 // pod ready → first production log line).
 //
+// CP3: Narrator hook — SSE tail from the backend, with an ambient narration mode.
+// When on, the voice engine speaks each transition as it arrives. Story mode speaks
+// a commit's full journey when you focus it. No LLM narrates: templates over the
+// ledger, deterministic from real timestamps.
+//
 // Data: `GET /api/fleetview/journeys` from the fleetview backend, reading
 // deploy_journeys / deploy_journey_events written by bin/estate-deploy-recorder.
-// A journey with no rows means the recorder has not run yet -- stated plainly,
-// never invented as an empty river.
-//
-// CP2 done means: a live push visibly flies through the gates; a forced failure
-// visibly cracks its gate. The river metaphor and stage states are real here;
-// the Three.js WebGL scene (the full 2100 spec) is CP2+ work.
-import { useCallback, useEffect, useState } from 'react';
+// SSE stream: `GET /api/fleetview/journeys/stream` tails new events.
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   discoveryApiRef,
   fetchApiRef,
   useApi,
 } from '@backstage/frontend-plugin-api';
 import Box from '@material-ui/core/Box';
+import Button from '@material-ui/core/Button';
 import Chip from '@material-ui/core/Chip';
 import Divider from '@material-ui/core/Divider';
 import Paper from '@material-ui/core/Paper';
@@ -53,6 +54,14 @@ export type JourneysEnvelope = {
   error: string | null;
   journeys: Journey[];
   generated_at: string;
+};
+
+export type JourneyFrame = {
+  sha: string;
+  state: string;
+  last_event: JourneyEvent | null;
+  narration: string;
+  story: string;
 };
 
 export const TITLE = 'Deploy River';
@@ -170,7 +179,7 @@ const useStyles = makeStyles(theme => ({
   },
 }));
 
-// ─── Hook ────────────────────────────────────────────────────────────────────
+// ─── Hook: journeys data ───────────────────────────────────────────────────────
 
 export function useJourneys(limit = 30) {
   const fetchApi = useApi(fetchApiRef);
@@ -206,6 +215,86 @@ export function useJourneys(limit = 30) {
   return { envelope, loading, refresh };
 }
 
+// ─── Hook: SSE narration stream ───────────────────────────────────────────────
+
+/**
+ * crew#973 CP3: SSE tail for ambient narration.
+ *
+ * Connects to `GET /api/fleetview/journeys/stream`. Each frame carries a `narration`
+ * (one sentence for the newest event) and a `story` (paragraph for the full journey).
+ * When `speakFn` is provided, each narration is spoken aloud via the voice engine.
+ * `onStory` is called when a person focuses a journey for its story.
+ */
+export function useJourneysStream(opts: {
+  speakFn?: (text: string) => void;
+  narrationOn: boolean;
+  onStory?: (sha: string, story: string) => void;
+}) {
+  const { speakFn, narrationOn, onStory } = opts;
+  const discovery = useApi(discoveryApiRef);
+  const esRef = useRef<EventSource | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [lastFrame, setLastFrame] = useState<JourneyFrame | null>(null);
+  const lastShaRef = useRef<string | null>(null);
+  // Refs so the SSE callbacks always read the current values without stale closure.
+  const speakFnRef = useRef(speakFn);
+  const narrationOnRef = useRef(narrationOn);
+  const onStoryRef = useRef(onStory);
+  speakFnRef.current = speakFn;
+  narrationOnRef.current = narrationOn;
+  onStoryRef.current = onStory;
+
+  const connect = useCallback(async () => {
+    const base = await discovery.getBaseUrl('proxy');
+    const url = `${base}/fleetview/journeys/stream`;
+    const es = new EventSource(url);
+    esRef.current = es;
+    setConnected(true);
+
+    es.onmessage = (e: MessageEvent) => {
+      if (!e.data || e.data.startsWith(':')) return; // heartbeat
+      try {
+        const frame = JSON.parse(e.data) as JourneyFrame;
+        if (!frame || !frame.narration) return;
+        // Skip if we've already narrated this sha
+        if (lastShaRef.current === frame.sha) return;
+        lastShaRef.current = frame.sha;
+        setLastFrame(frame);
+        if (narrationOnRef.current && speakFnRef.current && frame.narration) {
+          speakFnRef.current(frame.narration);
+        }
+        if (onStoryRef.current && frame.story) {
+          onStoryRef.current(frame.sha, frame.story);
+        }
+      } catch {
+        // malformed frame
+      }
+    };
+
+    es.onerror = () => {
+      setConnected(false);
+      es.close();
+      esRef.current = null;
+      // Reconnect after 5s using the stable connect reference
+      setTimeout(() => { void connect(); }, 5000);
+    };
+  }, [discovery]);
+
+  useEffect(() => {
+    void connect();
+    return () => {
+      esRef.current?.close();
+      esRef.current = null;
+      setConnected(false);
+    };
+  // connect is stable: discovery is stable from useApi, and speakFn/narrationOn
+  // are read via refs inside connect so this effect never re-runs.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connect]);
+
+  return { connected, lastFrame };
+}
+
 // ─── Gate ring ────────────────────────────────────────────────────────────────
 
 function GateRing({ event }: { event: JourneyEvent }) {
@@ -232,7 +321,7 @@ function GateRing({ event }: { event: JourneyEvent }) {
 
 // ─── Journey row ──────────────────────────────────────────────────────────────
 
-function JourneyRow({ journey }: { journey: Journey }) {
+function JourneyRow({ journey, onStory }: { journey: Journey; onStory?: (sha: string, story: string) => void }) {
   const classes = useStyles();
   const stateColor = STATE_COLOR[journey.state] ?? STATE_COLOR.abandoned;
   const shortSha = (journey.sha ?? '??????').slice(0, 7);
@@ -260,6 +349,26 @@ function JourneyRow({ journey }: { journey: Journey }) {
         : journey.state === 'in_flight'
           ? classes.chipInFlight
           : classes.chipAbandoned;
+
+  const handleStory = () => {
+    if (!onStory) return;
+    // Build a basic story from events (story from SSE overrides this when streaming)
+    const failCount = journey.events.filter(e => e.status === 'fail').length;
+    const state = journey.state;
+    const started = journey.started_at ? new Date(journey.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+    const merged = journey.merged_at ? new Date(journey.merged_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+    let story = `Commit ${shortSha}`;
+    if (started) story += ` pushed ${started}`;
+    if (failCount > 0) story += `, ${failCount} gate${failCount > 1 ? 's' : ''} failed first`;
+    if (state === 'merged') {
+      story += merged ? `, merged ${merged}, signed, rolled in, serving now` : ', merged, signed, rolled in, serving now';
+    } else if (state === 'failed') {
+      story += ', did not merge';
+    } else if (state === 'abandoned') {
+      story += ', abandoned';
+    }
+    onStory(journey.sha, story + '.');
+  };
 
   return (
     <Paper
@@ -307,6 +416,11 @@ function JourneyRow({ journey }: { journey: Journey }) {
           </Box>
         )}
         <Box flex={1} />
+        {onStory && (
+          <Button size="small" onClick={handleStory} style={{ fontSize: '0.65rem' }}>
+            Hear it
+          </Button>
+        )}
         {journey.title && (
           <Typography
             variant="body2"
@@ -314,7 +428,7 @@ function JourneyRow({ journey }: { journey: Journey }) {
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              maxWidth: 400,
+              maxWidth: 300,
             }}
           >
             {journey.title}
@@ -391,11 +505,89 @@ function AndonStrip({ journeys }: { journeys: Journey[] }) {
 
 export function River() {
   const classes = useStyles();
+  const fetchApi = useApi(fetchApiRef);
+  const discovery = useApi(discoveryApiRef);
   const { envelope, loading } = useJourneys();
+  const [narrationOn, setNarrationOn] = useState(false);
+  const [storyText, setStoryText] = useState<string | null>(null);
+  const [storySha, setStorySha] = useState<string | null>(null);
+  // Lazy AudioContext: created on first narration, reused across utterances.
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Speak one sentence via the board's /voice/say HTTP endpoint + WebAudio.
+  const speak = useCallback(async (text: string) => {
+    if (!text) return;
+    try {
+      const base = await discovery.getBaseUrl('proxy');
+      const res = await fetchApi.fetch(`${base}/fleetview/voice/say`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return;
+      const pcm = await res.arrayBuffer();
+      if (!pcm || pcm.byteLength === 0) return;
+      // Lazily create / reuse the AudioContext (same pattern as useEstateVoice).
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new AudioContext();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === 'suspended') await ctx.resume();
+      const f32 = new Float32Array(pcm);
+      const buf = ctx.createBuffer(1, f32.length, 24000);
+      buf.copyToChannel(f32, 0);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start();
+    } catch {
+      // narration is best-effort; a failure must not crash the stream
+    }
+  }, [fetchApi, discovery]);
+
+  const handleStory = useCallback((sha: string, story: string) => {
+    setStorySha(sha);
+    setStoryText(story);
+    if (narrationOn) speak(story);
+  }, [narrationOn, speak]);
+
+  const { connected, lastFrame } = useJourneysStream({
+    narrationOn,
+    speakFn: narrationOn ? speak : undefined,
+    onStory: handleStory,
+  });
 
   return (
     <EstatePage title={TITLE} lead={LEAD}>
       <Section title="The river" blurb="Every push, every gate, every merge. Refreshes every 30 seconds." testId="river-main">
+        {/* Narration controls */}
+        <Box display="flex" alignItems="center" mb={2} style={{ gap: 8 }}>
+          <Button
+            size="small"
+            variant={narrationOn ? 'contained' : 'outlined'}
+            color={narrationOn ? 'primary' : 'default'}
+            onClick={() => setNarrationOn(v => !v)}
+            data-testid="river-narration-toggle"
+          >
+            {narrationOn ? '🔊 Narration on' : '🔇 Narration off'}
+          </Button>
+          {connected && (
+            <Typography variant="caption" color="textSecondary">
+              Live stream connected
+            </Typography>
+          )}
+          {lastFrame && narrationOn && (
+            <Typography
+              variant="caption"
+              color="textSecondary"
+              style={{ fontStyle: 'italic', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              data-testid="river-live-narration"
+            >
+              {lastFrame.narration}
+            </Typography>
+          )}
+        </Box>
+
         {loading && !envelope && (
           <Waiting testId="river-loading">Reading the deploy ledger.</Waiting>
         )}
@@ -453,6 +645,23 @@ export function River() {
 
             <Divider style={{ marginBottom: 16 }} />
 
+            {/* Story mode overlay */}
+            {storyText && (
+              <Paper elevation={2} style={{ padding: 16, marginBottom: 16, background: 'rgba(0,204,136,0.08)', border: '1px solid #00cc88' }} data-testid="river-story">
+                <Box display="flex" justifyContent="space-between" alignItems="flex-start">
+                  <Box>
+                    <Typography variant="overline" style={{ color: '#00cc88' }}>
+                      Story mode — {storySha?.slice(0, 7)}
+                    </Typography>
+                    <Typography variant="body1" style={{ marginTop: 4, fontStyle: 'italic' }}>
+                      {storyText}
+                    </Typography>
+                  </Box>
+                  <Button size="small" onClick={() => setStoryText(null)}>Close</Button>
+                </Box>
+              </Paper>
+            )}
+
             {/* Journey list, newest first */}
             {envelope.journeys.length === 0 ? (
               <Paper elevation={0} className={classes.emptyPaper}>
@@ -475,7 +684,11 @@ export function River() {
               </Paper>
             ) : (
               envelope.journeys.map(j => (
-                <JourneyRow key={j.sha} journey={j} />
+                <JourneyRow
+                  key={j.sha}
+                  journey={j}
+                  onStory={narrationOn ? handleStory : undefined}
+                />
               ))
             )}
           </>

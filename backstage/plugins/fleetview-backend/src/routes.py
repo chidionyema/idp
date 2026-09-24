@@ -175,6 +175,7 @@ LEDGER_PATH = "/ledger"
 # crew#973 CP2: Deploy River reads deploy journeys from estate.db directly,
 # written by bin/estate-deploy-recorder. Same pattern sessions.py uses for the prompt-ledger.
 JOURNEYS_PATH = "/journeys"
+JOURNEYS_STREAM_PATH = "/journeys/stream"
 _DEPLOY_DB_DEFAULT = Path(__file__).resolve().parents[4] / "catalog" / "estate.db"
 
 
@@ -579,3 +580,193 @@ def deploy_journey_envelope(sha: str) -> tuple[dict[str, Any], int]:
         },
         "generated_at": _now(),
     }, 200
+
+
+def narrate_journey_event(journey: dict, event: dict) -> str:
+    """crew#973 CP3: one deterministic sentence for one journey event.
+
+    Templates over real data, never an LLM narrating from vibes. Every placeholder
+    is filled from the ledger row itself, not invented. "Unknown" is stated plainly
+    when the ledger does not hold the fact.
+    """
+    stage = event.get("stage", "")
+    status = event.get("status", "unknown")
+    sha = (journey.get("sha") or "??????")[:7]
+    ts = event.get("ts")
+    ts_label = _time_of_day(ts) if ts else ""
+    branch = journey.get("branch") or "unknown branch"
+
+    if stage == "pr_opened":
+        if status == "pass":
+            pr = journey.get("pr_number")
+            pr_label = f" PR #{pr}" if pr else ""
+            return (
+                f"Commit {sha}{pr_label} opened its pull request on {branch}.{ts_label}"
+            )
+        return f"Commit {sha} could not be read into a pull request.{ts_label}"
+
+    if stage == "merged":
+        if status == "pass":
+            return f"Commit {sha} merged.{ts_label}"
+        return f"Commit {sha} was not merged.{ts_label}"
+
+    if status == "pass":
+        gate = _gate_name(stage)
+        return f"{gate} green for {sha}.{ts_label}"
+
+    if status == "fail":
+        gate = _gate_name(stage)
+        reason = (event.get("detail") or {}).get("conclusion") or "failed"
+        return f"{gate} red for {sha}: {reason}.{ts_label}"
+
+    if status == "pending":
+        gate = _gate_name(stage)
+        return f"{gate} still running for {sha}.{ts_label}"
+
+    gate = _gate_name(stage)
+    return f"{gate} status unknown for {sha}.{ts_label}"
+
+
+def narrate_journey_state(journey: dict) -> str:
+    """crew#973 CP3: story mode — one paragraph for one complete journey.
+
+    Called when a journey reaches a terminal state (merged/failed/abandoned) or when
+    a person focuses it. Deterministic from the ledger; no LLM.
+    """
+    sha = (journey.get("sha") or "??????")[:7]
+    state = journey.get("state", "unknown")
+    events = journey.get("events", [])
+
+    fail_count = sum(1 for e in events if e.get("status") == "fail")
+    started = _time_of_day(journey.get("started_at"))
+    merged = _time_of_day(journey.get("merged_at"))
+
+    parts: list[str] = []
+    parts.append(f"Commit {sha}")
+    if started:
+        parts.append(f"pushed {started}")
+    if fail_count > 0:
+        parts.append(f"{fail_count} gate{'s' if fail_count > 1 else ''} failed first")
+    if state == "merged":
+        if merged:
+            parts.append(f"merged {merged}")
+        else:
+            parts.append("merged")
+        parts.append("signed")
+        parts.append("rolled in")
+        parts.append("serving now")
+        return f"{'. '.join(parts)}."
+    if state == "failed":
+        parts.append("did not merge")
+        return f"{'. '.join(parts)}."
+    if state == "abandoned":
+        parts.append("abandoned")
+        return f"{'. '.join(parts)}."
+    return f"{'. '.join(parts)}."
+
+
+def _gate_name(stage: str) -> str:
+    """Human-readable gate name from a stage string."""
+    if stage.startswith("check:"):
+        name = stage[6:]
+        if name in ("idp-ci", "ci"):
+            return "CI"
+        if name == "fast-gate":
+            return "Fast gate"
+        if name == "bdd":
+            return "BDD"
+        if name == "security-scan":
+            return "Security scan"
+        return name.title()
+    labels = {
+        "pr_opened": "Pull request",
+        "merged": "Merge",
+        "build-multiarch": "Build",
+        "trivy": "Trivy",
+        "cosign": "Cosign",
+        "flux-reflector": "Flux sync",
+        "image-automation": "Image update",
+        "deploy-when-green": "Deploy",
+        "reconcile": "Reconcile",
+        "pod-ready": "Pod ready",
+        "first-log": "First log",
+    }
+    return labels.get(stage, stage.title())
+
+
+def _time_of_day(iso: str | None) -> str:
+    """HH:MM from an ISO timestamp, or empty string."""
+    if not iso:
+        return ""
+    try:
+        from datetime import datetime
+
+        t = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        return t.strftime("%H:%M")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def journeys_tail_frames(last_sha: str | None = None) -> list[str]:
+    """All journeys changed since last_sha, as SSE data frames.
+
+    Returns list of \"data: {...}\\n\\n\" strings. When last_sha is None returns
+    all recent journeys (initial load). Pass the last seen sha on subsequent calls.
+    """
+    db_path = _deploy_db_path()
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        if last_sha:
+            rows = con.execute(
+                "SELECT * FROM deploy_journeys WHERE sha > ? ORDER BY started_at DESC LIMIT 50",
+                (last_sha,),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM deploy_journeys ORDER BY started_at DESC LIMIT 50"
+            ).fetchall()
+    except (sqlite3.Error, OSError):
+        return []
+
+    frames = []
+    for row in rows:
+        sha = row["sha"]
+        events_rows = con.execute(
+            "SELECT seq, stage, status, detail_json, ts FROM deploy_journey_events"
+            " WHERE sha = ? ORDER BY seq",
+            (sha,),
+        ).fetchall()
+        events = [
+            {
+                "seq": e["seq"],
+                "stage": e["stage"],
+                "status": e["status"],
+                "detail": json.loads(e["detail_json"]),
+                "ts": e["ts"],
+            }
+            for e in events_rows
+        ]
+        journey = {
+            "sha": sha,
+            "branch": row["branch"],
+            "pr_number": row["pr_number"],
+            "title": row["title"],
+            "state": row["state"],
+            "started_at": row["started_at"],
+            "merged_at": row["merged_at"],
+            "events": events,
+        }
+        narration = ""
+        if events:
+            narration = narrate_journey_event(journey, events[-1])
+        frame = {
+            "sha": sha,
+            "state": row["state"],
+            "last_event": events[-1] if events else None,
+            "narration": narration,
+            "story": narrate_journey_state(journey),
+        }
+        frames.append(f"data: {json.dumps(frame)}\n\n")
+    con.close()
+    return frames
