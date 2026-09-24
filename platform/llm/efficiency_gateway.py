@@ -1,4 +1,4 @@
-"""Estate efficiency gateway: all 8 token-optimisation mechanisms in one LiteLLM pre-call hook.
+"""Estate efficiency gateway: all 9 token-optimisation mechanisms in one LiteLLM pre-call hook.
 
 MODEL-AGNOSTIC: runs before every vendor call through llm.${ESTATE_ZONE}.
 Applies to: minimax, groq, gemini, cerebras, sambanova, openrouter, ollama.

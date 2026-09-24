@@ -44,6 +44,11 @@ DESTRUCTIVE_OP = "delete the local git branch feature/old-experiment"
 
 def _with_real_vault(monkeypatch: pytest.MonkeyPatch) -> Any:
     """config re-resolved against the real secret store and no estate.env."""
+    # CI must NEVER pay for live tokens. A runner with a reachable vault and router
+    # would otherwise run the _real scenarios and burn money on every commit. The
+    # kill switch forces every live scenario to skip unless an operator opts in.
+    if os.environ.get("IDP_NO_LIVE_LLM") == "1":
+        pytest.skip("IDP_NO_LIVE_LLM=1: live LLM scenarios are off in CI")
     if (
         not (_REAL_VAULT / "scripts" / "secret-load").is_file()
         or not _AGE_KEY.is_file()
