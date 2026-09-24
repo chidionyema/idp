@@ -20,6 +20,7 @@
     "dev": "tsup src/index.ts --format cjs,esm --dts --watch",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
+    "test": "node --test --import tsx test/*.test.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -52,6 +53,7 @@
   "devDependencies": {
     "@types/node": "^20.0.0",
     "tsup": "^8.0.0",
+    "tsx": "^4.23.15",
     "typescript": "^5.4.0"
   },
   "peerDependencies": {

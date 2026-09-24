@@ -11,6 +11,7 @@ import { VADProcessor } from './vad';
 import { ASRProcessor, audioBufferToFloat32 } from './asr';
 import { IntentProcessor } from './intent';
 import { TTSProcessor } from './tts';
+import { createConversation, type Conversation } from './conversation';
 import type {
   VoiceClientConfig,
   VoiceClientState,
@@ -74,6 +75,10 @@ export class VoiceClient {
   private partialProcessing = false;
   private lastPartialTranscript = '';
   private partialSequence = 0;
+
+  // Conversation memory + barge-in. The edge leg of the same conversation the server records,
+  // so "it" and "that one" resolve across whichever side answered the last turn.
+  private conversation: Conversation = createConversation();
 
   constructor(config: VoiceClientConfig = {}) {
     this.config = { ...DEFAULTS, ...config };
@@ -180,15 +185,46 @@ export class VoiceClient {
       throw new Error('TTS not initialized');
     }
 
+    // A new utterance is a barge-in on whatever was being spoken: the person who speaks first
+    // wins, and the previous sentence stops rather than stacking a second voice over it.
+    this.conversation.bargeIn();
+    this.tts.stopSpeaking();
+    this.conversation.clearBargeIn();
+
     const previousState = this.state;
     this.state = 'speaking';
     this.log(`Speaking: "${text}"`);
 
     try {
       await this.tts.speak(text, options);
+      this.conversation.remember('agent', text);
     } finally {
       this.state = previousState === 'listening' ? 'listening' : 'ready';
     }
+  }
+
+  /**
+   * Stop speaking immediately (barge-in), without ending the conversation.
+   * The current TTS is cancelled; the remembered turns are left intact.
+   */
+  bargeIn(): void {
+    this.conversation.bargeIn();
+    this.tts?.stopSpeaking();
+    this.conversation.clearBargeIn();
+  }
+
+  /**
+   * The remembered turns, oldest-first. This is the memory the next answer is prompted with.
+   */
+  history(): ReturnType<Conversation['history']> {
+    return this.conversation.history();
+  }
+
+  /**
+   * Forget the conversation (keep the models and the microphone running).
+   */
+  resetConversation(): void {
+    this.conversation.reset();
   }
 
   /**
@@ -427,6 +463,10 @@ export class VoiceClient {
       this.log(`Final transcript: "${asrResult.text}"`);
 
       if (asrResult.text.trim()) {
+        // Remember what the person said BEFORE parsing, so the conversation carries it even if
+        // intent parsing falls back to keyword matching or fails entirely.
+        this.conversation.remember('person', asrResult.text);
+
         // Parse intent
         this.log('Parsing final intent...');
         const parsedIntent = await this.intent.parse(asrResult.text);

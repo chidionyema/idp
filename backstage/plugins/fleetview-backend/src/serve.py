@@ -44,9 +44,11 @@ from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
+_METRICS_MODULE = Path(__file__).resolve().parent / "metrics.py"
+_VOICE_MEDIA_MODULE = Path(__file__).resolve().parent / "voice_media.py"
 
 
 def _load_executor_link():
@@ -76,6 +78,121 @@ def _load_routes(routes_path: Path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_voice_media():
+    """Load voice_media.py ONCE, with its package context, cached in sys.modules.
+
+    voice_media.py does `from . import tracing`, a relative import that only resolves when the
+    module is registered under a real parent package (its `__package__` is set). The tests
+    (test_speculate_and_clarify.py, test_voice_on_the_bus.py) do exactly this dance -- load
+    tracing.py first under the same synthetic package, then voice_media.py. A bare
+    spec_from_file_location would raise `ImportError: attempted relative import with no known
+    parent package`, which is why the bare load failed until this fix.
+
+    The fixed package name also caches the module so `sovereign.voice` (imported by
+    _voice_package) stays a single shared instance: a voice selected on one route voices every
+    route, not a per-loader second copy.
+    """
+    import sys
+    import types
+
+    pkg = "fleetview_backend"
+    if pkg not in sys.modules:
+        sys.modules[pkg] = types.ModuleType(pkg)
+
+    def _load_member(path: Path, name: str):
+        full = f"{pkg}.{name}"
+        if full in sys.modules:
+            return sys.modules[full]
+        spec = importlib.util.spec_from_file_location(full, path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"cannot load module at {path}")
+        module = importlib.util.module_from_spec(spec)
+        module.__package__ = pkg
+        sys.modules[full] = module
+        spec.loader.exec_module(module)
+        return module
+
+    _load_member(Path(__file__).resolve().parent / "tracing.py", "tracing")
+    return _load_member(_VOICE_MEDIA_MODULE, "voice_media")
+
+
+def _build_voice_routes(app: FastAPI) -> None:
+    """Mount the voice fleet's routes. THIS IS THE SPINAL CORD.
+
+    `voice_media.py` implements `hear`, `say`, `answered`, `voices`, `select`, `log`, `log_summary`
+    and `preview`, and the board's `useEstateVoice.ts` already polls `/voice/voices`, `/voice/select`,
+    `/voice/log` and `/voice/log/summary`. But until this block existed, NOT ONE of them was
+    registered on the app -- the board talked to endpoints that returned 404 through the proxy, and
+    the founder's friction panel (`voiceLog`/`voiceStats`) rendered nothing. These routes are the
+    join between a working brain and a working body.
+
+    The brain (`/voice/stream`) is voice.py's own SSE route, reached through `voice_media.py`'s
+    `ask`; it stays where it is -- this block only wires the MEDIA and the INSTRUMENT, which are
+    what the board polls.
+    """
+    vm = _load_voice_media()
+
+    @app.post("/voice/hear")
+    async def voice_hear(request: Request):
+        # A steer with no attributed author is refused: the estate never runs an unattributed
+        # steer. The author comes from the authenticated session at the proxy layer; hear() refuses
+        # a blank one, so the route passes it through rather than inventing a default.
+        body = await request.body()
+        session_id = request.query_params.get("session_id", "")
+        author = request.headers.get("x-voice-author", "")
+        result, status = await vm.hear(body, session_id, author)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post("/voice/say")
+    async def voice_say(request: Request):
+        body = await request.json()
+        pcm, reason = await vm.say(body.get("text", ""))
+        if pcm is None:
+            return JSONResponse(content={"error": reason}, status_code=502)
+        return Response(content=pcm, media_type="application/octet-stream")
+
+    @app.post("/voice/answered")
+    async def voice_answered(request: Request):
+        body = await request.json()
+        result, status = await vm.answered(body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.get("/voice/voices")
+    async def voice_voices():
+        return JSONResponse(content=await vm.voices())
+
+    @app.post("/voice/select")
+    async def voice_select(request: Request):
+        body = await request.json()
+        try:
+            result, status = await vm.select(
+                body.get("engine", ""), body.get("voice", "")
+            )
+        except Exception as exc:  # noqa: BLE001 -- select() may raise on a weird arg; report it
+            return JSONResponse(content={"error": str(exc)}, status_code=400)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.get("/voice/log")
+    async def voice_log(limit: int = 50):
+        return JSONResponse(content=vm.log(limit))
+
+    @app.get("/voice/log/summary")
+    async def voice_log_summary(limit: int = 200):
+        return JSONResponse(content=vm.log_summary(limit))
+
+    @app.post("/voice/preview")
+    async def voice_preview(request: Request):
+        body = await request.json()
+        pcm, reason = await vm.preview(
+            body.get("engine", ""), body.get("voice", ""), body.get("text", "")
+        )
+        if pcm is None:
+            return JSONResponse(content={"error": reason}, status_code=502)
+        return Response(content=pcm, media_type="application/octet-stream")
+
+    return app
 
 
 def build_app(routes_path: Path) -> FastAPI:
@@ -240,6 +357,45 @@ def build_app(routes_path: Path) -> FastAPI:
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
+
+    @app.get("/metrics")
+    def metrics():
+        """The voice metrics, in Prometheus text format, read from the SAME turnlog the board
+        reads. METRICS_ENABLED honours the opt-in: unset/false means the endpoint 404s, because a
+        metrics door advertised on a host that did not opt in is a new surface, not a feature. When
+        enabled, every gauge renders (NaN when no turns yet) so the metric NAMES exist on first
+        scrape and dashboards do not gap out before the first turn."""
+        if os.environ.get("METRICS_ENABLED", "").lower() not in (
+            "1",
+            "true",
+            "yes",
+            "on",
+        ):
+            raise HTTPException(status_code=404, detail="metrics not enabled")
+        spec = importlib.util.spec_from_file_location(
+            "fleetview_metrics", _METRICS_MODULE
+        )
+        if spec is None or spec.loader is None:
+            raise HTTPException(status_code=500, detail="metrics module unavailable")
+        metrics_mod = importlib.util.module_from_spec(spec)
+        import sys as _sys
+
+        root = str(Path(__file__).resolve().parents[4])
+        if root not in _sys.path:
+            _sys.path.insert(0, root)
+        spec.loader.exec_module(metrics_mod)
+        try:
+            from sovereign.voice import turnlog  # noqa: PLC0415
+
+            summary = turnlog.summary()
+        except Exception:  # noqa: BLE001 -- no voice models means no turns, not no metrics
+            summary = {"turns": 0, "empty": 0, "errors": 0}
+        body = metrics_mod.render(summary)
+        return Response(
+            content=body, media_type="text/plain; version=0.0.4; charset=utf-8"
+        )
+
+    _build_voice_routes(app)
 
     return app
 

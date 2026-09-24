@@ -16,7 +16,7 @@ from typing import Any, Dict
 # INV and OUT can be overridden so CI can run this against a fixture (bin/idp-ci).
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
 OUT = os.environ.get("OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "catalog")
-OWNER = "group:default/platform"
+OWNER = "group:default/platform-team"
 SYSTEM = "system:default/estate"
 
 # crew#612 CP2: the hierarchy the founder reads the estate through. Bytesync Ltd is the parent
@@ -1065,7 +1065,7 @@ def main() -> int:
             "spec:", f"  owner: {OWNER}", "  domain: platform"]))
     docs.append("\n".join([
         "apiVersion: backstage.io/v1alpha1", "kind: Group", "metadata:",
-        "  name: platform", "  title: Platform",
+        "  name: platform-team", "  title: Platform",
         f"  description: {y('The team that owns every generated entity in this catalogue.')}",
         *links_yaml(org_links()),
         "spec:", "  type: team", f"  parent: group:default/{ORG[0]}",
@@ -1076,7 +1076,7 @@ def main() -> int:
         f"  description: {y(ORG[2])}",
         *links_yaml(org_links()),
         "spec:", "  type: organization",
-        "  children:", "    - platform"]))
+        "  children:", "    - platform-team"]))
     # One Domain per company (crew#612 CP2); `platform` stays the Domain the estate System
     # and every stack System already point at.
     for key, (title, _needles, desc, *_home) in COMPANIES.items():

@@ -27,8 +27,28 @@ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 # 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
 #    the queryable copy of the same facts, and dropping a renderer is not a
 #    reason to stop producing the data underneath it.
-"$IDP/bin/catalog-gen"
-"$IDP/bin/db-gen"
+#
+#    SKIP WHEN NOTHING CHANGED, so a warm reboot does not spend ~2 minutes of full CPU
+#    regenerating a byte-identical catalogue from an unchanged inventory. Measured: the
+#    inventory was 4 days old and catalog-gen still re-ran at 97% CPU before the board could
+#    boot -- that is the "red star" in "one minute cold start". catalog-gen is deterministic
+#    (bin/idp-ci runs it twice and fails on a byte of difference), so a catalogue newer than
+#    both the inventory AND the generator is already correct, not merely "probably fine".
+#    FORCE=1 re-runs it regardless, for the day the inventory or generator changes in place.
+CATALOG="$IDP/catalog/catalog-info.yaml"
+INVENTORY="${INV:-$HOME/.estate/state/inventory.json}"
+GEN="$IDP/bin/catalog-gen"
+DB="$IDP/catalog/estate.db"
+if [ "${FORCE:-0}" = "1" ] || [ ! -f "$CATALOG" ] || [ "$INVENTORY" -nt "$CATALOG" ] || [ "$GEN" -nt "$CATALOG" ]; then
+	"$IDP/bin/catalog-gen"
+else
+	log "catalogue unchanged -- skipping catalog-gen (FORCE=1 to re-run)"
+fi
+if [ "${FORCE:-0}" = "1" ] || [ ! -f "$DB" ] || [ "$CATALOG" -nt "$DB" ]; then
+	"$IDP/bin/db-gen"
+else
+	log "estate.db unchanged -- skipping db-gen"
+fi
 
 # 2. The catalogue.
 if [ -d "$IDP/backstage/node_modules" ]; then

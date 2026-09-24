@@ -70,13 +70,22 @@ KOKORO_VOICES = os.environ.get("VOICE_KOKORO_VOICES") or str(
 KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", "af_heart")
 
 # The router is the estate's own (LAW 34: one router key per identity, no vendor keys on the Mac).
+# The spec's LLM leg is vLLM/Llama-3.3-70B streamed; the deployment note permits the estate router
+# to stand in for it. The model string here should name a lane the spec's Llama is actually routed
+# to, not a hardcoded default that is nobody's declared choice -- the drift the 2026-09-24 trace
+# found (every completion hung on the default while /v1/models listed the real lanes).
 ROUTER_HOST = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
-ROUTER_MODEL = os.environ.get("VOICE_LLM_MODEL", "deepseek")
+ROUTER_MODEL = os.environ.get("VOICE_LLM_MODEL", "default")
 
 # A clause ends at a breath. The regex demands punctuation FOLLOWED BY SPACE, so "3.5" and "e.g."
 # do not split mid-number or mid-abbreviation -- a fault that would make the voice read decimals
 # as two separate utterances.
 CLAUSE_END = re.compile(r"[.!?,;:]\s+$")
+
+# How long the answer leg waits on the router before it speaks a refusal. A person talking to a
+# machine must not sit in silence for a minute; a dead lane is a 5s pause then "I could not reach
+# the model", which is the difference between degraded-but-honest and broken-but-quiet.
+ROUTER_TIMEOUT_S = float(os.environ.get("VOICE_ROUTER_TIMEOUT_S", "8"))
 
 SYSTEM_PROMPT = os.environ.get(
     "VOICE_SYSTEM",
@@ -122,9 +131,12 @@ def load_models() -> Models:
     try:
         from faster_whisper import WhisperModel  # noqa: PLC0415 - deliberately lazy
 
-        # int8 on CPU. The blueprint's whole argument is that quantization, not hardware, is what
-        # makes this viable on a CPU; `compute_type` is where that choice is actually made.
-        m.asr = WhisperModel(ASR_MODEL, device="cpu", compute_type="int8")
+        # ASR model: `tiny.en` (fast, CPU/edge default) or `large-v3-turbo` (quality), chosen by
+        # VOICE_ASR_MODEL -- both are wanted. The compute type follows the model: tiny.en stays
+        # int8 (the CPU-viability argument), large-v3-turbo uses int8_float16 so it does not lose
+        # the one operator int8 lacks on this runtime (ConvInteger) and still runs on CPU.
+        asr_compute = "int8" if ASR_MODEL == "tiny.en" else "int8_float16"
+        m.asr = WhisperModel(ASR_MODEL, device="cpu", compute_type=asr_compute)
     except Exception as exc:  # noqa: BLE001 - a load failure is reported, never raised into a socket
         m.errors.append(f"asr: {exc.__class__.__name__}: {exc}")
 
@@ -312,7 +324,13 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
 
     def pump():
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            # A voice answer must FAIL FAST, not hang: a dead router lane is spoken as a refusal
+            # in seconds, not sixty seconds of silence the person then talks over. Measured
+            # 2026-09-24: the deepseek lane timed out (server-side 60s) while the browser client
+            # dropped at 30s -- so the failure was never spoken and the turn ended in silence with
+            # no error anywhere. The number here is the contract: a voice answer either starts in
+            # ROUTER_TIMEOUT_S seconds or it says it could not.
+            with urllib.request.urlopen(req, timeout=ROUTER_TIMEOUT_S) as resp:
                 buffer = ""
                 for raw in resp:
                     line = raw.decode("utf-8", "replace").strip()
