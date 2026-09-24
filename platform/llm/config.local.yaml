@@ -1,6 +1,14 @@
 # Local laptop config: minimax + deepseek only, efficiency callbacks active.
 # Derived from config.yaml — same callbacks, no cluster dependencies.
 # Keys come from ~/.pi/agent/auth.json exported as env vars below.
+#
+# Vault (OCI) reference for spire-key-broker in cluster:
+#   vault_ocid: ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa
+#   vault_region: uk-london-1
+#   secret_name: litellm-upstream
+#   secret_ocid: ocid1.vaultsecret.oc1.uk-london-1.amaaaaaapixfknia3kpkqsgu2aisv4p7dsrq2bbtdaa4ncei5iovfqmkws2q
+# The broker (platform/llm/spire-key-broker/) fetches this via SPIRE SVID.
+# The router calls broker:8080/keys/minimax with X-SPIFFE-ID: spiffe://estate.internal/ns/llm/sa/idp-router
 
 model_list:
   - model_name: minimax
