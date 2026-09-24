@@ -1,0 +1,23 @@
+# estate egress lock — default deny, explicit allow only
+# Applied at session start, cleared at session exit.
+# NO sudo required for the executor — this is pre-installed once.
+
+# Block everything outbound by default
+block drop out all
+
+# Allow loopback
+pass out proto tcp to 127.0.0.1
+pass out proto udp to 127.0.0.1
+
+# Allow router (LiteLLM)
+pass out proto tcp to llm.mumchimp.com port {443}
+
+# Allow GitHub
+pass out proto tcp to github.com port {22,443}
+
+# Allow package registries
+pass out proto tcp to pypi.org port {80,443}
+pass out proto tcp to registry.npmjs.org port {443}
+
+# Allow OKE API (kubeconfig refresh)
+pass out proto tcp to .oraclecloud.com port {443}

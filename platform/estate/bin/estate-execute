@@ -260,9 +260,32 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
     os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
 
+    # --- Egress lock (pf) — best-effort, warn but don't block -----------
+    pf_loaded = False
+    if Path("/etc/pf.anchors/estate-session").exists():
+        import subprocess as _sub
+        r = _sub.run(
+            ["sudo", "pfctl", "-a", "estate-session", "-f",
+             "/etc/pf.anchors/estate-session"],
+            capture_output=True, text=True, timeout=5,
+        )
+        pf_loaded = r.returncode == 0
+        if pf_loaded:
+            log("[estate] egress lock: pf active")
+        else:
+            log("[estate] egress lock: pf not loaded (sudo unavailable — skipping)")
+    else:
+        log("[estate] egress lock: anchor not installed (run day-0 pf setup)")
+
     # --- Cleanup trap ---------------------------------------------------
     def cleanup():
         shutil.rmtree(session_home, ignore_errors=True)
+        if pf_loaded:
+            import subprocess as _sub
+            _sub.run(
+                ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],
+                capture_output=True, timeout=5,
+            )
     atexit.register(cleanup)
 
     # --- Run intent steps -----------------------------------------------
