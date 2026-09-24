@@ -1,0 +1,117 @@
+{
+  "count": 1,
+  "generated_at": "2026-09-24T00:00:42.181687+00:00",
+  "needs": [],
+  "repos_seen": 6,
+  "seed_repo": "grammar",
+  "terminals": [
+    {
+      "annotations": {
+        "class": "safety",
+        "mode": "function",
+        "role": "seed-expression",
+        "scope": {
+          "resources": [
+            "filesystem"
+          ],
+          "secrets": {},
+          "tenant_isolated": true
+        }
+      },
+      "composes": [
+        "collector",
+        "resolver",
+        "shed_recorder"
+      ],
+      "grade": {
+        "gate": {
+          "sandbox": "subprocess",
+          "terminal": "grammar.admission_test"
+        },
+        "metric": "admission_test",
+        "polarity": "maximize",
+        "scale": [
+          0,
+          1
+        ]
+      },
+      "id": "grammar",
+      "input": {
+        "shape": "declaration"
+      },
+      "name": "The Terminal Grammar",
+      "output": {
+        "shape": "registry.entry"
+      },
+      "produces_again": true,
+      "since": "2026-09-24",
+      "state": "current"
+    }
+  ],
+  "ttl_seconds": 3600,
+  "warnings": [
+    "agent-foundry:?: missing field: id",
+    "agent-foundry:?: missing field: name",
+    "agent-foundry:?: missing field: input",
+    "agent-foundry:?: missing field: output",
+    "agent-foundry:?: missing field: grade",
+    "agent-foundry:?: missing field: state",
+    "agent-foundry:?: missing field: since",
+    "agent-foundry:?: missing field: id",
+    "agent-foundry:?: missing field: name",
+    "agent-foundry:?: missing field: input",
+    "agent-foundry:?: missing field: output",
+    "agent-foundry:?: missing field: grade",
+    "agent-foundry:?: missing field: state",
+    "agent-foundry:?: missing field: since",
+    "agent-foundry:?: missing field: id",
+    "agent-foundry:?: missing field: name",
+    "agent-foundry:?: missing field: input",
+    "agent-foundry:?: missing field: output",
+    "agent-foundry:?: missing field: grade",
+    "agent-foundry:?: missing field: state",
+    "agent-foundry:?: missing field: since",
+    "agent-foundry:?: missing field: id",
+    "agent-foundry:?: missing field: name",
+    "agent-foundry:?: missing field: input",
+    "agent-foundry:?: missing field: output",
+    "agent-foundry:?: missing field: grade",
+    "agent-foundry:?: missing field: state",
+    "agent-foundry:?: missing field: since",
+    "hermes-operator:?: missing field: id",
+    "hermes-operator:?: missing field: name",
+    "hermes-operator:?: missing field: input",
+    "hermes-operator:?: missing field: output",
+    "hermes-operator:?: missing field: grade",
+    "hermes-operator:?: missing field: state",
+    "hermes-operator:?: missing field: since",
+    "idp:?: missing field: id",
+    "idp:?: missing field: name",
+    "idp:?: missing field: input",
+    "idp:?: missing field: output",
+    "idp:?: missing field: grade",
+    "idp:?: missing field: state",
+    "idp:?: missing field: since",
+    "idp:?: missing field: id",
+    "idp:?: missing field: name",
+    "idp:?: missing field: input",
+    "idp:?: missing field: output",
+    "idp:?: missing field: grade",
+    "idp:?: missing field: state",
+    "idp:?: missing field: since",
+    "sovereign:?: missing field: id",
+    "sovereign:?: missing field: name",
+    "sovereign:?: missing field: input",
+    "sovereign:?: missing field: output",
+    "sovereign:?: missing field: grade",
+    "sovereign:?: missing field: state",
+    "sovereign:?: missing field: since",
+    "sovereign:?: missing field: id",
+    "sovereign:?: missing field: name",
+    "sovereign:?: missing field: input",
+    "sovereign:?: missing field: output",
+    "sovereign:?: missing field: grade",
+    "sovereign:?: missing field: state",
+    "sovereign:?: missing field: since"
+  ]
+}

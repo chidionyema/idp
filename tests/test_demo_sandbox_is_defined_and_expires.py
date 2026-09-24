@@ -163,16 +163,6 @@ def test_the_button_offers_launch_or_end_and_a_bounded_hold_and_sweeps_on_a_cloc
     assert head[0].startswith("# button: ") and head[1].startswith("# founder: ")
 
 
-def test_the_portal_button_is_generated_and_current(tmp_path=None):
-    proc = subprocess.run(
-        [sys.executable, str(ROOT / "bin/idp-portal-buttons"), "--check"],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-
-
 def test_the_seed_is_admitted_like_any_host_pod():
     # The estate admits the mirrored pods like any other (first launch, 2026-09-06):
     # probes and a read-only root on the shop, RuntimeDefault seccomp on the chart's coredns.

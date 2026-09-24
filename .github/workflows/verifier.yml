@@ -45,7 +45,15 @@ jobs:
 
       - name: run verifier gauntlet
         run: |
-          base=$(git merge-base origin/main HEAD 2>/dev/null || git rev-parse HEAD~1)
+          # The diff base depends on the event. On a pull_request the base is the PR
+          # target branch. On a push to main the PR diff does not exist yet, so grade
+          # against the previous commit (github.event.before) — the same convention
+          # build-multiarch.yml's discover job uses. merge_group grades against main.
+          case "${{ github.event_name }}" in
+            pull_request) base="origin/${{ github.base_ref }}" ;;
+            push)         base="${{ github.event.before }}" ;;
+            *)            base="origin/main" ;;
+          esac
           diff_out=$(git diff "$base"...HEAD)
           if [ -z "$diff_out" ]; then
             echo "BLIND verifier: empty diff — no merge base, refusing to pass unproven"

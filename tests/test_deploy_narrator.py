@@ -97,6 +97,10 @@ def _stub_runner(args):
 @pytest.fixture()
 def db(tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_DB", str(tmp_path / "estate.db"))
+    # _repo_slug() resolves owner/name for the check-runs read; without this it shells
+    # out to `gh repo view`, which the stub runner does not cover and a CI runner has no
+    # checkout context for -- it would raise BlindError and record 'checks: unknown'.
+    monkeypatch.setenv("GH_REPO", "chidionyema/idp")
     monkeypatch.delenv("FLUX_EVENTS_PATH", raising=False)
     return tmp_path / "estate.db"
 
@@ -220,7 +224,7 @@ def test_commentary_emits_one_line_per_transition(db):
     # At least one line per event of the journey (5 events + reconcile = 6).
     assert len(lines) >= 5
     # No consecutive lines for the same stage without a status change.
-    for prev, curr in zip(lines, lines[1:], strict=False):
+    for prev, curr in zip(lines, lines[1:]):
         if prev["stage"] == curr["stage"]:
             assert prev["status"] != curr["status"], (
                 f"commentary repeated stage {prev['stage']!r} with no change"

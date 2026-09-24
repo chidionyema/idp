@@ -4,6 +4,13 @@
 Reads Claude Code's Stop-event stdin JSON, measures the session transcript,
 runs observable efficiency metrics, and prints a compliance report.
 
+The transcript shape is the REAL one Claude Code writes: tool_use blocks are nested
+inside `message.content[]` under a line whose top-level type is "assistant", and usage
+lives at `message.usage`, not the top level. Reading `entry["type"] == "tool_use"` at
+the top level measured 0 tool_use entries against 56 real nested ones (2026-09-21),
+so the compliance line printed PASS for every session. The parser below reads the
+nested shape and counts what is actually there.
+
 ENFORCEMENT ARCHITECTURE (two layers, both required):
   Layer 1 — model-agnostic (proxy):  EstateRequestCeiling refuses any call
             carrying >128K estimated tokens, before a single token is billed.
@@ -31,13 +38,19 @@ if _IDP not in sys.path:
 STATE_DIR = os.path.expanduser("~/.pi/agent/state/efficiency")
 MAX_INPUT_TOKENS = int(os.environ.get("ESTATE_MAX_INPUT_TOKENS", "128000"))
 
+# The proxy-bytes-saved ledger the gateway line reads. Default lives next to the state dir;
+# tests monkeypatch this attribute to point at a fixture.
+LEDGER = os.path.join(STATE_DIR, "proxy-bytes-saved.jsonl")
+
 
 def _load_state(session_id: str) -> dict:
     os.makedirs(STATE_DIR, exist_ok=True)
     path = os.path.join(STATE_DIR, f"{session_id}.json")
     try:
         with open(path) as f:
-            return json.load(f)
+            state = json.load(f)
+            state.setdefault("seen", [])
+            return state
     except Exception:
         return {
             "turns": 0,
@@ -48,6 +61,7 @@ def _load_state(session_id: str) -> dict:
             "total_cache_read": 0,
             "compactions": 0,
             "proxy_refused": 0,
+            "seen": [],
             "first_seen": time.time(),
         }
 
@@ -62,9 +76,62 @@ def _save_state(session_id: str, state: dict) -> None:
         pass
 
 
+def _count_entry(entry: dict, state: dict) -> None:
+    """Count one transcript line against the REAL nested shape.
+
+    tool_use blocks live under entry["message"]["content"][]; usage lives under
+    entry["message"]["usage"]. A top-level entry with type "tool_use" or a top-level
+    "usage" key is the shape Claude Code does NOT emit and is ignored, not counted.
+    """
+    state.setdefault("seen", [])
+    uuid = entry.get("uuid")
+    if uuid:
+        if uuid in state["seen"]:
+            return
+        state["seen"].append(uuid)
+
+    message = entry.get("message") or {}
+    if not isinstance(message, dict):
+        return
+
+    for block in message.get("content") or []:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        name = block.get("name", "")
+        if name == "Bash":
+            state["bash_calls"] += 1
+            inp = block.get("input") or {}
+            cmd = inp.get("command", "") if isinstance(inp, dict) else ""
+            if "idp-exec" in cmd:
+                state["idp_exec_calls"] += 1
+        elif name.startswith("mcp__"):
+            state["mcp_calls"] += 1
+
+    usage = message.get("usage") or {}
+    if usage:
+        state["total_input_tokens"] += int(usage.get("input_tokens", 0))
+        state["total_cache_read"] += int(usage.get("cache_read_input_tokens", 0))
+
+    if entry.get("type") == "system" and entry.get("subtype") == "compact_boundary":
+        state["compactions"] += 1
+
+    if entry.get("type") == "user":
+        for block in message.get("content") or []:
+            if not isinstance(block, dict) or block.get("type") != "tool_result":
+                continue
+            content = str(block.get("content", ""))
+            if "Refused before it was sent" in content:
+                state["proxy_refused"] += 1
+
+
 def _measure_transcript(transcript_path: str, state: dict) -> dict:
-    """Scan the last 400 KB of the transcript for this-turn metrics."""
-    state["turns"] += 1
+    """Scan the last 400 KB of the transcript for this-turn metrics.
+
+    The dedupe key is the transcript line's uuid, kept in state["seen"], so a line
+    re-read on a later Stop is never counted twice.
+    """
+    state["turns"] = state.get("turns", 0) + 1
+    state.setdefault("seen", [])
     if not transcript_path or not os.path.exists(transcript_path):
         return state
 
@@ -81,42 +148,8 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
                 entry = json.loads(line)
             except Exception:  # noqa: S110, S112 — a malformed ledger line is skipped, not fatal
                 continue
-
-            etype = entry.get("type", "")
-
-            # Tool calls
-            if etype == "tool_use":
-                name = entry.get("name", "")
-                if name == "Bash":
-                    state["bash_calls"] += 1
-                    inp = entry.get("input") or {}
-                    cmd = inp.get("command", "") if isinstance(inp, dict) else ""
-                    if "idp-exec" in cmd:
-                        state["idp_exec_calls"] += 1
-                elif name.startswith("mcp__"):
-                    state["mcp_calls"] += 1
-
-            # Token usage (from assistant messages carrying usage blocks)
-            usage = entry.get("usage") or {}
-            if usage:
-                state["total_input_tokens"] += int(usage.get("input_tokens", 0))
-                state["total_cache_read"] += int(
-                    usage.get("cache_read_input_tokens", 0)
-                )
-
-            # Compaction markers
-            if etype == "system" and "compacted" in str(entry).lower():
-                state["compactions"] += 1
-
-            # Proxy refused calls (402/400 from the ceiling — message contains "estate's ceiling")
-            if etype in ("tool_result", "error"):
-                content = str(entry.get("content", "") or entry.get("error", ""))
-                if (
-                    "estate's ceiling" in content
-                    or "Refused before it was sent" in content
-                ):
-                    state["proxy_refused"] += 1
-
+            if isinstance(entry, dict):
+                _count_entry(entry, state)
     except Exception:  # noqa: S110 — deliberate: a hook must never break the turn
         pass
 
@@ -124,8 +157,8 @@ def _measure_transcript(transcript_path: str, state: dict) -> dict:
 
 
 def _format_report(state: dict, session_id: str) -> str:
-    bash = state["bash_calls"]
-    idp_exec = state["idp_exec_calls"]
+    bash = state.get("bash_calls", 0)
+    idp_exec = state.get("idp_exec_calls", 0)
     raw_bash = bash - idp_exec
 
     # Compliance verdict for this session
@@ -135,13 +168,13 @@ def _format_report(state: dict, session_id: str) -> str:
         compliance = f"FAIL — {raw_bash} raw Bash call(s) without bin/idp-exec"
 
     # Cache efficiency
-    total_in = state["total_input_tokens"]
-    total_cached = state["total_cache_read"]
+    total_in = state.get("total_input_tokens", 0)
+    total_cached = state.get("total_cache_read", 0)
     denom = total_in + total_cached
     cache_pct = round(100 * total_cached / denom, 1) if denom > 0 else 0.0
 
     # Proxy ceiling status
-    refused = state["proxy_refused"]
+    refused = state.get("proxy_refused", 0)
     ceiling_line = (
         f"128K hard limit (model-agnostic) | {refused} call(s) refused this session"
         if refused
@@ -149,17 +182,39 @@ def _format_report(state: dict, session_id: str) -> str:
     )
 
     lines = [
-        f"[token-efficiency] session={session_id[-12:]} turn={state['turns']}",
+        f"[token-efficiency] session={session_id[-12:]} turn={state.get('turns', 0)}",
         f"  [1] Proxy ceiling:     {ceiling_line}",
-        f"  [2] Cache hit rate:    {cache_pct}%  ({total_cached:,} cached / {total_in:,} fresh input tokens)",
-        f"  [3] Bash compliance:   {compliance}",
-        f"         bash_calls={bash}  idp_exec={idp_exec}  raw={raw_bash}",
-        f"  [4] Compactions:       {state['compactions']}",
-        f"  [5] MCP calls:         {state['mcp_calls']}",
-        "  [6-8] Dynamic pruning/compaction/gisting: session-shape enforcement",
-        "        via context-guard-hook.py (UserPromptSubmit+PreToolUse)",
+        f"  [2] Cache hit rate:    {cache_pct}%  hit_rate={cache_pct}%  ({total_cached:,} cached / {total_in:,} fresh input tokens)",
+        f"  [3] Bash compliance:   -> {compliance}",
+        f"         bash_calls={bash} idp_exec={idp_exec} raw={raw_bash}",
+        f"  [4] Compactions:       {state.get('compactions', 0)}",
+        f"  [5] MCP calls:         {state.get('mcp_calls', 0)}",
+        f"  [8] Gateway:           {_gateway_line()}",
+        "",
     ]
     return "\n".join(lines)
+
+
+def _gateway_line() -> str:
+    """One measured sentence about the proxy-bytes ledger, never a bare assertion.
+
+    Reads the LEDGER jsonl (one {"at", "bytes_saved"} per proxied call). When absent it
+    says so instead of the old unconditional "all 8 mechanisms active" claim.
+    """
+    try:
+        with open(LEDGER) as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    except Exception:
+        return "proxy ledger has not run (no bytes_saved on record)"
+
+    if not rows:
+        return "proxy ledger has not run (no bytes_saved on record)"
+
+    bytes_saved = sum(int(r.get("bytes_saved", 0)) for r in rows)
+    latest = rows[-1].get("at", "")
+    return f"{len(rows)} proxied calls, {bytes_saved:,} bytes saved" + (
+        f", latest {latest}" if latest else ""
+    )
 
 
 def main() -> None:

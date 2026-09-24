@@ -10,6 +10,17 @@ model_list:
 
   # @vendor-cluster-lanes@
 
+  # Local, free, and reachable from the cluster, not the founder's Mac.
+  # platform/llm/ollama.yaml runs it on the always-free pool; 1.5B because the free allowance is
+  # shared with the router, redis, postgres and tracing. No cost fields, so LiteLLM prices it
+  # $0.0000 and cost-based-routing prefers it automatically once healthy.
+  - model_name: ollama
+    litellm_params:
+      model: ollama/qwen2.5-coder:1.5b
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 300
+      keep_alive: 24h
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat

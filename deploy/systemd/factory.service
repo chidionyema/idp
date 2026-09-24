@@ -1,0 +1,22 @@
+[Unit]
+Description=Factory runtime (server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=factory
+Group=factory
+WorkingDirectory=/opt/factory
+EnvironmentFile=/etc/factory/env
+ExecStart=/usr/bin/python3 -m factory.server
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/factory /var/log/factory
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

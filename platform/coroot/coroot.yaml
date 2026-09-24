@@ -58,7 +58,7 @@ spec:
     spec:
       chart: coroot
       # Pinned. A service map that changes shape on a floating chart version is not a map.
-      version: "0.5.28"
+      version: "0.22.0"
       sourceRef:
         kind: HelmRepository
         name: coroot
