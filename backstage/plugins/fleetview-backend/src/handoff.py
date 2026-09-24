@@ -95,6 +95,22 @@ _ALLOWED_KEYS = frozenset(
 _PATH_OK = re.compile(r"^(/|~)[\w./~-]*$")
 
 
+def device_authorize_envelope() -> tuple[dict[str, str], int]:
+    """The body and status for GET /api/fleetview/device-authorize.
+
+    Returns only an opaque challenge identifier, a local URL, and the auth scheme --
+    nothing that could carry a credential across the portal boundary. The portal
+    holds no vault credentials and never sees the agent key or cluster token.
+    """
+    challenge = new_challenge()
+    return {
+        "challenge": challenge,
+        "state": "pending",
+        "url": handoff_url(challenge),
+        "scheme": "idp-device",
+    }, 200
+
+
 class SecretLeak(RuntimeError):
     """Raised when something this module was asked to emit would carry a secret.
 

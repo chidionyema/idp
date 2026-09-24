@@ -354,6 +354,16 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = await routes.reject_mutation(body)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.DEVICE_STATUS_PATH)
+    def device_status():
+        body, status = routes.device_status_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.DEVICE_AUTHORIZE_PATH)
+    def device_authorize():
+        body, status = routes.device_authorize_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
