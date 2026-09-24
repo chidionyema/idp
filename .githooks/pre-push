@@ -10,6 +10,36 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+# crew#1194: refuse any shell file with a syntax error in the push diff.
+# bash -n is a parse-only check -- no execution, no side effects, no secrets.
+# This closes the governance gap: the fast-gate (IDP_CI_FAST=1) exits
+# at line 144 and never reaches the nightly section (174-802) where errors live.
+# A shell file with bad syntax on main makes main red. Main must be green.
+while IFS= read -r _ _ _ remote_sha; do
+  [ -n "$remote_sha" ] || continue
+  break
+done
+refs=""
+while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  refs="${refs}${local_ref} ${local_sha} ${remote_ref} ${remote_sha}"$'\n'
+done
+while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$remote_sha" ] && continue
+  diff_files=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
+  for f in $diff_files; do
+    case "$f" in
+    *.sh|*.bash) ;;                       # shell extension
+    bin/*|.githooks/*) ;;                  # shebang convention
+    *) continue ;;                          # skip non-shell
+    esac
+    if [ -f "$f" ] && ! bash -n "$f" 2>&1; then
+      bash -n "$f" >&2
+      echo "pre-push REFUSED: syntax error in $f" >&2
+      exit 1
+    fi
+  done
+done <<<"$refs"
+
 # Read-only force pushes and the WIP-gate override are out of scope for this rung --
 # the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
 # This rung only refuses the fast-gate class; everything else still flows.
