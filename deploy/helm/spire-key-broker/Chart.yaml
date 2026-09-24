@@ -1,0 +1,12 @@
+apiVersion: v2
+name: spire-key-broker
+description: >
+  Router fetches provider keys from OCI Vault using workload identity.
+  No Bitwarden. No ExternalSecret. No founder-as-credential.
+  https://github.com/earendil-works/idp/blob/main/docs/specs/2026-09-24-spire-key-broker.md
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords: [spire, oci-vault, workload-identity]
+sources:
+  - https://github.com/earendil-works/idp
