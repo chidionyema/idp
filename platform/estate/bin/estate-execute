@@ -9,7 +9,11 @@ Usage:
 All executor logs go to stderr. Intent output goes to stdout.
 No heredocs. No pipes. No exit traps. All SQL via parameterized queries.
 """
-import sqlite3, subprocess, sys, os, re, json, shlex
+import sqlite3
+import subprocess
+import sys
+import os
+import shlex
 from pathlib import Path
 from datetime import datetime, timezone
 import uuid
@@ -57,10 +61,12 @@ def init_db():
 
 # ---- Ticket ops ----------------------------------------------------------
 def open_ticket(conn, intent_name, harness, goal=""):
-    ticket_id = f"INTENT-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    ticket_id = f"INTENT-{ts}-{uuid.uuid4().hex[:8]}"
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        "INSERT INTO intent_tickets (id,intent,harness,goal,started_at,status) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO intent_tickets "
+        "(id,intent,harness,goal,started_at,status) VALUES (?,?,?,?,?,?)",
         (ticket_id, intent_name, harness, goal, now, "running")
     )
     conn.commit()
@@ -68,7 +74,8 @@ def open_ticket(conn, intent_name, harness, goal=""):
 
 def log_step(conn, ticket_id, idx, cmd, rc, dur_ms):
     conn.execute(
-        "INSERT INTO step_runs (ticket_id,step_idx,cmd,exit_code,duration_ms,ran_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO step_runs "
+        "(ticket_id,step_idx,cmd,exit_code,duration_ms,ran_at) VALUES (?,?,?,?,?,?)",
         (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat())
     )
     conn.commit()
@@ -132,7 +139,7 @@ def run_steps(conn, ticket_id, intent, args):
 
         t0 = datetime.now(timezone.utc)
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S602
                 cmd, shell=True, capture_output=True, text=True, timeout=120
             )
             rc = result.returncode
@@ -197,31 +204,147 @@ def cmd_run(intent_name, raw_args):
     log(f"[estate] status={status}")
     return status
 
+
+def cmd_harness(harness_name, intent_name, goal, raw_args):
+    """Harness mode: set up restricted env, run steps, then spawn the harness."""
+    intent_path = INTENTS / f"{intent_name}.yaml"
+    if not intent_path.exists():
+        log(f"ERROR: unknown intent: {intent_name}")
+        sys.exit(1)
+
+    import yaml
+    import tempfile
+    with open(intent_path) as f:
+        intent = yaml.safe_load(f)
+
+    conn = init_db()
+    args = resolve_args(intent, raw_args)
+    ticket_id = open_ticket(conn, intent_name, harness_name, goal)
+    log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}")
+
+    # --- Build session HOME with allowlisted tools + runtime deps -------
+    tools = intent.get("tools", [])
+    # Always include these runtime deps regardless of intent
+    always = ["node", "python3", "bash", "sh", "cat", "ls", "mkdir",
+               "rm", "grep", "rg", "sed", "awk", "git", "gh"]
+    needed = list(dict.fromkeys(always + tools))  # dedupe, always first
+    session_home = Path(tempfile.mkdtemp(prefix="estate-session."))
+    (session_home / ".bin").mkdir()
+    for tool in needed:
+        tool_path = Path(shutil.which(tool))
+        if tool_path.exists():
+            (session_home / ".bin" / tool).symlink_to(tool_path)
+
+    # --- Environment scrub (keep real HOME — curl needs it for cert lookup) ------
+    scrub_vars = [
+        "MINIMAX_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_DIRECT_KEY",
+        "ANTHROPIC_DIRECT_KEY", "OPENROUTER_API_KEY", "GROQ_API_KEY",
+        "CEREBRAS_API_KEY", "KUBECONFIG",
+        "MINIMAX_BASE_URL", "DEEPSEEK_BASE_URL",
+    ]
+    for var in scrub_vars:
+        os.environ.pop(var, None)
+
+    # --- Set estate-controlled env (PATH narrowed, real HOME preserved) ---
+    os.environ["PATH"] = f"{session_home}/.bin:/usr/bin:/bin:/usr/sbin:/sbin"
+    os.environ["ESTATE_INTENT"] = intent_name
+    os.environ["ESTATE_HARNESS"] = harness_name
+    os.environ["ESTATE_TICKET"] = ticket_id
+    os.environ["ESTATE_GOAL"] = goal or ""
+    agent_key = os.environ.get("ESTATE_AGENT_KEY", "")
+    if agent_key:
+        os.environ["OPENAI_API_KEY"] = agent_key
+        os.environ["ANTHROPIC_API_KEY"] = agent_key
+    os.environ["OPENAI_BASE_URL"] = "https://llm.mumchimp.com/v1"
+    os.environ["ANTHROPIC_BASE_URL"] = "https://llm.mumchimp.com/v1"
+    os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
+    os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
+
+    # --- Cleanup trap ---------------------------------------------------
+    def cleanup():
+        shutil.rmtree(session_home, ignore_errors=True)
+    atexit.register(cleanup)
+
+    # --- Run intent steps -----------------------------------------------
+    status = run_steps(conn, ticket_id, intent, args)
+    log(f"[estate] status={status}")
+
+    if status == "halted":
+        sys.exit(1)
+
+    # --- Spawn real harness ---------------------------------------------
+    libexec_dir = HOME / ".estate" / "libexec"
+    real_bin = libexec_dir / f"{harness_name}-real"
+    if not real_bin.exists():
+        # Fallback: find on original PATH
+        import shutil as sh
+        orig_path = "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"
+        found = sh.which(harness_name, path=orig_path)
+        if found:
+            real_bin = Path(found)
+        else:
+            log(f"ERROR: harness binary not found: {harness_name}")
+            log(f"Expected: {libexec_dir}/{harness_name}-real")
+            sys.exit(1)
+
+    # Pass through remaining args (the goal is already in ESTATE_GOAL)
+    os.execv(str(real_bin), [str(real_bin)] + raw_args)  # noqa: S606  # noqa: S606
+
+
 # ---- Main ---------------------------------------------------------------
 if __name__ == "__main__":
+    import shutil
+    import atexit
+
     if len(sys.argv) == 1 or sys.argv[1] == "--list":
         cmd_list()
         sys.exit(0)
 
+    harness_name = None
     intent_name = None
+    goal = ""
     raw_args = []
 
-    for i, arg in enumerate(sys.argv[1:], 1):
+    # Mode 1: estate-execute <harness> --intent=<name> [--goal=...]
+    # Mode 2: estate-execute <intent> [arg=val ...]
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
         if arg == "--intent" and i + 1 < len(sys.argv):
-            intent_name = sys.argv[i]
+            intent_name = sys.argv[i + 1]
+            i += 2
         elif arg.startswith("--intent="):
             intent_name = arg.split("=", 1)[1]
-        elif intent_name is None:
-            intent_name = arg
+            i += 1
+        elif arg.startswith("--goal="):
+            goal = arg.split("=", 1)[1]
+            i += 1
+        elif harness_name is None and intent_name is None:
+            # First positional: could be harness or intent
+            harness_name = arg
+            i += 1
         else:
             raw_args.append(arg)
+            i += 1
 
-    if not intent_name:
-        log("usage: estate-execute <intent> [arg=val ...]")
-        sys.exit(1)
+    # Resolve: if first arg is a harness, intent must follow
+    if harness_name and intent_name:
+        # Harness mode
+        cmd_harness(harness_name, intent_name, goal, raw_args)
+    elif harness_name and not intent_name:
+        # Could be intent name or unknown harness
+        if (INTENTS / f"{harness_name}.yaml").exists():
+            cmd_run(harness_name, raw_args)
+        else:
+            log(f"ERROR: unknown harness or intent: {harness_name}")
+            log("usage: estate-execute <harness> --intent=<name>  # harness mode")
+            log("       estate-execute <intent> [arg=val...]       # direct mode")
+            log("       estate-execute --list")
+            sys.exit(1)
+    elif intent_name:
+        cmd_run(intent_name, raw_args)
+    else:
+        cmd_list()
+        sys.exit(0)
 
-    if intent_name in ("pi", "cline", "opencode"):
-        log("ERROR: harness mode not yet implemented")
-        sys.exit(1)
-
-    sys.exit(0 if cmd_run(intent_name, raw_args) == "ok" else 1)
+    sys.exit(0)
