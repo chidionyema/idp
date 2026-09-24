@@ -1,3 +1,5 @@
+# button: Batch agent work into one PR
+# founder: Opens one pull request per batch from agent-trunk against main, reviewed by a human, never merging on its own.
 # agent-trunk-batch -- one PR to main per batch, never N.
 #
 # THE STRUCTURE THIS ENFORCES (founder, 2026-09-23). Agents write to `agent-trunk`, which has

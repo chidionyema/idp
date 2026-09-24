@@ -1,3 +1,5 @@
+# button: Test and publish the factory package
+# founder: Runs the factory test suite and, on a push to main, builds and publishes its multi-arch image to GHCR.
 name: factory-ci
 
 on:
