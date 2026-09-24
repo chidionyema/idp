@@ -1,0 +1,41 @@
+# Default values for spire-key-broker.
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/earendil-works/idp/spire-key-broker
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# The SPIRE Workload API socket mount. The CSI driver is installed globally by the
+# spire HelmRelease in spire-mgmt; this mount makes it available to the broker.
+spireSocket:
+  mountPath: /spiffe-workload-api
+  hostPath: /run/spire/sockets
+  readOnly: true
+
+# OCI workload identity annotation on the broker's service account.
+# The OCIoke Workload Identity feature maps this annotation to an OCI principal,
+# granting the pod permission to call OCI Vault APIs without a static API key.
+oci:
+  workloadIdentity: true
+  # vault-ocid ConfigMap is created by bin/idp-flux-bootstrap in the llm namespace.
+  # The broker reads the vault OCID from this local ConfigMap (no cross-ns RBAC needed).
+  vaultOCIDPath: /configmaps/vault-ocid/vault_ocid
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 100m
+    memory: 64Mi
+
+# ServiceMonitor for Prometheus scraping.
+serviceMonitor:
+  enabled: true
+  interval: 30s
