@@ -1,0 +1,13 @@
+name: spire-agent-logs
+description: >
+  Get logs from the SPIRE agent DaemonSet on a specific node.
+  Requires OKE_KUBECONFIG env var pointing to the estate cluster.
+args:
+  node: { type: string, help: "Node name or IP (e.g. 10.0.148.221)" }
+  lines: { type: int, default: 100, help: "Number of log lines" }
+  since: { type: string, default: "1h", help: "Time window (e.g. 1h, 30m)" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      bash ~/.estate/libexec/spire-agent-logs.sh {{node}} {{lines}} {{since}}

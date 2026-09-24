@@ -1,0 +1,15 @@
+name: shell.suggest
+description: >
+  Propose a unified diff patch for a shell script. Writes diff to stdout.
+  Never touches the source file.
+  Usage: estate-execute shell.suggest <file> <line> <fixed_file>
+  where <fixed_file> contains the corrected line.
+args:
+  file: { type: string, help: "Path to shell script" }
+  line: { type: int, help: "Line number to fix" }
+  fixed_file: { type: string, help: "Path to file containing the corrected full line" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      python3 ~/.estate/libexec/shell-suggest.py {{file}} {{line}} {{fixed_file}}

@@ -1,0 +1,9 @@
+name: halt
+description: Print current state and exit. No reasoning.
+tools: []
+models: []
+halt_on_failure: true
+max_turns: 1
+steps:
+  - cmd: "echo halt done intent=$ESTATE_INTENT ticket=$ESTATE_TICKET"
+    on_fail: halt

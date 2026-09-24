@@ -1,0 +1,13 @@
+name: ci.errors
+description: >
+  Get every failing job, step, and error line from a GitHub Actions run.
+  Use this instead of poking gh api / gh run view by hand.
+args:
+  repo: { type: string, default: "chidionyema/idp" }
+  run: { type: string, default: "", help: "Run ID. Omit to use latest failing run." }
+  pr: { type: string, default: "", help: "PR number. Overrides run." }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      CI_REPO={{repo}} CI_RUN={{run}} CI_PR={{pr}} bash ~/.estate/libexec/ci-errors.sh

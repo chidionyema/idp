@@ -1,0 +1,15 @@
+name: build-image
+description: >
+  Build and push a Docker image via the estate's CI pipeline.
+  Requires ESTATE_IMAGE_NAME and ESTATE_GIT_REF env vars.
+  Uses bin/build-image from the idp repo.
+tools: [bash, git, docker]
+models: []
+halt_on_failure: true
+max_turns: 5
+steps:
+  - cmd: >
+      export IMAGE_NAME="${ESTATE_IMAGE_NAME:-}" &&
+      export GIT_REF="${ESTATE_GIT_REF:-main}" &&
+      ~/Documents/code/idp/bin/build-image "$IMAGE_NAME" "$GIT_REF"
+    on_fail: halt

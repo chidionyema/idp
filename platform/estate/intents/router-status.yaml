@@ -1,0 +1,12 @@
+name: router-status
+description: Is the router up? Confirm reachability and model catalog.
+tools: [curl]
+models: []
+halt_on_failure: true
+max_turns: 3
+steps:
+  - cmd: >
+      curl -sf https://llm.mumchimp.com/v1/models
+      -H "Authorization: Bearer $ESTATE_AGENT_KEY"
+      -w "\nHTTP:%{http_code}\n"
+    on_fail: halt

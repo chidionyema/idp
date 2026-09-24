@@ -1,0 +1,11 @@
+name: flux-suspend
+description: Suspend a Flux Kustomization or HelmRelease.
+args:
+  kind: { type: string, help: "kustomization or helmrelease" }
+  name: { type: string, help: "Resource name" }
+  namespace: { type: string, default: "flux-system", help: "Namespace" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      flux suspend {{kind}} {{name}} -n {{namespace}} 2>&1

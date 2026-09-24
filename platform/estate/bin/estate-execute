@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""
+estate-execute — intent ledger + pipeline executor
+
+Usage:
+  estate-execute --list
+  estate-execute <intent> [arg=val ...] [positional...]
+
+All executor logs go to stderr. Intent output goes to stdout.
+No heredocs. No pipes. No exit traps. All SQL via parameterized queries.
+"""
+import sqlite3, subprocess, sys, os, re, json, shlex
+from pathlib import Path
+from datetime import datetime, timezone
+import uuid
+
+# ---- Paths ---------------------------------------------------------------
+HOME    = Path.home()
+DB      = HOME / ".estate" / "estate.db"
+INTENTS = HOME / ".estate" / "intents"
+
+def log(*args, **kw):
+    print(*args, file=sys.stderr, **kw)
+
+# ---- DB init ------------------------------------------------------------
+def init_db():
+    DB.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS intent_tickets (
+            id           TEXT PRIMARY KEY,
+            intent       TEXT NOT NULL,
+            harness      TEXT NOT NULL,
+            goal         TEXT,
+            started_at   TEXT NOT NULL,
+            completed_at TEXT,
+            status       TEXT NOT NULL DEFAULT 'running',
+            steps_run    INTEGER NOT NULL DEFAULT 0,
+            steps_failed INTEGER NOT NULL DEFAULT 0,
+            cost_usd     REAL    DEFAULT 0,
+            error        TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS step_runs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id   TEXT NOT NULL REFERENCES intent_tickets(id),
+            step_idx    INTEGER NOT NULL,
+            cmd         TEXT NOT NULL,
+            exit_code   INTEGER,
+            duration_ms INTEGER,
+            ran_at      TEXT
+        )
+    """)
+    conn.commit()
+    return conn
+
+# ---- Ticket ops ----------------------------------------------------------
+def open_ticket(conn, intent_name, harness, goal=""):
+    ticket_id = f"INTENT-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO intent_tickets (id,intent,harness,goal,started_at,status) VALUES (?,?,?,?,?,?)",
+        (ticket_id, intent_name, harness, goal, now, "running")
+    )
+    conn.commit()
+    return ticket_id
+
+def log_step(conn, ticket_id, idx, cmd, rc, dur_ms):
+    conn.execute(
+        "INSERT INTO step_runs (ticket_id,step_idx,cmd,exit_code,duration_ms,ran_at) VALUES (?,?,?,?,?,?)",
+        (ticket_id, idx, cmd, rc, dur_ms, datetime.now(timezone.utc).isoformat())
+    )
+    conn.commit()
+
+def close_ticket(conn, ticket_id, status, error=None):
+    conn.execute(
+        "UPDATE intent_tickets SET completed_at=?,status=?,error=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(), status, error, ticket_id)
+    )
+    conn.commit()
+
+# ---- Argument resolution ------------------------------------------------
+def resolve_args(intent, raw_args):
+    arg_defs = intent.get("args", {})
+    resolved = {}
+    positional = []
+
+    for arg in raw_args:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            resolved[k] = v
+        else:
+            positional.append(arg)
+
+    names = list(arg_defs.keys())
+    for i, val in enumerate(positional):
+        if i < len(names):
+            resolved[names[i]] = val
+
+    for name, spec in arg_defs.items():
+        if name not in resolved:
+            resolved[name] = spec.get("default", "")
+        if spec.get("type") == "int":
+            try:
+                resolved[name] = int(float(str(resolved[name])))
+            except (ValueError, TypeError):
+                resolved[name] = 0
+    return resolved
+
+# ---- Interpolation ------------------------------------------------------
+def interpolate(cmd, args):
+    """{{var}} → shell-quoted (safe path), <<var>> → raw (already quoted)."""
+    for name, val in args.items():
+        quoted = shlex.quote(str(val))
+        cmd = cmd.replace("{{" + name + "}}", quoted)
+        cmd = cmd.replace("<<" + name + ">>", str(val))
+    return cmd
+
+# ---- Step runner --------------------------------------------------------
+def run_steps(conn, ticket_id, intent, args):
+    steps = intent.get("steps", [])
+    halt_on_fail = intent.get("halt_on_failure", True)
+    failed = 0
+
+    for idx, step in enumerate(steps):
+        cmd_tmpl = step.get("cmd", "")
+        on_fail = step.get("on_fail", "halt" if halt_on_fail else "continue")
+
+        cmd = interpolate(cmd_tmpl, args)
+        log(f"[step {idx+1}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+
+        t0 = datetime.now(timezone.utc)
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=120
+            )
+            rc = result.returncode
+        except subprocess.TimeoutExpired:
+            log("  TIMEOUT (120s)")
+            rc = 124
+        except Exception as e:
+            log(f"  ERROR: {e}")
+            rc = 1
+
+        dur = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+        log_step(conn, ticket_id, idx, cmd, rc, dur)
+
+        if rc != 0:
+            failed += 1
+            log(f"  exit {rc}  ({dur}ms)")
+            if result.stderr:
+                for line in result.stderr.strip().splitlines()[:5]:
+                    log(f"  stderr: {line}")
+            if on_fail == "halt":
+                close_ticket(conn, ticket_id, "halted", f"step {idx+1} failed")
+                return "halted"
+        else:
+            log(f"  ok  ({dur}ms)")
+            if result.stdout:
+                for line in result.stdout.strip().splitlines()[:20]:
+                    print(line)  # stdout — agent captures this
+
+    status = "ok" if failed == 0 else "broken"
+    close_ticket(conn, ticket_id, status)
+    return status
+
+# ---- Commands -----------------------------------------------------------
+def cmd_list():
+    import yaml
+    log("Available intents:")
+    for f in sorted(INTENTS.glob("*.yaml")):
+        with open(f) as fh:
+            d = yaml.safe_load(fh)
+        name = f.stem
+        desc = d.get("description", "")[:60]
+        log(f"  {name}")
+        if desc:
+            log(f"    {desc}")
+
+def cmd_run(intent_name, raw_args):
+    intent_path = INTENTS / f"{intent_name}.yaml"
+    if not intent_path.exists():
+        log(f"ERROR: unknown intent: {intent_name}")
+        sys.exit(1)
+
+    import yaml
+    with open(intent_path) as f:
+        intent = yaml.safe_load(f)
+
+    conn = init_db()
+    args = resolve_args(intent, raw_args)
+    ticket_id = open_ticket(conn, intent_name, "direct")
+    log(f"[estate] intent={intent_name}  ticket={ticket_id}")
+
+    status = run_steps(conn, ticket_id, intent, args)
+    log(f"[estate] status={status}")
+    return status
+
+# ---- Main ---------------------------------------------------------------
+if __name__ == "__main__":
+    if len(sys.argv) == 1 or sys.argv[1] == "--list":
+        cmd_list()
+        sys.exit(0)
+
+    intent_name = None
+    raw_args = []
+
+    for i, arg in enumerate(sys.argv[1:], 1):
+        if arg == "--intent" and i + 1 < len(sys.argv):
+            intent_name = sys.argv[i]
+        elif arg.startswith("--intent="):
+            intent_name = arg.split("=", 1)[1]
+        elif intent_name is None:
+            intent_name = arg
+        else:
+            raw_args.append(arg)
+
+    if not intent_name:
+        log("usage: estate-execute <intent> [arg=val ...]")
+        sys.exit(1)
+
+    if intent_name in ("pi", "cline", "opencode"):
+        log("ERROR: harness mode not yet implemented")
+        sys.exit(1)
+
+    sys.exit(0 if cmd_run(intent_name, raw_args) == "ok" else 1)

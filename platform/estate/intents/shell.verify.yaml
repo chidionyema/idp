@@ -1,0 +1,13 @@
+name: shell.verify
+description: >
+  Verify a patch is safe. Copies the file to /tmp, applies the patch,
+  runs bash -n and shellcheck on the copy. Never touches the source file.
+  Pass/fail returned. Nothing goes to a branch without this passing first.
+args:
+  file: { type: string, help: "Path to source shell script" }
+  patch: { type: string, help: "Path to unified diff file to verify" }
+tools: []
+halt_on_failure: true
+steps:
+  - cmd: >
+      python3 ~/.estate/libexec/shell-verify.py {{file}} {{patch}}
