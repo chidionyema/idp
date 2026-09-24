@@ -41,7 +41,8 @@ model_list:
       model: openai/MiniMax-M3
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
-      timeout: 300
+      timeout: 5
+      num_retries: 0
       max_tokens: 8192
       # Without these two the router prices this lane at $0.0000 a call. Measured
       # 2026-09-04 from LiteLLM_SpendLogs: 176 million MiniMax tokens across three
@@ -708,8 +709,8 @@ litellm_settings:
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
-  success_callback: ["langfuse"]
-  failure_callback: ["langfuse"]
+  success_callback: ["langfuse", "postgres"]
+  failure_callback: ["langfuse", "postgres"]
   drop_params: true
   turn_off_message_logging: true
   # Bounded answer reuse (the containment set the founder approved 2026-09-03): exact-match

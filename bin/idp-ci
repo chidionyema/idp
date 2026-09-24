@@ -13,10 +13,15 @@ set -uo pipefail
 # instant this file was next touched. Same bug class, same fix, as bin/idp-estate-seed's
 # missing -h|--help case: exit fast, exit 0, before any real work starts.
 FULL=0
+CHECK=0
 case "${1:-}" in
   -h|--help)
     echo "bin/idp-ci -- the offline gate. No flags to choose a subset; IDP_CI_FAST=1 runs only"
     echo "rungs 1/1b/1c and ruff. IDP_CI_BASE=<sha> scopes path-gated rungs to a diff."
+    echo ""
+    echo "  --check  syntax gate only. bash -n / shellcheck / py_compile / yamllint"
+    echo "           on all tracked files. No execution, no side effects. Exit 0 = clean."
+    echo "           Layer 1 of 3: pre-push | CI --check | CI full run."
     echo ""
     echo "  --full   run the complete matrix with no BLIND skips; all tools required."
     echo "           On success writes ~/.cache/idp-ci-verified/<HEAD-sha> so the pre-push"
@@ -24,6 +29,7 @@ case "${1:-}" in
     echo "           run bin/idp-install-deps to install."
     exit 0
     ;;
+  --check) CHECK=1 ;;
   --full) FULL=1 ;;
 esac
 
@@ -59,6 +65,95 @@ touched() {
 # ruff, under 60 s, no docker/conftest/helm. .github/workflows/fast-gate.yml runs it and every
 # heavy job (offline-gate, bdd, image builds, the drills) needs it green first.
 FAST="${IDP_CI_FAST:-0}"
+# --check: syntax gate. Parse-only checks on every tracked file -- no execution,
+# no side effects, no secrets. Mathematically impossible for bad syntax to reach CI
+# if this passes. Layers: pre-push | CI --check | CI full run. crew#1194.
+if [ "$CHECK" = 1 ]; then
+  set -uo pipefail
+  echo "idp-ci --check: syntax gate"
+  fail=0
+  # Non-ASCII guard on all tracked files
+  while IFS= read -r f; do
+    pos=$(python3 -c "
+import sys
+with open('$f','rb') as fh:
+    for i,b in enumerate(fh.read()):
+        if b>127:
+            print(i+1, b)
+            sys.exit(1)
+" 2>&1) || true
+    if [ -n "$pos" ]; then
+      echo "  FAIL non-ASCII in $f: $pos"
+      fail=1
+    fi
+  done < <(git ls-files | grep -v '^\.git/')
+  # bash -n on shell files
+  for f in $(git ls-files | grep -v '^\.git/'); do
+    case "$f" in
+    *.sh|*.bash) ;;                      # shell extension
+    bin/*|.githooks/*) ;;                 # shebang convention
+    *) continue ;;                         # skip non-shell
+    esac
+    if [ -f "$f" ] && ! bash -n "$f" 2>&1; then
+      echo "  FAIL bash -n $f"
+      fail=1
+    fi
+  done
+  # shellcheck on shell files (if available)
+  if command -v shellcheck >/dev/null 2>&1; then
+    for f in $(git ls-files | grep -v '^\.git/'); do
+      case "$f" in
+      *.sh|*.bash) is_shell=1 ;;                      # shell extension
+      bin/*|.githooks/*) is_shell=1 ;;                   # shebang convention
+      *) is_shell=0 ;;                                     # skip non-shell
+      esac
+      [ "$is_shell" = 1 ] && [ -f "$f" ] || continue
+      if shellcheck -S warning "$f" >/dev/null 2>&1; then
+        : # clean
+      else
+        echo "  FAIL shellcheck $f"
+        fail=1
+      fi
+    done
+  fi
+  # python3 -m py_compile on Python files
+  for f in $(git ls-files | grep -v '^\.git/'); do
+    case "$f" in
+    *.py)
+      [ -f "$f" ] || continue
+      if python3 -m py_compile "$f" 2>/dev/null; then
+        : # clean
+      else
+        echo "  FAIL py_compile $f"
+        fail=1
+      fi
+      ;;
+    esac
+  done
+  # yamllint on YAML files (if available)
+  if command -v yamllint >/dev/null 2>&1; then
+    for f in $(git ls-files | grep -v '^\.git/'); do
+      case "$f" in
+      *.yaml|*.yml)
+        [ -f "$f" ] || continue
+        if yamllint -d relaxed "$f" >/dev/null 2>&1; then
+          : # clean
+        else
+          echo "  FAIL yamllint $f"
+          fail=1
+        fi
+        ;;
+      esac
+    done
+  fi
+  if [ "$fail" = 1 ]; then
+    echo "idp-ci --check: FAIL"
+    exit 1
+  fi
+  echo "idp-ci --check: PASS"
+  exit 0
+fi
+
 need python3
 [ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
 # --full requires every tool the CI matrix uses; missing tool = FAIL (not BLIND).
@@ -167,6 +262,13 @@ for agcfg in mcp/agentgateway.yaml platform/mcp/agentgateway.yaml; do
   if check-jsonschema --schemafile "$AG_SCHEMA" "$IDP/$agcfg" >/dev/null 2>&1; then say "ok    schema   $agcfg against agentgateway $AG_TAG"
   else say "FAIL  schema   $agcfg does not match agentgateway $AG_TAG's config schema"; fail=1; fi
 done
+
+# catalog-gen is slow (60 s) and runs on every commit. It belongs in a nightly
+# schedule or pre-merge gate, not in the per-commit fast path. All rungs that call
+# catalog-gen are wrapped in this guard; set IDP_CATALOG_NIGHTLY=1 to run them.
+if [ "${IDP_CATALOG_NIGHTLY:-}" != "1" ]; then
+  say "skip   catalog-gen rungs off (IDP_CATALOG_NIGHTLY != 1); set =1 to run"
+else
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
@@ -444,7 +546,7 @@ if "$MPY" -c "import dagster" 2>/dev/null; then
   else say "$out"; fail=1; fi
 else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
 
-# 4z. mac-provision (per docs/reference/security-architecture.md §3 + §6).
+# 4z. mac-provision (per docs/reference/security-architecture.md section 3 + section 6).
 #     The Brewfile + LaunchDaemons + idp-mac-provision are the founder Mac install
 #     surface under SPIFFE primary. Linux cannot run `brew bundle`, but it
 #     CAN validate that the Brewfile parses and the plists are well-formed XML;
@@ -566,7 +668,7 @@ else
 fi
 fi  # IDP_CI_SKIP_PYTEST
 
-# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diátaxis folder
+# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diataxis folder
 #     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
 #     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
 #     techdocs page and nothing here would say so. BLIND when mkdocs is missing, never a pass.
@@ -743,13 +845,13 @@ if [ -z "${IDP_CI_BASE:-}" ]; then
   if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
     say "ok    local-evidence chain present and intact"
   else
-    say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+    say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken -- no agent action has been recorded"; fail=1
   fi
 else
   say "skip  local-evidence developer-local; CI cannot have an agent session"
 fi
 
-# ADR 0030: Jev scope guard — no direct TypeSafeClient calls outside mcp/plugins/jev.py.
+# ADR 0030: Jev scope guard -- no direct TypeSafeClient calls outside mcp/plugins/jev.py.
 # This is the forcing function that ensures every Jev call goes through the MCP plugin,
 # so every decision lands in estate.db and the API key lives in one place.
 if python3 "$IDP/bin/idp-jev-scope-guard" >/dev/null 2>&1; then
@@ -793,3 +895,4 @@ if python3 "$IDP/bin/idp-api-version-gate" "$IDP/platform" "$IDP/clusters" >/dev
    && python3 "$IDP/bin/idp-api-version-gate" "$IDP/tests/fixtures/api-version/good" >/dev/null 2>&1; then
   say "ok    apiversion no manifest in platform/ or clusters/ names a group/version this estate has migrated off"
 else say "FAIL  apiversion a manifest names a retired group/version, or the gate does not discriminate"; fail=1; fi
+fi

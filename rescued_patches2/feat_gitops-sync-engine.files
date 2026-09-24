@@ -1,0 +1,16 @@
+AGENTS.md
+bin/idp-drift-blind
+bin/idp-gitops-drift
+bin/idp-gitops-drift.py
+docs/how-to/onboarding/gitops-sync.md
+docs/specs/2026-09-13-gitops-sync-engine.md
+docs/tutorials/demo/gitops-sync.md
+rules.yaml
+scheduler/estate_scheduler/definitions.py
+scheduler/estate_scheduler/gitops_drift.py
+scheduler/estate_scheduler/gitops_sync.py
+sovereign/tests/bdd/test_gitops_sync.py
+tests/fixtures/drift-blind/bad/exit
+tests/fixtures/drift-blind/bad/stdout
+tests/fixtures/drift-blind/good/exit
+tests/fixtures/drift-blind/good/stdout

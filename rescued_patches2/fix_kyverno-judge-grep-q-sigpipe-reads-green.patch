@@ -1,0 +1,370 @@
+diff --git a/bin/estate-security-scan b/bin/estate-security-scan
+index 8bdc52b6c..a83195a51 100755
+--- a/bin/estate-security-scan
++++ b/bin/estate-security-scan
+@@ -80,7 +80,7 @@ else
+     say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities"
+   elif [ $rc = 124 ]; then
+     say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
+-  elif printf '%s' "$out" | grep -q 'Failed to install packages'; then
++  elif printf '%s' "$out" | grep 'Failed to install packages' >/dev/null; then
+     # pip-audit could not build the environment (a package with no wheel and no build
+     # deps, or a pin that is not on the index). That is not an advisory, so it is not a
+     # FAIL: audit the pins as written, without resolving or installing anything.
+@@ -90,7 +90,7 @@ else
+       say "ok    deps      pip-audit over $(( ${#args[@]} / 2 )) requirements files: no known vulnerabilities (pins audited without resolution; install failed: $why)"
+     elif [ $rc2 = 124 ]; then
+       say "BLIND deps      pip-audit exceeded 240s (network); rerun"; blind=1
+-    elif printf '%s' "$out2" | grep -qiE 'not pinned|must be pinned|pinned to an exact'; then
++    elif printf '%s' "$out2" | grep -iE 'not pinned|must be pinned|pinned to an exact' >/dev/null; then
+       say "BLIND deps      pip-audit could not install ($why) and a requirements file is not fully pinned, so nothing was measured"
+       [ $quiet = 1 ] || printf '%s\n' "$out2" | tail -5 | sed 's/^/      /'; blind=1
+     else
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 8a6fe3e98..94cc64716 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -34,7 +34,7 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
+ 
+ # 1. Every script parses and passes shellcheck at warning level.
+ for f in "$IDP"/bin/*; do
+-  head -1 "$f" | grep -q bash || continue
++  head -1 "$f" | grep bash >/dev/null || continue
+   bash -n "$f" && shellcheck -S warning "$f" >/dev/null \
+     && say "ok    shell    $(basename "$f")" || { say "FAIL  shell    $(basename "$f")"; fail=1; }
+ done
+@@ -313,7 +313,7 @@ printf '\n# historical: 127.0.0.1:%s was the old thing, deleted 2026-08-25\n' 99
+ # runs under `set -o pipefail`, so `port-gate | grep -q` reports port-gate's
+ # deliberate exit 1 and the leg fails even when the message is exactly right.
+ probe_out=$(REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" 2>&1)
+-if printf '%s' "$probe_out" | grep -q 'placement-audit.*probes 127.0.0.1:8000' \
++if printf '%s' "$probe_out" | grep 'placement-audit.*probes 127.0.0.1:8000' >/dev/null \
+    && ! REG="$probe_reg" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+    && COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1 \
+    && BIN_DIR="$probe_cmt" COMPOSE_GLOB=none python3 "$IDP/bin/port-gate" >/dev/null 2>&1; then
+@@ -373,7 +373,7 @@ poison="$tmp/poisonhome"; mkdir -p "$poison/.estate/state"
+ printf '{"rows":[{"kind":"listener","port":7107,"bind":"*","process":"node","owner":"poison"}]}\n' \
+   > "$poison/.estate/state/inventory.json"
+ poison_out=$(HOME="$poison" python3 "$IDP/bin/port-gate" --live 2>&1)   # captured: pipefail would report port-gate's status, not grep's
+-if printf '%s' "$poison_out" | grep -q 'poison'; then
++if printf '%s' "$poison_out" | grep 'poison' >/dev/null; then
+   say "FAIL  portlive port-gate --live is reading ~/.estate/state/inventory.json, not the machine"; fail=1
+ else say "ok    portlive port-gate --live reads the machine, not a saved inventory"; fi
+ # Reconcile (crew#186 CP3): a rogue container is a finding, the clean fixture is not.
+@@ -577,7 +577,7 @@ else
+   # non-zero on purpose here, which is the incident guard 1c is about.
+   bdd_bad=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/fixtures/bdd/unbound" -q 2>&1)
+   bdd_good=$("$BDD_PY" -m pytest "$IDP/sovereign/tests/bdd" -q $XD 2>&1); bdd_good_rc=$?
+-  if printf '%s' "$bdd_bad" | grep -q 'StepDefinitionNotFoundError' && [ "$bdd_good_rc" -eq 0 ]; then
++  if printf '%s' "$bdd_bad" | grep 'StepDefinitionNotFoundError' >/dev/null && [ "$bdd_good_rc" -eq 0 ]; then
+     say "ok    bdd      $(printf '%s' "$bdd_good" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$bdd_good" | grep -c '^  pending ') feature(s) pending; an unbound step is refused"
+     printf '%s' "$bdd_good" | grep '^  pending ' | sed 's/^/      /'
+   else
+@@ -637,10 +637,10 @@ if command -v kyverno >/dev/null && command -v helm >/dev/null; then
+   # dir with no changed file cannot render differently from main, where it was judged.
+   kyv_scope="every dir"
+   if [ -n "${IDP_CI_BASE:-}" ] && changed=$(cd "$IDP" && git diff --name-only "$IDP_CI_BASE...HEAD" 2>/dev/null); then
+-    if printf '%s\n' "$changed" | grep -qE '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)'; then
++    if printf '%s\n' "$changed" | grep -E '^(bin/idp-kyverno-render|bin/idp-ci|tests/fixtures/kyverno/|platform/kyverno/|platform/policies/|clusters/)' >/dev/null; then
+       kyv_scope="every dir: the judge, a policy or the cluster wiring changed"
+     else
+-      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep -q "^$d/" && echo "$d"; done)
++      scoped=$(for d in $dirs; do printf '%s\n' "$changed" | grep "^$d/" >/dev/null && echo "$d"; done)
+       kyv_scope="$(printf '%s\n' "$scoped" | grep -c .) of $(printf '%s\n' "$dirs" | grep -c .) dirs changed against $IDP_CI_BASE"
+       dirs="$scoped"
+     fi
+diff --git a/bin/idp-down b/bin/idp-down
+index d9bef5a86..45fe4daa1 100755
+--- a/bin/idp-down
++++ b/bin/idp-down
+@@ -40,7 +40,7 @@ for p in 8443 10000; do
+   # Captured, not piped: this script runs under `set -o pipefail`, so a failing
+   # `tailscale serve status` would decide the branch instead of the match.
+   serve_status=$(tailscale serve status 2>/dev/null || true)
+-  if printf '%s' "$serve_status" | grep -q ":$p"; then
++  if printf '%s' "$serve_status" | grep ":$p" >/dev/null; then
+     tailscale serve --http="$p" off >/dev/null 2>&1 \
+       && echo "  $p: unpublished" \
+       || echo "  $p: could not unpublish -- check 'tailscale serve status'"
+diff --git a/bin/idp-estate-seed b/bin/idp-estate-seed
+index af09f2e70..05c25ab9d 100755
+--- a/bin/idp-estate-seed
++++ b/bin/idp-estate-seed
+@@ -100,7 +100,7 @@ wellformed() { # <generator> <value> -> 0 when the value has the shape the gener
+     hex32)       [[ "$2" =~ ^[0-9a-f]{64}$ ]] ;;
+     urlsafe32)   [[ "$2" =~ ^[A-Za-z0-9_-]{40,}$ ]] ;;
+     sk)          [[ "$2" =~ ^sk-[0-9a-f]{48}$ ]] ;;
+-    rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep -q 'BEGIN PRIVATE KEY' ;;
++    rsa_pem_b64) printf '%s' "$2" | base64 -d 2>/dev/null | grep 'BEGIN PRIVATE KEY' >/dev/null;;
+     const:*)     [ "$2" = "${1#const:}" ] ;;
+     copy:*)      [ "$2" = "$(gen "$1")" ] ;;
+   esac
+diff --git a/bin/idp-kyverno-render b/bin/idp-kyverno-render
+index 7f1ab9262..b767cc6dd 100755
+--- a/bin/idp-kyverno-render
++++ b/bin/idp-kyverno-render
+@@ -180,7 +180,7 @@ judge() {  # judge <label-kind> <label> <resource-file>: one verdict block; exit
+   mapfile -t exc < <(_exc)
+   out=$(kyverno apply "$S/policies.yaml" --resource "$res" "${exc[@]}" 2>&1 || true)
+   summary=$(printf '%s\n' "$out" | grep -E '^pass:' | tail -1)
+-  if printf '%s\n' "$out" | grep -qE '^policy .* failed'; then
++  if printf '%s\n' "$out" | grep -E '^policy .* failed' >/dev/null; then
+     echo "FAIL  $kind $label: $summary"
+     printf '%s\n' "$out" | grep -E '^policy .* failed' | sed 's/^/      /'; return 1
+   else echo "ok    $kind $label: $summary"; fi
+diff --git a/bin/idp-oke-break-glass b/bin/idp-oke-break-glass
+index f169614ea..039d0bdd1 100755
+--- a/bin/idp-oke-break-glass
++++ b/bin/idp-oke-break-glass
+@@ -136,7 +136,7 @@ clickhouse_counts_15m() {
+   # chain. Compute the base64-shape check into a plain variable first, outside any
+   # if/elif/while condition, so no grep -q pipe's exit status ever sits inside one.
+   pw_b64_shaped=0
+-  printf '%s' "$pw" | grep -qE '^[A-Za-z0-9+/]*={0,2}$' && pw_b64_shaped=1
++  printf '%s' "$pw" | grep -E '^[A-Za-z0-9+/]*={0,2}$' >/dev/null && pw_b64_shaped=1
+   if [ -z "$pw" ] || [ $(( ${#pw} % 4 )) -ne 0 ] || [ "$pw_b64_shaped" -eq 0 ]; then
+     echo "clickhouse-auth secret in observability did not decode to a usable password"
+     return 0
+diff --git a/bin/idp-oke-dispatch b/bin/idp-oke-dispatch
+index 108afb1d1..284ce7c43 100755
+--- a/bin/idp-oke-dispatch
++++ b/bin/idp-oke-dispatch
+@@ -19,7 +19,7 @@ REPO_ARGS=(); [ -n "${IDP_REPO:-}" ] && REPO_ARGS=(--repo "$IDP_REPO")
+ if [ "$1" = --check ]; then
+   INPUTS=(-f mode=check)
+ else
+-  "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$1" \
++  "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -x "$1" >/dev/null \
+     || { echo "exit 64: unknown playbook '$1'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
+   INPUTS=(-f mode=break-glass -f "playbook=$1")
+ fi
+diff --git a/bin/idp-oke-rebuild b/bin/idp-oke-rebuild
+index dc3c31b32..919363c5b 100755
+--- a/bin/idp-oke-rebuild
++++ b/bin/idp-oke-rebuild
+@@ -153,7 +153,7 @@ case "$MODE" in
+     # (trap): a failed playbook never leaves the door open. Never from a laptop (crew#345).
+     [ -n "${OCI_CI:-}" ] || { echo "exit 3: --break-glass runs from Actions only (gh workflow run oke-check.yml -f mode=break-glass -f playbook=diagnose)"; exit 3; }
+     PLAYBOOK="${BREAK_GLASS_PLAYBOOK:-diagnose}"
+-    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -qx "$PLAYBOOK" || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
++    "$IDP/bin/idp-oke-break-glass" --list | tr ' ' '\n' | grep -x "$PLAYBOOK" >/dev/null || { echo "exit 64: unknown playbook '$PLAYBOOK'; known: $("$IDP/bin/idp-oke-break-glass" --list)"; exit 64; }
+     ORIG_CIDRS="$OKE_ALLOWED_CIDRS"
+     EGRESS="$(curl -fsS --max-time 10 https://api.ipify.org)"
+     [[ "$EGRESS" =~ ^[0-9.]+$ ]] || { echo "exit 2: could not measure the runner's egress IP"; exit 2; }
+diff --git a/bin/idp-set-root b/bin/idp-set-root
+index 66b576dd9..6acad6601 100755
+--- a/bin/idp-set-root
++++ b/bin/idp-set-root
+@@ -28,7 +28,7 @@ if [ "$P" = all ]; then
+       stripe) need=SEED_STRIPE_SECRET_KEY ;;
+       *) need=SEED_$(printf %s "$p" | tr a-z A-Z)_API_KEY ;;
+     esac
+-    missing=0; for k in $need; do printf '%s\n' "$have" | grep -qx "$k" || missing=1; done
++    missing=0; for k in $need; do printf '%s\n' "$have" | grep -x "$k" >/dev/null || missing=1; done
+     if [ $missing = 0 ]; then echo "ok      $p already set; skipped"; continue; fi
+     n=$((n+1)); echo; echo "=== $p ($n) ==="
+     IDP_NO_DISPATCH=1 "$0" "$p"
+diff --git a/bin/idp-tests-for b/bin/idp-tests-for
+index 4dbf7673a..a603a2384 100755
+--- a/bin/idp-tests-for
++++ b/bin/idp-tests-for
+@@ -34,7 +34,7 @@ trivial() {
+   [ -f "$IDP/$1" ] || return 1
+   git -C "$IDP" ls-files --error-unmatch "$1" >/dev/null 2>&1 || return 1
+   ! { git -C "$IDP" diff -U0 "$base"...HEAD -- "$1"; git -C "$IDP" diff -U0 HEAD -- "$1"; } \
+-      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -qvE '^[+-][[:space:]]*(#|//|--|$)'
++      | grep -E '^[+-]' | grep -vE '^(\+\+\+|---)' | grep -vE '^[+-][[:space:]]*(#|//|--|$)' >/dev/null
+ }
+ if [ "${SKIP_TESTS_ON_TRIVIAL:-1}" = 1 ]; then
+   kept=""; dropped=0
+diff --git a/bin/idp-trace-drill b/bin/idp-trace-drill
+index 3c6224391..bc47f457d 100755
+--- a/bin/idp-trace-drill
++++ b/bin/idp-trace-drill
+@@ -56,7 +56,7 @@ MASTER=$(printf '%s' "$UP" | jq -r '.LITELLM_MASTER_KEY // empty' 2>/dev/null)
+ # On a miss, name the keys the secret does hold (names only, never values; LAW 46)
+ shape() {  # value-free description of a secret payload that did not parse as JSON
+   local b64 dd
+-  b64=$(printf '%s' "$1" | tr -d '\n' | grep -qE '^[A-Za-z0-9+/=]+$' && echo yes || echo no)
++  b64=$(printf '%s' "$1" | tr -d '\n' | grep -E '^[A-Za-z0-9+/=]+$' >/dev/null && echo yes || echo no)
+   dd=$(printf '%s' "$1" | base64 -d 2>/dev/null | jq -e 'type' 2>/dev/null || echo no)
+   printf 'len=%s base64-shaped=%s json-after-second-decode=%s' "${#1}" "$b64" "$dd"
+ }
+diff --git a/bin/idp-up b/bin/idp-up
+index 48f6d95e0..351937745 100755
+--- a/bin/idp-up
++++ b/bin/idp-up
+@@ -63,7 +63,7 @@ if command -v tailscale >/dev/null; then
+   # Captured, not piped: this script runs under `set -o pipefail`, so a failing
+   # `tailscale serve status` would decide the branch instead of the match.
+   serve_status=$(tailscale serve status 2>/dev/null || true)
+-  if printf '%s' "$serve_status" | grep -q ':8443'; then
++  if printf '%s' "$serve_status" | grep ':8443' >/dev/null; then
+     log "publish   8443 already points somewhere -- left alone"
+   else
+     tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+diff --git a/bin/idp-verify-drill b/bin/idp-verify-drill
+index c18c7522f..bc1a6c7f6 100755
+--- a/bin/idp-verify-drill
++++ b/bin/idp-verify-drill
+@@ -95,7 +95,7 @@ else
+       # The exit code is the verdict; the body is only read on failure (idp#447 review: a healthy
+       # node's resourceVersion 12403 must never read as a 403).
+       if ! nodes=$(KUBECONFIG="$kc" kubectl get nodes -o json 2>&1); then
+-        if printf '%s' "$nodes" | grep -qiE 'forbidden|unauthorized|\b(HTTP|status) 40[13]\b'; then
++        if printf '%s' "$nodes" | grep -iE 'forbidden|unauthorized|\b(HTTP|status) 40[13]\b' >/dev/null; then
+           bl kube "API server refused $EXPECT_USER: $(printf '%s' "$nodes" | tail -1 | cut -c1-120) -- IAM 'use clusters' on the compartment plus a ClusterRoleBinding for the user is the gap"
+         else bl kube "kubectl get nodes failed: $(printf '%s' "$nodes" | tail -1 | cut -c1-160)"; fi
+       elif ! read -r k_all k_ready < <(printf '%s' "$nodes" | python3 -c 'import json,sys; d=json.load(sys.stdin)["items"]; print(len(d), sum(1 for n in d for c in n["status"]["conditions"] if c["type"]=="Ready" and c["status"]=="True"))' 2>/dev/null); then
+diff --git a/bin/langfuse-verify b/bin/langfuse-verify
+index 8f09bfdb0..3db933f65 100755
+--- a/bin/langfuse-verify
++++ b/bin/langfuse-verify
+@@ -156,7 +156,7 @@ else
+     fail=1
+   else
+     after=$(printf '%s\n' "$dump" | wc -l | tr -d ' \r')
+-    if printf '%s\n' "$dump" | grep -q "$trace_id"; then
++    if printf '%s\n' "$dump" | grep "$trace_id" >/dev/null; then
+       say "fallback  PASS -- the same trace id is on disk (${before:-0} -> ${after:-0} lines)"
+     else
+       say "FAIL      fallback accepted the span but the trace id is not in"
+diff --git a/bin/pr-report b/bin/pr-report
+index f96dbad1c..696431c13 100755
+--- a/bin/pr-report
++++ b/bin/pr-report
+@@ -76,7 +76,7 @@ tenet_rules=$(python3 -c "import yaml,sys; print(' '.join(r['pr_rule'] for r in
+ tenets=0; fired=0
+ for r in $tenet_rules; do
+   [ "$r" = "no_static_secret_in_diff" ] && r=no_secret_added
+-  tenets=$((tenets+1)); printf '%s\n' "$out" | grep -q "rule=$r " && fired=$((fired+1))
++  tenets=$((tenets+1)); printf '%s\n' "$out" | grep "rule=$r " >/dev/null && fired=$((fired+1))
+ done
+ score=$((tenets-fired))
+ if [ "$tenets" -gt 0 ]; then
+diff --git a/bin/repo-rulesets b/bin/repo-rulesets
+index b88efd042..968578f48 100755
+--- a/bin/repo-rulesets
++++ b/bin/repo-rulesets
+@@ -36,7 +36,7 @@ apply_spec() {
+ }
+ jobs_on_main() {  # true when the caller workflow, or a ci.yml carrying both jobs, is on the default branch
+   gh api "/repos/$OWNER/$1/contents/.github/workflows/security-scan.yml" -q .sha >/dev/null 2>&1 && return 0
+-  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep -q '^  spec-gate:'
++  gh api "/repos/$OWNER/$1/contents/.github/workflows/ci.yml" -q .content 2>/dev/null | base64 -d 2>/dev/null | grep '^  spec-gate:' >/dev/null
+ }
+ # crew#586 CP5: under GitHub's "first_time_contributors" policy every pull request opened by
+ # github-actions (bot/conscience-page, state/live-diagram, flux/image-updates) sits in
+diff --git a/bin/spec-gate b/bin/spec-gate
+index 09e90f6ad..600f9ba41 100755
+--- a/bin/spec-gate
++++ b/bin/spec-gate
+@@ -34,7 +34,7 @@ specs="$(printf '%s\n' "$changed" | grep -E "$spec_re" || true)"
+ # the file is prose, not execution: tests/test_cp1_estate_inventory.py named
+ # cp1_inventory_tool.feature for a week while no scenario in it ever ran (crew#297).
+ tests_list="$(git ls-files | grep -E "$spec_re" | grep -v '\.feature$' || true)"
+-bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lE -e "scenarios?\(\s*[\"'][^\"']*$(basename "$1")[\"']" -- 2>/dev/null | grep -q .; }
++bound() { [ -n "$tests_list" ] && printf '%s\n' "$tests_list" | xargs grep -lE -e "scenarios?\(\s*[\"'][^\"']*$(basename "$1")[\"']" -- 2>/dev/null | grep . >/dev/null; }
+ unbound_changed=""; new_unbound=""
+ for f in $(printf '%s\n' "$specs" | grep -E '(^|/)features/.*\.feature$' || true); do
+   git cat-file -e "HEAD:$f" 2>/dev/null || continue   # deleted
+diff --git a/tests/test_incident_kyverno_judge_read_41_failed_policies_as_ok.py b/tests/test_incident_kyverno_judge_read_41_failed_policies_as_ok.py
+new file mode 100644
+index 000000000..3f1c153a7
+--- /dev/null
++++ b/tests/test_incident_kyverno_judge_read_41_failed_policies_as_ok.py
+@@ -0,0 +1,94 @@
++"""2026-08-29: main went red on the kyverno rung (run 33248103977) with `the must-fail fixture
++passed; the judge admits an unpatched chart`, while the same commit's PR run was green. The
++judge in bin/idp-kyverno-render did `printf '%s\n' "$out" | grep -qE '^policy .* failed'` under
++`set -o pipefail`. `grep -q` exits on the first match; printf, still writing the rest of a
++kyverno report, takes SIGPIPE; pipefail hands the pipeline printf's 141, and `if` reads a
++41-fail render as "ok". Whether it bites depends on how much output sits behind the first
++match, so it flipped run to run: silent green, the defect class.
++
++Two fences: the judge shape reproduced with a stub kyverno whose report is larger than a pipe
++buffer, and a sweep that refuses `| grep -q` anywhere under bin/ (grep without -q reads all of
++its input, so the writer never sees SIGPIPE).
++
++Measured on the Mac with the real script and the fixture (2026-08-29): the `grep -q` pipeline
++inside the script exits 141 while the fixed judge on the same `$out` prints FAIL. A process
++tree that starts with SIGPIPE ignored (some agent harnesses do) turns 141 into a caught EPIPE,
++so the first test below is the CI-runner truth; the sweep is the fence that holds everywhere.
++"""
++
++import os
++import re
++import stat
++import subprocess
++from pathlib import Path
++
++import pytest
++
++IDP = Path(__file__).resolve().parents[1]
++RENDER = IDP / "bin" / "idp-kyverno-render"
++PIPED_GREP_Q = re.compile(r"\|\s*grep\s+-q")
++
++
++def _judge_source() -> str:
++    src = RENDER.read_text()
++    start = src.index("judge() {")
++    end = src.index("\n}\n", start) + 3
++    return src[start:end]
++
++
++@pytest.fixture
++def stub_kyverno(tmp_path: Path) -> Path:
++    """A kyverno whose report puts the failed line first and 400 KB of detail after it."""
++    b = tmp_path / "bin"
++    b.mkdir()
++    k = b / "kyverno"
++    k.write_text(
++        "#!/bin/sh\n"
++        "echo 'policy require-ro-rootfs -> resource ns/Deployment/x failed:'\n"
++        "i=0; while [ $i -lt 6000 ]; do echo '1 - autogen-validate-readOnlyRootFilesystem validation error: Root filesystem must be read-only.'; i=$((i+1)); done\n"
++        "echo 'pass: 185, fail: 41, warn: 0, error: 0, skip: 21'\n"
++    )
++    k.chmod(k.stat().st_mode | stat.S_IEXEC)
++    (tmp_path / "policies.yaml").write_text("")
++    (tmp_path / "res.yaml").write_text("")
++    return tmp_path
++
++
++def test_judge_grades_a_failed_render_fail_even_when_the_report_is_larger_than_a_pipe(
++    stub_kyverno,
++):
++    script = (
++        "set -euo pipefail\n"
++        f'S="{stub_kyverno}"\n'
++        "_exc() { :; }\n" + _judge_source() + 'judge "render  " x "$S/res.yaml"\n'
++    )
++    r = subprocess.run(
++        ["bash", "-c", script],
++        capture_output=True,
++        text=True,
++        env={**os.environ, "PATH": f"{stub_kyverno / 'bin'}:{os.environ['PATH']}"},
++    )
++    assert r.returncode == 1, r.stdout + r.stderr
++    assert r.stdout.startswith("FAIL  render"), r.stdout[:200]
++
++
++def test_no_script_under_bin_pipes_into_grep_q():
++    offenders = []
++    for p in sorted((IDP / "bin").iterdir()):
++        if not p.is_file():
++            continue
++        try:
++            head = p.open("rb").read(64)
++        except OSError:
++            continue
++        if b"sh" not in head.split(b"\n")[0]:
++            continue
++        for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
++            if line.lstrip().startswith("#"):
++                continue
++            if PIPED_GREP_Q.search(line):
++                offenders.append(f"{p.relative_to(IDP)}:{n}")
++    assert not offenders, (
++        "`| grep -q` under pipefail reads green on SIGPIPE; use `grep ... >/dev/null`: "
++        + ", ".join(offenders)
++    )

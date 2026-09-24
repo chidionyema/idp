@@ -1,0 +1,10 @@
+# Read-only policy for the factory runtime.
+path "secret/data/telegram/*"  { capabilities = ["read"] }
+path "secret/data/twilio/*"    { capabilities = ["read"] }
+path "secret/data/slack/*"     { capabilities = ["read"] }
+path "secret/data/notion/*"    { capabilities = ["read"] }
+path "secret/data/linear/*"    { capabilities = ["read"] }
+path "secret/data/stripe/*"    { capabilities = ["read"] }
+path "secret/data/github/*"    { capabilities = ["read"] }
+path "secret/data/llm/*"       { capabilities = ["read"] }
+path "*" { capabilities = ["deny"] }

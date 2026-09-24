@@ -1,0 +1,6 @@
+bin/catalog-render
+docs/demo/catalog-render.md
+docs/onboarding/catalog-render.md
+features/gates/estate_gates.feature
+mkdocs.yml
+scheduler/schedule.yml

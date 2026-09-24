@@ -19,7 +19,26 @@
 set -uo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-VENV="${VOICE_VENV:-/tmp/voice-env}"
+# RESOLVE PYTHON 3.12, WITH A FALLBACK. The voice models (kokoro-onnx 0.6.1, jsonschema 4.26.0)
+# live in Python 3.12 site-packages (docs/tickets/2026-09-23-host-provisioning-drift-metric.md),
+# and faster-whisper 1.2.1 needs >=3.10. This machine's system `python3` is 3.9.6 (macOS), which
+# CANNOT import them -- so every voice run against `python3` failed with ModuleNotFoundError, a
+# fault that reads as "voice is broken" when the truth is "the wrong interpreter was chosen".
+# Prefer 3.12 when present, fall back to 3.11/3.13, and only then the bare python3.
+PY="${VOICE_PYTHON:-}"
+if [ -z "$PY" ]; then
+	for cand in python3.12 python3.13 python3.11 python3; do
+		if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+	done
+fi
+# PERSISTENT, not /tmp: macOS wipes /tmp/voice-env on reboot, so the loop silently broke on every
+# boot while the models and the router key looked fine -- the exact "silent no-op" the estate
+# forbids. The venv lives beside the checkout (survives reboot), and VOICE_VENV still overrides.
+VENV="${VOICE_VENV:-$IDP/.voice-venv}"
+# The venv must be built by the SAME interpreter that will run it (LAW 46: no silent mismatch).
+if [ ! -x "$VENV/bin/python" ]; then
+	"$PY" -m venv "$VENV" || { echo "venv creation failed with $PY" >&2; exit 1; }
+fi
 PORT=8770
 MODE=start
 

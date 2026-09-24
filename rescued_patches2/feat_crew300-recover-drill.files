@@ -1,0 +1,11 @@
+.github/workflows/recover-drill.yml
+bin/idp-github-app
+bin/idp-recover-drill
+bin/idp-verify-drill
+docs/how-to/check-the-cluster-from-github.md
+docs/prose/recovery-clean-machine-live.feature
+drills/catalogue.yaml
+platform/github-app/lanes.json
+tests/test_incident_crew300_recover_drill_runs_on_a_clean_runner.py
+tests/test_incident_crew516_verify_drill_cluster_row_tolerates_resize.py
+tests/test_incident_crew66_cp5d_cluster_noun.py

@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import time
 
@@ -23,6 +24,8 @@ WORKER_DIR = REPO_ROOT / "bin" / "rca_worker"
 
 def test_go_proxy_compiles() -> None:
     """Primitive A: the Go interception sidecar builds cleanly."""
+    if not shutil.which("go"):
+        pytest.skip("BLIND: go toolchain not installed")
     result = subprocess.run(
         ["go", "build", "-o", "/tmp/via-negativa-proxy-test", "."],  # noqa: S108 - fixed path shared with test_go_proxy_returns_422_on_banned_tool below
         cwd=str(PROXY_DIR),

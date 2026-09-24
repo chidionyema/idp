@@ -1,0 +1,710 @@
+diff --git a/clusters/oke/estate-config.yaml b/clusters/oke/estate-config.yaml
+index 6834cf2c2..6c3125019 100644
+--- a/clusters/oke/estate-config.yaml
++++ b/clusters/oke/estate-config.yaml
+@@ -26,6 +26,11 @@ data:
+   # recompile: every compiled workload follows, the agents never notice.
+   ESTATE_REGISTRY: "ghcr.io/chidionyema"
+   ESTATE_STORAGE_PROVIDER: "oci"
++  # decision 0026 step 2: the Crossplane OCI provider needs the region twice -- in the
++  # resource-principal environment (platform/crossplane/providers/runtime.yaml) and in the
++  # ProviderConfig credential blob (providerconfig.yaml). One value, here, substituted by
++  # Flux postBuild. Matches the region in platform/oci/terraform.tfvars.
++  ESTATE_OCI_REGION: "uk-london-1"
+   # Founder 2026-09-02: "estate dna is missing email address, basically core company info that
+   # can change". The estate's contact address — ACME/cert contact, catalog owner mail, anywhere a
+   # surface needs "who runs this" — is referenced as ${ESTATE_EMAIL}, never a literal. Same rule
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index 3520ca971..056761ed8 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -775,6 +775,61 @@ spec:
+       name: keda-add-ons-http
+       namespace: keda
+ ---
++# Decision 0026 step 2: Crossplane's control plane. The core chart only -- no provider, no
++# ProviderConfig -- so a chart failure cannot take the providers with it, and so the providers
++# can wait on the CRDs this row installs (pkg.crossplane.io/v1) rather than racing them.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: crossplane
++  namespace: flux-system
++spec:
++  interval: 10m
++  dependsOn:
++    - name: scheduling
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/crossplane
++  prune: true
++  wait: true
++  timeout: 15m
++  healthChecks:
++    - apiVersion: helm.toolkit.fluxcd.io/v2
++      kind: HelmRelease
++      name: crossplane
++      namespace: crossplane-system
++---
++# Decision 0026 step 2, second half: the OCI provider, its runtime config and the ProviderConfig
++# that names OKE Workload Identity. Separate from the row above because Provider is a CRD the
++# chart installs -- this path cannot even be validated until crossplane has reconciled, which is
++# what dependsOn buys. No health check on the Provider: a Provider becomes Healthy only after it
++# has pulled and unpacked its package, which on a cold node is minutes, and a Kustomization that
++# waits on it would hold the whole reconcile. The wall is bin/idp-ci and the drill, not a timeout.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: crossplane-providers
++  namespace: flux-system
++spec:
++  interval: 10m
++  dependsOn:
++    - name: crossplane
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/crossplane/providers
++  prune: true
++  wait: false
++  timeout: 15m
++  postBuild:
++    substituteFrom:
++      # ${ESTATE_OCI_REGION}: the provider reads it twice (resource-principal env, credential
++      # blob). Not optional -- a missing ConfigMap must fail the row rather than hand the
++      # provider the literal string '${ESTATE_OCI_REGION}' as a region.
++      - kind: ConfigMap
++        name: estate-config
++---
+ # crew#516 CP5 slice 1: the science lane's facts counted in the collector's backend, from inside
+ # the cluster (platform/science/science-facts.yaml). Reader: bin/idp-science-facts.
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+diff --git a/docs/decisions/0007-bootstrap-deps-on-crossplane.md b/docs/decisions/0007-bootstrap-deps-on-crossplane.md
+new file mode 100644
+index 000000000..25fd24dc9
+--- /dev/null
++++ b/docs/decisions/0007-bootstrap-deps-on-crossplane.md
+@@ -0,0 +1,120 @@
++# 0007. Bootstrap depends on the OpenTofu half of decision 0026, not on the Crossplane operator
++
++2026-09-08. The bootstrap path (`bin/idp-bootstrap-estate`, the cloud workflow at
++`.github/workflows/estate-bootstrap.yml`, the Backstage scaffolder tile at
++`backstage/templates/estate-bootstrap-preflight/`) was built on the assumption that the OCI half
++of bootstrap crosses a trust boundary the runner already crosses via OIDC
++(`gtrevorrow/oci-token-exchange-action@v2`, the same identity path `vault-reads.yml` uses,
++crew#584). The four vendor halves (Tailscale, Cloudflare, GitHub App, vendor SaaS) cross separate
++trust boundaries and require either operator SSO or a long-lived service principal.
++
++Decision 0026 changed the picture. This record states where bootstrap fits in 0026's split, what
++stays the same, what changes when 0026 step 3 (Claim emitter) lands, and the empirical-proof gap
++that PR #2461 names — the same gap the bootstrap live job inherits.
++
++## What 0026 actually says, as it applies to bootstrap
++
++0026's table names six irreducible bootstrap resources and the answer to each is "Crossplane
++cannot own this, because the cluster does not exist yet." Four of those six are the vault's
++identity surface, which is exactly the surface the bootstrap orchestrator writes into:
++
++| 0026 resource | file | bootstrap's relationship |
++|---|---|---|
++| the `oke` module | `main.tf` | bootstrap does not touch it; the cluster is its precondition |
++| `oci_identity_policy.operators_compartment` | `iam.tf` | bootstrap does not touch it; it is the compartment grant everything hangs off |
++| `oci_kms_vault.estate` | `vault.tf` | bootstrap writes VALUES into this vault, never creates it |
++| `oci_kms_key.estate` | `vault.tf` | same |
++| `oci_identity_dynamic_group.workers` | `vault.tf` | bootstrap reads the dynamic group identity to prove it; never creates it |
++| `oci_identity_policy.workers_read_secrets` | `vault.tf` | bootstrap assumes this IAM grant exists; the founder's one-time grant is documented at `docs/operations/estate-bootstrap-cloud.md` |
++
++The orchestrator `bin/idp-bootstrap-estate` does not CREATE any of these six resources. It mints
++values that go INTO the four vault ones, via `bin/idp-vault-put --merge` (R52). It stays in the
++right lane under 0026.
++
++The four Day-2 candidate files named in 0026 (`langfuse.tf`, `flux-webhook.tf`,
++`healthchecks.tf`, `otlp-ingest.tf`, `bridge.tf`, `commerce.tf`, `signoz.tf`, `superset.tf`) hold
++38 application resources. Bootstrap does not touch them either — they are workload secrets, not
++estate credentials. The migration of those 38 off OpenTofu onto Crossplane Claims is 0026 step 4,
++decided by measurement, not asserted here.
++
++## What stays the same
++
++- `bin/idp-bootstrap-estate` runs `bin/idp-estate-seed`, `bin/idp-bootstrap-tailscale`,
++  `bin/idp-bootstrap-cloudflare`, `bin/idp-bootstrap-vendors`, `bin/idp-github-app` installation
++  + refresh, ending with `bin/idp-root-trust --check`.
++- The typed register `docs/reference/policy/root-trust.md` (R45) names every credential, its
++  birth path, and its bootstrapper. Nothing in 0026 changes that. The vocabulary has no estate
++  name; the bootstrapper reference is the only field the orchestrator reads.
++- The OIDC identity path (`gtrevorrow/oci-token-exchange-action@v2`) is unchanged.
++- `bin/idp-vault-put --merge` (R52) is unchanged.
++
++## What changes when 0026 step 3 (Claim emitter in `compile_storage()`) lands
++
++The four vendor halves become Day-2 candidates under 0026's split-brain rule. The orchestrator
++does not change; what changes is the writer behind the vault.
++
++- **Tailscale.** `bin/idp-bootstrap-tailscale` currently writes a Tailscale API key as a vault
++  secret via `bin/idp-vault-put`. Under step 3, the same intent could emit a Crossplane Claim for
++  a Tailscale OAuth client instead, and the runner exchanges its OIDC token for a Tailscale
++  session at run time (RFC 7523 jwt-bearer, 5-minute TTL, no stored credential).
++- **Cloudflare.** Same shape: a Crossplane Claim for a Cloudflare scoped API token via
++  Cloudflare Access OIDC. The runner reads the scope from the intent, mints via OIDC, writes
++  to the vault, never holds the long-lived key.
++- **GitHub App.** GitHub Apps already use JWT exchange (App ID + private key → installation
++  token). The private key lives in OCI Vault (Crossplane Claim, not a Terraform resource, after
++  step 3). The runner constructs the JWT from the OIDC identity and exchanges for an
++  installation token. No human login.
++- **Vendor SaaS long tail.** Three sub-cases: vendors with OIDC get direct exchange; vendors
++  without get Playwright-in-sandbox with the founder doing MFA on their phone; the rest get a
++  quarterly-rotated long-lived key in OCI Vault, rotated by a cron the runner owns.
++
++The split-brain guard (`bin/idp-split-brain`, shipped 2026-09-07 in #2449) enforces "one
++target, one owner" across both writers. Bootstrap does not grow its own guard.
++
++## The empirical-proof gap is the same one PR #2461 names
++
++PR #2461's summary states the gap explicitly: "Whether the workload-identity exchange actually
++works is read off the provider pod's logs after this merges and tofu applies the policy, not
++asserted here." The bootstrap live job has the same shape: synthetic CI gates are not proof;
++proof is the runner pod successfully authenticating to OCI, writing a value via
++`bin/idp-vault-put`, and `bin/idp-root-trust --check` exiting 0 on a real change.
++
++The empirical-proof rule (founder 2026-09-05) is binding: no system is WORKING or MEASURED_OK
++based on synthetic probes. The bootstrap live job's first real run, on real cluster traffic,
++with a real vault write, is the empirical proof. Until that run lands, the live job is
++UNVERIFIED — not because the code is wrong, but because synthetic gates lie.
++
++## What this turn ships
++
++Branch `feat/estate-autobot-surface`, commits `06066c01` and `bdf71872`.
++
++- `bin/idp-vault-put` usage check fix (no `$1: unbound variable` on missing arg; exits 2 with
++  usage).
++- `.github/workflows/estate-bootstrap-preflight.yml` — file-only CI gate; runs
++  `bin/idp-root-trust --check` on every PR that touches bootstrap-relevant paths.
++- `backstage/templates/estate-bootstrap-preflight/` — scaffolder tile; opens a PR with a
++  runbook script under `bin/estate-preflight.d/` that the operator runs on their laptop.
++- `.github/workflows/estate-bootstrap.yml` — `workflow_dispatch` + `workflow_call` cloud
++  workflow. Two jobs: preflight (read-only, no OCI write needed) and live (scope=estate-seed
++  only; refuses vendor scopes on purpose with a clear pointer at the runbook).
++- `docs/operations/estate-bootstrap-cloud.md` — the operator-facing doc.
++
++## What this turn does NOT ship
++
++- The post-consent callback that would let `mode=live` finish without a laptop (the honest
++  constraint: the runner owns no callback URL the OAuth2 flow can redirect to).
++- The four vendor WIF wirings (Tailscale, Cloudflare, GitHub App, vendor SaaS). Each is a
++  separate decision-and-build turn; the order is 0026 step 3 (Claim emitter) → step 4 (one
++  workload migrated).
++- The IAM grant that lets the federated GitHub Actions principal write to the OCI vault.
++  One-line founder action, documented in `docs/operations/estate-bootstrap-cloud.md`.
++
++## Open items, named
++
++- **Capacity is the precondition, not architecture** (0026, §"What actually blocks it"): the
++  cluster is misdeclared, 49% of CPU is reserved but idle, three pods in `observability` need
++  right-sizing. That is its own session's lane, named here so it is not forgotten.
++- **The pre-existing 10 MISS rows** in `docs/reference/policy/root-trust.md`
++  (`commerce-payment-provider`, `cyrus-linear`, `cyrus-linear-api-token`, `DEEPSEEK_API_KEY`,
++  `TELEGRAM_ALERTS_BOT_TOKEN`, `otto-staging-telegram`, etc.). The preflight gate refuses this
++  PR for those rows; they are a founder action (drop, rotate, or assign a bootstrapper).
+diff --git a/docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md b/docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md
+index fb5f85123..3fedcff21 100644
+--- a/docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md
++++ b/docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md
+@@ -166,8 +166,14 @@ claimed here.
+ 
+ 1. The `rules.yaml` split-brain row and its two fixtures, before any operator is installed. The
+    guard predates the thing it guards.
++   **Shipped 2026-09-07:** `bin/idp-split-brain`, the `rules.yaml` row and both fixtures (#2449).
+ 2. Crossplane core plus `provider-family-oci` with only the sub-providers the first move needs,
+    under Flux, with Workload Identity and no stored credential.
++   **Shipped 2026-09-08:** `platform/crossplane/` (chart 2.4.0, the family provider and
++   `provider-oci-objectstorage` v1.3.0, a `DeploymentRuntimeConfig` pinning the service account
++   name, and a `ProviderConfig` whose credential blob is two keys and no key material),
++   `platform/oci/crossplane.tf` (the IAM statement that is the entire boundary), and the two
++   `Kustomization` rows in `clusters/oke/platform.yaml`. `ESTATE_OCI_REGION` joins the DNA.
+ 3. The Claim emitter branch in `compile_storage()`, behind `ESTATE_STORAGE_PROVIDER`.
+ 4. One workload's secrets moved off OpenTofu, with the `random_password` and `oci_vault_secret`
+    resources deleted in the same pull request — never both sides, per the guard above. The
+diff --git a/platform/crossplane/helm.yaml b/platform/crossplane/helm.yaml
+new file mode 100644
+index 000000000..d818acfa4
+--- /dev/null
++++ b/platform/crossplane/helm.yaml
+@@ -0,0 +1,69 @@
++# Crossplane core: the day-2 control loop of decision 0026. OpenTofu owns the ground the cluster
++# stands on and keeps owning it; Crossplane owns what the cluster asks for afterwards, and the
++# difference between them is drift correction. A bucket OpenTofu created is correct until someone
++# changes it in the console, and nobody finds out until the next plan; a bucket Crossplane owns is
++# put back at the reconcile interval. bin/idp-split-brain is the guard that keeps exactly one of
++# them owning any given object, and it shipped before this did, on purpose.
++apiVersion: source.toolkit.fluxcd.io/v1
++kind: HelmRepository
++metadata:
++  name: crossplane
++  namespace: crossplane-system
++spec:
++  interval: 24h
++  url: https://charts.crossplane.io/stable
++---
++apiVersion: helm.toolkit.fluxcd.io/v2
++kind: HelmRelease
++metadata:
++  name: crossplane
++  namespace: crossplane-system
++spec:
++  interval: 10m
++  timeout: 10m
++  chart:
++    spec:
++      chart: crossplane
++      version: 2.4.0
++      sourceRef:
++        kind: HelmRepository
++        name: crossplane
++  install:
++    remediation: { retries: 3 }
++  upgrade:
++    remediation: { retries: 3 }
++  values:
++    # One replica. This is a control loop over a handful of objects, not a data path, and the
++    # estate's two nodes are at 89% of allocatable CPU requests; a second replica buys an
++    # availability property nothing here needs and costs a node's remaining headroom.
++    replicas: 1
++    resourcesCrossplane:
++      requests: { cpu: 50m, memory: 256Mi }
++      limits: { cpu: 500m, memory: 512Mi }
++    resourcesRBACManager:
++      requests: { cpu: 25m, memory: 128Mi }
++      limits: { cpu: 250m, memory: 256Mi }
++    metrics:
++      enabled: true
++    securityContextCrossplane:
++      runAsNonRoot: true
++      runAsUser: 65532
++      runAsGroup: 65532
++      allowPrivilegeEscalation: false
++      readOnlyRootFilesystem: true
++      # The namespace enforces the restricted pod-security profile, which wants these two named
++      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
++      # what lands on the container (verified by helm template against chart 2.4.0).
++      capabilities: { drop: [ALL] }
++      seccompProfile: { type: RuntimeDefault }
++    securityContextRBACManager:
++      runAsNonRoot: true
++      runAsUser: 65532
++      runAsGroup: 65532
++      allowPrivilegeEscalation: false
++      readOnlyRootFilesystem: true
++      # The namespace enforces the restricted pod-security profile, which wants these two named
++      # and not merely defaulted; the chart renders this map wholesale, so what is written here is
++      # what lands on the container (verified by helm template against chart 2.4.0).
++      capabilities: { drop: [ALL] }
++      seccompProfile: { type: RuntimeDefault }
+diff --git a/platform/crossplane/kustomization.yaml b/platform/crossplane/kustomization.yaml
+new file mode 100644
+index 000000000..87a855a8a
+--- /dev/null
++++ b/platform/crossplane/kustomization.yaml
+@@ -0,0 +1,5 @@
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++resources:
++  - namespace.yaml
++  - helm.yaml
+diff --git a/platform/crossplane/namespace.yaml b/platform/crossplane/namespace.yaml
+new file mode 100644
+index 000000000..43e872700
+--- /dev/null
++++ b/platform/crossplane/namespace.yaml
+@@ -0,0 +1,16 @@
++# Crossplane's own namespace. The chart and the provider documentation both assume
++# crossplane-system by name -- the ProviderConfig's secretRef names it, and so does every OCI IAM
++# policy statement that grants this cluster's workload identity anything. Renaming it would mean
++# rewriting a policy that lives in OpenTofu, so it keeps the name the ecosystem expects.
++apiVersion: v1
++kind: Namespace
++metadata:
++  name: crossplane-system
++  labels:
++    app.kubernetes.io/part-of: idp
++    # The provider pods run the upstream package image; `restricted` is what the estate enforces
++    # everywhere else and the packages are built to satisfy it.
++    pod-security.kubernetes.io/enforce: restricted
++    pod-security.kubernetes.io/enforce-version: latest
++  annotations:
++    kustomize.toolkit.fluxcd.io/prune: disabled
+diff --git a/platform/crossplane/providers/kustomization.yaml b/platform/crossplane/providers/kustomization.yaml
+new file mode 100644
+index 000000000..a6d674396
+--- /dev/null
++++ b/platform/crossplane/providers/kustomization.yaml
+@@ -0,0 +1,6 @@
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++resources:
++  - runtime.yaml
++  - providers.yaml
++  - providerconfig.yaml
+diff --git a/platform/crossplane/providers/providerconfig.yaml b/platform/crossplane/providers/providerconfig.yaml
+new file mode 100644
+index 000000000..f691ff349
+--- /dev/null
++++ b/platform/crossplane/providers/providerconfig.yaml
+@@ -0,0 +1,30 @@
++# This Secret holds no secret. Under Workload Identity the credentials blob is a two-key statement
++# of which authentication mode to use and where the tenancy is; the identity itself arrives from
++# the kubelet as a projected token the provider exchanges with OCI IAM. It is in git because it is
++# configuration, and bin/static-secret-gate is right to scan for the case where it is not: if this
++# file ever grows a private_key, a fingerprint or a user_ocid, the authentication mode has silently
++# changed back to API keys and the estate has a static credential on disk again.
++apiVersion: v1
++kind: Secret
++metadata:
++  name: oci-creds
++  namespace: crossplane-system
++type: Opaque
++stringData:
++  credentials: |
++    {
++      "auth": "OKEWorkloadIdentity",
++      "region": "${ESTATE_OCI_REGION}"
++    }
++---
++apiVersion: oci.upbound.io/v1beta1
++kind: ProviderConfig
++metadata:
++  name: default
++spec:
++  credentials:
++    source: Secret
++    secretRef:
++      name: oci-creds
++      namespace: crossplane-system
++      key: credentials
+diff --git a/platform/crossplane/providers/providers.yaml b/platform/crossplane/providers/providers.yaml
+new file mode 100644
+index 000000000..102363ebd
+--- /dev/null
++++ b/platform/crossplane/providers/providers.yaml
+@@ -0,0 +1,30 @@
++# The family provider is first and the order is not cosmetic. Oracle's own quickstart: "Always
++# install the family provider first ... Installing sub-provider first creates a missing dependency
++# issue, which the crossplane package-manager always resolves by pulling latest family provider
++# image" -- which is to say, install them the other way round and the pinned version in this file
++# stops being the version that runs. Flux applies a Kustomization's objects in one pass, so the
++# ordering that matters is dependency ordering, and the family provider is what the sub-provider
++# depends on. The name oracle-provider-family-oci is required, not chosen: crossplane resolves the
++# package image from (organization)-(provider-name).
++apiVersion: pkg.crossplane.io/v1
++kind: Provider
++metadata:
++  name: oracle-provider-family-oci
++spec:
++  package: ghcr.io/oracle/provider-family-oci:v1.3.0
++  runtimeConfigRef:
++    name: oci-workload-identity
++---
++# One sub-provider, deliberately. A Crossplane provider installs the CRDs for everything it can
++# manage, and the OCI family covers most of the console; installing the ones nothing asks for
++# would put hundreds of unused CRDs in the API server and widen what a compromised control plane
++# could reach. Object storage is what decision 0026's step 3 emits, so object storage is what is
++# installed. The next capability adds the next sub-provider, in the pull request that needs it.
++apiVersion: pkg.crossplane.io/v1
++kind: Provider
++metadata:
++  name: provider-oci-objectstorage
++spec:
++  package: ghcr.io/oracle/provider-oci-objectstorage:v1.3.0
++  runtimeConfigRef:
++    name: oci-workload-identity
+diff --git a/platform/crossplane/providers/runtime.yaml b/platform/crossplane/providers/runtime.yaml
+new file mode 100644
+index 000000000..39cb670a5
+--- /dev/null
++++ b/platform/crossplane/providers/runtime.yaml
+@@ -0,0 +1,46 @@
++# How the provider proves who it is, and the reason nothing here is a credential.
++#
++# OKE Workload Identity: the pod presents its own service account to OCI IAM, and an IAM policy
++# names that exact cluster, namespace and service account as the thing allowed to act. There is no
++# key to mint, none to store, none to rotate, and none that keeps working if it leaks -- a token
++# minted this way is worthless off this cluster. That is R52 read literally: one root per provider,
++# set once, and code mints the rest.
++#
++# serviceAccountTemplate is the load-bearing line. Crossplane names a provider's service account
++# after the package by default, with a hash, and an IAM policy cannot match a name that changes.
++# Pinning it makes the policy in platform/oci/crossplane.tf a statement about a name that will
++# still be true after the next package upgrade.
++apiVersion: pkg.crossplane.io/v1beta1
++kind: DeploymentRuntimeConfig
++metadata:
++  name: oci-workload-identity
++spec:
++  serviceAccountTemplate:
++    metadata:
++      name: crossplane-provider-oci
++  deploymentTemplate:
++    spec:
++      selector: {}
++      template:
++        spec:
++          # The provider pods land in the same restricted namespace as the core chart. Crossplane
++          # gives a provider deployment a sane default securityContext, but not a seccomp profile,
++          # and a default the upstream can change is not a fence -- so it is stated here.
++          securityContext:
++            runAsNonRoot: true
++            runAsUser: 65532
++            runAsGroup: 65532
++            seccompProfile: { type: RuntimeDefault }
++          containers:
++            - name: package-runtime
++              securityContext:
++                allowPrivilegeEscalation: false
++                readOnlyRootFilesystem: true
++                capabilities: { drop: [ALL] }
++              env:
++                - { name: OCI_RESOURCE_PRINCIPAL_VERSION, value: "2.2" }
++                - { name: OCI_RESOURCE_PRINCIPAL_REGION, value: "${ESTATE_OCI_REGION}" }
++                - { name: OCI_RESOURCE_PRINCIPAL_WORKLOAD_IDENTITY, value: "1" }
++              resources:
++                requests: { cpu: 50m, memory: 128Mi }
++                limits: { cpu: 500m, memory: 512Mi }
+diff --git a/platform/ns-fences/allowances.yaml b/platform/ns-fences/allowances.yaml
+index 854586410..284125920 100644
+--- a/platform/ns-fences/allowances.yaml
++++ b/platform/ns-fences/allowances.yaml
+@@ -189,6 +189,12 @@ flows:
+   agent-workforce:
+     egress: [observability, llm]
+     egress_internet: [443]
++  # decision 0026 step 2. The provider pods talk to the OCI control plane over 443 and
++  # nothing else; the collector hop is the usual one. Not rendered until the namespace is
++  # on the cluster (idp-ns-fence-gen defers what live-namespaces.txt does not hold).
++  crossplane-system:
++    egress: [observability]
++    egress_internet: [443]
+   keda:
+     egress: [observability]
+   llm:
+diff --git a/platform/ns-fences/crossplane-system.yaml b/platform/ns-fences/crossplane-system.yaml
+new file mode 100644
+index 000000000..b93e7be2d
+--- /dev/null
++++ b/platform/ns-fences/crossplane-system.yaml
+@@ -0,0 +1,24 @@
++# Generated by bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml (crew#839).
++# Do not edit: the next run overwrites this file. Change the input and re-run.
++apiVersion: v1
++kind: LimitRange
++metadata:
++  name: ns-defaults
++  namespace: crossplane-system
++spec:
++  limits:
++  - type: Container
++    defaultRequest:
++      cpu: 25m
++      memory: 64Mi
++---
++apiVersion: v1
++kind: ResourceQuota
++metadata:
++  name: ns-ceiling
++  namespace: crossplane-system
++spec:
++  hard:
++    requests.cpu: 500m
++    requests.memory: 1024Mi
++    pods: '10'
+diff --git a/platform/ns-fences/kustomization.yaml b/platform/ns-fences/kustomization.yaml
+index 89cbc3fec..19be8b16c 100644
+--- a/platform/ns-fences/kustomization.yaml
++++ b/platform/ns-fences/kustomization.yaml
+@@ -10,6 +10,7 @@ resources:
+ - cert-manager.yaml
+ - chaos-mesh.yaml
+ - commerce.yaml
++- crossplane-system.yaml
+ - dagster.yaml
+ - demo-sandbox.yaml
+ - edge.yaml
+diff --git a/platform/ns-fences/live-namespaces.txt b/platform/ns-fences/live-namespaces.txt
+index 9547a138f..c842504cc 100644
+--- a/platform/ns-fences/live-namespaces.txt
++++ b/platform/ns-fences/live-namespaces.txt
+@@ -5,6 +5,7 @@ calico-system
+ cert-manager
+ chaos-mesh
+ commerce
++crossplane-system
+ cyrus
+ dagster
+ default
+diff --git a/platform/ns-fences/network/crossplane-system.yaml b/platform/ns-fences/network/crossplane-system.yaml
+new file mode 100644
+index 000000000..b76a53cdb
+--- /dev/null
++++ b/platform/ns-fences/network/crossplane-system.yaml
+@@ -0,0 +1,109 @@
++# Generated by bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml (crew#839).
++# Do not edit: the next run overwrites this file. Change the input and re-run.
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: default-deny-all
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Ingress
++  - Egress
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: allow-dns-egress
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Egress
++  egress:
++  - to:
++    - namespaceSelector:
++        matchLabels:
++          kubernetes.io/metadata.name: kube-system
++      podSelector:
++        matchLabels:
++          k8s-app: kube-dns
++    ports:
++    - protocol: UDP
++      port: 53
++    - protocol: TCP
++      port: 53
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: allow-same-namespace
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Ingress
++  - Egress
++  ingress:
++  - from:
++    - podSelector: {}
++  egress:
++  - to:
++    - podSelector: {}
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: allow-apiserver-egress
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Egress
++  egress:
++  - to:
++    - ipBlock:
++        cidr: ${ESTATE_APISERVER_CIDR}
++    ports:
++    - protocol: TCP
++      port: 6443
++    - protocol: TCP
++      port: 12250
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: allow-declared-egress
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Egress
++  egress:
++  - to:
++    - namespaceSelector:
++        matchLabels:
++          kubernetes.io/metadata.name: observability
++---
++apiVersion: networking.k8s.io/v1
++kind: NetworkPolicy
++metadata:
++  name: allow-internet-egress
++  namespace: crossplane-system
++spec:
++  podSelector: {}
++  policyTypes:
++  - Egress
++  egress:
++  - to:
++    - ipBlock:
++        cidr: 0.0.0.0/0
++        except:
++        - 10.0.0.0/8
++        - 172.16.0.0/12
++        - 192.168.0.0/16
++        - 169.254.0.0/16
++        - 100.64.0.0/10
++    ports:
++    - protocol: TCP
++      port: 443
+diff --git a/platform/ns-fences/network/kustomization.yaml b/platform/ns-fences/network/kustomization.yaml
+index d4b1a4094..d72f5c946 100644
+--- a/platform/ns-fences/network/kustomization.yaml
++++ b/platform/ns-fences/network/kustomization.yaml
+@@ -10,6 +10,7 @@ resources:
+ - cert-manager.yaml
+ - chaos-mesh.yaml
+ - commerce.yaml
++- crossplane-system.yaml
+ - dagster.yaml
+ - demo-sandbox.yaml
+ - edge.yaml
+diff --git a/platform/ns-fences/network/observability.yaml b/platform/ns-fences/network/observability.yaml
+index 9e6283c32..f93606f4f 100644
+--- a/platform/ns-fences/network/observability.yaml
++++ b/platform/ns-fences/network/observability.yaml
+@@ -160,6 +160,9 @@ spec:
+     - namespaceSelector:
+         matchLabels:
+           kubernetes.io/metadata.name: commerce
++    - namespaceSelector:
++        matchLabels:
++          kubernetes.io/metadata.name: crossplane-system
+     - namespaceSelector:
+         matchLabels:
+           kubernetes.io/metadata.name: dagster
+diff --git a/platform/oci/crossplane.tf b/platform/oci/crossplane.tf
+new file mode 100644
+index 000000000..172a2f0fa
+--- /dev/null
++++ b/platform/oci/crossplane.tf
+@@ -0,0 +1,21 @@
++# The only thing that makes Crossplane able to touch OCI, and it is not a credential.
++#
++# Under OKE Workload Identity the provider pod presents its own service account and OCI IAM decides
++# from this statement whether that identity may act. The four conditions are the whole security
++# boundary: it must be a workload principal, in this cluster, in crossplane-system, running as the
++# service account platform/crossplane/providers/runtime.yaml pins by name. A token minted this way
++# is worth nothing anywhere else -- there is no key to leak, rotate or revoke, which is why
++# decision 0026 chose this over an API key even though an API key is fewer lines.
++#
++# The verb is `manage object-family` and nothing wider. Crossplane's step 3 emits buckets; a
++# provider that could also read secret-family or manage instances would be a standing grant nobody
++# asked for. The next capability widens this statement in the pull request that needs it.
++resource "oci_identity_policy" "crossplane_workload" {
++  provider       = oci.home
++  compartment_id = var.compartment_ocid
++  name           = "${var.cluster_name}-crossplane-objectstorage"
++  description    = "Crossplane's OCI provider, by workload identity, may manage object storage in this compartment and nothing else (decision 0026)"
++  statements = [
++    "Allow any-user to manage object-family in compartment id ${var.compartment_ocid} where all { request.principal.type = 'workload', request.principal.namespace = 'crossplane-system', request.principal.service_account = 'crossplane-provider-oci', request.principal.cluster_id = '${module.oke.cluster_id}' }",
++  ]
++}

@@ -764,6 +764,49 @@ def write_table(path, rows, counts, blind, generated_at):
     path.write_text("\n".join(lines) + "\n")
 
 
+def write_prometheus(path, rows, counts, blind, generated_at):
+    """The estate-wide scan as Prometheus metrics -- the aggregation layer of the asymmetric
+    collection pattern (founder blueprint, 2026-09-23): "Both layers feed one store."
+
+    WHY THIS EXISTS. The inventory already answers "which stacks cost the most and why",
+    "what is provisioned and never used" -- as a table an agent reads. A table is not a number
+    a dashboard can alert on, so every answer went stale the moment nobody opened it. This is
+    the same measurement projected into the store the other collectors already write to:
+    Coroot emits the service map and `collect_metrics.py` emits agent usage, both scraped by
+    the one Prometheus (platform/monitoring). This is the third feed into it.
+
+    A plane whose read failed is published as `read="UNKNOWN"` and NEVER as zero rows: an
+    unread plane and an empty plane are different facts, and a dashboard that shows 0 orphans
+    for a plane nobody could read is exactly the flattering number this estate forbids.
+    """
+    ts = int(time.time())
+    lines = [
+        "# HELP idp_inventory_resources Resources by plane and verdict",
+        "# TYPE idp_inventory_resources gauge",
+    ]
+    for plane, c in sorted(counts.items()):
+        for verdict in VERDICTS:
+            lines.append(
+                f'idp_inventory_resources{{plane="{plane}",verdict="{verdict}"}} {c.get(verdict, 0)}'
+            )
+    lines += [
+        "# HELP idp_inventory_plane_readable 1 when the plane was read, 0 when the read failed",
+        "# TYPE idp_inventory_plane_readable gauge",
+    ]
+    for plane, c in sorted(counts.items()):
+        readable = 0 if c.get("read") == "UNKNOWN" else 1
+        lines.append(f'idp_inventory_plane_readable{{plane="{plane}"}} {readable}')
+    lines += [
+        "# HELP idp_inventory_blind_planes Planes this run could not read at all",
+        "# TYPE idp_inventory_blind_planes gauge",
+        f"idp_inventory_blind_planes {len(blind)}",
+        "# HELP idp_inventory_scan_timestamp_seconds When this scan ran",
+        "# TYPE idp_inventory_scan_timestamp_seconds gauge",
+        f"idp_inventory_scan_timestamp_seconds {ts}",
+    ]
+    path.write_text("\n".join(lines) + "\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--planes", default=",".join(PLANES))
@@ -849,6 +892,7 @@ def main() -> int:
         )
     )
     write_table(out / "inventory.md", rows, counts, blind, generated_at)
+    write_prometheus(out / "inventory.prom", rows, counts, blind, generated_at)
     for p, c in counts.items():
         tally = (
             f"MANAGED {c['MANAGED']}  DRIFTED {c['DRIFTED']}  "

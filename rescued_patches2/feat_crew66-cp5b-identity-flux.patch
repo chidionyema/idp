@@ -1,0 +1,231 @@
+diff --git a/bin/idp-flux-bootstrap b/bin/idp-flux-bootstrap
+index 5c926eb5e..6fd974dd5 100755
+--- a/bin/idp-flux-bootstrap
++++ b/bin/idp-flux-bootstrap
+@@ -32,9 +32,16 @@ VAULT_ID=$(cd "$IDP/platform/oci" && tofu output -raw vault_id 2>/dev/null || tr
+ # the old vault is refused here (bin/idp-recreate-guard refuses the create on the tofu side).
+ CUR=$(kubectl -n flux-system get configmap estate-vars -o jsonpath='{.data.OCI_VAULT_ID}' 2>/dev/null || true)
+ if [ -n "$VAULT_ID" ] && [ -n "$CUR" ] && [ "$CUR" != "$VAULT_ID" ]; then
+-  left=$(oci vault secret list --compartment-id "$(grep -o 'ocid1\.compartment[^" ]*' "$IDP/platform/oci/terraform.tfvars" | head -1)" --vault-id "$CUR" --all --query 'length(data[?"lifecycle-state"==`ACTIVE`])' --raw-output 2>/dev/null || echo BLIND)
+-  if [ "$left" = BLIND ]; then echo "BLIND   estate-vars: vault changed but the old vault's secret count is unreadable; not switching"; VAULT_ID=
+-  elif [ "$left" != 0 ]; then echo "REFUSE  estate-vars: tofu vault_id changed but $left ACTIVE secret(s) still live in the current vault; import the old vault into state instead (incident 2026-08-26 02:26Z)"; exit 3
++  # crew#66 CP5b: vault reads go through bin/idp-cloud (one primitive layer). A non-zero layer exit is
++  # BLIND here (exit 2), never a count of 0 (which would silently switch to an empty old vault).
++  err="${TMPDIR:-/tmp}/flux.err"; : > "$err"
++  if list=$("$IDP/bin/idp-cloud" secret list --vault "$CUR" 2>"$err"); then
++    left=$(printf '%s\n' "$list" | grep -c .)
++  else
++    echo "BLIND   flux $(head -1 "$err")"
++    exit 2
++  fi
++  if [ "$left" != 0 ]; then echo "REFUSE  estate-vars: tofu vault_id changed but $left ACTIVE secret(s) still live in the current vault; import the old vault into state instead (incident 2026-08-26 02:26Z)"; exit 3
+   else echo "ok      estate-vars: vault changed and the old vault is empty; switching"; fi
+ fi
+ if [ -n "$VAULT_ID" ]; then
+diff --git a/bin/idp-identity-apply b/bin/idp-identity-apply
+index 75345ac66..8caae6029 100755
+--- a/bin/idp-identity-apply
++++ b/bin/idp-identity-apply
+@@ -20,11 +20,24 @@ cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config
+ # compartment: the CI variable when the job sets it, else the vault, as bin/idp-vault-put
+ C="${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}"
+ # vault and key: the ones the existing estate secrets already live in; placeholders are imported, never re-created
+-CID=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-id --query 'data[0].id' --raw-output 2>/dev/null || true)
+-CSEC=$(oci vault secret list --compartment-id "$C" --name oauth2-proxy-client-secret --query 'data[0].id' --raw-output 2>/dev/null || true)
+-[ -n "$CID" ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
+-V=$(oci vault secret get --secret-id "$CID" --query 'data."vault-id"' --raw-output)
+-K=$(oci vault secret get --secret-id "$CID" --query 'data."key-id"' --raw-output)
++# crew#66 CP5b: vault reads go through bin/idp-cloud (one primitive layer). A layer exit 1 (NotFound) is FAIL;
++# a layer exit 3 (Split) or any other non-zero is BLIND (exit 2), never treated as a silent empty value.
++# one stderr file per describe: a BLIND on client-id must print client-id's line, never client-secret's
++err_id="${TMPDIR:-/tmp}/identity-id.err"; : > "$err_id"
++err_sec="${TMPDIR:-/tmp}/identity-secret.err"; : > "$err_sec"
++desc_id=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id 2>"$err_id"); rc_id=$?
++desc_sec=$("$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret 2>"$err_sec"); rc_sec=$?
++case "$rc_id" in
++  0) CID=$(printf '%s' "$desc_id" | jq -r .id); V=$(printf '%s' "$desc_id" | jq -r '."vault-id"'); K=$(printf '%s' "$desc_id" | jq -r '."key-id"');;
++  1) echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2;;
++  *) echo "BLIND   identity $(head -1 "$err_id")"; exit 2;;
++esac
++[ -n "$CID" ] && [ "$CID" != null ] || { echo "FAIL    identity vault secret oauth2-proxy-client-id not found in compartment; platform/identity has never been bootstrapped"; exit 2; }
++case "$rc_sec" in
++  0) CSEC=$(printf '%s' "$desc_sec" | jq -r .id);;
++  1) CSEC="";;
++  *) echo "BLIND   identity $(head -1 "$err_sec")"; exit 2;;
++esac
+ # Incident 2026-08-26 02:31Z (crew#269): the first sign-in returned 500. oauth2-proxy read
+ # /admin/v1/SigningCert/jwk to verify the id_token and the domain answered 401: a new domain keeps its
+ # signing certificate private. The OpenTofu resource cannot set one flag (PutSetting replaces the
+diff --git a/tests/test_incident_crew66_cp5b_identity_and_flux_read_through_the_layer.py b/tests/test_incident_crew66_cp5b_identity_and_flux_read_through_the_layer.py
+new file mode 100644
+index 000000000..c107e5885
+--- /dev/null
++++ b/tests/test_incident_crew66_cp5b_identity_and_flux_read_through_the_layer.py
+@@ -0,0 +1,115 @@
++"""crew#66 CP5b: bin/idp-identity-apply and bin/idp-flux-bootstrap stop naming the oci CLI for vault
++reads; they go through bin/idp-cloud (one primitive layer). The IDCS SCIM door in identity-apply is
++left as `oci raw-request` because that is the identity provider's own API, not a vault read. Rule
++(rung 4): the script exits 2 with `BLIND   <noun> <first stderr line>` when the layer exits
++non-zero, never treats an empty value as success."""
++from __future__ import annotations
++
++import re
++import stat
++import subprocess
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++IDENTITY = (ROOT / "bin" / "idp-identity-apply").read_text()
++FLUX = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
++
++
++def test_identity_does_not_name_the_oci_cli_for_vault_reads() -> None:
++    # the script may still mention `oci` in comments and the `oci raw-request` IDCS SCIM door; only
++    # the vault reads (vault/secret subcommands) must be absent.
++    assert not re.search(r"^\s*[^#]*\boci vault", IDENTITY, re.M), "identity-apply still names `oci vault`"
++    assert not re.search(r"^\s*[^#]*\boci secrets", IDENTITY, re.M), "identity-apply still names `oci secrets`"
++
++
++def test_identity_still_names_oci_raw_request_for_the_idcs_door() -> None:
++    # the IDCS SCIM door is the identity provider's own API; crew#66 leaves it on the oci CLI until
++    # the layer grows an IDCS verb.
++    assert "oci raw-request" in IDENTITY
++    assert "admin/v1/Settings/Settings" in IDENTITY or "admin/v1/Users" in IDENTITY
++
++
++def test_identity_calls_secret_describe_through_the_layer() -> None:
++    assert '"$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-id' in IDENTITY
++    assert '"$IDP/bin/idp-cloud" secret describe oauth2-proxy-client-secret' in IDENTITY
++    assert "BLIND   identity" in IDENTITY
++
++
++def test_flux_does_not_name_the_oci_cli_for_vault_reads() -> None:
++    # only the `oci ce cluster create-kubeconfig` line is allowed to stay (a later job adds a
++    # `cluster` noun to the layer); the comment at line 5 mentions "OKE cluster id" without naming
++    # a CLI verb. Match `oci vault` / `oci secrets` only outside comments.
++    assert not re.search(r"^\s*[^#]*\boci vault", FLUX, re.M), "flux-bootstrap still names `oci vault`"
++    assert not re.search(r"^\s*[^#]*\boci secrets", FLUX, re.M), "flux-bootstrap still names `oci secrets`"
++
++
++def test_flux_calls_secret_list_through_the_layer() -> None:
++    assert '"$IDP/bin/idp-cloud" secret list --vault' in FLUX
++    assert "BLIND   flux" in FLUX
++
++
++# ------------------------------------------------------------------------------------------- runtime
++
++def _fake(b: Path, name: str, body: str) -> None:
++    f = b / name
++    f.write_text("#!/usr/bin/env bash\n" + body)
++    f.chmod(f.stat().st_mode | stat.S_IEXEC)
++
++
++def test_identity_layer_exit_split_blinds(tmp_path: Path) -> None:
++    """A layer exit 3 (Split: ACTIVE in more than one vault) on the first describe is BLIND, not a
++    silent empty value. The script must exit 2 with `BLIND   identity <why>` on stdout."""
++    idp = tmp_path / "idp"; idp.mkdir()
++    fake_bin = idp / "bin"; fake_bin.mkdir()
++    _fake(fake_bin, "idp-cloud", '''
++case "$1 $2" in
++  "secret describe")
++    echo "Split: secret $3 is ACTIVE in more than one vault of the compartment" >&2
++    exit 3;;
++esac
++echo "unexpected: $*" >&2; exit 9''')
++    src = (ROOT / "bin" / "idp-identity-apply").read_text()
++    # extract from `err_id="${TMPDIR:-/tmp}/identity-id.err"` through the closing of the second case.
++    # the script's first layer call is on `oauth2-proxy-client-id`; a Split there must BLIND.
++    m = re.search(
++        r'(err_id="\$\{TMPDIR:-/tmp\}/identity-id\.err"; : > "\$err_id"\n.*?case "\$rc_sec" in\n.*?\)\s*\n)',
++        src, re.S,
++    )
++    assert m, "the identity-apply BLIND-on-layer-error block could not be located"
++    block = m.group(1)
++    r = subprocess.run(["bash", "-c", f'IDP="{idp}"\n{block}'], capture_output=True, text=True)
++    assert r.returncode == 2, (r.stdout, r.stderr)
++    assert "BLIND" in r.stdout
++    assert "identity" in r.stdout
++    # REWORK idp#476 (09cd04a6): both describes run before either rc is checked, so a shared stderr
++    # file would print client-secret's line for a client-id BLIND. The line must name client-id.
++    assert "oauth2-proxy-client-id is ACTIVE" in r.stdout, r.stdout
++    assert "client-secret" not in r.stdout, r.stdout
++
++
++def test_flux_layer_exit_split_blinds(tmp_path: Path) -> None:
++    """A layer exit 3 (Split) on `secret list --vault` is BLIND, not a count of 0; the script must
++    exit 2 with `BLIND   flux <why>` on stdout."""
++    idp = tmp_path / "idp"; idp.mkdir()
++    fake_bin = idp / "bin"; fake_bin.mkdir()
++    _fake(fake_bin, "idp-cloud", '''
++case "$1 $2 $3" in
++  "secret list --vault")
++    echo "Split: vault CUR is unreadable" >&2
++    exit 3;;
++esac
++echo "unexpected: $*" >&2; exit 9''')
++    src = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
++    # the block runs from the `if [ -n "$VAULT_ID" ] && [ -n "$CUR" ] && [ "$CUR" != "$VAULT_ID" ];`
++    # header through its closing `fi`, the part of the script that exercises the layer for the
++    # current vault's secret count and reacts to the exit code.
++    m = re.search(r'(if \[ -n "\$VAULT_ID" \] && \[ -n "\$CUR" \] && \[ "\$CUR" != "\$VAULT_ID" \]; then.*?\nfi\n)', src, re.S)
++    assert m, "the flux-bootstrap vault-switch block could not be located"
++    block = m.group(1)
++    r = subprocess.run(
++        ["bash", "-c", f'IDP="{idp}"; VAULT_ID=ocid1.vault.new; CUR=ocid1.vault.old\n{block}'],
++        capture_output=True, text=True,
++    )
++    assert r.returncode == 2, (r.stdout, r.stderr)
++    assert "BLIND" in r.stdout
++    assert "flux" in r.stdout
+\ No newline at end of file
+diff --git a/tests/test_incident_estate_vars_repointed_at_empty_vault.py b/tests/test_incident_estate_vars_repointed_at_empty_vault.py
+index 2d1e30ec0..b9219a350 100644
+--- a/tests/test_incident_estate_vars_repointed_at_empty_vault.py
++++ b/tests/test_incident_estate_vars_repointed_at_empty_vault.py
+@@ -1,7 +1,8 @@
+ """Incident test (rung 4): 2026-08-26 02:26Z, bin/idp-flux-bootstrap repointed flux-system/estate-vars
+ at a freshly created empty vault while 10 secrets lived in the old one. Rule: a vault switch is
+ refused (rc 3) while the current vault still holds ACTIVE secrets; an empty old vault switches;
+-an unreadable count is BLIND and does not switch."""
++an unreadable count is BLIND (rc 2, never a count of 0). crew#66 CP5b: the count comes through
++bin/idp-cloud, not the oci CLI."""
+ import os, re, stat, subprocess
+ from pathlib import Path
+ 
+@@ -12,15 +13,31 @@ BLOCK = re.search(r'CUR=\$\(kubectl.*?\nfi\n', SRC, re.S).group(0)
+ def _fake(b: Path, name: str, body: str) -> None:
+     f = b / name; f.write_text("#!/usr/bin/env bash\n" + body); f.chmod(f.stat().st_mode | stat.S_IEXEC)
+ 
++def _fake_cloud(b: Path, count: str) -> None:
++    # the layer reads compartment itself; the test only grades how the script reacts to layer exit
++    # codes (0 with N names on stdout, non-zero on a BLIND).
++    body = f'''case "$1 $2 $3" in
++  "secret list --vault")
++    case "{count}" in
++      BLIND) echo "compartment unreadable from this identity" >&2; exit 3;;
++      *) i=0; while [ "$i" -lt "{count}" ]; do printf "s%s\\n" "$i"; i=$((i+1)); done; exit 0;;
++    esac;;
++esac
++echo "unexpected: $*" >&2; exit 9
++'''
++    _fake(b, "idp-cloud", body)
++
+ def _run(tmp: Path, count: str) -> subprocess.CompletedProcess:
+-    b = tmp / "bin"; b.mkdir(exist_ok=True); idp = tmp / "idp" / "platform" / "oci"; idp.mkdir(parents=True, exist_ok=True)
+-    (idp / "terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.oc1..t"\n')
++    b = tmp / "bin"; b.mkdir(exist_ok=True); idp = tmp / "idp"; idp.mkdir(exist_ok=True)
++    idp_bin = idp / "bin"; idp_bin.mkdir(exist_ok=True)
++    _fake_cloud(idp_bin, count)
++    (idp / "platform" / "oci").mkdir(parents=True, exist_ok=True)
++    (idp / "platform" / "oci" / "terraform.tfvars").write_text('compartment_ocid = "ocid1.compartment.oc1..t"\n')
+     _fake(b, "kubectl", 'echo ocid1.vault.old')
+-    _fake(b, "oci", f'[ "{count}" = BLIND ] && exit 1; echo {count}')
+     env = {**os.environ, "PATH": f"{b}:{os.environ['PATH']}"}
+     return subprocess.run(["bash", "-c", f'IDP="{tmp}/idp"; VAULT_ID=ocid1.vault.new\n{BLOCK}\necho "VAULT_ID=$VAULT_ID"'], env=env, capture_output=True, text=True)
+ 
+ def test_incident_estate_vars_repointed_at_empty_vault(tmp_path: Path) -> None:
+     r = _run(tmp_path, "10"); assert r.returncode == 3 and "REFUSE" in r.stdout
+     r = _run(tmp_path, "0"); assert r.returncode == 0 and "switching" in r.stdout and "VAULT_ID=ocid1.vault.new" in r.stdout
+-    r = _run(tmp_path, "BLIND"); assert r.returncode == 0 and "BLIND" in r.stdout and "VAULT_ID=\n" in r.stdout
++    r = _run(tmp_path, "BLIND"); assert r.returncode == 2 and "BLIND" in r.stdout and "flux" in r.stdout
+\ No newline at end of file

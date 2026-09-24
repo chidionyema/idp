@@ -1,0 +1,1174 @@
+diff --git a/backstage/packages/app/src/modules/home/Showcase.test.tsx b/backstage/packages/app/src/modules/home/Showcase.test.tsx
+index 97090c7bf..56ab6eb6c 100644
+--- a/backstage/packages/app/src/modules/home/Showcase.test.tsx
++++ b/backstage/packages/app/src/modules/home/Showcase.test.tsx
+@@ -25,7 +25,8 @@ const page = `- Entities: **582 ELITE**, **19 GAP**, **13 BLIND** of 614
+ const inventory = `### Senses
+ 
+ - **Reads every Telegram message on one hardened door.** LIVE. \`platform/otto-gateway/deployment.yaml:22\`.
+-- **Hears voice notes.** IN THE IMAGE.
++- **Hears voice notes.** IN THE IMAGE. \`tools/transcription_tools.py:1\`. Step 3.
++- **Never learns your voiceprint.** BUILT. \`otto/surface/identity.py\`.
+ 
+ ### Judgment and trust
+ 
+@@ -56,6 +57,11 @@ const flux = (name: string, ready: 'True' | 'False') => ({
+ const kubernetes = {
+   getClusters: jest.fn(async () => [{ name: 'estate', authProvider: 'serviceAccount' }]),
+   proxy: jest.fn(async ({ path }: { path: string }) => {
++    // The buyer-sandbox hook (useSandbox.ts) asks for one Kustomization by name and namespace.
++    // A 404 from the cluster is the "absent" path; the page then renders the launch button.
++    if (path.includes('/namespaces/demo-sandbox/kustomizations/demo-sandbox')) {
++      return new Response('not found', { status: 404 });
++    }
+     const body = path.includes('kustomizations')
+       ? [flux('edge', 'True'), flux('otto', 'False')]
+       : [];
+@@ -119,7 +125,9 @@ describe('Showcase', () => {
+     expect(screen.getByTestId('showcase-abilities').querySelectorAll('article, [data-testid^="ability-"]').length).toBeGreaterThan(0);
+     expect(screen.getByTestId('ability-0')).toHaveTextContent('Reads every Telegram message');
+     expect(screen.getByTestId('ability-1')).toHaveTextContent('otto/gateway/core.py:109');
+-    expect(screen.queryByText(/Hears voice notes/)).not.toBeInTheDocument();
++    // "Hears voice notes" is IN THE IMAGE, so it never lands in the abilities section -- it
++    // belongs on the roadmap section below. The abilities section is the live path only.
++    expect(screen.queryByTestId('ability-2')).not.toBeInTheDocument();
+     expect(screen.getByTestId('showcase-otto-sentence')).toHaveTextContent('2 abilities');
+   });
+   it('says plainly which document could not be read and keeps the other standing', async () => {
+@@ -128,4 +136,22 @@ describe('Showcase', () => {
+     expect(screen.getByTestId('showcase-bar-error')).toHaveTextContent('404');
+     expect(screen.getByTestId('ability-0')).toBeInTheDocument();
+   });
++  it('renders the roadmap section with BUILT and IN THE IMAGE rows and their spec step', async () => {
++    await render();
++    await waitFor(() => expect(screen.getByTestId('showcase-roadmap-tiles')).toBeInTheDocument(), SLOW);
++    const tiles = screen.getByTestId('showcase-roadmap-tiles').querySelectorAll('[data-testid^="roadmap-"]');
++    expect(tiles.length).toBe(2);
++    expect(screen.getByTestId('roadmap-0')).toHaveTextContent('Hears voice notes');
++    expect(screen.getByTestId('roadmap-0')).toHaveTextContent('step 3');
++    expect(screen.getByTestId('roadmap-1')).toHaveTextContent('Never learns your voiceprint');
++    expect(screen.getByTestId('showcase-roadmap-sentence')).toHaveTextContent('1 row is');
++  });
++  it('shows the launch button when no sandbox is running, not a countdown', async () => {
++    await render();
++    await waitFor(() => expect(screen.getByTestId('showcase-sandbox')).toBeInTheDocument(), SLOW);
++    const launch = await screen.findByTestId('showcase-sandbox-launch', {}, SLOW);
++    expect(launch).toHaveAttribute('href', '/create/templates/default/run-demo-sandbox');
++    expect(screen.getByTestId('showcase-sandbox-sentence')).toHaveTextContent(/no sandbox/i);
++    expect(screen.queryByTestId('showcase-sandbox-error')).not.toBeInTheDocument();
++  });
+ });
+diff --git a/backstage/packages/app/src/modules/home/Showcase.tsx b/backstage/packages/app/src/modules/home/Showcase.tsx
+index 871079162..33dd8f84d 100644
+--- a/backstage/packages/app/src/modules/home/Showcase.tsx
++++ b/backstage/packages/app/src/modules/home/Showcase.tsx
+@@ -6,7 +6,7 @@
+ // The buyer sandbox button and its countdown are CP2 of the same spec.
+ import { useMemo } from 'react';
+ import { Entity } from '@backstage/catalog-model';
+-import { Text } from '@backstage/ui';
++import { ButtonLink, Text } from '@backstage/ui';
+ import { makeStyles } from '@material-ui/core';
+ import {
+   Chip,
+@@ -23,9 +23,18 @@ import {
+ import { LayerState, ago, count, layerState, rank, systemOf, verdict } from './estate';
+ import { Estate, useEstate } from './useEstate';
+ import { useShowcase } from './useShowcase';
+-import { abilitiesSentence, barSentence } from './showcaseDocs';
++import { useSandbox } from './useSandbox';
++import {
++  abilitiesSentence,
++  barSentence,
++  formatRemaining,
++  progressionSentence,
++} from './showcaseDocs';
+ import { StateDonut, SystemBars, donutSentence } from './visuals';
+ 
++/** Scaffolder template the demo-sandbox workflow dispatches (CP2). */
++const SANDBOX_TEMPLATE = '/create/templates/default/run-demo-sandbox';
++
+ // Rules 8, 9 and 14 of DESIGN-RULES.md: spacing in theme units, related numbers grouped by
+ // proximity in one container, no border per number.
+ const useStyles = makeStyles(theme => ({
+@@ -97,8 +106,10 @@ export const Showcase = () => {
+   const classes = useStyles();
+   const docs = useShowcase();
+   const { loaded } = useEstate();
++  const sandbox = useSandbox();
+   const now = Date.now();
+   const abilities = docs.state === 'ready' ? docs.abilities : [];
++  const progression = docs.state === 'ready' ? docs.progression : [];
+   return (
+     <EstatePage title={TITLE} lead={LEAD}>
+       <Section
+@@ -190,6 +201,97 @@ export const Showcase = () => {
+           ))}
+         </Tiles>
+       </Section>
++      <Section
++        title="The roadmap"
++        blurb="What is on the door next, and which spec step moves it. Each row carries the receipt the spec names."
++        testId="showcase-roadmap"
++      >
++        {docs.state === 'loading' && (
++          <Waiting testId="showcase-roadmap-loading">Reading the inventory.</Waiting>
++        )}
++        {docs.state === 'ready' && docs.progressionError && (
++          <Unread testId="showcase-roadmap-error" detail={docs.progressionError}>
++            The inventory could not be read, so no roadmap row is claimed.
++          </Unread>
++        )}
++        {docs.state === 'ready' && !docs.progressionError && (
++          <Summary testId="showcase-roadmap-sentence">
++            {progressionSentence(progression)}
++          </Summary>
++        )}
++        <Tiles testId="showcase-roadmap-tiles">
++          {progression.map((row, i) => (
++            <Tile
++              key={`${row.sense}-${i}`}
++              title={row.text}
++              badge={
++                <>
++                  <Chip title={row.status}>{row.status.toLowerCase()}</Chip>
++                  {row.stepNumber !== null && (
++                    <Chip title="Spec step that moves this row to LIVE">
++                      step {row.stepNumber}
++                    </Chip>
++                  )}
++                </>
++              }
++              testId={`roadmap-${i}`}
++            >
++              {row.receipts.length > 0 && (
++                <Text variant="body-small" color="secondary">
++                  Proof:{' '}
++                  {row.receipts.map((r, j) => (
++                    <span key={r}>
++                      {j > 0 ? ', ' : ''}
++                      <Name>{r}</Name>
++                    </span>
++                  ))}
++                </Text>
++              )}
++            </Tile>
++          ))}
++        </Tiles>
++      </Section>
++      <Section
++        title="Buyer sandbox"
++        blurb="A throwaway cluster-in-a-cluster with a demo shop, set to remove itself when the hold runs out. A person launches it; an agent never does."
++        testId="showcase-sandbox"
++      >
++        {sandbox.state === 'loading' && (
++          <Waiting testId="showcase-sandbox-loading">Reading the cluster.</Waiting>
++        )}
++        {sandbox.state === 'absent' && (
++          <>
++            <Summary testId="showcase-sandbox-sentence">
++              No sandbox is running right now. Launch one to see the platform on a real workload, end-to-end.
++            </Summary>
++            <ButtonLink
++              href={SANDBOX_TEMPLATE}
++              variant="primary"
++              size="medium"
++              className="estate-action estate-action-strong"
++              data-testid="showcase-sandbox-launch"
++            >
++              Launch the buyer sandbox
++            </ButtonLink>
++          </>
++        )}
++        {sandbox.state === 'countdown' && (
++          <Summary testId="showcase-sandbox-sentence">
++            A sandbox is live: <Name>{formatRemaining(sandbox.remainingMs)}</Name>{' '}
++            before it removes itself.
++          </Summary>
++        )}
++        {sandbox.state === 'expired' && (
++          <Summary testId="showcase-sandbox-sentence">
++            The sandbox hold ran out. Refresh to see the launch button again.
++          </Summary>
++        )}
++        {sandbox.state === 'error' && (
++          <Unread testId="showcase-sandbox-error" detail={sandbox.error}>
++            The sandbox could not be read, so no countdown is claimed.
++          </Unread>
++        )}
++      </Section>
+     </EstatePage>
+   );
+ };
+diff --git a/backstage/packages/app/src/modules/home/estate.ts b/backstage/packages/app/src/modules/home/estate.ts
+index fe47069eb..20ce1c886 100644
+--- a/backstage/packages/app/src/modules/home/estate.ts
++++ b/backstage/packages/app/src/modules/home/estate.ts
+@@ -77,12 +77,28 @@ export type DeploymentObject = {
+   status?: { readyReplicas?: number; replicas?: number };
+ };
+ 
++export type DenyFlow = {
++  dst: string;
++  dp: string;
++  proto: string;
++  srcs: string[];
++};
++
++export type SchedulerJob = {
++  name: string;
++  description?: string;
++  schedule?: string;
++};
++
+ /** Live state per layer, keyed by Kustomization name. `undefined` means the cluster was not read. */
+ export type Live =
+   | {
+       kustomizations: Record<string, FluxObject>;
+       deployments: DeploymentObject[];
+       readAt: number;
++      langfuseHealthy: boolean;
++      calicoDenyFlows: DenyFlow[];
++      schedulerJobs: SchedulerJob[];
+     }
+   | undefined;
+ 
+diff --git a/backstage/packages/app/src/modules/home/showcaseDocs.test.ts b/backstage/packages/app/src/modules/home/showcaseDocs.test.ts
+index 0548d1076..7228e1213 100644
+--- a/backstage/packages/app/src/modules/home/showcaseDocs.test.ts
++++ b/backstage/packages/app/src/modules/home/showcaseDocs.test.ts
+@@ -1,4 +1,13 @@
+-import { abilitiesSentence, barSentence, parseAbilities, parseBar } from './showcaseDocs';
++import {
++  abilitiesSentence,
++  barSentence,
++  formatRemaining,
++  parseAbilities,
++  parseBar,
++  parseHoldMs,
++  parseProgression,
++  progressionSentence,
++} from './showcaseDocs';
+ 
+ const page = `# Estate showcase
+ 
+@@ -69,3 +78,92 @@ describe('what Otto does today', () => {
+     expect(abilitiesSentence([])).toBe('No Otto ability is marked live yet.');
+   });
+ });
++
++describe('the roadmap', () => {
++  it('keeps BUILT and IN THE IMAGE rows, with the spec step the line names', () => {
++    expect(parseProgression(inventory)).toEqual([
++      {
++        sense: 'Senses',
++        text: 'Hears voice notes on the pod',
++        status: 'IN THE IMAGE',
++        stepNumber: null,
++        receipts: ['hermes-agent/tools/transcription_tools.py:379'],
++      },
++      {
++        sense: 'Senses',
++        text: 'Never learns your voiceprint',
++        status: 'BUILT',
++        stepNumber: null,
++        receipts: ['otto/surface/identity.py'],
++      },
++    ]);
++  });
++  it('extracts a step number when the line says "Step N" or "spec step N"', () => {
++    const md = `### Reach
++- **Hears voice notes.** IN THE IMAGE. \`tools/x.py:1\`. Wired to the door at spec step 3.
++- **Speaks back.** IN THE IMAGE. \`tools/y.py:1\`. Step 4.
++- **One more.** BUILT. \`tools/z.py\`.
++`;
++    expect(parseProgression(md)).toEqual([
++      {
++        sense: 'Reach',
++        text: 'Hears voice notes',
++        status: 'IN THE IMAGE',
++        stepNumber: 3,
++        receipts: ['tools/x.py:1'],
++      },
++      {
++        sense: 'Reach',
++        text: 'Speaks back',
++        status: 'IN THE IMAGE',
++        stepNumber: 4,
++        receipts: ['tools/y.py:1'],
++      },
++      {
++        sense: 'Reach',
++        text: 'One more',
++        status: 'BUILT',
++        stepNumber: null,
++        receipts: ['tools/z.py'],
++      },
++    ]);
++  });
++  it('returns an empty array when the inventory has nothing to grade', () => {
++    expect(parseProgression('# Empty\n\nnothing here\n')).toEqual([]);
++  });
++  it('says in one sentence how many rows are one step from live', () => {
++    const rows = parseProgression(inventory);
++    expect(progressionSentence(rows)).toBe('Nothing on the roadmap yet.');
++    expect(progressionSentence([])).toBe('Nothing on the roadmap yet.');
++  });
++  it('spells the step range when the rows point to it', () => {
++    const md = `### Reach
++- **A.** IN THE IMAGE. \`x.py\`. Step 2.
++- **B.** BUILT. \`y.py\`. Step 5.
++`;
++    expect(progressionSentence(parseProgression(md))).toBe(
++      '2 rows are one spec step from live: step 2 to step 5.',
++    );
++  });
++});
++
++describe('the hold parser and the countdown text', () => {
++  it('reads hours, minutes, seconds and refuses anything else', () => {
++    expect(parseHoldMs('1h')).toBe(60 * 60 * 1000);
++    expect(parseHoldMs('4h')).toBe(4 * 60 * 60 * 1000);
++    expect(parseHoldMs('30m')).toBe(30 * 60 * 1000);
++    expect(parseHoldMs('90s')).toBe(90 * 1000);
++    expect(parseHoldMs('')).toBeUndefined();
++    expect(parseHoldMs(undefined)).toBeUndefined();
++    expect(parseHoldMs('1 hour')).toBeUndefined();
++    expect(parseHoldMs('0h')).toBeUndefined();
++  });
++  it('says how long is left in plain English', () => {
++    expect(formatRemaining(0)).toBe('gone');
++    expect(formatRemaining(-5)).toBe('gone');
++    expect(formatRemaining(45_000)).toBe('45 seconds left');
++    expect(formatRemaining(1_000)).toBe('1 second left');
++    expect(formatRemaining(60_000)).toBe('1 minute left');
++    expect(formatRemaining(2 * 60_000)).toBe('2 minutes left');
++  });
++});
+diff --git a/backstage/packages/app/src/modules/home/showcaseDocs.ts b/backstage/packages/app/src/modules/home/showcaseDocs.ts
+index ececc774e..85732776f 100644
+--- a/backstage/packages/app/src/modules/home/showcaseDocs.ts
++++ b/backstage/packages/app/src/modules/home/showcaseDocs.ts
+@@ -68,6 +68,59 @@ export const parseAbilities = (md: string): Ability[] => {
+   return out;
+ };
+ 
++/** A row one spec step away from LIVE: BUILT, or IN THE IMAGE (with optional suffix). */
++export type ProgressionRow = {
++  /** The "### Senses" heading the line sits under. */
++  sense: string;
++  /** The plain sentence, bold stripped, up to the status word. */
++  text: string;
++  /** The status as it appeared in the file (BUILT / IN THE IMAGE, ...). */
++  status: string;
++  /** "Step N" extracted from the line, when present; null otherwise. */
++  stepNumber: number | null;
++  /** File receipts named after the status word, backticks stripped. */
++  receipts: string[];
++};
++
++const PROGRESSION = /(^|[\s,.])(BUILT|IN THE IMAGE(?:,?\s+(?:enabled|KEY NEEDED|and PLATFORM))?)\b/;
++const STEP = /[Ss]tep\s+(\d+)/;
++
++/**
++ * Every BUILT or IN THE IMAGE row of the inventory's marketing list. Each row carries the
++ * "Step N" the spec (`docs/specs/otto-door-hands-and-senses.md`) names that moves it to LIVE,
++ * when the line says so. Order is the file's own order, under each heading. Live rows are
++ * not returned; the LIVE filter above already covers them.
++ */
++export const parseProgression = (md: string): ProgressionRow[] => {
++  const out: ProgressionRow[] = [];
++  let sense = '';
++  for (const raw of md.split('\n')) {
++    const line = raw.trim();
++    if (line.startsWith('### ')) {
++      sense = line.slice(4).trim();
++      continue;
++    }
++    if (!line.startsWith('- ') || sense === '') continue;
++    // Skip LIVE lines: they belong on the abilities section, not here.
++    if (LIVE.exec(line)) continue;
++    const m = PROGRESSION.exec(line);
++    if (!m) continue;
++    const at = m.index + m[1].length;
++    const status = m[2];
++    const text = line
++      .slice(2, at)
++      .replace(/\*\*/g, '')
++      .replace(/[\s,.:;]+$/, '')
++      .trim();
++    const tail = line.slice(at);
++    const stepMatch = STEP.exec(tail);
++    const stepNumber = stepMatch ? Number(stepMatch[1]) : null;
++    const receipts = [...tail.matchAll(/`([^`]+)`/g)].map(x => x[1]);
++    if (text) out.push({ sense, text, status, stepNumber, receipts });
++  }
++  return out;
++};
++
+ export const barSentence = (bar: Bar): string => {
+   const { entities: e, standards: s } = bar;
+   return `${e.total} catalogued things: ${e.elite} elite, ${e.gap} with a gap, ${e.blind} blind. ${s.live} of ${s.total} standards rows are live.`;
+@@ -80,3 +133,46 @@ export const abilitiesSentence = (abilities: Ability[]): string => {
+     abilities.length === 1 ? 'ability' : 'abilities'
+   } live on the door today, across ${senses.join(', ').toLowerCase()}.`;
+ };
++
++/** One sentence about the BUILT/IN THE IMAGE rows the spec says move to LIVE next. */
++export const progressionSentence = (rows: ProgressionRow[]): string => {
++  if (rows.length === 0) return 'Nothing on the roadmap yet.';
++  const withStep = rows.filter(r => r.stepNumber !== null);
++  if (withStep.length === 0) return `${rows.length} rows on the roadmap, none pinned to a spec step yet.`;
++  const steps = [...new Set(withStep.map(r => r.stepNumber as number))].sort((a, b) => a - b);
++  const first = steps[0];
++  const last = steps[steps.length - 1];
++  return `${withStep.length} ${
++    withStep.length === 1 ? 'row is' : 'rows are'
++  } one spec step from live: step ${first}${first !== last ? ` to step ${last}` : ''}.`;
++};
++
++/**
++ * Parse a duration string like "1h", "4h", "30m", "1h30m" to milliseconds. Returns undefined
++ * for any other shape; the caller treats undefined as "the policy did not pin a hold, refuse
++ * to draw a countdown rather than claim one".
++ */
++export const parseHoldMs = (s: string | undefined): number | undefined => {
++  if (!s) return undefined;
++  const m = /^(\d+)(h|m|s)$/.exec(s.trim());
++  if (!m) return undefined;
++  const n = Number(m[1]);
++  if (!Number.isFinite(n) || n <= 0) return undefined;
++  switch (m[2]) {
++    case 'h': return n * 60 * 60 * 1000;
++    case 'm': return n * 60 * 1000;
++    case 's': return n * 1000;
++    default: return undefined;
++  }
++};
++
++/** Format a remaining-millisecond count as "N minutes left" / "N seconds left" / "gone". */
++export const formatRemaining = (ms: number): string => {
++  if (ms <= 0) return 'gone';
++  if (ms < 60_000) {
++    const s = Math.max(1, Math.round(ms / 1000));
++    return `${s} ${s === 1 ? 'second' : 'seconds'} left`;
++  }
++  const m = Math.round(ms / 60_000);
++  return `${m} ${m === 1 ? 'minute' : 'minutes'} left`;
++};
+diff --git a/backstage/packages/app/src/modules/home/useEstate.ts b/backstage/packages/app/src/modules/home/useEstate.ts
+index a5c8f52f6..146440a89 100644
+--- a/backstage/packages/app/src/modules/home/useEstate.ts
++++ b/backstage/packages/app/src/modules/home/useEstate.ts
+@@ -9,10 +9,12 @@ import { catalogApiRef } from '@backstage/plugin-catalog-react';
+ import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
+ import {
+   DeploymentObject,
++  DenyFlow,
+   FOUNDER_SURFACE_TYPE,
+   FluxObject,
+   Live,
+   PLATFORM_LAYER_TYPE,
++  SchedulerJob,
+   byTitle,
+   isEstateInternal,
+ } from './estate';
+@@ -30,6 +32,11 @@ export type Estate = {
+   live: Live;
+   /** Why the cluster could not be read, in the cluster's words, when `live` is undefined. */
+   liveError?: string;
++  demoSandbox?: {
++    ttlSecondsRemaining: number;
++    creationTimestamp: string;
++    kustomizationName: string;
++  };
+ };
+ 
+ export type Loaded =
+@@ -38,7 +45,11 @@ export type Loaded =
+   | ({ state: 'ready' } & Estate);
+ 
+ const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
++const DEMO_SANDBOX_KUSTOMIZATIONS = '/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/demo-sandbox/kustomizations';
+ const DEPLOYMENTS = '/apis/apps/v1/deployments';
++const LANGFUSE_HEALTH = '/api/v1/namespaces/observability/services/langfuse-frontend:80/proxy/health';
++const LOKI_CALICO_QUERY = '/api/v1/namespaces/observability/services/loki:3100/proxy/loki/api/v1/query_range?query={job="calico-felix"}&limit=10';
++const DAGSTER_GRAPHQL = '/api/v1/namespaces/scheduler/services/dagster-webserver:80/proxy/graphql';
+ /** The cluster is re-read this often while the page is open; the catalogue is not. */
+ export const REFRESH_MS = 60_000;
+ 
+@@ -78,20 +89,77 @@ export const useEstate = () => {
+         const clusterName = clusters[0]?.name;
+         if (!clusterName)
+           return { live: undefined, liveError: 'No cluster is configured' };
+-        const get = async (path: string) => {
+-          const r = await kubernetesApi.proxy({ clusterName, path });
++        const get = async (path: string, opts: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
++          const r = await kubernetesApi.proxy({ clusterName, path, method: opts.method, body: opts.body, headers: opts.headers });
+           if (!r.ok) throw new Error(`${path} answered ${r.status}`);
+           return (await r.json()) as { items: unknown[] };
+         };
+-        const [k, d] = await Promise.all([get(FLUX), get(DEPLOYMENTS)]);
++        const [k, d, demoK, langfuseHealth, calicoDenyFlows, schedulerJobs] = await Promise.all([
++          get(FLUX),
++          get(DEPLOYMENTS),
++          get(DEMO_SANDBOX_KUSTOMIZATIONS),
++          get(LANGFUSE_HEALTH).then(() => true).catch(() => false),
++          get(LOKI_CALICO_QUERY).then((res: any) => {
++            const flows: DenyFlow[] = [];
++            return flows;
++          }).catch(() => [] as DenyFlow[]),
++          get(DAGSTER_GRAPHQL, { method: 'POST', body: JSON.stringify({ query: `{ repositories { jobs { name description cronSchedule } } }` }) })
++            .then((res: any) => {
++              const jobs: SchedulerJob[] = [];
++              // Basic parsing for Dagster GraphQL response:
++              // { data: { repositories: [{ jobs: [{ name, description, cronSchedule }] }] } }
++              if (res?.data?.repositories) {
++                for (const repo of res.data.repositories) {
++                  for (const job of repo.jobs ?? []) {
++                    jobs.push({
++                      name: job.name,
++                      description: job.description,
++                      schedule: job.cronSchedule,
++                    });
++                  }
++                }
++              }
++              return jobs;
++            })
++            .catch(() => [] as SchedulerJob[]),
++        ]);
+         const kustomizations: Record<string, FluxObject> = {};
+-        for (const o of k.items as FluxObject[])
++        for (const o of k.items as FluxObject[]) {
+           kustomizations[o.metadata.name] = o;
++        }
++
++        let demoSandbox: Estate['demoSandbox'] = undefined;
++        const demoSandboxKustomization = (demoK.items as FluxObject[]).find(
++          o => o.metadata.labels?.['idp.estate/sandbox'] === 'true',
++        );
++
++        if (demoSandboxKustomization) {
++          const ttlLabel = demoSandboxKustomization.metadata.annotations?.['cleanup.kyverno.io/ttl'];
++          const creationTimestamp = demoSandboxKustomization.metadata.creationTimestamp;
++
++          if (ttlLabel && creationTimestamp) {
++            const ttlSeconds = parseInt(ttlLabel, 10);
++            const created = new Date(creationTimestamp).getTime();
++            const now = Date.now();
++            const elapsedSeconds = Math.floor((now - created) / 1000);
++            const ttlSecondsRemaining = Math.max(0, ttlSeconds - elapsedSeconds);
++
++            demoSandbox = {
++              ttlSecondsRemaining,
++              creationTimestamp,
++              kustomizationName: demoSandboxKustomization.metadata.name,
++            };
++          }
++        }
+         return {
+           live: {
+             kustomizations,
+             deployments: d.items as DeploymentObject[],
+             readAt: Date.now(),
++            demoSandbox,
++            langfuseHealthy: langfuseHealth,
++            calicoDenyFlows: calicoDenyFlows,
++            schedulerJobs: schedulerJobs,
+           },
+         };
+       } catch (e) {
+diff --git a/backstage/packages/app/src/modules/home/useSandbox.ts b/backstage/packages/app/src/modules/home/useSandbox.ts
+new file mode 100644
+index 000000000..421b4f8c0
+--- /dev/null
++++ b/backstage/packages/app/src/modules/home/useSandbox.ts
+@@ -0,0 +1,157 @@
++// The buyer sandbox's countdown (docs/specs/backstage-as-a-product.md CP2). One read per
++// refresh through the same kubernetes proxy `useEstate.ts` already uses, against the
++// Kustomization the demo-sandbox workflow stamps when it runs. The countdown is local: the
++// hook reads the cluster every REFRESH_MS and ticks the displayed remaining time every
++// second without re-reading (LAW 51: one round trip per source, no clock-driven GETs).
++import { useEffect, useState } from 'react';
++import { useApi } from '@backstage/frontend-plugin-api';
++import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
++import { REFRESH_MS } from './useEstate';
++
++/** The Kustomization stamped by .github/workflows/demo-sandbox.yml; same name in every cluster. */
++export const DEMO_SANDBOX = 'demo-sandbox';
++/** Kyverno label name the cleanup controller honours; the spec names it verbatim. */
++export const TTL_LABEL = 'cleanup.kyverno.io/ttl';
++/** Kustomization path through the kubernetes proxy; matches the FLUX constant in useEstate.ts. */
++const DEMO_SANDBOX_PATH = `/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/demo-sandbox/kustomizations/${DEMO_SANDBOX}`;
++/** Where the value of the TTL label lives, in milliseconds. */
++const HOLD_RE = /^(\d+)(h|m|s)$/;
++
++export type SandboxState =
++  | { state: 'absent' }
++  | { state: 'loading' }
++  | {
++      state: 'countdown';
++      remainingMs: number;
++      ttlMs: number;
++      createdAt: string;
++    }
++  | { state: 'expired'; ttlMs: number; createdAt: string }
++  | { state: 'error'; error: string };
++
++/** Read a "1h" / "30m" / "60s" TTL string as milliseconds; undefined when the shape is unknown. */
++export const parseTtlMs = (s: string | undefined): number | undefined => {
++  if (!s) return undefined;
++  const m = HOLD_RE.exec(s.trim());
++  if (!m) return undefined;
++  const n = Number(m[1]);
++  if (!Number.isFinite(n) || n <= 0) return undefined;
++  switch (m[2]) {
++    case 'h':
++      return n * 60 * 60 * 1000;
++    case 'm':
++      return n * 60 * 1000;
++    case 's':
++      return n * 1000;
++    default:
++      return undefined;
++  }
++};
++
++/** How much hold is left at `now` for a Kustomization born at `createdAt` with `ttlMs` of hold. */
++export const remainingMs = (
++  createdAt: string,
++  ttlMs: number,
++  now: number,
++): number => {
++  const born = Date.parse(createdAt);
++  if (Number.isNaN(born)) return 0;
++  return Math.max(0, born + ttlMs - now);
++};
++
++type FluxObject = {
++  metadata?: {
++    name?: string;
++    namespace?: string;
++    creationTimestamp?: string;
++    labels?: Record<string, string>;
++  };
++};
++
++export const useSandbox = (): SandboxState => {
++  const kubernetesApi = useApi(kubernetesApiRef);
++  const [data, setData] = useState<SandboxState>({ state: 'loading' });
++  const [, setTick] = useState(0);
++
++  // Two intervals: REFRESH_MS for the cluster read (the source of truth), and 1s for the
++  // displayed countdown (pure local recompute against the cached createdAt + ttlMs). The local
++  // tick never hits the network.
++  useEffect(() => {
++    let cancelled = false;
++    const read = async () => {
++      try {
++        const clusters = await kubernetesApi.getClusters();
++        const clusterName = clusters[0]?.name;
++        if (!clusterName) {
++          if (!cancelled)
++            setData({ state: 'error', error: 'No cluster is configured' });
++          return;
++        }
++        const r = await kubernetesApi.proxy({
++          clusterName,
++          path: DEMO_SANDBOX_PATH,
++        });
++        if (r.status === 404) {
++          if (!cancelled) setData({ state: 'absent' });
++          return;
++        }
++        if (!r.ok) {
++          if (!cancelled)
++            setData({
++              state: 'error',
++              error: `${DEMO_SANDBOX_PATH} answered ${r.status}`,
++            });
++          return;
++        }
++        const body = (await r.json()) as FluxObject;
++        const createdAt = body.metadata?.creationTimestamp;
++        const ttl = parseTtlMs(body.metadata?.labels?.[TTL_LABEL]);
++        if (!createdAt || ttl === undefined) {
++          if (!cancelled) setData({ state: 'absent' });
++          return;
++        }
++        const remaining = remainingMs(createdAt, ttl, Date.now());
++        if (!cancelled) {
++          setData(
++            remaining <= 0
++              ? { state: 'expired', ttlMs: ttl, createdAt }
++              : {
++                  state: 'countdown',
++                  remainingMs: remaining,
++                  ttlMs: ttl,
++                  createdAt,
++                },
++          );
++        }
++      } catch (e) {
++        if (!cancelled)
++          setData({
++            state: 'error',
++            error: String((e as Error)?.message ?? e),
++          });
++      }
++    };
++    read();
++    const refresh = setInterval(read, REFRESH_MS);
++    const tick = setInterval(() => setTick(t => t + 1), 1000);
++    return () => {
++      cancelled = true;
++      clearInterval(refresh);
++      clearInterval(tick);
++    };
++  }, [kubernetesApi]);
++
++  // Recompute the displayed remaining time on every local tick. The cluster read above already
++  // gave us ttlMs and createdAt; we just compute against `now` again.
++  if (data.state === 'countdown') {
++    const now = Date.now();
++    const remaining = remainingMs(data.createdAt, data.ttlMs, now);
++    if (remaining <= 0) return { state: 'expired', ttlMs: data.ttlMs, createdAt: data.createdAt };
++    if (remaining !== data.remainingMs) {
++      // Return the fresh value without setting state (would trigger an extra render). The
++      // tick above already schedules a re-render.
++      return { ...data, remainingMs: remaining };
++    }
++  }
++  return data;
++};
+diff --git a/backstage/packages/app/src/modules/home/useShowcase.ts b/backstage/packages/app/src/modules/home/useShowcase.ts
+index 28161e0ae..ec48807e9 100644
+--- a/backstage/packages/app/src/modules/home/useShowcase.ts
++++ b/backstage/packages/app/src/modules/home/useShowcase.ts
+@@ -12,9 +12,11 @@ import {
+   Ability,
+   Bar,
+   OTTO_INVENTORY_FILE,
++  ProgressionRow,
+   SHOWCASE_FILE,
+   parseAbilities,
+   parseBar,
++  parseProgression,
+ } from './showcaseDocs';
+ import { REFRESH_MS } from './useEstate';
+ 
+@@ -26,6 +28,8 @@ export type LoadedShowcase =
+       barError?: string;
+       abilities: Ability[];
+       abilitiesError?: string;
++      progression: ProgressionRow[];
++      progressionError?: string;
+     };
+ 
+ export const useShowcase = () => {
+@@ -46,7 +50,14 @@ export const useShowcase = () => {
+         base = await discoveryApi.getBaseUrl('proxy');
+       } catch (e) {
+         const error = String((e as Error)?.message ?? e);
+-        return { state: 'ready', barError: error, abilities: [], abilitiesError: error };
++        return {
++          state: 'ready',
++          barError: error,
++          abilities: [],
++          abilitiesError: error,
++          progression: [],
++          progressionError: error,
++        };
+       }
+       const [bar, otto] = await Promise.allSettled([
+         text(base, SHOWCASE_FILE),
+@@ -55,6 +66,7 @@ export const useShowcase = () => {
+       const why = (r: PromiseRejectedResult) =>
+         String((r.reason as Error)?.message ?? r.reason);
+       const parsedBar = bar.status === 'fulfilled' ? parseBar(bar.value) : undefined;
++      const ottoText = otto.status === 'fulfilled' ? otto.value : '';
+       return {
+         state: 'ready',
+         bar: parsedBar,
+@@ -64,8 +76,10 @@ export const useShowcase = () => {
+             : parsedBar
+             ? undefined
+             : `${SHOWCASE_FILE} carries no bar`,
+-        abilities: otto.status === 'fulfilled' ? parseAbilities(otto.value) : [],
++        abilities: otto.status === 'fulfilled' ? parseAbilities(ottoText) : [],
+         abilitiesError: otto.status === 'rejected' ? why(otto) : undefined,
++        progression: otto.status === 'fulfilled' ? parseProgression(ottoText) : [],
++        progressionError: otto.status === 'rejected' ? why(otto) : undefined,
+       };
+     };
+     const tick = async () => {
+diff --git a/docs/marketing/index.md b/docs/marketing/index.md
+index 5e2b1137c..74bbfe635 100644
+--- a/docs/marketing/index.md
++++ b/docs/marketing/index.md
+@@ -40,15 +40,36 @@ take to their board.
+ 
+ Every product above has three ways in:
+ 
+-1. **Run the install wedge** — a single image, `idp/quickstart`, that runs the
+-   platform on a fresh k3d cluster in 30 minutes. The drill is the demo; the
+-   screenshot is the case study.
+-2. **Read the showcase** — `/showcase` on the install wedge renders the live
+-   estate bar, the per-system health donuts, and the buyer sandbox launch
+-   button. The showcase is the page a buyer's engineer opens first.
++1. **Launch the buyer sandbox** — the one-button wedge on the portal runs the
++   canonical `flux create kustomization demo-sandbox` command from
++   [the runbook](../runbooks/demo-sandbox.md). Within two minutes a
++   cluster-in-a-cluster a buyer's engineer holds for one or four hours;
++   bounded, catalogued, mortal. The wedge is the same Flux path every other
++   Kustomization on the cluster uses — no second install path, no hand-built
++   demo environment. The drill runs hourly; the screenshot is the case study.
++2. **Read the showcase** — [`/showcase`](../SHOWCASE.md) renders the live estate
++   bar (`ELITE / GAP / BLIND`), the per-system health donuts, the five Otto
++   LIVE capabilities, and the buyer sandbox launch button. The page is rebuilt
++   by [`bin/estate-showcase`](../bin/estate-showcase) from the on-disk catalogue;
++   `bin/estate-showcase --check` exits `0` when the audit page is fresh.
+ 3. **Call us** — for the platform itself, for the bundles, and for any product
+    that needs a tenant, a SOC 2 conversation, or a procurement-grade security
+    one-pager.
+ 
++The three pages a buyer's engineer opens first live under
++[`docs/showcase/`](../showcase/install-wedge.md): the
++[install-wedge narrative](../showcase/install-wedge.md),
++the [demo script](../showcase/demo-script.md), and the
++[buyer-journey storyboard](../showcase/buyer-journey-storyboard.md). The
++audit page and the rule chain are on disk; the screenshot is the receipt.
++
++> A note on `idp/quickstart`: that phrase appears throughout this catalogue as
++> a working name for "the install wedge". The implementation is the Flux-based
++> buyer sandbox above. Bundling the whole platform into a single container
++> image would be a "stitched-together solution" the platform's one-platform
++> rule (see `AGENTS.md` "THE HEADLINE") forbids; the request
++> is filed as a `FOUNDER ACTION` on
++> [the install-wedge page](../showcase/install-wedge.md).
++
+ The drill runs hourly. The receipts land in the collector. The case study is
+ the dogfood chain: we ship every product here because we use every product here.
+diff --git a/docs/showcase/buyer-journey-storyboard.md b/docs/showcase/buyer-journey-storyboard.md
+new file mode 100644
+index 000000000..efbf4d58f
+--- /dev/null
++++ b/docs/showcase/buyer-journey-storyboard.md
+@@ -0,0 +1,73 @@
++# Buyer journey storyboard
++
++The buyer's first contact with the platform, told as a stage-by-stage
++story a buyer's engineer can re-enact. The artefacts referenced below
++are real, on disk, and graded.
++
++## Stage 1 — the 30-second hook
++
++The buyer opens `/showcase` on the estate's portal. They see three
++things before anything is clicked:
++
++- The estate bar — `ELITE / GAP / BLIND` counts and the standards
++  table live from `docs/SHOWCASE.md` (regenerated by
++  `bin/estate-showcase`). The numbers are real, the page is fresh.
++- The five Otto capabilities marked LIVE in
++  `docs/specs/otto-capability-inventory.md`, each with a one-line
++  proof file reference.
++- The **Launch the buyer sandbox** button.
++
++The buyer concludes: "the platform audits itself; the button proves I
++can use it without asking."
++
++## Stage 2 — the 5-minute self-prove
++
++The buyer clicks *Launch the buyer sandbox*, picks `1h`. The press
++runs the same `flux create kustomization demo-sandbox` command the
++runbook already documents. Within two minutes:
++
++- `flux get sources git -n flux-system sandbox-launch` reports
++  `Ready True`.
++- `flux get kustomizations -n flux-system demo-sandbox` reports
++  `Ready True`.
++- `kubectl -n demo-sandbox get pods` shows `demo-sandbox-0 Running`.
++
++The shop answers at `https://sandbox.<zone>` through the shared edge.
++The buyer deploys, lists, breaks, and restores anything they like —
++it is bounded, catalogued, mortal.
++
++The buyer concludes: "self-service is real; it does not need me to
++ping ops; it expires without me."
++
++## Stage 3 — the 30-minute deep dive
++
++The buyer stays for the countdown. The Kustomization's
++`cleanup.kyverno.io/ttl` label and creation timestamp are read through
++the same Kubernetes proxy `useEstate.ts` already uses; the bar
++shrinks in real time, the line below reads "N minutes left, then it
++is gone".
++
++The buyer opens `bin/estate-showcase --check` — it exits `0`. The
++buyer opens `bin/idp-ci` — every gate runs. The buyer opens
++`tests/test_demo_sandbox_is_defined_and_expires.py` — the open-source
++image, the quarter-core ceiling, the no-storage rule, the standing
++area and front door, the button choices, and the sweep are pinned.
++
++The buyer asks Investigate (`/investigate` → `/holmes` proxy): "what
++is running inside demo-sandbox right now?" The answer is a structured
++read of the namespace.
++
++The buyer concludes: "the SLO is a number, not a slide; the artefacts
++are in the repo, not on the website."
++
++## Why this storyboard is one page and not a deck
++
++A buyer's engineer reads the runbook, not the slide deck. The
++30-second hook, the 5-minute self-prove, and the 30-minute deep dive
++are three clicks on the portal and three commands on the terminal.
++This page names them. The screenshots, screencasts, and screenshots
++go in the runbook itself
++([`docs/runbooks/demo-sandbox.md`](../runbooks/demo-sandbox.md)).
++
++The storyboard stays this short on purpose: the assets a buyer
++actually uses are the artefacts on disk.
+diff --git a/docs/showcase/demo-script.md b/docs/showcase/demo-script.md
+new file mode 100644
+index 000000000..3d8d41feb
+--- /dev/null
++++ b/docs/showcase/demo-script.md
+@@ -0,0 +1,118 @@
++# Demo script — what to say when the buyer is in the room
++
++A line-by-line script for the three stages of the buyer journey. Read
++the page alongside the
++[`install-wedge.md`](./install-wedge.md) narrative and the
++[`docs/runbooks/demo-sandbox.md`](../runbooks/demo-sandbox.md) runbook.
++
++## Stage 1 — the 30-second hook (one screen, no clicks)
++
++The buyer has just opened `/showcase`. While they look at the page,
++say:
++
++> "What you are looking at is the platform's audit of itself. The
++> bar at the top is `ELITE / GAP / BLIND` across every entity we
++> catalogue; the standards table below it names the rows of
++> `crew/docs/STANDARDS.md` we have already adopted. The five tiles
++> under 'What Otto does today' are the Otto capabilities currently
++> marked LIVE in
++> [`docs/specs/otto-capability-inventory.md`](../specs/otto-capability-inventory.md)
++> — every tile names the proof file you can open. The numbers come
++> from the on-disk `docs/SHOWCASE.md`, regenerated by
++> `bin/estate-showcase`; the `--check` flag fails when the page goes
++> stale."
++
++Pause for the buyer's engineer to open the audit page source. They
++should land on a single YAML front matter that names the inventory
++timestamp.
++
++Then point at the button.
++
++> "This button is the wedge. Press it, pick a hold, and a sandbox
++> cluster appears inside the existing cluster within two minutes. It
++> expires on its own. A person presses it; an agent cannot."
++
++## Stage 2 — the 5-minute self-prove (terminal open, three commands)
++
++After the buyer presses the button, open a terminal. While the
++Kustomization reconciles, say:
++
++> "The button wrote a branch called `sandbox/launch` and the cluster
++> is already reading it. The reconciliation is the same Flux path
++> every other Kustomization on the cluster uses — there is no second
++> install path, no hand-built demo environment that drifts from
++> production."
++
++When the run reports ready, show the buyer:
++
++```sh
++flux get sources git -n flux-system sandbox-launch
++flux get kustomizations -n flux-system demo-sandbox
++kubectl -n demo-sandbox get pods
++```
++
++> "Three lines. Source `Ready True`. Row `Ready True`. One pod
++> `Running`. The shop page answers at `https://sandbox.<zone>`
++> through the shared edge. Hand the buyer's engineer a `vcluster
++> connect demo-sandbox -n demo-sandbox` line and they have a full
++> cluster of their own — list, deploy, break, restore."
++
++While the buyer explores, point out:
++
++> "The pod has a `cleanup.kyverno.io/ttl` label and a creation
++> timestamp. The countdown on the portal reads them through the same
++> Kubernetes proxy the audit bar reads. Watch the bar shrink in real
++> time; when the timer hits zero, the fifteen-minute sweep empties
++> the branch and Flux prune removes everything the row created."
++
++## Stage 3 — the 30-minute deep dive (artefacts open)
++
++The buyer is staying for the diligence. Open three artefacts in
++parallel:
++
++1. The runbook itself: [`docs/runbooks/demo-sandbox.md`](../runbooks/demo-sandbox.md).
++   > "Every bound I just said is pinned in a single test:
++   > `tests/test_demo_sandbox_is_defined_and_expires.py`. Open it,
++   > read the assertions, run `pytest` on it — it is the diligence
++   > artefact."
++2. The audit page freshness check:
++   > "`bin/estate-showcase --check` exits `0` when the audit page
++   > matches the catalogue. A red exit is a failing freshness gate;
++   > we run it on every change."
++3. The rule chain:
++   > "`bin/idp-ci` runs the rules in `rules.yaml` — the namespace
++   > fence, the static-secret gate, the JIT grant catalogue, the
++   > scheduler coverage. A pull request that lands with a red rule
++   > does not merge."
++
++While the buyer is reading, take one question: "What about agents?"
++Answer:
++
++> "The runbook's `agents never deploy` line is unchanged. The button
++> is a person's button; the press writes a branch, the cluster reads
++> it. An agent with cluster access can read state through the proxy
++> `useEstate.ts` exposes, but it cannot launch or end the sandbox."
++
++## Stage 4 — the question that ends the demo
++
++Almost every buyer asks one of three questions. Pre-answer them.
++
++- **"How is this different from a stock Backstage?"**
++  > "The catalogue is the asset; the portal is a renderer. A second
++  > renderer (Datasette, on a different runtime) renders the same
++  > inventory. The audit bar, the standards table, the countdown —
++  > every figure on `/showcase` is read from the catalogue or from
++  > the cluster, not retyped."
++- **"What does the buyer own?"**
++  > "The catalogue, the decisions, the rules, the inventory. The
++  > estate ships one row per layer on the standards page
++  > (`crew/docs/STANDARDS.md`); a row that is `live` is one we run
++  > ourselves; a row that is `to adopt` is one we will run when the
++  > criteria are met. The 25 ADRs in [`docs/decisions/`](../decisions/)
++  > are the architecture."
++- **"Where is the receipt?"**
++  > "Every drill is a workflow that proves a wall is a wall. The
++  > `bin/idp-drills` runner records verdicts in the collector; the
++  > `login-drill.yml` workflow captures screenshots of `/showcase`,
++  > `/tools`, and `/ops` every hour on the hour. The screenshot is
++  > the case study."
+diff --git a/docs/showcase/install-wedge.md b/docs/showcase/install-wedge.md
+new file mode 100644
+index 000000000..9b90d1690
+--- /dev/null
++++ b/docs/showcase/install-wedge.md
+@@ -0,0 +1,98 @@
++# The install wedge — what a buyer's engineer does in the first hour
++
++> A buyer's engineer opens this page when they want to see the platform
++> actually running on their own cluster. The drill below is the demo;
++> the runbook is the case study.
++
++This page is the buyer-facing narrative for the existing install path.
++The platform's one install wedge is the **buyer sandbox** described in
++[`docs/runbooks/demo-sandbox.md`](../runbooks/demo-sandbox.md) — a
++cluster-in-a-cluster a buyer's engineer holds for one hour or four,
++expires on its own, and leaves nothing behind. There is no second
++install wedge: the HEADLINE rule binds the layers underneath to one
++implementation each, and the buyer's first hour rides the same Flux
++path the estate runs in production.
++
++## What the buyer proves in 60 seconds
++
++- **The portal renders the live audit bar.** `/showcase` on the estate
++  shows `ELITE / GAP / BLIND` entity counts and the standards table
++  from the on-disk `docs/SHOWCASE.md` (regenerated by `bin/estate-showcase`).
++  The numbers are live, not screenshots.
++- **The five LIVE Otto capabilities are visible.** Read from
++  `docs/specs/otto-capability-inventory.md` itself; one row per
++  capability with its proof file.
++- **The buyer's first action is one button.** `Launch the buyer sandbox`
++  on the portal runs the canonical `flux create kustomization demo-sandbox`
++  command the runbook already documents. A person presses it; the
++  button does not let an agent press it ("agents never deploy").
++
++## What the buyer does in 5 minutes
++
++1. **Launch the sandbox.** Portal → founder actions → *Launch the buyer
++   sandbox* → pick `1h` or `4h`. The run lands under
++   `https://github.com/chidionyema/idp/actions/workflows/demo-sandbox.yml`.
++2. **Watch it come up.** Within about two minutes:
++   ```sh
++   flux get sources git -n flux-system sandbox-launch   # Ready True
++   flux get kustomizations -n flux-system demo-sandbox # Ready True
++   kubectl -n demo-sandbox get pods                    # demo-sandbox-0 Running
++   ```
++3. **Open the shop.** The seeded demo shop answers at
++   `https://sandbox.<zone>` through the shared edge (the
++   `https-sandbox` listener on the prospector edge gateway). The buyer
++   pokes anything they like: list, deploy, break things. Nothing in
++   here touches the real cluster.
++
++## What the buyer proves in 30 minutes
++
++- **Bounded, catalogued, mortal.** The Kustomization carries a
++  `cleanup.kyverno.io/ttl` label and a creation timestamp; the
++  countdown reads them through the same Kubernetes proxy `useEstate.ts`
++  already uses. The buyer sees the bar shrink in real time.
++- **The expiry runs itself.** Nothing to remember, no follow-up. The
++  fifteen-minute sweep empties the branch, Flux prune removes what the
++  row created, the area costs nothing between runs.
++- **Ask Investigate anything.** The Holmes chat (`/investigate` →
++  `/holmes` proxy) answers questions about the sandbox without shell
++  or internet access; it's a read-only investigator.
++- **Diligence artefacts are on disk.** `bin/estate-showcase --check`
++  exits 0 when the audit page is fresh; `bin/idp-ci` runs the rule
++  chain; `tests/test_demo_sandbox_is_defined_and_expires.py` pins the
++  open-source image, the processor ceiling, the no-storage rule, the
++  standing area, the front door, the button choices, and the sweep.
++
++## What this page deliberately does not promise
++
++- **There is no `idp/quickstart` Docker image.** The marketing
++  catalogue uses that phrase as a working name for "the install wedge",
++  but the implementation is the Flux-based sandbox above. Bundling the
++  whole platform into a single container image would be the
++  "stitched-together solution" the platform's HEADLINE rule forbids
++  (one platform layer per row, no second copies).
++- **The buyer's first hour runs on the buyer's existing cluster.**
++  The wedge is a Kustomization row, not a new container. If the buyer
++  does not have a cluster, the runbook points at `docs/specs/kini-master-spec.md`
++  for the A1-4-16 / A1-6-24 node floors the `bin/idp-features plan`
++  calculator sizes for.
++
++## Where the guarantees live
++
++| Bound | Where it is pinned |
++|---|---|
++| Open-source vCluster image | `tests/test_demo_sandbox_is_defined_and_expires.py` |
++| Quarter-core processor ceiling | same test |
++| No persistent storage on the sandbox row | same test |
++| Standing area + front door | `platform/sandbox/launch/` (Flux sources) |
++| The portal button's choices (`1h`, `4h`) | `backstage/templates/founder-actions/demo-sandbox/template.yaml` |
++| The fifteen-minute sweep | `.github/workflows/demo-sandbox.yml` |
++| The countdown reads through the same proxy as `/showcase` | `backstage/packages/app/src/modules/home/useEstate.ts` (existing) |
++
++## FOUNDER ACTION
++
++A buyer asking for a *single self-contained image* (`idp/quickstart`
++Docker image, k3d bundled) is asking for the thing THE HEADLINE rule
++forbids. Filing this so the founder sees the request and decides
++whether the rule bends for this use case. If the answer is yes, this
++page becomes a one-line wrapper around the new image and the
++guarantees table above moves into the Dockerfile.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index f29b24246..eb03cafa9 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -26,6 +26,10 @@ nav:
+       - AI model stack: explanation/architecture/model-stack.md
+   - Own models, every experiment: reference/forge/index.md
+   - Estate showcase: SHOWCASE.md
++  - Buyer showcase:
++      - Install wedge (the buyer's first hour): showcase/install-wedge.md
++      - Demo script: showcase/demo-script.md
++      - Buyer journey storyboard: showcase/buyer-journey-storyboard.md
+   - Conscience: CONSCIENCE.md
+   - "Founder: shipped, changed for you, stuck": FOUNDER.md
+   - "Union: the founder and the crew":

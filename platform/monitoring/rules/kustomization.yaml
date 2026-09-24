@@ -11,5 +11,6 @@ resources:
   - founder-mac-screen-sharing-probe.yaml
   - agentgateway-servicemonitor.yaml
   - canary-servicemonitor.yaml
+  - fleetview-voice-servicemonitor.yaml
   - api-key-warden.yaml
   - kyverno.yaml

@@ -1,0 +1,980 @@
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index 07a09f0af..3520ca971 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -1546,22 +1546,22 @@ spec:
+     substituteFrom:
+       - kind: ConfigMap
+         name: estate-config
+-  # No healthCheck and no wait: this row applies the CRD and the RBAC, which have no
+-  # readiness of their own. The controller Deployment is not in the row yet (see
+-  # platform/nodesoftware-operator/kustomization.yaml) because its image does not exist,
+-  # and a healthCheck on a Deployment that can never become ready spends the whole 10m
+-  # timeout every 10m interval and reports a failure event each time.
+-  #
+-  # Removed 2026-09-08: this row also read `substituteFrom: {kind: Secret, name: ghcr-pull}`,
+-  # for a stated `IMAGE_TAG` field. ghcr-pull is a kubernetes.io/dockerconfigjson Secret and
+-  # its one key is `.dockerconfigjson`; Flux loads every key of a substituteFrom source as a
+-  # variable name, `.dockerconfigjson` is not a legal one, and the whole post-build aborted.
+-  # This row had therefore never applied once -- 156 minutes old and the namespace empty --
+-  # and gvisor-runtime, which dependsOn it, had never applied either. The estate pins images
+-  # with Flux image automation and a `$imagepolicy` marker written into git (cyrus,
+-  # hermes-agent, estate-mcp and eight more); nothing else in the estate substituted a pull
+-  # secret, and a pull secret is referenced by name in a pod spec, never substituted as text.
++  # Historical note (kept from the broken mechanism removed on 2026-09-08 by PR #2416):
++  # this row previously read `substituteFrom: {kind: Secret, name: ghcr-pull}` for a
++  # stated `IMAGE_TAG` field. ghcr-pull is a kubernetes.io/dockerconfigjson Secret whose
++  # one key is `.dockerconfigjson`; Flux loads every key of a substituteFrom source as a
++  # variable name, `.dockerconfigjson` is not a legal one, and the whole post-build aborted
++  # before applying anything. That substituteFrom is gone; the image is now pinned via Flux
++  # image automation and a `$imagepolicy` marker in kustomization.yaml (cyrus, hermes-agent
++  # and ten more already use it). A pull secret is referenced by name in a pod spec, never
++  # substituted as text.
++  wait: true
+   timeout: 10m
++  healthChecks:
++    - apiVersion: apps/v1
++      kind: Deployment
++      name: nodesoftware-operator
++      namespace: nodesoftware-operator
+ ---
+ # Cyrus agent orchestration (crew#834): the execution layer that works an issue with any engine --
+ # claude, codex, cursor, gemini or opencode -- and answers to both boards, GitHub and Linear.
+diff --git a/platform/image-automation/controller.yaml b/platform/image-automation/controller.yaml
+new file mode 100644
+index 000000000..989a4d717
+--- /dev/null
++++ b/platform/image-automation/controller.yaml
+@@ -0,0 +1,37 @@
++# nodesoftware-operator controller binary (goal b9217bea C2). The controller Dockerfile lives at
++# platform/nodesoftware-operator/controller/Dockerfile so `bin/dockerfiles` publishes the
++# multi-arch manifest list as ghcr.io/chidionyema/controller:main-<run>-<sha> (the dirname's
++# basename). ImageRepository below watches that registry name; the kustomization.yaml in the
++# platform/nodesoftware-operator directory carries the `$imagepolicy` marker that maps the
++# ImagePolicy's chosen tag onto the controller Deployment's `image:` field. Without this row
++# the controller's deployment asks for `ghcr.io/chidionyema/nodesoftware-operator` with no tag
++# and kubelet ImagePullBackOffs the pod until a human types a SHA.
++#
++# One ImageUpdateAutomation (backstage.yaml, path ./platform) writes every ImagePolicy marker
++# the policy tracks. Two automations on one push branch collide ("cannot lock ref", crew#406,
++# 2026-08-27), so there is exactly one.
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: controller
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/controller
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: controller
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: controller
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
+diff --git a/platform/image-automation/kustomization.yaml b/platform/image-automation/kustomization.yaml
+index b7e0b758e..49629e9e7 100644
+--- a/platform/image-automation/kustomization.yaml
++++ b/platform/image-automation/kustomization.yaml
+@@ -11,3 +11,5 @@ resources:
+   - lago-front.yaml
+   - cyrus.yaml
+   - jit.yaml
++  - controller.yaml
++  - runsc.yaml
+diff --git a/platform/image-automation/runsc.yaml b/platform/image-automation/runsc.yaml
+new file mode 100644
+index 000000000..f0228c059
+--- /dev/null
++++ b/platform/image-automation/runsc.yaml
+@@ -0,0 +1,38 @@
++# runsc handler image (goal b9217bea C5). build-multiarch publishes the multiarch
++# manifest list to ghcr.io/chidionyema/runsc:main-<run>-<sha>; the policy picks the
++# highest run and image-automation-controller writes the resulting tag into
++# platform/nodesoftware-operator/deployment.yaml (initContainer
++# runsc-handler-mirror, image: ghcr.io/chidionyema/runsc). The controller's source
++# reads that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
++# uses it as the InstallImage for the handler pods it schedules. Without this row
++# the controller's --handler-image never tracks a published tag and every handler
++# pod ImagePulls the broken ":IMAGE_TAG" literal it shipped with.
++#
++# One ImageUpdateAutomation (backstage.yaml, path ./platform) writes every
++# ImagePolicy marker the policy tracks. Two automations on one push branch
++# collide ("cannot lock ref", crew#406, 2026-08-27), so there is exactly one.
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: runsc
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/runsc
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: runsc
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: runsc
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
+diff --git a/platform/nodesoftware-operator/controller/Dockerfile b/platform/nodesoftware-operator/controller/Dockerfile
+index 5b72d661a..c753fbf78 100644
+--- a/platform/nodesoftware-operator/controller/Dockerfile
++++ b/platform/nodesoftware-operator/controller/Dockerfile
+@@ -5,17 +5,24 @@
+ # 10001 (uid: 10001 is what the controller's Deployment securityContext expects per the
+ # platform/nodesoftware-operator/deployment.yaml in PR #2338).
+ #
+-# Build:    docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
+-# Run:      docker run --rm ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
++# Build:    docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
++# Push:     the multi-arch manifest list lands at ghcr.io/chidionyema/controller:main-<run>-<sha>
++#           (bin/dockerfiles derives the image name from the Dockerfile's dirname basename;
++#           the deployment asks for ghcr.io/chidionyema/controller, the kustomize `images:`
++#           block in platform/nodesoftware-operator/kustomization.yaml fills the tag via the
++#           $imagepolicy marker in platform/image-automation/controller.yaml).
+ #
+-# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: this
+-# image is not built by any workflow and is a 404 in ghcr, and the Flux row that claimed to
++# Why `controller` and not `nodesoftware-operator`: every other image in this repo uses the
++# dirname basename as its registry name (cyrus, hermes-agent, jit, lago-api, lago-front).
++# `bin/dockerfiles` produces `ghcr.io/chidionyema/controller`; the deployment and kustomization
++# both reference that exact name so there is one source of truth.
++#
++# IMAGE_TAG above is a placeholder for a human running these commands, not a substitution: the
++# estate pins this image via a `$imagepolicy`-marked `newTag:` in kustomization.yaml, the same
++# cyrus pattern every other in-repo image uses. The Flux row that previously claimed to
+ # substitute it from the ghcr-pull secret never could (that Secret's one key is
+-# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08. When
+-# the image is built it is pinned the estate's way, a `$imagepolicy`-marked newTag in
+-# kustomization.yaml. Historic note, kept because the old text is still quoted downstream:
+-# `optional: false` in the Flux row was said to mean a missing IMAGE_TAG fails the row,
+-# not a silent `:latest` rollout.
++# `.dockerconfigjson`, not a legal envsubst variable name) and was removed on 2026-09-08
++# (PR #2416); this PR replaces the broken mechanism with the working one.
+ 
+ FROM golang:1.26.3 AS build
+ WORKDIR /src
+diff --git a/platform/nodesoftware-operator/controller/README.md b/platform/nodesoftware-operator/controller/README.md
+index e47959b3e..7d828ff33 100644
+--- a/platform/nodesoftware-operator/controller/README.md
++++ b/platform/nodesoftware-operator/controller/README.md
+@@ -98,15 +98,19 @@ gofmt -l .                      # formatting (should be empty)
+ The container image builds with the multi-stage `Dockerfile`:
+ 
+ ```sh
+-docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
++docker build -t ghcr.io/chidionyema/controller:IMAGE_TAG .
+ ```
+ 
+-`IMAGE_TAG` is a placeholder, not a substitution. The Flux row that claimed to substitute it
+-from `Secret/ghcr-pull` could never have done so -- that Secret's one key is `.dockerconfigjson`,
+-which is not a legal envsubst variable name, and it aborted the row's whole post-build until it
+-was removed on 2026-09-08. This image is not built by any workflow yet; when it is, it gets an
+-ImageRepository/ImagePolicy pair and a `$imagepolicy`-marked `newTag:` like every other image
+-in the estate.
++`IMAGE_TAG` is substituted at Flux postBuild by the kustomize `images:` block in
++`platform/nodesoftware-operator/kustomization.yaml` from the `$imagepolicy` marker in
++`platform/image-automation/controller.yaml` (idp#140 image-automation). The image is published
++as `ghcr.io/chidionyema/controller:main-<run>-<sha>` per the `bin/dockerfiles` dirname
++basename convention; the deployment asks for that exact name.
++
++Historical note (kept from the broken mechanism removed on 2026-09-08 by PR #2416): the Flux row
++that previously claimed to substitute `IMAGE_TAG` from `Secret/ghcr-pull` could never have done
++so -- that Secret's one key is `.dockerconfigjson`, which is not a legal envsubst variable name,
++and it aborted the row's whole post-build. The cyrus-pattern `newTag:` above is what replaced it.
+ 
+ ## What's NOT in this controller yet
+ 
+diff --git a/platform/nodesoftware-operator/controller/cmd/main.go b/platform/nodesoftware-operator/controller/cmd/main.go
+index 993d6ff22..6df9e6f32 100644
+--- a/platform/nodesoftware-operator/controller/cmd/main.go
++++ b/platform/nodesoftware-operator/controller/cmd/main.go
+@@ -2,22 +2,30 @@
+ // RuntimeInstall CRs and reconciles them against target nodes using per-runtime handlers.
+ //
+ // On startup:
+-//  1. Parse flags (--metrics-addr, --health-addr, --leader-elect).
+-//  2. Build the controller-runtime manager.
+-//  3. Register the closed-set handlers in the registry (runsc shipped; kata, nvidia stubbed).
+-//  4. Wire the Reconciler.
+-//  5. Start the manager.
++//  1. Parse flags (--metrics-addr, --health-addr, --leader-elect, --handler-image-source).
++//  2. Resolve --handler-image-source to a real image reference (default reads the
++//     `runsc-handler-mirror` initContainer image from this pod's spec, so Flux image
++//     automation owns the tag and we never need to hard-code a SHA in source).
++//  3. Build the controller-runtime manager.
++//  4. Register the closed-set handlers in the registry (runsc shipped; kata, nvidia stubbed).
++//  5. Wire the Reconciler.
++//  6. Start the manager.
+ //
+ // The controller image runs in the operator's namespace. The handler pods it creates run in the
+ // same namespace and are hostPath-mounted to /host.
+ package main
+ 
+ import (
++	"context"
+ 	"flag"
++	"fmt"
+ 	"os"
+ 
++	apierrors "k8s.io/apimachinery/pkg/api/errors"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+ 	"k8s.io/apimachinery/pkg/runtime"
+ 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
++	"k8s.io/client-go/kubernetes"
+ 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+ 	ctrl "sigs.k8s.io/controller-runtime"
+ 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+@@ -31,6 +39,14 @@ import (
+ 	"github.com/chidionyema/idp/platform/nodesoftware-operator/controller/internal/handler/runsc"
+ )
+ 
++const (
++	// defaultHandlerImageSource is the initContainer whose image the controller
++	// reads at startup to learn which runsc handler image to spawn. The
++	// initContainer itself is a noop (its only job is to be a kustomize-managed
++	// image: field that Flux image-automation can rewrite).
++	defaultHandlerImageSource = "init:runsc-handler-mirror"
++)
++
+ var scheme = runtime.NewScheme()
+ 
+ func init() {
+@@ -40,21 +56,34 @@ func init() {
+ 
+ func main() {
+ 	var (
+-		metricsAddr      string
+-		healthAddr       string
+-		leaderElect      bool
+-		handlerImage     string
+-		handlerNamespace string
++		metricsAddr        string
++		healthAddr         string
++		leaderElect        bool
++		handlerImage       string
++		handlerImageSource string
++		handlerNamespace   string
+ 	)
+ 	flag.StringVar(&metricsAddr, "metrics-addr", ":8080", "address for the metrics endpoint")
+ 	flag.StringVar(&healthAddr, "health-addr", ":8081", "address for the health-probe endpoint")
+ 	flag.BoolVar(&leaderElect, "leader-elect", true, "enable leader election for HA")
+-	flag.StringVar(&handlerImage, "handler-image", envOr("HANDLER_IMAGE", "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG"), "runsc handler image")
+-	flag.StringVar(&handlerNamespace, "handler-namespace", envOr("HANDLER_NAMESPACE", "nodesoftware-operator-system"), "namespace for handler pods")
++	flag.StringVar(&handlerImage, "handler-image", "", "literal handler image (empty => resolve from --handler-image-source). Used for unit tests and out-of-cluster dev.")
++	flag.StringVar(&handlerImageSource, "handler-image-source", envOr("HANDLER_IMAGE_SOURCE", defaultHandlerImageSource), `source of the handler image. "init:<name>" reads the named initContainer's image from this pod (image-automation-owned). A literal image string pins it in source.`)
++	flag.StringVar(&handlerNamespace, "handler-namespace", envOr("HANDLER_NAMESPACE", "nodesoftware-operator"), "namespace for handler pods")
+ 	flag.Parse()
+ 
+ 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+ 
++	if handlerImage == "" {
++		resolved, err := resolveHandlerImage(handlerImageSource)
++		if err != nil {
++			ctrl.Log.Error(err, "unable to resolve --handler-image from --handler-image-source",
++				"source", handlerImageSource)
++			os.Exit(1)
++		}
++		handlerImage = resolved
++		ctrl.Log.Info("resolved handler image from source", "source", handlerImageSource, "image", handlerImage)
++	}
++
+ 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
+ 		Scheme:                 scheme,
+ 		HealthProbeBindAddress: healthAddr,
+@@ -68,7 +97,12 @@ func main() {
+ 	}
+ 
+ 	registry := handler.NewRegistry()
+-	registry.Register(runsc.New(handlerImage, "/host"))
++	runscHandler, err := runsc.New(handlerImage, "/host")
++	if err != nil {
++		ctrl.Log.Error(err, "unable to construct runsc handler", "handlerImage", handlerImage)
++		os.Exit(1)
++	}
++	registry.Register(runscHandler)
+ 	// kata + nvidia handlers register when their handlers land (NodeSoftwareOperator: kata-runtime-handler
+ 	// and NodeSoftwareOperator: nvidia-runtime-handler).
+ 
+@@ -98,6 +132,58 @@ func main() {
+ 	}
+ }
+ 
++// resolveHandlerImage translates --handler-image-source into a concrete image string.
++// The only scheme currently supported is "init:<containerName>", which reads the named
++// initContainer's image from the controller's own pod. The pod identity comes from the
++// downward-API env vars POD_NAME / POD_NAMESPACE (deployment.yaml). Out-of-cluster runs
++// (unit tests, dev) set --handler-image directly and skip this code path.
++//
++// Why this exists: image-automation only rewrites PodSpec container `image:` fields; a
++// CLI flag cannot carry a $imagepolicy marker, so wiring the runsc handler image through
++// a flag would freeze its tag at apply time and break the estate's auto-bump flow.
++// Reading from an initContainer puts the tag under kustomize's control while still
++// giving the controller binary access to the live value at startup.
++func resolveHandlerImage(source string) (string, error) {
++	const initScheme = "init:"
++	if len(source) <= len(initScheme) || source[:len(initScheme)] != initScheme {
++		return "", fmt.Errorf("unsupported --handler-image-source %q (only %s<containerName> is implemented)", source, initScheme)
++	}
++	containerName := source[len(initScheme):]
++
++	podName := os.Getenv("POD_NAME")
++	podNamespace := os.Getenv("POD_NAMESPACE")
++	if podName == "" || podNamespace == "" {
++		return "", fmt.Errorf("in-cluster identity required: POD_NAME=%q POD_NAMESPACE=%q (deployment.yaml must downward-API both)", podName, podNamespace)
++	}
++
++	cfg, err := ctrl.GetConfig()
++	if err != nil {
++		return "", fmt.Errorf("kubeconfig: %w", err)
++	}
++	clientset, err := kubernetes.NewForConfig(cfg)
++	if err != nil {
++		return "", fmt.Errorf("kube client: %w", err)
++	}
++
++	pod, err := clientset.CoreV1().Pods(podNamespace).Get(context.Background(), podName, metav1.GetOptions{})
++	if err != nil {
++		if apierrors.IsNotFound(err) {
++			return "", fmt.Errorf("pod %s/%s not found (controller started before the pod was visible to its own service account?): %w", podNamespace, podName, err)
++		}
++		return "", fmt.Errorf("get pod %s/%s: %w", podNamespace, podName, err)
++	}
++
++	for _, c := range pod.Spec.InitContainers {
++		if c.Name == containerName {
++			if c.Image == "" {
++				return "", fmt.Errorf("initContainer %q has empty image: field (kustomize images: marker missing?)", containerName)
++			}
++			return c.Image, nil
++		}
++	}
++	return "", fmt.Errorf("initContainer %q not found on pod %s/%s (check deployment.yaml for the runsc-handler-mirror entry)", containerName, podNamespace, podName)
++}
++
+ func envOr(key, fallback string) string {
+ 	if v, ok := os.LookupEnv(key); ok && v != "" {
+ 		return v
+diff --git a/platform/nodesoftware-operator/controller/internal/handler/runsc/runsc.go b/platform/nodesoftware-operator/controller/internal/handler/runsc/runsc.go
+index fb94d1dd2..8b05f940e 100644
+--- a/platform/nodesoftware-operator/controller/internal/handler/runsc/runsc.go
++++ b/platform/nodesoftware-operator/controller/internal/handler/runsc/runsc.go
+@@ -27,8 +27,11 @@ import (
+ 
+ // Handler is the runsc handler implementation.
+ type Handler struct {
+-	// InstallImage is the handler image (carries the install/uninstall/probe scripts). Pinned
+-	// by digest in production. The chart substitutes IMAGE_TAG at deploy time.
++	// InstallImage is the handler image (carries the install/uninstall/probe scripts). The
++	// controller's main (cmd/main.go) resolves this at startup from the runsc-handler-mirror
++	// initContainer's image: field, so Flux image-automation owns the tag. Empty string is a
++	// hard error from New() rather than a fallback default: there is no safe default here,
++	// only the broken literal that PR #2396 was written to fix.
+ 	InstallImage string
+ 
+ 	// HostRoot is the hostPath the handler pod mounts to access the target node's filesystem.
+@@ -36,15 +39,17 @@ type Handler struct {
+ 	HostRoot string
+ }
+ 
+-// New constructs a runsc Handler with sensible defaults.
+-func New(installImage, hostRoot string) *Handler {
++// New constructs a runsc Handler. installImage is required (cmd/main.go resolves it from the
++// pod's own initContainer image before reaching this point); an empty installImage is rejected
++// here rather than silently falling back to a literal default that kubelet can never pull.
++func New(installImage, hostRoot string) (*Handler, error) {
+ 	if installImage == "" {
+-		installImage = "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG"
++		return nil, fmt.Errorf("runsc: installImage required (cmd/main.go should resolve it from the runsc-handler-mirror initContainer image; check --handler-image-source)")
+ 	}
+ 	if hostRoot == "" {
+ 		hostRoot = "/host"
+ 	}
+-	return &Handler{InstallImage: installImage, HostRoot: hostRoot}
++	return &Handler{InstallImage: installImage, HostRoot: hostRoot}, nil
+ }
+ 
+ // Runtime returns "runsc".
+diff --git a/platform/nodesoftware-operator/deployment.yaml b/platform/nodesoftware-operator/deployment.yaml
+index 4f7bf72ea..d6eb2e91c 100644
+--- a/platform/nodesoftware-operator/deployment.yaml
++++ b/platform/nodesoftware-operator/deployment.yaml
+@@ -3,18 +3,20 @@
+ # for the controller (the workload is bookkeeping, not data plane), not for the
+ # runtime handler pods it schedules (those have their own requests below).
+ #
+-# NOT APPLIED YET. This file is out of kustomization.yaml's resource list until the controller
+-# image exists; see that file's header for the three things that must become true first.
++# The controller's image: tag is filled by the kustomize `images:` block in
++# kustomization.yaml from platform/image-automation/controller.yaml
++# ($imagepolicy: flux-system:controller:tag). The runsc handler image's tag is
++# filled the same way (platform/image-automation/runsc.yaml) on the
++# `runsc-handler-mirror` initContainer below; the controller's source reads
++# that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
++# uses it as the InstallImage for the handler pods it schedules. No more
++# literal `:IMAGE_TAG` in this file -- cyrus pattern, image-automation owns it.
+ #
+-# The `IMAGE_TAG` below is a placeholder and nothing substitutes it. The header used to say it
+-# was "substituted at Flux postBuild from the IMAGE_TAG field on Secret ghcr-pull ... same
+-# mechanism as every other in-repo image reference (cyrus, hermes-agent)". None of that held:
+-# ghcr-pull is a kubernetes.io/dockerconfigjson Secret whose one key is `.dockerconfigjson`,
+-# which is not a legal envsubst variable name and aborted the whole row's post-build; cyrus and
+-# hermes-agent pin their images the estate's actual way, a `newTag:` in kustomization.yaml
+-# carrying a `# {"$imagepolicy": ...}` marker that Flux image automation rewrites in git; and
+-# envsubst substitutes `${IMAGE_TAG}`, never the bare word IMAGE_TAG, so even a correct source
+-# would have left this string in the pod spec for the kubelet to fail to pull.
++# PR #2416 had removed deployment.yaml from kustomization.yaml's resource list ("NOT APPLIED
++# YET") pending a workflow that pushes the image, an ImageRepository/ImagePolicy pair in
++# platform/image-automation, and a $imagepolicy-marked newTag here. All three are now true
++# (PR #2438); this file is back in the resource list and the Flux row's healthCheck + wait
++# in clusters/oke/platform.yaml go with it.
+ apiVersion: apps/v1
+ kind: Deployment
+ metadata:
+@@ -24,7 +26,6 @@ metadata:
+     app.kubernetes.io/name: nodesoftware-operator
+     app.kubernetes.io/part-of: idp
+     app.kubernetes.io/component: controller
+-    app.kubernetes.io/version: IMAGE_TAG
+ spec:
+   replicas: 2                              # HA without paying for five
+   strategy:
+@@ -42,7 +43,6 @@ spec:
+         app.kubernetes.io/name: nodesoftware-operator
+         app.kubernetes.io/part-of: idp
+         app.kubernetes.io/component: controller
+-        app.kubernetes.io/version: IMAGE_TAG
+     spec:
+       serviceAccountName: nodesoftware-operator
+       automountServiceAccountToken: true    # controller-runtime needs the token
+@@ -56,9 +56,38 @@ spec:
+         fsGroup: 10001
+         seccompProfile:
+           type: RuntimeDefault             # PSS restricted (edge/policies)
++      initContainers:
++        # Mirror container: holds the runsc handler image as a real PodSpec
++        # container image: field so the kustomize `images:` $imagepolicy
++        # marker can rewrite it. The container itself runs noop
++        # (/bin/sh -c true) -- the controller reads its own pod's spec at
++        # startup, finds this initContainer's image, and uses it as the
++        # InstallImage for the handler pods it schedules. The image never
++        # needs to be referenced anywhere else in the cluster; this is the
++        # one place Flux image automation writes the tag to. Renaming or
++        # removing this initContainer would break the controller's
++        # --handler-image resolution; do not.
++        - name: runsc-handler-mirror
++          image: ghcr.io/chidionyema/runsc
++          command: ["/bin/sh", "-c", "true"]
++          resources:
++            requests:
++              cpu: 10m
++              memory: 16Mi
++            limits:
++              memory: 32Mi
++          securityContext:
++            allowPrivilegeEscalation: false
++            capabilities:
++              drop: ["ALL"]
++            readOnlyRootFilesystem: true
++            runAsNonRoot: true
++            runAsUser: 10001
++            seccompProfile:
++              type: RuntimeDefault
+       containers:
+         - name: controller
+-          image: ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG
++          image: ghcr.io/chidionyema/controller
+           imagePullPolicy: IfNotPresent
+           args:
+             - --leader-elect=true
+@@ -66,16 +95,14 @@ spec:
+             - --metrics-bind-address=:8080
+             - --health-probe-bind-address=:8081
+             - --reconcile-period=15s         # see CRD-SPEC.md "pauseDuration"
+-            # The runsc handler image ships the install/uninstall/probe scripts
+-            # the controller invokes on each target node (per C4: PR #2396).
+-            # The controller's hardcoded default is
+-            # "ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG", which
+-            # the kubelet cannot pull. This override does not fix that today: it
+-            # carries the same placeholder, and nothing substitutes it (see the
+-            # file header). Both become real tags when the handler image is built
+-            # and given an ImagePolicy, not before.
+-            - --handler-image=ghcr.io/chidionyema/nodesoftware-runsc-handler:IMAGE_TAG
+-            - --handler-namespace=nodesoftware-operator
++            # --handler-image is filled at startup by resolveHandlerImage()
++            # (cmd/main.go) from the runsc-handler-mirror initContainer's
++            # image: field. No flag here on purpose: a flag would freeze
++            # the tag at apply time and break image-automation.
++            # --handler-namespace is also empty by default; the controller's
++            # Reconciler.applyDefaults fills it to the controller's own namespace
++            # (PR #2404), so the kubebuilder scaffold default
++            # 'nodesoftware-operator-system' never reaches a handler pod.
+           ports:
+             - name: metrics
+               containerPort: 8080
+diff --git a/platform/nodesoftware-operator/kustomization.yaml b/platform/nodesoftware-operator/kustomization.yaml
+index 734e7b625..5a7b4372c 100644
+--- a/platform/nodesoftware-operator/kustomization.yaml
++++ b/platform/nodesoftware-operator/kustomization.yaml
+@@ -1,26 +1,34 @@
+-# Kustomization for the NodeSoftwareOperator row: the CRD (which must land first, before
+-# any controller can reconcile) and the RBAC the controller will run as.
++# Kustomization for the NodeSoftwareOperator row: the CRD (must land first, before any
++# controller can reconcile), the RBAC the controller runs as, and the controller Deployment
++# itself.
+ #
+-# deployment.yaml is deliberately NOT in this list. #2338 shipped milestones A and B --
+-# "CRD + reconcile-loop spec + offline gate, no controller code" -- and the controller image
+-# it names does not exist: `ghcr.io/chidionyema/nodesoftware-operator` is a 404 in ghcr, no
+-# workflow in .github/workflows builds it, and no ImageRepository or ImagePolicy watches it.
+-# Listing it here asked Flux to deploy code that has never been built, which is the same
+-# decision the RuntimeInstall CR already got right by shipping dark
+-# (platform/gvisor-runtime/runtimeinstall.yaml: "shipped dark until the operator source lands
+-# and the controller image is in ghcr").
++# The Deployment's `image:` tags are owned by Flux image-automation via two $imagepolicy markers
++# below (cyrus pattern): one for the controller binary (ghcr.io/chidionyema/controller, watched
++# by platform/image-automation/controller.yaml) and one for the runsc handler image
++# (ghcr.io/chidionyema/runsc, watched by platform/image-automation/runsc.yaml), which the
++# controller reads at startup from its own pod's runsc-handler-mirror initContainer
++# (cmd/main.go:resolveHandlerImage). No literal IMAGE_TAG substitution anywhere; the row
++# reconciles a real image the kubelet can pull, with its tag moved by the same mechanism every
++# other in-repo image uses.
+ #
+-# To add it back, all three of these must be true, and deployment.yaml's own header lists them:
+-# the image is pushed by a workflow, an ImageRepository/ImagePolicy pair exists in
+-# platform/image-automation, and the tag is a `$imagepolicy`-marked `newTag:` here rather than
+-# the bare word IMAGE_TAG. Then restore the healthCheck and `wait: true` on the Flux row in
+-# clusters/oke/platform.yaml, which were removed with it.
++# This row previously lived without deployment.yaml on this list (PR #2416, "the row has never
++# applied once, and gvisor-runtime never has either"): the three conditions that header listed
++# for adding deployment.yaml back -- a workflow that pushes the image, an
++# ImageRepository/ImagePolicy pair in platform/image-automation, and a $imagepolicy-marked
++# newTag here rather than the bare word IMAGE_TAG -- are all true now (PR #2438). The
++# healthCheck + wait on the Flux row in clusters/oke/platform.yaml also go back with it.
+ #
+-# Order of resources matters here ONLY for readability; the API server applies
+-# them in dependency order regardless.
++# Order of resources matters here ONLY for readability; the API server applies them in
++# dependency order regardless.
+ apiVersion: kustomize.config.k8s.io/v1beta1
+ kind: Kustomization
+ namespace: nodesoftware-operator
+ resources:
+   - crds/runtimeinstall.yaml
+   - rbac.yaml
++  - deployment.yaml
++images:
++  - name: ghcr.io/chidionyema/controller
++    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:controller:tag"}
++  - name: ghcr.io/chidionyema/runsc
++    newTag: main-5324-778422de981294d58cc591b7395e2490bf7c1e22 # {"$imagepolicy": "flux-system:runsc:tag"}
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/Dockerfile b/platform/nodesoftware-operator/runtimes/runsc/Dockerfile
+new file mode 100644
+index 000000000..90f577ff9
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/Dockerfile
+@@ -0,0 +1,71 @@
++# nodesoftware-runsc-handler scripts — handler image for the runsc runtime.
++#
++# Carries the install / uninstall / probe scripts that the
++# NodeSoftwareOperator controller invokes on a target node when converging a
++# RuntimeInstall CR whose spec.runtime == "runsc".
++#
++# The image must contain:
++#   - curl / wget (for downloading the runsc binary in install)
++#   - python3 (for the TOML self-check)
++#   - nsenter / chroot (for entering host PID namespace to reload cri-o)
++#   - coreutils (for install(1) and friends)
++#
++# Multi-stage: scripts are linted in a builder stage, then copied into a
++# slim debian runtime. Pin to specific versions so the cri-o drop-in and the
++# reload path do not drift.
++#
++# Build:  docker buildx build --platform linux/arm64 -t ghcr.io/chidionyema/runsc:dev .
++# Push:   bin/dockerfiles publishes the multi-arch manifest list as
++#         ghcr.io/chidionyema/runsc:main-<run>-<sha> (image name = dirname basename of the
++#         Dockerfile). The NodeSoftwareOperator controller reads this tag from its own pod's
++#         runsc-handler-mirror initContainer at startup (cmd/main.go:resolveHandlerImage),
++#         so the same kustomize `images:` $imagepolicy marker that owns the controller
++#         binary's tag (platform/image-automation/runsc.yaml) owns this tag too. A literal
++#         IMAGE_TAG substitution has no place in this file; the controller's deployment.yaml
++#         carries the marker.
++#
++# Verify locally with: ./scripts/test-probe.sh   (no cri-o needed)
++
++# debian:bookworm-slim uses dash as /bin/sh, which does not understand
++# `set -o pipefail`. We need pipefail so a failed `apt-get install` aborts the
++# whole RUN even when `apt-get update` succeeded. SHELL must come after the
++# first FROM (only ARG is valid before FROM in this buildkit), so the directive
++# is repeated per stage below.
++
++FROM debian:bookworm-slim AS linter
++SHELL ["/bin/bash", "-c"]
++
++COPY scripts /tmp/scripts/
++RUN set -euo pipefail \
++    && apt-get update \
++    && apt-get install -y --no-install-recommends shellcheck ca-certificates \
++    && shellcheck -S warning /tmp/scripts/nodesoftware-runsc-* \
++    && echo "scripts: shellcheck clean" \
++    && install -m 0755 /tmp/scripts/* /usr/local/bin/
++
++# Runtime image: debian-slim has curl + python3 + util-linux out of the box.
++# We pin the version of the base image so a vulnerability fix doesn't change
++# script behaviour silently.
++FROM debian:bookworm-slim
++SHELL ["/bin/bash", "-c"]
++
++# Runtime dependencies. nsenter comes from util-linux; python3 from base; curl
++# from base. We pin via apt-get update before installing so the layer is
++# reproducible.
++RUN set -euo pipefail \
++    && apt-get update \
++    && apt-get install -y --no-install-recommends \
++        bash ca-certificates curl python3 util-linux coreutils \
++    && rm -rf /var/lib/apt/lists/*
++
++# Copy linted scripts from the previous stage.
++COPY --from=linter /usr/local/bin/nodesoftware-runsc-install   /usr/local/bin/
++COPY --from=linter /usr/local/bin/nodesoftware-runsc-uninstall /usr/local/bin/
++COPY --from=linter /usr/local/bin/nodesoftware-runsc-probe     /usr/local/bin/
++
++# The controller runs as uid 10001 on the host. Our handler pod inherits the
++# same securityContext (runAsNonRoot: true, runAsUser: 10001). We pre-touch
++# ownership so the binary is executable after COPY.
++USER 10001:10001
++
++ENTRYPOINT ["/usr/local/bin/nodesoftware-runsc-install"]
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/README.md b/platform/nodesoftware-operator/runtimes/runsc/README.md
+new file mode 100644
+index 000000000..5e25903da
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/README.md
+@@ -0,0 +1,43 @@
++# nodesoftware-runsc-handler — runtime handler image for spec.runtime == "runsc".
++#
++# This directory ships the install/uninstall/probe scripts that the
++# NodeSoftwareOperator controller invokes on a target node when reconciling
++# a `RuntimeInstall` CR. The controller's RBAC does NOT include `pods/exec`:
++# it spawns a handler pod with the image referenced here, waits for the pod
++# to terminate, then reads the logs.
++#
++# Files:
++#   scripts/nodesoftware-runsc-install   (96 lines; bash; shellcheck + shfmt clean)
++#   scripts/nodesoftware-runsc-uninstall (36 lines; bash; shellcheck + shfmt clean)
++#   scripts/nodesoftware-runsc-probe     (32 lines; sh;  shellcheck + shfmt clean)
++#   scripts/test-handler.sh              smoke test for exit codes
++#   Dockerfile                           multi-stage, debian:bookworm-slim
++#
++# Reference contract:
++#   /usr/local/bin/nodesoftware-runsc-install   <version> [host-root]
++#   /usr/local/bin/nodesoftware-runsc-uninstall <version> [host-root]
++#   /usr/local/bin/nodesoftware-runsc-probe
++#
++# The path /usr/local/bin/ is the contract. The controller's
++# internal/handler/runsc/runsc.go hardcodes these paths; renaming the scripts
++# (or moving them) is a contract break.
++#
++# Build:
++#   docker buildx build --platform linux/arm64 \
++#     -t ghcr.io/chidionyema/runsc:dev .
++#
++# The matching NODE-side handler image ref lives at:
++#   ghcr.io/chidionyema/runsc:<tag>
++# The image is published as ghcr.io/chidionyema/runsc:main-<run>-<sha> by bin/dockerfiles
++# (image name = dirname basename of the Dockerfile). Flux image-automation wires the tag into
++# the controller deployment.yaml's runsc-handler-mirror initContainer via the kustomize
++# `images:` $imagepolicy marker in platform/nodesoftware-operator/kustomization.yaml
++# (platform/image-automation/runsc.yaml is the source of the tag); the controller reads the
++# initContainer's image at startup (cmd/main.go:resolveHandlerImage) and uses it as the
++# InstallImage for the handler pods it schedules. No literal IMAGE_TAG substitution: cyrus
++# pattern, image-automation owns it.
++#
++# Test:
++#   ./scripts/test-handler.sh
++#
++# Empirical proof (milestone D): a real cluster drill on the canary node.
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-install b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-install
+new file mode 100755
+index 000000000..bf25b13ca
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-install
+@@ -0,0 +1,96 @@
++#!/bin/bash
++#
++# nodesoftware-runsc-install — install gVisor runsc on a target node.
++#
++# Invoked by the NodeSoftwareOperator controller from inside a privileged
++# hostPath-mounted pod. Writes the cri-o drop-in, drops the runsc binary into
++# /usr/local/sbin/runsc, then triggers a *reload* of cri-o.service (NOT restart).
++#
++# args:
++#   $1 = runsc version, e.g. "1.27.0"
++#   $2 = host root as seen by the handler pod, default "/host"
++#
++# The script writes to the host root via $HOST_ROOT, NOT the handler's
++# container root. The drop-in is then reloaded by entering the host's PID
++# namespace with nsenter and calling systemctl reload cri-o.
++
++set -euo pipefail
++
++VERSION="${1:?usage: nodesoftware-runsc-install <version> [host-root]}"
++HOST_ROOT="${2:-/host}"
++
++if [[ "${VERSION}" =~ [^0-9.] ]]; then
++	printf 'REFUSED: version must match [0-9.]+ (got %q)\n' "${VERSION}" >&2
++	exit 64
++fi
++
++ARCH="$(uname -m)"
++case "${ARCH}" in
++aarch64) ASSET_ARCH="arm64" ;;
++x86_64) ASSET_ARCH="amd64" ;;
++*)
++	printf 'REFUSED: unsupported architecture %s\n' "${ARCH}" >&2
++	exit 65
++	;;
++esac
++
++TMPDIR="$(mktemp -d)"
++cleanup() { rm -rf "${TMPDIR}"; }
++trap cleanup EXIT
++
++URL="https://github.com/containerd/runsc/releases/download/v${VERSION}/runsc-${VERSION}.linux-${ASSET_ARCH}"
++
++printf 'downloading %s\n' "${URL}"
++if ! curl -fSL --connect-timeout 10 --max-time 300 -o "${TMPDIR}/runsc" "${URL}"; then
++	printf 'FAILED: download %s\n' "${URL}" >&2
++	exit 1
++fi
++
++chmod 0755 "${TMPDIR}/runsc"
++
++# Verify the binary actually executes and reports the right version. Anything
++# else means the asset at this URL is wrong (could happen if a release is
++# yanked or the asset name changed).
++ACTUAL_VERSION="$("${TMPDIR}/runsc" --version 2>/dev/null | awk '{print $NF}' | tr -d '\r')"
++if [[ "${ACTUAL_VERSION}" != "${VERSION}" ]]; then
++	printf 'FAILED: downloaded runsc reported %q, expected %q\n' "${ACTUAL_VERSION}" "${VERSION}" >&2
++	exit 1
++fi
++
++# Install onto the host (via /host mount).
++mkdir -p "${HOST_ROOT}/usr/local/sbin"
++install -m 0755 "${TMPDIR}/runsc" "${HOST_ROOT}/usr/local/sbin/runsc"
++
++# Write the cri-o drop-in.
++mkdir -p "${HOST_ROOT}/etc/crio/crio.conf.d"
++cat >"${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf" <<EOF
++[crio.runtime.runtimes.runsc]
++runtime_path = "/usr/local/sbin/runsc"
++runtime_type = "oci"
++runtime_root = "/run/runsc"
++
++[crio.runtime.runtimes.runsc.options]
++Type = "runsc"
++SystemdCgroup = false
++EOF
++
++# Validate the drop-in parses as TOML *before* reloading cri-o, so a misconfig
++# never makes it into the running daemon.
++python3 -c "
++import sys, tomllib
++tomllib.load(open(sys.argv[1], 'rb'))
++" "${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf"
++
++# Reload cri-o so the new runtime takes effect. We use nsenter into the host
++# PID 1 -- `systemctl reload` from inside a container isn't recognised because
++# the handler has its own PID namespace.
++if ! nsenter --target 1 --mount --uts --ipc --net --pid -- \
++	/usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
++	# Fallback: some estates ship `systemctl` with different capabilities.
++	# Try `chroot` as a last resort. Either path, reload beats restart.
++	if ! chroot "${HOST_ROOT}" /usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
++		printf 'WARN: could not reload cri-o.service; ops must reload manually\n' >&2
++	fi
++fi
++
++printf 'installed runsc %s to %s and reloaded cri-o\n' "${VERSION}" "${HOST_ROOT}"
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-probe b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-probe
+new file mode 100755
+index 000000000..de19d659a
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-probe
+@@ -0,0 +1,40 @@
++#!/bin/bash
++#
++# nodesoftware-runsc-probe — verify we are running inside a gVisor runsc sandbox.
++#
++# Invoked by the NodeSoftwareOperator controller from inside a probe pod pinned
++# to the target node with runtimeClassName=gvisor. The probe pod IS scheduled
++# with runsc, so by the time this script runs, we are by definition inside a
++# gVisor kernel — the script just makes that observable so the controller's
++# successCondition regex can match.
++#
++# Emits a single line on stdout containing the detected kernel string. gVisor
++# sandboxes report a kernel version that contains "gvisor" in /proc/version;
++# this is the signal the controller's successCondition
++# [0-9.]+-gvisor-[0-9]+ locks on.
++#
++# Exit code:
++#   0 = inside gVisor, prints "verified: <kernel string>"
++#   1 = NOT inside gVisor, prints "FAILED: ..." on stderr
++#
++# Trap note: on bash 5.2, an EXIT trap normalises the script's exit code to 0
++# when the script is invoked via shebang and `set -e` triggers the failure path
++# (LAW 45 regression noted: the controller's reconcile_install.go checks the
++# pod's exit code via pod.Status, but we want the script's own exit code to be
++# honest too). ERR fires inside the script and does NOT override exit code.
++
++set -euo pipefail
++
++trap 'printf "probe: FAILED to detect gVisor kernel (rc=%%d)\n" "$?" >&2' ERR
++
++PROCVER="$(cat /proc/version 2>/dev/null || uname -a)"
++
++case "${PROCVER}" in
++*gvisor*)
++	printf 'verified: %s\n' "${PROCVER}"
++	;;
++*)
++	printf 'FAILED: proc=%s\n' "${PROCVER}" >&2
++	exit 1
++	;;
++esac
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-uninstall b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-uninstall
+new file mode 100755
+index 000000000..439f69f88
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-uninstall
+@@ -0,0 +1,41 @@
++#!/bin/bash
++#
++# nodesoftware-runsc-uninstall — remove gVisor runsc from a target node.
++#
++# Invoked by the NodeSoftwareOperator controller on a Rollback. Deletes the
++# cri-o drop-in, deletes the runsc binary, then reloads cri-o. If the binary
++# is missing, the script reports success anyway (idempotent — the goal is a
++# clean host state, not "binary removed if present").
++#
++# args:
++#   $1 = runsc version, e.g. "1.27.0" (informational only)
++#   $2 = host root as seen by the handler pod, default "/host"
++#
++# Trap note: see nodesoftware-runsc-probe — ERR, not EXIT, so bash 5.2's
++# shebang-exit-code trap normaliser doesn't clobber the script's exit status.
++
++set -euo pipefail
++
++trap 'printf "uninstall: FAILED before completion (rc=%%d) -- partial host state, check /etc/crio/crio.conf.d/99-gvisor.conf and /usr/local/sbin/runsc\n" "$?" >&2' ERR
++
++VERSION="${1:?usage: nodesoftware-runsc-uninstall <version> [host-root]}"
++HOST_ROOT="${2:-/host}"
++
++# 1. Remove the cri-o drop-in BEFORE removing the binary. If we removed the
++#    binary first, cri-o would still reference a path that no longer exists.
++rm -f "${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf"
++
++# 2. Remove the runsc binary.
++rm -f "${HOST_ROOT}/usr/local/sbin/runsc"
++
++# 3. Best-effort reload of cri-o. We swallow errors because, on rollback,
++#    the binary may already be gone and cri-o might already be in a state
++#    where the runtime pointer is dangling.
++if ! nsenter --target 1 --mount --uts --ipc --net --pid -- \
++	/usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
++	if ! chroot "${HOST_ROOT}" /usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
++		printf 'WARN: could not reload cri-o.service; ops must reload manually\n' >&2
++	fi
++fi
++
++printf 'uninstalled runsc %s from %s\n' "${VERSION}" "${HOST_ROOT}"
+diff --git a/platform/nodesoftware-operator/runtimes/runsc/scripts/test-handler.sh b/platform/nodesoftware-operator/runtimes/runsc/scripts/test-handler.sh
+new file mode 100755
+index 000000000..69639d4b5
+--- /dev/null
++++ b/platform/nodesoftware-operator/runtimes/runsc/scripts/test-handler.sh
+@@ -0,0 +1,62 @@
++#!/bin/bash
++#
++# test-handler.sh — smoke test the runsc handler scripts without a cluster.
++#
++# Verifies that each script:
++#   - parses its arguments
++#   - exits with the right code on bad input
++#   - exits with the right code on good input where we can fake the env
++#
++# Does NOT verify the cri-o reload path (needs a real cri-o) -- that's the
++# empirical proof in milestone D. The intent here is to lock in the script
++# contract so a refactor can't silently break it.
++#
++# Run: ./scripts/test-handler.sh
++# Exit 0 = all green, Exit 1 = at least one failure.
++
++set -euo pipefail
++
++SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++INSTALL="${SCRIPT_DIR}/nodesoftware-runsc-install"
++UNINSTALL="${SCRIPT_DIR}/nodesoftware-runsc-uninstall"
++PROBE="${SCRIPT_DIR}/nodesoftware-runsc-probe"
++
++FAIL=0
++PASS=0
++
++TMPDIR_T="$(mktemp -d)"
++trap 'rm -rf "${TMPDIR_T}"' EXIT
++
++assert_exit() {
++	local label="$1" expected="$2" actual="$3"
++	if [[ "${actual}" -eq "${expected}" ]]; then
++		printf '  ok    %s (exit=%d)\n' "${label}" "${actual}"
++		PASS=$((PASS + 1))
++	else
++		printf '  FAIL  %s (exit=%d, expected %d)\n' "${label}" "${actual}" "${expected}"
++		FAIL=$((FAIL + 1))
++	fi
++}
++
++# 1. Install: no args => usage, exit 1.
++set +e
++"${INSTALL}" >/dev/null 2>&1
++assert_exit "install no-args" 1 $?
++
++# 2. Install: bad version (contains shell meta) => REFUSED, exit 64.
++"${INSTALL}" "bad version" /tmp >/dev/null 2>&1
++assert_exit "install bad-version" 64 $?
++
++# 3. Install: unsupported arch is impossible to test from arm64+aarch64+
++#    because the script does `uname -m` and that matches the host. Skip.
++
++# 4. Uninstall: no args => usage, exit 1.
++"${UNINSTALL}" >/dev/null 2>&1
++assert_exit "uninstall no-args" 1 $?
++
++# 5. Probe: on the host (NOT in gVisor), exit 1.
++"${PROBE}" >/dev/null 2>&1
++assert_exit "probe host-fail" 1 $?
++
++printf '\n%d passed, %d failed\n' "${PASS}" "${FAIL}"
++exit "${FAIL}"

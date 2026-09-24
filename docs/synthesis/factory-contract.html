@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Factory Contract — the self-description schema and the order language</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured factory</div>
+  <h1>The Factory Contract — the self-description schema and the order language</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#1-what-this-contract-is-for">1. What this contract is for</a></li><li><a href="#2-the-self-description-schema-capability-yaml">2. The self-description schema — <code>capability.yaml</code></a></li><li><a href="#3-the-order-language-capabilities">3. The order language — <code>capabilities: [...]</code></a></li><li><a href="#4-the-collector-how-the-contract-becomes-the-inventory-automatically">4. The collector (how the contract becomes the inventory, automatically)</a></li><li><a href="#5-what-the-architect-builds-first-the-ordered-build-list">5. What the architect builds first (the ordered build list)</a></li></ol></nav>
+<h1 id="the-factory-contract-the-self-description-schema-and-the-order-language">The Factory Contract — the self-description schema and the order language</h1>
+<p><strong>Document 3 of 3. Written 2026-09-23, for the consultant architect. Companion: the Factory</strong> <strong>Inventory (doc 1) and the Programme (doc 2).</strong></p>
+<p>Documents 1 and 2 said <em>what exists</em> and <em>why</em>. This document says <em>the shape</em> — the one machine-readable contract that turns the fractal-factory law from prose into something the platform can emit, check, and resolve against. It is the concrete bridge between the strategy and the build. Everything here is a schema, not an opinion: where a key exists because the law demands it, that is stated.</p>
+<hr class="rule">
+<h2 id="1-what-this-contract-is-for">1. What this contract is for</h2>
+<p>Three documents, three jobs, now explicit:</p>
+<ul><li><strong>Doc 1 (Inventory)</strong> is the <em>measured tree</em> — what the seed has grown so far.</li><li><strong>Doc 2 (Programme)</strong> is the <em>law</em> — the spiral, and the factory as its constraint.</li><li><strong>Doc 3 (this)</strong> is the <em>contract</em> — the schema by which every repo declares its branch, and by which every order resolves a capability to a branch's current output.</li></ul>
+<p>The contract is the single most important build item because it does what the other two cannot: it makes the platform <strong>describe itself</strong>, and it makes "grant any capability" a <strong>typed, audited operation</strong> rather than a sentence. Without it, the inventory is a document someone rewrites by hand (which the spiral will eat). With it, the inventory is a fact the factory emits every hour, and the builder is real.</p>
+<hr class="rule">
+<h2 id="2-the-self-description-schema-capability-yaml">2. The self-description schema — <code>capability.yaml</code></h2>
+<p>Every repo ships one file declaring the branches it owns and the capabilities each branch produces. The schema is deliberately small: the estate already has 65 repos and a spiral to constrain; a heavy schema is another thing to maintain, which is the exact failure it exists to prevent.</p>
+<pre><code># capability.yaml — a repo&#x27;s self-declaration of the branches it owns.
+# One file per repo, committed at the root. A collector rolls every repo&#x27;s
+# file into the living registry (doc 1 §4); nothing is maintained by hand.
+
+schema: &quot;factory.contract/v1&quot;     # the shape version; breakers bump it, never silently
+
+repo:
+  name: agent-foundry              # must match the GitHub repo name
+  role: seed-expression            # one of: seed-expression | branch | product | rail
+
+branches:                          # the factories this repo owns (&gt;= 1)
+  - name: assembly                 # the capability family it produces
+    description: &gt;-                # one grounded sentence, not marketing
+      Turns an order into a running DAG of nodes over the estate bus.
+
+    # Every branch expresses the law: PRODUCE . GRADE . SHED.
+    produce:
+      - node: army                 # each produced thing is itself an order-taking factory
+        interface: order-in        # the kind of order it accepts
+      - node: worker
+        interface: job-in
+    grade:
+      - metric: convergence        # the number that proves the output hit the order
+        gate: end-to-end-metered   # the named check that measures it
+    shed:
+      retires: []                  # what this branch deprecates (empty = nothing yet)
+
+    # The three-way state is machine-readable so a resolver knows what to grant.
+    state: current                 # current | incubating | deprecated
+    since: &quot;2026-09-07&quot;            # ISO date the state last changed
+    supersedes: []                 # repo:branch this one won against, if any
+
+capabilities:                      # the concrete outputs a builder can grant (the leaves today)
+  - id: price-alert-army           # stable id; the resolver keys on this
+    name: &quot;Price-alert army&quot;
+    class: act                     # perceive | act | surface | memory | compute | safety | make
+    mode: function                 # function | frontier-call | trained-adapter | human-gate
+    scope:                          # what the grant can and cannot touch
+      resources: [web]
+      tenant_isolated: true         # corporate-vs-personal boundary (doc 1 gap #9)
+    produces_again: true            # a factory output may itself be ordered to produce
+    state: current</code></pre>
+<h3 id="why-each-field-exists-the-contract-is-brute-law-not-ceremony">Why each field exists (the contract is brute law, not ceremony)</h3>
+<div class="tablewrap"><table><thead><tr><th>Field</th><th>The law it encodes</th></tr></thead><tbody><tr><td><code>repo.role</code></td><td><code>seed-expression</code> vs <code>branch</code> vs <code>product</code> vs <code>rail</code> — keeps the fractal honest: products and rails are <em>also</em> factories, but they are not the seed; nothing may declare itself the seed twice.</td></tr><tr><td><code>branches[].produce</code></td><td>the <strong>Produce</strong> rule — every branch names what it births, and every produced thing is an <code>order-in</code> factory, so the recursion is explicit, not implied.</td></tr><tr><td><code>branches[].grade</code></td><td>the <strong>Grade</strong> rule — every branch carries the <em>metric and the gate</em> that proves it hit the order. A branch with no <code>grade</code> is refused: a factory that cannot be measured cannot be trusted (doc 2 §2).</td></tr><tr><td><code>branches[].shed</code></td><td>the <strong>Shed</strong> rule — deprecation is a declared, first-class field, not a comment someone leaves later.</td></tr><tr><td><code>branches[].state</code></td><td><code>current</code> / <code>incubating</code> / <code>deprecated</code> — the three-way state that is the <em>entire operational model</em> of the research lab. The resolver grants only <code>current</code>.</td></tr><tr><td><code>capabilities[].id</code> / <code>.state</code></td><td>the resolver's key — the builder grants a capability by <code>id</code>, and the id resolves to whichever branch is <code>current</code> today. Deprecating an old voice gate does <strong>not</strong> break the order; the resolver re-binds the id.</td></tr><tr><td><code>capabilities[].mode</code></td><td>the filter-first ladder (<code>function</code> → <code>frontier-call</code> → <code>trained-adapter</code>), inherited from <code>agent-foundry/ORDER.md</code> — cheap by default, train only when a traffic gate justifies it.</td></tr><tr><td><code>capabilities[].scope</code></td><td>the boundary — <code>tenant_isolated</code> is what turns the corporate-vs-personal split from a description into an enforced fact.</td></tr><tr><td><code>capabilities[].produces_again</code></td><td>the fractal claim, made checkable: is this capability itself an order-taking factory? If true, a robot/glasses order can be issued against it; if false, it is (for now) a leaf.</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="3-the-order-language-capabilities">3. The order language — <code>capabilities: [...]</code></h2>
+<p>This is the missing half of the <code>agent-foundry</code> order object (doc 1 gap #8). An order asks for a goal <strong>and</strong> the capabilities that goal needs; the resolver binds each capability id to the <code>current</code> branch that produces it. The order never names a repo or a file — it names a <em>need</em>, and the factory satisfies it.</p>
+<pre><code>{
+  &quot;order_id&quot;: &quot;ord_&lt;ulid&gt;&quot;,
+  &quot;tenant_id&quot;: &quot;ten_&lt;...&gt;&quot;,        // corporate or personal — the same factory, two kinds of order
+  &quot;goal&quot;: &quot;watch my competitors&#x27; prices and alert me when mine is 10% dearer&quot;,
+  &quot;capabilities&quot;: [
+    { &quot;id&quot;: &quot;web-scrape&quot;,      &quot;mode&quot;: &quot;function&quot; },       // resolves to a current branch
+    { &quot;id&quot;: &quot;price-extract&quot;,   &quot;mode&quot;: &quot;frontier-call&quot; },
+    { &quot;id&quot;: &quot;alert-emit&quot;,      &quot;mode&quot;: &quot;function&quot; }
+  ],
+  &quot;assembly&quot;: { &quot;mode&quot;: &quot;factory&quot;, &quot;shed&quot;: &quot;on-gate&quot; }      // produce . grade . shed, named
+}</code></pre>
+<h3 id="the-resolving-rule-the-one-line-that-makes-it-a-factory-not-a-lookup-table">The resolving rule (the one line that makes it a factory, not a lookup table)</h3>
+<blockquote><p><strong>Every <code>id</code> resolves to the <code>current</code> output of its branch. When a branch sheds an old output and births a new one, the <code>id</code> re-binds — the order does not change, and neither does the agent. Shelleing is invisible to the thing that was ordered.</strong></p></blockquote>
+<p>That single property is the whole moat (doc 2 §2): an agent ordered today keeps working tomorrow <em>and</em> is automatically running the better implementation the instant it graduates, with no rebuild, because the agent binds to the branch, never to the implementation.</p>
+<hr class="rule">
+<h2 id="4-the-collector-how-the-contract-becomes-the-inventory-automatically">4. The collector (how the contract becomes the inventory, automatically)</h2>
+<p>One collector (a <code>catalog-gen</code>-style job) reads every repo's <code>capability.yaml</code> and rolls it into the living registry. It enforces the law mechanically:</p>
+<ol><li><strong>No duplicate seed</strong> — at most one repo may declare <code>role: seed-expression</code>; a second is refused, not merged.</li><li><strong>Every branch proves itself</strong> — a <code>grade</code> with a <code>metric</code> and a <code>gate</code> is required; a branch that cannot be measured is reported, and a resolver refuses to grant an ungraded output as <code>current</code>.</li><li><strong>Every shed is recorded</strong> — when a branch flips to <code>deprecated</code>, the collector writes the shed to the trace branch (Aevum/ledger), so the estate's memory of every shed is a produced fact, not a changelog someone remembers to update.</li><li><strong>The registry is emitted, not maintained</strong> — doc 1 becomes a <em>generated</em> artifact. The hand version of the inventory is the seed data; after the collector runs, the hand version is the fallback, not the source of truth.</li></ol>
+<p>This is the fractal factory applied to its own description: <strong>the platform produces the map of itself with the same produce-grade-shed rule it uses for everything else.</strong></p>
+<hr class="rule">
+<h2 id="5-what-the-architect-builds-first-the-ordered-build-list">5. What the architect builds first (the ordered build list)</h2>
+<p>This contract gives the architect the first concrete increments — the ones that make docs 1 and 2 real, in dependency order:</p>
+<ol><li><strong>The schema as a gate</strong> — <code>check-jsonschema</code> against <code>capability.yaml</code> in <code>bin/idp-ci</code>, so a repo that declares itself is validated like any other manifest (the estate already does this for the gateway; extend the same rung).</li><li><strong>The <code>capabilities: [...]</code> field on the order</strong> — the grant operation (doc 1 gap #8), resolving ids against the registry.</li><li><strong>The collector</strong> — the job that rolls 65 repos' <code>capability.yaml</code> into one living registry, emitting the inventory as a generated artifact.</li><li><strong>The resolver's <code>current</code> bind</strong> — the one-line rule from §3, so deprecation is invisible to the ordered agent (the moat, made mechanical).</li><li><strong><code>tenant_isolated</code> enforcement</strong> — the corporate-vs-personal boundary as an enforced fact, not a flag (doc 1 gap #9).</li></ol>
+<p>Each of these is small, typed, and checkable. Together they are the transformation documents 1 and 2 describe — and because they are all expressions of the same rule, none of them is a new kind of thing. They are the seed growing its own contract.</p>
+<hr class="rule">
+<p><em>End of document 3 of 3. The three documents together — inventory, programme, contract — are the brief: shape the product from the tree (doc 1), constrain it with the rule (doc 2), and machine-check the shape (doc 3).</em></p>
+<footer>
+  <span>Source: <code>docs/synthesis/factory-contract.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

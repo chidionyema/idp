@@ -10,14 +10,87 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
+# crew#1194: syntax gate on the push diff. Parse-only checks, no execution.
+# A file with bad syntax on main makes main red. Main must be green.
+# Layer 1 of 3: pre-push | CI offline-gate | CI fast-gate.
+while IFS= read -r _ _ _ remote_sha; do
+  [ -n "$remote_sha" ] || continue
+  break
+done
+refs=""
+while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  refs="${refs}${local_ref} ${local_sha} ${remote_ref} ${remote_sha}"$'\n'
+done
+while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$remote_sha" ] && continue
+  diff_files=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
+  # Layer 1a: bash -n on shell files
+  for f in $diff_files; do
+    case "$f" in
+    *.sh|*.bash) is_shell=1 ;;           # shell extension
+    bin/*|.githooks/*) is_shell=1 ;;           # shebang convention
+    *) is_shell=0 ;;                          # skip non-shell
+    esac
+    if [ "$is_shell" = 1 ] && [ -f "$f" ]; then
+      if ! bash -n "$f" 2>&1; then
+        bash -n "$f" >&2
+        echo "pre-push REFUSED: syntax error in $f" >&2
+        exit 1
+      fi
+    fi
+  done
+  # Layer 1b: python3 -m py_compile on Python files
+  for f in $diff_files; do
+    case "$f" in
+    *.py) is_py=1 ;;                      # python extension
+    *) is_py=0 ;;                         # skip non-python
+    esac
+    if [ "$is_py" = 1 ] && [ -f "$f" ]; then
+      if ! python3 -m py_compile "$f" 2>&1; then
+        python3 -m py_compile "$f" >&2
+        echo "pre-push REFUSED: syntax error in $f" >&2
+        exit 1
+      fi
+    fi
+  done
+  # Layer 1c: no non-ASCII bytes on any tracked file
+  for f in $diff_files; do
+    [ -f "$f" ] || continue
+    if python3 -c "
+import sys
+with open('$f', 'rb') as fh:
+    for i, b in enumerate(fh.read()):
+        if b > 127:
+            sys.exit(i + 1)
+sys.exit(0)
+" 2>&1; then
+      : # clean
+    else
+      python3 -c "
+with open('$f', 'rb') as fh:
+    data = fh.read()
+    positions = [(i+1, b) for i, b in enumerate(data) if b > 127]
+print('non-ASCII byte(s) at:', positions[:5], '(first 5)')
+" >&2
+      echo "pre-push REFUSED: non-ASCII bytes in $f" >&2
+      exit 1
+    fi
+  done
+done <<<"$refs"
+
 # Read-only force pushes and the WIP-gate override are out of scope for this rung --
 # the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
 # This rung only refuses the fast-gate class; everything else still flows.
-
-if [ "${IDP_FAST_GATE:-1}" = "0" ]; then
-  echo "idp-fast-gate: skipped (IDP_FAST_GATE=0)"
-  exit 0
-fi
+#
+# NO OFF SWITCH (founder, 2026-09-23). `IDP_FAST_GATE=0` used to sit here and exit 0. It was
+# used -- by this session -- to push past the rung, which is how four pushes went out in
+# nineteen minutes each revealing one more failure: a bypass that makes the gate report green
+# on a tree the gate never read is worse than no gate, because the green is believed.
+#
+# The two rules are enforced server-side instead, where no local action can skip them:
+# `bin/idp-main-green-gate` and `bin/idp-wip-gate` are wired in below, and the estate's
+# required-checks ruleset refuses on the server. A local hook is a convenience that saves a CI
+# cycle; it is never the guarantee, and it must not pretend to be one.
 
 if [ ! -x "$repo_root/bin/idp-ci" ]; then
   # No local CI script on this checkout (e.g. a partial clone). The remote is the
@@ -41,8 +114,11 @@ if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
      2) re-run IDP_CI_FAST=1 bin/idp-ci until green
      3) git push
 
-   To bypass (NOT recommended -- CI will still fail on these):
-     IDP_FAST_GATE=0 git push
+   The two rules that must never be bypassed are enforced SERVER-SIDE:
+     bin/idp-main-green-gate   refuses a push while main's last CI run is red
+     bin/idp-wip-gate          refuses a new PR past the 3-failing-PR cap
+   Their overrides are typed deliberately for genuine emergencies, and they are the
+   only overrides this hook has. This rung has none.
 
 EOF
   exit 1

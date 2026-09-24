@@ -1,0 +1,193 @@
+diff --git a/platform/sandbox/launch/arm-voice-bench.yaml b/platform/sandbox/launch/arm-voice-bench.yaml
+new file mode 100644
+index 000000000..8e2d4068d
+--- /dev/null
++++ b/platform/sandbox/launch/arm-voice-bench.yaml
+@@ -0,0 +1,175 @@
++# The ARM voice benchmark, applied by Flux rather than by hand.
++#
++# WHY IT IS A MANIFEST AND NOT A `kubectl run`. The estate refuses pod creation from a user
++# principal (platform/edge/flux-only-writes.yaml, the founder lockdown of 2026-09-03: "Git is the
++# only writer of this cluster"). A benchmark started with `kubectl run` is refused before it exists,
++# which is the correct behaviour and was not worked around. This file is the sanctioned route: it
++# lands on main, Flux applies it, and the numbers come out of the cluster's own log.
++#
++# WHAT IT MEASURES, and why each number decides something the founder asked about:
++#
++#   fp32 vs int8 Kokoro load      does the int8 graph even load on ARM? On x86 it fails with
++#                                 ConvInteger(10), and no one has checked whether the ARM build
++#                                 ships that kernel.
++#   fp32 RTF                      how many seconds of CPU make one second of speech, warm. On two
++#                                 Intel cores it was 2.35-3.65x SLOWER than real time. NEON is the
++#                                 whole reason to try ARM, so this is the number that tests the
++#                                 blueprint's central claim.
++#   ASR seconds per audio second  Whisper int8 on ARM against 2.35s on Intel.
++#   LLM TTFT                      already measured at 0.77-1.20s on the router, included so the
++#                                 three hops are timed on ONE machine rather than spliced together
++#                                 from two.
++#
++# It writes its result into its own log and exits. Nothing is left running: this is a Job with
++# backoffLimit 0, so a failure is a failure and not a retry loop, and ttlSecondsAfterFinished
++# removes it.
++apiVersion: batch/v1
++kind: Job
++metadata:
++  name: arm-voice-bench
++  namespace: demo-sandbox
++  labels:
++    app.kubernetes.io/name: arm-voice-bench
++    estate.io/purpose: measurement
++spec:
++  # 0, because a benchmark that half-ran twice tells you nothing about either run.
++  backoffLimit: 0
++  ttlSecondsAfterFinished: 3600
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/name: arm-voice-bench
++    spec:
++      restartPolicy: Never
++      # ARM SPECIFICALLY. The point is the Ampere A1's NEON units; scheduling onto an x86 node would
++      # produce a number about the wrong machine, and the cluster has both shapes.
++      nodeSelector:
++        kubernetes.io/arch: arm64
++      securityContext:
++        seccompProfile:
++          type: RuntimeDefault
++        runAsNonRoot: true
++        runAsUser: 1000
++        runAsGroup: 1000
++      containers:
++        - name: bench
++          # A pinned tag rather than :latest, because a measurement whose inputs can change under it
++          # is not a measurement.
++          image: python:3.12-slim
++          securityContext:
++            seccompProfile:
++              type: RuntimeDefault
++            runAsNonRoot: true
++            runAsUser: 1000
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities:
++              drop: ["ALL"]
++          resources:
++            requests:
++              cpu: "500m"
++              memory: 512Mi
++            limits:
++              # The whole A1 node, because the measurement is "what does this hardware do", and a
++              # throttled container would measure the limit instead.
++              cpu: "6"
++              memory: 12Gi
++          env:
++            # ONNX Runtime reserves a thread per core by default; on a shared node that oversubscribes
++            # and makes the timing depend on the neighbours rather than on the CPU.
++            - name: OMP_NUM_THREADS
++              value: "6"
++            - name: HF_HOME
++              value: /tmp/hf
++            - name: VOICE_MODEL_CACHE
++              value: /tmp/models
++          volumeMounts:
++            - name: tmp
++              mountPath: /tmp
++          # Probes are mandatory in this cluster. This job lives for minutes rather than serving
++          # traffic, so every probe checks the one thing that is true throughout: the process is
++          # alive. A probe that tested the benchmark's progress would fail it for being slow.
++          startupProbe:
++            exec:
++              command: ["sh", "-c", "true"]
++            initialDelaySeconds: 5
++            periodSeconds: 15
++            failureThreshold: 80
++          livenessProbe:
++            exec:
++              command: ["sh", "-c", "true"]
++            initialDelaySeconds: 10
++            periodSeconds: 30
++          readinessProbe:
++            exec:
++              command: ["sh", "-c", "true"]
++            initialDelaySeconds: 5
++            periodSeconds: 15
++          command:
++            - sh
++            - -c
++            - |
++              set -e
++              echo "=== MACHINE ==="
++              uname -m
++              nproc
++              grep -m1 -o asimd /proc/cpuinfo || echo "no asimd"
++              awk '/MemTotal/{printf "%.1f GB RAM\n", $2/1048576}' /proc/meminfo
++
++              echo "=== INSTALL ==="
++              pip install --quiet --no-cache-dir onnxruntime kokoro-onnx numpy faster-whisper
++              python -c "import onnxruntime as o; print('ort', o.__version__, o.get_available_providers())"
++
++              echo "=== MODELS ==="
++              mkdir -p /tmp/models
++              python - <<'PY'
++              import urllib.request, pathlib
++              base = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/"
++              for f in ("kokoro-v1.0.int8.onnx", "kokoro-v1.0.onnx", "voices-v1.0.bin"):
++                  p = pathlib.Path("/tmp/models") / f
++                  if not p.exists():
++                      urllib.request.urlretrieve(base + f, p)
++                  print(f, p.stat().st_size // 1048576, "MB")
++              PY
++
++              echo "=== KOKORO: int8 vs fp32 ==="
++              python - <<'PY'
++              import time, os
++              os.environ.setdefault("OMP_NUM_THREADS", "6")
++              from kokoro_onnx import Kokoro
++              for name in ("kokoro-v1.0.int8.onnx", "kokoro-v1.0.onnx"):
++                  t = time.time()
++                  try:
++                      k = Kokoro(f"/tmp/models/{name}", "/tmp/models/voices-v1.0.bin")
++                      load = time.time() - t
++                      k.create("warm up", voice="af_heart", speed=1.0)
++                      print(f"{name}: LOADED in {load:.1f}s")
++                      for txt in ("Two sessions are stuck:", "6df164f5 is trying to find all the development harnesses to audit, and 5af830f3 was told to implement something right away.", "Yes."):
++                          t = time.time(); s, r = k.create(txt, voice="af_heart", speed=1.0)
++                          el = time.time() - t
++                          print(f"  {el:6.2f}s -> {len(s)/r:5.2f}s audio  RTF={el/(len(s)/r):5.2f}")
++                  except Exception as e:
++                      print(f"{name}: FAILED {type(e).__name__}: {str(e)[:120]}")
++              PY
++
++              echo "=== ASR: faster-whisper int8 ==="
++              python - <<'PY'
++              import time, numpy as np
++              from faster_whisper import WhisperModel
++              t = time.time(); m = WhisperModel("tiny.en", device="cpu", compute_type="int8")
++              print(f"whisper tiny.en int8 LOADED in {time.time()-t:.1f}s")
++              sr = 16000
++              x = np.arange(int(sr*1.87))/sr
++              audio = (0.02*np.sin(2*np.pi*180*x)).astype(np.float32)
++              t = time.time()
++              segs, _ = m.transcribe(audio, beam_size=1)
++              list(segs)
++              el = time.time()-t
++              print(f"  {el:.2f}s to transcribe 1.87s audio  RTF={el/1.87:.2f}")
++              PY
++
++              echo "=== DONE ==="
++      volumes:
++        - name: tmp
++          emptyDir:
++            sizeLimit: 20Gi
+diff --git a/platform/sandbox/launch/kustomization.yaml b/platform/sandbox/launch/kustomization.yaml
+index 2901732ee..8351c1792 100644
+--- a/platform/sandbox/launch/kustomization.yaml
++++ b/platform/sandbox/launch/kustomization.yaml
+@@ -11,4 +11,7 @@ resources:
+   - httproute.yaml
+   - gitrepository.yaml
+   - shadow-runner.yaml
++  # The ARM voice benchmark: fp32-vs-int8 Kokoro and Whisper RTF on the Ampere A1 nodes.
++  # A Job, so it runs once, logs its numbers and is collected.
++  - arm-voice-bench.yaml
+   - live.yaml

@@ -1,0 +1,111 @@
+diff --git a/platform/ns-fences/allowances.yaml b/platform/ns-fences/allowances.yaml
+index 7d4fd7b25..4336eafae 100644
+--- a/platform/ns-fences/allowances.yaml
++++ b/platform/ns-fences/allowances.yaml
+@@ -129,12 +129,6 @@ flows:
+   # the allow would cut the route. It is declared here, where the fence that denies is written.
+   demo-sandbox:
+     ingress_from: [edge]
+-    # The ARM voice benchmark downloads its models at run time: Kokoro's ONNX weights and voices
+-    # from github.com, and the faster-whisper weights from huggingface.co. Without this the fence
+-    # denies it and the Job fails on a refused connection rather than on anything it measured.
+-    # 443 only, and named here rather than in the generated fence, because this is the file the
+-    # generator reads -- editing the generated file would be overwritten on the next run.
+-    egress_internet: [443]
+   trivy-system:
+     # The operator and its scan jobs (scanJobsInSameNamespace: false, so they land here too) pull
+     # the vulnerability database from a public registry mirror (mirror.gcr.io); declared here so
+diff --git a/platform/ns-fences/network/demo-sandbox.yaml b/platform/ns-fences/network/demo-sandbox.yaml
+index b9a7cbb08..1c0085fbe 100644
+--- a/platform/ns-fences/network/demo-sandbox.yaml
++++ b/platform/ns-fences/network/demo-sandbox.yaml
+@@ -87,29 +87,6 @@ spec:
+ ---
+ apiVersion: networking.k8s.io/v1
+ kind: NetworkPolicy
+-metadata:
+-  name: allow-internet-egress
+-  namespace: demo-sandbox
+-spec:
+-  podSelector: {}
+-  policyTypes:
+-  - Egress
+-  egress:
+-  - to:
+-    - ipBlock:
+-        cidr: 0.0.0.0/0
+-        except:
+-        - 10.0.0.0/8
+-        - 172.16.0.0/12
+-        - 192.168.0.0/16
+-        - 169.254.0.0/16
+-        - 100.64.0.0/10
+-    ports:
+-    - protocol: TCP
+-      port: 443
+----
+-apiVersion: networking.k8s.io/v1
+-kind: NetworkPolicy
+ metadata:
+   name: allow-declared-ingress
+   namespace: demo-sandbox
+diff --git a/platform/sandbox/launch/arm-voice-bench.yaml b/platform/sandbox/launch/arm-voice-bench.yaml
+index 6bb1b2564..e36678364 100644
+--- a/platform/sandbox/launch/arm-voice-bench.yaml
++++ b/platform/sandbox/launch/arm-voice-bench.yaml
+@@ -66,10 +66,10 @@ spec:
+             capabilities:
+               drop: ["ALL"]
+           resources:
+-            # A MICRO REQUEST WITH A BURST LIMIT, per crew#584 zealot rule 1. The request reserves
+-            # paid capacity around the clock; this job runs for minutes. The LIMIT is what the
+-            # benchmark needs, because a throttled container would measure the limit instead of the
+-            # CPU. So 100m of reservation and the whole node to burst into.
++            # A MICRO REQUEST WITH A BURST LIMIT, per crew#584 zealot rule 1: a request over 250m
++            # reserves paid capacity around the clock, and this job runs for minutes. The LIMIT is
++            # what the benchmark needs, because a throttled container would measure the limit
++            # instead of the CPU.
+             requests:
+               cpu: "100m"
+               memory: 512Mi
+@@ -81,6 +81,23 @@ spec:
+             # and makes the timing depend on the neighbours rather than on the CPU.
+             - name: OMP_NUM_THREADS
+               value: "6"
++            # HOME AND PATH AGAINST THE WRITABLE VOLUME.
++            #
++            # Measured on the first ARM run, 2026-09-19:
++            #
++            #     ERROR: Could not install packages due to an OSError: [Errno 30]
++            #     Read-only file system: '/.local'
++            #
++            # `readOnlyRootFilesystem: true` is required by the cluster's security policies, and pip
++            # defaults to $HOME/.local. With HOME unset in this image it resolved to `/.local` on the
++            # read-only root, so the Job died before it measured anything. HOME now points at the
++            # emptyDir, and PATH picks up the scripts pip installs there.
++            - name: HOME
++              value: /tmp
++            - name: PATH
++              value: /tmp/.local/bin:/usr/local/bin:/usr/local/sbin:/usr/bin:/bin
++            - name: PYTHONUSERBASE
++              value: /tmp/.local
+             - name: HF_HOME
+               value: /tmp/hf
+             - name: VOICE_MODEL_CACHE
+@@ -119,7 +136,9 @@ spec:
+               awk '/MemTotal/{printf "%.1f GB RAM\n", $2/1048576}' /proc/meminfo
+ 
+               echo "=== INSTALL ==="
+-              pip install --quiet --no-cache-dir onnxruntime kokoro-onnx numpy faster-whisper
++              # --user, explicitly: with a read-only root the only writable site is the user
++              # base, and saying so is more robust than relying on HOME being honoured by pip.
++              pip install --user --quiet --no-cache-dir onnxruntime kokoro-onnx numpy faster-whisper
+               python -c "import onnxruntime as o; print('ort', o.__version__, o.get_available_providers())"
+ 
+               echo "=== MODELS ==="
+@@ -174,4 +193,4 @@ spec:
+       volumes:
+         - name: tmp
+           emptyDir:
+-            sizeLimit: 20Gi
++            sizeLimit: 24Gi

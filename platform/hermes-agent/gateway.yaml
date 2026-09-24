@@ -321,13 +321,23 @@ spec:
             failureThreshold: 3
           resources:
             # crew#584: radio-room set, Guaranteed QoS required (require-priority-class) -- request
-            # cut to 50m, limit held equal.
+            # held EQUAL to the limit, always. A container whose request differs is refused.
+            #
+            # 2026-09-11: memory cut 1Gi -> 288Mi because the 1Gi was reserved and never touched.
+            # Measured that day: this container uses 206Mi against a 1088Mi request, and the node
+            # was 99% reserved while the estate used ~20Gi of its 40Gi. The reservation was not
+            # protecting anything -- it was the largest single block of reclaimable memory in the
+            # estate, and tier 2 of the model ladder (a 14B, ~9GB) cannot land without it.
+            #
+            # 288Mi is ~40% above measured use, which is the headroom a boot spike needs. It stays
+            # Guaranteed, so this container is still evicted LAST -- the property radio-room set
+            # exists to buy is unchanged.
             requests:
               cpu: 50m
-              memory: 1Gi
+              memory: 288Mi
             limits:
               cpu: 50m
-              memory: 1Gi
+              memory: 288Mi
           securityContext:
             allowPrivilegeEscalation: false
             privileged: false

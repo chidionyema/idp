@@ -1,0 +1,12 @@
+backstage/app-config.container.yaml
+backstage/app-config.yaml
+docs/specs/key-ingest-door-part4.md
+platform/oci/vault.tf
+platform/vault-writer/app.py
+platform/vault-writer/deployment.yaml
+platform/vault-writer/kustomization.yaml
+platform/vault-writer/scoping.py
+platform/vault-writer/service.yaml
+platform/vault-writer/serviceaccount.yaml
+platform/verification/vault-writer-refuses-operator-entries.yaml
+tests/test_key_ingest_part4.py

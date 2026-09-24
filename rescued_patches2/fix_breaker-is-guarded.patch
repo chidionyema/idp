@@ -1,0 +1,666 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 0e466ed72..853a0ebdc 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -104,6 +104,7 @@ deprecate them. Eradicate them."
+ | A gate's answer is only true for the tree it ran in: grading from the shared checkout while it carries uncommitted work, or from any checkout mid-merge, is refused -- three separate estate defects were reported 2026-09-12 that existed only in another session's half-written tree | LAW 2, docs/policy/no-agent-works-in-the-main-checkout.md | `python3 bin/idp-clean-tree` | tests/fixtures/clean-tree/bad.json | tests/fixtures/clean-tree/good.json |
+ | A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent | LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days) | `python3 bin/idp-healthcheck-exists` | tests/fixtures/healthcheck-exists/bad | tests/fixtures/healthcheck-exists/good |
+ | An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead | R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application) | `python3 bin/idp-externalsecret-blockers` | tests/fixtures/secret-blockers/bad | tests/fixtures/secret-blockers/good |
++| The fingerprint of a tool's output is the stable identity of a FINDING, never the bytes it printed: output carrying no finding -- a successful command, a shell builtin echoing its input, a blank result -- yields no fingerprint and can never lock, however many times it repeats, while the same CVE set on three targets still locks. One rule, in bin/idp-circuit-breaker | R38, incident 2026-09-13 | `python3 bin/idp-breaker-fingerprint` | tests/fixtures/breaker-fingerprint/bad/real-cves.txt | tests/fixtures/breaker-fingerprint/good/noop-repeated.txt |
+ <!-- END GENERATED RULES TABLE -->
+ 
+ Rules that are already types or tools, and so need no row: compose files must parse
+diff --git a/bin/idp-breaker-fingerprint b/bin/idp-breaker-fingerprint
+new file mode 100755
+index 000000000..70e0751cb
+--- /dev/null
++++ b/bin/idp-breaker-fingerprint
+@@ -0,0 +1,88 @@
++#!/usr/bin/env python3
++"""The breaker's fingerprint, graded on one file of tool output.
++
++The extension asks bin/idp-circuit-breaker what a finding is; that answer decides whether a
++session locks. This gate grades the answer on a FILE, so rules.yaml can prove it both ways with
++a fixture pair, which a pytest-backed rule cannot do.
++
++    bin/idp-breaker-fingerprint <file>
++
++Exit 0 when the file's content carries NO finding (nothing can be proved by repeating it), 1 when
++it does. The exit code IS the verdict, and reading it the other way round is exactly the bug:
++
++    good/noop-repeated.txt  hello/hello/hello       -> 0, no finding, cannot lock
++    bad/real-cves.txt       the same CVE set        -> 1, one finding, locks at N=3
++
++THE MISFIRE OF 2026-09-13. The extension returned the tool's RAW OUTPUT TEXT as the "finding",
++so `echo hello` counted, three repeated commands tripped N=3, and the guard locked bash and read
++-- the two tools a session needs to investigate or fix anything. R38: a guard that refuses
++correct work is an outage.
++
++The rule lives in bin/idp-circuit-breaker. This does not restate it; it calls it. A second copy
++of "what counts as a finding" is exactly how the two drifted apart in the first place.
++"""
++
++from __future__ import annotations
++
++import importlib.machinery
++import importlib.util
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++
++
++def _fingerprint():
++    """The library's fingerprint(), loaded by path so the rule stays in one place."""
++    loader = importlib.machinery.SourceFileLoader(
++        "idp_circuit_breaker", str(ROOT / "bin" / "idp-circuit-breaker")
++    )
++    spec = importlib.util.spec_from_loader("idp_circuit_breaker", loader)
++    mod = importlib.util.module_from_spec(spec)
++    loader.exec_module(mod)
++    return mod.fingerprint
++
++
++def main(argv: list[str]) -> int:
++    # THE LIVE CHECK. Over the estate rather than a fixture: does the file that decides what a
++    # finding is still carry the no-finding rule? A fixture pair proves the behaviour; this proves
++    # the rule is still IN THE TREE. Remove it and the case fails in the pull request, instead of
++    # in a session that has already locked itself.
++    if len(argv) == 3 and argv[1] == "--estate-carries-the-rule":
++        target = Path(argv[2])
++        if not target.is_file():
++            print(f"BLIND  breaker-fingerprint  {target} is not a file", file=sys.stderr)
++            return 2
++        body = target.read_text()
++        if "_SIGNAL.search" in body and "return None" in body:
++            print(f"ok     breaker-fingerprint  {target.name} still refuses to fingerprint a no-op")
++            return 0
++        print(
++            f"FAIL   breaker-fingerprint  {target.name} no longer refuses to fingerprint a "
++            "no-op; repeated commands will lock the session",
++            file=sys.stderr,
++        )
++        return 1
++
++    if len(argv) != 2:
++        print(__doc__)
++        return 2
++    path = Path(argv[1])
++    if not path.is_file():
++        # BLIND, never a pass: a missing fixture is not a clean one (the calico lesson).
++        print(f"BLIND  breaker-fingerprint  {path} is not a file", file=sys.stderr)
++        return 2
++
++    fp = _fingerprint()(path.read_text())
++    if fp is None:
++        # NO FINDING -> exit 0. This is the case that was broken: output with no finding produced
++        # a fingerprint, so repeated no-ops locked the session. "Nothing to prove" is not a
++        # failure -- a gate that exits 1 here would refuse correct work, which is the whole defect.
++        print(f"ok     breaker-fingerprint  {path.name} carries no finding; repeating it cannot lock")
++        return 0
++    print(f"ok     breaker-fingerprint  {path.name} -> {fp}")
++    return 1
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/bin/idp-circuit-breaker b/bin/idp-circuit-breaker
+index 028973768..b83499307 100755
+--- a/bin/idp-circuit-breaker
++++ b/bin/idp-circuit-breaker
+@@ -37,21 +37,58 @@ N = 3  # the founder's number: three identical findings prove one cause
+ # because a set of CVEs prints in whatever order the scanner walked the package list.
+ _CVE = re.compile(r"CVE-\d{4}-\d{4,}")
+ 
++# WHAT MAKES A LINE A FINDING. This is the guard against the 2026-09-13 misfire: a result is only
++# a finding if it carries one of these signals -- a failure, a vulnerability, a refusal, an error.
++# `echo hello`, `ls`, `pwd`, `git status` and a green test run match none of them and so produce
++# NO fingerprint, which is what stops a repeated no-op from proving anything.
++#
++# Deliberately broad on the failure words and narrow on everything else: a false NEGATIVE only
++# means the breaker stays quiet, which is the safe direction. A false POSITIVE locks a session.
++_SIGNAL = re.compile(
++    r"(?i)(?:"
++    r"CVE-\d{4}-\d{4,}"
++    r"|\bFAIL(?:ED|URE|ING)?\b"
++    r"|\b\w*Error\b|\b\w*Exception\b|\bTraceback\b"
++    r"|\bnot ok\b|\bpanic:\b|\bfatal:\b|\bdenied\b|\brefused\b"
++    r"|\bcrash(?:ed|loopbackoff)?\b|\bvulnerab\w*\b|\bseverity\b|\bCRITICAL\b"
++    r"|\bexit(?:ed)? (?:code )?[1-9]\d*\b"
++    # A conflict is a finding, and it was the case a real test caught this list missing: a merge
++    # conflict on a file is a cause worth naming once rather than re-discovering per target.
++    r"|\bconflicts?\b|\bmerge conflict\b"
++    r"|\bBREAKING CHANGE\b|\bdeprecat\w*\b"
++    r")"
++)
+ 
+-def fingerprint(text: str) -> str:
+-    """The stable identity of a finding, from whatever a tool printed.
++
++def fingerprint(text: str) -> str | None:
++    """The stable identity of a finding, from whatever a tool printed, or None if there is none.
+ 
+     A CVE list is the measured case and the first thing tried, because it is what the six
+     failing pull requests had in common. Order-free on purpose: the same three CVEs in a
+     different order are one finding, not three.
+ 
+-    Falls back to a digest of the output with the noisy parts removed (line numbers, hex, paths),
+-    so a finding with no CVE still gets a fingerprint worth comparing -- a coarse one, and the
+-    tests say so rather than pretending it is exact.
++    THE MISFIRE OF 2026-09-13. This function used to fall back to a digest of ANY text, so
++    `echo hello` had a fingerprint, three repeated commands were "the same finding on three
++    targets", and the breaker locked bash and read -- the two tools a session needs to
++    investigate or fix anything. It locked a working session for hours and could not be cleared
++    from inside, because every clearing command was itself a bash call. R38: a guard that
++    refuses correct work is an outage.
++
++    A FINDING IS SOMETHING A DIAGNOSTIC PRODUCED. Nothing below is a finding, however many times
++    it repeats, and returning None is what makes that true:
++
++        a command that succeeded           (no error, no failing test, no gate verdict)
++        a shell builtin's echo of its input
++        a blank or near-blank result
++
++    Anything else keeps a coarse digest with the noisy parts removed (addresses, line:col,
++    timestamps), sorted, so the same failure on two machines still compares equal. The tests say
++    it is coarse rather than pretending it is exact.
+     """
+     cves = sorted(set(_CVE.findall(text or "")))
+     if cves:
+         return "cve:" + ",".join(cves)
++
+     cleaned = []
+     for line in (text or "").splitlines():
+         line = re.sub(r"0x[0-9a-fA-F]+", "", line)  # addresses
+@@ -60,7 +97,16 @@ def fingerprint(text: str) -> str:
+         line = re.sub(r"\s+", " ", line).strip()
+         if line:
+             cleaned.append(line)
++    if not cleaned:
++        return None
++
+     body = "\n".join(sorted(set(cleaned)))
++
++    # A SUCCESSFUL COMMAND IS NOT A FINDING. Without this, `echo alive` and `ls` carry a digest,
++    # and repeating one three times locks the session -- which is exactly what happened.
++    if not _SIGNAL.search(body):
++        return None
++
+     return "sha:" + hashlib.sha256(body.encode()).hexdigest()[:16]
+ 
+ 
+@@ -180,6 +226,12 @@ def lever_for(fp: str) -> str:
+ def main(argv: list[str] | None = None) -> int:
+     ap = argparse.ArgumentParser(description=__doc__)
+     ap.add_argument("--finding", help="the tool's output, or a cve:/sha: fingerprint")
++    ap.add_argument(
++        "--fingerprint",
++        action="store_true",
++        help="print the fingerprint of stdin, or null if it carries no finding (the extension "
++        "asks this, so the rule lives in one place instead of two)",
++    )
+     ap.add_argument(
+         "--target", help="what produced it (a PR number, a host, a resource)"
+     )
+@@ -193,6 +245,12 @@ def main(argv: list[str] | None = None) -> int:
+         "target is refused. This is what the fixtures grade, so the row is proved both ways",
+     )
+     args = ap.parse_args(sys.argv[1:] if argv is None else argv)
++    if args.fingerprint:
++        # The extension's question: does this output carry a finding, and if so which one?
++        # "null" means no -- and a result with no finding can never lock anything.
++        print(json.dumps(fingerprint(sys.stdin.read())))
++        return 0
++
+     b = Breaker(store=args.store) if args.store else Breaker()
+     if args.replay:
+         findings = json.loads(Path(args.replay).read_text()).get("findings") or []
+diff --git a/docs/gates/breaker-enforcement.md b/docs/gates/breaker-enforcement.md
+new file mode 100644
+index 000000000..4003ad7cd
+--- /dev/null
++++ b/docs/gates/breaker-enforcement.md
+@@ -0,0 +1,40 @@
++# Gate: breaker-enf
++
++*`breaker-enforcement` · R38, incident 2026-09-13 · planes: ci*
++
++The fingerprint of a tool's output is the stable identity of a FINDING, never the bytes it printed: output carrying no finding -- a successful command, a shell builtin echoing its input, a blank result -- yields no fingerprint and can never lock, however many times it repeats, while the same CVE set on three targets still locks. One rule, in bin/idp-circuit-breaker
++
++This page is generated by `bin/idp-gate-demo` from `rules.yaml`. The output below is what the gate itself printed when the generator ran it; it is not a description of what the gate does.
++
++## Run it yourself
++
++```bash
++python3 bin/idp-breaker-fingerprint
++```
++
++## Refused
++
++Fixture: `tests/fixtures/breaker-fingerprint/bad/real-cves.txt`
++
++Exit code `1` (the registry expects non-zero). ✓
++
++```
++ok     breaker-fingerprint  real-cves.txt -> cve:CVE-2026-13221,CVE-2026-42496,CVE-2026-8376
++```
++
++## Permitted
++
++Fixture: `tests/fixtures/breaker-fingerprint/good/noop-repeated.txt`
++
++Exit code `0` (the registry expects zero). ✓
++
++```
++ok     breaker-fingerprint  noop-repeated.txt carries no finding; repeating it cannot lock
++```
++
++## The registry's own lines
++
++- when it passes: a result carrying no finding cannot lock, and a proved pattern still locks
++- when it refuses: output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock bash and read -- the two tools a session needs to fix anything. Measured 2026-09-13: a session issued the same command repeatedly, the third tripped the lock, and every command that could have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.
++
++Origin: incident 2026-09-13, the breaker locked bash and read for hours
+diff --git a/docs/gates/defs-load-by-path.md b/docs/gates/defs-load-by-path.md
+index 8e9821bd7..03f111628 100644
+--- a/docs/gates/defs-load-by-path.md
++++ b/docs/gates/defs-load-by-path.md
+@@ -19,36 +19,17 @@ Fixture: `tests/fixtures/definitions/relative-import.py`
+ Exit code `1` (the registry expects non-zero). ✓
+ 
+ ```
+-[32m<timestamp> +0100[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
+-[32m<timestamp> +0100[0m - dagster - [34mERROR[0m - [31mValidation failed for code location relative-import.py:
+-dagster._core.errors.DagsterImportError: Encountered ImportError: `attempted relative import with no known parent package` while importing module relative-import from file /private/tmp/ag-otlp/tests/fixtures/definitions/relative-import.py. Consider using the module-based options `-m` for CLI-based targets or the `python_module` workspace target.
+-Stack Trace:
+-  [7 dagster system frames hidden, run with --verbose to see the full stack trace]
+-The above exception was caused by the following exception:
+-ImportError: attempted relative import with no known parent package
+-Stack Trace:
+-  [4 dagster system frames hidden, run with --verbose to see the full stack trace]
+-  File "/private/tmp/ag-otlp/tests/fixtures/definitions/relative-import.py", line 12, in <module>
+-    from .describe import describe  # noqa: F401  -- the break, on purpose
+-    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+-[0m
+-[32m<timestamp> +0100[0m - dagster - [34mERROR[0m - [31mValidation for 1 code locations failed.[0m
+-/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+-  return __callback(*args, **kwargs)
++/Users/chidionyema/dev/code/idp/.venv/bin/python: No module named dagster
+ ```
+ 
+ ## Permitted
+ 
+ Fixture: `tests/fixtures/definitions/loads-by-path.py`
+ 
+-Exit code `0` (the registry expects zero). ✓
++Exit code `1` (the registry expects zero). ✗
+ 
+ ```
+-[32m<timestamp> +0100[0m - dagster - [34mWARNING[0m - No dagster instance configuration file (dagster.yaml) found at <tmpdir>. Defaulting to loading and storing all metadata with <tmpdir>. If this is the desired behavior, create an empty dagster.yaml file in <tmpdir>.
+-[32m<timestamp> +0100[0m - dagster - [34mINFO[0m - Validation successful for code location loads-by-path.py.
+-[32m<timestamp> +0100[0m - dagster - [34mINFO[0m - All code locations passed validation.
+-/usr/local/lib/python3.14/site-packages/click/core.py:788: SupersessionWarning: Function `definitions_validate_command` is superseded and its usage is discouraged. Use 'dg check defs' instead.
+-  return __callback(*args, **kwargs)
++/Users/chidionyema/dev/code/idp/.venv/bin/python: No module named dagster
+ ```
+ 
+ ## The registry's own lines
+diff --git a/docs/gates/index.md b/docs/gates/index.md
+index df01aef1b..ee5aadc10 100644
+--- a/docs/gates/index.md
++++ b/docs/gates/index.md
+@@ -2,7 +2,7 @@
+ 
+ Every rule in `rules.yaml`, one page each, generated by `bin/idp-gate-demo`. Each page carries the gate's own output for its refusing and permitting cases, so a gate that stopped discriminating shows up here rather than in a claim.
+ 
+-75 gate(s).
++76 gate(s).
+ 
+ | gate | id | planes | law | refused | permitted |
+ |---|---|---|---|---|---|
+@@ -46,7 +46,7 @@ Every rule in `rules.yaml`, one page each, generated by `bin/idp-gate-demo`. Eac
+ | [ethos-rego](conscience-rego.md) | `conscience-rego` | ci | LAW 44 | `1` | `0` |
+ | [shell](shell-lint.md) | `shell-lint` |  | LAW 45 | `1` | `0` |
+ | [hardcode](hardcoded-path.md) | `hardcoded-path` | ci, session | LAW 46 | `1` | `0` |
+-| [codeloc](defs-load-by-path.md) | `defs-load-by-path` | ci | LAW 45 | `1` | `0` |
++| [codeloc](defs-load-by-path.md) | `defs-load-by-path` | ci | LAW 45 | `1` | `1` |
+ | [placement](fits-a-node.md) | `fits-a-node` | ci | LAW 45 | `1` | `0` |
+ | [reloader](reloader-operator-owned.md) | `reloader-operator-owned` | ci | crew#684 rung 2 | `1` | `0` |
+ | [sched](one-scheduler.md) | `one-scheduler` | ci | THE HEADLINE (one platform layer, not a  | `1` | `0` |
+@@ -81,3 +81,4 @@ Every rule in `rules.yaml`, one page each, generated by `bin/idp-gate-demo`. Eac
+ | [clean-tree](clean-tree.md) | `clean-tree` | ci, session | LAW 2, docs/policy/no-agent-works-in-the | `1` | `0` |
+ | [healthcheck-exists](healthcheck-names-a-real-object.md) | `healthcheck-names-a-real-object` | ci | LAW 45, incident 2026-09-13 (the tailsca | `1` | `0` |
+ | [secret-blockers](externalsecret-blockers-are-loud.md) | `externalsecret-blockers-are-loud` | ci | R47 (a founder blocker is loud and one a | `1` | `0` |
++| [breaker-enf](breaker-enforcement.md) | `breaker-enforcement` | ci | R38, incident 2026-09-13 | `1` | `0` |
+diff --git a/extensions/breaker/index.ts b/extensions/breaker/index.ts
+index 7e15e2dd1..b7a293b8b 100644
+--- a/extensions/breaker/index.ts
++++ b/extensions/breaker/index.ts
+@@ -22,6 +22,7 @@
+ 
+ import * as fs from "node:fs";
+ import * as path from "node:path";
++import { spawnSync } from "node:child_process";
+ import { decide } from "./decide.mjs";
+ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+ 
+@@ -35,15 +36,53 @@ const ROOT =
+   process.env.ESTATE_ROOT ||
+   path.join(process.env.HOME || "~", "dev", "code", "idp");
+ 
+-/** Findings about a target, pulled out of a tool's result. Coarse on purpose: the breaker
+- *  fingerprints, so this only has to hand it the text. */
+-function findingsFrom(toolName: string, input: unknown, output: unknown): string | null {
+-  const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
+-  if (!text || text.length < 20) return null;
++/** Findings about a target, pulled out of a tool's result.
++ *
++ *  THE MISFIRE OF 2026-09-13, AND WHY THIS DELEGATES INSTEAD OF DECIDING.
++ *
++ *  Two copies of "what counts as a finding" is how this broke. The library in
++ *  bin/idp-circuit-breaker already knew the rule; this file reimplemented it as "return the tool's
++ *  raw output", so `echo hello` and `cat .git/HEAD` registered as findings, three repeated
++ *  commands tripped N=3, and the guard locked bash and read -- the two tools a session needs to
++ *  investigate or fix anything. It locked a working session for hours and could not be cleared
++ *  from inside, because every clearing command was itself a bash call. R38: a guard that refuses
++ *  correct work is an outage.
++ *
++ *  So there is now ONE rule, in the library, and this asks it. The library returns null when a
++ *  result carries no finding -- a successful command, a shell builtin echoing its input, an empty
++ *  result -- and a fingerprint when it does, and that single answer decides everything here.
++ */
++function findingsFrom(toolName: string, input: unknown, output: unknown): string[] {
+   // Only reads and queries produce findings worth counting. A write is a change, not a diagnosis,
+   // and counting those would lock the tool an agent needs to fix the thing.
+-  if (toolName !== "bash" && toolName !== "read") return null;
+-  return text;
++  if (toolName !== "bash" && toolName !== "read") return [];
++  const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
++  if (!text) return [];
++  const fp = fingerprintVia(text);
++  return fp ? [fp] : [];
++}
++
++/** Ask bin/idp-circuit-breaker for the fingerprint of this text.
++ *
++ *  Shelled out rather than reimplemented: the extension cannot import the Python module, and a
++ *  second copy of the rule is exactly the defect being fixed. The call is O(1) and only runs for
++ *  a read/query that produced output at all.
++ */
++function fingerprintVia(text: string): string | null {
++  try {
++    const r = spawnSync("python3", [path.join(ROOT, "bin", "idp-circuit-breaker"), "--fingerprint"], {
++      input: text,
++      encoding: "utf-8",
++      timeout: 5000,
++    });
++    if (r.status !== 0) return null;
++    const out = (r.stdout || "").trim();
++    if (!out || out === "null") return null; // no finding: cannot lock, whatever the bytes
++    return out;
++  } catch {
++    // A guard that cannot ask must not become a guard that blocks. Nothing observed.
++    return null;
++  }
+ }
+ 
+ function append(row: Record<string, unknown>): void {
+@@ -81,13 +120,14 @@ export default function (pi: ExtensionAPI) {
+   // checks nine PRs produces nine targets. One target checked twice is one target, which
+   // decide() already handles.
+   pi.on("tool_result", async (event, _ctx) => {
+-    const finding = findingsFrom(event.toolName, event.input, event.output);
+-    if (!finding) return;
++    const findings = findingsFrom(event.toolName, event.input, event.output);
++    if (!findings.length) return; // no finding -> no observation -> cannot lock. The bug, fixed.
+     const target =
+       (event.input as { command?: string })?.command?.slice(0, 120) ??
+       (event.input as { path?: string })?.path ??
+       event.toolName;
+-    append({ finding, target, at: new Date().toISOString(), tool: event.toolName });
++    const at = new Date().toISOString();
++    append(findings.map((finding) => ({ finding, target, at, tool: event.toolName })));
+   });
+ 
+   // THE HARD GATE. Before a read/query runs, ask whether its pattern is already proved. If it is,
+diff --git a/mkdocs.yml b/mkdocs.yml
+index 433c67385..4ea55e479 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -319,6 +319,7 @@ nav:
+   - Gates:
+       - What these are: gates/index.md
+       - api-version-retired: gates/api-version-retired.md
++      - breaker-enforcement: gates/breaker-enforcement.md
+       - aevum-evidence: gates/aevum-evidence.md
+       - flux-subst: gates/flux-subst.md
+       - flux-wait-brake: gates/flux-wait-brake.md
+diff --git a/rules.yaml b/rules.yaml
+index d754ffcaf..1db14e7e1 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -2224,3 +2224,55 @@ rules:
+     note: the same ExternalSecret once a person has typed the pair
+   ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
+   fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
++
++- id: breaker-enforcement
++  label: breaker-enf
++  statement: >-
++    The fingerprint of a tool's output is the stable identity of a FINDING, never the bytes it
++    printed: output carrying no finding -- a successful command, a shell builtin echoing its input,
++    a blank result -- yields no fingerprint and can never lock, however many times it repeats,
++    while the same CVE set on three targets still locks. One rule, in bin/idp-circuit-breaker
++  law: R38, incident 2026-09-13
++  origin: incident 2026-09-13, the breaker locked bash and read for hours
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-breaker-fingerprint
++  fixtures:
++    must_fail: tests/fixtures/breaker-fingerprint/bad/real-cves.txt
++    must_pass: tests/fixtures/breaker-fingerprint/good/noop-repeated.txt
++  cases:
++  - expect: pass
++    args:
++    - tests/fixtures/breaker-fingerprint/good/noop-repeated.txt
++    note: repeated no-op output carries no finding, so it cannot lock the session
++  - expect: pass
++    args:
++    - tests/fixtures/breaker-fingerprint/good/prose.txt
++    note: a green run and a file listing carry no finding either
++  - expect: refuse
++    args:
++    - tests/fixtures/breaker-fingerprint/bad/real-cves.txt
++    note: >-
++      the same CVE set on three targets IS a finding, and this is the case the breaker exists
++      for; proving it still refuses is what stops the fix from disarming the guard
++  - expect: refuse
++    args:
++    - tests/fixtures/breaker-fingerprint/bad/failing-test.txt
++    note: a failing test is a finding
++  - expect: pass
++    live: true
++    args:
++    - --estate-carries-the-rule
++    - bin/idp-circuit-breaker
++    note: >-
++      the live input is the estate's OWN breaker, graded every run: the file that decides what a
++      finding is must still carry the no-finding rule. Remove it and this case fails in the pull
++      request, rather than in a session that has already locked itself
++  ok: a result carrying no finding cannot lock, and a proved pattern still locks
++  fail: >-
++    output carrying no finding gets a fingerprint, so repeated no-op commands trip N=3 and lock
++    bash and read -- the two tools a session needs to fix anything. Measured 2026-09-13: a session
++    issued the same command repeatedly, the third tripped the lock, and every command that could
++    have cleared it was itself a bash call. R38 -- a guard that refuses correct work is an outage.
+diff --git a/tests/fixtures/breaker-fingerprint/bad/failing-test.txt b/tests/fixtures/breaker-fingerprint/bad/failing-test.txt
+new file mode 100644
+index 000000000..64275a0eb
+--- /dev/null
++++ b/tests/fixtures/breaker-fingerprint/bad/failing-test.txt
+@@ -0,0 +1 @@
++FAILED tests/test_x.py::test_y
+diff --git a/tests/fixtures/breaker-fingerprint/bad/real-cves.txt b/tests/fixtures/breaker-fingerprint/bad/real-cves.txt
+new file mode 100644
+index 000000000..666e664d3
+--- /dev/null
++++ b/tests/fixtures/breaker-fingerprint/bad/real-cves.txt
+@@ -0,0 +1,2 @@
++build: CVE-2026-13221 CVE-2026-42496 CVE-2026-8376
++build: CVE-2026-8376 CVE-2026-13221 CVE-2026-42496
+diff --git a/tests/fixtures/breaker-fingerprint/good/noop-repeated.txt b/tests/fixtures/breaker-fingerprint/good/noop-repeated.txt
+new file mode 100644
+index 000000000..640bb73cf
+--- /dev/null
++++ b/tests/fixtures/breaker-fingerprint/good/noop-repeated.txt
+@@ -0,0 +1,3 @@
++hello
++hello
++hello
+diff --git a/tests/fixtures/breaker-fingerprint/good/prose.txt b/tests/fixtures/breaker-fingerprint/good/prose.txt
+new file mode 100644
+index 000000000..2ba2d96de
+--- /dev/null
++++ b/tests/fixtures/breaker-fingerprint/good/prose.txt
+@@ -0,0 +1 @@
++All gates green, committing now.
+diff --git a/tests/test_breaker_extension.py b/tests/test_breaker_extension.py
+index 775cd7579..dbdb5f0f3 100644
+--- a/tests/test_breaker_extension.py
++++ b/tests/test_breaker_extension.py
+@@ -11,6 +11,7 @@ third carried the same CVE set as the first two. The fourth check was waste. The
+ from __future__ import annotations
+ 
+ import json
++import os
+ import subprocess
+ from pathlib import Path
+ 
+@@ -169,15 +170,35 @@ class TestItIsBlindRatherThanSilent:
+     """
+ 
+     def test_it_reports_blind_when_the_tool_is_absent(self, node_available, tmp_path):
++        """A guard that cannot run its check says so, and never reports clean.
++
++        This test used to pass '/nonexistent-root' and expect BLIND. That stopped being a
++        missing-tool probe the moment findTool() grew a fallback to the estate's home checkout:
++        the tool WAS found there, and the call locked instead. The test asserted a state that
++        could no longer occur on a machine with a normal checkout -- green about nothing.
++
++        BLIND is forced honestly now: HOME and ESTATE_ROOT are pointed at an empty directory and
++        the worktree lookup is given a root that is not a repository, so findTool() has nothing
++        to find and must say so.
++        """
+         js = ROOT / "extensions" / "breaker" / "decide.mjs"
+-        r = subprocess.run(
++        empty = tmp_path / "empty-home"
++        empty.mkdir()
++        env = {
++            **os.environ,
++            "HOME": str(empty),
++            "ESTATE_ROOT": str(empty / "no-estate"),
++        }
++        r = subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell
+             [
+                 "node",
+                 "--input-type=module",
+                 "-e",
+                 (
+                     "import { decide } from '" + str(js) + "';"
+-                    "const out = decide('/nonexistent-root', {observations:["
++                    "const out = decide('"
++                    + str(tmp_path / "not-a-repo")
++                    + "', {observations:["
+                     "{finding:'x',target:'1'},{finding:'x',target:'2'},{finding:'x',target:'3'}],"
+                     "next:{finding:'x',target:'4'}});"
+                     "process.stdout.write(JSON.stringify(out));"
+@@ -185,6 +206,7 @@ class TestItIsBlindRatherThanSilent:
+             ],
+             capture_output=True,
+             text=True,
++            env=env,
+         )
+         assert r.returncode == 0, r.stderr
+         out = json.loads(r.stdout)
+@@ -192,6 +214,7 @@ class TestItIsBlindRatherThanSilent:
+             "a missing tool was reported as a clean result, not BLIND"
+         )
+         assert "idp-circuit-breaker" in out["blind"]
++        assert out.get("block") is False, "BLIND must never be a block"
+ 
+     def test_it_finds_the_tool_in_a_sibling_worktree(self, node_available):
+         """The primary checkout is often on another branch; the tool is in a worktree."""
+@@ -220,3 +243,71 @@ class TestItIsBlindRatherThanSilent:
+             f"lost the tool despite a worktree holding it: {out}"
+         )
+         assert out["block"] is True
++
++
++class TestTheFingerprintIsAFindingNotTheBytes:
++    """The misfire of 2026-09-13, and the regression test that would have caught it.
++
++    The extension returned the tool's RAW OUTPUT TEXT as the "finding", so `echo hello` and
++    `cat .git/HEAD` counted, three repeated commands tripped N=3, and the guard locked bash and
++    read -- the two tools a session needs to fix anything. It locked a working session for hours.
++
++    Two lessons are graded here:
++      1. the rule lives in ONE place (bin/idp-circuit-breaker); the extension asks it
++      2. a result with no finding can never lock, however many times it repeats
++    """
++
++    def _ask(self, text: str):
++        """The extension's own question, through the shipped CLI."""
++        r = subprocess.run(  # noqa: S603,S607 -- fixed argv, no shell
++            ["python3", str(ROOT / "bin" / "idp-circuit-breaker"), "--fingerprint"],
++            input=text,
++            capture_output=True,
++            text=True,
++        )
++        assert r.returncode == 0, r.stderr
++        return json.loads(r.stdout)
++
++    @pytest.mark.parametrize(
++        "noise", ["hello", "x", "alive", "ok", "", "   ", "README.md"]
++    )
++    def test_a_result_with_no_finding_produces_none(self, noise):
++        """THE CASE THAT WAS MISSING. Repeating any of these can never lock."""
++        assert self._ask(noise) is None, (
++            f"{noise!r} produced a finding; three repeats of a no-op would lock the session"
++        )
++
++    def test_a_repeated_noop_is_still_no_finding(self):
++        assert self._ask("hello\nhello\nhello") is None
++
++    def test_the_same_cve_set_fingerprints_identically_whatever_the_order(self):
++        a = self._ask("build: CVE-2026-13221 CVE-2026-42496 CVE-2026-8376")
++        b = self._ask("build: CVE-2026-8376 CVE-2026-13221 CVE-2026-42496")
++        assert a == b, "the same CVE set in a different order must fingerprint the same"
++        assert a and a.startswith("cve:"), a
++
++    @pytest.mark.parametrize(
++        "signal",
++        [
++            "FAILED tests/test_x.py::test_y",
++            "ValueError: bad input",
++            "FAIL  port-gate  undeclared bind",
++            "Traceback (most recent call last):",
++        ],
++    )
++    def test_a_real_failure_is_a_finding(self, signal):
++        assert self._ask(signal) is not None, signal
++
++    def test_the_extension_delegates_instead_of_deciding(self):
++        """One rule, one place. A second copy is how this broke."""
++        src = EXT.read_text()
++        assert "idp-circuit-breaker" in src, "the extension must ask the library"
++        assert "--fingerprint" in src, (
++            "the extension must use the library's fingerprint"
++        )
++
++    def test_the_extension_no_longer_returns_raw_output(self):
++        src = EXT.read_text()
++        assert "return text;" not in src, (
++            "the raw-text return is the bug; it must not come back"
++        )
