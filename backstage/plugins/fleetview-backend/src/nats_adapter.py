@@ -21,6 +21,51 @@ if TYPE_CHECKING:
 
 _DEFAULT_NATS_URL = "nats://nats.event-bus.svc:4222"
 
+# The stream the board reads. One stream, one subject family, one schema (the contract).
+STREAM_NAME = "ESTATE_AGENT"
+STREAM_SUBJECTS = ["estate.agent.>"]
+# The 15-minute TTL in nanoseconds, matching outbox.py's TTL_S. The drain side expires a row
+# after TTL_S seconds; the stream's max_age is the same span in nanos so the two ends of the
+# pipeline agree on what is stale.
+STREAM_MAX_AGE_NS = 15 * 60 * 1_000_000_000
+
+# The retry budget a one-shot publish asks of nats-py. The stock defaults
+# (max_reconnect_attempts=60, reconnect_time_wait=2) multiply to a 120s worst case a single
+# drained connection can never use -- measured 127s on one /voice/hear call for no reason. The
+# product of attempts and wait is the real ceiling; keep it tight (<=5s).
+CONNECT_MAX_RECONNECT_ATTEMPTS = 2
+CONNECT_RECONNECT_TIME_WAIT = 1.0
+CONNECT_TIMEOUT = 2.0
+
+
+async def _ensure_stream(js) -> None:
+    """Create the estate-agent stream on first use. Idempotent: a stream that already exists
+    raises the server's own 'stream name already in use' (error 10058); that exact refusal is
+    swallowed, anything else re-raises. Without this, the first publish to an uncovered subject
+    is a 503 NoStreamResponseError and the board's /stream has no durable replay -- the defect
+    this function exists to remove.
+
+    Uses the same nats-py JetStream API the outbox drains through, so the stream is provisioned
+    by whichever caller publishes first, never a hand-created object that lives in nobody's
+    checkout (AGENTS.md: never hand-apply).
+    """
+    try:
+        await js.add_stream(
+            name=STREAM_NAME,
+            subjects=STREAM_SUBJECTS,
+            # nats-py's StreamConfig.max_age is a float in SECONDS on the client, but the
+            # server and outbox.py agree on NANOSECONDS. Pass the nano value raw so the
+            # recorder's add_stream sees the same number the drain side emits.
+            max_age=STREAM_MAX_AGE_NS,
+        )
+    except Exception as exc:  # noqa: BLE001 — only the 'already exists' refusal is harmless
+        # nats-py raises ApiError for a 10058; match on its description rather than the class,
+        # because the message text ('stream name already in use') is the stable signal.
+        text = str(exc)
+        if "already in use" in text or "stream name already in use" in text:
+            return
+        raise
+
 
 def _nats_url(nats_url: str | None = None) -> str:
     return nats_url or os.environ.get("NATS_URL", _DEFAULT_NATS_URL)
@@ -63,9 +108,15 @@ async def publish(
     subject = f"estate.agent.{runtime}.{session_id}.{kind}"
     payload = json.dumps(event).encode()
 
-    nc = await nats.connect(url)
+    nc = await nats.connect(
+        url,
+        max_reconnect_attempts=CONNECT_MAX_RECONNECT_ATTEMPTS,
+        reconnect_time_wait=CONNECT_RECONNECT_TIME_WAIT,
+        connect_timeout=CONNECT_TIMEOUT,
+    )
     try:
         js = nc.jetstream()
+        await _ensure_stream(js)
         await js.publish(subject, payload)
     finally:
         await nc.drain()
