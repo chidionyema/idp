@@ -804,7 +804,14 @@ def cluster_entities():
         if kind == "HelmRelease" and not ns:
             ann["namespace"] = ann.get("backstage.io/kubernetes-namespace", "")
         tags = ["cluster", etype] + (["suspended"] if suspended else [])
-        docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}",
+        # Two Kustomizations can share a name across Flux clusters (e.g. `acg` in both
+        # clusters/oke and clusters/edge); metadata.name alone is not unique. The entity
+        # name carries the cluster so the catalogue never emits a duplicate Component.
+        cluster = rel.split("/")[1] if rel.startswith("clusters/") else ""
+        ent_name = f"cluster-{slug(kind).lower()}-{slug(name)}"
+        if cluster:
+            ent_name += f"-{slug(cluster)}"
+        docs.append(entity("Component", ent_name,
                            f"{name} ({kind})", etype, ann, tags, _idp_source_link(rel),
                            description=desc))
     # The CNI is two tools the founder asked for by name (crew#539: "are we getting hubble or not";
