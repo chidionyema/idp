@@ -31,6 +31,11 @@ def _docs():
     for f in sorted(
         glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True)
     ):
+        # platform/vendors/templates/*.yaml are Helm/Go templates ({{- /* ... */ -}}), not YAML.
+        # yaml.safe_load can never parse them, and they declare no HTTPRoute, so skip the
+        # whole templates/ directory rather than teaching this reader about Go templating.
+        if "templates" in pathlib.Path(f).parts:
+            continue
         for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
             if d:
                 yield f, d
