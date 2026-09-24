@@ -451,7 +451,7 @@ if "$MPY" -c "import dagster" 2>/dev/null; then
   else say "$out"; fail=1; fi
 else say "BLIND migration dagster not importable; gate not run"; fail=1; fi
 
-# 4z. mac-provision (per docs/reference/security-architecture.md §3 + §6).
+# 4z. mac-provision (per docs/reference/security-architecture.md section 3 + section 6).
 #     The Brewfile + LaunchDaemons + idp-mac-provision are the founder Mac install
 #     surface under SPIFFE primary. Linux cannot run `brew bundle`, but it
 #     CAN validate that the Brewfile parses and the plists are well-formed XML;
@@ -573,7 +573,7 @@ else
 fi
 fi  # IDP_CI_SKIP_PYTEST
 
-# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diátaxis folder
+# 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diataxis folder
 #     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
 #     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
 #     techdocs page and nothing here would say so. BLIND when mkdocs is missing, never a pass.
@@ -750,13 +750,13 @@ if [ -z "${IDP_CI_BASE:-}" ]; then
   if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
     say "ok    local-evidence chain present and intact"
   else
-    say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken — no agent action has been recorded"; fail=1
+    say "FAIL  local-evidence .aevum/local.jsonl is empty or chain is broken -- no agent action has been recorded"; fail=1
   fi
 else
   say "skip  local-evidence developer-local; CI cannot have an agent session"
 fi
 
-# ADR 0030: Jev scope guard — no direct TypeSafeClient calls outside mcp/plugins/jev.py.
+# ADR 0030: Jev scope guard -- no direct TypeSafeClient calls outside mcp/plugins/jev.py.
 # This is the forcing function that ensures every Jev call goes through the MCP plugin,
 # so every decision lands in estate.db and the API key lives in one place.
 if python3 "$IDP/bin/idp-jev-scope-guard" >/dev/null 2>&1; then
@@ -800,3 +800,4 @@ if python3 "$IDP/bin/idp-api-version-gate" "$IDP/platform" "$IDP/clusters" >/dev
    && python3 "$IDP/bin/idp-api-version-gate" "$IDP/tests/fixtures/api-version/good" >/dev/null 2>&1; then
   say "ok    apiversion no manifest in platform/ or clusters/ names a group/version this estate has migrated off"
 else say "FAIL  apiversion a manifest names a retired group/version, or the gate does not discriminate"; fail=1; fi
+fi
