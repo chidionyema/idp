@@ -225,3 +225,17 @@ estate-execute crystallize topic="<name>" command="<cmd>" description="<desc>"
 
 - **curl exit 56**: Removed `-f` flag from intent commands. Executor sets `SSL_CERT_FILE=/private/etc/ssl/cert.pem`. HOME is NOT restricted (prevents macOS SecureTransport cert lookup failure).
 - **YAML `{{ }}` interpolation**: Variables in intent YAML must use `{{var}}` (no spaces) — YAML 1.1 parses `{{ var }}` as a flow mapping.
+
+### k8s.debug Intent
+
+One-shot cluster diagnostic replacing 6 individual intents.
+
+```
+estate-execute k8s.debug namespace=llm focus=litellm-abc depth=quick since=6h log_lines=50
+```
+
+Returns in one call: overview, nodes, problem pods, high-restart pods, degraded workloads, warning events, pending PVCs, services with no endpoints, Flux state, failing pod logs. Read-only. Timeout-bounded. Scoped by namespace/focus/depth.
+
+**Pruned** (superseded): k8s-get, k8s-describe, spire-csi-check, spire-entries-list, spire-agent-logs, litellm-status, vault-ocid-get.
+
+**Design principle**: read = one intent (agent gets full picture in one call), write = many small intents (mutations stay precise).
