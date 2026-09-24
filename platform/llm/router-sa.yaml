@@ -1,0 +1,12 @@
+# Service account for the LiteLLM router pod.
+# The OCIoke admission controller reads the oci.oraclecloud.com/principal annotation and
+# grants the pod workload identity: the pod's OCI calls use the mapped OCI principal
+# instead of a static API key. This is what lets the spire-key-broker sidecar call
+# OCI Vault APIs without storing an OCI API key anywhere.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: idp-router
+  namespace: llm
+  annotations:
+    oci.oraclecloud.com/principal: workload
