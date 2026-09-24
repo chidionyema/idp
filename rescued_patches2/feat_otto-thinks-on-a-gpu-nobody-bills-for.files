@@ -1,6 +1,0 @@
-bin/idp-kaggle-lane
-docs/how-to/onboarding/idp-kaggle-lane.md
-docs/tutorials/demo/idp-kaggle-lane.md
-mkdocs.yml
-platform/lifeboat/src/homes.js
-platform/lifeboat/test/lifeboat.test.mjs

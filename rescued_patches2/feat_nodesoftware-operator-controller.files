@@ -1,8 +1,0 @@
-platform/nodesoftware-operator/controller/README.md
-platform/nodesoftware-operator/controller/api/v1alpha1/runtimeinstall_types.go
-platform/nodesoftware-operator/controller/internal/controller/reconcile_actions.go
-platform/nodesoftware-operator/controller/internal/controller/reconcile_install.go
-platform/nodesoftware-operator/controller/internal/controller/runtimeinstall_controller.go
-platform/nodesoftware-operator/controller/internal/controller/target.go
-platform/nodesoftware-operator/controller/internal/controller/target_test.go
-platform/nodesoftware-operator/controller/internal/controller/types.go

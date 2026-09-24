@@ -1,5 +1,0 @@
-platform/edge/kustomization.yaml
-platform/edge/verify-image-signatures.yaml
-tests/fixtures/kyverno-verify/signed-sovereign-worker.good.yaml
-tests/fixtures/kyverno-verify/unsigned-upstream.bad.yaml
-tests/test_incident_crew570_the_cluster_checks_the_signature.py

@@ -1,4 +1,0 @@
-bin/idp-oci-bootstrap
-bin/idp-oci-whoami
-docs/evidence/pr-275/20260826T235917Z-1.png
-tests/test_incident_crew345_no_file_routes_to_oci_session.py

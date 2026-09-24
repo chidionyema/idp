@@ -1,5 +1,0 @@
-docs/how-to/onboarding/lago-boot.md
-mkdocs.yml
-platform/commerce/app/lago-api.Dockerfile
-platform/commerce/app/lago.yaml
-tests/bdd/test_lago_rails_boot_window.py

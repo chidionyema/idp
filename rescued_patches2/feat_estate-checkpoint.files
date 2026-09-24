@@ -1,7 +1,0 @@
-bin/estate-checkpoint
-docs/decisions/2026-09-07-the-checkpoint-lives-on-the-issue-not-in-a-vendor-file.md
-platform/agent-foundry/runner/README.md
-platform/agent-foundry/runner/external-secret.yaml
-platform/agent-foundry/runner/kustomization.yaml
-platform/agent-foundry/runner/namespace.yaml
-platform/agent-foundry/runner/runner-deployment.yaml
