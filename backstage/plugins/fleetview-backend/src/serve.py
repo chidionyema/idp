@@ -354,6 +354,17 @@ def build_app(routes_path: Path) -> FastAPI:
         result, status = await routes.reject_mutation(body)
         return JSONResponse(content=result, status_code=status)
 
+    # crew#973 CP2: Deploy River data endpoints
+    @app.get(routes.JOURNEYS_PATH)
+    def journeys_get(limit: int = 30):
+        body, status = routes.journeys_envelope(limit)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get("/journeys/{sha}")
+    def journey_get(sha: str):
+        body, status = routes.deploy_journey_envelope(sha)
+        return JSONResponse(content=body, status_code=status)
+
     @app.get("/healthz")
     def healthz():
         return {"ok": True}

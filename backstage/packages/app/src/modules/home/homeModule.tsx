@@ -127,6 +127,19 @@ const boardPage = PageBlueprint.make({
   },
 });
 
+// /river (crew#973 CP2): the Deploy River -- every commit from push to cluster.
+// Data: `GET /api/fleetview/journeys` from the fleetview backend, reading
+// deploy_journeys / deploy_journey_events from estate.db (written by
+// bin/estate-deploy-recorder). A journey with no rows means the recorder has not
+// run yet -- stated plainly, never invented as an empty river.
+const riverPage = PageBlueprint.make({
+  name: 'river',
+  params: {
+    path: '/river',
+    loader: () => import('./River').then(m => <m.River />),
+  },
+});
+
 export const homeModule = createFrontendModule({
   pluginId: 'home',
   extensions: [
@@ -138,6 +151,7 @@ export const homeModule = createFrontendModule({
     investigatePage,
     showcasePage,
     fleetPage,
+    riverPage,
     boardPage,
   ],
 });
