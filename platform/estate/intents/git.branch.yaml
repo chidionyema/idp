@@ -1,0 +1,11 @@
+name: git.branch
+description: >
+  Create a new git branch from HEAD. Named from the ticket ID.
+  Never touches main. Never force-pushes.
+args:
+  name: { type: string, help: "Branch name, e.g. fix/bin-idp-ci-if-20260924" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      git branch {{name}} && git checkout {{name}} && echo "branch: {{name}}"
