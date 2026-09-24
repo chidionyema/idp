@@ -1,0 +1,228 @@
+#!/usr/bin/env python3
+"""crew#581 CP6: measure what Flux actually does to a hand-edit on a live cluster.
+
+The trust architecture the founder handed the crew says, of the engineer who edits a running
+server by hand: "Flux immediately deletes their change and reverts it back to what is written in
+Git." That sentence is doing real security work — it is the reason the doc can claim the cluster
+cannot drift — and nothing in this repository had ever measured it. This drill does, and it
+measures both halves, because the sentence is true of one and false of the other:
+
+  MANAGED    a field that exists in the source. Flux owns it, server-side apply reverts it, and
+             the only question is how long the drift is live. That number is the drill's output.
+  UNMANAGED  a field nobody declared — an added annotation, and by the same mechanism an added
+             sidecar or an added capability. Flux does not own it, so `prune` never touches it and
+             it survives every reconcile. "Immediately deletes their change" is false here.
+
+Both are graded. The managed revert is a FAIL if it never happens; the unmanaged survival is
+reported as the finding it is, never as a pass, because a drill that prints ok for the case an
+attacker would actually use is worse than no drill (LAW 28).
+
+"Immediately" is also not what the tree declares. Every Kustomization in this repository sets its
+own reconcile interval, and the ceiling below is read from the cluster rather than typed, so the
+drill cannot drift from the tree it grades (LAW 46).
+
+Usage:
+  bin/idp-drift-drill                 # discover a target, mutate, measure, grade
+  bin/idp-drift-drill --receipt DIR   # also write the raw before/after JSON there
+"""
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+import time
+
+SENTINEL = "drift-drill-sentinel"
+SIDECAR = "drift-drill-undeclared"
+ANNOTATION = "crew581.idp/unmanaged-drift"
+FLUX_NAME_LABEL = "kustomize.toolkit.fluxcd.io/name"
+POLL_SECONDS = 5
+
+
+def kc(*args, check=True):
+    """One kubectl call, stdout returned. The binary is the cluster's own client."""
+    proc = subprocess.run(
+        ["kubectl", *args], capture_output=True, text=True, check=False
+    )
+    if check and proc.returncode != 0:
+        sys.exit(f"FAIL    drift    kubectl {' '.join(args)}: {proc.stderr.strip()}")
+    return proc.stdout
+
+
+def interval_seconds(raw):
+    """Flux's own duration spelling -> seconds. "10m" and "10m0s" are both in this tree."""
+    total, digits = 0, ""
+    for char in raw.strip():
+        if char.isdigit():
+            digits += char
+        elif digits:
+            total += int(digits) * {"s": 1, "m": 60, "h": 3600}.get(char, 0)
+            digits = ""
+    return total
+
+
+def longest_interval(items):
+    """The slowest reconcile in the tree: the worst case a hand-edit can stay live."""
+    return max((interval_seconds((i.get("spec") or {}).get("interval") or "0s") for i in items), default=0)
+
+
+def reconcile_ceiling():
+    """The longest interval any Kustomization declares, plus slack, both in seconds.
+
+    Read from the cluster, never typed: a drill that hardcodes 10m goes quietly wrong the day
+    someone changes the tree, and would then grade its own stale assumption (LAW 46).
+    """
+    items = json.loads(kc("get", "kustomizations", "-A", "-o", "json"))["items"]
+    longest = longest_interval(items)
+    if longest == 0:
+        sys.exit("FAIL    drift    no Kustomization declares an interval; nothing to measure against")
+    return longest, longest + POLL_SECONDS * 3
+
+
+def pick_from(items):
+    """A ConfigMap Flux applied, holding at least one data key it therefore owns."""
+    for cm in items:
+        labels = (cm.get("metadata") or {}).get("labels") or {}
+        data = cm.get("data") or {}
+        if FLUX_NAME_LABEL in labels and data:
+            key = sorted(data)[0]
+            return cm["metadata"]["namespace"], cm["metadata"]["name"], key, data[key]
+    return None
+
+
+def pick_target():
+    picked = pick_from(json.loads(kc("get", "configmaps", "-A", "-o", "json"))["items"])
+    if picked is None:
+        sys.exit(
+            f"FAIL    drift    no ConfigMap carries {FLUX_NAME_LABEL} and a data key; "
+            "either Flux has applied nothing or the label has changed"
+        )
+    return picked
+
+
+def read(ns, name):
+    return json.loads(kc("get", "configmap", name, "-n", ns, "-o", "json"))
+
+
+def measure(ns, name, key, original, ceiling):
+    """Mutate a field Flux owns, then time how long the hand-edit stays live."""
+    kc("patch", "configmap", name, "-n", ns, "--type", "merge",
+       "-p", json.dumps({"data": {key: SENTINEL}}))
+    started = time.time()
+    while time.time() - started < ceiling:
+        time.sleep(POLL_SECONDS)
+        if (read(ns, name).get("data") or {}).get(key) != SENTINEL:
+            return round(time.time() - started)
+    return None
+
+
+def measure_unmanaged(ns, name, ceiling):
+    """Add a field nobody declared, and see whether a reconcile removes it."""
+    kc("annotate", "configmap", name, "-n", ns, f"{ANNOTATION}={SENTINEL}", "--overwrite")
+    deadline = time.time() + ceiling
+    while time.time() < deadline:
+        time.sleep(POLL_SECONDS)
+        annotations = (read(ns, name)["metadata"].get("annotations") or {})
+        if ANNOTATION not in annotations:
+            return True
+    kc("annotate", "configmap", name, "-n", ns, f"{ANNOTATION}-", check=False)
+    return False
+
+
+def pick_deployment(items):
+    """A Deployment Flux applied. Its containers list is the case a buyer's engineer cares about."""
+    for dep in items:
+        labels = (dep.get("metadata") or {}).get("labels") or {}
+        containers = (((dep.get("spec") or {}).get("template") or {}).get("spec") or {}).get("containers") or []
+        if FLUX_NAME_LABEL in labels and containers:
+            return dep["metadata"]["namespace"], dep["metadata"]["name"], [c["name"] for c in containers]
+    return None
+
+
+def measure_sidecar(ns, name, declared, ceiling):
+    """Inject a container nobody declared, and see whether any reconcile removes it.
+
+    This is the case the architecture is actually claiming to prevent. Flux v2.9.4's
+    kustomize-controller applies server-side, so field ownership is tracked — but an added entry in
+    a list keyed by name gets its own field manager, and Flux's manager does not claim what it
+    never declared. Server-side apply is therefore not what closes this; an admission controller is,
+    and this estate already runs one (platform/edge/kyverno.yaml).
+    """
+    patch = {"spec": {"template": {"spec": {"containers": [
+        {"name": SIDECAR, "image": "registry.k8s.io/pause:3.9"}]}}}}
+    kc("patch", "deployment", name, "-n", ns, "--type", "strategic", "-p", json.dumps(patch))
+    deadline = time.time() + ceiling
+    while time.time() < deadline:
+        time.sleep(POLL_SECONDS)
+        live = json.loads(kc("get", "deployment", name, "-n", ns, "-o", "json"))
+        names = [c["name"] for c in live["spec"]["template"]["spec"]["containers"]]
+        if SIDECAR not in names:
+            return True
+    kc("patch", "deployment", name, "-n", ns, "--type", "json",
+       "-p", json.dumps([{"op": "replace", "path": "/spec/template/spec/containers",
+                          "value": [c for c in json.loads(kc("get", "deployment", name, "-n", ns, "-o", "json"))
+                                    ["spec"]["template"]["spec"]["containers"] if c["name"] != SIDECAR]}]),
+       check=False)
+    return False
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--receipt", type=pathlib.Path, help="directory to write the raw JSON into")
+    args = ap.parse_args()
+
+    interval, ceiling = reconcile_ceiling()
+    ns, name, key, original = pick_target()
+    print(f"ok      drift    target {ns}/{name} data.{key}, longest declared interval {interval}s")
+
+    if args.receipt:
+        args.receipt.mkdir(parents=True, exist_ok=True)
+        (args.receipt / "before.json").write_text(json.dumps(read(ns, name), indent=2))
+
+    seconds = measure(ns, name, key, original, ceiling)
+    if seconds is None:
+        print(f"FAIL    drift    a hand-edit to a field Flux owns was still live after {ceiling}s; "
+              "the architecture's claim that drift is reverted does not hold here")
+        return 1
+    print(f"ok      drift    managed field reverted in {seconds}s "
+          f"(the window a hand-edit stays live; the doc says 'immediately')")
+
+    removed = measure_unmanaged(ns, name, ceiling)
+    if removed:
+        print(f"ok      drift    an undeclared annotation was also removed within {ceiling}s")
+    else:
+        print(f"FINDING drift    an undeclared annotation survived {ceiling}s. Flux reverts fields "
+              "it owns; it does not delete what no source declares, so an added annotation, "
+              "sidecar or capability persists. The architecture's 'Flux immediately deletes their "
+              "change' is true of edits and false of additions (crew#581 CP6)")
+
+    deployment = pick_deployment(
+        json.loads(kc("get", "deployments", "-A", "-o", "json"))["items"])
+    if deployment is None:
+        print("FINDING drift    no Flux-applied Deployment to inject into; the sidecar case is unmeasured")
+        pruned = None
+    else:
+        dns, dname, declared = deployment
+        pruned = measure_sidecar(dns, dname, declared, ceiling)
+        if pruned:
+            print(f"ok      drift    an undeclared container in {dns}/{dname} was removed within {ceiling}s")
+        else:
+            print(f"FINDING drift    an undeclared container survived {ceiling}s in {dns}/{dname}. "
+                  "Flux v2.9.4 applies server-side, so this is not a client-side-apply gap: an added "
+                  "list entry carries its own field manager and Flux never claimed it. The lever is "
+                  "admission, not apply, and platform/edge/kyverno.yaml is already installed "
+                  "(crew#581 CP6)")
+
+    if args.receipt:
+        (args.receipt / "after.json").write_text(json.dumps(read(ns, name), indent=2))
+        (args.receipt / "grade.txt").write_text(
+            f"managed_revert_seconds={seconds}\nunmanaged_annotation_removed={removed}\n"
+            f"undeclared_container_removed={pruned}\n"
+            f"longest_declared_interval_seconds={interval}\n"
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

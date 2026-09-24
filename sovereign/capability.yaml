@@ -1,0 +1,12 @@
+id: auto-sovereign
+name: sovereign
+repo: idp
+path: idp/sovereign
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-08'
+code_files: 164
+test_files: 78
+indicators:
+- requirements.txt
+requires_deep_review: true

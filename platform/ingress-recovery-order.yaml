@@ -1,0 +1,89 @@
+# Which public surfaces come back first when there is not enough room for all of them.
+#
+# 2026-09-09: the cross-node link was severed and the ingress path was pinned to one node. Thirty
+# one workloads were stranded on the other side needing 3022m CPU and 10014Mi of memory; the node
+# still serving had 108m and about 1027Mi. Everything could not come back, so something had to
+# choose -- and the only ordering the cluster held was pod priority, which said
+# observability/langfuse-web was `infrastructure-critical` at 1000000 and prospector, the shop
+# being sold, was 0 with no class at all. Left to that, the estate restores its trace viewer and
+# leaves the storefront down.
+#
+# This file is that decision, written down where it can be argued with. bin/idp-oke-break-glass
+# reads it (playbook: routed-backend-rescue) and rescues stranded routed backends in this order
+# while room lasts, then names what did not fit.
+#
+# A service here is <namespace>/<Service name> and must be the backend of an HTTPRoute.
+order:
+  - prospector/prospector-store-api    # the storefront's API; the web pods render nothing without it
+  - prospector/prospector-store-web    # the storefront itself
+  - identity/oauth2-proxy              # sign-in; without it every other surface is shut
+  - llm/litellm                        # the router every agent thinks through
+  - backstage/catalogue                # the portal the founder opens
+  - jit/jit-broker                     # the only door to cluster writes
+  - otto-gateway/otto-gateway
+  - otto-golden/otto-golden
+  - mcp/agentgateway
+  - healthchecks/healthchecks
+  - weave-gitops/weave-gitops
+
+# What gives up its room when something above cannot fit.
+#
+# The serving node had 32m of CPU free and the storefront API asks for 100m, so the shop could not
+# come back at all while every other workload kept what it held. The largest holder was
+# observability/langfuse-worker at 1000m -- a trace processor whose own web front end was stranded
+# and unreachable at the same moment, so it was processing traces nobody could read.
+#
+# These are scaled to zero, in this order, only when an entry above them will not otherwise fit,
+# and only as far as needed. Nothing here serves a customer. Restoring is one command per line and
+# the playbook prints it.
+yield:
+  # 2026-09-09: these three left the recovery order above and became sheddable. During the
+  # partition the storefront API -- 256Mi, priority 0 -- could not be seated while Superset held
+  # 1024Mi and ClickHouse held 4096Mi to draw graphs of the outage. What we watch the estate with
+  # yields to what the estate is for. They come back with `kubectl scale --replicas=1` once the
+  # link is repaired; the plan prints that command for each one as it yields it.
+  - observability/superset
+  - observability/langfuse-web
+  - observability/langfuse-worker      # trace processing; its own UI was stranded at the time
+  - monitoring/prometheus-kps          # metrics retained on disk, resumes on scale-up
+
+  # 2026-09-09, the second outage of the same day. The storefront API asked for 100m CPU on a node
+  # with 3m free, and the thing holding the room was `agent-workforce`: a scheduled job asking
+  # 225m and 768Mi that had FAILED on every one of its last three 15-minute runs and started
+  # again each time. Two dead runs and one running one, none of them doing any work -- crew#673
+  # had by then waited 15,419 minutes for a plan -- while the shop served no catalogue.
+  #
+  # Batch work yields to revenue work. A job that is failing yields to a shop that is down. This
+  # entry is a CronJob rather than a Deployment, which is why the executor below learned a third
+  # shape: suspend the schedule, delete the active runs, and print the way back.
+  - agent-workforce/agent-workforce
+
+  # 2026-09-09, the same outage, one message later. Founder, verbatim: "energenccy, cyrus is the
+  # wrong tool for us" and "we arenodel agnostic". Cyrus asks for exactly what the storefront API
+  # asks for -- 100m CPU and 256Mi -- and sits at priority 1000 on the only working node, so the
+  # shop was queued behind an agent runner the founder had just called the wrong tool.
+  #
+  # It is also the wrong tool on the estate's own measurement (record 2026-09-09T0548Z): its image
+  # installs only cyrus-ai, and the opencode, codex, cursor and gemini engines its config offers
+  # name binaries that are not in the image. A runner that reaches one vendor is a lane, not the
+  # estate's default. Shedding it costs no capability that was ever proved to exist.
+  - cyrus/cyrus
+
+# Not every casualty of a severed link is a public surface.
+#
+# external-secrets sat on the cordoned node while bitwarden-sdk-server, the thing it calls for
+# every value, sat on the serving one. Every secret in the estate stopped resolving: the Stripe
+# key the shop takes money with, the seed pushes, all of it, with nothing on any hostname to show
+# for it. A controller like that is a routed backend in every way that matters except that no
+# HTTPRoute names it, so it needs its own list.
+#
+# These are matched by Deployment name, not by Service, and treated exactly like the surfaces
+# above: rescued in this order while room lasts, evicted from the cordoned node when a healthy
+# peer already runs on the serving one.
+internal:
+  - external-secrets/external-secrets            # every secret in the estate resolves through it
+  - external-secrets/external-secrets-webhook    # admission for the same
+  - flux-system/source-controller                # nothing reconciles without it
+  - flux-system/kustomize-controller
+  - flux-system/helm-controller
+  - kube-system/calico-kube-controllers          # the dataplane's own control loop

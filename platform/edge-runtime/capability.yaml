@@ -1,0 +1,13 @@
+id: auto-edge-runtime
+name: edge-runtime
+repo: idp
+path: idp/platform/edge-runtime
+state: NO_CLUSTER_HOME
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-06'
+code_files: 3
+test_files: 0
+indicators:
+- Cargo.toml
+- Dockerfile
+requires_deep_review: true

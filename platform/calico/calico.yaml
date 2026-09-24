@@ -1,0 +1,86 @@
+# The estate's network policy enforcement layer (crew#839).
+#
+# Why this exists at all: `kubectl get daemonset -n kube-system` on 2026-09-04 returned
+# kube-flannel-ds and nothing else. Flannel gives a pod an address and a route and does not
+# implement NetworkPolicy, so the sixteen policy objects this cluster already holds have never
+# denied a packet, and the thirty-nine generated in platform/ns-fences/network/ would not either.
+#
+# Why Calico REPLACES flannel rather than sitting beside it: Oracle refuses the beside-it
+# configuration in writing -- "Installing the Calico network policy engine alongside the flannel
+# CNI plugin causes network issues. For this reason, Kubernetes Engine does not support the
+# installation of Calico alongside the flannel CNI plugin"
+# (docs.oracle.com/en-us/iaas/Content/ContEng/Tasks/contengsettingupcalico.htm, read 2026-09-04).
+# The other road, a cluster on VCN-native pod networking, needs a new cluster: "after a cluster
+# has been created, you cannot change the CNI plugin you originally selected for it"
+# (contengpodnetworking.htm, same day). Replacing the plugin on the running cluster is the
+# smaller road (LAW 23) and the one Oracle documents.
+#
+# Version: Calico v3.32 is tested against Kubernetes 1.34, 1.35 and 1.36
+# (docs.tigera.io/calico/latest/getting-started/kubernetes/requirements, read 2026-09-04). This
+# cluster serves 1.35.2, so the pairing is inside the tested set rather than beside it.
+#
+# Order: Calico is installed while flannel is still routing, and flannel is removed after. Oracle's
+# page gives the opposite order, and it deadlocks on this cluster -- `tigera-operator` is an
+# ordinary pod, so with the CNI configuration already gone it could never start and nothing would
+# install the replacement. The overlap is minutes, and it ends with Oracle's flannel add-on being
+# disabled; leaving that add-on enabled is what would make the overlap permanent, which is the
+# arrangement Oracle's sentence above refuses.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tigera-operator
+  annotations:
+    # Never garbage-collected by Flux: a namespace dropped from git takes everything in it, and
+    # everything in this one is the cluster's network (idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    # The operator runs privileged host networking; it cannot satisfy the restricted profile.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: projectcalico
+  namespace: tigera-operator
+spec:
+  interval: 24h
+  url: https://docs.tigera.io/calico/charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: tigera-operator
+  namespace: tigera-operator
+spec:
+  interval: 30m
+  chart:
+    spec:
+      chart: tigera-operator
+      version: "v3.32.2"
+      sourceRef:
+        kind: HelmRepository
+        name: projectcalico
+        namespace: tigera-operator
+  # Bounded remediation with the default rollback strategy, never `uninstall`: uninstalling a
+  # wedged release here would delete the cluster's network rather than degrade it.
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3, remediateLastFailure: true }
+  values:
+    installation:
+      enabled: true
+      # Calico takes over networking as well as policy, because Oracle refuses the policy-only
+      # arrangement. VXLAN with BGP disabled is the same encapsulation flannel runs today
+      # (kube-flannel-cfg: {"Network":"10.244.0.0/16","Backend":{"Type":"vxlan"}}, read
+      # 2026-09-04), so the datapath shape does not change -- only the implementation.
+      calicoNetwork:
+        bgp: Disabled
+        ipPools:
+          # The exact CIDR and per-node subnet length flannel uses today. A different pool would
+          # strand every running pod's address.
+          - cidr: 10.244.0.0/16
+            blockSize: 24
+            encapsulation: VXLAN
+            natOutgoing: Enabled
+            nodeSelector: all()

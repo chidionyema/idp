@@ -1,0 +1,12 @@
+id: auto-app
+name: app
+repo: idp
+path: idp/backstage/packages/app
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-08'
+code_files: 80
+test_files: 0
+indicators:
+- package.json
+requires_deep_review: true

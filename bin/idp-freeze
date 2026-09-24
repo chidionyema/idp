@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""A written freeze, measured against the estate it is supposed to be freezing.
+
+The founder opened chidionyema/crew#739 on 2026-08-31 -- "no more releases", "LOCK DOWN",
+"NOTHING ELSE GETS RELEASED" -- and it named eight workflows that were to stay switched off until
+he said otherwise in his own words on that page. Measured on 2026-09-08, eight days later: the
+issue was still open and carried no comment at all, five of the eight had been switched back on,
+the newest of those had run 40 minutes earlier, and main had taken 1,210 commits, 709 of them
+robot image updates -- the exact thing the fifth row of his table barred. Nothing noticed for
+eight days, because nothing read the page. Grep found no mention of the freeze anywhere in bin/,
+policy/ or rules.yaml.
+
+That is the class of defect he named on 2026-09-07: a thing that returns success and has never
+been checked against a real input. A lock is not a lock because it is written down.
+
+So this reads the lock where he actually writes it -- an open issue on the board carrying the
+`freeze` label -- works out which workflows it names by matching its words against the workflow
+files that really exist in this repository, and asks GitHub what state each of those is in right
+now. A freeze that is open while a workflow it named can still run is refused. With no freeze
+open it says so and passes, which is the ordinary day.
+
+  idp-freeze                  measure the live estate and grade it
+  idp-freeze SNAPSHOT.json    grade a recorded snapshot instead (this is what the fixtures are)
+  idp-freeze --snapshot PATH  measure, write the snapshot to PATH, and grade it
+
+Fail closed: if GitHub cannot be read, this refuses rather than passing. A release lock that
+returns green when it could not see anything is worse than no lock, because it is believed.
+
+It reads, and it changes nothing. Lifting a freeze is the founder's word on his own issue and is
+never this script's to give.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
+FREEZE_LABEL = os.environ.get("ESTATE_FREEZE_LABEL", "freeze")
+
+# GitHub's own words for a workflow that cannot run. Anything else can.
+OFF = {"disabled_manually", "disabled_inactivity", "disabled_fork"}
+
+
+class Unreadable(Exception):
+    """GitHub could not be read, so nothing was measured."""
+
+
+def gh(*args: str) -> str:
+    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise Unreadable(f"gh {' '.join(args)}: {proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else 'no output'}")
+    return proc.stdout
+
+
+def this_repo() -> str:
+    """The repository whose workflows a freeze names -- asked, never assumed (LAW 46)."""
+    if os.environ.get("ESTATE_IDP_REPO"):
+        return os.environ["ESTATE_IDP_REPO"]
+    return json.loads(gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
+
+
+def workflow_files() -> list[str]:
+    """The closed set a freeze's prose is matched against, so a stray word never becomes a rule."""
+    return sorted(p.stem for p in (ROOT / ".github" / "workflows").glob("*.yml"))
+
+
+def named_in(body: str, known: list[str]) -> list[str]:
+    """Which real workflows this issue locks.
+
+    Read against the real page first: crew#739 lists what it locks in a table, and then ends with
+    a sentence naming what is *still allowed to run* -- "ci, the drills ... estate-state ...".
+    A gate that just looks for workflow names in the body reads that sentence as part of the lock,
+    which is what this one did on its first live run: it reported ci and estate-state as frozen.
+    So the lock is read from structure, never from prose. Two places count, and nothing else:
+
+      * the first column of any markdown table row, which is how the founder wrote it, and
+      * any `name.yml` written out in full, which names a file rather than mentions a subject.
+
+    The candidates are then intersected with the workflows that really exist, so a stray word can
+    never become a rule.
+    """
+    real = set(known)
+    found: set[str] = set()
+    for line in body.splitlines():
+        if line.lstrip().startswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells:
+                cell = cells[0].strip("`* ")
+                stem = cell[:-4] if cell.endswith(".yml") else cell
+                if stem in real:
+                    found.add(stem)
+    for token in re.findall(r"(?<![\w-])([\w][\w-]*)\.yml(?![\w-])", body):
+        if token in real:
+            found.add(token)
+    return sorted(found)
+
+
+def measure() -> dict:
+    repo = this_repo()
+    issues = json.loads(gh("issue", "list", "--repo", CREW, "--label", FREEZE_LABEL,
+                           "--state", "open", "--json", "number,title,body", "--limit", "50"))
+    known = workflow_files()
+    state = {}
+    for row in json.loads(gh("workflow", "list", "--all", "--repo", repo,
+                             "--json", "state,path")):
+        state[Path(row["path"]).stem] = row["state"]
+    freezes = []
+    for issue in issues:
+        freezes.append({
+            "issue": f"{CREW}#{issue['number']}",
+            "title": issue["title"],
+            "workflows": [{"name": n, "state": state.get(n, "absent")}
+                          for n in named_in(issue.get("body") or "", known)],
+        })
+    return {"repo": repo, "freezes": freezes}
+
+
+def grade(snapshot: dict) -> int:
+    freezes = snapshot.get("freezes", [])
+    if not freezes:
+        print("ok    freeze   no freeze is open on the board; nothing is locked")
+        return 0
+    bad = 0
+    for f in freezes:
+        if not f["workflows"]:
+            bad += 1
+            print(f"FAIL  freeze   {f['issue']} is open and this gate could find nothing in it to "
+                  "grade: no table row and no name.yml matches a workflow that exists. A lock "
+                  "nobody can measure is the defect, so this refuses rather than passing.")
+            print(f"               {f['title']}")
+            continue
+        running = [w for w in f["workflows"] if w["state"] not in OFF and w["state"] != "absent"]
+        held = [w for w in f["workflows"] if w["state"] in OFF]
+        if running:
+            bad += 1
+            print(f"FAIL  freeze   {f['issue']} is open and locks {len(f['workflows'])} workflow(s), "
+                  f"but {len(running)} of them can still run: "
+                  + ", ".join(f"{w['name']} ({w['state']})" for w in running))
+            print(f"               {f['title']}")
+            print("               Either the freeze stands and these go back off "
+                  f"(gh workflow disable <name> --repo {snapshot.get('repo', '?')}), "
+                  "or the founder closes the issue. A lock nothing enforces is not a lock.")
+        else:
+            print(f"ok    freeze   {f['issue']} is open and all {len(held)} workflow(s) it "
+                  "names are switched off")
+    return 1 if bad else 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("snapshot", nargs="?", help="grade this recorded snapshot instead of the estate")
+    ap.add_argument("--snapshot", dest="write", metavar="PATH",
+                    help="measure the estate, write the snapshot here, and grade it")
+    args = ap.parse_args()
+
+    if args.snapshot:
+        return grade(json.loads(Path(args.snapshot).read_text()))
+    try:
+        snap = measure()
+    except Unreadable as exc:
+        # A release lock that goes green because it could not look is the failure this file
+        # exists to end. Refuse, and say what could not be read.
+        print(f"FAIL  freeze   the board and the workflow list could not be read, so no freeze "
+              f"was measured: {exc}")
+        return 1
+    if args.write:
+        Path(args.write).write_text(json.dumps(snap, indent=2) + "\n")
+    return grade(snap)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

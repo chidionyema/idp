@@ -1,0 +1,231 @@
+# Registration reconciler (build order step 6, docs/specs/otto-platform-v1/EVENT-GATEWAY-TENANCY.md
+# receipt layer 3, "vendor registration"): every 5 minutes a Job-owned pod asks Telegram's own
+# API -- getWebhookInfo -- whether the webhook this estate registered is still the one Telegram
+# holds, and how many updates are queued behind it. That is the vendor's own truth, not a guess
+# from our side of the wire (crew#516 comment 5451926212: "so we solve the problem once" applies
+# here too -- the same otto-staging-telegram vault entry telegram-secret.yaml already mounts is
+# read again here, never a second vault entry, never a literal token in this file or in a log
+# line).
+#
+# The metric names and shape are locked by the spec: channel_registration_ok (0/1) and
+# channel_pending_updates (a count), each carrying tenant_id and channel attributes so a second
+# tenant or a second channel plugin adds a row, never a second file. Pushed as OTLP metrics to
+# the SAME collector every other workload in this estate already sends to (LAW 50, LAW 43 -- no
+# second metrics sink): platform/otto-golden/deployment.yaml's OTEL_EXPORTER_OTLP_ENDPOINT, over
+# HTTP with the JSON encoding the collector's otlphttp receiver already accepts (no SDK, no pip
+# install, no extra image -- python's standard library is enough for one POST, the same
+# stdlib-only shape as platform/observability/telemetry-coverage.yaml's collect.py).
+#
+# Today there is one binding (tenant: estate, channel: telegram; docs/specs/otto-platform-v1/
+# EVENT-GATEWAY-TENANCY.md, "binding row #1"), so OTTO_TENANT_ID/OTTO_CHANNEL are the two
+# plain-config env vars below rather than a database read -- the channel_binding store itself is
+# a separate, in-flight piece of work (hermes-v2 branch otto/event-gateway). When that store
+# ships, this job's one call becomes a loop over its rows; the metric shape does not change.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-registration-reconciler-script
+  namespace: otto-golden
+data:
+  # Line 1 is the graded receipt line (ok/FAIL/BLIND, never printed with the token); the process
+  # exit code mirrors it so `kubectl get jobs` (or a Job-watching drill) can tell an outage from
+  # a healthy poll without reading the log at all.
+  check.py: |
+    import json
+    import os
+    import ssl
+    import sys
+    import time
+    import urllib.error
+    import urllib.request
+
+    TENANT = os.environ.get("OTTO_TENANT_ID", "estate")
+    CHANNEL = os.environ.get("OTTO_CHANNEL", "telegram")
+    TOKEN_FILE = os.environ.get(
+        "OTTO_TELEGRAM_TOKEN_FILE",
+        "/run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN",
+    )
+    OTLP_ENDPOINT = os.environ.get(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://signoz-otel-collector.observability.svc:4318"
+    )
+    TIMEOUT_S = 15
+
+    def get_webhook_info(token):
+        # The vendor's own truth (spec receipt layer 3): never our side's guess at whether the
+        # webhook is still registered. The token rides the URL path exactly as Telegram's Bot
+        # API requires; it is never logged, never included in an exception message we print.
+        url = f"https://api.telegram.org/bot{token}/getWebhookInfo"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, context=ctx, timeout=TIMEOUT_S) as r:
+            return json.load(r)
+
+    def _gauge(name, value, at_nano):
+        return {
+            "name": name,
+            "gauge": {
+                "dataPoints": [
+                    {
+                        "asDouble": float(value),
+                        "timeUnixNano": str(at_nano),
+                        "attributes": [
+                            {"key": "tenant_id", "value": {"stringValue": TENANT}},
+                            {"key": "channel", "value": {"stringValue": CHANNEL}},
+                        ],
+                    }
+                ]
+            },
+        }
+
+    def push_metrics(registration_ok, pending_updates, at_nano):
+        body = {
+            "resourceMetrics": [
+                {
+                    "resource": {
+                        "attributes": [
+                            {
+                                "key": "service.name",
+                                "value": {"stringValue": "otto-registration-reconciler"},
+                            }
+                        ]
+                    },
+                    "scopeMetrics": [
+                        {
+                            "scope": {"name": "otto.registration.reconciler"},
+                            "metrics": [
+                                _gauge("channel_registration_ok", registration_ok, at_nano),
+                                _gauge("channel_pending_updates", pending_updates, at_nano),
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        data = json.dumps(body).encode()
+        req = urllib.request.Request(
+            OTLP_ENDPOINT.rstrip("/") + "/v1/metrics",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=TIMEOUT_S) as r:
+            r.read()
+
+    def main():
+        at_nano = time.time_ns()
+        registration_ok = 0
+        pending_updates = -1  # -1: could not be determined this run, never confused with a real 0
+        try:
+            with open(TOKEN_FILE) as f:
+                token = f.read().strip()
+            info = get_webhook_info(token)
+            result = info.get("result", {}) if info.get("ok") else {}
+            registered = bool(result.get("url"))
+            registration_ok = 1 if info.get("ok") and registered else 0
+            pending_updates = result.get("pending_update_count", -1)
+            verdict = "ok" if registration_ok else "FAIL"
+            print(
+                f"{verdict} registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"registration_ok={registration_ok} pending_updates={pending_updates}"
+            )
+        except OSError as e:
+            print(
+                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"could not read the token file: {type(e).__name__}"
+            )
+        except (urllib.error.URLError, TimeoutError, ValueError) as e:
+            print(
+                f"FAIL registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"getWebhookInfo unreachable: {type(e).__name__}"
+            )
+        try:
+            push_metrics(registration_ok, pending_updates, at_nano)
+        except Exception as e:  # a collector that will not take the metric is BLIND, never a pass
+            print(
+                f"BLIND registration-reconciler tenant={TENANT} channel={CHANNEL} "
+                f"metric push failed: {type(e).__name__}"
+            )
+            sys.exit(1)
+        if registration_ok != 1:
+            sys.exit(1)
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: otto-registration-reconciler
+  namespace: otto-golden
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 60
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: check
+              # Standard library only (json, ssl, urllib) -- no pip install, no second image
+              # to keep patched (LAW 43); same interpreter tag the estate already runs in
+              # platform/llm/spend-breaker-digest.yaml's digest job.
+              image: docker.io/library/python:3.11-slim
+              command: ["python3", "/scripts/check.py"]
+              env:
+                - name: OTTO_TENANT_ID
+                  value: "estate"
+                - name: OTTO_CHANNEL
+                  value: "telegram"
+                # LAW 50: every workload emits to the central collector; same endpoint as
+                # platform/otto-golden/deployment.yaml.
+                - name: OTEL_EXPORTER_OTLP_ENDPOINT
+                  value: "http://signoz-otel-collector.observability.svc:4318"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: telegram-token
+                  mountPath: /run/secrets/otto-staging-telegram
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+              resources:
+                # crew#584: this job wakes for one HTTP call every 5 minutes and sleeps the rest
+                # of the time, so reserving standing CPU for it around the clock would be the
+                # paper-vs-real gap crew#584 exists to close. cpu carries no request (an honest
+                # zero, not a gap the namespace's LimitRange would silently fill with its 50m
+                # default -- explicit "0" beats an implicit default) and a small burst limit
+                # caps a single run. memory keeps requests == limits (Guaranteed for memory,
+                # since an OOM here is a false FAIL on a fact-finding check, not a saving).
+                requests: { cpu: "0", memory: 64Mi }
+                limits: { cpu: 25m, memory: 64Mi }
+          volumes:
+            - name: scripts
+              configMap:
+                name: otto-registration-reconciler-script
+                defaultMode: 0o555
+            - name: telegram-token
+              # The SAME Secret telegram-secret.yaml's ExternalSecret already renders from vault
+              # entry otto-staging-telegram -- never a second vault entry, never a literal token.
+              secret: { secretName: otto-staging-telegram }
+            - name: tmp
+              emptyDir: {}

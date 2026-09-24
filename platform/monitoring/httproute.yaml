@@ -1,0 +1,115 @@
+# The two monitoring doors (crew#684; founder 2026-08-30: "first i need all cluster monitoring tools
+# now ... top right of screen backstage ... all monitoring tools"). For 43 hours the catalogue read
+# "no public address yet" on both: kube-prometheus-stack was installed as an alert evaluator only
+# and nobody built a hostname for the console the alerts fire from or the store the numbers live in.
+# Same shape as signoz (platform/observability/httproute.yaml): the login callback path goes to
+# oauth2-proxy, everything else passes the one login (login-forward-auth) and reaches the chart's
+# Service. Grafana stays off in kube-prometheus-stack.yaml; SigNoz is the dashboard screen.
+# Service names: fullnameOverride `kps` + cleanPrometheusOperatorObjectNames, so kps-alertmanager
+# (9093) and kps-prometheus (9090), the same two the langfuse-alert-drill asks.
+---
+# Alertmanager: every firing alert, its silences, and the route that reaches your Telegram.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-alerts
+  name: alertmanager
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-alertmanager
+  hostnames:
+    - "alertmanager.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: oauth2-proxy
+          namespace: identity
+          port: 80
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: kps-alertmanager
+          port: 9093
+---
+# Prometheus: the numbers behind every alert, the rules, and which targets are being scraped.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  labels:
+    backstage.io/kubernetes-id: founder-metrics
+  name: prometheus
+  namespace: monitoring
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-prometheus
+  hostnames:
+    - "prometheus.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /oauth2/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: oauth2-proxy
+          namespace: identity
+          port: 80
+    - filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: login-forward-auth
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: kps-prometheus
+          port: 9090

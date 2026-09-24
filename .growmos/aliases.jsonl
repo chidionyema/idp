@@ -15,6 +15,7 @@
 {"alias": "safety tags", "entity": "artifact/safety-tags", "type": "ARTIFACT"}
 {"alias": "zero-trust-boundary.md", "entity": "artifact/zero-trust-boundary-md", "type": "ARTIFACT"}
 {"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
+{"alias": "agent-foundry real interface", "entity": "component/agent-foundry-real-interface", "type": "COMPONENT"}
 {"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
 {"alias": "Budget Orchestrator", "entity": "component/budget-orchestrator", "type": "COMPONENT"}
 {"alias": "Cache Guardian", "entity": "component/cache-guardian", "type": "COMPONENT"}
@@ -48,8 +49,11 @@
 {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
 {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
+{"alias": "agent-foundry", "entity": "concept/agent-foundry", "type": "CONCEPT"}
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
+{"alias": "Fractal Factory", "entity": "concept/fractal-factory", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
+{"alias": "Terminal Grammar", "entity": "concept/terminal-grammar", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
 {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
 {"alias": "voice-clarify-handshake", "entity": "concept/voice-clarify-handshake", "type": "CONCEPT"}
@@ -79,7 +83,9 @@
 {"alias": "SPIRE", "entity": "service/spire", "type": "SERVICE"}
 {"alias": "Telegram Bot", "entity": "service/telegram-bot", "type": "SERVICE"}
 {"alias": "Traefik", "entity": "service/traefik", "type": "SERVICE"}
+{"alias": "Factory Build Spec", "entity": "spec/factory-build-spec", "type": "SPEC"}
 {"alias": "voice_2100_architecture", "entity": "spec/voice-2100-architecture", "type": "SPEC"}
+{"alias": "Closed Grammar", "entity": "system/closed-grammar", "type": "SYSTEM"}
 {"alias": "Backstage", "entity": "tool/backstage", "type": "TOOL"}
 {"alias": "bin/idp-ci", "entity": "tool/bin-idp-ci", "type": "TOOL"}
 {"alias": "bin/idp-status", "entity": "tool/bin-idp-status", "type": "TOOL"}

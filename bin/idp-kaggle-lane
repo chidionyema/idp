@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""idp-kaggle-lane: hand Otto a GPU nobody bills for.
+
+Every other lane in platform/lifeboat/src/homes.js is somebody's free tier. A free tier can be
+withdrawn, re-priced, or have its model slug churned, and the day all of them do it at once the
+estate has nothing to think with. This launcher is the answer to that day: Kaggle gives 30 GPU
+hours a week on a T4 or P100 at zero cost, and a model WE chose running on a GPU WE launched
+answers regardless of what any vendor decides.
+
+It is also a fourth failure domain. Kaggle shares no node, no network, no DNS and no control
+plane with OKE, and none with Cloudflare either -- so it survives the loss of home 1 and home 2
+together, which is the only property that makes a third home worth having.
+
+HOW THE NOTEBOOK IS REACHED, and why it is not ngrok. The notebook dials OUT through a NAMED
+Cloudflare tunnel, so its address is the same hostname every session, nothing dials in, and
+there is no inbound port anywhere on Kaggle's side. The estate already owns that zone and, since
+2026-09-10, owns a Cloudflare root it can mint a tunnel credential from (R52) -- so this adds no
+platform layer, it uses the one that exists. The Worker reads the hostname from KAGGLE_LANE_URL
+and the shared bearer from KAGGLE_LANE_KEY; a lane with neither set is skipped and costs nothing,
+which is why the lane could be merged before this launcher had ever run.
+
+WHAT IT DOES NOT DO. It does not keep the session alive: Kaggle caps a session at 12 hours and
+that is not negotiable. The lane is therefore intermittent BY DESIGN, and the lifeboat is built
+for it -- when no notebook is running the hostname does not answer, the fetch throws, think()
+counts the lane as tried and moves to the next one. Re-launching on a schedule is Dagster's job
+(the estate has one scheduler, THE HEADLINE), not a loop in here.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+SLUG_DEFAULT = "otto-gpu-lane"
+MODEL_DEFAULT = "qwen2.5-coder:7b"
+
+
+def say(mark: str, what: str, msg: str) -> None:
+    print(f"{mark:<7} {what:<20} {msg}")
+
+
+def blind(what: str, msg: str) -> None:
+    say("BLIND", what, msg)
+    raise SystemExit(2)
+
+
+def fail(what: str, msg: str) -> None:
+    say("FAIL", what, msg)
+    raise SystemExit(1)
+
+
+def vault_get(name: str, field: str | None = None) -> str:
+    """Read one secret. Never printed, never logged -- only its presence is ever reported."""
+    try:
+        out = subprocess.run(
+            [str(IDP / "bin" / "idp-cloud"), "secret", "get", name],
+            capture_output=True, text=True, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if out.returncode != 0:
+        return ""
+    val = out.stdout.strip()
+    if field:
+        try:
+            return str(json.loads(val).get(field, "") or "")
+        except json.JSONDecodeError:
+            return ""
+    return val
+
+
+def notebook(model: str, key_env: str, hours: float) -> dict:
+    """The notebook the GPU runs.
+
+    Four cells, and every one of them is here rather than in a checked-in .ipynb because a
+    notebook file is a JSON blob nobody reviews. Written as source, it is diffable.
+    """
+    cells = [
+        # Ollama, not vLLM: it serves an OpenAI-compatible /v1/chat/completions out of the box,
+        # pulls a quantised model in one command, and needs no CUDA build step inside a sandbox
+        # we do not control. The lane wants an answer, not throughput.
+        "!curl -fsSL https://ollama.com/install.sh | sh\n"
+        "import subprocess, time\n"
+        "subprocess.Popen(['ollama','serve'])\n"
+        "time.sleep(8)\n",
+        f"!ollama pull {model}\n",
+        # The door. One shared bearer, checked in constant time on the Worker side; this end
+        # only has to not be open to the world, which the tunnel already guarantees -- nothing
+        # reaches this process except through the tunnel the estate authenticated.
+        "import os\n"
+        f"os.environ['LANE_KEY'] = {key_env!r}\n"
+        "!curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/"
+        "cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared\n"
+        "subprocess.Popen(['cloudflared','tunnel','--no-autoupdate','run','--token',"
+        "os.environ['TUNNEL_TOKEN']])\n",
+        # Hold the session. Kaggle stops a notebook that stops producing output, so this prints;
+        # and it stops itself before the 12-hour cap rather than being killed mid-answer.
+        f"import time\nfor i in range(int({hours} * 60)):\n"
+        "    print(f'lane up {i} min', flush=True)\n    time.sleep(60)\n",
+    ]
+    return {
+        "cells": [{"cell_type": "code", "source": c, "metadata": {}, "outputs": [],
+                   "execution_count": None} for c in cells],
+        "metadata": {"kernelspec": {"name": "python3", "language": "python",
+                                    "display_name": "Python 3"}},
+        "nbformat": 4, "nbformat_minor": 5,
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--model", default=MODEL_DEFAULT)
+    ap.add_argument("--slug", default=SLUG_DEFAULT)
+    ap.add_argument("--hours", type=float, default=11.0,
+                    help="hold the session this long; Kaggle's own cap is 12")
+    ap.add_argument("--gpu", default="nvidiaT4", choices=["nvidiaT4", "nvidiaP100"])
+    ap.add_argument("--preflight", action="store_true",
+                    help="report what is present and write nothing")
+    ap.add_argument("--status", action="store_true", help="ask Kaggle how the last push is doing")
+    args = ap.parse_args()
+
+    user = vault_get("kaggle-api", "username")
+    key = vault_get("kaggle-api", "key")
+    tunnel = vault_get("cloudflare-tunnel-token")
+    lane_key = vault_get("kaggle-lane-key")
+
+    for name, val, how in (
+        ("kaggle-api", user and key,
+         "FOUNDER ACTION: open https://www.kaggle.com/settings -> API -> Create New Token, then "
+         "Backstage -> Run the estate bootstrap -> scope kaggle. One console step, once."),
+        ("cloudflare-tunnel-token", tunnel,
+         "bin/idp-bootstrap-cloudflare --rotate mints this from the standing root (R52); "
+         "Backstage -> Run the estate bootstrap -> scope cloudflare, mode live."),
+        ("kaggle-lane-key", lane_key,
+         "bin/idp-bootstrap-cloudflare --rotate mints this shared bearer alongside the tunnel."),
+    ):
+        if not val:
+            say("BLIND", name, how)
+            if not args.preflight:
+                return 2
+
+    if args.preflight:
+        say("ok", "preflight", "nothing written; the BLIND lines above are what is still missing")
+        return 0
+
+    if not shutil.which("kaggle"):
+        blind("kaggle-cli", "pip install kaggle (the launcher shells out to it, R43)")
+
+    env = {**os.environ, "KAGGLE_USERNAME": user, "KAGGLE_KEY": key}
+
+    if args.status:
+        out = subprocess.run(["kaggle", "kernels", "status", f"{user}/{args.slug}"],
+                             capture_output=True, text=True, env=env)
+        say("ok" if out.returncode == 0 else "FAIL", "kaggle", out.stdout.strip() or out.stderr.strip())
+        return 0 if out.returncode == 0 else 1
+
+    with tempfile.TemporaryDirectory() as d:
+        p = Path(d)
+        (p / f"{args.slug}.ipynb").write_text(json.dumps(notebook(args.model, lane_key, args.hours)))
+        (p / "kernel-metadata.json").write_text(json.dumps({
+            "id": f"{user}/{args.slug}",
+            "title": "otto gpu lane",
+            "code_file": f"{args.slug}.ipynb",
+            "language": "python",
+            "kernel_type": "notebook",
+            "is_private": True,
+            "enable_gpu": True,
+            "enable_internet": True,
+            "accelerator": args.gpu,
+            # The tunnel token reaches the notebook as a Kaggle Secret, never in the file: the
+            # .ipynb is pushed to Kaggle's servers and a token written into it would be a static
+            # secret on somebody else's disk (security-policy.md, R52).
+            "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
+        }))
+        out = subprocess.run(["kaggle", "kernels", "push", "-p", str(p)],
+                             capture_output=True, text=True, env=env)
+    if out.returncode != 0:
+        fail("kaggle", (out.stderr or out.stdout).strip().splitlines()[-1][:200])
+    say("ok", "kaggle", f"pushed {user}/{args.slug} on {args.gpu}; "
+                        f"bin/idp-kaggle-lane --status says when it is serving")
+    say("ok", "lane", f"the lifeboat reaches it at KAGGLE_LANE_URL once the tunnel is up "
+                      f"(model {args.model}, held {args.hours}h of Kaggle's 12h cap)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,46 @@
+# The shop could not be seated because nothing said it mattered (2026-09-09).
+#
+# prospector's Deployments live in the product's own repository, not here -- platform is not
+# product. But which workload the scheduler seats first is a platform decision, and the platform
+# can make it without reaching into the product's manifests: a namespace declares its tier, and
+# this mutates the workloads in it to carry the matching class. A product team that later sets an
+# explicit priorityClassName keeps it; this only fills an absence, so it can never refuse correct
+# work (R38).
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: revenue-tier-priority
+  annotations:
+    policies.kyverno.io/title: Seat revenue workloads above the things that watch them
+    policies.kyverno.io/category: scheduling immunity
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Deployment, StatefulSet
+    policies.kyverno.io/description: >-
+      A workload in a namespace labelled estate.mumchimp.com/tier=revenue that names no
+      PriorityClass is given revenue-critical, which outranks infrastructure-critical. On
+      2026-09-09 the storefront ran at priority 0, below the nightly batch jobs and far below a
+      trace processor holding 1000m on the only node that could serve it, and the shop stayed
+      down because the scheduler had no reason to prefer it.
+spec:
+  background: false
+  rules:
+    - name: default-revenue-critical
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet]
+              operations: [CREATE, UPDATE]
+              namespaceSelector:
+                matchLabels:
+                  estate.mumchimp.com/tier: revenue
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.template.spec.priorityClassName || '' }}"
+            operator: Equals
+            value: ""
+      mutate:
+        patchStrategicMerge:
+          spec:
+            template:
+              spec:
+                priorityClassName: revenue-critical

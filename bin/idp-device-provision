@@ -1,0 +1,517 @@
+#!/usr/bin/env bash
+# idp-device-provision — declarative provisioning for any device the estate
+# trusts. Mac, Linux, future Windows. One orchestrator, one status contract,
+# one install path per OS.
+#
+# Subcommands:
+#   install      lay every dependency declared in infra/{macos,linux}/, render
+#                the templated LaunchDaemons / systemd units, place them, and
+#                load them. Idempotent.
+#   upgrade      like install, but `brew bundle upgrade` and `apt-get
+#                upgrade` run first.
+#   uninstall    reverses install.
+#   status       JSON on stdout, every component has `{installed, status}`
+#                fields. CI + the dashboard at mumchimp.com/devices consume
+#                this.
+#   doctor       human-readable status plus remediation; this is what the
+#                founder reads when something is wrong.
+#   self-test    parses the Brewfile + the apt list + every plist + every
+#                systemd unit + this script. Linux-runnable, so CI can
+#                run it on every PR.
+#
+# Gate (per AGENTS.md SPIFFE primary rule 3): an agent NEVER asks the founder
+# to log in or run a script. idp-device-provision IS the script the founder
+# runs once per device; after that, the LaunchAgents / systemd units keep
+# the device provisioned forever.
+#
+# Why rename from idp-mac-provision (the 2026-09-23 v1) to idp-device-provision
+# (v2): the founder flag "we are building for enterprise customers as well as
+# for founder, we need to be prepared". A Mac-only path closes enterprise
+# customers out of the same install path. v2 dispatches on OS, has Mac + Linux
+# wired end-to-end, leaves Windows as a dispatched stub for the day a Windows
+# device appears in the estate.
+
+set -euo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MAC_DIR="$IDP/infra/macos"
+LINUX_DIR="$IDP/infra/linux"
+BREWFILE="$MAC_DIR/Brewfile"
+MAC_LD_DIR="$MAC_DIR/LaunchDaemons"
+MAC_SPIRE_TEMPLATE="$MAC_DIR/spire-agent.conf.template"
+APT_LIST="$LINUX_DIR/apt-lists/runtime.txt"
+LINUX_SYSTEMD_DIR="$LINUX_DIR/systemd-units"
+ESTATE_ZONE="${ESTATE_ZONE:-mumchimp.com}"
+SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN:-estate.internal}"
+
+# --- print helpers ---------------------------------------------------------
+ok()    { printf 'ok      %s\n' "$*"; }
+warn()  { printf 'WARN    %s\n' "$*" >&2; }
+blind() { printf 'BLIND   %s\n' "$*" >&2; }
+fail()  { printf 'FAIL    %s\n' "$*" >&2; RC=1; }
+RC=0
+
+usage() {
+  cat <<'USAGE'
+Usage: bin/idp-device-provision {install|upgrade|uninstall|status|doctor|self-test}
+
+Options (env vars):
+  ESTATE_ZONE            DNS zone the estate lives under (default: mumchimp.com)
+  SPIRE_TRUST_DOMAIN     SPIFFE trust domain (default: estate.internal)
+  IDP_DEVICE_PROVISION_DRY 1 = render templates + leave plists under /tmp,
+                              never touch the live LaunchAgent dir or
+                              /etc/systemd/system/
+
+Status JSON contract -- consumed by the mumchimp.com/devices dashboard:
+  {
+    "platform":  "macos" | "linux",
+    "brew":      {"installed": 0|1, "status": "..."},  // mac only
+    "apt":       {"installed": 0|1, "status": "..."},  // linux only
+    "tailscale": {"installed": 0|1, "status": "..."},
+    "spire":     {"installed": 0|1, "status": "..."},
+    "executor":  {"installed": 0|1, "status": "..."},
+    "renew":     {"installed": 0|1, "status": "..."}
+  }
+USAGE
+}
+
+# --- OS detection ----------------------------------------------------------
+detect_os() {
+  case "$(uname -s | tr '[:upper:]' '[:lower:]')" in
+    darwin) echo macos ;;
+    linux)  echo linux ;;
+    msys*|mingw*|cygwin*) echo windows ;;
+    *)      echo unknown ;;
+  esac
+}
+PLATFORM="$(detect_os)"
+
+# --- platform-conditional helpers ------------------------------------------
+# Each helper returns 0 on ok and emits its own ok/WARN/FAIL line. The
+# `installed` field is the integer 0|1 the JSON contract requires.
+brew_present() { command -v brew >/dev/null 2>&1; }
+brew_version() { brew --version 2>/dev/null | head -1; }
+
+apt_present() { command -v apt-get >/dev/null 2>&1; }
+apt_version() { apt-get --version 2>&1 | head -1 || echo "apt-get not installed"; }
+
+tailscale_present() {
+  case "$PLATFORM" in
+    macos)  [ -d /Applications/Tailscale.app ] ;;
+    linux)  command -v tailscale >/dev/null 2>&1 || [ -x /usr/bin/tailscale ] || [ -x /usr/local/bin/tailscale ];;
+    *)      return 1 ;;
+  esac
+}
+
+spire_present() {
+  command -v spire-agent >/dev/null 2>&1 \
+    || [ -x /opt/homebrew/bin/spire-agent ] \
+    || [ -x /usr/local/bin/spire-agent ] \
+    || [ -x /usr/bin/spire-agent ]
+}
+
+executor_socket() {
+  case "$PLATFORM" in
+    macos)  [ -S /Users/Shared/.estate/executor.sock ] ;;
+    linux)  [ -S /run/idp/executor.sock ] ;;
+    *)      return 1 ;;
+  esac
+}
+executor_listening() {
+  local sock
+  case "$PLATFORM" in
+    macos)  sock="/Users/Shared/.estate/executor.sock";;
+    linux)  sock="/run/idp/executor.sock";;
+    *)      return 1 ;;
+  esac
+  [ -S "$sock" ] || return 1
+  (echo '{"verb":"fs_read","path":"/tmp/x"}' | nc -U "$sock" 2>/dev/null) | grep -q '"ok":'
+}
+
+renew_running() {
+  case "$PLATFORM" in
+    macos)
+      launchctl print gui/"$(id -u)"/com.estate.jit-device-renew >/dev/null 2>&1
+      ;;
+    linux)
+      systemctl --user is-active --quiet jit-device-renew.timer 2>/dev/null \
+        || systemctl is-active --quiet jit-device-renew.timer 2>/dev/null
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# --- install: homebrew path (macos) ---------------------------------------
+install_brew() {
+  if ! brew_present; then
+    fail "Homebrew absent. One-time per Mac:
+          /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\"
+          install does nothing else until Homebrew is on PATH."
+    return 1
+  fi
+  ok "brew present at $(command -v brew) ($(brew_version))"
+
+  brew bundle install --file "$BREWFILE" --no-upgrade \
+    && ok "brew bundle install --no-upgrade ($BREWFILE)" \
+    || fail "brew bundle install refused; see brew output above"
+
+  spire_present && ok "spire-agent present" \
+    || fail "spire-agent absent after brew bundle install; the brew formula is `spire`, build with: GOBIN=/opt/homebrew/bin go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3"
+
+  tailscale_present && ok "Tailscale.app present (system-extension user-approval is the one Mac GUI prompt)" \
+    || fail "Tailscale.app absent after brew bundle install"
+}
+
+# --- install: apt path (linux) ---------------------------------------------
+install_apt() {
+  if ! apt_present; then
+    fail "apt-get absent. The Linux path requires Debian/Ubuntu (apt); the dnf (RHEL/Fedora) and apk (Alpine) paths are dispatched stubs that land in a follow-up PR."
+    return 1
+  fi
+  ok "apt-get present ($(apt_version))"
+
+  # Idempotent. --dry-run first catches a missing or renamed package on the
+  # CI rung without trying to actually install.
+  if [ "${IDP_DEVICE_PROVISION_DRY:-0}" = "1" ]; then
+    dry_run_ok=1
+    xargs -a "$APT_LIST" apt-get install --dry-run -y --no-install-recommends >/dev/null 2>&1 \
+      && ok "apt-get install --dry-run converges (dry-run path; packages not actually installed)" \
+      || dry_run_ok=0
+    [ "$dry_run_ok" = 0 ] && fail "apt-get install --dry-run refused; a package in $APT_LIST is no longer in the distro"
+    return 0
+  fi
+
+  apt-get update -qq >/dev/null && ok "apt-get update" || fail "apt-get update refused"
+  xargs -a "$APT_LIST" apt-get install -y --no-install-recommends >/dev/null 2>&1 \
+    && ok "xargs apt-get install ($APT_LIST)" \
+    || fail "apt-get install refused; one or more packages in $APT_LIST is missing"
+
+  # SPIRE agent builds from upstream source (the brew formula is
+  # mac-side; the Linux distros don't ship a spire-agent package on the
+  # GA path). Same `go install` recipe as the bootstrap.
+  if command -v go >/dev/null 2>&1; then
+    GOBIN="${GOBIN:-/usr/local/bin}" go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3 >/dev/null 2>&1 \
+      && ok "spire-agent installed via go install (v1.15.3)" \
+      || warn "spire-agent go install failed; install via the official spiffe apt repo instead"
+  else
+    blind "go not on PATH; spire-agent install skipped. Add the upstream spiffe apt repo: curl -fsSL https://spiffe.io/apt/key.gpg | apt-key add -"
+  fi
+}
+
+# --- install: platform dispatch -------------------------------------------
+install_dispatch() {
+  case "$PLATFORM" in
+    macos)  install_brew ;;
+    linux)  install_apt ;;
+    windows) fail "Windows path is a dispatched stub (winget + PowerShell) — PR after a Windows device lands in the estate" ;;
+    *)      fail "unsupported platform; OS=$(uname -s) — only macos and linux are wired today" ;;
+  esac
+}
+
+# --- wiring: mac vs linux -------------------------------------------------
+wire_macos() {
+  render_spire_config
+  cp -f "$MAC_LD_DIR/com.estate.jit-device-renew.plist" "$HOME/Library/LaunchAgents/com.estate.jit-device-renew.plist"
+  chmod 644 "$HOME/Library/LaunchAgents/com.estate.jit-device-renew.plist"
+  launchctl bootstrap gui/"$(id -u)" "$HOME/Library/LaunchAgents/com.estate.jit-device-renew.plist" 2>/dev/null \
+    && ok "LaunchAgent com.estate.jit-device-renew loaded" \
+    || warn "LaunchAgent bootstrap refused (often benign — the plist is in place)"
+
+  cp -f "$MAC_LD_DIR/com.idp.spire-agent.plist" "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist"
+  chmod 644 "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist"
+  launchctl bootstrap gui/"$(id -u)" "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist" 2>/dev/null \
+    && ok "LaunchAgent com.idp.spire-agent loaded" \
+    || warn "LaunchAgent com.idp.spire-agent bootstrap refused (often benign)"
+
+  # executor daemon: root LaunchDaemon, sudo only. FOUNDER FENCE.
+  if executor_socket; then
+    ok "executor daemon socket present"
+  else
+    blind "executor daemon socket absent; sudo bin/idp-executor-install lays the LaunchDaemon (FOUNDER FENCE -- the founder runs it from their terminal, the agent never does)"
+  fi
+}
+
+wire_linux() {
+  render_spire_config_linux
+  local systemd_dir="$HOME/.config/systemd/user"
+  mkdir -p "$systemd_dir"
+  cp -f "$LINUX_SYSTEMD_DIR/jit-device-renew.service" "$systemd_dir/jit-device-renew.service"
+  cp -f "$LINUX_SYSTEMD_DIR/jit-device-renew.timer"   "$systemd_dir/jit-device-renew.timer"
+  chmod 644 "$systemd_dir/jit-device-renew."* 2>/dev/null
+  systemctl --user daemon-reload 2>/dev/null \
+    && ok "systemd --user daemon-reload" \
+    || warn "systemctl --user daemon-reload refused (often benign — service may need login-shell to enable)"
+  systemctl --user enable --now jit-device-renew.timer 2>/dev/null \
+    && ok "jit-device-renew.timer enabled --now" \
+    || warn "jit-device-renew.timer enable refused (run `loginctl enable-linger \$(id -un)` then retry)"
+
+  cp -f "$LINUX_SYSTEMD_DIR/spire-agent.service" "$systemd_dir/spire-agent.service"
+  chmod 644 "$systemd_dir/spire-agent.service"
+  systemctl --user daemon-reload 2>/dev/null \
+    && ok "spire-agent.service ready (not enabled; bind to a node attestor before starting)"
+
+  # Executor daemon: system-wide (root) unit under /etc/systemd/system/.
+  # FOUNDER FENCE applies: `sudo bin/idp-executor-install` does the layout.
+  if executor_socket; then
+    ok "executor daemon socket present (/run/idp/executor.sock)"
+  else
+    blind "executor daemon socket absent; sudo bin/idp-executor-install lays the system unit (FOUNDER FENCE -- never sudo from an agent session)"
+  fi
+}
+
+render_spire_config() {
+  local rendered="${TMPDIR:-/tmp}/spire-agent.conf.rendered.$$"
+  sed \
+      -e "s|\${SPIRE_TRUST_DOMAIN}|$SPIRE_TRUST_DOMAIN|g" \
+      -e "s|\${SPIRE_SERVER_ADDRESS}|spire-server.jit.svc.cluster.local|g" \
+      -e "s|\${SPIRE_SERVER_PORT}|8443|g" \
+      -e "s|\${SPIRE_TRUST_BUNDLE_PATH}|$HOME/.spire/initial-bundle.crt|g" \
+      -e "s|\${SPIRE_DATA_DIR}|$HOME/.spire/agent.data|g" \
+      "$MAC_SPIRE_TEMPLATE" > "$rendered" 2>/dev/null \
+    && chmod 600 "$rendered" \
+    && [ "${IDP_DEVICE_PROVISION_DRY:-0}" = "1" ] && {
+         cp "$rendered" /tmp/spire-agent.conf.rendered
+         ok "rendered /tmp/spire-agent.conf.rendered (DRY RUN -- not placed at /etc/spire/agent.conf)"
+       } \
+    || true
+  if [ "${IDP_DEVICE_PROVISION_DRY:-0}" != "1" ]; then
+    mkdir -p "$HOME/.spire"
+    mv "$rendered" /etc/spire/agent.conf 2>/dev/null \
+      && ok "rendered /etc/spire/agent.conf (chmod 600)" \
+      || warn "cannot write /etc/spire/agent.conf (sudo needed for that path); copy the rendered file manually"
+  fi
+  rm -f "$rendered" 2>/dev/null
+}
+
+render_spire_config_linux() {
+  local rendered="${TMPDIR:-/tmp}/spire-agent.conf.rendered.$$"
+  sed \
+      -e "s|\${SPIRE_TRUST_DOMAIN}|$SPIRE_TRUST_DOMAIN|g" \
+      -e "s|\${SPIRE_SERVER_ADDRESS}|spire-server.jit.svc.cluster.local|g" \
+      -e "s|\${SPIRE_SERVER_PORT}|8443|g" \
+      -e "s|\${SPIRE_TRUST_BUNDLE_PATH}|/etc/spire/initial-bundle.crt|g" \
+      -e "s|\${SPIRE_DATA_DIR}|/var/lib/spire|g" \
+      "$MAC_SPIRE_TEMPLATE" > "$rendered" 2>/dev/null && chmod 600 "$rendered"
+  if [ "${IDP_DEVICE_PROVISION_DRY:-0}" = "1" ]; then
+    cp "$rendered" /tmp/spire-agent.conf.rendered
+    ok "rendered /tmp/spire-agent.conf.rendered (DRY RUN)"
+  else
+    if [ -w /etc/spire ] || mkdir -p /etc/spire 2>/dev/null && [ -d /etc/spire ]; then
+      mv "$rendered" /etc/spire/agent.conf 2>/dev/null \
+        && ok "rendered /etc/spire/agent.conf (chmod 600)" \
+        || warn "cannot write /etc/spire/agent.conf; copy rendered file manually"
+    else
+      warn "cannot create /etc/spire/ (need sudo); copy the rendered file manually"
+    fi
+  fi
+  rm -f "$rendered" 2>/dev/null
+}
+
+# --- subcommand: install --------------------------------------------------
+install() {
+  echo "-- install --"
+  ok "platform=$PLATFORM"
+  install_dispatch
+  case "$PLATFORM" in
+    macos)  wire_macos ;;
+    linux)  wire_linux ;;
+    windows) ;;
+    *)      fail "unknown platform; nothing else to install" ;;
+  esac
+  return "$RC"
+}
+
+# --- subcommand: upgrade --------------------------------------------------
+upgrade() {
+  echo "-- upgrade --"
+  case "$PLATFORM" in
+    macos)
+      brew bundle install --file "$BREWFILE" --upgrade \
+        && ok "brew bundle install --upgrade" \
+        || fail "brew bundle install --upgrade refused"
+      ;;
+    linux)
+      apt-get update -qq && apt-get upgrade -y >/dev/null 2>&1 \
+        && ok "apt-get upgrade" \
+        || warn "apt-get upgrade failed (often benign on minimal images)"
+      ;;
+  esac
+  # Re-render templates; do NOT re-load service units (the founder triggers
+  # that manually when a config change is deliberate).
+  case "$PLATFORM" in
+    macos) wire_macos ;;
+    linux) wire_linux ;;
+  esac
+  return "$RC"
+}
+
+# --- subcommand: uninstall ------------------------------------------------
+uninstall() {
+  echo "-- uninstall --"
+  case "$PLATFORM" in
+    macos)
+      launchctl bootout gui/"$(id -u)"/com.estate.jit-device-renew 2>/dev/null \
+        && ok "booted out com.estate.jit-device-renew" || blind "not loaded"
+      launchctl bootout gui/"$(id -u)"/com.idp.spire-agent 2>/dev/null \
+        && ok "booted out com.idp.spire-agent" || blind "not loaded"
+      rm -f "$HOME/Library/LaunchAgents/com.estate.jit-device-renew.plist"
+      rm -f "$HOME/Library/LaunchAgents/com.idp.spire-agent.plist"
+      brew bundle cleanup --file "$BREWFILE" --force 2>/dev/null \
+        && ok "brew bundle cleanup --force" || blind "brew bundle cleanup returned non-zero"
+      blind "executor daemon uninstall: sudo bin/idp-executor-install --uninstall"
+      ;;
+    linux)
+      systemctl --user disable --now jit-device-renew.timer 2>/dev/null \
+        && ok "disabled jit-device-renew.timer" || blind "not loaded"
+      systemctl --user disable --now jit-device-renew.service 2>/dev/null \
+        && ok "disabled jit-device-renew.service" || blind "not loaded"
+      rm -f "$HOME/.config/systemd/user/jit-device-renew."*
+      blind "executor + spire-agent system units: sudo bin/idp-executor-install --uninstall; sudo systemctl disable --now spire-agent"
+      ;;
+  esac
+  return "$RC"
+}
+
+# --- subcommand: status (JSON) -------------------------------------------
+status_json() {
+  local brew_ok=0 apt_ok=0 tailscale_ok=0 spire_ok=0 executor_ok=0 renew_ok=0
+  local brew_status="missing" apt_status="missing"
+  local tailscale_status="missing" spire_status="missing"
+  local executor_status="missing" renew_status="missing"
+
+  # Each platform's package manager is part of THIS-platform's status, not the
+  # other. The contract is per-row, with the field still present so the
+  # JSON shape is stable across platforms.
+  case "$PLATFORM" in
+    macos)
+      brew_present && brew_ok=1 && brew_status="installed" || brew_status="missing"
+      apt_status="not_applicable_for_platform"
+      ;;
+    linux)
+      apt_present && apt_ok=1 && apt_status="installed" || apt_status="missing"
+      brew_status="not_applicable_for_platform"
+      ;;
+    *)
+      brew_status="not_applicable_for_platform"
+      apt_status="not_applicable_for_platform"
+      ;;
+  esac
+  tailscale_present && tailscale_ok=1 && tailscale_status="installed"
+  spire_present && spire_ok=1 && spire_status="installed"
+
+  if executor_socket; then
+    if executor_listening; then
+      executor_ok=1 && executor_status="running"
+    else
+      executor_status="socket_no_daemon"
+    fi
+  else
+    executor_status="no_socket"
+  fi
+
+  renew_running && renew_ok=1 && renew_status="running" || renew_status="not_running"
+
+  # Stable field order: platform, brew (mac), apt (linux), tailscale, spire,
+  # executor, renew. The dashboard reads this verbatim.
+  printf '{\n'
+  printf '  "platform":  "%s",\n' "$PLATFORM"
+  printf '  "brew":      {"installed": %s, "status": "%s"},\n' "$brew_ok" "$brew_status"
+  printf '  "apt":       {"installed": %s, "status": "%s"},\n' "$apt_ok" "$apt_status"
+  printf '  "tailscale": {"installed": %s, "status": "%s"},\n' "$tailscale_ok" "$tailscale_status"
+  printf '  "spire":     {"installed": %s, "status": "%s"},\n' "$spire_ok" "$spire_status"
+  printf '  "executor":  {"installed": %s, "status": "%s"},\n' "$executor_ok" "$executor_status"
+  printf '  "renew":     {"installed": %s, "status": "%s"}\n' "$renew_ok" "$renew_status"
+  printf '}\n'
+}
+
+# --- subcommand: doctor (human) ------------------------------------------
+doctor() {
+  echo "-- doctor (platform=$PLATFORM) --"
+  status_json | python3 -m json.tool 2>/dev/null || status_json
+  echo ""
+  echo "Remediation:"
+  echo "  bin/idp-device-provision install   lays everything declared in infra/{macos,linux}/"
+  echo "  sudo bin/idp-executor-install       lays the executor LaunchDaemon/systemd unit (FOUNDER FENCE)"
+  echo "  bin/idp-jit enroll                  one-time per Mac; proves age identity for the device"
+}
+
+# --- subcommand: self-test -----------------------------------------------
+self_test() {
+  echo "-- self-test (no writes; platform=$PLATFORM) --"
+  if [ -r "$BREWFILE" ]; then
+    if command -v ruby >/dev/null 2>&1; then
+      ruby -c "$BREWFILE" >/dev/null 2>&1 \
+        && ok "Brewfile parses (ruby -c)" \
+        || fail "Brewfile is not valid Ruby"
+    else
+      warn "ruby not installed; Brewfile parse deferred to macos-14 CI"
+    fi
+  else
+    blind "Brewfile missing at $BREWFILE (CI rung on macos-14 covers it)"
+  fi
+
+  if [ -r "$APT_LIST" ]; then
+    for pkg in $(grep -v '^#' "$APT_LIST" | grep -v '^$' | xargs); do
+      ok "apt: $pkg"
+    done
+  else
+    fail "Linux apt list missing at $APT_LIST"
+  fi
+
+  # Plists: well-formed XML.
+  if [ -d "$MAC_LD_DIR" ]; then
+    for plist in "$MAC_LD_DIR"/*.plist; do
+      [ -f "$plist" ] || continue
+      if command -v xmllint >/dev/null 2>&1; then
+        xmllint --noout "$plist" 2>/dev/null \
+          && ok "plist XML well-formed: $(basename "$plist")" \
+          || fail "plist malformed: $plist"
+      elif command -v plutil >/dev/null 2>&1; then
+        plutil -lint "$plist" >/dev/null 2>&1 \
+          && ok "plist well-formed: $(basename "$plist")" \
+          || fail "plist malformed: $plist"
+      fi
+    done
+  fi
+
+  # systemd units: well-formed INI.
+  if [ -d "$LINUX_SYSTEMD_DIR" ]; then
+    for unit in "$LINUX_SYSTEMD_DIR"/*.service "$LINUX_SYSTEMD_DIR"/*.timer; do
+      [ -f "$unit" ] || continue
+      # systemd-analyze is not on a Mac; inline parse: every line is either
+      # [section], key=value, or a comment. Empty lines allowed.
+      bad=0; in_continuation=0
+      while IFS= read -r line || [ -n "$line" ]; do
+        # A unit file: blank lines, comments, [sections], key=value lines.
+        # Continuation lines (start with whitespace, no '=') extend the previous
+        # key=value; systemd supports this explicitly for ExecStart, ExecStartPre
+        # and friends that wrap onto multiple lines.
+        case "$line" in
+          ''|'#'*|\[*)                                in_continuation=0 ;;
+          ' '*|'\t'*)                                  : ;;  # blank-keyed continuation
+          *=*)                                         in_continuation=0 ;;
+          *)                                           if [ "$in_continuation" = 0 ]; then bad=$((bad + 1)); fi ;;
+        esac
+        [ -n "$line" ] && [ "${line:0:1}" = " " ] || [ "${line:0:1}" = "$(printf '\t')" ] && [ "${line#*=}" = "$line" ] && in_continuation=1 || true
+      done < "$unit"
+      [ "$bad" = 0 ] && ok "systemd unit well-formed: $(basename "$unit")" \
+        || fail "systemd unit has $bad malformed line(s): $unit"
+    done
+  fi
+
+  bash -n "$0" && ok "this script parses" || fail "syntax error in $0"
+  return "$RC"
+}
+
+# --- entrypoint ------------------------------------------------------------
+case "${1:-}" in
+  install)       install ;;
+  upgrade)       upgrade ;;
+  uninstall)     uninstall ;;
+  status)        status_json ;;
+  doctor)        doctor ;;
+  self-test)     self_test ;;
+  -h|--help)     usage ;;
+  *)             usage; exit 2 ;;
+esac
+exit "$RC"

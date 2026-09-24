@@ -1,0 +1,52 @@
+# run 33618879684's wedge class, prevented for observability before it fires: require-availability
+# (platform/scheduling/require-availability.yaml) wants every Deployment in a founder-facing
+# namespace at 2 replicas spread across nodes, Enforce at admission. Six observability workloads
+# are by-design singletons, and the next Helm upgrade of either release would be DENIED the way
+# HelmRelease dagster/dagster was on 2026-09-02 (oke-check run 33618879684: release Failed,
+# Kustomization not-ready, three dependent layers wedged). The availability debt registry
+# (platform/availability.yaml) already records the class for langfuse-web, signoz and
+# signoz-otel-collector under idp#544; this is the same judgment at the admission layer, the
+# dagster-daemon-is-a-singleton precedent one file over.
+#
+# Why each name cannot run two today:
+#   langfuse-web / langfuse-worker   chart values pin replicas 1 (langfuse-values.yaml:32,44);
+#                                    both stand on the one shared ClickHouse and Postgres, so a
+#                                    second replica moves the single point of failure, not removes it
+#   langfuse-redis                   singleton cache on a ReadWriteOnce volume; two mounts cannot attach
+#   langfuse-s3-all-in-one           single-node MinIO-style store on a ReadWriteOnce volume
+#   signoz-clickhouse-operator       upstream operator runs as a singleton controller (no leader election
+#                                    values in the chart); two reconcile the same CRs against each other
+#   signoz-otel-collector            component of the signoz chart; this repo renders no Deployment for
+#                                    it, the values are the only lever and they follow the ClickHouse row
+#
+# Scope is exactly these six names and exactly the two rules they cannot meet; every other
+# availability rule (PDB sanity, rollout arithmetic) still binds them. Debt tracked open:
+# https://github.com/chidionyema/idp/issues/544
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: observability-singletons-availability
+  # Kyverno honours exceptions from namespace kyverno only (platform/kyverno/kyverno.yaml); this
+  # file lives in platform/edge because edge has no namespace transformer (the crew#325 lesson,
+  # same as langfuse-exception.yaml beside it).
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-availability
+      ruleNames:
+        - founder-facing-runs-two
+        - founder-facing-spreads-across-nodes
+  match:
+    any:
+      - resources:
+          kinds:
+            - Deployment
+          namespaces:
+            - observability
+          names:
+            - langfuse-web
+            - langfuse-worker
+            - langfuse-redis
+            - langfuse-s3-all-in-one
+            - signoz-clickhouse-operator
+            - signoz-otel-collector

@@ -7,7 +7,7 @@
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-23T17:41:26Z",
+  "last_run": "2026-09-23T23:38:32Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -164,6 +164,61 @@
       "entity": "defect/host-provisioning-drift",
       "kind": "remember",
       "ts": "2026-09-23T17:41:26Z"
+    },
+    {
+      "entity": "system/terminal-grammar",
+      "kind": "remember",
+      "ts": "2026-09-23T23:36:35Z"
+    },
+    {
+      "entity": "concept/terminal-grammar",
+      "kind": "remember",
+      "ts": "2026-09-23T23:36:44Z"
+    },
+    {
+      "entity": "concept/fractal-factory",
+      "kind": "remember",
+      "ts": "2026-09-23T23:36:45Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_98786caa1afb",
+      "ts": "2026-09-23T23:36:56Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_cc38292ec966",
+      "ts": "2026-09-23T23:36:57Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_29902dcc2b3a",
+      "ts": "2026-09-23T23:36:58Z"
+    },
+    {
+      "entity": "spec/factory-build-spec",
+      "kind": "remember",
+      "ts": "2026-09-23T23:38:18Z"
+    },
+    {
+      "entity": "component/agent-foundry-real-interface",
+      "kind": "remember",
+      "ts": "2026-09-23T23:38:18Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_0253f6e54d67",
+      "ts": "2026-09-23T23:38:31Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_6f77dbf50fc1",
+      "ts": "2026-09-23T23:38:31Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_a50bd7ca2e42",
+      "ts": "2026-09-23T23:38:32Z"
     }
   ]
 }

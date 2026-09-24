@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""The breaker's fingerprint, graded on one file of tool output.
+
+The extension asks bin/idp-circuit-breaker what a finding is; that answer decides whether a
+session locks. This gate grades the answer on a FILE, so rules.yaml can prove it both ways with
+a fixture pair, which a pytest-backed rule cannot do.
+
+    bin/idp-breaker-fingerprint <file>
+
+Exit 0 when the file's content carries NO finding (nothing can be proved by repeating it), 1 when
+it does. The exit code IS the verdict, and reading it the other way round is exactly the bug:
+
+    good/noop-repeated.txt  hello/hello/hello       -> 0, no finding, cannot lock
+    bad/real-cves.txt       the same CVE set        -> 1, one finding, locks at N=3
+
+THE MISFIRE OF 2026-09-13. The extension returned the tool's RAW OUTPUT TEXT as the "finding",
+so `echo hello` counted, three repeated commands tripped N=3, and the guard locked bash and read
+-- the two tools a session needs to investigate or fix anything. R38: a guard that refuses
+correct work is an outage.
+
+The rule lives in bin/idp-circuit-breaker. This does not restate it; it calls it. A second copy
+of "what counts as a finding" is exactly how the two drifted apart in the first place.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _fingerprint():
+    """The library's fingerprint(), loaded by path so the rule stays in one place."""
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_circuit_breaker", str(ROOT / "bin" / "idp-circuit-breaker")
+    )
+    spec = importlib.util.spec_from_loader("idp_circuit_breaker", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod.fingerprint
+
+
+def main(argv: list[str]) -> int:
+    # THE LIVE CHECK. Over the estate rather than a fixture: does the file that decides what a
+    # finding is still carry the no-finding rule? A fixture pair proves the behaviour; this proves
+    # the rule is still IN THE TREE. Remove it and the case fails in the pull request, instead of
+    # in a session that has already locked itself.
+    if len(argv) == 3 and argv[1] == "--estate-carries-the-rule":
+        target = Path(argv[2])
+        if not target.is_file():
+            print(f"BLIND  breaker-fingerprint  {target} is not a file", file=sys.stderr)
+            return 2
+        body = target.read_text()
+        if "_SIGNAL.search" in body and "return None" in body:
+            print(f"ok     breaker-fingerprint  {target.name} still refuses to fingerprint a no-op")
+            return 0
+        print(
+            f"FAIL   breaker-fingerprint  {target.name} no longer refuses to fingerprint a "
+            "no-op; repeated commands will lock the session",
+            file=sys.stderr,
+        )
+        return 1
+
+    if len(argv) != 2:
+        print(__doc__)
+        return 2
+    path = Path(argv[1])
+    if not path.is_file():
+        # BLIND, never a pass: a missing fixture is not a clean one (the calico lesson).
+        print(f"BLIND  breaker-fingerprint  {path} is not a file", file=sys.stderr)
+        return 2
+
+    fp = _fingerprint()(path.read_text())
+    if fp is None:
+        # NO FINDING -> exit 0. This is the case that was broken: output with no finding produced
+        # a fingerprint, so repeated no-ops locked the session. "Nothing to prove" is not a
+        # failure -- a gate that exits 1 here would refuse correct work, which is the whole defect.
+        print(f"ok     breaker-fingerprint  {path.name} carries no finding; repeating it cannot lock")
+        return 0
+    print(f"ok     breaker-fingerprint  {path.name} -> {fp}")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

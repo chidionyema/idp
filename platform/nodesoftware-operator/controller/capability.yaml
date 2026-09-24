@@ -1,0 +1,13 @@
+id: auto-controller
+name: controller
+repo: idp
+path: idp/platform/nodesoftware-operator/controller
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-08'
+code_files: 17
+test_files: 0
+indicators:
+- Dockerfile
+- go.mod
+requires_deep_review: true

@@ -1,0 +1,450 @@
+#!/usr/bin/env python3
+"""Refuse a grading step whose verdict cannot fail the run (LAW 28).
+
+A step whose PURPOSE is to grade -- its command is a grader -- and whose exit code is
+discarded, is not a gate. It is a log line.
+
+Mechanisms that discard a grader's exit:
+1. piped verdict  -- grader | tee/cat, without '-e' on the set line.
+   Measured 2026-09-10: 'set -uo pipefail; false | tee /dev/null' makes the PIPELINE exit 1,
+   but with no -e the script keeps going and the STEP exits 0 -- green while the grader failed.
+   pipefail alone does NOT propagate a piped grader's failure to the step's exit code; -e is
+   what does. (The earlier version of this file asserted the opposite and therefore accepted
+   the bad fixture it was written to refuse.) 'set -e' or 'set -eo pipefail' propagates.
+2. no -e          -- a set line with shell flags but no 'e' flag, whichever way the grader is
+   invoked. Without -e a non-zero exit does not propagate: not from a bare command, and not
+   from a pipeline either (see 1).
+3. orphan || true -- the grader line ends in || true without the optional marker.
+   The escape hatch: '# optional: <reason>' makes || true legitimate. The marker is looked for in
+   the step's whole YAML text, which is what the fixture and tests/test_grader_exit_gate.py's
+   OPTIONAL regex both assume; an earlier docstring here claimed the marker had to sit inside the
+   block scalar, and no fixture or test ever agreed with that, so the claim was removed rather
+   than enforced against work that had done nothing wrong (R38).
+
+Graders: bin/idp-prove, bin/idp-root-trust, bin/idp-conscience, bin/idp-escrow,
+bin/idp-inventory, bin/idp-router-lanes, bin/idp-fits-a-node, bin/idp-ticket-verify,
+bin/idp-agent-workforce-drill, bin/idp-mechanism-gate, bin/idp-rule-coverage,
+bin/idp-one-scheduler, bin/idp-drill-heartbeat, bin/idp-portability-drill.
+"""
+
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+import yaml
+
+# Grader commands to match in a step's run text
+GRADERS = [
+    "bin/idp-prove",
+    "bin/idp-root-trust",
+    "bin/idp-conscience",
+    "bin/idp-escrow",
+    "bin/idp-inventory",
+    "bin/idp-router-lanes",
+    "bin/idp-fits-a-node",
+    "bin/idp-ticket-verify",
+    "bin/idp-agent-workforce-drill",
+    "bin/idp-mechanism-gate",
+    "bin/idp-rule-coverage",
+    "bin/idp-one-scheduler",
+    "bin/idp-drill-heartbeat",
+    "bin/idp-portability-drill",
+]
+
+# The escape hatch: a step that may swallow its exit says so with this marker, in the step's
+# whole YAML text -- the shape tests/test_grader_exit_gate.py's OPTIONAL regex asserts.
+OPTIONAL_RE = re.compile(r"#\s*optional:\s*\S")
+
+
+def _grader_invoked(run: str) -> bool:
+    """True when run text invokes any known grader."""
+    return any(g + " " in run or g + "\n" in run for g in GRADERS)
+
+def _optional_steps(raw: str) -> set[str]:
+    """Names of steps that a '# optional: <reason>' marker excuses.
+
+    PyYAML drops comments, so the marker is read from the file's own bytes. A marker sits inside
+    the step it excuses -- between that step's '- name:' line and its 'run:' line -- which is the
+    shape the good fixture uses (tests/fixtures/grader-exit/good/good.yml lines 15-17). So the
+    marker binds to the nearest PRECEDING '- name:' line.
+
+    Returns the step names, stripped, so grade_file asks whether THIS step is excused rather than
+    whether the file contains a marker at all. Without that scoping, one '# optional:' anywhere
+    would excuse every '|| true' in the workflow.
+    """
+    excused: set[str] = set()
+    last_name: str | None = None
+    for ln in raw.splitlines():
+        m = re.match(r"\s*-\s*name:\s*(.+?)\s*$", ln)
+        if m:
+            last_name = m.group(1).strip().strip("'\"")
+            continue
+        if OPTIONAL_RE.search(ln) and last_name:
+            excused.add(last_name)
+    return excused
+
+
+def _strip_comments(run: str) -> str:
+    """The run text with shell '#' comments removed, so a flag named in prose is not read as code.
+
+    The optional marker is itself a comment, and is checked separately before this is used.
+    """
+    return "\n".join(re.sub(r"(^|\s)#.*$", "", ln) for ln in run.splitlines())
+
+
+def _has_set_e(run: str) -> bool:
+    """True when a 'set' line enables errexit (-e), in any bundled form.
+
+    The flag may be bundled with others -- -e, -eo, -euo, -ueo, -xe -- and a naive \b-e\b fails
+    on every bundled form because '-' and the next letter are both word characters, so the
+    trailing boundary never matches. Measured 2026-09-10: the previous \b-e\b regex returned
+    False for 'set -euo pipefail', the estate's own standard, which is what let the bad fixture
+    through and would have refused the good ones. So: find the flag cluster after 'set', then
+    look for 'e' inside it.
+    """
+    code = _strip_comments(run)
+    for m in re.finditer(r"^\s*set\s+(.+)$", code, re.MULTILINE):
+        args = m.group(1)
+        # only the flag words matter: -euo, -o pipefail, -u, +e (which UNSETS e)
+        for flag in re.findall(r"(?<![\w-])[-+][A-Za-z]+", args):
+            if flag.startswith("+"):
+                if "e" in flag[1:]:
+                    return False  # 'set +e' explicitly disables errexit
+                continue
+            if "e" in flag[1:]:
+                return True
+    return False
+
+
+def _has_set_line_with_pipefail(run: str) -> bool:
+    """True when a 'set' line enables pipefail.
+
+    Only a 'set' line can enable pipefail. Checking only the set line avoids a false negative
+    when 'pipefail' appears in a comment or elsewhere but pipefail is not set.
+    """
+    code = _strip_comments(run)
+    return bool(re.search(r"^\s*set\s+[^;\n]*\bpipefail\b", code, re.MULTILINE))
+
+
+def _is_piped_grader(run: str) -> bool:
+    """True when run pipes a grader into tee/cat (grader | tee, grader | tee -a, grader | cat)."""
+    if not _grader_invoked(run):
+        return False
+    return bool(re.search(r"\|\s*(tee|cat)\b", _strip_comments(run)))
+
+
+def _is_piped_no_guard(run: str) -> bool:
+    """Mechanism 1: a grader piped to tee/cat with neither pipefail nor -e.
+
+    Measured 2026-09-10 on bash 5.2, one shell per line, no inherited flags:
+
+        set -u;            false | tee out   -> exit 0   <-- the verdict is DISCARDED
+        set -uo pipefail;  false | tee out   -> exit 1   <-- propagates
+        set -eu;           false | tee out   -> exit 0   <-- propagates via -e
+        (nothing);         false | tee out   -> exit 0   <-- DISCARDED
+
+    So pipefail alone IS sufficient for a pipeline: it makes the pipeline's status the last
+    non-zero one, and the step's status is the script's last command. An earlier version of this
+    function refused every piped grader without '-e' and thereby refused correct work -- the
+    estate's own verdict-langfuse, verdict-signoz, estate-escrow, estate-state and
+    ticket-verification all use 'set -o pipefail' with no -e on purpose, and all five fail their
+    step correctly. A guard that refuses correct work is an outage (R38).
+    """
+    if not _grader_invoked(run):
+        return False
+    if _has_set_e(run):
+        return False
+    if _has_set_line_with_pipefail(run):
+        return False
+    # A captured exit re-raised ON THE SAME STEP is an assertion, not a discard:
+    # 'rc=0; grader | tee out || rc=$?; ...; exit "$rc"'.
+    if re.search(r'exit\s+"?\$\{?rc\}?"?', run):
+        return False
+    return _is_piped_grader(run)
+
+
+def _last_command_asserts(run: str) -> bool:
+    """True when something AFTER the grader tests the captured rc, so the step can still fail.
+
+    estate-inventory.yml is the worked example (measured 2026-09-10):
+
+        set -uo pipefail
+        bin/idp-inventory ... || rc=$?
+        echo "exit ${rc:-0}"
+        [ "${rc:-0}" != 2 ]        <-- the last command IS the verdict: rc=2 (every plane
+                                        BLIND) makes it non-zero and the step red; rc=1 (a red
+                                        tenet) is deliberately an issue, not a red run.
+
+    Without this, the gate refused a step doing exactly what its own comment says it does.
+    THREE of the defects this file has been through were guards refusing correct work (R38);
+    the rule is that a verdict which REACHES a later test has not been discarded.
+    """
+    code = _strip_comments(run)
+    after_last_grader = False
+    for ln in code.splitlines():
+        s = ln.strip()
+        if not s:
+            continue
+        if any(g in s for g in GRADERS):
+            after_last_grader = True
+            continue
+        if after_last_grader and re.search(r"\[\s*\"?\$\{?rc", s):
+            return True
+        if after_last_grader and re.search(r"exit\s+\"?\$\{?rc\}?\"?", s):
+            return True
+    return False
+
+
+def _is_no_e(run: str) -> bool:
+    """Mechanism 2: an UNPIPED grader that is not the last command, under no '-e'.
+
+    Measured 2026-09-10 on bash 5.2, one shell per line, no inherited flags:
+
+        set -uo pipefail; false                 -> exit 1   bare 'false' IS the script's status
+        set -u;           false                 -> exit 1   likewise
+        (nothing);        false                 -> exit 1   likewise
+        set -u;           false; echo done      -> exit 0   the grader's status is overwritten
+
+    A bare command that is the LAST command in the step sets the step's status whether or not
+    '-e' is set, so no-e is only a problem when something runs after the grader and overwrites
+    its status. The earlier version of this function fired on any bare grader under a flag-only
+    set line and refused oke-check's fits-a-node step, which is the last command in its step and
+    therefore fails the run correctly. A guard that refuses correct work is an outage (R38).
+    """
+    if not _grader_invoked(run):
+        return False
+    if _has_set_e(run):
+        return False
+    if _is_piped_grader(run):
+        return False  # mechanism 1 owns the piped case
+    if not re.search(r"^\s*set\s+-[a-z]+\s*(pipefail)?", _strip_comments(run), re.MULTILINE):
+        return False  # no set line at all: nothing claims a guard that was not armed
+    if _last_command_asserts(run):
+        return False  # the verdict reaches a later test; it is not discarded
+    return _grader_is_not_last(run)
+
+
+def _grader_is_not_last(run: str) -> bool:
+    """True when a command that is not a comment runs after the last grader invocation.
+
+    That is the only case in which a bare grader's status is lost without -e: something after it
+    overwrites $?, and the step's status becomes that command's.
+    """
+    code = _strip_comments(run)
+    lines = [ln.strip() for ln in code.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    last = max(
+        (i for i, ln in enumerate(lines) if any(g in ln for g in GRADERS)),
+        default=None,
+    )
+    if last is None:
+        return False
+    return last != len(lines) - 1
+
+
+def _is_orphan_true(run: str, step_excused: bool = False) -> bool:
+    """Mechanism 3: the grader line ends in || true and the step is not excused.
+
+    The grader line is read from comment-stripped code (a '|| true' quoted in prose is not code),
+    while the excuse comes from the raw file, because the marker is itself a comment and stripping
+    comments would erase it -- which refused a legitimate optional leg, a guard refusing correct
+    work (R38), the defect this whole file exists to catch.
+    """
+    if not _grader_invoked(run):
+        return False
+    if step_excused:
+        return False
+    code = _strip_comments(run)
+    for g in GRADERS:
+        # Grader on its own line, followed by || true on the same line.
+        # No \b before the || : a word boundary needs a word character on one side, and the
+        # character before '||' is a space (measured 2026-09-10 -- the previous pattern with
+        # \b\|\| matched nothing, so this mechanism was dead code and the orphan-true fixture
+        # passed the gate).
+        pattern = re.compile(
+            r"(?:^|\n)[^\S\n]*" + re.escape(g) + r"[^\n;]*\|\|[^\S\n]*true\b",
+        )
+        if pattern.search(code):
+            return True
+    return False
+
+
+def _mechanism(run: str, step_excused: bool = False) -> str:
+    """Return the name of the mechanism that discards the grader's exit."""
+    if _is_piped_no_guard(run):
+        return (
+            "piped verdict: grader piped into tee/cat with neither 'pipefail' nor '-e' on a set "
+            "line; measured -- 'set -u; false | tee out' exits 0, so the run is green while the "
+            "grader failed. 'set -o pipefail' or 'set -e...' fixes it."
+        )
+    if _is_orphan_true(run, step_excused):
+        return (
+            "orphan || true: grader line ends in '|| true' without a '# optional: <reason>' "
+            "marker; the grader's exit is discarded"
+        )
+    if _is_no_e(run):
+        return (
+            "no -e: a bare grader that is NOT the last command, under a set line without '-e'; "
+            "measured -- the command after it overwrites $?, so the verdict never reaches the "
+            "step's status"
+        )
+    return "unknown mechanism"
+
+
+def _refusal_message(
+    step_name: str, file_path: str, run: str, step_excused: bool = False
+) -> str:
+    mech = _mechanism(run, step_excused)
+    return (
+        f"REFUSED  {file_path}: step '{step_name}': {mech}\n"
+        f"  Fix: add '-e' to the set line (e.g. set -euo pipefail), "
+        f"or add '# optional: <reason>' above the step if this leg is "
+        f"genuinely allowed to be absent."
+    )
+
+
+def _job_asserts_a_verdict(steps: list, grader_index: int) -> bool:
+    """True when a step AFTER the grader reads its verdict and can fail the job.
+
+    The estate's provers collect evidence in one step and assert the verdict in a later one: they
+    capture 'prove.out', grep it, exit non-zero unless it says PASS, and build a check-run whose
+    conclusion is the outcome. That IS the gate; refusing it would be refusing correct work (R38).
+
+    Shapes that count as an assertion:
+      * a grep over captured output that is not neutralised by '|| true'; or
+      * a bare 'exit N' with non-zero N; or
+      * a check-run whose conclusion is derived from the verdict.
+
+    Only steps after the grader are read: a prior step cannot assert a later verdict.
+    """
+    for step in steps[grader_index + 1 :]:
+        if not isinstance(step, dict):
+            continue
+        env = step.get("env", {})
+        env_text = "\n".join(str(v) for v in env.values()) if isinstance(env, dict) else ""
+        body = (
+            "\n".join(
+                str(step.get(k, "")) for k in ("run", "if", "with", "name") if step.get(k)
+            )
+            + "\n"
+            + env_text
+        )
+        # The captured verdict travels by env (env: RC: ${{ steps.grade.outputs.rc }}), so a
+        # step that receives it and tests it IS the assertion. Reading only run/if missed this
+        # and refused every prover workflow in the estate -- correct work (R38).
+        if re.search(r"steps\.\w+\.outputs\.rc", body) and re.search(
+            r"\[\s*\"?\$?\{?(rc|RC)", body
+        ):
+            return True
+        for m in re.finditer(r"grep\s+-\w*\s*[^\n|]*", body):
+            line = m.group(0)
+            if "|| true" in line or "; true" in line:
+                continue
+            return True
+        if "check-runs" in body or "check_run" in body:
+            return True
+        if re.search(r"(^|\n)\s*exit\s+[1-9]\d*\b", body):
+            return True
+    return False
+
+
+def grade_file(path: pathlib.Path) -> list[str]:
+    """Return list of refusal messages for one workflow file. Empty = pass."""
+    refusals: list[str] = []
+    try:
+        raw = path.read_text()
+    except FileNotFoundError:
+        return [f"NOT FOUND  {path}"]
+    try:
+        doc = yaml.safe_load(raw)
+    except yaml.YAMLError as e:
+        return [f"UNPARSEABLE  {path}: {e}"]
+
+    if not isinstance(doc, dict):
+        return [f"NOT YAML    {path}: root is not a dict"]
+
+    excused = _optional_steps(raw)
+
+    jobs = doc.get("jobs", {})
+    if not isinstance(jobs, dict):
+        return [f"NOT YAML    {path}: jobs is not a dict"]
+
+    for job_name, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        steps = job.get("steps", [])
+        if not isinstance(steps, list):
+            continue
+        for index, step in enumerate(steps):
+            if not isinstance(step, dict):
+                continue
+            run = step.get("run", "")
+            if not isinstance(run, str):
+                continue
+            if not _grader_invoked(run):
+                continue
+            # The unit of judgement is the JOB, not the step: a grader whose exit does not
+            # propagate is still a gate when a later step in the same job reads the captured
+            # verdict and fails on it. The estate's provers are built exactly that way.
+            if _job_asserts_a_verdict(steps, index):
+                continue
+            step_name = step.get("name", "(unnamed)")
+            is_excused = str(step_name).strip() in excused
+            if (
+                _is_piped_no_guard(run)
+                or _is_no_e(run)
+                or _is_orphan_true(run, is_excused)
+            ):
+                refusals.append(
+                    _refusal_message(step_name, str(path), run, is_excused)
+                )
+
+    return refusals
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv
+
+    if len(argv) != 2:
+        print(f"Usage: {argv[0]} <workflow.yml or workflows-dir>", file=sys.stderr)
+        sys.exit(2)
+
+    target = pathlib.Path(argv[1])
+
+    if not target.exists():
+        print(f"NOT FOUND  {target}")
+        sys.exit(2)
+
+    files: list[pathlib.Path] = []
+    if target.is_dir():
+        files = sorted(target.glob("*.yml")) + sorted(target.glob("*.yaml"))
+    else:
+        files = [target]
+
+    all_refusals: list[str] = []
+
+    for f in files:
+        if not f.exists():
+            all_refusals.append(f"NOT FOUND  {f}")
+            continue
+        refusals = grade_file(f)
+        all_refusals.extend(refusals)
+
+    if all_refusals:
+        for r in all_refusals:
+            print(r)
+        n = len(all_refusals)
+        print(f"\n{n} step(s) refused.", file=sys.stderr)
+        sys.exit(1)
+
+    n = len(files)
+    print(f"ok    {n} workflow(s) checked, no refused grading steps.")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

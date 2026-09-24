@@ -1,36 +1,12 @@
-terminals:
-  - terminal:
-      id: capability-collector
-      name: "Capability Collector"
-      input:  { shape: "{root: text}" }
-      output: { shape: registry.entry }
-      grade:
-        metric: admission_test
-        polarity: maximize
-        scale: [0,1]
-        gate: { terminal: grammar.admission_test, sandbox: subprocess }
-      state: current
-      since: "2026-09-24"
-      annotations:
-        class: safety
-        mode: function
-        scope: { resources: [filesystem], secrets: {}, tenant_isolated: true }
-        role: branch
-
-  - terminal:
-      id: resolver
-      name: "Resolver"
-      input:  { shape: need }
-      output: { shape: resolution }
-      grade:
-        metric: accuracy
-        polarity: maximize
-        scale: [0,1]
-        gate: { terminal: grammar.admission_test, sandbox: subprocess }
-      state: current
-      since: "2026-09-24"
-      annotations:
-        class: act
-        mode: function
-        scope: { resources: [filesystem], secrets: {}, tenant_isolated: true }
-        role: branch
+id: auto-idp
+name: idp
+repo: idp
+path: idp
+state: HAS_CLUSTER_MANIFEST
+git_branch: feat/idp-lands-its-own-green-pull-requests
+last_commit: '2026-09-08'
+code_files: 574
+test_files: 174
+indicators:
+- pyproject.toml
+requires_deep_review: true
