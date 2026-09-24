@@ -29,7 +29,7 @@ spec:
           image: ghcr.io/spiffe/spire-agent:1.15.3   # already on the node; the CLI is in it
           imagePullPolicy: IfNotPresent
           command: ["/opt/spire/bin/spire-agent", "api", "fetch", "x509",
-                    "-socketPath", "/spiffe-workload-api/spire-agent.sock", "-timeout", "60s"]
+                    "-socketPath", "/spiffe-workload-api/spire-agent.sock", "-timeout", "300s"]
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
