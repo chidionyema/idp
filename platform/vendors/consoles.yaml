@@ -1,1236 +1,1118 @@
-# Vendor credential registry for bin/idp-bootstrap-vendors (crew#66 root trust, crew#579; R52).
-#
-# R52 (founder 2026-08-29): one root credential per provider, made by the founder once on his own
-# machine and set as a named repository secret; code does everything after that. None of these
-# vendors publishes a create-key API (measured 2026-08-28: Anthropic's Admin API lists and updates
-# keys but does not create them; OpenRouter's /api/v1/keys needs a provisioning key that is itself
-# console-born; DeepSeek, Minimax, Exa and Stripe publish no key API; BotFather has no HTTP
-# API), so for each of them the API key IS the root: the founder makes it once at `page`, runs
-# `gh secret set <secret> -R chidionyema/idp`, and never touches that vendor again. The bootstrapper
-# reads the secret from its environment in the apply run, proves it against `verify` (anything but
-# 2xx is a FAIL before any vault write, LAW 15), and writes every target with bin/idp-vault-put
-# --merge. No browser is ever driven; nothing is ever pasted into a prompt; no value is printed.
-#
-# Fields: kind (secret), secret (the repository secret name the apply run maps into the
-# environment), page (where the founder makes the key, once; documentation only), shape (regex the
-# key must match, anchored), verify (method, url, auth header template; {key} is substituted
-# in-process, never on argv), targets (vault entry + field pairs; other keys untouched). Telegram
-# carries one secret per bot on the target.
-#
-# Three fields exist for a credential that is a PAIR rather than one string: `pair: true` on the
-# vendor keeps its targets in one group so both halves are proved and written together; `shape` and
-# `secret` may then be set per target, because the two halves have different shapes and different
-# repository secrets; and `refuse_when` in `verify` is a regex the response body must NOT match,
-# for a vendor that grades a credential by refusing it rather than by answering 2xx. Every vendor
-# without those three behaves exactly as before.
-#
-# Modal (the Forge's GPU, forge/modal_app.py) is not a row: its API is gRPC only (modal client 1.5.5
-# names no HTTPS endpoint a `verify:` could call), so the bootstrapper cannot grade it. Its root is
-# the pair SEED_MODAL_TOKEN_ID / SEED_MODAL_TOKEN_SECRET, set once by `bin/idp-set-root modal`; the
-# forge-train workflow proves the pair against the provider (`modal secret list`) before it mints
-# the two Modal secrets the launcher reads. Same R52 shape, different prover.
 vendors:
-  # Anthropic was removed on 2026-09-04. Founder: "estate will never use antropic api keys",
-  # "we only use the pro nax nothly subscriptio", "final and end of". Claude reaches the estate
-  # through the Claude Max monthly subscription the Claude Code sessions sign in with, so there
-  # is no Anthropic API root to seed, no SEED_ANTHROPIC_API_KEY, and no anthropic lane on the
-  # router (platform/llm/config.yaml). Do not add one back.
   openrouter:
     kind: secret
     secret: SEED_OPENROUTER_API_KEY
     page: https://openrouter.ai/settings/keys
-    shape: "sk-or-v1-[0-9a-f]{64}"
-    verify: { method: GET, url: https://openrouter.ai/api/v1/auth/key, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # OpenRouter's /api/v1/keys needs a provisioning key that is console-born
+    shape: sk-or-v1-[0-9a-f]{64}
+    verify:
+      method: GET
+      url: https://openrouter.ai/api/v1/auth/key
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
-      - { ns: otto-gateway, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
-      - { entry: prospector-engine-env, ns: prospector, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
-      - { entry: hermes-agent-env, ns: hermes-agent, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: OPENROUTER_API_KEY, bw: OPENROUTER_API_KEY }
+    - entry: litellm-upstream
+      ns: llm
+      field: OPENROUTER_API_KEY
+      bw: OPENROUTER_API_KEY
+    - ns: otto-gateway
+      field: OPENROUTER_API_KEY
+      bw: OPENROUTER_API_KEY
+      entry: hermes-agent-env
+    - entry: prospector-engine-env
+      ns: prospector
+      field: OPENROUTER_API_KEY
+      bw: OPENROUTER_API_KEY
+    - entry: hermes-agent-env
+      ns: hermes-agent
+      field: OPENROUTER_API_KEY
+      bw: OPENROUTER_API_KEY
+    - ns: dagster
+      field: OPENROUTER_API_KEY
+      bw: OPENROUTER_API_KEY
+      entry: dagster-env
     router:
-      lanes: |
-        # This key has been mounted in the router pod for days and served no model row, so the
-        # estate router held an OpenRouter credential it could not use. Founder, 2026-09-10:
-        # "all agets send should be in litelln".
-        #
-        # Last resort and honestly the weakest lane in the matrix, kept because a fourth free
-        # vendor is a fourth failure domain. Of four `:free` tool-capable models asked in one
-        # run from the otto-gateway pod on 2026-09-10:
-        #   nvidia/nemotron-3-ultra-550b-a55b:free   timed out at 45s
-        #   thinkingmachines/inkling:free            403, "only available on agentic harnesses"
-        #   google/gemma-4-26b-a4b-it:free           429 from the upstream provider
-        #   nvidia/nemotron-3.5-lightning:free       200 in 8.68s, but no tool call
-        # and OpenRouter's `:free` slugs churn -- three that every list still names answer
-        # 404 "This model is unavailable for free."
-        - model_name: openrouter
-          litellm_params:
-            model: openai/nvidia/nemotron-3.5-lightning:free
-            api_base: https://openrouter.ai/api/v1
-            api_key: os.environ/OPENROUTER_API_KEY
-            # 8.68s measured, and its free pool is shared, so it queues where the others do not.
-            timeout: 90
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-      cluster_lanes: |
-        # THE LANE EVERY EMBEDDING CALL ASKS FIRST, as of 2026-09-10. It sits on this row and
-        # not on the gemini row that used to carry it because a lane belongs to the vendor whose
-        # key it spends -- the rule the cohere row states and
-        # tests/test_every_vendor_key_the_router_holds_has_a_lane.py grades.
-        #
-        # It was the fallback until today, and the order was the whole defect. In front of it
-        # stood gemini/gemini-embedding-001, whose id Google has retired -- a live probe answers
-        # HTTP 404, `models/gemini-embedding-001 is not found for API version v1beta` -- on an
-        # account whose prepay is depleted, so it also answers 429. The router's own log walked
-        # the chain from that refusal to this lane's 200 OK in about six seconds. Every caller
-        # bounded under six seconds therefore got nothing at all:
-        #
-        #   litellm.aembedding(model=gemini/gemini-embedding-001) Exception
-        #     litellm.RateLimitError: GeminiException - {"code": 429, "status": "RESOURCE_EXHAUSTED"}
-        #
-        # Three casualties, one dead hop. otto-gateway stored every fact with no vector
-        # (EmbeddingUnavailableError on _store_fact) so Otto stopped remembering conversations.
-        # The memory backfill (otto-memory-store-6, Error 20h) died at otto/memory/backfill.py:102
-        # with `urllib.error.URLError: <urlopen error timed out>`. And hindsight-api's FastAPI
-        # lifespan blocks on this lane at boot, so it never bound 8888 and never passed its
-        # startup probe: 168 restarts in 18h, each container dying at 329s of a 600s budget with
-        # two 120s timeouts inside it.
-        #
-        # Putting the lane that answers in front is not a workaround for the fallback -- it is
-        # what a fallback is for. Same 1536 width as every other hop, so a vector written by any
-        # of the three stays comparable and the store needs no migration. The key is already in
-        # the estate: this registry seeds it into estate-vault/litellm-upstream and the human
-        # door re-reads it as OPENROUTER_API_KEY, mounted and exported by basename.
-        - model_name: embed
-          litellm_params:
-            model: openrouter/openai/text-embedding-3-small
-            api_key: os.environ/OPENROUTER_API_KEY
-            dimensions: 1536
-            timeout: 120
-          model_info:
-            mode: embedding
+      lanes: "# This key has been mounted in the router pod for days and served no\
+        \ model row, so the\n# estate router held an OpenRouter credential it could\
+        \ not use. Founder, 2026-09-10:\n# \"all agets send should be in litelln\"\
+        .\n#\n# Last resort and honestly the weakest lane in the matrix, kept because\
+        \ a fourth free\n# vendor is a fourth failure domain. Of four `:free` tool-capable\
+        \ models asked in one\n# run from the otto-gateway pod on 2026-09-10:\n# \
+        \  nvidia/nemotron-3-ultra-550b-a55b:free   timed out at 45s\n#   thinkingmachines/inkling:free\
+        \            403, \"only available on agentic harnesses\"\n#   google/gemma-4-26b-a4b-it:free\
+        \           429 from the upstream provider\n#   nvidia/nemotron-3.5-lightning:free\
+        \       200 in 8.68s, but no tool call\n# and OpenRouter's `:free` slugs churn\
+        \ -- three that every list still names answer\n# 404 \"This model is unavailable\
+        \ for free.\"\n- model_name: openrouter\n  litellm_params:\n    model: openai/nvidia/nemotron-3.5-lightning:free\n\
+        \    api_base: https://openrouter.ai/api/v1\n    api_key: os.environ/OPENROUTER_API_KEY\n\
+        \    # 8.68s measured, and its free pool is shared, so it queues where the\
+        \ others do not.\n    timeout: 90\n    max_tokens: 8192\n  model_info:\n \
+        \   max_input_tokens: 131072\n"
+      cluster_lanes: "# THE LANE EVERY EMBEDDING CALL ASKS FIRST, as of 2026-09-10.\
+        \ It sits on this row and\n# not on the gemini row that used to carry it because\
+        \ a lane belongs to the vendor whose\n# key it spends -- the rule the cohere\
+        \ row states and\n# tests/test_every_vendor_key_the_router_holds_has_a_lane.py\
+        \ grades.\n#\n# It was the fallback until today, and the order was the whole\
+        \ defect. In front of it\n# stood gemini/gemini-embedding-001, whose id Google\
+        \ has retired -- a live probe answers\n# HTTP 404, `models/gemini-embedding-001\
+        \ is not found for API version v1beta` -- on an\n# account whose prepay is\
+        \ depleted, so it also answers 429. The router's own log walked\n# the chain\
+        \ from that refusal to this lane's 200 OK in about six seconds. Every caller\n\
+        # bounded under six seconds therefore got nothing at all:\n#\n#   litellm.aembedding(model=gemini/gemini-embedding-001)\
+        \ Exception\n#     litellm.RateLimitError: GeminiException - {\"code\": 429,\
+        \ \"status\": \"RESOURCE_EXHAUSTED\"}\n#\n# Three casualties, one dead hop.\
+        \ otto-gateway stored every fact with no vector\n# (EmbeddingUnavailableError\
+        \ on _store_fact) so Otto stopped remembering conversations.\n# The memory\
+        \ backfill (otto-memory-store-6, Error 20h) died at otto/memory/backfill.py:102\n\
+        # with `urllib.error.URLError: <urlopen error timed out>`. And hindsight-api's\
+        \ FastAPI\n# lifespan blocks on this lane at boot, so it never bound 8888\
+        \ and never passed its\n# startup probe: 168 restarts in 18h, each container\
+        \ dying at 329s of a 600s budget with\n# two 120s timeouts inside it.\n#\n\
+        # Putting the lane that answers in front is not a workaround for the fallback\
+        \ -- it is\n# what a fallback is for. Same 1536 width as every other hop,\
+        \ so a vector written by any\n# of the three stays comparable and the store\
+        \ needs no migration. The key is already in\n# the estate: this registry seeds\
+        \ it into estate-vault/litellm-upstream and the human\n# door re-reads it\
+        \ as OPENROUTER_API_KEY, mounted and exported by basename.\n- model_name:\
+        \ embed\n  litellm_params:\n    model: openrouter/openai/text-embedding-3-small\n\
+        \    api_key: os.environ/OPENROUTER_API_KEY\n    dimensions: 1536\n    timeout:\
+        \ 120\n  model_info:\n    mode: embedding\n"
   deepseek:
     kind: secret
     secret: SEED_DEEPSEEK_API_KEY
     page: https://platform.deepseek.com/api_keys
-    shape: "sk-[0-9a-f]{32}"
-    verify: { method: GET, url: https://api.deepseek.com/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # DeepSeek publishes no create-key API (measured 2026-09-04)
-    store_default: human-vault  # founder-pasted key
+    shape: sk-[0-9a-f]{32}
+    verify:
+      method: GET
+      url: https://api.deepseek.com/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
+    store_default: human-vault
     targets:
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
-      # Git-owned lane now (model agnosticism fix), so the router needs the key in its vault entry.
-      - { entry: litellm-upstream, ns: llm, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
-      - { entry: prospector-engine-env, ns: prospector, field: DEEPSEEK_API_KEY, bw: DEEPSEEK_API_KEY }
+    - ns: dagster
+      field: DEEPSEEK_API_KEY
+      bw: DEEPSEEK_API_KEY
+      entry: dagster-env
+    - entry: litellm-upstream
+      ns: llm
+      field: DEEPSEEK_API_KEY
+      bw: DEEPSEEK_API_KEY
+    - entry: prospector-engine-env
+      ns: prospector
+      field: DEEPSEEK_API_KEY
+      bw: DEEPSEEK_API_KEY
     router:
-      # Git-owned lane, same as MiniMax. The original console-owned design (founder 2026-09-04)
-      # broke model agnosticism: the deepseek chain rendered to both configs but only the cluster
-      # had a console to add the key, so laptop hit 401 on every deepseek-headed turn. A git-owned
-      # lane with `api_key: os.environ/DEEPSEEK_API_KEY` works everywhere the key is set (cluster
-      # via vault, laptop via .env or shell). The founder rotates keys by updating the vault entry
-      # or Bitwarden, same as MiniMax -- no console needed.
-      lanes: |
-        - model_name: deepseek
-          litellm_params:
-            model: deepseek/deepseek-chat
-            api_key: os.environ/DEEPSEEK_API_KEY
-            timeout: 300
-            max_tokens: 8192
-            # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
-            input_cost_per_token: 0.00000014
-            output_cost_per_token: 0.00000028
-          model_info:
-            max_input_tokens: 65536
-      fallbacks: |
-        # DeepSeek answered 401 from inside the router pod on 2026-09-04 21:5xZ (the key is revoked
-        # at the vendor; prospector's byte-identical copy fails the same way), which is why Gemini
-        # sits in this chain: a hop that always refuses is latency, not redundancy. That sentence
-        # now applies to Gemini itself, so it moved to the back -- see the measurement on the
+      lanes: "- model_name: deepseek\n  litellm_params:\n    model: deepseek/deepseek-chat\n\
+        \    api_key: os.environ/DEEPSEEK_API_KEY\n    timeout: 300\n    max_tokens:\
+        \ 8192\n    # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com,\
+        \ 2026-09)\n    input_cost_per_token: 0.00000014\n    output_cost_per_token:\
+        \ 0.00000028\n  model_info:\n    max_input_tokens: 65536\n"
+      fallbacks: '# DeepSeek answered 401 from inside the router pod on 2026-09-04
+        21:5xZ (the key is revoked
+
+        # at the vendor; prospector''s byte-identical copy fails the same way), which
+        is why Gemini
+
+        # sits in this chain: a hop that always refuses is latency, not redundancy.
+        That sentence
+
+        # now applies to Gemini itself, so it moved to the back -- see the measurement
+        on the
+
         # gemini block below.
+
         - deepseek: [gemini, minimax, groq]
+
+        '
   minimax:
     kind: secret
     secret: SEED_MINIMAX_API_KEY
     page: https://platform.minimax.io/user-center/basic-information/interface-key
-    # The vendor documents no key format (platform.minimax.io quickstart, read 2026-09-02); the old
-    # JSON-web-token regex was a guess, and on run 33685104831 it refused the founder's funded key
-    # before the vendor ever saw it. The shape refuses only an empty or malformed paste; the verify
-    # probe is the proof, as for kimi.
-    shape: "[A-Za-z0-9_.-]{20,}"
-    verify: { method: GET, url: https://api.minimax.io/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # MiniMax publishes no create-key API (R52)
+    shape: '[A-Za-z0-9_.-]{20,}'
+    verify:
+      method: GET
+      url: https://api.minimax.io/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      # No `entry:` on any of these three any more. The vault copies of this key were proved
-      # revoked at the vendor on 2026-09-10 -- HTTP 401 "invalid api key (2049)", measured from
-      # inside the router pod, while the founder's own copy answered -- and have been unset. The
-      # live key reaches every consumer through the Bitwarden human door alone, which is the one
-      # place a rotation actually lands. otto-gateway is here because Otto's home 2 reads it.
-      - { ns: llm, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      - { ns: prospector, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
-      - { ns: otto-gateway, field: MINIMAX_API_KEY, bw: MINIMAX_API_KEY }
+    - ns: dagster
+      field: MINIMAX_API_KEY
+      bw: MINIMAX_API_KEY
+      entry: dagster-env
+    - ns: llm
+      field: MINIMAX_API_KEY
+      bw: MINIMAX_API_KEY
+      entry: litellm-upstream
+    - ns: prospector
+      field: MINIMAX_API_KEY
+      bw: MINIMAX_API_KEY
+      entry: prospector-engine-env
+    - ns: otto-gateway
+      field: MINIMAX_API_KEY
+      bw: MINIMAX_API_KEY
+      entry: hermes-agent-env
     router:
-      lanes: |
-        # --- the moat's cheap primary --------------------------------------------------------
-        # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
-        # with an explicit api_base rather than a provider prefix.
-        - model_name: minimax
-          litellm_params:
-            model: openai/MiniMax-M3
-            api_base: https://api.minimax.io/v1
-            api_key: os.environ/MINIMAX_API_KEY
-            timeout: 300
-            max_tokens: 8192
-            # Without these two the router prices this lane at $0.0000 a call. Measured
-            # 2026-09-04 from LiteLLM_SpendLogs: 176 million MiniMax tokens across three
-            # consumers since 2026-08-27, every row recorded as zero spend, so
-            # general_settings.max_budget could never trip and the vendor's own plan ran
-            # out with nothing in the estate showing a cost. MiniMax is OpenAI-compatible
-            # rather than a first-class provider, so LiteLLM has no price for it unless
-            # the row carries one. MiniMax-M3 is priced $0.30 per million in and $1.20 per
-            # million out up to 512K input tokens, and $0.60 / $2.40 above that (vendor
-            # pricing page, read 2026-09-07) -- so this lane is the same money per token as
-            # the MiniMax-M2 it replaces, for every turn the cap below admits.
-            input_cost_per_token: 0.0000003
-            output_cost_per_token: 0.0000012
-          model_info:
-            # crew#506 CP1: the router refuses an oversized turn before it leaves the estate.
-            # MiniMax-M3 carries 1,048,576 tokens of context, but LiteLLM holds one rate per lane
-            # and MiniMax doubles its rate above 512K input. So the cap is set where the price
-            # above stops being true, not where the model stops reading: a turn over 512K would
-            # bill at twice what this row records, and a lane that under-reports its own spend is
-            # how 176 million tokens went by as $0.0000 in the first place. A turn above the cap
-            # 400s here instead of walking the fallback chain into unfunded lanes (the 2026-08-27
-            # Telegram outage).
-            max_input_tokens: 512000
+      lanes: "# --- the moat's cheap primary --------------------------------------------------------\n\
+        # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so\
+        \ it is declared\n# with an explicit api_base rather than a provider prefix.\n\
+        - model_name: minimax\n  litellm_params:\n    model: openai/MiniMax-M3\n \
+        \   api_base: https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n\
+        \    timeout: 300\n    max_tokens: 8192\n    # Without these two the router\
+        \ prices this lane at $0.0000 a call. Measured\n    # 2026-09-04 from LiteLLM_SpendLogs:\
+        \ 176 million MiniMax tokens across three\n    # consumers since 2026-08-27,\
+        \ every row recorded as zero spend, so\n    # general_settings.max_budget\
+        \ could never trip and the vendor's own plan ran\n    # out with nothing in\
+        \ the estate showing a cost. MiniMax is OpenAI-compatible\n    # rather than\
+        \ a first-class provider, so LiteLLM has no price for it unless\n    # the\
+        \ row carries one. MiniMax-M3 is priced $0.30 per million in and $1.20 per\n\
+        \    # million out up to 512K input tokens, and $0.60 / $2.40 above that (vendor\n\
+        \    # pricing page, read 2026-09-07) -- so this lane is the same money per\
+        \ token as\n    # the MiniMax-M2 it replaces, for every turn the cap below\
+        \ admits.\n    input_cost_per_token: 0.0000003\n    output_cost_per_token:\
+        \ 0.0000012\n  model_info:\n    # crew#506 CP1: the router refuses an oversized\
+        \ turn before it leaves the estate.\n    # MiniMax-M3 carries 1,048,576 tokens\
+        \ of context, but LiteLLM holds one rate per lane\n    # and MiniMax doubles\
+        \ its rate above 512K input. So the cap is set where the price\n    # above\
+        \ stops being true, not where the model stops reading: a turn over 512K would\n\
+        \    # bill at twice what this row records, and a lane that under-reports\
+        \ its own spend is\n    # how 176 million tokens went by as $0.0000 in the\
+        \ first place. A turn above the cap\n    # 400s here instead of walking the\
+        \ fallback chain into unfunded lanes (the 2026-08-27\n    # Telegram outage).\n\
+        \    max_input_tokens: 512000\n\n# The constrained-decoding variant of the\
+        \ primary lane (MUM-289).\n# Identical billing and rate limits, but the proxy\
+        \ returns strict JSON\n# only — the 400 cases callers hit parsing free-form\
+        \ prose from a model\n# that should have been structured are avoided here.\
+        \ Consumers opt in\n# by routing to `minimax_json` rather than `minimax`;\
+        \ the unconstrained\n# lane is unchanged.\n- model_name: minimax_json\n  litellm_params:\n\
+        \    model: openai/MiniMax-M3\n    api_base: https://api.minimax.io/v1\n \
+        \   api_key: os.environ/MINIMAX_API_KEY\n    timeout: 300\n    max_tokens:\
+        \ 8192\n    input_cost_per_token: 0.0000003\n    output_cost_per_token: 0.0000012\n\
+        \    # Forces the model into JSON-only output. LiteLLM forwards\n    # response_format\
+        \ to OpenAI-compatible providers, and MiniMax is one\n    # (api_base above),\
+        \ so this is the contract the proxy enforces.\n    response_format: { type:\
+        \ json_schema, json_schema: { name: estate_json, schema: { type: object, additionalProperties:\
+        \ true } } }\n  model_info:\n    max_input_tokens: 512000\n\n# The failover\
+        \ tier: same account and adapter, different model. It is a failover, never\n\
+        # a routing choice — see prospector config.yaml on `minimax_m27`.\n- model_name:\
+        \ minimax_m27\n  litellm_params:\n    # The name was aspirational until 2026-09-07:\
+        \ the lane called minimax_m27 served\n    # MiniMax-Text-01, because M2.7\
+        \ did not exist when the lane was cut. It does now, so\n    # the lane serves\
+        \ what it is named after and a reader of the router config is no\n    # longer\
+        \ told one model and given another.\n    model: openai/MiniMax-M2.7\n    api_base:\
+        \ https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n   \
+        \ timeout: 300\n    # Priced for the same reason as the row above; without\
+        \ it the failover tier is\n    # the free-looking way around a cap the primary\
+        \ now respects.\n    # MiniMax-M2.7: $0.30 per million in, $1.20 per million\
+        \ out (vendor pricing page,\n    # read 2026-09-07) -- dearer per token than\
+        \ the MiniMax-Text-01 it replaces, and\n    # that is the point: a failover\
+        \ that is cheaper than the primary is an invitation\n    # to route to it.\n\
+        \    input_cost_per_token: 0.0000003\n    output_cost_per_token: 0.0000012\n\
+        \  model_info:\n    # M2.7 reads 204,800 tokens, a fifth of the primary's\
+        \ window. Capped here so an\n    # oversized turn is refused by the estate\
+        \ rather than by the vendor mid-failover.\n    max_input_tokens: 204800\n"
+      fallbacks: '# Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax
+        answers 401 `invalid api
 
-        # The constrained-decoding variant of the primary lane (MUM-289).
-        # Identical billing and rate limits, but the proxy returns strict JSON
-        # only — the 400 cases callers hit parsing free-form prose from a model
-        # that should have been structured are avoided here. Consumers opt in
-        # by routing to `minimax_json` rather than `minimax`; the unconstrained
-        # lane is unchanged.
-        - model_name: minimax_json
-          litellm_params:
-            model: openai/MiniMax-M3
-            api_base: https://api.minimax.io/v1
-            api_key: os.environ/MINIMAX_API_KEY
-            timeout: 300
-            max_tokens: 8192
-            input_cost_per_token: 0.0000003
-            output_cost_per_token: 0.0000012
-            # Forces the model into JSON-only output. LiteLLM forwards
-            # response_format to OpenAI-compatible providers, and MiniMax is one
-            # (api_base above), so this is the contract the proxy enforces.
-            response_format: { type: json_schema, json_schema: { name: estate_json, schema: { type: object, additionalProperties: true } } }
-          model_info:
-            max_input_tokens: 512000
-
-        # The failover tier: same account and adapter, different model. It is a failover, never
-        # a routing choice — see prospector config.yaml on `minimax_m27`.
-        - model_name: minimax_m27
-          litellm_params:
-            # The name was aspirational until 2026-09-07: the lane called minimax_m27 served
-            # MiniMax-Text-01, because M2.7 did not exist when the lane was cut. It does now, so
-            # the lane serves what it is named after and a reader of the router config is no
-            # longer told one model and given another.
-            model: openai/MiniMax-M2.7
-            api_base: https://api.minimax.io/v1
-            api_key: os.environ/MINIMAX_API_KEY
-            timeout: 300
-            # Priced for the same reason as the row above; without it the failover tier is
-            # the free-looking way around a cap the primary now respects.
-            # MiniMax-M2.7: $0.30 per million in, $1.20 per million out (vendor pricing page,
-            # read 2026-09-07) -- dearer per token than the MiniMax-Text-01 it replaces, and
-            # that is the point: a failover that is cheaper than the primary is an invitation
-            # to route to it.
-            input_cost_per_token: 0.0000003
-            output_cost_per_token: 0.0000012
-          model_info:
-            # M2.7 reads 204,800 tokens, a fifth of the primary's window. Capped here so an
-            # oversized turn is refused by the estate rather than by the vendor mid-failover.
-            max_input_tokens: 204800
-      fallbacks: |
-        # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
         # key (2049)` on https://api.minimax.io/v1/chat/completions (request id
-        # 06ea7071f3bfa650df549152c286372b), and its native endpoint answers HTTP 200 carrying
-        # `base_resp.status_code 2049` in the body -- the same refusal wearing a 200, so a probe
-        # that grades only the HTTP status reads that account as healthy. DeepSeek answers 401.
-        # Those two were each other's only fallback, so a cheap turn walked minimax -> deepseek
-        # and died with nothing to answer the founder's Telegram message. Gemini answers, so it
+
+        # 06ea7071f3bfa650df549152c286372b), and its native endpoint answers HTTP
+        200 carrying
+
+        # `base_resp.status_code 2049` in the body -- the same refusal wearing a 200,
+        so a probe
+
+        # that grades only the HTTP status reads that account as healthy. DeepSeek
+        answers 401.
+
+        # Those two were each other''s only fallback, so a cheap turn walked minimax
+        -> deepseek
+
+        # and died with nothing to answer the founder''s Telegram message. Gemini
+        answers, so it
+
         # goes ahead of the dead pair rather than after it.
+
         #
-        # That reading expired. Both accounts named above are funded again and answering, and
-        # Gemini is now the one refusing: it left this chain entirely on 2026-09-08, on the
-        # measurement recorded on the gemini block below. It could not simply move to the back
-        # either -- sovereign/tests/bdd/test_cp30.py holds that every chain not headed by the
-        # cheap model ends in it, so a cascade never terminates on a costlier lane than the one
-        # it could have used. A dead lane after that tail would be a hop that costs a retry and
-        # a cooldown and can never answer, which is the founder's "we wait for a nodel to finish
-        # and then swtich whih fails all the tine" (2026-09-08) in its purest form. So the chain
+
+        # That reading expired. Both accounts named above are funded again and answering,
+        and
+
+        # Gemini is now the one refusing: it left this chain entirely on 2026-09-08,
+        on the
+
+        # measurement recorded on the gemini block below. It could not simply move
+        to the back
+
+        # either -- sovereign/tests/bdd/test_cp30.py holds that every chain not headed
+        by the
+
+        # cheap model ends in it, so a cascade never terminates on a costlier lane
+        than the one
+
+        # it could have used. A dead lane after that tail would be a hop that costs
+        a retry and
+
+        # a cooldown and can never answer, which is the founder''s "we wait for a
+        nodel to finish
+
+        # and then swtich whih fails all the tine" (2026-09-08) in its purest form.
+        So the chain
+
         # is minimax -> deepseek and stops: two vendors, both answering, no dead hop.
-        # 2026-09-08, the founder's cost mandate. Every chain on main ended in `deepseek`,
-        # an account at $0 that has answered 401 since 2026-09-04, so the last hop of every
-        # fallback was a guaranteed refusal and there was nothing free underneath it. This
-        # file already says twice that a hop which always refuses is latency, not redundancy;
-        # here that is applied. deepseek stays a chain HEAD, so the lane rejoins the moment
+
+        # 2026-09-08, the founder''s cost mandate. Every chain on main ended in `deepseek`,
+
+        # an account at $0 that has answered 401 since 2026-09-04, so the last hop
+        of every
+
+        # fallback was a guaranteed refusal and there was nothing free underneath
+        it. This
+
+        # file already says twice that a hop which always refuses is latency, not
+        redundancy;
+
+        # here that is applied. deepseek stays a chain HEAD, so the lane rejoins the
+        moment
+
         # the founder adds its key in the LiteLLM console -- no pull request, no session.
+
         - minimax: [gemini, groq]
+
+        '
   kimi:
-    # Moonshot's Kimi (platform.kimi.ai). The vendor documents no key shape (API overview and
-    # list-models pages, read 2026-09-02), so the shape only refuses an empty or malformed paste;
-    # the verify probe is the real proof: GET /v1/models answers 2xx only with a live key.
     kind: secret
     secret: SEED_KIMI_API_KEY
     page: https://platform.kimi.ai/console/api-keys
-    shape: "[A-Za-z0-9_.-]{20,}"
-    # A Kimi key has one of three homes and answers only there (kimi.com/code FAQ, read 2026-09-03:
-    # "Kimi Code membership benefits and the Kimi Platform have different Base URLs"): the open
-    # platform's global host, the Kimi Code membership host, the open platform's China host. The
-    # apply run on 2026-09-02 (job 100467823768) probed only the first and read the founder's key as
-    # "Incorrect API key" without ever asking the other two. Now the probe walks the list; the host
-    # that accepts the key is written as MOONSHOT_API_BASE, which LiteLLM's moonshot adapter reads
-    # from the environment beside the key (docs.litellm.ai/docs/providers/moonshot), so the router
-    # calls the home the key belongs to. Nobody is asked where the key was made.
+    shape: '[A-Za-z0-9_.-]{20,}'
     bases:
-      - https://api.moonshot.ai/v1
-      - https://api.kimi.com/coding/v1
-      - https://api.moonshot.cn/v1
-    verify: { method: GET, url: "{base}/models", headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Kimi publishes no create-key API
+    - https://api.moonshot.ai/v1
+    - https://api.kimi.com/coding/v1
+    - https://api.moonshot.cn/v1
+    verify:
+      method: GET
+      url: '{base}/models'
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: MOONSHOT_API_KEY, bw: MOONSHOT_API_KEY }
-      - { entry: litellm-upstream, field: MOONSHOT_API_BASE, derived: base }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: MOONSHOT_API_KEY, bw: MOONSHOT_API_KEY }
-    # NO router block, on purpose (R75, founder 2026-09-03). The kimi lane is console-owned:
-    # the key is brought through the router's own console (LLM Credentials -> Add Credential,
-    # then Models -> Add Model, stored encrypted in litellm-db) -- the enterprise intake, no
-    # terminal, no repository secret. A git-rendered row here locks the name `kimi` in the
-    # config file and the console then refuses to attach a key to it ("defined in config",
-    # hit by the founder 2026-09-03), so the row that pointed at env keys the vault never
-    # held was removed. The seed road above (SEED_KIMI_API_KEY -> MOONSHOT_API_KEY/BASE)
-    # remains the automated alternative and re-adding a lane here is one block, but only
-    # WITH the vault key, never before it.
+    - entry: litellm-upstream
+      ns: llm
+      field: MOONSHOT_API_KEY
+      bw: MOONSHOT_API_KEY
+    - entry: litellm-upstream
+      field: MOONSHOT_API_BASE
+      derived: base
+    - ns: dagster
+      field: MOONSHOT_API_KEY
+      bw: MOONSHOT_API_KEY
+      entry: dagster-env
   gemini:
-    # Google can mint keys with gcloud, but that road needed the founder's laptop SSO every time the
-    # session lapsed (a wrong root, crew#66 comment 5461144560). One key made once is the root (R52).
     kind: secret
     secret: SEED_GEMINI_API_KEY
     page: https://aistudio.google.com/apikey
-    shape: "AIza[A-Za-z0-9_-]{35}"
-    verify: { method: GET, url: "https://generativelanguage.googleapis.com/v1beta/models?key={key}", headers: {} }
-    rotation: assisted  # Google key creation needs gcloud SSO
+    shape: AIza[A-Za-z0-9_-]{35}
+    verify:
+      method: GET
+      url: https://generativelanguage.googleapis.com/v1beta/models?key={key}
+      headers: {}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
-      - { ns: otto-gateway, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: GEMINI_API_KEY, bw: GEMINI_API_KEY }
+    - entry: litellm-upstream
+      ns: llm
+      field: GEMINI_API_KEY
+      bw: GEMINI_API_KEY
+    - ns: otto-gateway
+      field: GEMINI_API_KEY
+      bw: GEMINI_API_KEY
+      entry: hermes-agent-env
+    - ns: dagster
+      field: GEMINI_API_KEY
+      bw: GEMINI_API_KEY
+      entry: dagster-env
     router:
-      lanes: |
-        # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
-        # 429 bodies carried quotaId `GenerateContentPaidTierInputTokensPerModelPerMinute`,
-        # quotaValue "1000000", quotaDimensions {model: gemini-2.5-flash, location: global}, and
-        # retryDelay values of 9s, 46s, 48s, 55s and 57s. So the limit is one million INPUT
-        # TOKENS a minute per model -- not requests -- and when it is passed Google makes the
-        # caller wait about a minute. That wait is what a person on Telegram experiences as the
-        # thing hanging and then switching.
-        #
-        # Three lanes name the same Google model (gemini, fast, vision), and Google counts them
-        # in one bucket, so the million is split across the three rather than repeated on each:
-        # 500k + 300k + 150k = 950k, with 50k of headroom for the retry LiteLLM is allowed. With
-        # `enable_pre_call_checks` and usage-based-routing-v2 in router_settings, the router now
-        # walks the fallback chain BEFORE the call leaves the estate instead of spending a round
-        # trip to be refused and then waiting out Google's retryDelay.
-        - model_name: gemini
-          litellm_params:
-            model: gemini/gemini-2.5-flash
-            api_key: os.environ/GEMINI_API_KEY
-            timeout: 300
-            tpm: 500000
+      lanes: "# The ceiling is Google's, measured, not chosen here. On 2026-09-08\
+        \ the router pod's\n# 429 bodies carried quotaId `GenerateContentPaidTierInputTokensPerModelPerMinute`,\n\
+        # quotaValue \"1000000\", quotaDimensions {model: gemini-2.5-flash, location:\
+        \ global}, and\n# retryDelay values of 9s, 46s, 48s, 55s and 57s. So the limit\
+        \ is one million INPUT\n# TOKENS a minute per model -- not requests -- and\
+        \ when it is passed Google makes the\n# caller wait about a minute. That wait\
+        \ is what a person on Telegram experiences as the\n# thing hanging and then\
+        \ switching.\n#\n# Three lanes name the same Google model (gemini, fast, vision),\
+        \ and Google counts them\n# in one bucket, so the million is split across\
+        \ the three rather than repeated on each:\n# 500k + 300k + 150k = 950k, with\
+        \ 50k of headroom for the retry LiteLLM is allowed. With\n# `enable_pre_call_checks`\
+        \ and usage-based-routing-v2 in router_settings, the router now\n# walks the\
+        \ fallback chain BEFORE the call leaves the estate instead of spending a round\n\
+        # trip to be refused and then waiting out Google's retryDelay.\n- model_name:\
+        \ gemini\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n    api_key:\
+        \ os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 500000\n\n# The two\
+        \ neutral lane names. They used to be declared on the anthropic row, which\
+        \ is\n# gone, and a caller must be able to ask for a capable model or a cheap\
+        \ one without\n# naming a vendor (LAW 34, founder 2026-09-04: \"we supposoed\
+        \ to be provider agnostic\").\n# They sat on Gemini from 2026-09-04 until\
+        \ today, on the theory that account was bought\n# direct and verified. That\
+        \ theory stopped being true on 2026-09-08 and the fallback\n# rule this same\
+        \ file states two rows below -- \"Gemini goes last everywhere and heads\n\
+        # nothing\" -- was never applied to these two rows, because they ARE a Gemini\
+        \ model_name,\n# not a fallback target of one: the primary attempt is not\
+        \ a fallback hop, so demoting\n# gemini inside their OWN fallback list (the\
+        \ previous `default: [gemini, minimax, groq]`)\n# did nothing -- every call\
+        \ still paid one guaranteed-dead round trip to Google before\n# ever reaching\
+        \ a fallback. Measured 2026-09-15, five consecutive calls to `default` and\n\
+        # `fast` from the live router: `x-litellm-attempted-fallbacks: 1` on every\
+        \ single one,\n# `x-litellm-model-group: minimax` on every single one -- 100%\
+        \ dead-hop-then-recover, on\n# every call, forever, because `allowed_fails`/`cooldown_time`\
+        \ cool down a deployment\n# inside a load-balanced pool, and neither of these\
+        \ model_names has ever had a second\n# deployment to fail toward -- there\
+        \ is nothing for a cooldown to route around. So they\n# now sit on MiniMax\
+        \ instead, the same \"moat's cheap primary\" lane and the only paid\n# vendor\
+        \ the 2026-09-04 21:5xZ and 2026-09-08 measurements below both found answering.\n\
+        # Gemini is demoted into their fallback (still first there, per the founder's\
+        \ own\n# \"it returns to the front the moment the Google account is billed\"\
+        \ rule) rather than\n# deleted, exactly the `embed-fallback` treatment three\
+        \ lanes below for the same vendor\n# and the same unbilled-account condition.\
+        \ Model ids unchanged from the vendor's own\n# https://ai.google.dev/gemini-api/docs/models\
+        \ for the day Gemini is billed again.\n#\n# 2026-09-15: MiniMax stopped being\
+        \ the only deployment under these two names. Both are\n# now a real pool of\
+        \ four -- minimax, groq, cerebras, sambanova -- and router_settings\n# carries\
+        \ `routing_strategy: cost-based-routing`, so among whichever of the four are\
+        \ not\n# presently cooling down, LiteLLM's own Router picks the cheapest per\
+        \ token, not a random\n# one. MiniMax prices its two fields above; the three\
+        \ free vendors carry none, which\n# LiteLLM reads as $0.0000/token, so they\
+        \ are picked ahead of MiniMax whenever any of\n# them is healthy -- the estate\
+        \ pays only when every free lane is dead or exhausted.\n# `allowed_fails`/`cooldown_time`\
+        \ then does the self-healing across all four the same\n# way it now does for\
+        \ groq's and cerebras's own three-key pools above: a deployment that\n# is\
+        \ revoked, out of daily quota, or rate-limited is excluded for the cooldown\
+        \ window and\n# rejoins on its own the moment it starts answering again --\
+        \ topped-up credit included,\n# since cooldown is blind to why a deployment\
+        \ failed and only watches whether it answers.\n# Gemini stays OUT of pool\
+        \ membership on purpose: a pool picks close to uniformly among\n# its live\
+        \ members (cost-based-routing aside), unlike a fallback chain's fixed order,\
+        \ and\n# Gemini is measured ~95% dead while unbilled (comment above) -- pool\
+        \ membership would\n# still spend one call in several on a vendor that almost\
+        \ always refuses. It keeps its\n# place at the front of the fallback chain\
+        \ below instead, which costs nothing when it is\n# never reached, and it earns\
+        \ pool membership back the day a live probe says it answers.\n- model_name:\
+        \ default\n  litellm_params:\n    model: openai/MiniMax-M3\n    api_base:\
+        \ https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n   \
+        \ timeout: 300\n    max_tokens: 8192\n    input_cost_per_token: 0.0000003\n\
+        \    output_cost_per_token: 0.0000012\n  model_info:\n    max_input_tokens:\
+        \ 512000\n- model_name: default\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n- model_name: default\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 65536\n- model_name: default\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n\n- model_name: fast\n  litellm_params:\n    model: openai/MiniMax-M3\n\
+        \    api_base: https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n\
+        \    timeout: 300\n    max_tokens: 8192\n    input_cost_per_token: 0.0000003\n\
+        \    output_cost_per_token: 0.0000012\n  model_info:\n    max_input_tokens:\
+        \ 512000\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 65536\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n"
+      cluster_lanes: "# Google's embedding lane, and AS OF 2026-09-10 NO LONGER THE\
+        \ ONE ASKED FIRST. It was,\n# from 2026-09-04 (the founder's rule that the\
+        \ estate buys model capacity direct and\n# never through a reseller) until\
+        \ today, when the cost of leaving a dead lane in front\n# stopped being visible\
+        \ in a log and started being visible in Otto:\n#\n#   otto.memory.embeddings.EmbeddingUnavailableError:\
+        \ embedding call to the estate\n#     router failed: TimeoutError        \
+        \  (otto-gateway pod, _store_fact, live)\n#\n# Read the fallback comment below\
+        \ for the measurement: the id is retired (404) and the\n# account is out of\
+        \ prepay (429), so this hop refuses every time and the router needs\n# about\
+        \ six seconds to walk past it. Otto's embedding client is bounded well under\
+        \ that,\n# so it timed out on every call and every fact Otto wrote went into\
+        \ the store with no\n# vector at all -- stored true, retained true, embedding\
+        \ absent. Semantic recall then\n# found nothing, which is the founder's \"\
+        conversation history, something not right\".\n#\n# It stays in the chain rather\
+        \ than being deleted: the id and the credit both come back,\n# and a hop that\
+        \ is second costs nothing when it refuses. It goes first again when a\n# live\
+        \ probe says it answers, and not before.\n- model_name: embed-fallback\n \
+        \ litellm_params:\n    model: gemini/gemini-embedding-001\n    api_key: os.environ/GEMINI_API_KEY\n\
+        \    dimensions: 1536\n    timeout: 120\n  model_info:\n    mode: embedding\n\
+        \n- model_name: vision\n  litellm_params:\n    model: gemini/gemini-2.5-flash\n\
+        \    api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n    tpm: 150000\n\
+        \n# Founder 2026-08-30, verbatim: \"we test with MiniMax see what the image\
+        \ quality is like, then\n# we use Gemini for the ones that will ship to production\"\
+        . So there are two image lanes, and\n# the reason they are shaped differently\
+        \ is a vendor fact, not a preference:\n#\n#   image           this row. Gemini\
+        \ is a first-class LiteLLM lane, so callers ask the router\n#            \
+        \       for \"image\" by capability and never name Google.\n#   /minimax/image\
+        \  a pass-through in general_settings below. LiteLLM v1.98.0 has no MiniMax\n\
+        #                   image provider (docs.litellm.ai/docs/image_generation\
+        \ lists OpenAI, Azure,\n#                   Google AI Studio, Vertex, Bedrock,\
+        \ Recraft, OpenRouter, Nscale, Xinference,\n#                   read 2026-08-30),\
+        \ and OpenRouter does not resell it either: every\n#                   minimax/*\
+        \ row on openrouter.ai/api/v1/models is output_modalities [\"text\"]\n#  \
+        \                 (measured 2026-08-30). MiniMax's own /v1/image_generation\
+        \ is the only door.\n#\n# Model id from https://ai.google.dev/gemini-api/docs/image-generation\
+        \ (read 2026-08-30), where\n# gemini-2.5-flash-image is marked legacy. It\
+        \ is newer than this LiteLLM's price map, so a call\n# on this lane traces\
+        \ with a zero cost until the image ships and the map catches up; spend is\n\
+        # still capped by general_settings.max_budget like every other lane.\n- model_name:\
+        \ image\n  litellm_params:\n    model: gemini/gemini-3.1-flash-image\n   \
+        \ api_key: os.environ/GEMINI_API_KEY\n    timeout: 300\n"
+      fallbacks: '# Gemini stopped heading any chain on 2026-09-08. Measured over
+        the two hours to
 
-        # The two neutral lane names. They used to be declared on the anthropic row, which is
-        # gone, and a caller must be able to ask for a capable model or a cheap one without
-        # naming a vendor (LAW 34, founder 2026-09-04: "we supposoed to be provider agnostic").
-        # They sat on Gemini from 2026-09-04 until today, on the theory that account was bought
-        # direct and verified. That theory stopped being true on 2026-09-08 and the fallback
-        # rule this same file states two rows below -- "Gemini goes last everywhere and heads
-        # nothing" -- was never applied to these two rows, because they ARE a Gemini model_name,
-        # not a fallback target of one: the primary attempt is not a fallback hop, so demoting
-        # gemini inside their OWN fallback list (the previous `default: [gemini, minimax, groq]`)
-        # did nothing -- every call still paid one guaranteed-dead round trip to Google before
-        # ever reaching a fallback. Measured 2026-09-15, five consecutive calls to `default` and
-        # `fast` from the live router: `x-litellm-attempted-fallbacks: 1` on every single one,
-        # `x-litellm-model-group: minimax` on every single one -- 100% dead-hop-then-recover, on
-        # every call, forever, because `allowed_fails`/`cooldown_time` cool down a deployment
-        # inside a load-balanced pool, and neither of these model_names has ever had a second
-        # deployment to fail toward -- there is nothing for a cooldown to route around. So they
-        # now sit on MiniMax instead, the same "moat's cheap primary" lane and the only paid
-        # vendor the 2026-09-04 21:5xZ and 2026-09-08 measurements below both found answering.
-        # Gemini is demoted into their fallback (still first there, per the founder's own
-        # "it returns to the front the moment the Google account is billed" rule) rather than
-        # deleted, exactly the `embed-fallback` treatment three lanes below for the same vendor
-        # and the same unbilled-account condition. Model ids unchanged from the vendor's own
-        # https://ai.google.dev/gemini-api/docs/models for the day Gemini is billed again.
-        #
-        # 2026-09-15: MiniMax stopped being the only deployment under these two names. Both are
-        # now a real pool of four -- minimax, groq, cerebras, sambanova -- and router_settings
-        # carries `routing_strategy: cost-based-routing`, so among whichever of the four are not
-        # presently cooling down, LiteLLM's own Router picks the cheapest per token, not a random
-        # one. MiniMax prices its two fields above; the three free vendors carry none, which
-        # LiteLLM reads as $0.0000/token, so they are picked ahead of MiniMax whenever any of
-        # them is healthy -- the estate pays only when every free lane is dead or exhausted.
-        # `allowed_fails`/`cooldown_time` then does the self-healing across all four the same
-        # way it now does for groq's and cerebras's own three-key pools above: a deployment that
-        # is revoked, out of daily quota, or rate-limited is excluded for the cooldown window and
-        # rejoins on its own the moment it starts answering again -- topped-up credit included,
-        # since cooldown is blind to why a deployment failed and only watches whether it answers.
-        # Gemini stays OUT of pool membership on purpose: a pool picks close to uniformly among
-        # its live members (cost-based-routing aside), unlike a fallback chain's fixed order, and
-        # Gemini is measured ~95% dead while unbilled (comment above) -- pool membership would
-        # still spend one call in several on a vendor that almost always refuses. It keeps its
-        # place at the front of the fallback chain below instead, which costs nothing when it is
-        # never reached, and it earns pool membership back the day a live probe says it answers.
-        - model_name: default
-          litellm_params:
-            model: openai/MiniMax-M3
-            api_base: https://api.minimax.io/v1
-            api_key: os.environ/MINIMAX_API_KEY
-            timeout: 300
-            max_tokens: 8192
-            input_cost_per_token: 0.0000003
-            output_cost_per_token: 0.0000012
-          model_info:
-            max_input_tokens: 512000
-        - model_name: default
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.groq.com/openai/v1
-            api_key: os.environ/GROQ_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-        - model_name: default
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.cerebras.ai/v1
-            api_key: os.environ/CEREBRAS_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 65536
-        - model_name: default
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.sambanova.ai/v1
-            api_key: os.environ/SAMBANOVA_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
-        - model_name: fast
-          litellm_params:
-            model: openai/MiniMax-M3
-            api_base: https://api.minimax.io/v1
-            api_key: os.environ/MINIMAX_API_KEY
-            timeout: 300
-            max_tokens: 8192
-            input_cost_per_token: 0.0000003
-            output_cost_per_token: 0.0000012
-          model_info:
-            max_input_tokens: 512000
-        - model_name: fast
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.groq.com/openai/v1
-            api_key: os.environ/GROQ_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-        - model_name: fast
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.cerebras.ai/v1
-            api_key: os.environ/CEREBRAS_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 65536
-        - model_name: fast
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.sambanova.ai/v1
-            api_key: os.environ/SAMBANOVA_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-      cluster_lanes: |
-        # Google's embedding lane, and AS OF 2026-09-10 NO LONGER THE ONE ASKED FIRST. It was,
-        # from 2026-09-04 (the founder's rule that the estate buys model capacity direct and
-        # never through a reseller) until today, when the cost of leaving a dead lane in front
-        # stopped being visible in a log and started being visible in Otto:
-        #
-        #   otto.memory.embeddings.EmbeddingUnavailableError: embedding call to the estate
-        #     router failed: TimeoutError          (otto-gateway pod, _store_fact, live)
-        #
-        # Read the fallback comment below for the measurement: the id is retired (404) and the
-        # account is out of prepay (429), so this hop refuses every time and the router needs
-        # about six seconds to walk past it. Otto's embedding client is bounded well under that,
-        # so it timed out on every call and every fact Otto wrote went into the store with no
-        # vector at all -- stored true, retained true, embedding absent. Semantic recall then
-        # found nothing, which is the founder's "conversation history, something not right".
-        #
-        # It stays in the chain rather than being deleted: the id and the credit both come back,
-        # and a hop that is second costs nothing when it refuses. It goes first again when a
-        # live probe says it answers, and not before.
-        - model_name: embed-fallback
-          litellm_params:
-            model: gemini/gemini-embedding-001
-            api_key: os.environ/GEMINI_API_KEY
-            dimensions: 1536
-            timeout: 120
-          model_info:
-            mode: embedding
-
-        - model_name: vision
-          litellm_params:
-            model: gemini/gemini-2.5-flash
-            api_key: os.environ/GEMINI_API_KEY
-            timeout: 300
-            tpm: 150000
-
-        # Founder 2026-08-30, verbatim: "we test with MiniMax see what the image quality is like, then
-        # we use Gemini for the ones that will ship to production". So there are two image lanes, and
-        # the reason they are shaped differently is a vendor fact, not a preference:
-        #
-        #   image           this row. Gemini is a first-class LiteLLM lane, so callers ask the router
-        #                   for "image" by capability and never name Google.
-        #   /minimax/image  a pass-through in general_settings below. LiteLLM v1.98.0 has no MiniMax
-        #                   image provider (docs.litellm.ai/docs/image_generation lists OpenAI, Azure,
-        #                   Google AI Studio, Vertex, Bedrock, Recraft, OpenRouter, Nscale, Xinference,
-        #                   read 2026-08-30), and OpenRouter does not resell it either: every
-        #                   minimax/* row on openrouter.ai/api/v1/models is output_modalities ["text"]
-        #                   (measured 2026-08-30). MiniMax's own /v1/image_generation is the only door.
-        #
-        # Model id from https://ai.google.dev/gemini-api/docs/image-generation (read 2026-08-30), where
-        # gemini-2.5-flash-image is marked legacy. It is newer than this LiteLLM's price map, so a call
-        # on this lane traces with a zero cost until the image ships and the map catches up; spend is
-        # still capped by general_settings.max_budget like every other lane.
-        - model_name: image
-          litellm_params:
-            model: gemini/gemini-3.1-flash-image
-            api_key: os.environ/GEMINI_API_KEY
-            timeout: 300
-      fallbacks: |
-        # Gemini stopped heading any chain on 2026-09-08. Measured over the two hours to
         # 10:45Z on both live router pods (24,955 log lines): gemini/gemini-2.5-flash
-        # answered 5 calls and failed 102, every failure RESOURCE_EXHAUSTED with no quotaId
-        # and no retryDelay -- the unbilled shape, not a per-minute ceiling this estate can
-        # stay under. openai/MiniMax-M3 answered 71 and failed 0; deepseek-v4-flash answered
+
+        # answered 5 calls and failed 102, every failure RESOURCE_EXHAUSTED with no
+        quotaId
+
+        # and no retryDelay -- the unbilled shape, not a per-minute ceiling this estate
+        can
+
+        # stay under. openai/MiniMax-M3 answered 71 and failed 0; deepseek-v4-flash
+        answered
+
         # 97 and failed 24, all 24 being one message ("This response_format type is
+
         # unavailable now") from a caller that sets a parameter Otto never sends.
+
         #
-        # A chain that opens on a lane refusing 95 of every 100 calls spends the router's two
-        # retries and its cooldown before it reaches a lane that can answer. That is the
-        # founder's complaint in one sentence -- "why do we wait for a nodel to finish and
-        # then swtich whih fails all the tine" (2026-09-08) -- and it is the same reason this
-        # file already gives on the deepseek block for demoting a dead hop: "a hop that always
-        # refuses is latency, not redundancy". Gemini goes last everywhere and heads nothing.
+
+        # A chain that opens on a lane refusing 95 of every 100 calls spends the router''s
+        two
+
+        # retries and its cooldown before it reaches a lane that can answer. That
+        is the
+
+        # founder''s complaint in one sentence -- "why do we wait for a nodel to finish
+        and
+
+        # then swtich whih fails all the tine" (2026-09-08) -- and it is the same
+        reason this
+
+        # file already gives on the deepseek block for demoting a dead hop: "a hop
+        that always
+
+        # refuses is latency, not redundancy". Gemini goes last everywhere and heads
+        nothing.
+
         # It returns to the front the moment the Google account is billed, which crew#920
+
         # carries; nothing else about these chains changes.
+
         #
-        # The cheap model is still the last hop of every chain it does not head, which is what
-        # sovereign cp30 grades and the `[routing] cheap` line of AGENTS.md declares; which
-        # lane is `cheap` is the founder's call, not this file's, so it is untouched.
+
+        # The cheap model is still the last hop of every chain it does not head, which
+        is what
+
+        # sovereign cp30 grades and the `[routing] cheap` line of AGENTS.md declares;
+        which
+
+        # lane is `cheap` is the founder''s call, not this file''s, so it is untouched.
+
         #
-        # `default` and `fast` are MiniMax rows now (see the lane comment above) -- naming
-        # minimax in their own fallback lists would be a hop back to the deployment that had
-        # just failed, the same reason `gemini`'s own list below never names `gemini`. Gemini
-        # stays first in their fallback, demoted but not deleted, so it is what a turn reaches
-        # if MiniMax itself is ever the one refusing, and it is promoted back to heading these
+
+        # `default` and `fast` are MiniMax rows now (see the lane comment above) --
+        naming
+
+        # minimax in their own fallback lists would be a hop back to the deployment
+        that had
+
+        # just failed, the same reason `gemini`''s own list below never names `gemini`.
+        Gemini
+
+        # stays first in their fallback, demoted but not deleted, so it is what a
+        turn reaches
+
+        # if MiniMax itself is ever the one refusing, and it is promoted back to heading
+        these
+
         # two lanes outright the day crew#920 bills the Google account.
+
         - gemini: [minimax, groq]
+
         - default: [gemini, groq]
+
         - fast: [gemini, groq]
-      cluster_fallbacks: |
-        # The lane that had no chain at all until 2026-09-10, and the only one that needed it.
-        # Every other group failed over; `embed` did not, so a Google 429 travelled straight out
-        # to the caller and killed two services (the embed rows in cluster_lanes above carry the
+
+        '
+      cluster_fallbacks: '# The lane that had no chain at all until 2026-09-10, and
+        the only one that needed it.
+
+        # Every other group failed over; `embed` did not, so a Google 429 travelled
+        straight out
+
+        # to the caller and killed two services (the embed rows in cluster_lanes above
+        carry the
+
         # full measurement).
+
         #
-        # This lives in cluster_fallbacks and NOT in fallbacks, and that is load-bearing rather
-        # than tidy. `embed` is a cluster lane: the OCI container's own render (llm/config.yaml)
-        # has no cluster-lanes marker and therefore carries no embed lane at all, so a chain
-        # naming `embed` in the plain block renders into both configs and fails the one that
+
+        # This lives in cluster_fallbacks and NOT in fallbacks, and that is load-bearing
+        rather
+
+        # than tidy. `embed` is a cluster lane: the OCI container''s own render (llm/config.yaml)
+
+        # has no cluster-lanes marker and therefore carries no embed lane at all,
+        so a chain
+
+        # naming `embed` in the plain block renders into both configs and fails the
+        one that
+
         # legitimately lacks the lane. The renderer catches exactly that, and did:
+
         #
+
         #   FAIL vendor-render llm/config.yaml: fallback names no lane serves:
-        #     ['embed', 'embed-cohere', 'embed-fallback']
+
+        #     [''embed'', ''embed-cohere'', ''embed-fallback'']
+
         #
-        # The order changed on 2026-09-10 and this list did not, which is the point of naming
-        # lanes rather than models: `embed` is now OpenRouter (the openrouter row), and
-        # `embed-fallback` is the Google id that used to be `embed` and now refuses in second
+
+        # The order changed on 2026-09-10 and this list did not, which is the point
+        of naming
+
+        # lanes rather than models: `embed` is now OpenRouter (the openrouter row),
+        and
+
+        # `embed-fallback` is the Google id that used to be `embed` and now refuses
+        in second
+
         # place, where refusing is free. Cohere is still last.
+
         #
-        # Every hop declares dimensions: 1536, the width otto_facts.embedding is created at.
-        # tests/test_the_embed_chain_agrees_on_one_width.py refuses a chain whose hops disagree:
-        # a hop of another width does not degrade recall, it writes a vector the store cannot
+
+        # Every hop declares dimensions: 1536, the width otto_facts.embedding is created
+        at.
+
+        # tests/test_the_embed_chain_agrees_on_one_width.py refuses a chain whose
+        hops disagree:
+
+        # a hop of another width does not degrade recall, it writes a vector the store
+        cannot
+
         # compare to anything it already holds, and it does that silently.
+
         - embed: [embed-fallback, embed-cohere]
+
+        '
   groq:
-    # The free floor (founder 2026-09-08, the cost mandate). Every lane the router served until
-    # today bills per token, so 100% of every turn was paid: the chains ended in `deepseek`, an
-    # account at $0, with nothing free underneath. Groq serves frontier open weights (Llama 3.3
-    # 70B, Qwen2.5-Coder-32B) on a free tier with no card, and it is OpenAI-compatible, so it is
-    # a LiteLLM lane and not an adapter. It is the floor, never a routing choice: the chains
-    # reach it only when the paid lanes are exhausted or refusing.
-    #
-    # R52: Groq publishes no create-key API (console.groq.com/keys is the only road, read
-    # 2026-09-08), so the API key IS the root. The founder makes it once and sets the seed; code
-    # does everything after that.
     kind: secret
     secret: SEED_GROQ_API_KEY
     page: https://console.groq.com/keys
-    shape: "gsk_[A-Za-z0-9]{20,}"
-    verify: { method: GET, url: https://api.groq.com/openai/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Groq publishes no create-key API (measured 2026-09-08)
+    shape: gsk_[A-Za-z0-9]{20,}
+    verify:
+      method: GET
+      url: https://api.groq.com/openai/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: GROQ_API_KEY, bw: GROQ_API_KEY }
-      # Otto's own copy, home 3 of the three homes. No `entry:`: there is no cluster Secret
-      # in that namespace to seed Bitwarden FROM -- the founder's copy is the only copy, and
-      # the bridge only reads outward here.
-      - { ns: otto-gateway, field: GROQ_API_KEY, bw: GROQ_API_KEY }
-      # Two more Groq accounts, found live in Bitwarden Secrets Manager 2026-09-15 and never
-      # wired in (same discovery as CEREBRAS_API_KEY_2/_3 and the new sambanova vendor below).
-      # No `entry:`, same reason as minimax: these never rode the vault, only the human door.
-      - { ns: llm, field: GROQ_API_KEY_2, bw: GROQ_API_KEY_2 }
-      - { ns: llm, field: GROQ_API_KEY_3, bw: GROQ_API_KEY_3 }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: GROQ_API_KEY, bw: GROQ_API_KEY }
-      - { ns: dagster, field: GROQ_API_KEY_2, bw: GROQ_API_KEY_2 }
-      - { ns: dagster, field: GROQ_API_KEY_3, bw: GROQ_API_KEY_3 }
-    # This is that follow-up. The condition the block above set -- "the moment
-    # bin/idp-bootstrap-vendors has written the field" -- was measured met on 2026-09-10:
-    # Secret/litellm-upstream in namespace `llm` carries the key names
-    # ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, LITELLM_DB_PASSWORD,
-    # LITELLM_MASTER_KEY, OPENROUTER_API_KEY. So the lane below names an environment
-    # variable the router pod actually holds, which is the whole of what was missing.
+    - entry: litellm-upstream
+      ns: llm
+      field: GROQ_API_KEY
+      bw: GROQ_API_KEY
+    - ns: otto-gateway
+      field: GROQ_API_KEY
+      bw: GROQ_API_KEY
+      entry: hermes-agent-env
+    - ns: llm
+      field: GROQ_API_KEY_2
+      bw: GROQ_API_KEY_2
+      entry: litellm-upstream
+    - ns: llm
+      field: GROQ_API_KEY_3
+      bw: GROQ_API_KEY_3
+      entry: litellm-upstream
+    - ns: dagster
+      field: GROQ_API_KEY
+      bw: GROQ_API_KEY
+      entry: dagster-env
+    - ns: dagster
+      field: GROQ_API_KEY_2
+      bw: GROQ_API_KEY_2
+      entry: dagster-env
+    - ns: dagster
+      field: GROQ_API_KEY_3
+      bw: GROQ_API_KEY_3
+      entry: dagster-env
     router:
-      lanes: |
-        # --- the free floor ------------------------------------------------------------------
-        # Until this row, the estate router had no free lane at all. Every one of its nine model
-        # rows billed per token and the tail of every fallback chain was a paid account: the
-        # cascade ended on `minimax` or `gemini`, so a day that emptied both accounts left every
-        # consumer of this router -- Holmes, the agent workforce, prospector, whatever answers
-        # the founder next -- with nowhere to go. Otto has carried a free floor in its own
-        # private brain config since 2026-09-10 (platform/otto-gateway/three-homes.yaml); this
-        # is the same floor under the router the rest of the estate rides.
-        #
-        # It is a floor, never a routing choice. Nothing heads a chain with it; it is the last
-        # hop of every chain, which is also what sovereign/tests/bdd/test_cp30.py holds about
-        # the cheap model, and why `[routing] cheap` in AGENTS.md moves to `groq` in the same
-        # change. Groq's free tier meters REQUESTS per day, not dollars, and resets daily --
-        # so unlike a prepaid balance it cannot reach zero and stay there.
-        #
-        # `openai/` twice on purpose: the first is LiteLLM's provider prefix (an
-        # OpenAI-compatible endpoint), the second belongs to the model's own name.
-        #
-        # gpt-oss-120b, and not the Llama 3.3 70B this registry named when the row was written:
-        # asked from inside the otto-gateway pod on this key on 2026-09-10, Groq answered
-        #   404 "The model `llama-3.3-70b-versatile` does not exist or you do not have access
-        #   to it."
-        # while GET /openai/v1/models returned the fourteen it does serve. Measured on the same
-        # call: openai/gpt-oss-120b HTTP 200 0.48s, 119 tokens, a real three-sentence answer,
-        # and a tool-calling turn returned tool_calls=['get_weather'] -- a floor that cannot
-        # call a tool is a floor that can only chat.
-        #
-        # No input_cost_per_token / output_cost_per_token, and that is the one row where their
-        # absence is correct rather than the 176-million-token accounting hole the minimax row
-        # describes: this lane costs nothing per token, so $0.0000 a call is the true price.
-        # general_settings.max_budget still bounds it, and the daily request meter is Groq's.
-        - model_name: groq
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.groq.com/openai/v1
-            api_key: os.environ/GROQ_API_KEY
-            # Shorter than the paid lanes' 300s on purpose. This is the hop a turn reaches
-            # after the lanes above it have already spent their own timeouts; a floor that
-            # takes five minutes to refuse is not a floor. Measured latency above was 0.48s.
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            # Groq publishes 131,072 tokens of context for gpt-oss-120b. Capped here so an
-            # oversized turn is refused by the estate rather than by the vendor at the end of
-            # a cascade, the same reason the minimax row carries a cap.
-            max_input_tokens: 131072
-
-        # --- the other two Groq accounts, same model_name on purpose ---------------------------
-        # This is what turns `groq` from a single deployment into a real LiteLLM pool. A
-        # model_name with one deployment has nothing for `allowed_fails`/`cooldown_time`
-        # (router_settings) to route around -- the gemini row's own comment three vendors up
-        # measured that exact failure mode, 100% dead-hop-then-recover on every call, forever.
-        # Three deployments under one name means a key that goes dead for any reason -- revoked,
-        # daily quota spent, rate-limited -- gets cooled down and the other two keep answering,
-        # and the cooled-down one rejoins on its own the moment the cooldown window ends, with
-        # no PR and no agent editing a key. That is cause-agnostic by construction: the router
-        # does not know or care WHY a deployment failed, so a revoked key, an empty quota and a
-        # quota that got topped up an hour later are all handled by the same mechanism.
-        # Verified live 2026-09-15 (`GET /openai/v1/models`, curl, both keys): same fourteen-model
-        # catalogue as the primary account, `openai/gpt-oss-120b` present on both.
-        - model_name: groq
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.groq.com/openai/v1
-            api_key: os.environ/GROQ_API_KEY_2
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
-        - model_name: groq
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.groq.com/openai/v1
-            api_key: os.environ/GROQ_API_KEY_3
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
+      lanes: "# --- the free floor ------------------------------------------------------------------\n\
+        # Until this row, the estate router had no free lane at all. Every one of\
+        \ its nine model\n# rows billed per token and the tail of every fallback chain\
+        \ was a paid account: the\n# cascade ended on `minimax` or `gemini`, so a\
+        \ day that emptied both accounts left every\n# consumer of this router --\
+        \ Holmes, the agent workforce, prospector, whatever answers\n# the founder\
+        \ next -- with nowhere to go. Otto has carried a free floor in its own\n#\
+        \ private brain config since 2026-09-10 (platform/otto-gateway/three-homes.yaml);\
+        \ this\n# is the same floor under the router the rest of the estate rides.\n\
+        #\n# It is a floor, never a routing choice. Nothing heads a chain with it;\
+        \ it is the last\n# hop of every chain, which is also what sovereign/tests/bdd/test_cp30.py\
+        \ holds about\n# the cheap model, and why `[routing] cheap` in AGENTS.md moves\
+        \ to `groq` in the same\n# change. Groq's free tier meters REQUESTS per day,\
+        \ not dollars, and resets daily --\n# so unlike a prepaid balance it cannot\
+        \ reach zero and stay there.\n#\n# `openai/` twice on purpose: the first is\
+        \ LiteLLM's provider prefix (an\n# OpenAI-compatible endpoint), the second\
+        \ belongs to the model's own name.\n#\n# gpt-oss-120b, and not the Llama 3.3\
+        \ 70B this registry named when the row was written:\n# asked from inside the\
+        \ otto-gateway pod on this key on 2026-09-10, Groq answered\n#   404 \"The\
+        \ model `llama-3.3-70b-versatile` does not exist or you do not have access\n\
+        #   to it.\"\n# while GET /openai/v1/models returned the fourteen it does\
+        \ serve. Measured on the same\n# call: openai/gpt-oss-120b HTTP 200 0.48s,\
+        \ 119 tokens, a real three-sentence answer,\n# and a tool-calling turn returned\
+        \ tool_calls=['get_weather'] -- a floor that cannot\n# call a tool is a floor\
+        \ that can only chat.\n#\n# No input_cost_per_token / output_cost_per_token,\
+        \ and that is the one row where their\n# absence is correct rather than the\
+        \ 176-million-token accounting hole the minimax row\n# describes: this lane\
+        \ costs nothing per token, so $0.0000 a call is the true price.\n# general_settings.max_budget\
+        \ still bounds it, and the daily request meter is Groq's.\n- model_name: groq\n\
+        \  litellm_params:\n    model: openai/gpt-oss-120b\n    api_base: https://api.groq.com/openai/v1\n\
+        \    api_key: os.environ/GROQ_API_KEY\n    # Shorter than the paid lanes'\
+        \ 300s on purpose. This is the hop a turn reaches\n    # after the lanes above\
+        \ it have already spent their own timeouts; a floor that\n    # takes five\
+        \ minutes to refuse is not a floor. Measured latency above was 0.48s.\n  \
+        \  timeout: 60\n    max_tokens: 8192\n  model_info:\n    # Groq publishes\
+        \ 131,072 tokens of context for gpt-oss-120b. Capped here so an\n    # oversized\
+        \ turn is refused by the estate rather than by the vendor at the end of\n\
+        \    # a cascade, the same reason the minimax row carries a cap.\n    max_input_tokens:\
+        \ 131072\n\n# --- the other two Groq accounts, same model_name on purpose\
+        \ ---------------------------\n# This is what turns `groq` from a single deployment\
+        \ into a real LiteLLM pool. A\n# model_name with one deployment has nothing\
+        \ for `allowed_fails`/`cooldown_time`\n# (router_settings) to route around\
+        \ -- the gemini row's own comment three vendors up\n# measured that exact\
+        \ failure mode, 100% dead-hop-then-recover on every call, forever.\n# Three\
+        \ deployments under one name means a key that goes dead for any reason --\
+        \ revoked,\n# daily quota spent, rate-limited -- gets cooled down and the\
+        \ other two keep answering,\n# and the cooled-down one rejoins on its own\
+        \ the moment the cooldown window ends, with\n# no PR and no agent editing\
+        \ a key. That is cause-agnostic by construction: the router\n# does not know\
+        \ or care WHY a deployment failed, so a revoked key, an empty quota and a\n\
+        # quota that got topped up an hour later are all handled by the same mechanism.\n\
+        # Verified live 2026-09-15 (`GET /openai/v1/models`, curl, both keys): same\
+        \ fourteen-model\n# catalogue as the primary account, `openai/gpt-oss-120b`\
+        \ present on both.\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_2\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n"
   cerebras:
-    # The largest daily allowance in the matrix by volume: Cerebras advertises 1,000,000 free
-    # tokens a day, against Groq's 1,000 REQUESTS a day. Those two units do not compare, and
-    # that is exactly why both are wanted -- a day of long turns exhausts Groq's request count
-    # while barely touching a token budget, and a day of many short turns does the reverse.
-    # Two lanes whose meters run in different units do not empty together.
-    #
-    # OpenAI-compatible at https://api.cerebras.ai/v1, so it is a LiteLLM lane and not an
-    # adapter. The number above is the vendor's published figure, not a measurement; what this
-    # registry MEASURES is the `verify` call below, which is the only claim it makes.
-    #
-    # R52: Cerebras publishes no create-key API (cloud.cerebras.ai is the only road), so the
-    # API key IS the root. The founder makes it once and drops it into Bitwarden Secrets
-    # Manager under the name CEREBRAS_API_KEY; the bridge does the rest, and no session, no
-    # repository and no log ever sees the value.
     kind: secret
     secret: SEED_CEREBRAS_API_KEY
     page: https://cloud.cerebras.ai/platform/apikeys
-    shape: "csk-[A-Za-z0-9._-]{20,}"
-    verify: { method: GET, url: https://api.cerebras.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Cerebras publishes no create-key API
+    shape: csk-[A-Za-z0-9._-]{20,}
+    verify:
+      method: GET
+      url: https://api.cerebras.ai/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
-      # Otto's own copy. No `entry:` for the same reason the groq row gives: there is no
-      # cluster Secret in that namespace to seed Bitwarden FROM, so the bridge reads outward.
-      - { ns: otto-gateway, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
-      # Two more Cerebras accounts, found live in Bitwarden 2026-09-15, same discovery as the
-      # extra Groq keys above and the new sambanova vendor below.
-      - { ns: llm, field: CEREBRAS_API_KEY_2, bw: CEREBRAS_API_KEY_2 }
-      - { ns: llm, field: CEREBRAS_API_KEY_3, bw: CEREBRAS_API_KEY_3 }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: CEREBRAS_API_KEY, bw: CEREBRAS_API_KEY }
-      - { ns: dagster, field: CEREBRAS_API_KEY_2, bw: CEREBRAS_API_KEY_2 }
-      - { ns: dagster, field: CEREBRAS_API_KEY_3, bw: CEREBRAS_API_KEY_3 }
+    - entry: litellm-upstream
+      ns: llm
+      field: CEREBRAS_API_KEY
+      bw: CEREBRAS_API_KEY
+    - ns: otto-gateway
+      field: CEREBRAS_API_KEY
+      bw: CEREBRAS_API_KEY
+      entry: hermes-agent-env
+    - ns: llm
+      field: CEREBRAS_API_KEY_2
+      bw: CEREBRAS_API_KEY_2
+      entry: litellm-upstream
+    - ns: llm
+      field: CEREBRAS_API_KEY_3
+      bw: CEREBRAS_API_KEY_3
+      entry: litellm-upstream
+    - ns: dagster
+      field: CEREBRAS_API_KEY
+      bw: CEREBRAS_API_KEY
+      entry: dagster-env
+    - ns: dagster
+      field: CEREBRAS_API_KEY_2
+      bw: CEREBRAS_API_KEY_2
+      entry: dagster-env
+    - ns: dagster
+      field: CEREBRAS_API_KEY_3
+      bw: CEREBRAS_API_KEY_3
+      entry: dagster-env
     router:
-      lanes: |
-        # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
-        # above reached exactly one consumer -- Otto's private brain -- and the estate router
-        # could not call Cerebras at all, so any other agent that wanted it had to go direct
-        # and off the ledger. The Secret existed in namespace `llm` (human-cerebras, bridged
-        # from Secrets Manager) and simply was not mounted; platform/llm/litellm.yaml mounts
-        # it in the same change.
-        #
-        # gpt-oss-120b, not llama-3.3-70b: asked on this key from inside the otto-gateway pod
-        # on 2026-09-10, Cerebras answered 404 "Model does not exist or you do not have access
-        # to it." GET /v1/models returned three -- gemma-4-31b, gpt-oss-120b, qwen-3.8-27b.
-        # Measured on the same call: openai/gpt-oss-120b HTTP 200 0.25s, and a tool-calling
-        # turn returned tool_calls=['get_weather'].
-        #
-        # gpt-oss over qwen even though qwen is different weights from the Groq floor: this
-        # is the one vendor in the matrix whose meter counts TOKENS (1,000,000/day), and qwen
-        # spent 290 tokens saying READY where gpt-oss spent 104. On a token meter the cheaper
-        # answer keeps the lane alive longer.
-        #
-        # No input/output cost keys: the lane is free, so $0.0000 a call is the true price.
-        # general_settings.max_budget still bounds the router; the daily meter is Cerebras's.
-        - model_name: cerebras
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.cerebras.ai/v1
-            api_key: os.environ/CEREBRAS_API_KEY
-            # 0.25s measured. Short for the same reason the groq row gives: a free lane that
-            # takes minutes to refuse is not a floor.
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 65536
-
-        # --- the other two Cerebras accounts, same model_name on purpose, same reason as the
-        # three groq deployments above: a pool, not a single point of failure, so the router's
-        # own cooldown does the self-healing instead of a fallback chain re-attempting a dead
-        # key fresh on every call. Verified live 2026-09-15, same three-model catalogue
-        # (gemma-4-31b, gpt-oss-120b, qwen-3.8-27b) as the primary account on both keys.
-        - model_name: cerebras
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.cerebras.ai/v1
-            api_key: os.environ/CEREBRAS_API_KEY_2
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 65536
-
-        - model_name: cerebras
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.cerebras.ai/v1
-            api_key: os.environ/CEREBRAS_API_KEY_3
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 65536
-
+      lanes: "# Founder, 2026-09-10: \"all agets send should be in litelln\". Until\
+        \ this row the key\n# above reached exactly one consumer -- Otto's private\
+        \ brain -- and the estate router\n# could not call Cerebras at all, so any\
+        \ other agent that wanted it had to go direct\n# and off the ledger. The Secret\
+        \ existed in namespace `llm` (human-cerebras, bridged\n# from Secrets Manager)\
+        \ and simply was not mounted; platform/llm/litellm.yaml mounts\n# it in the\
+        \ same change.\n#\n# gpt-oss-120b, not llama-3.3-70b: asked on this key from\
+        \ inside the otto-gateway pod\n# on 2026-09-10, Cerebras answered 404 \"Model\
+        \ does not exist or you do not have access\n# to it.\" GET /v1/models returned\
+        \ three -- gemma-4-31b, gpt-oss-120b, qwen-3.8-27b.\n# Measured on the same\
+        \ call: openai/gpt-oss-120b HTTP 200 0.25s, and a tool-calling\n# turn returned\
+        \ tool_calls=['get_weather'].\n#\n# gpt-oss over qwen even though qwen is\
+        \ different weights from the Groq floor: this\n# is the one vendor in the\
+        \ matrix whose meter counts TOKENS (1,000,000/day), and qwen\n# spent 290\
+        \ tokens saying READY where gpt-oss spent 104. On a token meter the cheaper\n\
+        # answer keeps the lane alive longer.\n#\n# No input/output cost keys: the\
+        \ lane is free, so $0.0000 a call is the true price.\n# general_settings.max_budget\
+        \ still bounds the router; the daily meter is Cerebras's.\n- model_name: cerebras\n\
+        \  litellm_params:\n    model: openai/gpt-oss-120b\n    api_base: https://api.cerebras.ai/v1\n\
+        \    api_key: os.environ/CEREBRAS_API_KEY\n    # 0.25s measured. Short for\
+        \ the same reason the groq row gives: a free lane that\n    # takes minutes\
+        \ to refuse is not a floor.\n    timeout: 60\n    max_tokens: 8192\n  model_info:\n\
+        \    max_input_tokens: 65536\n\n# --- the other two Cerebras accounts, same\
+        \ model_name on purpose, same reason as the\n# three groq deployments above:\
+        \ a pool, not a single point of failure, so the router's\n# own cooldown does\
+        \ the self-healing instead of a fallback chain re-attempting a dead\n# key\
+        \ fresh on every call. Verified live 2026-09-15, same three-model catalogue\n\
+        # (gemma-4-31b, gpt-oss-120b, qwen-3.8-27b) as the primary account on both\
+        \ keys.\n- model_name: cerebras\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY_2\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 65536\n\n- model_name: cerebras\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY_3\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 65536\n"
   nvidia:
-    # NVIDIA's own NIM endpoints, OpenAI-compatible at https://integrate.api.nvidia.com/v1.
-    # Its allowance is counted PER MODEL rather than per account, which is a different shape
-    # from every other row here: three models on one key are three separate meters, so this
-    # single credential is worth more than one lane. Again the vendor's published shape, not a
-    # measurement -- the `verify` below is the only thing this file measures.
-    #
-    # R52: build.nvidia.com is the only road to the key, so the API key IS the root. One key,
-    # dropped into Bitwarden as NVIDIA_API_KEY, and code does everything after it.
     kind: secret
     secret: SEED_NVIDIA_API_KEY
     page: https://build.nvidia.com/settings/api-keys
-    shape: "nvapi-[A-Za-z0-9._-]{20,}"
-    verify: { method: GET, url: https://integrate.api.nvidia.com/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # NVIDIA publishes no create-key API reachable without a console session
+    shape: nvapi-[A-Za-z0-9._-]{20,}
+    verify:
+      method: GET
+      url: https://integrate.api.nvidia.com/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
-      - { ns: otto-gateway, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: NVIDIA_API_KEY, bw: NVIDIA_API_KEY }
+    - entry: litellm-upstream
+      ns: llm
+      field: NVIDIA_API_KEY
+      bw: NVIDIA_API_KEY
+    - ns: otto-gateway
+      field: NVIDIA_API_KEY
+      bw: NVIDIA_API_KEY
+      entry: hermes-agent-env
+    - ns: dagster
+      field: NVIDIA_API_KEY
+      bw: NVIDIA_API_KEY
+      entry: dagster-env
     router:
-      lanes: |
-        # Same story as the cerebras row above, and the same fix: the key was in Secrets
-        # Manager, the bridge Secret human-nvidia existed in namespace `llm`, and nothing
-        # mounted it, so the estate router could not reach NVIDIA at all.
-        #
-        # nemotron-3.5-lightning-30b-a3b, not meta/llama-3.3-70b-instruct: asked on this key
-        # from inside the otto-gateway pod on 2026-09-10, NVIDIA answered
-        #   410 "... has reached its end of life on 2026-08-26T09:00:00Z"
-        # Measured on the replacement, same call: plain chat HTTP 200 in 2.92s, and a
-        # TOOL-CALLING turn HTTP 200 in 38.33s. That second number is why the timeout below
-        # is not the 60s the other free lanes carry: a lane whose tool turns take 38s and
-        # whose budget is 25s is recorded as the vendor refusing when the vendor answered.
-        #
-        # NVIDIA meters per MODEL (10,000 requests/day/model), not per account, which is a
-        # third meter shape again -- lanes whose meters run in different units do not empty
-        # together, which is the whole point of carrying more than one free vendor.
-        - model_name: nvidia
-          litellm_params:
-            model: openai/nvidia/nemotron-3.5-lightning-30b-a3b
-            api_base: https://integrate.api.nvidia.com/v1
-            api_key: os.environ/NVIDIA_API_KEY
-            timeout: 90
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
+      lanes: "# Same story as the cerebras row above, and the same fix: the key was\
+        \ in Secrets\n# Manager, the bridge Secret human-nvidia existed in namespace\
+        \ `llm`, and nothing\n# mounted it, so the estate router could not reach NVIDIA\
+        \ at all.\n#\n# nemotron-3.5-lightning-30b-a3b, not meta/llama-3.3-70b-instruct:\
+        \ asked on this key\n# from inside the otto-gateway pod on 2026-09-10, NVIDIA\
+        \ answered\n#   410 \"... has reached its end of life on 2026-08-26T09:00:00Z\"\
+        \n# Measured on the replacement, same call: plain chat HTTP 200 in 2.92s,\
+        \ and a\n# TOOL-CALLING turn HTTP 200 in 38.33s. That second number is why\
+        \ the timeout below\n# is not the 60s the other free lanes carry: a lane whose\
+        \ tool turns take 38s and\n# whose budget is 25s is recorded as the vendor\
+        \ refusing when the vendor answered.\n#\n# NVIDIA meters per MODEL (10,000\
+        \ requests/day/model), not per account, which is a\n# third meter shape again\
+        \ -- lanes whose meters run in different units do not empty\n# together, which\
+        \ is the whole point of carrying more than one free vendor.\n- model_name:\
+        \ nvidia\n  litellm_params:\n    model: openai/nvidia/nemotron-3.5-lightning-30b-a3b\n\
+        \    api_base: https://integrate.api.nvidia.com/v1\n    api_key: os.environ/NVIDIA_API_KEY\n\
+        \    timeout: 90\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n"
   sambanova:
-    # A vendor with no row at all until 2026-09-15, found live in the same Bitwarden sweep that
-    # turned up the extra groq/cerebras keys above: three keys (SAMBANOVA_API_KEY/_2/_3) sitting
-    # in Secrets Manager, dropped in by the founder, never wired into the router because nothing
-    # in this registry named the vendor. OpenAI-compatible at https://api.sambanova.ai/v1, so it
-    # is a LiteLLM lane and not an adapter.
-    #
-    # Verified live 2026-09-15, `GET /v1/models` on all three keys: identical seven-model
-    # catalogue on every key (DeepSeek-V3.1, DeepSeek-V3.2, Meta-Llama-3.3-70B-Instruct,
-    # MiniMax-M2.7, MiniMax-M3, gemma-4-31B-it, gpt-oss-120b). gpt-oss-120b chosen below, not a
-    # bigger model on the list: it is the same weights the groq and cerebras rows already run,
-    # so all three free vendors answer from the same model family and a caller who lands on any
-    # of them gets comparable output, not a coin flip between model quality tiers.
-    #
-    # Three independent keys, one `model_name`, from the first row -- not grown into a pool
-    # later the way groq/cerebras were, now that the router pod's cooldown mechanism no longer
-    # goes unused for a lack of a second deployment (see the groq block's pool comment above).
-    #
-    # R52: cloud.sambanova.ai is the only road to the key, so the API key IS the root. Rotation
-    # is `assisted` like every other free vendor here, even though these three were made before
-    # this row existed to ask for them.
     kind: secret
     secret: SEED_SAMBANOVA_API_KEY
     page: https://cloud.sambanova.ai/apis
-    shape: "[A-Za-z0-9]{20,}"
-    verify: { method: GET, url: https://api.sambanova.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # SambaNova publishes no create-key API reachable without a console session
+    shape: '[A-Za-z0-9]{20,}'
+    verify:
+      method: GET
+      url: https://api.sambanova.ai/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { ns: llm, field: SAMBANOVA_API_KEY, bw: SAMBANOVA_API_KEY }
-      - { ns: llm, field: SAMBANOVA_API_KEY_2, bw: SAMBANOVA_API_KEY_2 }
-      - { ns: llm, field: SAMBANOVA_API_KEY_3, bw: SAMBANOVA_API_KEY_3 }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: SAMBANOVA_API_KEY, bw: SAMBANOVA_API_KEY }
-      - { ns: dagster, field: SAMBANOVA_API_KEY_2, bw: SAMBANOVA_API_KEY_2 }
-      - { ns: dagster, field: SAMBANOVA_API_KEY_3, bw: SAMBANOVA_API_KEY_3 }
+    - ns: llm
+      field: SAMBANOVA_API_KEY
+      bw: SAMBANOVA_API_KEY
+      entry: litellm-upstream
+    - ns: llm
+      field: SAMBANOVA_API_KEY_2
+      bw: SAMBANOVA_API_KEY_2
+      entry: litellm-upstream
+    - ns: llm
+      field: SAMBANOVA_API_KEY_3
+      bw: SAMBANOVA_API_KEY_3
+      entry: litellm-upstream
+    - ns: dagster
+      field: SAMBANOVA_API_KEY
+      bw: SAMBANOVA_API_KEY
+      entry: dagster-env
+    - ns: dagster
+      field: SAMBANOVA_API_KEY_2
+      bw: SAMBANOVA_API_KEY_2
+      entry: dagster-env
+    - ns: dagster
+      field: SAMBANOVA_API_KEY_3
+      bw: SAMBANOVA_API_KEY_3
+      entry: dagster-env
     router:
-      lanes: |
-        - model_name: sambanova
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.sambanova.ai/v1
-            api_key: os.environ/SAMBANOVA_API_KEY
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
-        - model_name: sambanova
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.sambanova.ai/v1
-            api_key: os.environ/SAMBANOVA_API_KEY_2
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
-        - model_name: sambanova
-          litellm_params:
-            model: openai/gpt-oss-120b
-            api_base: https://api.sambanova.ai/v1
-            api_key: os.environ/SAMBANOVA_API_KEY_3
-            timeout: 60
-            max_tokens: 8192
-          model_info:
-            max_input_tokens: 131072
-
-  # Cloudflare Workers AI is NOT a row, and the reason is a second value. Its OpenAI-compatible
-  # endpoint is /accounts/{account_id}/ai/v1, so a lane needs the account id as well as a token,
-  # and no file in this estate holds a Cloudflare account id (grepped 2026-09-08: the external-dns
-  # credential is a token alone). A row here whose bootstrap writes one half of a two-half
-  # credential is a human-vault bridge that can never go healthy -- the exact shape of the kimi
-  # row that was deleted. It becomes a row when the account id has a home, not before. Its token
-  # is also a separate credential from the DNS one either way: that token is scoped Zone:DNS:Edit
-  # and cannot call Workers AI (R52, one credential is one job).
-
-  # Added 2026-09-10, with the embed chain above. Cohere embed-english-v3.0 is the better of
-  # the two embedding models the estate can reach, and it is the second hop on that chain.
-  #
-  # store_default is human-vault and that is the whole reason this row works: the founder holds
-  # this key in Bitwarden Secrets Manager, so nothing is pasted into a portal, nothing is seeded
-  # and no terminal is opened. The generated human-cohere ExternalSecret reads COHERE_API_KEY by
-  # name; a name the vault does not hold fails that one Secret alone and says so, which is also
-  # how the estate finds out whether the key is really there without printing a value. The router
-  # mounts it at /run/secrets/human/cohere, and its own command exports every mounted file by
-  # basename, which is what `os.environ/COHERE_API_KEY` in the lane resolves to.
-  #
-  # R52: Cohere publishes no create-key API (dashboard.cohere.com/api-keys is the only road,
-  # read 2026-09-10), so the API key IS the root. He makes it once and the estate does the rest.
+      lanes: "- model_name: sambanova\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n\n- model_name: sambanova\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY_2\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n\n- model_name: sambanova\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY_3\n\
+        \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
+        \ 131072\n"
   cohere:
     kind: secret
     secret: SEED_COHERE_API_KEY
     page: https://dashboard.cohere.com/api-keys
-    shape: "[A-Za-z0-9]{40}"
-    verify: { method: GET, url: https://api.cohere.com/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Cohere publishes no create-key API (read 2026-09-10)
+    shape: '[A-Za-z0-9]{40}'
+    verify:
+      method: GET
+      url: https://api.cohere.com/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: litellm-upstream, ns: llm, field: COHERE_API_KEY, bw: COHERE_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: COHERE_API_KEY, bw: COHERE_API_KEY }
+    - entry: litellm-upstream
+      ns: llm
+      field: COHERE_API_KEY
+      bw: COHERE_API_KEY
+    - ns: dagster
+      field: COHERE_API_KEY
+      bw: COHERE_API_KEY
+      entry: dagster-env
     router:
-      # The chain's second hop is declared on this row rather than on the gemini row that
-      # carries the `embed` lane itself, because a lane belongs to the vendor whose key it
-      # spends. A router that mounts COHERE_API_KEY and serves no row on it is what
-      # tests/test_every_vendor_key_the_router_holds_has_a_lane.py refuses, and it did.
-      cluster_lanes: |
-        # The embed lane's last fallback. It reads the key this row carries into the router
-        # through the human door, mounted at /run/secrets/human/cohere.
-        #
-        # embed-v4.0, and not the embed-english-v3.0 this row carried when it was written this
-        # morning. The v3 models emit 1024 floats and accept no width parameter; the other two
-        # hops of this chain emit 1536, which is the width otto_facts.embedding is created at.
-        # So on the one day both lanes above refuse, this hop would have written a vector the
-        # store cannot compare to anything it already holds -- not a worse answer, no answer --
-        # and nothing would have said so. v4 takes an output width and 1536 is one it accepts.
-        - model_name: embed-cohere
-          litellm_params:
-            model: cohere/embed-v4.0
-            api_key: os.environ/COHERE_API_KEY
-            dimensions: 1536
-            timeout: 120
-          model_info:
-            mode: embedding
-
+      cluster_lanes: "# The embed lane's last fallback. It reads the key this row\
+        \ carries into the router\n# through the human door, mounted at /run/secrets/human/cohere.\n\
+        #\n# embed-v4.0, and not the embed-english-v3.0 this row carried when it was\
+        \ written this\n# morning. The v3 models emit 1024 floats and accept no width\
+        \ parameter; the other two\n# hops of this chain emit 1536, which is the width\
+        \ otto_facts.embedding is created at.\n# So on the one day both lanes above\
+        \ refuse, this hop would have written a vector the\n# store cannot compare\
+        \ to anything it already holds -- not a worse answer, no answer --\n# and\
+        \ nothing would have said so. v4 takes an output width and 1536 is one it\
+        \ accepts.\n- model_name: embed-cohere\n  litellm_params:\n    model: cohere/embed-v4.0\n\
+        \    api_key: os.environ/COHERE_API_KEY\n    dimensions: 1536\n    timeout:\
+        \ 120\n  model_info:\n    mode: embedding\n"
   twilio:
-    # Added 2026-09-10, when the founder created the account for Mum's Sovereign Concierge.
-    #
-    # The concierge is the consumer: its WhatsApp surface is the product's main door, and the
-    # webhook verifies Twilio's HMAC signature before it trusts anything in the request --
-    # including the `From` field, which whoever sends the POST controls. That verification needs
-    # the Auth Token, and this row is how it arrives.
-    #
-    # store_default is human-vault, so the token the founder holds in Bitwarden Secrets Manager is
-    # read by name and never pasted into a portal, a terminal or this repository. The Account SID
-    # is NOT here: it is an identifier, not a credential, and it lives in the concierge's own
-    # ~/.concierge/env beside the sender number.
-    #
-    # R52: Twilio publishes no create-token API for the primary Auth Token (the Console is the
-    # only road, read 2026-09-10), so the token IS the root. He makes it once and the estate does
-    # the rest.
     kind: secret
     secret: SEED_TWILIO_AUTH_TOKEN
     page: https://console.twilio.com/
-    shape: "[0-9a-f]{32}"
-    rotation: assisted  # Twilio publishes no create-token API (read 2026-09-10)
+    shape: '[0-9a-f]{32}'
+    rotation: assisted
     store_default: human-vault
     targets:
-      # No litellm-upstream field and no router lane: this key routes nothing. It is the
-      # concierge's, and the concierge reads it from the human door by that name. `entry` is
-      # required by the push-secrets half of the bridge, which names the vault entry a value
-      # would be carried UP into -- bin/idp-vendor-render fails without it.
-      - { entry: concierge-twilio, ns: concierge, field: TWILIO_AUTH_TOKEN, bw: TWILIO_AUTH_TOKEN }
-      # The two phone numbers ARE the same facts about the same Twilio account as the token, so
-      # they are targets of this one vendor and land in the same ExternalSecret -- never a second
-      # store (LAW 44). Measured 2026-09-13: the projected secret carried only TWILIO_AUTH_TOKEN,
-      # so the concierge did not know which number is Nunn's; its WhatsApp handler refuses any
-      # sender that is not MOM_PHONE_NUMBER and answers a bare empty acknowledgement otherwise --
-      # HTTP 200 and silence on her phone, while every probe the estate owned read healthy.
-      #
-      # They are declared HERE and nowhere else. This file is the root of the vendor-bridge
-      # Helm chart (Chart.yaml beside it), and templates/externalsecrets.yaml reads it with
-      # `.Files.Get`, so Flux renders the ExternalSecret for this target in the cluster and
-      # there is no manifest anywhere to hand-add a row to. Until 2026-09-22 there was --
-      # two committed files written by bin/idp-vendor-render -- and they went stale the usual
-      # way on 36a0a0e09.
-      #
-      # Both are born in a browser: Twilio's console is where the WhatsApp sender and her number
-      # are visible, and no create-API mints a phone number for a person. That makes them
-      # FOUNDER ACTION values (LAW 47), named here and produced by one person, once -- and
-      # optional, so the deployment that would report them missing is not held out by their
-      # absence (bin/idp-externalsecret-blockers tells the two apart).
-      - { entry: concierge-twilio, ns: concierge, field: MOM_PHONE_NUMBER, bw: MOM_PHONE_NUMBER, optional: true }
-      - { entry: concierge-twilio, ns: concierge, field: GUARDIAN_PHONE_NUMBER, bw: GUARDIAN_PHONE_NUMBER, optional: true }
-      # Same fact class as the two phone numbers above: mums-concierge/src/mums_concierge/
-      # bootstrap.py's CLUSTER_SECRETS fetches five fields from this one secret, and only three
-      # were ever declared here -- the WhatsApp sender number and the public webhook URL were
-      # silently absent from the bridge, so even a founder who filled in Bitwarden completely
-      # would never see them land in the cluster. Same vendor, same ExternalSecret (LAW 44).
-      - { entry: concierge-twilio, ns: concierge, field: TWILIO_WHATSAPP_NUMBER, bw: TWILIO_WHATSAPP_NUMBER, optional: true }
-      - { entry: concierge-twilio, ns: concierge, field: PUBLIC_SERVER_URL, bw: PUBLIC_SERVER_URL, optional: true }
-
-  # The card key. Not a vendor: it is the symmetric key the concierge's card object is encrypted
-  # with, and it arrives the same way every other credential does -- the founder drops it into
-  # Bitwarden Secrets Manager under this name and the bridge carries it into the namespace. Nothing
-  # is pasted into a portal and no value is typed into this repository (R52).
-  #
-  # Deliberately a DIFFERENT key from the profile key, so a leaked profile key is a leaked set of
-  # cookies rather than a leaked card. The profile key moves on every order; the card key does not
-  # need to be anywhere near it.
-  #
-  # The card itself is not a secret in this registry: it is one object per customer, named
-  # `<customer>/pan.enc` in the agent-cards bucket, written by the concierge's own enrolment and
-  # read once per order by the sandbox. What is here is the key that makes it readable, and only
-  # the sandbox and the enrolment hold it.
+    - entry: concierge-twilio
+      ns: concierge
+      field: TWILIO_AUTH_TOKEN
+      bw: TWILIO_AUTH_TOKEN
+    - entry: concierge-twilio
+      ns: concierge
+      field: MOM_PHONE_NUMBER
+      bw: MOM_PHONE_NUMBER
+      optional: true
+    - entry: concierge-twilio
+      ns: concierge
+      field: GUARDIAN_PHONE_NUMBER
+      bw: GUARDIAN_PHONE_NUMBER
+      optional: true
+    - entry: concierge-twilio
+      ns: concierge
+      field: TWILIO_WHATSAPP_NUMBER
+      bw: TWILIO_WHATSAPP_NUMBER
+      optional: true
+    - entry: concierge-twilio
+      ns: concierge
+      field: PUBLIC_SERVER_URL
+      bw: PUBLIC_SERVER_URL
+      optional: true
   card-key:
     kind: secret
     secret: SEED_CONCIERGE_CARD_KEY
     page: https://bitwarden.com/
-    shape: "[0-9a-f]{64}"
+    shape: '[0-9a-f]{64}'
     rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: concierge-card-key, ns: concierge, field: CARD_KEY_HEX, bw: CONCIERGE_CARD_KEY }
-
+    - entry: concierge-card-key
+      ns: concierge
+      field: CARD_KEY_HEX
+      bw: CONCIERGE_CARD_KEY
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
     page: https://dashboard.exa.ai/api-keys
-    shape: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-    verify: { method: POST, url: https://api.exa.ai/search, headers: { x-api-key: "{key}", Content-Type: application/json }, body: '{"query":"estate bootstrap","numResults":1}' }
-    rotation: assisted  # Exa publishes no create-key API
+    shape: '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    verify:
+      method: POST
+      url: https://api.exa.ai/search
+      headers:
+        x-api-key: '{key}'
+        Content-Type: application/json
+      body: '{"query":"estate bootstrap","numResults":1}'
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: prospector-engine-env, ns: prospector, field: EXA_API_KEY, bw: EXA_API_KEY }
-      - { entry: hermes-agent-env, ns: hermes-agent, field: EXA_API_KEY, bw: EXA_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: EXA_API_KEY, bw: EXA_API_KEY }
+    - entry: prospector-engine-env
+      ns: prospector
+      field: EXA_API_KEY
+      bw: EXA_API_KEY
+    - entry: hermes-agent-env
+      ns: hermes-agent
+      field: EXA_API_KEY
+      bw: EXA_API_KEY
+    - ns: dagster
+      field: EXA_API_KEY
+      bw: EXA_API_KEY
+      entry: dagster-env
   cursor:
-    # crew#751: Cursor is an agent harness, not a LiteLLM completions lane. The key authenticates
-    # `agent -p` on the Mac via cursor-agent. Architect stays on the model router. Cursor publishes
-    # no create-key API (dashboard Integrations / API Keys, read 2026-08-31); the key is the root.
     kind: secret
     secret: SEED_CURSOR_API_KEY
     page: https://cursor.com/dashboard/integrations
-    shape: "(key_|crsr_|cursor_)[A-Za-z0-9_-]{16,}"
-    verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Cursor publishes no create-key API
+    shape: (key_|crsr_|cursor_)[A-Za-z0-9_-]{16,}
+    verify:
+      method: GET
+      url: https://api.cursor.com/v1/me
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: hermes-agent-env, ns: hermes-agent, field: CURSOR_API_KEY, bw: CURSOR_API_KEY }
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: CURSOR_API_KEY, bw: CURSOR_API_KEY }
+    - entry: hermes-agent-env
+      ns: hermes-agent
+      field: CURSOR_API_KEY
+      bw: CURSOR_API_KEY
+    - ns: dagster
+      field: CURSOR_API_KEY
+      bw: CURSOR_API_KEY
+      entry: dagster-env
   telegram:
-    # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
     kind: secret
     page: https://t.me/BotFather
-    shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}"
-    verify: { method: GET, url: "https://api.telegram.org/bot{key}/getMe", headers: {} }
-    rotation: assisted  # BotFather has no HTTP API
+    shape: '[0-9]{8,10}:[A-Za-z0-9_-]{35}'
+    verify:
+      method: GET
+      url: https://api.telegram.org/bot{key}/getMe
+      headers: {}
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: hermes-agent-env, ns: hermes-agent, field: TELEGRAM_BOT_TOKEN, secret: SEED_TELEGRAM_HERMES_BOT_TOKEN, bw: TELEGRAM_HERMES_BOT_TOKEN }
-      - { entry: flux-telegram, ns: flux-system, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, bw: TELEGRAM_ALERTS_BOT_TOKEN }
+    - entry: hermes-agent-env
+      ns: hermes-agent
+      field: TELEGRAM_BOT_TOKEN
+      secret: SEED_TELEGRAM_HERMES_BOT_TOKEN
+      bw: TELEGRAM_HERMES_BOT_TOKEN
+    - entry: flux-telegram
+      ns: flux-system
+      field: token
+      secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN
+      bw: TELEGRAM_ALERTS_BOT_TOKEN
   apprise_telegram:
-    # The founder's alert channel (root-trust row notify-apprise-founder-telegram). Apprise wants
-    # one URL, tgram://<bottoken>/<chatid>/, but a URL is not gradeable whole: the two halves only
-    # mean something to Telegram together, so this is a PAIR like google_oauth below. `getChat`
-    # grades both in one call: a wrong token is refused outright, a chat the bot cannot see is an
-    # error body. platform/notify/external-secret.yaml composes the tgram:// URL from the two
-    # vault fields, so no secret store ever holds a half-URL.
     kind: secret
     pair: true
     page: https://t.me/BotFather
     verify:
       method: GET
-      url: "https://api.telegram.org/bot{token}/getChat?chat_id={chat}"
+      url: https://api.telegram.org/bot{token}/getChat?chat_id={chat}
       headers: {}
-    rotation: assisted  # BotFather has no HTTP API
+    rotation: assisted
     store_default: human-vault
     targets:
-      - { entry: notify-apprise-founder-telegram, ns: notify, field: token, secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN, shape: "[0-9]{8,10}:[A-Za-z0-9_-]{35}", bw: TELEGRAM_ALERTS_BOT_TOKEN }
-      - { entry: notify-apprise-founder-telegram, ns: notify, field: chat, secret: SEED_TELEGRAM_ALERTS_CHAT_ID, shape: "-?[0-9]{6,14}", bw: TELEGRAM_ALERTS_CHAT_ID }
+    - entry: notify-apprise-founder-telegram
+      ns: notify
+      field: token
+      secret: SEED_TELEGRAM_ALERTS_BOT_TOKEN
+      shape: '[0-9]{8,10}:[A-Za-z0-9_-]{35}'
+      bw: TELEGRAM_ALERTS_BOT_TOKEN
+    - entry: notify-apprise-founder-telegram
+      ns: notify
+      field: chat
+      secret: SEED_TELEGRAM_ALERTS_CHAT_ID
+      shape: -?[0-9]{6,14}
+      bw: TELEGRAM_ALERTS_CHAT_ID
   stripe:
     kind: secret
     secret: SEED_STRIPE_SECRET_KEY
     page: https://dashboard.stripe.com/apikeys
-    shape: "sk_(live|test)_[A-Za-z0-9]{24,}"
-    verify: { method: GET, url: https://api.stripe.com/v1/balance, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # Stripe key creation needs dashboard
+    shape: sk_(live|test)_[A-Za-z0-9]{24,}
+    verify:
+      method: GET
+      url: https://api.stripe.com/v1/balance
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      # crew#832 CP3: the warden's own copy, so it can re-prove this key without reading it
-      # from an environment variable (Kyverno secrets-not-from-env-vars). No `entry:`: the
-      # warden only ever reads outward from Bitwarden, same as the otto-gateway copies above.
-      - { ns: dagster, field: Stripe__ApiKey, bw: STRIPE_SECRET_KEY }
-      # Stripe__ApiKey, not Stripe__SecretKey: the live prospector-store-api-env Secret carries
-      # Stripe__ApiKey and Stripe__WebhookSecret, and nothing in the estate has ever read a key
-      # called Stripe__SecretKey. Until 2026-09-07 this row named a field that does not exist,
-      # so the door would have delivered the founder's Stripe key under a name the shop ignores.
-      - { entry: prospector-store-api-env, ns: prospector, field: Stripe__ApiKey, bw: STRIPE_SECRET_KEY }
+    - ns: dagster
+      field: Stripe__ApiKey
+      bw: STRIPE_SECRET_KEY
+      entry: dagster-env
+    - entry: prospector-store-api-env
+      ns: prospector
+      field: Stripe__ApiKey
+      bw: STRIPE_SECRET_KEY
   google_oauth:
-    # The shop's "Continue with Google" button. It has been absent from mumchimp.com since the move
-    # to Kubernetes: Store.Api registers Google only when both halves are non-empty
-    # (Auth/AuthServiceCollectionExtensions.cs:203-211), the k8s manifest never carried them, so
-    # /v1/auth/external/providers answers 200 {"providers":[]} and the sign-in panel renders nothing
-    # (SocialSignIn.tsx:52-53 returns null on an empty list). Measured against the live API
-    # 2026-08-31.
-    #
-    # Google publishes no create-OAuth-client API. The only programmatic road is IAP-scoped, and its
-    # own page says the clients it makes are "locked for IAP usage only, and therefore the API does
-    # not allow any updates to the redirect URI or other attributes"
-    # (its "Creating OAuth clients programmatically" page under /iap/docs, read 2026-08-31) -- so it
-    # cannot make a client whose redirect URI is the store's. The host is deliberately not spelled
-    # out: this file is the provider-blind layer; a cloud host named outside platform/oci,
-    # platform/secret-store and clusters/ is refused (R36).
-    # Same shape as BotFather above: the client IS the root, made once at `page` (R52).
-    #
-    # It is a PAIR, and that is the one thing this registry could not express before. Neither half
-    # can be graded alone: an id with no secret and a secret with no id are both meaningless to
-    # Google. `pair: true` keeps the two halves in one group, each with its own repository secret and
-    # its own anchored shape, verified in one call and written together or not at all.
     kind: secret
     pair: true
     page: https://console.developers.google.com/auth/clients
-    # The token endpoint is the only thing that will grade a client without a real authorization
-    # code, and it grades it by REFUSING. Measured 2026-08-31 with a made-up pair: 401
-    # {"error":"invalid_client","error_description":"The OAuth client was not found."}. Google's own
-    # error table calls invalid_client "The OAuth client secret is incorrect", and a pair it knows
-    # gets past that to grade the code, answering invalid_grant, "The supplied authorization code is
-    # invalid or in the wrong format" (https://developers.google.com/identity/protocols/oauth2/
-    # web-server, read 2026-08-31). So the rule is refuse-on-invalid_client, which is exactly the
-    # failure this has to catch: a typo, a revoked client, or another project's client. The probe
-    # code is junk on purpose and no token is ever issued.
     verify:
       method: POST
       url: https://oauth2.googleapis.com/token
-      headers: { Content-Type: application/x-www-form-urlencoded }
-      body: "grant_type=authorization_code&code=idp-bootstrap-probe&client_id={Authentication__Google__ClientId}&client_secret={Authentication__Google__ClientSecret}&redirect_uri=https://api.${ESTATE_ZONE}/signin-google"
+      headers:
+        Content-Type: application/x-www-form-urlencoded
+      body: grant_type=authorization_code&code=idp-bootstrap-probe&client_id={Authentication__Google__ClientId}&client_secret={Authentication__Google__ClientSecret}&redirect_uri=https://api.${ESTATE_ZONE}/signin-google
       refuse_when: '"error"\s*:\s*"invalid_client"'
-    rotation: assisted  # Google publishes no create-OAuth-client API
+    rotation: assisted
     store_default: human-vault
-    # Nothing downstream changes. Kyverno secrets-not-from-env-vars refuses envFrom.secretRef and
-    # secretKeyRef, so the store reads its secrets as FILES through KeyPerFile, which turns a file
-    # named Authentication__Google__ClientId into the configuration key Authentication:Google:ClientId
-    # -- the exact key AuthServiceCollectionExtensions.cs:203 reads. The ExternalSecret pulls the
-    # whole prospector-store-api-env object with dataFrom.extract, so a new field in the vault object
-    # reaches the pod with no manifest edit at all.
     targets:
-      - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientId, secret: SEED_GOOGLE_OAUTH_CLIENT_ID, shape: "[0-9]+-[a-z0-9]+\\.apps\\.googleusercontent\\.com", bw: GOOGLE_OAUTH_CLIENT_ID }
-      - { entry: prospector-store-api-env, ns: prospector, field: Authentication__Google__ClientSecret, secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET, shape: "GOCSPX-[A-Za-z0-9_-]{20,}", bw: GOOGLE_OAUTH_CLIENT_SECRET }
-
-  # -------------------------------------------------------------------------------------------
-  # ADR 0030: TypeSafe Jev — the estate's unified confidence-and-decision service.
-  # Every agent decision point calls mcp/plugins/jev.py, which reads this key. The key is set
-  # once by the founder in Bitwarden Secrets Manager under TYPESAFE_API_KEY; the bridge carries it.
-  # TypeSafe publishes a /v1/models endpoint that answers 2xx only with a live key.
-  # -------------------------------------------------------------------------------------------
+    - entry: prospector-store-api-env
+      ns: prospector
+      field: Authentication__Google__ClientId
+      secret: SEED_GOOGLE_OAUTH_CLIENT_ID
+      shape: '[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com'
+      bw: GOOGLE_OAUTH_CLIENT_ID
+    - entry: prospector-store-api-env
+      ns: prospector
+      field: Authentication__Google__ClientSecret
+      secret: SEED_GOOGLE_OAUTH_CLIENT_SECRET
+      shape: GOCSPX-[A-Za-z0-9_-]{20,}
+      bw: GOOGLE_OAUTH_CLIENT_SECRET
   typesafe:
     kind: secret
     secret: SEED_TYPESAFE_API_KEY
     page: https://typesafe.ai/dashboard/api-keys
-    # TypeSafe keys start with "ts-" followed by alphanumeric characters (measured 2026-09-21)
-    shape: "ts-[A-Za-z0-9_-]{20,}"
-    verify: { method: GET, url: https://api.typesafe.ai/v1/models, headers: { Authorization: "Bearer {key}" } }
-    rotation: assisted  # TypeSafe publishes no create-key API reachable without a console session
+    shape: ts-[A-Za-z0-9_-]{20,}
+    verify:
+      method: GET
+      url: https://api.typesafe.ai/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
     store_default: human-vault
     targets:
-      # The MCP server reads TYPESAFE_API_KEY from its environment. The estate holds the only copy
-      # (LAW 46, ADR 0030); no other repo holds it. The MCP pod mounts /run/secrets/human/typesafe
-      # and exports by basename.
-      - { entry: mcp-gateway, ns: mcp, field: TYPESAFE_API_KEY, bw: TYPESAFE_API_KEY }
-      # The warden's copy for re-proving the key (crew#832 CP3, same pattern as every vendor above)
-      - { ns: dagster, field: TYPESAFE_API_KEY, bw: TYPESAFE_API_KEY }
-
-# Not here yet (crew#579 stays open for it): Mailjet, a key AND a secret pair, two
-# prospector-store-api-env fields. `pair: true` above is the road it will take.
+    - entry: mcp-gateway
+      ns: mcp
+      field: TYPESAFE_API_KEY
+      bw: TYPESAFE_API_KEY
+    - ns: dagster
+      field: TYPESAFE_API_KEY
+      bw: TYPESAFE_API_KEY
+      entry: dagster-env
