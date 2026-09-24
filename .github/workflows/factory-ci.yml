@@ -22,9 +22,9 @@ jobs:
         with: { fetch-depth: 0 }
       - uses: actions/setup-python@v5
         with: { python-version: "3.12", cache: pip }
-      - run: pip install --quiet pyyaml pytest jsonschema
+      - run: pip install --quiet pyyaml pytest pytest-xdist jsonschema
       - name: Tests
-        run: pytest factory/tests/ -q --maxfail=5
+        run: pytest factory/tests/ -q --maxfail=5 -n 0
 
   publish:
     needs: test
@@ -41,6 +41,7 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:latest
