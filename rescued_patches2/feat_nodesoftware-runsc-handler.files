@@ -1,6 +1,0 @@
-platform/nodesoftware-operator/runtimes/runsc/Dockerfile
-platform/nodesoftware-operator/runtimes/runsc/README.md
-platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-install
-platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-probe
-platform/nodesoftware-operator/runtimes/runsc/scripts/nodesoftware-runsc-uninstall
-platform/nodesoftware-operator/runtimes/runsc/scripts/test-handler.sh

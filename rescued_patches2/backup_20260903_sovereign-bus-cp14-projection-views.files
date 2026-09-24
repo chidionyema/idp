@@ -1,6 +1,0 @@
-docs/demo/sb.md
-docs/onboarding/sb.md
-sovereign/cli.py
-sovereign/config.py
-sovereign/engine/projection.py
-sovereign/engine/test_projection.py

@@ -1,6 +1,0 @@
-clusters/oke/edge.yaml
-docs/reference/incident-register.yaml
-platform/image-automation/backstage.yaml
-platform/image-automation/kustomization.yaml
-platform/image-automation/prospector.yaml
-tests/test_incident_crew693_prospector_images_reach_the_cluster_without_a_hand.py

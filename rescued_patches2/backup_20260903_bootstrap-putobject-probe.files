@@ -1,2 +1,0 @@
-bin/idp-oci-bootstrap
-tests/test_incident_policy_granted_never_exercised.py

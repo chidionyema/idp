@@ -1,5 +1,0 @@
-bin/idp-standby-drill
-clusters/oke/edge.yaml
-docs/evidence/pr-254/20260826T220028Z-1.png
-platform/hermes-agent/gateway.yaml
-platform/hermes-agent/kustomization.yaml

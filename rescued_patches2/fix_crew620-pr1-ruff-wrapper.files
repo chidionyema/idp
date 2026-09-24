@@ -1,5 +1,0 @@
-.githooks/pre-commit
-.github/workflows/ruff-required.yml
-bin/idp-ruff
-bin/idp-ruff-format
-bin/idp-ruff-ratchet

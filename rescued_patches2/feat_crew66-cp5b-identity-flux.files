@@ -1,4 +1,0 @@
-bin/idp-flux-bootstrap
-bin/idp-identity-apply
-tests/test_incident_crew66_cp5b_identity_and_flux_read_through_the_layer.py
-tests/test_incident_estate_vars_repointed_at_empty_vault.py

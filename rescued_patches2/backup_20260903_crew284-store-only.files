@@ -1,9 +1,0 @@
-clusters/oke/alerts.yaml
-features/drills/vault-seed.feature
-platform/alerts-secret/flux-telegram.yaml
-platform/alerts-secret/kustomization.yaml
-platform/alerts/provider.yaml
-platform/secret-store/kustomization.yaml
-sovereign/tests/bdd/test_gate_vault_seed.py
-tests/test_incident_backstage_17h_unreported.py
-tests/test_incident_crew325_vault_split.py
