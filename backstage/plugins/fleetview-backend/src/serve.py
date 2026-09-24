@@ -382,9 +382,22 @@ def build_app(routes_path: Path) -> FastAPI:
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
+    # crew#973 CP4: time-scrub — journeys as of a UTC timestamp
+    # MUST be before /journeys/{sha} so FastAPI matches it first (route order matters)
+    @app.get("/journeys/at")
+    def journeys_at_get(as_of: str = ""):
+        body, status = routes.journeys_at_time_envelope(as_of)
+        return JSONResponse(content=body, status_code=status)
+
     @app.get("/journeys/{sha}")
     def journey_get(sha: str):
         body, status = routes.deploy_journey_envelope(sha)
+        return JSONResponse(content=body, status_code=status)
+
+    # crew#973 CP4: interrogation — proxy one question to HolmesGPT
+    @app.get("/ask-holmes")
+    def ask_holmes_get(q: str = ""):
+        body, status = routes.ask_holmes_envelope(q)
         return JSONResponse(content=body, status_code=status)
 
     @app.get("/healthz")

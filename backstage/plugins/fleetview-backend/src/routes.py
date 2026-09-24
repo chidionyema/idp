@@ -707,6 +707,176 @@ def _time_of_day(iso: str | None) -> str:
         return ""
 
 
+def journeys_at_time_envelope(
+    as_of: str,
+) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/journeys/at?as_of=ISO8601`. crew#973 CP4: time-scrub.
+
+    Returns every journey as it was at the given UTC timestamp: events with ts <= as_of
+    are shown, later events are hidden. The journey's stored `state` is shown as-is
+    (the ledger's authoritative final state); only the event list is filtered by time.
+    An invalid or missing as_of is a 400, matching the rule that a form filled in
+    wrong is never a silent 200.
+    """
+    if not as_of or not as_of.strip():
+        return {
+            "available": True,
+            "error": "as_of timestamp is required",
+            "journeys": [],
+            "generated_at": _now(),
+        }, 400
+    db_path = _deploy_db_path()
+    try:
+        con = sqlite3.connect(str(db_path))
+        con.row_factory = sqlite3.Row
+        rows = con.execute(
+            "SELECT * FROM deploy_journeys ORDER BY started_at DESC LIMIT 100"
+        ).fetchall()
+    except (sqlite3.Error, OSError) as exc:
+        return {
+            "available": False,
+            "error": f"deploy store unreadable: {exc}",
+            "journeys": [],
+            "generated_at": _now(),
+        }, 503
+    journeys = []
+    for row in rows:
+        sha = row["sha"]
+        # Filter events to only those visible at as_of
+        events_rows = con.execute(
+            "SELECT seq, stage, status, detail_json, ts FROM deploy_journey_events"
+            " WHERE sha = ? AND (ts IS NULL OR ts <= ?) ORDER BY seq",
+            (sha, as_of.strip()),
+        ).fetchall()
+        events = [
+            {
+                "seq": e["seq"],
+                "stage": e["stage"],
+                "status": e["status"],
+                "detail": json.loads(e["detail_json"]),
+                "ts": e["ts"],
+            }
+            for e in events_rows
+        ]
+        journeys.append(
+            {
+                "sha": sha,
+                "branch": row["branch"],
+                "pr_number": row["pr_number"],
+                "title": row["title"],
+                "state": row["state"],
+                "started_at": row["started_at"],
+                "merged_at": row["merged_at"],
+                "events": events,
+            }
+        )
+    con.close()
+    return {
+        "available": True,
+        "error": None,
+        "journeys": journeys,
+        "as_of": as_of,
+        "generated_at": _now(),
+    }, 200
+
+
+def ask_holmes_envelope(
+    question: str,
+) -> tuple[dict[str, Any], int]:
+    """`GET /api/fleetview/ask-holmes?q=...`. crew#973 CP4: interrogation routing.
+
+    Proxies one question to HolmesGPT, the estate's investigator (estate_holmes.py).
+    Returns the analysis verbatim, trimmed to the byte ceiling. A question that is
+    blank or whitespace-only is a 400 (form filled in wrong, not a server error).
+    When Holmes is unreachable the error is in the response, not in the HTTP status
+    -- a silent investigator is reported as unknown, never as nothing being wrong.
+    """
+    question = (question or "").strip()
+    if not question:
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": "",
+            "error": "ask_holmes needs a question",
+        }, 400
+
+    import urllib.error
+    import urllib.request
+
+    base = os.environ.get(
+        "ESTATE_HOLMES_URL", "http://robusta-holmes.robusta.svc.cluster.local"
+    ).rstrip("/")
+    if not base.startswith(("http://", "https://")):
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": question,
+            "error": "ESTATE_HOLMES_URL is not an http(s) URL",
+        }, 200
+    timeout_s = float(os.environ.get("ESTATE_HOLMES_TIMEOUT_S", "180"))
+    byte_ceiling = int(os.environ.get("ESTATE_HOLMES_BYTE_CEILING", "8000"))
+    try:
+        request = urllib.request.Request(  # noqa: S310 — scheme is guarded to http(s) above
+            f"{base}/api/chat",
+            data=json.dumps({"ask": question}).encode("utf-8"),
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=timeout_s) as response:  # noqa: S310
+            raw = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": question,
+            "error": f"HolmesGPT refused the question: HTTP {exc.code}",
+        }, 200
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": question,
+            "error": f"HolmesGPT unreachable: {type(exc).__name__}",
+        }, 200
+    try:
+        body = json.loads(raw)
+    except ValueError:
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": question,
+            "error": "HolmesGPT returned a body that is not JSON",
+        }, 200
+    analysis = str(body.get("analysis") or "").strip()
+    if not analysis:
+        return {
+            "answered": False,
+            "analysis": "",
+            "tool_calls": 0,
+            "question": question,
+            "error": "HolmesGPT answered without an analysis",
+        }, 200
+    calls = body.get("tool_calls")
+    # Trim to ceiling and note the cut
+    cut_note = "\n\n[cut here: answer trimmed to byte ceiling]"
+    encoded = analysis.encode("utf-8")
+    if len(encoded) > byte_ceiling:
+        room = max(byte_ceiling - len(cut_note.encode("utf-8")), 0)
+        analysis = encoded[:room].decode("utf-8", "ignore") + cut_note
+    return {
+        "answered": True,
+        "analysis": analysis,
+        "tool_calls": len(calls) if isinstance(calls, list) else 0,
+        "question": question,
+        "error": None,
+    }, 200
+
+
 def journeys_tail_frames(last_sha: str | None = None) -> list[str]:
     """All journeys changed since last_sha, as SSE data frames.
 

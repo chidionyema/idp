@@ -1,18 +1,20 @@
-// crew#973 CP2+CP3: the Deploy River page (/river).
+// crew#973 CP2+CP3+CP4: the Deploy River page (/river).
 //
 // CP2: The estate's Definition of Done rendered as a river of commits: each commit travels
-// through gates (push → auto-PR → fast-gate → crucible → merge → build-multiarch →
-// trivy → cosign → flux reflector → image-automation → deploy-when-green → reconcile →
-// pod ready → first production log line).
+// through gates (push → CI → fast-gate → crucible → merge → build → trivy → cosign →
+// flux reflector → image-automation → deploy-when-green → reconcile → pod ready).
 //
-// CP3: Narrator hook — SSE tail from the backend, with an ambient narration mode.
+// CP3: Narration engine — SSE tail from the backend, with ambient narration mode.
 // When on, the voice engine speaks each transition as it arrives. Story mode speaks
 // a commit's full journey when you focus it. No LLM narrates: templates over the
 // ledger, deterministic from real timestamps.
 //
-// Data: `GET /api/fleetview/journeys` from the fleetview backend, reading
-// deploy_journeys / deploy_journey_events written by bin/estate-deploy-recorder.
-// SSE stream: `GET /api/fleetview/journeys/stream` tails new events.
+// CP4: Time-scrub slider — replay the river at any point in the last 4 hours.
+// Gate holograms — hover a ring to see its detail. "Ask Holmes" on a cracked gate
+// — interrogate the estate's investigator about what went wrong.
+//
+// Data: `GET /fleetview/journeys` (all events) and `GET /fleetview/journeys/at?as_of=ISO`
+// (time-scrubbed).  SSE stream: `GET /fleetview/journeys/stream` tails new events.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   discoveryApiRef,
@@ -22,10 +24,18 @@ import {
 import Box from '@material-ui/core/Box';
 import Button from '@material-ui/core/Button';
 import Chip from '@material-ui/core/Chip';
+import CircularProgress from '@material-ui/core/CircularProgress';
 import Divider from '@material-ui/core/Divider';
+
 import Paper from '@material-ui/core/Paper';
+import Slider from '@material-ui/core/Slider';
+import Tooltip from '@material-ui/core/Tooltip';
 import Typography from '@material-ui/core/Typography';
 import { makeStyles } from '@material-ui/core/styles';
+import BugReport from '@material-ui/icons/BugReport';
+import InfoOutlined from '@material-ui/icons/InfoOutlined';
+import VolumeUp from '@material-ui/icons/VolumeUp';
+import VolumeOff from '@material-ui/icons/VolumeOff';
 import { EstatePage, Section, Unread, Waiting } from '../shell';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,6 +64,7 @@ export type JourneysEnvelope = {
   error: string | null;
   journeys: Journey[];
   generated_at: string;
+  as_of?: string;
 };
 
 export type JourneyFrame = {
@@ -66,18 +77,53 @@ export type JourneyFrame = {
 
 export const TITLE = 'Deploy River';
 export const LEAD =
-  'Every commit on its road from push to cluster. A green ring means the gate passed; a cracked ring means it failed. The journey is done only when the pod is serving.';
+  'Every commit on its road from push to cluster. Green ring: passed. Cracked ring: failed. Hover a ring for the hologram. Click a cracked ring to ask Holmes.';
 
 // ─── Gate labels ──────────────────────────────────────────────────────────────
 
 const GATE_LABEL: Record<string, string> = {
-  pr_opened: 'PR opened',
-  merged: 'Merged',
+  pr_opened: 'PR open',
+  merged: 'Merge',
   'check:idp-ci': 'CI',
   'check:fast-gate': 'Fast gate',
   'check:bdd': 'BDD',
+  'check:bdd-suites': 'BDD suites',
+  'check:bdd-suites (acceptance)': 'BDD accept',
+  'check:bdd-suites (tests)': 'BDD tests',
   'check:security-scan': 'Sec scan',
-  'check:': 'Checks',
+  'check:': 'Check',
+  'check:merge': 'Merge gate',
+  'check:build': 'Build',
+  'check:build (idp, Dockerfile, ., linux/arm64)': 'Build arm64',
+  'check:build (idp, Dockerfile, ., linux/amd64)': 'Build amd64',
+  'check:build (sovereign-worker': 'Worker build',
+  'check:publish': 'Publish',
+  'check:publish-to-state-branch': 'Publish state',
+  'check:discover': 'Discover',
+  'check:executes-gate': 'Executes',
+  'check:feature-request-plan': 'Feature plan',
+  'check:guarded-paths': 'Guarded paths',
+  'check:offline-gate': 'Offline',
+  'check:migrate-domain': 'Migrate',
+  'check:messaging-demo': 'Messaging',
+  'check:estate-graph-sync': 'Graph sync',
+  'check:shadow-verify': 'Shadow verify',
+  'check:test': 'Test',
+  'check:verifier': 'Verifier',
+  'check:verifier / verifier': 'Verifier',
+  'check:fast-gate / fast-gate': 'Fast gate',
+  'check:ruff-required': 'Ruff',
+  'check:portal-app': 'Portal app',
+  'check:check': 'Check',
+  'check:open': 'Open',
+  'check:land': 'Land',
+  'check:verify': 'Verify',
+  'check:prove': 'Prove',
+  'check:hydrate': 'Hydrate',
+  'check:k3s': 'K3s',
+  'check:apply': 'Apply',
+  'check:bin/idp-root-trust': 'Root trust',
+  'check:plain-english': 'Plain english',
   'build-multiarch': 'Build',
   trivy: 'Trivy',
   cosign: 'Cosign',
@@ -91,9 +137,15 @@ const GATE_LABEL: Record<string, string> = {
 
 const shortLabel = (stage: string): string => {
   if (GATE_LABEL[stage]) return GATE_LABEL[stage];
-  if (stage.startsWith('check:')) return stage.slice(6);
-  return stage;
+  if (stage.startsWith('check:')) {
+    const name = stage.slice(6);
+    if (name.includes('(')) return name.split('(')[0].trim();
+    return name;
+  }
+  return stage.length > 8 ? stage.slice(0, 8) + '…' : stage;
 };
+
+const fullLabel = (stage: string): string => GATE_LABEL[stage] || stage;
 
 // ─── State colours ────────────────────────────────────────────────────────────
 
@@ -102,6 +154,7 @@ const STATUS_COLOR: Record<string, string> = {
   fail: '#ff3366',
   pending: '#ffaa00',
   unknown: '#666680',
+  cancelled: '#888899',
 };
 
 const STATE_COLOR: Record<string, string> = {
@@ -125,63 +178,81 @@ const useStyles = makeStyles(theme => ({
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    width: 32,
-    height: 32,
+    width: 34,
+    height: 34,
     borderRadius: '50%',
     borderWidth: 2,
     borderStyle: 'solid',
-    fontSize: '0.65rem',
+    fontSize: '0.6rem',
     fontWeight: 700,
     flexShrink: 0,
+    cursor: 'default',
+    transition: 'transform 0.1s',
+    '&:hover': { transform: 'scale(1.2)' },
+  },
+  gateRingClickable: {
+    cursor: 'pointer',
+    '&:hover': { transform: 'scale(1.2)' },
   },
   chipLive: {
     backgroundColor: '#00cc88',
     color: '#fff',
     fontWeight: 700,
-    fontSize: '0.65rem',
+    fontSize: '0.6rem',
   },
   chipFailed: {
     backgroundColor: '#ff3366',
     color: '#fff',
     fontWeight: 700,
-    fontSize: '0.65rem',
+    fontSize: '0.6rem',
   },
   chipInFlight: {
     backgroundColor: '#ffaa00',
-    color: '#fff',
+    color: '#000',
     fontWeight: 700,
-    fontSize: '0.65rem',
+    fontSize: '0.6rem',
   },
   chipAbandoned: {
     backgroundColor: '#666680',
     color: '#fff',
     fontWeight: 700,
-    fontSize: '0.65rem',
+    fontSize: '0.6rem',
   },
   journeyRow: {
     padding: theme.spacing(2),
     marginBottom: theme.spacing(2),
     borderLeft: '4px solid',
+    transition: 'background 0.2s',
   },
   andonStrip: {
     height: 6,
     borderRadius: 3,
     marginBottom: theme.spacing(3),
-    opacity: 0.6,
+    opacity: 0.7,
   },
   emptyPaper: {
     padding: theme.spacing(3),
     textAlign: 'center' as const,
     border: '1px dashed #666',
   },
-  mono: {
+  mono: { fontFamily: 'monospace' },
+  holmesPanel: {
+    padding: theme.spacing(2),
+    marginBottom: theme.spacing(2),
+    background: 'rgba(255,51,102,0.06)',
+    border: '1px solid rgba(255,51,102,0.3)',
+    borderRadius: 4,
+  },
+  scrubLabel: {
+    fontSize: '0.7rem',
+    color: 'rgba(255,255,255,0.5)',
     fontFamily: 'monospace',
   },
 }));
 
-// ─── Hook: journeys data ───────────────────────────────────────────────────────
+// ─── Hook: journeys data ─────────────────────────────────────────────────────
 
-export function useJourneys(limit = 30) {
+function useJourneys(limit = 30, asOf?: string) {
   const fetchApi = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
   const [envelope, setEnvelope] = useState<JourneysEnvelope | null>(null);
@@ -191,7 +262,10 @@ export function useJourneys(limit = 30) {
     setLoading(true);
     try {
       const base = await discovery.getBaseUrl('proxy');
-      const res = await fetchApi.fetch(`${base}/fleetview/journeys?limit=${limit}`);
+      const url = asOf
+        ? `${base}/fleetview/journeys/at?as_of=${encodeURIComponent(asOf)}`
+        : `${base}/fleetview/journeys?limit=${limit}`;
+      const res = await fetchApi.fetch(url);
       const body = (await res.json()) as JourneysEnvelope;
       setEnvelope(body);
     } catch (e) {
@@ -204,27 +278,15 @@ export function useJourneys(limit = 30) {
     } finally {
       setLoading(false);
     }
-  }, [fetchApi, discovery, limit]);
+  }, [fetchApi, discovery, limit, asOf]);
 
-  useEffect(() => {
-    void refresh();
-    const id = setInterval(() => { void refresh(); }, 30_000);
-    return () => clearInterval(id);
-  }, [refresh]);
+  useEffect(() => { void refresh(); }, [refresh]);
 
   return { envelope, loading, refresh };
 }
 
 // ─── Hook: SSE narration stream ───────────────────────────────────────────────
 
-/**
- * crew#973 CP3: SSE tail for ambient narration.
- *
- * Connects to `GET /api/fleetview/journeys/stream`. Each frame carries a `narration`
- * (one sentence for the newest event) and a `story` (paragraph for the full journey).
- * When `speakFn` is provided, each narration is spoken aloud via the voice engine.
- * `onStory` is called when a person focuses a journey for its story.
- */
 export function useJourneysStream(opts: {
   speakFn?: (text: string) => void;
   narrationOn: boolean;
@@ -236,7 +298,6 @@ export function useJourneysStream(opts: {
   const [connected, setConnected] = useState(false);
   const [lastFrame, setLastFrame] = useState<JourneyFrame | null>(null);
   const lastShaRef = useRef<string | null>(null);
-  // Refs so the SSE callbacks always read the current values without stale closure.
   const speakFnRef = useRef(speakFn);
   const narrationOnRef = useRef(narrationOn);
   const onStoryRef = useRef(onStory);
@@ -250,13 +311,11 @@ export function useJourneysStream(opts: {
     const es = new EventSource(url);
     esRef.current = es;
     setConnected(true);
-
     es.onmessage = (e: MessageEvent) => {
-      if (!e.data || e.data.startsWith(':')) return; // heartbeat
+      if (!e.data || e.data.startsWith(':')) return;
       try {
         const frame = JSON.parse(e.data) as JourneyFrame;
         if (!frame || !frame.narration) return;
-        // Skip if we've already narrated this sha
         if (lastShaRef.current === frame.sha) return;
         lastShaRef.current = frame.sha;
         setLastFrame(frame);
@@ -266,16 +325,12 @@ export function useJourneysStream(opts: {
         if (onStoryRef.current && frame.story) {
           onStoryRef.current(frame.sha, frame.story);
         }
-      } catch {
-        // malformed frame
-      }
+      } catch { /* malformed */ }
     };
-
     es.onerror = () => {
       setConnected(false);
       es.close();
       esRef.current = null;
-      // Reconnect after 5s using the stable connect reference
       setTimeout(() => { void connect(); }, 5000);
     };
   }, [discovery]);
@@ -287,53 +342,224 @@ export function useJourneysStream(opts: {
       esRef.current = null;
       setConnected(false);
     };
-  // connect is stable: discovery is stable from useApi, and speakFn/narrationOn
-  // are read via refs inside connect so this effect never re-runs.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connect]);
-
   return { connected, lastFrame };
 }
 
 // ─── Gate ring ────────────────────────────────────────────────────────────────
 
-function GateRing({ event }: { event: JourneyEvent }) {
+interface GateRingProps {
+  event: JourneyEvent;
+  onHolmes?: (event: JourneyEvent) => void;
+}
+
+function GateRing({ event, onHolmes }: GateRingProps) {
   const classes = useStyles();
   const color = STATUS_COLOR[event.status] ?? STATUS_COLOR.unknown;
   const isCracked = event.status === 'fail';
   const isPending = event.status === 'pending';
+  const isCancelled = (event.status as string) === 'cancelled';
+
+  const icon =
+    isCracked ? '✕' :
+    isPending  ? '…' :
+    isCancelled ? '—' :
+                 '✓';
+
+  const detail = event.detail as Record<string, string | number | null>;
+  const conclusion = detail?.conclusion as string | undefined;
+  const url = detail?.url as string | undefined;
+  const tsLabel = event.ts
+    ? (() => {
+        try {
+          const d = new Date(event.ts);
+          return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        } catch { return event.ts; }
+      })()
+    : null;
+
+  const tooltip = (
+    <Box p={1} style={{ maxWidth: 280 }}>
+      <Typography variant="caption" style={{ fontWeight: 700, color }} gutterBottom display="block">
+        {fullLabel(event.stage)}
+      </Typography>
+      <Typography variant="caption" display="block" style={{ textTransform: 'capitalize' }}>
+        {event.status}
+        {conclusion && conclusion !== event.status ? `: ${conclusion}` : ''}
+      </Typography>
+      {tsLabel && (
+        <Typography variant="caption" display="block" color="textSecondary">
+          {tsLabel}
+        </Typography>
+      )}
+      {url && (
+        <Typography variant="caption" display="block" style={{ color: '#88aacc', wordBreak: 'break-all' }}>
+          {url.replace('https://api.github.com/repos/chidionyema/idp/check-runs/', 'check-run/')}
+        </Typography>
+      )}
+      {isCracked && (
+        <Typography variant="caption" display="block" style={{ color: '#ff6699', marginTop: 4 }}>
+          Click ring to ask Holmes
+        </Typography>
+      )}
+    </Box>
+  );
+
   return (
-    <span
-      className={classes.gateRing}
-      style={{
-        borderColor: color,
-        backgroundColor: event.status === 'pass' ? color : 'transparent',
-        color,
-        opacity: isPending ? 0.5 : 1,
-        borderStyle: isCracked ? 'dashed' : 'solid',
-      }}
-      title={`${event.stage}: ${event.status}${event.ts ? ` at ${event.ts}` : ''}`}
-    >
-      {isCracked ? '✕' : isPending ? '…' : '✓'}
-    </span>
+    <Tooltip title={tooltip} placement="top" arrow>
+      <span
+        className={`${classes.gateRing} ${isCracked && onHolmes ? classes.gateRingClickable : ''}`}
+        style={{
+          borderColor: color,
+          backgroundColor: event.status === 'pass' ? color : 'transparent',
+          color,
+          opacity: isPending ? 0.5 : 1,
+          borderStyle: isCracked || isCancelled ? 'dashed' : 'solid',
+        }}
+        onClick={isCracked && onHolmes ? () => onHolmes(event) : undefined}
+        data-testid={`gate-${event.stage}`}
+        role={isCracked ? 'button' : undefined}
+      >
+        {icon}
+      </span>
+    </Tooltip>
+  );
+}
+
+// ─── Holmes interrogation ─────────────────────────────────────────────────────
+
+function useAskHolmes() {
+  const fetchApi = useApi(fetchApiRef);
+  const discovery = useApi(discoveryApiRef);
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const ask = useCallback(
+    async (question: string) => {
+      setAsking(true);
+      setError(null);
+      setAnswer(null);
+      try {
+        const base = await discovery.getBaseUrl('proxy');
+        const res = await fetchApi.fetch(
+          `${base}/fleetview/ask-holmes?q=${encodeURIComponent(question)}`,
+        );
+        const body = (await res.json()) as {
+          answered: boolean;
+          analysis: string;
+          error: string | null;
+        };
+        if (body.answered) {
+          setAnswer(body.analysis);
+        } else {
+          setError(body.error ?? 'Holmes could not answer');
+        }
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setAsking(false);
+      }
+    },
+    [fetchApi, discovery],
+  );
+
+  return { answer, error, asking, ask };
+}
+
+// ─── Time scrub ────────────────────────────────────────────────────────────────
+
+interface TimeScrubProps {
+  onChange: (asOf: string | undefined) => void;
+  currentAsOf: string | undefined;
+}
+
+function TimeScrub({ onChange, currentAsOf }: TimeScrubProps) {
+  const classes = useStyles();
+  const [now] = useState(() => Date.now());
+  // Window: last 4 hours, 30-minute steps
+  const MIN_MS = now - 4 * 60 * 60 * 1000;
+  const STEP_MS = 30 * 60 * 1000;
+
+  const currentMs = currentAsOf
+    ? new Date(currentAsOf).getTime()
+    : now;
+
+  // Slider goes 0 (= 4h ago) to 100 (= now)
+  const sliderVal = Math.round((currentMs - MIN_MS) / (now - MIN_MS) * 100);
+
+  const handleChange = (_: unknown, val: number | number[]) => {
+    const pct = (val as number) / 100;
+    const ms = MIN_MS + pct * (now - MIN_MS);
+    const rounded = Math.round(ms / STEP_MS) * STEP_MS;
+    if (rounded >= now - 60_000) {
+      onChange(undefined); // live
+    } else {
+      onChange(new Date(rounded).toISOString().replace('Z', '+00:00'));
+    }
+  };
+
+  const displayTime = currentAsOf
+    ? (() => {
+        try {
+          const d = new Date(currentAsOf);
+          const now2 = new Date();
+          const diffS = Math.round((now2.getTime() - d.getTime()) / 1000);
+          if (diffS < 60) return `${diffS}s ago`;
+          if (diffS < 3600) return `${Math.floor(diffS / 60)}m ago`;
+          return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        } catch { return currentAsOf; }
+      })()
+    : 'LIVE';
+
+  return (
+    <Box display="flex" alignItems="center" style={{ gap: 8 }} mb={2}>
+      <Typography variant="caption" className={classes.scrubLabel}>4h ago</Typography>
+      <Slider
+        value={sliderVal}
+        onChange={handleChange}
+        min={0}
+        max={100}
+        step={1}
+        style={{ width: 200, color: currentAsOf ? '#ffaa00' : '#00cc88' }}
+        data-testid="river-time-scrub"
+      />
+      <Typography variant="caption" className={classes.scrubLabel} style={{ color: currentAsOf ? '#ffaa00' : '#00cc88' }}>
+        {displayTime}
+      </Typography>
+      {currentAsOf && (
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={() => onChange(undefined)}
+          style={{ fontSize: '0.65rem', padding: '2px 6px' }}
+          data-testid="river-live-btn"
+        >
+          Return to live
+        </Button>
+      )}
+    </Box>
   );
 }
 
 // ─── Journey row ──────────────────────────────────────────────────────────────
 
-function JourneyRow({ journey, onStory }: { journey: Journey; onStory?: (sha: string, story: string) => void }) {
+interface JourneyRowProps {
+  journey: Journey;
+  onStory?: (sha: string, story: string) => void;
+  onHolmes?: (journey: Journey, event: JourneyEvent) => void;
+}
+
+function JourneyRow({ journey, onStory, onHolmes }: JourneyRowProps) {
   const classes = useStyles();
   const stateColor = STATE_COLOR[journey.state] ?? STATE_COLOR.abandoned;
   const shortSha = (journey.sha ?? '??????').slice(0, 7);
+  const [storyText, setStoryText] = useState<string | null>(null);
 
   const ago = journey.started_at
     ? (() => {
-        const s = Math.max(
-          0,
-          Math.round(
-            (Date.now() - new Date(journey.started_at).getTime()) / 1000,
-          ),
-        );
+        const s = Math.max(0, Math.round((Date.now() - new Date(journey.started_at).getTime()) / 1000));
         if (s < 60) return `${s}s ago`;
         if (s < 3600) return `${Math.floor(s / 60)}m ago`;
         if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
@@ -351,12 +577,23 @@ function JourneyRow({ journey, onStory }: { journey: Journey; onStory?: (sha: st
           : classes.chipAbandoned;
 
   const handleStory = () => {
-    if (!onStory) return;
-    // Build a basic story from events (story from SSE overrides this when streaming)
+    if (storyText) { setStoryText(null); return; }
     const failCount = journey.events.filter(e => e.status === 'fail').length;
     const state = journey.state;
-    const started = journey.started_at ? new Date(journey.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
-    const merged = journey.merged_at ? new Date(journey.merged_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : null;
+    const started = journey.started_at
+      ? (() => {
+          try {
+            return new Date(journey.started_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+          } catch { return null; }
+        })()
+      : null;
+    const merged = journey.merged_at
+      ? (() => {
+          try {
+            return new Date(journey.merged_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+          } catch { return null; }
+        })()
+      : null;
     let story = `Commit ${shortSha}`;
     if (started) story += ` pushed ${started}`;
     if (failCount > 0) story += `, ${failCount} gate${failCount > 1 ? 's' : ''} failed first`;
@@ -367,7 +604,8 @@ function JourneyRow({ journey, onStory }: { journey: Journey; onStory?: (sha: st
     } else if (state === 'abandoned') {
       story += ', abandoned';
     }
-    onStory(journey.sha, story + '.');
+    setStoryText(story + '.');
+    if (onStory) onStory(journey.sha, story + '.');
   };
 
   return (
@@ -380,89 +618,67 @@ function JourneyRow({ journey, onStory }: { journey: Journey; onStory?: (sha: st
       }}
       data-testid={`journey-${shortSha}`}
     >
-      <Box display="flex" alignItems="center" flexWrap="wrap" mb={1}>
-        <Chip
-          size="small"
-          label={STATE_WORD[journey.state] ?? journey.state}
-          className={chipClass}
-        />
-        <Box ml={1}>
-          <Typography
-            component="code"
-            variant="caption"
-            className={classes.mono}
-            style={{ color: 'rgba(255,255,255,0.6)' }}
-          >
-            {shortSha}
-          </Typography>
-        </Box>
-        {journey.branch && (
-          <Box ml={1}>
-            <Chip size="small" label={journey.branch} variant="outlined" />
-          </Box>
-        )}
+      <Box display="flex" alignItems="center" flexWrap="wrap" mb={1} style={{ gap: 4 }}>
+        <Chip size="small" label={STATE_WORD[journey.state] ?? journey.state} className={chipClass} />
+        <Typography component="code" variant="caption" className={classes.mono} style={{ color: 'rgba(255,255,255,0.6)' }}>
+          {shortSha}
+        </Typography>
+        {journey.branch && <Chip size="small" label={journey.branch} variant="outlined" />}
         {journey.pr_number && (
-          <Box ml={1}>
-            <Typography variant="caption" color="textSecondary">
-              PR #{journey.pr_number}
-            </Typography>
-          </Box>
+          <Typography variant="caption" color="textSecondary">PR #{journey.pr_number}</Typography>
         )}
-        {ago && (
-          <Box ml={1}>
-            <Typography variant="caption" color="textSecondary">
-              {ago}
-            </Typography>
-          </Box>
-        )}
+        {ago && <Typography variant="caption" color="textSecondary">{ago}</Typography>}
         <Box flex={1} />
         {onStory && (
           <Button size="small" onClick={handleStory} style={{ fontSize: '0.65rem' }}>
-            Hear it
+            {storyText ? 'Close' : 'Hear it'}
           </Button>
         )}
         {journey.title && (
-          <Typography
-            variant="body2"
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              maxWidth: 300,
-            }}
-          >
+          <Typography variant="body2" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 280 }}>
             {journey.title}
           </Typography>
         )}
       </Box>
 
-      {/* The river: one gate ring per event, left to right in sequence order */}
+      {/* Story mode overlay */}
+      {storyText && (
+        <Box mb={1}>
+          <Typography variant="body2" style={{ fontStyle: 'italic', color: '#00cc88' }}>
+            {storyText}
+          </Typography>
+        </Box>
+      )}
+
+      {/* The river: one gate ring per event */}
       <Box display="flex" flexWrap="wrap">
         {journey.events.length > 0 ? (
-          journey.events.map(e => <GateRing key={`${e.seq}-${e.stage}`} event={e} />)
+          journey.events.map(e => (
+            <GateRing
+              key={`${e.seq}-${e.stage}`}
+              event={e}
+              onHolmes={onHolmes ? () => onHolmes(journey, e) : undefined}
+            />
+          ))
         ) : (
-          <Typography
-            variant="caption"
-            color="textSecondary"
-            style={{ fontStyle: 'italic' }}
-          >
+          <Typography variant="caption" color="textSecondary" style={{ fontStyle: 'italic' }}>
             No stage events recorded yet
           </Typography>
         )}
       </Box>
 
-      {/* Stage labels below the rings */}
+      {/* Stage labels */}
       {journey.events.length > 0 && (
         <Box display="flex" flexWrap="wrap" mt={0.5}>
           {journey.events.map(e => {
             const color = STATUS_COLOR[e.status] ?? STATUS_COLOR.unknown;
             return (
               <Box
-                key={`${e.seq}-${e.stage}`}
+                key={`${e.seq}-${e.stage}-lbl`}
                 style={{
-                  fontSize: '0.6rem',
+                  fontSize: '0.58rem',
                   color,
-                  maxWidth: 50,
+                  maxWidth: 44,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
@@ -485,9 +701,9 @@ function AndonStrip({ journeys }: { journeys: Journey[] }) {
   const classes = useStyles();
   const hasFailure = journeys.some(j => j.state === 'failed');
   const hasInFlight = journeys.some(j => j.state === 'in_flight');
-  const moodColor = hasFailure ? '#ffaa00' : hasInFlight ? '#3399ff' : '#00cc88';
+  const moodColor = hasFailure ? '#ff3366' : hasInFlight ? '#3399ff' : '#00cc88';
   const moodLabel = hasFailure
-    ? 'A commit is failing'
+    ? 'A commit is failing — click a cracked ring to ask Holmes'
     : hasInFlight
       ? 'Commits are in flight'
       : 'All recent commits are live';
@@ -507,14 +723,15 @@ export function River() {
   const classes = useStyles();
   const fetchApi = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
-  const { envelope, loading } = useJourneys();
   const [narrationOn, setNarrationOn] = useState(false);
   const [storyText, setStoryText] = useState<string | null>(null);
   const [storySha, setStorySha] = useState<string | null>(null);
-  // Lazy AudioContext: created on first narration, reused across utterances.
+  const [timeAsOf, setTimeAsOf] = useState<string | undefined>(undefined);
   const audioCtxRef = useRef<AudioContext | null>(null);
+  const { answer: holmesAnswer, error: holmesError, asking: holmesAsking, ask: askHolmes } = useAskHolmes();
 
-  // Speak one sentence via the board's /voice/say HTTP endpoint + WebAudio.
+  const { envelope, loading } = useJourneys(30, timeAsOf);
+
   const speak = useCallback(async (text: string) => {
     if (!text) return;
     try {
@@ -527,10 +744,7 @@ export function River() {
       if (!res.ok) return;
       const pcm = await res.arrayBuffer();
       if (!pcm || pcm.byteLength === 0) return;
-      // Lazily create / reuse the AudioContext (same pattern as useEstateVoice).
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = new AudioContext();
-      }
+      if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
       const ctx = audioCtxRef.current;
       if (ctx.state === 'suspended') await ctx.resume();
       const f32 = new Float32Array(pcm);
@@ -540,9 +754,7 @@ export function River() {
       src.buffer = buf;
       src.connect(ctx.destination);
       src.start();
-    } catch {
-      // narration is best-effort; a failure must not crash the stream
-    }
+    } catch { /* narration is best-effort */ }
   }, [fetchApi, discovery]);
 
   const handleStory = useCallback((sha: string, story: string) => {
@@ -550,6 +762,19 @@ export function River() {
     setStoryText(story);
     if (narrationOn) speak(story);
   }, [narrationOn, speak]);
+
+  const handleHolmes = useCallback(
+    async (journey: Journey, event: JourneyEvent) => {
+      const sha = (journey.sha ?? '').slice(0, 7);
+      const stage = fullLabel(event.stage);
+      const conclusion = (event.detail as Record<string, string>)?.conclusion;
+      const q = conclusion
+        ? `Why did the ${stage} gate fail for commit ${sha}? Conclusion: ${conclusion}.`
+        : `What happened at the ${stage} gate for commit ${sha}?`;
+      await askHolmes(q);
+    },
+    [askHolmes],
+  );
 
   const { connected, lastFrame } = useJourneysStream({
     narrationOn,
@@ -559,17 +784,22 @@ export function River() {
 
   return (
     <EstatePage title={TITLE} lead={LEAD}>
-      <Section title="The river" blurb="Every push, every gate, every merge. Refreshes every 30 seconds." testId="river-main">
-        {/* Narration controls */}
-        <Box display="flex" alignItems="center" mb={2} style={{ gap: 8 }}>
+      <Section
+        title="The river"
+        blurb="Every push, every gate, every merge. Refreshes every 30 seconds."
+        testId="river-main"
+      >
+        {/* Controls row */}
+        <Box display="flex" alignItems="center" flexWrap="wrap" style={{ gap: 8 }} mb={2}>
           <Button
             size="small"
             variant={narrationOn ? 'contained' : 'outlined'}
             color={narrationOn ? 'primary' : 'default'}
+            startIcon={narrationOn ? <VolumeUp /> : <VolumeOff />}
             onClick={() => setNarrationOn(v => !v)}
             data-testid="river-narration-toggle"
           >
-            {narrationOn ? '🔊 Narration on' : '🔇 Narration off'}
+            {narrationOn ? 'Narration on' : 'Narration off'}
           </Button>
           {connected && (
             <Typography variant="caption" color="textSecondary">
@@ -580,13 +810,41 @@ export function River() {
             <Typography
               variant="caption"
               color="textSecondary"
-              style={{ fontStyle: 'italic', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              style={{ fontStyle: 'italic', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               data-testid="river-live-narration"
             >
               {lastFrame.narration}
             </Typography>
           )}
+          <Box flex={1} />
+          <TimeScrub onChange={setTimeAsOf} currentAsOf={timeAsOf} />
         </Box>
+
+        {/* Holmes interrogation panel */}
+        {(holmesAsking || holmesAnswer || holmesError) && (
+          <Paper elevation={0} className={classes.holmesPanel} data-testid="river-holmes-panel">
+            <Box display="flex" alignItems="center" mb={1}>
+              <BugReport style={{ color: '#ff3366', marginRight: 8, fontSize: 18 }} />
+              <Typography variant="overline" style={{ color: '#ff3366', flex: 1 }}>
+                Ask Holmes
+              </Typography>
+              {holmesAsking && <CircularProgress size={14} style={{ color: '#ffaa00' }} />}
+              <Button size="small" onClick={() => { setStoryText(null); setStorySha(null); }} style={{ fontSize: '0.65rem' }}>
+                Dismiss
+              </Button>
+            </Box>
+            {holmesAnswer && (
+              <Typography variant="body2" style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                {holmesAnswer}
+              </Typography>
+            )}
+            {holmesError && (
+              <Typography variant="caption" style={{ color: '#ff6699' }}>
+                {holmesError}
+              </Typography>
+            )}
+          </Paper>
+        )}
 
         {loading && !envelope && (
           <Waiting testId="river-loading">Reading the deploy ledger.</Waiting>
@@ -602,39 +860,42 @@ export function River() {
           <>
             <AndonStrip journeys={envelope.journeys} />
 
+            {timeAsOf && (
+              <Box mb={2} display="flex" alignItems="center" style={{ gap: 8 }}>
+                <InfoOutlined style={{ fontSize: 14, color: '#ffaa00' }} />
+                <Typography variant="caption" style={{ color: '#ffaa00' }}>
+                  Showing the river as it was at {new Date(timeAsOf).toLocaleString()}.
+                  {envelope.as_of ? ` (${envelope.journeys.length} journeys recorded by then)` : ''}
+                </Typography>
+              </Box>
+            )}
+
             <Typography variant="body2" color="textSecondary" style={{ marginBottom: 16 }}>
               {envelope.journeys.length === 0
                 ? 'No journeys recorded yet. Run bin/estate-deploy-recorder to populate the ledger.'
                 : `${envelope.journeys.length} commit${envelope.journeys.length === 1 ? '' : 's'} in the ledger.`}
             </Typography>
 
-            {/* Gate legend */}
+            {/* Legend */}
             <Box display="flex" flexWrap="wrap" alignItems="center" mb={2}>
-              <Typography variant="overline" style={{ marginRight: 8 }}>
-                Gate key:
-              </Typography>
+              <Typography variant="overline" style={{ marginRight: 8 }}>Gate key:</Typography>
               {([
                 { status: 'pass', label: 'Passed' },
                 { status: 'fail', label: 'Failed' },
                 { status: 'pending', label: 'Pending' },
+                { status: 'cancelled', label: 'Cancelled' },
                 { status: 'unknown', label: 'Unknown' },
               ] as const).map(({ status, label }) => (
-                <Box
-                  key={status}
-                  display="flex"
-                  alignItems="center"
-                  style={{ marginRight: 12 }}
-                >
+                <Box key={status} display="flex" alignItems="center" style={{ marginRight: 12 }}>
                   <Box
                     style={{
-                      width: 14,
-                      height: 14,
+                      width: 12,
+                      height: 12,
                       borderRadius: '50%',
                       borderWidth: 2,
-                      borderStyle: 'solid',
+                      borderStyle: status === 'fail' || status === 'cancelled' ? 'dashed' : 'solid',
                       borderColor: STATUS_COLOR[status],
-                      background:
-                        status === 'pass' ? STATUS_COLOR[status] : 'transparent',
+                      background: status === 'pass' ? STATUS_COLOR[status] : 'transparent',
                       marginRight: 4,
                     }}
                   />
@@ -646,8 +907,12 @@ export function River() {
             <Divider style={{ marginBottom: 16 }} />
 
             {/* Story mode overlay */}
-            {storyText && (
-              <Paper elevation={2} style={{ padding: 16, marginBottom: 16, background: 'rgba(0,204,136,0.08)', border: '1px solid #00cc88' }} data-testid="river-story">
+            {storyText && !holmesAnswer && (
+              <Paper
+                elevation={2}
+                style={{ padding: 16, marginBottom: 16, background: 'rgba(0,204,136,0.08)', border: '1px solid #00cc88' }}
+                data-testid="river-story"
+              >
                 <Box display="flex" justifyContent="space-between" alignItems="flex-start">
                   <Box>
                     <Typography variant="overline" style={{ color: '#00cc88' }}>
@@ -662,24 +927,13 @@ export function River() {
               </Paper>
             )}
 
-            {/* Journey list, newest first */}
             {envelope.journeys.length === 0 ? (
               <Paper elevation={0} className={classes.emptyPaper}>
-                <Typography
-                  color="textSecondary"
-                  style={{ fontStyle: 'italic' }}
-                >
+                <Typography color="textSecondary" style={{ fontStyle: 'italic' }}>
                   The ledger is empty. No commits have been recorded yet.
                 </Typography>
-                <Typography
-                  variant="caption"
-                  color="textSecondary"
-                  display="block"
-                  style={{ marginTop: 8 }}
-                >
-                  Run{' '}
-                  <code>bin/estate-deploy-recorder</code> to record the first
-                  journeys.
+                <Typography variant="caption" color="textSecondary" display="block" style={{ marginTop: 8 }}>
+                  Run <code>bin/estate-deploy-recorder</code> to record the first journeys.
                 </Typography>
               </Paper>
             ) : (
@@ -688,6 +942,7 @@ export function River() {
                   key={j.sha}
                   journey={j}
                   onStory={narrationOn ? handleStory : undefined}
+                  onHolmes={handleHolmes}
                 />
               ))
             )}
