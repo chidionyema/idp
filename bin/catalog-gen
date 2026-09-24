@@ -804,7 +804,14 @@ def cluster_entities():
         if kind == "HelmRelease" and not ns:
             ann["namespace"] = ann.get("backstage.io/kubernetes-namespace", "")
         tags = ["cluster", etype] + (["suspended"] if suspended else [])
-        docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}",
+        # Flux keys a Kustomization/HelmRelease by namespace/name, so the entity name must too.
+        # Without this, two legitimate deployments whose names agree but whose namespaces differ
+        # collapse into one entity: flux-system/k8s-infra and observability-agent/k8s-infra both
+        # became cluster-helmrelease-k8s-infra, and catalog-refcheck reported it as a duplicate
+        # that no file actually contained. The namespace is omitted from the name when it is the
+        # default flux-system, so the common case keeps the name it has always had.
+        ns_slug = "" if not ns or ns == "flux-system" else f"-{slug(ns)}"
+        docs.append(entity("Component", f"cluster-{slug(kind).lower()}-{slug(name)}{ns_slug}",
                            f"{name} ({kind})", etype, ann, tags, _idp_source_link(rel),
                            description=desc))
     # The CNI is two tools the founder asked for by name (crew#539: "are we getting hubble or not";
