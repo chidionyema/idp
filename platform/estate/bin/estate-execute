@@ -251,6 +251,16 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     os.environ["ESTATE_HARNESS"] = harness_name
     os.environ["ESTATE_TICKET"] = ticket_id
     os.environ["ESTATE_GOAL"] = goal or ""
+    # Propagate k8s.debug args as env vars so the helper script can read them
+    for _k8s_key, _k8s_val in [
+        ("K8S_DEBUG_NS", args.get("namespace", "")),
+        ("K8S_DEBUG_FOCUS", args.get("focus", "")),
+        ("K8S_DEBUG_DEPTH", args.get("depth", "full")),
+        ("K8S_DEBUG_SINCE", args.get("since", "1h")),
+        ("K8S_DEBUG_LOG_LINES", str(args.get("log_lines", 50))),
+    ]:
+        if _k8s_val:
+            os.environ[_k8s_key] = str(_k8s_val)
     agent_key = os.environ.get("ESTATE_AGENT_KEY", "")
     if agent_key:
         os.environ["OPENAI_API_KEY"] = agent_key
@@ -260,9 +270,32 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     os.environ["SSL_CERT_FILE"] = "/private/etc/ssl/cert.pem"
     os.environ["SSL_CERT_DIR"] = "/private/etc/ssl/certs"
 
+    # --- Egress lock (pf) — best-effort, warn but don't block -----------
+    pf_loaded = False
+    if Path("/etc/pf.anchors/estate-session").exists():
+        import subprocess as _sub
+        r = _sub.run(
+            ["sudo", "pfctl", "-a", "estate-session", "-f",
+             "/etc/pf.anchors/estate-session"],
+            capture_output=True, text=True, timeout=5,
+        )
+        pf_loaded = r.returncode == 0
+        if pf_loaded:
+            log("[estate] egress lock: pf active")
+        else:
+            log("[estate] egress lock: pf not loaded (sudo unavailable — skipping)")
+    else:
+        log("[estate] egress lock: anchor not installed (run day-0 pf setup)")
+
     # --- Cleanup trap ---------------------------------------------------
     def cleanup():
         shutil.rmtree(session_home, ignore_errors=True)
+        if pf_loaded:
+            import subprocess as _sub
+            _sub.run(
+                ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],
+                capture_output=True, timeout=5,
+            )
     atexit.register(cleanup)
 
     # --- Run intent steps -----------------------------------------------
@@ -298,6 +331,27 @@ if __name__ == "__main__":
 
     if len(sys.argv) == 1 or sys.argv[1] == "--list":
         cmd_list()
+        sys.exit(0)
+
+    if sys.argv[1] == "--show" and len(sys.argv) >= 3:
+        import yaml
+        name = sys.argv[2]
+        path = INTENTS / f"{name}.yaml"
+        if not path.exists():
+            log(f"ERROR: unknown intent: {name}")
+            sys.exit(1)
+        with open(path) as f:
+            d = yaml.safe_load(f)
+        log(f"name: {name}")
+        log(f"description: {d.get('description', '')}")
+        if d.get('args'):
+            log(f"args:")
+            for k, v in d['args'].items():
+                log(f"  {k}: {v}")
+        if d.get('steps'):
+            log(f"steps: {len(d['steps'])}")
+            for i, s in enumerate(d['steps']):
+                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
         sys.exit(0)
 
     harness_name = None
