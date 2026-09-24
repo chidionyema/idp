@@ -1,0 +1,76 @@
+# ClusterSPIFFEID — service-account-based workload attestation.
+# Replaces fragile pod-UID selectors with stable SA selectors.
+# The SPIRE Controller Manager (deployed by the spire Helm chart) automatically
+# creates and deletes SPIRE registration entries as pods using these SAs scale/restart.
+# All entries parent to the PSAT-attested node agent, so every node gets workload SVIDs.
+#
+# The old pod-UID entries (crew#227 CP6) should be deleted once these are confirmed working.
+# Run: kubectl exec -n spire-mgmt spire-server-0 -c spire-server -- spire-server entry show | grep "pod-uid" | grep -o 'estate\.[a-f0-9-]*' | xargs -I{} kubectl exec -n spire-mgmt spire-server-0 -c spire-server -- spire-server entry delete {}
+#
+# Proof: once agents are attested and these entries exist, any pod using the listed
+# service accounts will have a valid SVID without manual registration.
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: temporal-default
+spec:
+  spiffeIDTemplate: "spiffe://estate.internal/ns/temporal/sa/default"
+  namespaceSelector:
+    matchNames:
+      - temporal
+  serviceAccountSelector:
+    matchNames:
+      - default
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: temporal-sovereign-worker
+spec:
+  spiffeIDTemplate: "spiffe://estate.internal/ns/temporal/sa/sovereign-worker"
+  namespaceSelector:
+    matchNames:
+      - temporal
+  serviceAccountSelector:
+    matchNames:
+      - sovereign-worker
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: tailscale-proxies
+spec:
+  spiffeIDTemplate: "spiffe://estate.internal/ns/tailscale/sa/proxies"
+  namespaceSelector:
+    matchNames:
+      - tailscale
+  serviceAccountSelector:
+    matchNames:
+      - proxies
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: trivy-operator
+spec:
+  spiffeIDTemplate: "spiffe://estate.internal/ns/trivy-system/sa/trivy-operator"
+  namespaceSelector:
+    matchNames:
+      - trivy-system
+  serviceAccountSelector:
+    matchNames:
+      - trivy-operator
+---
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: via-negativa-default
+spec:
+  spiffeIDTemplate: "spiffe://estate.internal/ns/via-negativa/sa/default"
+  namespaceSelector:
+    matchNames:
+      - via-negativa
+  serviceAccountSelector:
+    matchNames:
+      - default
