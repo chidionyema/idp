@@ -1,4 +1,4 @@
-import os, imaplib, smtplib, json, hashlib, time
+import os, imaplib, smtplib, hashlib
 from email.message import EmailMessage
 from email.parser import BytesParser
 from email.policy import default as email_policy

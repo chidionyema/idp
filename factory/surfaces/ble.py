@@ -1,4 +1,4 @@
-import os, json, asyncio, hashlib, time
+import os, json, hashlib, time
 from pathlib import Path
 from datetime import datetime, timezone
 from .base import Surface

@@ -110,7 +110,7 @@ def main():
     print(
         f"  add to registry.py: if os.environ.get('{sid.upper()}_TOKEN'): from .{sid}.surface import {cls}Surface; out.append({cls}Surface())"
     )
-    print(f"  run:  python -m factory.main collect")
+    print("  run:  python -m factory.main collect")
 
 
 if __name__ == "__main__":

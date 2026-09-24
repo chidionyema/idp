@@ -1,4 +1,3 @@
-import os, json, urllib.request, urllib.parse
 from .http_webhook_base import HTTPWebhookSurface
 from .. import ledger
 

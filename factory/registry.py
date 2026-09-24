@@ -2,7 +2,6 @@ import yaml
 from pathlib import Path
 from datetime import datetime, timezone
 from . import grammar
-from .ledger import write as ledger_write
 
 
 def collect(root: Path) -> dict:

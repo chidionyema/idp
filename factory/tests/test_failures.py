@@ -1,8 +1,7 @@
 """Failure injection. Exercises the paths that matter under load."""
 
-import json, os, sys, time, threading, subprocess, tempfile
+import sys
 from pathlib import Path
-from datetime import datetime, timezone
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent

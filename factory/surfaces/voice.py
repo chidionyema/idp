@@ -1,4 +1,4 @@
-import os, json, hashlib, time
+import json, hashlib, time
 from pathlib import Path
 from .base import Surface
 from .. import llm, ledger

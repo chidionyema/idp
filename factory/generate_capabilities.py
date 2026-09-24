@@ -5,7 +5,7 @@ Heuristics are explicit; every emitted terminal carries source & confidence.
 Never overwrites an existing capability.yaml without --force.
 """
 
-import argparse, json, os, re, sys, hashlib
+import argparse, os, re, sys
 from pathlib import Path
 from datetime import date
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import json, hmac, hashlib, os, time
 from pathlib import Path
 from .base import Surface
-from .. import llm, ledger
+from .. import llm
 
 INBOX = Path("queue/webhook_inbox")
 INBOX.mkdir(parents=True, exist_ok=True)

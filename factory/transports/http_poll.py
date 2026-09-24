@@ -1,7 +1,6 @@
 """A surface we poll. IMAP, RSS, legacy APIs, anything that won't push."""
 
 import time, urllib.request
-from pathlib import Path
 
 
 class PollTransport:

@@ -5,7 +5,7 @@ Exit non-zero only if --once and drift found.
 """
 
 from __future__ import annotations
-import argparse, hashlib, json, os, signal, sys, time, urllib.request
+import argparse, json, os, signal, sys, time, urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 

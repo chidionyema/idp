@@ -19,7 +19,7 @@ def listen(surface_id: str, adapter: str = "hci0"):
         subprocess.run(
             [sys.executable, "-m", "pip", "install", "-q", "bleak"], check=True
         )
-        from bleak import BleakScanner, BleakClient
+        from bleak import BleakScanner
 
     async def _run():
         devices = await BleakScanner.discover(timeout=5)

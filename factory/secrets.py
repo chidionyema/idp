@@ -1,4 +1,4 @@
-import os, json, subprocess, urllib.request, urllib.parse, base64, re
+import os, json, subprocess, urllib.request, urllib.parse, re
 from pathlib import Path
 
 

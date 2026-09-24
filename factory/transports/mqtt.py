@@ -1,6 +1,6 @@
 """Pub/sub for IoT: smart home, vehicles, sensors, drones, wearables."""
 
-import json, os
+import json
 from pathlib import Path
 from datetime import datetime, timezone
 
