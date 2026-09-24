@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: Namespace
+metadata: { name: factory }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: factory-config, namespace: factory }
+data:
+  FACTORY_ROOT: "/workspace"
+  FACTORY_LEDGER: "/var/factory/ledger"
+  FACTORY_ORDERS: "/var/factory/orders"
+  FACTORY_REGISTRY: "/var/factory/registry.json"
+  ALLOW_ENV_SECRETS: "0"
+  PORT: "8080"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: factory, namespace: factory }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: factory } }
+  template:
+    metadata: { labels: { app: factory } }
+    spec:
+      containers:
+        - name: factory
+          image: ghcr.io/chidionyema/idp:latest
+          ports: [{ containerPort: 8080 }]
+          envFrom:
+            - configMapRef: { name: factory-config }
+          volumeMounts:
+            - { name: data, mountPath: /var/factory }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "1Gi" }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: factory-data }
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: { name: factory-data, namespace: factory }
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: { requests: { storage: 10Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: factory, namespace: factory }
+spec:
+  selector: { app: factory }
+  ports: [{ port: 80, targetPort: 8080 }]
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: factory-collect, namespace: factory }
+spec:
+  schedule: "*/30 * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: collect
+              image: ghcr.io/chidionyema/idp:latest
+              command: ["python", "-m", "factory.main", "collect"]
+              envFrom:
+                - configMapRef: { name: factory-config }
+              volumeMounts:
+                - { name: data, mountPath: /var/factory }
+          volumes:
+            - name: data
+              persistentVolumeClaim: { claimName: factory-data }

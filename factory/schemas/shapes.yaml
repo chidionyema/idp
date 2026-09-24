@@ -1,0 +1,25 @@
+shape_system:
+  id: shape.lattice/v1
+  atoms:
+    - { id: any }
+    - { id: text }
+    - { id: json }
+    - { id: human.expression }
+    - { id: human.receipt }
+    - { id: agent.output }
+    - { id: grade.signal }
+    - { id: price.query }
+    - { id: price.result }
+    - { id: price.alert }
+    - { id: delivery.ack }
+    - { id: declaration }
+    - { id: registry.entry }
+    - { id: need }
+    - { id: resolution }
+  declared_subsumptions:
+    - { sub: price.result, sup: agent.output }
+    - { sub: price.alert,  sup: agent.output }
+    - { sub: human.receipt, sup: human.expression }
+    - { sub: delivery.ack,  sup: grade.signal }
+    - { sub: text,          sup: any }
+    - { sub: json,          sup: any }
