@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# ONE SHOT, EVERYTHING. Start the whole voice fleet locally and PROVE it is up.
+#
+# Three processes, one command, one verdict:
+#   1. Backstage board     (the FleetView surface)   -> localhost:3100 / backend 7107
+#   2. FleetView backend   (voice routes + /metrics)  -> 127.0.0.1:18790
+#   3. Voice loop          (ASR + LLM + TTS on CPU)   -> 127.0.0.1:8770
+#
+# WHY THIS EXISTS. Until now "start voice" was three hand-wired commands across three runtimes
+# (nvm+yarn for the board, a venv python for the backend, a DIFFERENT venv at /tmp for the loop),
+# and the loop's venv lived in /tmp where macOS wipes it on reboot. A surface that needs a shell
+# history to come up is not elite -- it is a silent no-op waiting. This file is the one command.
+#
+# ELITE = PROVED, NOT SLEPT. Each layer is probed with a real HTTP request against a route it
+# actually serves (and 200s), not a timeout sleep that confuses "slow" with "up". The verdict is
+# the three probes, named. A layer that cannot answer is DOWN with its log path, never "up" by
+# assumption.
+#
+#   bin/start                    # bring everything up, prove it, print one verdict
+#   bin/start --check            # probe what is already running; start nothing
+#   bin/start --only voice       # just the loop + backend (skip the board)
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+RUN="$IDP/logs"; mkdir -p "$RUN"
+CHECK=0
+ONLY=""
+
+while [ $# -gt 0 ]; do
+	case "$1" in
+	--check) CHECK=1; shift ;;
+	--only) ONLY="${2:?--only needs voice|board|backend}"; shift 2 ;;
+	*) echo "unknown argument: $1" >&2; exit 2 ;;
+	esac
+done
+
+say() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+
+# --------------------------------------------------------------------------- voice venv bootstrap
+# The venv must exist with the voice models importable, or the loop is a silent no-op. Creating it
+# is a ONE-TIME cost (faster-whisper + kokoro-onnx are ~200MB); after that it is re-probed in
+# under a second. Pinned versions match ADR 0022 and the voice pipeline's own measured set.
+bootstrap_voice_venv() {
+	VENV="$IDP/.voice-venv"
+	if [ -x "$VENV/bin/python" ]; then
+		return 0
+	fi
+	# Resolve Python 3.12 first (the models need >=3.10; macOS system python3 is 3.9).
+	PY="${VOICE_PYTHON:-}"
+	if [ -z "$PY" ]; then
+		for cand in python3.12 python3.13 python3.11 python3; do
+			if command -v "$cand" >/dev/null 2>&1; then PY="$cand"; break; fi
+		done
+	fi
+	say "boot   voice     creating $VENV with $PY (one-time, ~200MB)"
+	"$PY" -m venv "$VENV" || { say "DOWN  voice     venv creation failed ($PY)"; return 1; }
+	"$VENV/bin/pip" install --quiet --upgrade pip
+	"$VENV/bin/pip" install --quiet \
+		"faster-whisper==1.2.1" \
+		"kokoro-onnx==0.6.1" \
+		"numpy>=1.26" \
+		"fastapi>=0.141.0" \
+		"uvicorn>=0.30.6" || { say "DOWN  voice     dependency install failed"; return 1; }
+	say "ok     voice     venv ready: $VENV"
+}
+
+# --------------------------------------------------------------------------- probes
+probe() { # url -> 0 up, 1 down
+	curl -fsS -o /dev/null --max-time 3 "$1" 2>/dev/null
+}
+
+# The board backend answers /api/auth/guest/refresh without credentials (idp-up's own finding).
+board_up() { probe "http://localhost:7107/api/auth/guest/refresh"; }
+# FleetView backend answers /healthz (built by serve.py).
+backend_up() { probe "http://127.0.0.1:18790/healthz"; }
+# The voice loop's server serves /healthz (sovereign/voice/server.py).
+voice_up() { probe "http://127.0.0.1:8770/healthz"; }
+
+# --------------------------------------------------------------------------- start: backend
+start_backend() {
+	if backend_up; then
+		say "OK    backend   already up on 18790"
+		return 0
+	fi
+	say "start  backend   serve-fleetview -> 18790"
+	"$IDP/bin/serve-fleetview" --port 18790 > "$RUN/fleetview.log" 2>&1 &
+	echo $! > "$RUN/fleetview.pid"
+	for _ in $(seq 1 20); do backend_up && break; sleep 1; done
+	if backend_up; then say "OK    backend   proven up (18790 /healthz)"; else
+		say "DOWN  backend   not answering after 20s -- see $RUN/fleetview.log"; return 1
+	fi
+}
+
+# --------------------------------------------------------------------------- start: voice loop
+start_voice() {
+	if voice_up; then
+		say "OK    voice     already up on 8770"
+		return 0
+	fi
+	# The loop's own readiness first: venv + models + key, before we spend the 89s warmup.
+	# If the venv is missing, bootstrap it (one-time) rather than requiring a hand-run command.
+	bootstrap_voice_venv || return 1
+	if ! "$IDP/bin/voice-loop" --check > "$RUN/voice-check.log" 2>&1; then
+		say "DOWN  voice     loop not ready -- see $RUN/voice-check.log"
+		sed 's/^/         /' "$RUN/voice-check.log" >&2
+		return 1
+	fi
+	say "start  voice     bin/voice-loop -> 8770"
+	"$IDP/bin/voice-loop" > "$RUN/voice-loop.log" 2>&1 &
+	echo $! > "$RUN/voice-loop.pid"
+	for _ in $(seq 1 60); do voice_up && break; sleep 2; done
+	if voice_up; then say "OK    voice     proven up (8770)"; else
+		say "DOWN  voice     not answering after 120s -- see $RUN/voice-loop.log"; return 1
+	fi
+}
+
+# --------------------------------------------------------------------------- start: board
+start_board() {
+	if board_up; then
+		say "OK    board     already up (3100/7107)"
+		return 0
+	fi
+	# idp-up starts the board and waits for 7107 itself, so a DOWN here is idp-up's own verdict.
+	say "start  board     bin/idp-up (Backstage -> 3100 / backend 7107)"
+	"$IDP/bin/idp-up" > "$RUN/board.log" 2>&1
+	if board_up; then say "OK    board     proven up (7107)"; else
+		say "DOWN  board     not answering -- see $RUN/board.log"; return 1
+	fi
+}
+
+# --------------------------------------------------------------------------- main
+rc=0
+case "$ONLY" in
+	voice)  start_backend; rc=$((rc||$?)); start_voice; rc=$((rc||$?)) ;;
+	board)  start_board;  rc=$? ;;
+	backend) start_backend; rc=$? ;;
+	"")     start_backend; rc=$((rc||$?)); start_voice; rc=$((rc||$?)); start_board; rc=$((rc||$?)) ;;
+	*) echo "unknown --only target: $ONLY" >&2; exit 2 ;;
+esac
+
+echo
+if [ "$rc" -eq 0 ]; then
+	echo "READY  voice fleet is up. Board: http://localhost:3100  (voice on the FleetView surface)"
+	echo "       metrics: http://127.0.0.1:18790/metrics   voice log: http://127.0.0.1:18790/voice/log/summary"
+else
+	echo "NOT READY  one or more layers DOWN -- named above."
+fi
+exit "$rc"

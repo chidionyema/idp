@@ -1,0 +1,27 @@
+# The one Prometheus scrapes the voice turnlog's /metrics (served by the fleetview-backend
+# serve.py process when METRICS_ENABLED=true, reading sovereign/voice/turnlog.py). Until the
+# endpoint existed there was nothing here to point at: the chart shipped a ServiceMonitor that
+# scraped a port no process was listening on. This is the real one, matching the canary's shape
+# (platform/monitoring/rules/canary-servicemonitor.yaml): a ServiceMonitor in the rules row, the
+# selector the voice Service already carries, and the `metrics` port the Service already exposes.
+#
+# The metric this makes queryable — `voice_empty_rate` — is the founder's own friction number
+# ("I have to repeat myself"), served at /metrics and now scrapeable, so a session can measure it
+# instead of asserting it.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: fleetview-voice
+  namespace: monitoring
+  labels:
+    idp.platform/voice: "true"
+spec:
+  namespaceSelector:
+    matchNames: [fleetview]
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fleetview-voice
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 30s

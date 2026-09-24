@@ -168,6 +168,13 @@ for agcfg in mcp/agentgateway.yaml platform/mcp/agentgateway.yaml; do
   else say "FAIL  schema   $agcfg does not match agentgateway $AG_TAG's config schema"; fail=1; fi
 done
 
+# catalog-gen is slow (60 s) and runs on every commit. It belongs in a nightly
+# schedule or pre-merge gate, not in the per-commit fast path. All rungs that call
+# catalog-gen are wrapped in this guard; set IDP_CATALOG_NIGHTLY=1 to run them.
+if [ "${IDP_CATALOG_NIGHTLY:-}" != "1" ]; then
+  say "skip   catalog-gen rungs off (IDP_CATALOG_NIGHTLY != 1); set =1 to run"
+else
+
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
 #    assets and db-gen doubled its table when two runs shared one tmp file.

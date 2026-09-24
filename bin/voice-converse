@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# bin/voice-converse — ONE real voice conversation turn, end to end.
+#
+# This is the proof the whole voice program has been missing: real speech IN (synthesised by
+# macOS `say`, so no Python model has to load in the caller), through the warm sovereign loop's
+# WebSocket (`/voice/stream`), ASR transcript out, LLM answer clauses out, TTS audio out. Not a
+# mock, not a dict, not a synthetic probe — microphone-shaped audio through the real pipeline.
+#
+#   bin/voice-converse "what is stuck in the fleet right now"
+#
+# The loop must already be warm (`bin/voice-loop`, then wait for `asr True tts True` on
+# /healthz). This script refuses to run against a cold loop rather than pay the 89s import.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+PY="$IDP/.voice-venv/bin/python"
+WORD="${1:-what is stuck in the fleet right now}"
+LOOP="http://127.0.0.1:8770"
+
+# Readiness: the loop must be warm, or this is a cold import that reads as a hang.
+ready="$($PY -c "import urllib.request,json; d=json.load(urllib.request.urlopen('$LOOP/healthz')); print('1' if d.get('asr') and d.get('tts') else '0')" 2>/dev/null || echo 0)"
+if [ "$ready" != "1" ]; then
+  echo "DOWN  voice loop is not warm on 8770 — run bin/voice-loop and wait for /healthz asr+tts=true" >&2
+  exit 1
+fi
+
+echo "-- speaking: \"$WORD\""
+"$PY" - "$WORD" <<'PY'
+import asyncio, json, subprocess, struct, sys, time
+import numpy as np
+import websockets
+
+word = sys.argv[1]
+
+# 1) Real speech via macOS say, then afconvert to a plain 16kHz mono WAV.
+#    A WAV has a fixed 44-byte header; the stdlib `wave` module reads it, so no hand-rolled
+#    chunk parsing (which read 0 bytes and sent silence).
+subprocess.run(["say", "-o", "/tmp/voice-converse.aiff", word], check=True)
+subprocess.run(["afconvert", "-f", "WAVE", "-d", "LEI16@16000", "-c", "1", "/tmp/voice-converse.aiff", "/tmp/voice-converse.wav"], check=True)
+import wave as _wave
+w = _wave.open("/tmp/voice-converse.wav", "rb")
+n = w.getnframes()
+raw = w.readframes(n)
+arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
+pcm = arr.tobytes()
+
+async def main():
+    uri = "ws://127.0.0.1:8770/voice/stream"
+    async with websockets.connect(uri, max_size=None) as ws:
+        t0 = time.perf_counter()
+        await ws.send(pcm)
+        print(f"SENT     {len(pcm)} bytes real speech ({len(arr)/16000:.2f}s @16kHz)")
+        first_audio = None
+        clauses = []
+        while True:
+            try:
+                msg = await asyncio.wait_for(ws.recv(), timeout=30)
+            except (asyncio.TimeoutError, websockets.ConnectionClosed):
+                print("         (stream ended)")
+                break
+            if isinstance(msg, bytes):
+                dur = len(msg)/4/24000
+                if first_audio is None:
+                    first_audio = time.perf_counter() - t0
+                print(f"AUDIO    {dur:.2f}s of spoken answer (first audio at {first_audio:.3f}s)")
+                continue
+            try:
+                d = json.loads(msg)
+            except Exception:
+                continue
+            t = d.get("type")
+            if t == "transcript":
+                print(f"HEARD    {d.get('text')!r}   [asr {d.get('asr_seconds')}s]")
+            elif t == "clause":
+                clauses.append(d.get("text"))
+                print(f"CLAUSE   {d.get('text')!r}")
+            elif t == "empty":
+                print("EMPTY    the ASR heard nothing")
+            elif t == "done":
+                print(f"DONE     first_audio={d.get('first_audio')}s total={d.get('total')}s clauses={d.get('clauses')}")
+                break
+        wall = time.perf_counter() - t0
+        print(f"\nTOTAL    {wall:.3f}s wall, {len(clauses)} spoken clause(s)")
+        # The verdict: a real conversation needs at least one transcript and one spoken clause.
+        ok = clauses and first_audio is not None
+        print("RESULT  ", "CONVERSATION COMPLETE" if ok else "INCOMPLETE (no spoken answer)")
+        return 0 if ok else 1
+
+raise SystemExit(asyncio.run(main()))
+PY
