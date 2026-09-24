@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: llm
 resources:
   - namespace.yaml
+  - router-sa.yaml
   - external-secret.yaml
   - redis.yaml
   - litellm.yaml

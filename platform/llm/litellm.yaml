@@ -44,6 +44,12 @@ spec:
           labelSelector:
             matchLabels: { app.kubernetes.io/name: litellm }
       automountServiceAccountToken: false
+      serviceAccountName: idp-router
+      # OCI Workload Identity: the admission controller reads oci.oraclecloud.com/principal
+      # and grants this pod an OCI principal. The spire-key-broker sidecar uses it to call
+      # OCI Vault APIs without any static API key.
+      podAnnotations:
+        oci.oraclecloud.com/principal: workload
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -81,6 +87,29 @@ spec:
               for f in /run/secrets/human/*/*; do
                 [ -f "$f" ] || continue
                 export "$(basename "$f")=$(cat "$f")"
+              done
+              # SPIRE key broker sidecar (this pod): the broker writes provider keys to
+              # /vault-keys/<provider-name> using OCI workload identity (no static key).
+              # Read them here and export as LITELLM's expected env vars. Broker writes
+              # before this runs (sidecar init), and refreshes every 10 min.
+              # Key names in vault: MINIMAX_API_KEY, DEEPSEEK_API_KEY, ...
+              # File names from broker: minimax, deepseek, gemini, ...
+              for f in /vault-keys/*; do
+                [ -f "$f" ] || continue
+                key="$(basename "$f")"
+                val="$(cat "$f")"
+                case "$key" in
+                  minimax)    export MINIMAX_API_KEY="$val" ;;
+                  deepseek)   export DEEPSEEK_API_KEY="$val" ;;
+                  gemini)     export GEMINI_API_KEY="$val" ;;
+                  kimi)       export MOONSHOT_API_KEY="$val" ;;
+                  cohere)     export COHERE_API_KEY="$val" ;;
+                  cerebras)   export CEREBRAS_API_KEY="$val" ;;
+                  nvidia)     export NVIDIA_API_KEY="$val" ;;
+                  groq)       export GROQ_API_KEY="$val" ;;
+                  sambanova)  export SAMBANOVA_API_KEY="$val" ;;
+                  openrouter) export OPENROUTER_API_KEY="$val" ;;
+                esac
               done
               export DATABASE_URL="postgresql://litellm:$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432/litellm"
               exec litellm --config /etc/litellm/config.yaml --port 4000 --host 0.0.0.0
@@ -132,27 +161,8 @@ spec:
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
             - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
             - { name: cache, mountPath: /run/secrets/litellm/cache, readOnly: true }
-            - { name: human-minimax, mountPath: /run/secrets/human/minimax, readOnly: true }
-            - { name: human-gemini, mountPath: /run/secrets/human/gemini, readOnly: true }
-            - { name: human-openrouter, mountPath: /run/secrets/human/openrouter, readOnly: true }
-            # cohere, added 2026-09-10 with the vendor row and the embed chain. `optional`
-            # like every human mount, so the router starts whether or not the key is in the
-            # vault yet; a missing one fails that Secret alone and the Cohere hop alone.
-            - { name: human-cohere, mountPath: /run/secrets/human/cohere, readOnly: true }
-            - { name: human-kimi, mountPath: /run/secrets/human/kimi, readOnly: true }
-            # 2026-09-10: both keys were in Secrets Manager and both bridge Secrets existed in
-            # this namespace, and neither was mounted -- so the estate router could not reach
-            # Cerebras or NVIDIA at all, and any agent that wanted them had to go direct and
-            # off the ledger. Founder, same day: "all agets send should be in litelln".
-            - { name: human-cerebras, mountPath: /run/secrets/human/cerebras, readOnly: true }
-            - { name: human-nvidia, mountPath: /run/secrets/human/nvidia, readOnly: true }
-            # 2026-09-15: GROQ_API_KEY_2/_3 and all of SAMBANOVA_API_KEY/_2/_3 ride the human
-            # door alone (no vault entry, same as minimax) -- the bridge Secrets human-groq and
-            # human-sambanova already exist (generated from consoles.yaml targets) but neither
-            # was mounted, so the pool deployments in consoles.yaml naming these env vars would
-            # start unresolved without this pair, exactly the cerebras/nvidia gap above.
-            - { name: human-groq, mountPath: /run/secrets/human/groq, readOnly: true }
-            - { name: human-sambanova, mountPath: /run/secrets/human/sambanova, readOnly: true }
+
+            - { name: vault-keys, mountPath: /vault-keys, readOnly: true }
             - { name: tmp, mountPath: /tmp }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
@@ -179,7 +189,49 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 3
+        - name: broker
+          image: ghcr.io/earendil-works/idp/spire-key-broker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: VAULT_OCID_PATH
+              value: /configmaps/vault-ocid/vault_ocid
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - name: vault-ocid
+              mountPath: /configmaps/vault-ocid
+              readOnly: true
+            - name: vault-keys
+              mountPath: /vault-keys
+            # SPIRE Workload API socket. The CSI driver (csi.spiffe.io) mounts this into
+            # every pod. The broker uses it to verify callers' SVIDs:
+            #   Router presents X-SPIFFE-ID header → broker calls spire-agent api fetch x509
+            #   → agent attributes the call to the router's process → broker verifies.
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
       volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
         - name: config
           configMap: { name: litellm-config }
         - name: request-ceiling
@@ -191,29 +243,13 @@ spec:
         - name: sso
           secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
         - name: cache
-          secret: { secretName: litellm-cache }   # REDIS_PASSWORD, minted in-cluster (redis.yaml)
-        # The bridge's Secrets, one per vendor (platform/human-vault-bridge, generated from the
-        # registry). optional: true is what lets a vendor whose key is not in Secrets Manager yet
-        # be absent without holding this pod Pending -- the opposite of the vault mounts above,
-        # which are deliberately required because a router with no upstream key is not a router.
-        - name: human-minimax
-          secret: { secretName: human-minimax, optional: true }
-        - name: human-gemini
-          secret: { secretName: human-gemini, optional: true }
-        - name: human-openrouter
-          secret: { secretName: human-openrouter, optional: true }
-        - name: human-cohere
-          secret: { secretName: human-cohere, optional: true }
-        - name: human-kimi
-          secret: { secretName: human-kimi, optional: true }
-        - name: human-cerebras
-          secret: { secretName: human-cerebras, optional: true }
-        - name: human-nvidia
-          secret: { secretName: human-nvidia, optional: true }
-        - name: human-groq
-          secret: { secretName: human-groq, optional: true }
-        - name: human-sambanova
-          secret: { secretName: human-sambanova, optional: true }
+          secret: { secretName: litellm-cache }
+        - name: vault-ocid
+          configMap:
+            name: vault-ocid
+            optional: true
+        - name: vault-keys
+          emptyDir: {}
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
 ---

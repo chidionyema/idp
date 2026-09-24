@@ -47,6 +47,11 @@ fi
 if [ -n "$VAULT_ID" ]; then
   kubectl -n flux-system create configmap estate-vars --from-literal=OCI_VAULT_ID="$VAULT_ID" --from-literal=OCI_REGION="$(vget OCI_REGION)" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
   echo "ok      estate-vars configmap in flux-system (vault id, region)"
+  # spire-key-broker sidecar: reads the vault OCID from a ConfigMap in its own namespace.
+  # Creating the ns here avoids a race where Flux reconciles llm before this runs.
+  kubectl create namespace llm --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl -n llm create configmap vault-ocid --from-literal=vault_ocid="$VAULT_ID" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  echo "ok      vault-ocid configmap in llm (for spire-key-broker sidecar)"
 else echo "n/a     estate-vars: no vault_id in tofu outputs yet; secret-store row stays pending"; fi
 # ghcr packages are private; the OCIRepository (flux-system) and the catalogue pod (backstage)
 # both pull with this. Token needs read:packages; write:packages for bin/idp-catalog-push.
