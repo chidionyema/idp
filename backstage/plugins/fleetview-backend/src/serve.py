@@ -360,6 +360,28 @@ def build_app(routes_path: Path) -> FastAPI:
         body, status = routes.journeys_envelope(limit)
         return JSONResponse(content=body, status_code=status)
 
+    # crew#973 CP3: SSE tail for the Deploy River narration
+    @app.get(routes.JOURNEYS_STREAM_PATH)
+    async def journeys_stream():
+        async def gen():
+            last_sha = None
+            while True:
+                frames = routes.journeys_tail_frames(last_sha)
+                for frame in frames:
+                    yield frame
+                    # Track the newest sha we've emitted
+                    try:
+                        import json as _json
+
+                        data = _json.loads(frame[6:])  # strip "data: "
+                        last_sha = data.get("sha", last_sha)
+                    except Exception:  # noqa: BLE001
+                        pass
+                yield ": heartbeat\n\n"
+                await asyncio.sleep(15)
+
+        return StreamingResponse(gen(), media_type="text/event-stream")
+
     @app.get("/journeys/{sha}")
     def journey_get(sha: str):
         body, status = routes.deploy_journey_envelope(sha)
