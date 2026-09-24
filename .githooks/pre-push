@@ -10,11 +10,9 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-# crew#1194: refuse any shell file with a syntax error in the push diff.
-# bash -n is a parse-only check -- no execution, no side effects, no secrets.
-# This closes the governance gap: the fast-gate (IDP_CI_FAST=1) exits
-# at line 144 and never reaches the nightly section (174-802) where errors live.
-# A shell file with bad syntax on main makes main red. Main must be green.
+# crew#1194: syntax gate on the push diff. Parse-only checks, no execution.
+# A file with bad syntax on main makes main red. Main must be green.
+# Layer 1 of 3: pre-push | CI offline-gate | CI fast-gate.
 while IFS= read -r _ _ _ remote_sha; do
   [ -n "$remote_sha" ] || continue
   break
@@ -26,15 +24,55 @@ done
 while IFS= read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$remote_sha" ] && continue
   diff_files=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
+  # Layer 1a: bash -n on shell files
   for f in $diff_files; do
     case "$f" in
-    *.sh|*.bash) ;;                       # shell extension
-    bin/*|.githooks/*) ;;                  # shebang convention
-    *) continue ;;                          # skip non-shell
+    *.sh|*.bash) is_shell=1 ;;           # shell extension
+    bin/*|.githooks/*) is_shell=1 ;;           # shebang convention
+    *) is_shell=0 ;;                          # skip non-shell
     esac
-    if [ -f "$f" ] && ! bash -n "$f" 2>&1; then
-      bash -n "$f" >&2
-      echo "pre-push REFUSED: syntax error in $f" >&2
+    if [ "$is_shell" = 1 ] && [ -f "$f" ]; then
+      if ! bash -n "$f" 2>&1; then
+        bash -n "$f" >&2
+        echo "pre-push REFUSED: syntax error in $f" >&2
+        exit 1
+      fi
+    fi
+  done
+  # Layer 1b: python3 -m py_compile on Python files
+  for f in $diff_files; do
+    case "$f" in
+    *.py) is_py=1 ;;                      # python extension
+    *) is_py=0 ;;                         # skip non-python
+    esac
+    if [ "$is_py" = 1 ] && [ -f "$f" ]; then
+      if ! python3 -m py_compile "$f" 2>&1; then
+        python3 -m py_compile "$f" >&2
+        echo "pre-push REFUSED: syntax error in $f" >&2
+        exit 1
+      fi
+    fi
+  done
+  # Layer 1c: no non-ASCII bytes on any tracked file
+  for f in $diff_files; do
+    [ -f "$f" ] || continue
+    if python3 -c "
+import sys
+with open('$f', 'rb') as fh:
+    for i, b in enumerate(fh.read()):
+        if b > 127:
+            sys.exit(i + 1)
+sys.exit(0)
+" 2>&1; then
+      : # clean
+    else
+      python3 -c "
+with open('$f', 'rb') as fh:
+    data = fh.read()
+    positions = [(i+1, b) for i, b in enumerate(data) if b > 127]
+print('non-ASCII byte(s) at:', positions[:5], '(first 5)')
+" >&2
+      echo "pre-push REFUSED: non-ASCII bytes in $f" >&2
       exit 1
     fi
   done
