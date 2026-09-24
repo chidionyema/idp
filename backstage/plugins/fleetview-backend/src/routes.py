@@ -75,6 +75,8 @@ _MUTATIONS_MODULE = Path(__file__).resolve().parent / "mutations.py"
 _EXECUTOR_LINK_MODULE = Path(__file__).resolve().parent / "executor_link.py"
 _TRACE_MODULE = Path(__file__).resolve().parent / "trace.py"
 _LEDGER_TAIL_MODULE = Path(__file__).resolve().parent / "ledger_tail.py"
+_DEVICE_ACCESS_MODULE = Path(__file__).resolve().parent / "device_access.py"
+_HANDOFF_MODULE = Path(__file__).resolve().parent / "handoff.py"
 
 
 def _load(path: Path, name: str):
@@ -171,6 +173,16 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+DEVICE_STATUS_PATH = "/device-status"
+DEVICE_AUTHORIZE_PATH = "/device-authorize"
+
+
+def _device_access():
+    return _load(_DEVICE_ACCESS_MODULE, "fleetview_device_access_impl")
+
+
+def _handoff():
+    return _load(_HANDOFF_MODULE, "fleetview_handoff_impl")
 
 
 def sessions_envelope() -> tuple[dict[str, Any], int]:
@@ -441,6 +453,23 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
         return {"rows": rows}, 200
     except Exception as exc:  # noqa: BLE001 — soft failure for the log pane
         return {"rows": [], "error": str(exc)}, 200
+
+
+def device_status_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for GET /api/fleetview/device-status.
+
+    Proxied through device_access.py so the tests can hold the pair (routes.py, device_access.py)
+    to the same no-drift rule as every other route in this module.
+    """
+    return _device_access().device_status_envelope()
+
+
+def device_authorize_envelope() -> tuple[dict[str, Any], int]:
+    """The body and status for GET /api/fleetview/device-authorize.
+    Proxied through handoff.py so the tests can hold the pair (routes.py, handoff.py)
+    to the same no-drift rule as every other route in this module.
+    """
+    return _handoff().device_authorize_envelope()
 
 
 def _now() -> str:
