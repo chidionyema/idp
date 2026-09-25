@@ -99,6 +99,7 @@ CHARS_PER_TOKEN = 4
 TOKENS_PER_MTOK = 1_000_000
 MAX_TOOL_DESC_CHARS = int(os.environ.get("ESTATE_MAX_TOOL_DESC_CHARS", "400"))
 MAX_HISTORY_MSGS = int(os.environ.get("ESTATE_MAX_HISTORY_MSGS", "60"))
+MAX_HISTORY_BYTES = int(os.environ.get("ESTATE_MAX_HISTORY_BYTES", "200000"))
 GIST_AFTER_MSGS = int(os.environ.get("ESTATE_GIST_AFTER_MSGS", "40"))
 STALE_THRESHOLD = int(os.environ.get("ESTATE_STALE_THRESHOLD", "10"))
 MIN_OBS_CHARS = int(os.environ.get("ESTATE_MIN_OBS_CHARS", "500"))
@@ -317,7 +318,10 @@ class EstateEfficiencyGateway(CustomLogger):
         dropping the corresponding tool messages, and vice versa. We find a safe
         cut point that doesn't orphan any tool messages.
         """
-        if len(messages) <= MAX_HISTORY_MSGS:
+        if (
+            len(messages) <= MAX_HISTORY_MSGS
+            and _json_bytes(messages) <= MAX_HISTORY_BYTES
+        ):
             return messages
         system = [
             m for m in messages if isinstance(m, dict) and m.get("role") == "system"
