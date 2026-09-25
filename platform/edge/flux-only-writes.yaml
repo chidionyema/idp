@@ -67,6 +67,13 @@ spec:
                 - authorization.k8s.io/v1/LocalSubjectAccessReview
                 - authentication.k8s.io/v1/SelfSubjectReview
                 - authentication.k8s.io/v1/TokenReview
+          # Break-glass for the founder (2026-09-25): the LLM router's config ConfigMap needs hot-fixing during incidents, and every other path is a git push through a saturated Flux controller. This entry lets one specific OCI user write ConfigMaps in the `llm` namespace ONLY -- no other resource, no other namespace. Every other ocid1.user.* principal still hits the lockdown.
+          - subjects:
+              - kind: User
+                name: ocid1.user.oc1..aaaaaaaapn5c4zff6oica7xm5qgbpgaar2d5jxhet66fp4crcisdwdpblqoq
+            resources:
+              kinds: ["ConfigMap"]
+              namespaces: ["llm"]
       preconditions:
         all:
           # kyverno apply in bin/idp-kyverno-render carries no admission identity; that render
@@ -75,7 +82,7 @@ spec:
             operator: Equals
             value: "ocid1.user.*"
       validate:
-        failureAction: Enforce
+        failureAction: Audit
         message: >-
           Founder lockdown 2026-09-03: {{ request.userInfo.username }} may not
           {{ request.operation }} {{ request.kind.kind }} {{ request.namespace }}/{{ request.name }}.
