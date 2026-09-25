@@ -23,7 +23,7 @@ metadata:
   name: gateway-api-crds
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: gateway-api
@@ -39,13 +39,13 @@ metadata:
   name: kyverno
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/kyverno
   prune: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -58,7 +58,7 @@ metadata:
   name: edge
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: gateway-api-crds
     - name: kyverno
@@ -69,7 +69,7 @@ spec:
   path: ./platform/edge
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   # flux-only-writes.yaml names its two excused identities as ${ESTATE_BREAK_GLASS_USER} and
   # ${ESTATE_FOUNDER_USER}. Without this block Flux applied the literal text (measured on the
   # live ClusterPolicy 2026-09-06 21:10Z), so neither exception ever matched a real principal and
@@ -101,7 +101,7 @@ metadata:
   name: prospector-platform
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
   # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
   retryInterval: 1m
@@ -137,7 +137,7 @@ metadata:
   name: prospector
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: prospector-platform
   sourceRef:
@@ -145,7 +145,7 @@ spec:
     name: prospector
   path: ./deploy/k8s/overlays/oke
   prune: true
-  timeout: 10m
+  timeout: 2m
   # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
   # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
   # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
@@ -191,7 +191,7 @@ metadata:
   name: dns
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
   # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
   retryInterval: 1m
@@ -207,7 +207,7 @@ spec:
   path: ./platform/dns
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -226,7 +226,7 @@ metadata:
   name: flux-webhook
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   retryInterval: 1m
   dependsOn:
     # the HTTPRoute has nothing to attach to until the Gateway exists,
@@ -239,7 +239,7 @@ spec:
   path: ./platform/flux-webhook
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -255,7 +255,7 @@ metadata:
   name: acg
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   retryInterval: 1m
   dependsOn:
     - name: edge
@@ -266,7 +266,7 @@ spec:
   path: ./platform/acg
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment

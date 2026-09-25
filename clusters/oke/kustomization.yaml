@@ -38,4 +38,4 @@ patches:
       metadata:
         name: estate-reconcile-interval
       spec:
-        interval: 10m
+        interval: 30s
