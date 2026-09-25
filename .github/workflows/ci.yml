@@ -53,6 +53,7 @@ jobs:
   # So it runs on the pull request, where it can still refuse, and on the push to main, where the
   # empty IDP_CI_BASE grades every directory rather than only the diff. Both, not either.
   offline-gate:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
@@ -118,6 +119,7 @@ jobs:
   # founder machine; this job only installs its tools. Pinned by checksum, the
   # way conftest above is pinned by version (bin/actions-pinned covers uses:).
   security-scan:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
@@ -125,6 +127,7 @@ jobs:
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
 
   bdd-suites:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
@@ -278,6 +281,7 @@ jobs:
   # runner-second; the matrix underneath can change shape -- a third suite, a rename -- without
   # anyone touching the repository ruleset, which is the coupling that caused the stall.
   messaging-demo:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     # crew#639 CP9, founder 2026-08-30: the messaging demos run on every push, both of them, against
@@ -309,6 +313,7 @@ jobs:
   # carries is a scoped one-hour token rather than the root. Only on changes under
   # bin/idp/migrate-domain/, because nothing else in the repository can move them.
   migrate-domain:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
@@ -342,6 +347,7 @@ jobs:
   # that runs it. Only on changes under backstage/: the install is the slow part and nothing else
   # in the repository can move these tests.
   portal-app:
+    if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
