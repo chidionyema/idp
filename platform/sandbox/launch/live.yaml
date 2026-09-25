@@ -9,15 +9,15 @@ metadata:
   name: sandbox-live
   namespace: flux-system
 spec:
-  interval: 1m
-  retryInterval: 1m
+  interval: 30s
+  retryInterval: 30s
   sourceRef:
     kind: GitRepository
     name: sandbox-launch
   path: ./
   prune: true
   wait: false
-  timeout: 5m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap

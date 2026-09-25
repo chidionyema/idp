@@ -29,7 +29,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: false
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -47,7 +47,7 @@ spec:
     # than standing up a database of its own (founder 2026-09-04). Lago's migrations run against
     # database `lago` there on first boot.
     - name: estate-db
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - { apiVersion: apps/v1, kind: StatefulSet, name: commerce-redis, namespace: commerce }
 ---
@@ -58,7 +58,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: false
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -69,7 +69,7 @@ spec:
     # The primitive publishes estate.commerce.order_paid; the bus it publishes to exists first.
     - name: event-bus
   wait: true
-  timeout: 15m
+  timeout: 2m
 ---
 # The internal event bus. Suspended with the layer that publishes to it: a bus with no
 # publisher is a workload nobody reads, which the estate does not admit (LAW 28).
@@ -80,7 +80,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: false
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -90,4 +90,4 @@ spec:
     # The NATS pod names platform-batch; that class is created by this row.
     - name: priority-classes
   wait: true
-  timeout: 10m
+  timeout: 2m
