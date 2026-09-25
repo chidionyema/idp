@@ -10,7 +10,7 @@ metadata:
   name: human-vault
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: external-secrets
     - name: secret-store
@@ -20,7 +20,7 @@ spec:
     name: flux-system
   path: ./platform/human-vault
   prune: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
