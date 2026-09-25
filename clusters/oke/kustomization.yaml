@@ -18,6 +18,7 @@ resources:
   - flux-system
   - alerts.yaml
   - catalog.yaml
+  - kube-system
   - commerce.yaml
   - edge.yaml
   - estate-config.yaml

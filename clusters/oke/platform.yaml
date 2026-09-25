@@ -1112,6 +1112,29 @@ spec:
       - kind: ConfigMap
         name: estate-config
 ---
+# kube-system CoreDNS egress fix (2026-09-25): NetworkPolicy allowing coredns pods to reach
+# the Kubernetes API server. Without this, the kubernetes plugin times out listing Services and
+# all internal DNS resolution returns SERVFAIL. Root cause: Calico default-deny in kube-system
+# blocked CoreDNS egress before this row existed. ${ESTATE_APISERVER_CIDR} = 10.0.0.11/32.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: kube-system
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/kube-system
+  prune: true
+  wait: true
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+---
 # crew#539 CP4: the node pool grows and shrinks by itself (platform/oci/autoscaler).
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
