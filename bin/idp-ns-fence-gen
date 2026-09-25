@@ -174,12 +174,16 @@ METADATA_ADDR = "169.254.169.254/32"
 
 
 def metadata_egress_doc(ns: str) -> dict:
+    # The OCI Go SDK (Instance Principal auth) makes two calls to the metadata service:
+    # 1. GET /opc-http/request_info/ (or /meta_data/) over port 80/443 to read the signing cert.
+    # 2. POST /v3/instanceprincipal/... over port 443 to exchange the cert for a JWT token.
+    # Both ports are needed; omitting 443 was silently breaking estate-vault on 2026-09-25.
     return {
         "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
         "metadata": {"name": "allow-metadata-egress", "namespace": ns},
         "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [{
             "to": [{"ipBlock": {"cidr": METADATA_ADDR}}],
-            "ports": [{"protocol": "TCP", "port": 80}]}]},
+            "ports": [{"protocol": "TCP", "port": 80}, {"protocol": "TCP", "port": 443}]}]},
     }
 
 
@@ -217,10 +221,19 @@ def policy_docs(ns: str, flows: dict, emitters: set | None = None) -> list[dict]
     }, {
         "apiVersion": "networking.k8s.io/v1", "kind": "NetworkPolicy",
         "metadata": {"name": "allow-dns-egress", "namespace": ns},
-        "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [{
-            "to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+        "spec": {"podSelector": {}, "policyTypes": ["Egress"], "egress": [
+            # Allow DNS to the kube-dns service IP (clusterIP, e.g. 10.96.0.10).
+            # Without this, default-deny blocks queries to the service IP even when the
+            # pods behind it are reachable. Required because allow-internet-egress denies
+            # RFC1918 space (10.0.0.0/8) and 10.96.0.10 is inside it.
+            {"to": [{"ipBlock": {"cidr": "10.96.0.10/32"}}],
+             "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]},
+            # Also allow to the kube-dns pods directly (for pods that resolve the service name
+            # to a pod IP rather than going through the service IP).
+            {"to": [{"namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
                     "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}}}],
-            "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]}]},
+             "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}]},
+        ]},
     }, {
         # The floor is drawn around the namespace ("the namespace next door", above), not around
         # each pod: a default deny with podSelector {} also cuts a namespace's own pods off from
