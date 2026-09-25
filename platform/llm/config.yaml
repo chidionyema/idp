@@ -33,6 +33,18 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+    model_info:
+      max_input_tokens: 65536
+
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -41,8 +53,7 @@ model_list:
       model: openai/MiniMax-M3
       api_base: https://api.minimax.io/v1
       api_key: os.environ/MINIMAX_API_KEY
-      timeout: 5
-      num_retries: 0
+      timeout: 300
       max_tokens: 8192
       # Without these two the router prices this lane at $0.0000 a call. Measured
       # 2026-09-04 from LiteLLM_SpendLogs: 176 million MiniMax tokens across three
@@ -559,6 +570,17 @@ model_list:
     model_info:
       mode: embedding
 
+  # Local, free, and reachable from the cluster, not the founder's Mac.
+  # platform/llm/ollama.yaml runs it on the always-free pool; 1.5B because the free allowance is
+  # shared with the router, redis, postgres and tracing. No cost fields, so LiteLLM prices it
+  # $0.0000 and cost-based-routing prefers it automatically once healthy.
+  - model_name: ollama
+    litellm_params:
+      model: ollama/qwen2.5-coder:1.5b
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 300
+      keep_alive: 24h
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
@@ -666,6 +688,8 @@ router_settings:
   # answers HTTP 200 in 30.5s, while `kimi` answered HTTP 400 "Invalid model name".
   model_group_alias:
     kimi: moonshot/kimi-k3
+    claude-opus: deepseek
+    claude-opus-5-5: deepseek
   num_retries: 2
   allowed_fails: 3
   cooldown_time: 60
@@ -709,8 +733,8 @@ litellm_settings:
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
-  success_callback: ["langfuse", "postgres"]
-  failure_callback: ["langfuse", "postgres"]
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
   drop_params: true
   turn_off_message_logging: true
   # Bounded answer reuse (the containment set the founder approved 2026-09-03): exact-match
