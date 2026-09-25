@@ -7,7 +7,7 @@ metadata:
   name: image-automation
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
     # crew#539: the namespace, not the portal. Role/RoleBinding/ServiceAccount ghcr-pull-reader
@@ -19,7 +19,7 @@ spec:
     name: flux-system
   path: ./platform/image-automation
   prune: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageRepository
