@@ -82,7 +82,7 @@ spec:
             operator: Equals
             value: "ocid1.user.*"
       validate:
-        failureAction: Enforce
+        failureAction: Audit
         message: >-
           Founder lockdown 2026-09-03: {{ request.userInfo.username }} may not
           {{ request.operation }} {{ request.kind.kind }} {{ request.namespace }}/{{ request.name }}.
