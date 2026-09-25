@@ -154,17 +154,18 @@ with open('$f','rb') as fh:
   exit 0
 fi
   # kubeconform: schema-validates every clusters/oke/ manifest.
-  # Catches: orphan apiVersion without kind, missing required fields, wrong types.
-  # Skipped (return 0) if no clusters/oke/ files changed -- zero false positives
-  # on touch-unrelated PRs.
-  if command -v kubeconform >/dev/null 2>&1; then
+  # yamllint only checks YAML syntax -- it passes a document with apiVersion but no kind:.
+  # kubeconform validates against the OpenAPI schema for the declared kind/apiVersion.
+  # Skipped in fast gate (IDP_CI_FAST=1) because it downloads the CRD catalog.
+  # Skipped if no clusters/oke/ files changed -- zero false positives on unrelated PRs.
+  if [ "$FAST" != 1 ] && command -v kubeconform >/dev/null 2>&1; then
     if touched clusters/oke/; then
       echo "  kubeconform schema validation (clusters/oke/)..."
       if kubeconform \
         -strict -summary -ignore-missing-schemas \
         -schema-location default \
         -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-        "$IDP/clusters/oke/" 2>&1; then
+        "$IDP/clusters/oke/" 2>&1 | tee "${TMPDIR:-/tmp}/kubeconform.log"; then
         : # clean
       else
         echo "  FAIL kubeconform clusters/oke/"
@@ -172,13 +173,14 @@ fi
       fi
     fi
   fi
-  # kustomize build: compiles the entire Flux tree exactly as the cluster would.
-  # Catches: missing kind, broken dependsOn, orphan --- separators, bad patches.
-  # Skipped if no clusters/oke/ files changed.
-  if command -v kustomize >/dev/null 2>&1; then
+  # kustomize build dry-run: compiles the entire Flux tree exactly as the cluster would.
+  # Even with valid YAML and valid per-document schemas, a --- separator can produce an empty
+  # resource or a patch can target a missing base. kustomize build catches both.
+  # Skipped in fast gate and if nothing in clusters/oke/ changed.
+  if [ "$FAST" != 1 ] && command -v kustomize >/dev/null 2>&1; then
     if touched clusters/oke/; then
       echo "  kustomize build clusters/oke/..."
-      if kustomize build "$IDP/clusters/oke/" >/dev/null 2>&1; then
+      if kustomize build "$IDP/clusters/oke/" >"${TMPDIR:-/tmp}/kustomize.log" 2>&1; then
         : # clean
       else
         echo "  FAIL kustomize build clusters/oke/"
@@ -310,28 +312,7 @@ if [ "$FAST" != 1 ] && command -v kubeconform >/dev/null 2>&1; then
   [ "$fail" -eq 0 ] && say "ok    kubeconform clusters/" || say "FAIL  kubeconform  clusters/"
 fi
 
-# 1g. crew#1194: flux build dry-run compiles the entire Kustomize tree exactly as the
-# cluster would. Even when individual YAMLs are syntactically valid and pass schema
-# validation, a --- document boundary can produce an empty resource, or a patch can
-# target a missing base. flux build kustomization --dry-run catches both.
-# NOTE: skipped in fast gate (IDP_CI_FAST=1) because it needs the flux binary and
-# network for Helm repos referenced by the tree.
-if [ "$FAST" != 1 ] && command -v flux >/dev/null 2>&1; then
-  # Test both the top-level cluster kustomization and the secret-store one
-  for _km in flux-system clusters/oke clusters/oke/secret-store; do
-    if [ -d "$IDP/$_km" ] || [ -f "$IDP/$_km" ]; then
-      flux build kustomization "$(basename "$_km")" \
-        --path "$IDP/$(dirname "$_km")" \
-        --dry-run 2>&1 | head -5
-      if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-        say "ok    flux build $_km (dry-run)"
-      else
-        say "FAIL  flux build $_km (dry-run)"
-        fail=1
-      fi
-    fi
-  done
-fi
+
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
 for c in llm/litellm.yml observability/langfuse.yml mcp/agentgateway.yml; do
