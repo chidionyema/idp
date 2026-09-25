@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>ai.estate.installer</string>
+    <key>CFBundleName</key>
+    <string>IDP Estate Installer</string>
+    <key>CFBundleVersion</key>
+    <string>0.1.0</string>
+    <key>IFPkgDeleteMyAppOnUninstall</key>
+    <false/>
+    <key>IFPkgFlagAuthorizationState</key>
+    <true/>
+    <key>IFPkgFlagDefaultLocation</key>
+    <string>/</string>
+    <key>IFPkgFlagRelocatable</key>
+    <false/>
+    <key>IFPkgFlagInstalledSize</key>
+    <integer>512</integer>
+    <key>IFPkgFlagRequiredSize</key>
+    <integer>512</integer>
+    <key>IFPkgProtocolVersion</key>
+    <integer>2</integer>
+    <key>IFRoleSelectionPopup</key>
+    <true/>
+</dict>
+</plist>
