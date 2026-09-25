@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<installer-gui-script minSpecVersion="1">
+    <title>IDP Estate Installer</title>
+    <license file="LICENSE" replace="true"/>
+    <readme file="README" replace="true"/>
+    <conclusion file="Conclusion" replace="true"/>
+
+    <choices-outline>
+        <line choice="estate"/>
+    </choices-outline>
+
+    <choice id="estate"
+            title="IDP Estate Platform"
+            description="Bootstrap tools and services for the IDP Estate platform">
+        <pkg-ref id="ai.estate.pkg">idp-estate.pkg</pkg-ref>
+    </choice>
+
+    <pkg-ref id="ai.estate.pkg"
+             version="0.1.0"
+             installKBytes="512"
+             auth="Admin">idp-estate.pkg</pkg-ref>
+</installer-gui-script>
