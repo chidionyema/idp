@@ -68,6 +68,8 @@ KOKORO_VOICES = os.environ.get("VOICE_KOKORO_VOICES") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "voices-v1.0.bin"
 )
 KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", "af_heart")
+SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", "Zarvox")
+PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_US-lessac-medium")
 
 # The router is the estate's own (LAW 34: one router key per identity, no vendor keys on the Mac).
 # The spec's LLM leg is vLLM/Llama-3.3-70B streamed; the deployment note permits the estate router
@@ -390,3 +392,34 @@ def synthesise(text: str) -> bytes | None:
         return samples.astype("float32").tobytes()
     except Exception:  # noqa: BLE001 -- one bad clause must not end the conversation
         return None
+
+
+def piper_voices() -> list[str]:
+    """Piper voices on disk, listed from the standard voices directory.
+
+    Returns voice names (the .onnx filename without extension) found in
+    ~/.local/share/piper/voices/ or the directory named by VOICE_PIPER_DIR.
+    An empty list means piper is not installed on this host -- that is fine,
+    the catalogue still renders correctly with the other two engines.
+    """
+    import pathlib
+
+    voice_dir = pathlib.Path(
+        os.environ.get(
+            "VOICE_PIPER_DIR",
+            pathlib.Path.home() / ".local" / "share" / "piper" / "voices",
+        )
+    )
+    if not voice_dir.is_dir():
+        return []
+    return sorted(p.stem for p in voice_dir.glob("*.onnx"))
+
+
+def synthesise_piper_with(voice: str, text: str) -> bytes | None:
+    """Synthesise with a piper voice. Raises NotImplementedError -- piper is not wired
+    into the voice routes; the fleetview-backend uses Cartesia Sonic instead.
+
+    Kept here so catalogue.py's select() and preview() don't import-error when enumerating
+    the piper engine, even though that engine is never actually selected.
+    """
+    raise NotImplementedError("piper synthesis is not wired into the voice routes")

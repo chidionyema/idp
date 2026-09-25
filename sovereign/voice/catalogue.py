@@ -109,11 +109,13 @@ def catalogue() -> dict:
     said, correctly, "why do i have to take my pick". The two engines ship 60+ voices between
     them; there was never a reason to offer two.
     """
-    m = engine.models()
+    # Skip engine.models() -- it loads Kokoro (~90s) on first call, which would block
+    # the catalogue route. The current engine is inferred from disk; voices are listed from disk.
+    tts_engine = "kokoro" if os.path.exists(engine.KOKORO_MODEL) else None
     return {
-        "engine": m.tts_engine,
+        "engine": tts_engine,
         "current": {
-            "engine": m.tts_engine,
+            "engine": tts_engine,
             "kokoro": engine.KOKORO_VOICE,
             "say": engine.SAY_VOICE,
             "piper": engine.PIPER_VOICE,
