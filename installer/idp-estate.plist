@@ -8,8 +8,6 @@
     <string>IDP Estate Installer</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
-    <key>IFPkgDeleteMyAppOnUninstall</key>
-    <false/>
     <key>IFPkgFlagAuthorizationState</key>
     <true/>
     <key>IFPkgFlagDefaultLocation</key>

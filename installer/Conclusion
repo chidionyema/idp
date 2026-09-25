@@ -1,16 +1,19 @@
 # Installation Complete
 
-The IDP Estate has been installed.
+The IDP Estate has been installed on this Mac.
 
 ## Next steps
 
-1. Open Terminal and run:
+Open Terminal and run the full bootstrap:
 
-       /usr/local/bin/idp-install-all
+    /usr/local/bin/idp-install-all
 
-   This installs Python 3.12, all packages, and configures services.
+This installs Python 3.12 and configures all services.
 
-2. FleetView backend is running at: http://127.0.0.1:18790
+## Services
+
+- FleetView backend:  http://127.0.0.1:18790
+- Executor daemon:     ~/.estate/executor.sock
 
 ## Uninstall
 

@@ -4,17 +4,19 @@ This package installs the IDP Estate bootstrap tools and services.
 
 ## What's installed
 
-- **`/usr/local/bin/idp-install-all`** — One-shot estate bootstrap script
-- **`ai.estate.fleetview-backend`** — Launchd agent for the FleetView voice backend
+- **idp-install-all** — One-shot estate bootstrap script at `/usr/local/bin/`
+- **ai.estate.fleetview-backend** — Launchd agent for the FleetView voice backend
 
 ## After installation
 
-Run the full bootstrap:
+Run the full bootstrap from Terminal:
 
     /usr/local/bin/idp-install-all
 
-This installs Python 3.12, MacPorts (if missing), all Python packages, and
+This installs Python 3.12 (via MacPorts), all Python packages, and
 configures the launchd agents.
+
+FleetView backend runs at: http://127.0.0.1:18790
 
 ## More information
 
