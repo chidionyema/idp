@@ -1,6 +1,7 @@
 README.md
 pyproject.toml
 src/fleetview_backend/__init__.py
+src/fleetview_backend/__main__.py
 src/fleetview_backend/blast.py
 src/fleetview_backend/claude_code_adapter.py
 src/fleetview_backend/config_guard.py
