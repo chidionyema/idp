@@ -99,7 +99,6 @@ spec:
 ---
 # The schedules. Split from the install (incident 2026-08-25): Flux dry-runs a row as one
 # unit, and a Schedule cannot be dry-run before chaos-mesh.org CRDs exist.
-apiVersion: kustomize.toolkit.fluxcd.io/v1
 ---
 # crew#258 CP2: SigNoz, the one metrics/traces/logs store (crew/docs/STANDARDS.md "Observability").
 # Was ordered after backstage "so the portal keeps first claim on the single node's CPU" — the single
