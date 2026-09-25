@@ -167,6 +167,8 @@ def run_steps(conn, ticket_id, intent, args):
             if result.stdout:
                 for line in result.stdout.strip().splitlines()[:20]:
                     print(line)  # stdout — agent captures this
+            else:
+                print(f"[step {idx+1}] ok")  # agent needs some stdout
 
     status = "ok" if failed == 0 else "broken"
     close_ticket(conn, ticket_id, status)
