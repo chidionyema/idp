@@ -71,6 +71,8 @@ router_settings:
   # answers HTTP 200 in 30.5s, while `kimi` answered HTTP 400 "Invalid model name".
   model_group_alias:
     kimi: moonshot/kimi-k3
+    claude-opus: deepseek
+    claude-opus-5-5: deepseek
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
