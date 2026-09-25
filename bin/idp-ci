@@ -153,6 +153,41 @@ with open('$f','rb') as fh:
   echo "idp-ci --check: PASS"
   exit 0
 fi
+  # kubeconform: schema-validates every clusters/oke/ manifest.
+  # Catches: orphan apiVersion without kind, missing required fields, wrong types.
+  # Skipped (return 0) if no clusters/oke/ files changed -- zero false positives
+  # on touch-unrelated PRs.
+  if command -v kubeconform >/dev/null 2>&1; then
+    if touched clusters/oke/; then
+      echo "  kubeconform schema validation (clusters/oke/)..."
+      if kubeconform \
+        -strict -summary -ignore-missing-schemas \
+        -schema-location default \
+        -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+        "$IDP/clusters/oke/" 2>&1; then
+        : # clean
+      else
+        echo "  FAIL kubeconform clusters/oke/"
+        fail=1
+      fi
+    fi
+  fi
+  # kustomize build: compiles the entire Flux tree exactly as the cluster would.
+  # Catches: missing kind, broken dependsOn, orphan --- separators, bad patches.
+  # Skipped if no clusters/oke/ files changed.
+  if command -v kustomize >/dev/null 2>&1; then
+    if touched clusters/oke/; then
+      echo "  kustomize build clusters/oke/..."
+      if kustomize build "$IDP/clusters/oke/" >/dev/null 2>&1; then
+        : # clean
+      else
+        echo "  FAIL kustomize build clusters/oke/"
+        fail=1
+      fi
+    fi
+  fi
+
+
 
 need python3
 [ "$FAST" = 1 ] || { need docker; need conftest; need check-jsonschema; need sqlite-utils; need jq; }
@@ -237,6 +272,65 @@ if [ "$FAST" = 1 ]; then
   # incident test without its committed row is refused here, so the chaos drills never drift.
   [ "$fail" -eq 0 ] && say "ok    fast-gate: ruff" || say "FAIL  fast-gate"
   exit "$fail"
+fi
+
+# 1f. crew#1194: kubeconform validates every Kubernetes YAML against the OpenAPI schema
+# for its kind/apiVersion. yamllint only checks YAML syntax -- a document with
+# apiVersion but no kind: is valid YAML but an invalid Kubernetes object and Flux
+# silently ignores it. kubeconform catches this. CRDs-catalog provides schemas for
+# Flux CRDs (Kustomization, GitRepository, HelmRepository, etc.).
+# NOTE: skipped in fast gate (IDP_CI_FAST=1) because it needs network for the catalog.
+if [ "$FAST" != 1 ] && command -v kubeconform >/dev/null 2>&1; then
+  _tmp_schemas=$(mktemp -d)
+  trap 'rm -rf "$_tmp_schemas"' EXIT
+  # Download the Flux CRD schema catalog once (cached by host)
+  _catalog="$_tmp_schemas/flux-catalog.json"
+  if [ ! -f "$_catalog" ]; then
+    curl -fsSL --max-time 30 \
+      'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/enterprise-contract.io/v1alpha1/enterprisecontractpolicy.json' \
+      -o "$_catalog" 2>/dev/null || true
+  fi
+  kubeconform \
+    -strict \
+    -summary \
+    -ignore-missing-schemas \
+    -schema-location default \
+    -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+    --debug \
+    clusters/ 2>&1 | tee "$_tmp_schemas/kubeconform.log"
+  _kubeconform_exit=${PIPESTATUS[0]}
+  if [ "$_kubeconform_exit" -ne 0 ]; then
+    # Grep for the specific "missing kind" error class
+    _bad=$(grep -E 'missing kind|error parsing|invalid resource' "$_tmp_schemas/kubeconform.log" | head -10 || true)
+    if [ -n "$_bad" ]; then
+      echo "  FAIL  kubeconform: $_bad"
+    fi
+    fail=1
+  fi
+  [ "$fail" -eq 0 ] && say "ok    kubeconform clusters/" || say "FAIL  kubeconform  clusters/"
+fi
+
+# 1g. crew#1194: flux build dry-run compiles the entire Kustomize tree exactly as the
+# cluster would. Even when individual YAMLs are syntactically valid and pass schema
+# validation, a --- document boundary can produce an empty resource, or a patch can
+# target a missing base. flux build kustomization --dry-run catches both.
+# NOTE: skipped in fast gate (IDP_CI_FAST=1) because it needs the flux binary and
+# network for Helm repos referenced by the tree.
+if [ "$FAST" != 1 ] && command -v flux >/dev/null 2>&1; then
+  # Test both the top-level cluster kustomization and the secret-store one
+  for _km in flux-system clusters/oke clusters/oke/secret-store; do
+    if [ -d "$IDP/$_km" ] || [ -f "$IDP/$_km" ]; then
+      flux build kustomization "$(basename "$_km")" \
+        --path "$IDP/$(dirname "$_km")" \
+        --dry-run 2>&1 | head -5
+      if [ "${PIPESTATUS[0]}" -eq 0 ]; then
+        say "ok    flux build $_km (dry-run)"
+      else
+        say "FAIL  flux build $_km (dry-run)"
+        fail=1
+      fi
+    fi
+  done
 fi
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
