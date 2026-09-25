@@ -307,8 +307,6 @@ spec:
   path: ./platform/llm
   prune: true
   dependsOn:
-    - name: edge
-    - name: secret-store
     # Its Postgres data is copied onto the estate cluster before this row is applied, and
     # this row is what deletes the old server. estate-db-migrate is the copy (crew: one
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
