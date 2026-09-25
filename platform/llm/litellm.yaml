@@ -122,7 +122,6 @@ spec:
             # Unreachable is safe. The shim fails open on connect error, timeout and unparseable
             # reply; the only thing it raises on is an explicit `reject`, and budget enforcement
             # is off (see platform/llm/zeroedge.yaml).
-            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc:8757" }
           volumeMounts:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             # The ceiling module, on the path the router imports from. PYTHONPATH above names
