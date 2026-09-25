@@ -39,6 +39,18 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
+  - model_name: deepseek
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 300
+      max_tokens: 8192
+      # DeepSeek V3 pricing: $0.14/M input, $0.28/M output (platform.deepseek.com, 2026-09)
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+    model_info:
+      max_input_tokens: 65536
+
   # --- the moat's cheap primary --------------------------------------------------------
   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
   # with an explicit api_base rather than a provider prefix.
@@ -571,6 +583,8 @@ router_settings:
   # answers HTTP 200 in 30.5s, while `kimi` answered HTTP 400 "Invalid model name".
   model_group_alias:
     kimi: moonshot/kimi-k3
+    claude-opus: deepseek
+    claude-opus-5-5: deepseek
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
