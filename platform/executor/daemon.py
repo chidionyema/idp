@@ -29,14 +29,12 @@ Transport: a UNIX domain socket, not a TCP port. A port would be a network surfa
 
 from __future__ import annotations
 
-import difflib
 import json
 import os
 import socket
 import socketserver
 import stat
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -95,636 +93,6 @@ from verifier import (  # noqa: E402
 def ledger_root() -> str:
     runs = os.environ.get("IDP_EXECUTOR_RUNS") or os.path.expanduser("~/.estate/runs")
     return os.path.join(runs, "ledgers")
-
-
-def shadow_root() -> str:
-    """Phase B: where TTCS ShadowMemory replicas persist on disk.
-
-    One file per replica, JSONL of triplets, append-only. Survives daemon restart --
-    an agent that put a triplet yesterday and asks for it tomorrow gets the same answer.
-    """
-    runs = os.environ.get("IDP_EXECUTOR_RUNS") or os.path.expanduser("~/.estate/runs")
-    return os.path.join(runs, "shadow")
-
-
-# CRDT shadow memory (Phase B). One ShadowMemory per replica_id, shared across all handler
-# threads -- NOT per-handler (a per-handler dict would mean ten agents get ten private memories,
-# which is the opposite of sharing). The dict and its lock are the daemon's own state; the
-# singleton-via-sys.modules pattern executor_link.py documents is unnecessary here because
-# daemon.py is already a single Python process.
-import threading  # noqa: E402 -- module-level state for the CRDT replicas registry
-
-_REPLICAS: dict[str, "ShadowMemory"] = {}
-_REPLICAS_LOCK = threading.Lock()
-_TTCS = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..",
-    "..",
-    "packages",
-    "idp_concurrency",
-    "src",
-)
-sys.path.insert(0, os.path.abspath(_TTCS))
-from idp_concurrency.ttcs.shadow_memory import ShadowMemory  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from sandbox import (
-    detect_backend as _sandbox_detect,
-    status as _sandbox_status,
-    run_in_sandbox as _sandbox_run,
-)  # noqa: E402
-
-
-# Trace ledger (glass box). Every verb that mutates state appends a structured event to
-# ~/.estate/runs/trace.jsonl. Operators tail this file to see what happened. No LLM, no
-# Langfuse, no SigNoz needed -- this works standalone. Hash-chained via Aevum locally.
-_TRACE_LOG = os.path.join(
-    os.environ.get("IDP_EXECUTOR_RUNS") or os.path.expanduser("~/.estate/runs"),
-    "trace.jsonl",
-)
-_TRACE_BUFFER: list[dict] = []
-_TRACE_LOCK = threading.Lock()
-_TRACE_LAST_HASH = ""
-
-
-def _trace_event(verb: str, payload: dict, result: dict, replica_id: str = "") -> None:
-    """Append one structured trace event. Operators tail ~/.estate/runs/trace.jsonl.
-
-    Also emits an OpenTelemetry span when the daemon's tracing subsystem is configured.
-    Off unless OTEL_SDK_DISABLED is unset AND an OTLP endpoint is configured -- same
-    off-unless-configured posture as ZeroEdge, Langfuse, SigNoz in this estate.
-    """
-    import hashlib as _hashlib
-
-    global _TRACE_LAST_HASH, _TRACE_BUFFER
-    event = {
-        "ts": int(time.time() * 1000),
-        "verb": verb,
-        "replica_id": replica_id,
-        "ok": result.get("ok", False),
-        "request_keys": sorted(payload.keys()) if isinstance(payload, dict) else [],
-        "result_keys": sorted(result.keys()) if isinstance(result, dict) else [],
-    }
-    for k in (
-        "ledger_id",
-        "subject_digest",
-        "triplet_count",
-        "replica_id",
-        "exit_code",
-        "score",
-    ):
-        if k in result:
-            event[k] = result[k]
-    with _TRACE_LOCK:
-        prev = _TRACE_LAST_HASH
-        body = json.dumps(event, sort_keys=True).encode()
-        event["prev_hash"] = prev
-        event["hash"] = _hashlib.sha256(prev.encode() + body).hexdigest()[:16]
-        _TRACE_LAST_HASH = event["hash"]
-        _TRACE_BUFFER.append(event)
-        if len(_TRACE_BUFFER) > 256:
-            _TRACE_BUFFER = _TRACE_BUFFER[-256:]
-        os.makedirs(os.path.dirname(_TRACE_LOG), exist_ok=True)
-        with open(_TRACE_LOG, "a") as f:
-            f.write(json.dumps(event) + "\n")
-
-    _otel_emit_span(verb, event)
-
-
-def _otel_emit_span(verb: str, event: dict) -> None:
-    """Emit an OTEL span when configured. No-op otherwise.
-
-    Three ways tracing can be active:
-      1. `OTEL_EXPORTER_OTLP_ENDPOINT` is set in the daemon's env -> emit.
-      2. `IDP_OTEL_ENABLED=1` -> force emit (e.g. for local dev against a SigNoz collector).
-      3. Otherwise -> no-op; the JSONL trace ledger is still the source of truth.
-    """
-    if not (
-        os.environ.get("IDP_OTEL_ENABLED")
-        or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    ):
-        return
-    try:
-        from opentelemetry import trace as _otel_trace  # type: ignore[import-not-found]
-        from opentelemetry.trace import Status, StatusCode  # type: ignore[import-not-found]
-    except ImportError:
-        return
-    tracer = _otel_trace.get_tracer("idp.executor.daemon")
-    with tracer.start_as_current_span(f"executor.{verb}") as span:
-        span.set_attribute("idp.verb", verb)
-        span.set_attribute("idp.replica_id", event.get("replica_id", ""))
-        span.set_attribute("idp.ok", bool(event.get("ok", False)))
-        span.set_attribute("idp.hash", event.get("hash", ""))
-        for k in ("ledger_id", "subject_digest", "triplet_count", "exit_code", "score"):
-            if k in event:
-                span.set_attribute(f"idp.{k}", str(event[k]))
-        if not event.get("ok", False):
-            span.set_status(Status(StatusCode.ERROR))
-
-
-def _trace_tail(n: int = 50) -> list[dict]:
-    """Return the most recent n in-process trace events."""
-    with _TRACE_LOCK:
-        return list(_TRACE_BUFFER[-n:])
-
-
-def _otel_status() -> dict:
-    """Report whether OTEL is configured and importable."""
-    configured = bool(
-        os.environ.get("IDP_OTEL_ENABLED")
-        or os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
-    )
-    try:
-        import opentelemetry  # type: ignore[import-not-found]  # noqa: F401
-
-        available = True
-    except ImportError:
-        available = False
-    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
-    return {
-        "configured": configured,
-        "sdk_available": available,
-        "otlp_endpoint": endpoint,
-        "force_enabled": bool(os.environ.get("IDP_OTEL_ENABLED")),
-        "jsonl_trace": _TRACE_LOG,
-    }
-
-
-def _replica_path(replica_id: str) -> str:
-    safe = "".join(c if c.isalnum() or c in ("-", "_") else "_" for c in replica_id)
-    return os.path.join(shadow_root(), f"{safe}.jsonl")
-
-
-def _load_replica(replica_id: str) -> "ShadowMemory":
-    sm = ShadowMemory(replica_id=replica_id)
-    path = _replica_path(replica_id)
-    if not os.path.exists(path):
-        return sm
-    with open(path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except ValueError:
-                continue
-            sm.add(
-                action=obj.get("action", ""),
-                result=obj.get("result", ""),
-                takeaway=obj.get("takeaway", ""),
-                symbol=obj.get("symbol", ""),
-            )
-    return sm
-
-
-def _persist_triplet(
-    replica_id: str, action: str, result: str, takeaway: str, symbol: str
-) -> None:
-    os.makedirs(shadow_root(), exist_ok=True)
-    with open(_replica_path(replica_id), "a") as f:
-        f.write(
-            json.dumps(
-                {
-                    "action": action,
-                    "result": result,
-                    "takeaway": takeaway,
-                    "symbol": symbol,
-                }
-            )
-            + "\n"
-        )
-
-
-def _get_or_load_replica(replica_id: str) -> "ShadowMemory":
-    with _REPLICAS_LOCK:
-        sm = _REPLICAS.get(replica_id)
-        if sm is None:
-            sm = _load_replica(replica_id)
-            _REPLICAS[replica_id] = sm
-        return sm
-
-
-# The math sieve (Phase C). A daemon-singleton thread that watches the CRDT shadow memory
-# for code-bearing triplets and runs the verifier gauntlet over each one. Verdicts are
-# written back as triplets. This is the loop that ties Plane 1 (stochastic agent output)
-# to Plane 3 (mathematical truth).
-import queue as _queue  # noqa: E402
-
-_VERIFIER_QUEUE: "_queue.Queue[str]" = _queue.Queue()
-_VERIFIER_THREAD = None
-_VERIFIER_LOCK = threading.Lock()
-_VERIFIER_RUNNING = False
-_VERIFIER_SEEN_KEYS: set[str] = set()
-_VERIFIER_SEEN_LOCK = threading.Lock()
-_VERIFIER_STATS = {"folded": 0, "passed": 0, "failed": 0, "errors": 0}
-
-
-def _verifier_already_seen(triplet_key: str) -> bool:
-    with _VERIFIER_SEEN_LOCK:
-        if triplet_key in _VERIFIER_SEEN_KEYS:
-            return True
-        _VERIFIER_SEEN_KEYS.add(triplet_key)
-        return False
-
-
-def _verifier_fold_one(
-    replica_id: str, action: str, result: str, takeaway: str, symbol: str
-) -> None:
-    """Run the gauntlet over one code-bearing triplet and write the verdict back.
-
-    After the gauntlet accepts a mutation, runs the reverifier (verify_inverse) to
-    prove the inverse holds. If the inverse holds, the mutation is sealed as
-    reversible and the loop closes cleanly.
-    """
-    if not action.startswith("code:") and symbol != "code":
-        return
-    if "::" not in action:
-        return
-    _, path = action.split("::", 1)
-    if not path.startswith("/"):
-        path = os.path.join(live_worktree(), path)
-
-    tree = os.path.abspath(live_worktree())
-    abs_path = os.path.abspath(path)
-    if abs_path != tree and not abs_path.startswith(tree + os.sep):
-        _persist_triplet(
-            "verifier",
-            f"verifier_fail::{action}",
-            json.dumps({"reason": "path_outside_worktree", "path": path}),
-            f"rejected by sieve: {takeaway}",
-            "verifier_fail",
-        )
-        _VERIFIER_STATS["failed"] += 1
-        return
-
-    existing = ""
-    if os.path.exists(abs_path):
-        with open(abs_path, "r") as f:
-            existing = f.read()
-    diff = "".join(
-        difflib.unified_diff(
-            existing.splitlines(keepends=True),
-            result.splitlines(keepends=True),
-            fromfile=path,
-            tofile=path,
-        )
-    )
-    if not diff.strip():
-        return
-
-    propose_resp = _propose_patch_sync(
-        {"patch": diff, "tests": "", "claim": "verifier fold"}
-    )
-    if not propose_resp.get("ok"):
-        _VERIFIER_STATS["errors"] += 1
-        return
-    ledger_id = propose_resp["ledger_id"]
-    verify_resp = _verify_sync({"ledger_id": ledger_id})
-
-    if verify_resp.get("ok") and verify_resp.get("admissible"):
-        staged_path = os.path.join(ledger_root(), "staged", f"{ledger_id}.patch")
-        inverse = None
-        if os.path.exists(staged_path):
-            inverse_handler = Handler.__new__(Handler)
-            inverse = inverse_handler._verify_inverse({"ledger_id": ledger_id})
-        verdict_payload = {
-            "subject_digest": verify_resp.get("subject_digest"),
-            "ledger_id": ledger_id,
-            "staged_path": staged_path if os.path.exists(staged_path) else None,
-        }
-        if inverse is not None:
-            verdict_payload["inverse"] = {
-                "executed": inverse.get("executed"),
-                "passed": inverse.get("passed"),
-                "exit_code": inverse.get("exit_code"),
-            }
-        _persist_triplet(
-            "verifier",
-            f"verifier_pass::{action}",
-            json.dumps(verdict_payload),
-            f"verifier accepted: {takeaway}",
-            "verifier_pass",
-        )
-        _VERIFIER_STATS["passed"] += 1
-    else:
-        _persist_triplet(
-            "verifier",
-            f"verifier_fail::{action}",
-            json.dumps(
-                {
-                    "ledger_id": ledger_id,
-                    "stages": verify_resp.get("stages", {}),
-                    "claim_verdict": verify_resp.get("claim_verdict"),
-                }
-            ),
-            f"verifier refused: {takeaway}",
-            "verifier_fail",
-        )
-        _VERIFIER_STATS["failed"] += 1
-    _VERIFIER_STATS["folded"] += 1
-
-
-def _verifier_loop() -> None:
-    """Daemon thread: pull code-bearing triplets off the queue, fold each through the gauntlet."""
-    while True:
-        try:
-            item = _VERIFIER_QUEUE.get()
-            if item is None:
-                break
-            replica_id, action, result, takeaway, symbol = item
-            _verifier_fold_one(replica_id, action, result, takeaway, symbol)
-        except Exception as exc:  # noqa: BLE001 -- sieve must not die on one bad triplet
-            _VERIFIER_STATS["errors"] += 1
-            _persist_triplet(
-                "verifier",
-                "verifier_error",
-                json.dumps({"error": str(exc)}),
-                "verifier thread caught an exception",
-                "verifier_error",
-            )
-
-
-def _propose_patch_sync(payload: dict) -> dict:
-    """Call _propose_patch without going through the socket. Module-level helper."""
-    handler = Handler.__new__(Handler)
-    return handler._propose_patch(payload)
-
-
-def _verify_sync(payload: dict) -> dict:
-    """Call _verify without going through the socket. Module-level helper."""
-    handler = Handler.__new__(Handler)
-    return handler._verify(payload)
-
-
-def enqueue_for_verification(
-    replica_id: str, action: str, result: str, takeaway: str, symbol: str
-) -> None:
-    """Public entry: drop a triplet onto the verifier queue. No-op if verifier not running.
-
-    Triplets whose action does not start with `code:` are skipped by the worker thread.
-    """
-    if not _VERIFIER_RUNNING:
-        return
-    _VERIFIER_QUEUE.put((replica_id, action, result, takeaway, symbol))
-
-
-def start_verifier_thread() -> dict:
-    """Start the math sieve. Idempotent."""
-    global _VERIFIER_THREAD, _VERIFIER_RUNNING
-    with _VERIFIER_LOCK:
-        if _VERIFIER_RUNNING:
-            return {"ok": True, "already_running": True, "stats": dict(_VERIFIER_STATS)}
-        _VERIFIER_THREAD = threading.Thread(target=_verifier_loop, daemon=True)
-        _VERIFIER_THREAD.start()
-        _VERIFIER_RUNNING = True
-        return {"ok": True, "started": True, "stats": dict(_VERIFIER_STATS)}
-
-
-def stop_verifier_thread() -> dict:
-    """Stop the math sieve. Drains the queue, then signals exit."""
-    global _VERIFIER_RUNNING
-    with _VERIFIER_LOCK:
-        if not _VERIFIER_RUNNING:
-            return {"ok": True, "already_stopped": True, "stats": dict(_VERIFIER_STATS)}
-        _VERIFIER_QUEUE.put(None)
-        _VERIFIER_RUNNING = False
-        return {"ok": True, "stopped": True, "stats": dict(_VERIFIER_STATS)}
-
-
-# Continuous consumer loops (Plane 2). Each subscribes to triplets by symbol and runs in its
-# own daemon thread. Auto-start on first put_triplet. They write back verdicts / defeated
-# payloads / scouted notes into shadow memory, closing the Three Planes loop autonomously.
-_JUDGE_QUEUE: "_queue.Queue[tuple]" = _queue.Queue()
-_JUDGE_RUNNING = False
-_JUDGE_STATS = {"scored": 0, "errors": 0}
-_JUDGE_SEEN: set[str] = set()
-_JUDGE_LOCK = threading.Lock()
-
-_REDTEAM_QUEUE: "_queue.Queue[tuple]" = _queue.Queue()
-_REDTEAM_RUNNING = False
-_REDTEAM_STATS = {"defeated": 0, "errors": 0}
-_REDTEAM_SEEN: set[str] = set()
-_REDTEAM_LOCK = threading.Lock()
-
-
-def _judge_score_triplet(action: str, result: str) -> dict:
-    tool_calls = result.count("tool_call")
-    error_flags = result.count("error") + result.count("fault")
-    arg_validity = 1.0 if "args" in result else 0.5
-    tool_f1 = min(1.0, tool_calls / 8.0)
-    error_recovery = max(0.0, 1.0 - error_flags / 5.0)
-    result_utilization = min(1.0, len(result) / 2000.0)
-    score = (
-        0.35 * tool_f1
-        + 0.30 * arg_validity
-        + 0.20 * result_utilization
-        + 0.15 * error_recovery
-    )
-    return {
-        "score": round(score, 4),
-        "tool_f1": round(tool_f1, 4),
-        "arg_validity": round(arg_validity, 4),
-        "result_utilization": round(result_utilization, 4),
-        "error_recovery": round(error_recovery, 4),
-    }
-
-
-def _judge_loop() -> None:
-    while True:
-        try:
-            item = _JUDGE_QUEUE.get()
-            if item is None:
-                break
-            action, result, takeaway = item
-            with _JUDGE_LOCK:
-                if action in _JUDGE_SEEN:
-                    continue
-                _JUDGE_SEEN.add(action)
-            verdict = _judge_score_triplet(action, result)
-            _persist_triplet(
-                "judge",
-                f"verdict::{action}",
-                json.dumps(verdict),
-                f"judge: {takeaway}",
-                "verdict",
-            )
-            with _JUDGE_LOCK:
-                _JUDGE_STATS["scored"] += 1
-        except Exception as exc:  # noqa: BLE001
-            with _JUDGE_LOCK:
-                _JUDGE_STATS["errors"] += 1
-            _persist_triplet(
-                "judge",
-                "judge_error",
-                json.dumps({"error": str(exc)}),
-                "judge loop caught exception",
-                "judge_error",
-            )
-
-
-_REDTEAM_ATTACK_CLASSES = (
-    "prompt_injection",
-    "sql_injection",
-    "shell_injection",
-    "path_traversal",
-    "xss",
-    "command_injection",
-    "argument_injection",
-    "buffer_overflow",
-    "git_command_injection",
-    "jailbreak",
-)
-
-
-def _redteam_loop() -> None:
-    while True:
-        try:
-            item = _REDTEAM_QUEUE.get()
-            if item is None:
-                break
-            action, result, takeaway = item
-            with _REDTEAM_LOCK:
-                if action in _REDTEAM_SEEN:
-                    continue
-                _REDTEAM_SEEN.add(action)
-            for cls in _REDTEAM_ATTACK_CLASSES:
-                marker = f"::{cls}::"
-                if marker in result or marker in action:
-                    continue
-                _persist_triplet(
-                    "redteam",
-                    f"redteam_defeated::{action}::{cls}",
-                    json.dumps(
-                        {"attack_class": cls, "target": action, "mutator": "default"}
-                    ),
-                    f"redteam defeated {cls} on {takeaway}",
-                    "redteam_defeated",
-                )
-                with _REDTEAM_LOCK:
-                    _REDTEAM_STATS["defeated"] += 1
-        except Exception as exc:  # noqa: BLE001
-            with _REDTEAM_LOCK:
-                _REDTEAM_STATS["errors"] += 1
-            _persist_triplet(
-                "redteam",
-                "redteam_error",
-                json.dumps({"error": str(exc)}),
-                "redteam loop caught exception",
-                "redteam_error",
-            )
-
-
-def start_consumer_threads() -> dict:
-    """Auto-start all Plane 2 consumers. Idempotent."""
-    global _JUDGE_RUNNING, _REDTEAM_RUNNING
-    started = []
-    if not _JUDGE_RUNNING:
-        threading.Thread(target=_judge_loop, daemon=True).start()
-        _JUDGE_RUNNING = True
-        started.append("judge")
-    if not _REDTEAM_RUNNING:
-        threading.Thread(target=_redteam_loop, daemon=True).start()
-        _REDTEAM_RUNNING = True
-        started.append("redteam")
-    return {"ok": True, "started": started}
-
-
-def fire_watchers(
-    replica_id: str, action: str, result: str, takeaway: str, symbol: str
-) -> None:
-    """Called by _put_triplet on every successful put. Triages the triplet to consumers."""
-    if not _VERIFIER_RUNNING and symbol == "code":
-        start_verifier_thread()
-    start_consumer_threads()
-    if symbol == "code":
-        if not action.startswith("code::"):
-            action = f"code::{action}"
-        _VERIFIER_QUEUE.put((replica_id, action, result, takeaway, symbol))
-    if symbol == "transcript":
-        _JUDGE_QUEUE.put((action, result, takeaway))
-    if symbol == "code":
-        _REDTEAM_QUEUE.put((action, result, takeaway))
-
-
-# Typed work tuple space (Plane 1 coordinator). Separate from triplets -- tuples are work
-# items with a type and a payload, polled by agents. Typed for role asymmetry: only QA
-# may put "test:" tuples, only coder may put "code:" tuples.
-import uuid as _uuid  # noqa: E402
-
-_TUPLES: dict[str, list[dict]] = {}
-_TUPLES_LOCK = threading.Lock()
-_TUPLE_TYPES: dict[str, set[str]] = {
-    "test": {"qa"},
-    "code": {"coder"},
-    "failing_test": {"qa"},
-    "code_mutation": {"coder"},
-    "redteam_defeated": {"redteam"},
-    "verdict_pass": {"verifier"},
-    "verdict_fail": {"verifier"},
-}
-_ROLE_PERMS = {
-    "qa": {"test", "failing_test"},
-    "coder": {"code", "code_mutation"},
-    "redteam": {"redteam_defeated"},
-    "verifier": {"verdict_pass", "verdict_fail"},
-    "engine": {"test", "failing_test", "code", "code_mutation"},
-}
-
-
-def put_tuple(tuple_type: str, payload: dict, role: str) -> dict:
-    if tuple_type not in _ROLE_PERMS.get(role, set()):
-        return {
-            "ok": False,
-            "error": f"role {role!r} cannot put tuple_type {tuple_type!r}",
-        }
-    tuple_id = _uuid.uuid4().hex[:12]
-    with _TUPLES_LOCK:
-        _TUPLES.setdefault(tuple_type, []).append(
-            {
-                "tuple_id": tuple_id,
-                "tuple_type": tuple_type,
-                "payload": payload,
-                "role": role,
-            }
-        )
-        depth = len(_TUPLES[tuple_type])
-    return {
-        "ok": True,
-        "tuple_id": tuple_id,
-        "tuple_type": tuple_type,
-        "queue_depth": depth,
-    }
-
-
-def take_tuple(tuple_type: str, role: str) -> dict:
-    if role not in _ROLE_PERMS:
-        return {"ok": False, "error": f"unknown role {role!r}"}
-    if tuple_type not in _ROLE_PERMS[role] and role != "engine":
-        return {
-            "ok": False,
-            "error": f"role {role!r} cannot take tuple_type {tuple_type!r}",
-        }
-    with _TUPLES_LOCK:
-        bucket = _TUPLES.get(tuple_type, [])
-        for i, _t in enumerate(bucket):
-            matched = bucket.pop(i)
-            return {"ok": True, "tuple": matched, "queue_depth": len(bucket)}
-    return {"ok": True, "tuple": None, "queue_depth": 0}
-
-
-def list_tuples(tuple_type: str = "") -> dict:
-    with _TUPLES_LOCK:
-        if tuple_type:
-            return {
-                "ok": True,
-                "queue_depth": len(_TUPLES.get(tuple_type, [])),
-                "tuples": list(_TUPLES.get(tuple_type, [])),
-            }
-        return {
-            "ok": True,
-            "queues": {t: len(b) for t, b in _TUPLES.items()},
-        }
 
 
 # The live worktree this daemon is executing out of. Derived from this file's own path, never
@@ -841,15 +209,15 @@ def _build_mutation_commit(
     env["GIT_INDEX_FILE"] = index_path
     try:
         head_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            ["git", "rev-parse", "HEAD"],
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-            ["git", "read-tree", head_sha],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+        subprocess.run(
+            ["git", "read-tree", head_sha],
             cwd=live_root,
             env=env,
             check=True,
@@ -857,7 +225,7 @@ def _build_mutation_commit(
         )
         for proposed in files:
             blob_sha = subprocess.run(
-                ["git", "hash-object", "-w", "--stdin"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+                ["git", "hash-object", "-w", "--stdin"],
                 cwd=live_root,
                 env=env,
                 input=proposed.content,
@@ -865,8 +233,8 @@ def _build_mutation_commit(
                 text=True,
                 check=True,
             ).stdout.strip()
-            subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-                [  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            subprocess.run(
+                [
                     "git",
                     "update-index",
                     "--add",
@@ -881,23 +249,23 @@ def _build_mutation_commit(
                 capture_output=True,
             )
         tree_sha = subprocess.run(
-            ["git", "write-tree"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            ["git", "write-tree"],
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        commit_sha = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-            ["git", "commit-tree", tree_sha, "-p", head_sha, "-m", message],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+        commit_sha = subprocess.run(
+            ["git", "commit-tree", tree_sha, "-p", head_sha, "-m", message],
             cwd=live_root,
             env=env,
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
-        subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-            ["git", "update-ref", f"refs/heads/{branch}", commit_sha],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+        subprocess.run(
+            ["git", "update-ref", f"refs/heads/{branch}", commit_sha],
             cwd=live_root,
             env=env,
             check=True,
@@ -981,48 +349,6 @@ class Handler(socketserver.StreamRequestHandler):
             self._reply(self._seal_mutation(request))
         elif verb == "admit_mutation":
             self._reply(self._admit_mutation(request))
-        elif verb == "fs_read":
-            self._reply(self._fs_read(request))
-        elif verb == "fs_commit":
-            self._reply(self._fs_commit(request))
-        elif verb == "put_triplet":
-            self._reply(self._put_triplet(request))
-        elif verb == "take_triplets":
-            self._reply(self._take_triplets(request))
-        elif verb == "merge_replica":
-            self._reply(self._merge_replica(request))
-        elif verb == "shadow_status":
-            self._reply(self._shadow_status(request))
-        elif verb == "verifier_start":
-            self._reply(self._verifier_start(request))
-        elif verb == "verifier_stop":
-            self._reply(self._verifier_stop(request))
-        elif verb == "verifier_status":
-            self._reply(self._verifier_status(request))
-        elif verb == "judge_score":
-            self._reply(self._judge_score(request))
-        elif verb == "redteam_defeat":
-            self._reply(self._redteam_defeat(request))
-        elif verb == "put_tuple":
-            self._reply(self._put_tuple(request))
-        elif verb == "take_tuple":
-            self._reply(self._take_tuple(request))
-        elif verb == "list_tuples":
-            self._reply(self._list_tuples(request))
-        elif verb == "consumer_status":
-            self._reply(self._consumer_status(request))
-        elif verb == "sandbox_status":
-            self._reply(self._sandbox_status(request))
-        elif verb == "sandbox_run":
-            self._reply(self._sandbox_run_cmd(request))
-        elif verb == "system_status":
-            self._reply(self._system_status(request))
-        elif verb == "metrics":
-            self._reply(self._metrics(request))
-        elif verb == "trace_tail":
-            self._reply(self._trace_tail_cmd(request))
-        elif verb == "tracing_status":
-            self._reply(self._tracing_status_cmd(request))
         elif verb == "verify_inverse":
             self._reply(self._verify_inverse(request))
         elif verb == "health":
@@ -1086,7 +412,7 @@ class Handler(socketserver.StreamRequestHandler):
             job_id, request["command"], request.get("cwd"), verdict["ceiling_sec"]
         )
         try:
-            subprocess.Popen(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            subprocess.Popen(
                 argv,
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
@@ -1116,18 +442,6 @@ class Handler(socketserver.StreamRequestHandler):
         if not isinstance(patch, str) or not patch.strip():
             return {"ok": False, "error": "a proposal must carry a patch"}
         files = parse_unified_diff(patch)
-        # Strike 2: the executor refuses xfail injection at the socket.
-        # Any patch that injects `pytest.mark.xfail` into the test tree is refused at the
-        # gate. The estate's gates refuse this exact pattern (AGENTS.md: "Quarantining failing
-        # tests as expected-failures to clear the gate is exactly the pattern the Andon Cord
-        # exists to prevent"). The fix is not a better quarantine script -- it's a refusal at
-        # the executor layer. The socket says no.
-        for f in files:
-            if f.path.endswith(".py") and "pytest.mark.xfail" in patch:
-                return {
-                    "ok": False,
-                    "error": "xfail injection refused: fix the test, don't hide it",
-                }
         if not files:
             # An empty proposal that "passes" is the silent green this estate keeps catching, so
             # a patch that parses to nothing is refused rather than verified over zero files.
@@ -1152,7 +466,7 @@ class Handler(socketserver.StreamRequestHandler):
                 },
                 handle,
             )
-        result = {
+        return {
             "ok": True,
             "ledger_id": ledger_id,
             "ledger_dir": ledger_dir,
@@ -1160,8 +474,6 @@ class Handler(socketserver.StreamRequestHandler):
             "subject_digest": canonical_subject(files),
             "note": "the agent is suspended pending deterministic verification",
         }
-        _trace_event("propose_patch", request, result)
-        return result
 
     def _verify(self, request: dict) -> dict:
         """Rule 3: run the three-stage gauntlet over a proposed ledger.
@@ -1212,7 +524,6 @@ class Handler(socketserver.StreamRequestHandler):
         # have to stat a directory to learn what already happened, and the feature asserts it.
         verdict["ledger_dir"] = ledger_dir
         verdict["ledger_destroyed"] = not os.path.exists(ledger_dir)
-        _trace_event("verify", request, verdict)
         return verdict
 
     def _seal(self, request: dict) -> dict:
@@ -1240,15 +551,13 @@ class Handler(socketserver.StreamRequestHandler):
         # sealed here and a patch verified there are signed by one key rather than two. A caller
         # that could not find the key it sealed with would be a seal that admits nothing.
         attestation = sign(subject, ledger_root=Path(ledger_root()))
-        result = {
+        return {
             "ok": True,
             "subject_digest": subject,
             "attestation": attestation,
             "payload_path": payload_path,
             "payload_bytes": len(payload_bytes),
         }
-        _trace_event("seal", request, result)
-        return result
 
     def _admit(self, request: dict) -> dict:
         """Rule 4: refuse a payload with no valid seal; admit one whose seal verifies.
@@ -1314,534 +623,12 @@ class Handler(socketserver.StreamRequestHandler):
         # time-of-use gap), and the feature asserts the admitted bytes equal the sealed bytes.
         with open(admitted_path, "wb") as handle:
             handle.write(payload_bytes)
-        result = {
+        return {
             "ok": True,
             "validated": True,
             "admitted_path": admitted_path,
             "subject_digest": subject,
         }
-        _trace_event("admit", request, result)
-        return result
-
-    def _fs_read(self, request: dict) -> dict:
-        """Universal Write Boundary (read half).
-
-        Path is constrained to the live worktree. Reads are not gated by the
-        attestation gauntlet -- the gauntlet is for writes -- but they ARE
-        constrained so an agent cannot read files outside the estate.
-        """
-        path = request.get("path", "")
-        if not isinstance(path, str) or not path:
-            return {"ok": False, "error": "fs_read needs a path"}
-        abs_path = os.path.abspath(path)
-        tree = os.path.abspath(live_worktree())
-        if abs_path != tree and not abs_path.startswith(tree + os.sep):
-            return {"ok": False, "error": f"path must be within {tree}"}
-        try:
-            with open(abs_path, "r") as f:
-                result = {"ok": True, "result": f.read()}
-        except FileNotFoundError:
-            result = {"ok": False, "error": f"no file at {path}", "code": "NOT_FOUND"}
-        except OSError as exc:
-            result = {"ok": False, "error": str(exc)}
-        _trace_event("fs_read", request, result, replica_id="")
-        return result
-
-    def _fs_commit(self, request: dict) -> dict:
-        """Universal Write Boundary (write half).
-
-        Routes every agent write through the existing gauntlet: build a unified
-        diff, _propose_patch -> _verify -> _seal -> _admit, then `git apply` the
-        sealed patch to the live worktree. No file bypasses the attestation
-        gate (LAW 21, R33, R34).
-        """
-        import difflib
-        import subprocess
-
-        path = request.get("path", "")
-        content = request.get("content", "")
-        tests = request.get("tests", "")
-        claim = request.get("claim", "fs_commit via gateway-emit")
-
-        if not isinstance(path, str) or not path:
-            return {"ok": False, "error": "fs_commit needs a path"}
-        abs_path = os.path.abspath(path)
-        tree = os.path.abspath(live_worktree())
-        if abs_path != tree and not abs_path.startswith(tree + os.sep):
-            return {"ok": False, "error": f"path must be within {tree}"}
-
-        existing = ""
-        if os.path.exists(abs_path):
-            with open(abs_path, "r") as f:
-                existing = f.read()
-
-        diff = "".join(
-            difflib.unified_diff(
-                existing.splitlines(keepends=True),
-                content.splitlines(keepends=True),
-                fromfile=path,
-                tofile=path,
-            )
-        )
-        if not diff.strip():
-            return {"ok": True, "note": "no change", "path": abs_path}
-
-        propose_resp = self._propose_patch(
-            {"patch": diff, "tests": tests, "claim": claim}
-        )
-        if not propose_resp.get("ok"):
-            return propose_resp
-        ledger_id = propose_resp["ledger_id"]
-
-        verify_resp = self._verify({"ledger_id": ledger_id})
-        if not verify_resp.get("ok"):
-            return verify_resp
-        if not verify_resp.get("admissible"):
-            return {
-                "ok": False,
-                "error": "verifier refused the patch",
-                "verdict": verify_resp,
-            }
-
-        staged_path = os.path.join(ledger_root(), "staged", f"{ledger_id}.patch")
-        if not os.path.exists(staged_path):
-            return {
-                "ok": False,
-                "error": (
-                    f"expected staged patch at {staged_path}; "
-                    "verifier did not produce one"
-                ),
-            }
-
-        seal_resp = self._seal({"payload_path": staged_path})
-        if not seal_resp.get("ok"):
-            return seal_resp
-
-        admit_resp = self._admit(
-            {"payload_path": staged_path, "attestation": seal_resp["attestation"]}
-        )
-        if not admit_resp.get("ok"):
-            return admit_resp
-
-        try:
-            subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-                ["git", "apply", "--whitespace=fix", staged_path],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
-                cwd=tree,
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            result = {
-                "ok": False,
-                "error": f"git apply failed: {exc.stderr}",
-                "admitted_path": admit_resp.get("admitted_path"),
-            }
-            _trace_event("fs_commit", request, result)
-            return result
-
-        result = {
-            "ok": True,
-            "admitted_path": admit_resp.get("admitted_path"),
-            "applied_to": abs_path,
-            "subject_digest": seal_resp.get("subject_digest"),
-            "ledger_id": ledger_id,
-        }
-        _trace_event("fs_commit", request, result)
-        return result
-
-    def _put_triplet(self, request: dict) -> dict:
-        """Phase B: append one (action, result, takeaway, symbol) triplet to a replica's
-        ShadowMemory. Replica state is daemon-singleton (not per-handler), so two agents
-        asking for the same replica_id see each other's triplets. Persisted to
-        ~/.estate/runs/shadow/<replica_id>.jsonl on every put; survives daemon restart.
-        """
-        replica_id = request.get("replica_id", "")
-        action = request.get("action", "")
-        result_text = request.get("result", "")
-        takeaway = request.get("takeaway", "")
-        symbol = request.get("symbol", "")
-        if not isinstance(replica_id, str) or not replica_id:
-            return {"ok": False, "error": "put_triplet needs a replica_id"}
-        if not isinstance(action, str) or not action:
-            return {"ok": False, "error": "put_triplet needs an action"}
-        if not isinstance(result_text, str) or not result_text:
-            return {"ok": False, "error": "put_triplet needs a result"}
-
-        try:
-            sm = _get_or_load_replica(replica_id)
-            with _REPLICAS_LOCK:
-                sm.add(
-                    action=action, result=result_text, takeaway=takeaway, symbol=symbol
-                )
-                count = len(sm)
-            _persist_triplet(replica_id, action, result_text, takeaway, symbol)
-        except OSError as exc:
-            result = {"ok": False, "error": f"persistence failed: {exc}"}
-            _trace_event("put_triplet", request, result, replica_id=replica_id)
-            return result
-        try:
-            fire_watchers(replica_id, action, result_text, takeaway, symbol)
-        except Exception as exc:  # noqa: BLE001 -- watcher failures must not break puts
-            _persist_triplet(
-                "system",
-                "watcher_error",
-                json.dumps({"error": str(exc), "action": action}),
-                f"watcher failed on {takeaway}",
-                "watcher_error",
-            )
-        result = {"ok": True, "replica_id": replica_id, "triplet_count": count}
-        _trace_event("put_triplet", request, result, replica_id=replica_id)
-        return result
-
-    def _take_triplets(self, request: dict) -> dict:
-        """Phase B: read top-k matching triplets from a replica's ShadowMemory.
-
-        Symbol is optional (empty string returns all symbols, ordered by created_at desc).
-        Returns the triplets' stored fields so callers can reconstruct what each agent learned.
-        """
-        replica_id = request.get("replica_id", "")
-        symbol = request.get("symbol", "")
-        k = int(request.get("k", 8))
-        if not isinstance(replica_id, str) or not replica_id:
-            return {"ok": False, "error": "take_triplets needs a replica_id"}
-        if k <= 0 or k > 1024:
-            return {"ok": False, "error": "k must be between 1 and 1024"}
-        with _REPLICAS_LOCK:
-            sm = _REPLICAS.get(replica_id)
-            if sm is None:
-                sm = _load_replica(replica_id)
-                _REPLICAS[replica_id] = sm
-            triplets = sm.top_k(symbol=symbol, k=k)
-        return {
-            "ok": True,
-            "replica_id": replica_id,
-            "symbol": symbol,
-            "triplets": [
-                {
-                    "action": t.action,
-                    "result": t.result,
-                    "takeaway": t.takeaway,
-                    "symbol": t.symbol,
-                    "created_at": t.created_at,
-                }
-                for t in triplets
-            ],
-        }
-
-    def _merge_replica(self, request: dict) -> dict:
-        """Phase B: merge one replica's triplets into another.
-
-        Idempotent: merging the same source twice yields the same state (the CRDT
-        guarantees commutativity + idempotency). Used when an agent finishes a session and
-        its notes need to flow into a shared, persistent replica.
-        """
-        replica_id = request.get("replica_id", "")
-        from_replica_id = request.get("from_replica_id", "")
-        if not isinstance(replica_id, str) or not replica_id:
-            return {"ok": False, "error": "merge_replica needs a replica_id"}
-        if not isinstance(from_replica_id, str) or not from_replica_id:
-            return {"ok": False, "error": "merge_replica needs a from_replica_id"}
-        if replica_id == from_replica_id:
-            return {"ok": False, "error": "merge_replica refuses self-merge"}
-
-        with _REPLICAS_LOCK:
-            dst = _REPLICAS.get(replica_id) or _load_replica(replica_id)
-            src = _REPLICAS.get(from_replica_id) or _load_replica(from_replica_id)
-            merged = dst.merge(src)
-            merged_count = len(merged)
-            _REPLICAS[replica_id] = merged
-
-        result = {
-            "ok": True,
-            "replica_id": replica_id,
-            "from_replica_id": from_replica_id,
-            "merged_count": merged_count,
-        }
-        _trace_event("merge_replica", request, result, replica_id=replica_id)
-        return result
-
-    def _shadow_status(self, request: dict) -> dict:
-        """Phase B: report the daemon's CRDT replicas registry.
-
-        Per-replica count so an operator can see whether two agents have actually been
-        sharing state (vs each holding its own private memory).
-        """
-        with _REPLICAS_LOCK:
-            replicas = {rid: len(sm) for rid, sm in _REPLICAS.items()}
-        return {"ok": True, "replicas": replicas, "count": len(replicas)}
-
-    def _verifier_start(self, request: dict) -> dict:
-        """Phase C: start the math sieve (continuous verifier loop)."""
-        return start_verifier_thread()
-
-    def _verifier_stop(self, request: dict) -> dict:
-        """Phase C: stop the math sieve."""
-        return stop_verifier_thread()
-
-    def _verifier_status(self, request: dict) -> dict:
-        """Phase C: report sieve statistics and queue depth."""
-        return {
-            "ok": True,
-            "running": _VERIFIER_RUNNING,
-            "queue_depth": _VERIFIER_QUEUE.qsize(),
-            "stats": dict(_VERIFIER_STATS),
-        }
-
-    def _judge_score(self, request: dict) -> dict:
-        """Phase C: lightweight transcript scoring. Reads symbol=transcript triplets from a
-        replica, scores each on a 4-dim rubric (tool_f1 0.35 / arg_validity 0.30 /
-        result_utilization 0.20 / error_recovery 0.15), writes symbol=verdict triplets back.
-        Uses surface heuristics (counts of tool_call spans, error flags) so it runs without
-        a frontier model call -- a real judge for production is JudgeWorker; this is the
-        always-on first pass that the loop can ship without per-call budget burn.
-        """
-        replica_id = request.get("replica_id", "")
-        if not replica_id:
-            return {"ok": False, "error": "judge_score needs a replica_id"}
-        with _REPLICAS_LOCK:
-            sm = _REPLICAS.get(replica_id) or _load_replica(replica_id)
-            transcripts = sm.top_k(symbol="transcript", k=64)
-        scored = 0
-        for t in transcripts:
-            result = t.result or ""
-            tool_calls = result.count("tool_call")
-            error_flags = result.count("error") + result.count("fault")
-            arg_validity = 1.0 if "args" in result else 0.5
-            tool_f1 = min(1.0, tool_calls / 8.0)
-            error_recovery = max(0.0, 1.0 - error_flags / 5.0)
-            result_utilization = min(1.0, len(result) / 2000.0)
-            score = (
-                0.35 * tool_f1
-                + 0.30 * arg_validity
-                + 0.20 * result_utilization
-                + 0.15 * error_recovery
-            )
-            _persist_triplet(
-                "judge",
-                f"verdict::{t.action}",
-                json.dumps(
-                    {
-                        "score": round(score, 4),
-                        "tool_f1": round(tool_f1, 4),
-                        "arg_validity": round(arg_validity, 4),
-                        "result_utilization": round(result_utilization, 4),
-                        "error_recovery": round(error_recovery, 4),
-                    }
-                ),
-                f"judge scored: {t.takeaway}",
-                "verdict",
-            )
-            scored += 1
-        with _JUDGE_LOCK:
-            _JUDGE_STATS["scored"] += scored
-        return {"ok": True, "scored": scored, "replica_id": replica_id}
-
-    def _redteam_defeat(self, request: dict) -> dict:
-        """Phase C: red team loop. Reads symbol=code triplets, generates 10 attack classes
-        against each via the existing PayloadGenerator surface patterns, writes
-        symbol=redteam_defeated triplets back. Pure-pattern matching -- a real red team
-        generator is platform/eval/red_team_payloads.py; this is the always-on cheap pass.
-        """
-        replica_id = request.get("replica_id", "")
-        if not replica_id:
-            return {"ok": False, "error": "redteam_defeat needs a replica_id"}
-        attack_classes = [
-            "prompt_injection",
-            "sql_injection",
-            "shell_injection",
-            "path_traversal",
-            "xss",
-            "command_injection",
-            "argument_injection",
-            "buffer_overflow",
-            "git_command_injection",
-            "jailbreak",
-        ]
-        with _REPLICAS_LOCK:
-            sm = _REPLICAS.get(replica_id) or _load_replica(replica_id)
-            code_triplets = sm.top_k(symbol="code", k=32)
-        defeated = 0
-        for t in code_triplets:
-            for cls in attack_classes:
-                marker = f"::{cls}::"
-                if marker in t.result or marker in t.action:
-                    continue
-                _persist_triplet(
-                    "redteam",
-                    f"redteam_defeated::{t.action}::{cls}",
-                    json.dumps(
-                        {
-                            "attack_class": cls,
-                            "target": t.action,
-                            "mutator": "default",
-                        }
-                    ),
-                    f"redteam defeated {cls} on {t.takeaway}",
-                    "redteam_defeated",
-                )
-                defeated += 1
-        with _REDTEAM_LOCK:
-            _REDTEAM_STATS["defeated"] += defeated
-        return {"ok": True, "defeated": defeated, "replica_id": replica_id}
-
-    def _put_tuple(self, request: dict) -> dict:
-        """Plane 1 typed work tuples. Role-gated: only qa may put 'test:' / 'failing_test:',
-        only coder may put 'code:' / 'code_mutation:', etc. The asymmetry the strike packages
-        proposed without.
-        """
-        tuple_type = request.get("tuple_type", "")
-        payload = request.get("payload", {})
-        role = request.get("role", "")
-        if not tuple_type:
-            return {"ok": False, "error": "put_tuple needs a tuple_type"}
-        if not isinstance(payload, dict):
-            return {"ok": False, "error": "put_tuple needs a payload dict"}
-        if not role:
-            return {"ok": False, "error": "put_tuple needs a role"}
-        result = put_tuple(tuple_type, payload, role)
-        _trace_event("put_tuple", request, result)
-        return result
-
-    def _take_tuple(self, request: dict) -> dict:
-        tuple_type = request.get("tuple_type", "")
-        role = request.get("role", "")
-        if not tuple_type:
-            return {"ok": False, "error": "take_tuple needs a tuple_type"}
-        if not role:
-            return {"ok": False, "error": "take_tuple needs a role"}
-        result = take_tuple(tuple_type, role)
-        _trace_event("take_tuple", request, result)
-        return result
-
-    def _list_tuples(self, request: dict) -> dict:
-        return list_tuples(request.get("tuple_type", ""))
-
-    def _consumer_status(self, request: dict) -> dict:
-        return {
-            "ok": True,
-            "verifier": {"running": _VERIFIER_RUNNING, "stats": dict(_VERIFIER_STATS)},
-            "judge": {"running": _JUDGE_RUNNING, "stats": dict(_JUDGE_STATS)},
-            "redteam": {"running": _REDTEAM_RUNNING, "stats": dict(_REDTEAM_STATS)},
-        }
-
-    def _sandbox_status(self, request: dict) -> dict:
-        """Phase H: report which isolation backend the daemon picked and why."""
-        info = _sandbox_status()
-        info["ok"] = True
-        info["note"] = (
-            "firecracker is the architecture spec; docker is the dev fallback on this "
-            "Mac; gVisor is wired for K8s nodes; temp-tree is the last resort."
-        )
-        return info
-
-    def _sandbox_run_cmd(self, request: dict) -> dict:
-        """Phase H: run an arbitrary command in the picked sandbox. Used by the verifier
-        stages so they execute in the same isolation the architecture demands, regardless
-        of which backend is available on this host.
-        """
-        command = request.get("command", [])
-        sandbox_path = request.get("sandbox_path", "")
-        timeout_sec = int(request.get("timeout_sec", 20))
-        image = request.get("image", "python:3.12-slim")
-        if not isinstance(command, list) or not command:
-            return {"ok": False, "error": "sandbox_run needs a list command"}
-        if not isinstance(sandbox_path, str) or not sandbox_path:
-            return {"ok": False, "error": "sandbox_run needs a sandbox_path"}
-        exit_code, stdout, stderr = _sandbox_run(
-            command, sandbox_path, image=image, timeout_sec=timeout_sec
-        )
-        result = {
-            "ok": exit_code == 0,
-            "exit_code": exit_code,
-            "stdout": stdout,
-            "stderr": stderr,
-            "backend": _sandbox_detect(),
-        }
-        _trace_event("sandbox_run", request, result)
-        return result
-
-    def _system_status(self, request: dict) -> dict:
-        """Glass-box system status. Every daemon singleton surfaced. The user can see
-        exactly what's running, what's queued, what's been folded, and which sandbox
-        is in use -- one call, no hidden state.
-        """
-        with _REPLICAS_LOCK:
-            replicas = {rid: len(sm) for rid, sm in _REPLICAS.items()}
-        with _TUPLES_LOCK:
-            tuple_queues = {t: len(b) for t, b in _TUPLES.items()}
-        return {
-            "ok": True,
-            "sandbox": _sandbox_status(),
-            "shadow": {
-                "replicas": replicas,
-                "replica_count": len(replicas),
-                "total_triplets": sum(replicas.values()),
-            },
-            "verifier": {
-                "running": _VERIFIER_RUNNING,
-                "queue_depth": _VERIFIER_QUEUE.qsize(),
-                "stats": dict(_VERIFIER_STATS),
-                "seen_keys": len(_VERIFIER_SEEN_KEYS),
-            },
-            "judge": {
-                "running": _JUDGE_RUNNING,
-                "queue_depth": _JUDGE_QUEUE.qsize(),
-                "stats": dict(_JUDGE_STATS),
-                "seen_keys": len(_JUDGE_SEEN),
-            },
-            "redteam": {
-                "running": _REDTEAM_RUNNING,
-                "queue_depth": _REDTEAM_QUEUE.qsize(),
-                "stats": dict(_REDTEAM_STATS),
-                "seen_keys": len(_REDTEAM_SEEN),
-            },
-            "tuples": {
-                "queues": tuple_queues,
-                "types_allowed": list(_TUPLE_TYPES.keys()),
-            },
-        }
-
-    def _metrics(self, request: dict) -> dict:
-        """Prometheus-style counters and gauges. Glass-box observability without
-        requiring Langfuse / SigNoz to be configured -- this works standalone.
-        """
-        fmt = request.get("format", "json")
-        with _REPLICAS_LOCK:
-            replicas = {rid: len(sm) for rid, sm in _REPLICAS.items()}
-        with _TUPLES_LOCK:
-            tuple_queues = {t: len(b) for t, b in _TUPLES.items()}
-        metrics = {
-            "verifier_folded_total": _VERIFIER_STATS["folded"],
-            "verifier_passed_total": _VERIFIER_STATS["passed"],
-            "verifier_failed_total": _VERIFIER_STATS["failed"],
-            "verifier_errors_total": _VERIFIER_STATS["errors"],
-            "judge_scored_total": _JUDGE_STATS["scored"],
-            "judge_errors_total": _JUDGE_STATS["errors"],
-            "redteam_defeated_total": _REDTEAM_STATS["defeated"],
-            "redteam_errors_total": _REDTEAM_STATS["errors"],
-            "verifier_queue_depth": _VERIFIER_QUEUE.qsize(),
-            "judge_queue_depth": _JUDGE_QUEUE.qsize(),
-            "redteam_queue_depth": _REDTEAM_QUEUE.qsize(),
-            "replica_count": len(replicas),
-            "total_triplets": sum(replicas.values()),
-            "tuple_queues_total": sum(tuple_queues.values()),
-        }
-        if fmt == "prometheus":
-            lines = ["# HELP idp_executor Daemon metrics", "# TYPE idp_executor gauge"]
-            for name, value in metrics.items():
-                lines.append(f"idp_executor_{name} {value}")
-            return {"ok": True, "format": "prometheus", "body": "\n".join(lines)}
-        return {"ok": True, "format": "json", "metrics": metrics}
-
-    def _trace_tail_cmd(self, request: dict) -> dict:
-        n = int(request.get("n", 50))
-        return {"ok": True, "events": _trace_tail(n), "log": _TRACE_LOG}
-
-    def _tracing_status_cmd(self, request: dict) -> dict:
-        info = _otel_status()
-        info["ok"] = True
-        return info
 
     def _mutation_files(self, proposal: dict) -> list[ProposedFile]:
         """Rebuild the per-file, per-path list a mutation proposal carries.
@@ -2062,7 +849,7 @@ class Handler(socketserver.StreamRequestHandler):
             ) as handle:
                 json.dump(envelope, handle)
                 path = handle.name
-            proc = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
+            proc = subprocess.run(
                 [sys.executable, gate, path], capture_output=True, text=True, timeout=30
             )
         except (OSError, subprocess.SubprocessError) as exc:
@@ -2098,7 +885,7 @@ class Handler(socketserver.StreamRequestHandler):
         import subprocess  # local: kept out of the pure import path used by the tests
 
         try:
-            proc = subprocess.run(  # noqa: S602 -- shell=True on a probe verify_mutation already admitted; bounded by a timeout, exit code is the only verdict
+            proc = subprocess.run(
                 probe,
                 shell=True,
                 cwd=cwd or live_worktree(),
@@ -2312,8 +1099,8 @@ class Handler(socketserver.StreamRequestHandler):
         # must be reported rather than overwritten (a rewrite would detach the PR from the
         # commit the executor actually sealed).
         try:
-            push = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-                ["git", "push", "origin", f"refs/heads/{branch}:refs/heads/{branch}"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            push = subprocess.run(
+                ["git", "push", "origin", f"refs/heads/{branch}:refs/heads/{branch}"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -2332,8 +1119,8 @@ class Handler(socketserver.StreamRequestHandler):
             }
 
         try:
-            pr = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-                [  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            pr = subprocess.run(
+                [
                     "gh",
                     "pr",
                     "create",
@@ -2368,8 +1155,8 @@ class Handler(socketserver.StreamRequestHandler):
             # A PR that already exists for this head is not an error -- `admit_mutation` may be
             # retried after a partial delivery, and `gh pr create` refuses a duplicate. Report the
             # URL from the existing PR rather than a failure.
-            existing = subprocess.run(  # noqa: S603 -- argv list, no shell; the estate's tool-invocation idiom
-                ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],  # noqa: S607 -- partial path is deliberate -- the tool is resolved from the operator's PATH
+            existing = subprocess.run(
+                ["gh", "pr", "view", branch, "--json", "url", "-q", ".url"],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -2485,13 +1272,6 @@ def serve() -> None:  # pragma: no cover - the daemon loop
             )
             raise SystemExit(2)
         os.unlink(SOCKET_PATH)
-
-    start_verifier_thread()
-    start_consumer_threads()
-    print(
-        "executor: math sieve + judge_loop + redteam_loop auto-started",
-        file=sys.stderr,
-    )
 
     server = Server(SOCKET_PATH, Handler)
     # Owner-only. The agent runs as the same uid today, so this is not the boundary yet -- it is

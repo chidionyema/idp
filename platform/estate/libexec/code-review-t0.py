@@ -7,12 +7,9 @@ Tools: ruff, eslint, semgrep, bandit, clang-tidy, custom AST patterns.
 
 from __future__ import annotations
 import json
-import os
 import re
 import subprocess
 import sys
-import tempfile
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -285,7 +282,7 @@ def main():
             try:
                 results = fut.result()
                 all_findings.extend(results)
-            except Exception as e:
+            except Exception:
                 pass
 
     by_severity = {"critical": [], "high": [], "medium": [], "low": []}
