@@ -1,0 +1,229 @@
+# LiteLLM proxy as an estate service (crew#284 CP2). Until 2026-08-26 the router only ran in a
+# colima VM on the founder's 16 GB Mac; stopping colima to save the machine (load 131, 17 MB
+# free) took every routed model call and CP1's photo intake down with it (crew#313). A router
+# is a platform layer, and platform layers run on the cluster.
+#
+# Postgres: postgres.yaml, so the router mints budgeted virtual keys and keeps a spend ledger,
+# the same -database image as llm/litellm.yml. Until 2026-08-26 the cluster ran without one and
+# the one caller held the master key; the CP2 spec (features/sovereign-bus/cp2_litellm_real.feature)
+# says the kernel's key is never the master key, and /key/generate answered "DB not connected".
+# DATABASE_URL is composed in-container from the mounted LITELLM_DB_PASSWORD, never stored whole.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+  # The command below exports the upstream keys once, at start, so a rotated key is invisible to
+  # a running pod (crew#506 CP4: a rotated GROQ_API_KEY sat in the Secret while the pod answered
+  # `Invalid API Key`).
+  # Founder blueprint 2026-08-30 (4ca529a0.md): no hand-kept list of Secret names. Reloader
+  # discovers every Secret and ConfigMap this pod references, and
+  # platform/edge/require-auto-reload.yaml injects this annotation at admission, so git and the
+  # cluster say the same thing.
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  replicas: 2   # crew#539: one pod is one node event away from a 503
+  selector:
+    matchLabels: { app.kubernetes.io/name: litellm }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: litellm, app.kubernetes.io/part-of: idp }
+    spec:
+      # Two replicas on one node are one replica. DoNotSchedule, not ScheduleAnyway: a
+      # best-effort spread silently collapses onto one node exactly when the cluster is tight,
+      # which is the moment the spread was for.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: litellm }
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: litellm
+          # Same line and version as llm/litellm.yml; tests hold the version equal.
+          image: ghcr.io/berriai/litellm-database:v1.98.0
+          # Kyverno (secrets-not-from-env-vars, no-optional-secret-references) refused the first
+          # shape of this Deployment on 2026-08-26: envFrom secretRef, one of them optional. The
+          # llm Kustomization sat "dry-run failed" and llm.mumchimp.com never got a record
+          # (crew#284). Secrets are mounted as files and exported by the container itself, which
+          # is what `os.environ/...` in config.yaml reads; neither Secret is optional, so a missing
+          # vault entry keeps the pod Pending naming it instead of starting a half-keyed router.
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              for f in /run/secrets/litellm/*/*; do
+                export "$(basename "$f")=$(cat "$f")"
+              done
+              # The human door wins (decision 0017, founder 2026-09-07 "should auto sync once i
+              # configure on portal"). Anything the founder has dropped into Bitwarden Secrets
+              # Manager arrives here through the human-vault-bridge ExternalSecrets and is exported
+              # after the vault mounts above, so it overrides them by name. That is the whole
+              # rotation story: he replaces a key in Secrets Manager, the bridge picks it up inside
+              # a minute, Reloader restarts this pod, and the new key is live -- no seeding
+              # workflow, no PR, nobody told to sync.
+              #
+              # Every mount is optional and the loop tolerates an empty one, so a vendor whose key
+              # is not in Secrets Manager yet simply leaves the vault's value in place. Without
+              # `[ -f "$f" ]` an unmatched glob under `set -eu` would export the literal pattern.
+              for f in /run/secrets/human/*/*; do
+                [ -f "$f" ] || continue
+                export "$(basename "$f")=$(cat "$f")"
+              done
+              export DATABASE_URL="postgresql://litellm:$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432/litellm"
+              exec litellm --config /etc/litellm/config.yaml --port 4000 --host 0.0.0.0
+          ports:
+            - { name: http, containerPort: 4000 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: LITELLM_LOG, value: INFO }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER, value: otlp_http }
+            - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
+            # crew#408: the Admin UI signs in through the estate identity domain (ADR 0007); the
+            # client id, secret and admin id are the litellm-sso mount. Endpoints come from
+            # estate-config, so no domain URL is typed here (LAW 46).
+            - { name: GENERIC_AUTHORIZATION_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/authorize" }
+            - { name: GENERIC_TOKEN_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/token" }
+            - { name: GENERIC_USERINFO_ENDPOINT, value: "${ESTATE_OIDC_DOMAIN_URL}/oauth2/v1/userinfo" }
+            - { name: GENERIC_SCOPE, value: "openid email profile" }
+            # The ceiling module lives at /etc/litellm/ceilings/request_ceiling.py. Without this
+            # the router starts, declares the callback in config.yaml, and then fails every
+            # request with a ModuleNotFoundError -- a broken router is worse than an unbounded
+            # one, which is why the path and the callback ship in the same pull request.
+            - { name: PYTHONPATH, value: "/etc/litellm/ceilings" }
+            # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
+            # set, and it fails open: a call whose optimization pass errors or exceeds the
+            # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
+            # llm fence carries it on allow-same-namespace and no new hop is declared.
+            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc.cluster.local:8757" }
+            - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
+            - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
+            - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
+            # What turns zeroedge_gateway.py from a registered no-op into the optimizer it was
+            # written to be. The shim has been in `litellm_settings.callbacks` since it landed
+            # and, with this unset, returned every request byte-identical -- so the five-layer
+            # gateway shipped and changed nothing. In-cluster ClusterIP: the call never leaves
+            # the namespace, and `allow-same-namespace` in platform/ns-fences/network/llm.yaml
+            # already permits it, so no fence change rides with this.
+            #
+            # Unreachable is safe. The shim fails open on connect error, timeout and unparseable
+            # reply; the only thing it raises on is an explicit `reject`, and budget enforcement
+            # is off (see platform/llm/zeroedge.yaml).
+            - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc:8757" }
+          volumeMounts:
+            - { name: config, mountPath: /etc/litellm, readOnly: true }
+            # The ceiling module, on the path the router imports from. PYTHONPATH above names
+            # this directory, so `request_ceiling.proxy_handler_instance` resolves at start.
+            - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
+            - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
+            - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
+            - { name: cache, mountPath: /run/secrets/litellm/cache, readOnly: true }
+            - { name: human-minimax, mountPath: /run/secrets/human/minimax, readOnly: true }
+            - { name: human-gemini, mountPath: /run/secrets/human/gemini, readOnly: true }
+            - { name: human-openrouter, mountPath: /run/secrets/human/openrouter, readOnly: true }
+            # cohere, added 2026-09-10 with the vendor row and the embed chain. `optional`
+            # like every human mount, so the router starts whether or not the key is in the
+            # vault yet; a missing one fails that Secret alone and the Cohere hop alone.
+            - { name: human-cohere, mountPath: /run/secrets/human/cohere, readOnly: true }
+            - { name: human-kimi, mountPath: /run/secrets/human/kimi, readOnly: true }
+            # 2026-09-10: both keys were in Secrets Manager and both bridge Secrets existed in
+            # this namespace, and neither was mounted -- so the estate router could not reach
+            # Cerebras or NVIDIA at all, and any agent that wanted them had to go direct and
+            # off the ledger. Founder, same day: "all agets send should be in litelln".
+            - { name: human-cerebras, mountPath: /run/secrets/human/cerebras, readOnly: true }
+            - { name: human-nvidia, mountPath: /run/secrets/human/nvidia, readOnly: true }
+            # 2026-09-15: GROQ_API_KEY_2/_3 and all of SAMBANOVA_API_KEY/_2/_3 ride the human
+            # door alone (no vault entry, same as minimax) -- the bridge Secrets human-groq and
+            # human-sambanova already exist (generated from consoles.yaml targets) but neither
+            # was mounted, so the pool deployments in consoles.yaml naming these env vars would
+            # start unresolved without this pair, exactly the cerebras/nvidia gap above.
+            - { name: human-groq, mountPath: /run/secrets/human/groq, readOnly: true }
+            - { name: human-sambanova, mountPath: /run/secrets/human/sambanova, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
+            # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
+            requests: { cpu: 50m, memory: 512Mi }
+            limits: { cpu: 1000m, memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health/readiness, port: http }
+            periodSeconds: 10
+          # The -database image runs Prisma migrations before it listens (idp#262). With no
+          # startupProbe the kubelet killed the pod on liveness before :4000 opened, 8 restarts
+          # in 20 minutes on 2026-08-26 23:2xZ. Liveness only counts once startup has passed.
+          startupProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health/liveliness, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: config
+          configMap: { name: litellm-config }
+        - name: request-ceiling
+          configMap: { name: litellm-request-ceiling }
+        - name: upstream
+          secret: { secretName: litellm-upstream }
+        - name: langfuse
+          secret: { secretName: litellm-langfuse }
+        - name: sso
+          secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
+        - name: cache
+          secret: { secretName: litellm-cache }   # REDIS_PASSWORD, minted in-cluster (redis.yaml)
+        # The bridge's Secrets, one per vendor (platform/human-vault-bridge, generated from the
+        # registry). optional: true is what lets a vendor whose key is not in Secrets Manager yet
+        # be absent without holding this pod Pending -- the opposite of the vault mounts above,
+        # which are deliberately required because a router with no upstream key is not a router.
+        - name: human-minimax
+          secret: { secretName: human-minimax, optional: true }
+        - name: human-gemini
+          secret: { secretName: human-gemini, optional: true }
+        - name: human-openrouter
+          secret: { secretName: human-openrouter, optional: true }
+        - name: human-cohere
+          secret: { secretName: human-cohere, optional: true }
+        - name: human-kimi
+          secret: { secretName: human-kimi, optional: true }
+        - name: human-cerebras
+          secret: { secretName: human-cerebras, optional: true }
+        - name: human-nvidia
+          secret: { secretName: human-nvidia, optional: true }
+        - name: human-groq
+          secret: { secretName: human-groq, optional: true }
+        - name: human-sambanova
+          secret: { secretName: human-sambanova, optional: true }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm, backstage.io/kubernetes-id: founder-model-router }
+spec:
+  selector: { app.kubernetes.io/name: litellm }
+  ports:
+    - { name: http, port: 4000, targetPort: http }

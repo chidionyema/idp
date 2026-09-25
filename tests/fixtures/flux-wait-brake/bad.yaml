@@ -6,14 +6,14 @@ metadata:
   name: otto-gateway
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/otto-gateway
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
