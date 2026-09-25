@@ -1,5 +1,155 @@
 [
  {
+  "feature": "features/battalion/cp1-cost-spend-governance.feature",
+  "title": "Cost & spend governance \u2014 hard breaker, hardware-signed activation, breakeven-gated ladder, graded costs",
+  "scenarios": [
+   "COST-01 \u2014 the router budget breaker severs traffic at breach, it does not warn",
+   "COST-02 \u2014 provisioning paid compute requires a hardware-rooted signature, not just budget",
+   "COST-03 \u2014 Rung 2 flat-rate rental activates only above the computed breakeven band",
+   "COST-04 \u2014 every hosting tier row carries a receipt grade, or it fails schema"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp10-p0-prerequisites.feature",
+  "title": "The three P0 prerequisites gate every other claim in the Battalion",
+  "scenarios": [
+   "P0-01 \u2014 the breaker severs, or every COST-01-dependent claim in the spec is fiction",
+   "P0-02 \u2014 the CFG-01 config document exists, or every axis is a code-level toggle, not a product capability",
+   "P0-03 \u2014 the UX-02 edge-case suite is green, or \"reliable as electricity\" is marketing"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp2-jit-provisioning.feature",
+  "title": "Compute provisioning is point-of-use, honoring each tier's real activation floor",
+  "scenarios": [
+   "JIT-01 \u2014 Apple Silicon and GPU tiers are not treated as interchangeable on activation floor",
+   "JIT-02 \u2014 a cold start beyond the latency budget degrades to the next lane, marked in-trace"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp3-routing-escalation.feature",
+  "title": "Routing and escalation \u2014 one router, an independently toggleable matrix, verifier-driven escalation, local floor",
+  "scenarios": [
+   "ROUTE-01 \u2014 all model calls traverse the standardized router, direct calls are rogue",
+   "ROUTE-02 \u2014 resource tier, candidate volume, selection method and escalation pattern are independent config axes",
+   "ROUTE-03 \u2014 verifier-driven escalation makes misroute risk zero by construction",
+   "ROUTE-04 \u2014 NL-judgment escalation is signaled by disagreement between two cheap models",
+   "ROUTE-05 \u2014 semantic intent routing is a named gap, present as a toggleable axis, default off",
+   "ROUTE-06 \u2014 the fallback chain terminates at the always-on local model, never at a paid pool"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp4-verification-selection.feature",
+  "title": "Verification and selection \u2014 the gauntlet, strategy-slotted selection, claim-graph as NL verifier, capped volume",
+  "scenarios": [
+   "VER-01 \u2014 attestation stays bound to the SHA-256 of verified bytes",
+   "VER-02 \u2014 weighted voting or multi-verifier is used where a real verifier exists, plain best-of-N is disallowed there",
+   "VER-03 \u2014 the claim-graph (DoD v3) is reused as the NL verifier for NL output candidates",
+   "VER-04 \u2014 candidate volume is capped for tasks with no real verifier, regardless of config"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp5-offload-grind-darwin-orchestration.feature",
+  "title": "Offload, grind, darwin and orchestration \u2014 no tokens on deterministic ops, unkillable grind, confirmed darwin loop, Temporal only",
+  "scenarios": [
+   "OFF-01 \u2014 deterministic operations never execute as a model call",
+   "OFF-02 \u2014 the CPU-sandbox execute_python tool excludes offloadable raw data from the prompt, when built",
+   "GRIND-01 \u2014 the overnight grind worker cannot terminate before its test passes or the 4h wall-clock limit",
+   "DARWIN-01 \u2014 the weekly meta-optimizer loop is confirmed against the repo, or recorded as a gap",
+   "ORCH-01 \u2014 orchestration reuses Temporal child workflows, no second framework",
+   "ORCH-02 \u2014 flat-rate tiers are governed by a time budget, metered tiers by a dollar budget",
+   "ORCH-03 \u2014 every routed call carries a config_id, answerable as a Langfuse query"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp6-free-lunch-invariants.feature",
+  "title": "Free-lunch invariants \u2014 the only leverage claims allowed to call themselves free of downside",
+  "scenarios": [
+   "FL-01 \u2014 speculative decoding never changes the output distribution",
+   "FL-02 \u2014 the exact-match cache keeps its safeguards, or it forfeits the free-lunch claim",
+   "FL-03 \u2014 config_id trace tagging is pure information gain on already-paid infrastructure",
+   "FL-04 \u2014 weighted verifier voting on Z3-scored branches costs the same as unweighted selection",
+   "Any other free-lunch claim is rejected at intake unless its tradeoff is named"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp7-config-surface.feature",
+  "title": "One hot-reloadable config document is the single point of control for every axis",
+  "scenarios": [
+   "CFG-01 \u2014 a config diff toggling any axis takes effect on the next request, no restart",
+   "CFG-02 \u2014 the config schema is generated from the spec's own REQ list, and a mismatch fails CI"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp8-observability-delivery.feature",
+  "title": "Observability and delivery \u2014 generated catalog entities, the estate's own board, no laptop dependency, destructive-class spend",
+  "scenarios": [
+   "OBS-01 \u2014 the hosting matrix and the CFG-01 surface are generated catalog entities",
+   "OBS-02 \u2014 founder-facing deliverables render on the estate's own board",
+   "GOV-01 \u2014 zero laptop dependency in the production routing path",
+   "GOV-02 \u2014 autonomous money-spending actions inherit the destructive capability class"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/battalion/cp9-ux-reliability-bar.feature",
+  "title": "UX and reliability \u2014 as seamless and reliable as electricity",
+  "scenarios": [
+   "UX-01 \u2014 every tier/model/axis switch is invisible to the requester on the success path",
+   "UX-02 \u2014 every enumerated edge case has a named, tested degradation path",
+   "UX-03 \u2014 CFG-01 rejects any write that would leave zero enabled lanes reachable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "e0d9d2fc",
+  "pr": null,
+  "ticket": null
+ },
+ {
   "feature": "features/chaos/chaos-target-namespace-labelled.feature",
   "title": "A chaos experiment targets a namespace Chaos Mesh is allowed to inject into",
   "scenarios": [
@@ -123,37 +273,106 @@
   "ticket": null
  },
  {
-  "feature": "features/drills/chaos-drill.feature",
-  "title": "The weekly pod-kill experiment is graded from outside the cluster",
+  "feature": "features/deploy-river/cp2_river_scene.feature",
+  "title": "CP2 Deploy River scene",
   "scenarios": [
-   "A Task pod is admitted without probes, a long-running pod is not"
+   "a fresh push ignites a comet at the source gate",
+   "a green gate flashes the ring and accelerates the comet",
+   "a red gate cracks the ring and the comet falls into the rejection basin",
+   "a docked comet shows the receipt (proof, not assertion)",
+   "the Andon ambient light shifts amber while main is red",
+   "focusing a gate unfolds its data hologram and focus moves collapses it",
+   "a comet's road is read-only; the renderer never invents stages",
+   "zero chrome \u2014 no sidebar, no breadcrumbs, no card floating in space",
+   "presence \u2014 the scene knows being-watched from being-used",
+   "a green gate rings consonance; a cracked gate is a dissonance you feel",
+   "the River reads from CP1, full-bleed to the bezel"
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "772db8c9",
-  "pr": 191,
-  "ticket": "crew#292"
+  "added_in": "8f6298ad",
+  "pr": null,
+  "ticket": null
  },
  {
-  "feature": "features/drills/cluster-state.feature",
-  "title": "The cluster reports its own state and a runner grades it without a laptop",
+  "feature": "features/deploy-river/cp3_narration.feature",
+  "title": "CP3 narration engine",
   "scenarios": [
-   "The receipt pod is admitted as a Job pod and refused as a long-running one",
-   "A fresh receipt with every node Ready grades ok",
-   "A stale receipt grades FAIL",
-   "A node that is not Ready grades FAIL",
-   "A Flux object that is not Ready grades FAIL",
-   "A receipt from a collector that predates the Flux rows grades FAIL, never clean",
-   "A DaemonSet short of its desired count grades FAIL",
-   "A receipt from a collector that predates the DaemonSet row grades FAIL, never clean",
-   "A receipt from a collector that predates the monitoring row grades FAIL, never clean",
-   "An ExternalSecret that is Ready but has not refreshed in twice its interval grades FAIL"
+   "story mode names the journey's actual push time, gates, and merge time",
+   "live commentary speaks only at transitions, never speculates",
+   "a failed gate is named, never glossed over",
+   "unknown stages are read as unknown, never guessed",
+   "a sha with no recorded journey is BLIND, never a fabricated story",
+   "timestamps are deterministic; two runs produce byte-identical text",
+   "the narration engine never imports an LLM client",
+   "narration speaks in one or two sentences, no markdown, no lists",
+   "live commentary speaks only at transitions and never wakes the room"
   ],
   "bound_by": [],
   "status": "UNBOUND",
-  "added_in": "3d1d0b9d",
-  "pr": 267,
-  "ticket": "crew#345"
+  "added_in": "8f6298ad",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/deploy-river/cp4_replay.feature",
+  "title": "CP4 time-scrub and Holmes interrogation",
+  "scenarios": [
+   "dragging the river's edge back replays last week's deploys at 60x",
+   "focusing a comet stops the replay and opens the receipt",
+   "\"why did this fail\" routes the question to ask_holmes and speaks the answer",
+   "\"why did this fail\" on a green comet is BLIND, never a forced answer",
+   "a failed gate hologram names the check-run and the conclusion verbatim",
+   "scrubbing past the latest ledger row is BLIND, not an extrapolation",
+   "Holmes is called once per question; the same question is not re-routed",
+   "the subtitle proof is shown, not hidden, on every answer",
+   "time machine \u2014 \"take me to last Thursday 4pm\" flies the camera into the past"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "8f6298ad",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/deploy-river/cp5_observatory.feature",
+  "title": "CP5 Three Planes Observatory",
+  "scenarios": [
+   "ring 1 (Generative Swarm) animates every live agent as a star",
+   "ring 2 (Adversarial Crucible) renders JudgeWorker scores as scales",
+   "ring 3 (Physics Engine) renders Z3 proofs and Aevum seals",
+   "work passes outward through the three rings",
+   "a plane with no data shows a named gap, not a green tick",
+   "the Universal Write Boundary is drawn as a crack",
+   "the Observatory reads only from the one estate MCP server",
+   "zero chrome \u2014 the rings are the page",
+   "presence \u2014 the rings idle until interrogated",
+   "every named gap renders as a dark segment with a name, never a green tick",
+   "the soundtrack binds each plane to an instrument family"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "8f6298ad",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/deploy-river/cp6_voice_steering.feature",
+  "title": "CP6 voice steering on both pages",
+  "scenarios": [
+   "focus on a comet by saying \"the one on the left\"",
+   "address a session by spatial relation not by name",
+   "a steering phrase reaches the right MCP tool, named by intent",
+   "an unresolvable spatial reference is BLIND, never a guessed target",
+   "the same spatial phrase works on the Observatory",
+   "the voice router never invents a session id",
+   "voice steering is gated by the same quota as the human on Telegram"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "8f6298ad",
+  "pr": null,
+  "ticket": null
  },
  {
   "feature": "features/estate-rebuild/rebuild-and-gates.feature",
@@ -243,6 +462,90 @@
   "ticket": null
  },
  {
+  "feature": "features/gates/ci-cryptographic-gateway.feature",
+  "title": "Cryptographic CI Gateway and Zero-Trust Agent Enforcement",
+  "scenarios": [
+   "An AI agent submits a Pull Request",
+   "The verifier tooling is unavailable or crashes",
+   "An agent submits a pre-verified, cryptographically sealed patch",
+   "An agent submits an unsealed patch (Hallucination/Bypass attempt)",
+   "A human submits an unsealed patch"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "89c068fb",
+  "pr": null,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/efficiency-gateway.feature",
+  "title": "The estate efficiency gateway cuts tokens before every vendor call, model-agnostic",
+  "scenarios": [
+   "A stable system prompt keeps the prefix cache alive",
+   "A drifted system prompt is flagged as a cache miss",
+   "Duplicate lines in a tool_result message are stripped",
+   "A tool description longer than the limit is truncated",
+   "A short tool description is not touched",
+   "Each call increments the call counter and the token estimate",
+   "A second identical large tool result is replaced with a reference handle",
+   "A duplicate tool_result with the same tool_call_id and content is pruned",
+   "A history longer than MAX_HISTORY_MSGS is truncated",
+   "System messages are preserved during compaction",
+   "An old assistant turn beyond the gist boundary is condensed",
+   "A recent assistant turn is not condensed",
+   "A realistic session with drift, duplicates, long history, and verbose tools is optimised"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/egress-block.feature",
+  "title": "Egress block \u2014 direct AI vendor egress denied at the network layer",
+  "scenarios": [
+   "GlobalNetworkPolicy has correct name and order",
+   "GlobalNetworkSet covers all current AI vendor endpoints",
+   "Policy blocks all namespaces except the approved exempt set",
+   "Egress rule targets the vendor endpoint GlobalNetworkSet by label",
+   "A non-exempt namespace has no allow-egress rule to vendor endpoints",
+   "Policy manifest is valid YAML and passes structural schema check"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "fd519c9b",
+  "pr": 3703,
+  "ticket": null
+ },
+ {
+  "feature": "features/gates/front-door-login.feature",
+  "title": "The front door is a federated login with no local password",
+  "scenarios": [
+   "No manifest holds a user database"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "79ff26c5",
+  "pr": 144,
+  "ticket": "crew#269"
+ },
+ {
+  "feature": "features/gates/placement-published.feature",
+  "title": "placement is measured, published and read on the portal",
+  "scenarios": [
+   "the cluster publishes its placement receipt",
+   "the render carries the placement document forward",
+   "the portal reads it through the proxy it already has",
+   "a cluster at its request ceiling is explained, never just reported"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "d0ffce9f",
+  "pr": 3254,
+  "ticket": null
+ },
+ {
   "feature": "features/portal-product/cp1-showcase-live.feature",
   "title": "the showcase page reads live state, never a markdown file",
   "scenarios": [
@@ -319,32 +622,6 @@
   "scenarios": [
    "the Otto door's pill reflects its own healthz answer",
    "the MCP gateway's pill is read through a proxy, never a hardcoded host"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp7-drills-and-board-live-counts.feature",
-  "title": "drills and the crew board show live counts, not bare links",
-  "scenarios": [
-   "the drills card shows the last verdict per drill",
-   "the crew board card shows live issue counts"
-  ],
-  "bound_by": [],
-  "status": "UNBOUND",
-  "added_in": "79b0318d",
-  "pr": 1918,
-  "ticket": null
- },
- {
-  "feature": "features/portal-product/cp8-screenshot-evidence-in-login-drill.feature",
-  "title": "the hourly login drill is the standing screenshot evidence for this spec",
-  "scenarios": [
-   "the scheduled login drill captures the showcase, tools and ops pages",
-   "a red login drill is a red Demo gate"
   ],
   "bound_by": [],
   "status": "UNBOUND",
@@ -558,6 +835,23 @@
   "ticket": "crew#213"
  },
  {
+  "feature": "features/sovereign-bus/cp30_consensus_and_policy.feature",
+  "title": "Cross-model consensus under a policy invariant",
+  "scenarios": [
+   "Two of three agree and the call is allowed",
+   "Consensus outside policy is blocked",
+   "A late vote does not count",
+   "Non-destructive ops use one cheap model",
+   "The default voters are three different models",
+   "sb model-consensus reaches the vote"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f8",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
   "feature": "features/sovereign-bus/cp3_approval_gate.feature",
   "title": "Approval gate \u2014 a session that needs the founder waits for him, durably",
   "scenarios": [
@@ -617,6 +911,21 @@
    "Every signal is a receipt",
    "Every session is a Langfuse trace",
    "Failure episodes are queryable"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "2f0123f8",
+  "pr": 70,
+  "ticket": "crew#213"
+ },
+ {
+  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
+  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
+  "scenarios": [
+   "The engine runs a step with no vendor present",
+   "No vendor import in the engine",
+   "No hardcoded home, host or checkout",
+   "A new provider is one registry entry, not a code change"
   ],
   "bound_by": [],
   "status": "UNBOUND",
@@ -755,60 +1064,10 @@
   "ticket": "crew#297"
  },
  {
-  "feature": "docs/prose/chaos-drill-live.feature",
-  "title": "The weekly pod-kill experiment leaves a receipt and the runner grades it",
-  "scenarios": [
-   "A finished experiment leaves a receipt",
-   "The runner grades the receipt's age",
-   "A missing or stale receipt is a red row"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "7fd1ba4d",
-  "pr": 217,
-  "ticket": "crew#297"
- },
- {
   "feature": "docs/prose/chaos-live.feature",
   "title": "A chaos experiment injects for real on the cluster",
   "scenarios": [
    "The first run is a receipt, not a promise"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "b4e9172a",
-  "pr": 215,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/cloud-agnostic-drills.feature",
-  "title": "Disposable compute, universal state: the migration drills",
-  "scenarios": [
-   "Bring-your-own-Kubernetes hydration",
-   "Cross-cloud secret portability",
-   "Stateless compute disaster recovery",
-   "Agnostic ingress routing"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "30a84548",
-  "pr": 206,
-  "ticket": "crew#297"
- },
- {
-  "feature": "docs/prose/drill-catalogue-live.feature",
-  "title": "The drills row of bin/idp-verify grades the live run history",
-  "scenarios": [
-   "A drill ran inside its window",
-   "Every graded drill is green",
-   "A drill has gone stale",
-   "A drill has never run at all",
-   "A pending drill is named but never graded",
-   "Freshness cannot be measured",
-   "The catalogue is missing or empty",
-   "The catalogue names a workflow that was retired",
-   "login-drill is graded, not pending",
-   "The check names a policy statement that is in git but not live"
   ],
   "bound_by": [],
   "status": "PROSE",
@@ -943,30 +1202,6 @@
   "ticket": "crew#297"
  },
  {
-  "feature": "docs/prose/front-door-login-drill-live.feature",
-  "title": "A drill signs in at the front door and sees the catalogue",
-  "scenarios": [
-   "The drill signs in and the catalogue renders",
-   "The password is wrong",
-   "The domain demands a password change on first login",
-   "The domain asks the drill user to consent to the front door",
-   "A later apply never overwrites the live drill password",
-   "The JWKS the door validates against is private",
-   "The drill credential is never on a laptop and never in a log",
-   "The door is green but Backstage shows its own guest sign-in page",
-   "The door's identity reaches Backstage's auth provider",
-   "The refresh endpoint is asked at Backstage's real path",
-   "The drill reads the catalogue and sees no error, not only a shell",
-   "A door request with a user name and no email still signs in",
-   "Every published path answers (crew#307)"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "ceb7345b",
-  "pr": 218,
-  "ticket": "crew#297"
- },
- {
   "feature": "docs/prose/front-door-login-live.feature",
   "title": "The live front door redirects to the identity domain and holds no password",
   "scenarios": [
@@ -1064,18 +1299,6 @@
   "title": "Flux reconciles a template-created service",
   "scenarios": [
    "Merging the platform pull request brings the service up"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "805afb0e",
-  "pr": 930,
-  "ticket": "crew#627"
- },
- {
-  "feature": "docs/prose/golden-path-cp2f-proof-drill.feature",
-  "title": "End-to-end proof drill for self-service golden paths",
-  "scenarios": [
-   "Provision, sign in, and tear down a throwaway service"
   ],
   "bound_by": [],
   "status": "PROSE",
@@ -1628,37 +1851,6 @@
   "ticket": null
  },
  {
-  "feature": "features/drills/drill-catalogue.feature",
-  "title": "Every scheduled drill has run recently, and the catalogue says which drills exist",
-  "scenarios": [
-   "The catalogue names only drills that are really scheduled"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_drill_catalogue.py"
-  ],
-  "status": "BOUND",
-  "added_in": "fd8c75fa",
-  "pr": 178,
-  "ticket": "crew#292"
- },
- {
-  "feature": "features/drills/vault-seed.feature",
-  "title": "the estate vault is seeded by the machine identity, never from a laptop (crew#284, crew#248)",
-  "scenarios": [
-   "every key the vault entries need arrives as a SEED_ secret",
-   "no value can reach the log",
-   "the git-writer credential never holds the LLM (crew#284)",
-   "secret-store carries only the store (crew#284)"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_vault_seed.py"
-  ],
-  "status": "BOUND",
-  "added_in": "d2ae3603",
-  "pr": 243,
-  "ticket": "crew#284"
- },
- {
   "feature": "features/fleetview/cp1_contract.feature",
   "title": "CP1 the session contract",
   "scenarios": [
@@ -1787,51 +1979,6 @@
   "ticket": null
  },
  {
-  "feature": "features/gates/efficiency-gateway.feature",
-  "title": "The estate efficiency gateway cuts tokens before every vendor call, model-agnostic",
-  "scenarios": [
-   "A stable system prompt keeps the prefix cache alive",
-   "A drifted system prompt is flagged as a cache miss",
-   "Duplicate lines in a tool_result message are stripped",
-   "A tool description longer than the limit is truncated",
-   "A short tool description is not touched",
-   "Each call increments the call counter and the token estimate",
-   "A second identical large tool result is replaced with a reference handle",
-   "A duplicate tool_result with the same tool_call_id and content is pruned",
-   "A history longer than MAX_HISTORY_MSGS is truncated",
-   "System messages are preserved during compaction",
-   "An old assistant turn beyond the gist boundary is condensed",
-   "A recent assistant turn is not condensed",
-   "A realistic session with drift, duplicates, long history, and verbose tools is optimised"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_efficiency_gateway_bdd.py"
-  ],
-  "status": "BOUND",
-  "added_in": "fd519c9b",
-  "pr": 3703,
-  "ticket": null
- },
- {
-  "feature": "features/gates/egress-block.feature",
-  "title": "Egress block \u2014 direct AI vendor egress denied at the network layer",
-  "scenarios": [
-   "GlobalNetworkPolicy has correct name and order",
-   "GlobalNetworkSet covers all current AI vendor endpoints",
-   "Policy blocks all namespaces except the approved exempt set",
-   "Egress rule targets the vendor endpoint GlobalNetworkSet by label",
-   "A non-exempt namespace has no allow-egress rule to vendor endpoints",
-   "Policy manifest is valid YAML and passes structural schema check"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_egress_block_bdd.py"
-  ],
-  "status": "BOUND",
-  "added_in": "fd519c9b",
-  "pr": 3703,
-  "ticket": null
- },
- {
   "feature": "features/gates/epistemic-and-trajectory.feature",
   "title": "An agent cannot lie about what it sees, and cannot forget what it was told to do",
   "scenarios": [
@@ -1896,20 +2043,6 @@
   "added_in": "fd519c9b",
   "pr": 3703,
   "ticket": null
- },
- {
-  "feature": "features/gates/front-door-login.feature",
-  "title": "The front door is a federated login with no local password",
-  "scenarios": [
-   "No manifest holds a user database"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_front_door_login.py"
-  ],
-  "status": "BOUND",
-  "added_in": "79ff26c5",
-  "pr": 144,
-  "ticket": "crew#269"
  },
  {
   "feature": "features/gates/github-app-per-lane.feature",
@@ -2015,23 +2148,6 @@
   "ticket": null
  },
  {
-  "feature": "features/gates/placement-published.feature",
-  "title": "placement is measured, published and read on the portal",
-  "scenarios": [
-   "the cluster publishes its placement receipt",
-   "the render carries the placement document forward",
-   "the portal reads it through the proxy it already has",
-   "a cluster at its request ceiling is explained, never just reported"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_placement_published.py"
-  ],
-  "status": "BOUND",
-  "added_in": "d0ffce9f",
-  "pr": 3254,
-  "ticket": null
- },
- {
   "feature": "features/gates/plist-gate.feature",
   "title": "A launchd job that backgrounds children declares AbandonProcessGroup",
   "scenarios": [
@@ -2092,7 +2208,12 @@
    "The SQL domain fails while code and the manifest are sound",
    "The agent calls seal_mutation before verify_mutation ever passed",
    "An unattested bundle attempts to be admitted",
-   "A validly attested bundle is admitted to a new branch, never main"
+   "A validly attested bundle is admitted to a new branch, never main",
+   "A proposal arrives with no reversibility envelope",
+   "A proposal carries an inverse that merely echoes the forward action",
+   "A proposal claims an irreversible exemption with a forged token",
+   "A proposal carries a deterministic inverse with a state probe",
+   "The inverse's probe is run against state the forward created"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_typed_multidomain_mutation_ledger.py"
@@ -2354,25 +2475,6 @@
   "ticket": "crew#284"
  },
  {
-  "feature": "features/sovereign-bus/cp30_consensus_and_policy.feature",
-  "title": "Cross-model consensus under a policy invariant",
-  "scenarios": [
-   "Two of three agree and the call is allowed",
-   "Consensus outside policy is blocked",
-   "A late vote does not count",
-   "Non-destructive ops use one cheap model",
-   "The default voters are three different models",
-   "sb model-consensus reaches the vote"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp30.py"
-  ],
-  "status": "BOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
   "feature": "features/sovereign-bus/cp31_fsm_budget.feature",
   "title": "Finite state machine and budget enforcer",
   "scenarios": [
@@ -2482,23 +2584,6 @@
   "ticket": "crew#284"
  },
  {
-  "feature": "features/sovereign-bus/cp6_provider_agnostic.feature",
-  "title": "Provider agnostic \u2014 the runner and the model are configuration, never code",
-  "scenarios": [
-   "The engine runs a step with no vendor present",
-   "No vendor import in the engine",
-   "No hardcoded home, host or checkout",
-   "A new provider is one registry entry, not a code change"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp6_provider_agnostic.py"
-  ],
-  "status": "BOUND",
-  "added_in": "2f0123f8",
-  "pr": 70,
-  "ticket": "crew#213"
- },
- {
   "feature": "features/stale_pr.feature",
   "title": "a pull request with no live owner does not sit in the queue",
   "scenarios": [
@@ -2523,7 +2608,6 @@
    "A deployment scaled to zero is dead, not absent",
    "A capability stranded on a branch is visible",
    "A branch that only edits existing files is not stranded",
-   "The twin and the catalogue generator cannot disagree",
    "A stopped emitter is visible as stale, not as healthy",
    "Replaying the same events changes nothing",
    "The twin adds no second store, bus or server"
