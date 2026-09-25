@@ -19,7 +19,16 @@ name: build-multiarch
 # version whichever push won a race and leaves a rollback nothing to roll back
 # to; prospector's container-images.yml states the same rule.
 on:
+  merge_group:
   pull_request:
+    paths:
+      - 'Dockerfile'
+      - 'src/**'
+      - 'cmd/**'
+      - 'internal/**'
+      - 'go.mod'
+      - 'package.json'
+      - '.github/workflows/build-multiarch.yml'
   push:
     branches: [main]
   # idp#769: four merges by github-actions[bot] fired no push run, so main's images were never
