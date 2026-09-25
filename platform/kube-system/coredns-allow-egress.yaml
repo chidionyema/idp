@@ -1,0 +1,47 @@
+# CoreDNS NetworkPolicy: allows kube-dns pods to reach the Kubernetes API server.
+# Root cause found 2026-09-25: kube-system had no NetworkPolicy allowing CoreDNS to egress to
+# the API server (10.0.0.11:6443). The Calico default-deny in kube-system blocked CoreDNS's
+# kubernetes plugin from listing Services, causing "failed to list *v1.Service" timeouts and
+# SERVFAIL on every internal name resolution. SPIRE agents were unable to resolve
+# spire-server.spire-mgmt, failing attestation.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: coredns-allow-egress
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/component: networking
+    app.kubernetes.io/part-of: kube-system
+spec:
+  podSelector:
+    matchLabels:
+      k8s-app: kube-dns
+  policyTypes:
+    - Egress
+  egress:
+    # VCN DNS via IMDS (169.254.169.254) — resolves OCI internal names
+    - ports:
+        - port: 53
+          protocol: UDP
+      to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+    # API server via clusterIP (10.96.0.1) — used by kubernetes plugin
+    - ports:
+        - port: 443
+          protocol: TCP
+      to:
+        - namespaceSelector: {}
+    # API server via endpoint IP — direct reach to the load balancer
+    - ports:
+        - port: 6443
+          protocol: TCP
+      to:
+        - ipBlock:
+            cidr: ${ESTATE_APISERVER_CIDR}
+    # DNS within cluster — resolve *.cluster.local and other namespace services
+    - ports:
+        - port: 53
+          protocol: UDP
+      to:
+        - namespaceSelector: {}
