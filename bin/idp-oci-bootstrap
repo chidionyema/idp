@@ -63,6 +63,52 @@ vput() { # name on argv, VALUE ON STDIN ONLY
   printf %s "$v" | SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
 }
 
+# 2026-09-26: the tenancy was upgraded to Pay As You Go on 2026-08-24 and ran 12 OCPU / 48 GB
+# against the Always Free 2 OCPU / 12 GB. The tofu precondition, node_pool.rego and the $50
+# budget all passed that, so they were deleted. The ceiling is now an Oracle compartment quota:
+# Oracle refuses any compute request beyond it, from any caller. It lives here, under the tenancy
+# owner, because quota permission is tenancy-scoped and estate-operators (estate-tofu, estate-ci,
+# every agent) is never granted it: nothing automated can raise its own ceiling.
+# A1 quotas count per availability domain, so every compute quota is zeroed and A1 is allowed
+# in AD-1 only (the PVs pin AD-1, platform/oci/main.tf). Later statements override earlier ones.
+apply_quota() {
+  AD1=$(oci iam availability-domain list "${O[@]}" --compartment-id "$TENANCY" --query 'data[?ends_with(name, `-AD-1`)].name | [0]' --raw-output)
+  case "$AD1" in *:*-AD-1) ;; *) echo "FAIL    quota: no AD-1 name from the API ($AD1)"; exit 1;; esac
+  QUOTA_NAME=estate-free-tier-ceiling
+  QUOTA=$(jq -c --arg ad "$AD1" 'map(sub("request.ad=AD1$"; "request.ad=" + $ad))' "$IDP/platform/oci/policy/free-tier-quota.statements.json")
+  QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
+  if [ -z "$QID" ] || [ "$QID" = null ]; then
+    oci limits quota create "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --description "Always Free A1 ceiling, AD-1 only; tenancy owner only (bin/idp-oci-bootstrap)" --statements "$QUOTA" >/dev/null
+    echo "quota   $QUOTA_NAME created"
+  elif [ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$QUOTA" ]; then
+    oci limits quota update "${O[@]}" --quota-id "$QID" --statements "$QUOTA" --force >/dev/null; echo "quota   $QUOTA_NAME statements updated"
+  fi
+  # Read back what Oracle stored (2026-08-25: OCI rewrote a policy's where clause on store) and
+  # what A1 is in use now. A quota refuses new capacity; it does not stop what already runs.
+  QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output)
+  [ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' | jq -c .)" = "$QUOTA" ] \
+    || { echo "FAIL    quota: stored statements differ from platform/oci/policy/free-tier-quota.statements.json"; exit 1; }
+  USED=$(oci limits resource-availability get "${O[@]}" --service-name compute --limit-name standard-a1-core-count --compartment-id "$TENANCY" --availability-domain "$AD1" --query data.used --raw-output 2>/dev/null || echo unknown)
+  echo "quota   $QUOTA_NAME in force: A1 2 OCPU / 12 GB in $AD1, 0 elsewhere; A1 OCPU in use now: $USED"
+}
+
+# --quota applies only the ceiling. Region and tenancy OCID are identifiers, not secrets: when the
+# sops vault no longer holds them (ADR 0017 moved them to OCI Vault) the laptop's own OCI CLI
+# config names them, and the tenancy name is only needed if the browser login has to run.
+if [ "${1:-}" = "--quota" ]; then
+  cfg() { awk -F= -v k="$1" '/^\[/{p=($0=="[DEFAULT]")} p && $1==k {print $2; exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}"; }
+  REGION="$(vget OCI_REGION 2>/dev/null || cfg region)"; TENANCY="$(vget OCI_TENANCY_OCID 2>/dev/null || cfg tenancy)"
+  TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME 2>/dev/null || true)}"
+  [ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND neither the vault nor ~/.oci/config [DEFAULT] names region / tenancy"; exit 2; }
+  O=(--auth security_token --profile estate-bootstrap --region "$REGION")
+  if oci iam region-subscription list "${O[@]}" >/dev/null 2>&1; then echo "login   session token still valid, no browser needed"
+  else
+    echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
+    oci session authenticate --region "$REGION" ${TENANCY_NAME:+--tenancy-name "$TENANCY_NAME"} --profile-name estate-bootstrap >/dev/null
+  fi
+  apply_quota
+  exit 0
+fi
 # `|| true` where the value may legitimately be absent, so a missing optional secret reports
 # itself through vget's BLIND line and still lets the required-value guard below name the gap.
 REGION="$(vget OCI_REGION || true)"; TENANCY="$(vget OCI_TENANCY_OCID || true)"
@@ -129,32 +175,7 @@ elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statemen
 fi
 echo "iam     policy $POLICY_NAME"
 
-# 2026-09-26: the tenancy was upgraded to Pay As You Go on 2026-08-24 and ran 12 OCPU / 48 GB
-# against the Always Free 2 OCPU / 12 GB. The tofu precondition, node_pool.rego and the $50
-# budget all passed that, so they were deleted. The ceiling is now an Oracle compartment quota:
-# Oracle refuses any compute request beyond it, from any caller. It lives here, under the tenancy
-# owner, because quota permission is tenancy-scoped and estate-operators (estate-tofu, estate-ci,
-# every agent) is never granted it: nothing automated can raise its own ceiling.
-# A1 quotas count per availability domain, so every compute quota is zeroed and A1 is allowed
-# in AD-1 only (the PVs pin AD-1, platform/oci/main.tf). Later statements override earlier ones.
-AD1=$(oci iam availability-domain list "${O[@]}" --compartment-id "$TENANCY" --query 'data[?ends_with(name, `-AD-1`)].name | [0]' --raw-output)
-case "$AD1" in *:*-AD-1) ;; *) echo "FAIL    quota: no AD-1 name from the API ($AD1)"; exit 1;; esac
-QUOTA_NAME=estate-free-tier-ceiling
-QUOTA=$(jq -c --arg ad "$AD1" 'map(sub("request.ad=AD1$"; "request.ad=" + $ad))' "$IDP/platform/oci/policy/free-tier-quota.statements.json")
-QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
-if [ -z "$QID" ] || [ "$QID" = null ]; then
-  oci limits quota create "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --description "Always Free A1 ceiling, AD-1 only; tenancy owner only (bin/idp-oci-bootstrap)" --statements "$QUOTA" >/dev/null
-  echo "quota   $QUOTA_NAME created"
-elif [ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$QUOTA" ]; then
-  oci limits quota update "${O[@]}" --quota-id "$QID" --statements "$QUOTA" --force >/dev/null; echo "quota   $QUOTA_NAME statements updated"
-fi
-# Read back what Oracle stored (2026-08-25: OCI rewrote a policy's where clause on store) and
-# what A1 is in use now. A quota refuses new capacity; it does not stop what already runs.
-QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output)
-[ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' | jq -c .)" = "$QUOTA" ] \
-  || { echo "FAIL    quota: stored statements differ from platform/oci/policy/free-tier-quota.statements.json"; exit 1; }
-USED=$(oci limits resource-availability get "${O[@]}" --service-name compute --limit-name standard-a1-core-count --compartment-id "$TENANCY" --availability-domain "$AD1" --query data.used --raw-output 2>/dev/null || echo unknown)
-echo "quota   $QUOTA_NAME in force: A1 2 OCPU / 12 GB in $AD1, 0 elsewhere; A1 OCPU in use now: $USED"
+apply_quota
 
 # crew#220 hand step 1: the remote-state bucket. Versioned so a bad apply can be rolled back to
 # the previous state object. Created here, under the bootstrap identity, because the operator
