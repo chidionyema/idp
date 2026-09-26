@@ -28,7 +28,9 @@ metadata:
     # this is one restart on the day it merges and nothing on every reconcile after.
     kubectl.kubernetes.io/restartedAt: "2026-09-08T08:30:00Z"
 spec:
-  instances: 2
+  # One instance since 2026-09-26: the whole cluster is one 2-OCPU Always Free node, so a
+  # replica on the same node buys no availability and costs 100m of the ~1.8 CPU there is.
+  instances: 1
   # PostgreSQL 18, and it is not a preference. Langfuse's own server already runs postgres:18
   # (measured on langfuse-postgresql-0, 2026-09-04) and pg_dump refuses to read a server newer
   # than itself, so a 17 cluster here could never have taken langfuse's data. 18 reads all ten.
@@ -72,7 +74,7 @@ spec:
     size: 40Gi
     storageClass: oci-bv
   resources:
-    requests: { cpu: 250m, memory: 512Mi }
+    requests: { cpu: 100m, memory: 512Mi }  # measured use ~10m (kubelet, 2026-09-26)
     limits: { cpu: "1", memory: 2Gi }
   postgresql:
     parameters:
