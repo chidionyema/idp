@@ -201,7 +201,7 @@ model_list:
       max_input_tokens: 512000
   - model_name: default
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 60
@@ -240,7 +240,7 @@ model_list:
       max_input_tokens: 512000
   - model_name: fast
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 60
@@ -299,7 +299,7 @@ model_list:
   # general_settings.max_budget still bounds it, and the daily request meter is Groq's.
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       # Shorter than the paid lanes' 300s on purpose. This is the hop a turn reaches
@@ -328,7 +328,7 @@ model_list:
   # catalogue as the primary account, `openai/gpt-oss-120b` present on both.
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY_2
       timeout: 60
@@ -338,13 +338,33 @@ model_list:
 
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY_3
       timeout: 60
       max_tokens: 8192
     model_info:
       max_input_tokens: 131072
+
+  # --- voice: the Fleet page's ears and mouth, behind the router so no service holds a vendor key.
+  # Measured 2026-09-26 with this key: whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,
+  # where the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept its terms once
+  # (console.groq.com playground); until then voice-tts answers 400 and the backend speaks locally.
+  - model_name: voice-asr
+    litellm_params:
+      model: groq/whisper-large-v3-turbo
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 20
+    model_info:
+      mode: audio_transcription
+  - model_name: voice-tts
+    litellm_params:
+      model: openai/canopylabs/orpheus-v1-english
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 20
+    model_info:
+      mode: audio_speech
 
   # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
   # above reached exactly one consumer -- Otto's private brain -- and the estate router
@@ -729,7 +749,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
