@@ -59,13 +59,13 @@ import jsonschema
 from . import tracing
 
 # The repo root, from this file's own location rather than the process's working directory:
-# src -> fleetview-backend -> plugins -> backstage -> <repo>. The same `parents[4]` reach
+# fleetview_backend -> src -> fleetview-backend -> plugins -> backstage -> <repo>. The same `parents[5]` reach
 # routes.py uses for platform/intent/observer.py.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_ROOT = Path(__file__).resolve().parents[5]
 
 _NATS_ADAPTER_MODULE = Path(__file__).resolve().parent / "nats_adapter.py"
 _OUTBOX_MODULE = Path(__file__).resolve().parent / "outbox.py"
-_INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[1] / "schemas" / "intent-v2.json"
+_INTENT_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "intent-v2.json"
 
 # Cached intent schema — loaded once per process.
 _intent_schema: dict | None = None
@@ -516,6 +516,197 @@ async def steer(
             }, 200
 
 
+def _f32_to_wav(pcm: bytes, rate: int) -> bytes:
+    import array  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    import wave  # noqa: PLC0415
+
+    floats = array.array("f", pcm[: len(pcm) - len(pcm) % 4])
+    ints = array.array("h", (max(-32768, min(32767, int(x * 32767))) for x in floats))
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(ints.tobytes())
+    return buf.getvalue()
+
+
+def _wav_to_f32(wav: bytes, want_rate: int) -> bytes:
+    import array  # noqa: PLC0415
+    import io  # noqa: PLC0415
+    import wave  # noqa: PLC0415
+
+    with wave.open(io.BytesIO(wav)) as w:
+        rate, width, chans = w.getframerate(), w.getsampwidth(), w.getnchannels()
+        frames = w.readframes(w.getnframes())
+    if width != 2:
+        raise ValueError(f"unsupported sample width {width}")
+    ints = array.array("h", frames)[::chans]
+    src = [x / 32768.0 for x in ints]
+    if rate != want_rate and src:
+        n = int(len(src) * want_rate / rate)
+        step = rate / want_rate
+        src = [src[min(int(i * step), len(src) - 1)] for i in range(n)]
+    return array.array("f", src).tobytes()
+
+
+def _router():
+    from . import voice  # noqa: PLC0415
+
+    headers = (
+        {"Authorization": f"Bearer {voice.router_key()}"} if voice.router_key() else {}
+    )
+    return voice.router_host(), headers
+
+
+async def _router_transcribe(pcm: bytes, rate: int) -> str | None:
+    """Router lane voice-asr (Groq whisper-turbo, 0.2s measured). None means: use the local engine."""
+    import httpx  # noqa: PLC0415
+
+    try:
+        host, headers = _router()
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.post(
+                f"{host}/v1/audio/transcriptions",
+                headers=headers,
+                data={"model": "voice-asr", "response_format": "json"},
+                files={"file": ("utterance.wav", _f32_to_wav(pcm, rate), "audio/wav")},
+            )
+        if r.status_code != 200:
+            print(
+                f"voice.hear router refused {r.status_code}: {r.text[:200]}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return None
+        return (r.json().get("text") or "").strip()
+    except Exception as exc:  # noqa: BLE001 - any router failure falls back to the local engine
+        print(
+            f"voice.hear router failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+
+
+# THE VOICE THE PERSON CHOSE, and the one `say` speaks with. Measured 2026-09-26 on /fleet: the
+# picker posted /voice/select, got 200, showed the new name -- and every clause was still spoken by
+# the router's default voice, because `say` never read the choice; and a reload showed "kokoro"
+# again, because the catalogue reported the engine whose model is on disk, not the one chosen. The
+# choice lives HERE and in this file so it survives a restart; nothing else decides the voice.
+CLOUD_VOICES = [
+    "troy",
+    "diana",
+    "hannah",
+    "autumn",
+    "austin",
+    "daniel",
+]  # Groq Orpheus, English
+_CHOICE_FILE = Path.home() / ".estate" / "voice-choice.json"
+
+
+def _load_choice() -> dict[str, str]:
+    try:
+        c = json.loads(_CHOICE_FILE.read_text())
+        if c.get("engine") and c.get("voice"):
+            return {"engine": c["engine"], "voice": c["voice"]}
+    except Exception:  # noqa: BLE001 - no file yet means the default below
+        pass
+    return {"engine": "cloud", "voice": os.environ.get("VOICE_CLOUD_VOICE", "troy")}
+
+
+_choice: dict[str, str] = _load_choice()
+
+
+def _save_choice(engine_name: str, voice: str) -> None:
+    _choice.update(engine=engine_name, voice=voice)
+    try:
+        _CHOICE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _CHOICE_FILE.write_text(json.dumps(_choice))
+    except Exception as exc:  # noqa: BLE001 - the choice still holds for this process
+        print(f"voice.select not persisted: {exc}", file=sys.stderr, flush=True)
+
+
+async def _router_synthesise(
+    text: str, rate: int, voice: str | None = None
+) -> bytes | None:
+    """Router lane voice-tts (Groq Orpheus). None means: use the local engine."""
+    import httpx  # noqa: PLC0415
+
+    try:
+        host, headers = _router()
+        async with httpx.AsyncClient(timeout=8) as c:
+            r = await c.post(
+                f"{host}/v1/audio/speech",
+                headers=headers,
+                json={
+                    "model": "voice-tts",
+                    "input": text,
+                    "voice": voice or os.environ.get("VOICE_CLOUD_VOICE", "troy"),
+                    "response_format": "wav",
+                },
+            )
+        if r.status_code != 200 or not r.content.startswith(b"RIFF"):
+            print(
+                f"voice.say router refused {r.status_code}: {r.text[:200]}",
+                file=sys.stderr,
+                flush=True,
+            )
+            return None
+        return _wav_to_f32(r.content, rate) or None
+    except Exception as exc:  # noqa: BLE001 - any router failure falls back to the local engine
+        print(
+            f"voice.say router failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+
+
+def _macos_say(text: str, rate: int, voice: str | None = None) -> bytes | None:
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    import tempfile  # noqa: PLC0415
+
+    if not shutil.which("say"):
+        return None
+    with tempfile.NamedTemporaryFile(suffix=".wav") as f:
+        try:
+            subprocess.run(
+                [
+                    "say",
+                    "-v",
+                    voice or os.environ.get("VOICE_SAY_VOICE", "Samantha"),
+                    "-o",
+                    f.name,
+                    f"--data-format=LEI16@{rate}",
+                    text,
+                ],
+                check=True,
+                timeout=15,
+                capture_output=True,
+            )
+            return _wav_to_f32(Path(f.name).read_bytes(), rate) or None
+        except Exception:  # noqa: BLE001 - falls through to the next engine
+            return None
+
+
+# The engine that actually served each leg last. The friction panel records this, not the browser's
+# guess: with fallbacks, the voice the page selected is not necessarily the one that spoke.
+_served: dict[str, str] = {}
+
+
+def _log_engine(leg: str, name: str, started: float) -> None:
+    _served[leg] = name
+    # One line per leg on stderr (the launchd err.log): which engine served it, and how long.
+    print(
+        f"voice.{leg} engine={name} seconds={time.time() - started:.2f}",
+        file=sys.stderr,
+        flush=True,
+    )
+
+
 async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any], int]:
     """One utterance of 16kHz float32 PCM in; what was heard out, and a steer row on the bus.
 
@@ -542,15 +733,21 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
         return {"error": "no audio in the request body"}, 400
 
     started = time.time()
-    loop = asyncio.get_running_loop()
-    # In a thread: transcription is CPU-bound and blocks. On the event loop it would stall every
-    # other request in this process for the length of the utterance, including the board's SSE.
-    try:
-        transcript, asr_seconds = await loop.run_in_executor(
-            None, engine.transcribe, pcm
-        )
-    except Exception as exc:  # noqa: BLE001 - see `say`: the reason is the product here
-        return {"error": f"{_ENGINE_ABSENT}: {type(exc).__name__}: {exc}"}, 502
+    asr_engine = "router:voice-asr"
+    transcript = await _router_transcribe(pcm, engine.ASR_SAMPLE_RATE)
+    asr_seconds = round(time.time() - started, 3)
+    if transcript is None:
+        asr_engine = "local"
+        loop = asyncio.get_running_loop()
+        # In a thread: transcription is CPU-bound and blocks. On the event loop it would stall every
+        # other request in this process for the length of the utterance, including the board's SSE.
+        try:
+            transcript, asr_seconds = await loop.run_in_executor(
+                None, engine.transcribe, pcm
+            )
+        except Exception as exc:  # noqa: BLE001 - see `say`: the reason is the product here
+            return {"error": f"{_ENGINE_ABSENT}: {type(exc).__name__}: {exc}"}, 502
+    _log_engine("hear", asr_engine, started)
     audio_seconds = round(len(pcm) / 4 / engine.ASR_SAMPLE_RATE, 2)
 
     if not transcript:
@@ -582,6 +779,7 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
         "text": transcript,
         "asr_seconds": asr_seconds,
         "audio_seconds": audio_seconds,
+        "asr_engine": asr_engine,
         "received_seconds": round(time.time() - started, 3),
         "bus": bus,
     }, 200
@@ -598,9 +796,32 @@ async def say(text: str) -> tuple[bytes | None, str | None]:
     text = (text or "").strip()
     if not text:
         return None, "text is required"
+    started = time.time()
+    chosen, voice = _choice["engine"], _choice["voice"]
     loop = asyncio.get_running_loop()
+    if chosen == "cloud":
+        pcm = await _router_synthesise(text, engine.TTS_SAMPLE_RATE, voice)
+        if pcm:
+            _log_engine("say", f"router:voice-tts:{voice}", started)
+            return pcm, None
+    if chosen in ("cloud", "say"):
+        # macOS `say`: ~1s a clause measured 2026-09-26 on the i5 laptop, against Kokoro's ~26s.
+        # The fallback when the router is down; the chosen voice when a macOS voice was picked.
+        pcm = await loop.run_in_executor(
+            None,
+            _macos_say,
+            text,
+            engine.TTS_SAMPLE_RATE,
+            voice if chosen == "say" else None,
+        )
+        if pcm:
+            _log_engine(
+                "say", f"macos-say:{voice if chosen == 'say' else 'default'}", started
+            )
+            return pcm, None
     try:
         pcm = await loop.run_in_executor(None, engine.synthesise, text)
+        _log_engine("say", f"local-{chosen}:{voice}", started)
     except Exception as exc:  # noqa: BLE001 - the reason is the product here
         # A HOST WITHOUT THE MODELS IS A NAMED REFUSAL, NOT A 500.
         #
@@ -656,7 +877,11 @@ async def answered(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
             tts_s=_num("tts_seconds") or 0.0,
             words=int(body.get("words") or 0),
             clauses=int(body.get("clauses") or 0),
-            engine=str(body.get("engine") or ""),
+            engine=(
+                f"hear:{_served['hear']} say:{_served['say']}"
+                if _served.get("hear") and _served.get("say")
+                else str(body.get("engine") or "")
+            ),
             voice=str(body.get("voice") or ""),
             session_id=session_id,
             outcome=str(body.get("outcome") or "ok"),
@@ -697,14 +922,37 @@ async def voices() -> dict[str, Any]:
     """
     _engine, _turnlog, catalogue = _voice_package()
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, catalogue.catalogue)
+    cat = await loop.run_in_executor(None, catalogue.catalogue)
+    # What is live is what was CHOSEN (`_choice`), not the engine whose model happens to be on disk.
+    cat["cloud"] = CLOUD_VOICES
+    cat["engine"] = _choice["engine"]
+    cat["current"] = {
+        **cat.get("current", {}),
+        "engine": _choice["engine"],
+        _choice["engine"]: _choice["voice"],
+    }
+    return cat
 
 
 async def select(want_engine: str, want_voice: str) -> tuple[dict[str, Any], int]:
     """Switch the live voice. Run in a thread: the first Kokoro selection loads a 350MB model."""
+    want_engine = (want_engine or "").strip().lower()
+    want_voice = (want_voice or "").strip()
+    if want_engine == "cloud":
+        if want_voice not in CLOUD_VOICES:
+            return {
+                "error": f"cloud voice must be one of {', '.join(CLOUD_VOICES)}"
+            }, 400
+        _save_choice("cloud", want_voice)
+        return {"engine": "cloud", "voice": want_voice}, 200
     _engine, _turnlog, catalogue = _voice_package()
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, catalogue.select, want_engine, want_voice)
+    result, status = await loop.run_in_executor(
+        None, catalogue.select, want_engine, want_voice
+    )
+    if status == 200:
+        _save_choice(result["engine"], result["voice"])
+    return result, status
 
 
 def log(limit: int = 50) -> dict[str, Any]:

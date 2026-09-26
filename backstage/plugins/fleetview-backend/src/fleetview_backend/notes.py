@@ -34,7 +34,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-_ROOT = Path(__file__).resolve().parents[4]
+_ROOT = Path(__file__).resolve().parents[5]
 _DB_DEFAULT = _ROOT / "catalog" / "estate.db"
 
 MAX_NOTE_LENGTH = 4000
