@@ -20,7 +20,6 @@ Exit 1 when any scenario fails: a harness that cannot fail is not a gate.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import tempfile

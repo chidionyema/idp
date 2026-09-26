@@ -611,7 +611,7 @@ def _load_choice() -> dict[str, str]:
         c = json.loads(_CHOICE_FILE.read_text())
         if c.get("engine") and c.get("voice"):
             return {"engine": c["engine"], "voice": c["voice"]}
-    except Exception:  # noqa: BLE001 - no file yet means the default below
+    except Exception:  # noqa: BLE001, S110 - no file yet means the default below
         pass
     return {"engine": "cloud", "voice": os.environ.get("VOICE_CLOUD_VOICE", "troy")}
 

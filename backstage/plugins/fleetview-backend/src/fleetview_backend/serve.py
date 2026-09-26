@@ -351,7 +351,7 @@ def main():
         main_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
         executor_config = uvicorn.Config(
             executor_app,
-            host="0.0.0.0",
+            host="0.0.0.0",  # noqa: S104 -- pre-existing on main; executor relay is key-checked (_check_key)
             port=executor_port,
             log_level="info",
         )

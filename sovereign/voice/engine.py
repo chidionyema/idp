@@ -253,7 +253,7 @@ def fleet_summary() -> str:
 
     host = os.environ.get("FLEETVIEW_URL", "http://127.0.0.1:18790")
     try:
-        with urllib.request.urlopen(f"{host}/sessions", timeout=5) as resp:
+        with urllib.request.urlopen(f"{host}/sessions", timeout=5) as resp:  # noqa: S310 -- FLEETVIEW_URL is estate config
             sessions = (json.load(resp) or {}).get("sessions") or []
     except Exception as exc:  # noqa: BLE001
         return f"FLEET CONTEXT UNAVAILABLE ({exc.__class__.__name__}). Say so if asked about it."
@@ -313,7 +313,7 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
         "temperature": 0.3,
         "stream": True,
     }
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- ROUTER_HOST is estate config
         f"{ROUTER_HOST}/v1/chat/completions",
         data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
@@ -335,7 +335,7 @@ async def llm_clauses(question: str, history: list[dict[str, str]] | None = None
             # dropped at 30s -- so the failure was never spoken and the turn ended in silence with
             # no error anywhere. The number here is the contract: a voice answer either starts in
             # ROUTER_TIMEOUT_S seconds or it says it could not.
-            with urllib.request.urlopen(req, timeout=ROUTER_TIMEOUT_S) as resp:
+            with urllib.request.urlopen(req, timeout=ROUTER_TIMEOUT_S) as resp:  # noqa: S310 -- ROUTER_HOST is estate config
                 buffer = ""
                 for raw in resp:
                     line = raw.decode("utf-8", "replace").strip()

@@ -382,7 +382,7 @@ def ask(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(
+        with urllib.request.urlopen(  # noqa: S310 -- router host is estate-controlled
             req, timeout=_timeout(), context=_SSL_CONTEXT
         ) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             doc = json.loads(resp.read().decode())

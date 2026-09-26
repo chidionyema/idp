@@ -101,7 +101,7 @@ def posteriors(hyps: list, results: list, eps: float) -> dict:
     prior_sweep = {}
     for multiplier in PRIOR_SWEEP:
         post = {}
-        for h, r in zip(hyps, results):
+        for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
             prior = float(h.get("prior", 1.0 / len(hyps))) * multiplier
             lf, _rel = likelihood(h, r)
             # EPS floor calibrated to probe reliability
@@ -152,7 +152,7 @@ def main() -> None:
             r = fut.result()
             results[idx[r["id"]]] = r
 
-    for h, r in zip(hyps, results):
+    for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
         r["falsified"] = matches(h, r)
 
     post = posteriors(hyps, results, eps)
