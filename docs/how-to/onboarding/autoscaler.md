@@ -13,12 +13,6 @@
 - Terraform hands `size` to the autoscaler (`ignore_initial_pool_size = true`) and a `moved`
   block keeps the live pool; a scale-out is never read as drift and never shrunk by an apply.
 
-## Money
-`policy/node_pool.rego` prices base plus burst under the one cap: with the 6 OCPU / 24 GB pool
-the base is USD 42.34 paid a month, the burst node USD 0.096/h, and `node_pool.burst_hours_monthly: 60`
-is USD 5.76 (total 48.10 under 50). A longer burst allowance is a founder edit of that number; the
-policy and the Terraform precondition refuse one the cap cannot hold.
-
 ## Demo
 `oke-check` mode=check after merge shows the row Ready in the receipt (`state/cluster`:
 `kube-system/cluster-autoscaler` Running). Scale-out proof: `platform/scheduling`'s balloon
@@ -43,9 +37,5 @@ vault entry (`bin/idp-autoscaler-seed` writes `SPOT_NODEPOOL_ID`).
   `infrastructure-critical` pods carry a required `estate.io/capacity NotIn [preemptible]`; every
   other pod in an idp namespace carries a preferred `In [preemptible]` (weight 50). Oracle reclaims
   a preemptible node with 30 s notice and TERMINATE is the only action on OKE.
-- Money: `node_pool.spot_max_nodes` × `node_pool.spot_hours_monthly` × half the burst node price
-  (`a1_preemptible_discount`, Oracle's published 50 %), under the same USD cap as base and burst
-  (`policy/node_pool.rego`, `terraform_data.burst_cap`). With the defaults: 30 h × USD 0.048 = USD 1.44;
-  total 49.54.
 - Labels reach new nodes only, so the running node has no `estate.io/capacity` label; that is why
   the radio-room rule is `NotIn`, and why the label is never read as a required `In [on-demand]`.

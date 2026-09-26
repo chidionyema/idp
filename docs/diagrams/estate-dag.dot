@@ -6,7 +6,6 @@ digraph {
   "random_password.langfuse_user" [label="random_password\nlangfuse_user"];
   "random_password.clickhouse_admin" [label="random_password\nclickhouse_admin"];
   "oci_vault_secret.langfuse" [label="oci_vault_secret\nlangfuse"];
-  "terraform_data.capacity_cap" [label="terraform_data\ncapacity_cap"];
   "random_password.flux_webhook" [label="random_password\nflux_webhook"];
   "oci_vault_secret.flux_webhook_token" [label="oci_vault_secret\nflux_webhook_token"];
   "oci_objectstorage_bucket.drill_receipts" [label="oci_objectstorage_bucket\ndrill_receipts"];
@@ -38,7 +37,6 @@ digraph {
   "oci_identity_policy.bridge" [label="oci_identity_policy\nbridge"];
   "oci_vault_secret.bridge_identity" [label="oci_vault_secret\nbridge_identity"];
   "oci_identity_policy.workers_autoscale" [label="oci_identity_policy\nworkers_autoscale"];
-  "terraform_data.burst_cap" [label="terraform_data\nburst_cap"];
   "random_password.commerce_db" [label="random_password\ncommerce_db"];
   "random_password.commerce_encryption_primary" [label="random_password\ncommerce_encryption_primary"];
   "random_password.commerce_encryption_deterministic" [label="random_password\ncommerce_encryption_deterministic"];

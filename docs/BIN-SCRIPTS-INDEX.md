@@ -76,7 +76,6 @@ Core platform functionality, administration, and operational commands.
 | `idp-flux-bootstrap` | Connect Flux to OKE cluster (ADR 0004 step 3) |
 | `idp-flux-settle` | Settle Flux deployment (crew#488 CP5) |
 | `idp-flux-wait-brake` | Wait for Flux brake |
-| `idp-free-tier` | Manage free tier |
 | `idp-github-app` | One GitHub App for estate agents, one installation token |
 | `idp-gitops-drift` | Carry estate drift back to PR that caused it |
 | `idp-glass-break` | Break glass emergency procedure |

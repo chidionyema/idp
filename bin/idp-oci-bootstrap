@@ -129,6 +129,33 @@ elif [ "$(oci iam policy get "${O[@]}" --policy-id "$PID" --query 'data.statemen
 fi
 echo "iam     policy $POLICY_NAME"
 
+# 2026-09-26: the tenancy was upgraded to Pay As You Go on 2026-08-24 and ran 12 OCPU / 48 GB
+# against the Always Free 2 OCPU / 12 GB. The tofu precondition, node_pool.rego and the $50
+# budget all passed that, so they were deleted. The ceiling is now an Oracle compartment quota:
+# Oracle refuses any compute request beyond it, from any caller. It lives here, under the tenancy
+# owner, because quota permission is tenancy-scoped and estate-operators (estate-tofu, estate-ci,
+# every agent) is never granted it: nothing automated can raise its own ceiling.
+# A1 quotas count per availability domain, so every compute quota is zeroed and A1 is allowed
+# in AD-1 only (the PVs pin AD-1, platform/oci/main.tf). Later statements override earlier ones.
+AD1=$(oci iam availability-domain list "${O[@]}" --compartment-id "$TENANCY" --query 'data[?ends_with(name, `-AD-1`)].name | [0]' --raw-output)
+case "$AD1" in *:*-AD-1) ;; *) echo "FAIL    quota: no AD-1 name from the API ($AD1)"; exit 1;; esac
+QUOTA_NAME=estate-free-tier-ceiling
+QUOTA=$(jq -c --arg ad "$AD1" 'map(sub("request.ad=AD1$"; "request.ad=" + $ad))' "$IDP/platform/oci/policy/free-tier-quota.statements.json")
+QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output 2>/dev/null || true)
+if [ -z "$QID" ] || [ "$QID" = null ]; then
+  oci limits quota create "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --description "Always Free A1 ceiling, AD-1 only; tenancy owner only (bin/idp-oci-bootstrap)" --statements "$QUOTA" >/dev/null
+  echo "quota   $QUOTA_NAME created"
+elif [ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' 2>/dev/null | jq -c .)" != "$QUOTA" ]; then
+  oci limits quota update "${O[@]}" --quota-id "$QID" --statements "$QUOTA" --force >/dev/null; echo "quota   $QUOTA_NAME statements updated"
+fi
+# Read back what Oracle stored (2026-08-25: OCI rewrote a policy's where clause on store) and
+# what A1 is in use now. A quota refuses new capacity; it does not stop what already runs.
+QID=$(oci limits quota list "${O[@]}" --compartment-id "$TENANCY" --name "$QUOTA_NAME" --query 'data[0].id' --raw-output)
+[ "$(oci limits quota get "${O[@]}" --quota-id "$QID" --query 'data.statements' | jq -c .)" = "$QUOTA" ] \
+  || { echo "FAIL    quota: stored statements differ from platform/oci/policy/free-tier-quota.statements.json"; exit 1; }
+USED=$(oci limits resource-availability get "${O[@]}" --service-name compute --limit-name standard-a1-core-count --compartment-id "$TENANCY" --availability-domain "$AD1" --query data.used --raw-output 2>/dev/null || echo unknown)
+echo "quota   $QUOTA_NAME in force: A1 2 OCPU / 12 GB in $AD1, 0 elsewhere; A1 OCPU in use now: $USED"
+
 # crew#220 hand step 1: the remote-state bucket. Versioned so a bad apply can be rolled back to
 # the previous state object. Created here, under the bootstrap identity, because the operator
 # policy above deliberately cannot create buckets (2026-08-25: BucketAlreadyExists-or-unauthorised).

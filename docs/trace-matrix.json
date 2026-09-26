@@ -163,9 +163,8 @@
  },
  {
   "feature": "features/cognitive-stack/cp0_gpu_capacity_and_decision.feature",
-  "title": "GPU capacity is a named FOUNDER ACTION, and the graph-of-record decision is recorded",
+  "title": "The graph-of-record decision is recorded",
   "scenarios": [
-   "A GPU node pool request above the budget cap is refused without founder sign-off",
    "The Memgraph-vs-estate.db decision is recorded, not assumed"
   ],
   "bound_by": [],
@@ -1026,19 +1025,6 @@
   "ticket": null
  },
  {
-  "feature": "docs/prose/capacity-cap-rollout.feature",
-  "title": "paid capacity reaches the running node from GitHub",
-  "scenarios": [
-   "the STAGED node-pool change is applied from GitHub, never from a laptop",
-   "a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)"
-  ],
-  "bound_by": [],
-  "status": "PROSE",
-  "added_in": "8f7267e0",
-  "pr": 209,
-  "ticket": "crew#297"
- },
- {
   "feature": "docs/prose/catalogue-links-product.feature",
   "title": "A product's UIs enter the catalogue from the product's own repository",
   "scenarios": [
@@ -1897,22 +1883,6 @@
   "added_in": "b44756c8",
   "pr": 3464,
   "ticket": null
- },
- {
-  "feature": "features/gates/capacity-cap.feature",
-  "title": "paid capacity is auto-defaulted up to the founder's cap and refused above it",
-  "scenarios": [
-   "a node pool under the cap is STAGED, never asked",
-   "a node pool over the cap is a paid billing authorisation",
-   "a missing price row or cap is BLIND, not zero"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_gate_capacity_cap.py"
-  ],
-  "status": "BOUND",
-  "added_in": "834b06aa",
-  "pr": 160,
-  "ticket": "crew#289"
  },
  {
   "feature": "features/gates/catalogue-links.feature",

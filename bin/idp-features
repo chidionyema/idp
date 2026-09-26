@@ -6,7 +6,7 @@ a leaner shop ... the flexibility to run and scale any combination of options ..
 to take into account the infra requirements and allocate accordingly."
 
   bin/idp-features plan [--set feature=tier ...]   sum the enabled tiers against the node: fits or not,
-                                                   the smallest node that fits, and its monthly price
+                                                   and the smallest node that fits
   bin/idp-features floors                          what git asks for per switch (container requests + PVCs)
                                                    and per tier; suspended switches are marked
   bin/idp-features enable <feature> <tier>         flip the Flux switches for that tier (suspend: false on
@@ -16,9 +16,9 @@ to take into account the infra requirements and allocate accordingly."
   bin/idp-features check                           exit 1 if a switch in the register names no Kustomization
 
 One source of truth each (LAW 51 memoize): tiers and switches in platform/features/features.yaml; the
-switches in clusters/<cluster>/*.yaml (`suspend:` on a Flux Kustomization); node shape and OCI A1 rates
-in platform/oci/variables.tf; requests in the manifests under each Kustomization's path. Nothing here
-is typed twice, so a price or a floor that changes in its file changes the plan without an edit.
+switches in clusters/<cluster>/*.yaml (`suspend:` on a Flux Kustomization); node shape in
+platform/oci/variables.tf; requests in the manifests under each Kustomization's path. Nothing here
+is typed twice, so a floor that changes in its file changes the plan without an edit.
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ import yaml
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 REGISTER = ROOT / "platform" / "features" / "features.yaml"
 VARIABLES = ROOT / "platform" / "oci" / "variables.tf"
-HOURS_MONTH = 730  # the factor platform/oci/main.tf prices capacity_monthly_usd with
 SELECTABLE = {None, "on", "trial"}  # tier statuses the planner may enable today
 
 
@@ -51,14 +50,7 @@ def tf_number(name: str, text: str) -> float:
 def node_shape() -> dict:
     t = VARIABLES.read_text()
     return {k: tf_number(k, t) for k in (
-        "worker_ocpus", "worker_memory_gb", "free_ocpus", "free_memory_gb",
-        "a1_ocpu_usd_per_hour", "a1_memory_gb_usd_per_hour")}
-
-
-def price(ocpus: float, memory_gb: float, shape: dict) -> float:
-    paid_cpu = max(0.0, ocpus - shape["free_ocpus"])
-    paid_mem = max(0.0, memory_gb - shape["free_memory_gb"])
-    return round((paid_cpu * shape["a1_ocpu_usd_per_hour"] + paid_mem * shape["a1_memory_gb_usd_per_hour"]) * HOURS_MONTH, 2)
+        "worker_ocpus", "worker_memory_gb")}
 
 
 # ---------------------------------------------------------------- switches (clusters/<cluster>/*.yaml)
@@ -216,7 +208,7 @@ def plan_data(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> dic
     def fits(size):
         return total["cpu"] <= size["ocpus"] - reserved["cpu"] and total["memory_gb"] <= size["memory_gb"] - reserved["memory_gb"]
 
-    smallest_node = next((s for s in sorted(reg["node"]["sizes"], key=lambda s: (price(s["ocpus"], s["memory_gb"], shape), s["ocpus"])) if fits(s)), None)
+    smallest_node = next((s for s in sorted(reg["node"]["sizes"], key=lambda s: (s["ocpus"], s["memory_gb"])) if fits(s)), None)
     return {
         "features": features_out,
         "total": {"cpu": total["cpu"], "memory_gb": total["memory_gb"], "storage_gb": total["storage_gb"]},
@@ -225,12 +217,10 @@ def plan_data(reg: dict, overrides: dict[str, str], cluster: str = "oke") -> dic
         "switches": sorted(switches),
         "reserved": {"cpu": reserved["cpu"], "memory_gb": reserved["memory_gb"]},
         "node_today": {"name": today["name"], "ocpus": today["ocpus"], "memory_gb": today["memory_gb"],
-                       "usd_month": price(today["ocpus"], today["memory_gb"], shape),
                        "fits": fits(today)},
         "node_smallest": None if smallest_node is None else {
             "name": smallest_node["name"], "ocpus": smallest_node["ocpus"],
-            "memory_gb": smallest_node["memory_gb"],
-            "usd_month": price(smallest_node["ocpus"], smallest_node["memory_gb"], shape)},
+            "memory_gb": smallest_node["memory_gb"]},
     }
 
 
@@ -268,10 +258,10 @@ def format_plan(data: dict) -> list[str]:
     r = data["reserved"]
     lines.append(f"total cpu {t['cpu']} memory_gb {t['memory_gb']} storage_gb {t['storage_gb']} (git requests over {data['switches_count']} switches + node reserve cpu {r['cpu']} memory_gb {r['memory_gb']})")
     today = data["node_today"]
-    lines.append(f"node {today['name']} usd_month {today['usd_month']} fits {'yes' if today['fits'] else 'no'}")
+    lines.append(f"node {today['name']} fits {'yes' if today['fits'] else 'no'}")
     sm = data.get("node_smallest")
     if sm:
-        lines.append(f"smallest {sm['name']} ocpus {sm['ocpus']} memory_gb {sm['memory_gb']} usd_month {sm['usd_month']}")
+        lines.append(f"smallest {sm['name']} ocpus {sm['ocpus']} memory_gb {sm['memory_gb']}")
     else:
         lines.append("smallest NONE: no size in the register holds this combination; add a size or drop a tier")
     lines.append("switches on: " + " ".join(sorted(data["switches"])))
