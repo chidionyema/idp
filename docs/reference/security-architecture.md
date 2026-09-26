@@ -40,11 +40,22 @@ Two SVID kinds flow from these identities:
 ## 2. SPIRE in the cluster
 
 * **Control plane + agent**: `platform/spire/helmrelease.yaml` (Helm chart
-  `spire`, namespace `spire`). Values in `platform/spire/values.yaml`.
+  `spire`, release `spire-mgmt/spire` — namespace `spire-mgmt`, not `spire`).
+  Values in `platform/spire/values.yaml`.
 * **Trust domain**: `estate.internal` (set in `values.yaml`).
 * **Cluster SPIFFE ID** (the cluster itself): per the federation doc that
   this repo will pin in the next PR; the placeholder today is
   `spiffe://estate.internal/cluster/<cluster-ocid>`.
+* **Live state, measured 2026-09-26 18:42Z**: the Helm upgrade had been refused
+  at admission by `oke-resource-leak-protection.oke.com`, whose stale counter
+  read 2779 secrets against a 2000 cap while the real count was 247. The
+  webhook was deleted at ~18:25Z on founder authorization (backup at
+  `~/oke-leak-webhook-backup-2026-09-26.yaml`). `spire-server-0` came up at
+  18:26Z. The agent on node 10.0.148.221 attested at 18:41:01Z and issues
+  X509-SVIDs (first one logged: `ns/flux-system/sa/helm-controller`). The agent
+  on node 10.0.159.197 still cannot reach the server across nodes (pod-network
+  path, owned by the Calico repair). The HelmRelease stays `Ready: False` until
+  both agents and the OIDC discovery provider are ready.
 
 The `bin/idp-ci` rung `spire-row` (see `tests/test_spire_row.py`) diffs the
 cluster's deployed config against `platform/spire/values.yaml` and the cluster
@@ -152,19 +163,47 @@ The errors an agent used to surface:
 
 ## 8. Migration receipt
 
-The migration is staged, not instantaneous. The state today:
+The migration is staged, not instantaneous. The state today (corrected
+2026-09-26 against live cluster reads — see §2):
 
 | Surface                    | State                          | Owner           |
 | -------------------------- | ------------------------------ | --------------- |
-| SPIRE control plane + agent| deployed                       | cluster fleet   |
-| spiffe-csi-driver          | enabled                        | this PR         |
-| spiffe-oidc-discovery-provider | enabled                    | this PR         |
-| Workload API socket        | mounted in pilot namespaces    | this PR         |
+| SPIRE control plane + agent| **partial**: server running; 1 of 2 agents attested and issuing SVIDs (node 10.0.148.221); the other agent is blocked on cross-node pod networking | cluster fleet   |
+| spiffe-csi-driver          | enabled, pods healthy (2/2)    | this PR         |
+| spiffe-oidc-discovery-provider | enabled in chart values, **not serving**: its init container needs an agent socket on its node | this PR         |
+| Workload API socket        | mounted in pilot namespaces, nothing on the other end yet | this PR         |
 | Proxy static-key lanes     | still accepting `x-litellm-api-key`, JWT-SVID lanes in review | LLM crew |
 | Anthropic OAuth path       | still primary on Claude Code   | founder         |
 | `bin/idp-jit-device-renew` | deployed on founder's Mac      | this commit     |
 | OCI-vault master key for proxy | still in OCI Object Storage | LLM crew (deprecate by EOM) |
 | Phone-tap broker ask       | still operational as fallback   | JIT crew (deprecate after SPIRE federation) |
+
+## 8a. Gaps SPIFFE does not cover, even once it is live
+
+SPIFFE is scoped to workload authentication. Two real risks sit outside that
+scope entirely and are not closed by fixing §2:
+
+* **Human root of trust.** `bin/owner-account-gate` (live 2026-09-26): 9 of 9
+  owner-tier provider accounts (GitHub, Oracle Cloud, Cloudflare, Google,
+  Stripe, Anthropic, OpenRouter, Apple ID, Telegram) recover to one personal
+  Gmail login. This is upstream of everything in this document — a
+  compromised inbox is compute, DNS, billing, code and both AI vendor
+  accounts, and no SVID protects against it, because SVIDs are minted for
+  workloads, not for the account that owns the cloud the workloads run on.
+  Target is crew#227 CP7 (0 single-owner providers); today's number is 9.
+  The fix is per-vendor hardware-key-bound recovery, not a second human
+  owner — this is a solo-founder estate.
+* **Runtime authorization has no engine.** Kyverno (23 live ClusterPolicies)
+  is an admission-time and background-scan control over Kubernetes API
+  objects; it never sees a live request and cannot become a per-call
+  authorization point no matter how SPIFFE-aware its rules get. There is no
+  service mesh and no `ext_authz`-style component anywhere in the platform
+  today (checked: no Istio, Linkerd, or Envoy pod exists). So even once
+  every pod holds an SVID, nothing today reads that SVID on a live call and
+  decides whether to allow it — SPIFFE would prove identity with no
+  consumer for it at request time. Closing this needs a new runtime
+  component (mesh sidecar or an Envoy-style authz server), not an upgrade
+  to Kyverno.
 
 ## 9. Why this is the right model
 

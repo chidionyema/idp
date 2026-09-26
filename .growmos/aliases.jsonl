@@ -9,10 +9,12 @@
 {"alias": "FLUX-ONLY lockdown", "entity": "artifact/flux-only-lockdown", "type": "ARTIFACT"}
 {"alias": "gVisor RuntimeClass", "entity": "artifact/gvisor-runtimeclass", "type": "ARTIFACT"}
 {"alias": "idp", "entity": "artifact/idp", "type": "ARTIFACT"}
+{"alias": "idp-circuit-breaker", "entity": "artifact/idp-circuit-breaker", "type": "ARTIFACT"}
 {"alias": "Intent DAG", "entity": "artifact/intent-dag", "type": "ARTIFACT"}
 {"alias": "intent.dag.dot", "entity": "artifact/intent-dag-dot", "type": "ARTIFACT"}
 {"alias": "intent.dag.json", "entity": "artifact/intent-dag-json", "type": "ARTIFACT"}
 {"alias": "safety tags", "entity": "artifact/safety-tags", "type": "ARTIFACT"}
+{"alias": "test_circuit_breaker.py", "entity": "artifact/test-circuit-breaker-py", "type": "ARTIFACT"}
 {"alias": "zero-trust-boundary.md", "entity": "artifact/zero-trust-boundary-md", "type": "ARTIFACT"}
 {"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
 {"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
@@ -29,7 +31,11 @@
 {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
 {"alias": "Governor", "entity": "component/governor", "type": "COMPONENT"}
 {"alias": "home module", "entity": "component/home-module", "type": "COMPONENT"}
+{"alias": "litellm-local", "entity": "component/litellm-local", "type": "COMPONENT"}
 {"alias": "MCP Adapter", "entity": "component/mcp-adapter", "type": "COMPONENT"}
+{"alias": "net-flannel-unmasq", "entity": "component/net-flannel-unmasq", "type": "COMPONENT"}
+{"alias": "net-forensics", "entity": "component/net-forensics", "type": "COMPONENT"}
+{"alias": "net-triage", "entity": "component/net-triage", "type": "COMPONENT"}
 {"alias": "ns-fences", "entity": "component/ns-fences", "type": "COMPONENT"}
 {"alias": "Optimizer", "entity": "component/optimizer", "type": "COMPONENT"}
 {"alias": "Parallel Agent Stack", "entity": "component/parallel-agent-stack", "type": "COMPONENT"}
@@ -48,17 +54,26 @@
 {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
 {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
+{"alias": "claude-max passthrough lane", "entity": "concept/claude-max-passthrough-lane", "type": "CONCEPT"}
+{"alias": "estate-execute", "entity": "concept/estate-execute", "type": "CONCEPT"}
+{"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
+{"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
+{"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
 {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
 {"alias": "voice-clarify-handshake", "entity": "concept/voice-clarify-handshake", "type": "CONCEPT"}
 {"alias": "voice-speculate-endpoint", "entity": "concept/voice-speculate-endpoint", "type": "CONCEPT"}
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
+{"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
+{"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
+{"alias": "OCI Always Free A1 cut", "entity": "decision/oci-always-free-a1-cut", "type": "DECISION"}
+{"alias": "piper lessac voice licence", "entity": "decision/piper-lessac-voice-licence", "type": "DECISION"}
 {"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
@@ -71,6 +86,13 @@
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
 {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
 {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
+{"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
+{"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
+{"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}
+{"alias": "TRAP parents[N] repo root", "entity": "gotcha/trap-parents-n-repo-root", "type": "GOTCHA"}
+{"alias": "TRAP reasoning-model token budget", "entity": "gotcha/trap-reasoning-model-token-budget", "type": "GOTCHA"}
+{"alias": "TRAP sessions DB-first", "entity": "gotcha/trap-sessions-db-first", "type": "GOTCHA"}
+{"alias": "Founder", "entity": "person/founder", "type": "PERSON"}
 {"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
 {"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}
 {"alias": "External Secrets Operator", "entity": "service/external-secrets-operator", "type": "SERVICE"}
@@ -79,7 +101,12 @@
 {"alias": "SPIRE", "entity": "service/spire", "type": "SERVICE"}
 {"alias": "Telegram Bot", "entity": "service/telegram-bot", "type": "SERVICE"}
 {"alias": "Traefik", "entity": "service/traefik", "type": "SERVICE"}
+{"alias": "Circuit Breaker", "entity": "spec/circuit-breaker", "type": "SPEC"}
 {"alias": "voice_2100_architecture", "entity": "spec/voice-2100-architecture", "type": "SPEC"}
+{"alias": "Fleet page", "entity": "system/fleet-page", "type": "SYSTEM"}
+{"alias": "FleetView", "entity": "system/fleetview", "type": "SYSTEM"}
+{"alias": "OKE node capacity 2026-09-26", "entity": "system/oke-node-capacity-2026-09-26", "type": "SYSTEM"}
+{"alias": "voice-router", "entity": "system/voice-router", "type": "SYSTEM"}
 {"alias": "Backstage", "entity": "tool/backstage", "type": "TOOL"}
 {"alias": "bin/idp-ci", "entity": "tool/bin-idp-ci", "type": "TOOL"}
 {"alias": "bin/idp-status", "entity": "tool/bin-idp-status", "type": "TOOL"}
@@ -87,5 +114,7 @@
 {"alias": "Flux", "entity": "tool/flux", "type": "TOOL"}
 {"alias": "Kyverno", "entity": "tool/kyverno", "type": "TOOL"}
 {"alias": "Langfuse", "entity": "tool/langfuse", "type": "TOOL"}
+{"alias": "law32-gate", "entity": "tool/law32-gate", "type": "TOOL"}
+{"alias": "merge-when-green.yml", "entity": "tool/merge-when-green-yml", "type": "TOOL"}
 {"alias": "rule-guard.py", "entity": "tool/rule-guard-py", "type": "TOOL"}
 {"alias": "spec-gate", "entity": "tool/spec-gate", "type": "TOOL"}
