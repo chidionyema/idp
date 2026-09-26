@@ -11,6 +11,12 @@ resources:
   - dns.yaml
   - monitoring.yaml
   - kyverno.yaml
+  # Restored 2026-09-26 with every workload pinned to its live replica count (see each row's
+  # patches): c96359f4 dropped these rows while their workloads kept running unreconciled.
+  - platform.yaml
+  - commerce.yaml
+  - human-vault.yaml
+  - sandbox.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
