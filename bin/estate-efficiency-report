@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
-"""What the efficiency mechanisms actually saved, from the ledger rather than from memory.
+"""What every efficiency step did, per call, and what Anthropic actually billed -- live.
 
-The gateway (`platform/llm/efficiency_gateway.py`) writes one JSONL row per call, carrying
-the payload size before and after the mechanism chain plus each mechanism's own byte delta.
-This reads that ledger and prints the attribution.
+    bin/estate-efficiency-report                 # totals for the whole ledger
+    bin/estate-efficiency-report --since 1h      # totals for a window
+    bin/estate-efficiency-report --follow        # one line per call as it happens, + totals
+    bin/estate-efficiency-report --json          # totals as JSON
 
-    bin/estate-efficiency-report                 # the whole ledger
-    bin/estate-efficiency-report --since 1h      # only recent rows
-    bin/estate-efficiency-report --json          # machine-readable
+The gateway (`platform/llm/efficiency_gateway.py`) writes two rows per call:
 
-A row is written whether or not anything was saved, so "0 saved" and "not instrumented" are
-different answers -- that distinction is the whole point (the counters this replaces reported
-`hit_rate=0.0%` while 18M tokens were served at a 99.9% cache-hit rate).
+  kind=pre      what the router did before sending: bytes before/after, and every step's action
+                and reason (`steps.m1`..`steps.m9`), including the prompt-cache prefix check;
+  kind=outcome  what Anthropic billed for that call: uncached input, cache read, cache write
+                (5m/1h) and output tokens, from the response's own usage block.
+
+"Saved" therefore has two exact parts and one estimate, printed separately and never summed:
+  - CACHE: prompt tokens x 1.0 minus what the call cost at Anthropic's relative prices
+    (read 0.1x, 5m write 1.25x, 1h write 2x). Exact, from usage.
+  - ROUTER: bytes the router removed before sending (collapsed log runs, repeated reads).
+    Exact in bytes; tokens shown at the gateway's own 4 chars/token.
+  - MODEL: opusplan runs execution on Sonnet; the BY MODEL table shows the split.
+
+Rows written before 2026-09-26 (no "v") carry process-cumulative mechanism counters; only their
+per-call byte totals are used, because summing cumulative counters over-counts.
 
 The ledger lives at $ESTATE_EFFICIENCY_LEDGER, default ~/.estate/efficiency-ledger.jsonl.
 """
@@ -23,21 +33,27 @@ import datetime as dt
 import json
 import os
 import sys
+import time
 from collections import defaultdict
 from pathlib import Path
 
 LEDGER_ENV = "ESTATE_EFFICIENCY_LEDGER"
 LEDGER_DEFAULT = "~/.estate/efficiency-ledger.jsonl"
+CHARS_PER_TOKEN = 4
 
-# mechanism -> (ledger field for its counter, ledger field for its bytes, one-line label)
-MECHANISMS = [
-    ("[1] CacheGuardian", "m1_cache_hits", None, "system-prompt drift / prefix preserved"),
-    ("[2] TokenKiller", "m2_lines_compressed", "m2_bytes_saved", "duplicate lines in tool results"),
-    ("[3] MCPAdapter", "m3_schemas_compressed", "m3_bytes_saved", "long tool descriptions trimmed"),
-    ("[5] SoLPi", "m5_obs_hits", "m5_bytes_saved", "repeated large observations -> handle"),
-    ("[6] ContextPruning", "m6_pruned", "m6_bytes_saved", "duplicate tool_result entries"),
-    ("[7] CompactionManager", "m7_compactions", "m7_bytes_saved", "old messages dropped"),
-    ("[8] Gisting", "m8_gisted", "m8_bytes_saved", "old assistant turns condensed"),
+STEPS = [
+    ("m1", "CacheGuardian", "prefix re-sent byte-identical, so the cache hits"),
+    (
+        "m2",
+        "TokenKiller",
+        "adjacent repeated lines in tool results -> one line + count",
+    ),
+    ("m3", "MCPAdapter", "tool-description trimming"),
+    ("m5", "SoLPi", "exact repeat of an earlier tool result -> pointer"),
+    ("m6", "ContextPruning", "duplicate tool results"),
+    ("m7", "Compaction", "history dropping"),
+    ("m8", "Gisting", "old assistant turns condensed"),
+    ("m9", "PairValidator", "tool_use/tool_result pairing"),
 ]
 
 
@@ -45,133 +61,299 @@ def ledger_path() -> Path:
     return Path(os.path.expanduser(os.environ.get(LEDGER_ENV) or LEDGER_DEFAULT))
 
 
-def load(path: Path, since: dt.datetime | None):
+def parse_at(r: dict) -> dt.datetime | None:
+    try:
+        return dt.datetime.strptime(r.get("at", ""), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=dt.timezone.utc
+        )
+    except ValueError:
+        return None
+
+
+def parse_since(text: str) -> dt.datetime:
+    secs = {"s": 1, "m": 60, "h": 3600, "d": 86400}[text[-1]]
+    return dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+        seconds=int(text[:-1]) * secs
+    )
+
+
+def load(path: Path, since: dt.datetime | None) -> list[dict]:
     if not path.exists():
         return []
     rows = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
         try:
             r = json.loads(line)
         except ValueError:
             continue
         if since is not None:
-            try:
-                at = dt.datetime.strptime(r.get("at", ""), "%Y-%m-%dT%H:%M:%SZ").replace(
-                    tzinfo=dt.timezone.utc
-                )
-            except ValueError:
-                continue
-            if at < since:
+            at = parse_at(r)
+            if at is None or at < since:
                 continue
         rows.append(r)
     return rows
 
 
-def parse_since(text: str) -> dt.datetime:
-    n = int(text[:-1])
-    unit = text[-1]
-    secs = {"s": 1, "m": 60, "h": 3600, "d": 86400}[unit]
-    return dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=n * secs)
+class Totals:
+    def __init__(self) -> None:
+        self.pre = 0
+        self.legacy = 0
+        self.bytes_before = self.bytes_after = 0
+        self.step_calls: dict = defaultdict(int)
+        self.step_bytes: dict = defaultdict(int)
+        self.step_why: dict = {}
+        self.prefix_checked = self.prefix_broken = 0
+        self.orphans = 0
+        self.u: dict = defaultdict(float)
+        self.outcomes = self.failures = 0
+        self.by_model: dict = defaultdict(lambda: defaultdict(float))
+
+    def add(self, r: dict) -> None:
+        kind = r.get("kind")
+        if (
+            r.get("v") is None
+        ):  # legacy row: per-call byte totals are sound, counters are not
+            self.legacy += 1
+            self.bytes_before += r.get("bytes_before", 0)
+            self.bytes_after += r.get("bytes_after", 0)
+            return
+        if kind == "pre":
+            self.pre += 1
+            self.bytes_before += r.get("bytes_before", 0)
+            self.bytes_after += r.get("bytes_after", 0)
+            steps = r.get("steps") or {}
+            if r.get("mode") == "anthropic":
+                for key, s in steps.items():
+                    if not isinstance(s, dict):
+                        continue
+                    if s.get("bytes"):
+                        self.step_calls[key] += 1
+                        self.step_bytes[key] += s["bytes"]
+                    if s.get("action") in ("skipped", "merged-into-m5"):
+                        self.step_why[key] = f"{s['action']}: {s.get('why', '')}"
+                m1 = steps.get("m1") or {}
+                if m1.get("action") == "checked":
+                    self.prefix_checked += 1
+                    self.prefix_broken += bool(m1.get("prefix_broken"))
+                self.orphans += (steps.get("m9") or {}).get("orphans", 0)
+            else:  # openai lane: steps are per-call counter deltas
+                for key in ("m2", "m3", "m5", "m6", "m7", "m8", "m9"):
+                    b = steps.get(f"{key}_bytes_saved", 0)
+                    if b:
+                        self.step_calls[key] += 1
+                        self.step_bytes[key] += b
+        elif kind == "outcome":
+            self.outcomes += 1
+            if not r.get("ok"):
+                self.failures += 1
+                return
+            u = r.get("usage") or {}
+            for k, v in u.items():
+                if isinstance(v, (int, float)) and k != "cache_hit_pct":
+                    self.u[k] += v
+            bm = self.by_model[r.get("model") or "?"]
+            bm["calls"] += 1
+            bm["billed"] += u.get("input_equiv_billed", 0)
+            bm["prompt"] += u.get("prompt_tokens", 0)
+            bm["output"] += u.get("output_tokens", 0)
+
+    def summary(self) -> dict:
+        u = self.u
+        saved_bytes = max(0, self.bytes_before - self.bytes_after)
+        return {
+            "calls_shaped": self.pre,
+            "calls_billed": self.outcomes - self.failures,
+            "failures": self.failures,
+            "legacy_rows": self.legacy,
+            "prompt_tokens": int(u["prompt_tokens"]),
+            "uncached_input": int(u["uncached_input"]),
+            "cache_read": int(u["cache_read"]),
+            "cache_write_5m": int(u["cache_write_5m"]),
+            "cache_write_1h": int(u["cache_write_1h"]),
+            "output_tokens": int(u["output_tokens"]),
+            "input_equiv_no_cache": round(u["input_equiv_no_cache"], 1),
+            "input_equiv_billed": round(u["input_equiv_billed"], 1),
+            "cache_saved_input_equiv": round(u["cache_saved_input_equiv"], 1),
+            "cache_hit_pct": round(u["cache_read"] / u["prompt_tokens"] * 100, 2)
+            if u["prompt_tokens"]
+            else 0.0,
+            "router_bytes_saved": saved_bytes,
+            "router_est_tokens_cut": saved_bytes // CHARS_PER_TOKEN,
+            "prefix_checked": self.prefix_checked,
+            "prefix_broken": self.prefix_broken,
+            "orphans": self.orphans,
+            "steps": {
+                k: {"calls": self.step_calls[k], "bytes": self.step_bytes[k]}
+                for k, _n, _w in STEPS
+            },
+        }
 
 
-def report(rows: list[dict]) -> int:
-    if not rows:
-        print(f"no rows in {ledger_path()}")
-        print("  (a session that made no calls through the router writes nothing;")
-        print("   the gateway is registered in platform/llm/config.yaml callbacks)")
-        return 0
+def n(x: float) -> str:
+    return f"{int(round(x)):,}"
 
-    calls = len(rows)
-    b_before = sum(r.get("bytes_before", 0) for r in rows)
-    b_after = sum(r.get("bytes_after", 0) for r in rows)
-    b_saved = sum(r.get("bytes_saved", 0) for r in rows)
-    msgs_dropped = sum(r.get("m7_dropped_messages", 0) for r in rows)
-    calls_that_saved = sum(1 for r in rows if r.get("bytes_saved", 0) > 0)
 
-    print(f"efficiency ledger: {ledger_path()}")
-    print(f"  calls          {calls:>12,}")
-    print(f"  bytes before   {b_before:>12,}")
-    print(f"  bytes after    {b_after:>12,}")
-    pct = (b_saved / b_before * 100) if b_before else 0
-    print(f"  bytes saved    {b_saved:>12,}  ({pct:.2f}%)")
-    print(f"  calls saving   {calls_that_saved:>12,}  of {calls:,}")
-    # 4 chars/token is the gateway's own CHARS_PER_TOKEN; named here so the conversion is visible.
-    print(f"  est tokens cut {b_saved // 4:>12,}  (bytes/4, the gateway's own ratio)")
-    if msgs_dropped:
-        print(f"  messages gone  {msgs_dropped:>12,}")
-
-    print("\n  BY MECHANISM (its own ledger field, not a decomposition)")
-    print(f"  {'mechanism':<22} {'events':>10}  {'bytes saved':>12}  {'share':>7}  what it does")
-    for label, count_field, bytes_field, what in MECHANISMS:
-        ev = sum(r.get(count_field, 0) for r in rows)
-        by = sum(r.get(bytes_field, 0) for r in rows) if bytes_field else 0
-        share = (by / b_saved * 100) if (b_saved and bytes_field) else 0
-        bs = f"{by:,}" if bytes_field else "n/a (prefix)"
-        print(f"  {label:<22} {ev:>10,}  {bs:>12}  {share:>6.1f}%  {what}")
-
-    inert = [
-        label
-        for label, count_field, _b, _w in MECHANISMS
-        if sum(r.get(count_field, 0) for r in rows) == 0
-    ]
-    if inert:
-        print(f"\n  INERT on this ledger ({len(inert)}/{len(MECHANISMS)}): {', '.join(inert)}")
-        print("  Not necessarily broken: [7] runs before [2]/[6] and drops what they would trim,")
-        print("  and [5]/[8] need a repeated >=500-char payload / >40 messages to act at all.")
-        print("  Measured, not assumed -- see tests/test_efficiency_gateway_records_what_it_saved.py")
-
-    # The per-mechanism byte totals can EXCEED the chain total, because mechanisms act on
-    # overlapping bytes: [7] drops messages whose bytes [5] may already have counted, so the
-    # same byte is attributed twice. Measured 2026-09-18 and left visible rather than hidden --
-    # a reader who adds the column and gets >100% must be told why, not left to conclude the
-    # instrument is broken or, worse, quote a number that double-counts.
-    mech_sum = sum(
-        sum(r.get(b, 0) for r in rows) for _l, _c, b, _w in MECHANISMS if b
+def print_summary(t: Totals) -> None:
+    s = t.summary()
+    print(f"\nefficiency ledger: {ledger_path()}")
+    if not (t.pre or t.outcomes or t.legacy):
+        print("  no rows yet -- a call through the local router writes two")
+        return
+    print(
+        f"  calls shaped {s['calls_shaped']:,}   billed {s['calls_billed']:,}   failed {s['failures']:,}"
     )
-    if b_saved and mech_sum > b_saved * 1.02:
-        over = (mech_sum / b_saved - 1) * 100
+    if s["prompt_tokens"]:
+        pct = (
+            s["cache_saved_input_equiv"] / s["input_equiv_no_cache"] * 100
+            if s["input_equiv_no_cache"]
+            else 0
+        )
+        print("\n  WHAT ANTHROPIC BILLED (exact, from each response's usage)")
+        print(f"    prompt tokens      {n(s['prompt_tokens']):>14}")
+        print(f"      uncached         {n(s['uncached_input']):>14}   x1.0")
         print(
-            f"\n  NOTE  per-mechanism bytes sum to {mech_sum:,}, {over:.1f}% above the chain "
-            f"total ({b_saved:,}).")
+            f"      cache read       {n(s['cache_read']):>14}   x0.1   hit {s['cache_hit_pct']:.1f}%"
+        )
+        print(f"      cache write 5m   {n(s['cache_write_5m']):>14}   x1.25")
+        print(f"      cache write 1h   {n(s['cache_write_1h']):>14}   x2.0")
+        print(f"    output tokens      {n(s['output_tokens']):>14}")
         print(
-            "        The mechanisms act on OVERLAPPING bytes -- [7] compaction drops messages"
+            f"    input-equiv billed {n(s['input_equiv_billed']):>14}   vs {n(s['input_equiv_no_cache'])} with no cache"
         )
         print(
-            "        whose bytes [5] may already have counted -- so the columns double-count a"
+            f"    SAVED BY CACHE     {n(s['cache_saved_input_equiv']):>14}   input-token-equivalents ({pct:.1f}%)"
         )
+    print("\n  WHAT THE ROUTER REMOVED BEFORE SENDING (exact bytes)")
+    print(
+        f"    bytes {n(t.bytes_before)} -> {n(t.bytes_after)}   saved {n(s['router_bytes_saved'])}"
+        f"  (~{n(s['router_est_tokens_cut'])} tokens at 4 chars/token)"
+    )
+    print(f"    {'step':<18} {'calls':>7} {'bytes':>12}  what / why")
+    for key, name, what in STEPS:
+        st = s["steps"][key]
+        note = t.step_why.get(key, what)
+        if key == "m1":
+            ok = s["prefix_checked"] - s["prefix_broken"]
+            note = f"prefix intact on {ok:,}/{s['prefix_checked']:,} follow-up calls"
+            if s["prefix_broken"]:
+                note += f"  <-- {s['prefix_broken']:,} BROKEN (cache miss)"
+        if key == "m9":
+            note = f"orphaned tool_results seen: {s['orphans']:,} (never dropped)"
         print(
-            "        byte and must not be added up. `bytes_saved` is the real total; the"
+            f"    [{key[1]}] {name:<14} {st['calls']:>7,} {n(st['bytes']):>12}  {note}"
         )
-        print("        per-mechanism column is attribution, not a decomposition.")
+    if t.by_model:
+        print("\n  BY MODEL (opusplan: Opus plans, Sonnet executes)")
+        for m, v in sorted(t.by_model.items(), key=lambda x: -x[1]["billed"]):
+            print(
+                f"    {m:<28} calls {int(v['calls']):>6,}  input-equiv billed {n(v['billed']):>12}  output {n(v['output']):>10}"
+            )
+    if s["legacy_rows"]:
+        print(
+            f"\n  ({s['legacy_rows']:,} legacy rows: byte totals counted, their cumulative counters ignored)"
+        )
 
-    # models, so the routing half of the story sits next to the mechanism half
-    by_model = defaultdict(lambda: [0, 0, 0])
-    for r in rows:
-        m = r.get("model") or "(none)"
-        by_model[m][0] += 1
-        by_model[m][1] += r.get("bytes_before", 0)
-        by_model[m][2] += r.get("bytes_saved", 0)
-    if by_model:
-        print("\n  BY MODEL")
-        for m, (n, bb, bs) in sorted(by_model.items(), key=lambda x: -x[1][0]):
-            p = (bs / bb * 100) if bb else 0
-            print(f"  {m:<24} calls={n:>8,}  saved={bs:>12,}  ({p:.1f}% of its bytes)")
+
+def live_line(pre: dict | None, out: dict) -> str:
+    at = (
+        (parse_at(out) or dt.datetime.now(dt.timezone.utc))
+        .astimezone()
+        .strftime("%H:%M:%S")
+    )
+    model = (out.get("model") or "?").replace("claude-", "")
+    sess = (out.get("session") or "-")[:6]
+    head = f"{at} {model:<14} {sess}"
+    if not out.get("ok"):
+        return f"{head}  FAILED {out.get('error', '')[:120]}"
+    u = out.get("usage") or {}
+    parts = [
+        f"read {n(u.get('cache_read', 0))}",
+        f"write {n(u.get('cache_write_5m', 0) + u.get('cache_write_1h', 0))}",
+        f"uncached {n(u.get('uncached_input', 0))}",
+        f"out {n(u.get('output_tokens', 0))}",
+        f"hit {u.get('cache_hit_pct', 0):.1f}%",
+        f"cache saved {n(u.get('cache_saved_input_equiv', 0))}",
+    ]
+    if pre:
+        st = pre.get("steps") or {}
+        m1 = st.get("m1") or {}
+        cut = pre.get("bytes_saved", 0)
+        parts.append(
+            f"router cut {n(cut / CHARS_PER_TOKEN)}t (m2 {n(st.get('m2', {}).get('bytes', 0))}B"
+            f" m5 {n(st.get('m5', {}).get('bytes', 0))}B)"
+        )
+        if m1.get("action") == "checked":
+            flag = "BROKEN" if m1.get("prefix_broken") else "ok"
+            parts.append(
+                f"prefix {m1.get('prefix_kept_msgs')}/{m1.get('prefix_prev_msgs')} {flag}"
+            )
+        parts.append(f"msgs {pre.get('messages', 0)}")
+    if out.get("latency_ms") is not None:
+        parts.append(f"{out['latency_ms'] / 1000:.1f}s")
+    return f"{head}  " + " | ".join(parts)
+
+
+def follow(path: Path, t: Totals) -> int:
+    for r in load(path, None):
+        t.add(r)
+    print_summary(t)
+    print("\nlive (Ctrl-C for totals):")
+    pending: dict = {}
+    pos = path.stat().st_size if path.exists() else 0
+    seen = 0
+    try:
+        while True:
+            if not path.exists() or path.stat().st_size <= pos:
+                time.sleep(0.5)
+                continue
+            with path.open(encoding="utf-8", errors="replace") as fh:
+                fh.seek(pos)
+                chunk = fh.read()
+                pos = fh.tell()
+            for line in chunk.splitlines():
+                try:
+                    r = json.loads(line)
+                except ValueError:
+                    continue
+                t.add(r)
+                if r.get("kind") == "pre" and r.get("call_id"):
+                    pending[r["call_id"]] = r
+                    while len(pending) > 1024:
+                        pending.pop(next(iter(pending)))
+                elif r.get("kind") == "outcome":
+                    print(live_line(pending.pop(r.get("call_id"), None), r), flush=True)
+                    seen += 1
+                    if seen % 25 == 0:
+                        s = t.summary()
+                        print(
+                            f"  -- totals: cache saved {n(s['cache_saved_input_equiv'])} input-equiv"
+                            f" ({s['cache_hit_pct']:.1f}% hit), router cut ~{n(s['router_est_tokens_cut'])}t,"
+                            f" prefix breaks {s['prefix_broken']}",
+                            flush=True,
+                        )
+    except KeyboardInterrupt:
+        print_summary(t)
     return 0
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--since", help="window, e.g. 30m / 2h / 7d")
-    ap.add_argument("--json", action="store_true", help="emit the summary as JSON")
+    ap.add_argument("--follow", "-f", action="store_true", help="print each call live")
+    ap.add_argument("--json", action="store_true", help="emit the totals as JSON")
     a = ap.parse_args()
-    rows = load(ledger_path(), parse_since(a.since) if a.since else None)
+    t = Totals()
+    if a.follow:
+        return follow(ledger_path(), t)
+    for r in load(ledger_path(), parse_since(a.since) if a.since else None):
+        t.add(r)
     if a.json:
-        print(json.dumps({"rows": len(rows), "ledger": str(ledger_path())}, indent=2))
+        print(json.dumps({"ledger": str(ledger_path()), **t.summary()}, indent=2))
         return 0
-    return report(rows)
+    print_summary(t)
+    return 0
 
 
 if __name__ == "__main__":

@@ -27,6 +27,28 @@ runs last as a safety net to catch any orphans before dispatch.
 
 Each mechanism modifies data["messages"] or data["tools"] in place and logs a metric.
 The combined return value is the optimised request body LiteLLM sends to the vendor.
+
+ANTHROPIC MODE (2026-09-26, the laptop router's `claude-*` lane). Claude Code sends the
+Anthropic Messages format and its economics are the prompt cache: a cache read costs 0.1x an
+uncached input token, and ANY change to an earlier message invalidates everything after it.
+Measured on a real 233-message session, the OpenAI-shaped chain above rewrote history so that
+consecutive turns shared 0 of 60 prefix messages -- every turn a full cache miss -- and dropped
+173 messages. So on that lane every mechanism is APPEND-STABLE: a message's transform depends
+only on itself and the messages before it, never on the conversation's length, so turn n+1
+re-sends byte-identical bytes for everything turn n cached. Concretely:
+  [2] collapses runs of identical CONSECUTIVE lines inside tool_result text (never the
+      non-adjacent dedup above, which deletes a repeated `}` or `return` and corrupts code);
+  [5] replaces an exact repeat of an earlier large tool_result with a pointer to the first
+      one, which is still in the request (per request -- never a cross-call memory, which
+      would point the model at a result it cannot see);
+  [1] proves the cache survives: it hashes system+tools and every transformed message per
+      conversation and records how much of the previous call's prefix this call re-sent;
+  [3][7][8] do NOT act: tool descriptions sit in the cached prefix at 0.1x and trimming them
+      degrades tool use; Claude Code compacts its own history; assistant turns carry thinking
+      signatures that Anthropic rejects if touched. Each records why, every call;
+  [9] checks tool_use/tool_result pairing and the first role, and never drops anything.
+async_log_success_event then records what Anthropic actually billed for the call (uncached,
+cache read, cache write 5m/1h, output), so "saved" is measured, not estimated.
 """
 
 import hashlib
@@ -105,6 +127,320 @@ STALE_THRESHOLD = int(os.environ.get("ESTATE_STALE_THRESHOLD", "10"))
 MIN_OBS_CHARS = int(os.environ.get("ESTATE_MIN_OBS_CHARS", "500"))
 
 
+RUN_MIN = int(os.environ.get("ESTATE_RUN_MIN_LINES", "3"))
+CONV_MEMORY = 256  # conversations whose prefix hashes are kept for the stability check
+CACHE_READ_RATE = (
+    0.1  # Anthropic's price of a cache read, relative to an uncached input token
+)
+CACHE_WRITE_5M_RATE = 1.25
+CACHE_WRITE_1H_RATE = 2.0
+
+
+def _is_anthropic(data: dict, call_type: Any) -> bool:
+    if "anthropic_messages" in str(call_type):
+        return True
+    for m in data.get("messages") or []:
+        c = m.get("content") if isinstance(m, dict) else None
+        if isinstance(c, list) and any(
+            isinstance(b, dict) and b.get("type") in ("tool_use", "tool_result")
+            for b in c
+        ):
+            return True
+    return False
+
+
+def _session_id(data: dict) -> str:
+    """Claude Code puts {"session_id": ...} as a JSON string in metadata.user_id."""
+    meta = data.get("metadata") or {}
+    uid = meta.get("user_id") if isinstance(meta, dict) else None
+    if isinstance(uid, str):
+        try:
+            sid = json.loads(uid).get("session_id")
+            if sid:
+                return str(sid)
+        except (ValueError, AttributeError):
+            return uid[:64]
+    return str(data.get("litellm_session_id") or "-")
+
+
+def _strip_cache_control(obj: Any) -> Any:
+    # Claude Code moves its cache_control breakpoints every turn; they are not content.
+    if isinstance(obj, dict):
+        return {
+            k: _strip_cache_control(v) for k, v in obj.items() if k != "cache_control"
+        }
+    if isinstance(obj, list):
+        return [_strip_cache_control(v) for v in obj]
+    return obj
+
+
+def _h(obj: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(_strip_cache_control(obj), sort_keys=True, default=str).encode()
+    ).hexdigest()[:16]
+
+
+def _collapse_runs(text: str) -> tuple[str, int]:
+    """Collapse runs of >= RUN_MIN identical consecutive non-blank lines. Returns (text, bytes saved).
+
+    Only adjacent repeats: the first line stays verbatim and the rest become one count marker,
+    so no information is lost and nothing non-adjacent (a `}` or `return` in code) is touched.
+    """
+    lines = text.split("\n")
+    out: list = []
+    i = 0
+    changed = False
+    while i < len(lines):
+        j = i
+        while j + 1 < len(lines) and lines[j + 1] == lines[i]:
+            j += 1
+        n = j - i + 1
+        marker = f"[router: previous line repeated {n - 1} more times]"
+        if (
+            lines[i].strip()
+            and n >= RUN_MIN
+            and len(marker) < len("\n".join(lines[i + 1 : j + 1]))
+        ):
+            out += [lines[i], marker]
+            changed = True
+        else:
+            out += lines[i : j + 1]
+        i = j + 1
+    if not changed:
+        return text, 0
+    new = "\n".join(out)
+    return new, len(text.encode()) - len(new.encode())
+
+
+def _tool_result_text(block: dict) -> Optional[str]:
+    """The text of a tool_result whose content is text only; None if it carries anything else."""
+    c = block.get("content")
+    if isinstance(c, str):
+        return c
+    if (
+        isinstance(c, list)
+        and c
+        and all(isinstance(b, dict) and b.get("type") == "text" for b in c)
+    ):
+        return "\n".join(str(b.get("text") or "") for b in c)
+    return None
+
+
+class _AnthropicSteps:
+    """The append-stable chain for the Anthropic Messages format. See the module docstring."""
+
+    def __init__(self) -> None:
+        # conversation key -> (system+tools hash, [per-message hash, ...]) from its last call
+        self._convs: "dict[str, tuple[str, list]]" = {}
+
+    def run(self, data: dict, session: str) -> dict:
+        msgs = data.get("messages") or []
+        steps: dict = {}
+
+        # [2] TokenKiller -- adjacent runs only, inside tool_result text
+        runs = saved2 = 0
+        for m in msgs:
+            if (
+                not isinstance(m, dict)
+                or m.get("role") != "user"
+                or not isinstance(m.get("content"), list)
+            ):
+                continue
+            for b in m["content"]:
+                if not isinstance(b, dict) or b.get("type") != "tool_result":
+                    continue
+                c = b.get("content")
+                if isinstance(c, str):
+                    new, sv = _collapse_runs(c)
+                    if sv > 0:
+                        b["content"], runs, saved2 = new, runs + 1, saved2 + sv
+                elif isinstance(c, list):
+                    for tb in c:
+                        if (
+                            isinstance(tb, dict)
+                            and tb.get("type") == "text"
+                            and isinstance(tb.get("text"), str)
+                        ):
+                            new, sv = _collapse_runs(tb["text"])
+                            if sv > 0:
+                                tb["text"], runs, saved2 = new, runs + 1, saved2 + sv
+        steps["m2"] = {
+            "action": "collapsed" if runs else "none",
+            "blocks": runs,
+            "bytes": saved2,
+            "why": "adjacent identical lines in tool results -> one line + count",
+        }
+
+        # [5] SoLPi -- exact repeats of an earlier large tool_result, within THIS request
+        first: dict = {}
+        hits = saved5 = 0
+        for m in msgs:
+            if (
+                not isinstance(m, dict)
+                or m.get("role") != "user"
+                or not isinstance(m.get("content"), list)
+            ):
+                continue
+            for b in m["content"]:
+                if not isinstance(b, dict) or b.get("type") != "tool_result":
+                    continue
+                text = _tool_result_text(b)
+                if text is None or len(text) < MIN_OBS_CHARS:
+                    continue
+                h = hashlib.sha256(text.encode()).hexdigest()[:16]
+                if h not in first:
+                    first[h] = b.get("tool_use_id")
+                    continue
+                ref = (
+                    f"[router: identical to the tool result of {first[h]} earlier in this "
+                    f"conversation ({len(text)} chars, sha256 {h[:8]}); not repeated]"
+                )
+                before = _json_bytes(b.get("content"))
+                b["content"] = ref
+                hits += 1
+                saved5 += before - _json_bytes(ref)
+        steps["m5"] = {
+            "action": "deduplicated" if hits else "none",
+            "results": hits,
+            "bytes": saved5,
+            "why": f"exact repeat (>= {MIN_OBS_CHARS} chars) of an earlier tool result in the same request",
+        }
+        steps["m6"] = {
+            "action": "merged-into-m5",
+            "bytes": 0,
+            "why": "one dedup pass; a second would only re-hash the same blocks",
+        }
+
+        # [3] [7] [8] -- deliberately inert on this lane, and saying so every call
+        tools = data.get("tools") or []
+        steps["m3"] = {
+            "action": "skipped",
+            "bytes": 0,
+            "tools": len(tools),
+            "tools_bytes": _json_bytes(tools),
+            "why": "tool schemas sit in the cached prefix (0.1x); trimming them costs tool-use quality",
+        }
+        est_tokens = (
+            _json_bytes(msgs) + _json_bytes(data.get("system")) + _json_bytes(tools)
+        ) // CHARS_PER_TOKEN
+        steps["m7"] = {
+            "action": "skipped",
+            "bytes": 0,
+            "est_tokens": est_tokens,
+            "why": "Claude Code compacts its own history; dropping turns breaks the cache and loses context",
+        }
+        steps["m8"] = {
+            "action": "skipped",
+            "bytes": 0,
+            "why": "assistant turns carry thinking signatures; Anthropic rejects edited ones",
+        }
+
+        # [9] pairing -- every tool_result answers a tool_use in the assistant turn before it
+        orphans = 0
+        open_ids: set = set()
+        for m in msgs:
+            if not isinstance(m, dict):
+                continue
+            c = m.get("content") if isinstance(m.get("content"), list) else []
+            if m.get("role") == "assistant":
+                open_ids = {
+                    b.get("id")
+                    for b in c
+                    if isinstance(b, dict) and b.get("type") == "tool_use"
+                }
+            else:
+                for b in c:
+                    if (
+                        isinstance(b, dict)
+                        and b.get("type") == "tool_result"
+                        and b.get("tool_use_id") not in open_ids
+                    ):
+                        orphans += 1
+        first_role = msgs[0].get("role") if msgs and isinstance(msgs[0], dict) else None
+        steps["m9"] = {
+            "action": "checked",
+            "orphans": orphans,
+            "first_role": first_role,
+            "why": "reports, never drops: the router removes no message on this lane",
+        }
+
+        # [1] CacheGuardian -- measured last, on exactly the bytes that will be sent
+        head = _h([data.get("system"), tools])
+        hashes = [_h(m) for m in msgs]
+        conv = f"{session}:{data.get('model')}:{hashes[0] if hashes else '-'}"
+        prev = self._convs.pop(conv, None)
+        common = 0
+        if prev:
+            for a, b in zip(prev[1], hashes):
+                if a != b:
+                    break
+                common += 1
+        self._convs[conv] = (head, hashes)
+        while len(self._convs) > CONV_MEMORY:
+            self._convs.pop(next(iter(self._convs)))
+        steps["m1"] = {
+            "action": "first-call" if prev is None else "checked",
+            "system_tools_changed": bool(prev and prev[0] != head),
+            "prefix_prev_msgs": len(prev[1]) if prev else 0,
+            "prefix_kept_msgs": common,
+            "prefix_broken": bool(prev and (common < len(prev[1]) or prev[0] != head)),
+            "why": "this call must re-send the previous call's messages byte-identical or the cache misses",
+        }
+        return steps
+
+
+def _usage_numbers(response_obj: Any, kwargs: dict) -> Optional[dict]:
+    """What Anthropic billed for the call, from the response usage LiteLLM hands the callback."""
+    u = None
+    try:
+        u = (
+            response_obj.get("usage")
+            if isinstance(response_obj, dict)
+            else getattr(response_obj, "usage", None)
+        )
+    except Exception:  # noqa: BLE001
+        u = None
+    if u is None:
+        slo = kwargs.get("standard_logging_object") or {}
+        u = (slo.get("metadata") or {}).get("usage_object")
+    if u is None:
+        return None
+
+    def g(o: Any, k: str) -> Any:
+        return o.get(k) if isinstance(o, dict) else getattr(o, k, None)
+
+    prompt = int(g(u, "prompt_tokens") or 0)
+    read = int(g(u, "cache_read_input_tokens") or 0)
+    write = int(g(u, "cache_creation_input_tokens") or 0)
+    details = (
+        g(g(u, "prompt_tokens_details") or {}, "cache_creation_token_details") or {}
+    )
+    w1h = int(g(details, "ephemeral_1h_input_tokens") or 0)
+    w5m = max(0, write - w1h)
+    uncached = max(0, prompt - read - write)
+    out = int(g(u, "completion_tokens") or 0)
+    # Input-token-equivalents at Anthropic's relative prices: what the call cost, and what the
+    # same prompt would have cost with no cache at all. Exact given the usage, no estimation.
+    billed = (
+        uncached
+        + w5m * CACHE_WRITE_5M_RATE
+        + w1h * CACHE_WRITE_1H_RATE
+        + read * CACHE_READ_RATE
+    )
+    return {
+        "prompt_tokens": prompt,
+        "uncached_input": uncached,
+        "cache_read": read,
+        "cache_write_5m": w5m,
+        "cache_write_1h": w1h,
+        "output_tokens": out,
+        "input_equiv_billed": round(billed, 1),
+        "input_equiv_no_cache": prompt,
+        "cache_saved_input_equiv": round(prompt - billed, 1),
+        "cache_hit_pct": round(read / prompt * 100, 2) if prompt else 0.0,
+    }
+
+
 class EstateEfficiencyGateway(CustomLogger):
     """Runs all 8 token-efficiency mechanisms on every pre-call hook invocation."""
 
@@ -143,6 +479,10 @@ class EstateEfficiencyGateway(CustomLogger):
         # [9] ToolPairValidator
         self._orphaned_tool_messages_dropped = 0
         self._orphaned_bytes_saved = 0
+        # Anthropic lane: prefix memory per conversation, and the pre-call summary per call id
+        # so the outcome row carries what the router did next to what Anthropic billed.
+        self._anthropic = _AnthropicSteps()
+        self._pending: dict = {}
 
     # ---------------------------------------------------------------------- [1]
 
@@ -484,8 +824,17 @@ class EstateEfficiencyGateway(CustomLogger):
         of a number that was computed after the fact.
         """
         started = time.time()
+        if _is_anthropic(data, call_type):
+            try:
+                return self._anthropic_call(data, call_type, started)
+            except Exception as exc:  # noqa: BLE001 - never fail the request (LAW 38)
+                log.warning("[EfficiencyGateway] anthropic chain skipped: %s", exc)
+                return data
         msgs = list(data.get("messages") or [])
         tools = list(data.get("tools") or [])
+        # Per-call deltas: the m* fields below are cumulative for the process's lifetime, so a
+        # reader summing them across rows over-counts. `steps` is THIS call only.
+        counters_before = self._counters()
 
         # Snapshot the payload as the vendor would have received it, before any mechanism
         # runs. This is the only honest baseline for "what did we save on this call".
@@ -509,9 +858,19 @@ class EstateEfficiencyGateway(CustomLogger):
             data["tools"] = tools
 
         after_bytes = _json_bytes(msgs) + _json_bytes(tools)
+        counters_after = self._counters()
+        steps = {
+            k: counters_after[k] - counters_before[k]
+            for k in counters_after
+            if counters_after[k] != counters_before[k]
+        }
 
         _ledger_write(
             {
+                "v": 2,
+                "kind": "pre",
+                "mode": "openai",
+                "call_id": data.get("litellm_call_id"),
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
                 "call_type": str(call_type),
                 "model": (data.get("model") or ""),
@@ -522,6 +881,7 @@ class EstateEfficiencyGateway(CustomLogger):
                 "bytes_saved": max(0, before_bytes - after_bytes),
                 "messages_before": before_messages,
                 "messages_after": len(msgs),
+                "steps": steps,
                 # per mechanism, measured inside each step (independent numbers)
                 "m1_cache_hits": self._cache_hits,
                 "m1_cache_misses": self._cache_misses,
@@ -560,6 +920,123 @@ class EstateEfficiencyGateway(CustomLogger):
             self._orphaned_tool_messages_dropped,
         )
         return data
+
+    def _counters(self) -> dict:
+        return {
+            "m1_cache_hits": self._cache_hits,
+            "m1_cache_misses": self._cache_misses,
+            "m2_lines_compressed": self._tool_line_compressions,
+            "m2_bytes_saved": self._tool_bytes_saved,
+            "m3_schemas_compressed": self._schemas_compressed,
+            "m3_bytes_saved": self._schema_bytes_saved,
+            "m5_obs_hits": self._obs_hits,
+            "m5_bytes_saved": self._obs_bytes_saved,
+            "m6_pruned": self._pruned_duplicates,
+            "m6_bytes_saved": self._pruned_bytes,
+            "m7_compactions": self._compactions,
+            "m7_dropped_messages": self._dropped_messages,
+            "m7_bytes_saved": self._compaction_bytes_saved,
+            "m8_gisted": self._gisted,
+            "m8_bytes_saved": self._gist_bytes_saved,
+            "m9_orphans_dropped": self._orphaned_tool_messages_dropped,
+            "m9_bytes_saved": self._orphaned_bytes_saved,
+        }
+
+    # ------------------------------------------------------------ anthropic lane
+
+    def _anthropic_call(self, data: dict, call_type: Any, started: float) -> dict:
+        session = _session_id(data)
+        msgs = data.get("messages") or []
+        before = _json_bytes(msgs)
+        steps = self._anthropic.run(data, session)
+        after = _json_bytes(data.get("messages") or [])
+        self._calls += 1
+        self._cumulative_tokens += steps["m7"]["est_tokens"]
+        row = {
+            "v": 2,
+            "kind": "pre",
+            "mode": "anthropic",
+            "call_id": data.get("litellm_call_id"),
+            "session": session,
+            "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+            "call_type": str(call_type),
+            "model": data.get("model") or "",
+            "ms": round((time.time() - started) * 1000, 2),
+            "messages": len(msgs),
+            "bytes_before": before,
+            "bytes_after": after,
+            "bytes_saved": max(0, before - after),
+            "est_tokens_cut": max(0, before - after) // CHARS_PER_TOKEN,
+            "steps": steps,
+        }
+        _ledger_write(row)
+        if row["call_id"]:
+            self._pending[row["call_id"]] = row
+            while len(self._pending) > 512:
+                self._pending.pop(next(iter(self._pending)))
+        m1 = steps["m1"]
+        log.info(
+            "[EfficiencyGateway] anthropic %s msgs=%d saved=%dB (m2 %dB, m5 %dB) prefix %d/%d%s",
+            row["model"],
+            len(msgs),
+            row["bytes_saved"],
+            steps["m2"]["bytes"],
+            steps["m5"]["bytes"],
+            m1["prefix_kept_msgs"],
+            m1["prefix_prev_msgs"],
+            " BROKEN" if m1["prefix_broken"] else "",
+        )
+        return data
+
+    def _outcome(
+        self,
+        kwargs: dict,
+        response_obj: Any,
+        start_time: Any,
+        end_time: Any,
+        error: Any = None,
+    ) -> None:
+        try:
+            call_id = kwargs.get("litellm_call_id")
+            pre = self._pending.pop(call_id, None) if call_id else None
+            if pre is None:
+                return  # not a call this gateway shaped (e.g. OpenAI lane): nothing to pair
+            try:
+                ms = round((end_time - start_time).total_seconds() * 1000)
+            except Exception:  # noqa: BLE001
+                ms = None
+            row = {
+                "v": 2,
+                "kind": "outcome",
+                "mode": pre["mode"],
+                "call_id": call_id,
+                "session": pre.get("session"),
+                "model": pre.get("model"),
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "latency_ms": ms,
+                "ok": error is None,
+                "est_tokens_cut": pre.get("est_tokens_cut", 0),
+                "prefix_broken": pre["steps"]["m1"]["prefix_broken"],
+            }
+            if error is not None:
+                row["error"] = str(error)[:300]
+            else:
+                row["usage"] = _usage_numbers(response_obj, kwargs)
+            _ledger_write(row)
+        except Exception as exc:  # noqa: BLE001 - the ledger may never fail the request
+            log.warning("[ledger] outcome not written: %s", exc)
+
+    async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
+        self._outcome(kwargs, response_obj, start_time, end_time)
+
+    async def async_log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        self._outcome(
+            kwargs,
+            response_obj,
+            start_time,
+            end_time,
+            error=kwargs.get("exception") or "failed",
+        )
 
 
 proxy_handler_instance = EstateEfficiencyGateway()
