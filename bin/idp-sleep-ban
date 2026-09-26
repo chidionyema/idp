@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
-"""Ban bare sleeps.
-
-A sleep is allowed if EITHER:
-  (a) the same line carries `# sleep-ok: <reason>`, OR
-  (b) the line sits inside a for/while/until ... done loop.
-
-Everything else fails. A sleep is a fixed-time bet that a variable-time
-thing will finish; it hides failures by making them look like they didn't
-happen yet.
-"""
+"""Ban bare sleeps. Allowed: (a) `# sleep-ok: <reason>` on the same line,
+(b) inside a for/while/until ... done loop. Everything else fails."""
 import re, sys
 from pathlib import Path
 
@@ -21,11 +13,8 @@ OK_MARK = re.compile(r'#\s*sleep-ok\s*:', re.I)
 OPEN = re.compile(r'^(\s*)(for|while|until)\b')
 CLOSE = re.compile(r'^(\s*)done\b')
 
-
 def loop_ranges(lines):
-    """Return list of (start_idx, end_idx) for every for/while/until...done."""
-    ranges = []
-    stack = []  # (indent, start_line_idx)
+    ranges, stack = [], []
     for i, line in enumerate(lines):
         m = OPEN.match(line)
         if m:
@@ -33,35 +22,25 @@ def loop_ranges(lines):
         m = CLOSE.match(line)
         if m:
             indent = len(m.group(1))
-            # pop all openings at greater-or-equal indent (handles nesting)
             while stack and stack[-1][0] >= indent:
                 start_indent, start = stack.pop()
                 if start_indent == indent:
-                    ranges.append((start, i))
-                    break
+                    ranges.append((start, i)); break
     return ranges
-
 
 def in_loop(idx, ranges):
     return any(s < idx < e for s, e in ranges)
 
-
 hits, ok = [], []
 for r in ROOTS:
     for f in (ROOT / r).rglob("*"):
-        if f.suffix not in EXTS or not f.is_file():
-            continue
-        try:
-            lines = f.read_text().splitlines()
-        except Exception:
-            continue
+        if f.suffix not in EXTS or not f.is_file(): continue
+        try: lines = f.read_text().splitlines()
+        except Exception: continue
         ranges = loop_ranges(lines)
         for i, line in enumerate(lines):
-            if not SLEEP.match(line):
-                continue
-            if OK_MARK.search(line):
-                ok.append((f, i + 1, line.strip()))
-            elif in_loop(i, ranges):
+            if not SLEEP.match(line): continue
+            if OK_MARK.search(line) or in_loop(i, ranges):
                 ok.append((f, i + 1, line.strip()))
             else:
                 hits.append((f, i + 1, line.strip()))

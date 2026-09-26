@@ -1,0 +1,25 @@
+#!/usr/bin/env python3
+"""Every Kustomization must declare idp.estate.io/runtime."""
+import sys, re
+from pathlib import Path
+
+VALID = {"always-on", "on-demand", "scheduled", "event-driven", "none"}
+fail = 0
+for d in sys.argv[1:]:
+    for f in Path(d).rglob("*.yaml"):
+        if f.name == "kustomization.yaml":
+            continue
+        text = f.read_text()
+        for doc in re.split(r'(?m)^---\s*$', text):
+            if "kind: Kustomization" not in doc or "kustomize.toolkit.fluxcd.io" not in doc:
+                continue
+            m = re.search(r'(?ms)^metadata:\s*\n(?:.*\n)*?\s+name:\s*(\S+)', doc)
+            name = m.group(1) if m else "<unnamed>"
+            r = re.search(r'idp\.estate\.io/runtime:\s*(\S+)', doc)
+            if not r:
+                print(f"{f}: {name}: missing idp.estate.io/runtime")
+                fail = 1
+            elif r.group(1) not in VALID:
+                print(f"{f}: {name}: invalid runtime '{r.group(1)}'")
+                fail = 1
+sys.exit(fail)
