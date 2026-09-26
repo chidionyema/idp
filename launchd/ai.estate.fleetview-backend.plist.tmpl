@@ -1,18 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Voice asks litellm-local (bin/litellm-local), not llm.${ESTATE_ZONE}: the Fleet page must answer when the cluster is down. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>ai.estate.fleetview-backend</string>
-  <key>ProcessType</key><string>Background</string>
-  <key>Nice</key><integer>10</integer>
+  <!-- Interactive, never Background/Nice: this serves live voice. Background throttled it -- measured
+       2026-09-26, /voice/voices 10-17s in the service vs 0.5s for the same code in a shell. -->
+  <key>ProcessType</key><string>Interactive</string>
   <key>ProgramArguments</key><array>
     <string>${PYTHON_BIN}</string>
     <string>-m</string>
-    <string>fleetview_backend</string>
+    <string>fleetview_backend.serve</string>
     <string>18790</string>
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>HOME</key><string>${HOME}</string>
-  </array>
+    <key>ESTATE_ZONE</key><string>${ESTATE_ZONE}</string>
+    <key>LITELLM_HOST</key><string>http://127.0.0.1:4000</string>
+    <key>VOICE_ROUTER_MODEL</key><string>fast</string>
+    <key>NATS_URL</key><string>nats://127.0.0.1:4222</string>
+  </dict>
   <key>WorkingDirectory</key><string>${IDP}</string>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>

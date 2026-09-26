@@ -63,25 +63,33 @@ vput() { # name on argv, VALUE ON STDIN ONLY
   printf %s "$v" | SECRET_REPLACE=1 "$VAULT/scripts/secret-add" "$ENV_NAME" "$1" "$1" >/dev/null && echo "vault   $1 written"
 }
 
-# `|| true` where the value may legitimately be absent, so a missing optional secret reports
-# itself through vget's BLIND line and still lets the required-value guard below name the gap.
-REGION="$(vget OCI_REGION || true)"; TENANCY="$(vget OCI_TENANCY_OCID || true)"
-TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME || true)}"
-[ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND vault lacks OCI_REGION / OCI_TENANCY_OCID -- see the BLIND line(s) above for which"; exit 2; }
-[ -n "$TENANCY_NAME" ] || { echo "need OCI_TENANCY_NAME (vault or env): the console tenancy name"; exit 2; }
-
 PROFILE=estate-bootstrap
+# Region and tenancy OCID are identifiers, not secrets: this Mac already holds them in ~/.oci/config.
+ocicfg() { # key -> value from the bootstrap profile, else DEFAULT
+  local p
+  for p in "$PROFILE" DEFAULT; do
+    awk -F= -v p="[$p]" -v k="$1" '$0==p{on=1;next} /^\[/{on=0} on && $1==k{sub(/^[^=]*=/,"");gsub(/[ \t]/,"");print;exit}' "${OCI_CLI_CONFIG_FILE:-$HOME/.oci/config}" 2>/dev/null | grep -vx None | grep . && return
+  done
+}
+REGION="${OCI_REGION:-$(ocicfg region || true)}"
+[ -n "$REGION" ] || REGION="$(awk '/^[[:space:]]*ESTATE_OCI_REGION:/{gsub(/"/,"",$2);print $2;exit}' "$IDP/clusters/oke/estate-config.yaml")"
+TENANCY="${OCI_TENANCY_OCID:-$(ocicfg tenancy || true)}"
+[ -n "$REGION" ] || REGION="$(vget OCI_REGION 2>/dev/null || true)"
+[ -n "$TENANCY" ] || TENANCY="$(vget OCI_TENANCY_OCID 2>/dev/null || true)"
+[ -n "$REGION" ] && [ -n "$TENANCY" ] || { echo "BLIND no OCI region/tenancy: not in env, ~/.oci/config [$PROFILE]/[DEFAULT], estate-config.yaml or the sops vault"; exit 2; }
+TENANCY_NAME="${OCI_TENANCY_NAME:-$(vget OCI_TENANCY_NAME 2>/dev/null || true)}"
+
 O=(--auth security_token --profile "$PROFILE" --region "$REGION")
 if oci iam region-subscription list "${O[@]}" >/dev/null 2>&1; then echo "login   session token still valid, no browser needed"
 else
   echo "login   browser opens once; sign in as the tenancy owner (token lives 1 hour)"
-  oci session authenticate --region "$REGION" --tenancy-name "$TENANCY_NAME" --profile-name "$PROFILE" >/dev/null
+  # Without --tenancy-name the browser page asks for it; nothing is gained by refusing here.
+  oci session authenticate --region "$REGION" ${TENANCY_NAME:+--tenancy-name "$TENANCY_NAME"} --profile-name "$PROFILE" >/dev/null
 fi
 # IDCS-backed tenancies refuse a user without a primary email (incident 2026-08-25:
 # error.identity.user.primaryEmailNotSpecified). The address is an identifier; Oracle mails it a
 # welcome message, nothing else depends on it.
-SVC_EMAIL="${OCI_SERVICE_USER_EMAIL:-$(vget OCI_SERVICE_USER_EMAIL || true)}"
-[ -n "$SVC_EMAIL" ] || { echo "need OCI_SERVICE_USER_EMAIL (vault or env): mailbox for the estate-tofu service user"; exit 2; }
+SVC_EMAIL="${OCI_SERVICE_USER_EMAIL:-$(vget OCI_SERVICE_USER_EMAIL 2>/dev/null || true)}"
 
 # --- IAM, idempotent ------------------------------------------------------------------
 ensure() { # kind name -> ocid   (compartment|group|user)
@@ -92,7 +100,10 @@ ensure() { # kind name -> ocid   (compartment|group|user)
     group) id=$(oci iam group list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
       [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam group create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --description "may manage the estate compartment only" --query data.id --raw-output);;
     user) id=$(oci iam user list "${O[@]}" --compartment-id "$TENANCY" --name "$name" --query 'data[0].id' --raw-output 2>/dev/null || true)
-      [ -n "$id" ] && [ "$id" != null ] || id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --email "$SVC_EMAIL" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output);;
+      if [ -z "$id" ] || [ "$id" = null ]; then
+        [ -n "$SVC_EMAIL" ] || { echo "need OCI_SERVICE_USER_EMAIL (env): user $name does not exist yet and OCI requires an email to create it" >&2; return 1; }
+        id=$(oci iam user create "${O[@]}" --compartment-id "$TENANCY" --name "$name" --email "$SVC_EMAIL" --description "OpenTofu service user; API key only, no console" --query data.id --raw-output)
+      fi;;
   esac
   [ -n "$id" ] && [ "$id" != null ] || { echo "FAIL    $kind $name: no OCID returned" >&2; return 1; }
   echo "$id"
@@ -181,7 +192,7 @@ fi
 # the service user estate-ci. Three objects, all SCIM: the user, a confidential OAuth client, and
 # the identity propagation trust that names both. Nothing here is a long-lived credential except
 # the client secret, which goes to the vault and to the repo's GitHub secrets, never to stdout.
-EP="$(vget OCI_IDENTITY_DOMAIN_URL || true)"
+EP="$(vget OCI_IDENTITY_DOMAIN_URL 2>/dev/null || true)"
 [ -n "$EP" ] || EP=$(oci iam domain list "${O[@]}" --compartment-id "$TENANCY" --query 'data[0].url' --raw-output)
 [ -n "$EP" ] && [ "$EP" != null ] || { echo "FAIL    no identity domain URL"; exit 1; }
 printf %s "$EP" | vput OCI_IDENTITY_DOMAIN_URL
