@@ -29,8 +29,10 @@ LABEL="com.estate.litellm-local"
 PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/litellm-local.log"
 VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
+ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
+export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT=4000
-MODULES="efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
 
@@ -64,7 +66,51 @@ run() {
   export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
   export OTEL_SERVICE_NAME=litellm-local
 
-  exec "$VENV/bin/litellm" --config "$CFG" --host 127.0.0.1 --port "$PORT"
+  if [ -x "$HERE/sops" ] && [ -d "$HERE/secrets" ]; then
+    for f in "$HERE"/secrets/*.yaml; do
+      [ -e "$f" ] || continue
+      k="$(basename "$f" .yaml)"
+      v="$("$HERE/sops" -d --extract "[\"$k\"]" "$f" 2>/dev/null)" && export "$k=$v" || echo "warn  could not decrypt $k"
+    done
+    unset v
+  fi
+  # The laptop router key, the one key the estate's local services present (voice-router already
+  # does). local_caller_auth requires it on every lane that spends a key this process holds.
+  # Undecryptable means those lanes refuse everyone: fail closed, and say so.
+  if [ -x "$HERE/sops" ] && [ -f "$HERE/caller/LITELLM_LAPTOP_KEY.yaml" ]; then
+    ESTATE_LOCAL_CALLER_KEY="$("$HERE/sops" -d --extract '["LITELLM_API_KEY"]' "$HERE/caller/LITELLM_LAPTOP_KEY.yaml" 2>/dev/null)" || true
+    export ESTATE_LOCAL_CALLER_KEY
+  fi
+  [ -n "${ESTATE_LOCAL_CALLER_KEY:-}" ] || echo "warn  no local caller key: keyed lanes refuse every caller"
+
+  # A lane whose key is absent can only fail, cool down and retry on every request -- that is
+  # flake, not redundancy. Serve only the lanes this process can actually call.
+  RUNCFG="$HERE/config.runtime.yaml"
+  export ESTATE_ROUTER_CONFIG="$RUNCFG"
+  "$VENV/bin/python" - "$CFG" "$RUNCFG" <<'PY'
+import os, sys, yaml
+cfg = yaml.safe_load(open(sys.argv[1]))
+kept, dropped = [], []
+for m in cfg.get("model_list", []):
+    key = str(m.get("litellm_params", {}).get("api_key", ""))
+    if key.startswith("os.environ/") and not os.environ.get(key.split("/", 1)[1]):
+        dropped.append(m["model_name"])
+    else:
+        kept.append(m)
+cfg["model_list"] = kept
+# Laptop only: who may call this router (platform/llm/local_caller_auth.py). It runs before every
+# other callback, so a refused request costs nothing.
+cfg.setdefault("general_settings", {})["custom_auth"] = "local_caller_auth.user_api_key_auth"
+ls = cfg.setdefault("litellm_settings", {})
+ls["callbacks"] = ["local_caller_auth.proxy_handler_instance"] + [
+    c for c in ls.get("callbacks", []) if c != "local_caller_auth.proxy_handler_instance"
+]
+yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
+print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
+print(f"lanes  dropped {len(dropped)} with no key on this machine")
+PY
+
+  exec "$VENV/bin/litellm" --config "$RUNCFG" --host 127.0.0.1 --port "$PORT"
 }
 
 install() {
@@ -78,6 +124,14 @@ install() {
   cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
   cp "$idp/llm/config.yaml" "$STAGE/config.yaml"
   for m in $MODULES; do cp "$idp/platform/llm/$m" "$STAGE/modules/$m"; done
+  # Vendor keys, ciphertext only: launchd cannot read ~/Documents, so the SOPS files and the
+  # sops binary are staged; run() decrypts them into this process's environment and nowhere else.
+  rm -rf "$STAGE/secrets"; mkdir -p "$STAGE/secrets"
+  cp "$ESTATE_SECRETS"/secrets/dev/*_API_KEY*.yaml "$STAGE/secrets/" 2>/dev/null || true
+  rm -rf "$STAGE/caller"; mkdir -p "$STAGE/caller"
+  cp "$ESTATE_SECRETS"/secrets/dev/LITELLM_LAPTOP_KEY.yaml "$STAGE/caller/" 2>/dev/null || true
+  local sops; sops="$(command -v sops || echo "$HOME/.cache/estate-tools/sops")"
+  [ -x "$sops" ] && cp "$sops" "$STAGE/sops"
   cat > "$PLIST" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
