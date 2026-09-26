@@ -2595,8 +2595,6 @@ spec:
         - --events-addr=http://notification-controller.$(RUNTIME_NAMESPACE).svc.cluster.local./
         - --watch-all-namespaces=true
         - --concurrent=40
-        - --kustomize-api-qps=100
-        - --kustomize-api-burst=200
         - --requeue-dependency=5s
         - --log-level=info
         - --log-encoding=json
