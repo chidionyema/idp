@@ -121,7 +121,15 @@ need no card or are hard-limited qualify. A PR that adds to the node states its 
 requests; the node's requests stay under 1.8 CPU. Before any node reboot, resize or drain,
 calico-node must be Ready on every node.
 
-## 9. Working style
+## 9. Voice first and realtime
+
+The platform is moving to voice first and realtime (founder, 2026-09-26). The founder speaks to the
+estate and hears it back, and watches what it does as it happens. The work surface is the Fleet
+page: a capability the founder cannot reach by voice or see live there is not finished. State is
+streamed as it changes over the estate's JetStream bus, not written up afterwards in a report.
+Voice design: `docs/specs/2026-09-22-voice-intent-plane-architecture.md`.
+
+## 10. Working style
 
 - Only make the change that was asked for. No unsolicited refactoring.
 - Do not guess. Search.
