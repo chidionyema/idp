@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The laptop's estate bus: JetStream on loopback. Voice steers (estate.agent.sovereign.<session>.steer)
+     land here and any MCP agent reads them via mcp/plugins/voice.py. The ESTATE_AGENT stream is created
+     by nats_adapter._ensure_stream on first publish, not by hand. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.nats</string>
+  <key>ProcessType</key><string>Background</string>
+  <key>ProgramArguments</key><array>
+    <string>${HOME}/.cache/estate-tools/nats-server</string>
+    <string>--jetstream</string>
+    <string>--store_dir</string>
+    <string>${HOME}/.estate/nats</string>
+    <string>--addr</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>4222</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/nats.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/nats.err.log</string>
+</dict></plist>

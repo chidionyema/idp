@@ -16,6 +16,7 @@ RESEARCH-BACKED EDGE CASES ADDRESSED:
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -26,6 +27,10 @@ from pathlib import Path
 EPS_DEFAULT = 0.05
 PRIOR_SWEEP = [0.5, 1.0, 2.0]
 CREDIBLE_WINDOW = 0.20
+_H = str(Path.home())
+PROBE_PATH = (
+    f"/opt/local/bin:/opt/homebrew/bin:/usr/local/bin:{_H}/.local/bin:{_H}/.rd/bin"
+)
 
 LOG_DIR = Path.home() / ".estate" / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -38,11 +43,16 @@ def run_probe(h: dict, timeout: int, dry_run_first: bool) -> dict:
         cmd = h["dry_run_probe"]
     t0 = time.time()
     try:
+        # bash -c, not -lc: a login shell cost 2.5-4s per probe (2026-09-26), turning a race of
+        # greps into seconds. PATH gets the tool dirs a login profile would have added.
+        env = dict(os.environ)
+        env["PATH"] = PROBE_PATH + ":" + env.get("PATH", "")
         r = subprocess.run(
-            ["bash", "-lc", cmd],
+            ["bash", "-c", cmd],
             capture_output=True,
             text=True,
             timeout=timeout,
+            env=env,
         )
         out, err, rc = r.stdout, r.stderr, r.returncode
     except subprocess.TimeoutExpired:
@@ -91,7 +101,7 @@ def posteriors(hyps: list, results: list, eps: float) -> dict:
     prior_sweep = {}
     for multiplier in PRIOR_SWEEP:
         post = {}
-        for h, r in zip(hyps, results):
+        for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
             prior = float(h.get("prior", 1.0 / len(hyps))) * multiplier
             lf, _rel = likelihood(h, r)
             # EPS floor calibrated to probe reliability
@@ -142,7 +152,7 @@ def main() -> None:
             r = fut.result()
             results[idx[r["id"]]] = r
 
-    for h, r in zip(hyps, results):
+    for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
         r["falsified"] = matches(h, r)
 
     post = posteriors(hyps, results, eps)
