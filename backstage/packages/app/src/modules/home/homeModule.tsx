@@ -117,6 +117,17 @@ const fleetPage = PageBlueprint.make({
   },
 });
 
+// TEMPORARY: the Fleet picture as the founder first saw it (git e61e43d0), beside /fleet for a
+// side-by-side after the 2026-09-20 rewrite made it look worse. Delete with FleetReactorOriginal.tsx.
+const fleetOriginalPage = PageBlueprint.make({
+  name: 'fleet-original',
+  params: {
+    path: '/fleet-original',
+    noHeader: true,
+    loader: () => import('../room/ui/FleetReactorOriginal').then(m => <m.default />),
+  },
+});
+
 // /board (docs/specs/2026-09-08-fleetview-live-mind-steering-and-the-board-view.md CP9):
 // the executive view -- fleet now, waiting on you, spend today, pull requests.
 const boardPage = PageBlueprint.make({
@@ -138,6 +149,7 @@ export const homeModule = createFrontendModule({
     investigatePage,
     showcasePage,
     fleetPage,
+    fleetOriginalPage,
     boardPage,
   ],
 });
