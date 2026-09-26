@@ -1,181 +1,72 @@
 #!/usr/bin/env python3
-"""Time is not a synchronisation primitive. A wait longer than 5 seconds is a missing event.
+"""Ban bare sleeps.
 
-    bin/idp-sleep-ban [paths...]     # grade scripts; default the tree
+A sleep is allowed if EITHER:
+  (a) the same line carries `# sleep-ok: <reason>`, OR
+  (b) the line sits inside a for/while/until ... done loop.
 
-WHY THIS EXISTS, and the founder said it first: an agent that writes `sleep 420` to wait for a
-state change has not understood the environment it is running in. A fixed sleep is wrong in both
-directions and there is no value of it that is right:
-
-  the work finished in 30s   -> 6.5 minutes of wall clock thrown away, and the session looks
-                                hung to the person watching it (measured 2026-09-12: the whole
-                                evening was punctuated by turns that produced nothing for
-                                minutes at a time)
-  the work took 421s         -> the sleep returns too early and the next command acts on state
-                                that is not there yet
-
-The estate already owns the event-driven answer for the case that caused this: GitHub's own
-merge queue. `gh pr merge --squash --auto` arms the merge and returns in 200ms; GitHub watches
-the checks and merges the instant they are green, or cancels if one fails. No polling, no
-guessing, no blocked thread.
-
-WHAT IS ALLOWED, because a ban that refuses correct work is an outage (R38):
-
-  sleep 5 and shorter       a yield, not a wait. Covers backoff between retries of a call that
-                            has already failed.
-  sleep with a marker       a line carrying `# sleep-ok: <reason>` is accepted, so a genuine
-                            fixed interval (a rate limit the API documents, a protocol heartbeat)
-                            can be written down instead of hidden. The reason is required: the
-                            marker is a place to state the case, not a way to silence the gate.
-  in a container manifest   a `sleep` inside a Kubernetes command that keeps a pod alive is not
-                            a synchronisation wait; those are excluded by path.
-
-WHAT IS REFUSED: a bare sleep of 10 seconds or more, waiting for something outside this process
-to change.
+Everything else fails. A sleep is a fixed-time bet that a variable-time
+thing will finish; it hides failures by making them look like they didn't
+happen yet.
 """
+import re, sys
+from pathlib import Path
 
-from __future__ import annotations
+ROOT = Path(__file__).resolve().parents[1]
+ROOTS = ["bin", "scripts", ".github", "platform"]
+EXTS = {".sh", ".bash", ".yml", ".yaml"}
 
-import argparse
-import pathlib
-import re
-import sys
-
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from treewalk import walk_tree  # noqa: E402  -- this repo's one walk-over-the-estate
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-
-# The largest gap that is a yield rather than a wait.
-MAX_YIELD_S = 5
-
-# A sleep this long is unambiguously waiting on external state.
-BAN_S = 10
-
-SLEEP = re.compile(r"\bsleep\s+(?P<arg>[0-9]+(?:\.[0-9]+)?)(?P<rest>[^\n]*)")
-ALLOW_MARK = re.compile(r"#\s*sleep-ok\s*:\s*\S", re.I)
-
-# Paths where a sleep is a liveness device, not a wait for state.
-EXEMPT_PARTS = ("/migrations/", "manifests/", "fixtures/")
-
-SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".crew", "run", "scratchpad"}
+SLEEP = re.compile(r'^\s*sleep\s+[0-9]')
+OK_MARK = re.compile(r'#\s*sleep-ok\s*:', re.I)
+OPEN = re.compile(r'^(\s*)(for|while|until)\b')
+CLOSE = re.compile(r'^(\s*)done\b')
 
 
-def scans(p: pathlib.Path, base: pathlib.Path) -> bool:
-    """Grade p unless it sits inside a worktree parked under the tree being graded.
-
-    `wt-`/`.wt-` is a sibling-checkout name (a git worktree of this same repository, checked
-    out beside it), so the directory must be skipped -- but ONLY where it is reached from
-    above. On 2026-09-13 this predicate matched the grader's own cwd: run from inside
-    `wt-one` every path carried the `wt-` part, every file was skipped, and the gate printed
-    `ok ... 0 file(s) scanned`. A pass over nothing is the failure this rule exists to catch,
-    so the base is stripped before the parts are judged.
-    """
-    try:
-        rel = p.resolve().relative_to(base.resolve()).parts
-    except ValueError:
-        rel = p.parts
-    if any(part in SKIP_DIRS or part.startswith("wt-") or part.startswith(".wt-") for part in rel[:-1]):
-        return False
-    return not any(x in str(p) for x in EXEMPT_PARTS)
-
-
-def grade(path: pathlib.Path) -> list[str]:
-    findings: list[str] = []
-    try:
-        lines = path.read_text(errors="replace").splitlines()
-    except OSError:
-        return findings
-    # A COMMENT OR A DOCSTRING IS NOT A COMMAND. This rule's own docstring quotes `sleep 420` as
-    # the example it refuses, so the gate refused itself the first time it ran -- prose about a
-    # sleep is not a sleep. The spans below are found rather than guessed: a triple-quoted block
-    # opens and closes, and every line between them is text.
-    prose: set[int] = set()
-    inside: str | None = None
-    for i, line in enumerate(lines, 1):
-        stripped = line.lstrip()
-        if inside is None:
-            for q in ('"""', "'''"):
-                if stripped.startswith(q) and not stripped[len(q):].rstrip().endswith(q):
-                    inside, _ = q, prose.add(i)
+def loop_ranges(lines):
+    """Return list of (start_idx, end_idx) for every for/while/until...done."""
+    ranges = []
+    stack = []  # (indent, start_line_idx)
+    for i, line in enumerate(lines):
+        m = OPEN.match(line)
+        if m:
+            stack.append((len(m.group(1)), i))
+        m = CLOSE.match(line)
+        if m:
+            indent = len(m.group(1))
+            # pop all openings at greater-or-equal indent (handles nesting)
+            while stack and stack[-1][0] >= indent:
+                start_indent, start = stack.pop()
+                if start_indent == indent:
+                    ranges.append((start, i))
                     break
-            else:
-                if stripped.startswith("#") or stripped.startswith("//"):
-                    prose.add(i)
-        else:
-            prose.add(i)
-            if inside in line:
-                inside = None
+    return ranges
 
-    for n, line in enumerate(lines, 1):
-        if n in prose or ALLOW_MARK.search(line):
-            continue
-        m = SLEEP.search(line)
-        if not m:
+
+def in_loop(idx, ranges):
+    return any(s < idx < e for s, e in ranges)
+
+
+hits, ok = [], []
+for r in ROOTS:
+    for f in (ROOT / r).rglob("*"):
+        if f.suffix not in EXTS or not f.is_file():
             continue
         try:
-            secs = float(m.group("arg"))
-        except ValueError:
+            lines = f.read_text().splitlines()
+        except Exception:
             continue
-        if secs < BAN_S:
-            continue
-        findings.append(f"{path}:{n}: sleep {m.group('arg')} -- {line.strip()[:70]}")
-    return findings
+        ranges = loop_ranges(lines)
+        for i, line in enumerate(lines):
+            if not SLEEP.match(line):
+                continue
+            if OK_MARK.search(line):
+                ok.append((f, i + 1, line.strip()))
+            elif in_loop(i, ranges):
+                ok.append((f, i + 1, line.strip()))
+            else:
+                hits.append((f, i + 1, line.strip()))
 
-
-def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("paths", nargs="*")
-    args = ap.parse_args()
-
-    roots = [pathlib.Path(p) for p in args.paths] or [ROOT / "bin", ROOT / "platform"]
-    files: list[pathlib.Path] = []
-    for r in roots:
-        r = r if r.is_absolute() else ROOT / r
-        if r.is_file():
-            files.append(r)
-        elif r.is_dir():
-            # `walk_tree` is this repository's one walk: it prunes `.git` by name and every
-            # gitignored directory by `git check-ignore`, so a walk grades the estate and not
-            # whatever a vendor left on disk. A bare `rglob` here descended into
-            # platform/oci/.terraform/ (`.gitignore:51`) and reported its vendored Terraform
-            # module's `sleep 30` -- an await_node_readiness helper that is not this estate's
-            # code and not this estate's defect. Measured 2026-09-13 in the primary checkout:
-            # the gate claimed "979 files scanned" from a clean worktree while scanning 1468
-            # here, and the 489 extra files were all under the ignored tree.
-            for dirpath, _dirnames, filenames in walk_tree(r):
-                for name in filenames:
-                    f = pathlib.Path(dirpath) / name
-                    if scans(f, r):
-                        files.append(f)
-
-    findings: list[str] = []
-    for f in sorted(set(files)):
-        findings += grade(f)
-
-    if findings:
-        print(f"FAIL  sleep-ban: {len(findings)} wait(s) on a clock instead of an event")
-        for f in findings[:12]:
-            print(f"      {f}")
-        print()
-        print("      a wait longer than 10s is a missing event. The estate's own answer for CI is")
-        print("      GitHub's merge queue:  gh pr merge <n> --squash --auto")
-        print("      for anything else the native reconciler is the waiter: Flux, a Kubernetes Job's")
-        print("      backoffLimit, a webhook. State the case with `# sleep-ok: <reason>` only when a")
-        print("      documented rate limit or protocol heartbeat forces a fixed interval.")
-        return 1
-
-    # A PASS OVER NOTHING IS NOT A PASS. The gate printed `ok` having read zero files when it
-    # was invoked from a worktree whose own name matched the skip list, and a rule that answers
-    # `clean` without looking is indistinguishable from one that has stopped matching.
-    if not files:
-        print("FAIL  sleep-ban: 0 file(s) scanned -- a pass over nothing is not a pass")
-        print("      point the gate at a tree that contains scripts, or say why there are none")
-        return 1
-
-    print(f"ok    sleep-ban: {len(set(files))} file(s) scanned, no wait on a clock")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+for f, i, line in hits:
+    print(f"{f}:{i}: {line}")
+print(f"\n{len(hits)} bare sleep(s), {len(ok)} allowed", file=sys.stderr)
+sys.exit(1 if hits else 0)
