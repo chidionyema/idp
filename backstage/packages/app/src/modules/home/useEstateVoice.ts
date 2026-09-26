@@ -163,7 +163,7 @@ export interface EstateVoice {
   /** The friction summary: empty rate, medians, per-voice speed. */
   voiceStats: any;
   /** The catalogue, for a picker. */
-  catalogue: { say: string[]; kokoro: string[]; piper: string[] };
+  catalogue: { cloud: string[]; say: string[]; kokoro: string[]; piper: string[] };
   /** The live engine and voice. */
   current: { engine: string; voice: string };
   selectVoice: (engine: string, voice: string) => Promise<string>;
@@ -189,12 +189,13 @@ export function useEstateVoice(): EstateVoice {
   // voices the service reports were dropped on arrival and the group showed "0 voices" while the
   // engine was IN FACT RUNNING PIPER. A type that does not match what the server sends is not a
   // type error; it is a silent truncation, and only the picker's optgroup label revealed it.
-  const [catalogue, setCatalogue] = useState<{ say: string[]; kokoro: string[]; piper: string[] }>({
+  const [catalogue, setCatalogue] = useState<{ cloud: string[]; say: string[]; kokoro: string[]; piper: string[] }>({
+    cloud: [],
     say: [],
     kokoro: [],
     piper: [],
   });
-  const [current, setCurrent] = useState({ engine: 'kokoro', voice: 'af_heart' });
+  const [current, setCurrent] = useState({ engine: 'cloud', voice: 'troy' });
   // THE VOICE LOG. Polled slowly: a turn log changes only when a turn happens, and the board is
   // already polling four other endpoints every 2 seconds.
   const [voiceLog, setVoiceLog] = useState<any[]>([]);
@@ -378,12 +379,12 @@ export function useEstateVoice(): EstateVoice {
     async (pcm: ArrayBuffer) => {
       const c = ctxRef.current;
       if (!c) return;
-      // BARGE-IN, SERVER SIDE: whatever was still being said for the last utterance is abandoned
-      // before this one starts. The socket sent a "barge_in" frame for this; an AbortController
-      // does it without a channel, because each request is its own.
-      c.turn?.abort();
+      // BARGE-IN ONLY ON REAL WORDS (2026-09-26). This used to abort the turn in flight the moment
+      // ANY sound started -- a cough, the fan, the machine's own voice through the speakers -- so a
+      // reply was cancelled, a new turn started, and that one was cancelled too: the founder's "we
+      // looping", three /voice/hear calls in the same second in the log. The previous turn now
+      // keeps talking until this utterance comes back as non-empty text.
       const turn = new AbortController();
-      c.turn = turn;
       const startedAt = performance.now();
 
       let hearBody: any;
@@ -416,10 +417,15 @@ export function useEstateVoice(): EstateVoice {
       // behind "I had to say it three times". The server has already counted it; the page simply
       // goes back to listening rather than showing a fault.
       if (hearBody.empty) {
-        setState('listening');
-        setDetail('did not catch that — say it again');
+        // Noise, not words: whatever was being said carries on.
+        if (!c.turn) setState('listening');
         return;
       }
+
+      // Real words: NOW the old reply stops and this turn owns the speaker.
+      c.turn?.abort();
+      silence();
+      c.turn = turn;
 
       const question: string = hearBody.text;
       setHeard(question);
@@ -431,6 +437,11 @@ export function useEstateVoice(): EstateVoice {
       let ttsSeconds = 0;
       let clauses = 0;
       const spoken: string[] = [];
+      // ALL CLAUSES SYNTHESISE AT ONCE, PLAY IN ORDER. Each clause used to wait for the previous
+      // clause's audio before the stream was even read again, so a four-clause answer paid four
+      // synthesis round trips back to back. Now each request starts the moment its text lands, and
+      // `chain` only orders the PLAYBACK.
+      let chain: Promise<void> = Promise.resolve();
 
       try {
         const res = await fetchApi.fetch(`${FLEETVIEW}/voice/stream`, {
@@ -481,12 +492,23 @@ export function useEstateVoice(): EstateVoice {
               // still on screen, which is why a missing clause degrades to silence, not to a
               // broken turn.
               const ttsStarted = performance.now();
-              try {
-                await sayClause(payload.text, turn.signal);
-              } catch {
-                /* one clause that could not be spoken must not end the conversation */
-              }
-              ttsSeconds += (performance.now() - ttsStarted) / 1000;
+              const audio = fetchApi
+                .fetch(`${FLEETVIEW}/voice/say`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ text: payload.text }),
+                  signal: turn.signal,
+                })
+                .then((r) => (r.ok ? r.arrayBuffer() : null))
+                .catch(() => null); // one clause that cannot be spoken must not end the turn
+              chain = chain.then(async () => {
+                const buf = await audio;
+                ttsSeconds += (performance.now() - ttsStarted) / 1000;
+                if (buf && !turn.signal.aborted) {
+                  if (clauses === 1 || c.playing.length === 0) setState('speaking');
+                  play(buf);
+                }
+              });
             }
           }
         }
@@ -501,6 +523,8 @@ export function useEstateVoice(): EstateVoice {
         return;
       }
 
+      await chain;
+      if (turn.signal.aborted) return;
       const totalSeconds = (performance.now() - startedAt) / 1000;
       const firstClauseSeconds =
         firstClauseAt === null ? null : (firstClauseAt - startedAt) / 1000;
@@ -511,6 +535,7 @@ export function useEstateVoice(): EstateVoice {
         { role: 'assistant', content: spoken.join(' ') },
       ].slice(-8);
 
+      if (c.turn === turn) c.turn = null;
       setState('listening');
       setDetail(
         firstClauseSeconds === null
@@ -542,7 +567,7 @@ export function useEstateVoice(): EstateVoice {
         /* the log is an instrument; its absence must not break the conversation */
       }
     },
-    [current.engine, current.voice, fetchApi, sayClause, sessionId],
+    [current.engine, current.voice, fetchApi, play, silence, sessionId],
   );
 
   const start = useCallback(async () => {
@@ -586,17 +611,31 @@ export function useEstateVoice(): EstateVoice {
         baseAssetPath: VOICE_ASSETS,
         onnxWASMBasePath: VOICE_ASSETS,
         onSpeechStart: () => {
-          // BARGE-IN, both halves and in this order: silence the browser immediately so the
-          // person hears themselves rather than the machine, then abandon the turn in flight so
-          // the rest of the reply is never fetched. Without the second half the answer talks over
-          // the interruption, which is the most robotic thing a voice interface can do.
-          silence();
-          setState('listening');
-          ctx.turn?.abort();
+          // A SOUND IS NOT YET AN INTERRUPTION. Barge-in happens in runTurn once the sound comes
+          // back as words; cancelling here is what made the machine cut itself off (see runTurn).
+          if (!ctx.turn) setState('listening');
         },
         onSpeechEnd: (buf: Float32Array) => {
+          // HEARD, SAID OUT LOUD, AT ONCE. A soft 70ms tone the instant the person stops, before
+          // any network: "am I being heard?" is answered in milliseconds, not after transcription.
+          try {
+            const o = audio.createOscillator();
+            const g = audio.createGain();
+            o.frequency.value = 880;
+            g.gain.setValueAtTime(0.0001, audio.currentTime);
+            g.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.07);
+            o.connect(g).connect(audio.destination);
+            o.start();
+            o.stop(audio.currentTime + 0.08);
+          } catch { /* the tone is a courtesy; the turn does not depend on it */ }
           setState('thinking');
+          setDetail('heard you — working…');
           void runTurn(buf.buffer as ArrayBuffer);
+        },
+        onVADMisfire: () => {
+          // Too short to be speech. Nothing is sent, nothing is cancelled.
+          if (!ctx.turn) setState('listening');
         },
       });
       ctx.vad = vad;
@@ -656,11 +695,11 @@ export function useEstateVoice(): EstateVoice {
       .then((r) => r.json())
       .then((d) => {
         if (cancelled) return;
-        setCatalogue({ say: d.say || [], kokoro: d.kokoro || [], piper: d.piper || [] });
+        setCatalogue({ cloud: d.cloud || [], say: d.say || [], kokoro: d.kokoro || [], piper: d.piper || [] });
         setAvailable(true);
         setCurrent({
-          engine: d.current?.engine || 'kokoro',
-          voice: d.current?.[d.current?.engine] || 'af_heart',
+          engine: d.current?.engine || 'cloud',
+          voice: d.current?.[d.current?.engine] || 'troy',
         });
       })
       .catch(() => {

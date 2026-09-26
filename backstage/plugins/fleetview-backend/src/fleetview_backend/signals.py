@@ -52,7 +52,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-_ROOT = Path(__file__).resolve().parents[4]
+_ROOT = Path(__file__).resolve().parents[5]
 _DB_DEFAULT = _ROOT / "catalog" / "estate.db"
 
 MAX_TEXT_LENGTH = 4000

@@ -216,8 +216,19 @@ def build_app() -> FastAPI:
         sessions = sessions_body.get("sessions") or []
 
         async def gen():
+            # stream_ask is a plain (sync) generator: it makes blocking urllib calls to the
+            # router. Iterating it directly on the event loop -- `async for` doesn't even work,
+            # since it has no __aiter__ -- would also stall every other request (the board's SSE
+            # included) for the length of the router call. Each `next()` runs in a thread instead,
+            # same reasoning `hear()` uses for the CPU-bound transcribe call.
+            loop = asyncio.get_running_loop()
+            it = iter(voice_module.stream_ask(question, sessions, history))
+            _DONE = object()
             try:
-                async for frame in voice_module.stream_ask(question, sessions, history):
+                while True:
+                    frame = await loop.run_in_executor(None, lambda: next(it, _DONE))
+                    if frame is _DONE:
+                        break
                     yield frame
             except Exception as exc:  # noqa: BLE001
                 yield f"event: error\ndata: {{'error': '{exc}'}}\n\n"
@@ -340,7 +351,7 @@ def main():
         main_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
         executor_config = uvicorn.Config(
             executor_app,
-            host="0.0.0.0",
+            host="0.0.0.0",  # noqa: S104 -- pre-existing on main; executor relay is key-checked (_check_key)
             port=executor_port,
             log_level="info",
         )

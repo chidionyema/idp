@@ -71,7 +71,7 @@ STREAM_ROUTE = "/api/fleetview/stream"
 DEFAULT_LEDGER_PREFIX = "~/.claude/state/prompt-ledger/"
 
 # Model-agnostic session source: catalog/estate.db sessions + session_events tables.
-_ROOT = Path(__file__).resolve().parents[4]
+_ROOT = Path(__file__).resolve().parents[5]
 _ESTATE_DB_DEFAULT = _ROOT / "catalog" / "estate.db"
 
 
@@ -159,7 +159,7 @@ def _estate_db_sessions(now: dt.datetime | None = None) -> list[dict[str, Any]]:
 
 
 _ESTATE_SESSIONS_MODULE = (
-    Path(__file__).resolve().parents[4] / "mcp" / "plugins" / "estate_sessions.py"
+    Path(__file__).resolve().parents[5] / "mcp" / "plugins" / "estate_sessions.py"
 )
 _SPEND_MODULE = Path(__file__).resolve().parent / "spend.py"
 
