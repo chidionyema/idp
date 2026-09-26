@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# litellm-local -- the laptop router, natively on macOS, no VM and no cluster.
+#
+#   bin/litellm-local install     stage + (re)start under launchd, wait for /health/liveliness
+#   bin/litellm-local uninstall   stop and remove the launchd agent (clients fall back to direct)
+#   bin/litellm-local status      liveliness + launchd state
+#   bin/litellm-local run         run in the foreground (what launchd calls)
+#
+# Same LiteLLM version as llm/litellm.yml (1.98.0) and the same rendered llm/config.yaml, run
+# without Docker or Postgres: on this 8 GiB Mac the compose stack needs a 4 GiB VM (litellm-up's
+# floor), while this process measured 275 MiB RSS. Founder, 2026-09-26: "if cluster breaks we
+# are all disabled" -- Claude Code's traffic must not depend on llm.mumchimp.com being up.
+#
+# WHY IT IS STAGED. launchd agents cannot read ~/Documents (macOS TCC: "Operation not
+# permitted", measured 2026-09-26), and this repo lives there. `install` copies the launcher,
+# the rendered config and the callback modules to ~/.estate/litellm-local/ and launchd runs that
+# copy. A side effect worth having: a branch switch in the repo cannot change the running
+# router; only the next `install` does.
+#
+# No DATABASE_URL, so no spend DB and no virtual keys: the master key (macOS keychain, service
+# `litellm-local`) is the one credential, and the port is bound to 127.0.0.1 only. Clients go
+# through this router only while /health/liveliness answers; otherwise ~/.bash_profile sends
+# them straight to Anthropic, so a dead router degrades to direct Max, never to an outage.
+set -euo pipefail
+
+HERE="$(cd "$(dirname "$0")" && pwd)"
+STAGE="$HOME/.estate/litellm-local"
+LABEL="com.estate.litellm-local"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LOG="$HOME/Library/Logs/litellm-local.log"
+VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
+PORT=4000
+MODULES="request_ceiling.py anthropic_beta_passthrough.py"
+
+live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
+
+run() {
+  if [ -f "$HERE/config.yaml" ]; then
+    CFG="$HERE/config.yaml"; MODDIR="$HERE/modules"          # staged copy (launchd)
+  else
+    CFG="$HERE/../llm/config.yaml"; MODDIR="$HERE/../platform/llm"   # repo checkout
+  fi
+
+  # A lane without api_key falls back to ANTHROPIC_API_KEY from the environment -- i.e. an
+  # Anthropic API key and its "credit balance is too low" -- instead of relaying the client's
+  # Max OAuth token. Never let one reach this process (2026-09-04 ruling).
+  unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN DATABASE_URL
+
+  LITELLM_MASTER_KEY="$(security find-generic-password -s litellm-local -a "$USER" -w)" || {
+    echo "FAIL  no keychain item 'litellm-local'; create it with:"
+    echo "      security add-generic-password -s litellm-local -a \"\$USER\" -w \"sk-local-\$(openssl rand -hex 24)\""
+    exit 2
+  }
+  export LITELLM_MASTER_KEY
+
+  # The callback modules named in llm/config.yaml are imported from here.
+  export PYTHONPATH="$MODDIR"
+  # Claude Code compacts at CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000; the ceiling's 128k default
+  # would refuse a long session before its own compaction ever fires.
+  export ESTATE_MAX_INPUT_TOKENS="${ESTATE_MAX_INPUT_TOKENS:-200000}"
+  export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
+  export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+  export OTEL_SERVICE_NAME=litellm-local
+
+  exec "$VENV/bin/litellm" --config "$CFG" --host 127.0.0.1 --port "$PORT"
+}
+
+install() {
+  local idp; idp="$(cd "$HERE/.." && pwd)"
+  [ -x "$VENV/bin/litellm" ] || {
+    echo "FAIL  no LiteLLM at $VENV; install it with:"
+    echo "      uv venv --python 3.12 $VENV && VIRTUAL_ENV=$VENV uv pip install 'litellm[proxy]==1.98.0' opentelemetry-sdk opentelemetry-exporter-otlp"
+    exit 2
+  }
+  mkdir -p "$STAGE/modules" "$(dirname "$PLIST")" "$(dirname "$LOG")"
+  cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
+  cp "$idp/llm/config.yaml" "$STAGE/config.yaml"
+  for m in $MODULES; do cp "$idp/platform/llm/$m" "$STAGE/modules/$m"; done
+  cat > "$PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>$STAGE/litellm-local</string><string>run</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>$LOG</string>
+  <key>StandardErrorPath</key><string>$LOG</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+</dict>
+</plist>
+EOF
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  launchctl bootstrap "gui/$(id -u)" "$PLIST"
+  for _ in $(seq 1 45); do live && { echo "ok    litellm-local live on 127.0.0.1:$PORT (staged at $STAGE)"; return 0; }; sleep 2; done
+  echo "FAIL  not live after 90s; last log lines:"; tail -20 "$LOG"; exit 1
+}
+
+uninstall() {
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  rm -f "$PLIST"
+  echo "ok    litellm-local stopped; new shells go direct to Anthropic"
+}
+
+status() {
+  if live; then echo "live  127.0.0.1:$PORT"; else echo "DOWN  127.0.0.1:$PORT (new shells go direct)"; fi
+  launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E '^\s*(state|pid) =' || echo "      launchd agent not loaded"
+}
+
+case "${1:-run}" in
+  run) run ;;
+  install) install ;;
+  uninstall) uninstall ;;
+  status) status ;;
+  *) echo "usage: $0 [run|install|uninstall|status]"; exit 2 ;;
+esac
