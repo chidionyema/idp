@@ -87,10 +87,11 @@ any PR that adds a line to it.
 | # | Blocker | Fix |
 |---|---|---|
 | 1 | `TYPESAFE_API_KEY` is absent from the laptop environment and from `secret-load`; `platform/vendors/consoles.yaml` delivers it only to `mcp-gateway` and `dagster` | add a laptop target to the `typesafe` entry; the key arrives through the vault, by name |
-| 2 | `jev.py` refuses to call unless `typesafe_sdk` imports, but the call uses plain `httpx` (installed, 0.28.1); the SDK is absent, so every call falls back | drop the import gate; gate on the key alone |
-| 3 | the endpoint `https://api.typesafe.ai/v1/systemone` is a literal in code | `JEV_URL`, config |
+| 2 | `jev.py` refuses to call unless `typesafe_sdk` imports, but the call uses plain `httpx` (installed, 0.28.1); the SDK is absent, so every call falls back | **fixed on this branch:** the gate now checks `httpx`, which the call uses |
+| 3 | the endpoint `https://api.typesafe.ai/v1/systemone` is a literal in code | **fixed on this branch:** `JEV_URL`, config |
 | 4 | the ledger path defaults to `/data/estate.db`, which does not exist on the laptop; `~/.estate/estate.db` has no `jev_decisions` table | Jev has recorded zero decisions here; point `ESTATE_DB_PATH` at the laptop store and create the table on first write |
 | 5 | idp-pr-risk and idp-affected run Jev before anything else, and today they fail open | once 1–4 land, they answer for real; that change is the first measurement |
+| 6 | Jev's confidence floor, timeout and model live in the `[jev]` section of the AGENTS.md policy block; ca326fdb (#3959) deleted the whole block, so `sovereign/policy.py` raised PolicyError for every section, and `Policy` never parsed `[jev]` at all | **fixed on this branch:** block restored as AGENTS.md §11, `[jev]` required and parsed (`test_jev_layer.py` + `test_policy.py`: 26 passed) |
 
 ## Real-time founder monitoring of all Jev activity
 
