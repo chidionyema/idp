@@ -1,0 +1,75 @@
+# Edge row. Gateway API CRDs come from the upstream release tag (the experimental channel:
+# Traefik's provider lists TLSRoute and TCPRoute and never accepts the GatewayClass without them), then the three platform charts,
+# then prospector's own manifests from its repo. Each step waits for the one before it.
+# external-dns is a leaf (Kustomization dns, below): nothing waits on it, because it cannot be
+# Ready until the Cloudflare token exists, and the shop must not be held behind DNS.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: gateway-api
+  namespace: flux-system
+spec:
+  interval: 24h
+  url: https://github.com/kubernetes-sigs/gateway-api
+  ref:
+    tag: v1.5.1
+  ignore: |
+    /*
+    !/config/crd/
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: gateway-api-crds
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: gateway-api
+  path: ./config/crd/experimental
+  prune: false
+  wait: true
+
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: edge
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/edge
+  prune: true
+  wait: true
+  timeout: 2m
+  # flux-only-writes.yaml names its two excused identities as ${ESTATE_BREAK_GLASS_USER} and
+  # ${ESTATE_FOUNDER_USER}. Without this block Flux applied the literal text (measured on the
+  # live ClusterPolicy 2026-09-06 21:10Z), so neither exception ever matched a real principal and
+  # the founder was refused on his own cluster. Not optional: a missing ConfigMap must fail the
+  # row rather than publish a placeholder.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
+  patches:
+    - target: {kind: HelmRelease, name: traefik, namespace: edge}
+      patch: |
+        apiVersion: helm.toolkit.fluxcd.io/v2
+        kind: HelmRelease
+        metadata: { name: traefik, namespace: edge }
+        spec:
+          values:
+            service:
+              annotations:
+                oci.oraclecloud.com/load-balancer-type: lb
+                service.beta.kubernetes.io/oci-load-balancer-shape: flexible
+                service.beta.kubernetes.io/oci-load-balancer-shape-flex-min: "10"
+                service.beta.kubernetes.io/oci-load-balancer-shape-flex-max: "10"
+
+---

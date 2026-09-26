@@ -1,0 +1,50 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/monitoring
+  prune: true
+  timeout: 20m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: kube-prometheus-stack
+      namespace: monitoring
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: blackbox
+      namespace: monitoring
+
+---
+# crew#539 DoD 1, second half: the estate's PrometheusRules and the founder-surface Probe are
+# monitoring.coreos.com CRs, so they apply after the chart row lands its CRDs (incident
+# 2026-08-25: a chart and its own CRs in one row never reconcile).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: monitoring-rules
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/monitoring/rules
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+
+---

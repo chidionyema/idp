@@ -1,0 +1,23 @@
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: dns
+  namespace: flux-system
+spec:
+  interval: 30s
+  # crew#488 CP5: an admission webhook that is still booting (ESO 'ca cert not yet ready') fails the
+  # first apply; without this the next try is the 10m interval and a fresh cluster reads red for it.
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/dns
+  prune: true
+  wait: true
+  timeout: 2m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+
+---
