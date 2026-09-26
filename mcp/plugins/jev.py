@@ -20,7 +20,7 @@ ARCHITECTURE (docs/decisions/0030-jevlayer-unified-confidence-and-decision-servi
 
 CONFIG (LAW 46 -- no path or key is a literal in code):
   TYPESAFE_API_KEY           -- TypeSafe API key (from estate-secrets, estate holds the only copy)
-  ESTATE_DB_PATH             -- estate.db path (default /data/estate.db)
+  ESTATE_DB_PATH             -- estate.db path (default $ESTATE_DB, the Fleet page's, else /data/estate.db)
   JEV_MODEL                  -- model name (default jev-1.13.0)
   JEV_URL                    -- endpoint (default https://api.typesafe.ai/v1/systemone)
   JEV_DEFAULT_CONFIDENCE_FLOOR  -- minimum confidence to consider a decision resolved (default 0.7)
@@ -49,7 +49,11 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 
 
 TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "")
-ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH", "/data/estate.db")
+# ESTATE_DB is what the Fleet page reads (bin/serve-fleetview); falling back to it puts Jev's rows on
+# the board. /data does not exist on the laptop, so without it every write was dropped (2026-09-26).
+ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH") or os.environ.get(
+    "ESTATE_DB", "/data/estate.db"
+)
 JEVD = os.environ.get("JEV_MODEL", "jev-1.13.0")
 DEFAULT_FLOOR = float(os.environ.get("JEV_DEFAULT_CONFIDENCE_FLOOR", "0.7"))
 TIMEOUT_MS = int(os.environ.get("JEV_TIMEOUT_MS", "2000"))

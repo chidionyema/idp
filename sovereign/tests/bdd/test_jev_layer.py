@@ -229,6 +229,27 @@ class TestJevLayerDatabase:
         assert rows[0][0] == "sovereign"
         assert rows[0][3] == 0.85
 
+    def test_ledger_defaults_to_the_fleet_pages_database(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        """Without ESTATE_DB_PATH, Jev writes where the Fleet page reads (ESTATE_DB)."""
+        import importlib
+
+        db = tmp_path / "estate.db"
+        monkeypatch.delenv("ESTATE_DB_PATH", raising=False)
+        monkeypatch.setenv("ESTATE_DB", str(db))
+        monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+        fresh = importlib.reload(jev_module)
+        try:
+            fresh.jev_choice("idp", "guard", "ledger", {}, "ok?", ["YES", "NO"])
+            con = sqlite3.connect(db)
+            rows = list(con.execute("SELECT decision_id, escalated FROM jev_decisions"))
+            con.close()
+        finally:
+            monkeypatch.undo()
+            importlib.reload(jev_module)
+        assert rows == [("ledger", 1)]
+
 
 class TestJevToolsNoServer:
     """Test the tool functions with no MCP server (pure function tests)."""
