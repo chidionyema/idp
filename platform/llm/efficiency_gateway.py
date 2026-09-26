@@ -371,7 +371,7 @@ class _AnthropicSteps:
         prev = self._convs.pop(conv, None)
         common = 0
         if prev:
-            for a, b in zip(prev[1], hashes):
+            for a, b in zip(prev[1], hashes, strict=False):
                 if a != b:
                     break
                 common += 1
