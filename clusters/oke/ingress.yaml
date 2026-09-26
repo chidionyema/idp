@@ -21,6 +21,8 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    idp.estate.io/runtime: none
   name: gateway-api-crds
   namespace: flux-system
 spec:
@@ -36,6 +38,8 @@ spec:
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
   name: edge
   namespace: flux-system
 spec:
