@@ -17,10 +17,10 @@
 # copy. A side effect worth having: a branch switch in the repo cannot change the running
 # router; only the next `install` does.
 #
-# No DATABASE_URL, so no spend DB and no virtual keys: the master key (macOS keychain, service
-# `litellm-local`) is the one credential, and the port is bound to 127.0.0.1 only. Clients go
-# through this router only while /health/liveliness answers; otherwise ~/.bash_profile sends
-# them straight to Anthropic, so a dead router degrades to direct Max, never to an outage.
+# No DATABASE_URL, no virtual keys, no master key; the port is bound to 127.0.0.1 only. Every
+# Claude Code process is pointed here by ANTHROPIC_BASE_URL in ~/.claude/settings.json, with no
+# direct fallback: a dead router is a loud error that launchd's KeepAlive restarts, never a
+# silent bypass of the efficiency gateway.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -46,12 +46,14 @@ run() {
   # Max OAuth token. Never let one reach this process (2026-09-04 ruling).
   unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN DATABASE_URL
 
-  LITELLM_MASTER_KEY="$(security find-generic-password -s litellm-local -a "$USER" -w)" || {
-    echo "FAIL  no keychain item 'litellm-local'; create it with:"
-    echo "      security add-generic-password -s litellm-local -a \"\$USER\" -w \"sk-local-\$(openssl rand -hex 24)\""
-    exit 2
-  }
-  export LITELLM_MASTER_KEY
+  # No router key. Every Claude Code process reaches this router from ~/.claude/settings.json,
+  # which cannot read the keychain, and a key is never written into a file. The router holds no
+  # credential to protect: it binds 127.0.0.1, launchd gives it no vendor keys, the Anthropic
+  # ones are unset above, and every caller must bring its own Max OAuth token. With
+  # LITELLM_MASTER_KEY unset LiteLLM skips auth (probed 2026-09-26: a keyless request reached
+  # Anthropic and was refused there for lacking a token). Founder, 2026-09-26: "no skipping
+  # the router allowed".
+  unset LITELLM_MASTER_KEY
 
   # The callback modules named in llm/config.yaml are imported from here.
   export PYTHONPATH="$MODDIR"
