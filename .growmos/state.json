@@ -1,13 +1,13 @@
 {
   "counters": {
-    "extractions": 12,
+    "extractions": 13,
     "profiles": 0,
-    "queries": 0,
+    "queries": 8,
     "resolutions": 0
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-23T17:41:26Z",
+  "last_run": "2026-09-26T22:17:33Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -164,6 +164,168 @@
       "entity": "defect/host-provisioning-drift",
       "kind": "remember",
       "ts": "2026-09-23T17:41:26Z"
+    },
+    {
+      "entity": "component/litellm-local",
+      "kind": "remember",
+      "ts": "2026-09-26T13:54:56Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_74764d00984d",
+      "ts": "2026-09-26T13:54:56Z"
+    },
+    {
+      "entities": 8,
+      "kind": "extraction",
+      "relations": 7,
+      "source": "src_1e9e49dc56df",
+      "ts": "2026-09-26T14:51:49Z"
+    },
+    {
+      "entity": "decision/oci-always-free-a1-cut",
+      "kind": "remember",
+      "ts": "2026-09-26T15:53:02Z"
+    },
+    {
+      "entity": "system/oke-node-capacity-2026-09-26",
+      "kind": "remember",
+      "ts": "2026-09-26T15:53:02Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_b4f1b081a9af",
+      "ts": "2026-09-26T15:53:03Z"
+    },
+    {
+      "entity": "decision/adr-0034-free-tier-placement",
+      "kind": "remember",
+      "ts": "2026-09-26T18:11:28Z"
+    },
+    {
+      "entity": "system/fleetview",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:39Z"
+    },
+    {
+      "entity": "system/fleet-page",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:39Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_d42fd9eaa904",
+      "ts": "2026-09-26T18:26:40Z"
+    },
+    {
+      "entity": "gotcha/trap-duplicate-fleet-summary",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:40Z"
+    },
+    {
+      "entity": "gotcha/trap-parents-n-repo-root",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:40Z"
+    },
+    {
+      "entity": "gotcha/trap-sessions-db-first",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:41Z"
+    },
+    {
+      "entity": "gotcha/trap-reasoning-model-token-budget",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:41Z"
+    },
+    {
+      "entity": "gotcha/trap-memory-mcp-dead",
+      "kind": "remember",
+      "ts": "2026-09-26T18:26:41Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_ca473c6130f8",
+      "ts": "2026-09-26T18:26:42Z"
+    },
+    {
+      "entity": "gotcha/trap-launchd-background-throttles-voice",
+      "kind": "remember",
+      "ts": "2026-09-26T19:18:20Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_e588b9e19296",
+      "ts": "2026-09-26T19:18:20Z"
+    },
+    {
+      "entity": "system/voice-router",
+      "kind": "remember",
+      "ts": "2026-09-26T20:29:07Z"
+    },
+    {
+      "entity": "component/net-forensics",
+      "kind": "remember",
+      "ts": "2026-09-26T21:24:51Z"
+    },
+    {
+      "entity": "component/net-flannel-unmasq",
+      "kind": "remember",
+      "ts": "2026-09-26T21:24:51Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_36d92c462060",
+      "ts": "2026-09-26T21:24:51Z"
+    },
+    {
+      "entity": "component/net-triage",
+      "kind": "remember",
+      "ts": "2026-09-26T21:43:43Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_4510f2cafce8",
+      "ts": "2026-09-26T21:43:43Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_4cfd8783a940",
+      "ts": "2026-09-26T21:43:43Z"
+    },
+    {
+      "entity": "system/voice-router",
+      "kind": "remember",
+      "ts": "2026-09-26T21:52:49Z"
+    },
+    {
+      "entity": "decision/piper-lessac-voice-licence",
+      "kind": "remember",
+      "ts": "2026-09-26T21:52:49Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_b6c999e76628",
+      "ts": "2026-09-26T21:52:49Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_1d245518f2bd",
+      "ts": "2026-09-26T21:52:50Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_2fb8b0167313",
+      "ts": "2026-09-26T22:17:31Z"
+    },
+    {
+      "entity": "decision/intent-engine-consultant-proposals",
+      "kind": "remember",
+      "ts": "2026-09-26T22:17:32Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_69d48e838a49",
+      "ts": "2026-09-26T22:17:33Z"
     }
   ]
 }
