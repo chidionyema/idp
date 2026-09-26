@@ -32,6 +32,7 @@ For provider "anthropic" the patch below adds back every top-level field the cli
 sent that LiteLLM does not handle itself, so the next field Claude Code ships is not lost too.
 """
 
+import inspect
 import logging
 
 from litellm import anthropic_beta_headers_manager as _mgr
@@ -64,10 +65,14 @@ _HANDLED_ELSEWHERE = frozenset(
 _original_params = (
     _utils.AnthropicMessagesRequestUtils.get_requested_anthropic_messages_optional_param
 )
+# The router pins 1.98.0, whose signature takes model/drop_params/custom_llm_provider; CI's
+# python3 carries 1.83.9, which takes no `model` (TypeError, 2026-09-26). Pass on only what the
+# installed version accepts.
+_original_kw = frozenset(inspect.signature(_original_params).parameters)
 
 
 def get_requested_anthropic_messages_optional_param(params, **kw):
-    out = _original_params(params, **kw)
+    out = _original_params(params, **{k: v for k, v in kw.items() if k in _original_kw})
     if kw.get("custom_llm_provider") != "anthropic":
         return out
     body = ((params or {}).get("proxy_server_request") or {}).get("body") or {}
