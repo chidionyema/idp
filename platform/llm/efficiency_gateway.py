@@ -282,7 +282,13 @@ class _AnthropicSteps:
             ):
                 continue
             for b in m["content"]:
-                if not isinstance(b, dict) or b.get("type") != "tool_result":
+                # Errors are never deduplicated: a repeated denial is new information to the
+                # model, and the pointer hid which call was refused.
+                if (
+                    not isinstance(b, dict)
+                    or b.get("type") != "tool_result"
+                    or b.get("is_error")
+                ):
                     continue
                 text = _tool_result_text(b)
                 if text is None or len(text) < MIN_OBS_CHARS:
