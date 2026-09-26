@@ -58,13 +58,11 @@ def kokoro_voices() -> list[str]:
     its voice names are just its member filenames. The directory listing gives all 54 names with
     no onnxruntime session, no 350MB model load, and without installing torch (a 2GB dependency)
     purely to list strings.
+
+    THE FILE IS THE ONLY SOURCE. This used to ask `engine.models()` first, which LOADS whisper and
+    Kokoro on first call -- measured 2026-09-26 on /fleet: /voice/voices 38s, and the single-worker
+    backend held /sessions (0.3s alone) behind it for 36s. Never load a model to list names.
     """
-    m = engine.models()
-    if m.tts is not None:
-        try:
-            return sorted(m.tts.get_voices())
-        except Exception:  # noqa: BLE001, S110 -- a model that cannot list voices still speaks
-            pass  # deliberate: fall through to the file listing below, which is the real answer
     try:
         with zipfile.ZipFile(engine.KOKORO_VOICES) as z:
             return sorted(n[:-4] for n in z.namelist() if n.endswith(".npy"))

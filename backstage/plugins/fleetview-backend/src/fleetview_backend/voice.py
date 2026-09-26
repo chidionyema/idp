@@ -34,11 +34,23 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
+
+import certifi
+
+# python.org's macOS Python builds (the interpreter serve-fleetview picks so pydantic's `str |
+# None` annotations work -- see serve-fleetview) ship their own OpenSSL with no CA trust store
+# wired to the system keychain. Left to the default context, every call to the router fails
+# `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` -- not a router problem,
+# a bare `urlopen()` trusting nothing. certifi is a hard dependency via httpx, so it is always
+# present; building the context from its bundle makes this work on any interpreter, not just one
+# that has had "Install Certificates.command" run on it by hand.
+_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 # CP6 spatial fast-path: when the user's intent is spatial (the one on the left,
 # the second from the right) we resolve to a sha WITHOUT calling the router.
@@ -47,7 +59,7 @@ from typing import Any
 # live comets come from mcp/plugins/deploy_journeys.list_deploy_journeys -- the
 # same MCP plugin the board already reads, so the voice answers about the same
 # fleet the reader is looking at.
-_REPO_ROOT = Path(__file__).resolve().parents[4]
+_REPO_ROOT = Path(__file__).resolve().parents[5]
 for _p in (str(_REPO_ROOT / "lib"), str(_REPO_ROOT / "mcp" / "plugins")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
@@ -58,7 +70,8 @@ import estate_spatial as _spatial  # noqa: E402
 _SPATIAL_PATTERN = re.compile(
     r"\b("
     r"the\s+(?:one\s+)?(?:on|in)\s+the\s+(?:left|right|back\s+left|front\s+right)|"
-    r"(?:leftmost|rightmost|topmost|bottommost|left|right|top|bottom)|"
+    # Bare left/right/top/bottom are NOT spatial: "right now" sent every such question here and 503'd.
+    r"(?:leftmost|rightmost|topmost|bottommost)|"
     r"the\s+\w+\s+(?:one|from\s+the\s+(?:left|right))|"
     r"the\s+(?:first|second|third|fourth|fifth|last)"
     r")\b|"
@@ -146,8 +159,10 @@ SYSTEM = (
     "You have NO ability to act. You cannot stop, steer or change anything, and you must never "
     "say that you have. If asked to act, say what you would do and that it needs confirmation.\n"
     "\n"
-    "Use ONLY the fleet summary below. Never invent a session, a state or a number. If the summary "
-    "does not answer the question, say so plainly.\n"
+    "Use ONLY the LIVE AGENTS below: it is what every agent is doing right now. Never invent a "
+    "session, a state or a number. If it does not answer the question, say so plainly. Never say "
+    "the words 'summary', 'fleet summary', 'data' or 'provided': speak as someone watching the "
+    "agents live.\n"
     "\n"
     'If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve "it", '
     '"that one" and "the stuck one", and answer the follow-up without making the person repeat '
@@ -170,6 +185,9 @@ def router_host() -> str:
     Verified unset in both services with `ps eww`. Fixed to a real default; `${ESTATE_ZONE}` is
     still honoured when present so the cluster keeps working.
     """
+    explicit = os.environ.get("LITELLM_HOST", "").strip()
+    if explicit:
+        return os.path.expandvars(explicit).rstrip("/")
     zone = os.environ.get("ESTATE_ZONE", "").strip()
     if not zone:
         raise RuntimeError(
@@ -185,6 +203,14 @@ def router_key() -> str:
     return os.environ.get("LITELLM_API_KEY", "").strip()
 
 
+def router_ready() -> bool:
+    # bin/litellm-local binds loopback and runs with no master key by design, so it needs no key.
+    if router_key():
+        return True
+    host = os.environ.get("LITELLM_HOST", "")
+    return host.startswith(("http://127.0.0.1", "http://localhost"))
+
+
 def router_model() -> str:
     return os.environ.get("VOICE_ROUTER_MODEL", "deepseek")
 
@@ -195,6 +221,9 @@ def _timeout() -> float:
 
 def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
     """The fleet, in the fewest words that still let an answer be true.
+
+    THIS is what the Fleet page's voice speaks from. sovereign/voice/engine.py has its own
+    fleet_summary for the standalone voice-loop server; changing that one does not change this.
 
     Counts by activity first, because "how many are stuck" is the question a person actually asks
     and it must be answerable without counting rows. Then the sessions themselves, capped: a
@@ -209,11 +238,23 @@ def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
         a = s.get("activity") or "unknown"
         counts[a] = counts.get(a, 0) + 1
 
-    stuck = counts.get("stuck", 0)
+    # The bare state words are ambiguous to a model. Measured 2026-09-26: "40 waiting, 3 thinking"
+    # was spoken as "forty-three agents working", and an absent stuck count as "yes, 40 stuck".
+    # So every state says what it means, and the two a person asks about are stated even at zero.
+    meaning = {
+        "thinking": "WORKING right now",
+        "waiting": "idle (waiting for a person to reply; NOT working, NOT stuck)",
+        "stuck": "STUCK (need attention)",
+        "finished": "finished (inactive)",
+    }
+    for k in ("thinking", "stuck"):
+        counts.setdefault(k, 0)
+    stuck = counts["stuck"]
     lines = [
         f"{len(sessions)} agents total. "
         + ", ".join(
-            f"{n} {k}" for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
+            f"{n} {meaning.get(k, k)}"
+            for k, n in sorted(counts.items(), key=lambda kv: -kv[1])
         )
         + ".",
     ]
@@ -221,10 +262,14 @@ def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
         # Leading with the thing that needs a person, because that is what the board leads with.
         lines.append(f"{stuck} need attention.")
 
-    # The ones worth naming: stuck first, then everything else, most events first.
+    # The ones worth naming: stuck, then working, then idle, then finished; most events first.
+    rank = {"stuck": 0, "thinking": 1, "waiting": 2}
     ordered = sorted(
         sessions,
-        key=lambda s: (s.get("activity") != "stuck", -(s.get("event_count") or 0)),
+        key=lambda s: (
+            rank.get(s.get("activity") or "", 3),
+            -(s.get("event_count") or 0),
+        ),
     )
     for s in ordered[:limit]:
         task = (s.get("task") or "").strip().replace("\n", " ")[:90]
@@ -294,7 +339,7 @@ def ask(
     if spatial is not None:
         return spatial
 
-    if not router_key():
+    if not router_ready():
         return {
             "error": "no LITELLM_API_KEY on this deployment, so voice has no model",
             "fix": "source the estate vault (estate-secrets/scripts/secret-load), or set it in the pod",
@@ -315,13 +360,16 @@ def ask(
             {
                 "role": "user",
                 "content": (
-                    f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\n"
+                    f"LIVE AGENTS (right now)\n{fleet_summary(sessions)}\n\n"
                     f"{history_block(history)}"
                     f"QUESTION\n{question}"
                 ),
             },
         ],
-        "max_tokens": 220,
+        # Headroom for reasoning models: the fast lane (gpt-oss-120b) spends ~75 hidden tokens even
+        # on "say hi", and at 220 a 192-agent prompt returned an empty answer (measured 2026-09-26).
+        # The spoken length is bounded by the system prompt, not by this number.
+        "max_tokens": 1024,
         "temperature": 0.2,
     }
     req = urllib.request.Request(  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
@@ -334,7 +382,9 @@ def ask(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(req, timeout=_timeout()) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
+        with urllib.request.urlopen(  # noqa: S310 -- router host is estate-controlled
+            req, timeout=_timeout(), context=_SSL_CONTEXT
+        ) as resp:  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
             doc = json.loads(resp.read().decode())
     except urllib.error.HTTPError as exc:
         # The router reports a depleted vendor plan as an error envelope with a 4xx; pass its
@@ -419,7 +469,7 @@ def stream_ask(
         yield _sse("done", {"status": status})
         return
 
-    if not router_key():
+    if not router_ready():
         yield _sse(
             "error",
             {"error": "no LITELLM_API_KEY on this deployment, so voice has no model"},
@@ -445,13 +495,16 @@ def stream_ask(
             {
                 "role": "user",
                 "content": (
-                    f"FLEET SUMMARY\n{fleet_summary(sessions)}\n\n"
+                    f"LIVE AGENTS (right now)\n{fleet_summary(sessions)}\n\n"
                     f"{history_block(history)}"
                     f"QUESTION\n{question}"
                 ),
             },
         ],
-        "max_tokens": 220,
+        # Headroom for reasoning models: the fast lane (gpt-oss-120b) spends ~75 hidden tokens even
+        # on "say hi", and at 220 a 192-agent prompt returned an empty answer (measured 2026-09-26).
+        # The spoken length is bounded by the system prompt, not by this number.
+        "max_tokens": 1024,
         "temperature": 0.2,
         "stream": True,
         # Ask for usage on the final chunk. Without this the cost is unknowable and the provenance
@@ -468,7 +521,7 @@ def stream_ask(
         method="POST",
     )
     try:
-        resp = urllib.request.urlopen(req, timeout=_timeout())  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
+        resp = urllib.request.urlopen(req, timeout=_timeout(), context=_SSL_CONTEXT)  # noqa: S310 -- the URL is the estate's own router/host, not caller-supplied
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
