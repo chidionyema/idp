@@ -628,7 +628,10 @@ litellm_settings:
   # LiteLLM imports it from this callbacks entry and discovers proxy_handler_instance. The
   # volume mount and PYTHONPATH env var in platform/llm/litellm.yaml are the other half —
   # both must be present or every request fails with ModuleNotFoundError.
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance"]
+  # efficiency_gateway runs first so the ceiling measures the request it actually sends. On the
+  # claude-* lane it is append-stable (prompt cache intact) and records per call what each step
+  # did and what Anthropic billed: `bin/estate-efficiency-report --follow`.
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's

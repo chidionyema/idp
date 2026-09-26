@@ -30,7 +30,7 @@ PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
 LOG="$HOME/Library/Logs/litellm-local.log"
 VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 PORT=4000
-MODULES="request_ceiling.py anthropic_beta_passthrough.py"
+MODULES="efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
 

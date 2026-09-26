@@ -84,6 +84,11 @@ def test_every_custom_callback_is_importable_by_the_local_router(cfg):
     launcher = LAUNCHER.read_text()
     custom = [c for c in callbacks if c not in BUILTIN_CALLBACKS]
     assert "anthropic_beta_passthrough.proxy_handler_instance" in custom
+    # The gateway is how the founder sees, per call, what each step did and what was billed;
+    # it must run before the ceiling so the ceiling measures what is actually sent.
+    assert custom.index("efficiency_gateway.proxy_handler_instance") < custom.index(
+        "request_ceiling.proxy_handler_instance"
+    )
     for cb in custom:
         module, sep, attr = cb.rpartition(".")
         assert sep and module and attr, (
@@ -118,3 +123,34 @@ def test_beta_passthrough_forwards_unknown_betas_for_anthropic_only():
     ) == [new_beta]
     # other providers still go through LiteLLM's own translation map
     assert new_beta not in mgr.filter_and_transform_beta_headers([new_beta], "bedrock")
+
+
+def test_request_fields_litellm_does_not_know_still_reach_anthropic():
+    # LiteLLM dropped Claude Code's `safeguards` field; the client then called its auto-mode
+    # classifier itself, which 429'd on the Max token and refused every Bash call (2026-09-26).
+    pytest.importorskip("litellm")
+    import sys
+
+    sys.path.insert(0, str(MODULE_DIR))
+    import anthropic_beta_passthrough  # noqa: F401
+    from litellm.llms.anthropic.experimental_pass_through.messages.utils import (
+        AnthropicMessagesRequestUtils as U,
+    )
+
+    body = {
+        "model": "claude-sonnet-5",
+        "messages": [],
+        "max_tokens": 10,
+        "safeguards": [{"type": "x"}],
+        "litellm_metadata": {"internal": object()},
+    }
+    params = {**body, "proxy_server_request": {"body": body}}
+    got = U.get_requested_anthropic_messages_optional_param(
+        params, model="claude-sonnet-5", custom_llm_provider="anthropic"
+    )
+    assert got.get("safeguards") == [{"type": "x"}]
+    assert "litellm_metadata" not in got and "model" not in got
+    other = U.get_requested_anthropic_messages_optional_param(
+        params, model="x", custom_llm_provider="bedrock"
+    )
+    assert "safeguards" not in other
