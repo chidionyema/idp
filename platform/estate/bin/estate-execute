@@ -157,16 +157,19 @@ def run_steps(conn, ticket_id, intent, args):
             failed += 1
             log(f"  exit {rc}  ({dur}ms)")
             if result.stderr:
-                for line in result.stderr.strip().splitlines()[:5]:
+                for line in result.stderr.strip().splitlines()[-20:]:
                     log(f"  stderr: {line}")
+            # Whole output, pass or fail: a truncated or suppressed diagnostic is a blind agent
+            # (2026-09-26: net-forensics lost 96 of 116 lines and every failed step printed nothing).
+            if result.stdout:
+                print(result.stdout.rstrip("\n"))  # stdout — agent captures this
             if on_fail == "halt":
                 close_ticket(conn, ticket_id, "halted", f"step {idx+1} failed")
                 return "halted"
         else:
             log(f"  ok  ({dur}ms)")
             if result.stdout:
-                for line in result.stdout.strip().splitlines()[:20]:
-                    print(line)  # stdout — agent captures this
+                print(result.stdout.rstrip("\n"))  # stdout — agent captures this
 
     status = "ok" if failed == 0 else "broken"
     close_ticket(conn, ticket_id, status)

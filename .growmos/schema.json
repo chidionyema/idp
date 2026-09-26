@@ -14,7 +14,9 @@
     "ISSUE",
     "FEATURE",
     "SPEC",
-    "DEFECT"
+    "DEFECT",
+    "SYSTEM",
+    "GOTCHA"
   ],
   "history": [
     {
@@ -31,6 +33,16 @@
       "note": "added type DEFECT via remember",
       "ts": "2026-09-23T17:41:26Z",
       "version": 3
+    },
+    {
+      "note": "added type SYSTEM via remember",
+      "ts": "2026-09-26T15:53:02Z",
+      "version": 4
+    },
+    {
+      "note": "added type GOTCHA via remember",
+      "ts": "2026-09-26T18:26:40Z",
+      "version": 5
     }
   ],
   "predicate_hints": [
@@ -48,5 +60,5 @@
     "introduced in",
     "fixes"
   ],
-  "version": 3
+  "version": 5
 }

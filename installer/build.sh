@@ -12,7 +12,7 @@ set -e
 # When run from <IDP>/: SCRIPT_DIR = <IDP>/installer, IDP = <IDP>
 # Use realpath for reliable resolution regardless of CWD.
 SCRIPT_DIR="$(cd "$(dirname "$(realpath "$0")")" && pwd)"
-IDP="${IDP:-$SCRIPT_DIR}"
+IDP="${IDP:-$(dirname "$SCRIPT_DIR")}"
 
 PKG="$IDP/installer"
 TMP="$(mktemp -d)"
