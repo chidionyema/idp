@@ -148,7 +148,7 @@ def test_nothing_the_model_wrote_is_touched_and_nothing_is_dropped(
     out = _call(gw, conv)
     assert len(out["messages"]) == len(conv)
     assert out["messages"][0]["role"] == "user"
-    for a, b in zip(conv, out["messages"], strict=True):
+    for a, b in zip(conv, out["messages"]):  # noqa: B905 -- runtime falls back to py3.9, no strict= kwarg
         if a["role"] == "assistant":
             assert a == b
     assert out["tools"][0]["description"] == "d" * 900, (
