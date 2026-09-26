@@ -160,18 +160,24 @@ fi
   if command -v kubeconform >/dev/null 2>&1; then
     if touched clusters/oke/; then
       echo "  kubeconform schema validation (clusters/oke/)..."
-      if kubeconform \
-        -strict -summary -ignore-missing-schemas \
+      _kc_log=$(mktemp)
+      kubeconform \
+        -strict -verbose -summary -ignore-missing-schemas \
         -schema-location default \
         -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-        "$IDP/clusters/oke/" 2>&1; then
-        : # clean
-      else
-        echo "  FAIL kubeconform clusters/oke/"
+        "$IDP/clusters/oke/" 2>&1 | tee "$_kc_log"
+      _kc_rc=${PIPESTATUS[0]}
+      if [ "$_kc_rc" -ne 0 ]; then
+        echo "  FAIL kubeconform clusters/oke/ (exit $_kc_rc)"; fail=1
+      elif grep ' skipped$' "$_kc_log" | grep -qEv '\.toolkit\.fluxcd\.io CustomResourceDefinition skipped$'; then
+        echo "  FAIL kubeconform skipped outside Flux CRD allowlist:"
+        grep ' skipped$' "$_kc_log" | grep -vE '\.toolkit\.fluxcd\.io CustomResourceDefinition skipped$' | sed 's/^/      /'
         fail=1
       fi
+      rm -f "$_kc_log"
     fi
   fi
+
   # kustomize build: compiles the entire Flux tree exactly as the cluster would.
   # Catches: missing kind, broken dependsOn, orphan --- separators, bad patches.
   # Skipped if no clusters/oke/ files changed.
