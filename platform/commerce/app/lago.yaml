@@ -198,7 +198,7 @@ spec:
             newTag: main-12750-76090d283d892b3edb203e81471894681ea4d7a1 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
-            newTag: main-12750-76090d283d892b3edb203e81471894681ea4d7a1 # {"$imagepolicy": "flux-system:lago-front:tag"}
+            newTag: main-12751-51bdad3f7a7675ebf90d2a523620bc5d1e5192f5 # {"$imagepolicy": "flux-system:lago-front:tag"}
           - name: getlago/lago-events-processor
             newName: docker.io/getlago/lago-events-processor
           - name: getlago/lago-gotenberg
