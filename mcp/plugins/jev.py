@@ -20,8 +20,9 @@ ARCHITECTURE (docs/decisions/0030-jevlayer-unified-confidence-and-decision-servi
 
 CONFIG (LAW 46 -- no path or key is a literal in code):
   TYPESAFE_API_KEY           -- TypeSafe API key (from estate-secrets, estate holds the only copy)
-  ESTATE_DB_PATH             -- estate.db path (default /data/estate.db)
+  ESTATE_DB_PATH             -- estate.db path (default $ESTATE_DB, the Fleet page's, else /data/estate.db)
   JEV_MODEL                  -- model name (default jev-1.13.0)
+  JEV_URL                    -- endpoint (default https://api.typesafe.ai/v1/systemone)
   JEV_DEFAULT_CONFIDENCE_FLOOR  -- minimum confidence to consider a decision resolved (default 0.7)
   JEV_TIMEOUT_MS             -- per-call timeout in ms (default 2000)
 
@@ -48,20 +49,26 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 
 
 TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "")
-ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH", "/data/estate.db")
+# ESTATE_DB is what the Fleet page reads (bin/serve-fleetview); falling back to it puts Jev's rows on
+# the board. /data does not exist on the laptop, so without it every write was dropped (2026-09-26).
+ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH") or os.environ.get(
+    "ESTATE_DB", "/data/estate.db"
+)
 JEVD = os.environ.get("JEV_MODEL", "jev-1.13.0")
 DEFAULT_FLOOR = float(os.environ.get("JEV_DEFAULT_CONFIDENCE_FLOOR", "0.7"))
 TIMEOUT_MS = int(os.environ.get("JEV_TIMEOUT_MS", "2000"))
 
-_JEVD_INSTALLED = False
-_TypeSafeClient = None
+JEV_URL = os.environ.get("JEV_URL", "https://api.typesafe.ai/v1/systemone")
 
+# The call below is plain httpx; gating on typesafe_sdk (never used) made every call on a machine
+# without that package fall back to jev_unavailable, key or no key (measured 2026-09-26).
+_JEVD_INSTALLED = False
 try:
-    from typesafe_sdk import TypeSafeClient as _TypeSafeClient
+    import httpx  # noqa: F401
 
     _JEVD_INSTALLED = True
-except ImportError:  # pragma: no cover - CI venv without typesafe-sdk
-    _TypeSafeClient = None
+except ImportError:  # pragma: no cover - venv without httpx
+    pass
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +252,7 @@ def _call_jev(
         }
         with httpx.Client(timeout=timeout_ms / 1000) as client:
             resp = client.post(
-                "https://api.typesafe.ai/v1/systemone",
+                JEV_URL,
                 headers=headers,
                 json=payload,
             )
