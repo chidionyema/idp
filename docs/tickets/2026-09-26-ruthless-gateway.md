@@ -86,7 +86,7 @@ any PR that adds a line to it.
 
 | # | Blocker | Fix |
 |---|---|---|
-| 1 | `TYPESAFE_API_KEY` is absent from the laptop environment and from `secret-load`; `platform/vendors/consoles.yaml` delivers it only to `mcp-gateway` and `dagster` | add a laptop target to the `typesafe` entry; the key arrives through the vault, by name |
+| 1 | `TYPESAFE_API_KEY` is absent from the laptop environment and from `secret-load`; `platform/vendors/consoles.yaml` delivers it only to `mcp-gateway` and `dagster` | **not** a laptop target: LAW 34 (vault-seed.yml, `laptop` entry) says the Mac holds no vendor key and reaches everything with its one router key. The router holds `TYPESAFE_API_KEY` and forwards Jev calls; `JEV_URL` points at the router. Every Jev call then passes the same chokepoint as every model call |
 | 2 | `jev.py` refuses to call unless `typesafe_sdk` imports, but the call uses plain `httpx` (installed, 0.28.1); the SDK is absent, so every call falls back | **fixed on this branch:** the gate now checks `httpx`, which the call uses |
 | 3 | the endpoint `https://api.typesafe.ai/v1/systemone` is a literal in code | **fixed on this branch:** `JEV_URL`, config |
 | 4 | the ledger path defaults to `/data/estate.db`, which does not exist on the laptop; `~/.estate/estate.db` has no `jev_decisions` table | Jev has recorded zero decisions here; point `ESTATE_DB_PATH` at the laptop store and create the table on first write |
