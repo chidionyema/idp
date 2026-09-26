@@ -236,6 +236,9 @@ def clauses(text: str):
 def fleet_summary() -> str:
     """The fleet as a few lines of text, read from the SAME endpoint the room renders.
 
+    NOT what the Fleet page's voice uses -- that is fleetview_backend/voice.py fleet_summary.
+    This one serves only the standalone voice-loop server (bin/voice-loop).
+
     WHY THIS IS NOT OPTIONAL. Measured 2026-09-19, before this existed: asked "what is stuck in the
     fleet right now", the server answered "I don't have live access to your fleet's current state".
     It was telling the truth -- it had been sent a question and nothing else -- and a voice that
