@@ -111,7 +111,17 @@ To invoke: `estate_invoke { intent: <name> }` via MCP, or `estate-execute <name>
 
 Design spec: `docs/specs/2026-09-24-estate-agent-enforcement-platform.md`
 
-## 8. Working style
+## 8. Placement — the free tier decides, not the cluster
+
+Nothing goes on the cluster by default. Place every workload by the ladder in
+`docs/decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md`, first rung
+that fits: delete → GitHub Actions schedule → Grafana Cloud free → Cloudflare Workers free →
+laptop just in time → KEDA scale-to-zero on the node → always-on on the node. Only free tiers that
+need no card or are hard-limited qualify. A PR that adds to the node states its CPU/memory
+requests; the node's requests stay under 1.8 CPU. Before any node reboot, resize or drain,
+calico-node must be Ready on every node.
+
+## 9. Working style
 
 - Only make the change that was asked for. No unsolicited refactoring.
 - Do not guess. Search.
