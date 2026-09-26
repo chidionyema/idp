@@ -497,6 +497,28 @@ model_list:
       timeout: 300
       keep_alive: 24h
 
+  # Claude Code on the founder's Max subscription, through THIS laptop router, not the cluster
+  # (founder, 2026-09-26: "if cluster breaks we are all disabled"). NO api_key ON PURPOSE: the
+  # lane relays the client's own `Authorization: Bearer sk-ant-oat01-...` OAuth token upstream
+  # (LiteLLM forwards the oat01 prefix and drops sk-ant-api03 keys), so the subscription pays
+  # and the estate holds no Anthropic key (2026-09-04 ruling). The client authenticates to this
+  # router with `x-litellm-api-key`, never `Authorization`, or the OAuth token is consumed here.
+  #
+  # The wildcard carries whatever dated id Claude Code sends (claude-opus-5-5,
+  # claude-haiku-4-5-20251001, ...) upstream unchanged. Zero cost fields because Max has no
+  # per-token spend -- without them LiteLLM prices Opus from its own table and the $5/day
+  # max_budget below refuses every call within minutes.
+  #
+  # tests/test_local_claude_max_lane.py fails if this lane, its header forwarding, or its
+  # freedom from aliases is removed -- the cluster copy of this lane was lost that way in the
+  # 2026-09-23 consolidate (8f6298ad) and then aliased to deepseek (#4063).
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
 router_settings:
   # The chain prospector's `noncritical_operator:` already declares, expressed once here
   # instead of in FallbackOperator. `minimax -> minimax_m27` is the documented failover;
@@ -583,8 +605,8 @@ router_settings:
   # answers HTTP 200 in 30.5s, while `kimi` answered HTTP 400 "Invalid model name".
   model_group_alias:
     kimi: moonshot/kimi-k3
-    claude-opus: deepseek
-    claude-opus-5-5: deepseek
+    # No claude-* alias, ever: an alias outranks the `claude-*` lane and silently turns a
+    # Claude Code session into another vendor's model (#4063 did exactly that with deepseek).
   num_retries: 2
   # A tier that keeps failing is taken out of the chain rather than retried into the
   # ground. This is the circuit breaker prospector/breaker.py hand-rolls.
@@ -606,7 +628,7 @@ litellm_settings:
   # LiteLLM imports it from this callbacks entry and discovers proxy_handler_instance. The
   # volume mount and PYTHONPATH env var in platform/llm/litellm.yaml are the other half —
   # both must be present or every request fails with ModuleNotFoundError.
-  callbacks: ["otel", "request_ceiling"]
+  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's
@@ -624,3 +646,8 @@ general_settings:
   # Health checks cost a call per upstream. Off by default; `litellm-status` probes
   # liveliness, which is free.
   background_health_checks: false
+  # Forwards the x-* family and `anthropic-beta` to the `claude-*` lane, which keeps tool
+  # search and beta features working through the router. The OAuth token itself is forwarded
+  # by its sk-ant-oat01 prefix regardless of this flag. `forward_llm_provider_auth_headers` is
+  # deliberately NOT set: that is the x-api-key BYOK path, i.e. an Anthropic API key.
+  forward_client_headers_to_llm_api: true
