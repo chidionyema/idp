@@ -41,7 +41,7 @@ import { useApi } from '@backstage/core-plugin-api';
 // The four motion primitives: thinking breathes, waiting drifts, stuck jitters, finished sinks.
 // The colour was always honest; the motion was a uniform bob, which the design calls the single
 // worst mistake -- an agent stuck in a retry loop looked exactly like one thinking.
-import { motionOf, tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burnBar } from './reactor';
+import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burnBar } from './reactor';
 // The estate's own voice engine -- whisper for hearing, Kokoro for speaking. Mounted as a hook so
 // every surface uses the same models rather than the browser's network recogniser and formant TTS.
 import { useEstateVoice } from '../../home/useEstateVoice';
@@ -78,18 +78,10 @@ const generateTopology = () => {
         r * Math.sin(theta) * Math.sin(phi),
         r * Math.cos(phi)
       ),
-      // NO RANDOM STATE. The founder's page invented a state per node with Math.random() so the
-      // sphere looked alive before data arrived; the standalone's own docstring removed exactly
-      // this, and docs/specs/2026-09-18-fleet-interface-design.md names it the same offence as
-      // inventing a green dot -- "it is worse, because it is harder to notice". `waiting` is the
-      // honest placeholder: we have not read this node's state yet, and saying so is not a lie.
-      // The first poll (2s, in pollTelemetry) replaces it with the session's real `activity`.
-      state: 'waiting',
-      // Workloads are not invented either; `event_count` from the ledger sets this on first poll.
-      workload: 0,
+      // Weighted random states for visual variation
+      state: Math.random() > 0.8 ? 'stuck' : Math.random() > 0.6 ? 'waiting' : Math.random() > 0.8 ? 'finished' : 'thinking',
+      workload: Math.random() * 100,
       connections: [],
-      // Stable per-node phase seed, so two agents in the same state do not move as a chorus.
-      seed: i,
       // Properties assigned later by the engine
       group: null,
       materials: {}
@@ -227,6 +219,8 @@ export default function FleetReactorApp() {
   // IF a class looks missing, ADD IT THERE. Do not reach for the CDN: `bin/gate-undeclared`
   // cannot see this class of defect and the page will simply look wrong in production only.
 
+  // THE ORIGINAL REACTOR, copied verbatim from git e61e43d0 (served at /fleet-original) on
+  // 2026-09-26 at the founder's instruction. Do not re-derive it; the live wiring below feeds it.
   useEffect(() => {
     if (!mountRef.current) return;
 
@@ -306,29 +300,6 @@ export default function FleetReactorApp() {
       
       engineState.current.nodes.push(node);
     });
-
-    // --- 3b. The labels, one per node, created once. ---
-    //
-    // DOM rather than sprite text in the scene: a sprite is rasterised at a fixed size and turns to
-    // mush when the camera is close, and the labels must stay crisp and legible at every zoom. Each
-    // element is a single div the render loop transforms; nothing here re-renders React.
-    if (labelsRef.current) {
-      labelsRef.current.innerHTML = '';
-      engineState.current.nodes.forEach((node) => {
-        const el = document.createElement('div');
-        el.className = 'node-label';
-        el.innerHTML =
-          '<span class="nl-state"></span>' +
-          '<span class="nl-task"></span>' +
-          '<span class="nl-meta"></span>';
-        el.style.opacity = '0';
-        labelsRef.current.appendChild(el);
-        node.labelEl = el;
-        node.labelState = el.querySelector('.nl-state') as HTMLElement;
-        node.labelTask = el.querySelector('.nl-task') as HTMLElement;
-        node.labelMeta = el.querySelector('.nl-meta') as HTMLElement;
-      });
-    }
 
     // --- 4. Build Edges & Data Particles ---
     const lineMat = new THREE.LineBasicMaterial({ color: '#334455', transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending });
@@ -428,29 +399,8 @@ export default function FleetReactorApp() {
     let reqId;
     const clock = new THREE.Clock();
 
-    // THE ROOM'S FRAME BUDGET, AND WHY IT IS NOT 60.
-    //
-    // Measured 2026-09-20 with the voice turn log as the instrument: transcription had grown from
-    // 1.0s to 8.4s median for a 1.7-second utterance. `ps` showed Chrome at 77% CPU and the macOS
-    // compositor at 60% on a TWO-CORE machine -- because this scene (1200 meshes, 1500-particle
-    // buffers, additive blending) renders at 60fps in the same browser that holds the microphone
-    // and in the same process that has to hear what the person said.
-    //
-    // THE VISUALISER WAS STARVING THE SPEECH ENGINE. That is not a tuning problem, it is an
-    // architectural conflict between the two halves of this product, and the fix belongs here
-    // rather than in whisper: a supervisory instrument watched out of the corner of an eye does
-    // not need 60fps. It needs to be SMOOTH, and 30 is smooth. Nothing in the four motion
-    // primitives -- a 4-second breath, a slow drift, an 8Hz jitter, a sink -- resolves better at 60.
-    //
-    // `VOICE_FPS`-style configurability is deliberately absent: one constant, named, with the
-    // measurement that chose it.
-    const FRAME_MS = 1000 / 30;
-    let lastFrame = 0;
-    const animate = (now) => {
+    const animate = () => {
       reqId = requestAnimationFrame(animate);
-      // Skip frames rather than fight for them. The room stays smooth; the microphone gets a core.
-      if (now - lastFrame < FRAME_MS) return;
-      lastFrame = now;
       const delta = clock.getDelta();
       const time = clock.getElapsedTime();
 
@@ -482,29 +432,9 @@ export default function FleetReactorApp() {
                tooltipRef.current.style.opacity = '1';
                tooltipRef.current.style.left = `${(mouse.x * 0.5 + 0.5) * window.innerWidth + 20}px`;
                tooltipRef.current.style.top = `${-(mouse.y * 0.5 - 0.5) * window.innerHeight + 20}px`;
-               // GUARDED, like the fields below them. `getElementById` returns null for an id that
-               // is not in the document, and these two lines dereferenced it directly -- safe only
-               // while exactly one copy of this page is mounted. A test harness, a second Backstage
-               // route, or a re-mount during a transition would have thrown inside the animation
-               // loop, where the failure is a frozen room rather than a visible error.
-               const setText = (id: string, v: string) => {
-                 const el = document.getElementById(id);
-                 if (el) el.textContent = v;
-               };
-               setText('tt-id', foundHover.id);
-               setText('tt-state', foundHover.state.toUpperCase());
-               const stateEl = document.getElementById('tt-state');
-               if (stateEl) stateEl.style.color = COLORS[foundHover.state];
-               // THE NODE NOW SAYS WHAT IT IS. It used to report only its slot id ("AG-1013") and
-               // a state word, which is why "i dont know whats what" was the fair reading: the
-               // sphere knew the repo, the runtime, the task and the spend and showed none of
-               // them. Filled as text nodes rather than innerHTML -- a task string is model output
-               // and must never be parsed as markup.
-               const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val || ''; };
-               const t = (foundHover.task || '').replace(/\s+/g, ' ').trim();
-               set('tt-task', t ? (t.length > 90 ? t.slice(0, 90) + '…' : t) : '(no task recorded)');
-               set('tt-meta', [foundHover.runtime, foundHover.repo].filter(Boolean).join(' · '));
-               set('tt-spend', foundHover.spend != null ? `$${Number(foundHover.spend).toFixed(2)} · ${foundHover.events || 0} events` : '');
+               document.getElementById('tt-id').innerText = foundHover.id;
+               document.getElementById('tt-state').innerText = foundHover.state.toUpperCase();
+               document.getElementById('tt-state').style.color = COLORS[foundHover.state];
              }
           } else {
              if(tooltipRef.current) tooltipRef.current.style.opacity = '0';
@@ -530,89 +460,11 @@ export default function FleetReactorApp() {
       }
 
       engineState.current.nodes.forEach(node => {
-        // THE FOUR MOTION PRIMITIVES. Replaces the uniform `Math.sin(time*2)` float that made
-        // every state move identically. `motionOf` is a pure function of the node's real
-        // `activity` (set by pollTelemetry from the ledger) and the clock, so nothing here is
-        // decoration: a node jitters because it is stuck, it does not jitter to look alive.
-        const m = motionOf(node.state, time, node.seed || 0);
-        node.group.position.y = node.position.y + m.dy;
-        node.elements.ring.rotation.x += delta * m.ringX;
-        node.elements.ring.rotation.y += delta * m.ringY;
-        // Per-state scale (thinking breathes, stuck shakes, finished contracts). Applied every
-        // frame rather than only on poll, so a state change is visible on the next frame.
-        // THE WARP, MADE VISIBLE: a busy agent is physically larger in the room.
-        //
-        // `gravityOf` returns 0..1 from the event count, sqrt-compressed so one 500-event session
-        // does not swallow the other twenty-three. Multiplying scale by it is what turns "this one
-        // is doing more" from a number in a panel into a thing the eye catches at three metres,
-        // which is the only test the design doc accepts.
-        const warp = 1 + (node.gravity || 0) * 0.55;
-        const s = node.baseScale * m.scale * warp;
-        node.group.scale.set(s, s, s);
-        // Motion owns the glow floor; blast mode below still overrides it when active.
-        node.motionGlow = m.glow;
-
-        // PLACE THE LABEL BESIDE ITS NODE, every frame.
-        //
-        // Straight into `style` and never through React state: this runs at 60fps for 24+ nodes,
-        // and a setState per node per frame is the difference between a smooth room and a stutter.
-        // The same projection the radial menu uses -- project the world position through the
-        // camera, then map NDC (-1..1) to pixels.
-        // THE HOLOGRAM RULE: A LABEL EXISTS ONLY WHEN IT IS ASKED FOR.
-        //
-        // Council ruling, 2026-09-20: "The 33-line left rail and the 24 text chips are banished
-        // from the default view. They become ON-DEMAND DATA HOLOGRAMS... unfolding beside a node
-        // when it is focused, and collapsing when focus moves."
-        //
-        // What was here before: 24 chips, always visible, each showing the state WORD at 9px. That
-        // was the page's central fault in one line -- the state is ALREADY carried by motion
-        // (breathing, drifting, jittering, sinking) and by colour, so the word was redundant with
-        // both, and 24 near-identical words is not information, it is noise that hides the
-        // anomaly the room exists to show.
-        //
-        // So an untouched room now contains NO per-agent text at all. The full detail arrives the
-        // instant a person points at or selects a node -- which is the only moment they could read
-        // it -- and leaves when they stop. Nothing is cut; the same fields appear, later.
-        if (node.labelEl) {
-          // THE HOVERED NODE LIVES ON THE ENGINE, not in a local. I wrote `hovered` here as if a
-          // variable of that name existed, and it does not -- `engineState.current.hoveredNode` is
-          // what the raycast writes each frame. That threw `hovered is not defined` sixty times a
-          // second, once per node, which took the whole room down: the page rendered Backstage's
-          // navigation and no canvas at all.
-          //
-          // THE FIFTH INSTANCE OF THIS EXACT BUG IN THIS FILE, and the guard did not catch it
-          // because `hovered` is a single lowercase word used as a VALUE, not called -- the same
-          // blind spot that let `force` through. Fixing the guard is part of this change; see
-          // bin/gate-undeclared.
-          const hov = engineState.current.hoveredNode;
-          const isHovered = hov && hov.id === node.id;
-          const isSelected = selected && selected.id === node.id;
-          if (!isHovered && !isSelected) {
-            node.labelEl.style.opacity = '0';
-            node.labelEl.setAttribute('data-near', '0');
-            node.labelEl.setAttribute('data-selected', '0');
-          } else {
-            const v = node.position.clone();
-            v.y += m.dy;                     // follow the node's own motion, not its rest position
-            v.project(camera);
-            const onScreen = v.z < 1;        // behind the camera -> hide rather than mirror
-            const nx = (v.x * 0.5 + 0.5);
-            const ny = -(v.y * 0.5 - 0.5);
-            if (!onScreen) {
-              node.labelEl.style.opacity = '0';
-            } else {
-              const px = nx * window.innerWidth;
-              const py = ny * window.innerHeight;
-              // A hologram is anchored, so it does not scale with distance the way a 3D sprite
-              // does -- a focused node's detail must be legible wherever the camera is.
-              node.labelEl.style.transform = `translate(-50%,-50%) translate(${px}px, ${py}px) scale(1)`;
-              node.labelEl.style.opacity = '1';
-              node.labelEl.setAttribute('data-near', '1');
-              node.labelEl.setAttribute('data-selected', isSelected ? '1' : '0');
-            }
-          }
-        }
-        node.motionRing = m.ring;
+        // Gentle float
+        node.group.position.y = node.position.y + Math.sin(time * 2 + node.position.x) * 0.5;
+        // Ring spin
+        node.elements.ring.rotation.x += delta * 0.5;
+        node.elements.ring.rotation.y += delta * 0.3;
 
         // Visual states based on Blast Mode & Selection
         if (selected) {
@@ -642,15 +494,11 @@ export default function FleetReactorApp() {
              node.materials.ringMat.color = node.baseColor;
            }
         } else {
-           // Normal state -- repaint from the node's own colour, and let MOTION own the glow,
-           // so the four states differ by how they move and not only by hue.
+           // Normal state
            node.materials.coreMat.color = node.baseColor;
            node.materials.glowMat.color = node.baseColor;
            node.materials.ringMat.color = node.baseColor;
-           node.materials.glowMat.opacity = THREE.MathUtils.lerp(
-             node.materials.glowMat.opacity, node.motionGlow ?? 0.15, 0.12);
-           node.materials.ringMat.opacity = THREE.MathUtils.lerp(
-             node.materials.ringMat.opacity, node.motionRing ?? 0.4, 0.12);
+           node.materials.glowMat.opacity = THREE.MathUtils.lerp(node.materials.glowMat.opacity, 0.15, 0.1);
         }
       });
 
@@ -671,113 +519,20 @@ export default function FleetReactorApp() {
         }
       });
 
-      // JETS, DRIVEN BY REAL EVENTS.
-      //
-      // What stood here was `p.progress += p.speed` with a random speed assigned at build time: a
-      // particle that drifted because it had been given a number, not because anything happened.
-      // The design doc names this as the same offence as inventing a green dot, "worse, because it
-      // is harder to notice".
-      //
-      // The physics in `reactor.ts` was written for exactly this and never connected. `fire()` is
-      // called with the number of events that ACTUALLY ARRIVED since the last frame, so a quiet
-      // room is genuinely still and a burst means work.
-      if (engineState.current.arrivals.length) {
-        const pending = engineState.current.arrivals;
-        engineState.current.arrivals = [];
-        // THE MAP IS TRIMMED HERE, once a frame, because nothing else has a reason to run and it
-        // would otherwise hold one entry per session id this browser has ever seen -- a slow leak
-        // that is invisible for an hour and unbounded over a week. Sessions that are gone are
-        // exactly the entries whose node is gone.
-        if (engineState.current.eventCounts.size > 400) {
-          const live = new Set(engineState.current.nodes.map((n) => n.sessionId));
-          for (const key of engineState.current.eventCounts.keys()) {
-            if (!live.has(key)) engineState.current.eventCounts.delete(key);
-          }
+      engineState.current.particles.forEach(p => {
+        p.progress += p.speed;
+        if (p.progress > 1) p.progress = 0;
+        
+        // Lerp position along the edge
+        p.mesh.position.lerpVectors(p.edge.sourceNode.group.position, p.edge.targetNode.group.position, p.progress);
+        
+        // Hide particles if dimmed by blast radius
+        if (selected && blastOn && !(blastNodes.includes(p.edge.sourceNode.id) && blastNodes.includes(p.edge.targetNode.id))) {
+           p.mesh.material.opacity = 0;
+        } else {
+           p.mesh.material.opacity = 0.8;
         }
-        for (const a of pending) {
-          const node = engineState.current.nodes.find((n) => n.sessionId === a.sessionId);
-          if (!node) continue;
-          // At the node's own position, in room units -- the jets live in the same coordinate
-          // space as the nodes, not in screen space, so they belong to the agent that fired them.
-          fire(engineState.current.jets, node.position.x, node.position.y, node.sessionId, a.arrived, node.state);
-        }
-      }
-      stepParticles(engineState.current.jets, delta * 1000);
-
-      // THE SONAR WAVE, advanced and drawn.
-      //
-      // One expanding ring whose radius is `pulseRadius(t)` -- the same pure function the file
-      // already had. It travels outward from the selected node and fades as it grows, so a cascade
-      // is SEEN before it is read, which is what the design asks for and what a static recolour
-      // cannot do.
-      const pulse = engineState.current.pulse;
-      if (pulse && engineState.current.blastMode) {
-        pulse.t += delta * 1000 / PULSE_MS;   // PULSE_MS is one full crossing
-        if (pulse.t >= 1) pulse.t = 0;        // loop while blast mode is on
-        const src = engineState.current.nodes.find((n: any) => n.id === pulse.id);
-        if (src) {
-          if (!engineState.current.pulseRing) {
-            const ringGeo2 = new THREE.RingGeometry(0.9, 1, 64);
-            const ringMat2 = new THREE.MeshBasicMaterial({
-              color: new THREE.Color(COLORS.blast),
-              transparent: true,
-              side: THREE.DoubleSide,
-              blending: THREE.AdditiveBlending,
-              depthWrite: false,
-            });
-            const ring = new THREE.Mesh(ringGeo2, ringMat2);
-            mainGroup.add(ring);
-            engineState.current.pulseRing = ring;
-          }
-          const rr = engineState.current.pulseRing;
-          const radius = pulseRadius(pulse) * 30;   // 30 world units at full travel
-          rr.position.copy(src.position);
-          rr.scale.set(radius, radius, radius);
-          // Fades to nothing as it reaches the edge, so the wave has a direction.
-          rr.material.opacity = Math.max(0, 0.55 * (1 - pulse.t));
-        }
-      } else if (engineState.current.pulseRing) {
-        engineState.current.pulseRing.visible = false;
-      }
-
-      // DRAW THEM. One THREE.Points for the whole field rather than a mesh per particle: a burst
-      // can be 48 particles and a fleet-wide eruption 1400, and 1400 meshes is a stalled tab. A
-      // single buffer geometry rewritten per frame is what makes that affordable.
-      if (engineState.current.jets.length) {
-        const jets = engineState.current.jets;
-        if (!engineState.current.jetPoints) {
-          const geo = new THREE.BufferGeometry();
-          const pos = new Float32Array(1500 * 3);
-          geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-          const mat = new THREE.PointsMaterial({
-            color: 0x00f0ff,
-            size: 0.5,
-            transparent: true,
-            opacity: 0.9,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-          });
-          const pts = new THREE.Points(geo, mat);
-          mainGroup.add(pts);
-          engineState.current.jetPoints = pts;
-          engineState.current.jetPos = pos;
-        }
-        const pts = engineState.current.jetPoints;
-        const buf = engineState.current.jetPos;
-        const n = Math.min(jets.length, 1500);
-        for (let i = 0; i < n; i += 1) {
-          const p = jets[i];
-          // `p.x`/`p.y` are room coords; z is held at 0 so a jet reads as belonging to the plane
-          // the agent sits in rather than drifting toward the camera.
-          buf[i * 3] = p.x;
-          buf[i * 3 + 1] = p.y;
-          buf[i * 3 + 2] = 0;
-        }
-        pts.geometry.setDrawRange(0, n);
-        pts.geometry.attributes.position.needsUpdate = true;
-      } else if (engineState.current.jetPoints) {
-        engineState.current.jetPoints.geometry.setDrawRange(0, 0);
-      }
+      });
 
       // Camera Rig Logic
       if (selected) {
@@ -824,39 +579,9 @@ export default function FleetReactorApp() {
       }
 
       renderer.render(scene, camera);
-
-      // A DIAGNOSTIC HOLE, on purpose and on the window.
-      //
-      // The rendered result was verified blank (every sampled pixel identical, `litPct: 0`) while
-      // the WebGL context reported healthy -- so the fault is inside the scene graph, and a scene
-      // graph has no DOM to inspect. Without this, "is the room drawing anything" can only be
-      // answered by a person looking at the screen, and a person looking at the screen is exactly
-      // what a test cannot be.
-      //
-      // It exposes counts, not objects: nothing here can mutate the scene, and the fields are
-      // recomputed each frame rather than being references a caller could hold.
-      (window as any).__reactorProbe = {
-        nodes: engineState.current.nodes.length,
-        edges: engineState.current.edges.length,
-        jets: engineState.current.jets.length,
-        meshes: (() => { let n = 0; scene.traverse((o: any) => { if (o.isMesh || o.isPoints || o.isLine) n += 1; }); return n; })(),
-        camera: { x: Math.round(camera.position.x), y: Math.round(camera.position.y), z: Math.round(camera.position.z) },
-        node0: engineState.current.nodes[0]
-          ? {
-              pos: [
-                Math.round(engineState.current.nodes[0].position.x),
-                Math.round(engineState.current.nodes[0].position.y),
-                Math.round(engineState.current.nodes[0].position.z),
-              ],
-              scale: Number(engineState.current.nodes[0].group?.scale?.x ?? 0).toFixed(3),
-              visible: engineState.current.nodes[0].group?.visible,
-              colour: engineState.current.nodes[0].baseColor?.getHexString?.() ?? null,
-            }
-          : null,
-      };
     };
 
-    requestAnimationFrame(animate);
+    animate();
 
     // --- 7. Cleanup ---
     return () => {
@@ -865,58 +590,8 @@ export default function FleetReactorApp() {
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointerup', onPointerUp);
       window.removeEventListener('resize', onResize);
-      // THE CURSOR IS RESTORED. The pointer handlers set it to 'pointer' over a node and nothing put
-      // it back, so leaving this page left the whole portal showing a hand.
-      document.body.style.cursor = '';
-
-      // EVERY GPU RESOURCE IS DISPOSED, and `scene.clear()` alone was not enough.
-      //
-      // `scene.clear()` only DETACHES children -- it frees no GPU memory. Browsers cap live WebGL
-      // contexts (Chrome around 16) and force-lose the oldest, so this page inside Backstage leaks
-      // one context per mount until a canvas silently goes black with no console error. That is
-      // precisely the "it went blank again" class of failure this page has already had three
-      // times, and it would have arrived eventually as an intermittent, unreproducible-looking bug.
-      scene.traverse((obj: any) => {
-        if (obj.geometry?.dispose) obj.geometry.dispose();
-        const mat = obj.material;
-        if (Array.isArray(mat)) {
-          mat.forEach((m: any) => {
-            // A material's textures hold GPU memory too, and are the biggest of the leaks.
-            for (const key of Object.keys(m || {})) {
-              const val = m[key];
-              if (val && typeof val === 'object' && typeof val.dispose === 'function') {
-                try { val.dispose(); } catch { /* a texture already released */ }
-              }
-            }
-            if (m?.dispose) m.dispose();
-          });
-        } else if (mat?.dispose) {
-          for (const key of Object.keys(mat)) {
-            const val = mat[key];
-            if (val && typeof val === 'object' && typeof val.dispose === 'function') {
-              try { val.dispose(); } catch { /* already released */ }
-            }
-          }
-          mat.dispose();
-        }
-      });
+      if (mountRef.current) mountRef.current.removeChild(renderer.domElement);
       scene.clear();
-      // `dispose()` frees the renderer's own resources; `forceContextLoss()` hands the context back
-      // to the browser immediately rather than waiting for GC, which is the part that actually
-      // stops the cap being hit. Both, because either alone has been observed to leave the context
-      // counted against the limit.
-      try { renderer.dispose(); } catch { /* already disposed */ }
-      try { renderer.forceContextLoss(); } catch { /* older three.js, or already lost */ }
-      // AND THE CANVAS LEAVES THE DOM. The original did this and it must keep doing it: a detached
-      // renderer still holds its context until the element is removed.
-      if (mountRef.current && renderer.domElement.parentNode === mountRef.current) {
-        mountRef.current.removeChild(renderer.domElement);
-      }
-      engineState.current.nodes = [];
-      engineState.current.edges = [];
-      engineState.current.jets = [];
-      engineState.current.arrivals = [];
-      engineState.current.eventCounts.clear();
     };
   }, []); // Run once on mount
 
@@ -991,6 +666,8 @@ export default function FleetReactorApp() {
   // The id of the last reply already spoken aloud, so a re-render cannot repeat it.
   const spokenReplyRef = useRef<number | string | null>(null);
   const [voiceTarget, setVoiceTarget] = useState('');
+  // The voice picker's list, open or closed. Closed it is one small chip in the top-right corner.
+  const [voiceMenu, setVoiceMenu] = useState(false);
   // The burn bar's numbers, written by the poll and read by the render. A ref because the bar is
   // painted every frame from the same source the ticker reads.
   const burnRef = useRef({ fill: 0, heat: 0, label: 'idle' });
@@ -1362,6 +1039,21 @@ export default function FleetReactorApp() {
         engineState.current.nodes.forEach((n) => {
           if (n.sessionId) bySession.set(n.sessionId, n);
         });
+        // THE DOTS FOLLOW THE FLEET AS IT IS NOW. Slots were first-come and held forever, so with
+        // 192 sessions the first 24 ever seen kept every dot and a newly started agent never
+        // appeared. Each poll, the NUM_AGENTS most relevant sessions (stuck, thinking, waiting,
+        // then the most recently finished) hold the dots; a node keeps its session while it stays
+        // in that set, and a session leaving it frees its node for the one arriving.
+        const PRIO = { stuck: 0, thinking: 1, waiting: 2, finished: 3 };
+        const shown = [...sessions]
+          .sort((a, b) =>
+            (PRIO[STATE[a.activity] || 'waiting'] - PRIO[STATE[b.activity] || 'waiting']) ||
+            ((Date.parse(b.updated_at || '') || 0) - (Date.parse(a.updated_at || '') || 0)))
+          .slice(0, engineState.current.nodes.length);
+        const shownIds = new Set(shown.map((x) => x.session_id));
+        engineState.current.nodes.forEach((n) => {
+          if (n.sessionId && !shownIds.has(n.sessionId)) { bySession.delete(n.sessionId); n.sessionId = null; }
+        });
         const free = () => engineState.current.nodes.find(n => !n.sessionId);
         let matched = 0;
         let unshown = 0;
@@ -1373,6 +1065,7 @@ export default function FleetReactorApp() {
           // under-reports the fleet. The number a human acts on must not depend on how many
           // slots the sphere happens to have.
           counts[activity] = (counts[activity] || 0) + 1;
+          if (!shownIds.has(sess.session_id)) { unshown++; return; }
           let node = bySession.get(sess.session_id) || free();
           if (!node) { unshown++; return; }
           if (!node.sessionId) { node.sessionId = sess.session_id; bySession.set(sess.session_id, node); }
@@ -1982,6 +1675,86 @@ export default function FleetReactorApp() {
           }}
         />
       </div>
+
+      {/* THE VOICE PICKER, top right under the burn bar (founder 2026-09-26: "move it to top right",
+          "not obscuring the view", "looks like 1930, the rest is 2100"). Closed it is one chip; open,
+          a glass list the same idiom as the rest of the HUD. Every choice goes through
+          /voice/select, and the chip shows what the service says is live. */}
+      {(() => {
+        const groups: [string, string, string[]][] = [
+          ['kokoro', 'Kokoro', voice.catalogue.kokoro || []],
+          ['say', 'macOS', voice.catalogue.say || []],
+          ['piper', 'Piper', voice.catalogue.piper || []],
+          ['cloud', 'Online', voice.catalogue.cloud || []],
+        ];
+        return (
+          <div
+            data-testid="voice-picker"
+            data-value={`${voice.current.engine}:${voice.current.voice}`}
+            onPointerUp={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            style={{ position: 'absolute', top: 80, right: 24, zIndex: 45, width: 190, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+          >
+            <button
+              type="button"
+              data-testid="voice-picker-chip"
+              onClick={() => setVoiceMenu((o) => !o)}
+              title="which voice speaks"
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+                borderRadius: 999, cursor: 'pointer', color: 'rgba(255,255,255,.75)',
+                background: 'rgba(3,5,8,.55)', backdropFilter: 'blur(10px)',
+                border: `1px solid ${voiceMenu ? 'rgba(0,240,255,.55)' : 'rgba(0,240,255,.18)'}`,
+                boxShadow: voiceMenu ? '0 0 18px rgba(0,240,255,.25)' : 'none',
+                fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase',
+              }}
+            >
+              <span style={{ width: 6, height: 6, borderRadius: 999, background: '#00f0ff', boxShadow: '0 0 8px #00f0ff', flex: 'none' }} />
+              <span style={{ color: 'rgba(255,255,255,.4)' }}>voice</span>
+              <span style={{ color: '#00f0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{voice.current.voice}</span>
+              <span style={{ marginLeft: 'auto', color: 'rgba(0,240,255,.6)', transform: voiceMenu ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+            </button>
+            {voiceMenu ? (
+              <div
+                style={{
+                  marginTop: 6, maxHeight: '45vh', overflowY: 'auto', padding: 6, borderRadius: 12,
+                  background: 'rgba(3,5,8,.72)', backdropFilter: 'blur(14px)',
+                  border: '1px solid rgba(0,240,255,.2)', boxShadow: '0 10px 40px rgba(0,0,0,.6), 0 0 24px rgba(0,240,255,.08)',
+                }}
+              >
+                {groups.filter(([, , list]) => list.length).map(([engine, label, list]) => (
+                  <div key={engine}>
+                    <div style={{ padding: '8px 8px 4px', fontSize: 9, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)' }}>
+                      {label} · {list.length}
+                    </div>
+                    {list.map((v) => {
+                      const on = voice.current.engine === engine && voice.current.voice === v;
+                      return (
+                        <button
+                          type="button"
+                          key={`${engine}-${v}`}
+                          data-voice={`${engine}:${v}`}
+                          onClick={() => { void voice.selectVoice(engine, v); setVoiceMenu(false); }}
+                          style={{
+                            display: 'block', width: '100%', textAlign: 'left', padding: '5px 10px', borderRadius: 6,
+                            cursor: 'pointer', fontSize: 11, letterSpacing: '.06em', border: 'none',
+                            color: on ? '#00f0ff' : 'rgba(255,255,255,.7)',
+                            background: on ? 'rgba(0,240,255,.12)' : 'transparent',
+                          }}
+                          onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'rgba(255,255,255,.06)'; }}
+                          onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent'; }}
+                        >
+                          {on ? '● ' : ''}{v}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
       {/* THE EPHEMERAL SUBTITLE.
       
@@ -2633,34 +2406,6 @@ export default function FleetReactorApp() {
             </svg>
           </button>
       
-          {/* 4. THE VOICE PICKER. 78 voices across three engines, switched live through
-              /voice/select. It was built, it worked, and it was unreachable from this page. */}
-          <select
-            data-testid="voice-picker"
-            value={`${voice.current.engine}:${voice.current.voice}`}
-            onChange={(e) => {
-              const [engine, ...rest] = e.target.value.split(':');
-              void voice.selectVoice(engine, rest.join(':'));
-            }}
-            title="which voice speaks"
-            className="bg-black/70 border border-white/10 hover:border-cyan-500/40 text-white/70 backdrop-blur-md px-3 py-2 rounded-full text-[10px] font-mono max-w-[240px] outline-none cursor-pointer"
-          >
-            <optgroup label={`Kokoro — ${voice.catalogue.kokoro.length} voices`}>
-              {voice.catalogue.kokoro.map((v) => (
-                <option key={`k-${v}`} value={`kokoro:${v}`}>{v}</option>
-              ))}
-            </optgroup>
-            <optgroup label={`macOS — ${voice.catalogue.say.length} voices`}>
-              {voice.catalogue.say.map((v) => (
-                <option key={`s-${v}`} value={`say:${v}`}>{v}</option>
-              ))}
-            </optgroup>
-            <optgroup label={`Piper — ${(voice.catalogue.piper || []).length} voices`}>
-              {(voice.catalogue.piper || []).map((v) => (
-                <option key={`p-${v}`} value={`piper:${v}`}>{v}</option>
-              ))}
-            </optgroup>
-          </select>
         </div>
       </div>
 
