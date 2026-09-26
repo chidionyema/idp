@@ -1,228 +1,249 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-09-26T04:46:09Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-09-26T09:45:16Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**120 objects: 23 ready, 95 not ready, 0 unknown, 2 suspended.**
+**120 objects: 3 ready, 116 not ready, 0 unknown, 1 suspended.**
 
 ## Not ready right now
 
+- **HelmRelease cert-manager/cert-manager** since 2026-09-26T09:39:05Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/cert-manager/cert-manager-cert-manager/cert-manager-v1.21.1.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/cert-manager/cert-manager-cert-manager/cert-manager-v1.21.1.tgz": dial tcp 10.96.202.29:80: connect: connection refused
 - **HelmRelease commerce/lago** since 2026-09-25T23:28:09Z: Could not determine release state: unable to determine state for release with status 'uninstalling'
-- **HelmRelease coroot/coroot** since 2026-09-26T04:44:10Z: Helm install failed for release coroot/coroot with chart coroot@0.22.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease crossplane-system/crossplane** since 2026-09-26T04:44:52Z: Helm upgrade failed for release crossplane-system/crossplane with chart crossplane@1.15.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease dagster/dagster** since 2026-09-26T04:29:36Z: Helm upgrade failed for release dagster/dagster with chart dagster@1.13.19: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2779 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease flux-system/vendor-bridge** since 2026-09-26T04:42:50Z: Helm install failed for release flux-system/vendor-bridge with chart vendor-bridge@0.1.0+2c28957f69eb: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2729 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
+- **HelmRelease coroot/coroot** since 2026-09-26T08:54:10Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/coroot/coroot-coroot/coroot-0.22.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/coroot/coroot-coroot/coroot-0.22.0.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease crossplane-system/crossplane** since 2026-09-26T08:16:56Z: Helm upgrade failed for release crossplane-system/crossplane with chart crossplane@1.15.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
+- **HelmRelease dagster/dagster** since 2026-09-26T09:31:54Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/dagster/dagster-dagster/dagster-1.13.19.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/dagster/dagster-dagster/dagster-1.13.19.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease edge/external-dns** since 2026-09-26T08:44:55Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-external-dns/external-dns-1.21.1.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-external-dns/external-dns-1.21.1.tgz": dial tcp 10.96.202.29:80: i/o timeout (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease edge/traefik** since 2026-09-26T09:42:40Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-traefik/traefik-41.3.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-traefik/traefik-41.3.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease estate-db/cloudnative-pg** since 2026-09-26T09:35:29Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/estate-db/estate-db-cloudnative-pg/cloudnative-pg-0.29.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/estate-db/estate-db-cloudnative-pg/cloudnative-pg-0.29.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease external-secrets/external-secrets** since 2026-09-26T09:42:41Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/external-secrets/external-secrets-external-secrets/external-secrets-2.9.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/external-secrets/external-secrets-external-secrets/external-secrets-2.9.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease flux-system/vendor-bridge** since 2026-09-26T09:21:55Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/flux-system/flux-system-vendor-bridge/vendor-bridge-0.1.0+afe742ea9614.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/flux-system/flux-system-vendor-bridge/vendor-bridge-0.1.0+afe742ea9614.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease healing/descheduler** since 2026-09-26T09:12:40Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-descheduler/descheduler-0.36.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-descheduler/descheduler-0.36.0.tgz": dial tcp 10.96.202.29:80: i/o timeout (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease healing/k8sgpt-operator** since 2026-09-26T08:35:39Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-k8sgpt-operator/k8sgpt-operator-0.2.29.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-k8sgpt-operator/k8sgpt-operator-0.2.29.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease identity/oauth2-proxy** since 2026-09-26T09:31:54Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/identity/identity-oauth2-proxy/oauth2-proxy-10.7.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/identity/identity-oauth2-proxy/oauth2-proxy-10.7.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease keda/keda-add-ons-http** since 2026-09-26T09:39:05Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/keda/keda-keda-add-ons-http/keda-add-ons-http-0.15.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/keda/keda-keda-add-ons-http/keda-add-ons-http-0.15.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease kyverno/kyverno** since 2026-09-26T09:35:29Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/kyverno/kyverno-kyverno/kyverno-3.9.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/kyverno/kyverno-kyverno/kyverno-3.9.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease metrics-server/metrics-server** since 2026-09-26T09:12:40Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/metrics-server/metrics-server-metrics-server/metrics-server-3.14.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/metrics-server/metrics-server-metrics-server/metrics-server-3.14.0.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease monitoring/blackbox** since 2026-09-26T09:39:06Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-blackbox/prometheus-blackbox-exporter-11.17.2.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-blackbox/prometheus-blackbox-exporter-11.17.2.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease monitoring/kube-prometheus-stack** since 2026-09-26T08:44:55Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-kube-prometheus-stack/kube-prometheus-stack-88.6.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-kube-prometheus-stack/kube-prometheus-stack-88.6.0.tgz": dial tcp 10.96.202.29:80: i/o timeout (Client.Timeout exceeded while awaiting headers)
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
-- **HelmRelease observability/signoz** since 2026-09-26T04:44:26Z: Helm upgrade failed for release observability/signoz with chart signoz@0.138.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease robusta/robusta** since 2026-09-26T04:45:08Z: Helm upgrade failed for release robusta/robusta with chart robusta@0.48.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease spire-mgmt/spire** since 2026-09-26T04:44:36Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **HelmRelease trivy-system/trivy-operator** since 2026-09-26T04:43:43Z: Helm install failed for release trivy-system/trivy-operator with chart trivy-operator@0.36.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
-- **Kustomization flux-system/acg** since 2026-09-26T00:02:50Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/agent-workforce** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/alerts** since 2026-09-26T00:02:50Z: dependency 'flux-system/alerts-secret' is not ready
-- **Kustomization flux-system/alerts-github** since 2026-09-26T00:02:50Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/alerts-secret** since 2026-09-26T00:02:51Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/autoscaler** since 2026-09-26T00:02:51Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/backstage** since 2026-09-26T00:59:50Z: dependency 'flux-system/backstage-namespace' is not ready
-- **Kustomization flux-system/backstage-namespace** since 2026-09-26T04:40:04Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/calico** since 2026-09-26T04:40:02Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/cluster-state** since 2026-09-26T00:29:22Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/commerce** since 2026-09-26T00:29:22Z: dependency 'flux-system/commerce-data' is not ready
-- **Kustomization flux-system/commerce-data** since 2026-09-26T00:02:50Z: dependency 'flux-system/external-secrets' is not ready
-- **Kustomization flux-system/concierge** since 2026-09-26T00:02:50Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/coroot** since 2026-09-26T00:02:50Z: dependency 'flux-system/monitoring' is not ready
-- **Kustomization flux-system/crossplane** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/crossplane-providerconfig** since 2026-09-26T00:02:50Z: dependency 'flux-system/crossplane-providers' is not ready
-- **Kustomization flux-system/crossplane-providers** since 2026-09-26T00:02:50Z: dependency 'flux-system/crossplane' is not ready
-- **Kustomization flux-system/crossplane-storage-capability** since 2026-09-26T00:02:50Z: dependency 'flux-system/crossplane-providerconfig' is not ready
-- **Kustomization flux-system/dagster** since 2026-09-26T00:02:51Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/dns** since 2026-09-26T00:02:51Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/edge** since 2026-09-26T00:59:50Z: dependency 'flux-system/gateway-api-crds' is not ready
-- **Kustomization flux-system/epistemic-fabric** since 2026-09-26T00:02:55Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/estate-catalog** since 2026-09-26T04:45:09Z: Reconciliation in progress
-- **Kustomization flux-system/estate-db** since 2026-09-26T00:20:46Z: dependency 'flux-system/estate-db-operator' is not ready
-- **Kustomization flux-system/estate-db-migrate** since 2026-09-26T00:20:46Z: dependency 'flux-system/estate-db' is not ready
-- **Kustomization flux-system/estate-db-operator** since 2026-09-26T04:40:04Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d7705b83a.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/event-bus** since 2026-09-26T00:58:32Z: dependency 'flux-system/priority-classes' is not ready
-- **Kustomization flux-system/external-secrets** since 2026-09-26T00:29:22Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/feature-register** since 2026-09-26T00:59:50Z: dependency 'flux-system/backstage-namespace' is not ready
-- **Kustomization flux-system/flux-webhook** since 2026-09-26T00:02:50Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/gateway-api-crds** since 2026-09-26T04:45:10Z: Reconciliation in progress
-- **Kustomization flux-system/github-app-creds** since 2026-09-26T00:02:50Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/guacamole** since 2026-09-26T00:02:51Z: dependency 'flux-system/identity' is not ready
-- **Kustomization flux-system/gvisor-runtime** since 2026-09-26T00:09:47Z: dependency 'flux-system/nodesoftware-operator' is not ready
-- **Kustomization flux-system/healing** since 2026-09-26T00:20:45Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/healing-analyzer** since 2026-09-26T00:22:52Z: dependency 'flux-system/healing-k8sgpt' is not ready
-- **Kustomization flux-system/healing-k8sgpt** since 2026-09-26T00:29:22Z: dependency 'flux-system/healing' is not ready
-- **Kustomization flux-system/healthchecks** since 2026-09-26T00:02:50Z: dependency 'flux-system/identity' is not ready
-- **Kustomization flux-system/hermes-agent** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/hindsight** since 2026-09-26T00:02:50Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/human-vault** since 2026-09-26T00:02:50Z: dependency 'flux-system/external-secrets' is not ready
-- **Kustomization flux-system/human-vault-bridge** since 2026-09-26T00:02:50Z: dependency 'flux-system/human-vault' is not ready
-- **Kustomization flux-system/identity** since 2026-09-26T00:02:50Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/idp-agent** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/image-automation** since 2026-09-26T00:02:51Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/jit** since 2026-09-26T00:59:50Z: dependency 'flux-system/rbac-floor' is not ready
-- **Kustomization flux-system/keda** since 2026-09-26T00:02:55Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/kyverno** since 2026-09-26T04:31:29Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/llm** since 2026-09-26T00:20:45Z: dependency 'flux-system/estate-db-migrate' is not ready
-- **Kustomization flux-system/mcp** since 2026-09-26T00:20:46Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/metrics-server** since 2026-09-26T00:22:52Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/monitoring** since 2026-09-26T00:29:21Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/monitoring-rules** since 2026-09-26T00:29:22Z: dependency 'flux-system/monitoring' is not ready
-- **Kustomization flux-system/nodesoftware-operator** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/notify** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/ns-fences** since 2026-09-26T04:22:53Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/1273ba83e53072b432b7d27e2bd2e829e27570a8.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/1273ba83e53072b432b7d27e2bd2e829e27570a8.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/observability** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/observability-collector** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/otto-gateway** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/otto-golden** since 2026-09-26T00:02:50Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/otto-golden-secret** since 2026-09-26T00:02:50Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/priority-classes** since 2026-09-26T04:31:29Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/prospector** since 2026-09-26T00:00:26Z: dependency 'flux-system/prospector-platform' is not ready
-- **Kustomization flux-system/prospector-platform** since 2026-09-26T00:02:51Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/rbac** since 2026-09-26T00:02:55Z: dependency 'flux-system/rbac-identity' is not ready
-- **Kustomization flux-system/rbac-floor** since 2026-09-26T04:40:04Z: Reconciliation in progress
-- **Kustomization flux-system/rbac-identity** since 2026-09-26T04:45:10Z: Reconciliation in progress
-- **Kustomization flux-system/reloader** since 2026-09-26T00:20:46Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/research-engine** since 2026-09-26T00:22:49Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/robusta** since 2026-09-26T00:22:58Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/router-events** since 2026-09-26T00:29:22Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/sandbox-launch** since 2026-09-26T00:29:22Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/sandbox-live** since 2026-09-26T04:31:27Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/sandbox-launch/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/sandbox-launch/76090d283d892b3edb203e81471894681ea4d7a1.tar.gz": dial tcp 10.96.202.29:80: i/o timeout
-- **Kustomization flux-system/scheduling** since 2026-09-26T00:29:21Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/science** since 2026-09-26T00:20:45Z: dependency 'flux-system/observability' is not ready
-- **Kustomization flux-system/searxng** since 2026-09-26T04:40:04Z: Reconciliation in progress
-- **Kustomization flux-system/secret-store** since 2026-09-26T00:22:58Z: dependency 'flux-system/external-secrets' is not ready
-- **Kustomization flux-system/spire** since 2026-09-26T00:29:21Z: dependency 'flux-system/scheduling' is not ready
-- **Kustomization flux-system/staging** since 2026-09-26T04:40:02Z: Reconciliation in progress
-- **Kustomization flux-system/tailscale** since 2026-09-26T00:20:45Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/temporal** since 2026-09-26T00:29:21Z: dependency 'flux-system/edge' is not ready
-- **Kustomization flux-system/trivy** since 2026-09-26T04:40:04Z: Reconciliation in progress
-- **Kustomization flux-system/verification** since 2026-09-26T00:58:32Z: dependency 'flux-system/backstage-namespace' is not ready
-- **Kustomization flux-system/via-negativa** since 2026-09-26T00:29:22Z: dependency 'flux-system/secret-store' is not ready
-- **Kustomization flux-system/weave-gitops** since 2026-09-26T00:29:22Z: dependency 'flux-system/identity' is not ready
+- **HelmRelease observability/signoz** since 2026-09-26T09:35:30Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-signoz/signoz-0.138.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-signoz/signoz-0.138.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease observability/superset** since 2026-09-26T08:54:10Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-superset/superset-0.22.4.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-superset/superset-0.22.4.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease observability-agent/k8s-infra** since 2026-09-26T09:31:54Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability-agent/observability-agent-k8s-infra/k8s-infra-0.17.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/observability-agent/observability-agent-k8s-infra/k8s-infra-0.17.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease reloader/reloader** since 2026-09-26T09:42:40Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/reloader/reloader-reloader/reloader-2.2.16.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/reloader/reloader-reloader/reloader-2.2.16.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease robusta/robusta** since 2026-09-26T09:42:43Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/robusta/robusta-robusta/robusta-0.48.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/robusta/robusta-robusta/robusta-0.48.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease spire-mgmt/spire** since 2026-09-26T08:15:32Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denied the request: OKE resource leak protection rejected the request. Cluster has 2778 secrets and the limit is 2000. See https://docs.oracle.com/iaas/Content/ContEng/Tasks/contengprotectingclustersfromresourceleaks.htm for details.
+- **HelmRelease spire-mgmt/spire-crds** since 2026-09-26T09:31:54Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/spire-mgmt/spire-mgmt-spire-crds/spire-crds-0.6.1.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/spire-mgmt/spire-mgmt-spire-crds/spire-crds-0.6.1.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease tailscale/tailscale-operator** since 2026-09-26T09:39:08Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/tailscale/tailscale-tailscale-operator/tailscale-operator-1.102.3.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/tailscale/tailscale-tailscale-operator/tailscale-operator-1.102.3.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease temporal/temporal** since 2026-09-26T09:35:33Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/temporal/temporal-temporal/temporal-1.6.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/temporal/temporal-temporal/temporal-1.6.0.tgz": dial tcp 10.96.202.29:80: connect: connection refused
+- **HelmRelease trivy-system/trivy-operator** since 2026-09-26T09:21:55Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/trivy-system/trivy-system-trivy-operator/trivy-operator-0.36.0.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/trivy-system/trivy-system-trivy-operator/trivy-operator-0.36.0.tgz": dial tcp 10.96.202.29:80: i/o timeout (Client.Timeout exceeded while awaiting headers)
+- **HelmRelease weave-gitops/weave-gitops** since 2026-09-26T09:21:55Z: Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/weave-gitops/weave-gitops-weave-gitops/weave-gitops-4.0.36.tgz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./helmchart/weave-gitops/weave-gitops-weave-gitops/weave-gitops-4.0.36.tgz": context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+- **Kustomization flux-system/acg** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/agent-workforce** since 2026-09-26T08:34:59Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/alerts** since 2026-09-26T08:34:59Z: dependency 'flux-system/alerts-secret' is not ready
+- **Kustomization flux-system/alerts-github** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/alerts-secret** since 2026-09-26T08:34:59Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/autoscaler** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/backstage** since 2026-09-26T08:34:59Z: dependency 'flux-system/backstage-namespace' is not ready
+- **Kustomization flux-system/backstage-namespace** since 2026-09-26T09:41:06Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/calico** since 2026-09-26T09:43:21Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/cluster-state** since 2026-09-26T08:34:59Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/commerce** since 2026-09-26T08:34:59Z: dependency 'flux-system/commerce-data' is not ready
+- **Kustomization flux-system/commerce-data** since 2026-09-26T08:34:58Z: dependency 'flux-system/external-secrets' is not ready
+- **Kustomization flux-system/concierge** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/coroot** since 2026-09-26T08:34:59Z: dependency 'flux-system/monitoring' is not ready
+- **Kustomization flux-system/crossplane** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/crossplane-providerconfig** since 2026-09-26T08:34:58Z: dependency 'flux-system/crossplane-providers' is not ready
+- **Kustomization flux-system/crossplane-providers** since 2026-09-26T08:34:58Z: dependency 'flux-system/crossplane' is not ready
+- **Kustomization flux-system/crossplane-storage-capability** since 2026-09-26T08:34:58Z: dependency 'flux-system/crossplane-providerconfig' is not ready
+- **Kustomization flux-system/dagster** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/dns** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/edge** since 2026-09-26T09:23:12Z: dependency 'flux-system/gateway-api-crds' is not ready
+- **Kustomization flux-system/epistemic-fabric** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/estate-catalog** since 2026-09-26T09:29:56Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./ocirepository/flux-system/estate-catalog/sha256:ed8d542c896ad74a43011d0c558fd9a4816813b2679ca496cff5e66127fb2d40.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./ocirepository/flux-system/estate-catalog/sha256:ed8d542c896ad74a43011d0c558fd9a4816813b2679ca496cff5e66127fb2d40.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/estate-db** since 2026-09-26T08:34:58Z: dependency 'flux-system/estate-db-operator' is not ready
+- **Kustomization flux-system/estate-db-migrate** since 2026-09-26T08:34:58Z: dependency 'flux-system/estate-db' is not ready
+- **Kustomization flux-system/estate-db-operator** since 2026-09-26T09:38:29Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/event-bus** since 2026-09-26T08:34:58Z: dependency 'flux-system/priority-classes' is not ready
+- **Kustomization flux-system/external-secrets** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/feature-register** since 2026-09-26T08:48:02Z: dependency 'flux-system/backstage-namespace' is not ready
+- **Kustomization flux-system/flux-system** since 2026-09-26T09:34:12Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/flux-webhook** since 2026-09-26T08:34:59Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/gateway-api-crds** since 2026-09-26T09:34:11Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/gateway-api/e7677b70ae75d14a4448fba94870e7deea6cf0ad.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/gateway-api/e7677b70ae75d14a4448fba94870e7deea6cf0ad.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/github-app-creds** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/guacamole** since 2026-09-26T08:34:59Z: dependency 'flux-system/identity' is not ready
+- **Kustomization flux-system/gvisor-runtime** since 2026-09-26T08:34:58Z: dependency 'flux-system/nodesoftware-operator' is not ready
+- **Kustomization flux-system/healing** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/healing-analyzer** since 2026-09-26T08:34:59Z: dependency 'flux-system/healing-k8sgpt' is not ready
+- **Kustomization flux-system/healing-k8sgpt** since 2026-09-26T08:34:59Z: dependency 'flux-system/healing' is not ready
+- **Kustomization flux-system/healthchecks** since 2026-09-26T08:34:58Z: dependency 'flux-system/identity' is not ready
+- **Kustomization flux-system/hermes-agent** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/hindsight** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/human-vault** since 2026-09-26T08:34:58Z: dependency 'flux-system/external-secrets' is not ready
+- **Kustomization flux-system/human-vault-bridge** since 2026-09-26T08:34:58Z: dependency 'flux-system/human-vault' is not ready
+- **Kustomization flux-system/identity** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/idp-agent** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/image-automation** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/jit** since 2026-09-26T08:57:37Z: dependency 'flux-system/rbac-floor' is not ready
+- **Kustomization flux-system/keda** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/kyverno** since 2026-09-26T09:29:56Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/llm** since 2026-09-26T08:34:58Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/mcp** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/metrics-server** since 2026-09-26T08:34:59Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/monitoring** since 2026-09-26T08:34:59Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/monitoring-rules** since 2026-09-26T08:34:59Z: dependency 'flux-system/monitoring' is not ready
+- **Kustomization flux-system/nodesoftware-operator** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/notify** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/ns-fences** since 2026-09-26T09:29:56Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/observability** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/observability-collector** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/otto-gateway** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/otto-golden** since 2026-09-26T08:34:58Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/otto-golden-secret** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/priority-classes** since 2026-09-26T09:25:43Z: Reconciliation in progress
+- **Kustomization flux-system/prospector** since 2026-09-26T08:32:35Z: dependency 'flux-system/prospector-platform' is not ready
+- **Kustomization flux-system/prospector-platform** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/rbac** since 2026-09-26T08:58:08Z: dependency 'flux-system/rbac-identity' is not ready
+- **Kustomization flux-system/rbac-floor** since 2026-09-26T09:43:48Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/rbac-identity** since 2026-09-26T09:34:14Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/reloader** since 2026-09-26T08:34:59Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/research-engine** since 2026-09-26T08:34:59Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/robusta** since 2026-09-26T08:34:59Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/router-events** since 2026-09-26T08:34:58Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/sandbox-launch** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/sandbox-live** since 2026-09-26T09:21:54Z: Reconciliation in progress
+- **Kustomization flux-system/scheduling** since 2026-09-26T08:34:58Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/science** since 2026-09-26T08:34:59Z: dependency 'flux-system/observability' is not ready
+- **Kustomization flux-system/searxng** since 2026-09-26T09:39:06Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/secret-store** since 2026-09-26T08:34:58Z: dependency 'flux-system/external-secrets' is not ready
+- **Kustomization flux-system/spire** since 2026-09-26T08:34:59Z: dependency 'flux-system/scheduling' is not ready
+- **Kustomization flux-system/staging** since 2026-09-26T09:34:11Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/tailscale** since 2026-09-26T08:34:59Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/temporal** since 2026-09-26T08:34:59Z: dependency 'flux-system/edge' is not ready
+- **Kustomization flux-system/trivy** since 2026-09-26T09:29:56Z: failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz giving up after 10 attempt(s): Get "http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa9627b795.tar.gz": dial tcp 10.96.202.29:80: connect: connection refused
+- **Kustomization flux-system/verification** since 2026-09-26T08:34:58Z: dependency 'flux-system/backstage-namespace' is not ready
+- **Kustomization flux-system/via-negativa** since 2026-09-26T08:34:58Z: dependency 'flux-system/secret-store' is not ready
+- **Kustomization flux-system/weave-gitops** since 2026-09-26T08:34:59Z: dependency 'flux-system/identity' is not ready
 
 ## Every row
 
 | Kind | Namespace | Name | State | Applied revision | Since | Message |
 |---|---|---|---|---|---|---|
+| HelmRelease | cert-manager | cert-manager | Not ready | v1.21.1 | 2026-09-26T09:39:05Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/cert-manager/cert-manager-cert-manager/cert-manager-v1.21.1.tgz givi |
 | HelmRelease | commerce | lago | Not ready | 1.28.0 | 2026-09-25T23:28:09Z | Could not determine release state: unable to determine state for release with status 'uninstalling' |
-| HelmRelease | coroot | coroot | Not ready | 0.22.0 | 2026-09-26T04:44:10Z | Helm install failed for release coroot/coroot with chart coroot@0.22.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" denie |
-| HelmRelease | crossplane-system | crossplane | Not ready | 1.15.1 | 2026-09-26T04:44:52Z | Helm upgrade failed for release crossplane-system/crossplane with chart crossplane@1.15.1: create: failed to create: admission webhook "oke-resource-leak-protec |
-| HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-26T04:29:36Z | Helm upgrade failed for release dagster/dagster with chart dagster@1.13.19: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" d |
-| HelmRelease | flux-system | vendor-bridge | Not ready | 0.1.0+2c28957f69eb | 2026-09-26T04:42:50Z | Helm install failed for release flux-system/vendor-bridge with chart vendor-bridge@0.1.0+2c28957f69eb: create: failed to create: admission webhook "oke-resource |
+| HelmRelease | coroot | coroot | Not ready | 0.22.0 | 2026-09-26T08:54:10Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/coroot/coroot-coroot/coroot-0.22.0.tgz giving up after 10 attempt(s) |
+| HelmRelease | crossplane-system | crossplane | Not ready | 1.15.1 | 2026-09-26T08:16:56Z | Helm upgrade failed for release crossplane-system/crossplane with chart crossplane@1.15.1: create: failed to create: admission webhook "oke-resource-leak-protec |
+| HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-26T09:31:54Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/dagster/dagster-dagster/dagster-1.13.19.tgz giving up after 10 attem |
+| HelmRelease | edge | external-dns | Not ready | 1.21.1 | 2026-09-26T08:44:55Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-external-dns/external-dns-1.21.1.tgz giving up after 10 at |
+| HelmRelease | edge | traefik | Not ready | 41.3.0 | 2026-09-26T09:42:40Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/edge/edge-traefik/traefik-41.3.0.tgz giving up after 10 attempt(s):  |
+| HelmRelease | estate-db | cloudnative-pg | Not ready | 0.29.0 | 2026-09-26T09:35:29Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/estate-db/estate-db-cloudnative-pg/cloudnative-pg-0.29.0.tgz giving  |
+| HelmRelease | external-secrets | external-secrets | Not ready | 2.9.0 | 2026-09-26T09:42:41Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/external-secrets/external-secrets-external-secrets/external-secrets- |
+| HelmRelease | flux-system | vendor-bridge | Not ready | 0.1.0+6f37ee69278c | 2026-09-26T09:21:55Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/flux-system/flux-system-vendor-bridge/vendor-bridge-0.1.0+afe742ea96 |
+| HelmRelease | healing | descheduler | Not ready | 0.36.0 | 2026-09-26T09:12:40Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-descheduler/descheduler-0.36.0.tgz giving up after 1 |
+| HelmRelease | healing | k8sgpt-operator | Not ready | 0.2.29 | 2026-09-26T08:35:39Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/healing/healing-k8sgpt-operator/k8sgpt-operator-0.2.29.tgz giving up |
+| HelmRelease | identity | oauth2-proxy | Not ready | 10.7.0 | 2026-09-26T09:31:54Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/identity/identity-oauth2-proxy/oauth2-proxy-10.7.0.tgz giving up aft |
+| HelmRelease | keda | keda-add-ons-http | Not ready | 0.15.0 | 2026-09-26T09:39:05Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/keda/keda-keda-add-ons-http/keda-add-ons-http-0.15.0.tgz giving up a |
+| HelmRelease | kyverno | kyverno | Not ready | 3.9.0 | 2026-09-26T09:35:29Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/kyverno/kyverno-kyverno/kyverno-3.9.0.tgz giving up after 10 attempt |
+| HelmRelease | metrics-server | metrics-server | Not ready | 3.14.0 | 2026-09-26T09:12:40Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/metrics-server/metrics-server-metrics-server/metrics-server-3.14.0.t |
+| HelmRelease | monitoring | blackbox | Not ready | 11.17.2 | 2026-09-26T09:39:06Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-blackbox/prometheus-blackbox-exporter-11.17.2. |
+| HelmRelease | monitoring | kube-prometheus-stack | Not ready | 88.6.0 | 2026-09-26T08:44:55Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/monitoring/monitoring-kube-prometheus-stack/kube-prometheus-stack-88 |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
-| HelmRelease | observability | signoz | Not ready | 0.138.0 | 2026-09-26T04:44:26Z | Helm upgrade failed for release observability/signoz with chart signoz@0.138.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.co |
-| HelmRelease | robusta | robusta | Not ready | 0.48.0 | 2026-09-26T04:45:08Z | Helm upgrade failed for release robusta/robusta with chart robusta@0.48.0: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" de |
-| HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T04:44:36Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" den |
-| HelmRelease | trivy-system | trivy-operator | Not ready | 0.36.0 | 2026-09-26T04:43:43Z | Helm install failed for release trivy-system/trivy-operator with chart trivy-operator@0.36.0: create: failed to create: admission webhook "oke-resource-leak-pro |
-| Kustomization | flux-system | acg | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | agent-workforce | Not ready | main@689bcd9 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | alerts | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/alerts-secret' is not ready |
-| Kustomization | flux-system | alerts-github | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | alerts-secret | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | autoscaler | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | backstage | Not ready | main@689bcd9 | 2026-09-26T00:59:50Z | dependency 'flux-system/backstage-namespace' is not ready |
-| Kustomization | flux-system | backstage-namespace | Not ready | main@fb6869d | 2026-09-26T04:40:04Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d77 |
-| Kustomization | flux-system | calico | Not ready | main@dc900dd | 2026-09-26T04:40:02Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d77 |
-| Kustomization | flux-system | cluster-state | Not ready | main@0b33777 | 2026-09-26T00:29:22Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | commerce | Not ready | main@abea14d | 2026-09-26T00:29:22Z | dependency 'flux-system/commerce-data' is not ready |
-| Kustomization | flux-system | commerce-data | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/external-secrets' is not ready |
-| Kustomization | flux-system | concierge | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | coroot | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/monitoring' is not ready |
-| Kustomization | flux-system | crossplane | Not ready | main@8d685ec | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | crossplane-providerconfig | Not ready | main@8d685ec | 2026-09-26T00:02:50Z | dependency 'flux-system/crossplane-providers' is not ready |
-| Kustomization | flux-system | crossplane-providers | Not ready | main@8d685ec | 2026-09-26T00:02:50Z | dependency 'flux-system/crossplane' is not ready |
-| Kustomization | flux-system | crossplane-storage-capability | Not ready | main@8d685ec | 2026-09-26T00:02:50Z | dependency 'flux-system/crossplane-providerconfig' is not ready |
-| Kustomization | flux-system | dagster | Not ready | main@08aa502 | 2026-09-26T00:02:51Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | dns | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | edge | Not ready | main@e1f7b06 | 2026-09-26T00:59:50Z | dependency 'flux-system/gateway-api-crds' is not ready |
-| Kustomization | flux-system | epistemic-fabric | Not ready | main@0b33777 | 2026-09-26T00:02:55Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | estate-catalog | Not ready | latest@sha256:b67e5e4b8349cf4a444626690b | 2026-09-26T04:45:09Z | Reconciliation in progress |
-| Kustomization | flux-system | estate-db | Not ready | main@0b33777 | 2026-09-26T00:20:46Z | dependency 'flux-system/estate-db-operator' is not ready |
-| Kustomization | flux-system | estate-db-migrate | Not ready | main@0b33777 | 2026-09-26T00:20:46Z | dependency 'flux-system/estate-db' is not ready |
-| Kustomization | flux-system | estate-db-operator | Not ready | main@cca4450 | 2026-09-26T04:40:04Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/07b6f30771c36a17e6f33a435eb6f18d77 |
-| Kustomization | flux-system | event-bus | Not ready | main@e1f7b06 | 2026-09-26T00:58:32Z | dependency 'flux-system/priority-classes' is not ready |
-| Kustomization | flux-system | external-secrets | Not ready | main@0b33777 | 2026-09-26T00:29:22Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | feature-register | Not ready | main@2518219 | 2026-09-26T00:59:50Z | dependency 'flux-system/backstage-namespace' is not ready |
-| Kustomization | flux-system | flux-webhook | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | gateway-api-crds | Not ready | v1.5.1@e7677b7 | 2026-09-26T04:45:10Z | Reconciliation in progress |
-| Kustomization | flux-system | github-app-creds | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | guacamole | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/identity' is not ready |
-| Kustomization | flux-system | gvisor-runtime | Not ready | main@0b33777 | 2026-09-26T00:09:47Z | dependency 'flux-system/nodesoftware-operator' is not ready |
-| Kustomization | flux-system | healing | Not ready | main@0b33777 | 2026-09-26T00:20:45Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | healing-analyzer | Not ready | main@689bcd9 | 2026-09-26T00:22:52Z | dependency 'flux-system/healing-k8sgpt' is not ready |
-| Kustomization | flux-system | healing-k8sgpt | Not ready | main@689bcd9 | 2026-09-26T00:29:22Z | dependency 'flux-system/healing' is not ready |
-| Kustomization | flux-system | healthchecks | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/identity' is not ready |
-| Kustomization | flux-system | hermes-agent | Not ready | main@0df0a74 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | hindsight | Not ready | main@689bcd9 | 2026-09-26T00:02:50Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | human-vault | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/external-secrets' is not ready |
-| Kustomization | flux-system | human-vault-bridge | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/human-vault' is not ready |
-| Kustomization | flux-system | identity | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | idp-agent | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | image-automation | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | jit | Not ready | main@689bcd9 | 2026-09-26T00:59:50Z | dependency 'flux-system/rbac-floor' is not ready |
-| Kustomization | flux-system | keda | Not ready | main@0b33777 | 2026-09-26T00:02:55Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | kyverno | Not ready | main@fb6869d | 2026-09-26T04:31:29Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681e |
-| Kustomization | flux-system | llm | Not ready | main@689bcd9 | 2026-09-26T00:20:45Z | dependency 'flux-system/estate-db-migrate' is not ready |
-| Kustomization | flux-system | mcp | Not ready | main@689bcd9 | 2026-09-26T00:20:46Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | metrics-server | Not ready | main@0b33777 | 2026-09-26T00:22:52Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | monitoring | Not ready | main@0b33777 | 2026-09-26T00:29:21Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | monitoring-rules | Not ready | main@0b33777 | 2026-09-26T00:29:22Z | dependency 'flux-system/monitoring' is not ready |
-| Kustomization | flux-system | nodesoftware-operator | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | notify | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | ns-fences | Not ready | main@280d758 | 2026-09-26T04:22:53Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/1273ba83e53072b432b7d27e2bd2e829e2 |
-| Kustomization | flux-system | observability | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | observability-collector | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | otto-gateway | Not ready | main@cd9eb71 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | otto-golden | Not ready | main@cd9eb71 | 2026-09-26T00:02:50Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | otto-golden-secret | Not ready | main@0b33777 | 2026-09-26T00:02:50Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | priority-classes | Not ready | main@280d758 | 2026-09-26T04:31:29Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/76090d283d892b3edb203e81471894681e |
-| Kustomization | flux-system | prospector | Not ready | main@7453d76 | 2026-09-26T00:00:26Z | dependency 'flux-system/prospector-platform' is not ready |
-| Kustomization | flux-system | prospector-platform | Not ready | main@0b33777 | 2026-09-26T00:02:51Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | rbac | Not ready | main@3ed6bfa | 2026-09-26T00:02:55Z | dependency 'flux-system/rbac-identity' is not ready |
-| Kustomization | flux-system | rbac-floor | Not ready | main@280d758 | 2026-09-26T04:40:04Z | Reconciliation in progress |
-| Kustomization | flux-system | rbac-identity | Not ready | main@2518219 | 2026-09-26T04:45:10Z | Reconciliation in progress |
-| Kustomization | flux-system | reloader | Not ready | main@0b33777 | 2026-09-26T00:20:46Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | research-engine | Not ready | main@689bcd9 | 2026-09-26T00:22:49Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | robusta | Not ready | main@41e996d | 2026-09-26T00:22:58Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | router-events | Not ready | main@689bcd9 | 2026-09-26T00:29:22Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | sandbox-launch | Not ready | main@ac2a1b1 | 2026-09-26T00:29:22Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | sandbox-live | Not ready | sandbox/launch@4830a6e | 2026-09-26T04:31:27Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/sandbox-launch/76090d283d892b3edb203e814718946 |
-| Kustomization | flux-system | scheduling | Not ready | main@0b33777 | 2026-09-26T00:29:21Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | science | Not ready | main@0b33777 | 2026-09-26T00:20:45Z | dependency 'flux-system/observability' is not ready |
-| Kustomization | flux-system | searxng | Not ready | main@fb6869d | 2026-09-26T04:40:04Z | Reconciliation in progress |
-| Kustomization | flux-system | secret-store | Not ready | main@0b33777 | 2026-09-26T00:22:58Z | dependency 'flux-system/external-secrets' is not ready |
-| Kustomization | flux-system | spire | Not ready | main@0b33777 | 2026-09-26T00:29:21Z | dependency 'flux-system/scheduling' is not ready |
-| Kustomization | flux-system | staging | Not ready | main@dc900dd | 2026-09-26T04:40:02Z | Reconciliation in progress |
-| Kustomization | flux-system | tailscale | Not ready | main@0b33777 | 2026-09-26T00:20:45Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | temporal | Not ready | main@41e996d | 2026-09-26T00:29:21Z | dependency 'flux-system/edge' is not ready |
-| Kustomization | flux-system | trivy | Not ready | main@689bcd9 | 2026-09-26T04:40:04Z | Reconciliation in progress |
-| Kustomization | flux-system | verification | Not ready | main@0b33777 | 2026-09-26T00:58:32Z | dependency 'flux-system/backstage-namespace' is not ready |
-| Kustomization | flux-system | via-negativa | Not ready | main@689bcd9 | 2026-09-26T00:29:22Z | dependency 'flux-system/secret-store' is not ready |
-| Kustomization | flux-system | weave-gitops | Not ready | main@0b33777 | 2026-09-26T00:29:22Z | dependency 'flux-system/identity' is not ready |
+| HelmRelease | observability | signoz | Not ready | 0.138.0 | 2026-09-26T09:35:30Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-signoz/signoz-0.138.0.tgz giving up afte |
+| HelmRelease | observability | superset | Not ready | 0.22.4 | 2026-09-26T08:54:10Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability/observability-superset/superset-0.22.4.tgz giving up a |
+| HelmRelease | observability-agent | k8s-infra | Not ready | 0.17.0 | 2026-09-26T09:31:54Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/observability-agent/observability-agent-k8s-infra/k8s-infra-0.17.0.t |
+| HelmRelease | reloader | reloader | Not ready | 2.2.16 | 2026-09-26T09:42:40Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/reloader/reloader-reloader/reloader-2.2.16.tgz giving up after 10 at |
+| HelmRelease | robusta | robusta | Not ready | 0.48.0 | 2026-09-26T09:42:43Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/robusta/robusta-robusta/robusta-0.48.0.tgz giving up after 10 attemp |
+| HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T08:15:32Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: create: failed to create: admission webhook "oke-resource-leak-protection.oke.com" den |
+| HelmRelease | spire-mgmt | spire-crds | Not ready | 0.6.1 | 2026-09-26T09:31:54Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/spire-mgmt/spire-mgmt-spire-crds/spire-crds-0.6.1.tgz giving up afte |
+| HelmRelease | tailscale | tailscale-operator | Not ready | 1.102.3 | 2026-09-26T09:39:08Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/tailscale/tailscale-tailscale-operator/tailscale-operator-1.102.3.tg |
+| HelmRelease | temporal | temporal | Not ready | 1.6.0 | 2026-09-26T09:35:33Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/temporal/temporal-temporal/temporal-1.6.0.tgz giving up after 10 att |
+| HelmRelease | trivy-system | trivy-operator | Not ready | 0.36.0 | 2026-09-26T09:21:55Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/trivy-system/trivy-system-trivy-operator/trivy-operator-0.36.0.tgz g |
+| HelmRelease | weave-gitops | weave-gitops | Not ready | 4.0.36 | 2026-09-26T09:21:55Z | Could not load chart: GET http://source-controller.flux-system.svc.cluster.local./helmchart/weave-gitops/weave-gitops-weave-gitops/weave-gitops-4.0.36.tgz givin |
+| Kustomization | flux-system | acg | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | agent-workforce | Not ready | main@689bcd9 | 2026-09-26T08:34:59Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | alerts | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/alerts-secret' is not ready |
+| Kustomization | flux-system | alerts-github | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | alerts-secret | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | autoscaler | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | backstage | Not ready | main@689bcd9 | 2026-09-26T08:34:59Z | dependency 'flux-system/backstage-namespace' is not ready |
+| Kustomization | flux-system | backstage-namespace | Not ready | main@eca1b80 | 2026-09-26T09:41:06Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | calico | Not ready | main@a1918be | 2026-09-26T09:43:21Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | cluster-state | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | commerce | Not ready | main@abea14d | 2026-09-26T08:34:59Z | dependency 'flux-system/commerce-data' is not ready |
+| Kustomization | flux-system | commerce-data | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/external-secrets' is not ready |
+| Kustomization | flux-system | concierge | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | coroot | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/monitoring' is not ready |
+| Kustomization | flux-system | crossplane | Not ready | main@8d685ec | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | crossplane-providerconfig | Not ready | main@8d685ec | 2026-09-26T08:34:58Z | dependency 'flux-system/crossplane-providers' is not ready |
+| Kustomization | flux-system | crossplane-providers | Not ready | main@8d685ec | 2026-09-26T08:34:58Z | dependency 'flux-system/crossplane' is not ready |
+| Kustomization | flux-system | crossplane-storage-capability | Not ready | main@8d685ec | 2026-09-26T08:34:58Z | dependency 'flux-system/crossplane-providerconfig' is not ready |
+| Kustomization | flux-system | dagster | Not ready | main@08aa502 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | dns | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | edge | Not ready | main@e1f7b06 | 2026-09-26T09:23:12Z | dependency 'flux-system/gateway-api-crds' is not ready |
+| Kustomization | flux-system | epistemic-fabric | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | estate-catalog | Not ready | latest@sha256:ed8d542c896ad74a43011d0c55 | 2026-09-26T09:29:56Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./ocirepository/flux-system/estate-catalog/sha256:ed8d542c896ad74a43011d0c |
+| Kustomization | flux-system | estate-db | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/estate-db-operator' is not ready |
+| Kustomization | flux-system | estate-db-migrate | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/estate-db' is not ready |
+| Kustomization | flux-system | estate-db-operator | Not ready | main@34aa23e | 2026-09-26T09:38:29Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | event-bus | Not ready | main@e1f7b06 | 2026-09-26T08:34:58Z | dependency 'flux-system/priority-classes' is not ready |
+| Kustomization | flux-system | external-secrets | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | feature-register | Not ready | main@2518219 | 2026-09-26T08:48:02Z | dependency 'flux-system/backstage-namespace' is not ready |
+| Kustomization | flux-system | flux-system | Not ready | main@eca1b80 | 2026-09-26T09:34:12Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | flux-webhook | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | gateway-api-crds | Not ready | v1.5.1@e7677b7 | 2026-09-26T09:34:11Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/gateway-api/e7677b70ae75d14a4448fba94870e7deea |
+| Kustomization | flux-system | github-app-creds | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | guacamole | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/identity' is not ready |
+| Kustomization | flux-system | gvisor-runtime | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/nodesoftware-operator' is not ready |
+| Kustomization | flux-system | healing | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | healing-analyzer | Not ready | main@689bcd9 | 2026-09-26T08:34:59Z | dependency 'flux-system/healing-k8sgpt' is not ready |
+| Kustomization | flux-system | healing-k8sgpt | Not ready | main@689bcd9 | 2026-09-26T08:34:59Z | dependency 'flux-system/healing' is not ready |
+| Kustomization | flux-system | healthchecks | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/identity' is not ready |
+| Kustomization | flux-system | hermes-agent | Not ready | main@0df0a74 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | hindsight | Not ready | main@689bcd9 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | human-vault | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/external-secrets' is not ready |
+| Kustomization | flux-system | human-vault-bridge | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/human-vault' is not ready |
+| Kustomization | flux-system | identity | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | idp-agent | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | image-automation | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | jit | Not ready | main@689bcd9 | 2026-09-26T08:57:37Z | dependency 'flux-system/rbac-floor' is not ready |
+| Kustomization | flux-system | keda | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | kyverno | Not ready | main@9c0c491 | 2026-09-26T09:29:56Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | llm | Not ready | main@689bcd9 | 2026-09-26T08:34:58Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | mcp | Not ready | main@689bcd9 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | metrics-server | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | monitoring | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | monitoring-rules | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/monitoring' is not ready |
+| Kustomization | flux-system | nodesoftware-operator | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | notify | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | ns-fences | Not ready | main@a1918be | 2026-09-26T09:29:56Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | observability | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | observability-collector | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | otto-gateway | Not ready | main@cd9eb71 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | otto-golden | Not ready | main@cd9eb71 | 2026-09-26T08:34:58Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | otto-golden-secret | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | priority-classes | Not ready | main@eca1b80 | 2026-09-26T09:25:43Z | Reconciliation in progress |
+| Kustomization | flux-system | prospector | Not ready | main@7453d76 | 2026-09-26T08:32:35Z | dependency 'flux-system/prospector-platform' is not ready |
+| Kustomization | flux-system | prospector-platform | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | rbac | Not ready | main@afe768a | 2026-09-26T08:58:08Z | dependency 'flux-system/rbac-identity' is not ready |
+| Kustomization | flux-system | rbac-floor | Not ready | main@a1918be | 2026-09-26T09:43:48Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | rbac-identity | Not ready | main@46e654b | 2026-09-26T09:34:14Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | reloader | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | research-engine | Not ready | main@689bcd9 | 2026-09-26T08:34:59Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | robusta | Not ready | main@41e996d | 2026-09-26T08:34:59Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | router-events | Not ready | main@689bcd9 | 2026-09-26T08:34:58Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | sandbox-launch | Not ready | main@ac2a1b1 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | sandbox-live | Not ready | sandbox/launch@4830a6e | 2026-09-26T09:21:54Z | Reconciliation in progress |
+| Kustomization | flux-system | scheduling | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | science | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/observability' is not ready |
+| Kustomization | flux-system | searxng | Not ready | main@a1918be | 2026-09-26T09:39:06Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | secret-store | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/external-secrets' is not ready |
+| Kustomization | flux-system | spire | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/scheduling' is not ready |
+| Kustomization | flux-system | staging | Not ready | main@eca1b80 | 2026-09-26T09:34:11Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | tailscale | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | temporal | Not ready | main@41e996d | 2026-09-26T08:34:59Z | dependency 'flux-system/edge' is not ready |
+| Kustomization | flux-system | trivy | Not ready | main@689bcd9 | 2026-09-26T09:29:56Z | failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/b850c7080fb2c82f3077e582fdeb64aa96 |
+| Kustomization | flux-system | verification | Not ready | main@0b33777 | 2026-09-26T08:34:58Z | dependency 'flux-system/backstage-namespace' is not ready |
+| Kustomization | flux-system | via-negativa | Not ready | main@689bcd9 | 2026-09-26T08:34:58Z | dependency 'flux-system/secret-store' is not ready |
+| Kustomization | flux-system | weave-gitops | Not ready | main@0b33777 | 2026-09-26T08:34:59Z | dependency 'flux-system/identity' is not ready |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
-| Kustomization | flux-system | flux-system | Suspended | main@cca4450 | 2026-09-25T21:12:37Z |  |
-| HelmRelease | cert-manager | cert-manager | Ready | v1.21.1 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | edge | external-dns | Ready | 1.21.1 | 2026-09-25T23:28:10Z |  |
-| HelmRelease | edge | traefik | Ready | 41.3.0 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | estate-db | cloudnative-pg | Ready | 0.29.0 | 2026-09-25T23:28:10Z |  |
 | HelmRelease | event-bus | nats | Ready | 2.14.6 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | external-secrets | external-secrets | Ready | 2.9.0 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | healing | descheduler | Ready | 0.36.0 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | healing | k8sgpt-operator | Ready | 0.2.29 | 2026-09-08T12:01:53Z |  |
 | HelmRelease | hindsight | hindsight | Ready | 0.9.2 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | identity | oauth2-proxy | Ready | 10.7.0 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | keda | keda | Ready | 2.20.2 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | keda | keda-add-ons-http | Ready | 0.15.0 | 2026-09-25T23:28:36Z |  |
-| HelmRelease | kyverno | kyverno | Ready | 3.9.0 | 2026-09-25T23:28:05Z |  |
-| HelmRelease | metrics-server | metrics-server | Ready | 3.14.0 | 2026-09-25T23:28:09Z |  |
-| HelmRelease | monitoring | blackbox | Ready | 11.17.2 | 2026-09-25T23:28:04Z |  |
-| HelmRelease | monitoring | kube-prometheus-stack | Ready | 88.6.0 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | observability | superset | Ready | 0.22.4 | 2026-09-25T23:28:05Z |  |
-| HelmRelease | observability-agent | k8s-infra | Ready | 0.17.0 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | reloader | reloader | Ready | 2.2.16 | 2026-09-25T23:28:07Z |  |
-| HelmRelease | spire-mgmt | spire-crds | Ready | 0.6.1 | 2026-09-25T23:28:10Z |  |
-| HelmRelease | tailscale | tailscale-operator | Ready | 1.102.3 | 2026-09-25T23:28:10Z |  |
-| HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-25T23:28:06Z |  |
-| HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-25T23:28:06Z |  |
+| HelmRelease | keda | keda | Ready | 2.20.2 | 2026-09-26T08:21:45Z |  |
