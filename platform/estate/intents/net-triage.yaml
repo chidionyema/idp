@@ -1,0 +1,28 @@
+name: net-triage
+description: >-
+  READ-ONLY one-shot incident loop for pod-network faults: gather (net-forensics, once, every
+  node) -> race every hypothesis in platform/estate/hypotheses/<spec>.json concurrently against
+  that one capture (hypotheses-race, Bayesian posterior) -> Jev yes/no on the top supported
+  cause's fix intent -> one VERDICT line naming the fix and verify intents. Applies nothing:
+  the fix is a separate MUTATING intent.
+args:
+  spec: {type: string, default: "net-crossnode"}
+halt_on_failure: true
+steps:
+  - name: gather
+    timeout: 300
+    cmd: >
+      bash ~/.estate/libexec/net-forensics.sh all > ~/.estate/logs/net-forensics.latest 2>&1;
+      grep -c . ~/.estate/logs/net-forensics.latest | sed 's/^/captured lines: /';
+      grep '^!!' ~/.estate/logs/net-forensics.latest | sort | uniq -c | sed 's/^ */findings x/' || true
+  - name: race
+    timeout: 60
+    cmd: >
+      NF=~/.estate/logs/net-forensics.latest
+      python3 ~/.estate/libexec/hypotheses-race.py ~/.estate/hypotheses/{{spec}}.json
+      > ~/.estate/logs/net-triage.race.json && echo "race done"
+  - name: verdict
+    timeout: 30
+    cmd: >
+      python3 ~/.estate/libexec/triage-verdict.py ~/.estate/hypotheses/{{spec}}.json
+      ~/.estate/logs/net-triage.race.json

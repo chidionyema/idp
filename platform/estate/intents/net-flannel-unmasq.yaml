@@ -1,0 +1,16 @@
+name: net-flannel-unmasq
+description: >-
+  MUTATING (node iptables). Removes flannel's orphaned FLANNEL-POSTRTG masquerade chain from every
+  node's nft nat table. flannel adds that chain with --ip-masq and never deletes it, so after the
+  flag is removed every Calico pod->pod packet between nodes is still SNATed and dropped by
+  default-deny fences (2026-09-08 and 2026-09-26 outages; see the header of
+  platform/calico/raw/flannel-daemonset.yaml). Refuses while live kube-flannel-ds still runs
+  --ip-masq (it would re-add the chain). Calico's cali-nat-outgoing keeps pod->internet NAT.
+  Verify with: net-forensics probe=probe.
+args:
+  node: {type: string, default: "all"}
+halt_on_failure: true
+steps:
+  - name: flannel-unmasq
+    cmd: >
+      bash ~/.estate/libexec/net-flannel-unmasq.sh "{{node}}"

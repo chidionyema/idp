@@ -81,12 +81,13 @@ else
 	echo "fleetview: voice   on  (router ${LITELLM_HOST:-https://llm.$ESTATE_ZONE})"
 fi
 
-# The plugin's module paths. Same two arguments the manual launch used.
-ROUTES="$IDP/backstage/plugins/fleetview-backend/src/routes.py"
-SERVE="$IDP/backstage/plugins/fleetview-backend/src/serve.py"
-
-[ -f "$SERVE" ] || { echo "FAIL    serve.py not at $SERVE" >&2; exit 1; }
-[ -f "$ROUTES" ] || { echo "FAIL    routes.py not at $ROUTES" >&2; exit 1; }
+# The plugin is installed editable (src/fleetview_backend/), so it is run as a module -- not by
+# file path. `serve.py`/`routes.py` used to sit directly under src/ and this launched them by
+# path; the package layout moved them under src/fleetview_backend/ and this file was not updated,
+# so every restart failed with "serve.py not at .../src/serve.py" and voice could not come back up.
+FV_PKG_DIR="$IDP/backstage/plugins/fleetview-backend/src/fleetview_backend"
+[ -f "$FV_PKG_DIR/serve.py" ] || { echo "FAIL    serve.py not at $FV_PKG_DIR/serve.py" >&2; exit 1; }
+[ -f "$FV_PKG_DIR/routes.py" ] || { echo "FAIL    routes.py not at $FV_PKG_DIR/routes.py" >&2; exit 1; }
 [ -f "$ESTATE_DB" ] || {
 	# Not fatal: estate-twin-runtime creates the schema on first sweep, and an absent file is
 	# the ordinary state of a fresh checkout. Say so rather than let it look like a config error.
@@ -196,7 +197,7 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 sys.path.insert(0, str(root))
-src = root / "backstage" / "plugins" / "fleetview-backend" / "src"
+src = root / "backstage" / "plugins" / "fleetview-backend" / "src" / "fleetview_backend"
 for name in ("config_guard", "routes", "serve"):
     spec = importlib.util.spec_from_file_location(f"fv_selftest_{name}", src / f"{name}.py")
     module = importlib.util.module_from_spec(spec)
@@ -222,4 +223,4 @@ fi
 # installed elsewhere on this machine, or a receipt check would grade the wrong code.
 export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
 
-exec "$FV_PYTHON" "$SERVE" "$PORT" "$ROUTES"
+exec "$FV_PYTHON" -m fleetview_backend.serve "$PORT"

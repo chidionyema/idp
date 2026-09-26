@@ -3,7 +3,7 @@
 set -uo pipefail
 
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
-host=$(tailscale status --json 2>/dev/null | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+host=$(tailscale status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//')
 
 # curl writes %{http_code} even when it fails -- "000" -- so `|| echo down`
 # appends and the caller gets "000down", which matches neither. Read the code
