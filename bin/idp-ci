@@ -153,6 +153,15 @@ with open('$f','rb') as fh:
   echo "idp-ci --check: PASS"
   exit 0
 fi
+  # sleep-ban: a fixed-time bet that a variable-time thing will finish hides failures.
+  if [ -x bin/idp-sleep-ban ]; then
+    if ! bin/idp-sleep-ban 2>/tmp/sleep-ban.err; then
+      echo "  FAIL  sleep-ban: bare sleeps without condition checks"
+      cat /tmp/sleep-ban.err
+      fail=1
+    fi
+  fi
+
   # kubeconform: schema-validates every clusters/oke/ manifest.
   # Catches: orphan apiVersion without kind, missing required fields, wrong types.
   # Skipped (return 0) if no clusters/oke/ files changed -- zero false positives
