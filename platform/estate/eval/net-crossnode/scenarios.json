@@ -4,7 +4,7 @@
     {"id": "live-2026-09-26", "source": "live capture, both nodes, 2026-09-26 21:24Z",
      "capture": "live-2026-09-26.capture", "gnp": "all()[\"Egress\"]",
      "truth": ["flannel-masq", "gnp-default-deny-egress"],
-     "truth_status": "provisional: net-flannel-unmasq not yet run, so neither cause is proven"},
+     "truth_status": "provisional: flannel-masq was live (~600k MASQUERADE hits/node) and net-flannel-unmasq removed it (INTENT-20260926-225311-3c348f76), but cross-node pod TCP still failed both ways with the listener seeing nothing (INTENT-20260926-225337-c842700c). flannel-masq is real but not sufficient; the blocking cause is unproven. Capture also shows cali-INPUT 'Drop IPv4 VXLAN packets from non-allowed hosts' hits on both nodes (295/315), not yet in the catalog"},
     {"id": "snat-2026-09-08", "source": "historical: platform/calico/raw/flannel-daemonset.yaml header (flannel --ip-masq SNAT fault, fixed by removing the flag)",
      "capture": "base-healthy.capture", "gnp": "",
      "ops": [{"node": 0, "append": "!! flannel masquerade live (SNATs cross-node pod traffic): [525042:45487638] -A POSTROUTING -m comment --comment \"flanneld masq\" -j FLANNEL-POSTRTG"},
