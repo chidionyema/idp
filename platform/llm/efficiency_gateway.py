@@ -371,7 +371,7 @@ class _AnthropicSteps:
         prev = self._convs.pop(conv, None)
         common = 0
         if prev:
-            for a, b in zip(prev[1], hashes, strict=False):
+            for a, b in zip(prev[1], hashes):  # noqa: B905 -- runtime falls back to py3.9, no strict= kwarg
                 if a != b:
                     break
                 common += 1
