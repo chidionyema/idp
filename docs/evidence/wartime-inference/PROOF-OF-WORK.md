@@ -24,7 +24,6 @@
 
 | Item | Value | Source | Status |
 |---|---|---|---|
-| Operational monthly target | $50 | `estate-defaults.yaml` `budget_monthly_usd: 50` | MEASURED_OK |
 | Contract ceiling | $150/month | `AGENTS.md` `[cost] contract_max_usd_month: 150` | MEASURED_OK |
 | Per-virtual-key daily cap | $5 | `estate-defaults.yaml` `llm.virtual_key_daily_usd: 5` | MEASURED_OK |
 | Per-agent frontier budget | $3/day | `AGENTS.md` `[budget.usd_per_day] litellm = 3.0` | MEASURED_OK |

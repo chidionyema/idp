@@ -35,7 +35,6 @@ Rules, all in `policy/operating_model.rego`:
 | `provisioning_complete` | an identity resource with no grant, policy or membership in the PR | add the binding in this PR |
 | `no_gui_actions` | an instruction line (`FOUNDER ACTION:`, `STAGED:`, `Use:`) with a console, click or browser step | a command, a Terraform block or an `APPROVE:` word |
 | `founder_denied` | a PR whose declared `Approval-word:` the founder answered with `DENY: <word>` from his GitHub login | do not merge; address his reason in a new PR. No rule waits for `APPROVE:`: a green PR merges (founder, 2026-08-27: "approve all, no founder friction", crew#473) |
-| `cost_budget` | a `platform/oci/` change with no `Cost-delta-usd-month:` line, or one above `estate-defaults.yaml` `infrastructure.monthly_cap_usd` | reduce the change, or raise the cap in its own approved PR |
 | `canary` | a `platform/oci/` change with no `canary` label | label it once the plan names its canary step |
 
 Structured rejection: every deny line is `rule=<name> | <what is wrong> | fix: <what to change>`
