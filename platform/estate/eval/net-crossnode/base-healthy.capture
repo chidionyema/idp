@@ -1,0 +1,239 @@
+
+================ node 10.0.148.221 (pod/calico-node-dj6ph)
+
+--- 1 limits: conntrack
+conntrack 2730 / 196608
+file-nr 5568	0	2097152
+sockets: used 446
+TCP: inuse 42 orphan 0 tw 150 alloc 196 mem 40
+UDP: inuse 5 mem 2
+UDPLITE: inuse 0
+RAW: inuse 0
+FRAG: inuse 0 memory 0
+
+--- 2 rp_filter (1 strict drops asymmetric/overlay traffic)
+all=0
+default=0
+enp0s6=0
+flannel.1=0
+vxlan.calico=0
+ip_forward=1
+
+--- 3 kernel protocol drop counters (/proc/net/snmp + netstat, non-zero)
+Ip:OutDiscards=62
+Tcp:AttemptFails=1093868
+Tcp:RetransSegs=409554
+Tcp:InErrs=24
+TcpExt:SyncookiesFailed=9
+TcpExt:LockDroppedIcmps=7871
+TcpExt:TCPLostRetransmit=8496
+TcpExt:TCPFastRetrans=35013
+TcpExt:TCPSlowStartRetrans=13
+TcpExt:TCPTimeouts=10955
+TcpExt:TCPSackRecoveryFail=7
+TcpExt:TCPAbortOnTimeout=331
+TcpExt:TCPSACKDiscard=23640
+TcpExt:TCPSynRetrans=10184
+TcpExt:TcpTimeoutRehash=10614
+
+--- 4 interfaces: MTU, state, rx/tx errors+drops (/proc/net/dev)
+enp0s6 mtu=9000 state=UP
+vxlan.calico mtu=8950 state=UNKNOWN
+cali65a3605c4d8 mtu=8950 state=UP
+cali3b023977335 mtu=8950 state=UP
+cali7c4ebbc6a8b mtu=8950 state=UP
+cali60f2d9e4dfc mtu=8950 state=UP
+cali4af2ba107e7 mtu=8950 state=UP
+cali91b1a492bf3 mtu=8950 state=UP
+calie7a89b182c8 mtu=8950 state=UP
+calid9327eb6365 mtu=8950 state=UP
+flannel.1 mtu=8950 state=UNKNOWN
+cali2c42fe95fdd mtu=8950 state=UP
+cali4637309f7e3 mtu=8950 state=UP
+cali0f95e0c5366 mtu=8950 state=UP
+cali9ce6af7ea1b mtu=8950 state=UP
+calice68f11eda8 mtu=8950 state=UP
+calida719888492 mtu=8950 state=UP
+cali190b1d7ddb3 mtu=8950 state=UP
+calia90b22f746c mtu=8950 state=UP
+cali7c3be625d5b mtu=8950 state=UP
+cali37f4725bfef mtu=8950 state=UP
+cali72cedaa016b mtu=8950 state=UP
+cali26fea1d6596 mtu=8950 state=UP
+cali7f531829f9e mtu=8950 state=UP
+calif0ace81a192 mtu=8950 state=UP
+calicb37b4d185e mtu=8950 state=UP
+calieb5c493d07f mtu=8950 state=UP
+calid1bef7063bb mtu=8950 state=UP
+cali8a3487c854d mtu=8950 state=UP
+cali9c1a94bee00 mtu=8950 state=UP
+cali44f598c51bf mtu=8950 state=UP
+calicc349ab1f85 mtu=8950 state=UP
+cali54004ec755f mtu=8950 state=UP
+cali321859513b7 mtu=8950 state=UP
+cali2a28e68c238 mtu=8950 state=UP
+enp0s6 rx_err=0 rx_drop=0 tx_err=0 tx_drop=0
+vxlan.calico rx_err=0 rx_drop=0 tx_err=0 tx_drop=488
+flannel.1 rx_err=0 rx_drop=0 tx_err=0 tx_drop=5
+vxlan id 4096 local 10.0.148.221 dev enp0s6 srcport 0 0 dstport 4789
+vxlan id 1 local 10.0.148.221 dev enp0s6 srcport 0 0 dstport 14789
+
+--- 5 CNI collision: flannel vs calico rules (nft + legacy)
+nat: flannel=8 calico=16 legacy_rules=0
+filter: flannel=4 calico=1809 legacy_rules=0
+mangle: flannel=0 calico=16 legacy_rules=0
+raw: flannel=0 calico=18 legacy_rules=0
+:PREROUTING ACCEPT [6400023:14439585986]
+:OUTPUT ACCEPT [341668:270973383]
+:PREROUTING ACCEPT [6400086:14439626971]
+:INPUT ACCEPT [332595:160329649]
+:FORWARD ACCEPT [6067491:14279297322]
+:OUTPUT ACCEPT [341686:270974850]
+:POSTROUTING ACCEPT [6406038:14550047784]
+:PREROUTING ACCEPT [91201:8199656]
+:INPUT ACCEPT [936:56160]
+:OUTPUT ACCEPT [10669:645015]
+:POSTROUTING ACCEPT [96155:8465723]
+:INPUT ACCEPT [1569790214:15310994811339]
+:FORWARD ACCEPT [2687403183:4035114417849]
+:OUTPUT ACCEPT [1578874411:2881885818412]
+
+--- 6 DROP/REJECT rules that have hit (nft)
+[147:8820] -A KUBE-SERVICES -d 10.96.234.136/32 -p tcp -m comment --comment "metrics-server/metrics-server:https has no endpoints" -m tcp --dport 443 -j REJECT --reject-with icmp-port-unreachable
+[24:1440] -A KUBE-SERVICES -d 10.96.7.232/32 -p tcp -m comment --comment "cert-manager/cert-manager-webhook:https has no endpoints" -m tcp --dport 443 -j REJECT --reject-with icmp-port-unreachable
+[295:56365] -A cali-INPUT -p udp -m comment --comment "cali:EDCNTTxYfggApx8C" -m comment --comment "Drop IPv4 VXLAN packets from non-allowed hosts" -m multiport --dports 4789 -m addrtype --dst-type LOCAL -j DROP
+[4760:346790] -A cali-fw-cali26fea1d6596 -m comment --comment "cali:aseQ0gm0MbLYPjpG" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[5374:322440] -A cali-fw-cali2c42fe95fdd -m comment --comment "cali:klpHuxt7jMI3BYVj" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[1482:88920] -A cali-fw-cali60f2d9e4dfc -m comment --comment "cali:gfyKgO3Qr9VbUtkZ" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[3302:264192] -A cali-fw-cali7f531829f9e -m comment --comment "cali:p6ooj84APEtiGPdD" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[9219:556320] -A cali-fw-cali91b1a492bf3 -m comment --comment "cali:GdKiDMLMXoMfycnx" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[119:7140] -A cali-fw-calice68f11eda8 -m comment --comment "cali:TUBQXBFDd0JqtnUd" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[185:11100] -A cali-fw-calida719888492 -m comment --comment "cali:LC04cCMjwYKeD5SB" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[56565:3445740] -A cali-fw-calif0ace81a192 -m comment --comment "cali:GcQI3aGBryOq4jvv" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[790:47400] -A cali-tw-cali7c3be625d5b -m comment --comment "cali:GfLI_DXD30H7pyz2" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[2:248] -A cali-tw-cali91b1a492bf3 -m comment --comment "cali:NDrxbKIYXAH4uwCi" -m conntrack --ctstate INVALID -j DROP
+[2867:172020] -A cali-tw-cali9c1a94bee00 -m comment --comment "cali:ZlgvAtAtIQCXLWPi" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[465:27900] -A cali-tw-calid9327eb6365 -m comment --comment "cali:ULxn4zOVYuRAJ2a2" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+
+--- 7 routing: pod routes, policy rules, broken neighbours
+10.244.1.128/25 via 10.244.1.128 dev flannel.1 onlink 
+10.244.3.0/24 via 10.244.3.0 dev vxlan.calico onlink mtu 8950 
+blackhole 10.244.117.0/24 proto 80 
+local workload routes: 32
+9:	from all fwmark 0x200/0xf00 lookup 2004
+100:	from all lookup local
+32766:	from all lookup main
+32767:	from all lookup default
+10.244.3.0 lladdr 66:97:a2:a1:7b:3c PERMANENT 
+
+================ node 10.0.159.197 (pod/calico-node-vclnb)
+
+--- 1 limits: conntrack
+conntrack 3067 / 196608
+file-nr 4256	0	2097152
+sockets: used 396
+TCP: inuse 48 orphan 0 tw 100 alloc 136 mem 15
+UDP: inuse 5 mem 7
+UDPLITE: inuse 0
+RAW: inuse 0
+FRAG: inuse 0 memory 0
+
+--- 2 rp_filter (1 strict drops asymmetric/overlay traffic)
+all=0
+default=0
+enp0s6=0
+flannel.1=0
+vxlan.calico=0
+ip_forward=1
+
+--- 3 kernel protocol drop counters (/proc/net/snmp + netstat, non-zero)
+Ip:OutDiscards=795
+Tcp:AttemptFails=966300
+Tcp:RetransSegs=451571
+Tcp:InErrs=3
+TcpExt:LockDroppedIcmps=3126
+TcpExt:TCPLostRetransmit=4270
+TcpExt:TCPFastRetrans=31384
+TcpExt:TCPSlowStartRetrans=3
+TcpExt:TCPTimeouts=5446
+TcpExt:TCPSackRecoveryFail=4
+TcpExt:TCPAbortOnTimeout=189
+TcpExt:TCPSACKDiscard=22264
+TcpExt:TCPRetransFail=5
+TcpExt:TCPSynRetrans=5006
+TcpExt:TcpTimeoutRehash=5242
+
+--- 4 interfaces: MTU, state, rx/tx errors+drops (/proc/net/dev)
+enp0s6 mtu=9000 state=UP
+cali77ef0596153 mtu=8950 state=UP
+cali470c036132f mtu=8950 state=UP
+cali467125db214 mtu=8950 state=UP
+cali44c81734c44 mtu=8950 state=UP
+cali503e940b83a mtu=8950 state=UP
+cali5f6dac3b6f7 mtu=8950 state=UP
+cali318ab064948 mtu=8950 state=UP
+vxlan.calico mtu=8950 state=UNKNOWN
+calice96d6155d1 mtu=8950 state=UP
+calie12883c35b6 mtu=8950 state=UP
+cali66c0750240a mtu=8950 state=UP
+cali092097b663c mtu=8950 state=UP
+flannel.1 mtu=8950 state=UNKNOWN
+cali5ac5fb23f0d mtu=8950 state=UP
+cali48269bb239d mtu=8950 state=UP
+cali9f68b57b74c mtu=8950 state=UP
+cali8076a5e10ca mtu=8950 state=UP
+cali541da7cdf1b mtu=8950 state=UP
+enp0s6 rx_err=0 rx_drop=0 tx_err=0 tx_drop=0
+vxlan.calico rx_err=0 rx_drop=0 tx_err=0 tx_drop=493
+flannel.1 rx_err=0 rx_drop=0 tx_err=0 tx_drop=5
+vxlan id 4096 local 10.0.159.197 dev enp0s6 srcport 0 0 dstport 4789
+vxlan id 1 local 10.0.159.197 dev enp0s6 srcport 0 0 dstport 14789
+
+--- 5 CNI collision: flannel vs calico rules (nft + legacy)
+nat: flannel=8 calico=16 legacy_rules=0
+filter: flannel=4 calico=920 legacy_rules=0
+mangle: flannel=0 calico=16 legacy_rules=0
+raw: flannel=0 calico=18 legacy_rules=0
+:PREROUTING ACCEPT [660987:165361638]
+:OUTPUT ACCEPT [292161:84911677]
+:PREROUTING ACCEPT [660995:165362662]
+:INPUT ACCEPT [293795:110268844]
+:FORWARD ACCEPT [367200:55093818]
+:OUTPUT ACCEPT [292169:84912327]
+:POSTROUTING ACCEPT [658021:139906545]
+:PREROUTING ACCEPT [93331:9163441]
+:INPUT ACCEPT [936:56160]
+:OUTPUT ACCEPT [7325:444563]
+:POSTROUTING ACCEPT [98372:9452244]
+:INPUT ACCEPT [1760841044:14171154480882]
+:FORWARD ACCEPT [3059554291:4940652698075]
+:OUTPUT ACCEPT [1949702064:7596768861442]
+
+--- 6 DROP/REJECT rules that have hit (nft)
+[16:1016] -A cali-PREROUTING -m comment --comment "cali:uvipz_NmQPrGYnTB" -m mark --mark 0x80000/0x80000 -m rpfilter --validmark --invert -j DROP
+[315:59241] -A cali-INPUT -p udp -m comment --comment "cali:EDCNTTxYfggApx8C" -m comment --comment "Drop IPv4 VXLAN packets from non-allowed hosts" -m multiport --dports 4789 -m addrtype --dst-type LOCAL -j DROP
+[1:114] -A cali-fw-cali092097b663c -m comment --comment "cali:3M3tEsL8HtGdWJD9" -m conntrack --ctstate INVALID -j DROP
+[223:10936] -A cali-fw-cali092097b663c -m comment --comment "cali:PUqtv6Rq8X0HL58f" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[1:114] -A cali-fw-cali318ab064948 -m comment --comment "cali:K2rJ1Y2i-lsM61m9" -m conntrack --ctstate INVALID -j DROP
+[221:10816] -A cali-fw-cali318ab064948 -m comment --comment "cali:If_W0gccSC5yNXF8" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[3308:264708] -A cali-fw-cali48269bb239d -m comment --comment "cali:FUbj9qc68BUeIO6C" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[5372:322320] -A cali-fw-cali541da7cdf1b -m comment --comment "cali:7iUwymU0KIq1K9Ne" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[1:114] -A cali-fw-cali66c0750240a -m comment --comment "cali:Skc64BkYBqp8TFPd" -m conntrack --ctstate INVALID -j DROP
+[223:10936] -A cali-fw-cali66c0750240a -m comment --comment "cali:BXA2Ys-ZSLwsB6eY" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[1414:84886] -A cali-fw-calice96d6155d1 -m comment --comment "cali:rgrOP05k3yaNf8z2" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[9152:552952] -A cali-fw-calie12883c35b6 -m comment --comment "cali:PFI3L-Xl5SAYVlWf" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[760:45600] -A cali-tw-cali470c036132f -m comment --comment "cali:b-Fk_EiqCMPYGODq" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[9:540] -A cali-tw-cali5f6dac3b6f7 -m comment --comment "cali:By_xvIeYa0dRqjsr" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[13021:781260] -A cali-tw-cali9f68b57b74c -m comment --comment "cali:qHbrvqgjJ1YSaOvu" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+[3375:202500] -A cali-tw-calice96d6155d1 -m comment --comment "cali:nJ-TP4rBhfsmf_rB" -m comment --comment "End of tier default. Drop if no policies passed packet" -m mark --mark 0x0/0x20000 -j DROP
+
+--- 7 routing: pod routes, policy rules, broken neighbours
+10.244.2.0/25 via 10.244.2.0 dev flannel.1 onlink 
+blackhole 10.244.3.0/24 proto 80 
+10.244.117.0/24 via 10.244.117.0 dev vxlan.calico onlink mtu 8950 
+local workload routes: 16
+9:	from all fwmark 0x200/0xf00 lookup 2004
+100:	from all lookup local
+32766:	from all lookup main
+32767:	from all lookup default
+10.244.117.0 lladdr 66:8b:45:36:4d:4b PERMANENT 

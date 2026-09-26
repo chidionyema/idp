@@ -1,0 +1,17 @@
+name: net-forensics
+description: >-
+  READ-ONLY node network forensics on every node (or one): conntrack saturation, rp_filter,
+  kernel drop counters, interface MTU/errors, flannel-vs-calico rule collisions (nft + legacy),
+  DROP/REJECT rules with hits, pod routes and broken neighbours. Reads host kernel state through
+  each node's calico-node pod; findings are prefixed "!! ". probe=probe adds a cross-node
+  pod-to-pod TCP test with two throwaway busybox pods (the only part that creates anything).
+  Packet-level companion to k8s-diag.
+args:
+  node:  {type: string, default: "all"}
+  probe: {type: string, default: ""}
+halt_on_failure: false
+steps:
+  - name: node-net-forensics
+    timeout: 600
+    cmd: >
+      bash ~/.estate/libexec/net-forensics.sh "{{node}}" "{{probe}}"
