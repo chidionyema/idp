@@ -20,12 +20,12 @@ from pathlib import Path
 from typing import Optional
 
 ROOT = Path(os.environ.get("IDP") or Path(__file__).resolve().parent.parent)
-SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal",
+SUBST = {"TEMPORAL_BIN": "/opt/rendered/temporal", "PYTHON_BIN": "/opt/rendered/python3",
          "IDP": str(ROOT), "HOME": os.environ.get("HOME", "/nonexistent"),
          "PATH": os.environ.get("PATH", "/usr/bin")}
 
 def render(text: str) -> str:
-    return re.sub(r"\$\{(IDP|HOME|PATH|TEMPORAL_BIN)\}", lambda m: SUBST[m.group(1)], text)
+    return re.sub(r"\$\{(IDP|HOME|PATH|TEMPORAL_BIN|PYTHON_BIN)\}", lambda m: SUBST[m.group(1)], text)
 
 def grade(path: Path) -> Optional[str]:
     raw = path.read_text()
