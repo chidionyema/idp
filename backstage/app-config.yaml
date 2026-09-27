@@ -111,9 +111,9 @@ backend:
   # auth:
   #   keys:
   #     - secret: ${BACKEND_SECRET}
-  baseUrl: http://localhost:7107
+  baseUrl: http://localhost:7207
   listen:
-    port: 7107
+    port: 7207
     # BIND POLICY, founder ruling R20 (2026-08-24): the gateway is the only process on this
     # machine that binds a non-loopback address. Everything else binds 127.0.0.1 or nothing.
     #
