@@ -21,7 +21,12 @@ CACHES = [
     ".npm/_cacache",
     ".npm/_npx",
 ]
-KEPT = [".cache/estate-tools/litellm-venv", ".ollama/models", "Documents/code/x", ".Trash/photo"]
+KEPT = [
+    ".cache/estate-tools/litellm-venv",
+    ".ollama/models",
+    "Documents/code/x",
+    ".Trash/photo",
+]
 
 
 def _home(tmp_path: Path) -> Path:
@@ -34,7 +39,13 @@ def _home(tmp_path: Path) -> Path:
 
 def _run(home: Path, *args: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "HOME": str(home), "DISK_GUARD_PATH": str(home)}
-    return subprocess.run(["bash", str(SCRIPT), *args], env=env, capture_output=True, text=True, timeout=120)
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
 
 def test_dry_run_lists_every_cache_and_deletes_nothing(tmp_path):
@@ -56,7 +67,9 @@ def test_apply_empties_the_allow_list_and_nothing_else(tmp_path):
     assert freed + skipped == len(CACHES), r.stdout
     assert r.returncode == 0, r.stdout + r.stderr
     assert "free after:" in r.stdout
-    gone = [d for d in CACHES if not (home / d).exists() or not any((home / d).iterdir())]
+    gone = [
+        d for d in CACHES if not (home / d).exists() or not any((home / d).iterdir())
+    ]
     assert len(gone) == freed, (gone, r.stdout)
     for d in KEPT:
         assert (home / d / "blob").exists(), f"{d} must never be touched"
@@ -74,5 +87,7 @@ def test_trash_is_emptied_only_when_opted_in(tmp_path):
 
 def test_refuses_when_home_is_root(tmp_path):
     env = {**os.environ, "HOME": "/", "DISK_GUARD_PATH": str(tmp_path)}
-    r = subprocess.run(["bash", str(SCRIPT), "true", "false"], env=env, capture_output=True, text=True)
+    r = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false"], env=env, capture_output=True, text=True
+    )
     assert r.returncode == 1 and "REFUSED" in r.stdout
