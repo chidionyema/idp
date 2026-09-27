@@ -169,6 +169,11 @@ def cue_frame(cue: dict[str, Any]) -> str:
     return f"data: {json.dumps({**cue, 'type': 'cue'})}\n\n"
 
 
+def story_frame(on: str, story: dict[str, Any]) -> str:
+    """One SSE frame for a news story; `on` is the channel the story was published on."""
+    return f"data: {json.dumps({'type': 'story', 'on': on, 'story': story})}\n\n"
+
+
 def notes_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     return {"notes": notes.notes_for(session_id)}, 200
 

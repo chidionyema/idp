@@ -91,18 +91,25 @@ def build_app() -> FastAPI:
                 async for cue in nats_adapter.subscribe_cues(nats_url):
                     yield routes.cue_frame(cue)
 
-            try:
-                last_hb = asyncio.get_event_loop().time()
-                async for frame in nats_adapter.merge(_events(), _cues()):
-                    yield frame
-                    now = asyncio.get_event_loop().time()
-                    if now - last_hb >= 30:
-                        yield ": heartbeat\n\n"
-                        last_hb = now
-            except Exception:  # noqa: BLE001
-                while True:
-                    await asyncio.sleep(30)
+            async def _stories():
+                async for on, story in nats_adapter.subscribe_stories(nats_url):
+                    yield routes.story_frame(on, story)
+
+            last_hb = asyncio.get_event_loop().time()
+            merged = nats_adapter.merge(
+                nats_adapter.isolated("events", _events()),
+                nats_adapter.isolated("cues", _cues()),
+                nats_adapter.isolated("stories", _stories()),
+            )
+            async for frame in merged:
+                yield frame
+                now = asyncio.get_event_loop().time()
+                if now - last_hb >= 30:
                     yield ": heartbeat\n\n"
+                    last_hb = now
+            while True:
+                await asyncio.sleep(30)
+                yield ": heartbeat\n\n"
 
         async def gen():
             body, _status = routes.sessions_envelope()

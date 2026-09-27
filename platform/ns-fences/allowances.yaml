@@ -150,7 +150,8 @@ flows:
     # replica on node-159 hung in its 14-plugin startup because the fence had never declared it).
     # tailscale: "Pair my phone" reaches Sunshine on the Mac through the operator's egress
     # proxy, which runs in that namespace (platform/backstage/overlays/oke/sunshine-egress.yaml).
-    egress: [dagster, estate-db, identity, kyverno, robusta, tailscale]
+    # event-bus: fleetview sidecar reads ESTATE_NEWS/cinema cues, crew#974 P2.
+    egress: [dagster, estate-db, event-bus, identity, kyverno, robusta, tailscale]
     ingress_from: [edge]
     # api.github.com. The portal's buttons are scaffolder templates whose one step is
     # `github:actions:dispatch`, and the catalogue also ingests entities and TechDocs over the
@@ -458,7 +459,8 @@ flows:
     # epistemic-fabric: the ingestion connectors (idp#3448 CP1) publish CloudEvents onto the
     # epistemic.* streams; declared on both sides for the same reason as otto-gateway/commerce/llm.
     # voice-router is the newsroom (crew#974), declared on both sides.
-    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router]
+    # backstage: fleetview sidecar reads ESTATE_NEWS/cinema cues, crew#974 P2.
+    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router, backstage]
   epistemic-fabric:
     # idp#3448 CP1: four ingestion connectors. Each publishes to the NATS bus (event-bus) and
     # polls or verifies a webhook against an external vendor API (GitHub, Slack) over the public
