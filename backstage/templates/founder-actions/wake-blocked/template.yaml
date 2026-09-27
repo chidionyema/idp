@@ -15,7 +15,7 @@ spec:
   - title: Choices for this run
     properties:
       resolved:
-        title: 'the thing that has now landed, in a few words (for example: the SigNoz root secret)'
+        title: 'the thing that has now landed, in a few words (for example: the Grafana Cloud token)'
         type: string
         default: ''
   steps:

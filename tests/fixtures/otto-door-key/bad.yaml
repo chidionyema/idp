@@ -258,7 +258,7 @@ spec:
             - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "1.5" }
             # LAW 50. The entrypoint refuses to start without this, so a door that cannot be
             # seen never opens rather than running dark.
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }
             # Otto's three homes (founder order 2026-09-09, "otto must have 3 homes"), and the
             # only line of Otto's own configuration that changes to get them. Loopback: the
             # otto-brain sidecar in this same pod. It is the estate's one router first

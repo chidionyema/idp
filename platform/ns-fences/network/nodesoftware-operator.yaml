@@ -91,4 +91,4 @@ spec:
   - to:
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: observability
+          kubernetes.io/metadata.name: monitoring

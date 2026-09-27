@@ -6,7 +6,7 @@ dependencies in project delivery". The answer is a line in the closed PR's body,
 database and not a rebase daemon:
 
     Blocked-by: idp#400            a PR (merged) or an issue (closed) in any estate repo
-    Blocked-by: secret signoz-root  a free-text key, resolved by `--resolved "secret signoz-root"`
+    Blocked-by: secret grafana-cloud  a free-text key, resolved by `--resolved "secret grafana-cloud"`
 
 Every 30 minutes (the caller workflow) this reads the repo's closed, unmerged PRs, resolves each
 `Blocked-by:` key, and for a PR whose every key is resolved: PUT update-branch (GitHub merges the
@@ -17,7 +17,7 @@ Nothing reopens while the repo has PR_CAP (10) or more open pull requests: the p
 
     idp-wake-blocked                          act on $GH_REPO
     idp-wake-blocked --dry-run                print the plan, change nothing
-    idp-wake-blocked --resolved "secret signoz-root"   also treat this key as landed
+    idp-wake-blocked --resolved "secret grafana-cloud"   also treat this key as landed
     idp-wake-blocked --pulls f.json --open 3 --landed idp#400 --dry-run   offline (tests)
 """
 from __future__ import annotations

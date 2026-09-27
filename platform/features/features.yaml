@@ -42,12 +42,12 @@ features:
     why: every model call, cost and prompt is a trace a buyer's engineer can open
     tiers:
       - name: enterprise
-        what: "Langfuse (traces, prompts, evals, SSO) + SigNoz on ClickHouse (logs, metrics, spans) + the estate OTel collector"
+        what: "Langfuse (traces, prompts, evals, SSO) + the estate OTLP door shipping logs, metrics and spans to Grafana Cloud"
         switches: [observability]
         depends: [postgres, clickhouse]
       - name: lean
-        what: "collector only, traces forwarded to a remote Langfuse/OTLP endpoint; nothing stored on the node"
-        switches: [observability-collector]
+        what: "OTLP door only, traces forwarded to a remote OTLP endpoint; nothing stored on the node"
+        switches: [monitoring]
     default: enterprise
 
   - name: logs-metrics-store
@@ -55,7 +55,7 @@ features:
     why: three to seven days of logs and metrics are what an incident is diagnosed from
     tiers:
       - name: enterprise
-        what: "SigNoz + ClickHouse, retention 3-7 days (retention is a tier knob, not a hand edit)"
+        what: "Grafana Cloud through the OTLP door, 14 days kept on the free tier, nothing stored on the node"
         switches: [observability]
         knobs: { retention_days: 7 }
       - name: lean
@@ -230,15 +230,6 @@ features:
         what: "fixed node, no scaler (zealot rule: no paid scaling without a P95 >= 80 % proof)"
         switches: []
     default: lean
-
-  - name: science
-    title: Science department (evidence ledgers)
-    tiers:
-      - name: "on"
-        switches: [science]
-      - name: "off"
-        switches: []
-    default: "on"
 
   - name: staging
     title: Staging namespace

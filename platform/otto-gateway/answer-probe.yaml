@@ -53,7 +53,7 @@ data:
         "LITELLM_BASE_URL", "http://litellm.llm.svc.cluster.local:4000/v1"
     ).rstrip("/")
     OTLP_ENDPOINT = os.environ.get(
-        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://signoz-otel-collector.observability.svc:4318"
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://otlp.monitoring.svc:4318"
     )
     TIMEOUT_S = 45
 
@@ -263,7 +263,7 @@ spec:
                 # minimax, and the comment this replaces recorded the same class of drift
                 # on 2026-09-05 (#1678).
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                  value: "http://signoz-otel-collector.observability.svc:4318"
+                  value: "http://otlp.monitoring.svc:4318"
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts

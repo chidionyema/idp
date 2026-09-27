@@ -237,6 +237,10 @@ python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 if [ "$FAST" = 1 ]; then
   if "$MPY" -m ruff --version >/dev/null 2>&1; then RUFF=("$MPY" -m ruff); else RUFF=(ruff); fi
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
+  # 1d.1: SigNoz is gone and does not come back (founder, 2026-09-27). Any deployable SigNoz
+  # identifier in what Flux, CI or a template ships is refused; history in comments is not.
+  "$IDP/bin/idp-no-signoz-gate" && say "ok    no-signoz  platform clusters templates workflows" \
+    || { say "FAIL  no-signoz  the one OTLP door is platform/monitoring/otlp.yaml"; fail=1; }
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required

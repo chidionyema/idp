@@ -155,20 +155,17 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: founder-telemetry
-  title: "Telemetry (SigNoz)"
+  title: "Telemetry (Grafana Cloud)"
   description: "Look at the logs, numbers and traces from every workload; this one asks for a second sign-in."
   annotations:
     estate/group: "See what is running"
     estate/tier: "daily"
-    idp/updated-by: "Flux from platform/observability; rows arrive live from the OTel collector"
+    idp/updated-by: "Flux from platform/monitoring; rows arrive live from the OTLP door (otlp.yaml)"
   tags: [founder, screen]
   links:
     - title: "Open"
-      url: "https://signoz.${ESTATE_ZONE}"
+      url: "https://grafana.com/login"
       icon: dashboard
-    - title: "How to sign in (the second credential, and why)"
-      url: "https://github.com/chidionyema/idp/blob/main/docs/how-to/sign-in-to-signoz.md"
-      icon: docs
     - title: "Alert rules, where they are tracked"
       url: "https://github.com/chidionyema/crew/issues/495"
       icon: docs

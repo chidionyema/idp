@@ -48,8 +48,8 @@ const entities: Entity[] = [
     apiVersion: 'backstage.io/v1alpha1',
     kind: 'Component',
     metadata: {
-      name: 'signoz',
-      title: 'SigNoz',
+      name: 'superset',
+      title: 'Superset',
       annotations: {
         'estate/health': 'OK',
         'estate/health-checked-at': new Date().toISOString(),
@@ -232,7 +232,7 @@ describe('Ops', () => {
         ready('platform', 'flux-system'),
         ready('edge', 'flux-system', 'False'),
       ],
-      [HELMRELEASES]: [ready('signoz', 'observability')],
+      [HELMRELEASES]: [ready('superset', 'observability')],
     });
     expect(await screen.findByTestId('ops-sentence')).toHaveTextContent(
       '2 of 2 nodes ready, 1 pods not ready, 2 of 3 Flux rows ready.',

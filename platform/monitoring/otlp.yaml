@@ -1,0 +1,243 @@
+# The estate's one OTLP door: Grafana Alloy, one pod, shipping to Grafana Cloud free.
+# Founder, 2026-09-27: the old telemetry store goes and does not come back; its ClickHouse took
+# 2.0 cores of a 1.8-core budget (b679856e), sat at 0 replicas, and still held three paid volumes.
+# ADR 0034 rung 3 puts telemetry storage off the node.
+#
+# Every workload reaches it as http://otlp.monitoring.svc:4318. That address is written
+# once, as OTLP_ENDPOINT in clusters/oke/estate-config.yaml, and platform/edge/inject-otel-endpoint.yaml
+# injects it into every pod at admission. The name says what it is, not who serves it, so a
+# change of backend is this file and nothing else.
+#
+# What it does, each part matching what the old store's collector and node agent did:
+#   otelcol.receiver.otlp           app traces, metrics and logs
+#   loki.source.kubernetes          every container's log, read through the API (no hostPath)
+#   loki.source.kubernetes_events   k8s events
+#   otelcol.processor.k8sattributes pod/namespace/workload labels on every signal
+# eBPF service metrics are Coroot's (platform/coroot), not this: one eBPF agent on the estate.
+# Everything leaves through one exporter to Grafana Cloud's OTLP gateway. Free tier: 10k metric
+# series and 50 GB each of logs and traces a month, 14 days kept; over the limit is dropped,
+# never billed. The credential is the vendor row `grafana_cloud` in platform/vendors/consoles.yaml,
+# which the vendor bridge renders into Secret human-grafana-cloud in monitoring.
+#
+# kube-prometheus-stack stays the one Prometheus that evaluates rules and pages; this ships
+# signals out, it does not alert.
+#
+# One replica, not a DaemonSet: the log and event sources read through the API, so one pod sees
+# every node, and a pod per node would send every event once per node.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: grafana
+  namespace: monitoring
+spec:
+  interval: 24h
+  url: https://grafana.github.io/helm-charts
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: otlp
+  namespace: monitoring
+spec:
+  # Bounded per HGC standard 6, as every release in this row.
+  maxHistory: 3
+  interval: 10m
+  timeout: 10m
+  chart:
+    spec:
+      chart: alloy
+      version: 1.12.1
+      sourceRef:
+        kind: HelmRepository
+        name: grafana
+  install:
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3 }
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: founder-telemetry
+  values:
+    fullnameOverride: otlp
+    crds:
+      create: false
+    controller:
+      type: deployment
+      replicas: 1
+      priorityClassName: infrastructure-critical
+      volumes:
+        extra:
+          - name: grafana-cloud
+            secret: { secretName: human-grafana-cloud }
+          # Alloy's write-ahead state; the root filesystem is read-only.
+          - name: storage
+            emptyDir: { sizeLimit: 512Mi }
+    # Only what the components below read. The chart's default also grants get/list/watch on
+    # every Secret and ConfigMap in the cluster (remote.kubernetes.*), which nothing here uses.
+    rbac:
+      rules:
+        - apiGroups: ["", "discovery.k8s.io"]
+          resources: ["pods", "pods/log", "namespaces", "services", "endpoints", "endpointslices", "events"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["apps"]
+          resources: ["replicasets", "deployments", "statefulsets", "daemonsets"]
+          verbs: ["get", "list", "watch"]
+        - apiGroups: ["batch"]
+          resources: ["jobs", "cronjobs"]
+          verbs: ["get", "list", "watch"]
+      clusterRules:
+        - apiGroups: [""]
+          resources: ["nodes"]
+          verbs: ["get", "list", "watch"]
+    service:
+      enabled: true
+    # No reloader sidecar: the chart then stamps checksum/config on the pod, so a config change
+    # rolls the pod, which is what require-auto-reload asks of every workload anyway.
+    configReloader:
+      enabled: false
+    alloy:
+      stabilityLevel: generally-available
+      enableReporting: false
+      extraPorts:
+        - { name: otlp-grpc, port: 4317, targetPort: 4317, protocol: TCP }
+        - { name: otlp-http, port: 4318, targetPort: 4318, protocol: TCP }
+      # The credential is a mounted file, never an env var (secrets-not-from-env-vars), read by
+      # local.file below. Not optional: without it nothing leaves, and a pod stuck on a missing
+      # Secret says so on /fleet, where a pod that silently exported nowhere would not.
+      mounts:
+        extra:
+          - { name: grafana-cloud, mountPath: /etc/grafana-cloud, readOnly: true }
+          - { name: storage, mountPath: /tmp/alloy }
+      # The full restricted profile: nothing here needs the host.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 473
+        runAsGroup: 473
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities: { drop: ["ALL"] }
+        seccompProfile: { type: RuntimeDefault }
+      # The memory_limiter below holds the pipeline under the limit.
+      resources:
+        requests: { cpu: 25m, memory: 128Mi }
+        limits: { cpu: 250m, memory: 256Mi }
+      livenessProbe:
+        httpGet: { path: /-/healthy, port: 12345 }
+        initialDelaySeconds: 30
+        periodSeconds: 30
+      configMap:
+        content: |
+          logging {
+            level = "warn"
+          }
+
+          otelcol.receiver.otlp "apps" {
+            grpc {
+              endpoint = "0.0.0.0:4317"
+            }
+            http {
+              endpoint = "0.0.0.0:4318"
+            }
+            output {
+              metrics = [otelcol.processor.k8sattributes.default.input]
+              logs    = [otelcol.processor.k8sattributes.default.input]
+              traces  = [otelcol.processor.k8sattributes.default.input]
+            }
+          }
+
+          otelcol.processor.k8sattributes "default" {
+            extract {
+              metadata = ["k8s.namespace.name", "k8s.pod.name", "k8s.deployment.name", "k8s.statefulset.name", "k8s.cronjob.name", "k8s.job.name", "k8s.node.name"]
+            }
+            output {
+              metrics = [otelcol.processor.memory_limiter.default.input]
+              logs    = [otelcol.processor.memory_limiter.default.input]
+              traces  = [otelcol.processor.memory_limiter.default.input]
+            }
+          }
+
+          discovery.kubernetes "pods" {
+            role = "pod"
+          }
+
+          discovery.relabel "pods" {
+            targets = discovery.kubernetes.pods.targets
+            rule {
+              source_labels = ["__meta_kubernetes_namespace"]
+              target_label  = "namespace"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_name"]
+              target_label  = "pod"
+            }
+            rule {
+              source_labels = ["__meta_kubernetes_pod_container_name"]
+              target_label  = "container"
+            }
+          }
+
+          loki.source.kubernetes "pods" {
+            targets    = discovery.relabel.pods.output
+            forward_to = [otelcol.receiver.loki.default.receiver]
+          }
+
+          loki.source.kubernetes_events "cluster" {
+            forward_to = [otelcol.receiver.loki.default.receiver]
+          }
+
+          otelcol.receiver.loki "default" {
+            output {
+              logs = [otelcol.processor.memory_limiter.default.input]
+            }
+          }
+
+          otelcol.processor.memory_limiter "default" {
+            check_interval = "5s"
+            limit          = "200MiB"
+            output {
+              metrics = [otelcol.processor.batch.default.input]
+              logs    = [otelcol.processor.batch.default.input]
+              traces  = [otelcol.processor.batch.default.input]
+            }
+          }
+
+          otelcol.processor.batch "default" {
+            output {
+              metrics = [otelcol.exporter.otlphttp.grafana_cloud.input]
+              logs    = [otelcol.exporter.otlphttp.grafana_cloud.input]
+              traces  = [otelcol.exporter.otlphttp.grafana_cloud.input]
+            }
+          }
+
+          local.file "endpoint" {
+            filename = "/etc/grafana-cloud/GRAFANA_CLOUD_OTLP_ENDPOINT"
+          }
+
+          local.file "instance_id" {
+            filename = "/etc/grafana-cloud/GRAFANA_CLOUD_INSTANCE_ID"
+          }
+
+          local.file "token" {
+            filename  = "/etc/grafana-cloud/GRAFANA_CLOUD_API_TOKEN"
+            is_secret = true
+          }
+
+          otelcol.auth.basic "grafana_cloud" {
+            username = string.trim_space(local.file.instance_id.content)
+            password = local.file.token.content
+          }
+
+          otelcol.exporter.otlphttp "grafana_cloud" {
+            client {
+              endpoint = string.trim_space(local.file.endpoint.content)
+              auth     = otelcol.auth.basic.grafana_cloud.handler
+            }
+          }

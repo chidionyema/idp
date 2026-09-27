@@ -2,7 +2,7 @@
   "capability": "workload",
   "component": "github-mcp-server",
   "env": {
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://signoz-otel-collector.observability.svc:4318",
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otlp.monitoring.svc:4318",
     "OTEL_SERVICE_NAME": "mcp-github"
   },
   "name": "github-mcp",

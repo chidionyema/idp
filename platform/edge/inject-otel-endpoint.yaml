@@ -109,12 +109,12 @@ spec:
                       #                 the sibling `value:` was written onto EVERY existing
                       #                 entry:
                       #                     IN   LITELLM_LOG=INFO   LITELLM_MODE=PRODUCTION
-                      #                     OUT  LITELLM_LOG=http://signoz-...
-                      #                          LITELLM_MODE=http://signoz-...
+                      #                     OUT  LITELLM_LOG=http://<the collector then>...
+                      #                          LITELLM_MODE=http://<the collector then>...
                       #                 That is what killed llm/litellm, which reads LITELLM_LOG
                       #                 at import:
                       #                     AttributeError: module 'logging' has no attribute
-                      #                     'HTTP://SIGNOZ-OTEL-COLLECTOR.OBSERVABILITY.SVC:4318'
+                      #                     'HTTP://<THE COLLECTOR THEN>:4318'
                       #
                       #   `+(value):` -- rejected. It stops the damage, but Kyverno then reports
                       #                 `skipped mutate policy ... skip: 1` and injects NOTHING,
@@ -130,5 +130,7 @@ spec:
                       # has been corrected to say so. It is a no-op today: every manifest that
                       # sets this key (platform/jit, platform/acg, platform/idp_agent,
                       # platform/via-negativa) sets the identical collector URL.
+                      # The value is estate-config's OTLP_ENDPOINT, substituted by the edge row's
+                      # postBuild: written once, never copied here.
                       - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                        value: "http://signoz-otel-collector.observability.svc:4318"
+                        value: "${OTLP_ENDPOINT}"

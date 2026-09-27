@@ -19,7 +19,9 @@ resources:
   - cert-manager.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml
-  - k8s-infra-exception.yaml
+  # Founder 2026-09-27: the telemetry store the OTLP door replaced, deleted from the cluster
+  # by name, once. A follow-up PR removes this line when the Job's done line is in its log.
+  - retire-signoz.yaml
   - temporal-exception.yaml
   - scheduling-exception.yaml
   - hindsight-exception.yaml

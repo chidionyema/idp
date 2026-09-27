@@ -32,7 +32,7 @@ from broker.broker import Ledger  # noqa: E402
 from broker.collector import SPOOL_MAX, OTLPSink, sink_from_env  # noqa: E402
 
 KEY = b"a key the agent identity cannot read"
-COLLECTOR = "signoz-otel-collector.observability.svc"
+COLLECTOR = "otlp.monitoring.svc"
 OTLP_PORT = 4318
 
 
@@ -242,11 +242,11 @@ def _selects(peer: dict, ns: str) -> bool:
 def test_the_hop_to_the_collector_is_open_at_both_ends(tmp_path):
     """Both namespaces sit behind default-deny in both directions, so egress alone is a deny on
     the wire -- and the symptom would be a ledger that looks complete in the pod and is empty in
-    SigNoz. jit is exempt from bin/idp-ns-fence-gen, so the far half only exists because the
+    the telemetry store. jit is exempt from bin/idp-ns-fence-gen, so the far half only exists because the
     generator admits the namespaces it does not fence.
     """
     leaves = any(
-        _selects(peer, "observability")
+        _selects(peer, "monitoring")
         and any(p.get("port") == OTLP_PORT for p in rule.get("ports") or [])
         for doc in _docs(ROOT / "platform" / "jit" / "fence.yaml")
         if doc.get("kind") == "NetworkPolicy"
@@ -260,12 +260,12 @@ def test_the_hop_to_the_collector_is_open_at_both_ends(tmp_path):
     arrives = any(
         _selects(peer, "jit")
         for doc in _docs(
-            ROOT / "platform" / "ns-fences" / "network" / "observability.yaml"
+            ROOT / "platform" / "ns-fences" / "network" / "monitoring.yaml"
         )
         if doc.get("kind") == "NetworkPolicy"
         for rule in doc["spec"].get("ingress") or []
         for peer in rule.get("from") or []
     )
     assert arrives, (
-        "observability does not admit jit; the ledger is dropped at the far side"
+        "monitoring does not admit jit; the ledger is dropped at the far side"
     )

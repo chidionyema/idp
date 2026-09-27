@@ -188,7 +188,7 @@ describe('the first sentence says the counts in words', () => {
   });
 
   it('does not promise the one login while a door asks for a second credential', () => {
-    // crew#718: SigNoz community has no OIDC, so "opens on your estate login" was false for it
+    // crew#718: a vendor door with no OIDC means "opens on your estate login" was false for it
     expect(toolsSentence(estate())).toMatch(/second credential/);
   });
 });

@@ -132,7 +132,7 @@ spec:
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
             # directly and refuses to start in otlp mode without it.
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://signoz-otel-collector.observability.svc:4318"
+              value: "http://otlp.monitoring.svc:4318"
           ports:
             - containerPort: 8080
               name: http

@@ -305,7 +305,9 @@ flows:
     # edge: Alertmanager and Prometheus are reached through the gateway, which is why edge has
     # admitted monitoring since the fence was written -- but this side never said so, and a
     # half-declaration is a deny on the wire.
-    egress: [guacamole, robusta, edge]
+    # observability: Prometheus scrapes what runs there. Implicit while that namespace was the
+    # telemetry sink (every namespace got egress to it); now the sink is here, so it is said.
+    egress: [guacamole, robusta, edge, observability]
     # kubelet: the kube-prometheus-stack kubelet ServiceMonitor scrapes every node's :10250.
     egress_kubelet: true
     # dagster: the scheduler reads Alertmanager's firing alerts to decide there is
@@ -339,11 +341,17 @@ flows:
     egress_internet: [443]
   observability:
     egress: [monitoring, identity, estate-db]
-    # telemetry-coverage, science-facts and the Langfuse alert drill each write a receipt to
+    # The Langfuse alert drill writes a receipt to
     # Object Storage as the node.
     egress_internet: [443]
     egress_metadata: true
-    ingress_from: [edge, monitoring]
+    # Until 2026-09-27 this namespace held the telemetry sink and the generator admitted every
+    # emitter here. The sink is now monitoring (platform/monitoring/otlp.yaml); these are the
+    # namespaces that still declare egress here, admitted as before so Langfuse and Superset
+    # keep every caller they had. A name drops off this list when its egress line drops it.
+    ingress_from: [edge, monitoring, agent-workforce, commerce, crossplane-system, dagster, forge,
+                   hermes-agent, hindsight, identity, keda, llm, mcp, observability-agent,
+                   otto-gateway, otto-golden, robusta, sovereign-system]
   observability-agent:
     egress: [observability]
   metrics-server:

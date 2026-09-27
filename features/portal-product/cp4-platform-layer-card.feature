@@ -1,7 +1,7 @@
 @cp4
 Feature: every platform layer's entity page draws its own live state
   docs/specs/backstage-as-a-product.md CP4. All 64 type: platform-layer entities carry a
-  kubernetes-label-selector and a Signoz link; none draws anything on the card itself. One
+  kubernetes-label-selector and an observability link; none draws anything on the card itself. One
   shared component, rendered on all 64 at once.
 
   Scenario: the layer card is one component reused by every platform layer

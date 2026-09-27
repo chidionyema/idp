@@ -94,7 +94,7 @@ spec:
           kubernetes.io/metadata.name: estate-db
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: observability
+          kubernetes.io/metadata.name: monitoring
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

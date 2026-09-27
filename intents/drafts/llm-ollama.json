@@ -5,7 +5,7 @@
     "HOME": "/tmp",
     "OLLAMA_KEEP_ALIVE": "24h",
     "OLLAMA_MODELS": "/models",
-    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://signoz-otel-collector.observability.svc:4318"
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://otlp.monitoring.svc:4318"
   },
   "name": "ollama",
   "port": 11434,

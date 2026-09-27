@@ -62,7 +62,7 @@ spec:
     remediation:
       retries: 3
   values:
-    # crew#539: oauth2-proxy sits in front of catalogue, hc, langfuse and signoz, so its chart
+    # crew#539: oauth2-proxy sits in front of catalogue, hc and langfuse, so its chart
     # default of replicaCount 1 made every one of those surfaces one node event from a 503 no
     # matter how many replicas they ran. 2026-08-28 06:20-06:39Z proved it. Value names checked
     # against `helm show values oauth2-proxy/oauth2-proxy --version 10.7.0` (lines 450, 501, 509),

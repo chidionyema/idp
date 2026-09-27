@@ -16,8 +16,8 @@
 //   fits             it could be placed again                        -> healthy
 //
 // "Pinned" is the one nobody sees coming: the pod looks fine because it already has its place,
-// and it does not come back after a drain. That is the state SigNoz's ClickHouse sat in for eleven
-// days.
+// and it does not come back after a drain. That is the state the old telemetry store's ClickHouse sat
+// in for eleven days.
 
 export type PlacementPod = {
   namespace: string;

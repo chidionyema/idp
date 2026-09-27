@@ -67,7 +67,7 @@ spec:
           ports:
             - { name: http, containerPort: 8001 }
           env:
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }
             - { name: OTEL_SERVICE_NAME, value: mcp-estate }
             - { name: ESTATE_DB_PATH, value: /data/estate.db }
             - { name: ESTATE_CATALOG_PATH, value: /data/catalog-info.yaml }
@@ -145,7 +145,7 @@ spec:
               done
           env:
             - { name: DOCKER_CONFIG, value: /creds }
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }   # LAW 50: every container names the collector
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }   # LAW 50: every container names the collector
             - { name: OTEL_SERVICE_NAME, value: mcp-estate-refresh }
           volumeMounts:
             - { name: data, mountPath: /data }

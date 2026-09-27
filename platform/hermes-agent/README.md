@@ -48,7 +48,7 @@ catalogue holds it three ways: the platform layer `layer-hermes-agent`, the foun
 `founder-otto`, and the Hermes company domain `bin/catalog-gen` builds. Traces: model calls go
 through the router (traced there, STANDARDS observability row) and the agent's own go to the
 in-cluster Langfuse with keys from the vault (`langfuse-key.yaml`); logs and metrics ride the
-SigNoz k8s-infra collector like every pod.
+estate's one OTLP door (`platform/monitoring/otlp.yaml`) like every pod.
 
 There is no `platform/hermes-v2/` and there must never be one: a second Deployment of one
 Telegram poller on one token is 409s on both. The five-day audit of 2026-09-03 (section 5) listed

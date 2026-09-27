@@ -1085,6 +1085,38 @@ vendors:
       secret: SEED_TELEGRAM_ALERTS_CHAT_ID
       shape: -?[0-9]{6,14}
       bw: TELEGRAM_ALERTS_CHAT_ID
+  grafana_cloud:
+    kind: secret
+    pair: true
+    page: https://grafana.com/orgs
+    verify:
+      method: POST
+      url: '{GRAFANA_CLOUD_OTLP_ENDPOINT}/v1/metrics'
+      basic: '{GRAFANA_CLOUD_INSTANCE_ID}:{GRAFANA_CLOUD_API_TOKEN}'
+      headers:
+        Content-Type: application/json
+      body: '{}'
+    rotation: assisted
+    store_default: human-vault
+    targets:
+    - entry: grafana-cloud
+      ns: monitoring
+      field: GRAFANA_CLOUD_OTLP_ENDPOINT
+      secret: SEED_GRAFANA_CLOUD_OTLP_ENDPOINT
+      shape: https://otlp-gateway-[a-z0-9-]+\.grafana\.net/otlp
+      bw: GRAFANA_CLOUD_OTLP_ENDPOINT
+    - entry: grafana-cloud
+      ns: monitoring
+      field: GRAFANA_CLOUD_INSTANCE_ID
+      secret: SEED_GRAFANA_CLOUD_INSTANCE_ID
+      shape: '[0-9]{4,10}'
+      bw: GRAFANA_CLOUD_INSTANCE_ID
+    - entry: grafana-cloud
+      ns: monitoring
+      field: GRAFANA_CLOUD_API_TOKEN
+      secret: SEED_GRAFANA_CLOUD_API_TOKEN
+      shape: glc_[A-Za-z0-9+/=_-]{20,}
+      bw: GRAFANA_CLOUD_API_TOKEN
   stripe:
     kind: secret
     secret: SEED_STRIPE_SECRET_KEY

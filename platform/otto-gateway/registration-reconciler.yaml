@@ -24,8 +24,7 @@
 # the SAME collector every other workload in this estate already sends to (LAW 50, LAW 43 -- no
 # second metrics sink): platform/otto-gateway/deployment.yaml's OTEL_EXPORTER_OTLP_ENDPOINT, over
 # HTTP with the JSON encoding the collector's otlphttp receiver already accepts (no SDK, no pip
-# install, no extra image -- python's standard library is enough for one POST, the same
-# stdlib-only shape as platform/observability/telemetry-coverage.yaml's collect.py).
+# install, no extra image -- python's standard library is enough for one POST).
 #
 # Today there is one binding (tenant: estate, channel: telegram; docs/specs/otto-platform-v1/
 # EVENT-GATEWAY-TENANCY.md, "binding row #1"), so OTTO_TENANT_ID/OTTO_CHANNEL are the two
@@ -73,7 +72,7 @@ data:
         "/run/secrets/otto-gateway-channels/OTTO_TELEGRAM_WEBHOOK_SECRET",
     )
     OTLP_ENDPOINT = os.environ.get(
-        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://signoz-otel-collector.observability.svc:4318"
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://otlp.monitoring.svc:4318"
     )
     TIMEOUT_S = 15
 
@@ -302,7 +301,7 @@ spec:
                 # LAW 50: every workload emits to the central collector; same endpoint as
                 # platform/otto-gateway/deployment.yaml.
                 - name: OTEL_EXPORTER_OTLP_ENDPOINT
-                  value: "http://signoz-otel-collector.observability.svc:4318"
+                  value: "http://otlp.monitoring.svc:4318"
               volumeMounts:
                 - name: scripts
                   mountPath: /scripts

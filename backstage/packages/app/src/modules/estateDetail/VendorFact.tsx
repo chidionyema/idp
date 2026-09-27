@@ -1,4 +1,4 @@
-// CP3: the "Is it up?" card on the three vendor surfaces (Traces/Langfuse, Telemetry/SigNoz,
+// CP3: the "Is it up?" card on the vendor surfaces (Traces/Langfuse and
 // Dashboards/Superset). Before this, each card's only fact was a link to the vendor's own login.
 // The card reads the vendor's own health endpoint through the backend proxy (useVendor.ts) and
 // says, in one plain sentence, whether the door answered -- never a silent green, never a frame

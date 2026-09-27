@@ -822,7 +822,7 @@ def cluster_entities():
         cv = yaml.safe_load(open(vals)) or {}
         hub = (cv.get("hubble") or {})
         for tool, on, what in (("cilium", True, "Cilium replaces flannel as the CNI: pod networking, network policy and eBPF datapath (platform/cni/cilium-values.yaml, applied by playbook cilium-replace, never a Flux row)."),
-                               ("hubble", bool(hub.get("enabled")), f"Hubble is Cilium's flow observability: relay {'on' if (hub.get('relay') or {}).get('enabled') else 'off'}, UI {'on' if (hub.get('ui') or {}).get('enabled') else 'off'}; flows and metrics per pod, counted by bin/idp-telemetry-coverage.")):
+                               ("hubble", bool(hub.get("enabled")), f"Hubble is Cilium's flow observability: relay {'on' if (hub.get('relay') or {}).get('enabled') else 'off'}, UI {'on' if (hub.get('ui') or {}).get('enabled') else 'off'}; flows and metrics per pod.")):
             docs.append(entity("Component", f"cluster-cni-{tool}", tool.capitalize(), "cluster-choice",
                                {"source": "cluster", "file": "platform/cni/cilium-values.yaml", "enabled": "true" if on else "false"},
                                ["cluster", "cluster-choice", "cni"] + ([] if on else ["disabled"]),

@@ -28,9 +28,8 @@ step() { local name="$1"; shift; local out rc v; out=$("$@" 2>&1); rc=$?
 show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
 # show_redacted is show for anything that prints a workload's own output: same shape, every line
 # through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
-# crew#483 reuses this for the collector/agent logs and the ClickHouse count queries, which carry
-# the admin password as a --password argument; redact() (defined below, crew#516) is the one
-# redaction helper in bin/ (`rg redact bin/`, 2026-08-28) and covers both cases already.
+# crew#483 reuses this for the OTLP door's own log; redact() (defined below, crew#516) is the one
+# redaction helper in bin/ (`rg redact bin/`, 2026-08-28).
 show_redacted() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | redact | head -60; }
 
 # dns_probe <pod-name> <nodeName-or-empty> <fqdn> [namespace]: one busybox nslookup, pinned to a
@@ -108,55 +107,6 @@ telemetry_log() {
   pod=$($K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\n"}{end}' 2>/dev/null | grep -m1 "$pat")
   [ -n "$pod" ] || { echo "no pod matching *$pat* in $ns"; return 0; }
   $K logs "$pod" -n "$ns" --all-containers --tail=80 --prefix 2>&1
-}
-# collector_config_dump: the ConfigMap the signoz-otel-collector mounts, found by name rather than
-# typed (the chart's exact ConfigMap name is not declared anywhere in platform/, LAW 46), filtered
-# to the receiver/exporter/endpoint lines a chart upgrade or a values change would move.
-collector_config_dump() {
-  local cm
-  cm=$($K get configmap -n observability -o name 2>/dev/null | grep -m1 otel-collector | sed 's#^configmap/##')
-  [ -n "$cm" ] || { echo "no ConfigMap matching *otel-collector* in observability"; return 0; }
-  $K get configmap "$cm" -n observability -o yaml 2>&1 \
-    | grep -E '^[[:space:]]*(receivers|exporters|clickhouselogsexporter|clickhousetracesexporter|clickhousemetricswrite|otlp|endpoint|datasource):'
-}
-# clickhouse_counts_15m: crew#483 (run 33156980292, 08:45Z): pods_running=80 pods_seen=1 missing=80
-# backend_errors={} -- the coverage query answered and answered nearly empty, which is not the same
-# fault as a backend nothing can reach. The same three tables telemetry-coverage.yaml queries
-# (platform/observability/telemetry-coverage.yaml QUERIES), counted for the last 15 minutes instead
-# of the coverage job's 60, from inside the ClickHouse pod itself (kubectl exec, native protocol,
-# no extra network hop or exporter needed to answer "is anything landing right now"). The admin
-# password is read once from the Secret every other init container in this namespace already
-# reads the same way (platform/observability/langfuse.yaml:85) and is never echoed.
-clickhouse_counts_15m() {
-  local chpod pw
-  chpod=$($K get pods -n observability -l clickhouse.altinity.com/chi -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
-  [ -n "$chpod" ] || { echo "no pod with label clickhouse.altinity.com/chi in observability"; return 0; }
-  pw=$($K get secret clickhouse-auth -n observability -o jsonpath='{.data.password}' 2>/dev/null)
-  # crew#483 CI: a Secret lookup that returns anything other than well-formed base64 (missing,
-  # empty, or a CI fixture standing in for an unscripted call) still reaches `base64 -d` on the
-  # bare `pw=$(... | base64 -d)` form -- `base64 -d` does not refuse malformed input, it emits
-  # whatever bytes the input decodes to, including raw non-UTF-8 bytes that then ride along as a
-  # --password argument and corrupt every downstream log this playbook's own invocation record is
-  # read back from (bdd/offline-gate run 33160519723: `UnicodeDecodeError ... invalid start byte`,
-  # traced to "ok" -> byte 0xa2). Refuse to decode anything that is not valid base64 shape instead.
-  # A compound `if ... || ! printf | grep -q ...; then` line trips bin/idp-ci's
-  # pipeverdict_scan guard (bin/idp-ci:54-62): its printf/echo/cat/head exemption only
-  # recognizes a bare `if printf | grep -q; then` pipeline, not one clause of an `||`
-  # chain. Compute the base64-shape check into a plain variable first, outside any
-  # if/elif/while condition, so no grep -q pipe's exit status ever sits inside one.
-  pw_b64_shaped=0
-  printf '%s' "$pw" | grep -E '^[A-Za-z0-9+/]*={0,2}$' >/dev/null && pw_b64_shaped=1
-  if [ -z "$pw" ] || [ $(( ${#pw} % 4 )) -ne 0 ] || [ "$pw_b64_shaped" -eq 0 ]; then
-    echo "clickhouse-auth secret in observability did not decode to a usable password"
-    return 0
-  fi
-  pw=$(printf '%s' "$pw" | base64 -d 2>/dev/null)
-  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
-    "SELECT 'logs', count() FROM signoz_logs.distributed_logs_v2 WHERE timestamp > toUInt64(toUnixTimestamp(now()) - 900) * 1000000000" 2>&1
-  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
-    "SELECT 'traces', count() FROM signoz_traces.distributed_signoz_index_v3 WHERE timestamp > now() - INTERVAL 900 SECOND" 2>&1
-  $K exec -n observability "$chpod" -c clickhouse -- clickhouse-client --user admin --password "$pw" -q \
-    "SELECT 'metrics', count() FROM signoz_metrics.distributed_time_series_v4 WHERE unix_milli > (toUnixTimestamp(now()) - 900) * 1000" 2>&1
 }
 # otlp_endpoints_by_workload: every Deployment carrying OTEL_EXPORTER_OTLP_ENDPOINT, read from the
 # live objects (never from the checked-out manifests -- what is APPLIED is what can be wrong).
@@ -253,14 +203,6 @@ pb_diagnose() {
   done <<<"$pending"
   # langfuse-web could not reach langfuse-postgresql:5432 while the postgres pod was Running: a
   # Service with no ready address is the difference, and it is only visible on the Endpoints.
-  # Run 33144117286: idp#536 raised clickhouse to 4Gi, Helm reported signoz.v40, and the pod kept
-  # logging "maximum: 1.80 GiB" because nothing rolled it. Helm -> ClickHouseInstallation ->
-  # StatefulSet -> pod is four links; print the memory limit at each so the broken one is named.
-  show clickhouse-installation sh -c "$K get chi -A -o wide 2>&1; $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tCHI podTemplate limits: \"}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{\"\n\"}{end}' 2>&1; $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tsts limits: \"}{.spec.template.spec.containers[0].resources.limits}{\"\tobservedGeneration=\"}{.status.observedGeneration}{\" generation=\"}{.metadata.generation}{\"\n\"}{end}' 2>&1; $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tpod limits: \"}{.spec.containers[0].resources.limits}{\"\n\"}{end}' 2>&1"
-  # kubectl logs takes no -A (idp#538 review): resolve the operator's namespace first.
-  # run 33145711762: `-l app=clickhouse-operator` matched nothing (the signoz chart labels the
-  # operator pod by its own names); the pod is found by name, which every chart version keeps
-  show clickhouse-operator-log sh -c "set -- \$($K get pods -A --no-headers 2>/dev/null | awk '\$2 ~ /clickhouse-operator/ {print \$1, \$2; exit}'); [ -n \"\${2:-}\" ] || { echo 'no pod named *clickhouse-operator*'; exit 0; }; $K logs -n \"\$1\" \"\$2\" --all-containers --tail=40 --prefix 2>&1 | tail -40"
   # Run 33143467334: 21 descheduler pods in Error with no row saying whether the CronJob's later
   # runs succeed; jobs are the receipt, pods are the history.
   show cronjobs $K get cronjobs,jobs -A
@@ -309,24 +251,10 @@ pb_diagnose() {
   # what we wrote (founder, 2026-08-29: "get all the regexes and audit").
   show policy-report-fails sh -c "$K get policyreports,clusterpolicyreports -A -o json 2>/dev/null | jq -r '[.items[].results[]? | select(.result==\"fail\") | \"\\(.policy)/\\(.rule)\"] | group_by(.) | map(\"\\(length)\\t\\(.[0])\") | .[]' | sort -rn | head -40; true"
   show admission-denials-live sh -c "$K get admissionreports -A -o json 2>/dev/null | jq -r '[.items[].spec.results[]? | select(.result==\"fail\") | \"\\(.policy)/\\(.rule)\"] | group_by(.) | map(\"\\(length)\\t\\(.[0])\") | .[]' | sort -rn | head -20; true"
-  # --- telemetry (crew#483): run 33156980292 (08:45Z) printed pods_running=80 pods_seen=1
-  # missing=80 backend_errors={} and nothing above ever looks at the collector's own words -- the
-  # pod-not-ready branch above only tails a pod when it is unready, and both telemetry components
-  # were Ready throughout. This answers where the other 79 pods' telemetry is lost: pod health for
-  # signoz-otel-collector and both k8s-infra components; each one's own log; the collector's live
-  # receiver/exporter config; the ClickHouse row counts for the last 15 minutes from the exact
-  # tables the coverage job queries; the OTLP endpoint every workload is told to use; and which
-  # Deployments actually carry that env var. Read-only throughout.
-  local ns
-  for ns in observability observability-agent; do
-    show "telemetry-pods-$ns" $K get pods -n "$ns" -o wide
-  done
-  show_redacted collector-log telemetry_log observability otel-collector
-  show_redacted k8s-infra-agent-log telemetry_log observability-agent otel-agent
-  show_redacted k8s-infra-deployment-log telemetry_log observability-agent otel-deployment
-  show collector-config collector_config_dump
-  show_redacted clickhouse-counts-15m clickhouse_counts_15m
-  show otlp-endpoint-declared $K get helmrelease k8s-infra -n observability-agent -o jsonpath='{"k8s-infra otelCollectorEndpoint: "}{.spec.values.otelCollectorEndpoint}{"\n"}'
+  # --- telemetry (crew#483): the OTLP door's own pod and log (platform/monitoring/otlp.yaml), the
+  # endpoint every workload is told to use, and which Deployments actually carry it. Read-only.
+  show telemetry-pods $K get pods -n monitoring -l app.kubernetes.io/instance=otlp -o wide
+  show_redacted otlp-log telemetry_log monitoring otlp
   show otlp-endpoint-workloads otlp_endpoints_by_workload
   $K get nodes >/dev/null || FAILED="$FAILED nodes"
 }
@@ -1172,45 +1100,6 @@ pb_node_uncordon() {
   show nodes $K get nodes -o wide
 }
 
-# chi-resize: run 33147086133 (diagnose after idp#536): the signoz HelmRelease carries 4Gi for
-# clickhouse, and "Helm upgrade failed ... pre-upgrade hooks failed: timeout waiting for
-# Job/observability/signoz-telemetrystore-migrator". The migrator's init containers wait for a
-# ClickHouse that is Ready; ClickHouse exits 137 at the old 2Gi every few minutes; the 4Gi that
-# would let it live sits behind the hook that waits for it. Helm cannot break its own deadlock,
-# so the ClickHouseInstallation is patched to the value the HelmRelease already declares (read
-# from the values ConfigMap, never typed here); the Altinity operator rolls the StatefulSet, the
-# pod comes up at 4Gi, the migrator finishes and the next Helm reconcile converges on the same
-# value: there is nothing to undo, the patch IS the declared state.
-CHI_VALUES="${CHI_VALUES:-observability/signoz-values}"   # <namespace>/<ConfigMap> holding values.yaml
-chi_links() {
-  $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tCHI podTemplate limits: "}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{"\n"}{end}' 2>&1
-  $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tsts limits: "}{.spec.template.spec.containers[0].resources.limits}{"\n"}{end}' 2>&1
-  $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tpod limits: "}{.spec.containers[0].resources.limits}{"\t"}{.status.phase}{"\n"}{end}' 2>&1
-}
-pb_chi_resize() {
-  local want
-  want=$($K get configmap "${CHI_VALUES#*/}" -n "${CHI_VALUES%/*}" -o jsonpath='{.data.values\.yaml}' 2>/dev/null \
-    | python3 -c 'import sys,json,yaml; r=(yaml.safe_load(sys.stdin) or {}).get("clickhouse",{}).get("resources"); print(json.dumps(r,separators=(",",":")) if r else "")')
-  [ -n "$want" ] || { echo "FAIL  chi-resize: no clickhouse.resources in ConfigMap $CHI_VALUES"; FAILED="$FAILED chi-resize"; return 1; }
-  local want_mem
-  want_mem=$(printf %s "$want" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("limits",{}).get("memory",""))')
-  [ -n "$want_mem" ] || { echo "FAIL  chi-resize: the declared resources carry no limits.memory"; FAILED="$FAILED chi-resize"; return 1; }
-  echo "--- want $want"
-  show chi-before chi_links
-  local row ns name
-  for row in $($K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{end}' 2>/dev/null); do
-    ns="${row%/*}"; name="${row#*/}"
-    step "patch-$name" $K patch chi "$name" -n "$ns" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/templates/podTemplates/0/spec/containers/0/resources\",\"value\":$want}]"
-    # run 33148549633: the patch landed on the CHI and `rollout status` answered "complete" in the
-    # same second -- against the OLD StatefulSet, because the Altinity operator reconciles
-    # CHI -> sts asynchronously. chi-after then printed 2Gi at sts and pod and the run still PASSed.
-    # Wait for the operator to carry the value onto the sts spec first; only then wait for the roll.
-    step "reconcile-$name" $K wait sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --for=jsonpath='{.spec.template.spec.containers[0].resources.limits.memory}'="$want_mem" --timeout=600s
-    step "rollout-$name" $K rollout status sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --timeout=600s
-  done
-  show chi-after chi_links
-}
-
 # registries-conf: READ-ONLY. What the container runtime on each node is actually configured to do
 # with an unqualified image name. Founder 2026-08-31, doc
 # ~/.claude/docs/founder/2026-08-31T0243Z-one-your-nodes-are-configured-to-reject-what-5434b31f.md:
@@ -1656,7 +1545,7 @@ trivy-system sbom-k8s-cluster Opaque <none> <none> 2026-09-05T10:00:00Z <none> <
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   -h|--help) sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/usage: idp-oke-break-glass <playbook>\nplaybooks: \1/p' "$0"; exit 0 ;;
-  --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize catalogue-roll router-spend registries-conf tigera-reset ns-fences secret-census secret-reclaim"; exit 0 ;;
+  --list) echo "diagnose architect-doctor otto-homes otto-parity otto-lockdown otto-restore healthchecks-door cilium-unchain cilium-replace helm-retry webhooks-restart namespace-unstick ghcr-pull-restore k8sgpt-analyze dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon catalogue-roll router-spend registries-conf tigera-reset ns-fences secret-census secret-reclaim"; exit 0 ;;
   diagnose) pb_diagnose ;;
   architect-doctor) pb_architect_doctor ;;
   otto-homes) pb_otto_homes ;;
@@ -1676,7 +1565,6 @@ case "${1:-}" in
   catalogue-roll) pb_catalogue_roll ;;
   node-drain) pb_node_drain ;;
   node-uncordon) pb_node_uncordon ;;
-  chi-resize) pb_chi_resize ;;
   namespace-unstick) pb_namespace_unstick ;;
   ghcr-pull-restore) pb_ghcr_pull_restore ;;
   registries-conf) pb_registries_conf ;;

@@ -25,7 +25,7 @@ metadata:
     policies.kyverno.io/subject: Deployment, StatefulSet, CronJob
     policies.kyverno.io/description: >-
       The radio-room set (traefik, langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway,
-      telemetry-coverage, cluster-state) must run under the infrastructure-critical PriorityClass;
+      cluster-state) must run under the infrastructure-critical PriorityClass;
       every other platform workload should name a class so the scheduler can rank it under pressure.
 spec:
   background: true
@@ -36,7 +36,7 @@ spec:
           - resources:
               kinds: [Deployment, CronJob]
               operations: [CREATE, UPDATE]
-              names: [traefik, langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, telemetry-coverage, cluster-state]
+              names: [traefik, langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, cluster-state]
       validate:
         failureAction: Enforce
         message: "crew#539: this workload is in the radio-room set and must run as priorityClassName infrastructure-critical"
@@ -82,7 +82,7 @@ spec:
           - resources:
               kinds: [Deployment, CronJob]
               operations: [CREATE, UPDATE]
-              names: [traefik, langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, telemetry-coverage, cluster-state]
+              names: [traefik, langfuse-web, langfuse-worker, agentgateway, hermes-agent-gateway, cluster-state]
       validate:
         failureAction: Enforce
         message: "crew#539: this workload is in the radio-room set and must be Guaranteed QoS: resources.requests == resources.limits for cpu and memory on every container"

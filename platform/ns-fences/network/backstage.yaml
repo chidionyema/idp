@@ -106,7 +106,7 @@ spec:
           kubernetes.io/metadata.name: kyverno
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: observability
+          kubernetes.io/metadata.name: monitoring
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: robusta

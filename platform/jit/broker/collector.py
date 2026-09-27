@@ -11,8 +11,8 @@ reports to (LAW 50, LAW 43: no second sink, no second store). The file stays -- 
 `/healthz` verifies the hash chain of, and it is the write-ahead copy that survives the
 collector being down -- but it is no longer the only place the record exists.
 
-Stdlib only, and deliberately: the same shape as platform/otto-gateway's reconciler and
-platform/observability/telemetry-coverage.yaml. One POST of OTLP/HTTP JSON, no SDK, no pip
+Stdlib only, and deliberately: the same shape as platform/otto-gateway's reconciler.
+One POST of OTLP/HTTP JSON, no SDK, no pip
 install, no extra layer on an image whose whole point is that it is small and auditable.
 
 The sink never raises into the broker. A collector that is down must not stop the founder
@@ -49,7 +49,7 @@ class OTLPSink:
 
     The whole record travels twice on purpose: as the body, verbatim, so a reader can re-run
     `Ledger.verify()`'s arithmetic over what arrived; and as attributes, so the record is
-    queryable in SigNoz without parsing the body. `this` and `sig` are what make the copy
+    queryable in the telemetry store without parsing the body. `this` and `sig` are what make the copy
     self-defending -- a record altered between here and the collector fails the same HMAC check
     the file's copy does.
     """
@@ -57,7 +57,7 @@ class OTLPSink:
     def __init__(
         self, endpoint: str, service: str = "jit-broker", timeout: float = 5.0
     ):
-        # SigNoz's collector takes OTLP/HTTP on 4318 and the estate passes the base URL in
+        # The collector takes OTLP/HTTP on 4318 and the estate passes the base URL in
         # OTEL_EXPORTER_OTLP_ENDPOINT, the same variable litellm, the MCP servers and the
         # k8s-infra chart all read. The signal path is appended here rather than configured,
         # because a base URL that already ends in /v1/logs is the misconfiguration that makes
@@ -74,7 +74,7 @@ class OTLPSink:
                     "resource": {
                         "attributes": [
                             _attr("service.name", self.service),
-                            # The namespace is what tells SigNoz's own views this belongs to
+                            # The namespace is what tells the store's own views this belongs to
                             # the estate's platform rather than a product workload.
                             _attr(
                                 "k8s.namespace.name",
@@ -95,7 +95,7 @@ class OTLPSink:
     def _record(self, body: dict) -> dict:
         at = float(body.get("at", 0.0))
         # Every key of the record becomes an attribute, so a grant name, a request id or the
-        # chain hash is a column in SigNoz rather than something to grep the body for.
+        # chain hash is a column in the store rather than something to grep the body for.
         attributes = [
             _attr(k, v)
             for k, v in sorted(body.items())

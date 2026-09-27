@@ -21,7 +21,7 @@ import { HEALTH_LABEL, checkedAgo, healthOf } from '../home/estate';
 // The live cluster card: reuse it for any Estate subject that genuinely sits on the cluster as
 // a Flux kustomization (every platform layer), so a click sees it Alive rather than a GitHub link.
 import { LayerOnCluster, isOnCluster } from './live';
-// CP3: the "Is it up?" card for the three vendor surfaces (Traces/Langfuse, Telemetry/SigNoz,
+// CP3: the "Is it up?" card for the vendor surfaces (Traces/Langfuse and
 // Dashboards/Superset), which otherwise carry only a link to the vendor's own login.
 import { VendorFact } from './VendorFact';
 import { vendorOf } from '../home/vendor';

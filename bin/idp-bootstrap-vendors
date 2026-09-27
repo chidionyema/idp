@@ -46,7 +46,7 @@ VAULT_PUT_PREFLIGHT=1 "$IDP/bin/idp-vault-put" vendors --preflight | sed 's/^/  
 
 export IDP REG MODE ONLY ROTATE
 exec python3 - <<'PY'
-import os, re, sys, glob, json, functools, subprocess, tempfile, urllib.error, urllib.request
+import base64, os, re, sys, glob, json, functools, subprocess, tempfile, urllib.error, urllib.request
 import yaml
 failed = []
 IDP, REG, MODE, ONLY, ROTATE = (os.environ[k] for k in ("IDP", "REG", "MODE", "ONLY", "ROTATE"))
@@ -98,6 +98,13 @@ def verify(v, subs):
             sys.exit(1)
         return s
     headers = {k: fill(val) for k, val in (spec.get("headers") or {}).items()}
+    # `basic: '{user}:{password}'` -- HTTP basic auth (Grafana Cloud's OTLP gateway), encoded
+    # here so the registry never has to spell a base64 of two fields it cannot compute. The
+    # encoded form joins the scrub list, so a vendor echoing the header never reaches the log.
+    if spec.get("basic"):
+        cred = base64.b64encode(fill(spec["basic"]).encode()).decode()
+        headers["Authorization"] = "Basic " + cred
+        subs = {**subs, "_basic": cred}
     data = fill(spec["body"]).encode() if spec.get("body") else None
     req = urllib.request.Request(fill(spec["url"]), data=data, method=spec["method"], headers=headers)
     refuse = spec.get("refuse_when")
