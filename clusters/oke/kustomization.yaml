@@ -11,7 +11,12 @@ resources:
   - dns.yaml
   - monitoring.yaml
   - kyverno.yaml
-  - estate-db.yaml
+  # Restored 2026-09-26 with every workload pinned to its live replica count (see each row's
+  # patches): c96359f4 dropped these rows while their workloads kept running unreconciled.
+  - platform.yaml
+  - commerce.yaml
+  - human-vault.yaml
+  - sandbox.yaml
   - ns-fences.yaml
   - unified-memory.yaml
 patches:

@@ -222,6 +222,11 @@ spec:
               value: "false"
             - name: FELIX_HEALTHENABLED
               value: "true"
+            # Cross-node pod TCP died while UDP worked (measured 2026-09-26 by idp-0a with busybox
+            # pods in spire-mgmt, both directions between .148 and .197; NSG and NetworkPolicy
+            # ruled out). That is the VXLAN checksum-offload signature.
+            - name: FELIX_FEATUREDETECTOVERRIDE
+              value: "ChecksumOffloadBroken=true"
           securityContext:
             privileged: true
           resources:
