@@ -25,3 +25,11 @@ jsonschema==4.26.0
 # ModuleNotFoundError before pytest can grade any orchestrator-routing scenario.
 langchain-core>=0.2
 
+
+# tests/test_unified_memory_server.py runs platform/unified-memory-server against a real
+# PostgreSQL 16 + pgvector. pgserver ships both as a wheel (manylinux x86_64, macOS), so the
+# suite needs no Docker and no cluster; without these three it would skip, and a skipped
+# suite proves nothing.
+pgserver==0.1.4
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
