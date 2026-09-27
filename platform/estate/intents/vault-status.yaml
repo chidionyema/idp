@@ -1,0 +1,36 @@
+name: vault-status
+description: >
+  Composite intent. Check ClusterSecretStore and SecretStore health.
+args:
+  namespace: {type: string, default: "vault"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: cluster-secret-stores
+    intent: kubectl-list
+    args:
+      resource: clustersecretstores
+      output: json
+  - name: secret-stores
+    intent: kubectl-list
+    args:
+      resource: secretstores
+      namespace: "{{namespace}}"
+      output: json
+  - name: summary
+    cmd: |
+      KUBECONFIG={{kubeconfig}} kubectl get clustersecretstores,secretstores -A -o json 2>/dev/null | python3 -c "
+      import sys, json
+      try:
+          d = json.load(sys.stdin)
+          items = d.get('items', []) if isinstance(d, dict) else []
+          print('Store status:')
+          for s in items:
+              name = s['metadata']['name']
+              ns = s['metadata'].get('namespace', 'cluster')
+              kind = s.get('kind', 'Store')
+              cond = s.get('status', {}).get('conditions', [])
+              ok = 'OK' if any(c.get('type') == 'Ready' and c.get('status') == 'True' for c in cond) else 'FAIL'
+              print(f'  [{ok}] {kind} {ns}/{name}')
+      except Exception as e:
+          print(f'error: {e}')
+      "

@@ -1,0 +1,12 @@
+name: k8s-diag
+description: >
+  Cluster health diagnostic: DNS, ClusterSecretStore, Flux blocks, IMDS egress.
+  No pod exec, no long timeouts. Reads API objects only.
+  Output: dashboard + JSON. Companion to k8s-net-doctor for packet-level tracing.
+args:
+  namespace: { type: string, default: "", description: "Target namespace (default: all)" }
+  verbose:   { type: bool,   default: false, description: "Include GitRepository revision" }
+halt_on_failure: false
+steps:
+  - cmd: |
+      python3 ~/.estate/libexec/k8s-diag.py

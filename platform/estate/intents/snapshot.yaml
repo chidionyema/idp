@@ -1,0 +1,40 @@
+name: snapshot
+description: Return full cluster state as bounded JSON.
+args:
+  namespace: {type: string, default: ""}
+steps:
+  - name: collect
+    cmd: |
+      python3 - <<'PY'
+      import subprocess, json, sys
+      def k(*a):
+          r = subprocess.run(["kubectl",*a], capture_output=True, text=True)
+          return r.stdout
+      out = {"ts": __import__("time").time()}
+      # kustomizations
+      try:
+          d = json.loads(k("-n","flux-system","get","kustomizations","-o","json"))
+          out["kustomizations"] = [
+              {"name": i["metadata"]["name"],
+               "ready": next((c.get("status") for c in i.get("status",{}).get("conditions",[]) if c.get("type")=="Ready"), "?"),
+               "message": next((c.get("message","")[:200] for c in i.get("status",{}).get("conditions",[]) if c.get("type")=="Ready"), ""),
+               "applied": i.get("status",{}).get("lastAppliedRevision",""),
+               "dependsOn": [x["name"] for x in i.get("spec",{}).get("dependsOn",[])]}
+              for i in d.get("items",[])
+          ]
+      except Exception as e:
+          out["kustomizations"] = str(e)
+      # controller args
+      try:
+          args = k("-n","flux-system","get","deploy","kustomize-controller","-o","jsonpath={.spec.template.spec.containers[0].args}")
+          out["kustomize_controller_args"] = [a for a in args.split() if "concurrent" in a or "requeue" in a]
+      except: pass
+      # source revision
+      out["source_revision"] = k("-n","flux-system","get","gitrepository","flux-system","-o","jsonpath={.status.artifact.revision}").strip()
+      # litellm configmap
+      try:
+          cm = k("-n","llm","get","cm","-o","jsonpath={.items[*].metadata.name}").split()
+          out["llm_configmaps"] = cm
+      except: pass
+      print(json.dumps(out, indent=2))
+      PY

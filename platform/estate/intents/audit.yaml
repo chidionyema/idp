@@ -1,0 +1,66 @@
+name: audit
+description: Estate health — kustomizations, helmreleases, crashloops.
+args: {}
+steps:
+  - name: run
+    cmd: |
+      python3 - <<'PY'
+      import json, subprocess
+
+      def k(*a):
+          try:
+              r = subprocess.run(["kubectl", *a, "-o", "json"],
+                                 capture_output=True, text=True, timeout=60)
+              return json.loads(r.stdout) if r.returncode == 0 else {"error": r.stderr[:200]}
+          except Exception as e:
+              return {"error": str(e)[:200]}
+
+      out = {}
+
+      # Kustomizations
+      kust = k("-n", "flux-system", "get", "kustomizations")
+      if "items" in kust:
+          def ready(i):
+              return any(c.get("type") == "Ready" and c.get("status") == "True"
+                         for c in i.get("status", {}).get("conditions", []))
+          out["kustomizations_ready"] = sum(1 for i in kust["items"] if ready(i))
+          out["kustomizations_total"] = len(kust["items"])
+          out["kustomizations_notready"] = [
+              {"name": i["metadata"]["name"],
+               "msg": next((c.get("message", "")[:120]
+                            for c in i.get("status", {}).get("conditions", [])
+                            if c.get("type") == "Ready"), "")}
+              for i in kust["items"] if not ready(i)]
+
+      # HelmReleases
+      hr = k("get", "helmreleases", "-A")
+      if "items" in hr:
+          bad = []
+          for i in hr["items"]:
+              conds = i.get("status", {}).get("conditions", [])
+              r = next((c for c in conds if c.get("type") == "Ready"), None)
+              if r and r.get("status") == "False":
+                  bad.append(f"{i['metadata']['namespace']}/{i['metadata']['name']}: {r.get('message','')[:100]}")
+          out["helmreleases_failing"] = bad
+
+      # Pods not Running / high restarts
+      pods = k("get", "pods", "-A")
+      if "items" in pods:
+          bad = []
+          for p in pods["items"]:
+              phase = p["status"].get("phase")
+              css = p["status"].get("containerStatuses") or []
+              worst = max((c.get("restartCount", 0) for c in css), default=0)
+              if phase != "Running" or worst > 10:
+                  bad.append(f"{p['metadata']['namespace']}/{p['metadata']['name']} {phase} restarts={worst}")
+          out["pods_unhealthy"] = bad[:40]
+          out["pods_total"] = len(pods["items"])
+
+      # Secrets count (cheap: just count names, no full json)
+      import subprocess as sp
+      r = sp.run(["kubectl", "get", "secrets", "-A", "--no-headers"],
+                 capture_output=True, text=True, timeout=60)
+      out["secrets_total"] = len(r.stdout.strip().split("\n")) if r.returncode == 0 else "?"
+
+      print(json.dumps(out, indent=2))
+      PY

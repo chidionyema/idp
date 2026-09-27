@@ -1,0 +1,44 @@
+name: pr-ready
+description: >
+  Composite intent. CI status + review state + draft flag → merge readiness verdict.
+  Returns structured JSON.
+args:
+  pr:   {type: int, default: 0}
+  repo: {type: string, default: "chidioniema/idp"}
+steps:
+  - name: ci-status
+    intent: ci.status
+    args:
+      pr: "{{pr}}"
+      repo: "{{repo}}"
+  - name: pr-info
+    intent: gh-api
+    args:
+      path: pulls/{{pr}}
+  - name: verdict
+    cmd: |
+      python3 -c "
+      import sys,json
+      try:
+      d=json.load(sys.stdin)
+      ci=d.get('ci-status',{})
+      pr=d.get('pr-info',{})
+      ready = (
+      ci.get('merge_ready')==True and
+      not pr.get('isDraft',True) and
+      pr.get('mergeable',True)
+      )
+      blockers=[]
+      if ci.get('failed',0)>0:
+      blockers.append(f\"{ci['failed']} CI failures\")
+      if ci.get('running',0)>0:
+      blockers.append(f\"{ci['running']} checks running\")
+      if pr.get('isDraft'):
+      blockers.append('DRAFT PR')
+      if not pr.get('mergeable'):
+      blockers.append('not mergeable')
+      result={'pr':{{pr}},'ready':ready,'blockers':blockers,'ci':ci,'pr_title':pr.get('title')}
+      print(json.dumps(result,indent=2))
+      except Exception as e:
+      print(json.dumps({'pr':{{pr}},'ready':False,'error':str(e)}))
+      "
