@@ -64,12 +64,20 @@ def build_app() -> FastAPI:
             body, _status = routes.sessions_envelope()
             for record in body.get("sessions") or []:
                 yield routes.stream_frames([record])[0]
+            import json as _json
+
+            async def _events():
+                async for event in nats_adapter.subscribe_stream(nats_url):
+                    yield f"data: {_json.dumps(event)}\n\n"
+
+            async def _cues():
+                async for cue in nats_adapter.subscribe_cues(nats_url):
+                    yield routes.cue_frame(cue)
+
             try:
                 last_hb = asyncio.get_event_loop().time()
-                async for event in nats_adapter.subscribe_stream(nats_url):
-                    import json as _json
-
-                    yield f"data: {_json.dumps(event)}\n\n"
+                async for frame in nats_adapter.merge(_events(), _cues()):
+                    yield frame
                     now = asyncio.get_event_loop().time()
                     if now - last_hb >= 30:
                         yield ": heartbeat\n\n"

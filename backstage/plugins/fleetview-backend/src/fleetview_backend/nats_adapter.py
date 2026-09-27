@@ -11,10 +11,11 @@ CONFIG (LAW 46): NATS_URL env, default nats://nats.event-bus.svc:4222.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import os
-from typing import TYPE_CHECKING, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterable, AsyncIterator
 
 if TYPE_CHECKING:
     pass
@@ -24,6 +25,8 @@ _DEFAULT_NATS_URL = "nats://nats.event-bus.svc:4222"
 # The stream the board reads. One stream, one subject family, one schema (the contract).
 STREAM_NAME = "ESTATE_AGENT"
 STREAM_SUBJECTS = ["estate.agent.>"]
+# Core NATS, ephemeral; published by voice-router in VOICE_MODE=director.
+CUE_SUBJECT = "estate.cinema.cue"
 # The 15-minute TTL in nanoseconds, matching outbox.py's TTL_S. The drain side expires a row
 # after TTL_S seconds; the stream's max_age is the same span in nanos so the two ends of the
 # pipeline agree on what is stale.
@@ -148,3 +151,74 @@ async def subscribe_stream(nats_url: str) -> AsyncGenerator[dict, None]:
                 continue
     finally:
         await nc.drain()
+
+
+async def decode_cues(messages: AsyncIterable) -> AsyncGenerator[dict, None]:
+    """Decode raw cue messages into validated cue dicts, skipping anything malformed."""
+    async for msg in messages:
+        try:
+            obj = json.loads(msg.data)
+        except (ValueError, UnicodeDecodeError, TypeError):
+            continue
+        if (
+            isinstance(obj, dict)
+            and isinstance(obj.get("target_id"), str)
+            and obj["target_id"]
+            and isinstance(obj.get("shot_type"), str)
+        ):
+            yield obj
+        else:
+            continue
+
+
+async def subscribe_cues(nats_url: str) -> AsyncGenerator[dict, None]:
+    """Subscribe to `estate.cinema.cue` (core NATS, ephemeral) and yield validated cue dicts.
+
+    Raises RuntimeError("nats-py not installed") when nats-py is absent.
+    """
+    _require_nats()
+    import nats
+
+    nc = await nats.connect(_nats_url(nats_url))
+    try:
+        sub = await nc.subscribe(CUE_SUBJECT)
+        async for cue in decode_cues(sub.messages):
+            yield cue
+    finally:
+        await nc.drain()
+
+
+async def merge(*gens: AsyncIterator) -> AsyncGenerator[Any, None]:
+    """Merge multiple async generators into one, interleaving items as they arrive.
+
+    An exception raised by any source generator cancels the rest and re-raises.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _drain(gen: AsyncIterator) -> None:
+        exc: Exception | None = None
+        try:
+            async for item in gen:
+                await queue.put((False, item))
+        except Exception as e:  # noqa: BLE001 — forwarded to the consumer, not swallowed
+            exc = e
+        finally:
+            await queue.put((True, exc))
+
+    tasks = [asyncio.create_task(_drain(gen)) for gen in gens]
+    finished = 0
+    try:
+        while finished < len(tasks):
+            is_done, payload = await queue.get()
+            if is_done:
+                finished += 1
+                if payload is not None:
+                    for t in tasks:
+                        t.cancel()
+                    raise payload
+                continue
+            yield payload
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
