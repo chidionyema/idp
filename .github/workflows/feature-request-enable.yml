@@ -27,11 +27,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # The secret is base64 of the PEM (bin/idp-github-app writes it that way); the action wants
+      # the PEM itself. Decoded and masked line by line, as agent-sandbox.yml does -- whose run
+      # 36318633546 is the proof this secret decodes to a working App key (crew#975 CP28).
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "::error::SEED_GITHUB_APP_PEM_B64 is not set"; exit 1; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app
         with:
           app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
-          private-key: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+          private-key: ${{ steps.pem.outputs.key }}
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref }}
