@@ -22,14 +22,20 @@ def _prompt(text: str) -> dict:
     return {"type": "user", "message": {"role": "user", "content": text}}
 
 
-def _bash(command: str) -> list[dict]:
+def _bash(command: str, output: str = "...") -> list[dict]:
+    uid = f"toolu_{abs(hash((command, output)))}"
     return [
         {
             "type": "assistant",
             "message": {
                 "role": "assistant",
                 "content": [
-                    {"type": "tool_use", "name": "Bash", "input": {"command": command}}
+                    {
+                        "type": "tool_use",
+                        "id": uid,
+                        "name": "Bash",
+                        "input": {"command": command},
+                    }
                 ],
             },
         },
@@ -37,7 +43,9 @@ def _bash(command: str) -> list[dict]:
             "type": "user",
             "message": {
                 "role": "user",
-                "content": [{"type": "tool_result", "content": "..."}],
+                "content": [
+                    {"type": "tool_result", "tool_use_id": uid, "content": output}
+                ],
             },
         },
     ]
@@ -54,6 +62,10 @@ READS = [
     *_bash("git show HEAD --stat"),
     *_bash("kubectl -n spire-mgmt get pods"),
     *_bash("gh pr view 4436"),
+    *_bash(
+        "git push origin HEAD:fix/spire",
+        "To github.com:o/idp.git\n   1a2b..3c4d  HEAD -> fix/spire",
+    ),
 ]
 CLAIM = "I fixed spire-proof-run and pushed it."
 

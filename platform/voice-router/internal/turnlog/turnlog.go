@@ -19,7 +19,7 @@ type Turn struct {
 	SessionID string    `json:"session_id"`
 	HLC       string    `json:"hlc"`      // orders turns across surfaces without trusting their clocks
 	HeardAt   time.Time `json:"heard_at"` // when the utterance ended (or the say arrived)
-	Kind      string    `json:"kind"`     // ask | say
+	Kind      string    `json:"kind"`     // ask | say | intent
 	// ASRS is the endpointer's wait: from the last change in the words to the
 	// end of the utterance. Streaming ASR has already transcribed by then, so
 	// this is the whole of "time to transcribe" the listener sits through.

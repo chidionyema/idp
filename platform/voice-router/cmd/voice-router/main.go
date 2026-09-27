@@ -4,10 +4,13 @@
 //
 //	client -> server  binary: int16 LE PCM, 16 kHz mono (any frame size)
 //	client -> server  text:   {"type":"system","text":...} | {"type":"ask","text":...} | {"type":"say","text":...} | {"type":"stop"}
-//	server -> client  text:   hello{rate} partial{text} final{turn,text} phrase{turn,text} barge{turn} done{turn} error{turn,text}
+//	server -> client  text:   hello{rate} partial{text} final{turn,text} phrase{turn,text} intent_result{turn,intent} barge{turn} done{turn} error{turn,text}
 //	server -> client  binary: uint32 LE turn id, then int16 LE PCM at hello.rate
 //
 // The client drops audio for any turn at or below the last barge.
+//
+// VOICE_INTENT_URL (the FleetView backend's POST /voice/intent; empty = off): an utterance that names a
+// committed, arg-free estate intent runs it; intent_result carries the result contract and its text is spoken.
 //
 // GET /voice/turns: the last turns (voice_turns fields) and their medians.
 //
@@ -33,6 +36,7 @@ import (
 
 	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
 	"github.com/chidionyema/idp/platform/voice-router/internal/engine"
+	"github.com/chidionyema/idp/platform/voice-router/internal/intent"
 	"github.com/chidionyema/idp/platform/voice-router/internal/session"
 	"github.com/chidionyema/idp/platform/voice-router/internal/turnlog"
 )
@@ -65,7 +69,11 @@ func main() {
 	b := brain.FromEnv()
 	origins := strings.Split(env("VOICE_ALLOWED_ORIGINS", "localhost:3100,127.0.0.1:3100"), ",")
 	system := env("VOICE_SYSTEM_PROMPT", defaultSystem)
-	log.Info("voice.ready", "load_ms", time.Since(t0).Milliseconds(), "brain", b.BaseURL, "model", b.Model, "origins", origins, "tts_rate", tts.SampleRate())
+	var intents session.Intents
+	if u := env("VOICE_INTENT_URL", ""); u != "" {
+		intents = intent.Hook{Client: &intent.Client{URL: u}, Log: log}
+	}
+	log.Info("voice.ready", "load_ms", time.Since(t0).Milliseconds(), "brain", b.BaseURL, "model", b.Model, "origins", origins, "tts_rate", tts.SampleRate(), "intent_url", env("VOICE_INTENT_URL", ""))
 
 	turns, clock := turnlog.NewRing(envInt("VOICE_TURNS_KEPT", 200)), turnlog.NewClock()
 	var conns atomic.Uint64
@@ -84,6 +92,9 @@ func main() {
 		id := strconv.FormatInt(t0.Unix(), 36) + "-" + strconv.FormatUint(conns.Add(1), 10)
 		serve(r.Context(), c, asr, tts, b, system, log.With("session_id", id), func(s *session.Session) {
 			s.Record(turns, clock, id, "piper", voice)
+			if intents != nil {
+				s.SetIntents(intents)
+			}
 		})
 	})
 
