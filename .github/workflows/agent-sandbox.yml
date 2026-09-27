@@ -25,6 +25,10 @@
 # (variable), SEED_GITHUB_APP_ID + SEED_GITHUB_APP_PEM_B64 (base64 of the PEM, as bin/idp-github-app
 # writes it).
 name: agent-sandbox
+# The run's title is the job's record: Fleet's agent-jobs panel (fleetview_backend/agent_jobs.py)
+# lists these runs and reads harness and task back out of this line, so GitHub is the one ledger.
+# A title, never a script: nothing here is executed.
+run-name: "agent (${{ inputs.harness }}): ${{ inputs.task }}"
 
 on:
   workflow_dispatch:

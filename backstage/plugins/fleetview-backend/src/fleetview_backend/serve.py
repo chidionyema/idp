@@ -333,6 +333,23 @@ def build_app() -> FastAPI:
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_get():
+        # GitHub calls, up to a 10s timeout each: off the event loop, like /voice/intent.
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.agent_jobs_envelope)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_post(request: Request):
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        loop = asyncio.get_running_loop()
+        result, status = await loop.run_in_executor(None, routes.submit_agent_job, body)
+        return JSONResponse(content=result, status_code=status)
+
     @app.post("/voice/intent")
     async def voice_intent(request: Request):
         """Utterance -> committed estate intent. 204 when it names none: the brain answers."""

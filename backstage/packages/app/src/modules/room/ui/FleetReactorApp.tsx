@@ -49,6 +49,7 @@ import { useEstateVoice } from '../../home/useEstateVoice';
 import { cueToReactor, type IntentResult } from '../../home/intentCue';
 // --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
 import NewsDesk from './NewsDesk';
+import AgentJobs from './AgentJobs';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
@@ -2705,6 +2706,16 @@ export default function FleetReactorApp() {
         onChannel={setNewsChannel}
         breaking={breakingStory}
         nowMs={Date.now()}
+      />
+
+      {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
+          the discovery proxy like every remote-capable call here, so it works from the phone. */}
+      <AgentJobs
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/agent-jobs`, init);
+        }}
       />
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}
