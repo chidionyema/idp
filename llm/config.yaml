@@ -614,6 +614,22 @@ router_settings:
     - gemini: [minimax, groq]
     - default: [gemini, groq]
     - fast: [gemini, groq]
+
+    # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
+    # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`
+    # (sovereign cp30), and until this chain `groq` ended nowhere: the laptop router logged
+    # 11 `No deployments available ... Passed model=groq` in one day, with Cerebras, SambaNova
+    # and NVIDIA idle -- nine free keys and a per-model meter that no chain ever reached.
+    # LiteLLM follows a fallback group's own chain, so this one line carries every chain on:
+    # groq down -> cerebras, both down -> sambanova, all three -> nvidia, then openrouter.
+    # The meters differ (Groq requests/day, Cerebras tokens/day, NVIDIA per model), so they
+    # do not empty together; each hop is a three-key pool that cools a dead key for 60s.
+    - groq: [cerebras, sambanova, nvidia, openrouter]
+
+    # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
+    - cerebras: [sambanova, nvidia, openrouter]
+
+    - sambanova: [nvidia, openrouter]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a
