@@ -45,6 +45,7 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 // The estate's own voice engine -- whisper for hearing, Kokoro for speaking. Mounted as a hook so
 // every surface uses the same models rather than the browser's network recogniser and formant TTS.
 import { useEstateVoice } from '../../home/useEstateVoice';
+import { CineCam } from './cinecam';
 
 
 const COLORS = {
@@ -195,7 +196,10 @@ export default function FleetReactorApp() {
     // The blast-radius sonar wave: a travelling ring rather than a static highlight. Written by
     // toggleBlast, advanced every frame, and drawn as a scaled ring.
     pulse: null as { id: string; t: number } | null,
-    pulseRing: null as any
+    pulseRing: null as any,
+    // The live movie: cues from the director (estate.cinema.cue via /stream) fly the camera.
+    cine: new CineCam({ position: [0, 30, 90], quaternion: [0, 0, 0, 1], fov: 50 }) as CineCam,
+    cineTarget: null as any
   });
 
   // THE TAILWIND CDN SCRIPT IS GONE, AND IT MUST NOT COME BACK.
@@ -578,6 +582,20 @@ export default function FleetReactorApp() {
         }
       }
 
+      // The director's cue owns the camera while it plays; the rig above resumes when it is idle.
+      const cine = engineState.current.cine;
+      if (cine.state === 'idle') {
+        if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
+        cine.sync({ position: camera.position.toArray() as any, quaternion: camera.quaternion.toArray() as any, fov: camera.fov });
+      } else {
+        const pose = cine.step(delta);
+        camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+        camera.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);
+        camera.fov = pose.fov;
+        camera.updateProjectionMatrix();
+        lookAtTarget.copy(engineState.current.cineTarget || lookAtTarget);
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -627,6 +645,15 @@ export default function FleetReactorApp() {
   // over it -- `talkTo` and the heard->steer effect both do -- because a `const` lives in the
   // temporal dead zone until its line executes. Declared late, it threw on every render.
   const voice = useEstateVoice();
+  // A director cue's line is spoken if a voice engine is on, else shown in the ticker for 4s.
+  const [cueLine, setCueLine] = useState('');
+  const cueSayRef = useRef<(text: string) => void>(() => {});
+  cueSayRef.current = (text: string) => {
+    if (!text) return;
+    if (voice.state !== 'off') { voice.speak(text.slice(0, 300)); return; }
+    setCueLine(text);
+    setTimeout(() => setCueLine((cur) => (cur === text ? '' : cur)), 4000);
+  };
   const api = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
   const baseUrlRef = useRef(null);
@@ -1273,6 +1300,17 @@ export default function FleetReactorApp() {
           es.onmessage = (ev) => {
             try {
               const frame = JSON.parse(ev.data);
+              if (frame?.type === 'cue') {
+                const node = engineState.current.nodes.find((n: any) => n.sessionId === frame.target_id);
+                if (node) {
+                  const p = node.position;
+                  if (engineState.current.cine.onCue(frame, [p.x, p.y, p.z])) {
+                    engineState.current.cineTarget = p.clone();
+                    cueSayRef.current(String(frame.monologue || ''));
+                  }
+                }
+                return;
+              }
               const rec = frame?.record;
               if (!rec?.session_id) return;
               // Count what arrived, per session, and let the render loop consume it. NOT fired
@@ -1642,9 +1680,7 @@ export default function FleetReactorApp() {
         }}
         title={live.ok ? live.ticker : `telemetry unavailable — ${live.error}`}
       >
-        {live.ok
-          ? live.ticker || `live · ${live.count} sessions`
-          : `OFFLINE · ${live.error || 'connecting'}`}
+        {cueLine ? cueLine : live.ok ? live.ticker || `live · ${live.count} sessions` : `OFFLINE · ${live.error || 'connecting'}`}
       </div>
 
       {/* THE BURN BAR. Cost as a RATE, never as a figure.
