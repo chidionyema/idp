@@ -22,12 +22,16 @@
 # Exit: 0 ok, 3 a target that should be gone is not (verify failed), 1 refused.
 set -uo pipefail
 export PATH="/opt/local/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
-APPLY="${1:-false}"; TRASH="${2:-false}"; ONLY_BELOW_MB="${3:-0}"
+APPLY="${1:-false}"; TRASH="${2:-false}"; ONLY_BELOW_MB="${3:-0}"; WORKTREES="${4:-false}"
 VOL="${DISK_GUARD_PATH:-/System/Volumes/Data}"   # the writable volume, as bin/idp-disk-guard
 RUST_ROOTS="${DISK_CLEANUP_RUST_ROOTS:-$HOME/Documents/code/idp}"
+WT_REPOS="${DISK_CLEANUP_WT_REPOS:-$HOME/Documents/code/idp}"
+WT_IDLE_MIN="${DISK_CLEANUP_WT_IDLE_MIN:-360}"
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
+case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
+case "$WT_IDLE_MIN" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_WT_IDLE_MIN=$WT_IDLE_MIN is not a number"; exit 1;; esac
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
 
 free_k() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print $4}'; }
@@ -86,6 +90,65 @@ $TARGETS
 EOF
 
 echo "allow-list total: ${total}M"
+
+# Settled worktrees (worktrees=true). Measured 2026-09-27: 0M of caches left to free while ~9G sat
+# in agent worktrees, each new one 260-560M, and the volume hit 160M free. A worktree is only a
+# checkout: its branch and commits live in the shared repository and survive `git worktree
+# remove`, so `git worktree add <path> <branch>` brings it back. It is removed only when ALL hold:
+#   - no modified, staged or untracked file (git status), and no ignored file outside the
+#     rebuildable set below (an ignored .env or notes file is someone's, and stays);
+#   - every commit reachable from a branch, tag or remote ref (the branch itself counts: removing
+#     the checkout leaves the branch and all its commits in the repository);
+#   - not locked; no process has its working directory inside it (a live session or server);
+#   - its index, HEAD and reflog untouched for WT_IDLE_MIN minutes (default 6h).
+# Removal is `git worktree remove` WITHOUT --force, so git re-checks cleanliness itself. No
+# process is signalled and nothing outside the worktree directory is touched.
+REBUILDABLE='(^|/)(node_modules|target|dist|dist-types|build|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|\.venv|venv|\.tox|coverage|\.coverage|\.turbo|\.next|\.cache|htmlcov)(/|$)|\.pyc$|\.tsbuildinfo$'
+unsettled() {
+  local repo=$1 wt=$2 out gd
+  out=$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null) || { echo "git status failed"; return; }
+  if printf '%s\n' "$out" | grep -v '^!! ' | grep -q .; then echo "uncommitted or untracked files"; return; fi
+  if printf '%s\n' "$out" | sed -n 's/^!! //p' | grep -Ev "$REBUILDABLE" | grep -q .; then
+    echo "ignored files that are not build output"; return; fi
+  # Every commit must stay reachable from a ref once the checkout is gone. A branch keeps its own
+  # commits (pushed or not, squash-merged or not); a detached HEAD's commits must be on a branch,
+  # tag or remote, or `git gc` would eventually take them.
+  out=$(git -C "$wt" rev-list -n1 HEAD --not --branches --tags --remotes 2>/dev/null) || { echo "git rev-list failed"; return; }
+  if [ -n "$out" ] || ! git -C "$wt" rev-parse -q --verify HEAD >/dev/null; then
+    echo "commits reachable only from this checkout's HEAD"; return; fi
+  if git -C "$repo" worktree list --porcelain | awk -v w="$wt" '$1=="worktree"{c=($2==w)} c&&$1=="locked"{f=1} END{exit !f}'; then
+    echo "locked"; return; fi
+  # lsof reports resolved paths (/private/tmp), git the path it was given (/tmp): compare both.
+  if printf '%s\n' "$CWDS" | awk -v w="$wt" -v r="$(cd "$wt" && pwd -P)" \
+       'index($0, w"/")==1 || $0==w || index($0, r"/")==1 || $0==r {f=1} END{exit !f}'; then
+    echo "a process is working inside it"; return; fi
+  gd=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || { echo "no git dir"; return; }
+  if [ "$WT_IDLE_MIN" -gt 0 ] && [ -n "$(find "$gd/index" "$gd/HEAD" "$gd/logs/HEAD" -mmin -"$WT_IDLE_MIN" 2>/dev/null | head -1)" ]; then
+    echo "used in the last ${WT_IDLE_MIN}m"; return; fi
+}
+if [ "$WORKTREES" = 1 ]; then
+  CWDS=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  wt_total=0
+  for repo in $WT_REPOS; do
+    [ -d "$repo" ] || continue
+    main=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || continue
+    git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r wt; do
+      [ "$wt" = "$main" ] && continue
+      [ -d "$wt" ] || continue
+      case "$wt" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) ;; *) echo "  keep   worktree  $wt  (not under HOME or /tmp)"; continue;; esac
+      why=$(unsettled "$repo" "$wt")
+      m=$(size_m "$wt")
+      if [ -n "$why" ]; then echo "  keep   worktree  ${m}M  $wt  ($why)"; continue; fi
+      b=$(git -C "$wt" branch --show-current); b=${b:-detached $(git -C "$wt" rev-parse --short HEAD)}
+      if [ "$APPLY" = 0 ]; then echo "  would  worktree  ${m}M  $wt  ($b; restore: git worktree add $wt ${b#detached })"; continue; fi
+      if git -C "$repo" worktree remove "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
+        echo "  freed  worktree  ${m}M  $wt  (restore: git worktree add $wt ${b#detached })"
+      else
+        echo "  !! worktree $wt: git refused to remove it"; fi
+    done
+  done
+fi
+
 if [ "$APPLY" = 1 ]; then
   after=$(free_k)
   echo "free after: $((after / 1024))M (measured delta $(((after - before) / 1024))M; other writers move this too)"
