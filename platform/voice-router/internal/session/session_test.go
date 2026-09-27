@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
+	"github.com/chidionyema/idp/platform/voice-router/internal/turnlog"
 )
 
 // fakeASR returns a scripted partial per Accept call, and an endpoint when the
@@ -431,5 +432,70 @@ func TestSpeechInterruptsSayAsANewQuestion(t *testing.T) {
 		if e.Type == "final" && e.Turn == 3 && e.Text != "stop that" {
 			t.Fatalf("interrupting a say was joined onto the earlier question: %q", e.Text)
 		}
+	}
+}
+
+// ringTurns waits for n turns in the ring: the record is written after "done"
+// goes out, so the client never waits on the bookkeeping.
+func ringTurns(t *testing.T, r *turnlog.Ring, n int) []turnlog.Turn {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		got := r.Recent(10)
+		if len(got) >= n {
+			return got
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d turns recorded, want %d", len(got), n)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func TestEveryTurnIsRecordedWithItsTimings(t *testing.T) {
+	a := &fakeASR{script: []step{{"how many agents", false}, {"how many agents", true}}}
+	s, r := newSession(a, &fakeTTS{delay: 2 * time.Millisecond}, &fakeBrain{tokens: []string{"Five", " agents.", " All", " healthy."}, gap: time.Millisecond})
+	ring := turnlog.NewRing(10)
+	s.Record(ring, turnlog.NewClock(), "conn-1", "piper", "ljspeech")
+	for range a.script {
+		s.OnAudio(pcm)
+	}
+	r.wait(t, "done", 1)
+	s.Say("The build failed.")
+	r.wait(t, "done", 2)
+
+	got := ringTurns(t, ring, 2)
+	say, ask := got[0], got[1]
+	if ask.Kind != "ask" || ask.Outcome != "ok" || ask.Words != 3 || ask.Clauses != 2 ||
+		ask.SessionID != "conn-1" || ask.Engine != "piper" || ask.Voice != "ljspeech" {
+		t.Fatalf("ask turn %+v", ask)
+	}
+	if !(ask.LLMFirstS > 0 && ask.LLMFirstS <= ask.FirstAudio && ask.LLMFirstS <= ask.LLMTotalS && ask.TTSS > 0) {
+		t.Fatalf("ask timings out of order: first phrase %.4f, first audio %.4f, brain done %.4f, tts %.4f",
+			ask.LLMFirstS, ask.FirstAudio, ask.LLMTotalS, ask.TTSS)
+	}
+	if say.Kind != "say" || say.Outcome != "ok" || say.Clauses != 1 || say.ASRS != 0 {
+		t.Fatalf("say turn %+v", say)
+	}
+	if !(ask.HLC < say.HLC) {
+		t.Fatalf("hlc %q is not before %q", ask.HLC, say.HLC)
+	}
+}
+
+func TestBargedAndFailedTurnsAreRecordedAsSuch(t *testing.T) {
+	s, r := newSession(&fakeASR{}, &fakeTTS{delay: 50 * time.Millisecond}, failing{})
+	ring := turnlog.NewRing(10)
+	s.Record(ring, turnlog.NewClock(), "c", "piper", "v")
+	s.Say("A long answer that will be cut off.")
+	r.waitAudio(t, 1)
+	s.Barge()
+	s.Ask("status")
+	r.wait(t, "error", 2)
+	got := ringTurns(t, ring, 2)
+	if got[1].Outcome != "cancelled" || got[0].Outcome != "error" || got[0].Detail == "" {
+		t.Fatalf("outcomes %q (%q), want cancelled then error", got[1].Outcome+","+got[0].Outcome, got[0].Detail)
+	}
+	if sum := ring.Summary(); sum.Turns != 2 || sum.Completed != 0 || len(sum.MedianS) != 0 {
+		t.Fatalf("summary timed turns that did not complete: %+v", sum)
 	}
 }
