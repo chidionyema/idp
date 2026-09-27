@@ -1,0 +1,25 @@
+name: cluster-events
+description: >
+  Composite intent. Warning events since timestamp. Default 1h.
+args:
+  since:     {type: string, default: "1h"}
+  namespace: {type: string, default: ""}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: events
+    cmd: |
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+      -n {{namespace}} get events
+      --field-selector type=Warning
+      --sort-by='.lastTimestamp'
+      -o json 2>/dev/null | python3 -c "
+      import sys,json
+      d=json.load(sys.stdin)
+      evs=d.get('items',[])
+      print(f'{len(evs)} warning events:')
+      for e in evs[-20:]:
+      ts=e.get('lastTimestamp','')
+      msg=e.get('message','')[:80]
+      obj=e.get('involvedObject',{})
+      print(f'  {ts} {obj.get(\"kind\")}/{obj.get(\"name\")} — {msg}')
+      "

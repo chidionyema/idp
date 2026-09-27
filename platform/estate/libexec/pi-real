@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec "$HOME"/.nvm/versions/node/v22.15.1/bin/pi "$@"
