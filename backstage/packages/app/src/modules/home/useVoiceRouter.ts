@@ -24,8 +24,53 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
-export function voiceRouterUrl(loc: Pick<Location, 'protocol' | 'host'> = window.location): string {
-  return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/voice/ws`;
+// Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
+// Under `yarn start` the page is the dev server, which cannot proxy a WebSocket, and the backend's
+// proxy drops the upgrade, so the page goes to the laptop router directly: its Origin allow-list
+// already admits localhost:3100. The same NODE_ENV split the sign-in module uses.
+export function voiceRouterBase(
+  loc: Pick<Location, 'protocol' | 'host'> = window.location,
+  env: string | undefined = process.env.NODE_ENV,
+): { ws: string; http: string } {
+  if (env !== 'production') return { ws: 'ws://127.0.0.1:8091', http: 'http://127.0.0.1:8091' };
+  const tls = loc.protocol === 'https:';
+  return { ws: `${tls ? 'wss' : 'ws'}://${loc.host}`, http: `${tls ? 'https' : 'http'}://${loc.host}` };
+}
+
+export function voiceRouterUrl(
+  loc: Pick<Location, 'protocol' | 'host'> = window.location,
+  env: string | undefined = process.env.NODE_ENV,
+): string {
+  return `${voiceRouterBase(loc, env).ws}/voice/ws`;
+}
+
+/**
+ * GET /voice/turns in the shape the /fleet voice panel already renders (useEstateVoice's
+ * voiceStats / voiceLog): the router's turn record uses voice_turns' field names, so only the
+ * summary needs renaming.
+ */
+export function toPanel(body: any): { voiceStats: any; voiceLog: any[] } {
+  const sum = body?.summary ?? {};
+  const med = sum.median_s ?? {};
+  const turns = sum.turns ?? 0;
+  const empty = sum.outcomes?.empty ?? 0;
+  const r2 = (v: any) => (typeof v === 'number' ? Math.round(v * 100) / 100 : undefined);
+  return {
+    voiceStats: {
+      turns,
+      empty,
+      empty_rate: turns ? empty / turns : 0,
+      asr_median_s: r2(med.asr_s),
+      first_clause_median_s: r2(med.first_audio_s),
+    },
+    voiceLog: (body?.recent ?? []).map((t: any) => ({
+      ...t,
+      id: t.hlc,
+      asr_s: r2(t.asr_s),
+      llm_first_s: r2(t.llm_first_s),
+      tts_s: r2(t.tts_s),
+    })),
+  };
 }
 
 // The capture worklet: downsample whatever rate the hardware runs at to 16 kHz by averaging, and
@@ -81,6 +126,8 @@ interface Live {
 export interface VoiceRouter extends EstateVoice {
   /** The words so far, while the person is still speaking. */
   partial: string;
+  /** The router answered its last turns read; false until it has, and after it stops. */
+  reachable: boolean;
 }
 
 export interface VoiceRouterOptions {
@@ -103,6 +150,32 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
   const onIntentRef = useRef(opts.onIntentResult);
   onIntentRef.current = opts.onIntentResult;
   const finalAt = useRef(0);
+  const [reachable, setReachable] = useState(false);
+  const [panel, setPanel] = useState<{ voiceStats: any; voiceLog: any[] }>({ voiceStats: {}, voiceLog: [] });
+
+  // The turn record, every 3s: the panel's metrics, and the proof the router is there at all.
+  useEffect(() => {
+    let live = true;
+    const read = async () => {
+      try {
+        const r = await fetch(`${voiceRouterBase().http}/voice/turns`);
+        if (!r.ok) throw new Error(String(r.status));
+        const p = toPanel(await r.json());
+        if (live) {
+          setPanel(p);
+          setReachable(true);
+        }
+      } catch {
+        if (live) setReachable(false);
+      }
+    };
+    void read();
+    const t = setInterval(read, 3000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
 
   const silence = useCallback(() => {
     const l = liveRef.current;
@@ -278,12 +351,13 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     reply,
     detail,
     available: typeof window !== 'undefined' && 'AudioWorkletNode' in window,
+    reachable,
     start,
     stop,
     speak,
     silence: interrupt,
-    voiceLog: [],
-    voiceStats: {},
+    voiceLog: panel.voiceLog,
+    voiceStats: panel.voiceStats,
     catalogue: { cloud: [], say: [], kokoro: [], piper: ['ljspeech-medium'] },
     current: { engine: 'voice-router', voice: 'ljspeech-medium' },
     selectVoice: async () => 'voice-router has one voice; set VOICE_TTS on the pod to change it',
