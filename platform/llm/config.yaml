@@ -346,6 +346,21 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
+  # --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice) ------------------
+  # A spoken turn waits on the first words, so this lane is picked for time to first token.
+  # Measured 2026-09-27 from the laptop, streaming, one short question: this model at
+  # reasoning_effort low 0.32-0.50s; `fast` (minimax/deepseek) 0.61-1.22s; `groq`
+  # (gpt-oss-120b, default effort) spent the whole budget reasoning and said nothing.
+  # `openai/` twice: LiteLLM's provider prefix, then Groq's own model id.
+  - model_name: voice
+    litellm_params:
+      model: openai/openai/gpt-oss-20b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      reasoning_effort: low
+      timeout: 20
+      max_tokens: 400
+
   # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
   # above reached exactly one consumer -- Otto's private brain -- and the estate router
   # could not call Cerebras at all, so any other agent that wanted it had to go direct
@@ -729,7 +744,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

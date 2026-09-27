@@ -708,7 +708,16 @@ vendors:
         \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n"
+        \ 131072\n\n# --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice)\
+        \ ------------------\n# A spoken turn waits on the first words, so this lane\
+        \ is picked for time to first token.\n# Measured 2026-09-27 from the laptop,\
+        \ streaming, one short question: this model at\n# reasoning_effort low 0.32-0.50s;\
+        \ `fast` (minimax/deepseek) 0.61-1.22s; `groq`\n# (gpt-oss-120b, default effort)\
+        \ spent the whole budget reasoning and said nothing.\n# `openai/` twice: LiteLLM's\
+        \ provider prefix, then Groq's own model id.\n- model_name: voice\n  litellm_params:\n\
+        \    model: openai/openai/gpt-oss-20b\n    api_base: https://api.groq.com/openai/v1\n\
+        \    api_key: os.environ/GROQ_API_KEY\n    reasoning_effort: low\n    timeout:\
+        \ 20\n    max_tokens: 400\n"
   cerebras:
     kind: secret
     secret: SEED_CEREBRAS_API_KEY
