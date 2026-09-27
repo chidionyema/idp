@@ -100,8 +100,8 @@ def kv(argv):
 
 def claude(prompt, model, cwd, max_turns, tools):
     """One headless model call. Returns (text, usage dict)."""
-    r = subprocess.run(
-        [
+    r = subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+        [  # noqa: S607 -- git and claude resolve from PATH on purpose
             "claude",
             "-p",
             prompt,
@@ -212,9 +212,9 @@ def cmd_dispatch(a):
         return 1
     tree = TREES / f"wt-{slug}"
     if not tree.exists():
-        subprocess.run(["git", "-C", repo, "fetch", "-q", "origin", "main"], check=True)
-        subprocess.run(
-            [
+        subprocess.run(["git", "-C", repo, "fetch", "-q", "origin", "main"], check=True)  # noqa: S603, S607 -- fixed argv (git/claude), no shell; git and claude resolve from PATH on purpose
+        subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+            [  # noqa: S607 -- git and claude resolve from PATH on purpose
                 "git",
                 "-C",
                 repo,
@@ -237,7 +237,7 @@ def cmd_dispatch(a):
     )
 
     def check(s):
-        r = subprocess.run(
+        r = subprocess.run(  # noqa: S602 -- the done-check is a shell command from the reviewed plan, by design
             s["done_check"],
             shell=True,
             cwd=tree,
@@ -250,8 +250,9 @@ def cmd_dispatch(a):
     def rewind(files, existed, base):
         for f in files:
             if existed[f]:
-                subprocess.run(
-                    ["git", "-C", tree, "checkout", base, "--", f], check=True
+                subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+                    ["git", "-C", tree, "checkout", base, "--", f],  # noqa: S607 -- git resolves from PATH on purpose
+                    check=True,
                 )
             elif (tree / f).exists():
                 (tree / f).unlink()
@@ -261,15 +262,15 @@ def cmd_dispatch(a):
     def run(s):
         if results.get(s["id"], {}).get("done"):
             return s["id"], results[s["id"]]
-        base = subprocess.run(
-            ["git", "-C", tree, "rev-parse", "HEAD"],
+        base = subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+            ["git", "-C", tree, "rev-parse", "HEAD"],  # noqa: S607 -- git and claude resolve from PATH on purpose
             capture_output=True,
             text=True,
             check=True,
         ).stdout.strip()
         existed = {
-            f: subprocess.run(
-                ["git", "-C", tree, "cat-file", "-e", f"{base}:{f}"],
+            f: subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
+                ["git", "-C", tree, "cat-file", "-e", f"{base}:{f}"],  # noqa: S607 -- git and claude resolve from PATH on purpose
                 capture_output=True,
             ).returncode
             == 0
