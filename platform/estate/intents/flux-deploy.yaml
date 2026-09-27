@@ -18,6 +18,4 @@ steps:
       git commit -m "{{message}}" || echo "nothing to commit"
       git push -u origin "$BR" 2>&1 | tail -3
       gh pr create --fill 2>&1 | tail -2
-      sleep 5
-      gh pr checks || true
-      echo "review the PR, then: gh pr merge --squash --delete-branch"
+      # No sleep-and-poll: merge-when-green watches the checks and lands it (AGENTS.md §2).
