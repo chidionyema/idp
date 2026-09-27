@@ -195,7 +195,7 @@ spec:
         images:
           - name: getlago/api
             newName: ghcr.io/chidionyema/lago-api
-            newTag: main-13098-a5b3515106d1360a102eb97f90a80e3d9f8deb4f # {"$imagepolicy": "flux-system:lago-api:tag"}
+            newTag: main-13099-1949ffecfd4665b2a74cfb4982107ea2080bf965 # {"$imagepolicy": "flux-system:lago-api:tag"}
           - name: getlago/front
             newName: ghcr.io/chidionyema/lago-front
             newTag: main-13098-a5b3515106d1360a102eb97f90a80e3d9f8deb4f # {"$imagepolicy": "flux-system:lago-front:tag"}
