@@ -1,0 +1,19 @@
+name: kubectl-logs
+description: Tail pod logs. Returns raw text; kubectl errors reach stderr.
+args:
+  pod:       {type: string}
+  namespace: {type: string, default: "default"}
+  container: {type: string, default: ""}
+  lines:    {type: int, default: 50}
+  since:    {type: string, default: ""}
+  previous: {type: bool, default: false}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: logs
+    # plain shell, not {{if(...)}}: the executor's interpolate() only substitutes {{var}}, so the
+    # if() form reached sh verbatim and every call was a syntax error (2026-09-26)
+    cmd: >
+      c={{container}}; s={{since}}; p={{previous}}; kc={{kubeconfig}};
+      ${kc:+env KUBECONFIG="$kc"} kubectl --request-timeout=30s
+      -n {{namespace}} logs {{pod}} ${c:+-c "$c"} --tail={{lines}} ${s:+--since="$s"}
+      $([ "$p" = True ] || [ "$p" = true ] && echo --previous)

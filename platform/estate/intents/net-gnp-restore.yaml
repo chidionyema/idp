@@ -1,0 +1,12 @@
+name: net-gnp-restore
+description: >-
+  MUTATING. Rollback for net-gnp-orphan-remove: re-creates the GlobalNetworkPolicy from the
+  snapshot path it printed (only paths under ~/.estate/state/snapshots/gnp-*.json).
+class: mutate
+args:
+  snapshot: {type: string}
+halt_on_failure: true
+steps:
+  - name: gnp-restore
+    cmd: >
+      bash ~/.estate/libexec/net-gnp-restore.sh {{snapshot}}
