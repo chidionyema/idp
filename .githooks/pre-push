@@ -13,14 +13,13 @@ cd "$repo_root"
 # crew#1194: syntax gate on the push diff. Parse-only checks, no execution.
 # A file with bad syntax on main makes main red. Main must be green.
 # Layer 1 of 3: pre-push | CI offline-gate | CI fast-gate.
-while IFS= read -r _ _ _ remote_sha; do
-  [ -n "$remote_sha" ] || continue
-  break
-done
 refs=""
-while IFS= read -r local_ref local_sha remote_ref remote_sha; do
-  refs="${refs}${local_ref} ${local_sha} ${remote_ref} ${remote_sha}"$'\n'
+while IFS= read -r line; do
+  refs="${refs}${line}"$'\n'
 done
+# NOT RUNNING (measured 2026-09-27): `IFS= read` puts the whole line in local_ref, so local_sha and
+# remote_sha are both empty and every ref is skipped. Reviving it as written would refuse most
+# pushes (bash -n on Python under bin/, any non-ASCII byte), so that is its own fix.
 while IFS= read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "$remote_sha" ] && continue
   diff_files=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || true)
@@ -78,6 +77,19 @@ print('non-ASCII byte(s) at:', positions[:5], '(first 5)')
   done
 done <<<"$refs"
 
+# PR cap: a push that would open a new PR is refused while 5 non-bot PRs are open, and when the
+# open PRs cannot be counted (bin/idp-max-open-prs-gate). A branch with an open PR always passes.
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "$remote_ref" ] || continue
+  case "$local_sha" in *[!0]*) ;; *) continue ;; esac # a branch deletion opens nothing
+  branch="${remote_ref#refs/heads/}"
+  [ "$branch" != "$remote_ref" ] || continue # tags open nothing
+  if ! python3 "$repo_root/bin/idp-max-open-prs-gate" --branch "$branch"; then
+    echo "pre-push REFUSED: max-open-prs" >&2
+    exit 1
+  fi
+done <<<"$refs"
+
 # Read-only force pushes and the WIP-gate override are out of scope for this rung --
 # the andon-cord pre-push has its own override (IDP_WIP_GATE=0) and that is not ours.
 # This rung only refuses the fast-gate class; everything else still flows.
@@ -87,9 +99,9 @@ done <<<"$refs"
 # nineteen minutes each revealing one more failure: a bypass that makes the gate report green
 # on a tree the gate never read is worse than no gate, because the green is believed.
 #
-# The two rules are enforced server-side instead, where no local action can skip them:
-# `bin/idp-main-green-gate` and `bin/idp-wip-gate` are wired in below, and the estate's
-# required-checks ruleset refuses on the server. A local hook is a convenience that saves a CI
+# The estate's required-checks ruleset refuses on the server. `bin/idp-main-green-gate` and
+# `bin/idp-wip-gate` are NOT called by this hook or by any workflow (measured 2026-09-27; this
+# comment used to say they were). The PR cap above is the one admission rung here. A local hook is a convenience that saves a CI
 # cycle; it is never the guarantee, and it must not pretend to be one.
 
 if [ ! -x "$repo_root/bin/idp-ci" ]; then
@@ -114,11 +126,7 @@ if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
      2) re-run IDP_CI_FAST=1 bin/idp-ci until green
      3) git push
 
-   The two rules that must never be bypassed are enforced SERVER-SIDE:
-     bin/idp-main-green-gate   refuses a push while main's last CI run is red
-     bin/idp-wip-gate          refuses a new PR past the 3-failing-PR cap
-   Their overrides are typed deliberately for genuine emergencies, and they are the
-   only overrides this hook has. This rung has none.
+   This rung has no override.
 
 EOF
   exit 1
@@ -145,6 +153,6 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 		echo "      git push origin HEAD:agent-trunk   # then agent-trunk-batch.yml opens one PR"
 		;;
 	esac
-done
+done <<<"$refs"
 
 exit 0
