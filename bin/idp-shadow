@@ -40,6 +40,7 @@ absent from the inventory and fails; a workload that never became Ready fails; s
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -313,7 +314,7 @@ def flux_source(head):
     )
 
 
-def flux_kustomization(name, path):
+def flux_kustomization(name, path, source="shadow"):
     ks = {
         "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
         "kind": "Kustomization",
@@ -322,7 +323,7 @@ def flux_kustomization(name, path):
             "interval": "5m",
             "path": path,
             "prune": True,
-            "sourceRef": {"kind": "GitRepository", "name": "shadow"},
+            "sourceRef": {"kind": "GitRepository", "name": source},
             # wait: true is the environment doing the verifying. Flux blocks until every
             # applied object reports healthy, or it fails the Kustomization itself.
             "wait": True,
@@ -336,6 +337,61 @@ def flux_kustomization(name, path):
         capture_output=True,
         text=True,
     )
+
+
+# THE ESTATE FLOOR. Production never reconciles a platform path on a bare cluster: the
+# external-secrets row installs the ExternalSecret CRDs and the priority-classes row the
+# PriorityClasses before any workload row. MEASURED 2026-09-27, once the shadow could clone its
+# head (idp#4488): every PR touching platform/llm, temporal, epistemic-fabric,
+# unified-memory-server or voice-router failed on `no matches for kind "ExternalSecret"`, and
+# event-bus's nats on `no PriorityClass with name platform-batch` -- gaps in the shadow, not in
+# the change. Flux lays the floor too; this process still applies nothing it proves.
+ESO_ROW = os.path.join(REPO, "platform", "secrets", "external-secrets.yaml")
+ESO_GIT = "https://github.com/external-secrets/external-secrets"
+
+
+def eso_version():
+    """The ESO chart version production pins, so the shadow's CRDs are production's CRDs."""
+    with open(ESO_ROW) as f:
+        m = re.search(r"chart: external-secrets\s+version: *([0-9][^\s]*)", f.read())
+    if not m:
+        raise RuntimeError(f"no external-secrets chart version in {ESO_ROW}")
+    return m.group(1)
+
+
+def flux_floor(deadline):
+    """Have Flux lay what production has under every platform row. Returns the failures."""
+    src = {
+        "apiVersion": "source.toolkit.fluxcd.io/v1",
+        "kind": "GitRepository",
+        "metadata": {"name": "shadow-floor-eso", "namespace": "flux-system"},
+        "spec": {
+            "interval": "1h",
+            "url": ESO_GIT,
+            "ref": {"tag": "v" + eso_version()},
+            "ignore": "/*\n!/deploy/crds/\n",
+        },
+    }
+    subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(src),
+        capture_output=True,
+        text=True,
+    )
+    floor = [
+        ("shadow-floor-eso-crds", "./deploy/crds", "shadow-floor-eso"),
+        ("shadow-floor-priority-classes", "./platform/priority-classes", "shadow"),
+    ]
+    for name, path, source in floor:
+        flux_kustomization(name, path, source)
+    failed = []
+    for name, path, _ in floor:
+        ready, msg, _inv = wait_ks(name, deadline)
+        if ready:
+            print(f"ok      shadow  floor {name} laid by flux")
+        else:
+            failed.append(f"the shadow floor {name} did not converge -- {msg}")
+    return failed
 
 
 def ks_status(name):
@@ -488,6 +544,9 @@ def verify(head, paths):
     daemon = serve_tree()
     try:
         flux_source(head)
+        floor_failed = flux_floor(time.time() + 300)
+        if floor_failed:
+            return 1, floor_failed
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
