@@ -1,6 +1,4 @@
 import json
-import os
-import stat
 import pathlib
 
 from fleetview_backend import voice_intents as vi

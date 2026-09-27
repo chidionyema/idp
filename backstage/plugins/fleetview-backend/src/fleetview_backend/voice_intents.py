@@ -71,8 +71,8 @@ def load_catalog(directory: str | Path | None = None) -> list[str]:
     for path in sorted(directory.glob("*.yaml")):
         try:
             doc = yaml.safe_load(path.read_text())
-        except Exception:
-            continue
+        except (OSError, yaml.YAMLError):
+            continue  # an unreadable or malformed intent is simply not in the voice catalog
         if not isinstance(doc, dict):
             continue
         name = doc.get("name") or path.stem
@@ -138,7 +138,8 @@ def execute(intent: str) -> tuple[str, str, int | None, int]:
         return ("error", "Intents run on the laptop only.", None, 0)
     t0 = time.monotonic()
     try:
-        proc = subprocess.run(
+        # argv list, no shell; intent is a name from the committed catalog, never words from speech.
+        proc = subprocess.run(  # noqa: S603
             [exe, intent],
             capture_output=True,
             text=True,
