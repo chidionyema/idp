@@ -13,6 +13,8 @@ resources:
   - kyverno.yaml
   - ns-fences.yaml
   - backstage.yaml
+  - voice-router.yaml
+  - epistemic-fabric.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io

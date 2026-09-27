@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: voice-router
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - director.yaml
+images:
+  # Placeholder tag until image-automation rewrites it from ImagePolicy flux-system/voice-router.
+  - name: ghcr.io/chidionyema/voice-router
+    newTag: main-13023-7d86661394cb92a841644df0119d4b612250f2e7 # {"$imagepolicy": "flux-system:voice-router:tag"}

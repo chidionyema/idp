@@ -1,0 +1,83 @@
+# platform/llm has no Flux row under clusters/oke on origin/main (checked 2026-09-27). The
+# litellm Service may exist only as an orphan, and no LLM_API_KEY is mounted, so narration
+# stays on the existing Limiter and template fallback (director.Narrator). No UI, no LLM
+# anchor, no voice in P1 (crew#974). No Service is declared: nothing calls the director, and
+# /healthz is for the kubelet probes.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-router-director
+  namespace: voice-router
+  labels:
+    app.kubernetes.io/name: voice-router-director
+    backstage.io/kubernetes-id: voice-router
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: voice-router-director
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: voice-router-director
+    spec:
+      serviceAccountName: voice-router-director
+      automountServiceAccountToken: true
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: director
+          image: ghcr.io/chidionyema/voice-router
+          env:
+            - name: VOICE_MODE
+              value: director
+            - name: NATS_URL
+              value: "nats://nats.event-bus.svc:4222"
+            - name: VOICE_ADDR
+              value: ":8080"
+            - name: LLM_BASE_URL
+              value: "http://litellm.llm.svc:4000/v1"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc:4318"
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
