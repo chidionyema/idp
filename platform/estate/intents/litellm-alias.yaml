@@ -1,0 +1,77 @@
+name: litellm-alias
+description: >
+  Add, remove, or list model aliases in the live LiteLLM config.
+  Patches the ConfigMap when permitted; otherwise prints the exact git diff.
+args:
+  action: {type: string, default: "list"}
+  alias: {type: string, default: ""}
+  target: {type: string, default: ""}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: run
+    cmd: |
+      KUBECONFIG={{kubeconfig}} ACTION={{action}} ALIAS={{alias}} TARGET={{target}} python3 - <<'PY'
+      import subprocess, os, yaml, sys, re
+      action = os.environ["ACTION"]
+      alias = os.environ["ALIAS"]
+      target = os.environ["TARGET"]
+
+      def k(*a, inp=None):
+          return subprocess.run(["kubectl", *a], capture_output=True, text=True, input=inp).stdout
+
+      cm_name = k("-n","llm","get","cm","-o",
+                  "jsonpath={.items[?(@.metadata.labels.kustomize\\.toolkit\\.fluxcd\\.io/name=='llm')].metadata.name}").strip()
+      if not cm_name:
+          print("no litellm configmap found"); sys.exit(1)
+      cm = yaml.safe_load(k("-n","llm","get","cm", cm_name, "-o","yaml"))
+      content = cm["data"]["config.yaml"]
+
+      if action == "list":
+          m = re.search(r"model_group_alias:\n((?:    \S+:.+\n)+)", content)
+          print("aliases:")
+          print(m.group(1).rstrip() if m else "  (none)")
+          sys.exit(0)
+
+      if not alias or not target:
+          print("need alias=X target=Y"); sys.exit(1)
+
+      lines = content.split("\n")
+      out, in_alias, done = [], False, False
+      for l in lines:
+          if l.strip() == "model_group_alias:":
+              in_alias = True; out.append(l); continue
+          if in_alias:
+              if l.startswith("    ") and ":" in l:
+                  key = l.split(":", 1)[0].strip()
+                  if key == alias:
+                      if action == "remove":
+                          done = True; continue
+                      if action == "add":
+                          out.append(f"    {alias}: {target}"); done = True; continue
+                  out.append(l); continue
+              else:
+                  if action == "add" and not done:
+                      out.append(f"    {alias}: {target}"); done = True
+                  in_alias = False
+          out.append(l)
+      if action == "add" and not done:
+          idx = next(i for i, l in enumerate(out) if l.strip() == "model_group_alias:")
+          out.insert(idx+1, f"    {alias}: {target}")
+
+      cm["data"]["config.yaml"] = "\n".join(out)
+      doc = yaml.safe_dump(cm, sort_keys=False)
+      r = subprocess.run(["kubectl","-n","llm","apply","-f","-"],
+                         input=doc, capture_output=True, text=True)
+      if "refuse-writes" in (r.stderr + r.stdout):
+          print("BLOCKED by Kyverno. Commit this to the repo instead. Alias block:")
+          for l in out:
+              if "model_group_alias:" in l or re.match(r"^    \S+:", l):
+                  print("  " + l)
+          sys.exit(2)
+      print(r.stdout or r.stderr)
+
+      subprocess.run(["kubectl","-n","llm","exec","deploy/litellm","--",
+                      "sh","-c","pkill -HUP -f litellm || kill -HUP 1"],
+                     capture_output=True, text=True)
+      print("reload signalled")
+      PY

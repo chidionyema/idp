@@ -1,0 +1,13 @@
+name: k8s-describe
+description: >
+  Describe a Kubernetes resource. Returns full YAML.
+args:
+  resource:  {type: string}
+  name:       {type: string}
+  namespace: {type: string, default: ""}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: describe
+    cmd: >
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+      -n {{namespace}} describe {{resource}} {{name}} 2>&1

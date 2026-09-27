@@ -1,0 +1,56 @@
+name: flux-doctor
+description: >
+  One-shot diagnosis of a stuck Flux cascade. Prints controller throughput,
+  source revision, every non-Ready Kustomization, and the single recommended
+  action to unblock. Use this first when a deploy is not landing.
+args:
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: diagnose
+    cmd: |
+      KUBECONFIG={{kubeconfig}} python3 - <<'PY'
+      import subprocess, json
+
+      def k(*a):
+          return subprocess.run(["kubectl", *a], capture_output=True, text=True).stdout
+
+      print("== controller ==")
+      raw = k("-n","flux-system","get","deploy","kustomize-controller",
+              "-o","jsonpath={.spec.template.spec.containers[0].args}")
+      flags = [x for x in raw.split() if "concurrent" in x or "requeue" in x]
+      print(" ", " ".join(flags) if flags else "(default 4 workers)")
+
+      print("== source ==")
+      print(" ", k("-n","flux-system","get","gitrepository","flux-system",
+                  "-o","jsonpath={.status.artifact.revision}").strip())
+
+      print("== kustomizations ==")
+      try:
+          d = json.loads(k("-n","flux-system","get","kustomizations","-o","json"))
+      except Exception as e:
+          print(" cannot list:", e); raise SystemExit(0)
+      rows = []
+      for it in d.get("items", []):
+          name = it["metadata"]["name"]
+          conds = it.get("status", {}).get("conditions", [])
+          ready = next((c for c in conds if c.get("type") == "Ready"), {})
+          rows.append((name, ready.get("status","?"), ready.get("message","")[:100]))
+      print(f"  {sum(1 for r in rows if r[1]=='True')}/{len(rows)} Ready")
+      blocked = []
+      for n, s, m in sorted(rows):
+          if s != "True":
+              print(f"    {n:34} {s:8} {m}")
+              if "dependency" in m.lower() or "revision" in m.lower():
+                  blocked.append((n, m))
+
+      print()
+      print("== verdict ==")
+      if not blocked:
+          print("  nothing blocked on dependencies.")
+          print("  if a change is not landing, check: kubectl -n llm get cm | grep litellm-config")
+      else:
+          names = {b[0] for b in blocked}
+          heads = [n for n, m in blocked if not any(f"flux-system/{x}" in m for x in names - {n})]
+          print(f"  {len(blocked)} blocked; head of chain: {heads[0] if heads else '?'}")
+          print(f"  next: estate-execute flux-kick name={heads[0] if heads else '?'}")
+      PY

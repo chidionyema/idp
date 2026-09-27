@@ -1,0 +1,9 @@
+name: gh-check-runs
+description: All check runs for a SHA or PR. Returns JSON array.
+args:
+  sha:  {type: string, description: "Commit SHA"}
+  repo: {type: string, default: "chidioniema/idp"}
+steps:
+  - name: runs
+    cmd: >
+      gh api repos/{{repo}}/commits/{{sha}}/check-runs --jq '.' 2>/dev/null

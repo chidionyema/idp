@@ -1,0 +1,33 @@
+name: flux-helmreleases
+description: >
+  Composite intent. List Flux HelmReleases and their status.
+args:
+  namespace: {type: string, default: ""}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: helmreleases
+    intent: kubectl-list
+    args:
+      resource: helmreleases
+      namespace: "{{namespace}}"
+      all_ns: true
+      output: json
+  - name: summary
+    cmd: |
+      python3 -c "
+      import sys,json
+      try:
+      d=json.load(sys.stdin)
+      items=d.get('items',[])
+      ready=sum(1 for h in items if h.get('status','{}').get('conditions',[{}])[0].get('type')=='Ready')
+      print(f'{len(items)} HelmReleases | Ready: {ready}')
+      for h in items:
+      ns=h['metadata']['namespace']
+      name=h['metadata']['name']
+      conds=h.get('status',{}).get('conditions',[])
+      ready='READY' if any(c.get('type')=='Ready' and c.get('status')=='True' for c in conds) else 'NOT-READY'
+      chart=h.get('spec',{}).get('chart',{}).get('chart','')
+      print(f'  {ns}/{name} {ready} chart={chart}')
+      except Exception as e:
+      print(f'flux helm not installed: {e}')
+      "
