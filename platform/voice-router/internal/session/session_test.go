@@ -90,6 +90,21 @@ func (b *fakeBrain) Stream(ctx context.Context, msgs []brain.Message, on func(st
 	return nil
 }
 
+type fakeIntents struct {
+	raw json.RawMessage
+	say string
+	ok  bool
+	mu  sync.Mutex
+	got []string
+}
+
+func (f *fakeIntents) Resolve(_ context.Context, text, sid string) (json.RawMessage, string, bool) {
+	f.mu.Lock()
+	f.got = append(f.got, sid+"|"+text)
+	f.mu.Unlock()
+	return f.raw, f.say, f.ok
+}
+
 type rec struct {
 	mu     sync.Mutex
 	events []Event
@@ -497,5 +512,115 @@ func TestBargedAndFailedTurnsAreRecordedAsSuch(t *testing.T) {
 	}
 	if sum := ring.Summary(); sum.Turns != 2 || sum.Completed != 0 || len(sum.MedianS) != 0 {
 		t.Fatalf("summary timed turns that did not complete: %+v", sum)
+	}
+}
+
+func TestIntentUtteranceRunsTheIntentNotTheBrain(t *testing.T) {
+	a := &fakeASR{script: []step{{"check ci status", true}}}
+	b := &fakeBrain{tokens: []string{"Brain."}}
+	s, r := newSession(a, &fakeTTS{}, b)
+	ring := turnlog.NewRing(10)
+	s.Record(ring, turnlog.NewClock(), "conn-1", "piper", "v")
+	fi := &fakeIntents{raw: json.RawMessage(`{"kind":"intent_result","intent":"ci-status","status":"ok"}`), say: "All green.", ok: true}
+	s.SetIntents(fi)
+	s.OnAudio(pcm)
+	r.wait(t, "done", 1)
+
+	var intentEvent *Event
+	var phrases []string
+	for _, e := range r.snapshot() {
+		if e.Type == "intent_result" && e.Turn == 1 {
+			ev := e
+			intentEvent = &ev
+		}
+		if e.Type == "phrase" {
+			phrases = append(phrases, e.Text)
+		}
+	}
+	if intentEvent == nil {
+		t.Fatalf("no intent_result event; got %+v", r.snapshot())
+	}
+	var got, want map[string]any
+	if err := json.Unmarshal(intentEvent.Intent, &got); err != nil {
+		t.Fatalf("intent payload not JSON: %v", err)
+	}
+	if err := json.Unmarshal(fi.raw, &want); err != nil {
+		t.Fatalf("fixture not JSON: %v", err)
+	}
+	gotJSON, _ := json.Marshal(got)
+	wantJSON, _ := json.Marshal(want)
+	if string(gotJSON) != string(wantJSON) {
+		t.Fatalf("intent payload = %s, want %s", gotJSON, wantJSON)
+	}
+	if strings.Join(phrases, "|") != "All green." {
+		t.Fatalf("phrases %q", phrases)
+	}
+	b.mu.Lock()
+	calls := len(b.calls)
+	b.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("brain was called %d times", calls)
+	}
+	fi.mu.Lock()
+	got2 := append([]string(nil), fi.got...)
+	fi.mu.Unlock()
+	if len(got2) != 1 || got2[0] != "conn-1|check ci status" {
+		t.Fatalf("intents.Resolve got %+v", got2)
+	}
+	turns := ringTurns(t, ring, 1)
+	if turns[0].Kind != "intent" || turns[0].Outcome != "ok" {
+		t.Fatalf("turn %+v", turns[0])
+	}
+}
+
+func TestNoIntentFallsThroughToTheBrain(t *testing.T) {
+	a := &fakeASR{script: []step{{"check ci status", true}}}
+	b := &fakeBrain{tokens: []string{"Five", " agents."}}
+	s, r := newSession(a, &fakeTTS{}, b)
+	ring := turnlog.NewRing(10)
+	s.Record(ring, turnlog.NewClock(), "conn-1", "piper", "v")
+	fi := &fakeIntents{ok: false}
+	s.SetIntents(fi)
+	s.OnAudio(pcm)
+	r.wait(t, "done", 1)
+
+	if r.has("intent_result", 1) {
+		t.Fatal("intent_result event sent when nothing matched")
+	}
+	var phrases []string
+	for _, e := range r.snapshot() {
+		if e.Type == "phrase" {
+			phrases = append(phrases, e.Text)
+		}
+	}
+	if strings.Join(phrases, "|") != "Five agents." {
+		t.Fatalf("phrases %q", phrases)
+	}
+	b.mu.Lock()
+	calls := len(b.calls)
+	b.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("brain calls = %d, want 1", calls)
+	}
+	turns := ringTurns(t, ring, 1)
+	if turns[0].Kind != "ask" {
+		t.Fatalf("turn kind = %q, want ask", turns[0].Kind)
+	}
+}
+
+func TestWithoutIntentsNothingChanges(t *testing.T) {
+	a := &fakeASR{script: []step{{"how many agents", true}}}
+	b := &fakeBrain{tokens: []string{"Five", " agents."}}
+	s, r := newSession(a, &fakeTTS{}, b)
+	s.OnAudio(pcm)
+	r.wait(t, "done", 1)
+	if r.has("intent_result", 1) {
+		t.Fatal("intent_result event sent with no Intents configured")
+	}
+	b.mu.Lock()
+	calls := len(b.calls)
+	b.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("brain calls = %d, want 1", calls)
 	}
 }

@@ -1,0 +1,85 @@
+#!/usr/bin/env python3
+"""launchd's door into fleetview: load the router key from the vault by name, then become the server.
+
+WHY. litellm-local refuses a keyed lane without the laptop router key (3027e45b), and the launchd
+job had no way to hold it: a key in the plist is a key in a file (AGENTS.md section 4). So every
+/voice/stream answered 401 and /fleet's default voice engine was dead; measured 2026-09-27 with
+bin/voice-latency-gate --engine estate (BLIND).
+
+WHY PYTHON. launchd cannot start /bin/sh on anything under ~/Documents (TCC, exit 126), while the
+framework Python it already runs fleetview with can. So this is Python, run by that interpreter.
+
+The key goes through estate-secrets/scripts/secret-load, the vault's one egress, into this
+process's environment only. Never printed. If it cannot be loaded the server still starts and
+/voice answers 503 naming LITELLM_API_KEY -- a board without voice beats no board.
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+SECRET_LOAD = Path(
+    os.environ.get("ESTATE_SECRET_LOAD")
+    or Path.home() / "Documents/code/estate-secrets/scripts/secret-load"
+)
+
+
+def load_key() -> str:
+    if os.environ.get("LITELLM_API_KEY"):
+        return os.environ["LITELLM_API_KEY"]
+    env = dict(os.environ)
+    # launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin: secret-load needs sops and a python3.
+    extra = [
+        str(Path(sys.executable).parent),
+        str(Path.home() / ".cache/estate-tools"),
+        "/usr/local/bin",
+        "/opt/homebrew/bin",
+    ]
+    env["PATH"] = ":".join([*extra, env.get("PATH", "/usr/bin:/bin")])
+    try:
+        r = subprocess.run(
+            [
+                "/bin/bash",
+                str(SECRET_LOAD),
+                "dev",
+                "LITELLM_LAPTOP_KEY",
+                "LITELLM_API_KEY",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"fleetview-launchd: router key not loaded: {type(exc).__name__}",
+            file=sys.stderr,
+        )
+        return ""
+    if r.returncode != 0 or not r.stdout.strip():
+        # stderr is sops's, which names files, never values; the last line says why.
+        why = (r.stderr.strip().splitlines() or ["no output"])[-1][:200]
+        print(
+            f"fleetview-launchd: router key not loaded (exit {r.returncode}): {why}",
+            file=sys.stderr,
+        )
+        return ""
+    return r.stdout.strip()
+
+
+def main() -> None:
+    key = load_key()
+    if key:
+        os.environ["LITELLM_API_KEY"] = key
+    print(
+        f"fleetview-launchd: router key {'loaded' if key else 'MISSING -- /voice will answer 503'}",
+        file=sys.stderr,
+    )
+    os.execv(
+        sys.executable, [sys.executable, "-m", "fleetview_backend.serve", *sys.argv[1:]]
+    )
+
+
+if __name__ == "__main__":
+    main()

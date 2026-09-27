@@ -14,16 +14,63 @@
 //
 // PROTOCOL (platform/voice-router/cmd/voice-router/main.go):
 //   up    binary int16 LE PCM, 16 kHz mono; text {"type":"system"|"ask"|"say"|"stop", text}
-//   down  text hello{rate} partial{text} final{turn,text} phrase{turn,text} barge{turn}
-//              done{turn} error{turn,text}
+//   down  text hello{rate} partial{text} final{turn,text} phrase{turn,text} intent_result{turn,intent}
+//              barge{turn} done{turn} error{turn,text}
 //         binary uint32 LE turn id, then int16 LE PCM at hello.rate
+// intent_result.intent is the contract in ./intentCue (an estate intent ran; its text is also spoken).
 // Audio for any turn at or below the last barge is dropped: that is what makes an interruption
 // silence the agent at once, even with frames still in flight.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
+import { parseIntentResult, type IntentResult } from './intentCue';
 
-export function voiceRouterUrl(loc: Pick<Location, 'protocol' | 'host'> = window.location): string {
-  return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/voice/ws`;
+// Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
+// Under `yarn start` the page is the dev server, which cannot proxy a WebSocket, and the backend's
+// proxy drops the upgrade, so the page goes to the laptop router directly: its Origin allow-list
+// already admits localhost:3100. The same NODE_ENV split the sign-in module uses.
+export function voiceRouterBase(
+  loc: Pick<Location, 'protocol' | 'host'> = window.location,
+  env: string | undefined = process.env.NODE_ENV,
+): { ws: string; http: string } {
+  if (env !== 'production') return { ws: 'ws://127.0.0.1:8091', http: 'http://127.0.0.1:8091' };
+  const tls = loc.protocol === 'https:';
+  return { ws: `${tls ? 'wss' : 'ws'}://${loc.host}`, http: `${tls ? 'https' : 'http'}://${loc.host}` };
+}
+
+export function voiceRouterUrl(
+  loc: Pick<Location, 'protocol' | 'host'> = window.location,
+  env: string | undefined = process.env.NODE_ENV,
+): string {
+  return `${voiceRouterBase(loc, env).ws}/voice/ws`;
+}
+
+/**
+ * GET /voice/turns in the shape the /fleet voice panel already renders (useEstateVoice's
+ * voiceStats / voiceLog): the router's turn record uses voice_turns' field names, so only the
+ * summary needs renaming.
+ */
+export function toPanel(body: any): { voiceStats: any; voiceLog: any[] } {
+  const sum = body?.summary ?? {};
+  const med = sum.median_s ?? {};
+  const turns = sum.turns ?? 0;
+  const empty = sum.outcomes?.empty ?? 0;
+  const r2 = (v: any) => (typeof v === 'number' ? Math.round(v * 100) / 100 : undefined);
+  return {
+    voiceStats: {
+      turns,
+      empty,
+      empty_rate: turns ? empty / turns : 0,
+      asr_median_s: r2(med.asr_s),
+      first_clause_median_s: r2(med.first_audio_s),
+    },
+    voiceLog: (body?.recent ?? []).map((t: any) => ({
+      ...t,
+      id: t.hlc,
+      asr_s: r2(t.asr_s),
+      llm_first_s: r2(t.llm_first_s),
+      tts_s: r2(t.tts_s),
+    })),
+  };
 }
 
 // The capture worklet: downsample whatever rate the hardware runs at to 16 kHz by averaging, and
@@ -79,13 +126,20 @@ interface Live {
 export interface VoiceRouter extends EstateVoice {
   /** The words so far, while the person is still speaking. */
   partial: string;
+  /** The router answered its last turns read; false until it has, and after it stops. */
+  reachable: boolean;
+}
+
+export interface VoiceRouterOptions {
+  /** An utterance ran an estate intent: its result, for the visual cue. */
+  onIntentResult?: (r: IntentResult) => void;
 }
 
 /**
  * `system` is the context the brain answers from -- the live fleet, so it never invents counts.
  * It is re-sent whenever it changes.
  */
-export function useVoiceRouter(system = ''): VoiceRouter {
+export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): VoiceRouter {
   const [state, setState] = useState<EstateVoiceState>('off');
   const [partial, setPartial] = useState('');
   const [heard, setHeard] = useState('');
@@ -93,7 +147,35 @@ export function useVoiceRouter(system = ''): VoiceRouter {
   const [detail, setDetail] = useState('');
   const liveRef = useRef<Live | null>(null);
   const systemRef = useRef(system);
+  const onIntentRef = useRef(opts.onIntentResult);
+  onIntentRef.current = opts.onIntentResult;
   const finalAt = useRef(0);
+  const [reachable, setReachable] = useState(false);
+  const [panel, setPanel] = useState<{ voiceStats: any; voiceLog: any[] }>({ voiceStats: {}, voiceLog: [] });
+
+  // The turn record, every 3s: the panel's metrics, and the proof the router is there at all.
+  useEffect(() => {
+    let live = true;
+    const read = async () => {
+      try {
+        const r = await fetch(`${voiceRouterBase().http}/voice/turns`);
+        if (!r.ok) throw new Error(String(r.status));
+        const p = toPanel(await r.json());
+        if (live) {
+          setPanel(p);
+          setReachable(true);
+        }
+      } catch {
+        if (live) setReachable(false);
+      }
+    };
+    void read();
+    const t = setInterval(read, 3000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, []);
 
   const silence = useCallback(() => {
     const l = liveRef.current;
@@ -207,6 +289,11 @@ export function useVoiceRouter(system = ''): VoiceRouter {
           case 'phrase':
             setReply((r) => (r ? `${r} ${m.text}` : m.text));
             break;
+          case 'intent_result': {
+            const r = parseIntentResult(m.intent);
+            if (r) onIntentRef.current?.(r);
+            break;
+          }
           case 'barge':
             l.barged = Math.max(l.barged, m.turn);
             silence();
@@ -264,12 +351,13 @@ export function useVoiceRouter(system = ''): VoiceRouter {
     reply,
     detail,
     available: typeof window !== 'undefined' && 'AudioWorkletNode' in window,
+    reachable,
     start,
     stop,
     speak,
     silence: interrupt,
-    voiceLog: [],
-    voiceStats: {},
+    voiceLog: panel.voiceLog,
+    voiceStats: panel.voiceStats,
     catalogue: { cloud: [], say: [], kokoro: [], piper: ['ljspeech-medium'] },
     current: { engine: 'voice-router', voice: 'ljspeech-medium' },
     selectVoice: async () => 'voice-router has one voice; set VOICE_TTS on the pod to change it',

@@ -1,8 +1,8 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-09-26T20:46:25Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-09-27T13:00:58Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**40 objects: 30 ready, 8 not ready, 0 unknown, 2 suspended.**
+**41 objects: 31 ready, 8 not ready, 0 unknown, 2 suspended.**
 
 ## Not ready right now
 
@@ -12,7 +12,7 @@ Read from the cluster receipt taken at 2026-09-26T20:46:25Z. Every Kustomization
 - **HelmRelease dagster/dagster** since 2026-09-26T19:04:24Z: Helm rollback to previous release dagster/dagster.v18 with chart dagster@1.13.19 failed: release dagster failed: failed early due to stalled resources: [Deployment/dagster/dagster-dagster-user-deployments-estate-scheduler status: 'Failed']
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
 - **HelmRelease spire-mgmt/spire** since 2026-09-26T20:11:52Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deployment/spire-mgmt/spire-spiffe-oidc-discovery-provider status: 'InProgress']
-- **Kustomization flux-system/external-secrets** since 2026-09-26T20:46:11Z: Certificate/external-secrets/human-vault-ca dry-run failed (InternalError): Internal error occurred: failed calling webhook "webhook.cert-manager.io": failed to call webhook: Post "https://cert-manager-webhook.cert-manager.svc:443/validate?timeout=30s": EOF 
+- **Kustomization flux-system/external-secrets** since 2026-09-27T13:00:43Z: Certificate/external-secrets/human-vault-ca dry-run failed (InternalError): Internal error occurred: failed calling webhook "webhook.cert-manager.io": failed to call webhook: Post "https://cert-manager-webhook.cert-manager.svc:443/validate?timeout=30s": read tcp 168.254.5.2:49412->168.254.5.1:33711: read: connection reset by peer 
 - **Kustomization flux-system/secret-store** since 2026-09-26T19:59:30Z: dependency 'flux-system/external-secrets' is not ready
 
 ## Every row
@@ -25,7 +25,7 @@ Read from the cluster receipt taken at 2026-09-26T20:46:25Z. Every Kustomization
 | HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-26T19:04:24Z | Helm rollback to previous release dagster/dagster.v18 with chart dagster@1.13.19 failed: release dagster failed: failed early due to stalled resources: [Deploym |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
 | HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T20:11:52Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deploymen |
-| Kustomization | flux-system | external-secrets | Not ready | main@a2d6693 | 2026-09-26T20:46:11Z | Certificate/external-secrets/human-vault-ca dry-run failed (InternalError): Internal error occurred: failed calling webhook "webhook.cert-manager.io": failed to |
+| Kustomization | flux-system | external-secrets | Not ready | main@7d86661 | 2026-09-27T13:00:43Z | Certificate/external-secrets/human-vault-ca dry-run failed (InternalError): Internal error occurred: failed calling webhook "webhook.cert-manager.io": failed to |
 | Kustomization | flux-system | secret-store | Not ready |  | 2026-09-26T19:59:30Z | dependency 'flux-system/external-secrets' is not ready |
 | HelmRelease | observability | signoz | Suspended | 0.138.0 | 2026-09-26T16:24:12Z |  |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
@@ -35,7 +35,7 @@ Read from the cluster receipt taken at 2026-09-26T20:46:25Z. Every Kustomization
 | HelmRelease | estate-db | cloudnative-pg | Ready | 0.29.0 | 2026-09-26T10:01:26Z |  |
 | HelmRelease | event-bus | nats | Ready | 2.14.6 | 2026-09-26T09:48:21Z |  |
 | HelmRelease | external-secrets | external-secrets | Ready | 2.9.0 | 2026-09-26T09:48:27Z |  |
-| HelmRelease | flux-system | vendor-bridge | Ready | 0.1.0+a2d66930ebcc | 2026-09-26T20:43:38Z |  |
+| HelmRelease | flux-system | vendor-bridge | Ready | 0.1.0+7d86661394cb | 2026-09-27T12:58:04Z |  |
 | HelmRelease | healing | descheduler | Ready | 0.36.0 | 2026-09-26T09:48:21Z |  |
 | HelmRelease | healing | k8sgpt-operator | Ready | 0.2.29 | 2026-09-26T09:48:26Z |  |
 | HelmRelease | hindsight | hindsight | Ready | 0.9.2 | 2026-09-26T09:48:29Z |  |
@@ -52,10 +52,11 @@ Read from the cluster receipt taken at 2026-09-26T20:46:25Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-26T10:39:02Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-26T18:25:31Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-26T09:48:27Z |  |
-| Kustomization | flux-system | dns | Ready | main@a2d6693 | 2026-09-26T20:44:51Z |  |
-| Kustomization | flux-system | edge | Ready | main@a2d6693 | 2026-09-26T20:44:55Z |  |
-| Kustomization | flux-system | flux-system | Ready | main@a2d6693 | 2026-09-26T20:44:58Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-26T20:42:05Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@a2d6693 | 2026-09-26T20:44:57Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@a2d6693 | 2026-09-26T20:45:58Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@a2d6693 | 2026-09-26T20:46:00Z |  |
+| Kustomization | flux-system | dns | Ready | main@7d86661 | 2026-09-27T12:59:48Z |  |
+| Kustomization | flux-system | edge | Ready | main@7d86661 | 2026-09-27T12:59:56Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@7d86661 | 2026-09-27T13:00:45Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-09-27T13:00:07Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@7d86661 | 2026-09-27T12:59:26Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@7d86661 | 2026-09-27T13:00:04Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@7d86661 | 2026-09-27T12:58:55Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@7d86661 | 2026-09-27T13:00:46Z |  |

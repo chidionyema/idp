@@ -45,6 +45,10 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 // The estate's own voice engine -- whisper for hearing, Kokoro for speaking. Mounted as a hook so
 // every surface uses the same models rather than the browser's network recogniser and formant TTS.
 import { useEstateVoice } from '../../home/useEstateVoice';
+// --- ADDED: an estate intent run by voice, shown on the fleet. ---
+import { cueToReactor, type IntentResult } from '../../home/intentCue';
+import { useVoiceRouter } from '../../home/useVoiceRouter';
+import { CineCam } from './cinecam';
 
 
 const COLORS = {
@@ -195,7 +199,17 @@ export default function FleetReactorApp() {
     // The blast-radius sonar wave: a travelling ring rather than a static highlight. Written by
     // toggleBlast, advanced every frame, and drawn as a scaled ring.
     pulse: null as { id: string; t: number } | null,
-    pulseRing: null as any
+    pulseRing: null as any,
+    // --- ADDED: voice -> intent cue state for the fleet-centre ring/burst. ---
+    intentCue: null as { t: number; kind: string; color: string } | null,
+    intentRing: null as any,
+    intentJets: [] as any[],
+    intentPoints: null as any,
+    intentPos: null as any,
+    intentColor: '#00f0ff',
+    // The live movie: cues from the director (estate.cinema.cue via /stream) fly the camera.
+    cine: new CineCam({ position: [0, 30, 90], quaternion: [0, 0, 0, 1], fov: 50 }) as CineCam,
+    cineTarget: null as any
   });
 
   // THE TAILWIND CDN SCRIPT IS GONE, AND IT MUST NOT COME BACK.
@@ -404,6 +418,46 @@ export default function FleetReactorApp() {
       const delta = clock.getDelta();
       const time = clock.getElapsedTime();
 
+      // --- ADDED: the intent cue. One ring from fleet centre, sized by reactor.ts's pulseRadius over PULSE_MS, and the burst fire() put in intentJets. ---
+      const ic = engineState.current.intentCue;
+      if (ic) {
+        ic.t += (delta * 1000) / PULSE_MS;
+        if (!engineState.current.intentRing) {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+          mainGroup.add(ring);
+          engineState.current.intentRing = ring;
+        }
+        const ring = engineState.current.intentRing;
+        const radius = Math.max(0.01, pulseRadius({ id: 'fleet', t: Math.min(ic.t, 1) }) * 30);
+        ring.visible = ic.t < 1;
+        ring.material.color.set(ic.color);
+        ring.position.set(0, 0, 0);
+        ring.scale.set(radius, radius, radius);
+        ring.material.opacity = Math.max(0, (ic.kind === 'shield' ? 0.8 : 0.55) * (1 - ic.t));
+        if (ic.t >= 1) engineState.current.intentCue = null;
+      }
+      const ij = engineState.current.intentJets;
+      stepParticles(ij, delta * 1000);
+      if (ij.length && !engineState.current.intentPoints) {
+        const geo = new THREE.BufferGeometry();
+        const pos = new Float32Array(200 * 3);
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.6, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+        mainGroup.add(pts);
+        engineState.current.intentPoints = pts;
+        engineState.current.intentPos = pos;
+      }
+      if (engineState.current.intentPoints) {
+        const pts = engineState.current.intentPoints;
+        const buf = engineState.current.intentPos;
+        const n = Math.min(ij.length, 200);
+        for (let i = 0; i < n; i += 1) { buf[i * 3] = ij[i].x; buf[i * 3 + 1] = ij[i].y; buf[i * 3 + 2] = 0; }
+        pts.geometry.setDrawRange(0, n);
+        pts.geometry.attributes.position.needsUpdate = true;
+        pts.material.color.set(engineState.current.intentColor);
+        pts.visible = n > 0;
+      }
+
       // Raycasting for Hover state (only if not drilled down)
       if (!engineState.current.selectedNode) {
         raycaster.setFromCamera(mouse, camera);
@@ -578,6 +632,20 @@ export default function FleetReactorApp() {
         }
       }
 
+      // The director's cue owns the camera while it plays; the rig above resumes when it is idle.
+      const cine = engineState.current.cine;
+      if (cine.state === 'idle') {
+        if (camera.fov !== 50) { camera.fov = 50; camera.updateProjectionMatrix(); }
+        cine.sync({ position: camera.position.toArray() as any, quaternion: camera.quaternion.toArray() as any, fov: camera.fov });
+      } else {
+        const pose = cine.step(delta);
+        camera.position.set(pose.position[0], pose.position[1], pose.position[2]);
+        camera.quaternion.set(pose.quaternion[0], pose.quaternion[1], pose.quaternion[2], pose.quaternion[3]);
+        camera.fov = pose.fov;
+        camera.updateProjectionMatrix();
+        lookAtTarget.copy(engineState.current.cineTarget || lookAtTarget);
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -626,11 +694,71 @@ export default function FleetReactorApp() {
   // Every voice surface mounts this hook. It has to be declared before ANY callback that closes
   // over it -- `talkTo` and the heard->steer effect both do -- because a `const` lives in the
   // temporal dead zone until its line executes. Declared late, it threw on every render.
-  const voice = useEstateVoice();
+  //
+  // Two engines, one surface. useEstateVoice is the voice: every voice in the picker, and talking
+  // to one agent (its words are steered to that agent, and the agent's reply is spoken). voice-
+  // router (streaming: words as you speak, first audio while the brain is still answering) speaks
+  // only when chosen in the picker as "Streaming", only while no agent is addressed (the router
+  // answers questions itself, which would talk over the agent), and only while it answers. A
+  // conversation already running on useEstateVoice is never switched mid-sentence.
+  //
+  // 2026-09-27: the router was made the default and the picker read its catalogue (one Piper
+  // voice, selectVoice a no-op), so the voice list and the mic on each agent vanished. Tested by
+  // e2e-tests/fleet-voice-controls.test.ts, a fleet-regression step.
+  // Which agent the microphone is addressed to, and the last thing it heard -- the ref because the
+  // effect below must not re-fire on every render, and the state because the row must light up.
+  const voiceTargetRef = useRef('');
+  const lastHeardRef = useRef('');
+  // The id of the last reply already spoken aloud, so a re-render cannot repeat it.
+  const spokenReplyRef = useRef<number | string | null>(null);
+  const [voiceTarget, setVoiceTarget] = useState('');
+  const legacyVoice = useEstateVoice();
+  const [fleetBrief, setFleetBrief] = useState('');
+  // The intent visual is defined further down (it needs the engine); the ref reaches it.
+  const onIntentRef = useRef<(r: IntentResult) => void>(() => {});
+  const routerVoice = useVoiceRouter(fleetBrief, { onIntentResult: (r: IntentResult) => onIntentRef.current(r) });
+  const [streaming, setStreaming] = useState(() => {
+    try { return window.localStorage.getItem('fleet.voice.streaming') === '1'; } catch { return false; }
+  });
+  const chooseStreaming = (on: boolean) => {
+    setStreaming(on);
+    try { window.localStorage.setItem('fleet.voice.streaming', on ? '1' : '0'); } catch { /* private mode */ }
+  };
+  const voice =
+    streaming && !voiceTarget && legacyVoice.state === 'off' && (routerVoice.reachable || routerVoice.state !== 'off')
+      ? routerVoice
+      : legacyVoice;
+  const partial = voice === routerVoice ? routerVoice.partial : '';
+  // A director cue's line is spoken if a voice engine is on, else shown in the ticker for 4s.
+  const [cueLine, setCueLine] = useState('');
+  const cueSayRef = useRef<(text: string) => void>(() => {});
+  cueSayRef.current = (text: string) => {
+    if (!text) return;
+    if (voice.state !== 'off') { voice.speak(text.slice(0, 300)); return; }
+    setCueLine(text);
+    setTimeout(() => setCueLine((cur) => (cur === text ? '' : cur)), 4000);
+  };
   const api = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
   const baseUrlRef = useRef(null);
   const [live, setLive] = useState({ ok: false, count: 0, error: null, ticker: '' });
+
+  // --- ADDED: voice -> intent. The result's cue becomes a ring (and, for burn/fire, a burst) from the fleet's centre, and its text holds the ticker for 4s. ---
+  const [intentLine, setIntentLine] = useState('');
+  const intentTimer = useRef<any>(null);
+  const onIntentResult = useCallback((r: IntentResult) => {
+    const c = cueToReactor(r);
+    engineState.current.intentCue = { t: 0, kind: c.kind, color: c.color };
+    engineState.current.intentColor = c.color;
+    if (c.kind === 'burn' || c.kind === 'fire') {
+      fire(engineState.current.intentJets, 0, 0, `intent:${r.intent}`, c.kind === 'burn' ? 8 : 4, c.kind === 'burn' ? 'stuck' : 'thinking');
+    }
+    setIntentLine(r.text);
+    clearTimeout(intentTimer.current);
+    intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
+  }, []);
+  useEffect(() => () => clearTimeout(intentTimer.current), []);
+  onIntentRef.current = onIntentResult;
 
   // THE ROWS THE LEFT PANEL RENDERS.
   //
@@ -644,6 +772,22 @@ export default function FleetReactorApp() {
   // re-render on poll, and node fields are mutated by the render loop where a change would not
   // reach React at all.
   const [rows, setRows] = useState([]);
+
+  // What the voice answers from: the live board, so it never invents a count. Only what changes
+  // meaning (state, task, repo) is in it, not ages, so it is re-sent when the fleet changes and not
+  // on every 2s poll.
+  useEffect(() => {
+    const list = rows as any[];
+    const by = (a: string) => list.filter((r) => r.activity === a).length;
+    const lines = list
+      .slice(0, 20)
+      .map((r) => `${r.sessionId} (${r.runtime}${r.model ? `, ${r.model}` : ''}): ${r.activity}; ${r.repo || 'no repo'}; ${r.task.slice(0, 80) || 'no task'}`);
+    setFleetBrief(
+      list.length
+        ? `The fleet right now: ${list.length} sessions, ${by('stuck')} stuck, ${by('thinking')} thinking, ${by('waiting')} waiting, ${by('finished')} finished.\n${lines.join('\n')}`
+        : '',
+    );
+  }, [rows]);
 
   // WHAT THE AGENTS SAID BACK, newest first, fleet-wide.
   //
@@ -659,13 +803,6 @@ export default function FleetReactorApp() {
   // identifier my own guard could not see, since it only checked names inside `{...}` expressions
   // and not ref attributes.
   const threadRef = useRef(null);
-  // Which agent the microphone is addressed to, and the last thing it heard -- the ref because the
-  // effect below must not re-fire on every render, and the state because the row must light up.
-  const voiceTargetRef = useRef('');
-  const lastHeardRef = useRef('');
-  // The id of the last reply already spoken aloud, so a re-render cannot repeat it.
-  const spokenReplyRef = useRef<number | string | null>(null);
-  const [voiceTarget, setVoiceTarget] = useState('');
   // The voice picker's list, open or closed. Closed it is one small chip in the top-right corner.
   const [voiceMenu, setVoiceMenu] = useState(false);
   // The burn bar's numbers, written by the poll and read by the render. A ref because the bar is
@@ -803,14 +940,17 @@ export default function FleetReactorApp() {
       if (voiceTargetRef.current === row.sessionId) {
         voiceTargetRef.current = '';
         setVoiceTarget('');
-        voice.stop();
+        legacyVoice.stop();
         return;
       }
       voiceTargetRef.current = row.sessionId;
       setVoiceTarget(row.sessionId);
-      if (voice.state === 'off') await voice.start();
+      // Always useEstateVoice: its transcript is steered to this agent. A streaming conversation
+      // with the fleet is ended first, or two engines would be listening.
+      if (routerVoice.state !== 'off') routerVoice.stop();
+      if (legacyVoice.state === 'off') await legacyVoice.start();
     },
-    [voice],
+    [legacyVoice, routerVoice],
   );
 
   // WHEN THE ENGINE HEARS SOMETHING, it goes to the addressed session.
@@ -1273,6 +1413,17 @@ export default function FleetReactorApp() {
           es.onmessage = (ev) => {
             try {
               const frame = JSON.parse(ev.data);
+              if (frame?.type === 'cue') {
+                const node = engineState.current.nodes.find((n: any) => n.sessionId === frame.target_id);
+                if (node) {
+                  const p = node.position;
+                  if (engineState.current.cine.onCue(frame, [p.x, p.y, p.z])) {
+                    engineState.current.cineTarget = p.clone();
+                    cueSayRef.current(String(frame.monologue || ''));
+                  }
+                }
+                return;
+              }
               const rec = frame?.record;
               if (!rec?.session_id) return;
               // Count what arrived, per session, and let the render loop consume it. NOT fired
@@ -1406,10 +1557,11 @@ export default function FleetReactorApp() {
   // the engine could not work. The engine names the real cause (mic permission vs service
   // unreachable), which the old code could not distinguish.
   useEffect(() => {
-    if (voice.heard) setVoiceText(`you: ${voice.heard}`);
+    if (partial) setVoiceText(`you: ${partial}…`);
+    else if (voice.heard) setVoiceText(`you: ${voice.heard}`);
     else if (voice.reply) setVoiceText(voice.reply);
     else if (voice.detail) setVoiceText(voice.detail);
-  }, [voice.heard, voice.reply, voice.detail]);
+  }, [partial, voice.heard, voice.reply, voice.detail]);
 
   const openVoice = async () => {
     setVoiceOpen(true);
@@ -1642,9 +1794,10 @@ export default function FleetReactorApp() {
         }}
         title={live.ok ? live.ticker : `telemetry unavailable — ${live.error}`}
       >
-        {live.ok
+        {/* ADDED: an intent result holds the ticker for 4s; then a director cue; then the live line. */}
+        {intentLine || cueLine || (live.ok
           ? live.ticker || `live · ${live.count} sessions`
-          : `OFFLINE · ${live.error || 'connecting'}`}
+          : `OFFLINE · ${live.error || 'connecting'}`)}
       </div>
 
       {/* THE BURN BAR. Cost as a RATE, never as a figure.
@@ -1682,15 +1835,17 @@ export default function FleetReactorApp() {
           /voice/select, and the chip shows what the service says is live. */}
       {(() => {
         const groups: [string, string, string[]][] = [
-          ['kokoro', 'Kokoro', voice.catalogue.kokoro || []],
-          ['say', 'macOS', voice.catalogue.say || []],
-          ['piper', 'Piper', voice.catalogue.piper || []],
-          ['cloud', 'Online', voice.catalogue.cloud || []],
+          ['kokoro', 'Kokoro', legacyVoice.catalogue.kokoro || []],
+          ['say', 'macOS', legacyVoice.catalogue.say || []],
+          ['piper', 'Piper', legacyVoice.catalogue.piper || []],
+          ['cloud', 'Online', legacyVoice.catalogue.cloud || []],
+          ['voice-router', 'Streaming', routerVoice.reachable ? routerVoice.catalogue.piper : []],
         ];
+        const shown = streaming && routerVoice.reachable ? routerVoice.current : legacyVoice.current;
         return (
           <div
             data-testid="voice-picker"
-            data-value={`${voice.current.engine}:${voice.current.voice}`}
+            data-value={`${shown.engine}:${shown.voice}`}
             onPointerUp={(e) => e.stopPropagation()}
             onPointerDown={(e) => e.stopPropagation()}
             style={{ position: 'absolute', top: 80, right: 24, zIndex: 45, width: 190, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
@@ -1711,7 +1866,7 @@ export default function FleetReactorApp() {
             >
               <span style={{ width: 6, height: 6, borderRadius: 999, background: '#00f0ff', boxShadow: '0 0 8px #00f0ff', flex: 'none' }} />
               <span style={{ color: 'rgba(255,255,255,.4)' }}>voice</span>
-              <span style={{ color: '#00f0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{voice.current.voice}</span>
+              <span style={{ color: '#00f0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shown.voice}</span>
               <span style={{ marginLeft: 'auto', color: 'rgba(0,240,255,.6)', transform: voiceMenu ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
             </button>
             {voiceMenu ? (
@@ -1728,13 +1883,17 @@ export default function FleetReactorApp() {
                       {label} · {list.length}
                     </div>
                     {list.map((v) => {
-                      const on = voice.current.engine === engine && voice.current.voice === v;
+                      const on = shown.engine === engine && shown.voice === v;
                       return (
                         <button
                           type="button"
                           key={`${engine}-${v}`}
                           data-voice={`${engine}:${v}`}
-                          onClick={() => { void voice.selectVoice(engine, v); setVoiceMenu(false); }}
+                          onClick={() => {
+                            if (engine === 'voice-router') chooseStreaming(true);
+                            else { chooseStreaming(false); void legacyVoice.selectVoice(engine, v); }
+                            setVoiceMenu(false);
+                          }}
                           style={{
                             display: 'block', width: '100%', textAlign: 'left', padding: '5px 10px', borderRadius: 6,
                             cursor: 'pointer', fontSize: 11, letterSpacing: '.06em', border: 'none',
@@ -2330,7 +2489,7 @@ export default function FleetReactorApp() {
         {voice.state !== 'off' ? (
           <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/70 border border-white/10 backdrop-blur-md text-[11px] font-mono">
             <span className="text-white/40">talking to</span>
-            <span className={voiceTarget ? 'text-cyan-300' : 'text-white/80'}>
+            <span data-testid="voice-addressee" className={voiceTarget ? 'text-cyan-300' : 'text-white/80'}>
               {(() => {
                 if (!voiceTarget) return 'the fleet';
                 const row = rows.find((r: any) => r.sessionId === voiceTarget);

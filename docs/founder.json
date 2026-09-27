@@ -1,7 +1,43 @@
 {
  "receipts": [],
- "taken": "2026-09-26T22:28Z",
+ "taken": "2026-09-27T13:38Z",
  "waiting": [
+  {
+   "cp": "CP3",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "**Founder decision:** create a free healthchecks.io project (heartbeats go nowhere today): `~/.estate/healthch"
+  },
+  {
+   "cp": "CP10",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "**Founder decision:** bot / GitHub App identity so agents hold no founder token (today every agent acts as the"
+  },
+  {
+   "cp": "CP16",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "**Founder decision:** go for a read-only full-history secret scan (gitleaks/trufflehog), then rotate whatever "
+  },
+  {
+   "cp": "CP17",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "**Founder confirms** the GitHub plan tier on the billing page (the token cannot read it)."
+  },
+  {
+   "cp": "CP23",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "Every item here is reachable from the Fleet page: the founder decisions above are worded so `bin/estate-founde"
+  },
+  {
+   "cp": "CP25",
+   "issue": 975,
+   "url": "https://github.com/chidionyema/crew/issues/975",
+   "what": "**Founder decision:** each held LaunchAgent (downshift, drills, consultd, estatelander) is revived, reworked v"
+  },
   {
    "cp": "CP1",
    "issue": 800,

@@ -11,6 +11,12 @@ RESEARCH-BACKED EDGE CASES ADDRESSED:
   Resource exhaustion:    max_workers capped at 16
   Dry-run mode:         dry_run_probe used before real probe
   Determinism:           full evidence to ~/.estate/logs/hypotheses-race.jsonl
+  Evidence unavailable:  a probe that errored (grep exit 2, 126/127, timeout, signal) is UNKNOWN,
+                         never support and never falsification; it gets no likelihood update and
+                         can never be `top`. With nothing supported and anything unknown the race
+                         abstains. Exit 0 = evidence for, 1 = against; any other exit is unknown
+                         unless the hypothesis names it (falsified_if.exit_code / evidence_exits).
+                         Measured 2026-09-27: 26 of 159 logged races ranked a timed-out probe top.
 """
 
 from __future__ import annotations
@@ -71,6 +77,18 @@ def run_probe(h: dict, timeout: int, dry_run_first: bool) -> dict:
     }
 
 
+def evidence_unavailable(h: dict, res: dict) -> bool:
+    f = h.get("falsified_if") or {}
+    if res["timeout"]:
+        return not f.get(
+            "timeout"
+        )  # a timeout is evidence only where the author declared it
+    known = set(h.get("evidence_exits", [0, 1]))
+    if "exit_code" in f:
+        known.add(f["exit_code"])
+    return res["exit"] not in known
+
+
 def matches(h: dict, res: dict) -> bool:
     f = h.get("falsified_if") or {}
     if "exit_code" in f and res["exit"] == f["exit_code"]:
@@ -103,6 +121,9 @@ def posteriors(hyps: list, results: list, eps: float) -> dict:
         post = {}
         for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
             prior = float(h.get("prior", 1.0 / len(hyps))) * multiplier
+            if r.get("unknown"):
+                post[h["id"]] = prior  # no evidence, no update
+                continue
             lf, _rel = likelihood(h, r)
             # EPS floor calibrated to probe reliability
             floor = max(eps, _rel * eps)
@@ -153,10 +174,14 @@ def main() -> None:
             results[idx[r["id"]]] = r
 
     for h, r in zip(hyps, results):  # noqa: B905 -- runtime falls back to py3.9
-        r["falsified"] = matches(h, r)
+        r["unknown"] = evidence_unavailable(h, r)
+        r["falsified"] = False if r["unknown"] else matches(h, r)
 
     post = posteriors(hyps, results, eps)
     ranked = sorted(post["point"], key=post["point"].get, reverse=True)
+    unknown = [r["id"] for r in results if r["unknown"]]
+    ruled = {r["id"] for r in results if r["unknown"] or r["falsified"]}
+    supported = [hid for hid in ranked if hid not in ruled]
 
     # Log evidence for replay
     with EVIDENCE.open("a") as fh:
@@ -181,7 +206,10 @@ def main() -> None:
         "credible_intervals": {
             hid: credible_interval(post["point"], hid) for hid in ranked
         },
-        "top": ranked[0] if ranked else None,
+        "unknown": unknown,
+        "supported": supported,
+        "top": supported[0] if supported else None,
+        "abstain": not supported and bool(unknown),
     }
     print(json.dumps(out, indent=2))
 

@@ -17,6 +17,7 @@ resources:
   - commerce.yaml
   - human-vault.yaml
   - sandbox.yaml
+  - ns-fences.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
