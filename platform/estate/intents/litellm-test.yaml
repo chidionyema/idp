@@ -1,0 +1,12 @@
+name: litellm-test
+description: Verify a model name through the router. Prints Pong or the error.
+args:
+  model: {type: string, default: "claude-opus"}
+steps:
+  - name: call
+    cmd: |
+      curl -sS https://llm.mumchimp.com/v1/chat/completions \
+        -H "Authorization: Bearer $LITELLM_API_KEY" \
+        -H "Content-Type: application/json" \
+        -d "{\"model\":\"{{model}}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}],\"max_tokens\":5}" \
+        | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('choices',[{}])[0].get('message',{}).get('content') or d.get('error',{}).get('message','?')[:150])"
