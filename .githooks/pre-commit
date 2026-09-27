@@ -42,15 +42,12 @@ fi
 #    per-file tsc invocation needs flags the project tsconfig already provides.
 #    If only test files are staged, run against their tsconfig if it exists.
 if [ -n "$staged_ts" ]; then
-  if [ -x "$repo_root/backstage/node_modules/.bin/tsc" ]; then
-    echo "  tsc --noEmit (whole project, catches staged)"
-    (cd "$repo_root/backstage" && ./node_modules/.bin/tsc --noEmit) || {
-      echo "pre-commit: tsc failed (project-wide). fix unused identifiers or run yarn tsc in backstage/" >&2
-      exit 1
-    }
-  else
-    echo "pre-commit: backstage/node_modules/.bin/tsc not found, skipping TS check (CI enforces)" >&2
-  fi
+  # No skip: a worktree borrows the main checkout's node_modules; with none, the commit is refused.
+  echo "  tsc --noEmit (whole project, catches staged)"
+  "$repo_root/bin/idp-backstage-tsc" || {
+    echo "pre-commit: tsc red or blind (project-wide). fix the types, or yarn install in backstage/" >&2
+    exit 1
+  }
 fi
 
 exit 0
