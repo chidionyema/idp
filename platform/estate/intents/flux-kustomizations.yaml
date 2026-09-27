@@ -1,0 +1,31 @@
+name: flux-kustomizations
+description: >
+  Composite intent. List Flux Kustomizations and their status.
+args:
+  namespace: {type: string, default: "flux-system"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: kustomizations
+    intent: kubectl-list
+    args:
+      resource: kustomizations
+      namespace: "{{namespace}}"
+      output: json
+  - name: summary
+    cmd: |
+      python3 -c "
+      import sys,json
+      try:
+      d=json.load(sys.stdin)
+      items=d.get('items',[])
+      ready=sum(1 for k in items if k.get('status','{}').get('conditions',[{}])[0].get('type')=='Ready')
+      print(f'{len(items)} Kustomizations | Ready: {ready}')
+      for k in items:
+      ns=k['metadata']['namespace']
+      name=k['metadata']['name']
+      conds=k.get('status',{}).get('conditions',[])
+      ready='READY' if any(c.get('type')=='Ready' and c.get('status')=='True' for c in conds) else 'NOT-READY'
+      print(f'  {ns}/{name} {ready}')
+      except Exception as e:
+      print(f'flux not installed or no kustomizations: {e}')
+      "
