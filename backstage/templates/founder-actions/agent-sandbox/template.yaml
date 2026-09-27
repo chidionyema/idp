@@ -1,0 +1,54 @@
+# Hand-kept since bin/idp-portal-buttons was removed (462ed10f); mirrors .github/workflows/agent-sandbox.yml.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: run-agent-sandbox
+  title: Give an agent a job
+  description: An AI agent does the job in a throwaway runner that can change nothing on its own. Every
+    claim it makes is checked against what it actually did, and only then does its work arrive as a pull
+    request, which merges itself once every required check passes.
+  tags:
+  - founder-action
+  - estate
+spec:
+  owner: group:default/platform
+  type: founder-action
+  parameters:
+  - title: The job
+    required:
+    - task
+    properties:
+      task:
+        title: What should the agent do?
+        description: Plain words, as you would tell a colleague. Name the file or the thing to change.
+        type: string
+        ui:widget: textarea
+        ui:options:
+          rows: 5
+      harness:
+        title: Which agent
+        type: string
+        enum:
+        - pi
+        - claude-code
+        enumNames:
+        - pi on MiniMax (ready)
+        - Claude Code (needs its sign-in token set once)
+        default: pi
+  steps:
+  - id: dispatch
+    name: Start Give an agent a job
+    action: github:actions:dispatch
+    input:
+      repoUrl: github.com?owner=chidionyema&repo=idp
+      workflowId: agent-sandbox.yml
+      branchOrTagName: main
+      workflowInputs:
+        harness: ${{ parameters.harness }}
+        task: ${{ parameters.task }}
+  output:
+    links:
+    - title: Watch it work (the newest run)
+      url: https://github.com/chidionyema/idp/actions/workflows/agent-sandbox.yml
+    - title: What agents have proposed
+      url: https://github.com/chidionyema/idp/pulls?q=is%3Apr+author%3Aapp%2Festate-agents

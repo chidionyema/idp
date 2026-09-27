@@ -1,0 +1,6 @@
+[
+  "zero compute-core quotas in tenancy",
+  "zero compute-memory quotas in tenancy",
+  "set compute-core quota standard-a1-core-count to 2 in tenancy where request.ad=AD1",
+  "set compute-memory quota standard-a1-memory-count to 12 in tenancy where request.ad=AD1"
+]

@@ -378,10 +378,16 @@ patches:
             # publish reports `{"published": false, "reason": "NATS_URL is unset"}` truthfully and
             # forever.
             - {name: NATS_URL, value: "nats://nats.event-bus.svc:4222"}
+            # Fleet's agent-jobs panel (agent_jobs.py) dispatches agent-sandbox.yml and follows its
+            # runs with the portal's own App token -- the backstage-github volume the backstage
+            # container already mounts, not a second credential. A file, re-read on every call:
+            # the token is re-minted every 45 minutes and the kubelet swaps the file in place.
+            - {name: FLEETVIEW_GITHUB_TOKEN_FILE, value: /run/secrets/backstage-github/GITHUB_TOKEN}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
+            - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3

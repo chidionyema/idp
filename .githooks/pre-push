@@ -134,6 +134,21 @@ fi
 
 echo "✅ idp-fast-gate: green"
 
+# Repo-wide open-PR cap (founder 2026-09-17: 5; 2026-09-27: "it should not even be possible to
+# have these many PRs open" -- 16 were). Only a NEW branch can become a new PR, so only that is
+# checked; pushing to an existing branch never adds one. Consolidation and bot lanes are exempt.
+# .github/workflows/pr-cap.yml closes a PR opened over the cap: that is the guarantee, this saves
+# the round trip.
+while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "$remote_ref" ] || continue
+  case "$remote_sha" in *[!0]*) continue ;; esac
+  case "$remote_ref" in refs/heads/consolidate*|refs/heads/flux/*|refs/heads/main) continue ;; esac
+  if ! "$repo_root/bin/idp-max-open-prs-gate" --adding; then
+    echo "pre-push REFUSED: the repo is at its open-PR cap. Land or consolidate before opening another." >&2
+    exit 1
+  fi
+done <<<"$refs"
+
 # ---------------------------------------------------------------------------
 # TRUNK ROUTING (advice, never a refusal).
 #

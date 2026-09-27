@@ -13,8 +13,8 @@
       "description": "which process emits the row; adapters map each runtime's own record (hook ledger, Temporal history, session API, Langfuse trace, run state)"
     },
     "kind": {
-      "enum": ["phase", "tool", "wait", "done", "steer"],
-      "description": "which kind of row: a phase change, a tool call, a wait, a done, a mid-flight steer"
+      "enum": ["phase", "tool", "wait", "done", "steer", "gate"],
+      "description": "which kind of row: a phase change, a tool call, a wait, a done, a mid-flight steer, a safeguard's decision on this session"
     },
     "tenant": { "type": "string", "description": "which tenant's fleet this row belongs to (decision 0021: a tenant sees only its own fleet)" },
     "at": {
@@ -54,6 +54,18 @@
         "audit_row": { "type": "string", "description": "the audit ledger row id that already recorded this steer (the estate writes the audit row first)" }
       },
       "description": "present when kind=steer: a human corrected the session mid-flight, already on the audit ledger"
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "verdict"],
+      "properties": {
+        "name": { "type": "string", "description": "the safeguard that decided, e.g. epistemic-firewall" },
+        "verdict": { "enum": ["pass", "refuse", "blind"], "description": "what it decided on this real agent action; blind = it could not read what it grades" },
+        "reason": { "type": "string", "description": "why, in one line, when it refused or was blind" },
+        "claim": { "type": "string", "description": "the agent's own words the gate judged, first 200 characters" }
+      },
+      "description": "present when kind=gate: a safeguard deciding, live, so /fleet shows it working (AGENTS.md section 3, operational = used)"
     }
   },
   "examples": [
@@ -84,6 +96,14 @@
       "at": "2026-09-09T21:43:00Z",
       "phase": "executing",
       "steer": { "text": "stop, look in the auth folder instead", "author": "user/chidionyema", "audit_row": "44821" }
+    },
+    {
+      "session_id": "s-7f3a",
+      "runtime": "claude-code",
+      "kind": "gate",
+      "at": "2026-09-27T14:20:00Z",
+      "phase": "executing",
+      "gate": { "name": "epistemic-firewall", "verdict": "refuse", "reason": "blocker claimed with no intent run behind it", "claim": "this is blocked on the vault" }
     }
   ]
 }

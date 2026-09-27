@@ -201,7 +201,7 @@ model_list:
       max_input_tokens: 512000
   - model_name: default
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 60
@@ -240,7 +240,7 @@ model_list:
       max_input_tokens: 512000
   - model_name: fast
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 60
@@ -299,7 +299,7 @@ model_list:
   # general_settings.max_budget still bounds it, and the daily request meter is Groq's.
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       # Shorter than the paid lanes' 300s on purpose. This is the hop a turn reaches
@@ -328,7 +328,7 @@ model_list:
   # catalogue as the primary account, `openai/gpt-oss-120b` present on both.
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY_2
       timeout: 60
@@ -338,13 +338,47 @@ model_list:
 
   - model_name: groq
     litellm_params:
-      model: openai/gpt-oss-120b
+      model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY_3
       timeout: 60
       max_tokens: 8192
     model_info:
       max_input_tokens: 131072
+
+  # --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice) ------------------
+  # A spoken turn waits on the first words, so this lane is picked for time to the first spoken word: content, not reasoning.
+  # Measured 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this model with
+  # reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s; gpt-oss-20b at
+  # effort low 0.82-1.26s and one empty reply, because it reasons before it speaks.
+  # `openai/` is LiteLLM's provider prefix; Groq's own id follows.
+  - model_name: voice
+    litellm_params:
+      model: openai/qwen/qwen3.8-27b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      reasoning_effort: none
+      timeout: 20
+      max_tokens: 400
+  # --- voice: the Fleet page's ears and mouth, behind the router so no service holds a vendor key.
+  # Measured 2026-09-26 with this key: whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,
+  # where the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept its terms once
+  # (console.groq.com playground); until then voice-tts answers 400 and the backend speaks locally.
+  - model_name: voice-asr
+    litellm_params:
+      model: groq/whisper-large-v3-turbo
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 20
+    model_info:
+      mode: audio_transcription
+  - model_name: voice-tts
+    litellm_params:
+      model: openai/canopylabs/orpheus-v1-english
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 20
+    model_info:
+      mode: audio_speech
 
   # Founder, 2026-09-10: "all agets send should be in litelln". Until this row the key
   # above reached exactly one consumer -- Otto's private brain -- and the estate router
@@ -653,6 +687,22 @@ router_settings:
     - gemini: [minimax, groq]
     - default: [gemini, groq]
     - fast: [gemini, groq]
+
+    # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
+    # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`
+    # (sovereign cp30), and until this chain `groq` ended nowhere: the laptop router logged
+    # 11 `No deployments available ... Passed model=groq` in one day, with Cerebras, SambaNova
+    # and NVIDIA idle -- nine free keys and a per-model meter that no chain ever reached.
+    # LiteLLM follows a fallback group's own chain, so this one line carries every chain on:
+    # groq down -> cerebras, both down -> sambanova, all three -> nvidia, then openrouter.
+    # The meters differ (Groq requests/day, Cerebras tokens/day, NVIDIA per model), so they
+    # do not empty together; each hop is a three-key pool that cools a dead key for 60s.
+    - groq: [cerebras, sambanova, nvidia, openrouter]
+
+    # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
+    - cerebras: [sambanova, nvidia, openrouter]
+
+    - sambanova: [nvidia, openrouter]
     # The lane that had no chain at all until 2026-09-10, and the only one that needed it.
     # Every other group failed over; `embed` did not, so a Google 429 travelled straight out
     # to the caller and killed two services (the embed rows in cluster_lanes above carry the
@@ -729,7 +779,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

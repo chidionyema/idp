@@ -15,7 +15,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, router-rows]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, router-rows]
         default: all
       delete:
         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
@@ -113,6 +113,11 @@ jobs:
             # k8sgpt's on purpose: a key alias is the only thing that attributes router spend to a caller,
             # so the investigator and the smoke alarm must never share one.
             bin/idp-router-key holmes minimax
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = newsroom ]; then
+            # The newsroom anchor's own virtual key (platform/voice-router/deploy/external-secret.yaml, crew#974 P3):
+            # it rewrites BREAKING anchor lines only, on the cheap `fast` lane, so that is the only lane on the key.
+            bin/idp-router-key newsroom fast
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key
