@@ -821,7 +821,7 @@ def _turn_spans(turns: list[dict]) -> list[tuple[int, int]]:
     """(prompt index, end) for every prompt that the agent answered in words."""
     starts = [i for i, t in enumerate(turns) if _is_prompt(t)]
     spans = []
-    for a, b in zip(starts, starts[1:] + [len(turns)]):
+    for a, b in zip(starts, starts[1:] + [len(turns)]):  # noqa: B905 -- runtime may be py3.9
         if any(_texts(t) for t in turns[a + 1 : b] if _is_agent(t)):
             spans.append((a, b))
     return spans
