@@ -78,9 +78,9 @@ funnel printout tells us whether the idea works, before anything is built on top
 - [x] Test scan descends into `mod tests` and `tests/`; multiple test binaries are data.
 - [x] Trap kinds classified by type (`Trap::OutOfFuel`, `Trap::Interrupt`, `I32Exit`).
 
-Deviations, documented in code: a binary harv_abi v1 payload instead of JSON and WIT; public
-functions from `syn` instead of nightly rustdoc (a function re-exported from a private module is
-missed); no coverage measurement; one crate with modules instead of seven.
+Deviations, documented in code: a binary harv_abi payload instead of JSON and WIT; no coverage
+measurement; one crate with modules instead of seven. (Since kronos `73af7b2` the public API comes
+from rustdoc JSON, as the spec asked, not `syn`.)
 
 ## First step and what counts as done
 
@@ -128,6 +128,39 @@ Pulled off the shelf through the intent, in deny mode:
 Terminals: `harv export-capabilities` output passes `factory/registry.collect()`: 18 admitted,
 one per part, 0 warnings. The t3 parts are exported as `state: current`, the rest as `incubating`.
 
+### Second funnel: rustdoc front end, harv_abi v2, generic menu, fusion (kronos `73af7b2`)
+
+Measured 2026-09-27, one run of the top 100 through `estate-execute harv verb=harvest limit=100`
+(ticket `INTENT-20260927-101226-2fe22c01`, 73.6 min):
+
+| stage | first funnel (top 100) | second funnel |
+|---|---:|---:|
+| public fns + methods seen | 671 (syn) | 6,253 (rustdoc) |
+| wrappable entries | 25 | 2,107 (75 instantiated generics, 1,988 fused ctor+method) |
+| crates whose wrapper built | 8 | 35 of 97 inventoried |
+| compiled | 17 | 1,891 |
+| zero imports | 17 | 1,385 |
+| smoke pass (t1) = shelved | 17 | 1,352 |
+| own tests pass (t2) | 9 | 118 (28 crates' tests built, 12 passed) |
+| independent witness agrees (t3) | 2 | 13 |
+| byte-equal rebuild | 8 crates | 35 crates |
+
+Survival: 17 of 671 (2.5%) before, 1,352 of 6,253 (21.6%) now. The 1,352 parts are 712 distinct
+callables: a method fused with up to 8 constructors is one part per constructor. The shelf leans on
+`time` (359 parts), `bytes` (270) and `regex-automata` (149).
+
+`verify-all`: 3,131 blobs re-hashed, 1,377 artifacts good, 0 bad.
+
+Differential: 60 clusters, 124 parts. A member now passes only if at least 1 input in 10 produced a
+value, so clusters that agree only on rejections (random strings never parse as `log::Level`,
+`serde_json::Value` or `toml::Value`) grant nothing. Two clusters disagreed, both different
+semantics under one name, not bugs: `log` vs `tracing-core` `LevelFilter::to_string` (111 of 1,000
+inputs), `version_check` vs `semver` `Version::parse.to_string` (3). Most agreeing clusters are
+`regex-automata` vs `aho-corasick` `PatternID`/`StateID`, shared code by one author: a weak witness.
+
 Still open:
+- Witness independence: shared-author clusters should not count as independent.
+- Other languages (Python via componentize-py, JS via componentize-js, C via wasi-sdk, Go via
+  TinyGo) share the shelf and make the differential cross-lingual.
 - The export is not yet in a directory the live collector scans.
 - No existing estate intent step has been replaced by a shelved block yet.

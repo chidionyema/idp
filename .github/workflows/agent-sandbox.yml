@@ -1,0 +1,222 @@
+# button: Run an agent in a throwaway sandbox
+# founder: Runs Claude Code or pi on a task in a fresh GitHub runner that holds no GitHub token, checks every claim it made against its own tool output, and only then opens a pull request as the estate's App. The laptop is not involved.
+# agent-sandbox -- the agent works; the environment decides what leaves.
+#
+# Founder, 2026-09-27: enforcement must be "model and harness agnostic", "no bypasses", "everyone
+# works exactly the same way" (crew#975 CP11). A rule configured inside each harness is a rule
+# each harness can skip. Here the rule is where the work LEAVES: three jobs, and the one that runs
+# the agent can reach nothing that matters.
+#
+#   agent     untrusted. contents: read, no credential left in .git, the task arrives through env
+#             only (never interpolated into a script). Its only outputs are a patch and its own
+#             transcript, age-encrypted -- this repo is public, and so are its logs and artifacts.
+#   firewall  trusted code only: a fresh checkout of main, main's bin/epistemic_firewall.py over
+#             the decrypted transcript. Refused (1) and BLIND (2) both stop the run.
+#   open-pr   trusted code only: applies the patch to main, refuses one that touches .github/ or
+#             .githooks/, pushes a branch and opens the PR as the estate App. A PR opened with
+#             GITHUB_TOKEN never triggers workflows, so the required checks would never run and
+#             the ruleset on main (24071703) would hold it forever -- hence the App.
+#
+# Not here, deliberately: running the patch's tests. That is untrusted code too, and the required
+# checks on the PR already run it on runners that hold nothing.
+#
+# Needs, and fails closed without: CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) for claude-code,
+# SEED_MINIMAX_API_KEY for pi, AGENT_TRANSCRIPT_AGE_KEY (secret) + AGENT_TRANSCRIPT_AGE_RECIPIENT
+# (variable), SEED_GITHUB_APP_ID + SEED_GITHUB_APP_PEM_B64 (base64 of the PEM, as bin/idp-github-app
+# writes it).
+name: agent-sandbox
+
+on:
+  workflow_dispatch:
+    inputs:
+      harness:
+        description: "Which agent harness runs the task"
+        required: true
+        type: choice
+        options: [claude-code, pi]
+      task:
+        description: "The task, in plain words"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  agent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+
+      - name: Install the harness and age
+        env:
+          HARNESS: ${{ inputs.harness }}
+        run: |
+          set -euo pipefail
+          case "$HARNESS" in
+            claude-code) npm install -g --silent @anthropic-ai/claude-code@2.1.280 ;;
+            pi)          npm install -g --silent @earendil-works/pi-coding-agent@0.86.1 ;;
+            *)           echo "::error::unknown harness"; exit 1 ;;
+          esac
+          sudo apt-get update -qq && sudo apt-get install -y -qq age
+
+      - name: Run the agent (its output goes to a file, never to this public log)
+        env:
+          HARNESS: ${{ inputs.harness }}
+          TASK: ${{ inputs.task }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          MINIMAX_API_KEY: ${{ secrets.SEED_MINIMAX_API_KEY }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
+          git rev-parse HEAD > "$out/base"
+          case "$HARNESS" in
+            claude-code)
+              [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
+              rc=0; claude -p "$TASK" --dangerously-skip-permissions > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -1) ;;
+            pi)
+              [ -n "$MINIMAX_API_KEY" ] || { echo "::error::SEED_MINIMAX_API_KEY is not set"; exit 1; }
+              rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(ls -t "$RUNNER_TEMP"/pi-sessions/*.jsonl "$RUNNER_TEMP"/pi-sessions/*/*.jsonl 2>/dev/null | head -1) ;;
+          esac
+          echo "harness exit $rc"
+          [ -n "${transcript:-}" ] || { echo "::error::the harness left no transcript; nothing can be graded"; exit 1; }
+          cp "$transcript" "$out/transcript.jsonl"
+          # The patch is everything the agent changed against the commit it started from,
+          # committed or not, tracked or new.
+          git add -A
+          git diff --cached --binary "$(cat "$out/base")" > "$out/patch"
+          echo "patch: $(git diff --cached --stat "$(cat "$out/base")" | tail -1)"
+
+      - name: Encrypt what leaves the job
+        env:
+          RECIPIENT: ${{ vars.AGENT_TRANSCRIPT_AGE_RECIPIENT }}
+        run: |
+          set -euo pipefail
+          [ -n "$RECIPIENT" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_RECIPIENT is not set"; exit 1; }
+          out="$RUNNER_TEMP/out"; mkdir -p "$RUNNER_TEMP/sealed"
+          tar -C "$out" -cf - base patch transcript.jsonl stdout | age -r "$RECIPIENT" -o "$RUNNER_TEMP/sealed/work.tar.age"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-work
+          path: ${{ runner.temp }}/sealed/work.tar.age
+          retention-days: 5
+          if-no-files-found: error
+
+  firewall:
+    needs: agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-work
+          path: ${{ runner.temp }}/sealed
+
+      - name: Grade every claim the agent made against its own tool output
+        env:
+          AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$AGE_KEY" ] || { echo "::error::AGENT_TRANSCRIPT_AGE_KEY is not set"; exit 1; }
+          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          work="$RUNNER_TEMP/work"; mkdir -p "$work"
+          printf '%s\n' "$AGE_KEY" > "$RUNNER_TEMP/key"; chmod 600 "$RUNNER_TEMP/key"
+          age -d -i "$RUNNER_TEMP/key" "$RUNNER_TEMP/sealed/work.tar.age" | tar -C "$work" -xf - transcript.jsonl
+          rm -f "$RUNNER_TEMP/key"
+          # The verdict quotes the agent's own sentences, and this log is public: print the verdict
+          # and the count, keep the sentences in the sealed artifact.
+          rc=0; python3 bin/epistemic_firewall.py "$work/transcript.jsonl" > "$work/verdict" 2>&1 || rc=$?
+          echo "firewall exit $rc: $(head -1 "$work/verdict" | cut -c1-40); refused claims: $(grep -c ' <- ' "$work/verdict" || true)"
+          exit "$rc"
+
+  open-pr:
+    needs: [agent, firewall]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Decode the App key
+        id: pem
+        env:
+          PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+        run: |
+          set -euo pipefail
+          [ -n "$PEM_B64" ] || { echo "::error::SEED_GITHUB_APP_PEM_B64 is not set"; exit 1; }
+          pem=$(printf %s "$PEM_B64" | base64 -d)
+          while IFS= read -r line; do [ -n "$line" ] && echo "::add-mask::$line"; done <<< "$pem"
+          { echo "key<<PEM_EOF"; printf '%s\n' "$pem"; echo "PEM_EOF"; } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.key }}
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          token: ${{ steps.app.outputs.token }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: agent-work
+          path: ${{ runner.temp }}/sealed
+
+      - name: Apply the patch to main, refusing what an agent may not change
+        env:
+          AGE_KEY: ${{ secrets.AGENT_TRANSCRIPT_AGE_KEY }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq && sudo apt-get install -y -qq age
+          work="$RUNNER_TEMP/work"; mkdir -p "$work"
+          printf '%s\n' "$AGE_KEY" > "$RUNNER_TEMP/key"; chmod 600 "$RUNNER_TEMP/key"
+          age -d -i "$RUNNER_TEMP/key" "$RUNNER_TEMP/sealed/work.tar.age" | tar -C "$work" -xf - patch base
+          rm -f "$RUNNER_TEMP/key"
+          [ -s "$work/patch" ] || { echo "::error::the agent changed nothing; there is no PR to open"; exit 1; }
+          git apply --index --3way "$work/patch"
+          # Read back what the index now holds, both sides of every rename included, rather than
+          # parse the patch text.
+          refused=$(git diff --cached --name-only --no-renames HEAD | grep -E '^(\.github|\.githooks)/' || true)
+          if [ -n "$refused" ]; then
+            echo "::error::an agent patch may not change CI or hooks:"; echo "$refused"; exit 1
+          fi
+
+      - name: Push a branch and open the PR as the App
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          HARNESS: ${{ inputs.harness }}
+          TASK: ${{ inputs.task }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          branch="agent/${HARNESS}-${GITHUB_RUN_ID}"
+          git config user.name "estate-agent-sandbox"
+          git config user.email "estate-agent-sandbox@users.noreply.github.com"
+          git checkout -b "$branch"
+          printf 'agent-sandbox: %s\n\n%s\n\nRun: %s\n' "$HARNESS" "$TASK" "$RUN_URL" > "$RUNNER_TEMP/msg"
+          git commit -q -F "$RUNNER_TEMP/msg"
+          git push -q origin "$branch"
+          printf '## Task\n\n%s\n\n## Provenance\n\nHarness: %s. Run: %s. The epistemic firewall passed the transcript before this PR was opened.\n' \
+            "$TASK" "$HARNESS" "$RUN_URL" > "$RUNNER_TEMP/body"
+          gh pr create --base main --head "$branch" --title "agent-sandbox ($HARNESS): run $GITHUB_RUN_ID" --body-file "$RUNNER_TEMP/body"
