@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The root converger: every 120s, cut a release of main's platform/estate into
+     /usr/local/estate/releases and relink the console user's ~/.estate into it.
+     docs/tickets/2026-09-27-merged-is-operating.md. Installed by IDP-Estate.pkg; static,
+     nothing is rendered into it at build time. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>ai.estate.converge</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/usr/local/estate/sbin/estate-converge</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StartInterval</key>
+    <integer>120</integer>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/usr/local/estate/logs/converge.log</string>
+    <key>StandardErrorPath</key>
+    <string>/usr/local/estate/logs/converge.log</string>
+</dict>
+</plist>
