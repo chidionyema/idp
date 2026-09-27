@@ -10,15 +10,18 @@ Bot lanes skipped (do not count against the cap):
   - authors ending in `[bot]` (github-actions, dependabot, image-update-pr bot)
   - PRs carrying an `image-update` label
 
-Reads GH_TOKEN from env; BLIND when unset (fails open, LAW 38 -- a fence a correct machine
-cannot satisfy is an outage).
+Reads GH_TOKEN/GITHUB_TOKEN, else `gh auth token`. BLIND (no token, API unreachable) exits 1:
+it failed open until 2026-09-27 and was never wired anywhere, and the repo reached 16 open PRs.
+Wired into .githooks/pre-push (a new branch, --adding) and .github/workflows/pr-cap.yml (a PR
+opened over the cap is closed: the server-side guarantee, which no local action can skip).
 
   bin/idp-max-open-prs-gate                     # grade the estate right now
   bin/idp-max-open-prs-gate --max 5             # override the cap
   bin/idp-max-open-prs-gate --check             # exit 0/1 without narration
+  bin/idp-max-open-prs-gate --adding            # would one more PR fit (pre-push)
 """
 from __future__ import annotations
-import argparse, json, os, sys, urllib.request, urllib.error
+import argparse, json, os, subprocess, sys, urllib.request, urllib.error
 
 MAX_DEFAULT = int(os.environ.get("IDP_MAX_OPEN_PRS", "5"))
 REPO = os.environ.get("IDP_REPO", "chidionyema/idp")
@@ -27,7 +30,15 @@ REPO = os.environ.get("IDP_REPO", "chidionyema/idp")
 def get_open_prs():
     token = os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN")
     if not token:
-        print("BLIND max-open-prs: no GH_TOKEN in env; skip (LAW 38)", file=sys.stderr)
+        # A laptop has no GH_TOKEN in env; gh keeps its own. Measured 2026-09-27: this gate
+        # skipped on every laptop push for want of it, and the repo reached 16 open PRs.
+        try:
+            token = subprocess.run(["gh", "auth", "token"], capture_output=True, text=True,
+                                   timeout=10).stdout.strip()
+        except (OSError, subprocess.TimeoutExpired):
+            token = ""
+    if not token:
+        print("BLIND max-open-prs: no GH_TOKEN and no gh login", file=sys.stderr)
         return None
     req = urllib.request.Request(
         f"https://api.github.com/repos/{REPO}/pulls?state=open&per_page=100",
@@ -57,12 +68,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--max", type=int, default=MAX_DEFAULT)
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--adding", action="store_true",
+                    help="a PR is about to be opened (pre-push of a new branch): count it too")
     args = ap.parse_args()
     prs = get_open_prs()
     if prs is None:
-        sys.exit(0)  # BLIND, fail open
+        sys.exit(1)  # BLIND fails closed: a gate that passes when it cannot see is how 16 PRs got open
     counted = [p for p in prs if not is_bot_lane(p)]
-    n = len(counted)
+    n = len(counted) + (1 if args.adding else 0)
     if n <= args.max:
         print(f"ok    max-open-prs  {n} open non-bot PRs (cap {args.max})")
         sys.exit(0)
@@ -70,7 +83,7 @@ def main():
     for p in counted:
         who = (p.get("user") or {}).get("login", "?")
         print(f"   #{p['number']:5d} by {who}  {p['title'][:80]}")
-    print("        run bin/idp-pr-consolidate-local, or dispatch the pr-consolidate workflow, then retry")
+    print("        land one, or dispatch the pr-consolidate workflow, then retry")
     sys.exit(1)
 
 
