@@ -11,6 +11,7 @@ resources:
   - dns.yaml
   - monitoring.yaml
   - kyverno.yaml
+  - ns-fences.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
