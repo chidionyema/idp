@@ -116,3 +116,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: otto-gateway
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: voice-router

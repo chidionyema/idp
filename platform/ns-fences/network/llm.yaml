@@ -172,3 +172,6 @@ spec:
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: via-negativa
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: voice-router

@@ -1,0 +1,22 @@
+# crew#974 P1, the CI/incident wire for the newsroom. The row was lost in c96359f4 and 0 pods
+# run. prune: false so that adopting the orphans deletes nothing. wait: false because
+# ExternalSecret epistemic-fabric-github (webhook) is SecretSyncedError and would hold the row
+# red.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: epistemic-fabric
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/epistemic-fabric
+  prune: false
+  wait: false
+  timeout: 2m
