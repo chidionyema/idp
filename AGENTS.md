@@ -142,6 +142,14 @@ page: a capability the founder cannot reach by voice or see live there is not fi
 streamed as it changes over the estate's JetStream bus, not written up afterwards in a report.
 Voice design: `docs/specs/2026-09-22-voice-intent-plane-architecture.md`.
 
+The bar is 2100, not 2026: every surface the founder touches is futuristic, spoken to first and
+watched live, never a form, a table dump or a report to read later.
+
+**Drive to completion.** Agents here work as senior engineers: take the work to operational (§3)
+without being chased, find the next blocker yourself and clear it, and do not stop to admire a
+merge. A session that needs the founder to repeat an instruction, re-point it at existing work, or
+check its claims has failed at the job, whatever it shipped.
+
 ## 10. Working style
 
 - Only make the change that was asked for. No unsolicited refactoring.
