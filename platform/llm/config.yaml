@@ -347,17 +347,17 @@ model_list:
       max_input_tokens: 131072
 
   # --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice) ------------------
-  # A spoken turn waits on the first words, so this lane is picked for time to first token.
-  # Measured 2026-09-27 from the laptop, streaming, one short question: this model at
-  # reasoning_effort low 0.32-0.50s; `fast` (minimax/deepseek) 0.61-1.22s; `groq`
-  # (gpt-oss-120b, default effort) spent the whole budget reasoning and said nothing.
-  # `openai/` twice: LiteLLM's provider prefix, then Groq's own model id.
+  # A spoken turn waits on the first words, so this lane is picked for time to the first spoken word: content, not reasoning.
+  # Measured 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this model with
+  # reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s; gpt-oss-20b at
+  # effort low 0.82-1.26s and one empty reply, because it reasons before it speaks.
+  # `openai/` is LiteLLM's provider prefix; Groq's own id follows.
   - model_name: voice
     litellm_params:
-      model: openai/openai/gpt-oss-20b
+      model: openai/qwen/qwen3.8-27b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
-      reasoning_effort: low
+      reasoning_effort: none
       timeout: 20
       max_tokens: 400
 
