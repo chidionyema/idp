@@ -43,6 +43,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -394,6 +395,76 @@ def flux_floor(deadline):
     return failed
 
 
+# The vault is the one thing a shadow can never have: ESO's CRDs are on the floor, but no
+# controller and no estate-vault store, so no ExternalSecret ever writes its Secret and every
+# workload that mounts one waits in ContainerCreating until the health check times out (P1's
+# epistemic-ingest, 2026-09-27: `secret "epistemic-fabric-github-api" not found`). The shadow
+# stands in for the vault, not for the change: for each ExternalSecret Flux applies, it creates
+# the target Secret ESO would have written, with the keys ESO would have written and a
+# placeholder value. A workload that needs the real credential to go Ready still fails.
+VAULT_PLACEHOLDER = "shadow-vault-stand-in"
+
+
+def vault_stand_ins(external_secrets):
+    """The Secrets ESO would write for these ExternalSecrets, holding placeholders."""
+    out = []
+    for es in external_secrets:
+        meta, spec = es.get("metadata") or {}, es.get("spec") or {}
+        target = spec.get("target") or {}
+        keys = [d["secretKey"] for d in spec.get("data") or [] if d.get("secretKey")]
+        keys += list(((target.get("template") or {}).get("data") or {}).keys())
+        for src in spec.get("dataFrom") or []:
+            for rw in src.get("rewrite") or []:
+                # a literal transform template renames the generated key to itself
+                tpl = (rw.get("transform") or {}).get("template") or ""
+                if tpl and "{{" not in tpl:
+                    keys.append(tpl)
+        out.append(
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": target.get("name") or meta.get("name"),
+                    "namespace": meta.get("namespace") or "default",
+                    "labels": {"idp.shadow/vault-stand-in": "true"},
+                },
+                "stringData": {k: VAULT_PLACEHOLDER for k in dict.fromkeys(keys)},
+            }
+        )
+    return out
+
+
+def stand_in_vault(stop, every=5.0):
+    """Until stop is set, give every ExternalSecret in the shadow its Secret, once."""
+    made = set()
+    while True:
+        p = kube(
+            ["get", "externalsecrets.external-secrets.io", "-A", "-o", "json"],
+            check=False,
+        )
+        items = (
+            json.loads(p.stdout or "{}").get("items", []) if p.returncode == 0 else []
+        )
+        for sec in vault_stand_ins(items):
+            key = (sec["metadata"]["namespace"], sec["metadata"]["name"])
+            if key in made:
+                continue
+            r = subprocess.run(
+                ["kubectl", "create", "-f", "-"],
+                input=json.dumps(sec),
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode == 0 or "AlreadyExists" in (r.stderr or ""):
+                made.add(key)
+                print(
+                    f"ok      shadow  vault stand-in {key[0]}/{key[1]} "
+                    f"({len(sec['stringData'])} placeholder key(s))"
+                )
+        if stop.wait(every):
+            return
+
+
 def ks_status(name):
     p = kube(
         ["get", "kustomization", name, "-n", "flux-system", "-o", "json"], check=False
@@ -542,11 +613,13 @@ def verify(head, paths):
         return 2, ["no path under test; nothing to reconcile"]
 
     daemon = serve_tree()
+    vault_stop = threading.Event()
     try:
         flux_source(head)
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
             return 1, floor_failed
+        threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
@@ -589,6 +662,7 @@ def verify(head, paths):
         )
         return 0, []
     finally:
+        vault_stop.set()
         daemon.terminate()
         try:
             daemon.wait(timeout=10)
