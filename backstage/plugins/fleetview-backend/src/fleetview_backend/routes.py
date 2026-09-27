@@ -325,3 +325,19 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
             "records": [],
         }, 503
     return {"available": True, "error": None, **result}, 200
+
+
+# ── agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR ──
+AGENT_JOBS_PATH = "/agent-jobs"
+
+
+def agent_jobs_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import agent_jobs
+
+    return agent_jobs.list_jobs()
+
+
+def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
+    from fleetview_backend import agent_jobs
+
+    return agent_jobs.handle_post(body)
