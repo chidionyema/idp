@@ -14,7 +14,8 @@ const ROUTER = 'http://127.0.0.1:8091';
 const WAV = '/tmp/fleet-voice-utterance.wav';
 const SAID = 'how many sessions are running';
 
-// macOS speaks the question; 30 s of silence follows it. Chrome loops a fake microphone file from
+// macOS speaks the question; 90 s of silence follows it (30 s cut off an answer whose speech took
+// 42 s to synthesise under load, 2026-09-27). Chrome loops a fake microphone file from
 // the moment the browser starts, so the page joins the loop at an unknown point: the test waits
 // for a whole question, and the silence lets its answer finish before the next repeat barges in.
 execFileSync('say', ['-o', '/tmp/fleet-voice-utterance.aiff', SAID]);
@@ -22,7 +23,7 @@ execFileSync('afconvert', ['-f', 'WAVE', '-d', 'LEI16@16000', '-c', '1', '/tmp/f
 execFileSync('python3', ['-c', `
 import wave
 r = wave.open("${WAV}"); p = r.getparams(); f = r.readframes(r.getnframes()); r.close()
-w = wave.open("${WAV}", "wb"); w.setparams(p); w.writeframes(f + b"\\0\\0" * p.framerate * 30); w.close()
+w = wave.open("${WAV}", "wb"); w.setparams(p); w.writeframes(f + b"\\0\\0" * p.framerate * 90); w.close()
 `]);
 
 test.use({
@@ -38,10 +39,14 @@ test.use({
 });
 
 test('/fleet hears a spoken question and voice-router answers it, timed', async ({ page, request }) => {
-  test.setTimeout(200_000);
+  test.setTimeout(300_000);
   const before = (await (await request.get(`${ROUTER}/voice/turns`)).json()).summary.turns;
+  // Only a turn heard during this test counts: the ring still holds the last run's turns.
+  const started = Date.now();
 
   const turnsRead = page.waitForResponse(r => r.url() === `${ROUTER}/voice/turns` && r.status() === 200);
+  // Streaming is opt-in (the picker's "Streaming" entry); this test is about voice-router.
+  await page.addInitScript(() => window.localStorage.setItem('fleet.voice.streaming', '1'));
   await page.goto('/fleet', { waitUntil: 'commit' });
   await page.getByRole('button', { name: 'Enter' }).click();
   await turnsRead; // the page found the router, so the mic is voice-router's
@@ -49,7 +54,7 @@ test('/fleet hears a spoken question and voice-router answers it, timed', async 
   await page.getByTestId('fleet-mic').click();
 
   // The whole question, heard: the page shows the final transcript of each utterance.
-  await expect(page.getByText(/how many sessions are running/i).first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText(/how many sessions are running/i).first()).toBeVisible({ timeout: 120_000 }); // up to one 92 s mic loop
 
   // The router's record is the verdict: that question's turn (five words) completed, with an
   // answer spoken. An empty brain reply is a failure -- the person hears silence.
@@ -59,7 +64,7 @@ test('/fleet hears a spoken question and voice-router answers it, timed', async 
       async () => {
         const body = await (await request.get(`${ROUTER}/voice/turns`)).json();
         if (body.summary.turns <= before) return 'no new turn';
-        turn = body.recent.find((t: any) => t.kind === 'ask' && t.words >= 5);
+        turn = body.recent.find((t: any) => t.kind === 'ask' && t.words >= 5 && Date.parse(t.heard_at) >= started);
         return turn ? `${turn.outcome}${turn.detail ? `: ${turn.detail}` : ''}` : 'whole question not recorded';
       },
       { timeout: 60_000, intervals: [1_000] },

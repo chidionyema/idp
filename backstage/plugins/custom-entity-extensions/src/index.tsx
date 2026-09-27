@@ -1,4 +1,4 @@
-import { createFrontendPlugin } from '@backstage/frontend-plugin-api';
+import { createFrontendPlugin, type FrontendPlugin } from '@backstage/frontend-plugin-api';
 import {
   EntityCardBlueprint,
 } from '@backstage/plugin-catalog-react/alpha';
@@ -512,7 +512,7 @@ const thoughtfulOverviewCard = EntityCardBlueprint.make({
   name: 'thoughtful-overview',
   params: {
     loader: async () => <ThoughtfulOverviewCard />,
-    type: 'summary',
+    type: 'info',
   },
 });
 
@@ -532,7 +532,7 @@ const whyItMattersCard = EntityCardBlueprint.make({
   },
 });
 
-export const customEntityExtensionsPlugin = createFrontendPlugin({
+export const customEntityExtensionsPlugin: FrontendPlugin = createFrontendPlugin({
   pluginId: 'custom-entity-extensions',
   extensions: [thoughtfulOverviewCard, directActionsCard, whyItMattersCard],
 });

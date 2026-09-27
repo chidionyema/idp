@@ -1,5 +1,5 @@
 name: fleet-regression
-description: Drive /fleet in real Chrome against the running local stack; fails if live sessions do not load, a reload does not recover, a fleetview read stays refused, the page throws, or a spoken question is not heard whole and answered aloud by voice-router.
+description: Drive /fleet in real Chrome against the running local stack; fails if live sessions do not load, a reload does not recover, a fleetview read stays refused, the page throws, or a spoken question is not heard whole and answered aloud by voice-router, or either voice engine is slower than p50 0.8 s / p95 1.2 s from end of speech to first sound.
 args:
   repo: {type: string, default: "~/Documents/code/idp"}
   url: {type: string, default: "http://localhost:3100"}
@@ -13,7 +13,16 @@ steps:
   - name: e2e
     timeout: 240
     cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
+  - name: voice-controls
+    # The voice list and the mic on one agent: both were cut out on 2026-09-27 and nothing noticed.
+    timeout: 300
+    cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice-controls.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
   - name: voice
     # A real recording as Chrome's microphone, the real mic button, the router's own turn record.
-    timeout: 300
+    timeout: 420
     cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
+  - name: voice-latency
+    # End of speech to first sound, both engines, 10 real turns each: p50 <= 0.8 s, p95 <= 1.2 s.
+    # Answering is not enough; an answer after 4 s passed every voice test before this one.
+    timeout: 900
+    cmd: cd <<repo>> && bin/voice-latency-gate --turns 10
