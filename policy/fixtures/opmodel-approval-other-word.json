@@ -17,7 +17,6 @@
     ],
     "denials": []
   },
-  "budget_monthly_usd": 50,
   "drills": [
     "oke-check",
     "drill-heartbeat",
