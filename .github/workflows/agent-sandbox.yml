@@ -80,18 +80,28 @@ jobs:
           set -euo pipefail
           out="$RUNNER_TEMP/out"; mkdir -p "$out" "$RUNNER_TEMP/pi-sessions"
           git rev-parse HEAD > "$out/base"
+          # The newest transcript anywhere under a directory, or nothing. Not `ls -t <globs>`: one
+          # glob that matches nothing makes ls exit 2, pipefail carries it, and set -e ended the
+          # step before it could say why (run 36317202633). stdin is closed: a harness that sees
+          # an open pipe waits on it.
+          newest() { find "$1" -type f -name '*.jsonl' -exec ls -t {} + 2>/dev/null | head -1 || true; }
           case "$HARNESS" in
             claude-code)
               [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ] || { echo "::error::CLAUDE_CODE_OAUTH_TOKEN is not set"; exit 1; }
-              rc=0; claude -p "$TASK" --dangerously-skip-permissions > "$out/stdout" 2>&1 || rc=$?
-              transcript=$(ls -t "$HOME"/.claude/projects/*/*.jsonl 2>/dev/null | head -1) ;;
+              rc=0; claude -p "$TASK" --dangerously-skip-permissions < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$HOME/.claude/projects") ;;
             pi)
               [ -n "$MINIMAX_API_KEY" ] || { echo "::error::SEED_MINIMAX_API_KEY is not set"; exit 1; }
-              rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" > "$out/stdout" 2>&1 || rc=$?
-              transcript=$(ls -t "$RUNNER_TEMP"/pi-sessions/*.jsonl "$RUNNER_TEMP"/pi-sessions/*/*.jsonl 2>/dev/null | head -1) ;;
+              rc=0; pi -p --provider minimax --model MiniMax-M2.7 --session-dir "$RUNNER_TEMP/pi-sessions" "$TASK" < /dev/null > "$out/stdout" 2>&1 || rc=$?
+              transcript=$(newest "$RUNNER_TEMP/pi-sessions") ;;
           esac
           echo "harness exit $rc"
-          [ -n "${transcript:-}" ] || { echo "::error::the harness left no transcript; nothing can be graded"; exit 1; }
+          if [ -z "${transcript:-}" ]; then
+            # No transcript means the harness never got as far as working; its first line is the
+            # reason (a start-up error, not the agent's words).
+            echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
+            exit 1
+          fi
           cp "$transcript" "$out/transcript.jsonl"
           # The patch is everything the agent changed against the commit it started from,
           # committed or not, tracked or new.
