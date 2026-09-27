@@ -1,6 +1,6 @@
 # The reality interface: a model's attempt is a hypothesis, the check is reality
 
-**Status:** critical, 2026-09-27. Built by one `claude-sonnet-5` builder through `delegate-build`,
+**Status:** merged in idp#4512 and installed to ~/.estate on 2026-09-27. Built by one `claude-sonnet-5` builder through `delegate-build`,
 reviewed by the planning session. Tracked on crew#975.
 
 **One sentence:** an agent's failed guess is removed from the tree and from its next prompt, so
