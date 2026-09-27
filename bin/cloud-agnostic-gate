@@ -141,7 +141,7 @@ def main() -> int:
 
 # Any `oci <service> <verb>` invocation, optional leading flags (`oci --profile x os ...`). Not a verb allow-list:
 # bin/idp-vault-reads calls `oci audit event list`, which a list of the usual services silently missed.
-# Shell: `oci <service> <verb>`; Python: subprocess argv starting ["oci", ...] (bin/idp-free-tier).
+# Shell: `oci <service> <verb>`; Python: subprocess argv starting ["oci", ...].
 OCI_CLI = re.compile(r"(^|[\s$(`|;&])oci(\s+--?[a-z-]+(\s+\S+)?)*\s+[a-z][a-z-]*\s+[a-z][a-z-]*|\[\s*[\"']oci[\"']\s*,")
 # A workflow step's `name:` is prose ("oci cli and a headless browser"), not a call.
 PROSE = re.compile(r"^\s*-?\s*name:")
