@@ -1,0 +1,35 @@
+name: harv
+description: Capability harvester (kronos crates/harv). verb=harvest|funnel|verify|ls|show|run|export|index. harvest limit=N skip=N only=a,b; ls filter=; show/run name=<part>[@ver] text=|hex=; export out=<path>. Parts run deny-mode in wasm; tiers come only from signed reports.
+# WHY: 2026-09-27 the fractal factory needs verified parts to assemble. harv takes them from
+# crates.io (license allow-list), proves them in a zero-import sandbox and shelves them with
+# signed evidence in ring4-ledger. State lives in $HARV_HOME (default ~/.estate/harv).
+effect: writes
+args:
+  verb:   {type: string, default: funnel}
+  limit:  {type: int, default: 20}
+  skip:   {type: int, default: 0}
+  only:   {type: string, default: ""}
+  filter: {type: string, default: ""}
+  name:   {type: string, default: ""}
+  text:   {type: string, default: ""}
+  hex:    {type: string, default: ""}
+  out:    {type: string, default: ""}
+steps:
+  - name: run
+    timeout: 14400
+    cmd: >
+      verb={{verb}}; only={{only}}; name={{name}}; text={{text}}; hex={{hex}}; out={{out}};
+      case "$verb" in
+        harvest) if [ -n "$only" ]; then harv harvest --only "$only" --limit 0;
+                 else harv harvest --limit {{limit}} --skip {{skip}}; fi ;;
+        funnel)  harv funnel ;;
+        verify)  harv registry verify-all ;;
+        ls)      harv registry ls {{filter}} ;;
+        show)    harv registry show "$name" ;;
+        run)     if [ -n "$hex" ]; then harv run "$name" --hex "$hex";
+                 else harv run "$name" --text "$text"; fi ;;
+        export)  if [ -n "$out" ]; then harv export-capabilities --out "$out";
+                 else harv export-capabilities; fi ;;
+        index)   harv index --limit {{limit}} ;;
+        *) echo "harv: unknown verb $verb" >&2; exit 2 ;;
+      esac
