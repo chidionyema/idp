@@ -25,14 +25,16 @@ variable "ssh_public_key" {
 # founder's sign-off that ruling R14 asked for, written once; the precondition on
 # terraform_data.capacity_cap in main.tf refuses a plan over it, and policy/node_pool.rego is
 # the same rule over `tofu output -json capacity`.
+# 2 / 12 since 2026-09-26: one node, the whole Always Free A1 allowance. Resized in place;
+# the Oracle quota (platform/oci/policy/free-tier-quota.statements.json) refuses anything more.
 variable "worker_ocpus" {
   type    = number
-  default = 6
+  default = 2
 }
 
 variable "worker_memory_gb" {
   type    = number
-  default = 24
+  default = 12
 }
 
 variable "free_ocpus" {
