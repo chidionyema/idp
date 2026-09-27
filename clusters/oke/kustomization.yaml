@@ -12,6 +12,7 @@ resources:
   - monitoring.yaml
   - kyverno.yaml
   - ns-fences.yaml
+  - backstage.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
