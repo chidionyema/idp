@@ -6,6 +6,7 @@ package session
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"log/slog"
 	"math"
 	"strings"
@@ -38,6 +39,11 @@ type Brain interface {
 	Stream(ctx context.Context, msgs []brain.Message, onDelta func(string)) error
 }
 
+// Intents decides whether an utterance names an estate intent. matched=false (or any failure) means the brain answers. raw is the intent_result contract, forwarded to the client untouched; say is what is spoken.
+type Intents interface {
+	Resolve(ctx context.Context, text, sessionID string) (raw json.RawMessage, say string, matched bool)
+}
+
 // Out is the client connection. JSON sends a control event; Binary sends an
 // audio frame: 4-byte little-endian turn id, then int16 little-endian PCM.
 type Out interface {
@@ -47,10 +53,11 @@ type Out interface {
 
 // Event is every control message the server sends.
 type Event struct {
-	Type string `json:"type"`
-	Turn uint32 `json:"turn,omitempty"`
-	Text string `json:"text,omitempty"`
-	Rate int    `json:"rate,omitempty"`
+	Type   string          `json:"type"`
+	Turn   uint32          `json:"turn,omitempty"`
+	Text   string          `json:"text,omitempty"`
+	Rate   int             `json:"rate,omitempty"`
+	Intent json.RawMessage `json:"intent,omitempty"`
 }
 
 const maxHistory = 12
@@ -67,12 +74,13 @@ var fillers = map[string]bool{"uh": true, "um": true, "hmm": true, "mm": true, "
 
 // Session is one connected client.
 type Session struct {
-	asr   ASR
-	tts   TTS
-	brain Brain
-	out   Out
-	log   *slog.Logger
-	root  context.Context
+	asr     ASR
+	tts     TTS
+	brain   Brain
+	intents Intents // nil: every utterance goes to the brain
+	out     Out
+	log     *slog.Logger
+	root    context.Context
 
 	mu      sync.Mutex
 	system  string
@@ -114,6 +122,9 @@ func (s *Session) SetSystem(p string) {
 	s.system = p
 	s.mu.Unlock()
 }
+
+// SetIntents routes utterances that name an estate intent to it before the brain.
+func (s *Session) SetIntents(i Intents) { s.mu.Lock(); s.intents = i; s.mu.Unlock() }
 
 // OnAudio takes int16 little-endian PCM at 16 kHz.
 func (s *Session) OnAudio(pcm []byte) {
@@ -189,7 +200,7 @@ func (s *Session) Say(text string) {
 	s.heardAt = time.Time{} // nothing was asked: speech before its audio is a new question
 	s.mu.Unlock()
 	t := s.newTurn("say", text, 0)
-	go s.run(ctx, id, t, func(_ context.Context, on func(string)) error { on(text); return nil }, done)
+	go s.run(ctx, id, &t, func(_ context.Context, on func(string)) error { on(text); return nil }, done)
 }
 
 // begin ends the live turn and starts the next one. It returns holding s.mu.
@@ -247,16 +258,29 @@ func (s *Session) ask(text string, cont bool, asrWait time.Duration) {
 		msgs = append(msgs, brain.Message{Role: "system", Content: s.system})
 	}
 	msgs = append(msgs, s.history...)
+	in, sid := s.intents, s.id
 	s.mu.Unlock()
 
 	_ = s.out.JSON(Event{Type: "final", Turn: id, Text: text})
 	t := s.newTurn("ask", text, asrWait)
-	go s.run(ctx, id, t, func(ctx context.Context, on func(string)) error { return s.brain.Stream(ctx, msgs, on) }, done)
+	go s.run(ctx, id, &t, func(ctx context.Context, on func(string)) error {
+		// An utterance that names an estate intent runs it; its result is spoken instead of the brain's answer.
+		// Resolved inside the turn, so a barge-in cancels it and listening never waits on it.
+		if in != nil {
+			if raw, say, ok := in.Resolve(ctx, text, sid); ok {
+				t.Kind = "intent"
+				_ = s.send(ctx, Event{Type: "intent_result", Turn: id, Intent: raw})
+				on(say)
+				return nil
+			}
+		}
+		return s.brain.Stream(ctx, msgs, on)
+	}, done)
 }
 
 // run speaks one turn: stream yields the words, which are chunked into
 // phrases and synthesised as they arrive.
-func (s *Session) run(ctx context.Context, id uint32, t turnlog.Turn, stream func(context.Context, func(string)) error, done chan struct{}) {
+func (s *Session) run(ctx context.Context, id uint32, t *turnlog.Turn, stream func(context.Context, func(string)) error, done chan struct{}) {
 	defer close(done)
 	t0 := time.Now()
 	var firstPhrase, firstAudio, brainDone, synth time.Duration
@@ -359,7 +383,7 @@ func (s *Session) run(ctx context.Context, id uint32, t turnlog.Turn, stream fun
 		"first_audio_s", t.FirstAudio, "words", t.Words, "clauses", t.Clauses, "engine", t.Engine,
 		"voice", t.Voice, "outcome", t.Outcome, "detail", t.Detail)
 	if s.turns != nil {
-		s.turns.Add(t)
+		s.turns.Add(*t)
 	}
 }
 

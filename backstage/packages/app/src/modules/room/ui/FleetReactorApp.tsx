@@ -45,6 +45,10 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 // The estate's own voice engine -- whisper for hearing, Kokoro for speaking. Mounted as a hook so
 // every surface uses the same models rather than the browser's network recogniser and formant TTS.
 import { useEstateVoice } from '../../home/useEstateVoice';
+// --- ADDED: an estate intent run by voice, shown on the fleet. ---
+import { cueToReactor, type IntentResult } from '../../home/intentCue';
+// --- ADDED: routerVoice supplies onIntentResult; the fleet still speaks through useEstateVoice above. ---
+import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
 
 
@@ -197,6 +201,13 @@ export default function FleetReactorApp() {
     // toggleBlast, advanced every frame, and drawn as a scaled ring.
     pulse: null as { id: string; t: number } | null,
     pulseRing: null as any,
+    // --- ADDED: voice -> intent cue state for the fleet-centre ring/burst. ---
+    intentCue: null as { t: number; kind: string; color: string } | null,
+    intentRing: null as any,
+    intentJets: [] as any[],
+    intentPoints: null as any,
+    intentPos: null as any,
+    intentColor: '#00f0ff',
     // The live movie: cues from the director (estate.cinema.cue via /stream) fly the camera.
     cine: new CineCam({ position: [0, 30, 90], quaternion: [0, 0, 0, 1], fov: 50 }) as CineCam,
     cineTarget: null as any
@@ -407,6 +418,46 @@ export default function FleetReactorApp() {
       reqId = requestAnimationFrame(animate);
       const delta = clock.getDelta();
       const time = clock.getElapsedTime();
+
+      // --- ADDED: the intent cue. One ring from fleet centre, sized by reactor.ts's pulseRadius over PULSE_MS, and the burst fire() put in intentJets. ---
+      const ic = engineState.current.intentCue;
+      if (ic) {
+        ic.t += (delta * 1000) / PULSE_MS;
+        if (!engineState.current.intentRing) {
+          const ring = new THREE.Mesh(new THREE.RingGeometry(0.9, 1, 64), new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false }));
+          mainGroup.add(ring);
+          engineState.current.intentRing = ring;
+        }
+        const ring = engineState.current.intentRing;
+        const radius = Math.max(0.01, pulseRadius({ id: 'fleet', t: Math.min(ic.t, 1) }) * 30);
+        ring.visible = ic.t < 1;
+        ring.material.color.set(ic.color);
+        ring.position.set(0, 0, 0);
+        ring.scale.set(radius, radius, radius);
+        ring.material.opacity = Math.max(0, (ic.kind === 'shield' ? 0.8 : 0.55) * (1 - ic.t));
+        if (ic.t >= 1) engineState.current.intentCue = null;
+      }
+      const ij = engineState.current.intentJets;
+      stepParticles(ij, delta * 1000);
+      if (ij.length && !engineState.current.intentPoints) {
+        const geo = new THREE.BufferGeometry();
+        const pos = new Float32Array(200 * 3);
+        geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        const pts = new THREE.Points(geo, new THREE.PointsMaterial({ size: 0.6, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }));
+        mainGroup.add(pts);
+        engineState.current.intentPoints = pts;
+        engineState.current.intentPos = pos;
+      }
+      if (engineState.current.intentPoints) {
+        const pts = engineState.current.intentPoints;
+        const buf = engineState.current.intentPos;
+        const n = Math.min(ij.length, 200);
+        for (let i = 0; i < n; i += 1) { buf[i * 3] = ij[i].x; buf[i * 3 + 1] = ij[i].y; buf[i * 3 + 2] = 0; }
+        pts.geometry.setDrawRange(0, n);
+        pts.geometry.attributes.position.needsUpdate = true;
+        pts.material.color.set(engineState.current.intentColor);
+        pts.visible = n > 0;
+      }
 
       // Raycasting for Hover state (only if not drilled down)
       if (!engineState.current.selectedNode) {
@@ -658,6 +709,24 @@ export default function FleetReactorApp() {
   const discovery = useApi(discoveryApiRef);
   const baseUrlRef = useRef(null);
   const [live, setLive] = useState({ ok: false, count: 0, error: null, ticker: '' });
+
+  // --- ADDED: voice -> intent. The result's cue becomes a ring (and, for burn/fire, a burst) from the fleet's centre, and its text holds the ticker for 4s. ---
+  const [intentLine, setIntentLine] = useState('');
+  const intentTimer = useRef<any>(null);
+  const onIntentResult = useCallback((r: IntentResult) => {
+    const c = cueToReactor(r);
+    engineState.current.intentCue = { t: 0, kind: c.kind, color: c.color };
+    engineState.current.intentColor = c.color;
+    if (c.kind === 'burn' || c.kind === 'fire') {
+      fire(engineState.current.intentJets, 0, 0, `intent:${r.intent}`, c.kind === 'burn' ? 8 : 4, c.kind === 'burn' ? 'stuck' : 'thinking');
+    }
+    setIntentLine(r.text);
+    clearTimeout(intentTimer.current);
+    intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
+  }, []);
+  useEffect(() => () => clearTimeout(intentTimer.current), []);
+  const fleetBrief = live.ticker;
+  const routerVoice = useVoiceRouter(fleetBrief, { onIntentResult });
 
   // THE ROWS THE LEFT PANEL RENDERS.
   //
@@ -1680,7 +1749,10 @@ export default function FleetReactorApp() {
         }}
         title={live.ok ? live.ticker : `telemetry unavailable — ${live.error}`}
       >
-        {cueLine ? cueLine : live.ok ? live.ticker || `live · ${live.count} sessions` : `OFFLINE · ${live.error || 'connecting'}`}
+        {/* ADDED: an intent result holds the ticker for 4s; then a director cue; then the live line. */}
+        {intentLine || cueLine || (live.ok
+          ? live.ticker || `live · ${live.count} sessions`
+          : `OFFLINE · ${live.error || 'connecting'}`)}
       </div>
 
       {/* THE BURN BAR. Cost as a RATE, never as a figure.

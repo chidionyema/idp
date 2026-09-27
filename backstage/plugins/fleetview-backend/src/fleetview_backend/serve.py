@@ -306,6 +306,26 @@ def build_app() -> FastAPI:
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
 
+    @app.post("/voice/intent")
+    async def voice_intent(request: Request):
+        """Utterance -> committed estate intent. 204 when it names none: the brain answers."""
+        from fleetview_backend import voice_intents as vi
+
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        text = str(body.get("text") or "")
+        session_id = str(body.get("session_id") or "")
+        # handle() may run a subprocess for up to 120s: off the event loop, like /voice/stream.
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, vi.handle, text, session_id)
+        if result is None:
+            return Response(status_code=204)
+        return JSONResponse(content=result)
+
     return app
 
 
