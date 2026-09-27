@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"math"
 	"strings"
@@ -364,9 +365,12 @@ func (s *Session) run(ctx context.Context, id uint32, t *turnlog.Turn, stream fu
 	switch {
 	case cancelled:
 		t.Outcome = "cancelled"
-	case err == nil && len(said) == 0:
+	case (err == nil || errors.Is(err, brain.ErrEmpty)) && len(said) == 0:
 		t.Outcome, t.Detail = "empty", "the brain gave an empty reply"
-		s.log.Error("voice.brain", "turn", id, "err", "empty reply")
+		if err != nil {
+			t.Detail = err.Error()
+		}
+		s.log.Error("voice.brain", "turn", id, "err", t.Detail)
 		_ = s.out.JSON(Event{Type: "error", Turn: id, Text: t.Detail})
 	case err != nil:
 		t.Outcome, t.Detail = "error", err.Error()

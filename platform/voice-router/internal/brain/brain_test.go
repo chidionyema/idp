@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -69,6 +70,34 @@ func TestStreamReportsInBandErrors(t *testing.T) {
 	c := &Client{BaseURL: srv.URL, HTTP: srv.Client()}
 	if err := c.Stream(context.Background(), nil, func(string) {}); err == nil || !strings.Contains(err.Error(), "rate limited") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// A reasoning lane can finish with no words (seen on /fleet 2026-09-27: turn 2 fell silent).
+// One empty draw is asked again; two are ErrEmpty, carrying the finish reason.
+func TestEmptyReplyIsAskedOnceMoreThenReported(t *testing.T) {
+	calls, answerOn := 0, 2
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if calls == answerOn {
+			sse(w, "Three sessions.")
+			return
+		}
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"\\n \"}}]}\n\n")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer srv.Close()
+	c := &Client{BaseURL: srv.URL, HTTP: srv.Client()}
+
+	var b strings.Builder
+	if err := c.Stream(context.Background(), nil, func(d string) { b.WriteString(d) }); err != nil || b.String() != "Three sessions." || calls != 2 {
+		t.Fatalf("retry: err=%v said=%q calls=%d", err, b.String(), calls)
+	}
+
+	calls, answerOn = 0, 99
+	err := c.Stream(context.Background(), nil, func(string) {})
+	if !errors.Is(err, ErrEmpty) || !strings.Contains(err.Error(), `"length"`) || calls != 2 {
+		t.Fatalf("two empties: err=%v calls=%d", err, calls)
 	}
 }
 

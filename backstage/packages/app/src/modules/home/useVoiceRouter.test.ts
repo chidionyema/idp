@@ -1,4 +1,4 @@
-import { CAPTURE_WORKLET, decodeFrame, voiceRouterUrl } from './useVoiceRouter';
+import { CAPTURE_WORKLET, decodeFrame, toPanel, voiceRouterUrl } from './useVoiceRouter';
 
 // The capture worklet runs in the browser's audio thread, which jest does not have. It is plain
 // JavaScript, so it is executed here against a stub of the two globals that thread provides.
@@ -81,8 +81,32 @@ describe('server audio frames', () => {
 });
 
 describe('the socket address', () => {
-  it('is the page’s own host, secure when the page is', () => {
-    expect(voiceRouterUrl({ protocol: 'https:', host: 'portal.example.com' })).toBe('wss://portal.example.com/voice/ws');
-    expect(voiceRouterUrl({ protocol: 'http:', host: 'localhost:3100' })).toBe('ws://localhost:3100/voice/ws');
+  it('deployed, is the page’s own host, secure when the page is', () => {
+    expect(voiceRouterUrl({ protocol: 'https:', host: 'portal.example.com' }, 'production')).toBe('wss://portal.example.com/voice/ws');
+    expect(voiceRouterUrl({ protocol: 'http:', host: 'portal.local' }, 'production')).toBe('ws://portal.local/voice/ws');
+  });
+  it('under yarn start, is the laptop router, since the dev server cannot carry a WebSocket', () => {
+    expect(voiceRouterUrl({ protocol: 'http:', host: 'localhost:3100' }, 'development')).toBe('ws://127.0.0.1:8091/voice/ws');
+  });
+});
+
+describe('the turn record, as the /fleet voice panel reads it', () => {
+  const body = {
+    summary: { turns: 4, outcomes: { ok: 2, empty: 1, cancelled: 1 }, completed: 2,
+      median_s: { asr_s: 0.524357, first_audio_s: 3.0635 } },
+    recent: [{ hlc: '1790467006491.000000', kind: 'ask', asr_s: 0.524357, llm_first_s: 2.5236,
+      tts_s: 6.1697, words: 6, outcome: 'ok', voice: 'ljspeech' }],
+  };
+  it('renames the summary to the panel’s fields', () => {
+    expect(toPanel(body).voiceStats).toEqual({ turns: 4, empty: 1, empty_rate: 0.25,
+      asr_median_s: 0.52, first_clause_median_s: 3.06 });
+  });
+  it('keys each turn by its HLC stamp and rounds its timings', () => {
+    const [t] = toPanel(body).voiceLog;
+    expect(t).toMatchObject({ id: '1790467006491.000000', asr_s: 0.52, llm_first_s: 2.52, tts_s: 6.17, words: 6 });
+  });
+  it('is empty, not broken, before the router has answered', () => {
+    expect(toPanel(undefined)).toEqual({ voiceStats: { turns: 0, empty: 0, empty_rate: 0,
+      asr_median_s: undefined, first_clause_median_s: undefined }, voiceLog: [] });
   });
 });
