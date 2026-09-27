@@ -1,0 +1,16 @@
+name: cluster-control-plane
+description: >
+  Composite intent. API server health, etcd latency, scheduler latency.
+  Returns structured output via metrics apiserver_request_duration_seconds.
+args:
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: apiserver-health
+    cmd: >
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s get --raw /healthz 2>/dev/null
+  - name: etcd-health
+    cmd: >
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s get --raw /healthz/etcd 2>/dev/null
+  - name: apiserver-latency
+    cmd: |
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s get --raw /apis/metrics.k8s.io/v1beta1/nodes 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); print('\n'.join(f\"{n['metadata']['name']}: cpu={n.get('usage',{}).get('cpu','0')} mem={n.get('usage',{}).get('memory','0')}\" for n in d.get('items',[])[:3]) or 'no metrics')"

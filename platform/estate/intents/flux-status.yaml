@@ -1,0 +1,36 @@
+name: flux-status
+description: Compact JSON snapshot of Flux state. Safe for agents.
+args:
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: snapshot
+    cmd: |
+      KUBECONFIG={{kubeconfig}} python3 - <<'PY'
+      import subprocess, json
+      def k(*a):
+          return subprocess.run(["kubectl", *a], capture_output=True, text=True).stdout
+      out = {}
+      raw = k("-n","flux-system","get","deploy","kustomize-controller",
+              "-o","jsonpath={.spec.template.spec.containers[0].args}")
+      out["controller_flags"] = [x for x in raw.split() if "concurrent" in x or "requeue" in x]
+      out["source_revision"] = k("-n","flux-system","get","gitrepository","flux-system",
+                                 "-o","jsonpath={.status.artifact.revision}").strip()
+      try:
+          d = json.loads(k("-n","flux-system","get","kustomizations","-o","json"))
+          items = []
+          for it in d.get("items", []):
+              conds = it.get("status", {}).get("conditions", [])
+              ready = next((c for c in conds if c.get("type") == "Ready"), {})
+              items.append({
+                  "name": it["metadata"]["name"],
+                  "ready": ready.get("status", "?"),
+                  "message": ready.get("message", ""),
+                  "applied": it.get("status", {}).get("lastAppliedRevision", ""),
+              })
+          out["kustomizations"] = sorted(items, key=lambda x: x["name"])
+      except Exception as e:
+          out["kustomizations"] = {"error": str(e)}
+      out["litellm_config"] = k("-n","llm","get","cm","-o",
+                                "jsonpath={.items[*].metadata.name}").strip().split()
+      print(json.dumps(out, indent=2))
+      PY
