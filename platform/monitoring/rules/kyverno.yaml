@@ -54,7 +54,7 @@ spec:
             summary: "require-otel-endpoint blocked a workload"
             description: >-
               A Deployment or StatefulSet was refused because it lacked OTEL_EXPORTER_OTLP_ENDPOINT.
-              Wire it to http://signoz-otel-collector.observability.svc:4318 or add a named entry
+              Wire it to http://otlp.monitoring.svc:4318 or add a named entry
               to platform/edge/otel-endpoint-exception.yaml with a crew# justification.
         - alert: KyvernoEnforcePolicyBlocked
           expr: |
@@ -63,4 +63,4 @@ spec:
           annotations:
             summary: "A Kyverno Enforce policy blocked one or more admissions"
             description: >-
-              Check kyverno_admission_requests_total labels (policy_name, resource_name) in SigNoz.
+              Check kyverno_admission_requests_total labels (policy_name, resource_name) in Prometheus.

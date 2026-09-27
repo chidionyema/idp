@@ -10,3 +10,5 @@ resources:
   - alertmanager-config.yaml
   - kube-prometheus-stack.yaml
   - blackbox.yaml
+  # The one OTLP door (Alloy -> Grafana Cloud), restricted, in this namespace.
+  - otlp.yaml

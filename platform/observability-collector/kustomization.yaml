@@ -1,9 +1,0 @@
-# crew#584 traces/lean: the node agent (SigNoz k8s-infra: OTel collector DaemonSet + deployment)
-# on its own Flux row so a lean estate ships telemetry to an external OTLP endpoint without
-# installing the ClickHouse store. The namespace is platform/edge/k8s-infra-namespace.yaml.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-namespace: observability-agent
-resources:
-  - helmrepository.yaml
-  - k8s-infra.yaml

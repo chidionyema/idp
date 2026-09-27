@@ -1,8 +1,8 @@
 # The "radio room" rule (crew#539 CP2): if the ship is sinking the radio room floods last. Under
 # CPU pressure the scheduler evicts ordinary pods to seat these; a runner or an app job may die,
 # the visibility and the routing never do. Applied strictly (founder) to langfuse-web,
-# langfuse-worker, mcp/agentgateway, hermes-agent-gateway, telemetry-coverage and cluster-state;
-# require-priority-class.yaml refuses any of the six that drops it.
+# langfuse-worker, mcp/agentgateway, hermes-agent-gateway and cluster-state;
+# require-priority-class.yaml refuses any of the five that drops it.
 apiVersion: scheduling.k8s.io/v1
 kind: PriorityClass
 metadata:

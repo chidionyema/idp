@@ -97,7 +97,7 @@ spec:
           kubernetes.io/metadata.name: identity
     - namespaceSelector:
         matchLabels:
-          kubernetes.io/metadata.name: observability
+          kubernetes.io/metadata.name: monitoring
     - namespaceSelector:
         matchLabels:
           kubernetes.io/metadata.name: tailscale

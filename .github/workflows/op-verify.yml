@@ -152,8 +152,8 @@ jobs:
           # Dagster
           check "dagster-webserver"          "dagster" "deploy" "dagster-webserver" ""
 
-          # SigNoz
-          check "signoz-otel-collector"      "observability" "deploy" "signoz-otel-collector" ""
+          # The one OTLP door (platform/monitoring/otlp.yaml)
+          check "otlp"                       "monitoring" "deploy" "otlp" ""
 
           # LLM: the router, and the gateway that now sits in front of it (#3834). This
           # namespace had NO row here until 2026-09-22 -- the only read-only door an agent

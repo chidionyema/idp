@@ -89,7 +89,7 @@ spec:
           env:
             - { name: HOME, value: /tmp }
             - { name: LITELLM_LOG, value: INFO }
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }
             - { name: OTEL_EXPORTER, value: otlp_http }
             - { name: LANGFUSE_HOST, value: "http://langfuse-web.observability.svc:3000" }
             # crew#408: the Admin UI signs in through the estate identity domain (ADR 0007); the

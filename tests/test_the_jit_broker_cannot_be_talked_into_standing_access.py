@@ -469,7 +469,7 @@ def test_the_layers_below_kubernetes_never_hand_over_a_credential(tmp_path):
         ("oci-scale-node-pool", {"node_pool": "pool-a", "size": "4"}),
         (
             "dns-point-record",
-            {"record": "signoz", "record_type": "A", "target": "1.2.3.4"},
+            {"record": "langfuse", "record_type": "A", "target": "1.2.3.4"},
         ),
         (
             "github-rerun-failed-checks",
@@ -543,7 +543,7 @@ def test_a_record_type_the_grant_does_not_write_is_refused(tmp_path):
     with pytest.raises(Refused):
         b.ask(
             "dns-point-record",
-            {"record": "signoz", "record_type": "NS", "target": "ns1.example"},
+            {"record": "langfuse", "record_type": "NS", "target": "ns1.example"},
             "the zone should be delegated elsewhere",
             "10m",
             "agent",

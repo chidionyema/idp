@@ -6,10 +6,10 @@
 # per node; the collection cost is flat while the visibility covers 100% of the estate --
 # our own services, third-party images, anything in any language.
 #
-# WHY THIS IS NOT A SECOND COPY OF THE SIGNOZ COLLECTOR (AGENTS.md section 6). They answer
+# WHY THIS IS NOT A SECOND COPY OF THE OTLP DOOR (AGENTS.md section 6). They answer
 # different questions and neither can answer the other's:
-#   platform/observability-collector/k8s-infra  pod/node/kubelet METRICS and container LOGS
-#                                               (OTel collector; asks the kubelet and API).
+#   platform/monitoring/otlp.yaml               app OTLP signals, container LOGS and k8s events
+#                                               (Alloy; asks the API, ships to Grafana Cloud).
 #   coroot (this file)                          the SERVICE MAP -- which process CALLS which,
 #                                               over which protocol, with which error rate,
 #                                               assembled from socket-level observation.

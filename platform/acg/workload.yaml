@@ -191,7 +191,7 @@ spec:
             # LAW 50: every container names the collector, so the estate can see the model calls
             # this gateway makes (require-otel-endpoint, platform/edge/require-otel-endpoint.yaml).
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://signoz-otel-collector.observability.svc:4318"
+              value: "http://otlp.monitoring.svc:4318"
             # The provider keys, by file. Each is optional: a missing file leaves that provider
             # out of the pool rather than failing the pod.
             - { name: GROQ_API_KEY_FILE,       value: /run/secrets/acg-secrets/GROQ_API_KEY }
@@ -289,7 +289,7 @@ spec:
           env:
             # LAW 50: every container names the collector (require-otel-endpoint).
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://signoz-otel-collector.observability.svc:4318"
+              value: "http://otlp.monitoring.svc:4318"
           resources:
             requests:
               cpu: 25m

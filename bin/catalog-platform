@@ -683,18 +683,15 @@ def http_hostnames(src):
 
 
 def observability_doors(rows):
-    """The estate's two observability doors -- logs/metrics (signoz.*) and model traces
-    (langfuse.*) -- read from the observability layer's own route manifests via
+    """The estate's model-traces door (langfuse.*), read from the observability layer's own route manifests via
     http_hostnames, never typed here (LAW 46). Founder, 2026-08-31 (crew#758): a layer's
     logs and traces are opened from its catalogue page, not from a URL he has to remember."""
     for r in rows:
         if r["metadata"]["name"] == "observability":
             src = os.path.normpath(os.path.join(ROOT, r["spec"].get("path", "./")))
             hosts = http_hostnames(src)
-            signoz = next((h for h in hosts if h.startswith("signoz.")), None)
-            langfuse = next((h for h in hosts if h.startswith("langfuse.")), None)
-            return signoz, langfuse
-    return None, None
+            return next((h for h in hosts if h.startswith("langfuse.")), None)
+    return None
 
 
 def emits_model_traces(src):
@@ -734,7 +731,7 @@ def render(rows):
         "# pods through the label Flux stamps on every applied object (crew#459).",
     ]
     used = {LAYERS[n][0] for n in names}
-    signoz_door, langfuse_door = observability_doors(rows)
+    langfuse_door = observability_doors(rows)
     for area in SYSTEMS:
         if area not in used:
             continue
@@ -776,12 +773,10 @@ def render(rows):
             f"    estate/cluster: {q(CLUSTER)}",
             f"  tags: [platform, {area}]",
         ]
-        # crew#758: every layer's page opens its own observability. The logs door is the
-        # estate's one log backend; the traces door appears exactly on the layers whose
-        # manifests project Langfuse keys, so a link never promises traces that do not land.
+        # crew#758: every layer's page opens its own observability. The traces door appears
+        # exactly on the layers whose manifests project Langfuse keys, so a link never promises
+        # traces that do not land.
         doors = []
-        if signoz_door:
-            doors.append(("Live logs and metrics", f"https://{signoz_door}"))
         if langfuse_door and emits_model_traces(src):
             doors.append(("Model traces", f"https://{langfuse_door}"))
         if n in UI_DOORS:

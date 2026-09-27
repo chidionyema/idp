@@ -4,13 +4,13 @@
 import { VENDORS, vendorOf, vendorSentence } from './vendor';
 
 describe('vendorOf (which surface is which vendor)', () => {
-  it('maps the three founder surfaces the spec names, by their own metadata name', () => {
+  it('maps the founder surfaces the spec names, by their own metadata name', () => {
     expect(vendorOf('founder-traces')).toEqual(VENDORS.langfuse);
-    expect(vendorOf('founder-telemetry')).toEqual(VENDORS.signoz);
     expect(vendorOf('founder-dashboards')).toEqual(VENDORS.superset);
   });
 
   it('is undefined for every other catalogue entity, so the card renders nothing', () => {
+    expect(vendorOf('founder-telemetry')).toBeUndefined();
     expect(vendorOf('founder-jobs')).toBeUndefined();
     expect(vendorOf('layer-alerts')).toBeUndefined();
     expect(vendorOf('')).toBeUndefined();

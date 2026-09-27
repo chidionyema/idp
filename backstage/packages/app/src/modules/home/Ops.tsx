@@ -470,7 +470,7 @@ export const Ops = () => {
       {/* Placement: whether the workloads that run could be placed again.
           This is the question that had no page. A pod the scheduler refused is NOT RUNNING and
           comes first; a pinned pod is running but would not come back after one drain, which is
-          the state SigNoz's ClickHouse sat in for eleven days. And when the receipt carries both,
+          the state the old telemetry store's ClickHouse sat in for eleven days. And when the receipt carries both,
           the sentence says how much CPU is reserved but idle -- the fact that explains a cluster
           reading 96% full while using 39%. */}
       <Section

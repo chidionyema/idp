@@ -39,7 +39,7 @@ spec:
         message: >-
           {{ request.object.kind }} {{ request.namespace }}/{{ request.object.metadata.name }}
           has no container declaring OTEL_EXPORTER_OTLP_ENDPOINT. Wire it to
-          http://signoz-otel-collector.observability.svc:4318 following hermes-v2/otto/obs/core.py.
+          http://otlp.monitoring.svc:4318 following hermes-v2/otto/obs/core.py.
           If this workload cannot emit OTel, add a named entry to
           platform/edge/otel-endpoint-exception.yaml with a crew# justification.
         deny:

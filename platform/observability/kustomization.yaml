@@ -3,11 +3,6 @@ kind: Kustomization
 namespace: observability
 resources:
   - namespace.yaml
-  - helmrepository.yaml
-  - signoz.yaml
-  - telemetry-coverage.yaml
-  - signoz-retention.yaml
-  - signoz-sso.yaml
   - langfuse.yaml
   - aevum.yaml
   - httproute.yaml
@@ -22,43 +17,11 @@ resources:
   - superset-memory-secret.yaml
   - superset-memory-seed.yaml
 configMapGenerator:
-  - name: signoz-values
-    files:
-      - values.yaml
-    options:
-      disableNameSuffixHash: true
   - name: langfuse-values
     files:
       - values.yaml=langfuse-values.yaml
     options:
       disableNameSuffixHash: true
-# WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
-#
-# 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
-# race and any pod created from now on is wired by Calico and judged by the estate's 154
-# NetworkPolicy objects. Pods created before that are still on flannel and judged by nothing.
-# Measured 2026-09-08: 108 running pods on flannel, 39 on Calico. Every fence in the estate is
-# decoration for the flannel half.
-#
-# The restart is this annotation, not a command. Changing its value changes the pod template, so
-# Flux performs the rollout; nothing needs a token, a drain or a founder tap, and reverting the
-# value reverts the roll. A drain was measured and refused: two nodes, 144 running pods, a
-# 110-pod ceiling each, so one node's pods do not fit on the other and a third node is capacity
-# we are not buying.
-#
-# Bump the value to roll these workloads again.
-patches:
-  - patch: |
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: signoz-sso
-        namespace: observability
-      spec:
-        template:
-          metadata:
-            annotations:
-              idp.internal/cni-generation: "2"
 # The tag is moved by Flux image automation (platform/image-automation/aevum.yaml), the same way
 # cyrus, jit and estate-mcp move. It is pinned here rather than in aevum.yaml so the marker sits on
 # one line the automation owns -- and because a literal tag in the Deployment is what put this

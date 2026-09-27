@@ -37,11 +37,11 @@ frontendPolicies:
       #
       # The port rides on the hostname. `port:` as a sibling is refused because the plain-host arm
       # of OtlpLoggingConfig's oneOf takes `host` alone.
-      host: signoz-otel-collector.observability.svc.cluster.local:4317
+      host: otlp.monitoring.svc.cluster.local:4317
       protocol: grpc
 config:
   tracing:
-    otlpEndpoint: http://signoz-otel-collector.observability.svc:4317
+    otlpEndpoint: http://otlp.monitoring.svc:4317
     otlpProtocol: grpc
 binds:
 - port: 3000

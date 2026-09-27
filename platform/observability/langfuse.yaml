@@ -1,6 +1,6 @@
 # Langfuse: the estate's one LLM trace store (crew#286 CP6, crew/docs/STANDARDS.md "Traces and
 # audit"). Chart pinned; 2.0.2 / app 4.17.0 was `helm search repo langfuse/langfuse` on 2026-08-26.
-# Sits on the same suspended observability Kustomization as SigNoz: it comes up when the node pool
+# Sits on the suspended observability Kustomization: it comes up when the node pool
 # grows (idp#160, crew#289). Nobody signs up: the org, project and API keys are seeded by
 # LANGFUSE_INIT_* from the vault (platform/oci/langfuse.tf) and sign-up is disabled.
 apiVersion: source.toolkit.fluxcd.io/v1
@@ -90,8 +90,7 @@ spec:
     - secretKey: client_secret
       remoteRef: { key: langfuse-sso-client-secret }
 ---
-# The ClickHouse admin password. SigNoz reads it through valuesFrom (signoz.yaml); Langfuse reads
-# it as auth.existingSecret. The chart's default (27ff0399-…) never reaches the cluster.
+# The ClickHouse admin password. Langfuse reads it as auth.existingSecret. The chart's default (27ff0399-…) never reaches the cluster.
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -107,7 +106,7 @@ spec:
 ---
 # Incident 2026-08-26 (crew#325): langfuse-web crashed for 4 hours on "Database langfuse does not
 # exist". The langfuse chart creates its database only when it deploys its own ClickHouse
-# (values: "Created automatically by the sub-chart when deploy is true"); on the shared SigNoz
+# (values: "Created automatically by the sub-chart when deploy is true"); on an external
 # ClickHouse nothing creates it, and the migrator assumes it exists. This Job is the declared
 # owner of that database. It is idempotent, retries until ClickHouse answers, and Flux re-applies
 # it on every reconcile, so a rebuilt cluster gets the database before Langfuse asks for it.
@@ -123,13 +122,13 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: { type: RuntimeDefault } }
       containers:
         - name: create
-          # Same image the SigNoz ClickHouseInstallation runs (signoz chart 0.138.0), already on the node.
+          # The ClickHouse server image, pinned.
           image: docker.io/clickhouse/clickhouse-server:25.12.5
           # Kyverno (secrets-not-from-env-vars) requires the password as a mounted file.
           command:
             - sh
             - -c
-            - clickhouse-client --host signoz-clickhouse --user admin --password "$(cat /secrets/password)" --query "CREATE DATABASE IF NOT EXISTS langfuse"
+            - clickhouse-client --host clickhouse --user admin --password "$(cat /secrets/password)" --query "CREATE DATABASE IF NOT EXISTS langfuse"
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
           resources:
             requests: { cpu: 20m, memory: 32Mi }
@@ -153,11 +152,6 @@ spec:
   maxHistory: 3
   interval: 10m
   timeout: 15m
-  # Incident 2026-08-26 (crew#325): langfuse-web crash-looped for four hours on
-  # `lookup signoz-clickhouse: no such host` while the signoz release had never become Ready.
-  # Langfuse runs on SigNoz's ClickHouse, so it waits for that release instead of racing it.
-  dependsOn:
-    - name: signoz
   chart:
     spec:
       chart: langfuse

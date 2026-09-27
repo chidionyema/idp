@@ -1,7 +1,7 @@
 # Seed the boardroom dashboard into Superset (decision 0018). The swap to Superset shipped an
 # empty tool and docs that told the founder to click a database connection together by hand —
 # and pointed at the wrong store: Langfuse 4.x keeps traces and observations in ClickHouse
-# (signoz-clickhouse, database `langfuse`), not in its postgres, which holds app metadata only
+# (host `clickhouse`, database `langfuse`; see langfuse-values.yaml), not in its postgres, which holds app metadata only
 # (receipt: langfuse-values.yaml clickhouse block; langfuse's own migration files 0001_traces,
 # 0002_observations). This one-shot job renders a Superset import bundle at run time — the
 # ClickHouse connection, two datasets over traces and observations, six charts and the
@@ -92,7 +92,7 @@ spec:
               uri = (
                   "clickhousedb+connect://admin:"
                   + urllib.parse.quote(password, safe="")
-                  + "@signoz-clickhouse.observability.svc.cluster.local:8123/langfuse"
+                  + "@clickhouse.observability.svc.cluster.local:8123/langfuse"
               )
 
               DB = "5f2e77a0-91c4-4d0e-8e30-2b6c5d9e0001"

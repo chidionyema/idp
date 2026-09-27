@@ -118,7 +118,7 @@ grants:
     provider: dns
     why: A surface answers on the wrong address and one record has to point at the live one
     mode: broker-applies
-    records: [signoz, langfuse, backstage, portal, catalogue, prospector, hermes]
+    records: [langfuse, backstage, portal, catalogue, prospector, hermes]
     record_types: [A, CNAME]
     max_ttl: 10m
     rate_per_hour: 2

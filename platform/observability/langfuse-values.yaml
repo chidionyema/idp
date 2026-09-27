@@ -1,4 +1,4 @@
-# Langfuse on the OKE node pool (crew#286 CP6). Sized like SigNoz next door: requests small
+# Langfuse on the OKE node pool (crew#286 CP6). Sized small: requests small
 # enough to fit beside Backstage, limits so a runaway cannot take the node. Kyverno enforces the
 # restricted profile, so every workload declares non-root, seccomp and drop-ALL.
 global:
@@ -114,16 +114,15 @@ redis:
     requests: { cpu: 50m, memory: 256Mi }   # crew#539 CP9: == limits, Guaranteed QoS
     limits: { cpu: 100m, memory: 256Mi }
 clickhouse:
-  # SigNoz already runs the estate's ClickHouse (values.yaml, Altinity operator). Langfuse 2.x would
-  # bring a second operator (clickhouse.com/v1alpha1) plus cert-manager for its own; one database
-  # in the existing server instead.
+  # The ClickHouse this shared was retired on 2026-09-27 with the telemetry store that ran it.
+  # Langfuse is at 0 replicas and has no Flux row; whoever revives it gives it its own ClickHouse
+  # at this host first. Until then this names a server that does not exist, on purpose.
   deploy: false
   crdCheck: false
-  host: signoz-clickhouse
+  host: clickhouse
   httpPort: 8123
   nativePort: 9000
-  # SigNoz's ClickHouseInstallation names its one cluster `cluster`; the chart default here is
-  # true and langfuse would run ON CLUSTER default, which does not exist. Single node, so off.
+  # Single node: the chart default would run ON CLUSTER default, which does not exist.
   cluster:
     enabled: false
   database: langfuse

@@ -45,7 +45,7 @@ spec:
             - { name: http, containerPort: 3000 }
             - { name: metrics, containerPort: 15020 }   # crew#498: stats listener, scraped by platform/monitoring/rules/agentgateway-servicemonitor.yaml
           env:
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }
             - { name: OTEL_SERVICE_NAME, value: mcp-agentgateway }
           volumeMounts:
             - { name: config, mountPath: /config, readOnly: true }

@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       resolved:
-        description: "the thing that has now landed, in a few words (for example: the SigNoz root secret)"
+        description: "the thing that has now landed, in a few words (for example: the Grafana Cloud token)"
         default: ""
 permissions:
   contents: read

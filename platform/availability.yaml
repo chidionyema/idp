@@ -26,21 +26,11 @@ waivers:
       rather than passed: the tool you reach for during an outage does not currently survive
       one.
     issue: chidionyema/idp#2492
-  - surface: observability/signoz
-    reason: >-
-      SigNoz stands on one ClickHouse; two replicas against a single database moves the single
-      point of failure rather than removing it. HA here is a ClickHouse topology change, not a
-      replica count.
-    issue: chidionyema/idp#544
   - surface: observability/langfuse-web
     reason: >-
-      A component of the langfuse chart (langfuse-values.yaml:32,44 set replicas 1), sharing the
-      same ClickHouse and Postgres as signoz.
-    issue: chidionyema/idp#544
-  - surface: observability/signoz-otel-collector
-    reason: >-
-      A component of the signoz chart; this repository renders no Deployment for it, so the values
-      are the only lever and they follow the signoz row above.
+      A component of the langfuse chart (langfuse-values.yaml:32,44 set replicas 1), on one
+      ClickHouse and one Postgres; two replicas against single databases move the single point
+      of failure rather than removing it.
     issue: chidionyema/idp#544
   - surface: hermes-agent/hermes-agent-gateway
     reason: >-

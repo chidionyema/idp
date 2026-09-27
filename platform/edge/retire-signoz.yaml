@@ -1,0 +1,342 @@
+# SigNoz, removed from the cluster by the deploy, by name, once.
+#
+# Founder, 2026-09-27: "remove signoz", "make this explicit and delete signoz and clean up
+# afterwards". platform/monitoring/otlp.yaml is the one OTLP door that replaces it.
+#
+# Deleting its files from git removes nothing live. It has had no Flux Kustomization row since
+# c96359f4, so helm-controller kept its HelmRelease as an orphan, and the release is suspended,
+# so deleting it skips the Helm uninstall and leaves every object behind. This Job is the
+# explicit removal: every object below was listed from the live cluster on 2026-09-27, and the
+# Job deletes exactly those, logging one line per object. Among them are three 50Gi claims whose
+# volumes are reclaimPolicy Delete, so the paid disks go with them; the science-facts and
+# telemetry-coverage CronJobs that only ever queried its ClickHouse; and the off-cluster OTLP
+# ingest route on its hostname.
+#
+# The ClickHouse operator is at 0 replicas, so the CHI's finalizer would never be removed and its
+# delete would hang forever: the Job clears that one finalizer first.
+#
+# Kept: clickhouse-auth, which Langfuse also reads. Coroot is not touched (founder, same day).
+#
+# The right is as small as the list: every rule names its objects (resourceNames); nothing here
+# can touch langfuse, superset or anything else in observability.
+#
+# Afterwards: once the Job's "done retire-signoz" line is in the pod log, a follow-up PR deletes
+# this file. bin/idp-no-signoz-gate exempts this file and nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: retire-signoz
+  namespace: observability
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: retire-signoz
+  namespace: observability
+rules:
+  - apiGroups: [helm.toolkit.fluxcd.io]
+    resources: [helmreleases]
+    resourceNames: [signoz]
+    verbs: [delete]
+  - apiGroups: [source.toolkit.fluxcd.io]
+    resources: [helmrepositories, helmcharts]
+    resourceNames: [signoz, observability-signoz]
+    verbs: [delete]
+  - apiGroups: [clickhouse.altinity.com]
+    resources: [clickhouseinstallations]
+    resourceNames: [signoz-clickhouse]
+    verbs: [patch, delete]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [signoz-clickhouse-operator, signoz-otel-collector, signoz-sso]
+    verbs: [delete]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    resourceNames: [chi-signoz-clickhouse-cluster-0-0, signoz, signoz-zookeeper]
+    verbs: [delete]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    resourceNames: [science-facts, signoz-retention, telemetry-coverage]
+    verbs: [delete]
+  - apiGroups: [external-secrets.io]
+    resources: [externalsecrets]
+    resourceNames: [otlp-ingest-users, signoz-root]
+    verbs: [delete]
+  - apiGroups: [gateway.networking.k8s.io]
+    resources: [httproutes]
+    resourceNames: [otlp-ingest, signoz, signoz-api]
+    verbs: [delete]
+  - apiGroups: [traefik.io]
+    resources: [middlewares]
+    resourceNames: [otlp-basic-auth]
+    verbs: [delete]
+  - apiGroups: [policy]
+    resources: [poddisruptionbudgets]
+    resourceNames: [signoz-clickhouse-cluster, signoz-sso]
+    verbs: [delete]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings]
+    resourceNames: [signoz-clickhouse-operator]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [services]
+    resourceNames:
+      - chi-signoz-clickhouse-cluster-0-0
+      - signoz
+      - signoz-clickhouse
+      - signoz-clickhouse-operator-metrics
+      - signoz-otel-collector
+      - signoz-sso
+      - signoz-zookeeper
+      - signoz-zookeeper-headless
+      - signoz-zookeeper-metrics
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    resourceNames:
+      - chi-signoz-clickhouse-common-configd
+      - science-facts-collect
+      - chi-signoz-clickhouse-common-usersd
+      - chi-signoz-clickhouse-deploy-confd-cluster-0-0
+      - signoz-clickhouse-custom-functions
+      - signoz-clickhouse-operator-etc-confd-files
+      - signoz-clickhouse-operator-etc-configd-files
+      - signoz-clickhouse-operator-etc-files
+      - signoz-clickhouse-operator-etc-templatesd-files
+      - signoz-clickhouse-operator-etc-usersd-files
+      - signoz-clickhouse-scripts
+      - signoz-otel-collector
+      - signoz-retention
+      - signoz-retention-apply
+      - signoz-sso
+      - signoz-values
+      - signoz-zookeeper-scripts
+      - telemetry-coverage-collect
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames:
+      - otlp-ingest-users
+      - sh.helm.release.v1.signoz.v80
+      - sh.helm.release.v1.signoz.v81
+      - signoz-clickhouse-operator
+      - signoz-root
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [serviceaccounts]
+    resourceNames:
+      - science-facts
+      - signoz
+      - signoz-clickhouse
+      - signoz-clickhouse-operator
+      - signoz-otel-collector
+      - signoz-telemetrystore-migrator
+      - telemetry-coverage
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [persistentvolumeclaims]
+    resourceNames:
+      - data-signoz-zookeeper-0
+      - data-volumeclaim-template-chi-signoz-clickhouse-cluster-0-0-0
+      - signoz-db-signoz-0
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: retire-signoz
+  namespace: observability
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: retire-signoz }
+subjects:
+  - kind: ServiceAccount
+    name: retire-signoz
+    namespace: observability
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: retire-signoz
+rules:
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [clusterroles, clusterrolebindings]
+    resourceNames: [signoz-otel-collector-observability]
+    verbs: [delete]
+  - apiGroups: [apiextensions.k8s.io]
+    resources: [customresourcedefinitions]
+    resourceNames:
+      - clickhouseinstallations.clickhouse.altinity.com
+      - clickhouseinstallationtemplates.clickhouse.altinity.com
+      - clickhouseoperatorconfigurations.clickhouse.altinity.com
+    verbs: [delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: retire-signoz
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: retire-signoz }
+subjects:
+  - kind: ServiceAccount
+    name: retire-signoz
+    namespace: observability
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: retire-signoz-script
+  namespace: observability
+data:
+  retire.py: |
+    """Delete a fixed list of named objects; 'already gone' is success, anything else fails."""
+    import json
+    import ssl
+    import sys
+    import urllib.error
+    import urllib.request
+
+    ROOT = "/var/run/secrets/kubernetes.io/serviceaccount"
+    API = "https://kubernetes.default.svc"
+    OBS = "/api/v1/namespaces/observability/"
+
+    def ns(group, version, ns_name, plural):
+        return "/apis/%s/%s/namespaces/%s/%s/" % (group, version, ns_name, plural)
+
+    O = "observability"
+    # Order matters: the release first so nothing reconciles it back, the CHI before the objects
+    # it owns, workloads before their config, claims last so no pod still holds them.
+    STEPS = [
+        (ns("helm.toolkit.fluxcd.io", "v2", O, "helmreleases"), ["signoz"]),
+        (ns("source.toolkit.fluxcd.io", "v1", O, "helmcharts"), ["observability-signoz"]),
+        (ns("source.toolkit.fluxcd.io", "v1", O, "helmrepositories"), ["signoz"]),
+        (ns("clickhouse.altinity.com", "v1", O, "clickhouseinstallations"), ["signoz-clickhouse"]),
+        (ns("apps", "v1", O, "deployments"),
+         ["signoz-clickhouse-operator", "signoz-otel-collector", "signoz-sso"]),
+        (ns("apps", "v1", O, "statefulsets"),
+         ["chi-signoz-clickhouse-cluster-0-0", "signoz", "signoz-zookeeper"]),
+        (ns("batch", "v1", O, "cronjobs"), ["science-facts", "signoz-retention", "telemetry-coverage"]),
+        (ns("external-secrets.io", "v1", O, "externalsecrets"), ["otlp-ingest-users", "signoz-root"]),
+        (ns("gateway.networking.k8s.io", "v1", O, "httproutes"), ["otlp-ingest", "signoz", "signoz-api"]),
+        (ns("traefik.io", "v1alpha1", O, "middlewares"), ["otlp-basic-auth"]),
+        (ns("policy", "v1", O, "poddisruptionbudgets"), ["signoz-clickhouse-cluster", "signoz-sso"]),
+        (ns("rbac.authorization.k8s.io", "v1", O, "rolebindings"), ["signoz-clickhouse-operator"]),
+        (ns("rbac.authorization.k8s.io", "v1", O, "roles"), ["signoz-clickhouse-operator"]),
+        (OBS + "services/", [
+            "chi-signoz-clickhouse-cluster-0-0", "signoz", "signoz-clickhouse",
+            "signoz-clickhouse-operator-metrics", "signoz-otel-collector", "signoz-sso",
+            "signoz-zookeeper", "signoz-zookeeper-headless", "signoz-zookeeper-metrics"]),
+        (OBS + "configmaps/", [
+            "chi-signoz-clickhouse-common-configd", "chi-signoz-clickhouse-common-usersd", "science-facts-collect",
+            "chi-signoz-clickhouse-deploy-confd-cluster-0-0", "signoz-clickhouse-custom-functions",
+            "signoz-clickhouse-operator-etc-confd-files", "signoz-clickhouse-operator-etc-configd-files",
+            "signoz-clickhouse-operator-etc-files", "signoz-clickhouse-operator-etc-templatesd-files",
+            "signoz-clickhouse-operator-etc-usersd-files", "signoz-clickhouse-scripts",
+            "signoz-otel-collector", "signoz-retention", "signoz-retention-apply", "signoz-sso",
+            "signoz-values", "signoz-zookeeper-scripts", "telemetry-coverage-collect"]),
+        (OBS + "secrets/", [
+            "otlp-ingest-users", "sh.helm.release.v1.signoz.v80", "sh.helm.release.v1.signoz.v81",
+            "signoz-clickhouse-operator", "signoz-root"]),
+        (OBS + "serviceaccounts/", [
+            "science-facts", "signoz", "signoz-clickhouse", "signoz-clickhouse-operator",
+            "signoz-otel-collector", "signoz-telemetrystore-migrator", "telemetry-coverage"]),
+        (OBS + "persistentvolumeclaims/", [
+            "data-signoz-zookeeper-0", "data-volumeclaim-template-chi-signoz-clickhouse-cluster-0-0-0",
+            "signoz-db-signoz-0"]),
+        ("/apis/rbac.authorization.k8s.io/v1/clusterrolebindings/",
+         ["signoz-otel-collector-observability"]),
+        ("/apis/rbac.authorization.k8s.io/v1/clusterroles/",
+         ["signoz-otel-collector-observability"]),
+        ("/apis/apiextensions.k8s.io/v1/customresourcedefinitions/", [
+            "clickhouseinstallations.clickhouse.altinity.com",
+            "clickhouseinstallationtemplates.clickhouse.altinity.com",
+            "clickhouseoperatorconfigurations.clickhouse.altinity.com"]),
+    ]
+    # The ClickHouse operator is at 0, so nothing would ever clear this finalizer.
+    UNPIN = ns("clickhouse.altinity.com", "v1", O, "clickhouseinstallations") + "signoz-clickhouse"
+
+    def call(method, path, body=None, ctype="application/json"):
+        with open(ROOT + "/token", encoding="utf-8") as f:
+            token = f.read().strip()
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(API + path, data=data, method=method, headers={
+            "Authorization": "Bearer " + token, "Content-Type": ctype})
+        ctx = ssl.create_default_context(cafile=ROOT + "/ca.crt")
+        try:
+            with urllib.request.urlopen(req, context=ctx, timeout=30) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return 404
+            raise
+
+    def main():
+        status = call("PATCH", UNPIN, {"metadata": {"finalizers": None}},
+                      "application/merge-patch+json")
+        print("ok retire-signoz unpin %s -> %s" % (UNPIN, "gone" if status == 404 else status))
+        deleted = gone = 0
+        for base, names in STEPS:
+            for name in names:
+                status = call("DELETE", base + name, {"propagationPolicy": "Background"})
+                if status == 404:
+                    gone += 1
+                    print("ok retire-signoz %s%s already gone" % (base, name))
+                else:
+                    deleted += 1
+                    print("ok retire-signoz deleted %s%s" % (base, name))
+        print("done retire-signoz deleted=%d already_gone=%d" % (deleted, gone))
+        return 0
+
+    if __name__ == "__main__":
+        sys.exit(main())
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: retire-signoz
+  namespace: observability
+  annotations:
+    # Jobs are immutable, so Flux recreates this one in place when the manifest changes; the
+    # script is safe to run again (every object already gone is a logged success).
+    kustomize.toolkit.fluxcd.io/force: Enabled
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 604800
+  template:
+    spec:
+      serviceAccountName: retire-signoz
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      priorityClassName: platform-batch
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: retire
+          # Standard library only -- no kubectl image introduced for a list of API calls (LAW 43).
+          image: docker.io/library/python:3.11-slim
+          command: ["python3", "/scripts/retire.py"]
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: ["ALL"] }
+            seccompProfile: { type: RuntimeDefault }
+          resources:
+            requests: { cpu: "0", memory: 64Mi }
+            limits: { cpu: 25m, memory: 64Mi }
+      volumes:
+        - name: scripts
+          configMap:
+            name: retire-signoz-script
+            defaultMode: 0o555
+        - name: tmp
+          emptyDir: {}

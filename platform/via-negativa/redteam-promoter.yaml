@@ -36,7 +36,7 @@ spec:
           image: ghcr.io/chidionyema/redteam_promoter
           command: ["python", "promoter.py", "consume"]
           env:
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otlp.monitoring.svc:4318 }
             # The estate's one bus (platform/event-bus, NATS JetStream). The promoted payload is
             # published as estate.eval.redteam.defeated by whichever loop proves a payload got
             # through; this is the consumer.

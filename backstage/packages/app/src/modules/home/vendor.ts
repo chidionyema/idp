@@ -1,5 +1,5 @@
 // CP3 (docs/specs/backstage-as-a-product.md): the vendor surfaces the estate does not own the UI
-// of -- Traces (Langfuse), Telemetry (SigNoz), Dashboards (Superset) -- shipped as a card whose
+// of -- Traces (Langfuse), Dashboards (Superset) -- shipped as a card whose
 // only fact was a link to the vendor's own login. This module is the pure half of the fix: it
 // maps ONE live read of a vendor's own health endpoint into one plain sentence, so a card says
 // whether the thing is up without framing the vendor (LAW 21, spec Non-goals).
@@ -16,22 +16,20 @@ export type Vendor = {
   label: string;
 };
 
-/** The three doors CP3 adds. Kept here, not typed in a page, so a test can hold the set. */
+/** The doors CP3 adds. Kept here, not typed in a page, so a test can hold the set. */
 export const VENDORS = {
   langfuse: { path: '/langfuse/api/public/health', label: 'Traces' },
-  signoz: { path: '/signoz/api/v1/health', label: 'Telemetry' },
   superset: { path: '/superset/health', label: 'Dashboards' },
 } as const;
 
 /** Which vendor a founder-surface entity is, from its own metadata name; undefined for the rest.
- * The catalogue names these `founder-traces`, `founder-telemetry`, `founder-dashboards`, so the
- * mapping is one place and a new vendor is one row, not a branch in a component. */
+ * The catalogue names these `founder-traces` and `founder-dashboards`, so the mapping is one
+ * place and a new vendor is one row, not a branch in a component. `founder-telemetry` (Grafana
+ * Cloud) has no in-portal health read: no proxy names its host, so it renders no card. */
 export const vendorOf = (name: string): Vendor | undefined => {
   switch (name) {
     case 'founder-traces':
       return VENDORS.langfuse;
-    case 'founder-telemetry':
-      return VENDORS.signoz;
     case 'founder-dashboards':
       return VENDORS.superset;
     default:

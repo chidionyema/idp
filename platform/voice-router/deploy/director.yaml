@@ -51,7 +51,7 @@ spec:
               valueFrom:
                 secretKeyRef: { name: newsroom-llm, key: key, optional: true }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://signoz-otel-collector.observability.svc:4318"
+              value: "http://otlp.monitoring.svc:4318"
           ports:
             - name: http
               containerPort: 8080

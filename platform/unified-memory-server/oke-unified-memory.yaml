@@ -69,7 +69,7 @@ spec:
             # secrets-not-from-env-vars (kyverno): files from the mounted Secret, read by main.py.
             - { name: DATABASE_URL_FILE, value: /var/run/memory/DATABASE_URL }
             - { name: MEMORY_SURFACE_TOKEN_FILE, value: /var/run/memory/MEMORY_SURFACE_TOKEN }
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otlp.monitoring.svc:4318 }
           # Ready means the schema ran and the pool is open: the lifespan does both before the
           # app serves anything, /docs included.
           readinessProbe:

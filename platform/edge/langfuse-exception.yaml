@@ -1,8 +1,6 @@
 # Langfuse and its Postgres read their credentials only from the environment (twelve-factor,
 # no file form exists), so the two secrets-from-env rules cannot be met by them. The exception is
-# scoped to these three workloads and these two rules; every other policy still applies. The
-# SigNoz release next door passes the same rules by carrying its ClickHouse password as a plain
-# env literal, which is the weaker of the two forms; that is the policy's gap, not a model.
+# scoped to these three workloads and these two rules; every other policy still applies.
 apiVersion: kyverno.io/v2
 kind: PolicyException
 metadata:

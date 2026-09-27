@@ -181,7 +181,7 @@ spec:
             - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "30" }
             # LAW 50: the run's own log lines reach the estate collector like every
             # other workload's, so a failed migration is visible without kubectl.
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }
             - { name: PYTHONUNBUFFERED, value: "1" }
           securityContext:
             allowPrivilegeEscalation: false
