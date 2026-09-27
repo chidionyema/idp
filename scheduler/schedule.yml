@@ -58,7 +58,7 @@ jobs:
     # bin/idp-disk-guard's 10G floor, acted on: regenerable caches + Cargo target/ dirs, and only
     # while under the floor, so a healthy disk is never touched. Measured 2026-09-27: a one-off
     # cleanup freed 469M and was eaten within hours (yarn cache back to 1560M, 3967M of target/).
-    runs_on: retire
+    runs_on: mac
     runs_on_ref: crew#516
     command:
     - ~/.estate/bin/estate-execute
