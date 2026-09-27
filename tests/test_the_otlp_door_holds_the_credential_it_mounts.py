@@ -88,7 +88,8 @@ def _verify():
     body = src[src.index("def verify(v, subs):") :]
     body = body[: body.index("\ndef ", 1)]
     ns = {"__builtins__": __builtins__}
-    exec(
+    # The code run is this repo's own verify(), which lives in a bash heredoc and cannot be imported.
+    exec(  # noqa: S102
         "import base64, re, sys, urllib.error, urllib.request\n"
         "def zone(): return ''\n"
         "def say(*a): print(*a)\n" + body,
