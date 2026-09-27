@@ -225,3 +225,17 @@ spec:
           - research_consumer
         passwordSecret:
           name: estate-db-role-research-reader
+      # memory / memory_app: the estate's memory layer (platform/unified-memory-server). `memory`
+      # logs in and owns database memory; every request then runs as memory_app, a NOLOGIN role
+      # that owns nothing, so row-level security holds (schema.sql section 9). Declared here for
+      # the reason research_worker is: a workload with no CREATEROLE cannot mint its own role.
+      - name: memory_app
+        ensure: present
+        login: false
+      - name: memory
+        ensure: present
+        login: true
+        inRoles:
+          - memory_app
+        passwordSecret:
+          name: estate-db-role-memory

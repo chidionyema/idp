@@ -40,7 +40,9 @@ SERVER_DIR = Path(__file__).resolve().parents[1] / "platform" / "unified-memory-
 
 @pytest.fixture(scope="module")
 def pg():
-    server = pgserver.get_server(tempfile.mkdtemp(prefix="umem-pg-"), cleanup_mode="delete")
+    server = pgserver.get_server(
+        tempfile.mkdtemp(prefix="umem-pg-"), cleanup_mode="delete"
+    )
     yield server
     server.cleanup()
 
@@ -54,9 +56,13 @@ def database_url(pg):
     return make_conninfo(pg.get_uri(), dbname=name)
 
 
-def load_app(database_url):
+def load_app(database_url, **env):
     """A fresh module instance per call: its own `pool` global, like a separate pod."""
-    os.environ["DATABASE_URL"] = database_url
+    for name in ("DATABASE_URL", "DATABASE_URL_FILE", "MEMORY_SURFACE_TOKEN_FILE"):
+        os.environ.pop(name, None)
+    if database_url:
+        os.environ["DATABASE_URL"] = database_url
+    os.environ.update(env)
     if str(SERVER_DIR) not in sys.path:
         sys.path.insert(0, str(SERVER_DIR))
     spec = importlib.util.spec_from_file_location(
@@ -68,8 +74,8 @@ def load_app(database_url):
 
 
 class Tenant:
-    """A tenant with surface tokens. A fresh token every 100 requests keeps a long test
-    under the server's 120-per-minute limit without touching the limiter itself."""
+    """A tenant with surface tokens. A fresh token every 25 requests keeps a long test
+    under the server's 30-per-minute limit without touching the limiter itself."""
 
     def __init__(self, database_url, name):
         self.database_url = database_url
@@ -81,7 +87,7 @@ class Tenant:
         self.token = None
 
     def headers(self):
-        if self.token is None or self.uses >= 100:
+        if self.token is None or self.uses >= 25:
             self.token = secrets.token_urlsafe(32)
             with psycopg.connect(self.database_url, autocommit=True) as c:
                 c.execute(
@@ -144,25 +150,29 @@ def test_a_tenant_cannot_read_or_overwrite_another_tenants_memory(booted):
     a, b = Tenant(url, "A"), Tenant(url, "B")
     assert put(client, a, "user_42", "secret", "A-private").status_code == 200
 
-    assert client.get("/memories/user_42/secret", headers=b.headers()).status_code == 404
+    assert (
+        client.get("/memories/user_42/secret", headers=b.headers()).status_code == 404
+    )
     assert client.get("/memories/user_42", headers=b.headers()).json()["facts"] == []
     history = client.get("/memories/user_42/secret/history", headers=b.headers())
     assert history.json()["versions"] == []
     assert client.get("/digest/user_42", headers=b.headers()).json()["facts"] == 0
 
     # B writing the same key makes B's own row; A's value is untouched.
-    assert put(client, b, "user_42", "secret", "B-private").json()["status"] == "CREATED"
-    assert client.get("/memories/user_42/secret", headers=a.headers()).json()["content"] == (
-        "A-private"
+    assert (
+        put(client, b, "user_42", "secret", "B-private").json()["status"] == "CREATED"
     )
+    assert client.get("/memories/user_42/secret", headers=a.headers()).json()[
+        "content"
+    ] == ("A-private")
 
 
 def test_requests_run_as_the_app_role_not_the_superuser(booted):
     client, url = booted
     with psycopg.connect(url) as c:
-        assert c.execute("SELECT rolsuper FROM pg_roles WHERE rolname = current_user").fetchone()[
-            0
-        ], "the test must connect as a superuser, as the manifest does"
+        assert c.execute(
+            "SELECT rolsuper FROM pg_roles WHERE rolname = current_user"
+        ).fetchone()[0], "the test must connect as a superuser, as the manifest does"
     pool = client.module.pool
 
     async def whoami():
@@ -180,7 +190,10 @@ def test_an_update_keeps_the_value_it_replaced(booted):
         assert put(client, a, "user_42", "drink", value).status_code == 200
     versions = client.get("/memories/user_42/drink/history", headers=a.headers()).json()
     assert [v["content"] for v in versions["versions"]] == ["tea", "coffee", "water"]
-    assert client.get("/memories/user_42/drink", headers=a.headers()).json()["content"] == "water"
+    assert (
+        client.get("/memories/user_42/drink", headers=a.headers()).json()["content"]
+        == "water"
+    )
 
 
 # --- bi-temporal reads ---------------------------------------------------------------------
@@ -191,11 +204,15 @@ def test_as_of_returns_the_value_that_was_true_then(booted):
     a = Tenant(url, "A")
     t0 = datetime.now(timezone.utc) - timedelta(days=3)
     for i, value in enumerate(("tea", "coffee", "water")):
-        r = put(client, a, "user_42", "drink", value, valid_from=iso(t0 + timedelta(days=i)))
+        r = put(
+            client, a, "user_42", "drink", value, valid_from=iso(t0 + timedelta(days=i))
+        )
         assert r.status_code == 200, r.text
 
     def at(t):
-        r = client.get("/memories/user_42/drink", params={"as_of": iso(t)}, headers=a.headers())
+        r = client.get(
+            "/memories/user_42/drink", params={"as_of": iso(t)}, headers=a.headers()
+        )
         return r.json().get("content") if r.status_code == 200 else r.status_code
 
     assert at(t0 - timedelta(seconds=1)) == 404  # nothing was true yet
@@ -212,7 +229,9 @@ def test_known_at_answers_what_the_server_believed_at_that_moment(booted):
     a = Tenant(url, "A")
     now = datetime.now(timezone.utc)
     t_early, t_late = now - timedelta(days=2), now - timedelta(days=1)
-    assert put(client, a, "u", "city", "Leeds", valid_from=iso(t_late)).status_code == 200
+    assert (
+        put(client, a, "u", "city", "Leeds", valid_from=iso(t_late)).status_code == 200
+    )
     before_correction = db_now(url)
     r = put(client, a, "u", "city", "York", valid_from=iso(t_early))
     assert r.json()["status"] == "RECORDED_AS_PAST"
@@ -234,14 +253,28 @@ def test_a_late_write_does_not_overwrite_the_current_value(booted):
     client, url = booted
     a = Tenant(url, "A")
     now = datetime.now(timezone.utc)
-    first = put(client, a, "u", "role", "lead", valid_from=iso(now - timedelta(hours=1)))
-    late = put(client, a, "u", "role", "junior", valid_from=iso(now - timedelta(days=30)))
+    first = put(
+        client, a, "u", "role", "lead", valid_from=iso(now - timedelta(hours=1))
+    )
+    late = put(
+        client, a, "u", "role", "junior", valid_from=iso(now - timedelta(days=30))
+    )
     assert late.status_code == 200
-    assert late.json() == {"status": "RECORDED_AS_PAST", "id": first.json()["id"], "version": 1}
-    assert client.get("/memories/u/role", headers=a.headers()).json()["content"] == "lead"
+    assert late.json() == {
+        "status": "RECORDED_AS_PAST",
+        "id": first.json()["id"],
+        "version": 1,
+    }
+    assert (
+        client.get("/memories/u/role", headers=a.headers()).json()["content"] == "lead"
+    )
     facts = client.get("/memories/u", headers=a.headers()).json()["facts"]
-    assert [(f["key"], f["content"], f["version"]) for f in facts] == [("role", "lead", 1)]
-    history = client.get("/memories/u/role/history", headers=a.headers()).json()["versions"]
+    assert [(f["key"], f["content"], f["version"]) for f in facts] == [
+        ("role", "lead", 1)
+    ]
+    history = client.get("/memories/u/role/history", headers=a.headers()).json()[
+        "versions"
+    ]
     assert [v["content"] for v in history] == ["junior", "lead"]
 
 
@@ -250,33 +283,55 @@ def test_valid_from_is_refused_far_in_the_future_or_without_a_timezone(booted):
     a = Tenant(url, "A")
     now = datetime.now(timezone.utc)
     r = put(client, a, "u", "k", "v", valid_from=iso(now + timedelta(hours=1)))
-    assert r.status_code == 422 and r.json()["detail"]["error"] == "VALID_FROM_IN_FUTURE"
-    assert put(client, a, "u", "k", "v", valid_from="2026-01-01T00:00:00").status_code == 422
-    # Inside the 60 s skew allowance is accepted.
-    assert put(client, a, "u", "k", "v", valid_from=iso(now + timedelta(seconds=30))).status_code == (
-        200
+    assert (
+        r.status_code == 422 and r.json()["detail"]["error"] == "VALID_FROM_IN_FUTURE"
     )
+    assert (
+        put(client, a, "u", "k", "v", valid_from="2026-01-01T00:00:00").status_code
+        == 422
+    )
+    # Inside the 60 s skew allowance is accepted.
+    assert put(
+        client, a, "u", "k", "v", valid_from=iso(now + timedelta(seconds=30))
+    ).status_code == (200)
 
 
 def test_human_confirmed_memory_is_protected_on_the_late_write_path_too(booted):
     client, url = booted
     a = Tenant(url, "A")
-    assert put(client, a, "u", "name", "Chidi", trust_tier="human_confirmed").status_code == 200
+    assert (
+        put(client, a, "u", "name", "Chidi", trust_tier="human_confirmed").status_code
+        == 200
+    )
     past = iso(datetime.now(timezone.utc) - timedelta(days=5))
-    r = put(client, a, "u", "name", "someone else", trust_tier="llm_derived", valid_from=past)
+    r = put(
+        client,
+        a,
+        "u",
+        "name",
+        "someone else",
+        trust_tier="llm_derived",
+        valid_from=past,
+    )
     assert r.status_code == 403
-    history = client.get("/memories/u/name/history", headers=a.headers()).json()["versions"]
+    history = client.get("/memories/u/name/history", headers=a.headers()).json()[
+        "versions"
+    ]
     assert [v["content"] for v in history] == ["Chidi"]
 
 
-@pytest.mark.parametrize("statement", ["UPDATE memory_versions SET content = 'x'",
-                                       "DELETE FROM memory_versions"])
+@pytest.mark.parametrize(
+    "statement",
+    ["UPDATE memory_versions SET content = 'x'", "DELETE FROM memory_versions"],
+)
 def test_history_is_append_only_even_for_the_superuser(booted, statement):
     client, url = booted
     a = Tenant(url, "A")
     assert put(client, a, "u", "k", "v").status_code == 200
     with psycopg.connect(url) as c:
-        with pytest.raises(psycopg.errors.CheckViolation, match="HISTORY_IS_APPEND_ONLY"):
+        with pytest.raises(
+            psycopg.errors.CheckViolation, match="HISTORY_IS_APPEND_ONLY"
+        ):
             c.execute(statement)
 
 
@@ -286,7 +341,8 @@ def test_history_is_append_only_even_for_the_superuser(booted, statement):
 def reference_digest(facts):
     """Independent of the SQL: sha256 over length-prefixed key + sha256(content), byte order."""
     lines = sorted(
-        f"{len(k)}:{k}{hashlib.sha256(v.encode()).hexdigest()}" for k, v in facts.items()
+        f"{len(k)}:{k}{hashlib.sha256(v.encode()).hexdigest()}"
+        for k, v in facts.items()
     )
     lines.sort(key=lambda s: s.encode())
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
@@ -295,7 +351,9 @@ def reference_digest(facts):
 def test_digest_depends_on_the_facts_not_the_order_they_were_written(booted):
     client, url = booted
     rng = random.Random(20260927)
-    facts = {f"k{i:02d}{rng.choice('aBz_é')}": f"value {rng.random()}" for i in range(25)}
+    facts = {
+        f"k{i:02d}{rng.choice('aBz_é')}": f"value {rng.random()}" for i in range(25)
+    }
     tenants = [Tenant(url, f"T{i}") for i in range(4)]
     digests = []
     for tenant in tenants:
@@ -311,8 +369,9 @@ def test_digest_depends_on_the_facts_not_the_order_they_were_written(booted):
 
     changed_key = sorted(facts)[7]
     put(client, tenants[0], "subject", changed_key, facts[changed_key] + "!")
-    assert client.get("/digest/subject", headers=tenants[0].headers()).json()["digest"] != (
-        digests[0]
+    assert (
+        client.get("/digest/subject", headers=tenants[0].headers()).json()["digest"]
+        != (digests[0])
     )
 
 
@@ -329,7 +388,9 @@ def test_randomised_writes_match_the_reference_model(booted, seed):
     rng = random.Random(seed)
     a = Tenant(url, "A")
     base = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=1)
-    slots = [base + timedelta(minutes=m) for m in range(6)]  # few slots: ties are common
+    slots = [
+        base + timedelta(minutes=m) for m in range(6)
+    ]  # few slots: ties are common
 
     writes, checkpoints = [], []  # writes: (valid_from, seq, content)
     for seq in range(14):
@@ -339,7 +400,8 @@ def test_randomised_writes_match_the_reference_model(booted, seed):
         assert r.status_code == 200, r.text
         current_before = max(writes)[0] if writes else None
         expected_status = (
-            "RECORDED_AS_PAST" if current_before is not None and vf < current_before
+            "RECORDED_AS_PAST"
+            if current_before is not None and vf < current_before
             else ("CREATED" if not writes else "UPDATED")
         )
         assert r.json()["status"] == expected_status, (seed, seq)
@@ -363,27 +425,37 @@ def test_randomised_writes_match_the_reference_model(booted, seed):
 
     current = client.get("/memories/subj", headers=a.headers()).json()["facts"]
     assert [f["content"] for f in current] == [max(writes)[2]]
-    history = client.get("/memories/subj/pred/history", headers=a.headers()).json()["versions"]
+    history = client.get("/memories/subj/pred/history", headers=a.headers()).json()[
+        "versions"
+    ]
     assert len(history) == len(writes)
+
+
+def estate_db_shaped(pg):
+    """The database the way estate-db hands it over: a login role with no CREATEROLE that owns
+    its database, memory_app declared by the operator with that role a plain member (CNPG
+    managed.roles inRoles: no ADMIN OPTION), and vector created by the Database resource."""
+    name = "umem_" + uuid.uuid4().hex[:12]
+    owner = "owner_" + uuid.uuid4().hex[:8]
+    with psycopg.connect(pg.get_uri(), autocommit=True) as c:
+        c.execute(f"CREATE ROLE {owner} LOGIN NOCREATEROLE PASSWORD 'x'")
+        c.execute(f"CREATE DATABASE {name} OWNER {owner}")
+        if not c.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname = 'memory_app'"
+        ).fetchone():
+            c.execute("CREATE ROLE memory_app NOLOGIN NOSUPERUSER NOBYPASSRLS")
+        c.execute(f"GRANT memory_app TO {owner}")
+    with psycopg.connect(
+        make_conninfo(pg.get_uri(), dbname=name), autocommit=True
+    ) as c:
+        c.execute("CREATE EXTENSION vector")
+    return make_conninfo(pg.get_uri(), dbname=name, user=owner, password="x")
 
 
 def test_the_table_owner_is_held_to_tenant_isolation_too(pg):
     """FORCE ROW LEVEL SECURITY, measured on its own: a non-superuser that owns the tables
     (the role that ran schema.sql) reads with no SET ROLE, and still sees only its tenant."""
-    name = "umem_" + uuid.uuid4().hex[:12]
-    owner = "owner_" + uuid.uuid4().hex[:8]
-    with psycopg.connect(pg.get_uri(), autocommit=True) as c:
-        c.execute(f"CREATE ROLE {owner} LOGIN PASSWORD 'x'")
-        c.execute(f"CREATE DATABASE {name} OWNER {owner}")
-        # A non-superuser cannot create memory_app itself, so an administrator does, once.
-        c.execute(
-            "DO $$ BEGIN CREATE ROLE memory_app NOLOGIN NOSUPERUSER NOBYPASSRLS;"
-            " EXCEPTION WHEN duplicate_object THEN NULL; END $$"
-        )
-        c.execute(f"GRANT memory_app TO {owner} WITH ADMIN OPTION")
-    with psycopg.connect(make_conninfo(pg.get_uri(), dbname=name), autocommit=True) as c:
-        c.execute("CREATE EXTENSION vector")
-    url = make_conninfo(pg.get_uri(), dbname=name, user=owner, password="x")
+    url = estate_db_shaped(pg)
     with TestClient(load_app(url).app) as client:
         a = Tenant(url, "A")
         Tenant(url, "B")
@@ -393,3 +465,64 @@ def test_the_table_owner_is_held_to_tenant_isolation_too(pg):
         c.execute("SELECT set_config('app.tenant_id', %s, false)", (str(b_id),))
         assert c.execute("SELECT content FROM memories").fetchall() == []
         assert c.execute("SELECT content FROM memory_versions").fetchall() == []
+
+
+# --- the production shape: estate-db, a mounted secret, the vault's token, the limit -------
+
+
+def test_boots_twice_on_estate_db_from_a_mounted_secret_with_the_vault_token(
+    pg, tmp_path
+):
+    url = estate_db_shaped(pg)
+    token = secrets.token_urlsafe(32)
+    (tmp_path / "url").write_text(url + "\n")
+    (tmp_path / "token").write_text(token + "\n")
+    env = {
+        "DATABASE_URL_FILE": str(tmp_path / "url"),
+        "MEMORY_SURFACE_TOKEN_FILE": str(tmp_path / "token"),
+    }
+    auth = {"Authorization": f"Bearer {token}"}
+    body = {"namespace": "estate", "key": "k", "content": "v"}
+    with TestClient(load_app(None, **env).app) as client:
+        assert (
+            client.put("/memories/estate/k", json=body, headers=auth).status_code == 200
+        )
+    second = load_app(None, **env)  # the second pod, the next deploy
+    with TestClient(second.app) as client:
+        assert client.get("/memories/estate/k", headers=auth).json()["content"] == "v"
+        whoami = client.portal.call(_current_user, second.pool)
+        assert whoami == "memory_app"
+    with psycopg.connect(url) as c:
+        rows = c.execute(
+            "SELECT t.name, s.surface_name FROM surface_tokens s JOIN tenants t USING (tenant_id)"
+        ).fetchall()
+    assert rows == [("estate", "estate-agents")]  # registered once, not once per boot
+
+
+async def _current_user(pool):
+    async with pool.connection() as conn:
+        cur = await conn.execute("SELECT current_user")
+        return (await cur.fetchone())["current_user"]
+
+
+def test_thirty_requests_a_minute_per_token_and_a_refused_token_is_counted(booted):
+    client, url = booted
+    a = Tenant(url, "A")
+    headers = a.headers()
+    window = client.module.time.time() // 60
+    codes = [client.get("/memories/u", headers=headers).status_code for _ in range(31)]
+    if client.module.time.time() // 60 != window:
+        pytest.skip("the minute rolled over mid-test; the count restarted")
+    assert codes[:30] == [200] * 30 and codes[30] == 429
+
+    bad = {"Authorization": "Bearer not-a-token"}
+    assert [client.get("/memories/u", headers=bad).status_code for _ in range(3)] == [
+        403
+    ] * 3
+    token_hash = hashlib.sha256(b"not-a-token").hexdigest()
+    with psycopg.connect(url) as c:
+        counted = c.execute(
+            "SELECT sum(request_count) FROM rate_limits WHERE surface_id = %s",
+            (token_hash,),
+        ).fetchone()[0]
+    assert counted == 3

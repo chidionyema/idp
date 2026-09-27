@@ -166,4 +166,7 @@ spec:
           kubernetes.io/metadata.name: temporal
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: unified-memory
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: via-negativa

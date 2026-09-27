@@ -206,18 +206,24 @@ BEFORE UPDATE OR DELETE ON memory_versions
 FOR EACH ROW
 EXECUTE FUNCTION fn_refuse_history_rewrite();
 
--- 9. The role every request runs as. The connecting role in the manifest is the image's
--- superuser, and a superuser bypasses row-level security even when it is FORCEd, so the
--- pool drops to this role on every connection. NOLOGIN: it has no password to leak.
+-- 9. The role every request runs as. The connecting role owns these tables, and an owner (or
+-- a superuser, which bypasses row-level security even when it is FORCEd) is the wrong identity
+-- to serve requests as, so the pool drops to this role on every connection. NOLOGIN: it has no
+-- password to leak. On estate-db the operator declares it (platform/estate-db/cluster/
+-- cluster.yaml) and makes the connecting role `memory` a member, because `memory` has no
+-- CREATEROLE; both steps below are then no-ops.
 -- Checked before CREATE: a migrating role without CREATEROLE is refused on privilege before
 -- PostgreSQL looks for a duplicate, so an exception guard alone fails when the role exists.
 DO $$ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'memory_app') THEN
         CREATE ROLE memory_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
     END IF;
+    -- Checked for the same reason: granting a role needs ADMIN OPTION on it, which a member
+    -- the operator made does not have, even when the grant would change nothing.
+    IF NOT pg_has_role(CURRENT_USER, 'memory_app', 'MEMBER') THEN
+        EXECUTE format('GRANT memory_app TO %I', CURRENT_USER);
+    END IF;
 END $$;
--- The migrating role must be able to SET ROLE to it (a no-op for a superuser).
-GRANT memory_app TO CURRENT_USER;
 GRANT USAGE ON SCHEMA public TO memory_app;
 GRANT SELECT ON tenants, surface_tokens TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON memories TO memory_app;

@@ -18,8 +18,28 @@ from security_core import (
     SecurityViolationException,
 )
 
+
+def _secret(name: str) -> Optional[str]:
+    """NAME_FILE (a mounted Secret) wins over NAME: on the cluster a secret is a file, never an
+    env var (Kyverno secrets-not-from-env-vars); NAME stays for local runs and tests."""
+    path = os.environ.get(f"{name}_FILE")
+    if path:
+        with open(path) as f:
+            return f.read().strip()
+    return os.environ.get(name)
+
+
 # LAW 4: secrets by name only, from the vault. No literal password in source.
-DATABASE_URL = os.environ["DATABASE_URL"]
+DATABASE_URL = _secret("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL (or DATABASE_URL_FILE) is required")
+# The estate's own surface token (vault entry unified-memory, key surface-token). Registered at
+# boot as tenant `estate`, surface `estate-agents`: without it no tenant and no token exist, and
+# the only way to make one would be a person typing an INSERT into the production database.
+SURFACE_TOKEN = _secret("MEMORY_SURFACE_TOKEN")
+# Requests per token per minute. An agent that reads its memory at the start of a task and
+# writes a handful of facts stays far under it; a loop does not.
+RATE_LIMIT_PER_MINUTE = 30
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.sql")
 
 # A write may say when its fact became true, but not later than this past the server's own
@@ -34,8 +54,8 @@ pool: Optional[AsyncConnectionPool] = None
 
 
 async def _drop_to_app_role(conn) -> None:
-    # Every request runs as memory_app: the connecting role is the image's superuser, and a
-    # superuser bypasses row-level security, so without this tenant isolation is not enforced.
+    # Every request runs as memory_app: the connecting role owns the tables (or, in a local
+    # run, is a superuser, which bypasses row-level security), so it never serves a request.
     await conn.execute("SET ROLE memory_app;")
     await conn.commit()
 
@@ -52,6 +72,18 @@ async def lifespan(app: FastAPI):
             await cur.execute("SELECT pg_advisory_xact_lock(2162852);")
             with open(SCHEMA_PATH, "r") as f:
                 await cur.execute(f.read())
+            if SURFACE_TOKEN:
+                await cur.execute(
+                    "INSERT INTO tenants(name) VALUES ('estate') ON CONFLICT (name) DO NOTHING;"
+                )
+                await cur.execute(
+                    """
+                    INSERT INTO surface_tokens(tenant_id, surface_name, token_hash)
+                    SELECT tenant_id, 'estate-agents', %s FROM tenants WHERE name = 'estate'
+                    ON CONFLICT (token_hash) DO NOTHING;
+                    """,
+                    (hashlib.sha256(SURFACE_TOKEN.encode("utf-8")).hexdigest(),),
+                )
         await conn.commit()
 
     # Bounded pool with active connection validation and TCP keepalive
@@ -111,12 +143,15 @@ async def authenticate_surface(
     token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
 
     async with conn.cursor() as cur:
-        # Rate Limiter Execution: 120 requests per 60-second window
         window = int(time.time() // 60)
         await cur.execute(
-            "SELECT fn_hit_rate_limit(%s, %s, %s);", (token_hash, window, 120)
+            "SELECT fn_hit_rate_limit(%s, %s, %s);",
+            (token_hash, window, RATE_LIMIT_PER_MINUTE),
         )
         allowed = (await cur.fetchone())["fn_hit_rate_limit"]
+        # Committed before anything can refuse the request: a 429 or a 403 raised below rolls
+        # the connection back, and the hit it rolled back was never counted.
+        await conn.commit()
         if not allowed:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
