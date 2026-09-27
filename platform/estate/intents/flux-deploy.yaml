@@ -1,0 +1,21 @@
+name: flux-deploy
+description: >
+  Standard deploy: branch, commit, push, PR, watch. For agents.
+args:
+  branch: {type: string, default: ""}
+  message: {type: string, default: "update"}
+  files: {type: string, default: ""}
+steps:
+  - name: deploy
+    cmd: |
+      cd ~/Documents/code/idp || exit 1
+      BR={{branch}}
+      [ -z "$BR" ] && BR="flux/$(date +%s)"
+      git checkout main
+      git pull --ff-only origin main
+      git checkout -B "$BR" origin/main
+      [ -n "{{files}}" ] && git add {{files}} || git add -A
+      git commit -m "{{message}}" || echo "nothing to commit"
+      git push -u origin "$BR" 2>&1 | tail -3
+      gh pr create --fill 2>&1 | tail -2
+      # No sleep-and-poll: merge-when-green watches the checks and lands it (AGENTS.md §2).
