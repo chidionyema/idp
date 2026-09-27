@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:estate.news.story",
+  "title": "estate.news.story",
+  "description": "One story from the estate newsroom (crew#974 P1). The voice-router director (VOICE_MODE=director) publishes it on subject estate.news.story.<channel> in JetStream stream ESTATE_NEWS, and also on estate.news.story.news when score >= 3 or breaking. Headlines and anchors are deterministic templates; no LLM is used in P1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "channel", "source", "severity", "state", "headline", "anchor", "entity", "evidence", "score", "count", "breaking", "first_at", "at"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1, "description": "the same id is re-published when a story is deduplicated" },
+    "supersedes": { "type": "string", "description": "the id of the story this one corrects, present only when state=corrected" },
+    "channel": {
+      "enum": ["news", "agents", "deploys", "cluster", "metrics", "products"],
+      "description": "which channel this story belongs to"
+    },
+    "source": {
+      "enum": ["flux", "k8s", "cicd", "incidents", "agent"],
+      "description": "which system generated this story"
+    },
+    "severity": {
+      "enum": ["info", "warn", "danger"],
+      "description": "it only escalates within one story"
+    },
+    "state": {
+      "enum": ["reported", "confirmed", "corrected"],
+      "description": "the story's lifecycle state"
+    },
+    "headline": { "type": "string", "description": "the deterministic template headline" },
+    "anchor": { "type": "string", "description": "one sentence on why it matters, naming the source, e.g. 'according to Flux'" },
+    "entity": { "type": "string", "description": "the deduplication key, e.g. Kustomization/flux-system/ns-fences" },
+    "link": { "type": "string", "format": "uri", "description": "a link to more detail on this story" },
+    "evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 5,
+      "description": "the most recent raw messages"
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "description": "sevWeight(info 1, warn 3, danger 9) x 0.5^(age/10min) x (2 if count==1 else 1)"
+    },
+    "count": { "type": "integer", "minimum": 1, "description": "how many times this entity's story has recurred" },
+    "breaking": { "type": "boolean", "description": "danger, or a CI failure with count >= 3" },
+    "first_at": { "type": "string", "format": "date-time", "description": "when this story's entity was first reported" },
+    "at": { "type": "string", "format": "date-time", "description": "when this story row was last updated" }
+  },
+  "examples": [
+    {
+      "id": "3f9a1c0d2b7e4a55",
+      "channel": "deploys",
+      "source": "flux",
+      "severity": "warn",
+      "state": "reported",
+      "headline": "FAILED: ns-fences, 3rd in 12m",
+      "anchor": "ns-fences is not reconciling (BuildFailed), so its changes are not reaching the cluster, according to Flux.",
+      "entity": "Kustomization/flux-system/ns-fences",
+      "evidence": ["BuildFailed: kustomize build failed: accumulating resources"],
+      "score": 1.5,
+      "count": 3,
+      "breaking": false,
+      "first_at": "2026-09-27T08:00:00Z",
+      "at": "2026-09-27T08:12:00Z"
+    },
+    {
+      "id": "7c1e5b8a4d3f9021",
+      "supersedes": "3f9a1c0d2b7e4a55",
+      "channel": "deploys",
+      "source": "flux",
+      "severity": "info",
+      "state": "corrected",
+      "headline": "RECOVERED: ns-fences",
+      "anchor": "ns-fences is reconciling again, so its changes are reaching the cluster, according to Flux.",
+      "entity": "Kustomization/flux-system/ns-fences",
+      "evidence": ["Reconciliation succeeded"],
+      "score": 2,
+      "count": 1,
+      "breaking": false,
+      "first_at": "2026-09-27T08:14:00Z",
+      "at": "2026-09-27T08:14:00Z"
+    }
+  ]
+}

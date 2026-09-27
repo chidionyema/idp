@@ -1,0 +1,11 @@
+# crew#974 P1: the newsroom director. Restricted profile namespace for
+# voice-router's cluster-facing pieces (director.yaml, rbac.yaml).
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: voice-router
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted

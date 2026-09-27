@@ -254,7 +254,7 @@ flows:
     egress_internet: [443]
     # research: the hourly research engine sends every lane's prompt through the router
     # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge]
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge, voice-router]
   research:
     # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
     # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every
@@ -458,8 +458,8 @@ flows:
     # row above, learned live on 2026-09-07.
     # epistemic-fabric: the ingestion connectors (idp#3448 CP1) publish CloudEvents onto the
     # epistemic.* streams; declared on both sides for the same reason as otto-gateway/commerce/llm.
-    # backstage: fleetview sidecar reads ESTATE_NEWS/cinema cues, crew#974 P2.
-    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, backstage]
+    # voice-router is the newsroom (crew#974), declared on both sides.
+    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router]
   epistemic-fabric:
     # idp#3448 CP1: four ingestion connectors. Each publishes to the NATS bus (event-bus) and
     # polls or verifies a webhook against an external vendor API (GitHub, Slack) over the public
@@ -471,6 +471,10 @@ flows:
     # gate (it enforces pod-to-pod traffic on the cluster network, not a port-forward tunnel).
     egress: [event-bus]
     egress_internet: [443]
+  voice-router:
+    # crew#974 P1: the newsroom director reads epistemic.* and publishes estate.news.* on the bus, and narrates through the router.
+    # The API server needs no line here: policy_docs gives every namespace allow-apiserver-egress, and that is how its watcher reaches events, Kustomizations and HelmReleases.
+    egress: [event-bus, llm]
   estate-db:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an

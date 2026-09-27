@@ -39,17 +39,17 @@ func runDirector(log *slog.Logger) int {
 	}
 
 	ring := director.NewRing(director.Capacity)
-	sub, err := js.Subscribe(agentSubjects, func(m *nats.Msg) {
+	// ESTATE_AGENT does not exist in-cluster until P1.5 (crew#974), so the feed is
+	// optional and is retried every 60s rather than crashlooping.
+	go subscribeRetry(ctx, log, js, agentSubjects, "director.agent_feed_absent", func(m *nats.Msg) {
 		var ev director.Event
 		if json.Unmarshal(m.Data, &ev) != nil || ev.SessionID == "" {
 			return
 		}
 		ring.Push(ev)
-	}, nats.OrderedConsumer(), nats.DeliverNew())
-	if err != nil {
-		log.Error("director.start", "err", err)
-		return 1
-	}
+	})
+
+	go runNewsroom(ctx, log, nc, js)
 
 	b := brain.FromEnv()
 	narrator := &director.Narrator{Brain: b, Limiter: director.NewLimiter(), Now: time.Now}
@@ -101,7 +101,6 @@ loop:
 		}
 	}
 
-	_ = sub.Unsubscribe()
 	_ = nc.Drain()
 	shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
