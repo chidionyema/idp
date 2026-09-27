@@ -7,7 +7,7 @@ metadata:
   name: xp-providers
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system

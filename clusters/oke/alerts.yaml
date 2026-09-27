@@ -6,7 +6,7 @@ metadata:
   name: alerts
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: alerts-secret
   sourceRef:
@@ -15,7 +15,7 @@ spec:
   path: ./platform/alerts
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: Secret
@@ -28,7 +28,7 @@ metadata:
   name: alerts-secret
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -37,7 +37,7 @@ spec:
   path: ./platform/alerts-secret
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#406 row 4: the GitHub App (vault key github-app) was never created, so the github-app
 # ExternalSecret never became Ready, alerts-secret (wait: true) never became Ready, and `alerts`
@@ -75,7 +75,7 @@ metadata:
   name: github-app-creds
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -84,7 +84,7 @@ spec:
   path: ./platform/github-app-creds
   prune: true
   wait: false
-  timeout: 10m
+  timeout: 2m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -92,7 +92,7 @@ metadata:
   name: alerts-github
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
     - name: github-app-creds
@@ -102,4 +102,4 @@ spec:
   path: ./platform/alerts-github
   prune: true
   wait: false
-  timeout: 10m
+  timeout: 2m

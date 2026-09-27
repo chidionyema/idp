@@ -13,14 +13,14 @@ metadata:
   name: backstage-namespace
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/backstage/namespace/overlays/oke
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#857: the feature register and pre-computed plan consumed by the
 # catalogue backend. One ConfigMap, two files (features.yaml + plan.json),
@@ -33,7 +33,7 @@ metadata:
   name: feature-register
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -42,7 +42,7 @@ spec:
   dependsOn:
     - name: backstage-namespace
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # ADR 0004 step 3. `flux bootstrap github --path clusters/oke` writes flux-system/ beside this
 # file; everything below is what Flux then reconciles. Secrets reach the
@@ -53,7 +53,7 @@ metadata:
   name: backstage
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -90,7 +90,7 @@ spec:
       # that mints the portal's GitHub token (platform/backstage/overlays/oke/github-token.yaml).
       - kind: Secret
         name: github-app
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -103,7 +103,7 @@ metadata:
   name: chaos-mesh
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   # Platform rows never wait on the portal (crew#539, 2026-08-28: one stalled catalogue rollout held
   # 15 rows — observability, spire, temporal, keda, monitoring, science — behind Deployment/backstage/catalogue).
   # Only `chaos` (the experiments that target the portal) depends on backstage.
@@ -114,7 +114,7 @@ spec:
     name: flux-system
   path: ./platform/chaos/mesh
   prune: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -129,7 +129,7 @@ metadata:
   name: chaos
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: chaos-mesh
     # crew#488: the langfuse alert drill's Schedule and Workflow land in the observability namespace.
@@ -154,7 +154,7 @@ metadata:
 spec:
   # crew#584 traces/lean: the node agent alone. Enterprise adds the `observability` row (SigNoz
   # store + Langfuse) on top; lean points otelCollectorEndpoint at an external OTLP endpoint.
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
     - name: edge   # platform/edge/k8s-infra-namespace.yaml and the hostPath waiver live there
@@ -170,7 +170,7 @@ spec:
       # shipping telemetry to the literal '${OTLP_ENDPOINT}'.
       - kind: ConfigMap
         name: estate-config
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -190,7 +190,7 @@ spec:
   # 10m so a broken workload is reported within ten minutes (tests/test_incident_backstage_17h_unreported.py).
   # After unsuspend the HelmRelease has a 15m timeout, so a cold ClickHouse shows "not ready" for the
   # first two ticks; that is the install, not an incident (code-37, 2026-08-25).
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
     # crew#584: the collector row owns k8s-infra now; ordering it first means the objects are
@@ -233,7 +233,7 @@ metadata:
   name: identity
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -242,7 +242,7 @@ spec:
   dependsOn:
     - name: edge
     - name: secret-store
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -264,7 +264,7 @@ metadata:
   name: healthchecks
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -278,7 +278,7 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -298,7 +298,7 @@ metadata:
   name: metrics-server
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -306,7 +306,7 @@ spec:
   prune: true
   dependsOn:
     - name: scheduling
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -322,7 +322,7 @@ metadata:
   name: reloader
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -330,7 +330,7 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -343,7 +343,7 @@ metadata:
   name: llm
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -368,7 +368,7 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
-  timeout: 10m
+  timeout: 2m
 ---
 # The router's own event wiring (founder decision 2026-09-12: the database is the source of
 # truth and git is its backup, with nothing connected by a poll).
@@ -382,7 +382,7 @@ metadata:
   name: router-events
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -391,7 +391,7 @@ spec:
   dependsOn:
     - name: llm
     - name: event-bus
-  timeout: 5m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -413,7 +413,7 @@ metadata:
   name: epistemic-fabric
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -431,7 +431,7 @@ spec:
     - name: event-bus
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: github-app-creds
-  timeout: 5m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -447,7 +447,7 @@ metadata:
   name: hermes-agent
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -467,7 +467,7 @@ spec:
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: github-app-creds
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -485,7 +485,7 @@ metadata:
   name: idp-agent
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -502,7 +502,7 @@ spec:
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: github-app-creds
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -529,7 +529,7 @@ metadata:
   name: otto-golden
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -552,7 +552,7 @@ spec:
     - name: secret-store
     - name: edge
     - name: otto-golden-secret
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -591,7 +591,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: false
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -619,7 +619,7 @@ spec:
     # guard is spent, and while it stood it was a permanent brake -- estate-db-migrate has
     # been Ready=False for 13 hours on its own dependency, so every otto-gateway change
     # since then, including the bulk-lane fix in #1678, could not reach the cluster.
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -635,7 +635,7 @@ metadata:
   name: otto-golden-secret
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -644,7 +644,7 @@ spec:
   path: ./platform/otto-golden-secret
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # MCP row (crew#458): agentgateway + github-mcp on the cluster, reached at mcp.<zone> through the
 # https-mcp listener on prospector-edge. Replaces the colima VM on the founder Mac. After edge
@@ -655,7 +655,7 @@ metadata:
   name: mcp
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -667,7 +667,7 @@ spec:
     - name: secret-store
     # strict envsubst: an undefined ${githubAppIDQuoted} fails the row, so it waits on the Secret
     - name: github-app-creds
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -703,7 +703,7 @@ metadata:
   name: agent-workforce
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -724,7 +724,7 @@ spec:
     - name: github-app-creds
     - name: llm
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#716 CP1: the estate scheduler (Dagster) on the cluster instead of the Mac.
 # After edge (Kyverno policies) and secret-store (the image pull secret).
@@ -734,7 +734,7 @@ metadata:
   name: dagster
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -749,7 +749,7 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -764,7 +764,7 @@ metadata:
   name: cluster-state
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
@@ -778,7 +778,7 @@ spec:
   path: ./platform/state
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#396: the estate's one workflow engine, in the cluster instead of on the Mac.
 # Suspended 2026-08-30 on the founder's word (crew#284): "what I spec'd was not what was built; I
@@ -792,7 +792,7 @@ metadata:
   namespace: flux-system
 spec:
   suspend: false
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: edge
     - name: secret-store
@@ -822,7 +822,7 @@ metadata:
   name: spire
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
     # crew#539: the namespace, not the portal. This row lands objects in namespace backstage and
@@ -833,7 +833,7 @@ spec:
     name: flux-system
   path: ./platform/spire
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -851,7 +851,7 @@ metadata:
   name: keda
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
   sourceRef:
@@ -859,7 +859,7 @@ spec:
     name: flux-system
   path: ./platform/keda
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -879,7 +879,7 @@ metadata:
   name: crossplane
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
   sourceRef:
@@ -887,7 +887,7 @@ spec:
     name: flux-system
   path: ./platform/crossplane
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -918,7 +918,7 @@ metadata:
   name: crossplane-providers
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: crossplane
   sourceRef:
@@ -926,7 +926,7 @@ spec:
     name: flux-system
   path: ./platform/crossplane/providers
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: pkg.crossplane.io/v1
       kind: Provider
@@ -952,7 +952,7 @@ metadata:
   name: crossplane-providerconfig
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: crossplane-providers
   sourceRef:
@@ -961,7 +961,7 @@ spec:
   path: ./platform/crossplane/providerconfig
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
   postBuild:
     substituteFrom:
       # ${ESTATE_OCI_REGION}: the credentials blob states which region the tenancy is in.
@@ -980,7 +980,7 @@ metadata:
   name: crossplane-storage-capability
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: crossplane-providerconfig
   sourceRef:
@@ -988,7 +988,7 @@ spec:
     name: flux-system
   path: ./platform/crossplane/capabilities/storage
   prune: true
-  timeout: 5m
+  timeout: 2m
   healthChecks:
     - apiVersion: apiextensions.crossplane.io/v1
       kind: CompositeResourceDefinition
@@ -1009,7 +1009,7 @@ metadata:
   name: science
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: observability   # the clickhouse-auth Secret and the SigNoz backend
   sourceRef:
@@ -1018,7 +1018,7 @@ spec:
   path: ./platform/science
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # The Architect's memory (crew#524 CP1): Hindsight, the vendor chart on the pgvector Postgres
 # beside it, LLM behind the estate router. After secret-store for the one Secret it reads and
@@ -1029,7 +1029,7 @@ metadata:
   name: hindsight
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
     - name: llm
@@ -1043,7 +1043,7 @@ spec:
     name: flux-system
   path: ./platform/hindsight
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1060,7 +1060,7 @@ metadata:
   name: guacamole
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1075,7 +1075,7 @@ spec:
     # Postgres for the estate) -- it must report Ready first or the data would be pruned
     # ahead of being moved.
     - name: estate-db-migrate
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1093,7 +1093,7 @@ metadata:
   name: autoscaler
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1101,7 +1101,7 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1116,14 +1116,14 @@ metadata:
   name: priority-classes
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/priority-classes
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#539: scheduling immunity. The balloon and the Kyverno policies that keep the radio-room set
 # honest. After edge (Kyverno CRDs) and after priority-classes, which is where the two classes now
@@ -1135,7 +1135,7 @@ metadata:
   name: scheduling
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: edge
     - name: priority-classes
@@ -1152,7 +1152,7 @@ spec:
   # "dependency 'flux-system/scheduling' is not ready" for the better part of an hour. What those
   # rows actually need from here is the three admission policies, so those are the health checks.
   wait: false
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: kyverno.io/v1
       kind: ClusterPolicy
@@ -1180,7 +1180,7 @@ metadata:
   name: healing
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: scheduling
   sourceRef:
@@ -1188,7 +1188,7 @@ spec:
     name: flux-system
   path: ./platform/healing
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1203,7 +1203,7 @@ metadata:
   name: healing-k8sgpt
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: healing
     - name: llm
@@ -1213,7 +1213,7 @@ spec:
     name: flux-system
   path: ./platform/healing/k8sgpt
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1228,7 +1228,7 @@ metadata:
   name: healing-analyzer
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     # The analyzer is a K8sGPT object built by the K8sGPT operator, so it follows the row that
     # installs the operator -- which is healing-k8sgpt since the 2026-09-08 split, not healing.
@@ -1254,7 +1254,7 @@ metadata:
   name: robusta
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
   sourceRef:
@@ -1262,7 +1262,7 @@ spec:
     name: flux-system
   path: ./platform/robusta
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1278,7 +1278,7 @@ metadata:
   name: monitoring
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: edge
     - name: secret-store
@@ -1327,7 +1327,7 @@ metadata:
   name: monitoring-rules
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: monitoring
   sourceRef:
@@ -1350,7 +1350,7 @@ metadata:
   name: drills
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1361,7 +1361,7 @@ spec:
   dependsOn:
     - name: github-app-creds
   wait: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1377,7 +1377,7 @@ metadata:
   name: tailscale
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1385,7 +1385,7 @@ spec:
   prune: true
   dependsOn:
     - name: secret-store
-  timeout: 10m
+  timeout: 2m
   # THE DEPLOYMENT IS CALLED `operator`, NOT `tailscale-operator`. Measured 2026-09-13 by
   # rendering the chart from git (`bin/idp-compile-helm`, 33/33 releases): the release is named
   # tailscale-operator and the chart it pins (1.102.3) emits `Deployment/operator` in the
@@ -1416,14 +1416,14 @@ metadata:
   name: staging
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/staging
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # The concierge's namespace row. It exists before the workload because the Twilio Auth Token
 # rides the human door: platform/vendors/consoles.yaml declares `twilio` with
@@ -1442,7 +1442,7 @@ metadata:
   name: concierge
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1462,7 +1462,7 @@ spec:
         optional: false
   dependsOn:
     - name: secret-store
-  timeout: 5m
+  timeout: 2m
 
 ---
 # Notifications row (R75 founder spec 2026-08-29): Apprise API, the single fan-out engine. Publish
@@ -1475,7 +1475,7 @@ metadata:
   name: notify
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1484,7 +1484,7 @@ spec:
   dependsOn:
     - name: scheduling
     - name: secret-store
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1501,7 +1501,7 @@ metadata:
   name: weave-gitops
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1510,7 +1510,7 @@ spec:
   dependsOn:
     - name: identity
     - name: edge
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1531,13 +1531,13 @@ metadata:
   name: searxng
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/searxng
   prune: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1560,7 +1560,7 @@ metadata:
   name: research-engine
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
     - name: llm
@@ -1572,7 +1572,7 @@ spec:
   path: ./platform/research-engine
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # The one database platform, part 1: the operator and its CRDs. Founder, 2026-09-04, on the ten
 # Postgres servers this estate ran: "we need urgent consolidtion to one in few steps as possible
@@ -1585,13 +1585,13 @@ metadata:
   name: estate-db-operator
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/estate-db/operator
   prune: true
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1606,7 +1606,7 @@ metadata:
   name: estate-db
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: estate-db-operator
     - name: secret-store
@@ -1615,7 +1615,7 @@ spec:
     name: flux-system
   path: ./platform/estate-db/cluster
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
@@ -1631,7 +1631,7 @@ metadata:
   name: estate-db-migrate
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: estate-db
   sourceRef:
@@ -1660,7 +1660,7 @@ metadata:
   name: via-negativa
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: secret-store
     - name: llm
@@ -1671,7 +1671,7 @@ spec:
   path: ./platform/via-negativa
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
 ---
 # crew#839: every namespace's request defaults and its ceiling, generated in one pass by
 # bin/idp-ns-fence-gen from platform/ns-fences/allowances.yaml. A LimitRange lands beside every
@@ -1691,14 +1691,14 @@ metadata:
   name: ns-fences
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/ns-fences
   prune: true
   wait: true
-  timeout: 10m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
@@ -1738,7 +1738,7 @@ metadata:
   name: calico
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1746,7 +1746,7 @@ spec:
   suspend: false
   prune: false
   wait: false
-  timeout: 15m
+  timeout: 2m
 ---
 # crew#841: the break-glass bridge's read access. Cluster-scoped RBAC only -- no workload, no
 # namespace, nothing to fence. The bridge itself runs on an Oracle instance outside the cluster
@@ -1757,14 +1757,14 @@ metadata:
   name: rbac-identity
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/rbac-identity
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
@@ -1772,14 +1772,14 @@ metadata:
   name: rbac-floor
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/rbac-floor
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
 ---
 # The break-glass bridge's ClusterRoleBinding. Kept apart from the row above on purpose: this one
 # cannot apply until terraform publishes bridge-instance-ocid, and for two days it took the estate's
@@ -1790,7 +1790,7 @@ metadata:
   name: rbac
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: rbac-identity
   sourceRef:
@@ -1799,7 +1799,7 @@ spec:
   path: ./platform/rbac
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
   # The bridge's instance OCID, published to the vault by terraform and synced here by External
   # Secrets. optional: false on purpose -- if the identity is missing this reconcile must fail
   # loudly, because a binding rendered with an empty subject grants nothing and says nothing.
@@ -1822,7 +1822,7 @@ metadata:
   name: jit
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   dependsOn:
     - name: rbac-floor
   sourceRef:
@@ -1831,7 +1831,7 @@ spec:
   path: ./platform/jit
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
   # public-door.yaml routes `otto.${ESTATE_ZONE}`, and the zone is one value in
   # clusters/*/estate-config.yaml (R46) that only Flux's variable substitution can fill in. This
   # row declared none, so Flux handed the API the literal and the API refused it:
@@ -1878,7 +1878,7 @@ metadata:
   name: nodesoftware-operator
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1903,7 +1903,7 @@ spec:
   # image automation and a `$imagepolicy` marker in kustomization.yaml (cyrus, hermes-agent
   # and ten more already use it). A pull secret is referenced by name in a pod spec, never
   # substituted as text.
-  timeout: 10m
+  timeout: 2m
   healthChecks:
     - apiVersion: apps/v1
       kind: Deployment
@@ -1922,7 +1922,7 @@ metadata:
   name: gvisor-runtime
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -1931,7 +1931,7 @@ spec:
   dependsOn:
     - name: nodesoftware-operator
   wait: true
-  timeout: 5m
+  timeout: 2m
 ---
 # crew#846: the fourth question estate-security-scan asks (platform/trivy) -- container image and
 # cluster vulnerability scanning, which the estate ran nowhere before this row.
@@ -1941,13 +1941,13 @@ metadata:
   name: trivy
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/trivy
   prune: true
-  timeout: 15m
+  timeout: 2m
   healthChecks:
     - apiVersion: helm.toolkit.fluxcd.io/v2
       kind: HelmRelease
@@ -1967,11 +1967,11 @@ metadata:
   name: cross-node-drill
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/cross-node-drill
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m

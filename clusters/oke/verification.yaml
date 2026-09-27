@@ -11,14 +11,14 @@ metadata:
   name: verification
   namespace: flux-system
 spec:
-  interval: 10m
+  interval: 30s
   sourceRef:
     kind: GitRepository
     name: flux-system
   path: ./platform/verification
   prune: true
   wait: false
-  timeout: 10m
+  timeout: 2m
   # external-secrets brings the CRD, secret-store the ClusterSecretStore the probe asks through,
   # backstage-namespace the namespace the probe sits in beside its control (backstage-env).
   dependsOn:

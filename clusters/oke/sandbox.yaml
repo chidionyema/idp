@@ -13,8 +13,8 @@ metadata:
   name: sandbox-launch
   namespace: flux-system
 spec:
-  interval: 10m
-  retryInterval: 1m
+  interval: 30s
+  retryInterval: 30s
   dependsOn:
     - name: edge
     - name: kyverno
@@ -24,7 +24,7 @@ spec:
   path: ./platform/sandbox/launch
   prune: true
   wait: true
-  timeout: 5m
+  timeout: 2m
   postBuild:
     substituteFrom:
       - kind: ConfigMap
