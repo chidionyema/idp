@@ -102,6 +102,10 @@ func (c *Client) stream(ctx context.Context, msgs []Message, onDelta func(string
 	if c.APIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+c.APIKey)
 	}
+	// Marks the POST replayable without sending the header (net/http: a nil value), so a pooled
+	// connection the router closed while idle is retried on a fresh one instead of failing the
+	// turn. 2026-09-27 a gate turn went silent on "connection reset by peer" 63 ms after the final.
+	req.Header["X-Idempotency-Key"] = nil
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
