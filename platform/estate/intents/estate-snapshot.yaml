@@ -1,0 +1,17 @@
+name: estate-snapshot
+description: >-
+  The estate's size and scale in one read, every number measured at run time and none typed in:
+  code we wrote (own repos only; cloned repos are listed and excluded), GitHub (repos, PRs, CI
+  runs over 30 days), the idp platform as declared in git (components, workflows, tools, intents,
+  tests, Kubernetes objects, router lanes), the live cluster (nodes, pods, deployments, Flux
+  readiness with names), this laptop (agents, ports, disk) and the knowledge graphs. An unreadable
+  source is BLIND with the reason, never zero; exit 3 when any section is BLIND. Writes
+  ~/.estate/snapshots/<utc>.json plus latest.json and latest.md. Takes about three minutes.
+class: read
+args:
+  repo: {type: string, default: "~/Documents/code/idp"}
+halt_on_failure: true
+steps:
+  - name: estate-snapshot
+    timeout: 900
+    cmd: cd <<repo>> && bin/estate-snapshot
