@@ -48,6 +48,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
+async def _bus_reachable(nats_url: str) -> dict:
+    """A TCP connect to the bus, bounded at 0.5s: reachable or not, and why."""
+    if not nats_url:
+        return {"reachable": False, "reason": "NATS_URL is unset"}
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    u = urlparse(nats_url)
+    try:
+        _r, w = await asyncio.wait_for(
+            asyncio.open_connection(u.hostname, u.port or 4222), timeout=0.5
+        )
+        w.close()
+        return {"reachable": True, "url": nats_url}
+    except Exception as exc:  # noqa: BLE001 - the reason is the answer
+        return {"reachable": False, "url": nats_url, "reason": type(exc).__name__}
+
+
 def build_app() -> FastAPI:
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
@@ -165,8 +182,11 @@ def build_app() -> FastAPI:
         return JSONResponse(content=result, status_code=status)
 
     @app.get("/healthz")
-    def healthz():
-        return {"ok": True}
+    async def healthz():
+        # `ok` is liveness and stays true; `bus` says whether the estate bus answers. 2026-09-27
+        # the laptop's NATS was never installed, this answered {"ok": true} throughout, and every
+        # voice turn and the board's live stream went without it with nobody told.
+        return {"ok": True, "bus": await _bus_reachable(os.environ.get("NATS_URL", ""))}
 
     @app.get("/metrics")
     def metrics_handler():
