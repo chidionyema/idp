@@ -31,9 +31,10 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -uo pipefail
-          if out=$(python3 bin/idp-max-open-prs-gate 2>&1); then echo "$out"; exit 0; fi
+          out=$(python3 bin/idp-max-open-prs-gate 2>&1); rc=$?
           echo "$out"
-          case "$out" in *BLIND*) echo "::error::cannot read open PRs"; exit 1 ;; esac
+          [ "$rc" = 0 ] && exit 0
+          [ "$rc" = 1 ] || { echo "::error::cannot read open PRs (rc=$rc)"; exit 1; }
           gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "Closed by pr-cap: the repo is over its open-PR cap (5 non-bot). Your branch is untouched. Land or consolidate an open PR, then reopen this one.
 
           \`\`\`
