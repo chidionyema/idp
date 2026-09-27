@@ -137,14 +137,17 @@ def run_steps(conn, ticket_id, intent, args):
         cmd = interpolate(cmd_tmpl, args)
         log(f"[step {idx+1}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
 
+        # A step may name its own ceiling: a benchmark or a browser test outlives the default.
+        limit = int(step.get("timeout", 120))
         t0 = datetime.now(timezone.utc)
+        result = None
         try:
             result = subprocess.run(  # noqa: S602
-                cmd, shell=True, capture_output=True, text=True, timeout=120
+                cmd, shell=True, capture_output=True, text=True, timeout=limit
             )
             rc = result.returncode
         except subprocess.TimeoutExpired:
-            log("  TIMEOUT (120s)")
+            log(f"  TIMEOUT ({limit}s)")
             rc = 124
         except Exception as e:
             log(f"  ERROR: {e}")
@@ -156,19 +159,19 @@ def run_steps(conn, ticket_id, intent, args):
         if rc != 0:
             failed += 1
             log(f"  exit {rc}  ({dur}ms)")
-            if result.stderr:
+            if result and result.stderr:
                 for line in result.stderr.strip().splitlines()[-20:]:
                     log(f"  stderr: {line}")
             # Whole output, pass or fail: a truncated or suppressed diagnostic is a blind agent
             # (2026-09-26: net-forensics lost 96 of 116 lines and every failed step printed nothing).
-            if result.stdout:
+            if result and result.stdout:
                 print(result.stdout.rstrip("\n"))  # stdout — agent captures this
             if on_fail == "halt":
                 close_ticket(conn, ticket_id, "halted", f"step {idx+1} failed")
                 return "halted"
         else:
             log(f"  ok  ({dur}ms)")
-            if result.stdout:
+            if result and result.stdout:
                 print(result.stdout.rstrip("\n"))  # stdout — agent captures this
 
     status = "ok" if failed == 0 else "broken"
@@ -370,7 +373,10 @@ if __name__ == "__main__":
     elif harness_name and not intent_name:
         # Could be intent name or unknown harness
         if (INTENTS / f"{harness_name}.yaml").exists():
-            cmd_run(harness_name, raw_args)
+            # The exit code carries the verdict: a halted or broken intent that exits 0 reads as
+            # a pass to every caller (estate_invoke judges by it), which makes each intent a gate
+            # that cannot fail.
+            sys.exit(0 if cmd_run(harness_name, raw_args) == "ok" else 1)
         else:
             log(f"ERROR: unknown harness or intent: {harness_name}")
             log("usage: estate-execute <harness> --intent=<name>  # harness mode")
@@ -378,7 +384,7 @@ if __name__ == "__main__":
             log("       estate-execute --list")
             sys.exit(1)
     elif intent_name:
-        cmd_run(intent_name, raw_args)
+        sys.exit(0 if cmd_run(intent_name, raw_args) == "ok" else 1)
     else:
         cmd_list()
         sys.exit(0)
