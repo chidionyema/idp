@@ -167,3 +167,64 @@ def test_an_empty_patch_is_a_failure_not_a_quiet_success(tmp_path):
     r = _repo(tmp_path)
     p = _refusal_step(r, "", tmp_path)
     assert p.returncode != 0 and "changed nothing" in p.stdout
+
+
+# The agent step itself, run with a stand-in harness on PATH. Run 36317202633 died here in 0.75s
+# with no message: the structural tests above passed, and the step had never executed.
+FAKE = {
+    "pi": 'for a; do [ "$prev" = --session-dir ] && d="$a"; prev="$a"; done\n'
+    'echo "{}" > "$d/2026-09-27T00-00-00Z_s.jsonl"\necho there >> a.txt\n',
+    "claude": 'mkdir -p "$HOME/.claude/projects/p"\necho "{}" > "$HOME/.claude/projects/p/s.jsonl"\n'
+    "echo there >> a.txt\n",
+}
+
+
+def _agent_step(
+    tmp_path: Path, harness: str, fake: str | None
+) -> tuple[subprocess.CompletedProcess, Path]:
+    r = _repo(tmp_path)
+    (r / "a.txt").write_text("hi\n")
+    subprocess.run(["git", "-C", str(r), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(r), "commit", "-qm", "a"], check=True)
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    for name, body in FAKE.items():
+        f = bin_ / name
+        f.write_text("#!/bin/bash\n" + (fake if fake is not None else body))
+        f.chmod(0o755)
+    temp, home = tmp_path / "runner", tmp_path / "home"
+    temp.mkdir()
+    home.mkdir()
+    env = {
+        "PATH": f"{bin_}:/usr/bin:/bin",
+        "HOME": str(home),
+        "RUNNER_TEMP": str(temp),
+        "HARNESS": harness,
+        "TASK": "append there",
+        "CLAUDE_CODE_OAUTH_TOKEN": "x",
+        "MINIMAX_API_KEY": "x",
+    }
+    run = _step("agent", "Run the agent")["run"]
+    p = subprocess.run(
+        ["bash", "-e", "-c", run],
+        cwd=r,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    return p, temp / "out"
+
+
+@pytest.mark.parametrize("harness", ["pi", "claude-code"])
+def test_the_agent_step_hands_on_a_transcript_and_the_patch(tmp_path, harness):
+    p, out = _agent_step(tmp_path, harness, None)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (out / "transcript.jsonl").read_text() == "{}\n"
+    assert "+there" in (out / "patch").read_text()
+
+
+def test_a_harness_that_leaves_no_transcript_says_why(tmp_path):
+    p, _ = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
+    assert p.returncode == 1
+    assert "harness exit 1" in p.stdout and "no API key for minimax" in p.stdout
