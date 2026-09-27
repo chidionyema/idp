@@ -45,18 +45,63 @@ def test_the_floor_is_production_eso_crds_and_priority_classes(monkeypatch):
         r"chart: external-secrets\s+version: *(\S+)",
         (REPO / "platform/secrets/external-secrets.yaml").read_text(),
     ).group(1)
-    src = next(o for o in applied if o["kind"] == "GitRepository")
-    assert src["spec"]["ref"] == {"tag": "v" + pinned}
+    srcs = {
+        o["metadata"]["name"]: o["spec"]
+        for o in applied
+        if o["kind"] == "GitRepository"
+    }
+    assert srcs["shadow-floor-eso"]["ref"] == {"tag": "v" + pinned}
     ks = {
         o["spec"]["path"]: o["spec"]["sourceRef"]["name"]
         for o in applied
         if o["kind"] == "Kustomization"
     }
     assert ks == {
-        "./deploy/crds": src["metadata"]["name"],
+        "./deploy/crds": "shadow-floor-eso",
+        "./config/crd/experimental": "shadow-floor-gateway-api",
+        "./config/crd": "shadow-floor-keda-http",
         "./platform/priority-classes": "shadow",
     }
     assert (REPO / "platform/priority-classes/priorityclasses.yaml").exists()
+
+
+def test_the_floor_takes_gateway_api_and_keda_http_crds_at_production_versions(
+    monkeypatch,
+):
+    """2026-09-27 after idp#4510: platform/llm failed on no kind "HTTPRoute", and
+    unified-memory-server on no kind "HTTPScaledObject". Production lays both."""
+    shadow = load_shadow()
+    applied = []
+    monkeypatch.setattr(
+        shadow.subprocess,
+        "run",
+        lambda argv, input=None, **kw: (
+            applied.append(json.loads(input))
+            or subprocess.CompletedProcess(argv, 0, "", "")
+        ),
+    )
+    monkeypatch.setattr(shadow, "wait_ks", lambda name, deadline: (True, "", []))
+    assert shadow.flux_floor(0) == []
+    srcs = {
+        o["metadata"]["name"]: o["spec"]
+        for o in applied
+        if o["kind"] == "GitRepository"
+    }
+
+    ingress = (REPO / "clusters/oke/ingress.yaml").read_text()
+    gw_tag = re.search(r"gateway-api\s+ref:\s+tag: *(\S+)", ingress).group(1)
+    assert srcs["shadow-floor-gateway-api"]["url"] in ingress
+    assert srcs["shadow-floor-gateway-api"]["ref"] == {"tag": gw_tag}
+    assert "path: ./config/crd/experimental" in ingress
+
+    keda = (REPO / "platform/keda/keda.yaml").read_text()
+    http = re.search(r"chart: keda-add-ons-http\s+version: *(\S+)", keda).group(1)
+    assert srcs["shadow-floor-keda-http"]["ref"] == {"tag": "v" + http}
+    for spec in srcs.values():
+        assert spec["ignore"].startswith("/*\n!/")
+
+    # platform/llm's HTTPRoute is on main; HTTPScaledObject arrives with unified-memory's branch
+    assert "kind: HTTPRoute" in (REPO / "platform/llm/httproute.yaml").read_text()
 
 
 def test_a_floor_that_does_not_converge_fails_the_run_before_any_path(monkeypatch):

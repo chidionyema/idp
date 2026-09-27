@@ -349,40 +349,86 @@ def flux_kustomization(name, path, source="shadow"):
 # the change. Flux lays the floor too; this process still applies nothing it proves.
 ESO_ROW = os.path.join(REPO, "platform", "secrets", "external-secrets.yaml")
 ESO_GIT = "https://github.com/external-secrets/external-secrets"
+# MEASURED 2026-09-27 once the vault stand-in landed (idp#4510): platform/llm then failed on
+# `no matches for kind "HTTPRoute"` and unified-memory-server on `no matches for kind
+# "HTTPScaledObject"`. Production has both: clusters/oke/ingress.yaml lays the Gateway API CRDs,
+# platform/keda/keda.yaml installs the KEDA http add-on. The shadow takes their CRDs, at the
+# versions production pins, and nothing else of either.
+GATEWAY_ROW = os.path.join(REPO, "clusters", "oke", "ingress.yaml")
+KEDA_ROW = os.path.join(REPO, "platform", "keda", "keda.yaml")
+
+
+def pinned(row, pattern, what):
+    with open(row) as f:
+        m = re.search(pattern, f.read())
+    if not m:
+        raise RuntimeError(f"no {what} version in {row}")
+    return m.group(1)
 
 
 def eso_version():
     """The ESO chart version production pins, so the shadow's CRDs are production's CRDs."""
-    with open(ESO_ROW) as f:
-        m = re.search(r"chart: external-secrets\s+version: *([0-9][^\s]*)", f.read())
-    if not m:
-        raise RuntimeError(f"no external-secrets chart version in {ESO_ROW}")
-    return m.group(1)
+    return pinned(
+        ESO_ROW,
+        r"chart: external-secrets\s+version: *([0-9][^\s]*)",
+        "external-secrets chart",
+    )
+
+
+def floor_sources():
+    """(GitRepository name, url, tag, CRD path) for every CRD family production lays first."""
+    return [
+        ("shadow-floor-eso", ESO_GIT, "v" + eso_version(), "./deploy/crds"),
+        (
+            "shadow-floor-gateway-api",
+            "https://github.com/kubernetes-sigs/gateway-api",
+            pinned(
+                GATEWAY_ROW,
+                r"gateway-api\s+ref:\s+tag: *(v[0-9][^\s]*)",
+                "gateway-api tag",
+            ),
+            "./config/crd/experimental",
+        ),
+        (
+            "shadow-floor-keda-http",
+            "https://github.com/kedacore/http-add-on",
+            "v"
+            + pinned(
+                KEDA_ROW,
+                r"chart: keda-add-ons-http\s+version: *([0-9][^\s]*)",
+                "keda-add-ons-http chart",
+            ),
+            "./config/crd",
+        ),
+    ]
 
 
 def flux_floor(deadline):
     """Have Flux lay what production has under every platform row. Returns the failures."""
-    src = {
-        "apiVersion": "source.toolkit.fluxcd.io/v1",
-        "kind": "GitRepository",
-        "metadata": {"name": "shadow-floor-eso", "namespace": "flux-system"},
-        "spec": {
-            "interval": "1h",
-            "url": ESO_GIT,
-            "ref": {"tag": "v" + eso_version()},
-            "ignore": "/*\n!/deploy/crds/\n",
-        },
-    }
-    subprocess.run(
-        ["kubectl", "apply", "-f", "-"],
-        input=json.dumps(src),
-        capture_output=True,
-        text=True,
+    floor = []
+    for src_name, url, tag, path in floor_sources():
+        src = {
+            "apiVersion": "source.toolkit.fluxcd.io/v1",
+            "kind": "GitRepository",
+            "metadata": {"name": src_name, "namespace": "flux-system"},
+            "spec": {
+                "interval": "1h",
+                "url": url,
+                "ref": {"tag": tag},
+                # the two levels production re-includes: /deploy/crds/, /config/crd/
+                "ignore": "/*\n!/" + "/".join(path[2:].split("/")[:2]) + "/\n",
+            },
+        }
+        subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=json.dumps(src),
+            capture_output=True,
+            text=True,
+        )
+        floor.append((src_name + "-crds", path, src_name))
+    floor.append(
+        ("shadow-floor-priority-classes", "./platform/priority-classes", "shadow")
     )
-    floor = [
-        ("shadow-floor-eso-crds", "./deploy/crds", "shadow-floor-eso"),
-        ("shadow-floor-priority-classes", "./platform/priority-classes", "shadow"),
-    ]
     for name, path, source in floor:
         flux_kustomization(name, path, source)
     failed = []
