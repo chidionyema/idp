@@ -1,0 +1,21 @@
+name: pr-list
+description: >
+  List pull requests. Default: open PRs on chidioniema/idp.
+  Use --state=open|closed|merged|all to filter.
+args:
+  state:  {type: string, default: "open"}
+  repo:   {type: string, default: "chidioniema/idp"}
+  limit:  {type: int,    default: 10}
+steps:
+  - name: list
+    cmd: |
+      gh pr list --state {{state}} --repo {{repo}} --limit {{limit}} --json number,title,headRefName,baseRefName,isDraft,additions,deletions,changedFiles,updatedAt 2>/dev/null |
+      python3 -c "
+      import json,sys
+      prs=json.load(sys.stdin)
+      print(f'PRs ({len(prs)}, state={{state}}, repo={{repo}}):')
+      for p in prs:
+      draft='[DRAFT]' if p['isDraft'] else ''
+      print(f'  #{p[\"number\"]} {draft} {p[\"title\"][:60]}')
+      print(f'    {p[\"headRefName\"]} -> {p[\"baseRefName\"]} | +{p[\"additions\"]}/-{p[\"deletions\"]} files={p[\"changedFiles\"]} | {p[\"updatedAt\"][:10]}')
+      "

@@ -356,6 +356,12 @@ ESO_GIT = "https://github.com/external-secrets/external-secrets"
 # versions production pins, and nothing else of either.
 GATEWAY_ROW = os.path.join(REPO, "clusters", "oke", "ingress.yaml")
 KEDA_ROW = os.path.join(REPO, "platform", "keda", "keda.yaml")
+# MEASURED 2026-09-27: platform/llm (idp#4516) failed on `no matches for kind "Middleware" in
+# version "traefik.io/v1alpha1"` and platform/calico/raw (idp#4375) on `no matches for kind
+# "GlobalNetworkPolicy" in version "crd.projectcalico.org/v1"`. Production has both: the edge row's
+# traefik chart installs its CRDs, and calico-node runs the version the raw manifest pins.
+TRAEFIK_ROW = os.path.join(REPO, "platform", "edge", "traefik.yaml")
+CALICO_ROW = os.path.join(REPO, "platform", "calico", "raw-migration", "calico.yaml")
 
 
 def pinned(row, pattern, what):
@@ -399,6 +405,21 @@ def floor_sources():
                 "keda-add-ons-http chart",
             ),
             "./config/crd",
+        ),
+        (
+            "shadow-floor-traefik",
+            "https://github.com/traefik/traefik-helm-chart",
+            "v"
+            + pinned(
+                TRAEFIK_ROW, r"chart: traefik\s+version: *([0-9][^\s]*)", "traefik chart"
+            ),
+            "./traefik/crds",
+        ),
+        (
+            "shadow-floor-calico",
+            "https://github.com/projectcalico/calico",
+            pinned(CALICO_ROW, r"calico/node:(v[0-9][^\s\"]*)", "calico/node image"),
+            "./libcalico-go/config/crd",
         ),
     ]
 
