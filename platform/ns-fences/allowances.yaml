@@ -619,6 +619,12 @@ flows:
     # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
     # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
     ingress_apiserver: [9443]
+    # kubelet: spire-agent runs on the pod network and its k8s workload attestor reads its own
+    # node's kubelet (<node>:10250/pods) to learn which pod is asking for an SVID. Default-deny
+    # dropped it: measured 2026-09-27T00:10Z, agent "Get https://10.0.148.221:10250/pods: context
+    # deadline exceeded", every attestation "workload attestation failed", so no workload in the
+    # estate got an identity and spire-spiffe-oidc-discovery-provider sat in Init:Error.
+    egress_kubelet: true
   via-negativa:
     # llm: the proxy sits in front of litellm -- every agent tool call it intercepts is then
     # forwarded to the router (platform/via-negativa/proxy.yaml:49, UPSTREAM_URL), and the RCA
