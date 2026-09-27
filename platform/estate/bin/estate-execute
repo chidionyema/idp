@@ -14,6 +14,8 @@ import subprocess
 import sys
 import os
 import shlex
+import json
+import atexit
 from pathlib import Path
 from datetime import datetime, timezone
 import uuid
@@ -25,6 +27,10 @@ INTENTS = HOME / ".estate" / "intents"
 
 def log(*args, **kw):
     print(*args, file=sys.stderr, **kw)
+
+# ---- Step output cache (keyed by step name) ---------------------------------
+# Filled by run_steps, consumed by subsequent `from:` steps
+STEP_OUTPUTS = {}  # {step_name: {"stdout": str, "rc": int, "json": obj}}
 
 # ---- DB init ------------------------------------------------------------
 def init_db():
@@ -124,59 +130,180 @@ def interpolate(cmd, args):
         cmd = cmd.replace("<<" + name + ">>", str(val))
     return cmd
 
+# ---- Composition helpers --------------------------------------------------
+def _resolve_from(prev_name, prev_output):
+    """Parse previous step output into a dict inject."""
+    if prev_output.get("json"):
+        return {"_from_json": prev_output["json"]}
+    try:
+        return {"_from_json": json.loads(prev_output["stdout"])}
+    except (json.JSONDecodeError, TypeError):
+        return {"_from_text": prev_output["stdout"]}
+
+
+def _inject_from(step, step_outputs, args):
+    """Merge previous step output into args based on `from:` field."""
+    from_ref = step.get("from")
+    if not from_ref:
+        return
+    # from: "step-name" or from: ["step1", "step2"]
+    names = [from_ref] if isinstance(from_ref, str) else from_ref
+    for name in names:
+        prev = step_outputs.get(name)
+        if prev:
+            args.update(_resolve_from(name, prev))
+
+
+def _read_intent(name):
+    """Load an intent YAML by name."""
+    path = INTENTS / f"{name}.yaml"
+    if not path.exists():
+        # Try with dashes stripped for dot-notation names (hypotheses.race)
+        alt = INTENTS / f"{name.replace('.', '-')}.yaml"
+        if alt.exists():
+            path = alt
+    if not path.exists():
+        raise FileNotFoundError(f"intent not found: {name}")
+    with open(path) as f:
+        import yaml
+        return yaml.safe_load(f), path.stem
+
+
 # ---- Step runner --------------------------------------------------------
-def run_steps(conn, ticket_id, intent, args):
+def run_steps(conn, ticket_id, intent, args, depth=0):
     steps = intent.get("steps", [])
     halt_on_fail = intent.get("halt_on_failure", True)
     failed = 0
 
+    # Merge step_outputs into args for the duration of this intent
+    for name, out in STEP_OUTPUTS.items():
+        if name not in args:
+            args[name] = out.get("stdout", "")
+
     for idx, step in enumerate(steps):
-        cmd_tmpl = step.get("cmd", "")
+        step_name = step.get("name", f"step-{idx+1}")
         on_fail = step.get("on_fail", "halt" if halt_on_fail else "continue")
 
-        cmd = interpolate(cmd_tmpl, args)
-        log(f"[step {idx+1}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+        # Inject previous step output
+        _inject_from(step, STEP_OUTPUTS, args)
 
-        # A step may name its own ceiling: a benchmark or a browser test outlives the default.
-        limit = int(step.get("timeout", 120))
-        t0 = datetime.now(timezone.utc)
-        result = None
-        try:
-            result = subprocess.run(  # noqa: S602
-                cmd, shell=True, capture_output=True, text=True, timeout=limit
-            )
-            rc = result.returncode
-        except subprocess.TimeoutExpired:
-            log(f"  TIMEOUT ({limit}s)")
-            rc = 124
-        except Exception as e:
-            log(f"  ERROR: {e}")
+        # ---- COMPOSITION: `intent:` field references another intent --------
+        if "intent" in step:
+            sub_name = step["intent"]
+            sub_args = dict(args)
+            # Merge step-level args
+            for k, v in step.get("args", {}).items():
+                if isinstance(v, str) and v.startswith("{{"):
+                    # interpolate from current args
+                    sub_args[k] = interpolate(v, args)
+                else:
+                    sub_args[k] = v
+
+            indent = "  " * (depth + 1)
+            log(f"[step {idx+1} / {step_name}] COMPOSE → {sub_name}")
+            if depth > 4:
+                log(f"{indent}ERROR: composition depth exceeded (max 5)")
+                rc = 1
+                dur = 0
+            else:
+                t0 = datetime.now(timezone.utc)
+                try:
+                    rc, sub_stdout = _run_composed(sub_name, sub_args, depth + 1)
+                    dur = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+                    stdout = sub_stdout
+                except FileNotFoundError as e:
+                    log(f"{indent}ERROR: {e}")
+                    rc = 1
+                    dur = 0
+                    stdout = ""
+            # Cache the output
+            try:
+                j = json.loads(stdout)
+                STEP_OUTPUTS[step_name] = {"stdout": stdout, "rc": rc, "json": j}
+            except (json.JSONDecodeError, TypeError):
+                STEP_OUTPUTS[step_name] = {"stdout": stdout, "rc": rc, "json": None}
+            log(f"{indent}  exit {rc}  ({dur}ms)")
+
+        # ---- PRIMITIVE: `cmd:` field runs shell ---------------------------
+        elif "cmd" in step:
+            cmd_tmpl = step["cmd"]
+            cmd = interpolate(cmd_tmpl, args)
+            log(f"[step {idx+1} / {step_name}] {cmd[:80]}{'...' if len(cmd) > 80 else ''}")
+
+            t0 = datetime.now(timezone.utc)
+            step_timeout = int(step.get("timeout", 120))
+            stderr = ""
+            try:
+                result = subprocess.run(  # noqa: S602
+                    cmd, shell=True, capture_output=True, text=True, timeout=step_timeout
+                )
+                rc = result.returncode
+                stdout = result.stdout
+                stderr = result.stderr
+            except subprocess.TimeoutExpired:
+                log(f"  TIMEOUT ({step_timeout}s)")
+                rc = 124
+                stdout = ""
+            except Exception as e:
+                log(f"  ERROR: {e}")
+                rc = 1
+                stdout = ""
+
+            dur = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
+            # Cache the output
+            try:
+                j = json.loads(stdout)
+                STEP_OUTPUTS[step_name] = {"stdout": stdout, "rc": rc, "json": j}
+            except (json.JSONDecodeError, TypeError):
+                STEP_OUTPUTS[step_name] = {"stdout": stdout, "rc": rc, "json": None}
+            log_step(conn, ticket_id, idx, cmd, rc, dur)
+            log(f"  exit {rc}  ({dur}ms)")
+
+            # Whole output, pass or fail: a truncated or suppressed diagnostic is a blind agent
+            # (2026-09-26: net-forensics lost 96 of 116 lines and every failed step printed nothing).
+            if rc != 0 and stderr:
+                for line in stderr.strip().splitlines()[-20:]:
+                    log(f"  stderr: {line}")
+            if stdout:
+                print(stdout.rstrip("\n"))
+
+        else:
+            log(f"[step {idx+1} / {step_name}] ERROR: step has no `cmd` or `intent` field")
             rc = 1
-
-        dur = int((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
-        log_step(conn, ticket_id, idx, cmd, rc, dur)
 
         if rc != 0:
             failed += 1
-            log(f"  exit {rc}  ({dur}ms)")
-            if result and result.stderr:
-                for line in result.stderr.strip().splitlines()[-20:]:
-                    log(f"  stderr: {line}")
-            # Whole output, pass or fail: a truncated or suppressed diagnostic is a blind agent
-            # (2026-09-26: net-forensics lost 96 of 116 lines and every failed step printed nothing).
-            if result and result.stdout:
-                print(result.stdout.rstrip("\n"))  # stdout — agent captures this
             if on_fail == "halt":
-                close_ticket(conn, ticket_id, "halted", f"step {idx+1} failed")
+                close_ticket(conn, ticket_id, "halted", f"step {idx+1} ({step_name}) failed")
                 return "halted"
-        else:
-            log(f"  ok  ({dur}ms)")
-            if result and result.stdout:
-                print(result.stdout.rstrip("\n"))  # stdout — agent captures this
 
     status = "ok" if failed == 0 else "broken"
     close_ticket(conn, ticket_id, status)
     return status
+
+
+def _run_composed(intent_name, args, depth=0):
+    """Run a sub-intent, return (rc, stdout)."""
+    sub_intent, _ = _read_intent(intent_name)
+    sub_args = resolve_args(sub_intent, [])  # base resolve
+    # Override with passed args
+    for k, v in args.items():
+        if k in sub_intent.get("args", {}):
+            sub_args[k] = v
+    sub_args.update({k: v for k, v in args.items()
+                    if k not in sub_args and not k.startswith("_")})
+
+    conn = init_db()
+    t_id = f"SUB-{uuid.uuid4().hex[:8]}"
+    status = run_steps(conn, t_id, sub_intent, sub_args, depth=depth)
+    rc = 0 if status == "ok" else 1
+    # Collect stdout from cached outputs
+    outputs = STEP_OUTPUTS
+    stdout_parts = []
+    for _name, out in outputs.items():
+        if out.get("stdout"):
+            stdout_parts.append(out["stdout"])
+    return rc, "\n".join(stdout_parts)
 
 # ---- Commands -----------------------------------------------------------
 def cmd_list():
@@ -192,7 +319,25 @@ def cmd_list():
             log(f"    {desc}")
 
 def cmd_run(intent_name, raw_args):
-    intent_path = INTENTS / f"{intent_name}.yaml"
+    # Handle --intent=<name> when called as: estate-execute pi --intent=<name>
+    # The main() dispatcher sets harness_name='pi' intent_name=None in this case.
+    # We resolve intent_name from raw_args.
+    if not intent_name:
+        for arg in raw_args:
+            if arg.startswith("--intent="):
+                intent_name = arg.split("=", 1)[1]
+                raw_args = [a for a in raw_args if a is not arg]
+                break
+    if not intent_name:
+        log("ERROR: no intent specified")
+        sys.exit(1)
+
+    # Normalize: replace dots with dashes for filename lookup
+    lookup_name = intent_name.replace(".", "-")
+    intent_path = INTENTS / f"{lookup_name}.yaml"
+    if not intent_path.exists():
+        # Try original name (for intents with dashes in their name field)
+        intent_path = INTENTS / f"{intent_name}.yaml"
     if not intent_path.exists():
         log(f"ERROR: unknown intent: {intent_name}")
         sys.exit(1)
@@ -206,6 +351,7 @@ def cmd_run(intent_name, raw_args):
     ticket_id = open_ticket(conn, intent_name, "direct")
     log(f"[estate] intent={intent_name}  ticket={ticket_id}")
 
+    STEP_OUTPUTS.clear()
     status = run_steps(conn, ticket_id, intent, args)
     log(f"[estate] status={status}")
     return status
@@ -281,7 +427,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     if Path("/etc/pf.anchors/estate-session").exists():
         import subprocess as _sub
         r = _sub.run(
-            ["sudo", "pfctl", "-a", "estate-session", "-f",
+            ["sudo", "pfctl", "-a", "estate-session", "-f",  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
              "/etc/pf.anchors/estate-session"],
             capture_output=True, text=True, timeout=5,
         )
@@ -299,12 +445,16 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
         if pf_loaded:
             import subprocess as _sub
             _sub.run(
-                ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],
+                ["sudo", "pfctl", "-a", "estate-session", "-F", "all"],  # noqa: S607 -- sudo/pfctl resolve from PATH on purpose
                 capture_output=True, timeout=5,
             )
     atexit.register(cleanup)
 
+    # Reset step outputs for fresh session
+    STEP_OUTPUTS.clear()
+
     # --- Run intent steps -----------------------------------------------
+    STEP_OUTPUTS.clear()
     status = run_steps(conn, ticket_id, intent, args)
     log(f"[estate] status={status}")
 
@@ -333,10 +483,30 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
 # ---- Main ---------------------------------------------------------------
 if __name__ == "__main__":
     import shutil
-    import atexit
 
     if len(sys.argv) == 1 or sys.argv[1] == "--list":
         cmd_list()
+        sys.exit(0)
+
+    if sys.argv[1] == "--show" and len(sys.argv) >= 3:
+        import yaml
+        name = sys.argv[2]
+        path = INTENTS / f"{name}.yaml"
+        if not path.exists():
+            log(f"ERROR: unknown intent: {name}")
+            sys.exit(1)
+        with open(path) as f:
+            d = yaml.safe_load(f)
+        log(f"name: {name}")
+        log(f"description: {d.get('description', '')}")
+        if d.get('args'):
+            log("args:")
+            for k, v in d['args'].items():
+                log(f"  {k}: {v}")
+        if d.get('steps'):
+            log(f"steps: {len(d['steps'])}")
+            for i, s in enumerate(d['steps']):
+                log(f"  {i+1}. {s.get('name', '?')}: {s.get('cmd', '')[:60]}")
         sys.exit(0)
 
     harness_name = None
@@ -373,9 +543,6 @@ if __name__ == "__main__":
     elif harness_name and not intent_name:
         # Could be intent name or unknown harness
         if (INTENTS / f"{harness_name}.yaml").exists():
-            # The exit code carries the verdict: a halted or broken intent that exits 0 reads as
-            # a pass to every caller (estate_invoke judges by it), which makes each intent a gate
-            # that cannot fail.
             sys.exit(0 if cmd_run(harness_name, raw_args) == "ok" else 1)
         else:
             log(f"ERROR: unknown harness or intent: {harness_name}")
