@@ -177,9 +177,13 @@ def verdict(engine: str, xs: list[float], n: int) -> int:
         return BLIND
     p50, p95 = statistics.median(xs), p(xs, 95)
     red = p50 > P50 or p95 > P95 or len(xs) < n
+    # The load is printed, never used to excuse a result: 2026-09-27 one run went from p50 2.0 s
+    # to 7.5 s while other builds pushed the 1-minute load to 149 on a 4-thread i5.
+    load = os.getloadavg()[0]
     print(
         f"{engine}: {len(xs)}/{n} answered  p50={p50:.2f}s (limit {P50}s, ultra {ULTRA}s)  "
-        f"p95={p95:.2f}s (limit {P95}s)  -> {'RED' if red else 'GREEN'}"
+        f"p95={p95:.2f}s (limit {P95}s)  load1={load:.0f} cpus={os.cpu_count()}  "
+        f"-> {'RED' if red else 'GREEN'}"
     )
     return 1 if red else 0
 
