@@ -1,0 +1,13 @@
+name: git-sync
+description: >
+  Composite intent. git fetch --all --prune + status summary.
+args:
+  remote: {type: string, default: "origin"}
+  dry_run: {type: bool, default: true}
+steps:
+  - name: fetch
+    cmd: >
+      git fetch --all --prune 2>&1
+  - name: status
+    cmd: >
+      git status --short -b 2>/dev/null | head -10
