@@ -193,3 +193,31 @@ func TestStreamSurvivesResetOfPooledConnection(t *testing.T) {
 		}
 	}
 }
+
+// 2026-09-27 the laptop router was re-rendered without the `voice` lane. voice-router's
+// /healthz kept answering ok while every spoken turn got "the brain did not answer" for two
+// hours. Ready asks the lane itself, so a lane the router cannot serve is not ready.
+func TestReadyIsTheLaneAnsweringNotTheProcessUp(t *testing.T) {
+	var got map[string]any
+	status, body := http.StatusOK, `{"choices":[{"message":{"content":"ok"}}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}))
+	defer srv.Close()
+	c := &Client{BaseURL: srv.URL + "/v1", Model: "voice", HTTP: srv.Client()}
+	if err := c.Ready(context.Background()); err != nil {
+		t.Fatalf("a lane that answers is ready: %v", err)
+	}
+	if got["model"] != "voice" || got["stream"] == true {
+		t.Fatalf("readiness asks the configured lane, unstreamed: %v", got)
+	}
+
+	status = http.StatusBadRequest
+	body = `{"error":{"message":"litellm.BadRequestError: You passed in model=voice. There are no healthy deployments for this model"}}`
+	err := c.Ready(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "no healthy deployments") || !strings.Contains(err.Error(), "voice") {
+		t.Fatalf("a lane the router cannot serve is not ready, and says why: %v", err)
+	}
+}
