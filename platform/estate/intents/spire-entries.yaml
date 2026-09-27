@@ -1,0 +1,27 @@
+name: spire-entries
+description: >
+  Composite intent. List SPIRE ClusterSPIFFEIDs and their SPIFFE IDs.
+args:
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: entries
+    intent: kubectl-list
+    args:
+      resource: clusterspiffeids
+      output: json
+  - name: summary
+    cmd: |
+      python3 -c "
+      import sys,json
+      try:
+      d=json.load(sys.stdin)
+      items=d.get('items',[])
+      print(f'{len(items)} ClusterSPIFFEIDs:')
+      for e in items:
+      name=e['metadata']['name']
+      spiffe=e.get('spec',{}).get('spiffeIdTemplate','?')
+      ns=e['metadata'].get('namespace','cluster')
+      print(f'  {name}: {spiffe}')
+      except Exception as ex:
+      print(f'No ClusterSPIFFEIDs or SPIRE not installed: {ex}')
+      "

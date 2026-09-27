@@ -1,0 +1,29 @@
+name: cluster-storage
+description: >
+  Composite intent. CSI driver issues + unbound/pending PVCs.
+args:
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: csi-drivers
+    cmd: >
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+      get csidrivers -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.metadata.annotations.storage\.kubernetes\.io\/createdby}{"\n"}{end}'
+  - name: pending-pvcs
+    intent: kubectl-list
+    args:
+      resource: pvc
+      all_ns: true
+      output: json
+  - name: storage-usage
+    cmd: |
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+      get persistentvolumeclaims -A -o json 2>/dev/null | python3 -c "
+      import sys,json
+      d=json.load(sys.stdin)
+      items=d.get('items',[])
+      pending=[p for p in items if p['status']['phase'] not in ('Bound','Deleted')]
+      bound=[p for p in items if p['status']['phase']=='Bound']
+      print(f'Total: {len(items)} | Bound: {len(bound)} | Pending: {len(pending)}')
+      for p in pending[:5]:
+      print(f\"  {p['metadata']['namespace']}/{p['metadata']['name']} — {p['status'].get('phase','?')}\")
+      "
