@@ -105,6 +105,7 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+DELIVERY_PATH = "/delivery"
 
 
 def _now() -> str:
