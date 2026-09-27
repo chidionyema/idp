@@ -1,0 +1,8 @@
+name: voice-turns
+description: Read voice-router's turn record -- per-turn timings and outcomes plus their medians -- from GET /voice/turns.
+args:
+  url: {type: string, default: "http://127.0.0.1:8091"}
+halt_on_failure: true
+steps:
+  - name: turns
+    cmd: curl -sf --max-time 5 {{url}}/voice/turns | python3 -m json.tool

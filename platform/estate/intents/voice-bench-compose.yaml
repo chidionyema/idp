@@ -1,0 +1,17 @@
+name: voice-bench-compose
+description: Build the voice bench from source and rank every cached streaming ASR x piper voice at each endpoint silence (licence and WER gates first, then listener wait). Prints the markdown table.
+args:
+  repo: {type: string, default: "~/Documents/code/idp"}
+  silences: {type: string, default: "0.5,0.8"}
+  runs: {type: int, default: 3}
+  models: {type: string, default: "~/.cache/estate-tools/sherpa-models"}
+halt_on_failure: true
+steps:
+  - name: build
+    timeout: 600
+    cmd: |
+      export PATH=$HOME/.cache/estate-tools/go/bin:$PATH GOPATH=$HOME/.cache/estate-tools/gopath
+      cd <<repo>>/platform/voice-router && go build -o /tmp/voice-bench ./cmd/bench
+  - name: compose
+    timeout: 1800
+    cmd: uptime && /tmp/voice-bench -models <<models>> -compose {{silences}} -runs {{runs}}
