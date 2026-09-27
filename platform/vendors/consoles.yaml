@@ -404,7 +404,7 @@ vendors:
         \ https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n   \
         \ timeout: 300\n    max_tokens: 8192\n    input_cost_per_token: 0.0000003\n\
         \    output_cost_per_token: 0.0000012\n  model_info:\n    max_input_tokens:\
-        \ 512000\n- model_name: default\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \ 512000\n- model_name: default\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n- model_name: default\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
@@ -417,7 +417,7 @@ vendors:
         \    api_base: https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n\
         \    timeout: 300\n    max_tokens: 8192\n    input_cost_per_token: 0.0000003\n\
         \    output_cost_per_token: 0.0000012\n  model_info:\n    max_input_tokens:\
-        \ 512000\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \ 512000\n- model_name: fast\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n- model_name: fast\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
@@ -678,7 +678,7 @@ vendors:
         \ 176-million-token accounting hole the minimax row\n# describes: this lane\
         \ costs nothing per token, so $0.0000 a call is the true price.\n# general_settings.max_budget\
         \ still bounds it, and the daily request meter is Groq's.\n- model_name: groq\n\
-        \  litellm_params:\n    model: openai/gpt-oss-120b\n    api_base: https://api.groq.com/openai/v1\n\
+        \  litellm_params:\n    model: openai/openai/gpt-oss-120b\n    api_base: https://api.groq.com/openai/v1\n\
         \    api_key: os.environ/GROQ_API_KEY\n    # Shorter than the paid lanes'\
         \ 300s on purpose. This is the hop a turn reaches\n    # after the lanes above\
         \ it have already spent their own timeouts; a floor that\n    # takes five\
@@ -702,23 +702,23 @@ vendors:
         # quota that got topped up an hour later are all handled by the same mechanism.\n\
         # Verified live 2026-09-15 (`GET /openai/v1/models`, curl, both keys): same\
         \ fourteen-model\n# catalogue as the primary account, `openai/gpt-oss-120b`\
-        \ present on both.\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \ present on both.\n- model_name: groq\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_2\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
+        \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n\n# --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice)\
-        \ ------------------\n# A spoken turn waits on the first words, so this lane\
-        \ is picked for time to the first spoken word: content, not reasoning.\n# Measured\
-        \ 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this\
-        \ model with\n# reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s;\
-        \ gpt-oss-20b at\n# effort low 0.82-1.26s and one empty reply, because it reasons\
-        \ before it speaks.\n# `openai/` is LiteLLM's provider prefix; Groq's own id\
-        \ follows.\n- model_name: voice\n  litellm_params:\n\
-        \    model: openai/qwen/qwen3.8-27b\n    api_base: https://api.groq.com/openai/v1\n\
-        \    api_key: os.environ/GROQ_API_KEY\n    reasoning_effort: none\n    timeout:\
-        \ 20\n    max_tokens: 400\n"
+        \ 131072\n\n# --- voice: the Fleet page's ears and mouth, behind the router\
+        \ so no service holds a vendor key.\n# Measured 2026-09-26 with this key:\
+        \ whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,\n# where\
+        \ the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept\
+        \ its terms once\n# (console.groq.com playground); until then voice-tts answers\
+        \ 400 and the backend speaks locally.\n- model_name: voice-asr\n  litellm_params:\n\
+        \    model: groq/whisper-large-v3-turbo\n    api_key: os.environ/GROQ_API_KEY\n\
+        \    timeout: 20\n  model_info:\n    mode: audio_transcription\n- model_name:\
+        \ voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n\
+        \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
+        \    timeout: 20\n  model_info:\n    mode: audio_speech\n"
   cerebras:
     kind: secret
     secret: SEED_CEREBRAS_API_KEY
