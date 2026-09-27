@@ -31,7 +31,7 @@
 //
 // Every addition is marked ADDED. Nothing below a marker was rewritten.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 // --- ADDED: the estate's own API surface. `plugin://proxy/fleetview/*` is how the Backstage
@@ -47,6 +47,9 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 import { useEstateVoice } from '../../home/useEstateVoice';
 // --- ADDED: an estate intent run by voice, shown on the fleet. ---
 import { cueToReactor, type IntentResult } from '../../home/intentCue';
+// --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
+import NewsDesk from './NewsDesk';
+import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
 
@@ -760,6 +763,33 @@ export default function FleetReactorApp() {
   useEffect(() => () => clearTimeout(intentTimer.current), []);
   onIntentRef.current = onIntentResult;
 
+  // --- ADDED: the news desk (crew#974 P2). `rundown` accumulates director stories per channel;
+  // `channel` is which one is on screen; `breaking` is the current interrupt band, auto-cleared
+  // after 8s; `seenBreaking` stops a replayed history frame from re-triggering the same interrupt.
+  const [rundown, dispatchStory] = useReducer(
+    (state: Rundown, frame: ReturnType<typeof parseStoryFrame>) => (frame ? ingest(state, frame, Date.now()) : state),
+    undefined,
+    emptyRundown,
+  );
+  const [newsChannel, setNewsChannel] = useState(0);
+  const [breakingStory, setBreakingStory] = useState<Story | null>(null);
+  const breakingTimer = useRef<any>(null);
+  const seenBreakingRef = useRef<Set<string>>(new Set());
+  const lastStoryShotMsRef = useRef(0);
+  useEffect(() => () => clearTimeout(breakingTimer.current), []);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (!/^[0-6]$/.test(e.key)) return;
+      setNewsChannel(Number(e.key));
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // THE ROWS THE LEFT PANEL RENDERS.
   //
   // WHY THIS EXISTS. The board moved but did not say WHAT was moving: a node hovered as
@@ -1420,6 +1450,46 @@ export default function FleetReactorApp() {
                   if (engineState.current.cine.onCue(frame, [p.x, p.y, p.z])) {
                     engineState.current.cineTarget = p.clone();
                     cueSayRef.current(String(frame.monologue || ''));
+                  }
+                }
+                return;
+              }
+              const sf = parseStoryFrame(frame);
+              if (sf) {
+                dispatchStory(sf);
+                const { story } = sf;
+                const nowMs = Date.now();
+                const interrupt = shouldInterrupt(story, nowMs, seenBreakingRef.current);
+                if (interrupt) {
+                  seenBreakingRef.current.add(story.id);
+                  setBreakingStory(story);
+                  clearTimeout(breakingTimer.current);
+                  breakingTimer.current = setTimeout(() => setBreakingStory(null), 8000);
+                  cueSayRef.current(story.anchor || story.headline);
+                }
+                // Replayed history (the last hour, on connect) fills the rundown silently: only a
+                // story that happened in the last 120s rings, bursts, or moves the camera.
+                const atMs = Date.parse(story.at);
+                if (Number.isNaN(atMs) || Math.abs(nowMs - atMs) > 120_000) return;
+                const visual = visualFor(story);
+                engineState.current.intentCue = { t: 0, kind: visual.ring, color: visual.color };
+                engineState.current.intentColor = visual.color;
+                if (visual.burst > 0) {
+                  fire(engineState.current.intentJets, 0, 0, `story:${story.id}`, visual.burst, visual.ring === 'fire' ? 'stuck' : 'thinking');
+                }
+                if (
+                  visual.shot &&
+                  engineState.current.cine.state === 'idle' &&
+                  (interrupt || nowMs - lastStoryShotMsRef.current >= 20000)
+                ) {
+                  lastStoryShotMsRef.current = nowMs;
+                  if (
+                    engineState.current.cine.onCue(
+                      { target_id: story.id, shot_type: visual.shot, monologue: '', focal_length: 50, dolly_speed: 1, timestamp: story.at },
+                      [0, 0, 0],
+                    )
+                  ) {
+                    engineState.current.cineTarget = new THREE.Vector3(0, 0, 0);
                   }
                 }
                 return;
@@ -2578,6 +2648,14 @@ export default function FleetReactorApp() {
         </div>
       ) : null}
 
+
+      <NewsDesk
+        rundown={rundown}
+        channel={newsChannel}
+        onChannel={setNewsChannel}
+        breaking={breakingStory}
+        nowMs={Date.now()}
+      />
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay z-50 bg-[repeating-linear-gradient(transparent,transparent_2px,#000_2px,#000_4px)]"></div>
