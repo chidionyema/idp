@@ -709,6 +709,17 @@ vendors:
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n"
+      fallbacks: |
+        # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
+        # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`
+        # (sovereign cp30), and until this chain `groq` ended nowhere: the laptop router logged
+        # 11 `No deployments available ... Passed model=groq` in one day, with Cerebras, SambaNova
+        # and NVIDIA idle -- nine free keys and a per-model meter that no chain ever reached.
+        # LiteLLM follows a fallback group's own chain, so this one line carries every chain on:
+        # groq down -> cerebras, both down -> sambanova, all three -> nvidia, then openrouter.
+        # The meters differ (Groq requests/day, Cerebras tokens/day, NVIDIA per model), so they
+        # do not empty together; each hop is a three-key pool that cools a dead key for 60s.
+        - groq: [cerebras, sambanova, nvidia, openrouter]
   cerebras:
     kind: secret
     secret: SEED_CEREBRAS_API_KEY
@@ -786,6 +797,9 @@ vendors:
         \    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 65536\n"
+      fallbacks: |
+        # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
+        - cerebras: [sambanova, nvidia, openrouter]
   nvidia:
     kind: secret
     secret: SEED_NVIDIA_API_KEY
@@ -878,6 +892,8 @@ vendors:
         \    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n"
+      fallbacks: |
+        - sambanova: [nvidia, openrouter]
   cohere:
     kind: secret
     secret: SEED_COHERE_API_KEY

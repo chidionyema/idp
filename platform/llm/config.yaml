@@ -653,6 +653,22 @@ router_settings:
     - gemini: [minimax, groq]
     - default: [gemini, groq]
     - fast: [gemini, groq]
+
+    # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
+    # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`
+    # (sovereign cp30), and until this chain `groq` ended nowhere: the laptop router logged
+    # 11 `No deployments available ... Passed model=groq` in one day, with Cerebras, SambaNova
+    # and NVIDIA idle -- nine free keys and a per-model meter that no chain ever reached.
+    # LiteLLM follows a fallback group's own chain, so this one line carries every chain on:
+    # groq down -> cerebras, both down -> sambanova, all three -> nvidia, then openrouter.
+    # The meters differ (Groq requests/day, Cerebras tokens/day, NVIDIA per model), so they
+    # do not empty together; each hop is a three-key pool that cools a dead key for 60s.
+    - groq: [cerebras, sambanova, nvidia, openrouter]
+
+    # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
+    - cerebras: [sambanova, nvidia, openrouter]
+
+    - sambanova: [nvidia, openrouter]
     # The lane that had no chain at all until 2026-09-10, and the only one that needed it.
     # Every other group failed over; `embed` did not, so a Google 429 travelled straight out
     # to the caller and killed two services (the embed rows in cluster_lanes above carry the
@@ -729,7 +745,7 @@ litellm_settings:
   # on 2026-09-13 and did not sever -- it grades the hour's total, so one session at 737,169 per
   # call is indistinguishable from 200 sessions at 3,700. Its own comment says it:
   # "It reports and warns; it does not sever the router."
-  callbacks: ["otel", "request_ceiling.proxy_handler_instance", "efficiency_gateway.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.
