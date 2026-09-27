@@ -8,6 +8,8 @@
 //	server -> client  binary: uint32 LE turn id, then int16 LE PCM at hello.rate
 //
 // The client drops audio for any turn at or below the last barge.
+//
+// GET /voice/turns: the last turns (voice_turns fields) and their medians.
 package main
 
 import (
@@ -21,6 +23,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -29,6 +32,7 @@ import (
 	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
 	"github.com/chidionyema/idp/platform/voice-router/internal/engine"
 	"github.com/chidionyema/idp/platform/voice-router/internal/session"
+	"github.com/chidionyema/idp/platform/voice-router/internal/turnlog"
 )
 
 const defaultSystem = "You are the estate's voice. Open with a short sentence of under six words, " +
@@ -46,7 +50,8 @@ func main() {
 		log.Error("voice.start", "err", err)
 		os.Exit(1)
 	}
-	tts, err := engine.NewPiperTTS(filepath.Join(models, env("VOICE_TTS", "vits-piper-en_US-ljspeech-medium")),
+	voice := env("VOICE_TTS", "vits-piper-en_US-ljspeech-medium")
+	tts, err := engine.NewPiperTTS(filepath.Join(models, voice),
 		threads, envInt("VOICE_TTS_POOL", 1), float32(envFloat("VOICE_SPEED", 1.0)))
 	if err != nil {
 		log.Error("voice.start", "err", err)
@@ -57,7 +62,13 @@ func main() {
 	system := env("VOICE_SYSTEM_PROMPT", defaultSystem)
 	log.Info("voice.ready", "load_ms", time.Since(t0).Milliseconds(), "brain", b.BaseURL, "model", b.Model, "origins", origins, "tts_rate", tts.SampleRate())
 
+	turns, clock := turnlog.NewRing(envInt("VOICE_TURNS_KEPT", 200)), turnlog.NewClock()
+	var conns atomic.Uint64
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /voice/turns", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"summary": turns.Summary(), "recent": turns.Recent(50)})
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
 	mux.HandleFunc("GET /voice/ws", func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: origins})
@@ -65,7 +76,10 @@ func main() {
 			log.Warn("voice.reject", "origin", r.Header.Get("Origin"), "err", err)
 			return
 		}
-		serve(r.Context(), c, asr, tts, b, system, log)
+		id := strconv.FormatInt(t0.Unix(), 36) + "-" + strconv.FormatUint(conns.Add(1), 10)
+		serve(r.Context(), c, asr, tts, b, system, log.With("session_id", id), func(s *session.Session) {
+			s.Record(turns, clock, id, "piper", voice)
+		})
 	})
 
 	srv := &http.Server{Addr: env("VOICE_ADDR", ":8080"), Handler: mux, ReadHeaderTimeout: 10 * time.Second}
@@ -99,7 +113,7 @@ func (o wsOut) JSON(v any) error {
 
 func (o wsOut) Binary(b []byte) error { return o.c.Write(o.ctx, websocket.MessageBinary, b) }
 
-func serve(parent context.Context, c *websocket.Conn, asr *engine.ASR, tts *engine.TTS, b *brain.Client, system string, log *slog.Logger) {
+func serve(parent context.Context, c *websocket.Conn, asr *engine.ASR, tts *engine.TTS, b *brain.Client, system string, log *slog.Logger, setup func(*session.Session)) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 	defer c.CloseNow()
@@ -107,6 +121,7 @@ func serve(parent context.Context, c *websocket.Conn, asr *engine.ASR, tts *engi
 	stream := asr.NewStream()
 	defer stream.Close()
 	s := session.New(ctx, stream, tts, b, wsOut{ctx, c}, system, log)
+	setup(s)
 	if err := s.Hello(); err != nil {
 		return
 	}
