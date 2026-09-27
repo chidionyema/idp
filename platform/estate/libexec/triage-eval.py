@@ -98,7 +98,10 @@ def run(sc: dict, corpus: Path, spec: Path, fixable: set) -> dict:
         "VERDICT <missing>",
     )
     falsified = {r["id"] for r in res["results"] if r["falsified"]}
-    supported = [h for h in res["ranked"] if h not in falsified]
+    unknown_ids = {r["id"] for r in res["results"] if r.get("unknown")}
+    supported = [
+        h for h in res["ranked"] if h not in falsified and h not in unknown_ids
+    ]
     truth, unknown = set(sc["truth"]), set(sc.get("unknown", []))
 
     diagnosis = (supported[0] in truth) if truth else not supported
