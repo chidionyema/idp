@@ -1,0 +1,20 @@
+name: k8s-pods
+description: >
+  Composite intent. List pods, filter by namespace/label/status/field.
+args:
+  namespace: {type: string, default: ""}
+  label:     {type: string, default: ""}
+  status:   {type: string, default: ""}
+  all_ns:   {type: bool, default: false}
+  output:   {type: string, default: "wide"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: list
+    intent: kubectl-list
+    args:
+      resource: pods
+      namespace: "{{namespace}}"
+      all_ns: "{{all_ns}}"
+      label: "{{label}}"
+      field: "{{status}}"
+      output: "{{output}}"

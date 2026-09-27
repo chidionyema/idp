@@ -1,0 +1,19 @@
+name: k8s-apply
+description: >
+  Composite intent. Dry-run first (default), then apply only when dry_run=false.
+args:
+  manifest:  {type: string}
+  namespace: {type: string, default: ""}
+  dry_run:   {type: bool, default: true}
+  server:    {type: bool, default: false}
+  validate:  {type: bool, default: true}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: plan
+    intent: kubectl-apply
+    args:
+      manifest: "{{manifest}}"
+      namespace: "{{namespace}}"
+      dry_run: "{{dry_run}}"
+      server: "{{server}}"
+      validate: "{{validate}}"

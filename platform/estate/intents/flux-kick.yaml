@@ -1,0 +1,24 @@
+name: flux-kick
+description: >
+  Force reconcile of a Kustomization. In Audit mode works via annotation.
+  In Enforce mode, prints the one-file commit that would force it instead.
+args:
+  name: {type: string, default: "llm"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: kick
+    cmd: |
+      NS=flux-system
+      NAME={{name}}
+      OUT=$(KUBECONFIG={{kubeconfig}} kubectl -n $NS annotate kustomization $NAME \
+        reconcile.fluxcd.io/requestedAt="$(date +%s)" --overwrite 2>&1)
+      if echo "$OUT" | grep -q "refuse-writes-from-user-principals"; then
+        echo "BLOCKED by Kyverno (Enforce mode)."
+        echo "Alternative: change the Kustomization spec in the repo."
+        echo "  cd ~/Documents/code/idp"
+        echo "  grep -n 'name: $NAME' clusters/oke/platform.yaml"
+        echo "  # add a comment under spec: to force a reconcile, then commit+push+PR"
+      else
+        echo "$OUT"
+        echo "annotated; reconcile fires within 30s"
+      fi
