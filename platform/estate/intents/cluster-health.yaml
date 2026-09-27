@@ -1,0 +1,26 @@
+name: cluster-health
+description: >
+  Composite intent. Nodes + problem pods (restarts/crashloop) + warning events.
+  Use namespace= to scope to one namespace.
+args:
+  namespace: {type: string, default: ""}
+  since:     {type: string, default: "1h"}
+steps:
+  - name: nodes
+    intent: kubectl
+    args:
+      resource: nodes
+      output: wide
+  - name: problem-pods
+    intent: kubectl-list
+    args:
+      resource: pods
+      namespace: "{{namespace}}"
+      field: status.phase!=Running
+      output: wide
+  - name: warning-events
+    intent: kubectl
+    args:
+      resource: events
+      output: wide
+      extra: --all-namespaces --field-selector type=Warning --sort-by='.lastTimestamp'

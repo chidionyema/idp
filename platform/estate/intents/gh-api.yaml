@@ -1,0 +1,9 @@
+name: gh-api
+description: Thin wrapper — raw gh api call. Returns JSON.
+args:
+  path:   {type: string, description: "API path after repos/{owner}/{repo}/"}
+  params: {type: string, default: ""}
+steps:
+  - name: get
+    cmd: >
+      gh api repos/chidionyema/idp/{{path}} {{params}} 2>/dev/null

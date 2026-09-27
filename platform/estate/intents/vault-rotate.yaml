@@ -1,0 +1,20 @@
+name: vault-rotate
+description: >
+  Composite intent. Delete a Kubernetes Secret to trigger rotation via ESO.
+args:
+  name:       {type: string}
+  namespace:  {type: string, default: "default"}
+  dry_run:    {type: bool, default: true}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: delete
+    cmd: >
+      if [ "{{dry_run}}" = "True" ]; then
+        echo "DRY RUN: would delete secret {{namespace}}/{{name}}"
+        KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+        -n {{namespace}} get secret {{name}} 2>&1
+      else
+        echo "Deleting secret {{namespace}}/{{name}}..."
+        KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
+        -n {{namespace}} delete secret {{name}} 2>&1
+      fi
