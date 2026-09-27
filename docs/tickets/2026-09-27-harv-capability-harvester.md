@@ -1,6 +1,7 @@
 # harv: a shelf of sealed, pre-tested building blocks harvested from open source
 
-**Status:** open, 2026-09-27. Design source: the founder's `harv` spec (z.ai session
+**Status:** built and run on the laptop, 2026-09-27 (kronos `feat/harv`). Operating = the
+funnel below, measured through the `harv` intent. Design source: the founder's `harv` spec (z.ai session
 `c46e97b9`, pasted into the idp Claude session 2026-09-27). Context:
 `docs/synthesis/2026-09-27-fractal-factory-review-brief.md`.
 
@@ -62,24 +63,24 @@ funnel printout tells us whether the idea works, before anything is built on top
 | Registry / catalogue | `factory/registry.py`: each shelved block is emitted as a `capability.yaml` terminal, its tier as `grade` |
 | Signing trust root | keys from `estate-secrets`, referenced by name |
 
-## Build checklist (found reading the spec's code, 2026-09-27; not compiled)
+## Build checklist (the spec's code, as fixed in kronos `crates/harv`)
 
-- [ ] Differential engine passes `payload` into the module (`harv_alloc`/`harv_run`); today it
-      runs every member with the same args and no stdout, so everything "agrees". A mutant
-      fixture must produce a disagreement, or the check isn't a check.
-- [ ] Signatures verify against an allow-list of trusted keys, not the key embedded in the
-      signature (I2).
-- [ ] Tier is derived from signed reports, never set in the manifest; reports are signed;
-      `executions` is append-only in fact; `artifacts` never `INSERT OR REPLACE` (I5).
-- [ ] `verify-all` re-hashes every blob file (I1; acceptance test 6 depends on it).
-- [ ] `recipe_hash` covers the real inputs (commit, lockfile, adapter source); rebuilds use the
-      same path (I6). Fix the adapter WIT (`export` inside an interface) and the `{wit-dir}`
-      placeholder.
-- [ ] Deny probe for `wasm32v1-none` invokes the ABI export, not `_start`.
-- [ ] Test scan descends into `mod tests`; rustdoc JSON runs as `cargo +nightly rustdoc`;
-      coverage parses the real `llvm-cov` export shape; multiple test binaries are data, not an
-      abort.
-- [ ] Trap kinds classified by type, not error-string matching.
+- [x] Differential passes the payload into the module (`harv_alloc`/`harv_run`); the
+      `crc32-buggy` fixture (one polynomial bit off) produces a disagreement with the exact input
+      (acceptance test 4).
+- [x] Signatures verify against a trust store of allowed keys by role, never the embedded key (I2).
+- [x] Tier derived from signed reports only; reports signed; `ring4-ledger` append-only by
+      trigger; `artifacts` is `INSERT OR IGNORE` with an UPDATE trigger (I5).
+- [x] `verify-all` re-hashes every blob file (I1, test 6).
+- [x] `recipe_hash` covers toolchain, target, flags, wrapper source, lockfile and every crate
+      source file; rebuilds at the same path are compared byte for byte (I6, test 7).
+- [x] Deny probe calls the ABI export in a module with zero imports.
+- [x] Test scan descends into `mod tests` and `tests/`; multiple test binaries are data.
+- [x] Trap kinds classified by type (`Trap::OutOfFuel`, `Trap::Interrupt`, `I32Exit`).
+
+Deviations, documented in code: a binary harv_abi v1 payload instead of JSON and WIT; public
+functions from `syn` instead of nightly rustdoc (a function re-exported from a private module is
+missed); no coverage measurement; one crate with modules instead of seven.
 
 ## First step and what counts as done
 
@@ -88,3 +89,45 @@ funnel printout tells us whether the idea works, before anything is built on top
    sealed run.
 2. Then the funnel on the crates.io top 100, printed. Done = the printout, measured, in this
    ticket.
+
+## Results (measured 2026-09-27, laptop, `estate-execute harv`)
+
+Acceptance: `cargo test -p harv`: 8 of 8 pass (sign_roundtrip, deny_probe_pure,
+deny_probe_impure, differential_divergence, fuel_timeout, registry_persistence,
+rebuild_equality, class_gate).
+
+Funnel, crates.io top 100 by downloads (two runs: top 20, then 21 to 100):
+
+| stage | top 20 | 21 to 100 |
+|---|---:|---:|
+| crates indexed / license ok / fetched | 20 / 20 / 20 | 80 / 80 / 80 |
+| public fns | 79 | 592 |
+| flat-signature fns | 7 | 18 |
+| crates whose wrapper built | 2 | 6 |
+| fns compiled, zero imports, smoke pass (t1) | 6 | 11 |
+| fns whose crate's tests pass in the sandbox (t2) | 3 | 6 |
+| crates reproducible (byte-equal rebuild) | 2 | 6 |
+| shelved | 6 | 11 |
+
+Most of the top 100 is generic or trait API (serde, syn, rand_core...), so it has no flat
+function to seal. That is the main attrition, and the number to widen next (generic
+instantiation, `char`/`Option` in the ABI).
+
+Differential on real code (run `only=regex,regex-syntax,strsim,levenshtein`): 2 clusters, 1,000
+generated inputs each, 0 disagreements. `regex::escape` agreed with `regex_syntax::escape`, and
+`strsim::levenshtein` with `levenshtein::levenshtein`. `regex-syntax-escape` and
+`strsim-levenshtein` reached **t3**: smoke, own tests and an independent witness.
+
+Shelf: 18 parts (t1 9, t2 7, t3 2), 25 signed manifests counting re-shelves with new evidence;
+`verify-all` 100 blobs re-hashed, 25 artifacts good, 0 bad; 67 evidence entries in ring4-ledger.
+
+Pulled off the shelf through the intent, in deny mode:
+`estate-execute harv verb=run name=strsim-levenshtein hex=<"kitten","sitting">` gives `= 3`
+(fuel 8657).
+
+Terminals: `harv export-capabilities` output passes `factory/registry.collect()`: 18 admitted,
+one per part, 0 warnings. The t3 parts are exported as `state: current`, the rest as `incubating`.
+
+Still open:
+- The export is not yet in a directory the live collector scans.
+- No existing estate intent step has been replaced by a shelved block yet.
