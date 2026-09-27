@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# idp-backstage-tsc: tsc --noEmit over the whole backstage workspace, or a refusal. Never a skip.
+#
+# Why: 2026-09-27 PR #4467 changed .tsx files and no compiler read them. The pre-commit hook and
+# bin/idp-ci both skipped tsc in a worktree with no node_modules ("CI enforces"), and CI's
+# portal-app job skipped pull requests. Every layer pointed at another. A worktree now borrows
+# the main checkout's node_modules for the run; with none anywhere the answer is exit 3 (blind),
+# which callers treat as red.
+#
+# exit 0 = types clean, 1 = types red, 3 = blind (no compiler reachable).
+set -uo pipefail
+root="$(git rev-parse --show-toplevel)"
+bs="$root/backstage"
+linked=""
+if [ ! -x "$bs/node_modules/.bin/tsc" ]; then
+  main="$(cd "$(git rev-parse --git-common-dir)/.." && pwd)"
+  if [ -x "$main/backstage/node_modules/.bin/tsc" ] && [ ! -e "$bs/node_modules" ]; then
+    ln -s "$main/backstage/node_modules" "$bs/node_modules" && linked="$bs/node_modules"
+    trap '[ -n "$linked" ] && rm -f "$linked"' EXIT
+    echo "idp-backstage-tsc: borrowing node_modules from $main/backstage" >&2
+  else
+    echo "idp-backstage-tsc: BLIND: no backstage/node_modules here or in $main; run yarn install in backstage/" >&2
+    exit 3
+  fi
+fi
+(cd "$bs" && ./node_modules/.bin/tsc --noEmit)

@@ -347,7 +347,9 @@ jobs:
   # that runs it. Only on changes under backstage/: the install is the slow part and nothing else
   # in the repository can move these tests.
   portal-app:
-    if: github.event_name != 'pull_request'
+    # Runs on pull requests (2026-09-27): skipped there, no compiler read a PR's .tsx before it
+    # merged (PR #4467). Required in ruleset.idp.required-checks.json. Still only installs when
+    # backstage/ changed, so other PRs pay nothing.
     needs: [fast-gate, verifier]
     runs-on: ubuntu-latest
     steps:
