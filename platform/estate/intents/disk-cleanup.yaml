@@ -6,14 +6,17 @@ description: >-
   deletes the allow-list, verifies each target is gone (exit 3 if not), and reports free space
   measured before and after. trash=true also empties ~/.Trash (the user's; opt-in only).
   only_below_mb=N applies only while free space is under N MB (the scheduled row uses the
-  guard's 10G floor). bin/idp-disk-guard reports the pressure; this acts on it.
+  guard's 10G floor). worktrees=true also removes settled agent worktrees: clean, every commit on
+  a branch/tag/remote, unlocked, idle 6h, no process inside, via `git worktree remove` without
+  --force (restorable with `git worktree add`). bin/idp-disk-guard reports the pressure; this acts on it.
 class: mutate
 args:
   apply: {type: bool, default: false}
   trash: {type: bool, default: false}
   only_below_mb: {type: int, default: 0}
+  worktrees: {type: bool, default: false}
 halt_on_failure: true
 steps:
   - name: disk-cleanup
     cmd: >
-      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}}
+      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}} {{worktrees}}
