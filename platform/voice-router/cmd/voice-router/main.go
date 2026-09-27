@@ -10,6 +10,8 @@
 // The client drops audio for any turn at or below the last barge.
 //
 // GET /voice/turns: the last turns (voice_turns fields) and their medians.
+//
+// VOICE_MODE=director runs the /fleet cinema director instead (director.go); no models load.
 package main
 
 import (
@@ -40,6 +42,9 @@ const defaultSystem = "You are the estate's voice. Open with a short sentence of
 
 func main() {
 	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if os.Getenv("VOICE_MODE") == "director" {
+		os.Exit(runDirector(log))
+	}
 	models := env("VOICE_MODELS", "/models")
 	threads := envInt("VOICE_THREADS", 2)
 
