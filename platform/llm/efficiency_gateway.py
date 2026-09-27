@@ -163,6 +163,48 @@ def _session_id(data: dict) -> str:
     return str(data.get("litellm_session_id") or "-")
 
 
+# Which tool sent the call, so the ledger can show that every tool on the machine reaches the
+# router (founder 2026-09-27: "prove this works for all the tooling, pi, claude code, opencode").
+# LiteLLM copies the request's User-Agent into the metadata dict (`metadata` on chat routes,
+# `litellm_metadata` on /v1/messages) and the headers into proxy_server_request. An agent the
+# table does not know is recorded as "unknown" with its raw User-Agent, never dropped.
+_TOOLS = (
+    ("claude-cli/", "claude-code"),
+    ("opencode", "opencode"),
+    ("pi-coding-agent", "pi"),
+    ("gemini-cli", "gemini-cli"),
+    ("codex", "codex"),
+    ("hermes", "hermes"),
+    ("cline", "cline"),
+    ("cursor", "cursor"),
+)
+
+
+def _user_agent(data: dict) -> str:
+    for key in ("litellm_metadata", "metadata"):
+        meta = data.get(key)
+        if (
+            isinstance(meta, dict)
+            and isinstance(meta.get("user_agent"), str)
+            and meta["user_agent"]
+        ):
+            return meta["user_agent"]
+    headers = (data.get("proxy_server_request") or {}).get("headers") or {}
+    for k, v in headers.items() if isinstance(headers, dict) else ():
+        if str(k).lower() == "user-agent":
+            return str(v)
+    return ""
+
+
+def _caller(data: dict) -> dict:
+    ua = _user_agent(data)
+    low = ua.lower()
+    tool = next(
+        (name for prefix, name in _TOOLS if prefix in low), "unknown" if ua else "-"
+    )
+    return {"tool": tool, "ua": ua[:120]}
+
+
 def _strip_cache_control(obj: Any) -> Any:
     # Claude Code moves its cache_control breakpoints every turn; they are not content.
     if isinstance(obj, dict):
@@ -877,6 +919,7 @@ class EstateEfficiencyGateway(CustomLogger):
                 "kind": "pre",
                 "mode": "openai",
                 "call_id": data.get("litellm_call_id"),
+                **_caller(data),
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
                 "call_type": str(call_type),
                 "model": (data.get("model") or ""),
@@ -963,6 +1006,7 @@ class EstateEfficiencyGateway(CustomLogger):
             "kind": "pre",
             "mode": "anthropic",
             "call_id": data.get("litellm_call_id"),
+            **_caller(data),
             "session": session,
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
             "call_type": str(call_type),
@@ -1017,6 +1061,7 @@ class EstateEfficiencyGateway(CustomLogger):
                 "mode": pre["mode"],
                 "call_id": call_id,
                 "session": pre.get("session"),
+                "tool": pre.get("tool"),
                 "model": pre.get("model"),
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "latency_ms": ms,
