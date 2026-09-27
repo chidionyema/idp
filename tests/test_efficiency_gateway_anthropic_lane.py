@@ -253,3 +253,39 @@ def test_a_failed_call_is_recorded_not_silent(monkeypatch, tmp_path):
     )
     out = _rows(tmp_path, "outcome")[-1]
     assert out["ok"] is False and "400" in out["error"]
+
+
+def test_every_row_names_the_tool_that_sent_the_call(monkeypatch, tmp_path):
+    """The ledger must show which tool reached the router, or per-tool coverage is unprovable."""
+    gw = _gw(monkeypatch, tmp_path)
+    data = {
+        "model": "claude-opus-5-5",
+        "messages": _conversation()[:3],
+        "metadata": {"user_id": SESSION},
+        # where LiteLLM puts the User-Agent on /v1/messages
+        "litellm_metadata": {"user_agent": "claude-cli/2.1.3 (external, cli)"},
+        "litellm_call_id": "call-t",
+    }
+    asyncio.run(gw.async_pre_call_hook(None, None, data, "anthropic_messages"))
+    t0 = dt.datetime(2026, 9, 27)
+    asyncio.run(
+        gw.async_log_success_event({"litellm_call_id": "call-t"}, {"usage": {}}, t0, t0)
+    )
+    pre, out = _rows(tmp_path, "pre")[-1], _rows(tmp_path, "outcome")[-1]
+    assert (pre["tool"], out["tool"]) == ("claude-code", "claude-code")
+    assert pre["ua"].startswith("claude-cli/2.1.3")
+
+
+def test_the_openai_lane_reads_the_header_and_keeps_an_unknown_agent(
+    monkeypatch, tmp_path
+):
+    gw = _gw(monkeypatch, tmp_path)
+    for ua, want in (("opencode/1.0.3 ai-sdk", "opencode"), ("curl/8.7.1", "unknown")):
+        data = {
+            "model": "free",
+            "messages": [{"role": "user", "content": "hi"}],
+            "proxy_server_request": {"headers": {"User-Agent": ua}},
+        }
+        asyncio.run(gw.async_pre_call_hook(None, None, data, "acompletion"))
+        row = _rows(tmp_path, "pre")[-1]
+        assert (row["tool"], row["ua"]) == (want, ua)

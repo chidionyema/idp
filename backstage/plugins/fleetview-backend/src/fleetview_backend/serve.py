@@ -433,12 +433,18 @@ def main():
             port=executor_port,
             log_level="info",
         )
-        server = uvicorn.Server(configs=[main_config, executor_config])
-    else:
-        server = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
-        server = uvicorn.Server(server)
+        # uvicorn.Server takes one Config; there is no `configs=` (the src-layout move, 2e364b4b,
+        # wrote one, and every two-port start raised TypeError). Two servers on one loop.
+        main_server = uvicorn.Server(main_config)
+        executor_server = uvicorn.Server(executor_config)
 
-    server.run()
+        async def _serve_both():
+            await asyncio.gather(main_server.serve(), executor_server.serve())
+
+        asyncio.run(_serve_both())
+        return
+
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 
 
 if __name__ == "__main__":
