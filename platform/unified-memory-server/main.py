@@ -1,10 +1,13 @@
 import os
 import hashlib
+import math
+import re
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
+from pydantic import BaseModel, Field
 from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, status
 import psycopg
 from psycopg.rows import dict_row
@@ -429,6 +432,108 @@ async def memory_search(
         # Re-sort based on the multi-factor MAPLE equation and truncate to requested limit
         scored_results.sort(key=lambda x: x["maple_score"], reverse=True)
         return {"results": scored_results[:limit]}
+
+
+class RecallPayload(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    # Omitted means every namespace the tenant holds: an agent asking a question rarely knows
+    # which subject the answer was filed under.
+    namespace: Optional[str] = Field(default=None, max_length=128)
+    limit: int = Field(default=5, ge=1, le=50)
+
+
+# Strength doubles per recall up to a year: a fact asked about every day for a year is as
+# sharp as it gets, and the exponent never overflows.
+MAX_STRENGTH_DAYS = 365.0
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def retrievability(similarity: float, age_days: float, strength_days: float) -> float:
+    """R = S_semantic * exp(-dt / S_strength) (Ebbinghaus). A negative age (clock skew between
+    pods) counts as zero, never as a memory stronger than new."""
+    return similarity * math.exp(-max(age_days, 0.0) / strength_days)
+
+
+def or_query(text: str) -> Optional[str]:
+    """Any word matches, and more matching words rank higher. plainto_tsquery ANDs every word,
+    so a question with one word the memory does not use finds nothing. Only [a-z0-9] reach
+    to_tsquery, so no caller text is ever parsed as tsquery syntax."""
+    words = sorted(set(_WORD.findall(text.lower())))
+    return " | ".join(words) if words else None
+
+
+@app.post("/memories/recall", status_code=status.HTTP_200_OK)
+async def memory_recall(
+    payload: RecallPayload,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
+):
+    tsq = or_query(payload.query)
+    if tsq is None:
+        return {"results": []}
+    async with conn.cursor() as cur:
+        # ts_rank_cd normalisation 32 is rank/(rank+1): a similarity in [0, 1), the same range
+        # as a cosine. The 200 best by words are ranked again by retrievability below.
+        await cur.execute(
+            """
+            WITH q AS (SELECT to_tsquery('english', %s) AS tsq)
+            SELECT m.id, m.namespace, m.key, m.content, m.trust_tier, m.version,
+                   m.valid_from, m.updated_at,
+                   ts_rank_cd(m.search_tsv, q.tsq, 32) AS similarity,
+                   COALESCE(s.strength_days, 1.0) AS strength_days,
+                   COALESCE(s.recalls, 0) AS recalls,
+                   EXTRACT(EPOCH FROM (clock_timestamp()
+                       - GREATEST(m.updated_at, COALESCE(s.last_recalled, m.updated_at))
+                   )) / 86400.0 AS age_days
+            FROM memories m CROSS JOIN q
+            LEFT JOIN memory_strength s ON s.memory_id = m.id
+            WHERE m.is_quarantined = FALSE
+              AND m.search_tsv @@ q.tsq
+              AND (%s::text IS NULL OR m.namespace = %s)
+            ORDER BY similarity DESC
+            LIMIT 200;
+            """,
+            (tsq, payload.namespace, payload.namespace),
+        )
+        rows = await cur.fetchall()
+        for r in rows:
+            r["retrievability"] = retrievability(
+                float(r["similarity"]), float(r["age_days"]), float(r["strength_days"])
+            )
+        rows.sort(key=lambda r: r["retrievability"], reverse=True)
+        kept = rows[: payload.limit]
+        # Recalling is rehearsal: what came back is held twice as long from now on.
+        for r in kept:
+            await cur.execute(
+                """
+                INSERT INTO memory_strength (memory_id, tenant_id, strength_days, last_recalled, recalls)
+                VALUES (%s, %s, LEAST(2.0, %s), clock_timestamp(), 1)
+                ON CONFLICT (memory_id) DO UPDATE SET
+                    strength_days = LEAST(memory_strength.strength_days * 2.0, %s),
+                    last_recalled = clock_timestamp(),
+                    recalls = memory_strength.recalls + 1;
+                """,
+                (r["id"], auth["tenant_id"], MAX_STRENGTH_DAYS, MAX_STRENGTH_DAYS),
+            )
+    await conn.commit()
+    return {
+        "results": [
+            {
+                "namespace": r["namespace"],
+                "key": r["key"],
+                "content": r["content"],
+                "trust_tier": r["trust_tier"],
+                "version": r["version"],
+                "valid_from": r["valid_from"].isoformat(),
+                "recorded_at": r["updated_at"].isoformat(),
+                "similarity": round(float(r["similarity"]), 4),
+                "retrievability": round(r["retrievability"], 4),
+                "strength_days": float(r["strength_days"]),
+                "recalls": int(r["recalls"]),
+            }
+            for r in kept
+        ]
+    }
 
 
 # ---------------------------------------------------------------------

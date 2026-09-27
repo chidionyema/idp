@@ -526,3 +526,104 @@ def test_thirty_requests_a_minute_per_token_and_a_refused_token_is_counted(boote
             (token_hash,),
         ).fetchone()[0]
     assert counted == 3
+
+
+# --- recall: word search ranked by retrievability (Ebbinghaus) ---------------------------
+
+
+def recall(client, tenant, query, **extra):
+    r = client.post(
+        "/memories/recall", json={"query": query, **extra}, headers=tenant.headers()
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["results"]
+
+
+def age(database_url, ns, key, days):
+    """Move a memory's write, and its last recall if any, `days` into the past."""
+    with psycopg.connect(database_url, autocommit=True) as c:
+        c.execute("ALTER TABLE memories DISABLE TRIGGER trg_bump_memory_version")
+        c.execute(
+            "UPDATE memories SET updated_at = updated_at - make_interval(days => %s) "
+            "WHERE namespace = %s AND key = %s",
+            (days, ns, key),
+        )
+        c.execute("ALTER TABLE memories ENABLE TRIGGER trg_bump_memory_version")
+        c.execute(
+            "UPDATE memory_strength SET last_recalled = last_recalled - make_interval(days => %s) "
+            "WHERE memory_id = (SELECT id FROM memories WHERE namespace = %s AND key = %s)",
+            (days, ns, key),
+        )
+
+
+def test_recall_finds_a_memory_by_its_words_in_any_namespace(booted):
+    client, url = booted
+    a = Tenant(url, "A")
+    put(
+        client,
+        a,
+        "estate",
+        "memory.door",
+        "the memory door is mcp.zone/memories via keda",
+    )
+    put(client, a, "voice", "lane", "voice runs on the groq lane")
+    got = recall(client, a, "where is the memory door?")
+    assert [r["key"] for r in got] == ["memory.door"]
+    assert got[0]["namespace"] == "estate"
+    assert 0 < got[0]["similarity"] < 1
+    # One word the memory does not use does not hide it (OR, not AND).
+    assert [r["key"] for r in recall(client, a, "groq zebra")] == ["lane"]
+    assert recall(client, a, "the of and") == []  # stopwords only: nothing to search
+
+
+def test_an_unused_memory_decays_below_a_fresh_one_that_says_the_same(booted):
+    client, url = booted
+    a = Tenant(url, "A")
+    put(client, a, "estate", "old", "postgres runs on estate-db")
+    put(client, a, "estate", "new", "postgres runs on estate-db")
+    age(url, "estate", "old", 10)
+    got = recall(client, a, "postgres estate-db", limit=2)
+    assert [r["key"] for r in got] == ["new", "old"]
+    new, old = got
+    assert new["similarity"] == old["similarity"]
+    # R = sim * e^(-10/1): ten idle days at strength one leave ~0.005% of it.
+    assert old["retrievability"] < new["retrievability"] * 1e-3
+
+
+def test_recall_is_rehearsal_strength_doubles_and_the_fact_is_not_rewritten(booted):
+    client, url = booted
+    a = Tenant(url, "A")
+    put(client, a, "estate", "k", "calico is the pod network")
+    for expected_strength, expected_recalls in ((1.0, 0), (2.0, 1), (4.0, 2)):
+        (hit,) = recall(client, a, "calico network")
+        assert hit["strength_days"] == expected_strength
+        assert hit["recalls"] == expected_recalls
+    # A read is not a new version of the fact: version and history are untouched.
+    assert hit["version"] == 1
+    hist = client.get("/memories/estate/k/history", headers=a.headers()).json()
+    assert len(hist["versions"]) == 1
+
+
+def test_a_rehearsed_memory_outlasts_an_idle_one(booted):
+    client, url = booted
+    a = Tenant(url, "A")
+    put(client, a, "estate", "asked", "the router listens on four thousand")
+    for _ in range(4):  # strength 1 -> 16 days; 'idle' does not exist yet
+        recall(client, a, "router listens", namespace="estate", limit=1)
+    put(client, a, "estate", "idle", "the router listens on four thousand")
+    for key in ("asked", "idle"):
+        age(url, "estate", key, 5)
+    got = recall(client, a, "router listens", limit=2)
+    assert [r["key"] for r in got] == ["asked", "idle"]
+    asked, idle = got
+    assert (asked["strength_days"], idle["strength_days"]) == (16.0, 1.0)
+    # e^(-5/16) against e^(-5/1): the rehearsed one keeps ~73%, the idle one under 1%.
+    assert idle["retrievability"] < asked["retrievability"] * 0.05
+
+
+def test_recall_never_crosses_tenants(booted):
+    client, url = booted
+    a, b = Tenant(url, "A"), Tenant(url, "B")
+    put(client, a, "estate", "secretish", "tenant a keeps the zebra fact")
+    assert recall(client, b, "zebra") == []
+    assert [r["key"] for r in recall(client, a, "zebra")] == ["secretish"]

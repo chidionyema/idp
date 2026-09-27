@@ -231,3 +231,35 @@ GRANT SELECT, INSERT ON memory_versions TO memory_app;
 GRANT USAGE ON SEQUENCE memory_versions_version_id_seq TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON rate_limits TO memory_app;
 GRANT EXECUTE ON FUNCTION fn_hit_rate_limit(TEXT, BIGINT, INT) TO memory_app;
+
+-- 10. Recall: find a memory by what it says, and let what nobody uses fade.
+-- Word search, not vectors: no write path stores an embedding, so the HNSW search above can
+-- return nothing, and a local model would add a cold-start load to a pod that scales to zero.
+-- The key is searched too (dots and slashes read as spaces), so `estate.memory-door` matches
+-- "memory door".
+ALTER TABLE memories ADD COLUMN IF NOT EXISTS search_tsv tsvector
+    GENERATED ALWAYS AS (
+        to_tsvector('english', translate(key, './_-', '    ') || ' ' || content)
+    ) STORED;
+CREATE INDEX IF NOT EXISTS idx_memories_search ON memories USING gin (search_tsv);
+
+-- How strongly each memory is held, apart from what it says (Ebbinghaus; Park et al. 2023).
+-- Retrievability at recall is R = similarity * exp(-age_days / strength_days), where age runs
+-- from the later of the last write and the last recall. Every recall that returns a memory
+-- doubles its strength, so what the estate keeps asking about stays sharp and what nobody asks
+-- about falls out of the answer on its own. Its own table, because an UPDATE on memories bumps
+-- the version and the transaction time, and a read is not a new version of a fact.
+CREATE TABLE IF NOT EXISTS memory_strength (
+    memory_id UUID PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL,
+    strength_days DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (strength_days > 0),
+    last_recalled TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    recalls BIGINT NOT NULL DEFAULT 0
+);
+ALTER TABLE memory_strength ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_strength FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON memory_strength;
+CREATE POLICY tenant_isolation ON memory_strength
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+GRANT SELECT, INSERT, UPDATE ON memory_strength TO memory_app;
