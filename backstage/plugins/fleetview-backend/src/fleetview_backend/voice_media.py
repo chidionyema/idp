@@ -768,7 +768,7 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
             "audio_seconds": audio_seconds,
         }, 200
 
-    bus = await publish(
+    bus = await _publish_without_waiting(
         session_id,
         kind="steer",
         phase="executing",
@@ -783,6 +783,43 @@ async def hear(pcm: bytes, session_id: str, author: str) -> tuple[dict[str, Any]
         "received_seconds": round(time.time() - started, 3),
         "bus": bus,
     }, 200
+
+
+# How long the reply to /voice/hear waits for the bus. The steer row is for the board and other
+# agents; the page needs only the transcript. Measured 2026-09-27 with the laptop's NATS down: every
+# turn waited out nats-py's connect timeout and retries, hear took 2.3-3.3s against 0.3-1.0s of ASR.
+BUS_WAIT_S = 0.25
+_in_flight: set[asyncio.Task] = set()
+
+
+async def _publish_without_waiting(session_id: str, **row: Any) -> dict[str, Any]:
+    """`publish`, bounded: the row still goes out, but the reply stops waiting after BUS_WAIT_S and
+    says so. A row that later fails is logged on stderr, never dropped silently."""
+    task = asyncio.create_task(publish(session_id, **row))
+    done, _ = await asyncio.wait({task}, timeout=BUS_WAIT_S)
+    if done:
+        return task.result()
+    _in_flight.add(task)
+
+    def _settled(t: asyncio.Task) -> None:
+        _in_flight.discard(t)
+        result = (
+            t.result()
+            if not t.cancelled()
+            else {"published": False, "reason": "cancelled"}
+        )
+        if not result.get("published"):
+            print(
+                f"voice.bus steer not published: {result.get('reason')}",
+                file=sys.stderr,
+                flush=True,
+            )
+
+    task.add_done_callback(_settled)
+    return {
+        "published": None,
+        "reason": f"the bus did not answer within {BUS_WAIT_S}s; the row is still being published and the reply did not wait",
+    }
 
 
 async def say(text: str) -> tuple[bytes | None, str | None]:
