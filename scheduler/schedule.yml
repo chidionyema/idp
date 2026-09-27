@@ -54,6 +54,20 @@ jobs:
     cwd: ~/.claude/scripts
     skip_on_battery: false
     timeout_s: 1800
+  ai.estate.disk-cleanup:
+    # bin/idp-disk-guard's 10G floor, acted on: regenerable caches + Cargo target/ dirs, and only
+    # while under the floor, so a healthy disk is never touched. Measured 2026-09-27: a one-off
+    # cleanup freed 469M and was eaten within hours (yarn cache back to 1560M, 3967M of target/).
+    runs_on: mac
+    runs_on_ref: crew#516
+    command:
+    - ~/.estate/bin/estate-execute
+    - disk-cleanup
+    - apply=true
+    - only_below_mb=10240
+    cron: 41 * * * *
+    skip_on_battery: false
+    timeout_s: 900
   ai.estate.drills:
     runs_on: mac
     runs_on_ref: crew#516 CP2
