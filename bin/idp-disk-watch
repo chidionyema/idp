@@ -1,0 +1,49 @@
+#!/bin/bash
+# Watch the data volume every 5 minutes and say so before it is full, not after.
+#
+# WHY. 2026-09-27 the laptop reached 0.6 GB free mid-session with nothing warning: bin/idp-disk-guard
+# reports only when someone runs it, and ai.estate.disk-clean pointed at a script that no longer
+# existed and was not loaded. The founder: "dont wait for it to run out ... we must never be in trouble".
+#
+# Runs from ~/.estate/bin, never ~/Documents: launchd cannot start /bin/sh on a file under
+# ~/Documents (TCC, exit 126). Installed by copying this file there (see the plist template).
+#
+#   free < MIN_FREE_GB (10)  a macOS notification, at most once an hour
+#   free < CRIT_GB (3)       the disk-cleanup allow-list is applied (regenerable package caches only,
+#                            nothing of anyone's), then a notification on every run
+# Every run appends one measured line to ~/.estate/disk-watch.log.
+set -uo pipefail
+MIN_FREE_GB="${MIN_FREE_GB:-10}"
+CRIT_GB="${CRIT_GB:-3}"
+LOG="$HOME/.estate/disk-watch.log"
+STAMP="$HOME/.estate/disk-watch.last-alert"
+CLEANUP="$HOME/.estate/libexec/disk-cleanup.sh"
+
+free_kb=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -z "$free_kb" ]; then
+	echo "$(date -u +%FT%TZ) BLIND cannot read /System/Volumes/Data" >>"$LOG"
+	exit 0
+fi
+free_gb=$((free_kb / 1048576))
+echo "$(date -u +%FT%TZ) free=${free_gb}G" >>"$LOG"
+tail -n 5000 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+
+notify() {
+	/usr/bin/osascript -e "display notification \"$1\" with title \"Estate disk\" sound name \"Basso\"" >/dev/null 2>&1
+}
+
+if [ "$free_gb" -lt "$CRIT_GB" ]; then
+	if [ -f "$CLEANUP" ]; then
+		bash "$CLEANUP" true false >>"$LOG" 2>&1
+	fi
+	after=$(($(df -k /System/Volumes/Data | awk 'NR==2 {print $4}') / 1048576))
+	notify "CRITICAL: ${free_gb} GB free, ${after} GB after clearing caches. Run bin/idp-disk-guard."
+	date +%s >"$STAMP"
+elif [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
+	last=$(cat "$STAMP" 2>/dev/null || echo 0)
+	if [ $(($(date +%s) - last)) -ge 3600 ]; then
+		notify "${free_gb} GB free (floor ${MIN_FREE_GB} GB). Run bin/idp-disk-guard."
+		date +%s >"$STAMP"
+	fi
+fi
+exit 0
