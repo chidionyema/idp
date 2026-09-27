@@ -1,10 +1,13 @@
 package brain
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -135,5 +138,58 @@ func TestCancelStopsStream(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("stream did not stop after cancel")
+	}
+}
+
+// A pooled connection the router resets after reading the next request must not fail the turn:
+// the request is replayed on a fresh connection (2026-09-27, "connection reset by peer").
+func TestStreamSurvivesResetOfPooledConnection(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	answer := func(c net.Conn, r *bufio.Reader) bool {
+		req, err := http.ReadRequest(r)
+		if err != nil {
+			return false
+		}
+		_, _ = io.Copy(io.Discard, req.Body)
+		body := "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n"
+		fmt.Fprintf(c, "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: %d\r\n\r\n%s", len(body), body)
+		return true
+	}
+	go func() {
+		first := true
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			r := bufio.NewReader(c)
+			if first {
+				first = false
+				answer(c, r)
+				_, _ = http.ReadRequest(r) // the next turn arrives on the pooled connection ...
+				c.(*net.TCPConn).SetLinger(0)
+				c.Close() // ... and is reset unanswered
+				continue
+			}
+			go func() {
+				defer c.Close()
+				for answer(c, r) {
+				}
+			}()
+		}
+	}()
+	c := &Client{BaseURL: "http://" + ln.Addr().String(), HTTP: &http.Client{Timeout: 5 * time.Second}}
+	for i := range 2 {
+		var b strings.Builder
+		if err := c.Stream(context.Background(), []Message{{"user", "hi"}}, func(d string) { b.WriteString(d) }); err != nil {
+			t.Fatalf("turn %d: %v", i+1, err)
+		}
+		if b.String() != "ok" {
+			t.Fatalf("turn %d: got %q", i+1, b.String())
+		}
 	}
 }
