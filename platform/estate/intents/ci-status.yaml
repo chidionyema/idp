@@ -1,0 +1,12 @@
+name: ci-status
+description: Structured CI/CD status for a PR or SHA. Returns JSON (all check runs, not the first 30).
+args:
+  pr:   {type: string, default: ""}
+  sha:  {type: string, default: ""}
+  repo: {type: string, default: "chidionyema/idp"}
+steps:
+  - name: status
+    # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26)
+    cmd: >
+      p={{pr}}; s={{sha}};
+      python3 ~/.estate/libexec/ci-status.py ${p:+pr="$p"} ${s:+sha="$s"} repo={{repo}}

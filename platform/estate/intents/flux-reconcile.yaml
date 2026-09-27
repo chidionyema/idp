@@ -1,12 +1,17 @@
 name: flux-reconcile
-description: >
-  Force Flux to reconcile a Kustomization or HelmRelease.
+description: Force reconcile a Flux source or resource.
 args:
-  kind: { type: string, help: "kustomization or helmrelease" }
-  name: { type: string, help: "Resource name" }
-  namespace: { type: string, default: "flux-system", help: "Namespace" }
-tools: []
+  kind:     {type: string, description: "source git|kustomization|helmrelease|..."}
+  name:     {type: string}
+  namespace: {type: string, default: "flux-system"}
+  with_source: {type: bool, default: false}
+  kubeconfig: {type: string, default: ""}
 halt_on_failure: false
 steps:
-  - cmd: >
-      flux reconcile {{kind}} {{name}} -n {{namespace}} --with-source 2>&1
+  - name: reconcile
+    # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26).
+    # $k unquoted on purpose: "source git" is two words to flux.
+    cmd: >
+      kc={{kubeconfig}}; w={{with_source}}; k={{kind}};
+      ${kc:+env KUBECONFIG="$kc"} flux --timeout=2m reconcile $k {{name}} -n {{namespace}}
+      $([ "$w" = True ] || [ "$w" = true ] && echo --with-source) 2>&1
