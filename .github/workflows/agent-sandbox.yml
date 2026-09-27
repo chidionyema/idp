@@ -102,6 +102,15 @@ jobs:
             echo "::error::the harness left no transcript; nothing can be graded. It said: $(head -1 "$out/stdout" | cut -c1-200)"
             exit 1
           fi
+          if [ "$rc" -ne 0 ]; then
+            # A harness that failed did no work worth grading: stop here with the reason. Only the
+            # provider's HTTP status and error type reach this public log, never the agent's words.
+            # A rejected key reads: 401 {"type":"error","error":{"type":"authentication_error",...
+            status=$(grep -oE '^[0-9]{3} ' "$out/stdout" | head -1 || true)
+            kind=$(grep -oE '"type":"[a-z_]+_error"' "$out/stdout" | head -1 | cut -d'"' -f4 || true)
+            echo "::error::the harness failed (exit $rc); provider said: ${status:-no status}${kind:-}"
+            exit "$rc"
+          fi
           cp "$transcript" "$out/transcript.jsonl"
           # The patch is everything the agent changed against the commit it started from,
           # committed or not, tracked or new.
