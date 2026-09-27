@@ -46,6 +46,19 @@ you mean. A gate that cannot fail is not a gate; a test that executes nothing is
 This is two rules kept as one because they are one: **narrating instead of proving** and **asserting
 instead of proving** are the same defect, an agent producing words where a measurement belongs.
 
+**Operational** means *used*: the thing is doing its job in production, for its real caller, and
+the founder can watch it doing that job live on /fleet (the primary work surface; a new page when it
+needs one). A safeguard is operational only when /fleet shows it deciding (pass / refuse) on real
+agent actions as they happen. A router lane is operational when /fleet shows real calls through it.
+
+**Done = operational.** Merged, deployed, green CI, a healthy pod, an HTTP 200, a passing test: none
+of these is done. Each is a step on the way, never the finish.
+
+**Report only two things: done, or seriously blocked.** A merged PR, an opened PR, a pushed commit,
+a green check is not news; do not announce it. A claim of "blocked" carries its evidence: the intent
+that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
+printed. A blocker without an intent run behind it is a guess, and is not reported.
+
 ---
 
 ## 4. Secrets — by name only, from the vault
