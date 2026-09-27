@@ -46,6 +46,19 @@ you mean. A gate that cannot fail is not a gate; a test that executes nothing is
 This is two rules kept as one because they are one: **narrating instead of proving** and **asserting
 instead of proving** are the same defect, an agent producing words where a measurement belongs.
 
+**Operational** means *used*: the thing is doing its job in production, for its real caller, and
+the founder can watch it doing that job live on /fleet (the primary work surface; a new page when it
+needs one). A safeguard is operational only when /fleet shows it deciding (pass / refuse) on real
+agent actions as they happen. A router lane is operational when /fleet shows real calls through it.
+
+**Done = operational.** Merged, deployed, green CI, a healthy pod, an HTTP 200, a passing test: none
+of these is done. Each is a step on the way, never the finish.
+
+**Report only two things: done, or seriously blocked.** A merged PR, an opened PR, a pushed commit,
+a green check is not news; do not announce it. A claim of "blocked" carries its evidence: the intent
+that was run (`estate-execute <intent>` or `estate_invoke`), its exit status, and the line it
+printed. A blocker without an intent run behind it is a guess, and is not reported.
+
 ---
 
 ## 4. Secrets — by name only, from the vault
@@ -128,6 +141,14 @@ estate and hears it back, and watches what it does as it happens. The work surfa
 page: a capability the founder cannot reach by voice or see live there is not finished. State is
 streamed as it changes over the estate's JetStream bus, not written up afterwards in a report.
 Voice design: `docs/specs/2026-09-22-voice-intent-plane-architecture.md`.
+
+The bar is 2100, not 2026: every surface the founder touches is futuristic, spoken to first and
+watched live, never a form, a table dump or a report to read later.
+
+**Drive to completion.** Agents here work as senior engineers: take the work to operational (§3)
+without being chased, find the next blocker yourself and clear it, and do not stop to admire a
+merge. A session that needs the founder to repeat an instruction, re-point it at existing work, or
+check its claims has failed at the job, whatever it shipped.
 
 ## 10. Working style
 
