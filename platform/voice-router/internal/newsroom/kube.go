@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -35,6 +36,10 @@ type Kube struct {
 }
 
 func InCluster(log *slog.Logger) (*Kube, error) {
+	// KUBE_API_URL points a laptop run at `kubectl proxy`, which carries the caller's own auth.
+	if u := os.Getenv("KUBE_API_URL"); u != "" {
+		return &Kube{Host: strings.TrimRight(u, "/"), HTTP: http.DefaultClient, Log: log}, nil
+	}
 	host, port := os.Getenv("KUBERNETES_SERVICE_HOST"), os.Getenv("KUBERNETES_SERVICE_PORT")
 	if host == "" || port == "" {
 		return nil, fmt.Errorf("newsroom: KUBERNETES_SERVICE_HOST/PORT not set")
@@ -86,15 +91,17 @@ type mapper interface {
 }
 
 func (k *Kube) get(ctx context.Context, u string) (*http.Response, error) {
-	tok, err := os.ReadFile(k.TokenFile)
-	if err != nil {
-		return nil, fmt.Errorf("newsroom: read token: %w", err)
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(tok)))
+	if k.TokenFile != "" {
+		tok, err := os.ReadFile(k.TokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("newsroom: read token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(string(tok)))
+	}
 	req.Header.Set("Accept", "application/json")
 	return k.HTTP.Do(req)
 }
@@ -301,12 +308,27 @@ func (e *eventMapper) seen(obj json.RawMessage, src source, now time.Time) (Raw,
 	if ev.Reason == "BackOff" && strings.Contains(ev.Message, "restarting failed container") {
 		kind, severity = "k8s.crashloop", "danger"
 	}
+	objKind, name := owner(ev.InvolvedObject.Kind, ev.InvolvedObject.Name)
 	return Raw{
 		Source: "k8s", Kind: kind, Severity: severity,
-		Entity: ev.InvolvedObject.Kind + "/" + ns + "/" + ev.InvolvedObject.Name,
-		Name:   ev.InvolvedObject.Name, Namespace: ns,
+		Entity: objKind + "/" + ns + "/" + name,
+		Name:   name, Namespace: ns,
 		Reason: ev.Reason, Message: ev.Message, At: at,
 	}, true
+}
+
+// cronRun matches a CronJob's Job (<cronjob>-<8-digit schedule>) and that Job's Pod (-<5 chars>).
+var cronRun = regexp.MustCompile(`^(.+)-[0-9]{8}(-[a-z0-9]{5})?$`)
+
+// owner folds every run of a CronJob into the CronJob, so a job failing every
+// 5 minutes is one story counting up, not a new story per run.
+func owner(kind, name string) (string, string) {
+	if kind == "Job" || kind == "Pod" {
+		if m := cronRun.FindStringSubmatch(name); m != nil {
+			return "CronJob", m[1]
+		}
+	}
+	return kind, name
 }
 
 type fluxState struct{ ready, rev string }

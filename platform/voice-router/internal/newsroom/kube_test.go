@@ -303,3 +303,17 @@ func TestKubeSendsTheToken(t *testing.T) {
 	}
 	cancel()
 }
+
+func TestEveryRunOfACronJobIsOneEntity(t *testing.T) {
+	for _, c := range []struct{ kind, name, wantKind, wantName string }{
+		{"Job", "front-door-heartbeat-29841635", "CronJob", "front-door-heartbeat"},
+		{"Pod", "spiffe-proof-29841645-zjz42", "CronJob", "spiffe-proof"},
+		{"Pod", "coroot-549554db7f-pd45b", "Pod", "coroot-549554db7f-pd45b"},
+		{"HelmRelease", "dagster", "HelmRelease", "dagster"},
+	} {
+		k, n := owner(c.kind, c.name)
+		if k != c.wantKind || n != c.wantName {
+			t.Errorf("owner(%s, %s) = %s/%s, want %s/%s", c.kind, c.name, k, n, c.wantKind, c.wantName)
+		}
+	}
+}

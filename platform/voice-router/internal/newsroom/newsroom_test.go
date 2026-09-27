@@ -28,7 +28,7 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestEditorDedupesWithinTenMinutes(t *testing.T) {
+func TestEditorDedupesWithinTheWindow(t *testing.T) {
 	e := NewEditor()
 	s1, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0}, t0)
 	if !ok {
@@ -44,7 +44,7 @@ func TestEditorDedupesWithinTenMinutes(t *testing.T) {
 	if s2.Count != 2 {
 		t.Fatalf("expected Count 2, got %d", s2.Count)
 	}
-	s3, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0.Add(20 * time.Minute)}, t0.Add(20*time.Minute))
+	s3, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0.Add(45 * time.Minute)}, t0.Add(45*time.Minute))
 	if !ok {
 		t.Fatal("expected ok")
 	}
@@ -53,6 +53,24 @@ func TestEditorDedupesWithinTenMinutes(t *testing.T) {
 	}
 	if s3.Count != 1 {
 		t.Fatalf("expected Count 1, got %d", s3.Count)
+	}
+}
+
+func TestEditorFoldsTheSchedulerRetryCadence(t *testing.T) {
+	e := NewEditor()
+	var first Story
+	for i := 0; i < 6; i++ {
+		at := t0.Add(time.Duration(i) * (10*time.Minute + 11*time.Second))
+		s, _ := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "coroot/pod", Name: "pod", Severity: "warn", At: at}, at)
+		if i == 0 {
+			first = s
+		}
+		if s.ID != first.ID {
+			t.Fatalf("retry %d opened a new story %q, want %q", i, s.ID, first.ID)
+		}
+		if s.Count != i+1 {
+			t.Fatalf("retry %d count = %d, want %d", i, s.Count, i+1)
+		}
 	}
 }
 

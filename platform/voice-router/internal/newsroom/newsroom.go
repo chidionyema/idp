@@ -16,7 +16,9 @@ const (
 	StateConfirmed = "confirmed"
 	StateCorrected = "corrected"
 
-	DedupeWindow = 10 * time.Minute
+	// The scheduler retries an unschedulable pod every ~10m11s (measured on OKE, 2026-09-27);
+	// a 10m window split one ongoing failure into a story per retry.
+	DedupeWindow = 30 * time.Minute
 	EvidenceCap  = 5
 )
 
@@ -198,7 +200,10 @@ func (e *Editor) Ingest(r Raw, now time.Time) (Story, bool) {
 		}
 	}
 
-	if prev, ok := e.stories[r.Entity]; ok && prev.raw.Kind == r.Kind && t.Sub(prev.At) <= DedupeWindow {
+	// a deploy of a new revision is its own story, never a repeat of the last one
+	newRevision := r.Kind == "flux.deployed" && r.Reason != ""
+	if prev, ok := e.stories[r.Entity]; ok && prev.raw.Kind == r.Kind && t.Sub(prev.At) <= DedupeWindow &&
+		!(newRevision && prev.raw.Reason != r.Reason) {
 		prev.Count++
 		prev.Severity = higherSeverity(prev.Severity, r.Severity)
 		if t.After(prev.At) {
