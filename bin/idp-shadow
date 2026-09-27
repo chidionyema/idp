@@ -558,9 +558,13 @@ def wait_ks(name, deadline):
                         "entries"
                     ) or []
                     return True, last, inv
+                # ArtifactFailed is kustomize-controller retrying while its GitRepository still
+                # clones (2026-09-27: the ESO floor, Applied 18s later). A source that never
+                # arrives still fails, at the deadline, with this message.
                 if ready.get("status") == "False" and ready.get("reason") not in (
                     "Progressing",
                     "ReconciliationSucceeded",
+                    "ArtifactFailed",
                 ):
                     inv = (obj.get("status", {}).get("inventory") or {}).get(
                         "entries"
