@@ -56,7 +56,10 @@ func main() {
 
 	t0 := time.Now()
 	asr, err := engine.NewASR(filepath.Join(models, env("VOICE_ASR", "sherpa-onnx-nemo-streaming-fast-conformer-transducer-en-480ms-int8")),
-		threads, float32(envFloat("VOICE_ENDPOINT_SILENCE", 0.5)))
+		// 0.3 s, not 0.5: measured 2026-09-27 with bin/voice-latency-gate, the endpoint wait went
+		// from 0.26-0.80 s to 0.00-0.01 s and router p50 from 4.08 s to 2.02 s. A cut-off question
+		// is re-joined by the session's continue window, so a short pause costs a merge, not a turn.
+		threads, float32(envFloat("VOICE_ENDPOINT_SILENCE", 0.3)))
 	if err != nil {
 		log.Error("voice.start", "err", err)
 		os.Exit(1)
