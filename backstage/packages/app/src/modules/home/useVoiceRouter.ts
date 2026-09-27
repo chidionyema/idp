@@ -14,13 +14,15 @@
 //
 // PROTOCOL (platform/voice-router/cmd/voice-router/main.go):
 //   up    binary int16 LE PCM, 16 kHz mono; text {"type":"system"|"ask"|"say"|"stop", text}
-//   down  text hello{rate} partial{text} final{turn,text} phrase{turn,text} barge{turn}
-//              done{turn} error{turn,text}
+//   down  text hello{rate} partial{text} final{turn,text} phrase{turn,text} intent_result{turn,intent}
+//              barge{turn} done{turn} error{turn,text}
 //         binary uint32 LE turn id, then int16 LE PCM at hello.rate
+// intent_result.intent is the contract in ./intentCue (an estate intent ran; its text is also spoken).
 // Audio for any turn at or below the last barge is dropped: that is what makes an interruption
 // silence the agent at once, even with frames still in flight.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
+import { parseIntentResult, type IntentResult } from './intentCue';
 
 export function voiceRouterUrl(loc: Pick<Location, 'protocol' | 'host'> = window.location): string {
   return `${loc.protocol === 'https:' ? 'wss' : 'ws'}://${loc.host}/voice/ws`;
@@ -81,11 +83,16 @@ export interface VoiceRouter extends EstateVoice {
   partial: string;
 }
 
+export interface VoiceRouterOptions {
+  /** An utterance ran an estate intent: its result, for the visual cue. */
+  onIntentResult?: (r: IntentResult) => void;
+}
+
 /**
  * `system` is the context the brain answers from -- the live fleet, so it never invents counts.
  * It is re-sent whenever it changes.
  */
-export function useVoiceRouter(system = ''): VoiceRouter {
+export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): VoiceRouter {
   const [state, setState] = useState<EstateVoiceState>('off');
   const [partial, setPartial] = useState('');
   const [heard, setHeard] = useState('');
@@ -93,6 +100,8 @@ export function useVoiceRouter(system = ''): VoiceRouter {
   const [detail, setDetail] = useState('');
   const liveRef = useRef<Live | null>(null);
   const systemRef = useRef(system);
+  const onIntentRef = useRef(opts.onIntentResult);
+  onIntentRef.current = opts.onIntentResult;
   const finalAt = useRef(0);
 
   const silence = useCallback(() => {
@@ -207,6 +216,11 @@ export function useVoiceRouter(system = ''): VoiceRouter {
           case 'phrase':
             setReply((r) => (r ? `${r} ${m.text}` : m.text));
             break;
+          case 'intent_result': {
+            const r = parseIntentResult(m.intent);
+            if (r) onIntentRef.current?.(r);
+            break;
+          }
           case 'barge':
             l.barged = Math.max(l.barged, m.turn);
             silence();
