@@ -1,5 +1,6 @@
 import hashlib
 import re
+from datetime import datetime
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 
@@ -15,6 +16,8 @@ class MemoryWritePayload(BaseModel):
     expected_version: Optional[int] = None
     trust_tier: str = Field(default="raw_source")
     provenance: Dict[str, Any] = Field(default_factory=dict)
+    # When the fact became true in the world. Omitted means now.
+    valid_from: Optional[datetime] = None
 
 
 class SecurityViolationException(Exception):

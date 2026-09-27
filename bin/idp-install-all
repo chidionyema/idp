@@ -161,6 +161,25 @@ mkdir -p "$STATE/bin" "$STATE/intents" "$STATE/libexec" "$STATE/logs"
 chmod 755 "$STATE" 2>/dev/null || true
 ok "estate state at $STATE"
 
+# ── voice-router binary ──────────────────────────────────────────────────────
+# ai.estate.voice-router execs ~/.estate/voice-router/voice-router (launchd cannot exec under
+# ~/Documents, TCC). Built here from this checkout so /fleet voice never runs a hand-copied binary.
+GO_BIN="$(command -v go || echo "$HOME/.cache/estate-tools/go/bin/go")"
+if [ -x "$GO_BIN" ]; then
+  mkdir -p "$STATE/voice-router"
+  if (cd "$IDP/platform/voice-router" && CGO_ENABLED=1 "$GO_BIN" build -trimpath -o "$STATE/voice-router/voice-router.new" ./cmd/voice-router); then
+    mv "$STATE/voice-router/voice-router.new" "$STATE/voice-router/voice-router"
+    ok "voice-router built"
+  else
+    warn "voice-router build failed; the previous binary stays"
+  fi
+else
+  warn "no go toolchain: voice-router not built"
+fi
+# Its launcher and watch run from ~/.estate/bin, not this checkout: /fleet voice must not change when
+# someone switches the checkout's branch (2026-09-27: a branch reinstall silenced it for two hours).
+install -m 755 "$IDP/bin/fleetview-launchd" "$IDP/bin/voice-router-launchd" "$IDP/bin/voice-watch" "$STATE/bin/"
+
 # ── launchd agents ───────────────────────────────────────────────────────────
 info "installing launchd agents..."
 install_launchd() {

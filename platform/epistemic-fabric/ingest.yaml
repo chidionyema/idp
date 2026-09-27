@@ -20,7 +20,8 @@ metadata:
   namespace: epistemic-fabric
   labels: { app.kubernetes.io/name: epistemic-ingest-github, estate.io/layer: epistemic-fabric }
 spec:
-  replicas: 1
+  # 0: webhook secret epistemic-fabric-github is SecretSyncedError; the founder chose cicd + incidents only (crew#974).
+  replicas: 0
   selector:
     matchLabels: { app.kubernetes.io/name: epistemic-ingest-github }
   template:
@@ -96,7 +97,8 @@ metadata:
   namespace: epistemic-fabric
   labels: { app.kubernetes.io/name: epistemic-ingest-slack, estate.io/layer: epistemic-fabric }
 spec:
-  replicas: 1
+  # 0: no Slack source; the founder chose cicd + incidents only (crew#974).
+  replicas: 0
   selector:
     matchLabels: { app.kubernetes.io/name: epistemic-ingest-slack }
   template:

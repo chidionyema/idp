@@ -49,6 +49,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
+async def _bus_reachable(nats_url: str) -> dict:
+    """A TCP connect to the bus, bounded at 0.5s: reachable or not, and why."""
+    if not nats_url:
+        return {"reachable": False, "reason": "NATS_URL is unset"}
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    u = urlparse(nats_url)
+    try:
+        _r, w = await asyncio.wait_for(
+            asyncio.open_connection(u.hostname, u.port or 4222), timeout=0.5
+        )
+        w.close()
+        return {"reachable": True, "url": nats_url}
+    except Exception as exc:  # noqa: BLE001 - the reason is the answer
+        return {"reachable": False, "url": nats_url, "reason": type(exc).__name__}
+
+
 def build_app() -> FastAPI:
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
@@ -75,18 +92,25 @@ def build_app() -> FastAPI:
                 async for cue in nats_adapter.subscribe_cues(nats_url):
                     yield routes.cue_frame(cue)
 
-            try:
-                last_hb = asyncio.get_event_loop().time()
-                async for frame in nats_adapter.merge(_events(), _cues()):
-                    yield frame
-                    now = asyncio.get_event_loop().time()
-                    if now - last_hb >= 30:
-                        yield ": heartbeat\n\n"
-                        last_hb = now
-            except Exception:  # noqa: BLE001
-                while True:
-                    await asyncio.sleep(30)
+            async def _stories():
+                async for on, story in nats_adapter.subscribe_stories(nats_url):
+                    yield routes.story_frame(on, story)
+
+            last_hb = asyncio.get_event_loop().time()
+            merged = nats_adapter.merge(
+                nats_adapter.isolated("events", _events()),
+                nats_adapter.isolated("cues", _cues()),
+                nats_adapter.isolated("stories", _stories()),
+            )
+            async for frame in merged:
+                yield frame
+                now = asyncio.get_event_loop().time()
+                if now - last_hb >= 30:
                     yield ": heartbeat\n\n"
+                    last_hb = now
+            while True:
+                await asyncio.sleep(30)
+                yield ": heartbeat\n\n"
 
         async def gen():
             body, _status = routes.sessions_envelope()
@@ -166,8 +190,11 @@ def build_app() -> FastAPI:
         return JSONResponse(content=result, status_code=status)
 
     @app.get("/healthz")
-    def healthz():
-        return {"ok": True}
+    async def healthz():
+        # `ok` is liveness and stays true; `bus` says whether the estate bus answers. 2026-09-27
+        # the laptop's NATS was never installed, this answered {"ok": true} throughout, and every
+        # voice turn and the board's live stream went without it with nobody told.
+        return {"ok": True, "bus": await _bus_reachable(os.environ.get("NATS_URL", ""))}
 
     @app.get("/metrics")
     def metrics_handler():
@@ -305,6 +332,23 @@ def build_app() -> FastAPI:
             k: v for k, v in request.headers.items() if k.lower().startswith("x-trace-")
         }
         result, status = await vm.steer(body, trace_context or None)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.get(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_get():
+        # GitHub calls, up to a 10s timeout each: off the event loop, like /voice/intent.
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.agent_jobs_envelope)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_post(request: Request):
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        loop = asyncio.get_running_loop()
+        result, status = await loop.run_in_executor(None, routes.submit_agent_job, body)
         return JSONResponse(content=result, status_code=status)
 
     @app.post("/voice/intent")

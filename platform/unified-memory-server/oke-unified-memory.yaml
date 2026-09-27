@@ -1,169 +1,128 @@
----
+# The estate's memory layer (AGENTS.md §6: exactly one). The API alone: its Postgres is the one
+# estate-db cluster (role `memory`, database `memory`), not a server of its own -- the draft this
+# replaces ran its own pgvector with a 50Gi volume, a second copy of the data layer.
+#
+# Free tier (ADR 0034, rung 6): scale-to-zero behind the KEDA HTTP add-on. Idle it requests
+# nothing; awake it requests 50m CPU and 128Mi. It calls no model and no vendor, so it spends
+# nothing: search by meaning stays off until embeddings can go through LiteLLM.
 apiVersion: v1
-kind: ConfigMap
+kind: Namespace
 metadata:
-  name: memory-server-config
-data:
-  TUDUDI_HOSTED_MODE: "true"
-  # LAW 4: DATABASE_URL is injected from a Secret (SOPS + age via estate-secrets),
-  # never committed as a literal. The connection string carries the password.
+  name: unified-memory
+  labels: { app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
 ---
-apiVersion: v1
-kind: Secret
+# Both secrets come from the vault by name (bin/idp-estate-seed mints them): the role password,
+# assembled here into the connection string, and the estate agents' surface token.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
 metadata:
-  name: memory-db-secret
-stringData:
-  DATABASE_URL: "postgresql://matrix_admin:$(DB_PASSWORD)@memory-db-service:5432/agent_memory"
-  POSTGRES_USER: "matrix_admin"
-  POSTGRES_PASSWORD: "$(DB_PASSWORD)"
-  POSTGRES_DB: "agent_memory"
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: pgvector-block-pvc
+  name: unified-memory
+  namespace: unified-memory
 spec:
-  accessModes:
-    - ReadWriteOnce
-  storageClassName: oci-bv
-  resources:
-    requests:
-      storage: 50Gi
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: unified-memory-db
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: unified-memory-db
-  template:
-    metadata:
-      labels:
-        app: unified-memory-db
-    spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64
-      containers:
-        - name: pgvector
-          image: pgvector/pgvector:pg16
-          ports:
-            - containerPort: 5432
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: memory-db-secret
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: memory-db-secret
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                secretKeyRef:
-                  name: memory-db-secret
-                  key: POSTGRES_DB
-          resources:
-            requests:
-              cpu: "1000m"
-              memory: "4Gi"
-            limits:
-              cpu: "2000m"
-              memory: "8Gi"
-          volumeMounts:
-            - name: pgdata
-              mountPath: /var/lib/postgresql/data
-      volumes:
-        - name: pgdata
-          persistentVolumeClaim:
-            claimName: pgvector-block-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: memory-db-service
-spec:
-  selector:
-    app: unified-memory-db
-  ports:
-    - port: 5432
-      targetPort: 5432
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: unified-memory
+    creationPolicy: Owner
+    template:
+      data:
+        DATABASE_URL: "postgresql://memory:{{ .password }}@estate-rw.estate-db.svc.cluster.local:5432/memory?sslmode=require"
+        MEMORY_SURFACE_TOKEN: "{{ .token }}"
+  data:
+    - secretKey: password
+      remoteRef: { key: estate-db, property: memory-password }
+    - secretKey: token
+      remoteRef: { key: unified-memory, property: surface-token }
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: unified-memory-server
+  namespace: unified-memory
+  labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
+  annotations:
+    reloader.stakater.com/auto: "true"
 spec:
-  replicas: 2
+  # KEDA owns the count (0 or 1); this is only the count before it first acts.
+  replicas: 0
   selector:
-    matchLabels:
-      app: unified-memory-server
+    matchLabels: { app.kubernetes.io/name: unified-memory-server }
   template:
     metadata:
-      labels:
-        app: unified-memory-server
+      labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
     spec:
-      nodeSelector:
-        kubernetes.io/arch: arm64
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
       containers:
-        - name: api-server
-          image: your-docker-registry/agent-memory-server:latest
-          command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+        - name: server
+          image: ghcr.io/chidionyema/unified-memory-server
           ports:
-            - containerPort: 8000
+            - { name: http, containerPort: 8000 }
           env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: memory-db-secret
-                  key: DATABASE_URL
-            - name: TUDUDI_HOSTED_MODE
-              valueFrom:
-                configMapKeyRef:
-                  name: memory-server-config
-                  key: TUDUDI_HOSTED_MODE
-          resources:
-            requests:
-              cpu: "500m"
-              memory: "1Gi"
-            limits:
-              cpu: "1000m"
-              memory: "2Gi"
+            - { name: HOME, value: /tmp }
+            - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+            # secrets-not-from-env-vars (kyverno): files from the mounted Secret, read by main.py.
+            - { name: DATABASE_URL_FILE, value: /var/run/memory/DATABASE_URL }
+            - { name: MEMORY_SURFACE_TOKEN_FILE, value: /var/run/memory/MEMORY_SURFACE_TOKEN }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
+          # Ready means the schema ran and the pool is open: the lifespan does both before the
+          # app serves anything, /docs included.
           readinessProbe:
-            httpGet:
-              path: /docs
-              port: 8000
-            initialDelaySeconds: 5
-            periodSeconds: 10
-        - name: curation-daemon
-          image: your-docker-registry/agent-memory-server:latest
-          command: ["python", "curation_worker.py"]
-          env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: memory-db-secret
-                  key: DATABASE_URL
+            httpGet: { path: /docs, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /docs, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 4
           resources:
-            requests:
-              cpu: "250m"
-              memory: "512Mi"
-            limits:
-              cpu: "500m"
-              memory: "1Gi"
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: secret, mountPath: /var/run/memory, readOnly: true }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - name: secret
+          secret: { secretName: unified-memory, defaultMode: 256 }
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: unified-memory-service
+  name: unified-memory-server
+  namespace: unified-memory
+  labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp }
 spec:
   type: ClusterIP
-  selector:
-    app: unified-memory-server
+  selector: { app.kubernetes.io/name: unified-memory-server }
   ports:
-    - port: 80
-      targetPort: 8000
+    - { name: http, port: 8000, targetPort: http }
+---
+# Callers address the interceptor (keda-add-ons-http-interceptor-proxy.keda:8080) with this Host;
+# it holds the request, wakes the pod, and forwards. Five idle minutes and the pod is gone again.
+apiVersion: http.keda.sh/v1alpha1
+kind: HTTPScaledObject
+metadata:
+  name: unified-memory-server
+  namespace: unified-memory
+spec:
+  hosts:
+    - unified-memory.estate.internal
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: unified-memory-server
+    service: unified-memory-server
+    port: 8000
+  replicas: { min: 0, max: 1 }
+  scaledownPeriod: 300

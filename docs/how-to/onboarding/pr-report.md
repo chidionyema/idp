@@ -4,17 +4,14 @@
 
 `bin/pr-report <n> [--comment]` reads pull request `n` with `gh` (body, labels,
 changed files, added lines), writes `reports/pr.json`, and runs
-`conftest test -p policy` over it. The budget the cost rule compares against is
-`estate-defaults.yaml` `infrastructure.monthly_cap_usd`; the script never holds a
-number of its own. With `--comment` it posts every deny line as one PR comment.
+`conftest test -p policy` over it. With `--comment` it posts every deny line as one PR comment.
 
 ## What a PR body needs
 
 - `Approval-word: <word>` when the PR touches `backstage/`, `platform/identity/`,
   `platform/edge/`, `docs/reference/policy/` or `estate-defaults.yaml`. The founder answers
   `APPROVE: <word>` or `DENY: <word>`.
-- `Cost-delta-usd-month: <number>` when the PR touches `platform/oci/` (0 for a
-  change that costs nothing), and the `canary` label
+- The `canary` label when the PR touches `platform/oci/`
   (`gh pr edit <n> --add-label canary`).
 - A grant, policy or group membership in the same diff as any new identity
   resource (`oci_identity_user`, `oci_identity_domains_app`, ...).

@@ -31,7 +31,7 @@
 //
 // Every addition is marked ADDED. Nothing below a marker was rewritten.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import * as THREE from 'three';
 
 // --- ADDED: the estate's own API surface. `plugin://proxy/fleetview/*` is how the Backstage
@@ -48,6 +48,10 @@ import Delivery from './Delivery';
 import { useEstateVoice } from '../../home/useEstateVoice';
 // --- ADDED: an estate intent run by voice, shown on the fleet. ---
 import { cueToReactor, type IntentResult } from '../../home/intentCue';
+// --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
+import NewsDesk from './NewsDesk';
+import AgentJobs from './AgentJobs';
+import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
 
@@ -676,7 +680,7 @@ export default function FleetReactorApp() {
     const sel = engineState.current.nodes.find(
       (n: any) => n.sessionId && engineState.current.selectedNode === n,
     );
-    engineState.current.pulse = newMode && selectedNode ? { id: selectedNode.id, t: 0 } : null;
+    engineState.current.pulse = newMode && sel ? { id: sel.id, t: 0 } : null;
   };
 
   // --- WIRED: LIVE TELEMETRY ---
@@ -732,6 +736,10 @@ export default function FleetReactorApp() {
   const partial = voice === routerVoice ? routerVoice.partial : '';
   // A director cue's line is spoken if a voice engine is on, else shown in the ticker for 4s.
   const [cueLine, setCueLine] = useState('');
+  // SAFEGUARDS, LIVE. Each row is a gate deciding on a real agent turn, published on the bus as an
+  // estate.agent.event of kind "gate" (bin/epistemic_firewall.py). Founder 2026-09-27: a safeguard
+  // is operational only when /fleet shows it deciding as it happens. A refusal is spoken.
+  const [gates, setGates] = useState<any[]>([]);
   const cueSayRef = useRef<(text: string) => void>(() => {});
   cueSayRef.current = (text: string) => {
     if (!text) return;
@@ -760,6 +768,33 @@ export default function FleetReactorApp() {
   }, []);
   useEffect(() => () => clearTimeout(intentTimer.current), []);
   onIntentRef.current = onIntentResult;
+
+  // --- ADDED: the news desk (crew#974 P2). `rundown` accumulates director stories per channel;
+  // `channel` is which one is on screen; `breaking` is the current interrupt band, auto-cleared
+  // after 8s; `seenBreaking` stops a replayed history frame from re-triggering the same interrupt.
+  const [rundown, dispatchStory] = useReducer(
+    (state: Rundown, frame: ReturnType<typeof parseStoryFrame>) => (frame ? ingest(state, frame, Date.now()) : state),
+    undefined,
+    emptyRundown,
+  );
+  const [newsChannel, setNewsChannel] = useState(0);
+  const [breakingStory, setBreakingStory] = useState<Story | null>(null);
+  const breakingTimer = useRef<any>(null);
+  const seenBreakingRef = useRef<Set<string>>(new Set());
+  const lastStoryShotMsRef = useRef(0);
+  useEffect(() => () => clearTimeout(breakingTimer.current), []);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return;
+      }
+      if (!/^[0-6]$/.test(e.key)) return;
+      setNewsChannel(Number(e.key));
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // THE ROWS THE LEFT PANEL RENDERS.
   //
@@ -1405,6 +1440,7 @@ export default function FleetReactorApp() {
     // gone QUIET -- nothing is emitted when an agent stops, so only a timer can notice. The stream
     // answers "something just happened" and is the only thing that can make a jet mean anything.
     // They are not redundant: one is a heartbeat, the other is a nerve.
+      let es: EventSource | null = null;
       let retryMs = 2000;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
       const connect = () => {
@@ -1421,6 +1457,55 @@ export default function FleetReactorApp() {
                   if (engineState.current.cine.onCue(frame, [p.x, p.y, p.z])) {
                     engineState.current.cineTarget = p.clone();
                     cueSayRef.current(String(frame.monologue || ''));
+                  }
+                }
+                return;
+              }
+              if (frame?.kind === 'gate' && frame.gate) {
+                setGates((g) => [frame, ...g].slice(0, 40));
+                // The stream replays the last 15 minutes on connect; only a decision made now is spoken.
+                const fresh = Date.now() - Date.parse(frame.at || '') < 20000;
+                if (fresh && frame.gate.verdict === 'refuse') {
+                  cueSayRef.current(`${frame.gate.name} refused: ${frame.gate.reason || 'a claim with nothing behind it'}`);
+                }
+                return;
+              }
+              const sf = parseStoryFrame(frame);
+              if (sf) {
+                dispatchStory(sf);
+                const { story } = sf;
+                const nowMs = Date.now();
+                const interrupt = shouldInterrupt(story, nowMs, seenBreakingRef.current);
+                if (interrupt) {
+                  seenBreakingRef.current.add(story.id);
+                  setBreakingStory(story);
+                  clearTimeout(breakingTimer.current);
+                  breakingTimer.current = setTimeout(() => setBreakingStory(null), 8000);
+                  cueSayRef.current(story.anchor || story.headline);
+                }
+                // Replayed history (the last hour, on connect) fills the rundown silently: only a
+                // story that happened in the last 120s rings, bursts, or moves the camera.
+                const atMs = Date.parse(story.at);
+                if (Number.isNaN(atMs) || Math.abs(nowMs - atMs) > 120_000) return;
+                const visual = visualFor(story);
+                engineState.current.intentCue = { t: 0, kind: visual.ring, color: visual.color };
+                engineState.current.intentColor = visual.color;
+                if (visual.burst > 0) {
+                  fire(engineState.current.intentJets, 0, 0, `story:${story.id}`, visual.burst, visual.ring === 'fire' ? 'stuck' : 'thinking');
+                }
+                if (
+                  visual.shot &&
+                  engineState.current.cine.state === 'idle' &&
+                  (interrupt || nowMs - lastStoryShotMsRef.current >= 20000)
+                ) {
+                  lastStoryShotMsRef.current = nowMs;
+                  if (
+                    engineState.current.cine.onCue(
+                      { target_id: story.id, shot_type: visual.shot, monologue: '', focal_length: 50, dolly_speed: 1, timestamp: story.at },
+                      [0, 0, 0],
+                    )
+                  ) {
+                    engineState.current.cineTarget = new THREE.Vector3(0, 0, 0);
                   }
                 }
                 return;
@@ -1828,6 +1913,42 @@ export default function FleetReactorApp() {
               : 'none',
           }}
         />
+      </div>
+
+      {/* SAFEGUARDS, bottom right: every gate decision on a real turn, newest first, as it lands on
+          the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}
+      <div
+        data-testid="safeguards"
+        className="absolute bottom-6 right-6 z-30 w-[280px] rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
+      >
+        <div className="flex items-baseline gap-2 px-1 pb-1">
+          <span className="text-[9px] font-mono uppercase tracking-widest text-white/60 flex-1">safeguards · live</span>
+          <span className="text-[9px] font-mono text-emerald-300/80">{gates.filter((g) => g.gate.verdict === 'pass').length} pass</span>
+          <span className="text-[9px] font-mono text-rose-400/90">{gates.filter((g) => g.gate.verdict === 'refuse').length} refused</span>
+          {gates.some((g) => g.gate.verdict === 'blind') ? (
+            <span className="text-[9px] font-mono text-amber-300/80">{gates.filter((g) => g.gate.verdict === 'blind').length} blind</span>
+          ) : null}
+        </div>
+        {gates.length ? gates.slice(0, 6).map((g, i) => (
+          <div key={`${g.session_id}-${g.at}-${i}`} className="px-1 py-0.5 flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span
+                className="inline-block w-1.5 h-1.5 rounded-full"
+                style={{ background: g.gate.verdict === 'pass' ? '#34d399' : g.gate.verdict === 'refuse' ? '#fb7185' : '#fcd34d' }}
+              />
+              <span className="text-[9px] font-mono text-white/70">{g.gate.name}</span>
+              <span className="text-[9px] font-mono text-white/40">{g.gate.verdict}</span>
+              <span className="text-[8px] font-mono text-white/30 truncate flex-1 text-right">
+                {String(g.session_id || '').slice(0, 8)} · {String(g.at || '').slice(11, 19)}
+              </span>
+            </div>
+            {g.gate.verdict !== 'pass' && (g.gate.reason || g.gate.claim) ? (
+              <div className="text-[9px] text-white/45 truncate pl-3">{g.gate.claim || g.gate.reason}</div>
+            ) : null}
+          </div>
+        )) : (
+          <div className="px-1 py-1 text-[9px] font-mono text-white/30">no gate decision on the bus yet</div>
+        )}
       </div>
 
       {/* THE VOICE PICKER, top right under the burn bar (founder 2026-09-26: "move it to top right",
@@ -2581,6 +2702,24 @@ export default function FleetReactorApp() {
         </div>
       ) : null}
 
+
+      <NewsDesk
+        rundown={rundown}
+        channel={newsChannel}
+        onChannel={setNewsChannel}
+        breaking={breakingStory}
+        nowMs={Date.now()}
+      />
+
+      {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
+          the discovery proxy like every remote-capable call here, so it works from the phone. */}
+      <AgentJobs
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/agent-jobs`, init);
+        }}
+      />
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay z-50 bg-[repeating-linear-gradient(transparent,transparent_2px,#000_2px,#000_4px)]"></div>

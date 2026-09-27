@@ -86,6 +86,35 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, onDelta func(string
 	return err
 }
 
+// Ready asks the lane for one token. The process being up says nothing about voice: on
+// 2026-09-27 the router lost the `voice` lane and every turn failed while /healthz said ok.
+func (c *Client) Ready(ctx context.Context) error {
+	body, err := json.Marshal(map[string]any{
+		"model": c.Model, "messages": []Message{{"user", "ok"}}, "max_tokens": 1,
+	})
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.BaseURL+"/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
+	resp, err := c.HTTP.Do(req)
+	if err != nil {
+		return fmt.Errorf("brain %s: %w", c.Model, err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("brain %s: %s: %s", c.Model, resp.Status, strings.TrimSpace(string(b)))
+	}
+	return nil
+}
+
 func (c *Client) stream(ctx context.Context, msgs []Message, onDelta func(string), finish *string) error {
 	body, err := json.Marshal(map[string]any{
 		"model": c.Model, "messages": msgs, "stream": true, "max_tokens": c.MaxTokens,

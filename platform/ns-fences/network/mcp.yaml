@@ -94,6 +94,9 @@ spec:
           kubernetes.io/metadata.name: hindsight
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: keda
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: llm
     - namespaceSelector:
         matchLabels:
