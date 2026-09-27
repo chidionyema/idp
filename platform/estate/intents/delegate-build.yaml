@@ -1,5 +1,5 @@
 name: delegate-build
-description: Strong model plans, cheap model builds, a test decides. verb=plan|dispatch|status spec=<md> slug=<name> repo= planner=claude-opus-5-5 builder=claude-sonnet-5 parallel=3 max_turns=30. Plan first, read plan.json, then dispatch.
+description: Strong model plans, cheap model builds, a test decides. verb=plan|dispatch|status spec=<md> slug=<name> repo= planner=claude-opus-5-5 builder=claude-sonnet-5 parallel=3 max_turns=30 attempts=3. Plan first, read plan.json, then dispatch.
 # WHY: 2026-09-27 builders went out on Opus with a spec and no plan, explored on their own and
 # burned tokens. Every step here names its files and a done-check; builders open nothing else;
 # done means the check exits 0. Model calls are `claude -p` children, so they go through the
@@ -14,7 +14,8 @@ args:
   builder:   {type: string, default: claude-sonnet-5}
   parallel:  {type: int, default: 3}
   max_turns: {type: int, default: 30}
+  attempts:  {type: int, default: 3}
 steps:
   - name: run
     timeout: 7200
-    cmd: python3 ~/.estate/libexec/delegate-build.py {{verb}} spec={{spec}} slug={{slug}} repo={{repo}} planner={{planner}} builder={{builder}} parallel={{parallel}} max_turns={{max_turns}}
+    cmd: python3 ~/.estate/libexec/delegate-build.py {{verb}} spec={{spec}} slug={{slug}} repo={{repo}} planner={{planner}} builder={{builder}} parallel={{parallel}} max_turns={{max_turns}} attempts={{attempts}}

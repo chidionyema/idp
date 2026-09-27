@@ -11,9 +11,15 @@ builder says so.
 Every model call is a `claude -p` child. It reads ~/.claude/settings.json, so it goes through the
 estate gateway (ANTHROPIC_BASE_URL, litellm-local on :4000) like this session does.
 
+The reality interface (docs/tickets/2026-09-27-reality-interface.md): a builder's attempt is a
+hypothesis; the done-check is reality. A failed attempt is rewound out of the tree (only the
+step's files) and the next attempt gets the original instructions plus the raw check output in an
+[EMPIRICAL_STATE] block, never the failed attempt's words. results.json keeps 'empirical'
+(dispatcher-written) apart from 'scratchpad' (model-written).
+
   plan      spec=<md> repo=<dir> slug=<name> planner=<model>
             -> ~/.estate/delegate/<slug>/plan.json, validated
-  dispatch  slug=<name> repo=<dir> builder=<model> parallel=<n> max_turns=<n>
+  dispatch  slug=<name> repo=<dir> builder=<model> parallel=<n> max_turns=<n> attempts=<n>
             -> one worktree ~/Documents/code/wt-<slug> on branch delegate/<slug>; steps run in
                waves (depends_on); steps in one wave touch disjoint files, so they share the tree
   status    slug=<name>
@@ -28,7 +34,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HOME = Path.home()
-ROOT = HOME / ".estate" / "delegate"
+ROOT = Path(os.environ.get("ESTATE_DELEGATE_ROOT", str(HOME / ".estate" / "delegate")))
+TREES = Path(os.environ.get("ESTATE_DELEGATE_TREES", str(HOME / "Documents" / "code")))
 MAX_PARALLEL = 3  # the estate's agent spawn budget
 
 PLAN_SHAPE = """{
@@ -203,7 +210,7 @@ def cmd_dispatch(a):
     if errors:
         print("\n".join(f"INVALID: {e}" for e in errors), file=sys.stderr)
         return 1
-    tree = HOME / "Documents" / "code" / f"wt-{slug}"
+    tree = TREES / f"wt-{slug}"
     if not tree.exists():
         subprocess.run(["git", "-C", repo, "fetch", "-q", "origin", "main"], check=True)
         subprocess.run(
@@ -238,36 +245,81 @@ def cmd_dispatch(a):
             text=True,
             timeout=1800,
         )
-        return r.returncode == 0, (r.stdout + r.stderr)[-3000:]
+        return r.returncode == 0, r.returncode, (r.stdout + r.stderr)[-3000:]
+
+    def rewind(files, existed, base):
+        for f in files:
+            if existed[f]:
+                subprocess.run(
+                    ["git", "-C", tree, "checkout", base, "--", f], check=True
+                )
+            elif (tree / f).exists():
+                (tree / f).unlink()
+
+    attempts = int(a.get("attempts", 3))
 
     def run(s):
         if results.get(s["id"], {}).get("done"):
             return s["id"], results[s["id"]]
-        prompt = BUILDER_PROMPT.format(
-            id=s["id"],
-            title=s["title"],
-            instructions=s["instructions"],
-            files=", ".join(s["files"]),
-            read=", ".join(s.get("read", [])) or "none",
-            done_check=s["done_check"],
-        )
-        usage_all = []
-        for attempt in (1, 2):
+        base = subprocess.run(
+            ["git", "-C", tree, "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        existed = {
+            f: subprocess.run(
+                ["git", "-C", tree, "cat-file", "-e", f"{base}:{f}"],
+                capture_output=True,
+            ).returncode
+            == 0
+            for f in s["files"]
+        }
+        usage_all, empirical = [], []
+        rc, out = None, None
+        for attempt in range(1, attempts + 1):
+            prompt = BUILDER_PROMPT.format(
+                id=s["id"],
+                title=s["title"],
+                instructions=s["instructions"],
+                files=", ".join(s["files"]),
+                read=", ".join(s.get("read", [])) or "none",
+                done_check=s["done_check"],
+            )
+            if attempt > 1:
+                n = attempt - 1
+                prompt += f"""
+
+[EMPIRICAL_STATE] written by the dispatcher from the done-check, not by a model
+Attempt {n} was rejected: `{s["done_check"]}` exited {rc}. Its changes were removed from the tree.
+Output:
+{out}
+[/EMPIRICAL_STATE]
+The previous attempt's reasoning was deleted on purpose. Form a new hypothesis from the instructions and this output alone."""
             text, usage = claude(prompt, builder, tree, turns, "Read,Edit,Write,Bash")
             usage_all.append(usage)
-            ok, out = check(s)
+            ok, rc, out = check(s)
+            empirical.append({"attempt": attempt, "check_rc": rc, "check_output": out})
             if ok:
                 return s["id"], {
                     "done": True,
                     "attempts": attempt,
-                    "said": text[-300:],
+                    "empirical": empirical,
+                    "scratchpad": {
+                        "said": text[-300:],
+                        "note": "the builder's own words; unverified, never used as evidence",
+                    },
                     "usage": usage_all,
                 }
-            prompt += f"\n\nThe done-check failed:\n{out}\nFix it."
+            rewind(s["files"], existed, base)
         return s["id"], {
             "done": False,
-            "attempts": 2,
-            "check_output": out,
+            "attempts": attempts,
+            "empirical": empirical,
+            "scratchpad": {
+                "said": text[-300:],
+                "note": "the builder's own words; unverified, never used as evidence",
+            },
             "usage": usage_all,
         }
 
@@ -276,7 +328,7 @@ def cmd_dispatch(a):
             for sid, res in pool.map(run, wave):
                 results[sid] = res
                 print(
-                    f"{sid}: {'done' if res['done'] else 'FAILED'} attempts={res['attempts']} usage={res['usage']}"
+                    f"{sid}: {'done' if res['done'] else 'FAILED'} attempts={res['attempts']} check_rc={last_rc(res)} usage={res['usage']}"
                 )
         (d / "results.json").write_text(json.dumps(results, indent=2))
         if not all(results[s["id"]]["done"] for s in wave):
@@ -291,6 +343,11 @@ def cmd_dispatch(a):
     return 0
 
 
+def last_rc(res):
+    """The last done-check exit code; None for a result written before the reality interface."""
+    return (res.get("empirical") or [{}])[-1].get("check_rc")
+
+
 def cmd_status(a):
     d = ROOT / a["slug"]
     plan = json.loads((d / "plan.json").read_text())
@@ -301,9 +358,10 @@ def cmd_status(a):
     )
     for s in plan["steps"]:
         r = results.get(s["id"], {})
-        print(
-            f"{s['id']:6} {'done' if r.get('done') else ('FAILED' if r else 'pending'):8} {s['title']}"
-        )
+        line = f"{s['id']:6} {'done' if r.get('done') else ('FAILED' if r else 'pending'):8} {s['title']}"
+        if s["id"] in results:
+            line += f"  rc={last_rc(r)}"
+        print(line)
     return 0
 
 
