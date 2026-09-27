@@ -50,7 +50,7 @@ function NewsBug({ channelDef, story }: NewsBugProps): JSX.Element {
       data-testid="news-bug"
       style={{
         position: 'absolute',
-        top: 64,
+        top: 184, // below the title, its subtitle and the session pill
         left: 24,
         display: 'flex',
         alignItems: 'center',

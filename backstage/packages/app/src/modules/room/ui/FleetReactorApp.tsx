@@ -678,7 +678,7 @@ export default function FleetReactorApp() {
     const sel = engineState.current.nodes.find(
       (n: any) => n.sessionId && engineState.current.selectedNode === n,
     );
-    engineState.current.pulse = newMode && selectedNode ? { id: selectedNode.id, t: 0 } : null;
+    engineState.current.pulse = newMode && sel ? { id: sel.id, t: 0 } : null;
   };
 
   // --- WIRED: LIVE TELEMETRY ---
@@ -1434,6 +1434,7 @@ export default function FleetReactorApp() {
     // gone QUIET -- nothing is emitted when an agent stops, so only a timer can notice. The stream
     // answers "something just happened" and is the only thing that can make a jet mean anything.
     // They are not redundant: one is a heartbeat, the other is a nerve.
+      let es: EventSource | null = null;
       let retryMs = 2000;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
       const connect = () => {
