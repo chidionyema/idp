@@ -44,6 +44,9 @@ work, agent delegation and monitoring.
    - `node-pressure.sh` was not valid bash (unquoted JSONPath filter); quoted.
    - `k8s-diag.py` failed the estate Python standard; fixed.
    - `*-real` harness wrappers used an absolute home path; now `$HOME`.
+   - The running `estate-execute` (agent-trunk build) is main's copy plus intent composition
+     (`_run_composed`, `from:`). It is adopted too, with four lint fixes; otherwise the
+     converger would install main's copy and drop composition.
 2. **Converge.** One LaunchAgent installed in `~/.estate` (TCC-safe) watches `origin/main`, cuts
    a read-only `releases/<sha>` from `platform/estate`, flips `current` atomically, and writes a
    ledger line (sha, time, PRs carried, drift). `IDP-Estate.pkg` and `idp-install-all` install
