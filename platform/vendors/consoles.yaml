@@ -708,7 +708,17 @@ vendors:
         \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n"
+        \ 131072\n\n# --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice)\
+        \ ------------------\n# A spoken turn waits on the first words, so this lane\
+        \ is picked for time to the first spoken word: content, not reasoning.\n# Measured\
+        \ 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this\
+        \ model with\n# reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s;\
+        \ gpt-oss-20b at\n# effort low 0.82-1.26s and one empty reply, because it reasons\
+        \ before it speaks.\n# `openai/` is LiteLLM's provider prefix; Groq's own id\
+        \ follows.\n- model_name: voice\n  litellm_params:\n\
+        \    model: openai/qwen/qwen3.8-27b\n    api_base: https://api.groq.com/openai/v1\n\
+        \    api_key: os.environ/GROQ_API_KEY\n    reasoning_effort: none\n    timeout:\
+        \ 20\n    max_tokens: 400\n"
       fallbacks: |
         # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
         # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`
