@@ -1,0 +1,16 @@
+name: estate-inventory
+description: >-
+  READ-ONLY. Every platform/ component on three tiers: declared (main's clusters/oke Flux rows),
+  deployed (the live Kustomization covering its path: Ready, on the source revision?) and running
+  (owned Deployments/StatefulSets/DaemonSets ready/desired). Status: operating, degraded, frozen
+  (runs with no live row -- a merged change never lands), declared-not-deployed, code-only. A
+  failed cluster read makes the live tiers UNKNOWN, never absent. The live counterpart of
+  get_estate_inventory, which reads only the hourly crew/STATE.md snapshot. json=true for JSON.
+args:
+  json: {type: bool, default: false}
+halt_on_failure: true
+steps:
+  - name: inventory
+    timeout: 180
+    cmd: >
+      python3 ~/.estate/libexec/estate-inventory.py {{json}}

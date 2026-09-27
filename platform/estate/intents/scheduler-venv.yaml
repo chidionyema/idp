@@ -1,0 +1,15 @@
+name: scheduler-venv
+description: >-
+  Build $IDP/.venv, the venv bin/scheduler-up runs dagster-daemon and dagster-webserver from, with
+  the dagster pins read from estate-scheduler.Dockerfile (Mac and cluster run one dagster), then
+  prove estate_scheduler.definitions imports from it. A non-directory .venv (the e48c6919 blob) is
+  moved to .venv.stale-<utc>, never deleted. Dry run by default; apply=true builds. Exit 3 when the
+  built venv does not load the scheduler.
+args:
+  apply: {type: bool, default: false}
+halt_on_failure: true
+steps:
+  - name: build
+    timeout: 900
+    cmd: >
+      bash ~/.estate/libexec/scheduler-venv.sh {{apply}}

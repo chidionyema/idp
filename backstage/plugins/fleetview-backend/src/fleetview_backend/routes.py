@@ -164,6 +164,11 @@ def stream_frames(records: list[dict[str, Any]]) -> list[str]:
     return [f"data: {json.dumps(sessions.stream_event_for(r))}\n\n" for r in records]
 
 
+def cue_frame(cue: dict[str, Any]) -> str:
+    """One SSE frame for a cinema cue; the page routes type == 'cue' to its CineCam."""
+    return f"data: {json.dumps({**cue, 'type': 'cue'})}\n\n"
+
+
 def notes_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     return {"notes": notes.notes_for(session_id)}, 200
 

@@ -19,21 +19,37 @@ spec = json.loads(Path(sys.argv[1]).read_text())
 race = json.loads(Path(sys.argv[2]).read_text())
 by_id = {h["id"]: h for h in spec["hypotheses"]}
 falsified = {r["id"] for r in race["results"] if r["falsified"]}
-supported = [h for h in race["ranked"] if h not in falsified]
+# a probe that errored proved nothing either way: never offered as a cause, never counted as ruled out
+unknown = {r["id"] for r in race["results"] if r.get("unknown")}
+supported = [h for h in race["ranked"] if h not in falsified and h not in unknown]
 
-print("evidence (posterior, supported=probe found it):")
+print("evidence (posterior, supported=probe found it, unknown=probe could not look):")
 for hid in race["ranked"]:
-    mark = "SUPPORTED" if hid not in falsified else "falsified"
+    mark = (
+        "unknown"
+        if hid in unknown
+        else "falsified"
+        if hid in falsified
+        else "SUPPORTED"
+    )
     print(
         f"  {race['posteriors'][hid]:.3f}  {mark:9}  {hid}: {by_id[hid]['statement']}"
     )
 
+if not supported and unknown:
+    print(
+        f"VERDICT abstain: evidence unavailable for {', '.join(sorted(unknown))} -- "
+        "re-gather; nothing is proposed from a probe that could not look"
+    )
+    sys.exit(2)
 if not supported:
     print(
         "VERDICT none: every hypothesis falsified -- the fault is outside this model; widen the spec"
     )
     sys.exit(2)
 
+if unknown:
+    print(f"  ?? unknown, not ruled out: {', '.join(sorted(unknown))}")
 fixable = [h for h in supported if by_id[h].get("fix")]
 for h in supported:
     if not by_id[h].get("fix"):
