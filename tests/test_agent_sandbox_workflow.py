@@ -228,3 +228,14 @@ def test_a_harness_that_leaves_no_transcript_says_why(tmp_path):
     p, _ = _agent_step(tmp_path, "pi", 'echo "error: no API key for minimax"; exit 1\n')
     assert p.returncode == 1
     assert "harness exit 1" in p.stdout and "no API key for minimax" in p.stdout
+
+
+def test_a_harness_that_fails_stops_the_run_with_the_providers_reason(tmp_path):
+    """Run 36317773590: pi exited 1 in 0.6s, left a transcript, and the firewall passed it."""
+    body = FAKE["pi"] + (
+        'echo \'401 {"type":"error","error":{"type":"authentication_error","message":"login fail"}}\'\nexit 1\n'
+    )
+    p, _ = _agent_step(tmp_path, "pi", body)
+    assert p.returncode == 1, p.stdout + p.stderr
+    assert "401 authentication_error" in p.stdout
+    assert "login fail" not in p.stdout
