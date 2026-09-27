@@ -315,7 +315,7 @@ def flux_source(head):
     )
 
 
-def flux_kustomization(name, path, source="shadow"):
+def flux_kustomization(name, path, source="shadow", substitute=False):
     ks = {
         "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
         "kind": "Kustomization",
@@ -332,6 +332,11 @@ def flux_kustomization(name, path, source="shadow"):
             "force": True,
         },
     }
+    if substitute:
+        # What every production row that publishes a hostname carries (clusters/oke/*.yaml).
+        ks["spec"]["postBuild"] = {
+            "substituteFrom": [{"kind": "ConfigMap", "name": "estate-config"}]
+        }
     subprocess.run(
         ["kubectl", "apply", "-f", "-"],
         input=json.dumps(ks),
@@ -362,6 +367,27 @@ KEDA_ROW = os.path.join(REPO, "platform", "keda", "keda.yaml")
 # traefik chart installs its CRDs, and calico-node runs the version the raw manifest pins.
 TRAEFIK_ROW = os.path.join(REPO, "platform", "edge", "traefik.yaml")
 CALICO_ROW = os.path.join(REPO, "platform", "calico", "raw-migration", "calico.yaml")
+
+
+# MEASURED 2026-09-27 (idp#4582): platform/llm failed on `spec.hostnames[0]: Invalid value:
+# "llm.${ESTATE_ZONE}"`. Production substitutes every hostname in Flux postBuild from the
+# estate-config ConfigMap (clusters/oke/estate-config.yaml); the shadow had neither the ConfigMap
+# nor the postBuild, so every path that publishes a hostname was refused for a gap in the shadow.
+# The ConfigMap is the head's own copy: configuration, like the vault stand-in, not the change.
+ESTATE_CONFIG = os.path.join(REPO, "clusters", "oke", "estate-config.yaml")
+
+
+def estate_config():
+    """Lay the head's estate-config ConfigMap. Returns the failure, or None."""
+    p = subprocess.run(
+        ["kubectl", "apply", "-f", ESTATE_CONFIG], capture_output=True, text=True
+    )
+    if p.returncode != 0:
+        return f"could not lay estate-config: {(p.stderr or '').strip()[-400:]}"
+    print(
+        "ok      shadow  estate-config laid from the head (clusters/oke/estate-config.yaml)"
+    )
+    return None
 
 
 def pinned(row, pattern, what):
@@ -411,7 +437,9 @@ def floor_sources():
             "https://github.com/traefik/traefik-helm-chart",
             "v"
             + pinned(
-                TRAEFIK_ROW, r"chart: traefik\s+version: *([0-9][^\s]*)", "traefik chart"
+                TRAEFIK_ROW,
+                r"chart: traefik\s+version: *([0-9][^\s]*)",
+                "traefik chart",
             ),
             "./traefik/crds",
         ),
@@ -690,11 +718,14 @@ def verify(head, paths):
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
             return 1, floor_failed
+        config_failed = estate_config()
+        if config_failed:
+            return 1, [config_failed]
         threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
-            flux_kustomization(name, path)
+            flux_kustomization(name, path, substitute=True)
             names.append((name, path))
 
         deadline = time.time() + int(os.environ.get("IDP_SHADOW_TIMEOUT", "600"))
