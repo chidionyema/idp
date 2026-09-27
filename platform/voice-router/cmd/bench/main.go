@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,12 +16,13 @@ import (
 )
 
 var (
-	models  = flag.String("models", os.ExpandEnv("$HOME/.cache/estate-tools/sherpa-models"), "model root")
-	threads = flag.Int("threads", 2, "onnx threads")
-	runs    = flag.Int("runs", 3, "repeats per case")
-	ttsOnly = flag.Bool("tts", false, "TTS only")
-	cadence = flag.Bool("cadence", false, "print when each streaming ASR partial changes, in audio time, then exit")
-	text    = flag.String("text", "All five agents are healthy. The build lane finished two minutes ago, and nothing needs you right now.", "TTS sentence")
+	models      = flag.String("models", os.ExpandEnv("$HOME/.cache/estate-tools/sherpa-models"), "model root")
+	threads     = flag.Int("threads", 2, "onnx threads")
+	runs        = flag.Int("runs", 3, "repeats per case")
+	ttsOnly     = flag.Bool("tts", false, "TTS only")
+	cadence     = flag.Bool("cadence", false, "print when each streaming ASR partial changes, in audio time, then exit")
+	composeFlag = flag.String("compose", "", "rank every cached ASR x voice pair at these endpoint silences (e.g. 0.3,0.5,0.8), then exit")
+	text        = flag.String("text", "All five agents are healthy. The build lane finished two minutes ago, and nothing needs you right now.", "TTS sentence")
 )
 
 const chunk = 1600 // 100 ms at 16 kHz
@@ -29,6 +31,19 @@ type asrCase struct{ name, dir, enc, dec, join, modelType string }
 
 func main() {
 	flag.Parse()
+	if *composeFlag != "" {
+		var sil []float64
+		for _, f := range strings.Split(*composeFlag, ",") {
+			v, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "-compose: %q is not a number of seconds\n", f)
+				os.Exit(2)
+			}
+			sil = append(sil, v)
+		}
+		compose(sil)
+		return
+	}
 	wavs := flag.Args()
 	if len(wavs) == 0 {
 		wavs = []string{"/tmp/vbench/q.wav", "/tmp/vbench/long.wav"}

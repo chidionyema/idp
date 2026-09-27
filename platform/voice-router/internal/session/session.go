@@ -15,6 +15,7 @@ import (
 
 	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
 	"github.com/chidionyema/idp/platform/voice-router/internal/chunk"
+	"github.com/chidionyema/idp/platform/voice-router/internal/turnlog"
 )
 
 // ASR is one streaming recognizer stream (16 kHz mono float32 in).
@@ -85,11 +86,21 @@ type Session struct {
 	cont    bool      // this utterance continues the last question
 	heardAt time.Time // when the last question was heard
 	audible bool      // the latest turn has sent audio
+
+	turns          *turnlog.Ring // nil: turns are only logged
+	clock          *turnlog.Clock
+	id, engine, vc string
 }
 
 // New creates a session. ctx ends every turn when the connection closes.
 func New(ctx context.Context, asr ASR, tts TTS, b Brain, out Out, system string, log *slog.Logger) *Session {
 	return &Session{asr: asr, tts: tts, brain: b, out: out, system: system, log: log, root: ctx}
+}
+
+// Record keeps every turn in r, stamped by c, under this connection's id and
+// the engine and voice that speak it.
+func (s *Session) Record(r *turnlog.Ring, c *turnlog.Clock, sessionID, engine, voice string) {
+	s.turns, s.clock, s.id, s.engine, s.vc = r, c, sessionID, engine, voice
 }
 
 // Hello tells the client the audio formats.
@@ -142,7 +153,7 @@ func (s *Session) OnAudio(pcm []byte) {
 		s.mu.Unlock()
 		if hasWords(text) {
 			s.log.Info("voice.heard", "endpoint_wait_ms", time.Since(spoke).Milliseconds(), "chars", len(text), "continues", cont)
-			s.ask(text, cont)
+			s.ask(text, cont, time.Since(spoke))
 		}
 	}
 }
@@ -167,7 +178,7 @@ func (s *Session) stop(announce bool) {
 }
 
 // Ask starts a new turn for text, ending any turn still speaking.
-func (s *Session) Ask(text string) { s.ask(text, false) }
+func (s *Session) Ask(text string) { s.ask(text, false, 0) }
 
 // Say speaks text as it is, with no brain, ending any turn still speaking.
 // It is how the client reads out words that came from elsewhere -- an agent's
@@ -177,7 +188,8 @@ func (s *Session) Say(text string) {
 	id, ctx, done := s.begin()
 	s.heardAt = time.Time{} // nothing was asked: speech before its audio is a new question
 	s.mu.Unlock()
-	go s.run(ctx, id, func(_ context.Context, on func(string)) error { on(text); return nil }, done)
+	t := s.newTurn("say", text, 0)
+	go s.run(ctx, id, t, func(_ context.Context, on func(string)) error { on(text); return nil }, done)
 }
 
 // begin ends the live turn and starts the next one. It returns holding s.mu.
@@ -203,7 +215,17 @@ func (s *Session) begin() (uint32, context.Context, chan struct{}) {
 	return s.turn, ctx, s.done
 }
 
-func (s *Session) ask(text string, cont bool) {
+// newTurn starts a turn's record. heard is the utterance (or the text to say).
+func (s *Session) newTurn(kind, heard string, asrWait time.Duration) turnlog.Turn {
+	t := turnlog.Turn{SessionID: s.id, HeardAt: time.Now(), Kind: kind, ASRS: asrWait.Seconds(),
+		Words: len(strings.Fields(heard)), Engine: s.engine, Voice: s.vc}
+	if s.clock != nil {
+		t.HLC = s.clock.Stamp()
+	}
+	return t
+}
+
+func (s *Session) ask(text string, cont bool, asrWait time.Duration) {
 	id, ctx, done := s.begin()
 	if cont {
 		// Replace the cut-off question (and any partial answer) with the whole one.
@@ -228,15 +250,16 @@ func (s *Session) ask(text string, cont bool) {
 	s.mu.Unlock()
 
 	_ = s.out.JSON(Event{Type: "final", Turn: id, Text: text})
-	go s.run(ctx, id, func(ctx context.Context, on func(string)) error { return s.brain.Stream(ctx, msgs, on) }, done)
+	t := s.newTurn("ask", text, asrWait)
+	go s.run(ctx, id, t, func(ctx context.Context, on func(string)) error { return s.brain.Stream(ctx, msgs, on) }, done)
 }
 
 // run speaks one turn: stream yields the words, which are chunked into
 // phrases and synthesised as they arrive.
-func (s *Session) run(ctx context.Context, id uint32, stream func(context.Context, func(string)) error, done chan struct{}) {
+func (s *Session) run(ctx context.Context, id uint32, t turnlog.Turn, stream func(context.Context, func(string)) error, done chan struct{}) {
 	defer close(done)
 	t0 := time.Now()
-	var firstPhrase, firstAudio time.Duration
+	var firstPhrase, firstAudio, brainDone, synth time.Duration
 	phrases := make(chan string, 32)
 	errc := make(chan error, 1)
 
@@ -244,6 +267,9 @@ func (s *Session) run(ctx context.Context, id uint32, stream func(context.Contex
 		defer close(phrases)
 		c := chunk.Chunker{First: true}
 		send := func(p string) {
+			if firstPhrase == 0 {
+				firstPhrase = time.Since(t0) // ready to speak: timed here, not when the speaker is free
+			}
 			select {
 			case phrases <- p:
 			case <-ctx.Done():
@@ -257,6 +283,7 @@ func (s *Session) run(ctx context.Context, id uint32, stream func(context.Contex
 		if rest := c.Flush(); rest != "" && ctx.Err() == nil {
 			send(rest)
 		}
+		brainDone = time.Since(t0)
 		errc <- err
 	}()
 
@@ -265,12 +292,10 @@ func (s *Session) run(ctx context.Context, id uint32, stream func(context.Contex
 		if ctx.Err() != nil {
 			break
 		}
-		if firstPhrase == 0 {
-			firstPhrase = time.Since(t0)
-		}
 		if s.send(ctx, Event{Type: "phrase", Turn: id, Text: p}) != nil {
 			break
 		}
+		st := time.Now()
 		err := s.tts.Synth(ctx, p, func(samples []float32) bool {
 			if ctx.Err() != nil {
 				return false
@@ -285,6 +310,7 @@ func (s *Session) run(ctx context.Context, id uint32, stream func(context.Contex
 			}
 			return s.out.Binary(Frame(id, samples)) == nil
 		})
+		synth += time.Since(st)
 		if err != nil && ctx.Err() == nil {
 			s.log.Error("voice.tts", "turn", id, "err", err)
 		}
@@ -313,18 +339,28 @@ func (s *Session) run(ctx context.Context, id uint32, stream func(context.Contex
 
 	switch {
 	case cancelled:
+		t.Outcome = "cancelled"
 	case err == nil && len(said) == 0:
+		t.Outcome, t.Detail = "empty", "the brain gave an empty reply"
 		s.log.Error("voice.brain", "turn", id, "err", "empty reply")
-		_ = s.out.JSON(Event{Type: "error", Turn: id, Text: "the brain gave an empty reply"})
+		_ = s.out.JSON(Event{Type: "error", Turn: id, Text: t.Detail})
 	case err != nil:
+		t.Outcome, t.Detail = "error", err.Error()
 		s.log.Error("voice.brain", "turn", id, "err", err)
 		_ = s.out.JSON(Event{Type: "error", Turn: id, Text: "the brain did not answer"})
 	default:
+		t.Outcome = "ok"
 		_ = s.out.JSON(Event{Type: "done", Turn: id})
 	}
-	s.log.Info("voice.turn", "turn", id, "first_phrase_ms", firstPhrase.Milliseconds(),
-		"first_audio_ms", firstAudio.Milliseconds(), "total_ms", time.Since(t0).Milliseconds(),
-		"phrases", len(said), "cancelled", cancelled)
+	t.LLMFirstS, t.LLMTotalS, t.TTSS, t.FirstAudio = firstPhrase.Seconds(), brainDone.Seconds(), synth.Seconds(), firstAudio.Seconds()
+	t.Clauses = len(said)
+	s.log.Info("voice.turn", "turn", id, "hlc", t.HLC, "kind", t.Kind,
+		"asr_s", t.ASRS, "llm_first_s", t.LLMFirstS, "llm_total_s", t.LLMTotalS, "tts_s", t.TTSS,
+		"first_audio_s", t.FirstAudio, "words", t.Words, "clauses", t.Clauses, "engine", t.Engine,
+		"voice", t.Voice, "outcome", t.Outcome, "detail", t.Detail)
+	if s.turns != nil {
+		s.turns.Add(t)
+	}
 }
 
 // send drops events for a turn that has already been cancelled.
