@@ -1,5 +1,5 @@
 {
-  "_doc": "Cross-node pod TCP failure. Every probe reads the one net-forensics capture ($NF, taken once) or one API read, so the race is ms. exit 0 = evidence for the hypothesis; exit 1 falsifies it. fix = the estate intent that repairs it; verify = the intent that proves the repair.",
+  "_doc": "Cross-node pod TCP failure. Every probe reads the one net-forensics capture ($NF, taken once) or one API read, so the race is ms. exit 0 = evidence for the hypothesis; exit 1 falsifies it. Any other exit (grep exit 2 on a missing capture, an unreachable API) is UNKNOWN: evidence unavailable, never a result. fix = the estate intent that repairs it; verify = the intent that proves the repair.",
   "parallel": 8,
   "timeout": 20,
   "hypotheses": [
@@ -21,7 +21,7 @@
      "fix": null, "verify": "net-forensics"},
     {"id": "vxlan-mtu-mismatch", "prior": 0.10, "probe_reliability": 0.9,
      "statement": "vxlan.calico MTU differs between nodes",
-     "probe": "[ \"$(grep -o 'vxlan.calico mtu=[0-9]*' \"$NF\" | sort -u | wc -l)\" -gt 1 ]", "falsified_if": {"exit_code": 1},
+     "probe": "[ -s \"$NF\" ] || exit 2; [ \"$(grep -o 'vxlan.calico mtu=[0-9]*' \"$NF\" | sort -u | wc -l)\" -gt 1 ]", "falsified_if": {"exit_code": 1},
      "fix": null, "verify": "net-forensics"},
     {"id": "neighbour-failed", "prior": 0.10, "probe_reliability": 0.7,
      "statement": "a FAILED/INCOMPLETE neighbour blackholes the next hop",
@@ -29,7 +29,7 @@
      "fix": null, "verify": "net-forensics"},
     {"id": "gnp-default-deny-egress", "prior": 0.20, "probe_reliability": 0.9,
      "statement": "GlobalNetworkPolicy deny-direct-ai-vendor-egress selects all() with type Egress: default-denies egress of every pod without its own allow",
-     "probe": "[ \"$(kubectl --request-timeout=10s get globalnetworkpolicy deny-direct-ai-vendor-egress -o jsonpath='{.spec.selector}{.spec.types}' 2>/dev/null)\" = 'all()[\"Egress\"]' ]", "falsified_if": {"exit_code": 1},
+     "probe": "s=$(kubectl --request-timeout=10s get globalnetworkpolicy deny-direct-ai-vendor-egress --ignore-not-found -o jsonpath='{.spec.selector}{.spec.types}' 2>/dev/null) || exit 2; [ \"$s\" = 'all()[\"Egress\"]' ]", "falsified_if": {"exit_code": 1},
      "fix": null, "verify": "net-forensics probe=probe"}
   ]
 }

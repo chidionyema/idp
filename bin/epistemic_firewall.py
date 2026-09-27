@@ -24,7 +24,9 @@ transcript either contains a tool call or it does not.
 Fail-closed: a transcript that cannot be read is BLIND, never a clean bill. An empty feed is not
 evidence of honesty (the idp-calico-deny-log lesson).
 
-  bin/epistemic_firewall.py <session.jsonl>   exit 0 clean, 1 violation, 2 BLIND
+  bin/epistemic_firewall.py <session.jsonl>          exit 0 clean, 1 violation, 2 BLIND
+  bin/epistemic_firewall.py --turn <session.jsonl>   only the turn since the last prompt (the
+                                                     Stop hook's question: is THIS turn backed?)
 
 The honest limit: this grades evidence present in the transcript, not truth. An agent that runs a
 tool call which does not actually support its claim still passes. It removes the failure mode
@@ -151,6 +153,10 @@ def _find_claims(turns: list[dict]) -> list[str]:
     for turn in turns:
         if not isinstance(turn, dict):
             continue
+        if (
+            _unwrap(turn).get("role") == "user"
+        ):  # the founder's words are not the agent's claims
+            continue
         for text in _texts(turn):
             for sentence in _sentences(text):
                 if QUESTION.search(sentence):
@@ -261,7 +267,11 @@ def _has_independent_witness(pieces: set[str]) -> bool:
     own draft, which is exactly why existence was never the question.
     """
     for piece in pieces:
-        if not piece.startswith("bash:"):
+        # Case-folded: pi names the tool `bash`, Claude Code names it `Bash`. Measured 2026-09-27:
+        # a Claude Code session with 112 pieces, 39 of them Bash (kubectl, git show, gh), graded
+        # "no piece of evidence reads state this session did not author" -- every Claude Code
+        # claim failed, because only the pi spelling was ever in a fixture.
+        if not piece.lower().startswith("bash:"):
             continue
         rest = piece[len("bash:") :].split()
         if rest and rest[0] in _WITNESS_COMMANDS:
@@ -332,6 +342,34 @@ def grade(turns: list[dict]) -> dict:
     }
 
 
+def _is_prompt(turn: dict) -> bool:
+    """A user turn a person typed -- not a tool result fed back, not an injected meta line."""
+    if turn.get("isMeta"):
+        return False
+    msg = _unwrap(turn)
+    if msg.get("role") != "user":
+        return False
+    content = msg.get("content")
+    if isinstance(content, str):
+        return bool(content.strip())
+    if not isinstance(content, list):
+        return False
+    kinds = {b.get("type") for b in content if isinstance(b, dict)}
+    return "text" in kinds and "tool_result" not in kinds
+
+
+def last_turn(turns: list[dict]) -> list[dict]:
+    """Everything after the last prompt: the turn a Stop hook is being asked about.
+
+    Graded over a whole session, the rule goes quiet for good once any 3 pieces exist anywhere in
+    it -- a claim at turn 40 was "backed" by reads made for turn 2. Graded per turn, a claim must be
+    backed by what THIS turn read. A turn that only talks (a recap, a summary) and claims completed
+    work has read nothing, and is refused until it looks.
+    """
+    starts = [i for i, t in enumerate(turns) if isinstance(t, dict) and _is_prompt(t)]
+    return turns[starts[-1] + 1 :] if starts else turns
+
+
 def _blind(why: str) -> dict:
     return {
         "refused": True,
@@ -342,7 +380,7 @@ def _blind(why: str) -> dict:
     }
 
 
-def grade_file(path: Path | str) -> dict:
+def grade_file(path: Path | str, turn_only: bool = False) -> dict:
     """Read a pi session transcript (one JSON object per line) and grade it.
 
     Fail-closed: a missing file, or any line that will not parse, is BLIND -- never a clean bill.
@@ -364,7 +402,7 @@ def grade_file(path: Path | str) -> dict:
             turns.append(json.loads(line))
         except (json.JSONDecodeError, ValueError):
             return _blind(f"{p}:{n} is not valid JSON")
-    return grade(turns)
+    return grade(last_turn(turns) if turn_only else turns)
 
 
 def _estate_sessions() -> list[Path]:
@@ -452,7 +490,7 @@ def main(argv: list[str]) -> int:
     if not args:
         return _grade_estate()
 
-    verdict = grade_file(args[0])
+    verdict = grade_file(args[0], turn_only="--turn" in argv)
     if verdict["verdict"] == "BLIND":
         print(f"BLIND epistemic {verdict['remedy']}", file=sys.stderr)
         return 2

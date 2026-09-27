@@ -1,17 +1,19 @@
 name: disk-cleanup
 description: >-
   Free the laptop's data volume by deleting ONLY regenerable package-manager caches (yarn berry,
-  go-build, pip, Homebrew, npm/npx). Dry run by default: lists each target with its measured size
+  go-build, pip, Homebrew, npm/npx, Cargo target/ dirs in the idp main checkout, never other agents' worktrees). Dry run by default: lists each target with its measured size
   plus the large things it will never touch (estate-tools, worktrees, nvm, ollama). apply=true
   deletes the allow-list, verifies each target is gone (exit 3 if not), and reports free space
   measured before and after. trash=true also empties ~/.Trash (the user's; opt-in only).
-  bin/idp-disk-guard reports the pressure; this acts on it.
+  only_below_mb=N applies only while free space is under N MB (the scheduled row uses the
+  guard's 10G floor). bin/idp-disk-guard reports the pressure; this acts on it.
 class: mutate
 args:
   apply: {type: bool, default: false}
   trash: {type: bool, default: false}
+  only_below_mb: {type: int, default: 0}
 halt_on_failure: true
 steps:
   - name: disk-cleanup
     cmd: >
-      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}}
+      bash ~/.estate/libexec/disk-cleanup.sh {{apply}} {{trash}} {{only_below_mb}}

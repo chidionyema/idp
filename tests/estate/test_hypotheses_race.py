@@ -10,8 +10,10 @@ from pathlib import Path
 
 import pytest
 
-# Path to the script under test
-RACE = Path.home() / ".estate" / "libexec" / "hypotheses-race.py"
+# Path to the script under test: the repo's, so CI grades the change, not whatever is installed
+RACE = (
+    Path(__file__).resolve().parents[2] / "platform/estate/libexec/hypotheses-race.py"
+)
 
 
 def run_race(spec: dict) -> dict:
@@ -318,3 +320,90 @@ class TestEPSAndPriors:
         out = run_race(spec)
         # Should have result even with timeout
         assert len(out["results"]) == 1
+
+
+class TestEvidenceUnavailable:
+    """A probe that could not look is UNKNOWN: never support, never falsification, never top."""
+
+    def test_grep_on_a_missing_capture_is_unknown_and_the_race_abstains(self, tmp_path):
+        missing = tmp_path / "no-capture"
+        spec = {
+            "hypotheses": [
+                {
+                    "id": "flannel-masq",
+                    "prior": 0.9,
+                    "probe": f"grep -q '^!! flannel' {missing}",
+                    "falsified_if": {"exit_code": 1},
+                },
+            ],
+            "parallel": 1,
+            "timeout": 5,
+        }
+        out = run_race(spec)
+        r = out["results"][0]
+        assert r["exit"] == 2
+        assert r["unknown"] is True and r["falsified"] is False
+        assert out["top"] is None and out["abstain"] is True
+        assert out["unknown"] == ["flannel-masq"]
+
+    def test_command_not_found_is_unknown(self):
+        spec = {
+            "hypotheses": [
+                {
+                    "id": "H1",
+                    "probe": "no-such-tool-xyz",
+                    "falsified_if": {"exit_code": 1},
+                }
+            ],
+            "parallel": 1,
+            "timeout": 5,
+        }
+        out = run_race(spec)
+        assert out["results"][0]["exit"] == 127 and out["results"][0]["unknown"] is True
+
+    def test_undeclared_timeout_never_outranks_real_evidence(self):
+        spec = {
+            "hypotheses": [
+                {
+                    "id": "slow",
+                    "prior": 0.9,
+                    "probe": "sleep 10",
+                    "falsified_if": {"exit_code": 1},
+                },
+                {
+                    "id": "seen",
+                    "prior": 0.1,
+                    "probe": "true",
+                    "falsified_if": {"exit_code": 1},
+                },
+            ],
+            "parallel": 2,
+            "timeout": 1,
+        }
+        out = run_race(spec)
+        assert out["top"] == "seen", out
+        assert out["unknown"] == ["slow"] and out["supported"] == ["seen"]
+        assert out["abstain"] is False
+
+    def test_an_exit_code_the_author_declared_is_evidence(self):
+        spec = {
+            "hypotheses": [
+                {"id": "H1", "probe": "exit 3", "falsified_if": {"exit_code": 3}}
+            ],
+            "parallel": 1,
+            "timeout": 5,
+        }
+        out = run_race(spec)
+        assert out["results"][0]["unknown"] is False
+        assert out["results"][0]["falsified"] is True
+
+    def test_all_falsified_is_not_an_abstention(self):
+        spec = {
+            "hypotheses": [
+                {"id": "H1", "probe": "exit 1", "falsified_if": {"exit_code": 1}}
+            ],
+            "parallel": 1,
+            "timeout": 5,
+        }
+        out = run_race(spec)
+        assert out["top"] is None and out["abstain"] is False and out["unknown"] == []
