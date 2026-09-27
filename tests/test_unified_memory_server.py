@@ -350,7 +350,7 @@ def reference_digest(facts):
 
 def test_digest_depends_on_the_facts_not_the_order_they_were_written(booted):
     client, url = booted
-    rng = random.Random(20260927)
+    rng = random.Random(20260927)  # noqa: S311 - seeded, reproducible test data
     facts = {
         f"k{i:02d}{rng.choice('aBz_é')}": f"value {rng.random()}" for i in range(25)
     }
@@ -385,7 +385,7 @@ def test_randomised_writes_match_the_reference_model(booted, seed):
     the answer is the write with the greatest (valid_from, write order) among writes
     made by known_at whose valid_from is at or before as_of."""
     client, url = booted
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 - seeded, reproducible test data
     a = Tenant(url, "A")
     base = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=1)
     slots = [
@@ -449,7 +449,7 @@ def estate_db_shaped(pg):
         make_conninfo(pg.get_uri(), dbname=name), autocommit=True
     ) as c:
         c.execute("CREATE EXTENSION vector")
-    return make_conninfo(pg.get_uri(), dbname=name, user=owner, password="x")
+    return make_conninfo(pg.get_uri(), dbname=name, user=owner, password="x")  # noqa: S106 - throwaway test database
 
 
 def test_the_table_owner_is_held_to_tenant_isolation_too(pg):
