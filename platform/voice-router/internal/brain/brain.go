@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -54,9 +55,38 @@ func env(k, def string) string {
 	return def
 }
 
+// ErrEmpty is a completed reply with no words in it. A reasoning lane does this when its hidden
+// reasoning spends the token budget (finish_reason "length"), or now and then for no stated reason.
+var ErrEmpty = errors.New("brain: empty reply")
+
 // Stream sends msgs and calls onDelta with each content fragment as it
 // arrives. Cancelling ctx drops the connection, which stops generation.
+//
+// An empty reply is asked once more: the person is waiting in silence, and the second draw
+// usually answers. A second empty reply is returned as ErrEmpty with the finish reason.
 func (c *Client) Stream(ctx context.Context, msgs []Message, onDelta func(string)) error {
+	var err error
+	for range 2 {
+		got := false
+		var finish string
+		// Whitespace is not an answer (/fleet measured a 0.48 s reply of nothing but blanks), so
+		// leading blanks are dropped and do not count as a reply.
+		err = c.stream(ctx, msgs, func(d string) {
+			if !got && strings.TrimSpace(d) == "" {
+				return
+			}
+			got = true
+			onDelta(d)
+		}, &finish)
+		if err != nil || got {
+			return err
+		}
+		err = fmt.Errorf("%w (finish_reason=%q)", ErrEmpty, finish)
+	}
+	return err
+}
+
+func (c *Client) stream(ctx context.Context, msgs []Message, onDelta func(string), finish *string) error {
 	body, err := json.Marshal(map[string]any{
 		"model": c.Model, "messages": msgs, "stream": true, "max_tokens": c.MaxTokens,
 	})
@@ -97,6 +127,7 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, onDelta func(string
 				Delta struct {
 					Content string `json:"content"`
 				} `json:"delta"`
+				FinishReason string `json:"finish_reason"`
 			} `json:"choices"`
 			Error *struct {
 				Message string `json:"message"`
@@ -108,8 +139,13 @@ func (c *Client) Stream(ctx context.Context, msgs []Message, onDelta func(string
 		if chunk.Error != nil {
 			return fmt.Errorf("brain: %s", chunk.Error.Message)
 		}
-		if len(chunk.Choices) > 0 && chunk.Choices[0].Delta.Content != "" {
-			onDelta(chunk.Choices[0].Delta.Content)
+		if len(chunk.Choices) > 0 {
+			if f := chunk.Choices[0].FinishReason; f != "" {
+				*finish = f
+			}
+			if chunk.Choices[0].Delta.Content != "" {
+				onDelta(chunk.Choices[0].Delta.Content)
+			}
 		}
 	}
 	if err := sc.Err(); err != nil {

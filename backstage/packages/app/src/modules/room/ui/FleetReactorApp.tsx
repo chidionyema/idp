@@ -47,7 +47,6 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 import { useEstateVoice } from '../../home/useEstateVoice';
 // --- ADDED: an estate intent run by voice, shown on the fleet. ---
 import { cueToReactor, type IntentResult } from '../../home/intentCue';
-// --- ADDED: routerVoice supplies onIntentResult; the fleet still speaks through useEstateVoice above. ---
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
 
@@ -695,7 +694,19 @@ export default function FleetReactorApp() {
   // Every voice surface mounts this hook. It has to be declared before ANY callback that closes
   // over it -- `talkTo` and the heard->steer effect both do -- because a `const` lives in the
   // temporal dead zone until its line executes. Declared late, it threw on every render.
-  const voice = useEstateVoice();
+  //
+  // Two engines, one surface. voice-router (streaming: words as you speak, first audio while the
+  // brain is still answering) is used whenever it answers; useEstateVoice stays as the fallback so
+  // a laptop without the router still talks. A conversation already running on the fallback is
+  // never switched mid-sentence.
+  const legacyVoice = useEstateVoice();
+  const [fleetBrief, setFleetBrief] = useState('');
+  // The intent visual is defined further down (it needs the engine); the ref reaches it.
+  const onIntentRef = useRef<(r: IntentResult) => void>(() => {});
+  const routerVoice = useVoiceRouter(fleetBrief, { onIntentResult: (r: IntentResult) => onIntentRef.current(r) });
+  const voice =
+    legacyVoice.state === 'off' && (routerVoice.reachable || routerVoice.state !== 'off') ? routerVoice : legacyVoice;
+  const partial = voice === routerVoice ? routerVoice.partial : '';
   // A director cue's line is spoken if a voice engine is on, else shown in the ticker for 4s.
   const [cueLine, setCueLine] = useState('');
   const cueSayRef = useRef<(text: string) => void>(() => {});
@@ -725,8 +736,7 @@ export default function FleetReactorApp() {
     intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
   }, []);
   useEffect(() => () => clearTimeout(intentTimer.current), []);
-  const fleetBrief = live.ticker;
-  const routerVoice = useVoiceRouter(fleetBrief, { onIntentResult });
+  onIntentRef.current = onIntentResult;
 
   // THE ROWS THE LEFT PANEL RENDERS.
   //
@@ -740,6 +750,22 @@ export default function FleetReactorApp() {
   // re-render on poll, and node fields are mutated by the render loop where a change would not
   // reach React at all.
   const [rows, setRows] = useState([]);
+
+  // What the voice answers from: the live board, so it never invents a count. Only what changes
+  // meaning (state, task, repo) is in it, not ages, so it is re-sent when the fleet changes and not
+  // on every 2s poll.
+  useEffect(() => {
+    const list = rows as any[];
+    const by = (a: string) => list.filter((r) => r.activity === a).length;
+    const lines = list
+      .slice(0, 20)
+      .map((r) => `${r.sessionId} (${r.runtime}${r.model ? `, ${r.model}` : ''}): ${r.activity}; ${r.repo || 'no repo'}; ${r.task.slice(0, 80) || 'no task'}`);
+    setFleetBrief(
+      list.length
+        ? `The fleet right now: ${list.length} sessions, ${by('stuck')} stuck, ${by('thinking')} thinking, ${by('waiting')} waiting, ${by('finished')} finished.\n${lines.join('\n')}`
+        : '',
+    );
+  }, [rows]);
 
   // WHAT THE AGENTS SAID BACK, newest first, fleet-wide.
   //
@@ -1513,10 +1539,11 @@ export default function FleetReactorApp() {
   // the engine could not work. The engine names the real cause (mic permission vs service
   // unreachable), which the old code could not distinguish.
   useEffect(() => {
-    if (voice.heard) setVoiceText(`you: ${voice.heard}`);
+    if (partial) setVoiceText(`you: ${partial}…`);
+    else if (voice.heard) setVoiceText(`you: ${voice.heard}`);
     else if (voice.reply) setVoiceText(voice.reply);
     else if (voice.detail) setVoiceText(voice.detail);
-  }, [voice.heard, voice.reply, voice.detail]);
+  }, [partial, voice.heard, voice.reply, voice.detail]);
 
   const openVoice = async () => {
     setVoiceOpen(true);
