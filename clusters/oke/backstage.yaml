@@ -1,0 +1,70 @@
+# The portal (catalogue) and its fleetview-backend sidecar: the founder's /fleet surface.
+#
+# Re-added 2026-09-27. c96359f4 (the 7-row transform) deleted both rows with platform.yaml, so
+# every git change to platform/backstage stopped landing: the pod sat on image main-12090 while
+# main built main-13023, and the fleetview-backend sidecar never got FLEETVIEW_GITHUB_TOKEN_FILE
+# for Fleet agent jobs (#4531). Measured before re-adding, a server-side diff (kustomize-controller
+# field manager) of both paths against the cluster:
+#   - namespace path: 1 object, labels only;
+#   - portal path: 23 objects. 21 gain only this row's owner labels. catalogue moves 0 -> 2
+#     replicas and main-12090 -> main-13023 (forward, never a rollback). Service/sunshine-mac
+#     would be re-set to its placeholder, so it is now create-only
+#     (overlays/oke/sunshine-egress.yaml).
+# prune: false, so adopting the orphans can delete nothing. The dependsOn list names only rows
+# that exist: estate-db-migrate and github-app-creds went with platform.yaml, and the
+# flux-system/github-app Secret they guarded is live.
+# Budget (free-tier rule): 275m CPU / 576Mi requested per replica.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: backstage-namespace
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/backstage/namespace/overlays/oke
+  prune: false
+  wait: true
+  timeout: 2m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: backstage
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/backstage/overlays/oke
+  prune: false
+  # The overlay carries ExternalSecrets (CRD from external-secrets, store from secret-store) and
+  # HTTPRoute/Middleware objects whose CRDs come from edge (crew#488).
+  dependsOn:
+    - name: backstage-namespace
+    - name: external-secrets
+    - name: secret-store
+    - name: edge
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE and FOUNDER_MAC_TS_IP (clusters/oke/estate-config.yaml). Not optional: a
+      # missing ConfigMap fails the row rather than publish '${ESTATE_ZONE}'.
+      - kind: ConfigMap
+        name: estate-config
+      # The estate-agents App's ids for the GithubAccessToken generator that mints the portal's
+      # GitHub token (platform/backstage/overlays/oke/github-token.yaml).
+      - kind: Secret
+        name: github-app
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: catalogue
+      namespace: backstage

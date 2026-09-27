@@ -13,6 +13,10 @@ metadata:
   namespace: backstage
   annotations:
     tailscale.com/tailnet-ip: "${FOUNDER_MAC_TS_IP}"
+    # Create-only. The operator owns externalName after creation; an apply would re-set it to
+    # `placeholder` (managedFields showed the two writing it in the same second, 2026-09-25).
+    # A new FOUNDER_MAC_TS_IP therefore lands only on a fresh Service: delete it and Flux recreates.
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
 spec:
   type: ExternalName
   externalName: placeholder
