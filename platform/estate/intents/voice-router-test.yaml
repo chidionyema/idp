@@ -1,0 +1,11 @@
+name: voice-router-test
+description: Run voice-router's Go tests (session, turn log, engines) from source, race detector on.
+args:
+  repo: {type: string, default: "~/Documents/code/idp"}
+halt_on_failure: true
+steps:
+  - name: test
+    timeout: 600
+    cmd: |
+      export PATH=$HOME/.cache/estate-tools/go/bin:$PATH GOPATH=$HOME/.cache/estate-tools/gopath
+      cd <<repo>>/platform/voice-router && go vet ./... && go test -race -count=1 ./...
