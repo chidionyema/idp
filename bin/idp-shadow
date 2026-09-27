@@ -266,9 +266,25 @@ ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 """
 
 
+# The branch the served tree names its head commit on. Measured 2026-09-27 (runs 36311081058 and
+# every other PR that touched platform/): actions/checkout of a SHA leaves HEAD detached and no
+# refs/heads at all, and Flux's commit-only clone fetches refs/heads/* -- so the commit under test
+# was never fetched, and source-controller answered "unable to clone ...: object not found" after
+# the 300s reconcile timeout. Not one of the check's greens had ever reconciled anything; every
+# one was the "no platform directory changed" skip. Naming the head on a branch, and cloning that
+# branch pinned to the commit, is the fix (reproduced with go-git against this exact server).
+SHADOW_BRANCH = "shadow-verify"
+
+
+def name_head(head):
+    """Put `head` on refs/heads/SHADOW_BRANCH in the served tree, so a clone can reach it."""
+    sh(["git", "-C", REPO, "update-ref", f"refs/heads/{SHADOW_BRANCH}", head])
+
+
 def flux_source(head):
     # http:// -- the ONE scheme Flux admits among the three it allows (see serve_tree's note).
     url = f"http://{GIT_HOST}:{GIT_PORT}/{os.path.basename(REPO)}"
+    name_head(head)
     src = {
         "apiVersion": "source.toolkit.fluxcd.io/v1",
         "kind": "GitRepository",
@@ -277,7 +293,7 @@ def flux_source(head):
         "spec": {
             "interval": "1m",
             "url": url,
-            "ref": {"commit": head},
+            "ref": {"branch": SHADOW_BRANCH, "commit": head},
             "ignore": ".git/\n",
         },
     }
