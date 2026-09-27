@@ -27,6 +27,9 @@
           },
           {
             "context": "shadow-verify"
+          },
+          {
+            "context": "portal-app"
           }
         ]
       }
