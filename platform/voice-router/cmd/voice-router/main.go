@@ -93,6 +93,7 @@ func main() {
 		_ = json.NewEncoder(w).Encode(map[string]any{"summary": turns.Summary(), "recent": turns.Recent(50)})
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok\n")) })
+	mux.HandleFunc("GET /readyz", readyz(b.Ready, 30*time.Second))
 	mux.HandleFunc("GET /voice/ws", func(w http.ResponseWriter, r *http.Request) {
 		c, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: origins})
 		if err != nil {
