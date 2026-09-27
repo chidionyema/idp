@@ -49,9 +49,14 @@ jobs:
           # target branch. On a push to main the PR diff does not exist yet, so grade
           # against the previous commit (github.event.before) — the same convention
           # build-multiarch.yml's discover job uses. merge_group grades against main.
+          # A push that creates a branch has no previous commit: before is forty zeros,
+          # and "0000…...HEAD" is git exit 128 -- the red on every flux/image-updates
+          # push. That push grades against main, like a PR from the same branch would.
+          before="${{ github.event.before }}"
           case "${{ github.event_name }}" in
             pull_request) base="origin/${{ github.base_ref }}" ;;
-            push)         base="${{ github.event.before }}" ;;
+            push)         base="$before"
+                          case "$before" in ''|*[!0]*) ;; *) base="origin/main" ;; esac ;;
             *)            base="origin/main" ;;
           esac
           diff_out=$(git diff "$base"...HEAD)
