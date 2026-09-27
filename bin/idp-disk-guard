@@ -18,7 +18,9 @@
 # in ways that read as unrelated faults, and nothing in this estate reported the pressure. This
 # guard reports it, at the boundary where it can still be acted on, before another write.
 #
-# WHAT IT IS NOT. It deletes nothing, and it is not a cleanup tool. `bin/estate-cleaner` is that.
+# WHAT IT IS NOT. It deletes nothing, and it is not a cleanup tool. The `disk-cleanup` intent is
+# that (platform/estate/intents/disk-cleanup.yaml): dry run by default, regenerable caches only.
+# (`bin/estate-cleaner` only proposes git branches to archive; it frees no disk.)
 # A guard that silently removes things on a machine whose problem is surprise deletions would be
 # the joke writing itself. This measures, names the consequence, and suggests; the human decides.
 #
@@ -74,11 +76,10 @@ echo "        consequence  writes fail in ways that read as unrelated faults: a 
 echo "                     dies after minutes as 'No space left on device' (measured"
 echo "                     2026-09-18), git cannot write a blob beside its old copy, and a"
 echo "                     tool mid-copy can leave a truncated file behind"
-echo "        fix          bin/estate-cleaner, or free regenerable caches by hand. The largest"
-echo "                     safe targets on this machine, measured 2026-09-18:"
-echo "                       rm -rf ~/.npm/_npx          # 595M of npx-downloaded packages"
-echo "                       npm cache clean --force     # ~1.1G"
-echo "                       brew cleanup -s             # ~1.8G when caches are cold"
+echo "        fix          estate-execute disk-cleanup             # dry run: each cache, measured"
+echo "                     estate-execute disk-cleanup apply=true  # deletes regenerable caches only"
+echo "                     It lists, never deletes, the big owner-decides items (worktrees,"
+echo "                     ~/.nvm, ~/.ollama, Trash; trash=true is the one opt-in)."
 echo "        do not       delete anything under ~/Pictures, ~/Documents or ~/Music to satisfy"
 echo "                     this guard. Those are the user's, not the build's."
 exit 0
