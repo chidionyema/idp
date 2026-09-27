@@ -50,20 +50,6 @@ backend.add(
 // See https://backstage.io/docs/features/software-catalog/configuration#subscribing-to-catalog-errors
 backend.add(import('@backstage/plugin-catalog-backend-module-logs'));
 
-// Every Dagster asset, job and schedule becomes a catalogue entity by polling Dagster's GraphQL
-// API on catalog.providers.dagster.schedule; no hand-written entity for scheduler work (crew#468).
-backend.add(
-  import('catalog-backend-module-dagster-entity-provider'),
-);
-
-// Every .py module in the estate becomes a catalogue entity by running
-// `bin/catalog-projection --json` on a schedule; the projection is a pure
-// deterministic function over source, so the catalogue cannot drift from the
-// code (crew#740 CP6). No hand-written entity for projection work.
-backend.add(
-  import('catalog-backend-module-estate-projection'),
-);
-
 // permission plugin
 backend.add(import('@backstage/plugin-permission-backend'));
 // Gates scaffolder templates tagged founder-action to group:default/platform; every other
