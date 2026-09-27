@@ -234,7 +234,10 @@ flows:
     # (platform/unified-memory-server/oke-unified-memory.yaml, HTTPScaledObject).
     egress: [observability, unified-memory]
     # mcp: the estate MCP server, the agents' door to memory, calls the interceptor's proxy.
-    ingress_from: [mcp]
+    # edge: the public door to memory, mcp.${ESTATE_ZONE}/memories and /digest
+    # (platform/unified-memory-server/door.yaml), is a Gateway route whose backend is this proxy,
+    # so traefik dials in here. edge names keda back, or the return path is cut.
+    ingress_from: [mcp, edge]
   llm:
     # estate-db: the router mints budgeted virtual keys and writes every call to a spend ledger
     # in postgres `litellm` (platform/llm/litellm.yaml composes DATABASE_URL against
@@ -573,7 +576,10 @@ flows:
              # idp-agent admits edge for the same reason demo-sandbox does: the GitHub/Flux
              # webhook route into platform/idp_agent/gateway.py's /webhook/github and
              # /webhook/flux crosses this namespace, so edge must name the return path back.
-             demo-sandbox, idp-agent]
+             demo-sandbox, idp-agent,
+             # keda: the memory door's backend is the HTTP add-on's interceptor proxy, which wakes
+             # the scale-to-zero memory server (platform/unified-memory-server/door.yaml).
+             keda]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,

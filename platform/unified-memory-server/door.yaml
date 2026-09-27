@@ -1,0 +1,59 @@
+# The public door to the estate's memory: https://mcp.${ESTATE_ZONE}/memories and /digest.
+# Every agent that is not a pod -- Claude Code, pi, opencode, Cursor, hermes on the laptop, the
+# founder's phone -- reaches the one memory here; pods keep the in-cluster Host
+# unified-memory.estate.internal. The mcp listener already has its certificate and DNS, and its own
+# route (platform/mcp/httproute.yaml) matches `/`, so these two longer prefixes win and nothing
+# else on that host moves.
+#
+# The backend is the KEDA HTTP add-on's interceptor, not the server: the server scales to zero,
+# and only the interceptor can hold a request while it wakes the pod. The interceptor picks the
+# app by Host, so mcp.${ESTATE_ZONE} is also a host of the HTTPScaledObject
+# (oke-unified-memory.yaml). The cross-namespace backend needs the ReferenceGrant row in
+# platform/keda/referencegrant.yaml, and the fence edge -> keda (platform/ns-fences/allowances.yaml).
+#
+# Auth is the server's own: every call carries `Authorization: Bearer <surface token>` (vault
+# entry unified-memory, key surface-token), and the server refuses anything else with 401.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: memory
+  namespace: unified-memory
+  labels: { app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
+  annotations:
+    idp.estate/auth: bearer-memory-surface-token
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-mcp
+  hostnames:
+    - "mcp.${ESTATE_ZONE}"
+  rules:
+    - matches:
+        - path: { type: PathPrefix, value: /memories }
+        - path: { type: PathPrefix, value: /digest }
+      filters:
+        - type: ExtensionRef
+          extensionRef: { group: traefik.io, kind: Middleware, name: edge-headers }
+      backendRefs:
+        - name: keda-add-ons-http-interceptor-proxy
+          namespace: keda
+          port: 8080
+---
+# A Middleware is an ExtensionRef filter and must live in the route's namespace (see
+# platform/backstage/overlays/oke/edge-manners.yaml). No friendly-errors page here: callers are
+# programs, and a 503 must stay a 503 they can retry, not an HTML page.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: edge-headers
+  namespace: unified-memory
+spec:
+  headers:
+    stsSeconds: 63072000
+    stsIncludeSubdomains: true
+    contentTypeNosniff: true
+    referrerPolicy: strict-origin-when-cross-origin
+    customResponseHeaders:
+      Server: ""
+      X-Powered-By: ""

@@ -9,7 +9,7 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: unified-memory
-  labels: { app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
+  labels: { app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory, idp.estate/edge-attach: "true" }
 ---
 # Both secrets come from the vault by name (bin/idp-estate-seed mints them): the role password,
 # assembled here into the connection string, and the estate agents' surface token.
@@ -118,6 +118,8 @@ metadata:
 spec:
   hosts:
     - unified-memory.estate.internal
+    # The public door (door.yaml): the Gateway forwards the client's Host unchanged.
+    - "mcp.${ESTATE_ZONE}"
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment

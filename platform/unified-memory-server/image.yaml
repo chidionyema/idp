@@ -17,6 +17,10 @@ kind: ImagePolicy
 metadata:
   name: unified-memory-server
   namespace: flux-system
+  annotations:
+    # The row substitutes ${ESTATE_ZONE} for the door; '$run' below is the policy's own capture
+    # group and must reach the controller as written, not as the empty string.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
 spec:
   imageRepositoryRef:
     name: unified-memory-server

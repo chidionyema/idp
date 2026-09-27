@@ -13,6 +13,7 @@ spec:
   dependsOn:
     - name: estate-db
     - name: secret-store
+    - name: edge
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -20,3 +21,9 @@ spec:
   prune: true
   wait: false
   timeout: 2m
+  postBuild:
+    substituteFrom:
+      # ESTATE_ZONE (clusters/oke/estate-config.yaml), for the door's hostname. Not optional: a
+      # missing ConfigMap fails the row rather than publish '${ESTATE_ZONE}'.
+      - kind: ConfigMap
+        name: estate-config

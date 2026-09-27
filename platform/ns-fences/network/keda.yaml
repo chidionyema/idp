@@ -130,4 +130,7 @@ spec:
   - from:
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: edge
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: mcp

@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - oke-unified-memory.yaml
+  - door.yaml
   - image.yaml
 images:
   # Set by Flux image automation. Until the first main build exists this names no image, and

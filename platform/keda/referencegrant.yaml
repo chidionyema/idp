@@ -13,7 +13,16 @@ spec:
     - group: gateway.networking.k8s.io
       kind: HTTPRoute
       namespace: prospector
+    # The memory door (platform/unified-memory-server/door.yaml).
+    - group: gateway.networking.k8s.io
+      kind: HTTPRoute
+      namespace: unified-memory
   to:
     - group: ""
       kind: Service
       name: interceptor-proxy
+    # The name the add-on's chart actually gives the proxy Service (read live 2026-09-27:
+    # `kubectl -n keda get svc` has keda-add-ons-http-interceptor-proxy and no interceptor-proxy).
+    - group: ""
+      kind: Service
+      name: keda-add-ons-http-interceptor-proxy
