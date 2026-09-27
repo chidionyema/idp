@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
 
+	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
 	"github.com/chidionyema/idp/platform/voice-router/internal/newsroom"
 )
 
@@ -88,6 +90,14 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 		})
 	}
 
+	// Without a router key the router refuses the call, so the anchor desk stays on templates.
+	var anchor *newsroom.Anchor
+	if os.Getenv("LLM_API_KEY") != "" {
+		anchor = &newsroom.Anchor{Brain: brain.FromEnv()}
+	} else {
+		log.Info("newsroom.anchor_template_only", "reason", "LLM_API_KEY unset")
+	}
+
 	ed := newsroom.NewEditor()
 	for {
 		select {
@@ -98,13 +108,21 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 			if !ok {
 				continue
 			}
+			s, byLLM := anchor.Voice(ctx, s, time.Now())
 			b, _ := json.Marshal(s)
 			for _, subj := range newsroom.Subjects(s) {
 				if err := nc.Publish(subj, b); err != nil {
 					log.Warn("newsroom.publish", "subject", subj, "err", err)
 				}
 			}
-			log.Info("news.story", "id", s.ID, "channel", s.Channel, "severity", s.Severity, "state", s.State, "breaking", s.Breaking, "headline", s.Headline)
+			log.Info("news.story", "id", s.ID, "channel", s.Channel, "severity", s.Severity, "state", s.State, "breaking", s.Breaking, "anchor_by", anchorBy(byLLM), "headline", s.Headline)
 		}
 	}
+}
+
+func anchorBy(llm bool) string {
+	if llm {
+		return "llm"
+	}
+	return "template"
 }

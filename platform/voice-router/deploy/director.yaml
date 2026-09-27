@@ -46,6 +46,10 @@ spec:
               value: ":8080"
             - name: LLM_BASE_URL
               value: "http://litellm.llm.svc:4000/v1"
+            # Optional: until vault-seed mints the `newsroom` entry the anchor stays on templates.
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: newsroom-llm, key: key, optional: true }
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://signoz-otel-collector.observability.svc:4318"
           ports:
