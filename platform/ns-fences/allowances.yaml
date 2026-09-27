@@ -229,7 +229,12 @@ flows:
     # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
     # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
     ingress_apiserver: [9443]
-    egress: [observability]
+    # unified-memory: the HTTP add-on's interceptor is the only door to the memory server, which
+    # scales to zero; the interceptor holds the request, wakes the pod and forwards it
+    # (platform/unified-memory-server/oke-unified-memory.yaml, HTTPScaledObject).
+    egress: [observability, unified-memory]
+    # mcp: the estate MCP server, the agents' door to memory, calls the interceptor's proxy.
+    ingress_from: [mcp]
   llm:
     # estate-db: the router mints budgeted virtual keys and writes every call to a spend ledger
     # in postgres `litellm` (platform/llm/litellm.yaml composes DATABASE_URL against
@@ -284,7 +289,8 @@ flows:
     # robusta: the estate MCP server hosts the ask_holmes tool (mcp/plugins/estate_holmes.py),
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
     # a question. Both directions declared, as above.
-    egress: [observability, hindsight, robusta, llm]
+    # keda: the memory server (unified-memory) is reached through the HTTP add-on's interceptor.
+    egress: [observability, hindsight, robusta, llm, keda]
     # The server does not ship its data. Both init containers run `flux pull artifact
     # oci://ghcr.io/chidionyema/idp/estate-db` (platform/mcp/estate-mcp.yaml), so the pod itself
     # dials the public internet before the server starts -- this is not an image pull, which the
@@ -485,7 +491,7 @@ flows:
     # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
     # Jobs -- these are standing daily diallers, and a database neither can reach is a service
     # that does not start.
-    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge]
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge, unified-memory]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.
@@ -640,6 +646,12 @@ flows:
     # estate-rw.estate-db). Nothing here targets via-negativa-redis -- that DSN is
     # via-negativa-redis.via-negativa.svc, same-namespace, and default-deny never touches it.
     egress: [llm, estate-db]
+  unified-memory:
+    # The estate's memory layer (§6). estate-db: its own role and database on the one Postgres
+    # (estate-rw.estate-db, DATABASE_URL). keda: every request arrives through the HTTP add-on's
+    # interceptor. No llm and no internet: it calls no model.
+    egress: [estate-db]
+    ingress_from: [keda]
   sovereign-system:
     # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).
     # All LLM calls must go through the estate proxy in llm; no direct vendor egress is declared
