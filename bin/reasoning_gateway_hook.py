@@ -25,6 +25,14 @@ sit on disk where a person (or a future Backstage page reading the same file, th
 mcp/plugins/estate_sessions.py already reads the catalogue's own session rows) can see it without
 running anything. The UI door for that surface does not exist yet; this is the write side of it.
 
+The one exception, and it is end-of-turn, never mid-stream: bin/epistemic_firewall.py --turn grades
+only the turn that just ended, so the reason above (an old step re-tripping every Stop) does not
+apply to it. When that turn claims completed work its own tool calls do not back, the hook answers
+{"decision": "block", "reason": ...}: the agent is handed the unbacked claims and continues once to
+back them with a reading or restate them as unverified. Claude Code sets stop_hook_active on that
+continuation, and the hook never blocks it -- one correction pass per turn, never a loop, and a
+stream is never cut.
+
   reasoning_gateway_hook.py --hook       what settings.json runs on Stop (reads hook JSON on stdin)
   reasoning_gateway_hook.py --report [N] the last N session verdicts, newest first (default 10)
   reasoning_gateway_hook.py --self-test  prove it
@@ -48,7 +56,11 @@ def _run_gate(script: str, args: list[str]) -> dict:
         text=True,
         timeout=30,
     )
-    return {"exit": proc.returncode, "stdout": proc.stdout.strip()}
+    return {
+        "exit": proc.returncode,
+        "stdout": proc.stdout.strip(),
+        "stderr": proc.stderr.strip(),
+    }
 
 
 def grade(transcript_path: str) -> dict:
@@ -59,6 +71,7 @@ def grade(transcript_path: str) -> dict:
         "transcript": str(p),
         "prm": _run_gate("prm_grader.py", ["--grade", str(p)]),
         "budget": _run_gate("budget_governor.py", ["--run", str(p)]),
+        "epistemic": _run_gate("epistemic_firewall.py", ["--turn", str(p)]),
     }
 
 
@@ -87,6 +100,20 @@ def cmd_hook() -> int:
         record(session_id, verdict)
     except OSError:
         pass  # the ledger write is a nicety; it must never take a live session down with it
+    epistemic = verdict.get("epistemic") or {}
+    if epistemic.get("exit") == 1 and not payload.get("stop_hook_active"):
+        print(
+            json.dumps(
+                {
+                    "decision": "block",
+                    "reason": "Epistemic firewall, end of turn: this turn claims completed work "
+                    "that its own tool calls do not back.\n"
+                    + epistemic.get("stderr", "")
+                    + "\nBack each claim now with a reading of the thing itself, or restate it "
+                    "as unverified. This check does not block again this turn.",
+                }
+            )
+        )
     return 0
 
 
