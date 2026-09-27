@@ -36,7 +36,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "backstage" / "plugins" / "fleetview-backend" / "src"
+SRC = ROOT / "backstage" / "plugins" / "fleetview-backend" / "src" / "fleetview_backend"
 HOOK = (
     ROOT
     / "backstage"
@@ -277,6 +277,33 @@ def test_an_empty_transcript_is_counted_not_published(voice):
         "an utterance nobody could make out was published as a steer"
     )
     assert voice.turnlog.recorded[0].fields["outcome"] == "empty"
+
+
+def test_a_bus_that_does_not_answer_never_holds_the_reply(voice, monkeypatch):
+    """2026-09-27 the laptop's NATS was down and every /voice/hear waited out the connect timeout:
+    2.3-3.3s a turn for 0.3-1.0s of speech-to-text. The transcript must come back regardless."""
+    import time as _time
+
+    async def hangs(url, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(voice.bus, "connect", hangs)
+    voice.engine.transcribe = lambda pcm: ("land the commit", 0.4)
+
+    async def turn():
+        t0 = _time.monotonic()
+        body, status = await voice.module.hear(
+            b"\0" * 64_000, session_id="voice-abc123", author="founder"
+        )
+        return body, status, _time.monotonic() - t0
+
+    body, status, took = asyncio.run(turn())
+
+    assert status == 200
+    assert body["text"] == "land the commit"
+    assert took < 1.0, f"the reply waited {took:.2f}s on a bus that never answered"
+    assert body["bus"]["published"] is None
+    assert "did not wait" in body["bus"]["reason"]
 
 
 def test_a_host_off_the_bus_says_so_rather_than_pretending(voice, monkeypatch):

@@ -1,0 +1,28 @@
+# The server's image. build-multiarch discovers ./Dockerfile (bin/dockerfiles names it
+# unified-memory-server) and pushes main-<run>-<sha>; this policy is what moves the tag in
+# kustomization.yaml onto each new one, through the one ImageUpdateAutomation that walks the repo.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: unified-memory-server
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/unified-memory-server
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: unified-memory-server
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: unified-memory-server
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

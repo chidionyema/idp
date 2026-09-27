@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""launchd's door into voice-router: load the router key from the vault by name, then become the router.
+
+WHY. On 2026-09-27 /fleet voice was a hand-run /tmp binary under nohup with its env typed into a
+shell; a router reinstall took its lane away and nothing restarted, watched, or even knew how it had
+been started. Now launchd owns it (launchd/ai.estate.voice-router.plist.tmpl, KeepAlive) and its
+settings live in that template; bin/voice-watch probes /readyz every two minutes.
+
+The key is the one bin/fleetview-launchd loads -- LITELLM_LAPTOP_KEY through
+estate-secrets/scripts/secret-load, into this process's environment only, never printed. Without it
+the router still starts and /readyz answers 503 naming the 401, which bin/voice-watch reports.
+"""
+
+import os
+import runpy
+import sys
+from pathlib import Path
+
+# One key loader, not two: bin/fleetview-launchd's, run as a module (its main() is not called).
+load_key = runpy.run_path(str(Path(__file__).resolve().parent / "fleetview-launchd"))[
+    "load_key"
+]
+
+BINARY = Path(
+    os.environ.get("VOICE_ROUTER_BIN")
+    or Path.home() / ".estate/voice-router/voice-router"
+)
+
+
+def main() -> None:
+    key = load_key()
+    if key:
+        os.environ["LLM_API_KEY"] = key
+    print(
+        f"voice-router-launchd: router key {'loaded' if key else 'MISSING -- /readyz will answer 503'}",
+        file=sys.stderr,
+    )
+    os.execv(str(BINARY), [str(BINARY)])
+
+
+if __name__ == "__main__":
+    main()

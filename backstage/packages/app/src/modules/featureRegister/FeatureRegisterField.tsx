@@ -1,6 +1,6 @@
 // crew#857: scaffolder custom field extension that reads the feature register
 // (platform/features/features.yaml) at render time and renders the rows and
-// their tiers as the choices. As the selection changes, it shows the price
+// their tiers as the choices. As the selection changes, it shows the resources
 // and fit from the pre-computed plan (plan.json).
 //
 // Reads from /api/feature-register/register (features.yaml) and
@@ -74,10 +74,10 @@ interface PlanData {
   features: PlanEntry[];
   total: { cpu: number; memory_gb: number; storage_gb: number };
   node_today: {
-    name: string; ocpus: number; memory_gb: number; usd_month: number; fits: boolean;
+    name: string; ocpus: number; memory_gb: number; fits: boolean;
   };
   node_smallest?: {
-    name: string; ocpus: number; memory_gb: number; usd_month: number;
+    name: string; ocpus: number; memory_gb: number;
   } | null;
 }
 
@@ -234,16 +234,16 @@ export const FeatureRegisterField = ({
           </Typography>
           {nodeToday.fits ? (
             <Typography variant="body2" className={classes.fitYes}>
-              ✓ Fits current node ({nodeToday.name}) — USD {nodeToday.usd_month}/mo
+              ✓ Fits current node ({nodeToday.name})
             </Typography>
           ) : (
             <>
               <Typography variant="body2" className={classes.fitNo}>
-                ✗ Does not fit current node ({nodeToday.name} — USD {nodeToday.usd_month}/mo)
+                ✗ Does not fit current node ({nodeToday.name})
               </Typography>
               {nodeSmallest ? (
                 <Typography variant="body2" className={classes.fitYes}>
-                  Smallest node that fits: {nodeSmallest.name} — USD {nodeSmallest.usd_month}/mo
+                  Smallest node that fits: {nodeSmallest.name}
                 </Typography>
               ) : (
                 <Typography variant="body2" className={classes.fitNo}>

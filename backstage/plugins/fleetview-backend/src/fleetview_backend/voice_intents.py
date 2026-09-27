@@ -38,7 +38,89 @@ _CUES = {
     "cancelled": ("comet_spawn", "info"),
 }
 _PENDING: dict[str, tuple[str, float]] = {}
+_PENDING_TASK: dict[str, str] = {}
 _LOCK = threading.Lock()
+
+# "Give an agent a job: <task>" -> agent_jobs.submit, after a spoken read-back and a yes. The task
+# is what was said after the phrase, punctuation kept; a job costs a model run and opens a PR, so
+# it is never sent on the first utterance.
+AGENT_JOB = "agent-job"
+_AGENT_JOB_PHRASE = re.compile(
+    r"^\s*(?:(?:hey|ok(?:ay)?)[\s,.!]+)?(?:please[\s,]+)?"
+    r"(?:give\s+(?:an?\s+)?agent\s+(?:a\s+)?job|agent\s+job|ask\s+an?\s+agent\s+to|have\s+an?\s+agent)"
+    r"\b[\s:,.\-]*(?P<task>.*)$",
+    re.I | re.S,
+)
+
+
+def agent_job_task(text: str) -> str | None:
+    """The task in an agent-job utterance ("" when the phrase came alone), None when it is not one."""
+    m = _AGENT_JOB_PHRASE.match(text or "")
+    if not m:
+        return None
+    return m.group("task").strip().rstrip(".").strip()
+
+
+def _agent_job(session_id: str, text: str, task: str, now: float) -> dict:
+    from fleetview_backend import agent_jobs
+
+    if not task:
+        _audit(session_id, text, AGENT_JOB, "error", None, 0)
+        return result(
+            AGENT_JOB, "error", "Say the job too: give an agent a job, then what to do."
+        )
+    try:
+        task, _h = agent_jobs.validate(task, "pi")
+    except agent_jobs.JobRefused as exc:
+        _audit(
+            session_id,
+            "[agent job refused before read-back]",
+            AGENT_JOB,
+            "error",
+            None,
+            0,
+        )
+        return result(AGENT_JOB, "error", str(exc)[:160])
+    with _LOCK:
+        _PENDING[session_id] = (AGENT_JOB, now)
+        _PENDING_TASK[session_id] = task
+    _audit(session_id, text, AGENT_JOB, "pending_confirmation", None, 0)
+    return result(
+        AGENT_JOB,
+        "pending_confirmation",
+        f"Send an agent to: {task}? Say yes to confirm.",
+    )
+
+
+def _send_agent_job(session_id: str, text: str, task: str) -> dict:
+    from fleetview_backend import agent_jobs
+
+    t0 = time.monotonic()
+    try:
+        job, _status = agent_jobs.submit(task, "pi", by=f"voice:{session_id}")
+    except agent_jobs.JobRefused as exc:
+        _audit(
+            session_id,
+            text,
+            AGENT_JOB,
+            "error",
+            exc.status,
+            int((time.monotonic() - t0) * 1000),
+        )
+        return result(AGENT_JOB, "error", str(exc)[:160])
+    dur = int((time.monotonic() - t0) * 1000)
+    _audit(session_id, text, AGENT_JOB, "ok", 0, dur)
+    if job.get("duplicate"):
+        return result(
+            AGENT_JOB, "ok", f"That job is already running as run {job['run_id']}."
+        )
+    if job.get("run_id"):
+        return result(AGENT_JOB, "ok", f"Sent. Run {job['run_id']}. Watch it on Fleet.")
+    return result(
+        AGENT_JOB,
+        "ok",
+        "Sent. GitHub has not listed the run yet; it will show on Fleet.",
+    )
 
 
 def default_dir() -> Path:
@@ -193,8 +275,11 @@ def handle(text: str, session_id: str) -> dict | None:
     now = time.monotonic()
     with _LOCK:
         pend = _PENDING.pop(session_id, None)
+        pend_task = _PENDING_TASK.pop(session_id, "")
     if pend and now - pend[1] <= PENDING_TTL_S:
         name = pend[0]
+        if name == AGENT_JOB and norm in YES:
+            return _send_agent_job(session_id, text, pend_task)
         if norm in YES:
             status, msg, rc, dur = execute(name)
             _audit(session_id, text, name, status, rc, dur)
@@ -202,6 +287,10 @@ def handle(text: str, session_id: str) -> dict | None:
         if norm in NO:
             _audit(session_id, text, name, "cancelled", None, 0)
             return result(name, "cancelled", f"Cancelled {_spoken(name)}.")
+
+    task = agent_job_task(text)
+    if task is not None:
+        return _agent_job(session_id, text, task, now)
 
     name = match(text, load_catalog())
     if name is None:

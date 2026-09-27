@@ -18,3 +18,4 @@ resources:
   - via-negativa.yaml
   - fleetview-backend.yaml
   - zeroedge.yaml
+  - voice-router.yaml

@@ -11,8 +11,12 @@ resources:
   - dns.yaml
   - monitoring.yaml
   - kyverno.yaml
+  - estate-db.yaml
   - ns-fences.yaml
   - backstage.yaml
+  - voice-router.yaml
+  - epistemic-fabric.yaml
+  - unified-memory.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
