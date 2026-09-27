@@ -239,13 +239,12 @@ if [ "$FAST" = 1 ]; then
   (cd "$IDP" && "${RUFF[@]}" check --quiet .) && say "ok    ruff     pyproject rule set" || { say "FAIL  ruff"; fail=1; }
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
-  if [ -x "$IDP/backstage/node_modules/.bin/tsc" ]; then
-    (cd "$IDP/backstage" && ./node_modules/.bin/tsc --noEmit) \
-      && say "ok    tsc      backstage" \
-      || { say "FAIL  tsc      backstage"; fail=1; }
-  else
-    say "skip  tsc      backstage (node_modules missing; CI enforces)"
-  fi
+  # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
+  # check, run on pull requests) is the compiler there.
+  (cd "$IDP" && bin/idp-backstage-tsc); rc=$?
+  if [ $rc = 0 ]; then say "ok    tsc      backstage"
+  elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
+  else say "FAIL  tsc      backstage"; fail=1; fi
   # 1d.3: ruff format --check on the whole repo. Same reason as tsc.
   (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
     && say "ok    ruff-fmt whole repo" \
