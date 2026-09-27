@@ -23,8 +23,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -78,7 +80,12 @@ func main() {
 	turns, clock := turnlog.NewRing(envInt("VOICE_TURNS_KEPT", 200)), turnlog.NewClock()
 	var conns atomic.Uint64
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /voice/turns", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /voice/turns", func(w http.ResponseWriter, r *http.Request) {
+		// The same allow-list as the socket: a page that may talk may also read its own metrics.
+		if o := r.Header.Get("Origin"); allowedOrigin(origins, o) {
+			w.Header().Set("Access-Control-Allow-Origin", o)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"summary": turns.Summary(), "recent": turns.Recent(50)})
 	})
@@ -192,4 +199,19 @@ func envFloat(k string, def float64) float64 {
 		return f
 	}
 	return def
+}
+
+// allowedOrigin matches an Origin header's host against the allow-list patterns the way the
+// WebSocket accept does (path.Match on the host, case-insensitive).
+func allowedOrigin(patterns []string, origin string) bool {
+	u, err := url.Parse(origin)
+	if origin == "" || err != nil || u.Host == "" {
+		return false
+	}
+	for _, p := range patterns {
+		if ok, _ := path.Match(strings.ToLower(strings.TrimSpace(p)), strings.ToLower(u.Host)); ok {
+			return true
+		}
+	}
+	return false
 }
