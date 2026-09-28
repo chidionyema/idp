@@ -53,6 +53,9 @@ SOCKET = Path(
     or (Path.home() / ".estate" / "executor.sock")
 )
 DAEMON = IDP / "platform" / "executor" / "daemon.py"
+KEEPALIVE = IDP / "platform" / "executor" / "keepalive.py"
+ESTATE_BIN = Path.home() / ".estate" / "bin"
+KEEPALIVE_DEST = ESTATE_BIN / "estate-executor-keepalive"
 
 
 def say(*parts: object) -> None:
@@ -135,7 +138,7 @@ def socket_answers(timeout: float = 20.0) -> tuple[bool, str]:
 
 def check() -> int:
     ok = True
-    for path, kind in ((TEMPLATE, "template"), (DAEMON, "daemon")):
+    for path, kind in ((TEMPLATE, "template"), (DAEMON, "daemon"), (KEEPALIVE, "keepalive")):
         if path.exists():
             say(f"ok   {kind} present: {path}")
         else:
@@ -170,6 +173,16 @@ def install() -> int:
     if check() != 0:
         say("refused: fix the FAIL lines above")
         return 1
+
+    # Install the keepalive first (self-healing watchdog).
+    # It survives: stale sockets, daemon hanging on socket-but-not-answering,
+    # estate_executor.py missing (integrity check in daemon.py catches this too,
+    # but the keepalive survives a wider class of silent failures).
+    ESTATE_BIN.mkdir(parents=True, exist_ok=True)
+    import shutil
+    shutil.copy2(KEEPALIVE, KEEPALIVE_DEST)
+    KEEPALIVE_DEST.chmod(0o755)
+    say(f"ok   installed keepalive: {KEEPALIVE_DEST}")
 
     DEST.parent.mkdir(parents=True, exist_ok=True)
     DEST.write_text(render())

@@ -50,6 +50,32 @@ _PLUGINS = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "..", "mcp", "plugins"
 )
 sys.path.insert(0, os.path.abspath(_PLUGINS))
+
+# EXECUTOR-CRITICAL INTEGRITY CHECK
+# If estate_executor.py is missing or mutated, this prints a clear error and exits
+# instead of raising NameError on every job (silent outage). Measured 2026-09-28:
+# the file was deleted in a consolidation commit and the daemon could not start,
+# but estate_executor_status still reported "alive" because it checked the process
+# (ppid=1, alive) rather than the socket (unreachable). This check runs before
+# the first import so the failure is loud and immediate, not silent.
+_EXECUTOR_MODULE = os.path.join(os.path.abspath(_PLUGINS), "estate_executor.py")
+if not os.path.exists(_EXECUTOR_MODULE):
+    sys.exit(
+        f"FATAL: {os.path.abspath(_EXECUTOR_MODULE)} does not exist.\n"
+        f"The executor daemon cannot start without it.\n"
+        f"Restore from git:\n"
+        f"  git show a7d721151^:mcp/plugins/estate_executor.py > mcp/plugins/estate_executor.py\n"
+        f"  git add mcp/plugins/estate_executor.py && git commit --amend --no-edit\n"
+    )
+if os.path.getsize(_EXECUTOR_MODULE) < 100:
+    sys.exit(
+        f"FATAL: {os.path.abspath(_EXECUTOR_MODULE)} exists but is only "
+        f"{os.path.getsize(_EXECUTOR_MODULE)} bytes (expected ~44KB).\n"
+        f"It may be a stub or a placeholder.\n"
+        f"Restore from git:\n"
+        f"  git show a7d721151^:mcp/plugins/estate_executor.py > mcp/plugins/estate_executor.py\n"
+    )
+
 from estate_executor import (  # noqa: E402
     CEILING_SEC,
     LocalExecutor,
