@@ -93,6 +93,8 @@ if [ -n "$staged_sh" ]; then
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       [ -f "$f" ] || continue
+      # bin/ holds python too: only a *.sh/*.bash name or a shell shebang is a shell file.
+      case "$f" in *.sh | *.bash) ;; *) head -1 "$f" | grep -qE '^#!.*[/ ](ba|z|da)?sh( |$)' || continue ;; esac
       if ! shellcheck -S warning "$f" >/dev/null 2>&1; then
         echo "  FAIL shellcheck $f"
         sh_fail=1
