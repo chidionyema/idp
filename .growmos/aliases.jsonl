@@ -55,7 +55,11 @@
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
 {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
 {"alias": "claude-max passthrough lane", "entity": "concept/claude-max-passthrough-lane", "type": "CONCEPT"}
+{"alias": "consolidate/2026-09-28-final", "entity": "concept/consolidate-2026-09-28-final", "type": "CONCEPT"}
+{"alias": "delegate/merged-is-operating", "entity": "concept/delegate-merged-is-operating", "type": "CONCEPT"}
+{"alias": "delegate/vendor-self-setup", "entity": "concept/delegate-vendor-self-setup", "type": "CONCEPT"}
 {"alias": "estate-execute", "entity": "concept/estate-execute", "type": "CONCEPT"}
+{"alias": "feat/unified-memory-wiring", "entity": "concept/feat-unified-memory-wiring", "type": "CONCEPT"}
 {"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
 {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
@@ -86,6 +90,8 @@
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
 {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
 {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
+{"alias": "groq-model-prefix-doubling-bug", "entity": "gotcha/groq-model-prefix-doubling-bug", "type": "GOTCHA"}
+{"alias": "pr-cap-gate-set-e-abort-bug", "entity": "gotcha/pr-cap-gate-set-e-abort-bug", "type": "GOTCHA"}
 {"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
 {"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
 {"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}

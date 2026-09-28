@@ -12,8 +12,6 @@ This is the enforcement layer. The actual gate logic lives in pobr_gate_wrapper.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.types.utils import ModelResponse
