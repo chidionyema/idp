@@ -87,27 +87,35 @@ with open('$f','rb') as fh:
       fail=1
     fi
   done < <(git ls-files | grep -v '^\.git/')
+  # bin/idp-always-on-guard etc: an extensionless file under bin/ or .githooks/ is not
+  # necessarily a shell script (a Python file with no .py extension used to be bash -n'd
+  # and linted as bash here -- SC1071). *.sh/*.bash are trivially shell; anything under
+  # bin/ or .githooks/ with a real extension is trivially not; an extensionless one goes
+  # by its actual shebang.
+  is_shell_file() {
+    case "$1" in
+    *.sh|*.bash) return 0 ;;
+    bin/*|.githooks/*)
+      case "$(basename "$1")" in
+      *.*) return 1 ;;
+      esac
+      [ -f "$1" ] && head -1 "$1" 2>/dev/null | grep -qE '^#!.*\b(bash|sh|dash|ksh)\b'
+      ;;
+    *) return 1 ;;
+    esac
+  }
   # bash -n on shell files
   for f in $(git ls-files | grep -v '^\.git/'); do
-    case "$f" in
-    *.sh|*.bash) ;;                      # shell extension
-    bin/*|.githooks/*) ;;                 # shebang convention
-    *) continue ;;                         # skip non-shell
-    esac
+    is_shell_file "$f" || continue
     if [ -f "$f" ] && ! bash -n "$f" 2>&1; then
       echo "  FAIL bash -n $f"
       fail=1
     fi
   done
-  # shellcheck on shell files (if available)
+  # run shellcheck on shell files (if available)
   if command -v shellcheck >/dev/null 2>&1; then
     for f in $(git ls-files | grep -v '^\.git/'); do
-      case "$f" in
-      *.sh|*.bash) is_shell=1 ;;                      # shell extension
-      bin/*|.githooks/*) is_shell=1 ;;                   # shebang convention
-      *) is_shell=0 ;;                                     # skip non-shell
-      esac
-      [ "$is_shell" = 1 ] && [ -f "$f" ] || continue
+      is_shell_file "$f" && [ -f "$f" ] || continue
       if shellcheck -S warning "$f" >/dev/null 2>&1; then
         : # clean
       else
@@ -191,6 +199,19 @@ fi
         : # clean
       else
         echo "  FAIL kustomize build clusters/oke/"
+        fail=1
+      fi
+    fi
+  fi
+
+  # always-on inventory: a Kustomization row annotated idp.estate.io/runtime: always-on must
+  # never disappear outright (crew#... c96359f4, 2026-09-26, deleted backstage.yaml/platform.yaml
+  # wholesale and neither kubeconform nor kustomize build noticed since both only validate what
+  # still exists). See bin/idp-always-on-guard.
+  if [ -x "$IDP/bin/idp-always-on-guard" ]; then
+    if touched clusters/oke/; then
+      echo "  always-on Kustomization inventory (clusters/oke/)..."
+      if ! (cd "$IDP" && python3 bin/idp-always-on-guard); then
         fail=1
       fi
     fi
