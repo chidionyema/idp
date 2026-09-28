@@ -31,6 +31,18 @@ NAME_RE = re.compile(r"(?m)^metadata:\s*\n(?:.*\n)*?\s+name:\s*(\S+)")
 RUNTIME_RE = re.compile(r"idp\.estate\.io/runtime:\s*(\S+)")
 
 
+def kustomization_names(text):
+    """Every Kustomization name in text, regardless of its runtime annotation."""
+    names = set()
+    for doc in re.split(r"(?m)^---\s*$", text):
+        if "kind: Kustomization" not in doc or "kustomize.toolkit.fluxcd.io" not in doc:
+            continue
+        m = NAME_RE.search(doc)
+        if m:
+            names.add(m.group(1))
+    return names
+
+
 def always_on_names(text):
     names = set()
     for doc in re.split(r"(?m)^---\s*$", text):
@@ -69,13 +81,16 @@ def base_always_on():
     return names
 
 
-def working_tree_always_on():
-    names = set()
+def working_tree_names():
+    """(all Kustomization names present, always-on names) in the working tree."""
+    all_names, on_names = set(), set()
     for f in (REPO_ROOT / CLUSTER_DIR).rglob("*.yaml"):
         if f.name == "kustomization.yaml":
             continue
-        names |= always_on_names(f.read_text())
-    return names
+        text = f.read_text()
+        all_names |= kustomization_names(text)
+        on_names |= always_on_names(text)
+    return all_names, on_names
 
 
 def main():
@@ -83,8 +98,11 @@ def main():
     if base is None:
         print(f"idp-always-on-guard: {BASE_REF} unreachable, skipping (nothing to diff against)")
         return 0
-    current = working_tree_always_on()
-    missing = sorted(base - current)
+    current_all, current_on = working_tree_names()
+    # A name that vanished from the always-on set but still exists as a Kustomization (demoted to
+    # on-demand/none, in its own commit) is a deliberate decision, not the outage this guards
+    # against; only a name gone from the tree entirely -- deleted, exactly like c96359f4 -- fails.
+    missing = sorted(base - current_all)
     if missing:
         print(f"idp-always-on-guard: FAIL -- always-on Kustomization(s) dropped since {BASE_REF}:")
         for name in missing:
@@ -92,7 +110,7 @@ def main():
         print("If this is deliberate, demote it to on-demand/none first in its own commit;")
         print("an always-on row must never simply vanish.")
         return 1
-    print(f"idp-always-on-guard: {len(current)} always-on Kustomization(s), none dropped")
+    print(f"idp-always-on-guard: {len(current_on)} always-on Kustomization(s), none dropped")
     return 0
 
 

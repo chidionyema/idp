@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# bin/idp-ci-growmos-writeback — the required CI check that closes the "write it back" gap.
+#
+# Root cause it fixes (crew journal / session 2026-09-28): AGENTS.md and CLAUDE.md tell every
+# agent to write durable decisions into growmos before finishing. Nothing checked that they did.
+# 2026-09-27's `docs/synthesis/2026-09-27-fractal-factory-review-brief.md` landed with no matching
+# growmos entity, so the next session's `growmos query` legitimately came back empty and re-derived
+# the same design from scratch. The instruction alone already failed once; this is the gate.
+#
+# Refuses a PR when it adds or modifies a file under docs/synthesis/, docs/tickets/, or
+# docs/decisions/ without also touching .growmos/entities.jsonl or .growmos/relations.jsonl in the
+# same diff. It does not check semantic correctness of the write-back (growmos eval / doctor do
+# that); it only checks that a write-back happened at all.
+set -uo pipefail
+
+BASE="${1:-origin/main}"
+git fetch origin "${BASE#origin/}" 2>/dev/null || true
+HEAD_REV="$(git rev-parse HEAD)"
+
+changed="$(git diff --name-only "$BASE...$HEAD_REV" 2>/dev/null || true)"
+
+# LAW 55 (pipe-verdict): capture grep output, then test, rather than pipe-into-if.
+doc_hits="$(printf '%s\n' "$changed" | grep -E '^docs/(synthesis|tickets|decisions)/' || true)"
+
+if [ -z "$doc_hits" ]; then
+  echo "ok    growmos-writeback  no docs/synthesis, docs/tickets or docs/decisions changes"
+  exit 0
+fi
+
+growmos_hits="$(printf '%s\n' "$changed" | grep -E '^\.growmos/(entities|relations)\.jsonl$' || true)"
+
+if [ -n "$growmos_hits" ]; then
+  echo "ok    growmos-writeback  docs changed and growmos store updated in the same PR:"
+  printf '                    %s\n' $doc_hits
+  exit 0
+fi
+
+echo "FAIL  growmos-writeback  docs/synthesis, docs/tickets or docs/decisions touched with no matching growmos write:"
+printf '                    %s\n' $doc_hits
+echo "                    Run growmos remember/link for the durable facts this doc introduces, then"
+echo "                    growmos journal a summary, and include the resulting .growmos/*.jsonl diff"
+echo "                    in this PR. See CLAUDE.md 'growmos — living knowledge graph'."
+exit 1
