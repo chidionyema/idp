@@ -103,7 +103,8 @@ spec:
             # the router starts, declares the callback in config.yaml, and then fails every
             # request with a ModuleNotFoundError -- a broken router is worse than an unbounded
             # one, which is why the path and the callback ship in the same pull request.
-            - { name: PYTHONPATH, value: "/etc/litellm/ceilings" }
+            # PoBR enforcement: callbacks/ directory added so pobr_enforce.PoBREnforcer can be imported.
+            - { name: PYTHONPATH, value: "/etc/litellm/callbacks:/etc/litellm/ceilings" }
             # ZeroEdge (platform/llm/zeroedge.yaml). The shim module is OFF unless this is
             # set, and it fails open: a call whose optimization pass errors or exceeds the
             # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
@@ -126,6 +127,8 @@ spec:
             - { name: config, mountPath: /etc/litellm, readOnly: true }
             # The ceiling module, on the path the router imports from. PYTHONPATH above names
             # this directory, so `request_ceiling.proxy_handler_instance` resolves at start.
+            # PoBR callbacks: mounts the litellm-callbacks ConfigMap (pobr_enforce.py + gate modules).
+            - { name: pobr-callbacks, mountPath: /etc/litellm/callbacks, readOnly: true }
             - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
@@ -153,6 +156,7 @@ spec:
             - { name: human-groq, mountPath: /run/secrets/human/groq, readOnly: true }
             - { name: human-sambanova, mountPath: /run/secrets/human/sambanova, readOnly: true }
             - { name: tmp, mountPath: /tmp }
+            - { name: pobr-agent-key, mountPath: /etc/litellm/keys, readOnly: true }
           resources:
             # OOMKilled at 1Gi within 19s of start on the -database image (Prisma engine plus the
             # proxy), 10 restarts on 2026-08-26 23:2xZ; node has 20Gi allocatable.
@@ -181,6 +185,9 @@ spec:
       volumes:
         - name: config
           configMap: { name: litellm-config }
+        # PoBR enforcement callback modules (pobr_enforce.py, pobr_gate.py, pobr_schema.py).
+        - name: pobr-callbacks
+          configMap: { name: litellm-callbacks }
         - name: request-ceiling
           configMap: { name: litellm-request-ceiling }
         - name: upstream
@@ -215,6 +222,8 @@ spec:
           secret: { secretName: human-sambanova, optional: true }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
+        - name: pobr-agent-key
+          secret: { secretName: litellm-pobr-agent-key }
 ---
 apiVersion: v1
 kind: Service
