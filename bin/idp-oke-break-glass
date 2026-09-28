@@ -553,12 +553,61 @@ pb_architect_doctor() {
   show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
 }
 
+# otto_stack: both Ottos and every layer they run on, graded ahead of the hermes rows below.
+# 2026-09-28: c96359f4 had pruned all of these from the cluster for two days and this playbook
+# could not say so -- every row below execs into hermes-agent, so "the pod is gone" and "the
+# router is Pending on a cordoned node" read as one opaque red. Each layer is now its own row.
+# The webhook rows ask Telegram from inside the pod that holds the token; it is never printed.
+otto_stack() {
+  show nodes $K get nodes -o custom-columns=NAME:.metadata.name,UNSCHEDULABLE:.spec.unschedulable,TAINTS:.spec.taints[*].key
+  # A cordoned node halves a two-node cluster. Who set spec.unschedulable, and whether the pod
+  # network (calico-node) is Ready on it -- the precondition for ever scheduling there again.
+  show cordon-provenance sh -c "for n in \$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name} {end}'); do echo \"== \$n\"; $K get node \$n --show-managed-fields -o json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"annotations:\", {k: v for k, v in d[\"metadata\"].get(\"annotations\", {}).items() if \"volumes\" not in k and \"csi\" not in k}); [print(\"manager:\", m.get(\"manager\"), m.get(\"operation\"), m.get(\"time\")) for m in d[\"metadata\"].get(\"managedFields\", []) if \"f:unschedulable\" in json.dumps(m)]'; $K get pods -A --field-selector spec.nodeName=\$n -o wide --no-headers | awk '{print \$1, \$2, \$3, \$4}' | grep -Ei 'calico|spire|Error|CrashLoop|nodesoftware' | head -12; done"
+  step nodes-schedulable sh -c "c=\$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name} {end}'); echo \"cordoned: \${c:-none}\"; [ -z \"\$c\" ]"
+  step flux-rows-ready sh -c "$K get kustomizations.kustomize.toolkit.fluxcd.io -n flux-system -o json | python3 -c '
+import json, sys
+want = {\"priority-classes\", \"github-app-creds\", \"estate-db-migrate\", \"llm\", \"hindsight\", \"mcp\", \"tailscale\", \"event-bus\", \"hermes-agent\", \"otto-gateway\", \"otto-golden-secret\", \"otto-golden\"}
+st = {i[\"metadata\"][\"name\"]: next((c for c in i.get(\"status\", {}).get(\"conditions\", []) if c[\"type\"] == \"Ready\"), {}) for i in json.load(sys.stdin)[\"items\"]}
+bad = [n for n in sorted(want) if st.get(n, {}).get(\"status\") != \"True\"]
+for n in bad: print(n, st.get(n, {}).get(\"status\", \"ABSENT\"), st.get(n, {}).get(\"message\", \"no row in the cluster\")[:100])
+print(\"flux rows ready: %d/%d\" % (len(want) - len(bad), len(want)))
+sys.exit(1 if bad else 0)'"
+  step router-ready $K rollout status deploy/litellm -n llm --timeout=60s
+  step bus-ready $K rollout status statefulset/nats -n event-bus --timeout=60s
+  step memory-ready sh -c "$K get deploy -n hindsight -o json | python3 -c '
+import json, sys
+d = [(i[\"metadata\"][\"name\"], i[\"status\"].get(\"readyReplicas\", 0), i[\"spec\"].get(\"replicas\", 1)) for i in json.load(sys.stdin)[\"items\"]]
+print(\" \".join(\"%s=%s/%s\" % x for x in d) or \"no deployments in hindsight\")
+sys.exit(0 if d and all(r >= w for _, r, w in d) else 1)'"
+  step door-ready $K rollout status deploy/otto-gateway -n otto-gateway --timeout=60s
+  step numun-ready $K rollout status deploy/otto-golden -n otto-golden --timeout=60s
+  show not-running sh -c "for n in llm hindsight event-bus otto-gateway otto-golden hermes-agent mcp; do $K get pods -n \$n --field-selector=status.phase!=Running,status.phase!=Succeeded --no-headers 2>/dev/null | sed \"s/^/\$n /\"; $K get events -n \$n --field-selector type=Warning --sort-by=.lastTimestamp 2>/dev/null | tail -3 | sed \"s/^/\$n /\"; done"
+  step webhook-ottototbot $K exec deploy/otto-gateway -n otto-gateway -c gateway -- python3 -c "$(otto_webhook_py /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN)"
+  step webhook-numun $K exec deploy/otto-golden -n otto-golden -c otto-boot -- python3 -c "$(otto_webhook_py /run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN)"
+  # The in-cluster probe that sends a real completion through the door's own router key, every 15m.
+  step answer-probe-recent sh -c "l=\$($K get jobs -n otto-gateway --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | grep '^otto-answer-probe' | tail -1); echo \"\${l:-no otto-answer-probe job has run}\"; echo \"\$l\" | awk '{exit !(\$2==\"1/1\")}'"
+}
+
+# Telegram's own answer on where it delivers and whether delivery is failing (Bot API
+# getWebhookInfo): a URL is set, no delivery error in the last 15 minutes, fewer than 20 queued.
+otto_webhook_py() {
+  cat <<PY
+import json, time, urllib.request
+t = open("$1").read().strip()
+w = json.load(urllib.request.urlopen("https://api.telegram.org/bot%s/getWebhookInfo" % t, timeout=15))["result"]
+age = time.time() - w.get("last_error_date", 0)
+print("url=%s pending=%s last_error=%s age_s=%d" % (w.get("url", "")[:60], w.get("pending_update_count"), w.get("last_error_message", "-"), age))
+raise SystemExit(0 if w.get("url") and w.get("pending_update_count", 0) < 20 and age > 900 else 1)
+PY
+}
+
 # otto-parity: crew#561, the from-scratch proof product will demand. Read-only. Each step is a
 # parity item from crew#561, graded from inside the running pod, never from a file on a laptop:
 # the gateway is up and not restarting, mac-run reaches the founder's Mac and runs a command
 # there, the memory service answers, the model lane is the estate router, and the cron lanes
 # are installed. A red step is the finding.
 pb_otto_parity() {
+  otto_stack
   local ns=hermes-agent d=deploy/hermes-agent-gateway
   step gateway-ready $K rollout status "$d" -n "$ns" --timeout=60s
   step no-restart-loop sh -c "r=\$($K get pods -n $ns -l app=hermes-agent-gateway -o jsonpath='{.items[0].status.containerStatuses[?(@.name==\"gateway\")].restartCount}'); echo restarts=\$r; [ \"\${r:-0}\" -lt 5 ]"
