@@ -17,6 +17,7 @@ resources:
   - voice-router.yaml
   - epistemic-fabric.yaml
   - unified-memory.yaml
+  - platform.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
