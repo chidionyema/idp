@@ -19,19 +19,19 @@ fi
 FILE_COUNT=$(echo "$ALL_FILES" | wc -l | tr -d ' ')
 echo "mutation-pr: base=$BASE, ${FILE_COUNT} files, timeout=${PR_TIMEOUT}s"
 
-# Run in subshell so SIGALRM/SIGKILL from timeout can't kill the parent
-(
-  exec timeout "$PR_TIMEOUT" python3 "$ORCH" --tier=pr --stdin --cwd="$REPO_ROOT" <<< "$ALL_FILES"
-) > /tmp/mutation-pr-output.txt 2>&1
+# gtimeout sends SIGKILL (not SIGALRM) — safe to use, won't kill the shell
+/opt/local/bin/gtimeout "$PR_TIMEOUT" python3 "$ORCH" --tier=pr --stdin --cwd="$REPO_ROOT" <<< "$ALL_FILES" \
+  > /tmp/mutation-pr-output.txt 2>&1
 MUT_RC=$?
 
-if [ $MUT_RC -eq 137 ] || [ $MUT_RC -eq 139 ]; then
-  echo "mutation-pr: TIMEOUT/CRASH after ${PR_TIMEOUT}s — allowing push"
+if [ $MUT_RC -eq 124 ]; then
+  echo "mutation-pr: TIMEOUT after ${PR_TIMEOUT}s — allowing push"
+elif [ $MUT_RC -eq 137 ]; then  # SIGKILL
+  echo "mutation-pr: KILLED after ${PR_TIMEOUT}s — allowing push"
 elif [ $MUT_RC -eq 0 ]; then
   echo "mutation-pr: complete"
 else
   echo "mutation-pr: done (rc=$MUT_RC, informational)"
 fi
 
-echo "mutation-pr: push proceeds"
 exit 0
