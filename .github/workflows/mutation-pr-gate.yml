@@ -25,7 +25,7 @@ permissions:
   statuses: write
 
 env:
-  MIN_SCORE: 80  # blocks merge if score drops below this
+  MIN_SCORE: 80
 
 jobs:
   mutation-pr:
@@ -53,94 +53,96 @@ jobs:
           chmod +x "$HOME/.estate/bin/mutation-orchestrator"
 
       - name: Get changed files
-        id: changed
+        id: get-changed
         run: |
-          BASE_BRANCH="${{ github.base_ref || 'main' }}"
-          echo "base=$BASE_BRANCH"
+          BASE_BRANCH="${GITHUB_BASE_REF:-main}"
+          echo "base_branch=$BASE_BRANCH"
           CHANGED=$(git diff --name-only "origin/$BASE_BRANCH...HEAD" \
             | grep -E '\.(py|rs|ts|tsx|go|cs)$' || true)
           if [ -z "$CHANGED" ]; then
-            echo "files=None" >> "$GITHUB_OUTPUT"
-            echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "file_count=0" >> "$GITHUB_OUTPUT"
+            echo "files=none" >> "$GITHUB_OUTPUT"
           else
+            COUNT=$(echo "$CHANGED" | wc -l | tr -d ' ')
+            echo "file_count=$COUNT" >> "$GITHUB_OUTPUT"
             echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
-            echo "count=$(echo "$CHANGED" | wc -l)" >> "$GITHUB_OUTPUT"
           fi
-          echo "base=$BASE_BRANCH" >> "$GITHUB_OUTPUT"
 
       - name: Run mutation testing
-        if: steps.changed.outputs.count != '0'
+        id: mutation-pr
+        if: steps.get-changed.outputs.file_count != '0'
         env:
-          CHANGED_FILES: ${{ steps.changed.outputs.files }}
-          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+          CHANGED_FILES: ${{ steps.get-changed.outputs.files }}
+          PR_NUM: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: |
           echo "## Mutation PR Gate" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Files changed: \`$CHANGED_FILES\`" >> $GITHUB_STEP_SUMMARY
+          echo "Files changed:" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "$CHANGED_FILES" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 
-          LEDGER=$(mktemp)
           echo "$CHANGED_FILES" | python3 "$HOME/.estate/bin/mutation-orchestrator" \
-            --tier=pr --stdin --cwd="$PWD" 2>&1 | tee /tmp/mutation-pr.out
+            --tier=pr --stdin --cwd="$PWD" > /tmp/mutation-pr.json 2>&1
+          RC=${PIPESTATUS[0]}
 
-          # Extract score from output
+          # Extract score from JSON output (last JSON block)
           SCORE=$(python3 -c "
 import json, sys
-output = open('/tmp/mutation-pr.out').read()
-for line in output.splitlines():
-    if line.strip().startswith('{'):
+lines = open('/tmp/mutation-pr.json').read().strip().splitlines()
+for line in reversed(lines):
+    line = line.strip()
+    if line.startswith('{'):
         try:
             d = json.loads(line)
-            print(d.get('score', 0))
+            print(d.get('score', 0) or 0)
             break
         except:
             pass
+print(0)
 " 2>/dev/null || echo "0")
 
-          echo "score=$SCORE" >> $GITHUB_OUTPUT
+          echo "score=$SCORE" >> "$GITHUB_OUTPUT"
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Score | $SCORE% |" >> $GITHUB_STEP_SUMMARY
           echo "| Min required | $MIN_SCORE% |" >> $GITHUB_STEP_SUMMARY
-          echo "| Files | $CHANGED_FILES |" >> $GITHUB_STEP_SUMMARY
+          echo "| Files | ${{ steps.get-changed.outputs.file_count }} |" >> $GITHUB_STEP_SUMMARY
 
       - name: Post PR comment
-        if: steps.changed.outputs.count != '0'
+        if: steps.get-changed.outputs.file_count != '0'
         env:
           SCORE: ${{ steps.mutation-pr.outputs.score || '0' }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUM: ${{ github.event.pull_request.number || inputs.pr_number }}
         run: |
-          SCORE_VAL=${SCORE:-0}
-          STATUS="✅ PASS"
-          if (( $(echo "$SCORE_VAL < $MIN_SCORE" | bc -l) )); then
-            STATUS="❌ FAIL — score below $MIN_SCORE%"
+          SCORE_VAL="${SCORE:-0}"
+          MIN=$MIN_SCORE
+          if [ "$SCORE_VAL" -lt "$MIN" ] 2>/dev/null; then
+            STATUS="FAIL"
+            BODY="❌ **Mutation score $SCORE_VAL% is below minimum $MIN%** — merge blocked."
+          else
+            STATUS="PASS"
+            BODY="✅ Mutation score: $SCORE_VAL% (min: $MIN%) — merge allowed."
           fi
-
-          PR_NUM="${{ github.event.pull_request.number || inputs.pr_number }}"
+          echo "Mutation PR gate: score=$SCORE_VAL% min=$MIN% status=$STATUS"
           if [ -n "$PR_NUM" ]; then
-            gh pr comment "$PR_NUM" --body "
-## Mutation Testing: $STATUS
-
-| Metric | Value |
-|--------|-------|
-| Score | $SCORE_VAL% |
-| Min required | $MIN_SCORE% |
-| Files tested | ${{ steps.changed.outputs.count }} |
-
-$STATUS — $SCORE_VAL% mutation score.
-$(if [ $(echo "$SCORE_VAL < $MIN_SCORE" | bc -l) -eq 1 ]; then echo "⚠️ Merge blocked: score must reach ${MIN_SCORE}%."; fi)
-" 2>/dev/null || true
+            gh pr comment "$PR_NUM" --body "$BODY" 2>/dev/null || true
           fi
 
       - name: Gate decision
-        if: steps.changed.outputs.count != '0'
+        if: steps.get-changed.outputs.file_count != '0'
         env:
           SCORE: ${{ steps.mutation-pr.outputs.score || '0' }}
         run: |
-          SCORE_VAL=${SCORE:-0}
-          if (( $(echo "$SCORE_VAL < $MIN_SCORE" | bc -l) )); then
-            echo "SCORE=$SCORE_VAL% < MIN=$MIN_SCORE% — blocking merge"
+          SCORE_VAL="${SCORE:-0}"
+          MIN=$MIN_SCORE
+          echo "Score: $SCORE_VAL%, Minimum: $MIN%"
+          if [ "$SCORE_VAL" -lt "$MIN" ] 2>/dev/null; then
+            echo "BLOCK: score $SCORE_VAL% < $MIN%"
             exit 1
           fi
-          echo "SCORE=$SCORE_VAL% >= MIN=$MIN_SCORE% — merge allowed"
+          echo "PASS: score $SCORE_VAL% >= $MIN%"

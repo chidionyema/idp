@@ -7,6 +7,12 @@ import sys
 import yaml
 from pathlib import Path
 
+try:
+    from mcp.plugins import pobr_grant
+
+except ImportError:
+    pobr_grant = None  # type: ignore
+
 HOME = Path.home()
 INTENTS = HOME / ".estate" / "intents"
 log = logging.getLogger(__name__)
@@ -160,12 +166,64 @@ TOOL_DEFS = [
             "required": ["intent"],
         },
     },
+    {
+        "name": "pobr_submit",
+        "description": "Submit a PoBR receipt to consume the session grant.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID matching the grant",
+                },
+                "receipt": {
+                    "type": "object",
+                    "description": "PoBR receipt dict from the reasoning trace",
+                    "default": {},
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
+    {
+        "name": "pobr_status",
+        "description": "Check PoBR grant status for a session.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session_id": {
+                    "type": "string",
+                    "description": "Session ID to check",
+                },
+            },
+            "required": ["session_id"],
+        },
+    },
 ]
+
+def _pobr_submit(args):
+    if pobr_grant is None:
+        return "ERROR: pobr_grant not available"
+    session_id = args.get("session_id", "")
+    receipt = args.get("receipt", {})
+    result = pobr_grant.pobr_submit_tool(session_id, receipt)
+    return str(result)
+
+
+def _pobr_status(args):
+    if pobr_grant is None:
+        return "ERROR: pobr_grant not available"
+    session_id = args.get("session_id", "")
+    result = pobr_grant.grant_status(session_id)
+    return str(result)
+
 
 TOOL_FNS = {
     "estate_list": _estate_list,
     "estate_show": _estate_show,
     "estate_invoke": _estate_invoke,
+    "pobr_submit": _pobr_submit,
+    "pobr_status": _pobr_status,
 }
 
 
@@ -176,6 +234,42 @@ def register_mcp_tools(datasette, mcp):
 
         def make_wrapper(f, td=td):
             def wrapper(kwargs):
+                tool_name = td["name"]
+
+                # --- PoBR grant gate ---
+                if (
+                    pobr_grant is not None
+                    and pobr_grant.requires_grant(tool_name)
+                ):
+                    session_id = kwargs.get("session_id", "")
+                    if not session_id:
+                        return {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "PoBR grant required for {}. "
+                                        "Call pobr_submit or pobr_status first."
+                                    ).format(tool_name),
+                                }
+                            ],
+                            "isError": True,
+                        }
+                    check = pobr_grant.check_grant(session_id)
+                    if not check.get("valid"):
+                        return {
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "PoBR grant check failed: {}".format(
+                                        check.get("reason", "unknown")
+                                    ),
+                                }
+                            ],
+                            "isError": True,
+                        }
+                # --- end PoBR gate ---
+
                 try:
                     result = f(kwargs)
                     return {"content": [{"type": "text", "text": str(result)}]}
