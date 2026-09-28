@@ -272,3 +272,60 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+---
+# The estate bus (NATS JetStream). otto-gateway publishes every inbound message to otto.ingress on it.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: event-bus
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/event-bus
+  prune: true
+  dependsOn:
+    - name: priority-classes
+  wait: true
+  timeout: 2m
+---
+# Otto's door. Since 2026-09-05 the one TELEGRAM_BOT_TOKEN for @Ottototbot is held here and nowhere
+# else (platform/hermes-agent/gateway.yaml header); hermes-agent is reached from it over a2a :9900.
+# Without this row Otto has no way to hear the founder at all.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-gateway
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-gateway
+  prune: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: secret-store
+    - name: edge
+    - name: event-bus
+    - name: github-app-creds
+    - name: priority-classes
+    - name: estate-db
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-gateway
+      namespace: otto-gateway
