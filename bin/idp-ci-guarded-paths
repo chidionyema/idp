@@ -6,11 +6,13 @@
 #   2. HEAD merge trailer indicates blind-accept strategy (-X theirs or -X ours).
 #   3. HEAD carries no X-Idp-Signed trailer (defeats git commit/push --no-verify since the hook
 #      stamps X-Idp-Signed on every legitimate commit).
-#   4. HEAD introduces a .claude/ or claude-code/ path. The estate is model-agnostic (AGENTS.md
-#      R6); .claude/ is a second execution boundary and gets deleted, not authorized. Unlike 1-3
-#      this has no signature override — .githooks/pre-push checks the same thing client-side, but
-#      a bot commit, a hookless machine or a GitHub-UI merge skips that hook, which is why the
-#      directory kept coming back.
+#   4. HEAD introduces a .claude/, claude-code/ or .pi/ path -- any harness's own per-project
+#      folder. The estate is model- and harness-agnostic (AGENTS.md R6); a harness folder is a
+#      second execution boundary and gets deleted, not authorized. Unlike 1-3 this has no
+#      signature override — .githooks/pre-push checks the same thing client-side, but a bot
+#      commit, a hookless machine or a GitHub-UI merge skips that hook, which is why .claude/
+#      kept coming back; .pi/ is banned pre-emptively so pi (or any future harness) never starts
+#      the same pattern.
 #
 # Zero-trust: none of these can be worked around by an agent — the signature requires a private
 # key no agent holds; X-Idp-Signed is stamped by the commit-msg hook using a secret only present
@@ -28,14 +30,15 @@ changed="$(git diff --name-only "$BASE"..."$HEAD_REV" 2>/dev/null || true)"
 
 rc=0
 
-# 0) .claude/ / claude-code/ ban -- unconditional, no signature or bootstrap exemption. Runs
-# before the bootstrap check below because it guards a different contract (model-agnosticism,
-# AGENTS.md R6), not the founder-signature one, and must hold even on the PR that bootstraps that.
-claude_hit="$(printf '%s\n' "$changed" | grep -E '(^|/)\.claude/|(^|/)claude-code/' || true)"
-if [ -n "$claude_hit" ]; then
-  echo "FAIL  guarded-paths  .claude/ or claude-code/ path introduced (AGENTS.md R6: the estate"
-  echo "                 is model-agnostic; one execution boundary, ~/.estate/):"
-  printf '                 %s\n' "$claude_hit"
+# 0) Harness-folder ban (.claude/, claude-code/, .pi/) -- unconditional, no signature or bootstrap
+# exemption. Runs before the bootstrap check below because it guards a different contract
+# (model-agnosticism, AGENTS.md R6), not the founder-signature one, and must hold even on the PR
+# that bootstraps that.
+harness_hit="$(printf '%s\n' "$changed" | grep -E '(^|/)\.claude/|(^|/)claude-code/|(^|/)\.pi/' || true)"
+if [ -n "$harness_hit" ]; then
+  echo "FAIL  guarded-paths  harness-specific path introduced (AGENTS.md R6: the estate is model-"
+  echo "                 and harness-agnostic; one execution boundary, ~/.estate/):"
+  printf '                 %s\n' "$harness_hit"
   rc=1
 fi
 
