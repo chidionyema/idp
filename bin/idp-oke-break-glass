@@ -560,6 +560,10 @@ pb_architect_doctor() {
 # The webhook rows ask Telegram from inside the pod that holds the token; it is never printed.
 otto_stack() {
   show nodes $K get nodes -o custom-columns=NAME:.metadata.name,UNSCHEDULABLE:.spec.unschedulable,TAINTS:.spec.taints[*].key
+  # A cordoned node halves a two-node cluster. Who set spec.unschedulable, and whether the pod
+  # network (calico-node) is Ready on it -- the precondition for ever scheduling there again.
+  show cordon-provenance sh -c "for n in \$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name} {end}'); do echo \"== \$n\"; $K get node \$n --show-managed-fields -o json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(\"annotations:\", {k: v for k, v in d[\"metadata\"].get(\"annotations\", {}).items() if \"volumes\" not in k and \"csi\" not in k}); [print(\"manager:\", m.get(\"manager\"), m.get(\"operation\"), m.get(\"time\")) for m in d[\"metadata\"].get(\"managedFields\", []) if \"f:unschedulable\" in json.dumps(m)]'; $K get pods -A --field-selector spec.nodeName=\$n -o wide --no-headers | awk '{print \$1, \$2, \$3, \$4}' | grep -Ei 'calico|spire|Error|CrashLoop|nodesoftware' | head -12; done"
+  step nodes-schedulable sh -c "c=\$($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name} {end}'); echo \"cordoned: \${c:-none}\"; [ -z \"\$c\" ]"
   step flux-rows-ready sh -c "$K get kustomizations.kustomize.toolkit.fluxcd.io -n flux-system -o json | python3 -c '
 import json, sys
 want = {\"priority-classes\", \"github-app-creds\", \"estate-db-migrate\", \"llm\", \"hindsight\", \"mcp\", \"tailscale\", \"event-bus\", \"hermes-agent\", \"otto-gateway\", \"otto-golden-secret\", \"otto-golden\"}
