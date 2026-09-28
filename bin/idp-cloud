@@ -563,9 +563,17 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             # hides the failure in the row after it -- the 401 was covering this one.
             C=$(oci_compartment)
             [ -n "$C" ] || blind "cluster kubeconfig: could not resolve the compartment"
-            CID=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE \
-              --query "data[?name=='$NAME'].id | [0]" --raw-output 2>/dev/null) \
-              || blind "oci ce cluster list failed while resolving cluster '$NAME'"
+            # Every workflow that mints a kubeconfig (op-verify, webhook-diagnose, mac-salvage,
+            # estate-secret-prune) resolves `cluster list` to the OCID and passes THAT here;
+            # matching it as a name failed every run (2026-09-28, op-verify 36490530344:
+            # "no ACTIVE cluster named 'ocid1.cluster...'"), so each read door reported every
+            # workload MISSING while blind. An OCID is used as-is.
+            case "$NAME" in
+              ocid1.cluster.*) CID=$NAME ;;
+              *) CID=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE \
+                --query "data[?name=='$NAME'].id | [0]" --raw-output 2>/dev/null) \
+                || blind "oci ce cluster list failed while resolving cluster '$NAME'" ;;
+            esac
             if [ -z "$CID" ] || [ "$CID" = "null" ]; then
               ACTIVE=$(oci ce cluster list --compartment-id "$C" --lifecycle-state ACTIVE \
                 --query 'data[].name' --raw-output 2>/dev/null | paste -sd, -)
