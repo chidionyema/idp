@@ -218,4 +218,10 @@ with open(LEDGER, "a") as f:
     f.write(json.dumps(summary) + "\n")
 
 print(json.dumps(summary, indent=2))
-sys.exit(0 if budget_ok else 1)
+# Exit 0 if no surviving mutants (timeouts are acceptable — test is just slow)
+# Exit 1 only if mutants survived or budget exceeded
+if total_s > 0:
+    sys.exit(1)  # real surviving mutants — must fix
+if not budget_ok:
+    sys.exit(1)  # ran over budget
+sys.exit(0)
