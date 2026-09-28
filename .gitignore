@@ -135,3 +135,6 @@ catalog/*.db-shm
 # absolute path of the checkout that produced them, and tripped bin/idp-hardcode-scan on
 # 2026-09-13 after a `git add -A` swept them in. They are not repository content.
 .agent/
+
+# Built by installer/build.sh, never committed: a committed pkg is a stale copy of the converger.
+installer/IDP-Estate.pkg
