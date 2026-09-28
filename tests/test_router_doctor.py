@@ -63,3 +63,17 @@ def test_pinned_token_in_settings_fails_the_check(tmp_path):
     assert not ok and "ANTHROPIC_API_KEY" in detail
     d.heal_settings()
     assert d.check_settings()[0]
+
+
+def test_a_changed_model_is_reverted_to_opusplan(tmp_path):
+    d = _doctor()
+    d.SETTINGS = tmp_path / "settings.json"
+    d.SETTINGS.write_text(
+        '{"model":"opus[1m]","env":{"ANTHROPIC_BASE_URL":"%s","ANTHROPIC_MODEL":"opus"}}'
+        % d.BASE
+    )
+    ok, detail = d.check_settings()
+    assert not ok and "must be opusplan" in detail and "ANTHROPIC_MODEL" in detail
+    d.heal_settings()
+    assert d.check_settings()[0]
+    assert '"model": "opusplan"' in d.SETTINGS.read_text()

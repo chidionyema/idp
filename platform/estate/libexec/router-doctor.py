@@ -40,6 +40,9 @@ OAUTH_PATCH = "_pre.clean_headers = clean_headers"
 # Install sources, most trusted first: the main runtime clone, then the shared checkout.
 SOURCES = [HOME / ".estate/runtime/idp", HOME / "Documents/code/idp"]
 PROBE_MODEL = "claude-haiku-4-5"
+# Founder, 2026-09-28: the Claude Code model is opusplan (Opus plans, Sonnet executes) and "must
+# never be changed again". A /model switch or a hand edit is reverted within one watch tick.
+REQUIRED_MODEL = "opusplan"
 
 MODE = (sys.argv[1] if len(sys.argv) > 1 else "heal").lower()
 HEAL = MODE not in ("diagnose", "false", "0", "no")
@@ -222,22 +225,32 @@ def heal_lanes():
 
 def check_settings():
     try:
-        env = json.loads(SETTINGS.read_text()).get("env", {})
+        d = json.loads(SETTINGS.read_text())
     except (OSError, ValueError) as e:
         return False, "unreadable: %s" % e
+    env = d.get("env", {})
     bad = []
+    if d.get("model") != REQUIRED_MODEL:
+        bad.append("model=%r, must be %s" % (d.get("model"), REQUIRED_MODEL))
+    if "ANTHROPIC_MODEL" in env:
+        bad.append("ANTHROPIC_MODEL=%r overrides the model" % env["ANTHROPIC_MODEL"])
     if env.get("ANTHROPIC_BASE_URL") != BASE:
         bad.append("ANTHROPIC_BASE_URL=%r" % env.get("ANTHROPIC_BASE_URL"))
     for k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
         if k in env:
             bad.append("%s pinned (dies on token rotation)" % k)
-    return not bad, "; ".join(bad) or "base_url=router, no pinned token"
+    return not bad, "; ".join(
+        bad
+    ) or "base_url=router, model=%s, no pinned token" % REQUIRED_MODEL
 
 
 def heal_settings():
-    shutil.copy2(SETTINGS, str(SETTINGS) + ".bak-router-doctor-%d" % int(time.time()))
+    # One backup, overwritten: a revert every tick must not pile up files.
+    shutil.copy2(SETTINGS, str(SETTINGS) + ".bak-router-doctor")
     d = json.loads(SETTINGS.read_text())
+    d["model"] = REQUIRED_MODEL
     env = d.setdefault("env", {})
+    env.pop("ANTHROPIC_MODEL", None)
     env["ANTHROPIC_BASE_URL"] = BASE
     env.pop("ANTHROPIC_API_KEY", None)
     env.pop("ANTHROPIC_AUTH_TOKEN", None)
