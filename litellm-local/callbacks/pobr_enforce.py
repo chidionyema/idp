@@ -8,6 +8,7 @@ Hooks into every LLM completion call:
 
 This is the enforcement layer. The actual gate logic lives in pobr_gate_wrapper.py.
 """
+
 from __future__ import annotations
 
 import json
