@@ -3,10 +3,6 @@
     "growmos": {
       "args": ["mcp"],
       "command": "growmos"
-    },
-    "memory": {
-      "args": [],
-      "command": "/Users/roseonyema/Documents/code/estate-core/memory/mcp_server.py"
     }
   }
 }

@@ -70,6 +70,11 @@ if [ -n "$staged_sh" ]; then
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       [ -f "$f" ] || continue
+      case "$f" in
+      *.py) continue ;;                                            # never shell, even under bin/
+      *.sh|*.bash) ;;                                               # real shell extension
+      *) head -1 "$f" 2>/dev/null | grep -qE '^#!.*\b(sh|bash)$' || continue ;;
+      esac
       if ! shellcheck -S warning "$f" >/dev/null 2>&1; then
         echo "  FAIL shellcheck $f"
         sh_fail=1
