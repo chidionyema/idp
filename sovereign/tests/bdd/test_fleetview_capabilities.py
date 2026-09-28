@@ -16,7 +16,13 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SESSIONS_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "sessions.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "sessions.py"
 )
 
 

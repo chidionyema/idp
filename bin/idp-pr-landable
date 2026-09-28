@@ -136,9 +136,30 @@ def verdict(pr, required):
     #
     # A refresh helps exactly one population: a branch whose checks are FINISHED and some of them
     # are red, where the redness is because main has moved on. A branch whose checks are still
-    # running is not that, and refreshing it destroys the evidence rather than repairing it.
-    # `bin/idp-circuit-breaker` names the same shape: do not repeat a step that is not converging.
+    # UNSTABLE means the MWG already merged (or tried to). A refresh here starts new CI on the
+    # feature branch, which produces new check entries -- and GitHub's statusCheckRollup returns
+    # those alongside the old entries, causing staleness cycles where the MWG reads a FAILED entry
+    # from the old run even though the new run is still completing. MWG then sees failure -> UPDATE
+    # -> new CI -> more entries -> more staleness. Measured: PR #4764 dros-daemon build.
+    #
+    # Fix: when state==UNSTABLE and all checks finished, skip the refresh entirely. The checks
+    # verdict below judges on merits. If green, MERGE fires next tick once GitHub propagates.
+    # If red, SKIP fires next tick. Either way, no new CI is started.
     behind_by = pr.get("behind_by", 0) or 0
+    if state == "UNSTABLE":
+        running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]
+        if running:
+            return "SKIP", (
+                f"mergeStateStatus=UNSTABLE, {len(running)} check(s) still running; "
+                f"skipping refresh to avoid staleness cycle"
+            )
+        behind = behind_by > 0
+        if behind:
+            return "SKIP", (
+                f"mergeStateStatus=UNSTABLE, behind main by {behind_by} commit(s); "
+                f"skipping refresh -- MWG already merged, GitHub propagates asynchronously"
+            )
+        # UNSTABLE but checks finished and not behind -- let checks verdict below judge on merits.
     behind = state == "BEHIND" or behind_by > 0
     if behind and state in ("BEHIND", "UNSTABLE", "BLOCKED", "CLEAN"):
         running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]

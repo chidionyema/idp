@@ -20,10 +20,22 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 DEVICE_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "device_access.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "device_access.py"
 )
 ROUTES_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
 )
 
 
@@ -174,7 +186,13 @@ def test_the_route_is_registered_and_read_only(device):
     assert hasattr(routes, "device_status_envelope")
 
     serve_src = (
-        REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "serve.py"
+        REPO
+        / "backstage"
+        / "plugins"
+        / "fleetview-backend"
+        / "src"
+        / "fleetview_backend"
+        / "serve.py"
     ).read_text()
     assert "routes.DEVICE_STATUS_PATH" in serve_src, (
         "the path is declared in routes.py but serve.py does not register it, so it would 404"

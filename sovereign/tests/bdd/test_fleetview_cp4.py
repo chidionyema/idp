@@ -36,7 +36,15 @@ FEATURE = str(REPO / "features" / "fleetview" / "cp4_every_runtime.feature")
 SCHEMA_PATH = (
     REPO / "backstage" / "plugins" / "fleetview-backend" / "schema" / "session.json"
 )
-PLUGIN = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "sessions.py"
+PLUGIN = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "sessions.py"
+)
 
 
 @pytest.fixture()
