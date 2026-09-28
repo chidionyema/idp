@@ -4,7 +4,7 @@
 # Every 10 minutes (launchd/ai.estate.graph-drain.plist.tmpl, from ~/.estate/bin -- launchd cannot
 # run anything under ~/Documents, TCC): each ~/.estate/graph-spool/<session>.md idle for IDLE_MIN
 # is moved into the graph's sessions/ dir, registered with `growmos add`, and `growmos ingest`
-# extracts it through the laptop router on the keyless local lane (ollama-llama: no key, no cost).
+# extracts it through the laptop router on the free groq lane (llama3.2 locally took >300s a chunk).
 # graph_capture skips those calls (Python-urllib), so extraction is never itself captured.
 #
 # The graph is ESTATE_GRAPH_ROOT (default ~/.estate/graph/estate-graph, a clone of
@@ -16,7 +16,7 @@ ROOT="${ESTATE_GRAPH_ROOT:-$HOME/.estate/graph/estate-graph}"
 SPOOL="${ESTATE_GRAPH_SPOOL:-$HOME/.estate/graph-spool}"
 IDLE_MIN="${ESTATE_GRAPH_IDLE_MIN:-10}"
 LIMIT="${ESTATE_GRAPH_INGEST_LIMIT:-40}"
-MODEL="${ESTATE_GRAPH_MODEL:-ollama-llama}"
+MODEL="${ESTATE_GRAPH_MODEL:-groq}"
 LOG="$HOME/.estate/graph-drain.log"
 say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
 
@@ -32,8 +32,14 @@ done <<EOF
 $(find "$SPOOL" -maxdepth 1 -name '*.md' -mmin +"$IDLE_MIN" 2>/dev/null)
 EOF
 
+# groq is keyed on the router, so the caller key is needed (founder approved 2026-09-28): the same
+# staged SOPS file and age key bin/litellm-local decrypts at start. Never printed or written.
+STAGE="$HOME/.estate/litellm-local"
+key="$(SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}" \
+	"$STAGE/sops" -d --extract '["LITELLM_API_KEY"]' "$STAGE/caller/LITELLM_LAPTOP_KEY.yaml" 2>/dev/null)"
+[ -n "$key" ] || { say "moved=$moved ingest=BLOCKED no local caller key"; exit 1; }
 out="$(cd "$ROOT" && GROWMOS_PROVIDER=openai GROWMOS_BASE_URL=http://127.0.0.1:4000/v1 \
-	GROWMOS_API_KEY=local GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
+	GROWMOS_API_KEY="$key" GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
 	growmos --root "$ROOT" ingest --limit "$LIMIT" 2>&1)"
 rc=$?
 entities=$(wc -l <"$ROOT/.growmos/entities.jsonl" | tr -d ' ')
