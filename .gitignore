@@ -135,3 +135,7 @@ catalog/*.db-shm
 # absolute path of the checkout that produced them, and tripped bin/idp-hardcode-scan on
 # 2026-09-13 after a `git add -A` swept them in. They are not repository content.
 .agent/
+
+# Cargo build output: never tracked. Tracked target/ made every cleaned worktree look dirty,
+# so disk-cleanup could never retire it (2026-09-28, 1669 files).
+target/
