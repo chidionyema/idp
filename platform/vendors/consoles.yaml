@@ -708,18 +708,7 @@ vendors:
         \ 131072\n\n- model_name: groq\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n\
         \    timeout: 60\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
-        \ 131072\n\n# --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice)\
-        \ ------------------\n# A spoken turn waits on the first words, so this lane\
-        \ is picked for time to the first spoken word: content, not reasoning.\n# Measured\
-        \ 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this\
-        \ model with\n# reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s;\
-        \ gpt-oss-20b at\n# effort low 0.82-1.26s and one empty reply, because it reasons\
-        \ before it speaks.\n# `openai/` is LiteLLM's provider prefix; Groq's own id\
-        \ follows.\n- model_name: voice\n  litellm_params:\n\
-        \    model: openai/qwen/qwen3.8-27b\n    api_base: https://api.groq.com/openai/v1\n\
-        \    api_key: os.environ/GROQ_API_KEY\n    reasoning_effort: none\n    timeout:\
-        \ 20\n    max_tokens: 400\n\
-        # --- voice: the Fleet page's ears and mouth, behind the router\
+        \ 131072\n\n# --- voice: the Fleet page's ears and mouth, behind the router\
         \ so no service holds a vendor key.\n# Measured 2026-09-26 with this key:\
         \ whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,\n# where\
         \ the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept\

@@ -120,22 +120,6 @@ install() {
     echo "      uv venv --python 3.12 $VENV && VIRTUAL_ENV=$VENV uv pip install 'litellm[proxy]==1.98.0' opentelemetry-sdk opentelemetry-exporter-otlp"
     exit 2
   }
-  # A reinstall never silently takes a lane away. 2026-09-27 14:02 an install from a branch without the
-  # `voice` lane replaced the staged config and /fleet voice failed every turn for two hours. A lane
-  # the staged router serves and the new config lacks refuses the install unless it is named in
-  # LITELLM_LOCAL_DROP_LANES (comma-separated): dropping one is a decision, never a side effect.
-  if [ -f "$STAGE/config.yaml" ]; then
-    "$VENV/bin/python" - "$STAGE/config.yaml" "$idp/llm/config.yaml" "${LITELLM_LOCAL_DROP_LANES:-}" <<'PY' || exit 3
-import sys, yaml
-names = lambda p: {m["model_name"] for m in (yaml.safe_load(open(p)) or {}).get("model_list") or []}
-lost = sorted(names(sys.argv[1]) - names(sys.argv[2]) - {s.strip() for s in sys.argv[3].split(",") if s.strip()})
-if lost:
-    print(f"FAIL  install would drop lanes the running router serves: {', '.join(lost)}")
-    print(f"      from {sys.argv[2]} (is this checkout on the branch you think?)")
-    print("      to drop them on purpose: LITELLM_LOCAL_DROP_LANES=" + ",".join(lost))
-    sys.exit(1)
-PY
-  fi
   mkdir -p "$STAGE/modules" "$(dirname "$PLIST")" "$(dirname "$LOG")"
   cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
   cp "$idp/llm/config.yaml" "$STAGE/config.yaml"

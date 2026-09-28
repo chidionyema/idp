@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# hooks/pre-commit — mutation testing commit gate
+# Configured via: git config core.hooksPath hooks/
+set -euo pipefail
+
+STAGED=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$STAGED" ] && echo "mutation-commit: no staged files" && exit 0
+
+ORCH="$HOME/.estate/bin/mutation-orchestrator"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Filter to mutation-testable files
+ALL_FILES=$(echo "$STAGED" | grep -E '\.(py|rs|ts|tsx|go|cs)$' || true)
+[ -z "$ALL_FILES" ] && echo "mutation-commit: no testable files staged — pass" && exit 0
+
+echo "mutation-commit: $ALL_FILES"
+
+# Check tools installed
+for ext in py rs ts go; do
+  if echo "$ALL_FILES" | grep -qE "\.$ext$"; then
+    TOOL=""
+    case "$ext" in py) TOOL="mutmut" ;; rs) TOOL="cargo-mutants" ;;
+      ts) TOOL="stryker" ;; go) TOOL="mewt" ;; esac
+    if ! command -v "$TOOL" &>/dev/null; then
+      echo "mutation-commit: SKIP — $TOOL not installed (run: mutation-orchestrator --install)" >&2
+      exit 0
+    fi
+  fi
+done
+
+echo "$ALL_FILES" | python3 "$ORCH" --tier=commit --stdin --cwd="$REPO_ROOT"
+RESULT=$?
+
+if [ $RESULT -eq 0 ]; then
+  echo "mutation-commit: PASS ✓"
+else
+  echo "mutation-commit: FAIL ✗ (exit $RESULT)" >&2
+  echo "Surviving mutants must be fixed. Skip: git commit --no-verify" >&2
+fi
+exit $RESULT

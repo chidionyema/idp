@@ -107,7 +107,6 @@ class Totals:
         self.u: dict = defaultdict(float)
         self.outcomes = self.failures = 0
         self.by_model: dict = defaultdict(lambda: defaultdict(float))
-        self.by_tool: dict = defaultdict(int)  # pre rows per calling tool; rows before 2026-09-27 have none
 
     def add(self, r: dict) -> None:
         kind = r.get("kind")
@@ -120,7 +119,6 @@ class Totals:
             return
         if kind == "pre":
             self.pre += 1
-            self.by_tool[r.get("tool") or "(not recorded)"] += 1
             self.bytes_before += r.get("bytes_before", 0)
             self.bytes_after += r.get("bytes_after", 0)
             steps = r.get("steps") or {}
@@ -184,7 +182,6 @@ class Totals:
             "prefix_checked": self.prefix_checked,
             "prefix_broken": self.prefix_broken,
             "orphans": self.orphans,
-            "by_tool": dict(self.by_tool),
             "steps": {
                 k: {"calls": self.step_calls[k], "bytes": self.step_bytes[k]}
                 for k, _n, _w in STEPS
@@ -251,10 +248,6 @@ def print_summary(t: Totals) -> None:
             print(
                 f"    {m:<28} calls {int(v['calls']):>6,}  input-equiv billed {n(v['billed']):>12}  output {n(v['output']):>10}"
             )
-    if t.by_tool:
-        print("\n  BY TOOL (calls that reached the router, from each request's User-Agent)")
-        for tool, c in sorted(t.by_tool.items(), key=lambda x: -x[1]):
-            print(f"    {tool:<28} calls {c:>6,}")
     if s["legacy_rows"]:
         print(
             f"\n  ({s['legacy_rows']:,} legacy rows: byte totals counted, their cumulative counters ignored)"
