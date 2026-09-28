@@ -61,6 +61,15 @@ spec:
   upgrade:
     remediation:
       retries: 3
+  # 2026-09-28: this Deployment sat at out-of-band replicas: 0 for 3+ days -- catalogue, auth,
+  # langfuse, superset, signoz and hc all sit behind the login-forward-auth Middleware that calls
+  # this service, so the whole authenticated estate surface hung (ForwardAuth times out rather than
+  # failing fast when its target has 0 endpoints). Without driftDetection, helm-controller only
+  # diffs the rendered chart against ITS OWN last-stored release manifest, never against live
+  # cluster state, so a `kubectl scale` done outside Flux is invisible across every 10m reconcile
+  # indefinitely. `enabled` makes each reconcile diff live state too and correct it back.
+  driftDetection:
+    mode: enabled
   values:
     # crew#539: oauth2-proxy sits in front of catalogue, hc, langfuse and signoz, so its chart
     # default of replicaCount 1 made every one of those surfaces one node event from a 503 no
