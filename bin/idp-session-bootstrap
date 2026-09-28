@@ -1,31 +1,52 @@
 #!/usr/bin/env bash
-# Every Claude Code session starts fenced, on any machine (crew#654, crew#300; founder 2026-08-29:
-# "we need a path back to a MacBook or any other machine").
-#   bin/idp-session-bootstrap          clone claude-estate (guards submodule included) into $HOME/.claude when absent; no-op when present
-#   bin/idp-session-bootstrap --check  exit 0 when $HOME/.claude/scripts holds the guards, 1 when it does not; nothing written
-# Runs as the SessionStart hook in .claude/settings.json, so a cloud session (vendor page: repo hooks
-# run in the cloud, user-level ~/.claude does not) gets the same fences as the Mac. Never writes over
-# an existing checkout and never touches its branch: a peer's working tree is not this script's to move.
+# Every agent session starts fenced, on any machine (crew#654, crew#300).
+#
+#   bin/idp-session-bootstrap          clone estate-guards into ~/.estate/scripts when absent
+#   bin/idp-session-bootstrap --check  exit 0 when ~/.estate/scripts holds the guards, 1 when absent
+#
+# The canonical home is ~/.estate/ — NOT ~/.claude/. Claude Code, Gemini Code, Cursor,
+# Windsurf, any agent harness all mount the same ~/.estate/ home. One boundary, not one per
+# model. AGENTS.md R6: a second execution boundary is stitching and gets deleted.
+#
+# Never writes over an existing checkout and never touches its branch: a peer's working tree
+# is not this script's to move.
+#
+# Guards live in estate-guards (https://github.com/chidionyema/estate-guards), not
+# claude-estate. The estate-guards repo is the canonical location; this bootstrap is
+# model-agnostic.
 set -euo pipefail
 trap 'echo "idp-session-bootstrap: failed at line $LINENO" >&2' ERR
-ESTATE_REPO=${ESTATE_REPO:-https://github.com/chidionyema/claude-estate}
-DEST=$HOME/.claude
+
+GUARDS_REPO=${ESTATE_GUARDS_REPO:-https://github.com/chidionyema/estate-guards}
+ESTATE_HOME=${ESTATE_HOME:-$HOME/.estate}
+SCRIPTS_DIR="$ESTATE_HOME/scripts"
+
+# --check: verify guards are present without writing anything
 if [ "${1:-}" = --check ]; then
-	[ -f "$DEST/scripts/hook-run.py" ] && {
-		echo "ok      guards present in $DEST/scripts"
-		exit 0
-	}
-	echo "MISSING $DEST/scripts/hook-run.py" >&2
-	exit 1
+    if [ -f "$SCRIPTS_DIR/hook-run.py" ]; then
+        echo "ok      guards present in $SCRIPTS_DIR"
+        exit 0
+    fi
+    echo "MISSING $SCRIPTS_DIR/hook-run.py" >&2
+    exit 1
 fi
-if [ -f "$DEST/scripts/hook-run.py" ]; then exit 0; fi
-if [ -e "$DEST/.git" ]; then
-	git -C "$DEST" submodule update --init --recursive
-else
-	tmp=$(mktemp -d "${TMPDIR:-/tmp}/estate.XXXXXX")
-	git clone --quiet --recurse-submodules "$ESTATE_REPO" "$tmp/estate"
-	mkdir -p "$DEST"
-	cp -R "$tmp/estate/." "$DEST/"
-	rm -rf "$tmp"
+
+# Guards already present — nothing to do
+if [ -f "$SCRIPTS_DIR/hook-run.py" ]; then
+    exit 0
 fi
+
+# Already a git checkout — update submodule only
+if [ -e "$ESTATE_HOME/.git" ]; then
+    git -C "$ESTATE_HOME" submodule update --init --recursive 2>/dev/null || true
+    exit 0
+fi
+
+# Fresh clone
+tmp=$(mktemp -d "${TMPDIR:-/tmp}/estate.XXXXXX")
+git clone --quiet --recurse-submodules "$GUARDS_REPO" "$tmp/guards"
+mkdir -p "$ESTATE_HOME"
+cp -R "$tmp/guards/." "$ESTATE_HOME/"
+rm -rf "$tmp"
+
 "$0" --check

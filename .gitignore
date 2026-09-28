@@ -1,3 +1,8 @@
+# Claude Code / claude-code — model-specific, never tracked
+# AGENTS.md R6: one execution boundary. A second is stitching and gets deleted.
+# The estate home is ~/.estate/. Model-specific config lives there, not here.
+.claude/
+
 # Generated. Both are rebuilt from ~/.estate/state/inventory.json on every
 # bin/idp-up, so a committed copy is a stale copy that reads as a record.
 catalog/catalog-info.yaml
