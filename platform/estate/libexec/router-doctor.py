@@ -81,10 +81,15 @@ def alert(level, msg):
         pass
 
 
-def sh(cmd, timeout=60):
+def sh(argv, timeout=60, **kw):
     try:
-        r = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=timeout
+        r = subprocess.run(  # noqa: S603 -- fixed argv built in this file, no shell
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
+            **kw,
         )
         return r.returncode, (r.stdout + r.stderr).strip()
     except subprocess.TimeoutExpired:
@@ -92,14 +97,15 @@ def sh(cmd, timeout=60):
 
 
 def http(path, body=None, headers=None, timeout=5):
-    req = urllib.request.Request(
+    # BASE is the fixed http://127.0.0.1 router, never a caller-supplied URL.
+    req = urllib.request.Request(  # noqa: S310
         BASE + path,
         data=json.dumps(body).encode() if body else None,
         headers=headers or {},
         method="POST" if body else "GET",
     )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
             return r.status, r.read().decode(errors="replace")
     except urllib.error.HTTPError as e:
         return e.code, e.read().decode(errors="replace")
@@ -129,7 +135,7 @@ def install_source():
 
 def reinstall():
     src = install_source()
-    rc, out = sh('"%s/bin/litellm-local" install' % src, timeout=180)
+    rc, out = sh([str(src / "bin/litellm-local"), "install"], timeout=180)
     return "install from %s rc=%d: %s" % (src, rc, out.splitlines()[-1] if out else "")
 
 
@@ -144,7 +150,8 @@ def wait_live(secs=45):
 
 def keychain_token():
     rc, out = sh(
-        'security find-generic-password -s "Claude Code-credentials" -w', timeout=10
+        ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
+        timeout=10,
     )
     if rc != 0 or not out:
         raise Fix("no Claude Code login in the keychain -- run: claude  then  /login")
@@ -157,7 +164,7 @@ def keychain_token():
 def check_launchd():
     if not PLIST.exists():
         return False, "no plist at %s" % PLIST
-    rc, out = sh("launchctl print gui/%d/%s" % (uid(), LABEL), timeout=10)
+    rc, out = sh(["launchctl", "print", "gui/%d/%s" % (uid(), LABEL)], timeout=10)
     if rc != 0:
         return False, "agent not loaded"
     state = re.search(r"\bstate = (\S+)", out)
@@ -176,7 +183,7 @@ def check_live():
 
 
 def heal_live():
-    sh("launchctl kickstart -k gui/%d/%s" % (uid(), LABEL), timeout=15)
+    sh(["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), LABEL)], timeout=15)
     if wait_live():
         return "kickstarted"
     return reinstall()
@@ -244,7 +251,7 @@ def check_bypass():
     for f in ("oauth.token", "byte_forwarder.py"):
         if (STAGE / f).exists():
             found.append(str(STAGE / f))
-    rc, out = sh("pgrep -fl byte_forwarder", timeout=5)
+    rc, out = sh(["pgrep", "-fl", "byte_forwarder"], timeout=5)
     if rc == 0 and out:
         found.append(
             "forwarder pid(s) " + " ".join(l.split()[0] for l in out.splitlines())
@@ -259,10 +266,12 @@ def heal_bypass():
         if p.exists():
             p.unlink()
             did.append("rm " + f)
-    rc, out = sh("pgrep -f byte_forwarder", timeout=5)
+    rc, out = sh(["pgrep", "-f", "byte_forwarder"], timeout=5)
     for pid in out.split() if rc == 0 else []:
         # A session still connected through it would lose its next call; leave it to exit on restart.
-        _, conns = sh("lsof -nP -a -p %s -iTCP -sTCP:ESTABLISHED" % pid, timeout=5)
+        _, conns = sh(
+            ["lsof", "-nP", "-a", "-p", pid, "-iTCP", "-sTCP:ESTABLISHED"], timeout=5
+        )
         if "ESTABLISHED" in conns:
             did.append("pid %s still serving a session (restart that session)" % pid)
         else:
@@ -281,11 +290,17 @@ def check_token():
 
 def heal_token():
     # Claude Code refreshes its own token on use; one tiny call through the router makes it.
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+    }
+    env["ANTHROPIC_BASE_URL"] = BASE
     rc, out = sh(
-        "cd /tmp && env -u ANTHROPIC_API_KEY -u ANTHROPIC_AUTH_TOKEN "
-        "ANTHROPIC_BASE_URL=%s claude -p 'reply ok' --model %s </dev/null"
-        % (BASE, PROBE_MODEL),
+        ["claude", "-p", "reply ok", "--model", PROBE_MODEL],
         timeout=90,
+        cwd=str(HOME),
+        env=env,
     )
     return "claude -p rc=%d" % rc
 
