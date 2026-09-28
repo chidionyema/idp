@@ -31,7 +31,7 @@ LOG="$HOME/Library/Logs/litellm-local.log"
 VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
-PORT=4000
+PORT="${LITELLM_LOCAL_PORT:-4000}"   # override only for a canary beside the live router
 MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
@@ -78,8 +78,10 @@ run() {
   # human-vault ClusterSecretStore. Read into this process only, so a key added in Bitwarden is a
   # lane here on the next start -- nothing to seed, stage or paste.
   export PATH="$HOME/.rd/bin:$HOME/.local/bin:$HOME/bin:$PATH"
-  if command -v kubectl >/dev/null; then
-    eval "$(kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c '
+  # The loader is a variable, not inline in $(...): macOS /bin/bash 3.2 mis-parses a quoted
+  # multi-line program inside a command substitution and runs it as shell.
+  local bw_py bw_env
+  bw_py='
 import base64, json, re, shlex, sys
 try: items = json.load(sys.stdin)["items"]
 except Exception: items = []
@@ -88,10 +90,14 @@ for s in items:
     if not s["metadata"]["name"].startswith("human-"): continue
     for k, v in (s.get("data") or {}).items():
         if re.fullmatch(r"[A-Z][A-Z0-9_]*", k):
-            print(f"export {k}={shlex.quote(base64.b64decode(v).decode())}"); names.append(k)
-print(f"echo {shlex.quote(\"keys   bitwarden: \" + str(len(names)) + \" \" + \",\".join(sorted(names)))}")
-')"
+            print("export %s=%s" % (k, shlex.quote(base64.b64decode(v).decode()))); names.append(k)
+print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(sorted(names)))))
+'
+  if command -v kubectl >/dev/null; then
+    bw_env="$(kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
+    eval "$bw_env"
   fi
+  unset bw_py bw_env
   [ -n "${DEEPSEEK_API_KEY:-}" ] || echo "warn  bitwarden keys unreadable (kubectl -n llm get secrets): vendor lanes will be dropped"
   # The laptop router key, the one key the estate's local services present (voice-router already
   # does). local_caller_auth requires it on every lane that spends a key this process holds.
