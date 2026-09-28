@@ -1,0 +1,20 @@
+version: "3.9"
+
+services:
+  factory:
+    build: .
+    ports: ["8080:8080"]
+    environment:
+      FACTORY_ROOT: /workspace
+      FACTORY_LEDGER: /var/factory/ledger
+      FACTORY_ORDERS: /var/factory/orders
+      FACTORY_REGISTRY: /var/factory/registry.json
+      ALLOW_ENV_SECRETS: "0"
+      PORT: "8080"
+    volumes:
+      - ./:/workspace:ro
+      - factory-data:/var/factory
+    restart: unless-stopped
+
+volumes:
+  factory-data:

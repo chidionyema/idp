@@ -1,0 +1,185 @@
+# Oracle installs this DaemonSet with the cluster (the Flannel add-on, ACTIVE, unmanageable on a
+# basic cluster: README step 2). It is adopted here, byte-for-byte as Oracle shipped it, with one
+# argument removed: --ip-masq.
+#
+# 2026-09-08 21:36Z: both flannel pods were recreated and flannel re-installed its masquerade chain.
+# Its RETURN rules exempt only its own per-node /25s, so every packet between two Calico-addressed
+# pods on different nodes (10.244.3.0/24, 10.244.117.0/24) was SNATed to the VXLAN tunnel address,
+# arrived with no workload identity, and was dropped by the far pod's default-deny fence:
+# 220,627 and 304,694 masqueraded packets on the two nodes when read at 22:50Z. Calico owns the
+# pool and its own nat-outgoing does the masquerade for pod-to-internet; flannel doing it too is
+# the two-overlay stitch the README names. Until step 2 is taken, flannel runs, but it does not NAT.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: flannel
+    tier: node
+  name: kube-flannel-ds
+  namespace: kube-system
+spec:
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: flannel
+      tier: node
+  template:
+    metadata:
+      annotations:
+        checksum/config: b1655542c5171d68
+        version_hash: '-308931296'
+      labels:
+        app: flannel
+        tier: node
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: oci.oraclecloud.com/vcn-native-ip-cni
+                operator: NotIn
+                values:
+                - 'true'
+              - key: oci.oraclecloud.com/custom-k8s-networking
+                operator: NotIn
+                values:
+                - 'true'
+              - key: node-role.kubernetes.io/virtual-node
+                operator: DoesNotExist
+      containers:
+      - args:
+        - --kube-subnet-mgr
+        command:
+        - /opt/bin/flanneld
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              apiVersion: v1
+              fieldPath: metadata.namespace
+        - name: PATH
+          value: /hostIptables:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/host/usr/bin:/host/sbin
+        image: uk-london-1.ocir.io/id9y6mi8tcky/oke-public-flannel@sha256:1d40a538acef1404c92dca16e297265eeedbb517e69c91b1b66d0e5f0a2d0805
+        imagePullPolicy: IfNotPresent
+        name: kube-flannel
+        resources:
+          limits:
+            cpu: '1'
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 50Mi
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /run
+          name: run
+        - mountPath: /etc/kube-flannel/
+          name: flannel-cfg
+        - mountPath: /hostIptables/
+          name: chroot-iptables
+        - mountPath: /host
+          name: host-root
+      dnsPolicy: ClusterFirst
+      hostNetwork: true
+      initContainers:
+      - command:
+        - /bin/bash
+        - -ce
+        - echo Validating if flannel plugin needs to be copied to host; if [ -f /tmp/flannel
+          ]; then echo Copying flannel plugin && cp -f /tmp/flannel /opt/cni/bin/;
+          fi
+        image: uk-london-1.ocir.io/id9y6mi8tcky/oke-public-flannel@sha256:1d40a538acef1404c92dca16e297265eeedbb517e69c91b1b66d0e5f0a2d0805
+        imagePullPolicy: IfNotPresent
+        name: install-bin
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /opt/cni/bin
+          name: host-cni-bin
+      - args:
+        - -f
+        - /etc/kube-flannel/cni-conf.json
+        - /etc/cni/net.d/10-flannel.conflist
+        command:
+        - cp
+        env:
+        - name: PATH
+          value: /hostIptables:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/host/usr/bin:/host/sbin
+        image: uk-london-1.ocir.io/id9y6mi8tcky/oke-public-flannel@sha256:1d40a538acef1404c92dca16e297265eeedbb517e69c91b1b66d0e5f0a2d0805
+        imagePullPolicy: IfNotPresent
+        name: install-cni
+        resources: {}
+        securityContext:
+          allowPrivilegeEscalation: true
+          privileged: true
+          readOnlyRootFilesystem: true
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /etc/cni/net.d
+          name: cni
+        - mountPath: /etc/kube-flannel/
+          name: flannel-cfg
+        - mountPath: /hostIptables/
+          name: chroot-iptables
+        - mountPath: /host
+          name: host-root
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+      serviceAccount: flannel
+      serviceAccountName: flannel
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Exists
+      - operator: Exists
+      volumes:
+      - hostPath:
+          path: /run
+          type: ''
+        name: run
+      - hostPath:
+          path: /etc/cni/net.d
+          type: ''
+        name: cni
+      - configMap:
+          defaultMode: 420
+          name: kube-flannel-cfg
+        name: flannel-cfg
+      - hostPath:
+          path: /opt/cni/bin
+          type: Directory
+        name: host-cni-bin
+      - hostPath:
+          path: /
+          type: Directory
+        name: host-root
+      - configMap:
+          defaultMode: 493
+          name: oci-iptables-flannel
+        name: chroot-iptables
+  updateStrategy:
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+    type: RollingUpdate

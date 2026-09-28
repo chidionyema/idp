@@ -1,0 +1,93 @@
+# The continuity lane. One pod on the OCI node, holding one narrow expert, answering on loopback.
+#
+# WHY THIS EXISTS AND WHY IT IS FIRST: when the paid agent lane's tokens run out, this is what
+# answers. Without it, the estate's ability to think stops with a billing balance. With it, the
+# experts that were already measured working -- 97.7% agreement at 17.5% abstain -- keep running on
+# hardware that is already paid for, and cannot run out.
+#
+# ONE ARTIFACT, NOT TWENTY. The spec (docs/specs/2026-09-06-model-forge-edge-runtime.md section 10)
+# designs an LRU over many artifacts on one node. The Rust implements ONE, loaded at start. So this
+# ships the one that is proven rather than waiting for the eviction feature: 1.1 GB on a node with
+# ~5 GB unreserved, which is the whole reason it can land today.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: edge-runtime
+  labels:
+    # The estate's own fence: a namespace without these is refused (crew#191, crew#839).
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: edge-runtime
+  namespace: edge-runtime
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: edge-runtime }
+  template:
+    metadata:
+      labels: { app: edge-runtime }
+    spec:
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      # On the node with the headroom. `.197` is at 84%; `.221` has the ~5 GB this needs.
+      nodeSelector:
+        kubernetes.io/hostname: "10.0.148.221"
+      # THE PULL CREDENTIAL. The package is public, and GHCR still answers 401 without a token --
+      # which is how "public" and "pullable" turn out to be different things. Every other
+      # namespace in this estate carries this secret; edge-runtime did not, because it is new.
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: edge-runtime
+          # THE DIGEST, not a tag. Admission refuses a mutable tag, and the pipeline pushes
+          # untagged-by-digest anyway: the multi-arch manifest it built at
+          # run 34595559998. A digest means a restart runs the bytes that were scanned, and
+          # nobody has to guess which build a tag pointed at last Tuesday.
+          image: ghcr.io/chidionyema/edge-runtime@sha256:eae0df039b91bd444f0ea23853397d2bc5fddc569e2677e8e79d8e7ccd8c16f8
+          # Loopback only (R20). Nothing outside this pod reaches it; `bin/idp-kube` port-forwards
+          # when a person needs to call it, which is the estate's one road to a private service.
+          env:
+            - { name: EDGE_BIND, value: "127.0.0.1:8421" }
+            - { name: EDGE_ARTIFACT_DIR, value: "/artifact" }
+            - { name: RUST_LOG, value: "info" }
+          resources:
+            # 1.1 GB for a 1.7B Q4 plus the runtime itself. A REQUEST as well as a limit, so the
+            # scheduler places it on a node that actually has the room -- the lesson from the
+            # ClickHouse eviction, where a request larger than the node made the pod Unschedulable
+            # and it sat Pending while its place was taken.
+            requests: { cpu: "250m", memory: "1500Mi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+          volumeMounts:
+            - { name: artifact, mountPath: /artifact, readOnly: true }
+          readinessProbe:
+            httpGet: { path: /v1/health, port: 8421 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /v1/health, port: 8421 }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            # Restricted PodSecurity requires this explicitly. The cluster refused the pod without
+            # it, which is the fence doing exactly what it says.
+            seccompProfile: { type: RuntimeDefault }
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            # THE NUMERIC UID, because the image's user is NAMED `nonroot` (distroless) and
+            # Kubernetes cannot verify a name is not root -- it refuses the container with
+            # "container has runAsNonRoot and image has non-numeric user". 65532 is distroless's
+            # nonroot uid, stated here so the check has a number to check.
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+      volumes:
+        - name: artifact
+          # The artifact is a directory of three files pulled by digest (spec section 3). Until the
+          # first Forge artifact lands (#2815 fixed the export bug that refused them all), this
+          # holds a placeholder so the pod can prove it schedules and serves /v1/health -- which is
+          # CP4, and is separately provable from CP2.
+          emptyDir: {}

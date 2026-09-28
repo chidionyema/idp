@@ -1,0 +1,3 @@
+bin/idp-bootstrap-tailscale
+docs/reference/policy/credential-lifecycle.md
+tests/test_incident_crew66_seed_is_read_off_the_page_never_pasted.py

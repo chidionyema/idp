@@ -1,0 +1,57 @@
+# The k3d overlay: base plus the two things that come from this machine.
+#
+#   estate-catalog  ConfigMap from catalog/catalog-info.yaml (bin/catalog-gen output)
+#   backstage-env   Secret from backstage/.env, the same gitignored file compose
+#                   uses; bin/idp-up creates it with `openssl rand`. No default.
+#
+# Both files sit outside this directory, so render with
+#   kubectl kustomize --load-restrictor LoadRestrictionsNone platform/backstage/overlays/local
+# which is what `make catalogue-deploy` does.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # The namespace moved out of the base into its own directory so OKE can order it as a
+  # separate Flux row (crew#488). `make catalogue-deploy` applies this overlay by hand with
+  # nothing to order it, so it takes both.
+  - ../../namespace/base
+  - ../../base
+configMapGenerator:
+  - name: estate-catalog
+    files:
+      - catalog-info.yaml=../../../../catalog/catalog-info.yaml
+  - name: sovereign-artifacts
+    files:
+      - intent.dag.json=../../../../artifacts/intent.dag.json
+      - drift-report.json=../../../../artifacts/drift-report.json
+      - intent.dag.dot=../../../../artifacts/intent.dag.dot
+secretGenerator:
+  - name: backstage-env
+    envs:
+      - ../../../../backstage/.env
+generatorOptions:
+  disableNameSuffixHash: true
+patchesJson6902:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: catalogue
+      namespace: backstage
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: SOVEREIGN_ARTIFACTS_DIR
+          value: /sovereignArtifacts
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: sovereign-artifacts
+          configMap:
+            name: sovereign-artifacts
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: sovereign-artifacts
+          mountPath: /sovereignArtifacts
+          readOnly: true

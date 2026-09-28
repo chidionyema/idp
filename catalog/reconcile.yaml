@@ -1,0 +1,9 @@
+# Desired state for bin/idp-reconcile (crew#186 CP3). Anything running under
+# docker that is not (a) a container of an idp compose file, (b) a project
+# listed here, or (c) a name prefix listed here is rogue and is removed on the
+# next tick. Every row needs a reason so a buyer's engineer can see why it lives.
+compose_globs: [llm/*.yml, mcp/*.yml, observability/*.yml]
+foreign:
+  - {config_prefix: $CODE/prospector-main/, reason: "prospector is the product; its compose is its own repo"}
+name_prefixes:
+  - {prefix: k3d-, reason: "k3d cluster nodes and load balancers (platform/k3d)"}

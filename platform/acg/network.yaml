@@ -1,0 +1,136 @@
+# The acg namespace's network fence, shipped with the namespace for the same reason ns-fence.yaml
+# is. Shape copied from the generated policy set (platform/ns-fences/network/observability-agent.yaml)
+# and extended with the two holes this workload actually needs:
+#
+#   - ingress from the edge namespace: the shared Gateway (prospector-edge) routes acg.<zone> to
+#     the gateway Service, and the connection arrives from the gateway pod in `prospector`, not
+#     from a pod in `acg`.
+#   - egress to the internet (443 only): the whole point of ACG is to call vendor model APIs
+#     (api.groq.com, api.cerebras.ai, api.anthropic.com, ...). A default-deny that cut that would
+#     leave the cascade with only its L0 cache and L5 degraded response, which reads as a broken
+#     gateway rather than a fence.
+#
+# Both holes are the same ones the generator would write from an allowances.yaml entry; this file
+# exists because the namespace is not on the cluster yet, so the generator holds it as `pending`.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector: {}
+  egress:
+  - to:
+    - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-edge-ingress
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: prospector
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-internet-egress
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+        except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
+        - 169.254.0.0/16
+        - 100.64.0.0/10
+    ports:
+    - protocol: TCP
+      port: 443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-apiserver-egress
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - ipBlock:
+        cidr: ${ESTATE_APISERVER_CIDR}
+    ports:
+    - protocol: TCP
+      port: 6443
+    - protocol: TCP
+      port: 12250
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-declared-egress
+  namespace: acg
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: observability

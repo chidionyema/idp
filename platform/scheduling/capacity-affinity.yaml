@@ -1,0 +1,69 @@
+# crew#539 CP10: who lands on preemptible capacity. Oracle reclaims a preemptible node with 30 s
+# notice, so the radio-room set (priorityClassName infrastructure-critical, the six of
+# require-priority-class.yaml) must never sit on one, and everything else should prefer one when it
+# exists (half the price). Kyverno mutates the Pod at admission, so no chart or Deployment carries the
+# rule twice (headline rule 1: the estate's admission controller, not a shell gate).
+#
+# Why NotIn [preemptible] and not In [on-demand]: node labels reach NEW nodes only (initial_node_labels
+# in platform/oci/main.tf); the node running today has no label, and a required In would make the
+# radio-room unschedulable on it.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: capacity-affinity
+  annotations:
+    policies.kyverno.io/title: Preemptible capacity is for pods that can lose a node
+    policies.kyverno.io/category: crew#539 scheduling immunity
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      infrastructure-critical pods are kept off nodes labelled estate.io/capacity=preemptible (required);
+      every other pod in an idp namespace prefers them (weight 50). Nothing in the rule names a provider.
+spec:
+  background: false
+  rules:
+    - name: radio-room-stays-off-preemptible
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.priorityClassName || '' }}"
+            operator: Equals
+            value: infrastructure-critical
+      mutate:
+        patchStrategicMerge:
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                    - matchExpressions:
+                        - key: estate.io/capacity
+                          operator: NotIn
+                          values: [preemptible]
+    - name: everything-else-prefers-preemptible
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels: { app.kubernetes.io/part-of: idp }
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.priorityClassName || '' }}"
+            operator: NotEquals
+            value: infrastructure-critical
+      mutate:
+        patchStrategicMerge:
+          spec:
+            affinity:
+              nodeAffinity:
+                preferredDuringSchedulingIgnoredDuringExecution:
+                  - weight: 50
+                    preference:
+                      matchExpressions:
+                        - key: estate.io/capacity
+                          operator: In
+                          values: [preemptible]

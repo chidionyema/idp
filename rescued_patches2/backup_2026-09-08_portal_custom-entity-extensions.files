@@ -1,0 +1,10 @@
+backstage/packages/app/src/App.tsx
+backstage/plugins/custom-entity-extensions/.eslintignore
+backstage/plugins/custom-entity-extensions/.eslintrc.js
+backstage/plugins/custom-entity-extensions/.swcrc
+backstage/plugins/custom-entity-extensions/package.json
+backstage/plugins/custom-entity-extensions/src/index.test.tsx
+backstage/plugins/custom-entity-extensions/src/index.tsx
+backstage/plugins/custom-entity-extensions/src/setupTests.ts
+backstage/plugins/custom-entity-extensions/tsconfig.json
+backstage/yarn.lock

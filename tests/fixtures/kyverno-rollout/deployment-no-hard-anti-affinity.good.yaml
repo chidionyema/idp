@@ -1,0 +1,19 @@
+# maxUnavailable 0 is a GOOD default and must stay legal. Without a hard hostname rule the surge
+# pod lands anywhere, including beside a sibling, so the rollout always completes. A guard that
+# refuses correct work is an outage (LAW 38) -- most of this estate looks like this.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: ordinary, namespace: backstage}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: ordinary}}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 1, maxUnavailable: 0}}
+  template:
+    metadata: {labels: {app: ordinary}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm: {topologyKey: kubernetes.io/hostname, labelSelector: {matchLabels: {app: ordinary}}}
+      containers: [{name: c, image: busybox}]

@@ -1,0 +1,39 @@
+diff --git a/features/gates/capacity-cap.feature b/features/gates/capacity-cap.feature
+index fb2b35aef..4e98d92cf 100644
+--- a/features/gates/capacity-cap.feature
++++ b/features/gates/capacity-cap.feature
+@@ -28,3 +28,10 @@ Feature: paid capacity is auto-defaulted up to the founder's cap and refused abo
+     Then bin/idp-oke-rebuild --apply runs tofu apply under the estate-ci session token
+     And the flux-bootstrap step is reported n/a on a runner
+     And main.tf refuses the apply when capacity_monthly_usd exceeds node_pool.budget_monthly_usd
++
++  Scenario: a shape change reaches the running node, not only the pool template (incident 2026-08-26, crew#289)
++    Given the node pool template moved to 4 OCPU / 24 GB in apply run 32926017634
++    And the running node stayed at 2 OCPU / 12 GB because OCI applies shape changes to new nodes only
++    When the pool has node cycling enabled with surge 1 and unavailable 0
++    Then a 4 OCPU / 24 GB node is Ready before the 2 / 12 node drains
++    And kubectl reports the node allocatable above 3500m cpu
+diff --git a/platform/oci/main.tf b/platform/oci/main.tf
+index f04588a04..77e633b5b 100644
+--- a/platform/oci/main.tf
++++ b/platform/oci/main.tf
+@@ -32,7 +32,18 @@ module "oke" {
+       memory           = var.worker_memory_gb
+       size             = 1
+       boot_volume_size = 50
+-      placement_ads    = [1, 2] # 2026-08-25 apply failed: "Node shape is unavailable in subnet availability domain(s)"; VM.Standard.A1.Flex is offered in AD-1 and AD-2 only (oci compute shape list per AD)
++      # crew#289: a shape change reaches only new nodes. On 2026-08-26 the apply moved the pool to
++      # 4 OCPU / 24 GB while the running node stayed at 2 / 12 (`oci compute instance list`, kubectl
++      # allocatable 1830m). Cycling replaces the node: surge 1 brings the new node Ready first,
++      # unavailable 0 drains the old one only then. Same module setting the OKE docs call node cycling.
++      node_cycling_enabled         = true
++      node_cycling_max_surge       = 1
++      node_cycling_max_unavailable = 0
++      # AD-1 only (crew#289, 2026-08-26): the two block-volume PVs (backstage/pgdata-postgres-0,
++      # prospector/prospector-store-api-data) carry nodeAffinity UK-LONDON-1-AD-1; a cycled node in
++      # AD-2 could never mount them. A1.Flex is offered in AD-1 and AD-2 only, and the 2026-08-25
++      # "Node shape is unavailable in subnet availability domain(s)" failure was AD-3.
++      placement_ads    = [1]
+     }
+   }
+ }

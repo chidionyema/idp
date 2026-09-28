@@ -1,0 +1,45 @@
+# The secret-store register: which store the estate can write to and which it only syncs from.
+# Read at request time by the credential-ingest door (backstage/packages/backend/src/credentialIngest.ts)
+# and rendered by the store picker. Adding a store is a row here, never code: ESO 2.9.0 ships a
+# provider for each of Azure Key Vault, AWS Secrets Manager, Google Secret Manager, HashiCorp Vault,
+# 1Password, Doppler, Akeyless, CyberArk and Infisical, and each becomes a ClusterSecretStore YAML
+# (docs/specs/key-ingest-door.md part 3).
+#
+# Fields
+#   name            stable id the picker and the endpoint hold (never displayed verbatim to a user)
+#   label           one human display name
+#   provider        the ESO / vault provider kind
+#   write           true only when a pasted plaintext key can land here TODAY. Kept separate from
+#                   sync because the two are separate facts (decision 0020 amendment): a zero-
+#                   knowledge store is read-only to the estate no matter how writable it is to its
+#                   own client, measured by bin/idp-human-vault-probe --write.
+#   sync            true when the estate reads from here (a ClusterSecretStore/ExternalSecret source)
+#   default_for     which register Owners default to this store in the picker (decision 0021)
+#   zero_knowledge  true when fields are client-side encrypted before they reach the API, so not even
+#                   the store's API can accept a plaintext value
+#   why             one sentence shown in the interface; the sentence a customer who keeps keys in a
+#                   zero-knowledge store reads to learn why the paste field is disabled, not hidden.
+stores:
+  - name: estate-vault
+    label: "The platform's vault"
+    provider: oci-vault
+    write: true        # a pasted key can land here today
+    sync: true         # the estate reads from here
+    default_for: [Customer, Operator, Supplier]
+    zero_knowledge: false
+    why: >-
+      Plaintext write path, fine-grained grant scoped per entry, already under the daily rotation
+      drill. This is the store the credential-ingest door writes to.
+  - name: human-vault
+    label: "My Bitwarden"
+    provider: bitwarden-secrets-manager
+    write: false
+    sync: true
+    default_for: []
+    zero_knowledge: true
+    why: >-
+      Zero-knowledge: fields are encrypted by the client before they reach the API, so nobody but
+      the client can write them. Measured by bin/idp-human-vault-probe --write: the same payload the
+      raw API refuses with "400 Key is not a valid encrypted string" succeeds through the client. The
+      estate reads from here as a sync source only; keep the human-vault master key in your own vault
+      and the estate syncs it in.

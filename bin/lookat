@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""lookat -- read a PNG as structure, because the agent cannot view images.
+
+WHY THIS EXISTS. This agent cannot see. It has been given screenshots repeatedly and has had to
+say so, and the honest consequence is that any claim about how the room LOOKS was a claim made
+without looking. A screenshot that is never decoded is a file, not evidence.
+
+So this decodes one, without dependencies, and reports the things a claim can be built on:
+how much of the canvas is lit, where the mass is, whether there is a lattice, whether there is
+warm colour and where. It does not say "it looks good" -- that is not decidable here and never
+will be. It says what is on the pixels.
+
+  bin/lookat FILE.png            # structure report
+  bin/lookat FILE.png --map      # an ASCII map, brightness
+  bin/lookat FILE.png --hue      # an ASCII map, by dominant channel
+"""
+
+from __future__ import annotations
+
+import struct
+import sys
+import zlib
+from pathlib import Path
+
+
+def decode(path: Path) -> tuple[int, int, int, bytes]:
+    """A PNG to raw pixels. Unfiltering per the spec's five filter types, which is the whole of it."""
+    d = path.read_bytes()
+    if d[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError(f"{path} is not a PNG")
+    pos, w, h, idat, ct = 8, 0, 0, b"", 6
+    while pos < len(d):
+        ln = struct.unpack(">I", d[pos : pos + 4])[0]
+        typ = d[pos + 4 : pos + 8]
+        data = d[pos + 8 : pos + 8 + ln]
+        if typ == b"IHDR":
+            w, h, _bd, ct = struct.unpack(">IIBB", data[:10])
+        elif typ == b"IDAT":
+            idat += data
+        pos += 12 + ln
+    raw = zlib.decompress(idat)
+    ch = 4 if ct == 6 else 3
+    stride = w * ch
+    out = bytearray(w * h * ch)
+    prev = bytearray(stride)
+    i = 0
+    for y in range(h):
+        fl = raw[i]
+        i += 1
+        line = bytearray(raw[i : i + stride])
+        i += stride
+        if fl == 1:
+            for x in range(ch, stride):
+                line[x] = (line[x] + line[x - ch]) & 255
+        elif fl == 2:
+            for x in range(stride):
+                line[x] = (line[x] + prev[x]) & 255
+        elif fl == 3:
+            for x in range(stride):
+                a = line[x - ch] if x >= ch else 0
+                line[x] = (line[x] + ((a + prev[x]) >> 1)) & 255
+        elif fl == 4:
+            for x in range(stride):
+                a = line[x - ch] if x >= ch else 0
+                c = prev[x - ch] if x >= ch else 0
+                p = a + prev[x] - c
+                pa, pb, pc = abs(p - a), abs(p - prev[x]), abs(p - c)
+                pr = a if (pa <= pb and pa <= pc) else (prev[x] if pb <= pc else c)
+                line[x] = (line[x] + pr) & 255
+        out[y * stride : (y + 1) * stride] = line
+        prev = line
+    return w, h, ch, bytes(out)
+
+
+def stats(w: int, h: int, ch: int, px: bytes) -> dict:
+    """What is on the pixels, measured AGAINST THE BACKGROUND.
+
+    THE BUG THIS FIXES, found 2026-09-19 by looking at the raw histogram of a real screenshot:
+    this reported `lit 99.7%` and an almost-empty map on the same image, because "lit" was
+    `r+g+b > 60` and the room's background is a MID GREY (96,96,96). Every background pixel
+    counted as lit, so a busy canvas and a blank one scored identically -- the instrument was
+    measuring the page, not the drawing.
+
+    The honest measure is CONTRAST: the most common colour is the background, and content is
+    whatever departs from it. Everything below is that.
+    """
+    from collections import Counter
+
+    coarse = Counter()
+    step = ch * 7
+    for k in range(0, len(px) - ch, step):
+        coarse[(px[k] // 8 * 8, px[k + 1] // 8 * 8, px[k + 2] // 8 * 8)] += 1
+    bg = coarse.most_common(1)[0][0]
+    bgl = sum(bg)
+
+    lit = dark = 0
+    warm = blue = red = 0
+    xs: list[int] = []
+    ys: list[int] = []
+    for y in range(h):
+        row = y * w * ch
+        for x in range(w):
+            i = row + x * ch
+            r, g, b = px[i], px[i + 1], px[i + 2]
+            v = r + g + b
+            d = abs(v - bgl)
+            if d > 60:  # >20 per channel away from the background
+                lit += 1
+                xs.append(x)
+                ys.append(y)
+            else:
+                dark += 1
+            if r > 90 and r >= g >= b:
+                warm += 1
+            if b > r + 8 and b > 25:
+                blue += 1
+            # The sonar's own colours: rgba(255,170,90) and rgba(255,120,120). Red must LEAD.
+            if r > 120 and r - b > 45:
+                red += 1
+    total = w * h
+    out = {
+        "px": f"{w}x{h}",
+        "total": total,
+        "background": str(bg),
+        "content": lit,
+        "content_pct": round(100 * lit / total, 2),
+        "lit": lit,
+        "lit_pct": round(100 * lit / total, 1),
+        "warm": warm,
+        "blue_field": blue,
+        "red": red,
+    }
+    if xs:
+        # Where the mass is, as fractions: a claim about composition needs a number, not a feeling.
+        out["mass_x"] = f"{min(xs)/w:.2f}-{max(xs)/w:.2f}"
+        out["mass_y"] = f"{min(ys)/h:.2f}-{max(ys)/h:.2f}"
+        out["centre"] = f"{sum(xs)/len(xs)/w:.2f},{sum(ys)/len(ys)/h:.2f}"
+    return out
+
+
+def map_bright(w: int, h: int, ch: int, px: bytes, cols: int = 72, rows: int = 24) -> None:
+    ramp = " .:-=+*#%@"
+    for ry in range(rows):
+        line = ""
+        for rx in range(cols):
+            x0, x1 = rx * w // cols, max(rx * w // cols + 1, (rx + 1) * w // cols)
+            y0, y1 = ry * h // rows, max(ry * h // rows + 1, (ry + 1) * h // rows)
+            tot = n = 0
+            for y in range(y0, y1, 3):
+                base = y * w * ch
+                for x in range(x0, x1, 3):
+                    i = base + x * ch
+                    tot += px[i] + px[i + 1] + px[i + 2]
+                    n += 1
+            v = tot // max(1, n)
+            line += ramp[min(9, v * 10 // 400)]
+        print(line)
+
+
+def map_hue(w: int, h: int, ch: int, px: bytes, cols: int = 72, rows: int = 24) -> None:
+    """Each cell's DOMINANT CHANNEL RELATIVE TO THE BACKGROUND.
+
+    The first version classified on absolute colour, so on the room's mid-grey page it printed
+    one long row of dots for a canvas that was 36% content -- it was describing the page again.
+    Now each cell is compared to the background: warm means red leads (an agent, or the sonar),
+    cool means blue leads (the field lattice), and the glyph's weight is how far from background.
+    """
+    from collections import Counter
+
+    coarse = Counter()
+    for k in range(0, len(px) - ch, ch * 11):
+        coarse[(px[k] // 8 * 8, px[k + 1] // 8 * 8, px[k + 2] // 8 * 8)] += 1
+    br, bg_, bb = coarse.most_common(1)[0][0]
+
+    for ry in range(rows):
+        line = ""
+        for rx in range(cols):
+            x0, x1 = rx * w // cols, max(rx * w // cols + 1, (rx + 1) * w // cols)
+            y0, y1 = ry * h // rows, max(ry * h // rows + 1, (ry + 1) * h // rows)
+            r = g = b = n = 0
+            for y in range(y0, y1, 3):
+                base = y * w * ch
+                for x in range(x0, x1, 3):
+                    i = base + x * ch
+                    r += px[i]
+                    g += px[i + 1]
+                    b += px[i + 2]
+                    n += 1
+            n = max(1, n)
+            r, g, b = r // n, g // n, b // n
+            # Distance from the background, per channel -- the only thing that means "drawn".
+            dr, dg, db = r - br, g - bg_, b - bb
+            mag = (abs(dr) + abs(dg) + abs(db)) // 2
+            if mag < 8:
+                line += " "
+            elif dr - db > 12:  # red leads: an agent's own colour, or the sonar
+                line += "R" if dr - db > 40 else "r"
+            elif db - dr > 12:  # blue leads: the field lattice
+                line += "B" if db - dr > 40 else "b"
+            elif mag > 60:
+                line += "#"  # bright and neutral: a node's white core or a lit ring
+            else:
+                line += "."
+        print(line)
+
+
+def main() -> int:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if not args:
+        print(__doc__)
+        return 0
+    path = Path(args[0])
+    if not path.exists():
+        print(f"lookat: no such file: {path}", file=sys.stderr)
+        return 2
+    w, h, ch, px = decode(path)
+    s = stats(w, h, ch, px)
+    for k, v in s.items():
+        print(f"  {k:11} {v}")
+    if "--map" in sys.argv:
+        print()
+        map_bright(w, h, ch, px)
+    if "--hue" in sys.argv:
+        print()
+        map_hue(w, h, ch, px)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

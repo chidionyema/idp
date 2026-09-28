@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+# bin/idp-install-deps -- installs every binary the CI matrix requires, at the same pinned
+# versions CI uses (.github/actions/estate-tools/action.yml).
+#
+# Model-agnostic: works on macOS (darwin arm64/amd64) and Linux (amd64/arm64).
+# Idempotent: already-correct installs are skipped in under a second.
+# Called by bin/idp-install-hooks so a fresh clone bootstraps the full toolset automatically.
+#
+# Installs to ~/.cache/estate-tools/ (same path as CI) and adds it to PATH if needed.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-install-deps -- install every binary bin/idp-ci requires, at CI-pinned versions."
+    echo "Idempotent. Installs to ~/.cache/estate-tools/ (same path as CI). Called by bin/idp-install-hooks."
+    exit 0
+    ;;
+esac
+set -euo pipefail
+
+TOOLS_DIR="$HOME/.cache/estate-tools"
+mkdir -p "$TOOLS_DIR"
+
+# Exact versions pinned in .github/actions/estate-tools/action.yml
+KYVERNO_VER="1.19.0"
+HELM_VER="3.19.0"
+CONFTEST_VER="0.62.0"
+FLUX_VER="2.9.4"
+KUSTOMIZE_VER="5.7.1"
+KUBECONFORM_VER="0.8.0"
+
+OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+ARCH="$(uname -m)"
+[ "$ARCH" = "x86_64" ] && ARCH="amd64"
+[ "$ARCH" = "aarch64" ] && ARCH="arm64"
+
+fail=0
+_ok()   { printf 'ok    deps    %s\n' "$*"; }
+_inst() { printf 'install deps  %s\n' "$*"; }
+_fail() { printf 'FAIL  deps    %s\n' "$*"; fail=1; }
+
+_need_curl() {
+  command -v curl >/dev/null || { _fail "curl not found -- install curl first"; exit 1; }
+}
+
+# Check installed version; tries version/--version/-v; matches with or without 'v' prefix
+_ver_ok() {
+  local bin="$1" want="$2"
+  local path; path="$TOOLS_DIR/$bin"
+  [ -x "$path" ] || return 1
+  local bare="${want#v}"
+  local out
+  out="$("$path" version 2>&1; "$path" --version 2>&1; "$path" -v 2>&1; true)"
+  echo "$out" | grep -qE "$want|$bare"
+}
+
+_fetch() {
+  local name="$1" url="$2" strip="${3:-0}"
+  local tmp; tmp="$(mktemp -d)"
+  _need_curl
+  if curl -sSL --retry 3 --retry-delay 2 "$url" | tar -xz -C "$tmp" 2>/dev/null; then
+    if [ "$strip" -gt 0 ]; then
+      find "$tmp" -maxdepth "$((strip+1))" -name "$name" -type f | head -1 | xargs -I{} cp {} "$TOOLS_DIR/$name"
+    else
+      cp "$tmp/$name" "$TOOLS_DIR/$name" 2>/dev/null || \
+        find "$tmp" -name "$name" -type f | head -1 | xargs -I{} cp {} "$TOOLS_DIR/$name"
+    fi
+    chmod +x "$TOOLS_DIR/$name"
+    rm -rf "$tmp"
+    return 0
+  else
+    rm -rf "$tmp"; return 1
+  fi
+}
+
+# kyverno -- release archive uses x86_64/arm64, not amd64
+_KYV_ARCH="$ARCH"; [ "$ARCH" = "amd64" ] && _KYV_ARCH="x86_64"
+if _ver_ok kyverno "v$KYVERNO_VER"; then
+  _ok "kyverno $KYVERNO_VER"
+else
+  _inst "kyverno $KYVERNO_VER"
+  URL="https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VER}/kyverno-cli_v${KYVERNO_VER}_${OS}_${_KYV_ARCH}.tar.gz"
+  if _fetch kyverno "$URL"; then _ok "kyverno $KYVERNO_VER installed"
+  else _fail "kyverno install failed (url: $URL)"; fi
+fi
+
+# helm
+if _ver_ok helm "v$HELM_VER"; then
+  _ok "helm $HELM_VER"
+else
+  _inst "helm $HELM_VER"
+  URL="https://get.helm.sh/helm-v${HELM_VER}-${OS}-${ARCH}.tar.gz"
+  if _fetch helm "$URL" 1; then _ok "helm $HELM_VER installed"
+  else _fail "helm install failed (url: $URL)"; fi
+fi
+
+# conftest -- release archive capitalises OS name (Darwin/Linux)
+if _ver_ok conftest "$CONFTEST_VER"; then
+  _ok "conftest $CONFTEST_VER"
+else
+  _inst "conftest $CONFTEST_VER"
+  CF_OS="Linux"; [ "$OS" = "darwin" ] && CF_OS="Darwin"
+  CF_ARCH="$ARCH"; [ "$ARCH" = "amd64" ] && CF_ARCH="x86_64"
+  URL="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VER}/conftest_${CONFTEST_VER}_${CF_OS}_${CF_ARCH}.tar.gz"
+  if _fetch conftest "$URL"; then _ok "conftest $CONFTEST_VER installed"
+  else _fail "conftest install failed (url: $URL)"; fi
+fi
+
+# flux
+if _ver_ok flux "$FLUX_VER"; then
+  _ok "flux $FLUX_VER"
+else
+  _inst "flux $FLUX_VER"
+  URL="https://github.com/fluxcd/flux2/releases/download/v${FLUX_VER}/flux_${FLUX_VER}_${OS}_${ARCH}.tar.gz"
+  if _fetch flux "$URL"; then _ok "flux $FLUX_VER installed"
+  else _fail "flux install failed (url: $URL)"; fi
+fi
+
+# kustomize
+if _ver_ok kustomize "v$KUSTOMIZE_VER"; then
+  _ok "kustomize $KUSTOMIZE_VER"
+else
+  _inst "kustomize $KUSTOMIZE_VER"
+  URL="https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VER}/kustomize_v${KUSTOMIZE_VER}_${OS}_${ARCH}.tar.gz"
+  if _fetch kustomize "$URL"; then _ok "kustomize $KUSTOMIZE_VER installed"
+  else _fail "kustomize install failed (url: $URL)"; fi
+fi
+
+# kubeconform
+if _ver_ok kubeconform "$KUBECONFORM_VER"; then
+  _ok "kubeconform $KUBECONFORM_VER"
+else
+  _inst "kubeconform $KUBECONFORM_VER"
+  URL="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VER}/kubeconform-${OS}-${ARCH}.tar.gz"
+  if _fetch kubeconform "$URL"; then _ok "kubeconform $KUBECONFORM_VER installed"
+  else _fail "kubeconform install failed (url: $URL)"; fi
+fi
+
+# docker -- daemon must be reachable for the compose validation rung in bin/idp-ci
+if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  _ok "docker (daemon reachable)"
+elif command -v docker >/dev/null 2>&1; then
+  printf 'WARN  deps    docker installed but daemon not running\n'
+  [ "$OS" = "darwin" ] && printf '      start Docker Desktop or: open -a Docker\n'
+  [ "$OS" = "linux"  ] && printf '      sudo systemctl start docker\n'
+else
+  printf 'WARN  deps    docker not installed\n'
+  [ "$OS" = "darwin" ] && printf '      macOS: brew install --cask docker && open -a Docker\n'
+  [ "$OS" = "linux"  ] && printf '      Linux: sudo apt-get install -y docker.io && sudo systemctl start docker\n'
+  printf '      (required for docker compose validation rung in bin/idp-ci)\n'
+fi
+
+# PATH -- point to the right shell rc file for the OS
+_RC="$HOME/.zshrc"; [ "$OS" = "linux" ] && _RC="$HOME/.bashrc"
+if ! echo "$PATH" | tr ':' '\n' | grep -qx "$TOOLS_DIR"; then
+  printf '\nWARN  deps    %s not on PATH\n' "$TOOLS_DIR"
+  printf '      add to %s:\n' "$_RC"
+  printf '        export PATH="%s:$PATH"\n\n' "$TOOLS_DIR"
+fi
+
+[ "$fail" -eq 0 ] && printf 'ok    deps    all estate-tools at CI-pinned versions\n'
+exit "$fail"

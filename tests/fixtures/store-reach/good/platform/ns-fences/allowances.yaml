@@ -1,0 +1,5 @@
+flows:
+  external-secrets:
+    ingress_apiserver: [10250]
+    egress_internet: [443]
+    egress_metadata: true

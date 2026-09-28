@@ -1,0 +1,56 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: sovereign-topology
+  namespace: default
+  title: Infrastructure Topology (Sovereign)
+  description: "Deterministic infrastructure-as-code topology with drift detection"
+  links:
+    - url: https://github.com/your-org/idp/artifacts/intent.dag.json
+      title: Download DAG (JSON)
+    - url: https://github.com/your-org/idp/artifacts/intent.dag.dot
+      title: Download Visualization (GraphViz)
+    - url: https://github.com/your-org/idp/artifacts/drift-report.json
+      title: Download Drift Report
+spec:
+  type: service
+  owner: infrastructure
+  lifecycle: production
+  system: sovereign
+  providesApis:
+    - sovereign-exports
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: sovereign-exports
+  title: Sovereign Export API
+  description: "Export infrastructure topology in JSON, GraphViz, and Mermaid formats"
+spec:
+  type: openapi
+  owner: infrastructure
+  lifecycle: production
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Sovereign Topology API
+      version: 1.0.0
+    paths:
+      /intent.dag.json:
+        get:
+          summary: "Get intent DAG as JSON"
+          responses:
+            200:
+              description: "Infrastructure topology as JSON"
+      /intent.dag.dot:
+        get:
+          summary: "Get intent DAG as GraphViz"
+          responses:
+            200:
+              description: "Infrastructure topology as GraphViz DOT format"
+      /drift-report.json:
+        get:
+          summary: "Get drift report"
+          responses:
+            200:
+              description: "Drift comparison report"

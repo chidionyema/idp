@@ -1,0 +1,10 @@
+# crew#892 CP4 fixture: an allowances file whose gVisor-cell namespace fence has been widened to
+# let it reach the internet -- the isolation break step 6 exists to catch. bin/gvisor-cell-fence
+# -gate must refuse it; the generator would otherwise fan an allow-internet-egress NetworkPolicy
+# out to a namespace that runs code a model wrote.
+flows:
+  otto-gvisor-sandbox:
+    egress: [edge]
+    egress_internet: [443]
+  edge:
+    ingress_from: [otto-gvisor-sandbox]

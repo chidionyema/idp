@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""idp-shadow-run — the deterministic producer of the green shadow-verify a merged PR must carry.
+
+Spec W2.2 + the closed loop (#2751): a `type:auto-remediation` PR may only be auto-landed when its
+rollup actually holds a SUCCESSful shadow-verify / proof-of-convergence check. That check is
+*produced* by a shadow run -- a workload change applied inside the ephemeral sandbox vcluster and
+graded by bin/idp-shadow-verify. This is the deterministic producer: given the PR's quoted shadow
+observation, it decides GREEN or RED and prints the exact line the gate looks for.
+
+The live part (resolving a real PR's diff, applying it through bin/idp-shadow up/verify inside the
+sandbox vcluster, reading state back) is exercised by an in-cluster runner the estate must approve
+-- the estate holds no CI cluster credential by design (clusters/oke/sandbox.yaml). What is
+deterministic and need never touch a cluster is the *production* of the verdict from an
+observation + the workload's head, which this tool does and a fixture can prove both ways.
+
+  bin/idp-shadow-run OBSERVATION.json HEAD_SHA
+  Reads bin/idp-shadow-verify's observation JSON {kind,metadata,ready,requiredReplicas,...}, and:
+    - converged + on the given head  -> prints the green line the gate requires (exit 0)
+    - not converged, or a missing/absent head/observation -> prints a red line / refuses (exit 1)
+    - observation unreadable        -> BLIND (exit 2; a producer that could not run graded nothing)
+"""
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+VERIFY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-shadow-verify")
+
+
+def produce(obs_path, head):
+    """Return (verdict_line, exit_code). Fail-closed: nothing converges silently."""
+    try:
+        obs = json.load(open(obs_path, encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        return f"BLIND           shadow-run  cannot read {obs_path}: {e}", 2
+
+    # The observation names its workload and head; #2751's producer must commit that this run
+    # proved THIS head.
+    run_head = obs.get("head") or obs.get("metadata", {}).get("head")
+    if not head:
+        return "FAIL            shadow-run  no head commit given; a shadow run must name the head it proved", 1
+    if run_head and run_head != head:
+        return (f"FAIL            shadow-run  observation is for {run_head}, not the head {head}; "
+                f"the proof does not cover this PR", 1)
+
+    r = subprocess.run(["python3", VERIFY, obs_path], capture_output=True, text=True)
+    ok = (r.returncode == 0)
+    if ok:
+        # the line #2751 / pr-landable requires: a real SUCCESSful shadow-verify on this head.
+        return f"ok              shadow-verify  {obs.get('metadata',{}).get('namespace','?')}/" \
+               f"{obs.get('metadata',{}).get('name','?')} converged on head {head} " \
+               f"(shadow-verify SUCCESS)", 0
+    return f"FAIL            shadow-verify  change broke the workload in the shadow on head {head}", 1
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("observation", help="bin/idp-shadow-verify observation JSON")
+    ap.add_argument("head", help="the pull request head commit this run proves")
+    a = ap.parse_args(argv)
+    line, code = produce(a.observation, a.head)
+    print(line)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

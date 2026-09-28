@@ -1,0 +1,102 @@
+#!/usr/bin/env python3
+"""estate-request-router — slot 3 of the local ops tier (crew#929).
+
+Routes an inbound request / message / issue to the owning estate System by matching the text
+against the REAL system taxonomy in backstage/platform/catalog-info.yaml (names + descriptions).
+Deterministic and model-free: it ranks candidate Systems by keyword overlap and REFUSES loudly
+when nothing matches — it never guesses a lane (the roster's no-op contract).
+
+    bin/estate-request-router 'the portal sign-in is returning 502'   # -> route: edge
+    printf 'issue body' | bin/estate-request-router -
+    bin/estate-request-router --systems                            # list the owning taxonomy
+
+Boundary (LAW 21): this routes on the request's own text; it returns only the route decision, never
+forwards request body content to another lane. A security request that names no lane is refused.
+"""
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CATALOG = os.getenv("ESTATE_CATALOG", os.path.join(ROOT, "backstage", "platform", "catalog-info.yaml"))
+THRESHOLD = 2   # a System must overlap at least this many distinct keywords to win
+# Stopwords that carry no routing signal; counting them manufactures false matches (the reason
+# 'paint the mauve dog ate homework' must refuse, never route every System).
+_STOP = set("""
+the a an and or of to in on for with my your its it is are was were be being do does did
+then than this that these those please paint ate dog homework ceiling color about into under
+over too also maybe when where which what how i we you he she they his her their not no yes
+""".split())
+
+
+def systems_from_catalog(path):
+    """name -> (title, description-words). Reads the real owning taxonomy; empty on a missing file."""
+    out = {}
+    try:
+        txt = open(path, encoding="utf-8").read()
+    except OSError:
+        return out
+    for m in re.finditer(r"kind: System\s*\nmetadata:\s*\n\s*name: (\S+).*?description: '([^']*)'", txt, re.S):
+        name = m.group(1)
+        desc = m.group(2).lower()
+        # title-bearing keywords: the system name, its description words, common aliases
+        words = set(re.findall(r"[a-z][a-z0-9-]{1,}", name)) | set(re.findall(r"[a-z][a-z0-9]{2,}", desc))
+        out[name] = words
+    return out
+
+
+def route(text, systems):
+    """Return (winners, matches) — winners None for a refusal."""
+    low = text.lower()
+    text_words = set(re.findall(r"[a-z][a-z0-9]{2,}", low)) - _STOP
+    # explicit lane names and aliases route directly
+    for name in ("security", "secrets"):
+        if name in text_words and "secrets" in low:
+            return ["identity"], None
+    scored = {}
+    for name, sys_words in systems.items():
+        hits = text_words & sys_words
+        # a direct mention of the system name is the strongest signal
+        if name in text_words:
+            scored[name] = scored.get(name, 0) + 6
+        if sys_words:
+            scored[name] = scored.get(name, 0) + len(hits)
+    interesting = {k: v for k, v in scored.items() if v >= THRESHOLD}
+    # a tie with no single strong owner is still a refusal, never a scatter-gun of every System
+    if not interesting:
+        return None, scored
+    top = max(interesting.values())
+    winners = sorted(k for k, v in interesting.items() if v == top)
+    return winners if len(winners) == 1 else None, scored
+
+
+def main(argv):
+    if len(argv) > 1 and argv[1] == "--systems":
+        systems = systems_from_catalog(CATALOG)
+        for name in sorted(systems):
+            print(f"{name}")
+        return 0
+    txt = ""
+    if len(argv) > 1 and argv[1] != "-":
+        txt = argv[1]
+    else:
+        txt = sys.stdin.read()
+    systems = systems_from_catalog(CATALOG)
+    if not systems:
+        print("REFUSED: estate-request-router could not read the owning taxonomy (empty)",
+              file=sys.stderr)
+        return 1
+    winners, scored = route(txt, systems)
+    if winners:
+        print("ROUTE:" + ",".join(winners))
+        return 0
+    if scored:
+        order = ", ".join(f"{k}={v}" for k, v in sorted(scored.items(), key=lambda x: -x[1])[:5])
+        print(f"REFUSED: no single estate System matched (never guess a lane); nearest: {order}")
+    else:
+        print("REFUSED: no request text to route")
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

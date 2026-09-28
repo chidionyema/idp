@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# The estate's drift, carried back to the pull request that caused it.
+#
+# Spec: docs/specs/2026-09-13-gitops-sync-engine.md
+#
+# The estate shell standard keeps this file thin on purpose: everything that can
+# be reasoned about lives in bin/idp-gitops-drift.py, next to it, where the tests
+# can reach it. What is left here is the part that must be shell -- finding the
+# checkout, clearing the scratch dir, and refusing when kubectl is absent.
+#
+# Exit: 0 a real reading with nothing actionable, 1 a drift naming a pull request,
+# 2 BLIND -- kubectl missing or a list unreadable. "Nothing is drifting" and
+# "nothing could be read" must never print the same thing.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export IDP_GITOPS_ROOT="$ROOT"
+
+# One scratch directory for this run, removed on every exit path including a
+# signal, so a killed read leaves nothing behind for the next caller to mistake
+# for a reading.
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT INT TERM
+export IDP_GITOPS_TMP="$TMP"
+
+# A missing kubectl is a BLIND reading, and the message goes to BOTH streams: a
+# caller capturing only stdout would otherwise see exit 2 with an empty body and
+# no way to know the estate went unread. bin/idp-drift-blind grades exactly this
+# and refused the first version of this file for writing it to stderr alone.
+if ! command -v kubectl >/dev/null 2>&1; then
+	msg="BLIND gitops-drift: kubectl is not installed, so nothing was read"
+	echo "$msg" >&2
+	echo "$msg"
+	exit 2
+fi
+
+# The reader's non-zero exit is a VERDICT (1 = a drift naming a pull request),
+# never a crash, so it is passed through rather than swallowed. `exec` keeps this
+# shell out of the signal path entirely.
+set +e
+python3 "$ROOT/bin/idp-gitops-drift.py" "$@"
+rc=$?
+set -e
+exit "$rc"

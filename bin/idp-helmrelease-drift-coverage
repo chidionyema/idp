@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""A HelmRelease that reports Ready while the cluster disagrees is not reconciled.
+
+Incident: 2026-09-13, chaos-mesh. Rule: helmrelease-drift-is-detectable (rules.yaml).
+
+THE INCIDENT. `chaos-controller-manager` ran at **0 replicas for 18 days** while
+three things reported everything was fine:
+
+    chaos-controller-manager   0/0   0   0   18d
+    HelmRelease/chaos-mesh     Ready  UpgradeSucceeded
+    helm-controller            "release in-sync with desired state"
+
+Helm's own storage held `replicas: 1`. The live Deployment held `replicas: 0`.
+Nothing compared the two, because helm-controller diffs the stored manifest
+against the rendered chart and NEVER against the cluster. A Deployment edited
+after the apply is invisible to it forever.
+
+The cost was not a missing pod. chaos-mesh ships 39 admission webhooks with
+`failurePolicy: Fail`, all pointing at a Service that had no endpoints, so every
+object under `chaos-mesh.org/*` became uncreatable estate-wide:
+
+    Workflow/backstage/backstage-pod-kill-first-run dry-run failed (InternalError):
+      failed calling webhook "mworkflow.kb.io": ... Post https://...:443/...: EOF
+
+THE FENCE ALREADY EXISTS AND WAS SWITCHED OFF. `spec.driftDetection` compares the
+Helm storage against the resources actually in the cluster and re-applies the
+difference on every reconcile. Measured 2026-09-13: **1 of 33 HelmReleases had it
+enabled.** The one that did carries the comment explaining why --
+
+    platform/observability-collector/k8s-infra.yaml: "this HelmRelease still read
+    Ready with an empty namespace and telemetry-coverage fell to seen=2/97"
+
+-- which is the same defect one incident earlier. The estate learned the lesson,
+applied the fence to one release, and never asked how many others needed it.
+
+WHAT THIS GATE DOES. It names every HelmRelease without `driftDetection` enabled,
+because each one is a workload that can silently disagree with the cluster. It
+does NOT fail on them: switching driftDetection on re-applies any difference on
+every reconcile, and for a release with a postRenderer patch or a deliberately
+hand-tuned field that is a behaviour change which has to be decided per release,
+not batched by a gate. So it reports, and the count is the number to drive down.
+
+    bin/idp-helmrelease-drift-coverage --json
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+# A HelmRelease with drift detection enabled records it here.
+ENABLED = "enabled"
+
+
+def _items(args: list[str], timeout: int = 90) -> list[dict]:
+    """One `kubectl get -o json` read. A failure raises -- never an empty estate."""
+    try:
+        r = subprocess.run(
+            ["kubectl", *args], capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(
+            f"BLIND helmrelease-drift-coverage: kubectl could not run: {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+    if r.returncode != 0:
+        print(
+            f"BLIND helmrelease-drift-coverage: {' '.join(args)} exited {r.returncode}: "
+            f"{(r.stderr or '')[:300]}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    try:
+        doc = json.loads(r.stdout or "{}")
+    except ValueError as exc:
+        print(
+            f"BLIND helmrelease-drift-coverage: no JSON from kubectl: {exc}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
+    items = doc.get("items")
+    return items if isinstance(items, list) else []
+
+
+def coverage(helmreleases: list[dict]) -> dict:
+    """Which releases can see the cluster disagree with them, and which cannot."""
+    covered, blind = [], []
+    for hr in helmreleases:
+        meta = hr.get("metadata") or {}
+        name = f"{meta.get('namespace', '')}/{meta.get('name', '')}"
+        spec = hr.get("spec") or {}
+        dd = spec.get("driftDetection") or {}
+        ready = False
+        for c in (hr.get("status") or {}).get("conditions") or []:
+            if c.get("type") == "Ready":
+                ready = c.get("status") == "True"
+        if dd.get("mode") == ENABLED:
+            covered.append(name)
+        else:
+            blind.append(
+                {"release": name, "ready": ready, "mode": dd.get("mode") or "unset"}
+            )
+    return {
+        "summary": {
+            "releases": len(helmreleases),
+            "drift_detectable": len(covered),
+            "drift_blind": len(blind),
+            "ready_and_blind": sum(1 for b in blind if b["ready"]),
+        },
+        "drift_detectable": covered,
+        "drift_blind": blind,
+    }
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="idp-helmrelease-drift-coverage")
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument(
+        "--from",
+        dest="source",
+        default="",
+        help=(
+            "read a `kubectl get helmreleases -A -o json` document from a file instead of "
+            "the cluster. This is what makes the rule gradable offline: the fixture carries "
+            "the shape and the gate grades it with the same code the live run uses."
+        ),
+    )
+    ap.add_argument(
+        "--fail-on-blind-ready",
+        action="store_true",
+        help=(
+            "exit 1 when any Ready HelmRelease cannot see drift. Off by default: the "
+            "estate has 32 of them and a gate that is red on day one is a gate that "
+            "gets switched off (R38). This is the flag a caller uses once the count "
+            "has been driven to zero, to keep it there."
+        ),
+    )
+    args = ap.parse_args(argv)
+
+    if args.source:
+        try:
+            doc = json.loads(Path(args.source).read_text())
+        except (OSError, ValueError) as exc:
+            print(
+                f"BLIND helmrelease-drift-coverage: {args.source} is unreadable: {exc}",
+                file=sys.stderr,
+            )
+            raise SystemExit(2) from exc
+        items = doc.get("items")
+        payload = coverage(items if isinstance(items, list) else [])
+    else:
+        payload = coverage(_items(["get", "helmreleases", "-A", "-o", "json"]))
+
+    if args.json:
+        print(json.dumps(payload, indent=2))
+        return 0
+
+    s = payload["summary"]
+    print(
+        f"ok    helmrelease-drift  {s['drift_detectable']} of {s['releases']} HelmRelease(s) "
+        f"can see the cluster disagree with them; {s['drift_blind']} cannot, "
+        f"{s['ready_and_blind']} of those reporting Ready"
+    )
+    for b in payload["drift_blind"][:20]:
+        flag = "READY" if b["ready"] else "     "
+        print(f"      {flag}  {b['release']}  (driftDetection {b['mode']})")
+    if s["drift_blind"] > 20:
+        print(f"      ... and {s['drift_blind'] - 20} more")
+
+    if args.fail_on_blind_ready and s["ready_and_blind"]:
+        print(
+            f"FAIL  helmrelease-drift  {s['ready_and_blind']} release(s) report Ready while "
+            "unable to see the cluster disagree with them"
+        )
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv[1:]))

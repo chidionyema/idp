@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Name a refused GitHub Actions run once, instead of every session re-diagnosing it.
+
+Incident 2026-08-27 (crew#535): claude-estate run 33105070038 and every private-repo run after
+15:29Z failed with 0 steps; the check-run annotation said "recent account payments have failed",
+and three sessions spent ~3h grading the red as a pull-request fault. A run whose jobs all have
+zero steps never started; the annotation is the reason, and billing is a founder action.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+DEFAULT_REPOS = "chidionyema/idp,chidionyema/claude-estate,chidionyema/estate-secrets,chidionyema/crew,chidionyema/claude-guards"
+NO_ANNOTATION = "refused before the first step, no annotation"
+BILLING_WORDS = ("payments have failed", "spending limit")
+FOUNDER_LINE = "FOUNDER ACTION: fix the GitHub payment method or raise the spending limit — https://github.com/settings/billing"
+
+
+def gh_json(path: str):
+    out = subprocess.run(["gh", "api", path], capture_output=True, text=True, check=True).stdout
+    return json.loads(out or "null")
+
+
+def classify(repo: str, runs: list[dict], jobs_for, annotations_for) -> list[dict]:
+    """A finding per failed run whose every job has zero steps; the first annotation is the reason."""
+    found = []
+    for run in runs:
+        if run.get("conclusion") != "failure":
+            continue
+        jobs = jobs_for(repo, run["id"])
+        if not jobs or any(len(j.get("steps") or []) for j in jobs):
+            continue
+        reason = NO_ANNOTATION
+        for job in jobs:
+            notes = annotations_for(repo, job["id"])
+            if notes:
+                reason = notes[0].get("message", NO_ANNOTATION)
+                break
+        found.append({"repo": repo, "run_id": run["id"], "reason": reason})
+    return found
+
+
+def _jobs(repo: str, run_id: int) -> list[dict]:
+    return gh_json(f"repos/{repo}/actions/runs/{run_id}/jobs").get("jobs", [])
+
+
+def _annotations(repo: str, job_id: int) -> list[dict]:
+    try:
+        return gh_json(f"repos/{repo}/check-runs/{job_id}/annotations") or []
+    except subprocess.CalledProcessError:
+        return []
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--repo", action="append", help="OWNER/NAME, repeatable (default: IDP_ESTATE_REPOS)")
+    ap.add_argument("--limit", type=int, default=5, help="runs per repo to inspect")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+    repos = a.repo or os.environ.get("IDP_ESTATE_REPOS", DEFAULT_REPOS).split(",")
+    findings = []
+    for repo in repos:
+        runs = gh_json(f"repos/{repo}/actions/runs?per_page={a.limit}").get("workflow_runs", [])
+        findings += classify(repo, runs, _jobs, _annotations)
+    if a.json:
+        print(json.dumps(findings, indent=1))
+    else:
+        for f in findings:
+            print(f"refused  {f['repo']} run {f['run_id']}: {f['reason']}")
+        if any(w in f["reason"] for f in findings for w in BILLING_WORDS):
+            print(FOUNDER_LINE)
+    return 2 if findings else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

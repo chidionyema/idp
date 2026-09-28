@@ -1,0 +1,110 @@
+<?xml version="1.0"?>
+<!--
+  ClickHouse sized for a laptop, not a data warehouse.
+
+  Without this it reads the host's total RAM and sizes its caches against that,
+  which on a 16 GiB machine means it tries to use several gigabytes. The
+  mem_limit in langfuse.yml would then not restrain it, it would just get the
+  container OOM-killed, and a container that dies under load is worse than one
+  that runs slowly: the kill looks like a crash and nobody reads it as capacity.
+
+  These numbers assume a few thousand spans a day. If ingest ever grows, raise
+  max_server_memory_usage and the mem_limit together. Changing one alone gets
+  you either an OOM kill or wasted headroom.
+
+  A double hyphen is illegal inside an XML comment, and one in this block cost
+  three hours: ClickHouse refused the whole file with "SAXParseException:
+  Invalid token", crash-looped, and because langfuse-web and langfuse-worker
+  wait on it being healthy they were never started at all. Writing the fix
+  introduced a second one, inside the very sentence naming the validator, which
+  is why the validator now runs in bin/langfuse-up rather than living in prose.
+-->
+<!-- Validate: xmllint (noout) observability/clickhouse-low-memory.xml -->
+<clickhouse>
+    <!-- 1000 MB, inside the container's 1200m ceiling with room for overhead. -->
+    <max_server_memory_usage>1000000000</max_server_memory_usage>
+
+    <!-- Caches. Defaults are sized for a dedicated box. -->
+    <mark_cache_size>134217728</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+    <index_mark_cache_size>67108864</index_mark_cache_size>
+    <index_uncompressed_cache_size>0</index_uncompressed_cache_size>
+
+    <!-- Background work. The default pool assumes many cores are idle. -->
+    <background_pool_size>4</background_pool_size>
+    <background_schedule_pool_size>4</background_schedule_pool_size>
+    <background_common_pool_size>4</background_common_pool_size>
+    <max_concurrent_queries>16</max_concurrent_queries>
+
+    <!--
+      Shrinking background_pool_size alone is not safe. ClickHouse runs a sanity
+      check at startup and REFUSES TO BOOT if the MergeTree pool reservations
+      exceed the pool that now exists:
+
+        Code: 36. DB::Exception: The value of
+        'number_of_free_entries_in_pool_to_execute_mutation' setting (20) is
+        greater than the value of
+        'background_pool_size'*'background_merges_mutations_concurrency_ratio'
+        (8). This indicates incorrect configuration because mutations cannot
+        work with these settings. (BAD_ARGUMENTS)
+
+      Those two defaults, 20 and 8, are sized against the default pool of 16.
+      With a pool of 4 and a ratio of 2 there are 8 slots, so both reservations
+      have to come down with it. They are the number of slots kept free, so 2
+      leaves 6 usable and still lets a mutation run.
+    -->
+    <merge_tree>
+        <number_of_free_entries_in_pool_to_execute_mutation>2</number_of_free_entries_in_pool_to_execute_mutation>
+        <number_of_free_entries_in_pool_to_lower_max_size_of_merge>2</number_of_free_entries_in_pool_to_lower_max_size_of_merge>
+        <number_of_free_entries_in_pool_to_execute_optimize_entire_partition>2</number_of_free_entries_in_pool_to_execute_optimize_entire_partition>
+    </merge_tree>
+
+    <!-- Logs otherwise grow without bound in a volume nobody looks at. -->
+    <logger>
+        <level>warning</level>
+        <size>50M</size>
+        <count>3</count>
+    </logger>
+
+    <!--
+      crew#340: on a 2 vCPU host the sampling profiler and the per-second metric
+      tables were the load. With 6 rows of trace data stored, trace_log held 6.6
+      million rows (129 MiB), asynchronous_metric_log 11.5 million, and the server
+      sat at 88 percent CPU idle; a 44 MiB insert into events_full then took 15 to
+      39 seconds and hit TIMEOUT_EXCEEDED on the events_core_mv push. These are
+      diagnostics for a warehouse team; nobody reads them here. query_log stays,
+      it is what bin/langfuse-verify and this incident were diagnosed from.
+    -->
+    <trace_log remove="remove"/>
+    <metric_log remove="remove"/>
+    <asynchronous_metric_log remove="remove"/>
+    <processors_profile_log remove="remove"/>
+    <latency_log remove="remove"/>
+    <error_log remove="remove"/>
+    <!--
+      crew#85 row 2: ClickHouse 25.12 also creates part_log, text_log,
+      background_schedule_pool_log, query_metric_log, query_views_log,
+      query_thread_log, asynchronous_insert_log and opentelemetry_span_log by
+      default, with no config section to remove. Measured 2026-08-27 06:10Z on
+      the laptop: 0 queries, metric_log merging 81 times in 2 minutes, part_log
+      logging its own merges, the container at 67-75 percent of a core. Dropping
+      the removed tables took it to 35 percent; the rest is this list.
+    -->
+    <part_log remove="remove"/>
+    <text_log remove="remove"/>
+    <background_schedule_pool_log remove="remove"/>
+    <query_metric_log remove="remove"/>
+    <query_views_log remove="remove"/>
+    <query_thread_log remove="remove"/>
+    <asynchronous_insert_log remove="remove"/>
+    <opentelemetry_span_log remove="remove"/>
+
+    <profiles>
+        <default>
+            <max_memory_usage>600000000</max_memory_usage>
+            <query_profiler_real_time_period_ns>0</query_profiler_real_time_period_ns>
+            <query_profiler_cpu_time_period_ns>0</query_profiler_cpu_time_period_ns>
+            <max_bytes_before_external_group_by>300000000</max_bytes_before_external_group_by>
+        </default>
+    </profiles>
+</clickhouse>

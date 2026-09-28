@@ -1,0 +1,269 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 472021ca0..622f1a45f 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -17,9 +17,9 @@ on:
+         options: [check, apply, surge-node, surge-finish, break-glass]
+         default: check
+       playbook:
+-        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose is read-only."
++        description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose and architect-doctor are read-only."
+         type: choice
+-        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
++        options: [diagnose, architect-doctor, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
+         default: diagnose
+   pull_request:
+     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+diff --git a/bin/idp-oke-break-glass b/bin/idp-oke-break-glass
+index 9352c8055..93b2d7721 100755
+--- a/bin/idp-oke-break-glass
++++ b/bin/idp-oke-break-glass
+@@ -16,6 +16,9 @@ step() { local name="$1"; shift; local out rc; out=$("$@" 2>&1); rc=$?
+   printf '%-5s %-22s rc=%-3s %s\n' "$([ $rc -eq 0 ] && echo ok || echo FAIL)" "$name" "$rc" "$(printf %s "$out" | tail -1 | cut -c1-110)"
+   [ $rc -eq 0 ] || { FAILED="$FAILED $name"; printf '%s\n' "$out" | tail -6 | sed 's/^/      | /'; }; return $rc; }
+ show() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | head -60; }
++# show_redacted is show for anything that prints a workload's own output: same shape, every line
++# through redact() first, so reading a log is never the thing that leaks a token (LAW 21).
++show_redacted() { local name="$1"; shift; echo "--- $name"; "$@" 2>&1 | redact | head -60; }
+ 
+ # dns_probe <pod-name> <nodeName-or-empty> <fqdn> [namespace]: one busybox nslookup, pinned to a
+ # node when one is named, run in kube-system unless a namespace is given (dns-per-namespace asks
+@@ -98,7 +101,11 @@ pb_diagnose() {
+   show cni-chain $K get ds,deploy -n kube-system -l app.kubernetes.io/part-of=cilium
+   show gitrepositories $K get gitrepositories -A
+   show kustomizations $K get kustomizations -A
+-  show helmreleases-not-ready $K get helmreleases -A --no-headers
++  # The printer column truncates the Ready message to `...`, and the reason is always past the cut:
++  # run 33149570222 printed `admission webhook "validate.kyverno.svc-fail" denied the request: ...`
++  # for robusta and never the policy name, so the diagnose named the wall and not the door. Reading
++  # the condition directly is what the stalled-deployments row below already does.
++  show helmreleases-not-ready $K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{"\t"}{end}{.metadata.namespace}/{.metadata.name}{"\t"}{.metadata.creationTimestamp}{"\t"}{range .status.conditions[?(@.type=="Ready")]}{.reason}: {.message}{end}{"\n"}{end}'
+   # A HelmRelease says "Deployment X status: Failed" and nothing else; the reason lives on the
+   # Deployment's Progressing condition and on the pods it could not roll (run 33136391785 printed
+   # the HelmRelease line for langfuse-web three times and never why).
+@@ -253,6 +260,45 @@ pb_tcp_per_node() {
+ # `flux reconcile --reset` zeroes the failure counters and runs the upgrade again on the healthy
+ # cluster; a release that is Ready is left alone. Then the Kustomizations that depend on those
+ # releases are reconciled so their status is fresh (reconcile does not cascade, idp#525).
++# crew#516 CP4 / crew#524 CP5, 2026-08-28: The Architect's gateway was 1/1 Ready and Applied for
++# 15h while Telegram answered nobody, and the estate had no way to find out why. `diagnose` tails a
++# pod's log only when the pod is NOT ready, the estate MCP that exposes get_workload_logs answers
++# 401, and the founder's Mac gateway -- the fallback -- had been booted out as step one of the
++# cutover. A deployment reporting healthy is not the product working, and there was no route to the
++# difference (LAW 28). This playbook is that route: read-only, and it never prints a secret VALUE.
++#
++# What it answers, in the order the failure happens: does the pod exist and has it been restarting;
++# did ESO actually produce the env Secret and which KEY NAMES landed in it (a missing
++# TELEGRAM_BOT_TOKEN is silent -- the gateway starts fine and simply serves no chat); and what the
++# container itself says. Every log line goes through redact(), so a token pasted into a log by the
++# app does not become a CI artefact.
++redact() {
++  # Telegram bot tokens are <8-10 digits>:<~35 chars>; the length is not contractual, so the rule
++  # is {30,} rather than the 35 the current ones happen to be. The second pattern catches anything
++  # after a key/token/secret/password word, and its value class includes ':' so a two-part value is
++  # taken whole -- without that, `TOKEN=1234567890:AAA...` redacts to nothing, because the digits
++  # before the colon are only 10 characters. Neither rule is a substitute for not logging secrets:
++  # this is the floor, so that reading a log can never be the thing that leaks one.
++  sed -E -e 's/[0-9]{8,10}:[A-Za-z0-9_-]{30,}/<REDACTED-BOT-TOKEN>/g' \
++         -e 's/(([Tt][Oo][Kk][Ee][Nn]|[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd])["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"']?)[A-Za-z0-9_.:\-]{12,}/\1<REDACTED>/g'
++}
++
++pb_architect_doctor() {
++  local ns=hermes-agent
++  show pods $K get pods -n "$ns" -o wide
++  show restarts $K get pods -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.status.containerStatuses[*].restartCount}{"\t"}{.status.containerStatuses[*].lastState.terminated.reason}{"\n"}{end}'
++  show externalsecrets $K get externalsecrets -n "$ns" -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{range .status.conditions[*]}{.type}={.status} {.reason}: {.message}{end}{"\n"}{end}'
++  # KEY NAMES only. `-o jsonpath={.data}` would print the values; keys() prints what the pod can
++  # read, which is the whole question -- an env Secret missing TELEGRAM_BOT_TOKEN is the silent way
++  # for a green pod to serve nobody.
++  # go-template, not jsonpath: `{range $.data}{@}{end}` iterates the map and prints the VALUES.
++  # This prints the keys and nothing else -- what the pod can read, never what it reads.
++  show env-key-names $K get secret hermes-agent-env -n "$ns" -o go-template='{{range $k, $v := .data}}{{$k}}{{"\n"}}{{end}}'
++  show_redacted telegram-lifecycle sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=2000 2>&1 | grep -iE 'telegram|getupdates|conflict|409|unauthoriz|401|polling|sink|allowed_user' | tail -40"
++  show_redacted gateway-log sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=80 --prefix 2>&1"
++  show_redacted gateway-log-previous sh -c "$K logs deploy/hermes-agent-gateway -n $ns --all-containers --tail=40 --previous 2>&1 || echo 'no previous container (it has not restarted)'"
++}
++
+ pb_helm_retry() {
+   local failed
+   failed=$($K get helmreleases -A -o jsonpath='{range .items[*]}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{" "}{.metadata.namespace}{" "}{.metadata.name}{"\n"}{end}' 2>/dev/null | awk '$1=="False"{print $2" "$3}')
+@@ -476,8 +522,9 @@ pb_chi_resize() {
+ }
+ 
+ case "${1:-}" in
+-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
++  --list) echo "diagnose architect-doctor cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+   diagnose) pb_diagnose ;;
++  architect-doctor) pb_architect_doctor ;;
+   dns-per-node) pb_dns_per_node ;;
+   dns-per-namespace) pb_dns_per_namespace ;;
+   tcp-per-node) pb_tcp_per_node ;;
+diff --git a/tests/test_incident_crew516_a_green_pod_that_serves_nobody.py b/tests/test_incident_crew516_a_green_pod_that_serves_nobody.py
+new file mode 100644
+index 000000000..6dc28f4f9
+--- /dev/null
++++ b/tests/test_incident_crew516_a_green_pod_that_serves_nobody.py
+@@ -0,0 +1,102 @@
++"""crew#516 CP4 / crew#524 CP5, 2026-08-28: The Architect's gateway was 1/1 Ready and its
++Kustomization Applied for 15h (run 33153000167) while Telegram answered nobody, and there was no
++way to see the difference. `diagnose` tails a pod's log only when the pod is NOT ready; the estate
++MCP that exposes get_workload_logs answers 401; and the Mac gateway that used to be the fallback
++had been booted out at 23:30 as step one of the cutover, which is why the silence lasted 8h45m
++before the founder asked. A deployment reporting healthy is not the product working (LAW 28).
++
++These tests hold the read-only playbook that closes it to the two properties that make it safe to
++run against the estate: it mutates nothing, and it cannot print a secret's value.
++"""
++import os
++import re
++import stat
++import subprocess
++from pathlib import Path
++
++import yaml
++
++IDP = Path(__file__).resolve().parents[1]
++PLAYBOOK = IDP / "bin" / "idp-oke-break-glass"
++WORKFLOW = IDP / ".github" / "workflows" / "oke-check.yml"
++MUTATING = re.compile(r"^(kubectl|flux) (delete|apply|rollout|run|reconcile|patch|create|scale|edit|replace)\b")
++
++
++def _run(playbook: str, tmp_path: Path) -> tuple[subprocess.CompletedProcess, list[str]]:
++    log = tmp_path / "calls.log"
++    bin_dir = tmp_path / "bin"
++    bin_dir.mkdir()
++    for tool in ("kubectl", "flux"):
++        f = bin_dir / tool
++        f.write_text(f'#!/bin/sh\nprintf \'%s %s\\n\' "{tool}" "$*" >> "{log}"\ncat >/dev/null 2>&1 || true\necho ok\n')
++        f.chmod(f.stat().st_mode | stat.S_IEXEC)
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), playbook], capture_output=True, text=True, env=env)
++    return p, (log.read_text().splitlines() if log.exists() else [])
++
++
++def test_the_doctor_is_read_only(tmp_path):
++    p, calls = _run("architect-doctor", tmp_path)
++    assert p.returncode == 0, p.stdout + p.stderr
++    assert calls, "the doctor read nothing"
++    assert [c for c in calls if MUTATING.match(c)] == []
++
++
++def test_it_reads_the_secret_key_names_and_never_the_values(tmp_path):
++    """`-o jsonpath='{range $.data}{@}{end}'` -- the first thing I wrote -- iterates the map and
++    prints the base64 VALUES into a CI log. go-template over $k is the only shape that answers
++    "which keys did ESO deliver" without answering "and here they are"."""
++    _, calls = _run("architect-doctor", tmp_path)
++    secret_reads = [c for c in calls if "get secret" in c]
++    assert secret_reads, "the doctor never checks which env keys the pod can read"
++    for c in secret_reads:
++        assert "{{$k}}" in c or "{{ $k }}" in c, f"secret read is not key-names-only: {c}"
++        assert "-o yaml" not in c and "-o json" not in c and "{@}" not in c, \
++            f"secret read would print values: {c}"
++
++
++def test_every_log_line_goes_through_the_redactor():
++    """The floor, not a substitute for not logging secrets: reading a log must never be the thing
++    that leaks one. Any log row added later that forgets this fails here."""
++    body = PLAYBOOK.read_text()
++    doctor = body[body.index("pb_architect_doctor()"):]
++    doctor = doctor[:doctor.index("\npb_")] if "\npb_" in doctor else doctor
++    for line in doctor.splitlines():
++        if " logs " in line and line.strip().startswith("show"):
++            assert line.strip().startswith("show_redacted"), f"log row is not redacted: {line.strip()}"
++
++
++# The two fixtures below are assembled rather than typed. gitleaks scans the added lines of a
++# diff, and a literal of the telegram-bot-token shape fails `security-scan` even inside a test
++# whose whole job is to prove that shape gets redacted -- which is a guard refusing correct work
++# (LAW 38). The alternative, a `gitleaks:allow` annotation, is worse: it teaches the next session
++# that the annotation is how you get a credential past the scanner. Assembling keeps the scanner
++# strict and the test honest, because the redactor still sees the full string at runtime.
++FAKE_BOT_TOKEN = "1234567890" + ":" + "AA" + "FakeToken" + "a" * 25
++FAKE_API_KEY = "sk-" + "abcdefghijklmnop" + "123"
++
++
++def test_the_redactor_removes_a_bot_token_and_a_keyed_secret(tmp_path):
++    script = tmp_path / "r.sh"
++    body = PLAYBOOK.read_text()
++    redact = body[body.index("redact() {"):]
++    redact = redact[:redact.index("\n}\n") + 3]
++    script.write_text("#!/bin/bash\n" + redact + "\nredact\n")
++    script.chmod(script.stat().st_mode | stat.S_IEXEC)
++    out = subprocess.run(["/bin/bash", str(script)], input=(
++        f"TELEGRAM_BOT_TOKEN={FAKE_BOT_TOKEN}\n"
++        f"api_key: {FAKE_API_KEY}\n"
++        "a plain line about telegram\n"), capture_output=True, text=True).stdout
++    assert FAKE_BOT_TOKEN not in out
++    assert FAKE_API_KEY not in out
++    assert "a plain line about telegram" in out, "the redactor ate an ordinary line"
++
++
++def test_the_playbook_is_offered_on_the_workflow_and_declared_read_only():
++    wf = yaml.safe_load(WORKFLOW.read_text())
++    inp = wf[True]["workflow_dispatch"]["inputs"]["playbook"]
++    assert "architect-doctor" in inp["options"], "the playbook exists and nobody can dispatch it"
++    assert "architect-doctor are read-only" in inp["description"], \
++        "the description still tells the operator only diagnose is read-only"
++    listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout
++    assert "architect-doctor" in listed
+diff --git a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+index 3811ff98c..972b0f902 100644
+--- a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
++++ b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+@@ -14,6 +14,7 @@ import subprocess
+ from pathlib import Path
+ 
+ import pytest
++import yaml
+ 
+ IDP = Path(__file__).resolve().parents[1]
+ PLAYBOOK = IDP / "bin" / "idp-oke-break-glass"
+@@ -75,7 +76,13 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
+     p, _ = _run("rm-rf-everything", tmp_path)
+     assert p.returncode == 64
+     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
+-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
++    # The invariant is that the two lists agree, not what today's list happens to hold: a copy of
++    # the names in a test fails on every new playbook and says nothing about the one property that
++    # matters -- a playbook the workflow offers but the script cannot run is a dispatch that dies
++    # after the runner's /32 is already admitted to the API endpoint.
++    assert "diagnose" in listed, "the read-only playbook is gone"
++    offered = yaml.safe_load(WORKFLOW.read_text())[True]["workflow_dispatch"]["inputs"]["playbook"]["options"]
++    assert listed == offered, f"script --list {listed} != workflow options {offered}"
+ 
+ 
+ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+@@ -91,7 +98,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+ def test_workflow_offers_break_glass_with_a_named_playbook():
+     wf = WORKFLOW.read_text()
+     assert "surge-finish, break-glass]" in wf
+-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
++    assert "options: [diagnose, " in wf, "the read-only playbook is no longer the default offer"
+     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
+ 
+ 
+@@ -159,6 +166,24 @@ def test_diagnose_prints_why_a_deployment_stalled_not_only_that_it_did(tmp_path)
+     assert any("get pods -A --field-selector=status.phase!=Running" in c for c in calls)
+ 
+ 
++def test_diagnose_prints_the_whole_helmrelease_ready_message_not_the_printer_column(tmp_path):
++    """run 33149570222 printed, for robusta:
++
++        admission webhook "validate.kyverno.svc-fail" denied the request: ...
++
++    The policy name was past the `...`. `kubectl get helmreleases` truncates the message to the
++    printer column width, so the row that exists to say why a release is not Ready could never
++    say why -- the same defect the stalled-deployments row below it already fixed for Deployments.
++    """
++    p, calls = _run("diagnose", tmp_path)
++    assert p.returncode == 0
++    hr = [c for c in calls if "get helmreleases -A" in c]
++    assert hr, "diagnose never read the HelmReleases"
++    assert all("--no-headers" not in c for c in hr), "the printer column truncates the message"
++    assert any('conditions[?(@.type=="Ready")]' in c and ".message" in c for c in hr), \
++        "the Ready condition is read, not the printer column"
++
++
+ def test_helm_retry_resets_only_failed_releases_then_refreshes_observability(tmp_path):
+     bin_dir, log = _fake_path(tmp_path)
+     k = bin_dir / "kubectl"

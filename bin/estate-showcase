@@ -1,0 +1,234 @@
+#!/usr/bin/env python3
+"""estate-showcase: grade the whole estate against the buyer's-engineer bar, red rows first.
+
+Founder, 2026-08-27 (crew#474): "needs to be sellable to investors, and showcase the whole
+estate and platform ... elite and super impressive, if any part of estate does not meet elite
+grade status shout out loud, we need to expose ourselves before the market exposes us and
+correct it." This is the science department's charter (crew/roles/science.md), and this file
+is the process: nothing on the page is typed by hand, and the red rows are printed before
+anything that looks good.
+
+    estate-showcase                      grade catalog/catalog-info.yaml -> docs/SHOWCASE.md
+    estate-showcase --catalog F --out G  other paths (the tests use a fixture)
+    estate-showcase --check              exit 1 when the page on disk is not what the inputs say
+
+Inputs, all already produced by something else (LAW 43): the catalogue bin/catalog-gen writes
+from the inventory; the standards table crew/docs/STANDARDS.md; the science showcase page
+crew/docs/science/SHOWCASE.md. Each entity gets one of three grades from its own annotations:
+
+    ELITE   a scheduled job or guard whose last run passed, a repository clean and mirrored
+            offsite with a licence, a drill that is not stale, a surface with a description
+    GAP     the annotation says it failed, never ran, is dirty, stale or undescribed; the row
+            names the annotation and value so the fix is one command away
+    BLIND   the annotation that would decide is absent; never counted as ELITE (LAW 15)
+
+A standards row is ELITE when its status says "live", GAP otherwise. An input that is
+missing is a BLIND section with the path it expected, never a silent omission (LAW 28).
+Deterministic: same inputs, same bytes; the header carries the inventory timestamp.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+import subprocess
+
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+CATALOG = ROOT / "catalog" / "catalog-info.yaml"
+OUT = ROOT / "docs" / "SHOWCASE.md"
+#: LAW 46: the sibling checkout is named by ESTATE_CODE, never by a literal path.
+
+
+def code_root(root: Path) -> Path:
+    """The directory the sibling checkouts live in.
+
+    ESTATE_CODE wins. Otherwise the parent of the MAIN checkout, found through
+    `git rev-parse --git-common-dir`, never `root.parent`: on 2026-08-27 the
+    scheduled page was rendered from a scratch worktree, `root.parent` was that
+    scratch directory, and the live page read "Standards rows: 0 of 0" and
+    "Science: BLIND (no page at .../scratchpad/crew/...)" (crew#474).
+    """
+    env = os.environ.get("ESTATE_CODE")
+    if env:
+        return Path(env)
+    try:
+        common = subprocess.run(["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+                                capture_output=True, text=True, check=False)
+        if common.returncode == 0 and common.stdout.strip():
+            git_dir = Path(common.stdout.strip())
+            if not git_dir.is_absolute():
+                git_dir = root / git_dir
+            return git_dir.resolve().parent.parent
+    except OSError:
+        pass
+    return root.parent
+
+
+CODE = code_root(ROOT)
+STANDARDS = CODE / "crew" / "docs" / "STANDARDS.md"
+SCIENCE = CODE / "crew" / "docs" / "science" / "SHOWCASE.md"
+
+ELITE, GAP, BLIND = "ELITE", "GAP", "BLIND"
+PASSING = {"clean", "PASS", "0", "running"}  # running: a KeepAlive daemon with a live PID (crew#478)
+
+
+def load(catalog: Path):
+    text = catalog.read_text(encoding="utf-8")
+    m = re.search(r"^# inventory taken: (.+)$", text, re.M)
+    taken = m.group(1).strip() if m else "unknown"
+    return taken, [d for d in yaml.safe_load_all(text) if d]
+
+
+def grade(doc: dict) -> tuple[str, str]:
+    """One grade and one reason per entity, from its annotations alone."""
+    kind, typ = doc.get("kind"), (doc.get("spec") or {}).get("type")
+    md = doc.get("metadata") or {}
+    ann = {k: str(v) for k, v in (md.get("annotations") or {}).items()}
+    if kind == "Component":
+        if not md.get("description"):
+            return GAP, "no description; a buyer cannot tell what it is"
+        if typ == "service":
+            if "estate/dirty" not in ann or "estate/offsite" not in ann:
+                return BLIND, "estate/dirty or estate/offsite absent; not inventoried (LAW 15)"
+            gaps = []
+            if ann.get("estate/dirty", "0") != "0":
+                gaps.append(f"estate/dirty={ann['estate/dirty']} uncommitted files")
+            if ann.get("estate/offsite", "True") != "True":
+                gaps.append("estate/offsite=False, no remote holds it")
+            if "estate/licence-file" in ann and ann["estate/licence-file"] in ("", "None", "absent"):
+                gaps.append("no licence file")
+            return (GAP, "; ".join(gaps)) if gaps else (ELITE, "clean, offsite, licensed, described")
+        return ELITE, "described and linked" if md.get("links") else "described"
+    if typ in ("scheduled-job", "guard"):
+        last = ann.get("estate/last-status")
+        if last is None:
+            return BLIND, "estate/last-status absent; never observed"
+        if last in PASSING:
+            return ELITE, f"last run {last}"
+        return GAP, f"estate/last-status={last}"
+    if typ == "drill":
+        if "estate/stale" not in ann:
+            return BLIND, "estate/stale absent"
+        return (GAP, f"stale, age {ann.get('estate/age-h', '?')}h") if ann["estate/stale"] == "True" else (ELITE, f"fresh, age {ann.get('estate/age-h', '?')}h")
+    if typ in ("ledger", "data-store", "port", "vendor"):
+        return (ELITE, "described") if md.get("description") else (GAP, "no description")
+    if kind in ("Domain", "System", "Group"):
+        return (ELITE, "described") if md.get("description") else (GAP, "no description")
+    return BLIND, f"no rule for {kind}/{typ}"
+
+
+def standards(path: Path) -> list[tuple[str, str, str, str]]:
+    """(layer, standard, status, grade) per table row of crew/docs/STANDARDS.md."""
+    rows = []
+    if not path.is_file():
+        return rows
+    in_table = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        cells = [c.strip().replace("\x00", "|") for c in line.strip().strip("|").replace("\\|", "\x00").split("|")]
+        if cells and cells[0] == "Layer":
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not line.startswith("|"):
+            break  # only the first table (the layers) is the standards register
+        if len(cells) < 3 or set(cells[0]) <= {"-"}:
+            continue
+        status = cells[2]
+        g = ELITE if status.lower().startswith("live") else GAP
+        rows.append((cells[0], cells[1], status, g))
+    return rows
+
+
+def science(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    lines = path.read_text(encoding="utf-8").splitlines()
+    caps = [l for l in lines if l.startswith("- ") and "BLIND" not in l]
+    blind = [l for l in lines if "BLIND" in l]
+    return f"{len(caps)} rows on the science page, {len(blind)} BLIND"
+
+
+NEXT = ROOT / "docs" / "NEXT.md"
+
+
+def next_bar(path: Path = NEXT) -> str:
+    """crew#403 CP6: quote the Next page's bar, or say it is missing (LAW 28)."""
+    if not path.is_file():
+        return f"BLIND (no page at {path}; run bin/estate-next)"
+    lines = [l[2:] for l in path.read_text(encoding="utf-8").splitlines() if l.startswith("- Checkpoints:") or l.startswith("- When:")]
+    return "; ".join(lines) + f" — see `{path.name}`" if lines else f"BLIND ({path.name} carries no bar)"
+
+
+def render(taken: str, docs: list, std_rows: list, sci: str | None, std_path: Path, sci_path: Path) -> str:
+    graded = []
+    for d in docs:
+        md = d.get("metadata") or {}
+        typ = (d.get("spec") or {}).get("type") or d.get("kind")
+        g, why = grade(d)
+        graded.append((g, typ, md.get("name", "?"), why))
+    graded.sort(key=lambda r: (r[0] != GAP, r[0] != BLIND, r[1], r[2]))
+    n = {g: sum(1 for r in graded if r[0] == g) for g in (ELITE, GAP, BLIND)}
+    sgap = [r for r in std_rows if r[3] == GAP]
+    out = [
+        "# Estate showcase",
+        "",
+        f"GENERATED by `bin/estate-showcase` from `catalog/catalog-info.yaml` (inventory taken {taken}), "
+        f"`{std_path.name}` and the science page. Red rows first (crew#474). Do not edit by hand.",
+        "",
+        "## The bar",
+        "",
+        f"- Entities: **{n[ELITE]} ELITE**, **{n[GAP]} GAP**, **{n[BLIND]} BLIND** of {len(graded)}",
+        f"- Standards rows: **{len(std_rows) - len(sgap)} live**, **{len(sgap)} not yet** of {len(std_rows)}",
+        f"- Science: {sci or f'BLIND (no page at {sci_path})'}",
+        f"- Next: {next_bar()}",
+        "",
+        "## Gaps, loudest first",
+        "",
+        "| Grade | Type | Entity | Why |",
+        "|---|---|---|---|",
+    ]
+    red = [r for r in graded if r[0] != ELITE]
+    out += [f"| {g} | {t} | `{name}` | {why} |" for g, t, name, why in red] or ["| — | — | — | every entity is ELITE |"]
+    out += ["", "## Standards not yet live", "", "| Layer | Standard | Status today |", "|---|---|---|"]
+    out += [f"| {l} | {s} | {st} |" for l, s, st, _ in sgap] or (
+        ["| — | — | every row is live |"] if std_rows else [f"| BLIND | — | no table at {std_path} |"])
+    out += ["", "## Elite", "", "| Type | Entity | Why |", "|---|---|---|"]
+    out += [f"| {t} | `{name}` | {why} |" for g, t, name, why in graded if g == ELITE]
+    return "\n".join(out) + "\n"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(add_help=True)
+    ap.add_argument("--catalog", default=str(CATALOG))
+    ap.add_argument("--out", default=str(OUT))
+    ap.add_argument("--standards", default=str(STANDARDS))
+    ap.add_argument("--science", default=str(SCIENCE))
+    ap.add_argument("--check", action="store_true", help="exit 1 when the page on disk differs from the inputs")
+    a = ap.parse_args(argv)
+    catalog, out, std, sci = Path(a.catalog), Path(a.out), Path(a.standards), Path(a.science)
+    if not catalog.is_file():
+        print(f"BLIND estate-showcase: no catalogue at {catalog} (run bin/catalog-gen)", file=sys.stderr)
+        return 3
+    taken, docs = load(catalog)
+    page = render(taken, docs, standards(std), science(sci), std, sci)
+    gaps = page.count("| GAP |")
+    if a.check:
+        if out.is_file() and out.read_text(encoding="utf-8") == page:
+            print(f"ok    estate-showcase: {out} matches the inputs ({gaps} GAP rows)")
+            return 0
+        print(f"FAIL  estate-showcase: {out} is not what the inputs say; run bin/estate-showcase")
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(page, encoding="utf-8")
+    print(f"estate-showcase: {page.count(chr(10))} lines, {gaps} GAP rows -> {os.path.relpath(out)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

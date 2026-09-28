@@ -1,0 +1,2 @@
+platform/calico/raw/flannel-daemonset.yaml
+platform/calico/raw/kustomization.yaml

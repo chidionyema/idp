@@ -1,0 +1,32 @@
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-example
+  description: A platform layer with a valid spec.type
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: example-api
+  description: An API with a valid spec.type
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform
+  definition: |
+    {}
+---
+apiVersion: backstage.io/v1alpha1
+kind: Template
+metadata:
+  name: scaffold-template
+  description: Templates use scaffold syntax and are skipped by the gate
+spec:
+  type: founder-action
+  parameters: []
+  steps: []

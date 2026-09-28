@@ -1,0 +1,34 @@
+# The same sidecar, probed from inside the container where loopback is the sidecar.
+# No host field, so nothing for PodSecurity restricted to refuse.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otto-gateway
+  namespace: otto-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: otto-brain
+          image: ghcr.io/berriai/litellm:v1.98.0
+          readinessProbe:
+            exec:
+              command: ["python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4010/health/liveliness', timeout=2)"]
+---
+# A container that binds the pod IP needs no host either: the kubelet already sends
+# the probe there. This is the ordinary case and the gate must not touch it.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: otto-answer-probe
+  namespace: otto-gateway
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: probe
+              image: ghcr.io/berriai/litellm:v1.98.0
+              livenessProbe:
+                httpGet: { path: /healthz, port: 8080 }

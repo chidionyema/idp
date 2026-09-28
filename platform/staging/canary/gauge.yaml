@@ -1,0 +1,97 @@
+# The gauge: `canary_reported_state` served at /metrics and scraped by the one Prometheus
+# (platform/monitoring/rules/canary-servicemonitor.yaml). The scheduler rewrites the ConfigMap
+# for every window; the file is a directory mount so the kubelet refreshes it in place.
+# `ssa: IfNotPresent` (Flux docs, Kustomization annotations): Flux creates the ConfigMap once and
+# never writes it again, so a lying window is not corrected back to the truth by a reconcile.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: canary-gauge
+  namespace: staging
+  labels:
+    app: canary-gauge
+    idp.platform/canary: "true"
+  annotations:
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+data:
+  metrics: |
+    # HELP canary_reported_state What the gauge says about the canary: 1 scaled up, 0 scaled to zero. Sometimes a lie (crew#656).
+    # TYPE canary_reported_state gauge
+    canary_reported_state{service="canary"} 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: canary-gauge
+  namespace: staging
+  labels:
+    app: canary-gauge
+    idp.platform/canary: "true"
+  annotations:
+    idp.platform/never-an-incident: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: canary-gauge
+  template:
+    metadata:
+      labels:
+        app: canary-gauge
+        idp.platform/canary: "true"
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gauge
+          image: docker.io/nginxinc/nginx-unprivileged:1.27-alpine
+          ports:
+            - { name: http, containerPort: 8080 }
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { cpu: 50m, memory: 32Mi }
+          # crew#656: upstream require-probes (pinned in prospector deploy/k8s/policies) refuses a
+          # container with no liveness and no readiness probe. #1776 and #1777 each deleted one of
+          # the two copies two sessions had added, which left none; this is the single copy.
+          readinessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /metrics, port: http }
+            periodSeconds: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: metrics, mountPath: /usr/share/nginx/html }
+            - { name: cache, mountPath: /var/cache/nginx }
+            - { name: run, mountPath: /tmp }
+      volumes:
+        - name: metrics
+          configMap:
+            name: canary-gauge
+        - { name: cache, emptyDir: {} }
+        - { name: run, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: canary-gauge
+  namespace: staging
+  labels:
+    app: canary-gauge
+    idp.platform/canary: "true"
+    # Everything that serves a port names its catalogue entity (platform/edge/require-catalogue-entity.yaml,
+    # founder ruling 2026-08-29). The gauge's port is scraped by the one Prometheus, so it is a
+    # surface; the entity is the Flux row that reconciles it, cluster-kustomization-staging.
+    backstage.io/kubernetes-id: cluster-kustomization-staging
+spec:
+  selector:
+    app: canary-gauge
+  ports:
+    - { name: http, port: 8080, targetPort: http }

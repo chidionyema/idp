@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+"""Property tests for bin/catalog-projection.
+
+Proves five invariants (run unconditionally by bin/idp-ci):
+
+  TOT  totality        every parseable .py file -> exactly one Component;
+                        every import -> one dependsOn edge OR one logged drop.
+                        broken.py is a SyntaxError skip, never silent.
+  DET  determinism     SHA256(canonical-JSON) depends only on source.
+                        Two runs -> byte-identical; proven in IDP.
+  IDP  idempotency     project(G) is its own fixed point: 5 runs -> 1 fingerprint.
+  REF  reference       every dependsOn target is emitted by the SAME sweep.
+                        Tautological by construction.
+  SCH  schema          every entity matches the Backstage Component schema
+                        subset (apiVersion, kind, metadata.name, spec.*).
+
+A regression: the projection has lost a guarantee the catalog relies on.
+
+Usage: bin/test-catalog-projection
+Exit 0 with one PASS line per property; non-zero with the failure message."""
+from __future__ import annotations
+
+import json
+import hashlib
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+FIXTURE = IDP / "tests" / "fixtures" / "projection"
+PROJECTION = IDP / "bin" / "catalog-projection"
+
+NAME_RE = re.compile(r"^[a-zA-Z0-9]([-_.a-zA-Z0-9]*[a-zA-Z0-9])?$")
+LIFECYCLE_VALUES = frozenset({"experimental", "production", "deprecated"})
+REQUIRED_METADATA = frozenset({"name", "title", "description", "tags", "annotations", "links"})
+REQUIRED_SPEC = frozenset({"type", "owner", "lifecycle", "dependsOn"})
+
+
+def run_projection(source: Path) -> tuple[list[dict], str]:
+    proc = subprocess.run(
+        [sys.executable, str(PROJECTION), "--json", str(source)],
+        capture_output=True, check=True, text=True,
+    )
+    entities = json.loads(proc.stdout)
+    return entities, proc.stderr
+
+
+def fail(msg: str) -> None:
+    print(f"FAIL  {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def ok(msg: str) -> None:
+    print(f"PASS  {msg}")
+
+
+def test_totality(entities: list[dict], stderr: str) -> None:
+    py_files = sorted(p for p in FIXTURE.rglob("*.py") if p.is_file() and p.name != "broken.py")
+    skipped = [p for p in FIXTURE.rglob("*.py") if p.is_file() and p.name == "broken.py"]
+    expected = len(py_files)
+    actual = len(entities)
+    if actual != expected:
+        fail(f"TOT: expected {expected} entities (one per parseable .py), got {actual}")
+    names_in = {Path(e["metadata"]["annotations"]["estate/source-path"]).name for e in entities}
+    names_exp = {p.name for p in py_files}
+    if names_in != names_exp:
+        fail(f"TOT: entity set != parseable-file set; missing {names_exp - names_in}, extra {names_in - names_exp}")
+    for s in skipped:
+        sname = s.relative_to(FIXTURE).as_posix()
+        if sname not in stderr:
+            fail(f"TOT: {sname} was skipped silently on stderr")
+    if "edge dropped" not in stderr:
+        fail("TOT: expected 'edge dropped' log line for alpha's external 'os' import")
+    ok(f"TOT: {actual} entities from {expected} parseable .py + {len(skipped)} skipped SyntaxError lines")
+
+
+def run_and_fingerprint() -> str:
+    proc = subprocess.run(
+        [sys.executable, str(PROJECTION), "--json", str(FIXTURE)],
+        capture_output=True, check=True, text=True,
+    )
+    first = proc.stdout  # already sorted canonical JSON
+    import hashlib
+    return hashlib.sha256(first.encode()).hexdigest()
+
+
+def test_determinism() -> None:
+    # First run: capture stdout, compute fingerprint
+    proc1 = subprocess.run(
+        [sys.executable, str(PROJECTION), "--json", str(FIXTURE)],
+        capture_output=True, check=True, text=True,
+    )
+    first = proc1.stdout  # already sorted canonical JSON
+    # Second run: re-execute from scratch
+    proc2 = subprocess.run(
+        [sys.executable, str(PROJECTION), "--json", str(FIXTURE)],
+        capture_output=True, check=True, text=True,
+    )
+    second = proc2.stdout
+    if first != second:
+        fail("DET: same source -> different canonical JSON (non-deterministic output)")
+    fp = hashlib.sha256(first.encode()).hexdigest()
+    ok(f"DET: two runs -> byte-identical (fp={fp[:16]}...)")
+
+
+def test_idempotency() -> None:
+    fps = set()
+    for _ in range(5):
+        fps.add(run_and_fingerprint())
+    if len(fps) != 1:
+        fail(f"IDP: 5 runs produced {len(fps)} distinct fingerprints: {fps}")
+    ok(f"IDP: 5 consecutive runs -> 1 fingerprint (fp={next(iter(fps))[:16]}...)")
+
+
+def test_reference_closure(entities: list[dict]) -> None:
+    emitted = {e["metadata"]["name"] for e in entities}
+    dangling: list[str] = []
+    for e in entities:
+        for dep in e["spec"]["dependsOn"]:
+            if not dep.startswith("component:default/"):
+                dangling.append(f"{e['metadata']['name']}: bad prefix {dep}")
+                continue
+            target = dep.split("/", 1)[1]
+            if target not in emitted:
+                dangling.append(f"{e['metadata']['name']} -> {target}")
+    if dangling:
+        fail(f"REF: dangling dependsOn in projection: {dangling}")
+    ok(f"REF: all {sum(len(e['spec']['dependsOn']) for e in entities)} dependsOn refs resolve within the {len(emitted)}-entity projection")
+
+
+def test_schema_validity(entities: list[dict]) -> None:
+    for e in entities:
+        if e.get("apiVersion") != "backstage.io/v1alpha1":
+            fail(f"SCH: {e.get('metadata', {}).get('name')}: bad apiVersion")
+        if e.get("kind") != "Component":
+            fail(f"SCH: {e.get('metadata', {}).get('name')}: bad kind")
+        md = e.get("metadata") or {}
+        spec = e.get("spec") or {}
+        if not REQUIRED_METADATA.issubset(md):
+            fail(f"SCH: {md.get('name')}: missing meta keys {REQUIRED_METADATA - set(md)}")
+        if not REQUIRED_SPEC.issubset(spec):
+            fail(f"SCH: {md.get('name')}: missing spec keys {REQUIRED_SPEC - set(spec)}")
+        if not NAME_RE.match(md["name"]):
+            fail(f"SCH: {md['name']}: violates Backstage name grammar")
+        if len(md["name"]) > 63:
+            fail(f"SCH: {md['name']}: name exceeds 63 chars")
+        if spec["lifecycle"] not in LIFECYCLE_VALUES:
+            fail(f"SCH: {md['name']}: lifecycle {spec['lifecycle']!r} not in {LIFECYCLE_VALUES}")
+    ok(f"SCH: {len(entities)} entities match the Backstage Component schema subset")
+
+
+def main() -> int:
+    if not FIXTURE.is_dir():
+        fail(f"fixture missing: {FIXTURE}")
+    entities, stderr = run_projection(FIXTURE)
+    test_totality(entities, stderr)
+    test_determinism()
+    test_idempotency()
+    test_reference_closure(entities)
+    test_schema_validity(entities)
+    print("ALL PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

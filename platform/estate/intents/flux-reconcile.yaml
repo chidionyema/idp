@@ -1,0 +1,12 @@
+name: flux-reconcile
+description: >
+  Force Flux to reconcile a Kustomization or HelmRelease.
+args:
+  kind: { type: string, help: "kustomization or helmrelease" }
+  name: { type: string, help: "Resource name" }
+  namespace: { type: string, default: "flux-system", help: "Namespace" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      flux reconcile {{kind}} {{name}} -n {{namespace}} --with-source 2>&1

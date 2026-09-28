@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# must be REFUSED by bin/migration-gate: every apply adds a resource.
+f="${DAGSTER_HOME:-/tmp}/counter"; mkdir -p "$(dirname "$f")"
+case "$1" in
+  can_apply) exit 0 ;;
+  apply) n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f" ;;
+  healthcheck) exit 0 ;;
+  rollback) rm -f "$f" ;;
+  state) printf '{"dagster_yaml_sha": null, "resources": %s}\n' "$(cat "$f" 2>/dev/null || echo 0)" ;;
+esac

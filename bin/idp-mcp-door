@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+"""idp-mcp-door — prove the estate's one MCP door accepts a real call, and name why when it does not.
+
+WHY THIS EXISTS (measured 2026-09-13). The gateway in front of the estate's MCP servers is the
+single door every agent's tool call passes through (docs/decisions/0006). It looked broken: 24 hours
+of logs held three requests and every one was a 401. The gateway was fine, the key was fine, and the
+callers were sending the key in the wrong header. A door that only ever answers 401 is
+indistinguishable from a door that is down, and nothing in this repository could tell the two apart
+-- because nothing made a request.
+
+WHAT IT DOES. Makes one real tools/list call to a route, with the credential the route expects, and
+reports the answer. It is a probe, not a test double: it goes through the same Service and the same
+policies a real agent does.
+
+THE HEADER IS THE WHOLE POINT. This gateway's apiKey policy reads `Authorization: Bearer <key>`.
+`x-api-key` -- the spelling nearly every MCP client and the estate's own documentation use -- is
+rejected with `reason=APIKeyAuth` and no indication that the header, not the key, is wrong. This
+tool sends Authorization and prints which header it used, so the next person does not spend an
+evening on it.
+
+Usage:
+    python3 bin/idp-mcp-door --route estate      # needs MCP_GATEWAY_KEY in the environment
+    python3 bin/idp-mcp-door --url http://host:3000/estate/mcp
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+
+ROUTES = {
+    "estate": "http://agentgateway.mcp.svc.cluster.local:3000/estate/mcp",
+    "github": "http://agentgateway.mcp.svc.cluster.local:3000/github/mcp",
+}
+
+
+def call(url: str, key: str, timeout: float = 10.0) -> tuple[int, str]:
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).encode()
+    req = urllib.request.Request(
+        url,
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+            # The header this gateway reads. See the module docstring.
+            "Authorization": f"Bearer {key}",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode(errors="replace")
+    except Exception as exc:  # noqa: BLE001 - a door that cannot be reached is the report
+        return 0, f"unreachable: {exc}"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--route", choices=sorted(ROUTES), default="estate")
+    ap.add_argument("--url", default=None, help="override the route's URL")
+    args = ap.parse_args(argv[1:])
+
+    url = args.url or ROUTES[args.route]
+    key = os.environ.get("MCP_GATEWAY_KEY", "")
+    if not key:
+        print("BLIND  mcp-door MCP_GATEWAY_KEY is unset; vault entry mcp-gateway holds it")
+        return 2
+
+    status, body = call(url, key)
+    if status == 401:
+        print(f"FAIL  mcp-door {url} answered 401 with Authorization: Bearer <key>. "
+              f"The key is the one the config's keyHash was built from, so a 401 here means the "
+              f"gateway is rejecting the header, not the value.")
+        return 1
+    if status != 200:
+        print(f"FAIL  mcp-door {url} answered {status}: {body[:200]}")
+        return 1
+
+    # THE BODY IS SSE, not JSON. The gateway answers `text/event-stream` with the JSON-RPC payload
+    # on a `data:` line -- measured 2026-09-13, content-type text/event-stream, body beginning
+    # `event: message\ndata: {...}`. Parsing the raw body as JSON fails on every successful call,
+    # which is the shape of bug this whole script exists to stop repeating.
+    payload = body
+    for line in body.splitlines():
+        if line.startswith("data:"):
+            payload = line[len("data:"):].strip()
+            break
+    try:
+        names = sorted({m["name"] for m in json.loads(payload, strict=False).get("result", {})
+                        .get("tools", [])})
+    except Exception:  # noqa: BLE001 - a 200 that is not tools/list is still a served door
+        names = []
+    print(f"ok    mcp-door {url} answered 200 with {len(names)} tool(s)"
+          + (f": {', '.join(names[:8])}" if names else ""))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -1,0 +1,98 @@
+# The crew#191 fence for this namespace -- the both-ways `default-deny-all` and the
+# `allow-dns-egress` exception -- is NOT here. It lives in
+# platform/ns-fences/network/otto-golden.yaml, with every other namespace's, because that is the
+# deck bin/ns-fence-gate grades and one object may have one owner.
+#
+# Until 2026-09-07 it was in both files, and two Flux Kustomizations reapplied it at each
+# other every ten minutes. Each apply rewrote the object's
+# `kustomize.toolkit.fluxcd.io/name` label to its own name, so each one was a real change
+# and each emitted a `NetworkPolicy/otto-golden/... configured` event. Four objects
+# (default-deny-all and allow-dns-egress, in otto-gateway and otto-golden) were 80 of the
+# 112 Flux events an hour reaching GitHub Actions, and the specs were byte-identical the
+# whole time -- the churn was the ownership label, not the policy.
+#
+# What stays in this file is what is specific to this workload: the holes it needs.
+# The shared Traefik gateway (namespace `edge`) is what an HTTPRoute forwards through; without
+# this, Telegram's POST to /telegram-webhook and any GET /healthz probe from the edge would
+# arrive at a pod that drops every ingress packet by default.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-from-edge
+  namespace: otto-golden
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: edge
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# LAW 50: every workload emits to the central collector. signoz-otel-collector lives in the
+# observability namespace; OTEL_EXPORTER_OTLP_ENDPOINT in deployment.yaml points at it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-observability
+  namespace: otto-golden
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - protocol: TCP
+          port: 4318
+---
+# The Telegram Bot API itself (api.telegram.org and friends) has no stable, publishable IP
+# range to name here, so this is scoped by port, not by destination, and it deliberately
+# excludes the three private ranges: a compromised pod in this namespace can still reach the
+# public internet on 443 (which is the point -- Telegram calls back), but not another
+# namespace's ClusterIP or a node's internal address by guessing it (that lateral path is
+# exactly what crew#191 measured: a pod reaching another pod's IP with no credential).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-internet-https
+  namespace: otto-golden
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# The estate's memory (platform/hindsight): one bank on the one estate Postgres. Without this
+# rule the answering lane's recall and retain calls are refused by the fence and the door
+# answers with no memory at all -- which is what it did from 2026-09-03 until this row landed.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-memory
+  namespace: otto-golden
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: hindsight
+      ports:
+        - protocol: TCP
+          port: 8888

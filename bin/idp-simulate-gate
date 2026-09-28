@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""bin/idp-simulate-gate — no state-changing estate MCP tool without a simulate twin (MUM-288).
+
+Board row MUM-288, `docs/specs/2026-09-08-estate-world-model-simulate-before-execute.md`, "Done,
+in commands": a rules row that refuses a state-changing MCP tool that has no simulate twin. ADR
+0006 said every state-changing tool is two calls, propose then execute; nothing enforced it until
+the estate MCP server registered `execute_change`) with its `simulate_change` twin
+(`mcp/plugins/estate_simulate.py`). This gate turns that agreement into a repo law both ways, so a
+future `mcp/plugins/*.py` that registers a mutating execute verb without a propose twin under the
+same module is refused in the pull request.
+
+What counts as the mutating verb: a datasette `@mcp.tool()` whose registered name is `execute_*`
+(or spins from an `execute` action word in : the tool is the door that changes the world). The
+twin is a `simulate_*` tool in the same module. `@mcp.tool()` names are read from the source, never
+by importing (the estate's CI venv has no datasette): the decorator form `async def <name>(...)`
+directly under an `@mcp.tool()`.
+
+Usage:
+    IDP_SIMULATE_ROOT=<tree> bin/idp-simulate-gate          # grade a tree (tests, pull requests)
+    bin/idp-simulate-gate                                   # live: grade this repository
+
+Exit 0 and print `ok` when every mutating tool has a twin; print each offender and exit 1 when one
+does not; exit 2 BLIND when the tree has no mcp/plugins to grade.
+
+The repository is graded clean today: the estate MCP server's mutated-door already ships with its
+simulate twin. The fixtures under tests/fixtures/simulate-grade prove the gate refuses the missing
+twin and passes the twin.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import sys
+from pathlib import Path
+
+# A tool name is read from the def directly under an @mcp.tool() decorator.
+TOOL_DEF = re.compile(r"^\s*@mcp\.tool\(\)\s*$", re.M)
+DEF_NAME = re.compile(r"^\s*async\s+def\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(")
+
+
+def tree_plugins(root: Path) -> list[Path]:
+    plugins = root / "mcp" / "plugins"
+    if not plugins.is_dir():
+        return []
+    return sorted(p for p in plugins.glob("*.py") if not p.name.startswith("__"))
+
+
+def registered_tools(source: str) -> list[str]:
+    """Every `@mcp.tool()`-decorated function name in one plugin file, in order."""
+    names: list[str] = []
+    pos = 0
+    while True:
+        start = TOOL_DEF.search(source, pos)
+        if start is None:
+            break
+        after = source[start.end():]
+        m = DEF_NAME.match(after)
+        if m:
+            names.append(m.group(1))
+        pos = start.end()
+    return names
+
+
+def verdict(root: Path) -> tuple[int, list[str]]:
+    """(exit_code, lines). 0 clean; 1 offenders; 2 BLIND when nothing to grade."""
+    plugins = tree_plugins(root)
+    if not plugins:
+        return 2, ["BLIND: no mcp/plugins to grade under " + str(root)]
+    out: list[str] = []
+    offenders: list[str] = []
+    for plugin in plugins:
+        try:
+            source = plugin.read_text(encoding="utf-8")
+        except OSError as exc:
+            return 2, [f"BLIND: cannot read {plugin}: {exc}"]
+        tools = registered_tools(source)
+        executors = [t for t in tools if t.startswith("execute_") or t.startswith("exec_")]
+        simulates = [t for t in tools if t.startswith("simulate_")]
+        for name in executors:
+            # The twin must propose the world before the act: any simulate tool satisfies the
+            # module, but the identity is best-effort by stem (execute_change <-> simulate_change).
+            if name.endswith("change") and not any(s.endswith("change") for s in simulates):
+                offenders.append(f"{plugin.relative_to(root)} registers {name} with no "
+                                 f"simulate_*change twin ({', '.join(simulates) or 'none'})")
+            elif not simulates:
+                offenders.append(
+                    f"{plugin.relative_to(root)} registers a mutating {name} with no simulate_* twin"
+                )
+    if offenders:
+        out += offenders
+        out.append(f"FAIL    simulate-grade  {len(offenders)} mutating MCP tool(s) without a "
+                   f"simulate twin (MUM-288, ADR 0006)")
+        return 1, out
+    out.append(f"ok    simulate-grade  every mutating estate MCP tool in {plugins[0].parent.name} "
+               f"ships a simulate twin (MUM-288)")
+    return 0, out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("root", nargs="?", default=None)
+    a = ap.parse_args()
+    root = Path(a.root) if a.root else Path(__file__).resolve().parents[1]
+    code, lines = verdict(root)
+    for line in lines:
+        print(line)
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

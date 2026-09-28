@@ -1,0 +1,125 @@
+# The free local lane Pillar 1 of the founder's routing sketch calls for: a tiny
+# quantized model that absorbs deterministic, high-volume calls (formatting, tool-call
+# routing, classification) at zero marginal cost, so those calls stop paying groq/minimax
+# rates. Until now `llm/config.yaml`'s three ollama/* entries pointed at
+# http://host.docker.internal:11434 -- the founder's own Mac, which he killed on
+# 2026-09-10 ("no i killed ollama because machine is slow", platform/otto-gateway/
+# three-homes.yaml:28-29). Every call routed there has been silently falling through
+# the fallback chain to a paid model since. This runs the same free floor in-cluster,
+# on the always-free Ampere pool, instead of a laptop that can be turned off.
+#
+# Model is 1.5B, not the 7B llm/config.yaml names, because the whole always-free A1
+# allowance is 2 OCPU / 12 GB (docs/reference/oci-tenancy.md:18), shared with litellm
+# (2 replicas), redis, postgres, temporal-worker, langfuse and signoz already running
+# in this cluster -- there is no room for a 7B model's working set here. 1.5B is the
+# size Pillar 1 itself named ("Qwen-2.5-Coder 1.5B") for exactly this gatekeeper role.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ollama-models
+  namespace: llm
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 5Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ollama
+  namespace: llm
+  labels: { app.kubernetes.io/name: ollama, app.kubernetes.io/part-of: idp }
+spec:
+  replicas: 1   # local free floor, not a load-bearing tier -- a fallback chain behind it
+                # already exists in llm/config.yaml if this pod is down
+  strategy: { type: Recreate }   # the PVC is ReadWriteOnce; a rolling second pod can't mount it
+  selector:
+    matchLabels: { app.kubernetes.io/name: ollama }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: ollama, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      initContainers:
+        # ollama has no "pull on deploy" step of its own; a pod that only ran `ollama
+        # serve` would lazy-pull the model on the FIRST real request, off the litellm
+        # 300s timeout budget, unpredictably. Pull once here so the pod is only Ready
+        # once the model is actually on disk.
+        - name: pull-model
+          image: docker.io/ollama/ollama:0.3.14
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              ollama serve &
+              pid=$!
+              for i in $(seq 1 60); do
+                wget -q -O- http://127.0.0.1:11434/ >/dev/null 2>&1 && break
+                sleep 1
+              done
+              ollama pull qwen2.5-coder:1.5b
+              kill "$pid"
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OLLAMA_MODELS, value: /models }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: 1500m, memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+      containers:
+        - name: ollama
+          image: docker.io/ollama/ollama:0.3.14
+          ports:
+            - { name: http, containerPort: 11434 }
+          env:
+            - { name: HOME, value: /tmp }
+            - { name: OLLAMA_MODELS, value: /models }
+            - { name: OLLAMA_KEEP_ALIVE, value: 24h }   # crew#284 CP2: cold load measured 30.8s, warm 16.9s
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
+          volumeMounts:
+            - { name: models, mountPath: /models }
+            - { name: tmp, mountPath: /tmp }
+          resources:
+            # 1.5B q4 weights are ~1GB resident; 2Gi limit leaves headroom for context.
+            requests: { cpu: 200m, memory: 768Mi }
+            limits: { cpu: 1500m, memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: models
+          persistentVolumeClaim: { claimName: ollama-models }
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  namespace: llm
+  labels: { app.kubernetes.io/name: ollama, backstage.io/kubernetes-id: founder-model-router }
+spec:
+  selector: { app.kubernetes.io/name: ollama }
+  ports:
+    - { name: http, port: 11434, targetPort: http }

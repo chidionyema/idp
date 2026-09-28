@@ -1,0 +1,5 @@
+.github/workflows/oke-check.yml
+docs/evidence/pr-493/20260827T212331Z-1.png
+platform/hermes-agent/gateway.yaml
+tests/test_hermes_agent_row.py
+tests/test_incident_crew516_cp4_gateway_probe_reaches_a2a_and_hermes_reads_the_allowlist.py

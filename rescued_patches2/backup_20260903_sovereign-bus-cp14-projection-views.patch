@@ -1,0 +1,435 @@
+diff --git a/docs/demo/sb.md b/docs/demo/sb.md
+index 3dce07d38..01fdcff56 100644
+--- a/docs/demo/sb.md
++++ b/docs/demo/sb.md
+@@ -77,3 +77,22 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
+     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
+     $ cat $ESTATE_HOME/alerts/inbox.jsonl
+     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
++
++## Phase 2 — projection views (cp14)
++
++`sb rebuild` deletes nothing itself but always replays the whole DAG from genesis and rewrites the projection store -- a plain JSON file keyed by table then rowid, `projection.store_path`. Every read the store answers came from the DAG, never from a copy trusted to survive on its own. Measured 2026-08-25 on a disposable estate, two rows inserted and drained:
++
++    $ bin/sb rebuild --by founder --json
++    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
++    $ rm $ESTATE_HOME/sovereign/projection.json && bin/sb rebuild --by founder --json
++    {"root": "0f49efca8af8c8992712f0b135664864630cbc7ba7afc1e9387d84c3970473f0", "rows": 2, "tables": ["episodes"], "verified": true}
++
++Same root both times -- deleting and rebuilding the store is deterministic, exactly "the views match the root hash" the feature file names.
++
++The boot check (`sb up`, before temporal/the worker start) compares the store's own recorded root against the current DAG head and rebuilds automatically on any mismatch, writing a `"[✓] REBUILD | root:<hash>"` receipt:
++
++    $ # a row lands in the DAG without a rebuild
++    read before boot: None
++    $ # ensure_fresh() is what `sb up` calls at boot
++    ensure_fresh (boot check): {'root': '3c706a84…', 'verified': True, 'tables': ['episodes'], 'rows': 3, 'rebuilt': True}
++    read after boot: {'id': 'c', 'lane': 'ops', 'note': 'n3'}
+diff --git a/docs/onboarding/sb.md b/docs/onboarding/sb.md
+index fff19589d..c7bb6b0f2 100644
+--- a/docs/onboarding/sb.md
++++ b/docs/onboarding/sb.md
+@@ -20,6 +20,7 @@
+ - `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
+ - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
+ - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
++- `bin/sb rebuild --by <who> --json` replays the whole DAG from genesis and rewrites the projection store (`projection.store_path`); `sb up` runs the same check at boot and rebuilds automatically whenever the store's own root has fallen behind the current DAG head.
+ 
+ ## When it breaks
+ 
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index 75c76dd5d..2a076b1ff 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -115,6 +115,17 @@ def cmd_consensus(args: argparse.Namespace) -> int:
+     return 0
+ 
+ 
++def cmd_rebuild(args: argparse.Namespace) -> int:
++    """cp14: `sb rebuild --json` replays the whole DAG from genesis and
++    rewrites the projection store; verified=False means the DAG chain
++    itself did not check out and the store on disk was left untouched."""
++    from sovereign.engine import projection
++
++    result = projection.rebuild(by=args.by)
++    _emit(result, args.json)
++    return 0 if result["verified"] else 1
++
++
+ def cmd_list(args: argparse.Namespace) -> int:
+     res = asyncio.run(engine_client.list_sessions())
+     _emit(res, args.json)
+@@ -231,7 +242,17 @@ def _spawn(cmd: list[str], log_path: Path, pid_path: Path) -> int:
+ 
+ def cmd_up(args: argparse.Namespace) -> int:
+     config.ensure_dirs()
+-    result = {"temporal": "already-running", "worker": "already-running"}
++
++    # cp14 boot check: "when the kernel boots and the view hash differs
++    # from heads/main, it rebuilds automatically and writes a receipt."
++    # Runs before temporal/the worker start, since neither depends on the
++    # projection store and a stale store should never be served even for
++    # the brief window before the worker comes up.
++    from sovereign.engine import projection
++
++    boot_check = projection.ensure_fresh(by="boot")
++
++    result = {"temporal": "already-running", "worker": "already-running", "projection": boot_check}
+ 
+     if _alive(_read_pid(config.TEMPORAL_PID_FILE)) or _port_open(
+         config.TEMPORAL_ADDRESS, config.CLI_PORT_PROBE_TIMEOUT_S
+@@ -384,6 +405,11 @@ def main(argv: list[str] | None = None) -> int:
+     _add_json(p)
+     p.set_defaults(func=cmd_consensus)
+ 
++    p = sub.add_parser("rebuild", help="cp14 -- replay the DAG from genesis and rewrite the projection store")
++    p.add_argument("--by", default="operator")
++    _add_json(p)
++    p.set_defaults(func=cmd_rebuild)
++
+     p = sub.add_parser("list", help="list sessions")
+     _add_json(p)
+     p.set_defaults(func=cmd_list)
+diff --git a/sovereign/config.py b/sovereign/config.py
+index bfdbadd00..33c2461a9 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -198,6 +198,8 @@ KEYS: dict[str, KeySpec] = {
+     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
+     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
+     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
++    "projection.store_path": KeySpec(str(_estate_home() / "sovereign" / "projection.json"), "path", "SB_PROJECTION_STORE_PATH", "cp14: the hot store rebuilt from the DAG, one JSON file keyed by table then rowid"),
++    "rebuild.receipt_template": KeySpec("[✓] REBUILD | root:{root}", "str", "SB_REBUILD_RECEIPT_TEMPLATE", "cp14 receipt line, exact format from features/sovereign-bus/cp14_projection_views.feature"),
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -490,6 +492,8 @@ STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].v
+ CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
+ CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
+ LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
++PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
++REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
+ 
+ TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
+ WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"
+diff --git a/sovereign/engine/projection.py b/sovereign/engine/projection.py
+new file mode 100644
+index 000000000..6b804f92a
+--- /dev/null
++++ b/sovereign/engine/projection.py
+@@ -0,0 +1,154 @@
++"""Projection views (cp14): a rebuildable hot store compiled entirely from
++cp8's immutable Merkle DAG, never trusted to survive on its own.
++
++`rebuild()` deletes nothing itself -- a caller (or `bin/sb rebuild`) may
++have already deleted the store -- but always starts from an empty state
++and replays every DAG node from genesis to the current head
++(shadow_root's head), oldest first, applying each INSERT/UPDATE/DELETE in
++order. The result is written back to disk keyed by table and rowid, along
++with the root hash the replay reached, so a later caller can tell in one
++comparison whether the store is still fresh (`ensure_fresh()`) without
++re-walking the whole DAG.
++
++Test isolation follows the one pattern the rest of sovereign/engine/
++already uses (sovereign/engine/test_flip.py, sovereign/sidecar/
++test_sidecar.py): patch.object the relevant config.* paths, never a
++parallel set of override parameters.
++"""
++from __future__ import annotations
++
++import hashlib
++import json
++import os
++from pathlib import Path
++from typing import Any
++
++from sovereign import config
++from sovereign.engine import receipts as receipts_mod
++from sovereign.engine import shadow_root
++
++
++def store_path() -> Path:
++    return config.PROJECTION_STORE_PATH
++
++
++def _walk_nodes_oldest_first(dag_dir: Path, root: str | None) -> list[dict[str, Any]] | None:
++    """Mirrors shadow_root.verify()'s backward walk (head to genesis) but
++    collects and returns every node body, oldest first, for replay.
++    Returns None (fail closed, never a partial or wrong-order replay) on
++    any broken link, missing file or cycle -- the exact conditions
++    verify() itself already treats as verified=False."""
++    bodies: list[dict[str, Any]] = []
++    node_hash = root
++    seen: set[str] = set()
++    while node_hash and node_hash != shadow_root.GENESIS_NODE_HASH:
++        if node_hash in seen:
++            return None
++        seen.add(node_hash)
++        node_path = dag_dir / f"{node_hash}.json"
++        if not node_path.exists():
++            return None
++        try:
++            body = json.loads(node_path.read_text())
++        except (OSError, json.JSONDecodeError):
++            return None
++        if hashlib.sha256(config.canonical_json(body)).hexdigest() != node_hash:
++            return None
++        bodies.append(body)
++        node_hash = body.get("prev_node_hash", shadow_root.GENESIS_NODE_HASH)
++    bodies.reverse()
++    return bodies
++
++
++def _apply(state: dict[str, dict[str, Any]], body: dict[str, Any]) -> None:
++    table = body["table"]
++    rowid = str(body["rowid"])
++    tbl_state = state.setdefault(table, {})
++    if body["op"] == "DELETE":
++        tbl_state.pop(rowid, None)
++    else:
++        tbl_state[rowid] = body.get("row")
++
++
++def rebuild(by: str = "boot") -> dict[str, Any]:
++    """Replays the whole DAG from genesis and writes the resulting
++    projection to disk. Returns {root, verified, tables, rows}. verified
++    is False (and the store on disk is left untouched) the moment
++    _walk_nodes_oldest_first fails closed -- a rebuild never overwrites a
++    working store with a broken one."""
++    root_state = shadow_root.verify()
++    root = root_state["root"]
++
++    state: dict[str, dict[str, Any]] = {}
++    verified = root_state["verified"]
++    if root is not None and verified:
++        bodies = _walk_nodes_oldest_first(config.SIDECAR_DAG_DIR, root)
++        if bodies is None:
++            verified = False
++        else:
++            for body in bodies:
++                _apply(state, body)
++
++    result = {
++        "root": root,
++        "verified": verified,
++        "tables": sorted(state.keys()),
++        "rows": sum(len(t) for t in state.values()),
++    }
++    if not result["verified"]:
++        return result
++
++    path = store_path()
++    path.parent.mkdir(parents=True, exist_ok=True)
++    tmp = path.with_suffix(path.suffix + ".tmp")
++    tmp.write_text(json.dumps({"root": root, "tables": state}, sort_keys=True))
++    os.replace(tmp, path)
++
++    text = config.REBUILD_RECEIPT_TEMPLATE.format(root=root)
++    receipts_mod.append({
++        "session_id": "-", "kind": "rebuild", "by": by, "text": text,
++        "step": 0, "status": "rebuilt", "task": "", "runner": "",
++        "root": root, "rows": result["rows"],
++    })
++    return result
++
++
++def current_view_root() -> str | None:
++    path = store_path()
++    if not path.exists():
++        return None
++    try:
++        return json.loads(path.read_text()).get("root")
++    except (OSError, json.JSONDecodeError):
++        return None
++
++
++def ensure_fresh(by: str = "boot") -> dict[str, Any]:
++    """The boot check (cp14): compares the projection store's own
++    recorded root against the current shadow-root head. Any mismatch --
++    a deleted store, a stale one, or a head that has moved since the
++    store was last built -- triggers rebuild() and returns its result
++    with rebuilt=True; an already-fresh store returns rebuilt=False
++    without touching the DAG at all."""
++    current_root = shadow_root.verify()["root"]
++    stored_root = current_view_root()
++    if stored_root is not None and stored_root == current_root:
++        return {"root": current_root, "rebuilt": False}
++    result = rebuild(by=by)
++    result["rebuilt"] = True
++    return result
++
++
++def read(table: str, rowid: Any) -> dict[str, Any] | None:
++    """Reads one row from the projection store as it stands -- never
++    triggers a rebuild itself (call ensure_fresh() first if freshness
++    matters to the caller); a stale read is a caller decision, not
++    something this function should hide."""
++    path = store_path()
++    if not path.exists():
++        return None
++    try:
++        data = json.loads(path.read_text())
++    except (OSError, json.JSONDecodeError):
++        return None
++    return data.get("tables", {}).get(table, {}).get(str(rowid))
+diff --git a/sovereign/engine/test_projection.py b/sovereign/engine/test_projection.py
+new file mode 100644
+index 000000000..8f12d0905
+--- /dev/null
++++ b/sovereign/engine/test_projection.py
+@@ -0,0 +1,155 @@
++"""unittest for sovereign/engine/projection.py (cp14). Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.engine.test_projection -v
++
++Never opens maestro's real database -- every test builds its own
++disposable sqlite3 file and points config.SIDECAR_DAG_DIR /
++config.SHADOW_HEADS_DIR / config.PROJECTION_STORE_PATH at a temp dir,
++same pattern as sovereign/sidecar/test_sidecar.py and
++sovereign/engine/test_flip.py.
++"""
++from __future__ import annotations
++
++import random
++import sqlite3
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from sovereign import config
++from sovereign.engine import projection, receipts, shadow_root
++from sovereign.sidecar import core as sidecar_core
++
++_FIXED_KEY = b"\x0e" * 32
++
++
++class ProjectionTestBase(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        root = Path(self._tmp.name)
++        for name, val in (
++            ("SB_RECEIPTS", root / "receipts.jsonl"),
++            ("RECEIPTS_HEAD", root / "receipts.head"),
++            ("SIDECAR_DAG_DIR", root / "dag"),
++            ("SHADOW_HEADS_DIR", root / "heads"),
++            ("PROJECTION_STORE_PATH", root / "projection.json"),
++        ):
++            p = patch.object(config, name, val)
++            p.start()
++            self.addCleanup(p.stop)
++        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
++        p.start()
++        self.addCleanup(p.stop)
++
++        self.db_path = root / "legacy.db"
++        self.conn = sqlite3.connect(str(self.db_path))
++        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
++        self.conn.commit()
++        self.addCleanup(self.conn.close)
++        # no dag_dir override -- relies on the patched config.SIDECAR_DAG_DIR
++        # above, so this sidecar and projection.rebuild() agree on where
++        # the DAG nodes live, exactly the way sovereign.sidecar.core's
++        # own default (dag_dir or config.SIDECAR_DAG_DIR) already works.
++        self.sc = sidecar_core.attach(self.conn, "episodes")
++
++    def _insert(self, row_id: str, lane: str, note: str) -> None:
++        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, ?, ?)", (row_id, lane, note))
++        self.conn.commit()
++
++    def _update(self, row_id: str, note: str) -> None:
++        self.conn.execute("UPDATE episodes SET note = ? WHERE id = ?", (note, row_id))
++        self.conn.commit()
++
++    def _delete(self, row_id: str) -> None:
++        self.conn.execute("DELETE FROM episodes WHERE id = ?", (row_id,))
++        self.conn.commit()
++
++    def _legacy_rows(self) -> dict[str, dict]:
++        rows = self.conn.execute("SELECT rowid, id, lane, note FROM episodes").fetchall()
++        return {str(r[0]): {"id": r[1], "lane": r[2], "note": r[3]} for r in rows}
++
++
++class ProjectionPropertyTest(ProjectionTestBase):
++    def test_property_rebuild_from_scratch_matches_legacy_state_for_any_op_sequence(self) -> None:
++        rng = random.Random(1787631900)
++        for trial in range(20):
++            row_id = f"r{trial}"
++            self._insert(row_id, "ops", f"note-{trial}")
++            if rng.random() < 0.5:
++                self._update(row_id, f"note-{trial}-edited")
++            if rng.random() < 0.3:
++                self._delete(row_id)
++            self.sc.drain()
++
++        result = projection.rebuild(by="test")
++        self.assertTrue(result["verified"], "a clean DAG chain must always verify")
++        self.assertEqual(result["root"], shadow_root.verify()["root"])
++
++        legacy = self._legacy_rows()
++        for rowid, row in legacy.items():
++            self.assertEqual(projection.read("episodes", rowid), row)
++
++        last = receipts.read_all()[-1]
++        self.assertEqual(last["kind"], "rebuild")
++        self.assertEqual(last["text"], config.REBUILD_RECEIPT_TEMPLATE.format(root=result["root"]))
++
++    def test_property_deleted_store_rebuilds_to_the_exact_same_state(self) -> None:
++        for row_id, lane, note in (("a", "ops", "n1"), ("b", "ops", "n2")):
++            self._insert(row_id, lane, note)
++        self._delete("a")
++        self.sc.drain()
++
++        first = projection.rebuild(by="test")
++        before_text = config.PROJECTION_STORE_PATH.read_text()
++
++        config.PROJECTION_STORE_PATH.unlink()
++        self.assertIsNone(projection.current_view_root())
++
++        second = projection.rebuild(by="test")
++        after_text = config.PROJECTION_STORE_PATH.read_text()
++
++        self.assertEqual(first["root"], second["root"])
++        self.assertEqual(before_text, after_text, "the views match the root hash: rebuild is deterministic")
++        legacy = self._legacy_rows()
++        for rowid, row in legacy.items():
++            self.assertEqual(projection.read("episodes", rowid), row, "every read answers as before")
++
++
++class ProjectionBootCheckTest(ProjectionTestBase):
++    def test_incident_cp14_boot_check_rebuilds_when_a_write_landed_after_the_last_rebuild(self) -> None:
++        """cp14's own safety bar: `sb up`'s boot check (ensure_fresh) must
++        detect that the DAG head moved since the projection store was last
++        built and rebuild before anything reads it -- if that comparison
++        were ever skipped or hardcoded, a session started after boot would
++        silently serve pre-boot state for a row that already landed."""
++        self._insert("seed", "ops", "n0")
++        self.sc.drain()
++        projection.rebuild(by="test")
++        self.assertEqual(projection.read("episodes", "1"), {"id": "seed", "lane": "ops", "note": "n0"})
++
++        # a write lands after the last rebuild -- exactly the boot
++        # scenario: something wrote to the DAG while the store was stale
++        self._insert("late", "ops", "n1")
++        self.sc.drain()
++
++        stale_read = projection.read("episodes", "2")
++        self.assertIsNone(stale_read, "precondition: the store has not been rebuilt yet")
++
++        boot_result = projection.ensure_fresh(by="boot")
++        self.assertTrue(boot_result["rebuilt"], "the head moved since the last rebuild")
++        self.assertEqual(projection.read("episodes", "2"), {"id": "late", "lane": "ops", "note": "n1"})
++
++    def test_ensure_fresh_is_a_noop_when_already_current(self) -> None:
++        self._insert("seed", "ops", "n0")
++        self.sc.drain()
++        projection.rebuild(by="test")
++        before = config.PROJECTION_STORE_PATH.read_text()
++
++        result = projection.ensure_fresh(by="boot")
++        self.assertFalse(result["rebuilt"])
++        self.assertEqual(config.PROJECTION_STORE_PATH.read_text(), before)
++
++
++if __name__ == "__main__":
++    unittest.main()

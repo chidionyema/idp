@@ -1,0 +1,7 @@
+backstage/app-config.container.yaml
+backstage/packages/backend/package.json
+backstage/packages/backend/src/index.ts
+backstage/yarn.lock
+docs/onboarding/catalogue-discovery.md
+mkdocs.yml
+tests/test_incident_crew480_catalogue_providers_configured.py

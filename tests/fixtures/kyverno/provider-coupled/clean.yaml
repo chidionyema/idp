@@ -1,0 +1,87 @@
+# The same shapes with nothing provider-specific, plus the declared boundary objects; all pass.
+apiVersion: v1
+kind: Service
+metadata:
+  name: plain-lb
+  namespace: apps
+  annotations:
+    availability.idp/tier: founder-facing
+spec:
+  type: LoadBalancer
+  ports: [{port: 80}]
+---
+# The one declared hole: the edge Service that clusters/oke/edge.yaml patches (provider-edge-exception.yaml).
+apiVersion: v1
+kind: Service
+metadata:
+  name: traefik
+  namespace: edge
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: lb
+spec:
+  type: LoadBalancer
+  ports: [{port: 443}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-on-default
+  namespace: apps
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db-on-default
+  namespace: apps
+spec:
+  serviceName: db
+  selector: {matchLabels: {app: db}}
+  template:
+    metadata: {labels: {app: db}}
+    spec:
+      containers: [{name: db, image: db:1}]
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: {requests: {storage: 1Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pod-with-spiffe
+  namespace: apps
+spec:
+  selector: {matchLabels: {app: x}}
+  template:
+    metadata: {labels: {app: x}}
+    spec:
+      containers: [{name: x, image: x:1}]
+      volumes:
+        - name: svid
+          csi:
+            driver: csi.spiffe.io
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: estate-vault
+  labels:
+    idp.platform/provider-door: "true"
+spec:
+  provider:
+    oracle:
+      vault: ocid1.vault.example
+      region: eu-example-1
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: ghcr-pull
+spec:
+  provider:
+    kubernetes:
+      remoteNamespace: flux-system

@@ -1,0 +1,316 @@
+diff --git a/docs/demo/sb.md b/docs/demo/sb.md
+index 3dce07d38..fa429ea80 100644
+--- a/docs/demo/sb.md
++++ b/docs/demo/sb.md
+@@ -77,3 +77,15 @@ A dual-read mismatch is an alert, never a freeze -- one `consensus_mismatch` lin
+     {"matches": 1, "mismatches": 1, "rate": 0.5, "reads": 2}
+     $ cat $ESTATE_HOME/alerts/inbox.jsonl
+     {"kind": "consensus_mismatch", "table": "episodes", "rowid": 2, "query": {"table": "episodes", "rowid": 2}, "legacy_hash": "69d8071…", "dag_hash": "bf81b47…", "ts": 1787631765.74}
++
++## Phase 2 — cross-stack root (cp15)
++
++`bin/sb root --json` now reports one composite root over four children -- `code_root` (`git rev-parse HEAD`), `db_root` (cp9's shadow root, unchanged), `policy_root` (the resolved `sovereign.attach` policy: destructive patterns, write-verb lists, quorum), `ai_policy_root` (the resolved `sovereign.trust` policy: backend, presence timeout) -- so a single number moves the moment any one of the four does. Measured 2026-08-25 on a disposable estate, two rows inserted and drained one at a time:
++
++    $ bin/sb root --json
++    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 1, "db_parent": "0000…", "db_root": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "04da929c9cc748fe9e1750c7b359a7b6272a43ff575cd45bd48a423b5afc94ad"}
++    $ # a second row drained, code/policy/ai_policy untouched
++    $ bin/sb root --json
++    {"ai_policy_root": "ebe0f3054e844927f6183fa11aa92fc782bf07ddcbf4e5110d61995eff381cd5", "code_root": "d78b7d58a379f82488ef0af2491fec03ad71025a", "db_nodes": 2, "db_parent": "b3449ed6bd317b5f1a8b4ff3dba073eaa9488369c77e57b60950543fdc3f4f68", "db_root": "bef2735bffd3ab589af9550c1289fbac088b06ae29bb528b173b8f50fc3adec1", "db_verified": true, "policy_root": "ef9ada93f556b351aab13d6d9c12e0e8e6d4082a63f58c9184d353de42a18eed", "root": "7688b96c2e4cf324dc991ae80b61bd45a1e95ea096a04be01aa7881d439e064f"}
++
++`code_root`, `policy_root` and `ai_policy_root` held identical across both calls; only `db_root` and the composite `root` moved -- proving the composite genuinely covers `db_root` rather than silently dropping it (`sovereign/engine/test_cross_stack.py::test_incident_cp15_composite_root_changes_when_db_root_changes`).
+diff --git a/docs/onboarding/sb.md b/docs/onboarding/sb.md
+index fff19589d..290358f4a 100644
+--- a/docs/onboarding/sb.md
++++ b/docs/onboarding/sb.md
+@@ -17,7 +17,7 @@
+ - `bin/sb attach <repo>` mounts any repository as an estate and scaffolds its `AGENTS.md`; `bin/sb status`, `bin/sb halt --all`.
+ - `bin/sb audit --verify` walks the signed receipt chain; `bin/sb episodes --kind stop` reads what happened.
+ - `bin/sb config --json`, `bin/sb config set <key> <value>`, `bin/sb config --lint` (must print 0).
+-- `bin/sb root --json` shows the shadow root (`.estate/heads/shadow_main`): the DAG node cp8's sidecar last wrote, and whether the chain from there to genesis still verifies.
++- `bin/sb root --json` shows the cross-stack composite root (cp15): `{root, code_root, db_root, policy_root, ai_policy_root}` plus cp9's own `db_nodes`/`db_parent`/`db_verified` diagnostics for the DAG chain from `.estate/heads/shadow_main`. `code_root` is `git rev-parse HEAD`; `policy_root`/`ai_policy_root` hash the resolved `sovereign.attach`/`sovereign.trust` config. The command exits 1 whenever `db_verified` is false.
+ - `sovereign.sidecar.dualread.read(conn, table, rowid)` runs a read against both the legacy DB and the DAG, records a `dualread` receipt, and returns the legacy answer; `dualread.max_overhead_ms` caps the added p95 cost.
+ - `bin/sb consensus --json` reports the running legacy/DAG match rate; a mismatch also lands in the cockpit Inbox (`/api/inbox`) as a `consensus_mismatch` alert -- it never blocks the read or stops a service.
+ 
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index 75c76dd5d..bced8d55a 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -96,14 +96,17 @@ def cmd_audit(args: argparse.Namespace) -> int:
+ 
+ 
+ def cmd_root(args: argparse.Namespace) -> int:
+-    """cp9: `sb root --json` reports {root, parent, nodes, verified} for
+-    .estate/heads/shadow_main -- the branch pointer cp8's sidecar advances
+-    once per write."""
+-    from sovereign.engine import shadow_root
+-
+-    res = shadow_root.verify()
++    """cp9/cp15: `sb root --json` reports the cross-stack composite root
++    -- {root, code_root, db_root, policy_root, ai_policy_root} -- plus
++    cp9's own DB-chain diagnostics (db_nodes, db_parent, db_verified).
++    db_root IS .estate/heads/shadow_main, the branch pointer cp8's
++    sidecar advances once per write; the other three children are cp15's
++    (git HEAD, the attach policy config, the trust/presence config)."""
++    from sovereign.engine import cross_stack
++
++    res = cross_stack.root()
+     _emit(res, args.json)
+-    return 0 if res.get("verified") else 1
++    return 0 if res.get("db_verified") else 1
+ 
+ 
+ def cmd_consensus(args: argparse.Namespace) -> int:
+diff --git a/sovereign/config.py b/sovereign/config.py
+index bfdbadd00..8ed9e7247 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -198,6 +198,7 @@ KEYS: dict[str, KeySpec] = {
+     "cli.exit_usage_error": KeySpec(2, "int", "SB_EXIT_USAGE_ERROR", "exit code for a refused command, e.g. missing budget"),
+     "client.query_timeout_s": KeySpec(5, "float", "SB_QUERY_TIMEOUT_S", "client-side timeout on a single workflow query, so one stuck session never hangs `sb list`"),
+     "log.bot_token_redact_pattern": KeySpec(r"bot\d+:[A-Za-z0-9_-]+", "str", None, "regex matching a Telegram bot token as it appears in a URL (LAW 21)"),
++    "cross_stack.git_timeout_s": KeySpec(5, "int", "SB_CROSS_STACK_GIT_TIMEOUT_S", "cp15: timeout for the `git rev-parse HEAD` subprocess call that produces code_root"),
+ }
+ 
+ # ---------------------------------------------------------------------------
+@@ -490,6 +491,7 @@ STEP_ACTIVITY_RETRY_MAX_ATTEMPTS: int = _R["step.activity_retry_max_attempts"].v
+ CLI_EXIT_USAGE_ERROR: int = _R["cli.exit_usage_error"].value
+ CLIENT_QUERY_TIMEOUT_S: float = _R["client.query_timeout_s"].value
+ LOG_BOT_TOKEN_REDACT_PATTERN: str = _R["log.bot_token_redact_pattern"].value
++CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
+ 
+ TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
+ WORKER_PID_FILE: Path = SOVEREIGN_HOME / "worker.pid"
+diff --git a/sovereign/engine/cross_stack.py b/sovereign/engine/cross_stack.py
+new file mode 100644
+index 000000000..8f470250a
+--- /dev/null
++++ b/sovereign/engine/cross_stack.py
+@@ -0,0 +1,96 @@
++"""Cross-stack root (cp15): one Merkle root over four children -- code,
++DB, the attach policy, and the AI trust/presence policy -- so a single
++number moves the moment any one of the four does, and `sb root --json`
++reports which child moved.
++
++Each child is a real, already-load-bearing piece of state, never a
++second copy invented for this checkpoint:
++
++- code_root: `git rev-parse HEAD`, the commit this checkout is built
++  from. Git's own commit graph already is a Merkle tree over every file
++  in the checkout (LAW 43: that mechanism is not reinvented here as a
++  second file-hash walk).
++- db_root: cp9's shadow root (sovereign.engine.shadow_root.verify()),
++  the Merkle root over every write cp8's sidecar has drained.
++- policy_root: sha256 over the resolved sovereign.attach policy config
++  (cp21's "conservative default policy" -- destructive-command
++  patterns, write/git-write verb lists, the approval quorum) -- the
++  config that decides which commands require a receipt or a quorum.
++- ai_policy_root: sha256 over the resolved sovereign.trust config --
++  which hardware-trust backend is pinned and what a founder-presence
++  check requires -- the policy governing what the AI may sign for
++  itself versus what needs the founder physically present.
++"""
++from __future__ import annotations
++
++import hashlib
++import subprocess
++from pathlib import Path
++from typing import Any
++
++from sovereign import config
++from sovereign.attach import config_keys as attach_ck
++from sovereign.engine import shadow_root
++from sovereign.trust import config_keys as trust_ck
++
++
++def code_root(repo_dir: Path | None = None) -> str | None:
++    """`git rev-parse HEAD` of the checkout this process runs from.
++    Returns None (never raises) outside a git checkout -- e.g. a
++    packaged deploy with no .git directory -- so a caller can tell a
++    missing code_root apart from one that legitimately changed."""
++    try:
++        proc = subprocess.run(
++            ["git", "rev-parse", "HEAD"],
++            cwd=str(repo_dir) if repo_dir else None,
++            capture_output=True, text=True, timeout=config.CROSS_STACK_GIT_TIMEOUT_S,
++        )
++    except (OSError, subprocess.SubprocessError):
++        return None
++    if proc.returncode != 0:
++        return None
++    sha = proc.stdout.strip()
++    return sha or None
++
++
++def policy_root() -> str:
++    body = {
++        "destructive_patterns": attach_ck.get("attach.destructive_patterns"),
++        "write_verbs": attach_ck.get("attach.write_verbs"),
++        "git_write_verbs": attach_ck.get("attach.git_write_verbs"),
++        "quorum": attach_ck.get("attach.quorum"),
++        "policy_mode": attach_ck.get("attach.policy_mode"),
++    }
++    return hashlib.sha256(config.canonical_json(body)).hexdigest()
++
++
++def ai_policy_root() -> str:
++    body = {
++        "backend": config.get("trust.backend").value,
++        "presence_timeout_s": trust_ck.get("trust.presence_timeout_s"),
++        "reason_default": trust_ck.get("trust.reason_default"),
++    }
++    return hashlib.sha256(config.canonical_json(body)).hexdigest()
++
++
++def root(repo_dir: Path | None = None) -> dict[str, Any]:
++    """The exact shape `bin/sb root --json` reports: the composite
++    "root" plus each of its four named children, so a caller can tell
++    which one moved without recomputing anything. db_nodes/db_parent/
++    db_verified are cp9's own diagnostic fields about the DB Merkle
++    chain's integrity, carried through unchanged."""
++    db_state = shadow_root.verify()
++    children = {
++        "code_root": code_root(repo_dir),
++        "db_root": db_state["root"],
++        "policy_root": policy_root(),
++        "ai_policy_root": ai_policy_root(),
++    }
++    composite = hashlib.sha256(config.canonical_json(children)).hexdigest()
++    return {
++        "root": composite,
++        **children,
++        "db_nodes": db_state["nodes"],
++        "db_parent": db_state["parent"],
++        "db_verified": db_state["verified"],
++    }
+diff --git a/sovereign/engine/test_cross_stack.py b/sovereign/engine/test_cross_stack.py
+new file mode 100644
+index 000000000..d3267c9b3
+--- /dev/null
++++ b/sovereign/engine/test_cross_stack.py
+@@ -0,0 +1,126 @@
++"""unittest for sovereign/engine/cross_stack.py (cp15). Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.engine.test_cross_stack -v
++
++Never opens maestro's real database or the real repo's git history --
++every test builds its own disposable sqlite3 file for db_root and
++patches subprocess for code_root, same isolation pattern as
++sovereign/engine/test_flip.py and sovereign/engine/test_projection.py.
++"""
++from __future__ import annotations
++
++import os
++import sqlite3
++import subprocess
++import tempfile
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++from sovereign import config
++from sovereign.engine import cross_stack, receipts
++from sovereign.sidecar import core as sidecar_core
++
++_FIXED_KEY = b"\x0f" * 32
++
++
++def _fake_run(sha: str):
++    def run(cmd, **kwargs):
++        return subprocess.CompletedProcess(cmd, 0, stdout=f"{sha}\n", stderr="")
++    return run
++
++
++class CrossStackTestBase(unittest.TestCase):
++    def setUp(self) -> None:
++        self._tmp = tempfile.TemporaryDirectory()
++        self.addCleanup(self._tmp.cleanup)
++        root = Path(self._tmp.name)
++        for name, val in (
++            ("SB_RECEIPTS", root / "receipts.jsonl"),
++            ("RECEIPTS_HEAD", root / "receipts.head"),
++            ("SIDECAR_DAG_DIR", root / "dag"),
++            ("SHADOW_HEADS_DIR", root / "heads"),
++        ):
++            p = patch.object(config, name, val)
++            p.start()
++            self.addCleanup(p.stop)
++        p = patch.object(receipts, "get_or_create_key", lambda: (_FIXED_KEY, "software_file"))
++        p.start()
++        self.addCleanup(p.stop)
++
++        self.db_path = root / "legacy.db"
++        self.conn = sqlite3.connect(str(self.db_path))
++        self.conn.execute("CREATE TABLE episodes (id TEXT PRIMARY KEY, lane TEXT, note TEXT)")
++        self.conn.commit()
++        self.addCleanup(self.conn.close)
++        self.sc = sidecar_core.attach(self.conn, "episodes")
++
++        self._git_patch = patch("subprocess.run", _fake_run("aaaa000011112222"))
++        self._git_patch.start()
++        self.addCleanup(self._git_patch.stop)
++
++    def _drain_one_row(self, row_id: str) -> None:
++        self.conn.execute("INSERT INTO episodes (id, lane, note) VALUES (?, 'ops', 'n')", (row_id,))
++        self.conn.commit()
++        self.sc.drain()
++
++
++class CrossStackPropertyTest(CrossStackTestBase):
++    def test_property_root_reports_all_four_named_children(self) -> None:
++        self._drain_one_row("seed")
++        res = cross_stack.root()
++        for key in ("root", "code_root", "db_root", "policy_root", "ai_policy_root"):
++            self.assertIn(key, res)
++        self.assertEqual(res["code_root"], "aaaa000011112222")
++        self.assertIsNotNone(res["db_root"])
++
++    def test_property_composite_root_changes_when_code_root_changes(self) -> None:
++        self._drain_one_row("seed")
++        before = cross_stack.root()
++        with patch("subprocess.run", _fake_run("bbbb999988887777")):
++            after = cross_stack.root()
++        self.assertNotEqual(before["code_root"], after["code_root"])
++        self.assertNotEqual(before["root"], after["root"])
++        self.assertEqual(before["db_root"], after["db_root"])
++        self.assertEqual(before["policy_root"], after["policy_root"])
++        self.assertEqual(before["ai_policy_root"], after["ai_policy_root"])
++
++    def test_property_composite_root_changes_when_policy_root_changes(self) -> None:
++        self._drain_one_row("seed")
++        before = cross_stack.root()
++        with patch.dict(os.environ, {"SB_ATTACH_QUORUM": "3/3"}):
++            after = cross_stack.root()
++        self.assertNotEqual(before["policy_root"], after["policy_root"])
++        self.assertNotEqual(before["root"], after["root"])
++        self.assertEqual(before["code_root"], after["code_root"])
++        self.assertEqual(before["ai_policy_root"], after["ai_policy_root"])
++
++    def test_property_composite_root_changes_when_ai_policy_root_changes(self) -> None:
++        self._drain_one_row("seed")
++        before = cross_stack.root()
++        with patch.dict(os.environ, {"SB_TRUST_PRESENCE_TIMEOUT_S": "999"}):
++            after = cross_stack.root()
++        self.assertNotEqual(before["ai_policy_root"], after["ai_policy_root"])
++        self.assertNotEqual(before["root"], after["root"])
++        self.assertEqual(before["code_root"], after["code_root"])
++        self.assertEqual(before["policy_root"], after["policy_root"])
++
++
++class CrossStackIncidentTest(CrossStackTestBase):
++    def test_incident_cp15_composite_root_changes_when_db_root_changes(self) -> None:
++        """cp15's own safety bar, the exact line the feature file states:
++        "changing any child changes the root". db_root is the one child
++        that moves on its own (every drained write advances it, cp9), so
++        this is also the one most likely to be silently left out of the
++        composite hash by a future edit that forgets it -- a code_root/
++        policy_root/ai_policy_root-only composite would still satisfy the
++        other three property tests above."""
++        self._drain_one_row("a")
++        before = cross_stack.root()
++        self._drain_one_row("b")
++        after = cross_stack.root()
++        self.assertNotEqual(before["db_root"], after["db_root"], "precondition: the DB actually advanced")
++        self.assertNotEqual(before["root"], after["root"], "the composite root must move with db_root")
++
++
++if __name__ == "__main__":
++    unittest.main()

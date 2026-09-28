@@ -1,0 +1,15 @@
+{
+  "_comment": "The good case. A guard is not finished until it has been shown to allow correct work (LAW 38), so this fixture must PASS. Shaped like a real npm tree: permissive licences, one package with no metadata, which is common and must never fail a build.",
+  "packages": [
+    {"name": "react", "version": "18.3.1", "licences": ["MIT"]},
+    {"name": "express", "version": "4.21.2", "licences": ["MIT"]},
+    {"name": "lodash", "version": "4.17.21", "licences": ["MIT"]},
+    {"name": "typescript", "version": "5.6.3", "licences": ["Apache-2.0"]},
+    {"name": "semver", "version": "7.6.3", "licences": ["ISC"]},
+    {"name": "sprintf-js", "version": "1.1.3", "licences": ["BSD-3-Clause"]},
+    {"name": "path-scurry", "version": "1.11.1", "licences": ["BlueOak-1.0.0"]},
+    {"name": "some-internal-shim", "version": "0.0.1", "licences": []},
+    {"name": "tslib", "version": "2.8.1", "licences": ["0BSD"]},
+    {"name": "mkdirp", "version": "3.0.1", "licences": ["MIT"]}
+  ]
+}

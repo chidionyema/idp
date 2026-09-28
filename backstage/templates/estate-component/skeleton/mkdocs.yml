@@ -1,0 +1,12 @@
+site_name: ${{ values.name }}
+site_description: ${{ values.description }}
+# Diataxis, four folders and nothing else. A page that fits none of the four
+# does not belong in docs/.  https://diataxis.fr
+nav:
+  - Home: index.md
+  - Tutorials: tutorials/index.md
+  - How-to: how-to/index.md
+  - Reference: reference/index.md
+  - Explanation: explanation/index.md
+plugins:
+  - techdocs-core

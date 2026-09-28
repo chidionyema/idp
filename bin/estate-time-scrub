@@ -1,0 +1,96 @@
+#!/usr/bin/env python3
+"""CP4 time-scrub: list journeys active on a given date.
+
+The replay UI scrubs through history; what it reads is a list of (sha, branch,
+state, started_at, merged_at) for every journey whose started_at falls on the
+date (or whose merged_at falls on the date). No interpolation: if the date has
+no journeys, BLIND with a named error.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sqlite3
+import sys
+from datetime import date, datetime, timezone
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "mcp" / "plugins"))
+
+import deploy_journeys as _plugin  # noqa: E402
+
+
+def _connect():
+    return sqlite3.connect(_plugin._db_path())
+
+
+def _parse_date(s: str) -> date:
+    return datetime.strptime(s, "%Y-%m-%d").date()
+
+
+def _scrub(day: str) -> dict:
+    if not Path(_plugin._db_path()).exists():
+        return {
+            "available": False,
+            "day": day,
+            "journeys": [],
+            "error": "ledger missing",
+        }
+    try:
+        target = _parse_date(day)
+    except ValueError:
+        return {
+            "available": True,
+            "day": day,
+            "journeys": [],
+            "error": f"unparseable date {day!r}; expected YYYY-MM-DD",
+        }
+    lo = target.isoformat()
+    hi = date.fromordinal(target.toordinal() + 1).isoformat()
+    con = _connect()
+    rows = con.execute(
+        "SELECT sha, branch, pr_number, state, started_at, merged_at"
+        " FROM deploy_journeys WHERE (started_at >= ? AND started_at < ?)"
+        " OR (merged_at >= ? AND merged_at < ?)"
+        " ORDER BY started_at DESC",
+        (lo, hi, lo, hi),
+    ).fetchall()
+    con.close()
+    if not rows:
+        return {
+            "available": True,
+            "day": day,
+            "journeys": [],
+            "error": f"no journeys on {day}",
+        }
+    journeys = [
+        {
+            "sha": r[0],
+            "branch": r[1],
+            "pr_number": r[2],
+            "state": r[3],
+            "started_at": r[4],
+            "merged_at": r[5],
+        }
+        for r in rows
+    ]
+    return {"available": True, "day": day, "journeys": journeys}
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("usage: estate-time-scrub YYYY-MM-DD [--json-pretty]", file=sys.stderr)
+        sys.exit(2)
+    day = sys.argv[1]
+    if "--json-pretty" in sys.argv:
+        print(json.dumps(_scrub(day), indent=2))
+    else:
+        print(json.dumps(_scrub(day)))
+
+
+if __name__ == "__main__":
+    main()

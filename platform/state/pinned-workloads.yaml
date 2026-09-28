@@ -1,0 +1,25 @@
+# Workloads that fit on exactly one node.
+#
+# A pod here is running and healthy, and every probe in the estate says so. What no probe says
+# is that it holds its place only because it already has it: no other node has room for its
+# request, so a drain, a rollout or a raised request evicts it into Pending and it does not come
+# back. SigNoz's ClickHouse was in exactly this state for eleven days before #2378 raised its
+# memory request and took it down (idp#2388), and nothing in the estate was asking the question.
+# bin/idp-fits-a-node asks it.
+#
+# The ratchet: `budget` is the number of pinned workloads the estate tolerates. It may fall and
+# never rise. An entry listed here that is no longer pinned is stale and fails too, so the list
+# cannot rot into decoration. Removing a workload from this list means giving the cluster room
+# for it -- a third node, or a smaller request that is still above real use.
+budget: 2
+pinned:
+  - workload: observability/Deployment/langfuse-web
+    why: >-
+      Measured 2026-09-07: asks 1000m/2048Mi, and the only other node has 467m/6516Mi free, so
+      the CPU request is what pins it. Langfuse and SigNoz share one ClickHouse and one Postgres
+      on a two-node cluster at 85% and 92% of allocatable CPU requests; the fix is a third node
+      or a request sized to measured use, and both are the founder's call (chidionyema/idp#544).
+  - workload: observability/Deployment/langfuse-worker
+    why: >-
+      Measured 2026-09-07: asks 1000m/1024Mi against 802m/4166Mi free on the other node. Same
+      cause and same two levers as langfuse-web above.

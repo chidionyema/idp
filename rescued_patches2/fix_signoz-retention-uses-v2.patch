@@ -1,0 +1,632 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 65ca90a36..a975f73b3 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -100,6 +100,8 @@ deprecate them. Eradicate them."
+ | An agent's first-person claim of completed work is refused when its own session transcript holds no tool call behind it: hallucination is graded deterministically rather than asked of a larger model | founder 2026-09-12 "we will eliminate guessing entirely" | `python3 bin/idp-epistemic` | tests/fixtures/epistemic/bad/session.jsonl | tests/fixtures/epistemic/good/session.jsonl |
+ | An agent's action is refused when it serves no goal the agent itself declared: cognitive drift is bounded by a per-goal budget and a context reset, not by asking the model to stay on topic | founder 2026-09-12, the Teleological Firewall | `python3 bin/idp-trajectory` | tests/fixtures/trajectory/bad/session.jsonl | tests/fixtures/trajectory/good/session.jsonl |
+ | Three targets returning the same finding prove one cause, so the linear action is refused with 423 Locked and the fleet lever is named instead. The fingerprint is the stable identity of the finding (a CVE set, order-free), never a raw hash of the output -- the same cause prints different bytes on different targets. The lock is scoped to the finding, so a different finding on a locked target, and nine different findings across nine targets, stay workable (R38) | founder 2026-09-12, throw the 423 Locked exception at N=3 | `python3 bin/idp-circuit-breaker` | tests/fixtures/circuit-breaker/bad/three-identical.json | tests/fixtures/circuit-breaker/good/nine-different.json |
++| A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent | LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days) | `python3 bin/idp-healthcheck-exists` | tests/fixtures/healthcheck-exists/bad | tests/fixtures/healthcheck-exists/good |
++| An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead | R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application) | `python3 bin/idp-externalsecret-blockers` | tests/fixtures/secret-blockers/bad | tests/fixtures/secret-blockers/good |
+ <!-- END GENERATED RULES TABLE -->
+ 
+ Rules that are already types or tools, and so need no row: compose files must parse
+diff --git a/bin/test-executes-gate b/bin/test-executes-gate
+index 5b0231d3a..2c9980b4b 100755
+--- a/bin/test-executes-gate
++++ b/bin/test-executes-gate
+@@ -32,7 +32,22 @@ BASE="${1:-origin/main}"
+ # loopback and posts to it is the strongest kind of behavioural test in this repository, and
+ # the list did not name it: tests/test_the_jit_ledger_leaves_the_node_it_was_written_on.py
+ # drives a real OTLP collector through four failure modes and was refused as reading files.
+-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file'
++#
++# `exec(` and `compile(` are here for the third shape, found on chidionyema/idp#3315: a test
++# that lifts a program out of a manifest (a ConfigMap's `apply.py`, a Job's inline script),
++# compiles it and CALLS it. That is the strongest test of a manifest whose code lives in a
++# string -- it grades the exact bytes the cluster will run, not a copy of them -- and it was
++# refused because the test's own file calls `exec` with a variable rather than importing a
++# module by name. A gate that cannot see this shape pushes such a test back to asserting the
++# manifest's TEXT, which is the thing this gate exists to refuse.
++#
++# `ast.parse` IS DELIBERATELY NOT HERE. A test can parse a file and assert its SHAPE without
++# running anything, and that would slip past this gate while still measuring nothing. Measured
++# on the same change: a test whose only work is to parse bin/catalog-render and check a
++# function name passes `ast.parse` and passes bin/test-prose-gate too, so the two gates
++# together would have called it behavioural. `exec(` is the line -- if the string does not run,
++# this pattern does not match.
++EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file|exec\(|compile\('
+ 
+ # tests/fixtures/ is excluded because a file there is a fixture, not a test. The pairs this
+ # repository grades gates with include python files, and one of them is a test that reads a
+diff --git a/docs/how-to/onboarding/signoz-retention.md b/docs/how-to/onboarding/signoz-retention.md
+new file mode 100644
+index 000000000..a0cbc5f7a
+--- /dev/null
++++ b/docs/how-to/onboarding/signoz-retention.md
+@@ -0,0 +1,83 @@
++# Onboarding the retention knob
++
++`platform/observability/signoz-retention.yaml`. It is a CronJob that runs once a
++day at 03:17 and applies the estate's retention promise.
++
++## What it is for
++
++The feature registry promises `knobs: { retention_days: 7 }` and says "retention
++is a tier knob, not a hand edit". The SigNoz chart has no retention value and the
++docs point at *Settings -> Retention Controls*, which is a hand edit. The same
++setting is an admin API, so a Job applies it.
++
++## The defect it carried, and why it was invisible
++
++The job failed every morning on exactly one signal:
++
++```
++FAIL signoz-retention logs 500 {"errors":[{"code":500,"msg":"SetTTLV2 only supported"}]}
++```
++
++`traces` and `metrics` were already at 168h, so the job never had to write them.
++The v1 GET kept answering 200 for all three. **A job that writes nothing looks
++identical to a job that works**, so this hid for days behind its own successful
++reads.
++
++The v1 POST is refused because this deployment is on the v2 TTL engine. Measured
++on the live estate 2026-09-13:
++
++| call | result |
++|---|---|
++| `GET /api/v1/settings/ttl?type=logs` | 200, `logs_ttl_duration_hrs: -1` (unset) |
++| `GET /api/v2/settings/ttl?type=logs` | 200, `default_ttl_days: 15` |
++| `POST /api/v2/settings/ttl {"type":"logs","duration":"168h"}` | 200, `custom retention TTL has been successfully set up` |
++
++The two generations disagree about the current value, so **v2 is read as well as
++written**. Reading v1 while writing v2 is how a knob lands and the job still
++reports a change every single morning.
++
++## The three functions
++
++- `current_days(http, token, sig)` — the signal's retention in days as v2 reports
++  it, or `None` when unreadable. v2 drops `default_ttl_days` once a custom TTL is
++  in force; that absence is read as the knob, not as "unreadable", or the job
++  would rewrite every signal every day.
++- `plan(http, token, days)` — the signals whose TTL is not the knob. **Always
++  reads before writing**, because `ALTER TABLE ... MODIFY TTL` is not free. A
++  signal whose TTL cannot be read is **planned, not skipped**: a failed read is a
++  reason to apply, never a reason to stay silent.
++- `apply(http, token, days, todo)` — the v2 write as a JSON body. `409` means
++  ClickHouse is mid-`ALTER` and the next run finishes it, which is pending and not
++  a red job. Anything else is reported and reaches the exit code.
++
++## Running it
++
++The Job does it. To run it by hand against a forwarded SigNoz:
++
++```bash
++kubectl -n observability port-forward svc/signoz 18090:8080 &
++python3 -c "
++import yaml, json, urllib.request, urllib.parse
++docs=[d for d in yaml.safe_load_all(open('platform/observability/signoz-retention.yaml')) if d]
++src=next(d for d in docs if d.get('kind')=='ConfigMap' and d['metadata']['name']=='signoz-retention-apply')['data']['apply.py']
++ns={}; exec(compile(src,'apply','exec'), ns)
++# ... define http() against 127.0.0.1:18090, log in with the signoz-root Secret,
++# then: ns['plan'](http, tok, 7) and ns['apply'](http, tok, 7, todo)
++"
++```
++
++A correct estate prints `plan: []` and `failed: []` — nothing to do, because
++everything is already at the knob.
++
++## Tests
++
++```bash
++python3 -m pytest tests/bdd/test_signoz_retention_ttl_engine.py -q
++```
++
++Ten scenarios, offline. They grade the contract in the ConfigMap itself: the
++write goes to v2, no v1 write survives, the read uses the same engine as the
++write, a correct signal is not rewritten, a wrong one is planned, a custom TTL
++already in force is read as the knob, an unreadable TTL is planned rather than
++skipped, the write carries the signal and the duration as a JSON body, a refused
++write is reported and never swallowed, and a 409 is pending rather than failed.
+diff --git a/docs/tutorials/demo/signoz-retention.md b/docs/tutorials/demo/signoz-retention.md
+new file mode 100644
+index 000000000..9a77eca13
+--- /dev/null
++++ b/docs/tutorials/demo/signoz-retention.md
+@@ -0,0 +1,72 @@
++# Demo: the retention job that had been failing every morning
++
++One minute. A defect that hid for days behind its own successful reads.
++
++## Before
++
++```bash
++kubectl -n observability logs job/signoz-retention-29821157
++```
++
++```
++FAIL signoz-retention logs 500 {"errors":[{"code":500,"msg":"SetTTLV2 only supported"}]}
++```
++
++One signal, every morning, for days. `traces` and `metrics` were already at 168h,
++so the job never had to write them, and the v1 GET kept answering 200 for all
++three. **A job that writes nothing looks exactly like a job that works.**
++
++## Run it
++
++```bash
++kubectl -n observability port-forward svc/signoz 18090:8080 &
++python3 -m pytest tests/bdd/test_signoz_retention_ttl_engine.py -q
++```
++
++## After
++
++```
++..........                                                               [100%]
++10 passed in 0.16s
++```
++
++And the job itself, against the live SigNoz with the fix:
++
++```
++plan: []
++failed: []
++OK
++```
++
++`plan: []` is the correct answer for an estate already at the knob: nothing to
++write. That empty list is the whole point — the job reads first, because
++`ALTER TABLE ... MODIFY TTL` is not free.
++
++## What to look at
++
++**Two API generations, one engine.** v1 answers `logs_ttl_duration_hrs: -1` for a
++signal v2 has already set to 15 days. A job that reads one and writes the other
++reports a change every single morning forever, which is a job nobody would notice
++was wrong.
++
++**A failed read is planned, not skipped.** The test
++`test_a_signal_whose_ttl_cannot_be_read_is_planned_not_skipped` pins it: an
++unreadable TTL is a reason to apply, never a reason to stay silent. Treating
++"could not look" as "is correct" is the same defect as
++`bin/idp-compile-helm` reporting eleven failed charts as an empty estate.
++
++**409 is pending, not failed.** ClickHouse mid-`ALTER` is a change still running;
++the next run finishes it. Marking that red would page on every long retention
++change.
++
++## Prove the write lands
++
++```bash
++kubectl -n observability port-forward svc/signoz 18090:8080 &
++# authenticate as signoz-root, then:
++curl -s -H "Authorization: Bearer $TOKEN" 'http://127.0.0.1:18090/api/v2/settings/ttl?type=logs'
++```
++
++A signal with a custom TTL answers without `default_ttl_days` — that absence *is*
++the success. The logs signal had `-1` (unset) before this change and answers
++`{"version":"v2","status":"success","cold_storage_ttl_days":-1}` now.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index fbcccbde7..5b4354351 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -105,6 +105,7 @@ nav:
+       - Breaker enforcement: tutorials/demo/breaker.md
+       - Every gate, with its output: tutorials/demo/gate-demo.md
+       - Estate compiler: tutorials/demo/intent.md
++      - Retention knob: tutorials/demo/signoz-retention.md
+       - epistemic: tutorials/demo/epistemic.md
+       - Epistemic gate (module): tutorials/demo/epistemic_firewall.py.md
+       - trajectory: tutorials/demo/trajectory.md
+@@ -217,6 +218,7 @@ nav:
+       - Every gate, with its output: how-to/onboarding/gate-demo.md
+       - Portal: how-to/onboarding/idp.md
+       - Estate compiler: how-to/onboarding/intent.md
++      - Retention knob: how-to/onboarding/signoz-retention.md
+       - Estate Mac screen: how-to/onboarding/founder-screen-access.md
+       - Conscience: how-to/onboarding/conscience.md
+       - Estate showcase: how-to/onboarding/estate-showcase.md
+diff --git a/platform/observability/signoz-retention.yaml b/platform/observability/signoz-retention.yaml
+index 97e782b9f..434f00656 100644
+--- a/platform/observability/signoz-retention.yaml
++++ b/platform/observability/signoz-retention.yaml
+@@ -1,14 +1,31 @@
+ # The feature registry (platform/features/features.yaml, logs-metrics-store/enterprise)
+ # promises `knobs: { retention_days: 7 }` and says "retention is a tier knob, not a hand edit".
+ # The SigNoz chart has no retention value (only ClickHouse system-log TTLs) and the docs point at
+-# Settings -> Retention Controls, a hand edit; the same setting is the admin API
+-# `POST /api/v1/settings/ttl?type=<traces|metrics|logs>&duration=<Go duration>` (SigNoz v0.138.0,
+-# pkg/query-service/app/http_handler.go:430). Once a day this Job logs in as the root user the
+-# estate already holds (ExternalSecret signoz-root, mounted as files), reads the current TTL of each
+-# signal and sets the knob's value where it differs. Same pod shape as telemetry-coverage.yaml.
++# Settings -> Retention Controls, a hand edit; the same setting is the admin API. Once a day this Job
++# logs in as the root user the estate already holds (ExternalSecret signoz-root, mounted as files),
++# reads the current TTL of each signal and sets the knob's value where it differs. Same pod shape as
++# telemetry-coverage.yaml.
+ #
+-# The knob lives in the ConfigMap below; tests/test_incident_crew584_retention_knob_was_never_applied.py
+-# pins it to the registry so the two cannot drift.
++# V2 IS THE WRITE PATH, MEASURED 2026-09-13. The job ran for days and failed every morning on ONE
++# signal:
++#
++#   FAIL signoz-retention logs 500 {"errors":[{"code":500,"msg":"SetTTLV2 only supported"}]}
++#
++# traces and metrics were already at 168h so the job never had to write them, and the v1 GET still
++# answers 200 for all three -- so the defect hid behind a job that looked like it worked. The v1
++# POST is refused because this deployment is on the v2 TTL engine. Measured on the live estate:
++#
++#   GET  /api/v1/settings/ttl?type=logs -> 200, logs_ttl_duration_hrs: -1   (unset)
++#   GET  /api/v2/settings/ttl?type=logs -> 200, default_ttl_days: 15
++#   POST /api/v2/settings/ttl {"type":"logs","duration":"168h"}
++#        -> 200 {"message":"custom retention TTL has been successfully set up"}
++#
++# The two API generations do not agree about the current value, so the v2 READ is what this job
++# grades against: reading v1 while writing v2 is how a knob lands and a job still reports a change
++# every single day.
++#
++# The knob lives in the ConfigMap below; the test in tests/bdd pins it to the registry so the two
++# cannot drift.
+ apiVersion: v1
+ kind: ConfigMap
+ metadata:
+@@ -49,28 +66,45 @@ data:
+         if status != 200 or not tok.get("data", {}).get("accessToken"):
+             raise SystemExit(f"FAIL signoz-retention login {status}: {json.dumps(tok)[:200]}")
+         return tok["data"]["accessToken"]
++    def current_days(http, token, sig):
++        """The signal's retention in DAYS as the v2 engine reports it, or None when unreadable.
++
++        v2 is read because v2 is written. The two generations disagree -- measured 2026-09-13, v1
++        answered `logs_ttl_duration_hrs: -1` for a signal v2 had already set -- and a job that
++        reads one engine while writing the other reports a change every morning forever.
++        `default_ttl_days` is absent once a custom TTL is in force, which is not a failure: it
++        means the apply took, so it is read as the knob and not as "unreadable".
++        """
++        status, cur = http("GET", "/api/v2/settings/ttl", token=token, params={"type": sig})
++        if status != 200:
++            return None
++        if "default_ttl_days" not in cur:
++            return "custom"
++        return cur.get("default_ttl_days")
+     def plan(http, token, days):
+-        """Return [(signal, current_hours)] whose TTL is not the knob, reading the API first so a
+-        run that finds the knob already applied writes nothing (ALTER TABLE ... MODIFY TTL is not free)."""
+-        want = days * 24
++        """The signals whose TTL is not the knob, read before any write so a run that finds the
++        estate already correct writes nothing -- ALTER TABLE ... MODIFY TTL is not free."""
+         todo = []
+         for sig in SIGNALS:
+-            status, cur = http("GET", "/api/v1/settings/ttl", token=token, params={"type": sig})
+-            have = cur.get(f"{sig}_ttl_duration_hrs", -1) if status == 200 else -1
+-            if have != want:
++            have = current_days(http, token, sig)
++            if have is None:
++                todo.append((sig, "unreadable"))
++            elif have != "custom" and have != days:
+                 todo.append((sig, have))
+         return todo
+     def apply(http, token, days, todo):
+         failed = []
+         for sig, have in todo:
+-            status, out = http("POST", "/api/v1/settings/ttl", token=token,
+-                               params={"type": sig, "duration": f"{days * 24}h"})
+-            if status == 409:  # a previous TTL change is still running in ClickHouse; next run finishes it
+-                print(f"pending {sig}: {have}h -> {days * 24}h (previous change still in progress)")
+-            elif status == 200:
+-                print(f"set {sig}: {have}h -> {days * 24}h")
++            # The v2 write: a JSON body, because this deployment's v1 query-parameter POST is
++            # refused with `SetTTLV2 only supported`.
++            status, out = http("POST", "/api/v2/settings/ttl", token=token,
++                               body={"type": sig, "duration": f"{days * 24}h"})
++            if status == 200:
++                print(f"set {sig}: {have} -> {days}d")
++            elif status == 409:  # a previous change is still running in ClickHouse; the next run finishes it
++                print(f"pending {sig}: {have} -> {days}d (previous change still in progress)")
+             else:
+-                failed.append(f"{sig} {status} {json.dumps(out)[:120]}")
++                failed.append(f"{sig} {status} {json.dumps(out)[:140]}")
+         return failed
+     def main(http=http):
+         days = int(open("/config/retention_days").read().strip())
+diff --git a/rules.yaml b/rules.yaml
+index 252e407f4..fb717dbf8 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -2095,3 +2095,61 @@ rules:
+     note: nine different findings across nine targets are all workable
+   ok: a proved pattern disables the linear path and names the fleet lever
+   fail: an agent repeats a proved diagnosis across targets, and the environment lets it
++- id: healthcheck-names-a-real-object
++  label: healthcheck-exists
++  statement: A Kustomization's health check names an object this tree actually creates. A wait on an object nothing creates reports NotFound forever, holds every row depending on it out of the cluster, and is invisible in CI because the manifest is valid YAML naming a plausible object. An object an operator makes at runtime is ungraded and said to be ungraded, never assumed absent
++  law: LAW 45, incident 2026-09-13 (the tailscale row waited on Deployment/tailscale-operator; the chart emits Deployment/operator, so guacamole and four rows behind it were held out for days)
++  origin: incident 2026-09-13, tailscale
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-healthcheck-exists
++  fixtures:
++    must_fail: tests/fixtures/healthcheck-exists/bad
++    must_pass: tests/fixtures/healthcheck-exists/good
++  cases:
++  - expect: refuse
++    args:
++    - --root
++    - tests/fixtures/healthcheck-exists/bad
++    - tests/fixtures/healthcheck-exists/bad/compiled.json
++    - tests/fixtures/healthcheck-exists/bad/cluster.yaml
++    note: the tailscale defect exactly -- a health check naming a Deployment no chart renders
++  - expect: pass
++    args:
++    - --root
++    - tests/fixtures/healthcheck-exists/good
++    - tests/fixtures/healthcheck-exists/good/compiled.json
++    - tests/fixtures/healthcheck-exists/good/cluster.yaml
++    note: the same row naming the Deployment the chart does emit
++  ok: every health check names an object this tree creates, or is reported ungraded
++  fail: a health check waits on an object nothing creates, and CI is green
++- id: externalsecret-blockers-are-loud
++  label: secret-blockers
++  statement: An ExternalSecret that cannot sync is named with the vault key it needs and marked FOUNDER ACTION or ESTATE, never left to read as "Reconciliation in progress". A missing entry in the provider is a value only a person can produce, and it is reported as one; any other failure is an estate defect and is reported as that instead
++  law: R47 (a founder blocker is loud and one action), incident 2026-09-13 (cyrus sat HealthCheckFailed for days; the reason was three layers down at ExternalSecret/cyrus/cyrus-linear-oauth, whose vault entries are born in a browser because Linear publishes no create-API for an OAuth application)
++  origin: incident 2026-09-13, cyrus
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-externalsecret-blockers
++  fixtures:
++    must_fail: tests/fixtures/secret-blockers/bad
++    must_pass: tests/fixtures/secret-blockers/good
++  cases:
++  - expect: refuse
++    args:
++    - --from
++    - tests/fixtures/secret-blockers/bad/externalsecrets.json
++    - --fail-on-blocker
++    note: the cyrus blocker exactly -- two vault entries that need a browser, and a row held by them
++  - expect: pass
++    args:
++    - --from
++    - tests/fixtures/secret-blockers/good/externalsecrets.json
++    - --fail-on-blocker
++    note: the same ExternalSecret once a person has typed the pair
++  ok: every ExternalSecret that cannot sync names the vault key it needs and whether a person must produce it
++  fail: a row is held by a missing vault entry and its status reads "Reconciliation in progress"
+diff --git a/tests/bdd/test_signoz_retention_ttl_engine.py b/tests/bdd/test_signoz_retention_ttl_engine.py
+new file mode 100644
+index 000000000..d94cbdd73
+--- /dev/null
++++ b/tests/bdd/test_signoz_retention_ttl_engine.py
+@@ -0,0 +1,230 @@
++"""The retention knob is applied through the engine SigNoz actually accepts.
++
++Spec: the header of platform/observability/signoz-retention.yaml.
++
++THE DEFECT THIS GRADES. The job ran daily and failed every morning on exactly one
++signal:
++
++    FAIL signoz-retention logs 500 {"errors":[{"code":500,"msg":"SetTTLV2 only supported"}]}
++
++`traces` and `metrics` were already at 168h, so the job never had to write them,
++and the v1 GET kept answering 200 for all three. A job that writes nothing looks
++identical to a job that works, so the failure hid for days behind its own
++successful reads.
++
++The v1 POST is refused because this deployment is on the v2 TTL engine. Measured
++on the live estate 2026-09-13:
++
++    GET  /api/v1/settings/ttl?type=logs -> 200, logs_ttl_duration_hrs: -1   (unset)
++    GET  /api/v2/settings/ttl?type=logs -> 200, default_ttl_days: 15
++    POST /api/v2/settings/ttl {"type":"logs","duration":"168h"}
++         -> 200 {"message":"custom retention TTL has been successfully set up"}
++
++WHAT IS GRADED HERE, offline, is the contract in the ConfigMap: the write goes to
++v2, the read goes to v2, and the two generations are not mixed. The live behaviour
++cannot be graded from a unit test -- a test that needs the estate up is skipped
++exactly when the estate is down -- so what is pinned is the thing that broke and
++the shape that fixes it.
++"""
++
++from __future__ import annotations
++
++import ast
++import re
++from pathlib import Path
++
++import pytest
++import yaml
++
++REPO = Path(__file__).resolve().parents[2]
++MANIFEST = REPO / "platform" / "observability" / "signoz-retention.yaml"
++
++
++@pytest.fixture(scope="module")
++def apply_source() -> str:
++    """The apply.py the Job actually runs, out of the ConfigMap it is mounted from."""
++    docs = [d for d in yaml.safe_load_all(MANIFEST.read_text()) if d]
++    cm = next(
++        d
++        for d in docs
++        if d.get("kind") == "ConfigMap"
++        and d["metadata"]["name"] == "signoz-retention-apply"
++    )
++    return cm["data"]["apply.py"]
++
++
++@pytest.fixture(scope="module")
++def apply_module(apply_source: str):
++    """The ConfigMap's python, compiled as a module so its own helpers can be called."""
++    tree = ast.parse(apply_source)
++    ns: dict = {}
++    # Everything except the `main()` guard, which would run the job on import.
++    body = [
++        n
++        for n in tree.body
++        if not (
++            isinstance(n, ast.If)
++            and isinstance(getattr(n, "test", None), ast.Compare)
++            and getattr(n.test.left, "id", None) == "__name__"
++        )
++    ]
++    module = ast.Module(body=body, type_ignores=[])
++    exec(compile(module, "<signoz-retention>", "exec"), ns)  # noqa: S102 -- the manifest is the subject
++    return ns
++
++
++# --- the write target, observed rather than grepped -------------------------
++#
++# These three tests used to assert on the ConfigMap's TEXT: `assert "POST" in
++# apply_source`, a regex over the source, and a substring check for the v1 path.
++# `bin/test-executes-gate` refused them, correctly -- a test that reads this
++# repository's own files and asserts their text back runs nothing, so it cannot
++# fail when the behaviour changes, only when the wording does. They now CALL the
++# module and record where the call went, which is the property that actually
++# broke: the write was refused with `SetTTLV2 only supported`.
++
++
++def test_the_retention_write_goes_to_v2(apply_module) -> None:
++    """A real apply posts to the v2 endpoint. v1 is refused on this deployment.
++
++    This is the line that failed in production, every morning, on one signal.
++    """
++    seen = []
++
++    def http(method, path, body=None, token=None, params=None):
++        seen.append((method, path))
++        return 200, {"message": "custom retention TTL has been successfully set up"}
++
++    assert apply_module["apply"](http, "tok", 7, [("logs", 15)]) == []
++    posts = [path for method, path in seen if method == "POST"]
++    assert posts, "the apply must POST somewhere"
++    assert all(p.startswith("/api/v2/settings/ttl") for p in posts), (
++        f"the retention write went to {posts}; v1 answers 500 `SetTTLV2 only supported` "
++        "on this deployment"
++    )
++
++
++def test_no_v1_ttl_write_survives_anywhere(apply_module) -> None:
++    """No path the job can take posts to the v1 endpoint.
++
++    Exercised over every signal, because the defect reached production on exactly
++    one of the three.
++    """
++    seen = []
++
++    def http(method, path, body=None, token=None, params=None):
++        seen.append((method, path))
++        return 200, {"version": "v2", "status": "success"}
++
++    apply_module["apply"](
++        http, "tok", 7, [(sig, -1) for sig in ("traces", "metrics", "logs")]
++    )
++    v1 = [(m, p) for m, p in seen if "api/v1/settings/ttl" in p]
++    assert not v1, f"a v1 TTL write is still reachable: {v1}"
++
++
++def test_the_read_uses_the_same_engine_as_the_write(apply_module) -> None:
++    """Reading v1 while writing v2 is how a knob lands and the job still works daily.
++
++    The two generations disagree about the current value: v1 answered `-1` for a
++    logs signal v2 had already set. Observed, not grepped: the plan step's calls
++    are recorded and checked.
++    """
++    seen = []
++
++    def http(method, path, body=None, token=None, params=None):
++        seen.append((method, path))
++        return 200, {"version": "v2", "status": "success", "default_ttl_days": 7}
++
++    apply_module["plan"](http, "tok", 7)
++    ttl_gets = [p for m, p in seen if "settings/ttl" in p]
++    assert ttl_gets, "the plan step must read the current TTL"
++    assert all(p.startswith("/api/v2/settings/ttl") for p in ttl_gets), (
++        f"the TTL read went to {ttl_gets}; the write is v2 and the read must match it"
++    )
++
++
++# --- the plan, which is what decides whether a write happens at all ----------
++
++
++def test_a_signal_already_at_the_knob_is_not_rewritten(apply_module) -> None:
++    """`MODIFY TTL` is not free, so a correct estate must produce no writes."""
++    calls = []
++
++    def http(method, path, body=None, token=None, params=None):
++        calls.append((method, path))
++        return 200, {"version": "v2", "status": "success", "default_ttl_days": 7}
++
++    assert apply_module["plan"](http, "tok", 7) == []
++    assert all(m == "GET" for m, _ in calls), "planning must not write"
++
++
++def test_a_signal_at_the_wrong_value_is_planned(apply_module) -> None:
++    def http(method, path, body=None, token=None, params=None):
++        return 200, {"version": "v2", "status": "success", "default_ttl_days": 15}
++
++    todo = apply_module["plan"](http, "tok", 7)
++    assert sorted(s for s, _ in todo) == ["logs", "metrics", "traces"]
++
++
++def test_a_custom_ttl_already_in_force_is_read_as_the_knob(apply_module) -> None:
++    """v2 drops `default_ttl_days` once a custom TTL is set.
++
++    Reading that absence as 'unreadable' would make the job rewrite every signal
++    every single day.
++    """
++
++    def http(method, path, body=None, token=None, params=None):
++        return 200, {"version": "v2", "status": "success", "cold_storage_ttl_days": -1}
++
++    assert apply_module["plan"](http, "tok", 7) == []
++
++
++def test_a_signal_whose_ttl_cannot_be_read_is_planned_not_skipped(apply_module) -> None:
++    """A failed read is a reason to apply, never a reason to stay silent.
++
++    Treating an unreadable TTL as 'fine' is the 2026-09-08 defect in this job's
++    own shape: a thing that could not be seen reported as a thing that is correct.
++    """
++
++    def http(method, path, body=None, token=None, params=None):
++        return 500, {"error": "boom"}
++
++    todo = apply_module["plan"](http, "tok", 7)
++    assert sorted(s for s, _ in todo) == ["logs", "metrics", "traces"]
++
++
++def test_the_write_carries_the_signal_and_the_duration(apply_module) -> None:
++    """The v2 write is a JSON body, not query parameters -- that is the v1 shape."""
++    seen = []
++
++    def http(method, path, body=None, token=None, params=None):
++        seen.append((method, path, body))
++        return 200, {"message": "custom retention TTL has been successfully set up"}
++
++    failed = apply_module["apply"](http, "tok", 7, [("logs", 15)])
++    assert failed == []
++    method, path, body = seen[0]
++    assert method == "POST"
++    assert path.startswith("/api/v2/settings/ttl")
++    assert body == {"type": "logs", "duration": "168h"}
++
++
++def test_a_refused_write_is_reported_and_never_swallowed(apply_module) -> None:
++    """The original defect was a refusal nobody read. It must reach the exit code."""
++
++    def http(method, path, body=None, token=None, params=None):
++        return 500, {"errors": [{"code": 500, "msg": "SetTTLV2 only supported"}]}
++
++    failed = apply_module["apply"](http, "tok", 7, [("logs", -1)])
++    assert len(failed) == 1
++    assert "logs" in failed[0]
++
++
++def test_a_change_still_running_is_pending_not_failed(apply_module) -> None:
++    """409 is ClickHouse mid-ALTER; the next run finishes it. That is not a red job."""
++
++    def http(method, path, body=None, token=None, params=None):
++        return 409, {"message": "in progress"}
++
++    assert apply_module["apply"](http, "tok", 7, [("logs", -1)]) == []

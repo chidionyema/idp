@@ -1,0 +1,54 @@
+#!/usr/bin/env python3
+"""
+crew-sync-agent — auto-commits crew file changes every 60s.
+Like electricity: runs, stays out of the way, never asks.
+"""
+import os, subprocess, sys, time
+from pathlib import Path
+
+CREW   = Path.home() / "Documents" / "code" / "crew"
+LOG    = Path.home() / ".estate"  / "logs"  / "crew-sync.log"
+STATE  = Path.home() / ".estate" / ".crew-sync-state"
+INTERVAL = 60  # seconds
+
+def log(*args, **kw):
+    msg = " ".join(str(a) for a in args)
+    print(msg, flush=True)
+    try:
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(LOG, "a") as f:
+            f.write(f"{time.strftime('%Y-%m-%dT%H:%M:%S')} crew-sync: {msg}\n")
+    except Exception: pass
+
+def git(repo, *args):
+    return subprocess.run(
+        ["git"] + list(args),
+        cwd=repo, capture_output=True, text=True, timeout=30
+    )
+
+def main():
+    log("starting")
+    while True:
+        try:
+            # Stage all changes
+            r = git(CREW, "add", "-A")
+            # Check if anything staged
+            r2 = git(CREW, "diff", "--cached", "--stat")
+            if r2.stdout.strip():
+                # Get change summary
+                stats = r2.stdout.strip().splitlines()[-1] if r2.stdout.strip() else ""
+                msg = f"sync: {stats}"
+                r3 = git(CREW, "commit", "-m", msg)
+                if r3.returncode == 0:
+                    r4 = git(CREW, "push")
+                    log(f"committed & pushed: {stats} -> {r4.stdout.strip() or r4.stderr.strip() or 'ok'}")
+                else:
+                    log(f"commit failed: {r3.stderr.strip()}")
+            else:
+                log("no changes")
+        except Exception as e:
+            log(f"error: {e}")
+        time.sleep(INTERVAL)
+
+if __name__ == "__main__":
+    main()

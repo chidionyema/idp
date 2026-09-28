@@ -1,0 +1,4 @@
+2024-11-19T12:15:03.000000-08:00 estate-node kubelet: Started container calico-node
+2024-11-19T12:15:04.000000-08:00 estate-node systemd: Started session for user 1000
+2024-11-19T12:15:05.000000-08:00 estate-node kernel: IPv6: ADDRCONF(NETDEV_UP): eth0: link is not ready
+2024-11-19T12:15:06.000000-08:00 estate-node kernel: audit: type=1400 audit(1732032906.000:123): apparmor="STATUS"

@@ -1,0 +1,17 @@
+# The otto-brain sidecar exactly as it merged on 2026-09-10: a loopback-only router
+# whose probes were pointed at loopback with host:. Every pod create was refused with
+# `probe or lifecycle host (container "otto-brain" uses probe or lifecycle host
+# "127.0.0.1")`, so the Deployment never became Available and nothing said why.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otto-gateway
+  namespace: otto-gateway
+spec:
+  template:
+    spec:
+      containers:
+        - name: otto-brain
+          image: ghcr.io/berriai/litellm:v1.98.0
+          readinessProbe:
+            httpGet: { path: /health/liveliness, port: 4010, host: 127.0.0.1 }

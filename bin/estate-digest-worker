@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# estate-digest-worker — the founder's recurrent "update / what changed / what's red / what's next",
+# answered by the LOCAL free model (client-zero V1, crew#929). Proves a self-hosted open-model ops
+# tier can absorb the estate's own low-tier operational model work instead of a frontier call.
+#
+#   bin/estate-digest-worker [--model qwen2.5-coder:7b]
+#
+# Reads real estate state (STATE.md + recent merged PRs + live flux readiness) and emits the digest
+# the founder replies to. The DIGEST IS HONEST BY CONSTRUCTION: the status line (RED / ALL GREEN) is
+# computed deterministically from measured flux + snapshot facts and PRINTED BY THE WORKER, never by
+# the model — a drifting model cannot greenwash a real red. The model writes only a short narrative
+# (what changed / likely next) from the given facts. Frontier is not used; small output + low
+# frequency = the batch/queued local tier. LAW 2: no fact the model emits is one the model invented.
+
+set -euo pipefail
+_on_exit() {
+	local e=$?
+	[ $e -ne 0 ] && echo "estate-digest-worker exit $e" >&2
+}
+trap _on_exit EXIT
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# LAW 46: no file names where the checkout/home/machine lives. The crew checkout is the sibling
+# of the idp checkout, so it is derived from $IDP's parent, never from a $HOME literal. Callers
+# with the estate somewhere else set ESTATE_CREW explicitly.
+CREW="${ESTATE_CREW:-$(dirname "$IDP")/crew}"
+MODEL="${ESTATE_DIGEST_MODEL:-qwen2.5-coder:7b}"
+OLLAMA="${ESTATE_OLLAMA:-http://localhost:11434}"
+STATE="${ESTATE_STATE_FILE:-$CREW/STATE.md}"
+
+# --- gather the real, measured facts the digest reports (never invented) -------------------------
+STATE_AGE="STALE/unmeasured"
+[ -f "$STATE" ] && STATE_AGE=$(grep -oE 'Generated [0-9-]+ [0-9:]+' "$STATE" | head -1) && [ -z "$STATE_AGE" ] && STATE_AGE="present, unread"
+# snapshot rows the model must never paper over
+RED=$(grep -E '^\| .*\|\s*(RED|NOT RUN|FAIL)' "$STATE" 2>/dev/null | sed -E 's/^\| +//;s/ *\|.*//' | grep -v '^\.' | head -6 | tr '\n' '; ')
+[ -z "$RED" ] && RED="(none marked red)"
+CHANGED=$(git -C "$IDP" log --oneline -12 origin/main 2>/dev/null | grep -viE "image update|main-[0-9]+-" | head -4 | sed 's/^[0-9a-f]* //')
+CHANGED=$(printf '%s\n' "$CHANGED" | tr '\n' '; ')
+[ -z "$CHANGED" ] && CHANGED="(no non-image commits)"
+# Only Kustomizations currently reconciliation=False count as red RIGHT NOW. Unknown = not yet read,
+# not down, so excluded (avoids crying wolf on a moment's reconciliation).
+FLUX_RED=$(kubectl get kustomizations -A --no-headers 2>/dev/null | awk '$4=="False"{print $2}' | head -8 | tr '\n' '; ')
+[ -z "$FLUX_RED" ] && FLUX_RED="none"
+
+# --- the deterministic status line (worker-owned; a model cannot change it) ----------------------
+if [ "$FLUX_RED" != "none" ]; then
+	STATUS_DEC="STATUS: RED — flux not-Ready: $FLUX_RED"
+else
+	STATUS_DEC="STATUS: ALL GREEN in the live cluster"
+fi
+if [ "$RED" != "(none marked red)" ]; then
+	STATUS_DEC="$STATUS_DEC | snapshot rows RED/NOT RUN: $RED"
+fi
+
+# --- build the payload with python (no shell-quoting fragility): writes /tmp payload file -------
+F=/tmp/estate-digest-payload.json
+python3 - "$MODEL" <<PY >"$F"
+import json, sys
+model = sys.argv[1]
+# The model must NOT re-state or contradict the deterministic status below; it only narrates.
+prompt = """Write ONLY a short ops narrative, 4-8 lines total, that does NOT restate or repeat this line,
+and never contradicts it: THE STATUS IS ALREADY DECIDED:
+$STATUS_DEC
+
+Write two short UNLABELED lines only:
+1. WHAT CHANGED recently (real, from FACTS below)
+2. WHAT'S NEXT (a likely next action, only if the decided status names a real red; if the status is
+   ALL GREEN say 'Nothing pending' for this line)
+
+Do NOT say 'all green' anywhere. Do NOT add services or facts not in FACTS. Stay under 60 words.
+
+FACTS (truth):
+- snapshot: $STATE_AGE
+- recent merged (non-image): $CHANGED
+
+NARRATIVE:"""
+print(json.dumps({"model": model, "prompt": prompt, "stream": False, "options": {"num_predict": 140}}))
+PY
+
+start=$(date +%s)
+OUT=$(curl -s --max-time 240 "$OLLAMA/api/generate" -d @"$F" 2>&1)
+end=$(date +%s)
+rm -f "$F"
+
+DIGEST=$(printf '%s' "$OUT" | python3 -c "import sys,json
+try:
+    d=json.load(sys.stdin); print((d.get('response') or '').strip())
+except Exception as e:
+    print('PARSE_ERR', str(e))")
+
+# LAW 55: a pipeline exit status must never stand in for a grep match. Capture the match into a
+# variable (no-match is expected, so it must not fail the script under pipefail), then gate on it.
+PARSE_ERR=''
+printf '%s\n' "$DIGEST" | grep -q 'PARSE_ERR' && PARSE_ERR=1 || true
+if [ -z "$DIGEST" ] || [ -n "$PARSE_ERR" ]; then
+	echo "FAIL digest-worker model did not answer in $((end - start))s"
+	exit 1
+fi
+# digest = the worker's deterministic status line + the model's narrative, in that order
+printf '%s\n' "$STATUS_DEC"
+printf '%s\n' "$DIGEST"
+echo ""
+echo "ok digest-worker answered in $((end - start))s <- $MODEL (local); status deterministic (worker)," \
+	"narrative model ($(printf '%s' "$DIGEST" | wc -w) words)"

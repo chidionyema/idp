@@ -1,0 +1,57 @@
+diff --git a/platform/alerts/provider.yaml b/platform/alerts/provider.yaml
+index ead374596..b933c3b38 100644
+--- a/platform/alerts/provider.yaml
++++ b/platform/alerts/provider.yaml
+@@ -6,6 +6,6 @@ metadata:
+ spec:
+   type: telegram
+   # Substituted by the alerts Kustomization from the flux-telegram Secret (postBuild).
+-  channel: "${channel}"
++  channel: ${channel}   # unquoted on purpose: the synced value carries its own quotes (see secret-store/flux-telegram.yaml)
+   secretRef:
+     name: flux-telegram
+diff --git a/platform/secret-store/flux-telegram.yaml b/platform/secret-store/flux-telegram.yaml
+index cfd9c3891..8af13d5be 100644
+--- a/platform/secret-store/flux-telegram.yaml
++++ b/platform/secret-store/flux-telegram.yaml
+@@ -8,6 +8,18 @@ metadata:
+ spec:
+   refreshInterval: 1h
+   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+-  target: { name: flux-telegram, creationPolicy: Owner }
++  target:
++    name: flux-telegram
++    creationPolicy: Owner
++    # Incident 2026-08-25 (idp#127 live): the alerts row substitutes `${channel}` into
++    # the Provider's spec.channel. kustomize drops the quotes around a plain scalar, so
++    # a numeric chat id landed as a YAML integer and the dry-run refused it:
++    # ".spec.channel: expected string, got <int>". The synced value carries
++    # its own quotes, so the rendered manifest reads channel: "<id>" and stays a string.
++    template:
++      engineVersion: v2
++      data:
++        token: "{{ .token }}"
++        channel: "\"{{ .channel }}\""
+   dataFrom:
+     - extract: { key: flux-telegram }
+diff --git a/tests/test_incident_backstage_17h_unreported.py b/tests/test_incident_backstage_17h_unreported.py
+index efbfbc10d..38a5b5467 100644
+--- a/tests/test_incident_backstage_17h_unreported.py
++++ b/tests/test_incident_backstage_17h_unreported.py
+@@ -49,3 +49,16 @@ def test_alert_covers_every_namespace_that_holds_a_helmrelease():
+     missing = {ns for ns in hr_namespaces if ("HelmRelease", ns) not in covered}
+     assert not missing, f"HelmRelease namespaces with no alert: {sorted(missing)}"
+     assert all(a["spec"]["eventSeverity"] == "error" for a in alerts)
++
++
++def test_telegram_channel_survives_substitution_as_a_string():
++    """Live incident 2026-08-25: kustomize dropped the quotes around `${channel}`, the
++    numeric chat id substituted in as a YAML integer and the Provider dry-run refused it.
++    The synced Secret value carries its own quotes; the Provider leaves the scalar bare."""
++    es = next(d for d in yaml.safe_load_all(open(ROOT / "platform" / "secret-store" / "flux-telegram.yaml")))
++    channel = es["spec"]["target"]["template"]["data"]["channel"]
++    assert channel.startswith('"') and channel.endswith('"'), channel
++    prov = (ROOT / "platform" / "alerts" / "provider.yaml").read_text()
++    assert "channel: ${channel}" in prov and 'channel: "${channel}"' not in prov
++    rendered = "channel: ${channel}".replace("${channel}", '"123"')
++    assert isinstance(yaml.safe_load(rendered)["channel"], str)

@@ -1,0 +1,117 @@
+# The router's shared memory (founder 2026-09-03: the router had no cache). Two router pods
+# without a shared store each keep their own cooldowns, rate counts and spend windows, and no
+# answer is ever reused; this small Redis gives both pods one memory plus a bounded answer
+# cache (five minutes, exact-match only, per-call opt-out — the containment set the founder
+# approved before the build).
+#
+# The password is minted inside the cluster by the secret machinery's own password generator —
+# no vault entry, no console, no person ever sees it (same day-0 shape as
+# platform/mcp/external-secret.yaml). refreshInterval 0h: minted once at creation and stable,
+# so the cache and the router can never disagree about it and reloader never restart-loops.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: litellm-cache
+  namespace: llm
+spec:
+  length: 42
+  digits: 10
+  symbols: 0
+  symbolCharacters: ""
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: litellm-cache
+  namespace: llm
+spec:
+  refreshInterval: 0h
+  target: { name: litellm-cache, creationPolicy: Owner }
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: litellm-cache
+      rewrite:
+        - transform: { template: "REDIS_PASSWORD" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm-cache
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm-cache, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: founder-model-router }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: litellm-cache }
+  ports:
+    - { name: redis, port: 6379, targetPort: 6379 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm-cache
+  namespace: llm
+  labels: { app.kubernetes.io/name: litellm-cache, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # One memory: two caches behind one name would briefly disagree, so replace, never overlap.
+  # Losing it for the seconds of a replace is safe — the router treats an unreachable cache as
+  # a miss and keeps answering; state rebuilds in minutes.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: litellm-cache }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: litellm-cache, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # redis uid in the alpine image
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: docker.io/library/redis:7.4-alpine
+          # The password rides a mounted file (secrets-not-from-env-vars, same as postgres.yaml).
+          # No persistence on purpose: a cache and a coordination board, both rebuilt in minutes;
+          # bounded memory with least-recently-used eviction so it can never grow past its limit.
+          command: ["/bin/sh", "-c"]
+          args:
+            - exec redis-server --requirepass "$(cat /run/secrets/litellm/cache/REDIS_PASSWORD)" --maxmemory 192mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+          ports:
+            - { containerPort: 6379, name: redis }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/litellm/cache/REDIS_PASSWORD)\" redis-cli ping"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/litellm/cache/REDIS_PASSWORD)\" redis-cli ping"]
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+          volumeMounts:
+            - { name: cache-secret, mountPath: /run/secrets/litellm/cache, readOnly: true }
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: cache-secret
+          secret: { secretName: litellm-cache }
+        - name: data
+          emptyDir: { sizeLimit: 256Mi }
+        - name: tmp
+          emptyDir: {}

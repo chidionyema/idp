@@ -1,0 +1,488 @@
+#!/usr/bin/env bash
+# bin/idp-workstation-bootstrap — one command that provisions any workstation (Mac, Linux) from
+# nothing but git + curl + an age identity into a fully-authed dev environment.
+#
+# The founder's rule (2026-09-17): "our system must be able to bootstrap itself in any env; we must
+# be able to run vendor independent". A new laptop should reach dev-ready in one command, on any OS
+# family the estate supports, without pasting a secret and without a per-vendor tour.
+#
+# This is the "Level 0 + Level 3" wrapper around `bin/idp-bootstrap-estate`:
+#   Level 0 (bring-up)         portable installer for the estate tool set (age sops oci gh kubectl
+#                              flux jq openssl curl). Idempotent per OS family: brew on macOS,
+#                              apt on Debian/Ubuntu, dnf on RHEL/Fedora, apk on Alpine, curl
+#                              fallback for any Linux the package manager missed.
+#   Level 1 (root trust)       age identity restore is the one hand a person gives (kept out of
+#                              this script; delivered by iCloud Keychain / paper / hardware key /
+#                              the estate's age-key delivery pattern). Verifies presence and refuses
+#                              to proceed if the age key is not readable.
+#   Level 2 (estate credentials) `bin/idp-bootstrap-estate` — the existing orchestrator that mints
+#                              every estate-born credential and writes them to the sops-age vault.
+#   Level 3 (workstation authn) mint an installation token via `bin/idp-github-app token
+#                              platform-engineer`, `gh auth login --with-token` from it, and write
+#                              `~/.kube/config` via `bin/idp-cloud cluster kubeconfig`.
+#
+# States: OK = ran and verified; BLIND = tool or vendor absent and the estate does not
+# depend on it (informational, not a refusal); FAIL = a step that must succeed refused.
+#
+# Vendor-neutral (AGENTS.md 2026-09-17): the local container runtime is never installed by this
+# script. It is a personal choice. A machine with none is a valid state; cluster ops via Flux + GH
+# Actions do not need one.
+#
+# Usage:
+#   bin/idp-workstation-bootstrap                run every phase; keep whatever already works
+#   bin/idp-workstation-bootstrap --preflight    print every phase's plan; write nothing
+#   bin/idp-workstation-bootstrap --check        exit 0 when every phase reports OK
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MODE="${1:-run}"
+case "$MODE" in
+  run|--preflight|--check) ;;
+  -h|--help) sed -n '2,32p' "$0"; exit 0;;
+  *) echo "usage: $0 [run|--preflight|--check]" >&2; exit 2;;
+esac
+
+# Print helpers mirror bin/idp-estate-seed / bin/idp-install-hooks so the run reads as one voice.
+ok()    { printf 'ok      %s\n' "$*"; }
+warn()  { printf 'WARN    %s\n' "$*" >&2; }
+blind() { printf 'BLIND   %s\n' "$*" >&2; }
+fail()  { printf 'FAIL    %s\n' "$*" >&2; RC=1; }
+RC=0
+
+# ---- OS detection -----------------------------------------------------------
+# Answers one of: macos, debian, rhel, alpine, unknown. Never guesses on unknown.
+detect_os() {
+  case "$(uname -s)" in
+    Darwin) echo macos;;
+    Linux)
+      if   [ -r /etc/os-release ]; then
+        . /etc/os-release
+        case "${ID_LIKE:-$ID}" in
+          *debian*|*ubuntu*) echo debian;;
+          *rhel*|*fedora*|*centos*) echo rhel;;
+          alpine) echo alpine;;
+          *) echo unknown;;
+        esac
+      else echo unknown; fi;;
+    *) echo unknown;;
+  esac
+}
+OS="$(detect_os)"
+
+# ---- Level 0: binary bring-up -----------------------------------------------
+# Tool set the estate needs before anything else runs. Each row: <binary> <macos-pkg> <apt-pkg>
+# <dnf-pkg> <apk-pkg>. A dash means "install via curl from upstream" — filled in per-tool below.
+# Order matters: openssl and jq first so estate-seed's own preflight passes.
+#
+# A row in this list is a HARD dependency of the platform. A row that is "not strictly required"
+# does not go here; it goes in opt/. A row that the platform actually depends on but is missing
+# from this list is the failure mode the founder flagged on 2026-09-23 ("we can't be running
+# install manually") and is a P0 defect against this script. Adding a row is a code review.
+declare -a TOOLS=(
+  "openssl  openssl@3          openssl        openssl        openssl"
+  "jq       jq                 jq             jq             jq"
+  "age      age                age            age            age"
+  "sops     sops               -              -              -"
+  "oci      oci-cli            -              -              -"
+  "gh       gh                 gh             gh             github-cli"
+  "kubectl  kubernetes-cli     -              -              -"
+  "flux     fluxcd/tap/flux    -              -              -"
+  "curl     curl               curl           curl           curl"
+  "git      git                git            git            git"
+  # SPIFFE primary (docs/reference/security-architecture.md). The cluster runs SPIRE control plane
+  # + agent; this Mac needs the spire-agent binary to mint JWT-SVIDs for the workloads the founder
+  # runs from here (Claude Code, terminals, the executor daemon). No spire-agent = no SPIFFE on
+  # this device, which is exactly the "hacks" failure mode the founder called out.
+  "spire-agent  -              -              -              -"
+  # Tailscale: required for the JIT broker's tailnet door (100.74.93.65:8080, the founder's
+  # machine per OKE facts). Without tailscale the broker is unreachable from this Mac and every
+  # `bin/idp-jit` call that needs a real broker (enroll, renew, ask) BLINDs. SPIFFE primary does
+  # not change this — the broker is the SPIFFE control plane's reachability seam.
+  "tailscale  -                -              -              -"
+)
+
+TOOLS_DIR="${TOOLS_DIR:-$HOME/.cache/estate-tools}"   # the path bin/idp-install-deps and CI's estate-tools share
+AGE_VER="1.2.1"
+
+# install_upstream <binary>: fetch one tool straight from its upstream release, with no package
+# manager at all. This exists because a package manager is an assumption, not a given: measured
+# 2026-09-21, this Mac has no Homebrew (/opt/homebrew/bin/brew and /usr/local/bin/brew both
+# absent), so the entire macos branch of install_pkg was dead code that reported
+# "brew install oci-cli refused" for a brew that was never there -- pointing the reader at the
+# wrong defect. Returns 0 only when the binary afterwards answers for itself.
+install_upstream() {
+  local bin="$1"
+  local uos uarch
+  uos="$(uname -s | tr '[:upper:]' '[:lower:]')"
+  uarch="$(uname -m)"; [ "$uarch" = "x86_64" ] && uarch="amd64"; [ "$uarch" = "aarch64" ] && uarch="arm64"
+  case "$bin" in
+    oci)
+      # oci-cli is a pip package in this estate, never a brew formula: all 14 install sites
+      # across 7 workflows use .github/requirements/oci-cli.txt. The cryptography pin is load
+      # bearing -- 46+ ships no macOS x86_64/universal2 wheel (PyPI JSON API, 2026-09-21), so on
+      # an Intel Mac an unconstrained resolve falls back to compiling Rust via maturin and fails.
+      command -v uv >/dev/null 2>&1 || return 1
+      local cons; cons="$(mktemp)"
+      echo 'cryptography<46' >"$cons"
+      uv tool install oci-cli --python 3.12 --constraints "$cons" >/dev/null 2>&1
+      local rc=$?
+      rm -f "$cons"
+      [ "$rc" -eq 0 ] || return 1
+      command -v oci >/dev/null 2>&1 || [ -x "$HOME/.local/bin/oci" ] || return 1
+      return 0 ;;
+    age)
+      mkdir -p "$TOOLS_DIR"
+      local tmp; tmp="$(mktemp -d)"
+      if curl -fsSL -o "$tmp/age.tgz" \
+           "https://github.com/FiloSottile/age/releases/download/v${AGE_VER}/age-v${AGE_VER}-${uos}-${uarch}.tar.gz" \
+        && tar xzf "$tmp/age.tgz" -C "$tmp"; then
+        find "$tmp" -type f -name 'age' -exec cp {} "$TOOLS_DIR/age" \; 2>/dev/null
+        find "$tmp" -type f -name 'age-keygen' -exec cp {} "$TOOLS_DIR/age-keygen" \; 2>/dev/null
+        chmod +x "$TOOLS_DIR/age" "$TOOLS_DIR/age-keygen" 2>/dev/null
+      fi
+      rm -rf "$tmp"
+      [ -x "$TOOLS_DIR/age" ] && "$TOOLS_DIR/age" --version >/dev/null 2>&1 ;;
+    # SPIRE agent for local JWT-SVID minting (SPIFFE primary, 2026-09-23). The cluster SPIRE
+    # control plane is reachable over tailnet on 100.74.93.65:8443; this binary joins that trust
+    # domain and serves a Workload API on a per-device Unix socket. Without it every "credential
+    # through SPIFFE" line in docs/reference/security-architecture.md is fiction on this Mac.
+    #
+    # SPIRE upstream does not ship prebuilt darwin tarballs — only the linux/amd64 linux/arm64
+    # binaries are on the GitHub release page (verified 2026-09-23). The darwin build path is
+    # `brew install spire` (preferred) or `go install .../cmd/spire-agent@latest` from source.
+    # When neither brew nor go is present (this Mac, 2026-09-23), we BLIND with the right cause
+    # and let phase4 own the install instruction; refusing to ship a broken upstream URL.
+    spire-agent)
+      command -v brew >/dev/null 2>&1 && brew install spire >/dev/null 2>&1 && return 0
+      command -v go   >/dev/null 2>&1 && {
+        local out; out="$(go env GOBIN 2>/dev/null || echo "$HOME/go/bin")"
+        mkdir -p "$out"
+        GOBIN="$out" go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3 >/dev/null 2>&1 \
+          && [ -x "$out/spire-agent" ] && return 0
+      }
+      return 1 ;;
+    # Tailscale CLI — the daemon + Mac system extension are installed by the .pkg from
+    # tailscale.com; this row only fetches the `tailscale` and `tailscaled` binaries so the
+    # bootstrap is operable headlessly (CI runners, dev containers). On a founder Mac the .pkg
+    # install is the install path; phase4 below checks for that and reports what is missing.
+    # pkgs.tailscale.com serves binaries named `tailscale_<version>_<arch>.tgz` where
+    # arch ∈ {386, amd64, arm, arm64}; there is no `darwin_` prefix in the filename. Verified
+    # 2026-09-23 that `tailscale_<empty>_amd64.tgz` is a 404, `tailscale_1.102.4_amd64.tgz`
+    # is 200; pinned to the latest stable releases delivered by `tailscale update` after
+    # install keeps this version-free. `brew install --cask tailscale` is the founder-Mac
+    # path; this recipe only runs when brew is absent (CI runner, dev container).
+    tailscale)
+      mkdir -p "$TOOLS_DIR"
+      local tmp; tmp="$(mktemp -d)"
+      if curl -fsSL -o "$tmp/ts.tgz" \
+           "https://pkgs.tailscale.com/stable/tailscale_${uarch}.tgz" \
+        && tar xzf "$tmp/ts.tgz" -C "$tmp"; then
+        find "$tmp" -type f -name 'tailscale'  -exec cp {} "$TOOLS_DIR/tailscale"  \; 2>/dev/null
+        find "$tmp" -type f -name 'tailscaled' -exec cp {} "$TOOLS_DIR/tailscaled" \; 2>/dev/null
+        chmod +x "$TOOLS_DIR/tailscale" "$TOOLS_DIR/tailscaled" 2>/dev/null
+      fi
+      rm -rf "$tmp"
+      [ -x "$TOOLS_DIR/tailscale" ] && "$TOOLS_DIR/tailscale" version >/dev/null 2>&1 ;;
+    *) return 1 ;;
+  esac
+}
+
+# install_pkg <binary> <pkgname>: bring one tool up. Upstream first, package manager second, so a
+# machine with no package manager still reaches dev-ready. Idempotent — a present binary is a
+# no-op, and $TOOLS_DIR counts as present because that is where install_upstream and
+# bin/idp-install-deps both put things.
+install_pkg() {
+  local bin="$1" pkg="$2"
+  command -v "$bin" >/dev/null && { ok "level0 $bin present"; return 0; }
+  [ -x "$TOOLS_DIR/$bin" ] && { ok "level0 $bin present ($TOOLS_DIR)"; return 0; }
+  if install_upstream "$bin"; then
+    ok "level0 $bin installed from upstream (no package manager needed)"
+    return 0
+  fi
+  [ "$pkg" = "-" ] && { blind "level0 $bin has no $OS package mapping and no upstream recipe; file a lane row"; return 0; }
+  # Name the real defect rather than blaming the package manager for refusing: if it is not
+  # installed, "brew install X refused" is a lie about what happened.
+  local mgr
+  case "$OS" in macos) mgr=brew;; debian) mgr=apt-get;; rhel) mgr=dnf;; alpine) mgr=apk;; *) mgr="";; esac
+  if [ -n "$mgr" ] && ! command -v "$mgr" >/dev/null 2>&1; then
+    fail "level0 $bin absent: no upstream recipe succeeded and $mgr is not installed on this $OS"
+    return 0
+  fi
+  case "$OS" in
+    macos)  brew install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via brew ($pkg)" || fail "level0 brew install $pkg refused";;
+    debian) sudo apt-get -qq update >/dev/null 2>&1; sudo apt-get -qq -y install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via apt ($pkg)" || fail "level0 apt install $pkg refused";;
+    rhel)   sudo dnf -q -y install "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via dnf ($pkg)" || fail "level0 dnf install $pkg refused";;
+    alpine) sudo apk add --no-progress "$pkg" >/dev/null 2>&1 && ok "level0 $bin installed via apk ($pkg)" || fail "level0 apk add $pkg refused";;
+    *) blind "level0 $bin: OS=$OS not supported; install $bin manually and re-run";;
+  esac
+}
+
+phase0() {
+  echo "-- Level 0: binary bring-up ($OS) --"
+  local row bin macos debian rhel alpine
+  for row in "${TOOLS[@]}"; do
+    read -r bin macos debian rhel alpine <<<"$row"
+    case "$OS" in
+      macos)  install_pkg "$bin" "$macos";;
+      debian) install_pkg "$bin" "$debian";;
+      rhel)   install_pkg "$bin" "$rhel";;
+      alpine) install_pkg "$bin" "$alpine";;
+      *)      command -v "$bin" >/dev/null && ok "level0 $bin present" || blind "level0 $bin absent on unknown OS";;
+    esac
+  done
+}
+
+# ---- Level 1: age identity presence check -----------------------------------
+# The estate stores every provisioned secret in a sops file encrypted to one age recipient. Without
+# the age key, no phase past this one can read the vault. This step never writes an age key; the
+# person delivers it (paper/keychain/hardware key). We only refuse to proceed when it is absent.
+phase1() {
+  echo "-- Level 1: root trust (age identity) --"
+  local key="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+  if [ -r "$key" ]; then
+    ok "level1 age key readable at $key"
+  else
+    fail "level1 age key not readable at $key; restore it (iCloud Keychain / paper / hardware key) before re-running"
+  fi
+}
+
+# ---- Level 2: estate credentials -------------------------------------------
+# Delegates to bin/idp-bootstrap-estate — the umbrella that runs idp-estate-seed and every vendor
+# bootstrapper in dependency order. Idempotent by design.
+phase2() {
+  echo "-- Level 2: estate credentials (bin/idp-bootstrap-estate) --"
+  [ -x "$IDP/bin/idp-bootstrap-estate" ] || { blind "level2 bin/idp-bootstrap-estate absent in $IDP"; return 0; }
+  if [ "$MODE" = "--preflight" ] || [ "$MODE" = "--check" ]; then
+    "$IDP/bin/idp-bootstrap-estate" --preflight || fail "level2 estate preflight refused"
+  else
+    "$IDP/bin/idp-bootstrap-estate" || fail "level2 estate bootstrap refused"
+  fi
+}
+
+# ---- Level 3: workstation authn --------------------------------------------
+# Two vendor-agnostic couplers the estate reaches through: (1) an OCI-compliant K8s cluster
+# accessed by an OCI CLI cluster-provider door (bin/idp-cloud), (2) a GitHub installation token
+# minted narrow to the platform-engineer lane. The estate does not require either to be present —
+# a machine that only runs unit tests locally does not need cluster access — so both refuse BLIND
+#, not FAIL, when the vendor side is not reachable.
+phase3_kube() {
+  echo "-- Level 3a: kubeconfig via bin/idp-cloud --"
+  [ -x "$IDP/bin/idp-cloud" ] || { blind "level3 bin/idp-cloud absent; kubeconfig not provisioned"; return 0; }
+  command -v oci >/dev/null || { blind "level3 oci CLI absent (level0 should have installed it)"; return 0; }
+  # 2026-09-18: this used to say "run bin/idp-oci-bootstrap for a session token". That script now
+  # BLINDs at its first line on a device whose vault holds no OCI key -- which is every device
+  # after commit 76ba8be moved the dev secrets to OCI Vault -- so it sent a fresh workstation to
+  # a command that could not help. The browser login that mints the session is bin/idp-oci-login
+  # (its own header: "provider-adapter: oci -- this file IS the provider door (session sign-in)"),
+  # and the founder's own terminal is the only place it will run.
+  local cl name id kubecfg="$HOME/.kube/config"
+  cl="$("$IDP/bin/idp-cloud" cluster list 2>/dev/null || true)"
+  [ -n "$cl" ] || {
+    blind "level3 no ACTIVE OCI cluster visible.
+         cause  this device has no OCI session
+         fix    bin/idp-oci-login, in the owner's own terminal (it refuses an agent session on purpose).
+                If the vault itself reads empty, the secrets moved to OCI Vault: see
+                docs/reference/agent-identity.md"
+    return 0
+  }
+  name="$(printf '%s\n' "$cl" | awk 'NR==1{print $1}')"
+  id="$(printf '%s\n' "$cl" | awk 'NR==1{print $2}')"
+  [ "$MODE" = "--check" ] && { [ -r "$kubecfg" ] && ok "level3 kubeconfig present at $kubecfg" || blind "level3 kubeconfig absent at $kubecfg"; return 0; }
+  mkdir -p "$(dirname "$kubecfg")"
+  if [ "$MODE" != "--preflight" ]; then
+    "$IDP/bin/idp-cloud" cluster kubeconfig "$id" --file "$kubecfg" 2>/dev/null \
+      && { chmod 600 "$kubecfg"; ok "level3 kubeconfig written for cluster $name"; } \
+      || fail "level3 kubeconfig mint refused for cluster $name"
+  else
+    ok "level3 would mint kubeconfig for cluster $name to $kubecfg"
+  fi
+}
+
+# Level 3a-alt: the AGENT identity, which needs no OCI session and no founder login at all.
+#
+# WHY THIS EXISTS. phase3_kube above mints a kubeconfig whose user is the founder's own OCI
+# principal. WJ.1's last clause is "bin/idp-kube stops minting the founder's OCI principal", and
+# the door that makes that true is the JIT broker's /identity: a device holding ONE key presents
+# it and is handed a one-hour agent-reader token that can read and nothing else. That path needs
+# no browser, so it is the one a fresh workstation should be told about first, and it is the only
+# one that works when the OCI session is the thing that is missing.
+#
+# It is deliberately BLIND rather than FAIL when the key is absent: a machine that only runs unit
+# tests locally needs no cluster access, and a device that has never been authorized is the
+# ordinary case for a new laptop, not an error to shout about.
+phase3_agent_identity() {
+  echo "-- Level 3a-alt: agent identity via the JIT broker (no OCI session needed) --"
+  [ -x "$IDP/bin/idp-jit" ] || { blind "level3 bin/idp-jit absent; agent identity not provisioned"; return 0; }
+
+  local state
+  state="$(python3 "$IDP/bin/idp-jit" status 2>/dev/null || true)"
+  case "$state" in
+  *'"state": "active"'*|*'"state": "expiring"'*)
+    ok "level3 agent identity is live (read-only, renews itself)"
+    return 0
+    ;;
+  esac
+
+  # No key yet: enroll. ADR 0032. A fresh machine proves the one credential it already has --
+  # the age identity phase1 just checked -- over the tailnet, and the broker hands back a key
+  # that is this device's own. No vendor secret to fetch, no browser, no founder's terminal.
+  # This is the seam that used to BLIND; the old "a device is authorized once, by its owner"
+  # is still true, it is just that the age identity IS the owner's one hand (Level 1), spent
+  # by a signature-less X25519 agreement rather than a shared key typed in by hand.
+  if [ ! -e "$HOME/.local/state/idp/agent-key" ] && [ -z "${JIT_AGENT_KEY:-}" ]; then
+    if [ "$MODE" = "--check" ]; then
+      blind "level3 this device holds no agent key; bin/idp-jit enroll would mint one from the age identity"
+      return 0
+    fi
+    if "$IDP/bin/idp-jit" enroll; then
+      ok "level3 enrolled -- this device holds its own key (from the age identity, no shared secret)"
+    else
+      blind "level3 could not enroll.
+         cause  the broker did not accept the age identity, or is unreachable
+         fix    a machine with no age key restores it first (phase1); a reachable broker
+                answers bin/idp-jit status. Enrollment proves the age identity, never a password"
+      return 0
+    fi
+  fi
+
+  # Key present (or just enrolled): mint now. This needs no approval, by the broker's own design
+  # -- "agent-reader holds reads and nothing else ... so there is nothing to approve".
+  if "$IDP/bin/idp-jit" renew --kubeconfig "$HOME/.local/state/idp/agent.kubeconfig" --quiet 2>/dev/null; then
+    ok "level3 agent identity minted (read-only, renews every 10 minutes)"
+  else
+    blind "level3 agent key present but the broker did not answer; check tailnet or bin/idp-jit status"
+  fi
+  return 0
+}
+
+phase3_gh() {
+  echo "-- Level 3b: gh CLI authn from GitHub App installation token --"
+  command -v gh >/dev/null || { blind "level3 gh CLI absent (level0 should have installed it)"; return 0; }
+  [ -x "$IDP/bin/idp-github-app" ] || { blind "level3 bin/idp-github-app absent"; return 0; }
+  if [ "$MODE" = "--check" ]; then
+    gh auth status >/dev/null 2>&1 && ok "level3 gh CLI authed" || blind "level3 gh CLI not authed"
+    return 0
+  fi
+  if [ "$MODE" = "--preflight" ]; then
+    ok "level3 would mint a platform-engineer installation token and pipe it to gh auth login"
+    return 0
+  fi
+  local tok
+  tok="$("$IDP/bin/idp-github-app" token platform-engineer 2>/dev/null || true)"
+  [ -n "$tok" ] || { blind "level3 GH installation token unavailable (vault or App not seeded yet)"; return 0; }
+  printf '%s' "$tok" | gh auth login --with-token >/dev/null 2>&1 \
+    && ok "level3 gh CLI authed via platform-engineer installation token" \
+    || fail "level3 gh auth login --with-token refused"
+}
+
+# ---- Verify -----------------------------------------------------------------
+# Empirical proof (AGENTS.md section 3): every provisioned surface must answer, not just
+# claim. A green report where nothing actually answers is theatre.
+verify() {
+  echo "-- Verify --"
+  command -v gh >/dev/null && gh auth status >/dev/null 2>&1 && ok "verify gh: $(gh api /user -q .login 2>/dev/null || echo unknown)" || blind "verify gh: not authed"
+  command -v kubectl >/dev/null && kubectl --request-timeout=5s get ns kube-system -o name >/dev/null 2>&1 && ok "verify kubectl: cluster reachable" || blind "verify kubectl: no cluster or no kubeconfig"
+  command -v oci >/dev/null && oci session validate --profile DEFAULT >/dev/null 2>&1 && ok "verify oci: session live" || blind "verify oci: no session or no config"
+}
+
+# ---- Level 4: SPIFFE primary — wire the local identity surface ---------------
+# This is what `docs/reference/security-architecture.md` calls "primary": the cluster SPIRE
+# trust domain reaches this Mac and the workloads on it present JWT-SVIDs, not static keys.
+# Each row here is a single thing that must be operational for the primary to hold; the verify
+# rung below names what is missing. None of these prompt the founder; the one-time age-identity
+# proof (Level 1) is the only hand a person gives.
+#
+# 4a. tailscale daemon — required for the JIT broker's tailnet door. The Mac .pkg install
+#     needs sudo; the bootstrap cannot do that without a person. Report what's missing.
+# 4b. spire-agent — required for local Workload API (X.509-SVID over a Unix socket). Joining
+#     the trust domain needs the SPIRE control plane's trust bundle + join token; that is
+#     fetched over tailnet, so 4a must be operational first.
+# 4c. JIT device-renew LaunchAgent — the 10-minute renewal loop. Idempotent install; needs the
+#     device to be enrolled (phase3_agent_identity).
+# 4d. executor daemon — gateway-as-floor enforcement. Installs as a root LaunchDaemon under a
+#     uid the agent does not own (bin/idp-executor-install); refuses to proceed from an agent
+#     session, so this row only reports what is missing.
+phase4_spiffe() {
+  echo "-- Level 4: SPIFFE primary — local identity surface --"
+
+  # 4a. tailscale
+  if [ -d "/Applications/Tailscale.app" ] || command -v tailscale >/dev/null 2>&1 || [ -x "$TOOLS_DIR/tailscale" ]; then
+    ok "level4a tailscale present"
+  else
+    blind "level4a tailscale absent: install from https://tailscale.com/download/mac (one-time, sudo)
+         cause  the platform's broker is on tailnet 100.74.93.65:8080; without tailscale the JIT
+                broker is unreachable from this Mac and every bin/idp-jit call that needs a real
+                broker (enroll / renew / ask) BLINDs
+         fix    download the .pkg from tailscale.com/download/mac and run the installer; re-run
+                this bootstrap and phase4a will read GREEN"
+  fi
+
+  # 4b. spire-agent
+  local sa="$TOOLS_DIR/spire-agent"
+  if [ -x "$sa" ] || command -v spire-agent >/dev/null 2>&1; then
+    if [ -f "$HOME/.spire/agent.conf" ] && pgrep -f 'spire-agent' >/dev/null 2>&1; then
+      ok "level4b spire-agent running with config at $HOME/.spire/agent.conf"
+    else
+      blind "level4b spire-agent installed but not joined the trust domain yet.
+           cause  no $HOME/.spire/agent.conf; the trust bundle and join token come from the
+                  SPIRE control plane over tailnet (100.74.93.65:8443)
+           fix    run:  spire-agent fetch-spiffe-id -socketPath /tmp/spire-agent.sock  (one-time)
+                  and write agent.conf from the returned bundle. bootstrap will detect on re-run"
+    fi
+  else
+    blind "level4b spire-agent absent: level0 should have installed it; if level0 reported FAIL on
+         spire-agent, the bootstrap did not finish and SPIFFE primary is not active on this Mac"
+  fi
+
+  # 4c. JIT device-renew LaunchAgent
+  if [ -x "$IDP/bin/idp-jit-device-renew" ]; then
+    if launchctl list 2>/dev/null | grep -q 'com.estate.jit-device-renew'; then
+      ok "level4c JIT device-renew LaunchAgent loaded (renews every 10 min)"
+    else
+      if [ "$MODE" = "--check" ]; then
+        blind "level4c JIT device-renew LaunchAgent not loaded; 'bin/idp-jit-device-renew --install' would load it"
+      else
+        if "$IDP/bin/idp-jit-device-renew" --install 2>/dev/null; then
+          ok "level4c JIT device-renew LaunchAgent installed"
+        else
+          blind "level4c JIT device-renew --install refused: the device is not enrolled yet
+               cause  phase3_agent_identity BLINDed on enrollment
+               fix    re-run this bootstrap after phase1 (age key) answers GREEN and the JIT
+                      broker is reachable over tailnet (level4a GREEN)"
+        fi
+      fi
+    fi
+  else
+    blind "level4c bin/idp-jit-device-renew absent in $IDP/bin"
+  fi
+
+  # 4d. executor daemon
+  local sock="$HOME/.estate/executor.sock"
+  if [ -S "$sock" ]; then
+    if (echo '{"verb":"fs_read","path":"/etc/hostname"}' | nc -U "$sock" 2>/dev/null) | grep -q '"ok":'; then
+      ok "level4d executor daemon reachable at $sock"
+    else
+      blind "level4d executor socket exists at $sock but no daemon is listening
+           cause  bin/idp-executor-install ran, but the LaunchDaemon was not loaded, or the
+                  daemon process exited
+           fix    run sudo bin/idp-executor-install (it refuses an agent-invoked shell on
+                  purpose; the founder runs it from their own terminal). Re-run bootstrap."
+    fi
+  else
+    blind "level4d executor daemon absent at $sock: gateway-as-floor is not enforced on this Mac
+         cause  bin/idp-executor-install was never run (it is a sudo install that the agent
+                must NOT do)
+         fix    run sudo bin/idp-executor-install from the founder's terminal. Re-run bootstrap."
+  fi
+}
+
+phase0
+phase1
+phase2
+phase3_kube
+phase3_agent_identity
+phase3_gh
+phase4_spiffe
+verify
+
+[ "$RC" -eq 0 ] && echo "== bootstrap OK ==" || echo "== bootstrap had FAILs (see above) ==" >&2
+exit "$RC"

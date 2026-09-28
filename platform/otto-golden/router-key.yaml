@@ -1,0 +1,22 @@
+# Otto's router key. Same machine road as telegram-secret.yaml: bin/idp-estate-seed mints a
+# LiteLLM virtual key (lanes kimi,minimax,deepseek) into the vault entry `otto-golden`, this
+# ExternalSecret decodes it into a Kubernetes Secret, and deployment.yaml mounts it as a file
+# and exports it as LITELLM_API_KEY before exec'ing python -m otto.boot -- Kyverno's
+# secrets-not-from-env-vars policy refuses secretKeyRef env, exactly as on the bot token.
+# otto.router.providers reads LITELLM_API_KEY from env first; without it every model call
+# raises EgressDenied and the pod can ack but never answer. No hand ever holds the value:
+# rotation is ROUTER_ROTATE=1 on the seed, never a chat or a console (LAW 52, R49).
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: otto-golden-router-key
+  namespace: otto-golden
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: otto-golden-router-key
+    creationPolicy: Owner
+  data:
+    - secretKey: LITELLM_API_KEY
+      remoteRef: { key: otto-golden, property: LITELLM_API_KEY }

@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The portal starts itself. Nobody types bin/idp-up.
+
+  RunAtLoad brings it back after a reboot. The hourly repeat is not a watchdog
+  bolted on: bin/idp-up regenerates both renderings from the inventory, which
+  the hourly inventory job has just rewritten, and starts whichever renderer is
+  no longer running. Running it when everything is already healthy costs two
+  file writes and two curl probes.
+
+  KeepAlive is deliberately absent. bin/idp-up starts the renderers in the
+  background and exits, so KeepAlive would read that exit as a crash and
+  restart it in a loop forever.
+
+  Install:    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/ai.estate.idp.plist
+  Remove:     launchctl bootout gui/$(id -u)/ai.estate.idp
+-->
+<plist version="1.0">
+<dict>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>${PATH}</string>
+		<key>HOME</key>
+		<string>${HOME}</string>
+	</dict>
+	<key>Label</key>
+	<string>ai.estate.idp</string>
+	<key>LowPriorityIO</key>
+	<true/>
+	<key>Nice</key>
+	<integer>10</integer>
+	<key>ProgramArguments</key>
+	<array>
+		<string>${IDP}/bin/idp-up</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<!-- bin/idp-up nohups Backstage and exits. Without this key launchd kills the
+	     job's process group at exit and the portal it just started dies with it. -->
+	<key>AbandonProcessGroup</key>
+	<true/>
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<key>StandardErrorPath</key>
+	<string>${IDP}/logs/launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>${IDP}/logs/launchd.log</string>
+	<key>WorkingDirectory</key>
+	<string>${IDP}</string>
+</dict>
+</plist>

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# crew#620: the single source of truth for the Python standard. Reads pyproject.toml
+# [tool.ruff] and runs ruff check. Hook and CI both call this; if the rule set changes
+# it changes in one place. Fail-closed: missing python3, missing config, missing ruff
+# are refused, not silenced.
+set -euo pipefail
+
+[ -f pyproject.toml ] || { echo "FAIL: pyproject.toml missing"; exit 1; }
+command -v python3 >/dev/null 2>&1 || { echo "FAIL: python3 missing"; exit 1; }
+python3 -m ruff --version >/dev/null 2>&1 || { echo "FAIL: ruff not installed (pip install ruff)"; exit 1; }
+
+exec python3 -m ruff check --config pyproject.toml "$@"

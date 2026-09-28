@@ -1,0 +1,37 @@
+# A workload created by an operator from a custom resource. This is the shape that loops: the
+# operator rewrites the ConfigMap this pod mounts, so a Reloader roll changes what the operator
+# writes next. Reloader must be off here, and the annotation must be corrected to "false" even
+# though rule 1 has already injected "true" -- which is why the fixture ships carrying "true".
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chi-signoz-clickhouse-cluster-0-0
+  namespace: observability
+  annotations:
+    reloader.stakater.com/auto: "true"
+  ownerReferences:
+    - apiVersion: clickhouse.altinity.com/v1
+      kind: ClickHouseInstallation
+      name: signoz-clickhouse
+      uid: c292601b-71fc-48cd-9aed-18b6923de255
+      controller: true
+      blockOwnerDeletion: true
+spec:
+  serviceName: chi-signoz-clickhouse
+  replicas: 1
+  selector:
+    matchLabels: { app: clickhouse }
+  template:
+    metadata:
+      labels: { app: clickhouse }
+    spec:
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:25.12.5
+          volumeMounts:
+            - name: usersd
+              mountPath: /etc/clickhouse-server/users.d
+      volumes:
+        - name: usersd
+          configMap:
+            name: chi-signoz-clickhouse-common-usersd

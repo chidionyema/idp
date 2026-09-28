@@ -1,0 +1,26 @@
+# The refusing case of reloader-operator-owned. The policy here is the real one; the expectation
+# is wrong on purpose -- it asserts the operator-owned StatefulSet keeps auto "true", which is the
+# loop the rule exists to break. `kyverno test` MUST fail on this directory. rules.yaml runs it as
+# the refusing case; if it ever passes, the permitting fixture next door is grading nothing.
+#
+# It is written this way because of a trap measured on 2026-09-08. The first refusing case was the
+# real expectations against a copy of the policy with the rule deleted -- and `kyverno test` printed
+# "3 tests passed", marking the row Pass with reason "Excluded". An expectation naming a rule that
+# does not exist is not a failure to kyverno, it is a skip that counts as a pass, and the
+# patchedResources comparison never runs. A refusing case must therefore perturb the EXPECTATION,
+# never the rule's existence, or it proves only that kyverno started.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: require-auto-reload
+policies:
+  - ../../../platform/edge/require-auto-reload.yaml
+resources:
+  - ../reloader/operator-owned.yaml
+results:
+  - policy: require-auto-reload
+    rule: an-operator-owned-workload-is-its-operators-job
+    kind: StatefulSet
+    resources: [observability/chi-signoz-clickhouse-cluster-0-0]
+    patchedResources: loop-not-fixed.patched.yaml
+    result: pass

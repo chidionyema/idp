@@ -1,0 +1,6 @@
+platform/llm/litellm.yaml
+platform/llm/postgres.yaml
+platform/llm/spend-breaker-digest.yaml
+platform/mcp/estate-mcp.yaml
+platform/mcp/github-mcp.yaml
+platform/priority-classes/priorityclasses.yaml

@@ -1,0 +1,13 @@
+# The other way a resource may own its dollar signs: Flux's documented per-resource opt-out.
+# The script below is byte-for-byte the one the bad fixture is refused for; the annotation is the
+# only difference, and the controller substitutes nothing here. A gate that failed this file would
+# refuse what the cluster accepts.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: probe-owns-its-dollars
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+data:
+  probe.sh: |
+    out=$(curl -s https://door.${ESTATE_ZONE}/); code=${out%% *}; loc=${out#* }

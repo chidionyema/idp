@@ -1,0 +1,16 @@
+{
+  "name": "pi-token-efficiency",
+  "version": "1.0.0",
+  "description": "Automatic token efficiency for pi agent - 8 mechanisms active on every run",
+  "main": "index.js",
+  "type": "module",
+  "keywords": ["pi", "token-efficiency", "optimization"],
+  "author": "Claude",
+  "license": "MIT",
+  "pi": {
+    "hooks": {
+      "before-execute": "hooks/before-execute.js",
+      "after-execute": "hooks/after-execute.js"
+    }
+  }
+}

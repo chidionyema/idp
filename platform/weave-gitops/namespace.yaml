@@ -1,0 +1,19 @@
+# The deploy button (founder, 2026-09-04: "install weaveops ... so i can do the deploynents
+# nyself"). Weave GitOps is Flux's own dashboard: it lists every Kustomization, HelmRelease and
+# Git source in this cluster, what revision each one is on, whether it applied cleanly, and gives
+# a Reconcile button that tells Flux to read main and apply it NOW instead of waiting out its
+# 10-minute interval. It is the vendor's chart, unmodified (LAW 43).
+#
+# It is not a second control plane and it cannot become one. It never writes a workload: the only
+# thing its buttons change is a Flux annotation, which is Flux's own "go now" signal. Git stays the
+# single source of what runs, which is what platform/edge/flux-only-writes.yaml enforces.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: weave-gitops
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    availability.idp/tier: founder-facing
+    idp.estate/edge-attach: "true"

@@ -1,0 +1,21 @@
+# crew#88 documentation standard: every document has an owner, and GitHub enforces review on the
+# same rows. One GitHub user exists in this estate today, so every row names the founder; the rows
+# are split by area so a second owner is one line, not a rewrite. The last matching row wins.
+# science/docsmap.py (crew) reads this file when a document carries no Owner: line.
+*                       @chidionyema
+/platform/              @chidionyema
+/clusters/              @chidionyema
+/backstage/             @chidionyema
+/catalog/               @chidionyema
+/docs/                  @chidionyema
+/bin/                   @chidionyema
+/tests/                 @chidionyema
+/.github/               @chidionyema
+
+# The gateway verifies everyone else; it cannot verify itself. verifier.yml, its engine,
+# and the spec that defines it require the founder's review so an agent cannot weaken the
+# gate in the same PR that needs weakening. (docs/specs/2026-09-22-cryptographic-ci-gateway.md §3)
+/.github/workflows/verifier.yml       @chidionyema
+/sovereign/verifier.py                @chidionyema
+/bin/idp-ci-verify                    @chidionyema
+/docs/specs/2026-09-22-cryptographic-ci-gateway.md  @chidionyema

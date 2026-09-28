@@ -1,0 +1,304 @@
+diff --git a/.github/workflows/trace-drill.yml b/.github/workflows/trace-drill.yml
+new file mode 100644
+index 000000000..e50bf2873
+--- /dev/null
++++ b/.github/workflows/trace-drill.yml
+@@ -0,0 +1,64 @@
++# crew#325 showcase: one call through llm.<zone>, its trace read back from langfuse.<zone>.
++# Same shape as login-drill: its own clock, the machine identity (GitHub OIDC exchanged for a
++# one-hour OCI session), keys read from the vault by name and never printed.
++name: trace-drill
++on:
++  schedule:
++    - cron: "23 * * * *"   # hourly; each run is one 8-token completion on the cheapest upstream
++  workflow_dispatch: {}
++  push:
++    branches: [main]
++    paths:
++      - platform/llm/**
++      - platform/observability/**
++      - bin/idp-trace-drill
++      - .github/workflows/trace-drill.yml
++permissions:
++  id-token: write
++  contents: read
++  issues: write
++concurrency:
++  group: trace-drill
++  cancel-in-progress: false
++jobs:
++  trace-drill:
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
++        with: { python-version: "3.12" }
++      - name: oci cli
++        run: pip install -q oci-cli
++      - name: OCI session token from the GitHub OIDC token
++        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
++        with:
++          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
++          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
++          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
++          oci_region: ${{ vars.OCI_REGION }}
++      - name: bin/idp-trace-drill
++        env:
++          OCI_CI: "1"
++          OCI_CLI_AUTH: security_token
++          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++        run: |
++          set -o pipefail
++          bin/idp-trace-drill 2>&1 | tee drill.out
++      - name: the verdict is on the run summary, pass or fail
++        if: always()
++        run: |
++          line=$(grep -E '^(ok|FAIL) +trace-drill' drill.out | tail -1 || true)
++          printf '### trace-drill\n```\n%s\n```\n' "${line:-no verdict line: the drill died before printing one}" >> "$GITHUB_STEP_SUMMARY"
++      - name: a failed drill is an open P1 on this repository, never a badge nobody reads
++        if: failure()
++        env:
++          GH_TOKEN: ${{ github.token }}
++        run: |
++          line=$(grep -E '^FAIL +trace-drill' drill.out | tail -1 || true)
++          line=${line:-"trace-drill died before printing a verdict"}
++          body=$(printf '%s\nrun: %s/%s/actions/runs/%s\nboard: https://github.com/chidionyema/crew/issues/325\n' "$line" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
++          n=$(gh issue list --state open --search 'in:title "P1: trace drill failed"' --json number -q '.[0].number')
++          if [ -n "$n" ]; then gh issue comment "$n" --body "$body"; else gh label create P1 --color D93F0B --description "a platform row is not proving itself" --force >/dev/null; gh issue create --title "P1: trace drill failed" --label P1 --body "$body"; fi
+diff --git a/bin/idp-trace-drill b/bin/idp-trace-drill
+new file mode 100755
+index 000000000..a67a519b6
+--- /dev/null
++++ b/bin/idp-trace-drill
+@@ -0,0 +1,86 @@
++#!/usr/bin/env bash
++# One call through the estate's router, and its trace read back out of the estate's trace
++# store (crew#325 showcase). This is the definition of done for "model routing" and "traces"
++# as one command: LiteLLM at llm.<zone> answers a chat completion, and Langfuse at
++# langfuse.<zone> holds the trace of that exact call a few seconds later.
++#
++# Reachable is not the same as working. A router that answers 200 with the langfuse callback
++# misconfigured drops every trace silently; a Langfuse whose worker cannot write to ClickHouse
++# renders an empty dashboard. So the drill sends a real call with its own trace id, then asks
++# Langfuse's public API for that id. Nothing else proves the whole chain (DNS, the Gateway
++# listener, LiteLLM, the upstream, the callback, Langfuse ingestion) at once.
++#
++# Credentials come out of the vault by name and are never printed (LAW 46):
++#   litellm-upstream (JSON)        -> LITELLM_MASTER_KEY
++#   langfuse-init-public-key       -> the project's public key
++#   langfuse-init-secret-key       -> the project's secret key
++#
++#   bin/idp-trace-drill
++#
++# Prints exactly one verdict line and exits 0 only when the trace came back:
++#   ok      trace-drill  llm.<zone> answered via <model> in 2.3s; trace <id> in Langfuse after 4s
++#   FAIL    trace-drill  <stage> <detail>
++# Stages: config, tools, vault, dns, router, trace.
++set -uo pipefail
++IDP="$(cd "$(dirname "$0")/.." && pwd)"
++export SUPPRESS_LABEL_WARNING=True
++fail() { printf 'FAIL    trace-drill  %s %s\n' "$1" "$2"; exit 1; }
++
++for t in oci curl jq dig python3; do command -v "$t" >/dev/null 2>&1 || fail tools "$t missing"; done
++
++CFG="$IDP/clusters/oke/estate-config.yaml"
++[ -f "$CFG" ] || fail config "no $CFG"
++ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG")
++[ -n "$ZONE" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_ZONE"
++MODEL="${TRACE_DRILL_MODEL:-deepseek}"   # a model_name in platform/llm/config.yaml; the cheapest upstream
++LLM="https://llm.$ZONE"
++LF="https://langfuse.$ZONE"
++
++# --- the keys, by name, out of the vault --------------------------------------------------------
++C="${OCI_COMPARTMENT_OCID:-}"
++[ -n "$C" ] || fail config "OCI_COMPARTMENT_OCID is not set"
++vault() {  # vault <secret-name> -> decoded content on stdout, never on argv
++  local sid b64
++  sid=$(oci vault secret list --compartment-id "$C" --name "$1" --query 'data[0].id' --raw-output 2>/dev/null) || sid=""
++  [ -n "$sid" ] && [ "$sid" != "null" ] || fail vault "no secret $1 in the compartment"
++  b64=$(oci secrets secret-bundle get --secret-id "$sid" --query 'data."secret-bundle-content".content' --raw-output 2>/dev/null) || b64=""
++  [ -n "$b64" ] && [ "$b64" != "null" ] || fail vault "secret-bundle for $1 is empty or unreadable by this identity"
++  printf '%s' "$b64" | base64 -d
++}
++MASTER=$(vault litellm-upstream | jq -r '.LITELLM_MASTER_KEY // empty')
++[ -n "$MASTER" ] || fail vault "litellm-upstream holds no LITELLM_MASTER_KEY"
++LF_PK=$(vault langfuse-init-public-key); LF_SK=$(vault langfuse-init-secret-key)
++[ -n "$LF_PK" ] && [ -n "$LF_SK" ] || fail vault "langfuse-init-public-key or langfuse-init-secret-key decodes to nothing"
++
++# --- dns: both hostnames must resolve, or the layer that broke is external-dns --------------------
++for h in "llm.$ZONE" "langfuse.$ZONE"; do
++  [ -n "$(dig +short "$h" A | head -1)" ] || fail dns "$h has no A record (external-dns has not published the HTTPRoute hostname)"
++done
++
++# --- one call, with a trace id of our own -------------------------------------------------------
++TRACE="drill-$(date -u +%Y%m%dT%H%M%SZ)-$RANDOM"
++T0=$(date +%s.%N)
++RESP=$(curl -sS --max-time 90 -o - -w '\n%{http_code}' "$LLM/v1/chat/completions" \
++  -H "Authorization: Bearer $MASTER" -H 'Content-Type: application/json' \
++  -d "$(jq -cn --arg m "$MODEL" --arg t "$TRACE" '{model:$m, max_tokens:8, messages:[{role:"user",content:"Reply with the single word: ok"}], metadata:{trace_id:$t, tags:["trace-drill"]}}')") || fail router "curl to $LLM failed"
++CODE=${RESP##*$'\n'}; BODY=${RESP%$'\n'*}
++unset MASTER
++[ "$CODE" = "200" ] || fail router "$LLM/v1/chat/completions answered http $CODE: $(printf '%s' "$BODY" | jq -r '.error.message // .' 2>/dev/null | head -c 200)"
++USED=$(printf '%s' "$BODY" | jq -r '.model // "?"')
++T1=$(date +%s.%N)
++ROUTER_S=$(python3 -c "print(f'{$T1-$T0:.1f}')")
++
++# --- the trace, read back by id -------------------------------------------------------------------
++# /api/public/ carries Langfuse's own key auth and bypasses the login ForwardAuth
++# (platform/observability/httproute.yaml). Ingestion is asynchronous; give it up to 90 s.
++i=0
++while [ $i -lt 18 ]; do
++  sleep 5; i=$((i+1))
++  CODE=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' -u "$LF_PK:$LF_SK" "$LF/api/public/traces/$TRACE") || CODE=000
++  if [ "$CODE" = "200" ]; then
++    printf 'ok      trace-drill  llm.%s answered via %s in %ss; trace %s in Langfuse after %ss\n' "$ZONE" "$USED" "$ROUTER_S" "$TRACE" "$((i*5))"
++    exit 0
++  fi
++  case "$CODE" in 404|000) ;; *) fail trace "$LF/api/public/traces/$TRACE answered http $CODE (a 302 means the login still fronts the public API)";; esac
++done
++fail trace "trace $TRACE not in Langfuse 90s after a 200 from the router (callback or ingestion)"
+diff --git a/drills/catalogue.yaml b/drills/catalogue.yaml
+index d40ed2fd4..07d7935da 100644
+--- a/drills/catalogue.yaml
++++ b/drills/catalogue.yaml
+@@ -51,3 +51,13 @@ drills:
+       In the last week Chaos Mesh killed one Backstage pod while /healthcheck stayed 200, the
+       Workflow wrote its receipt from the node's own identity, and a runner holding no key read
+       it back (bin/idp-chaos-drill grades the receipt's age, max 194h).
++
++  - name: trace-drill
++    workflow: trace-drill.yml
++    job: trace-drill
++    schedule: "23 * * * *"
++    max_age_hours: 3
++    proves: >-
++      One chat completion went through llm.<zone> with the master key from the vault and its
++      trace came back out of langfuse.<zone> by id within 90 s, so model routing and the trace
++      store work end to end from a runner that holds no key (crew#325 showcase).
+diff --git a/platform/observability/httproute.yaml b/platform/observability/httproute.yaml
+index c50d0ed17..4680dcbbf 100644
+--- a/platform/observability/httproute.yaml
++++ b/platform/observability/httproute.yaml
+@@ -42,3 +42,29 @@ spec:
+       backendRefs:
+         - name: langfuse-web
+           port: 3000
++---
++# Langfuse's public API, the path programs use: bin/idp-trace-drill from a runner reads a trace
++# back by id (crew#325). It carries Langfuse's own auth (project public:secret key, basic auth;
++# the keys are the two vault entries langfuse.yaml pulls) and cannot sit behind a browser login,
++# where every program got a 302. Same two-part proof as the router's route (platform/llm): the
++# annotation says so, and the gates check that this route exposes /api/public/ and nothing else.
++apiVersion: gateway.networking.k8s.io/v1
++kind: HTTPRoute
++metadata:
++  name: langfuse-api
++  namespace: observability
++  annotations:
++    idp.estate/auth: langfuse-project-keys
++spec:
++  parentRefs:
++    - name: prospector-edge
++      namespace: prospector
++      sectionName: https-langfuse
++  hostnames:
++    - "langfuse.${ESTATE_ZONE}"
++  rules:
++    - matches:
++        - path: { type: PathPrefix, value: /api/public/ }
++      backendRefs:
++        - name: langfuse-web
++          port: 3000
+diff --git a/sovereign/tests/bdd/test_gate_front_door_login.py b/sovereign/tests/bdd/test_gate_front_door_login.py
+index 2c8a7b103..0f7a4f739 100644
+--- a/sovereign/tests/bdd/test_gate_front_door_login.py
++++ b/sovereign/tests/bdd/test_gate_front_door_login.py
+@@ -60,6 +60,14 @@ def _oauth2_proxy_in_front(state: dict) -> None:
+         # oauth2-proxy only when it says so on the route AND its own config shows the key is enforced;
+         # the annotation alone is a label, and a label is not a proof.
+         auth = (d["metadata"].get("annotations") or {}).get("idp.estate/auth")
++        if auth == "langfuse-project-keys":
++            # The trace store's public API (crew#325): Langfuse enforces the project keys on
++            # /api/public/, so the route may expose that path and nothing else.
++            paths = [m.get("path", {}) for r in d["spec"]["rules"] for m in r.get("matches", [])]
++            assert paths and all(x == {"type": "PathPrefix", "value": "/api/public/"} for x in paths), f"{p}: langfuse-project-keys route exposes {paths}"
++            keys = (p.parent / "langfuse.yaml").read_text()
++            assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, f"{p}: langfuse.yaml pulls no project keys"
++            continue
+         assert auth == "bearer-master-key", f"{p}: route {d['metadata']['name']} has no oauth2-proxy Middleware in front ({refs}) and no idp.estate/auth annotation"
+         cfg = p.parent / "config.yaml"
+         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), f"{p}: annotated bearer-master-key but {cfg} enforces no master_key"
+diff --git a/tests/test_front_door_every_route_is_behind_the_one_login.py b/tests/test_front_door_every_route_is_behind_the_one_login.py
+index 56a913832..62bbb99e7 100644
+--- a/tests/test_front_door_every_route_is_behind_the_one_login.py
++++ b/tests/test_front_door_every_route_is_behind_the_one_login.py
+@@ -52,6 +52,17 @@ def test_every_route_outside_identity_is_behind_forward_auth(f, route):
+         assert cfg.exists() and "master_key: os.environ/" in cfg.read_text(), \
+             f"{f}: annotated bearer-master-key but {cfg} enforces no master_key"
+         return
++    # The trace store's public API (crew#325) carries Langfuse's own project-key auth. The route may
++    # skip oauth2-proxy only when it says so AND exposes nothing but /api/public/, AND the namespace
++    # pulls the two project keys Langfuse enforces on that path (langfuse.yaml, from the vault).
++    if (route["metadata"].get("annotations") or {}).get("idp.estate/auth") == "langfuse-project-keys":
++        paths = [m.get("path", {}) for rule in route["spec"]["rules"] for m in rule.get("matches", [])]
++        assert paths and all(p == {"type": "PathPrefix", "value": "/api/public/"} for p in paths), \
++            f"{f}: annotated langfuse-project-keys but exposes a path other than /api/public/: {paths}"
++        keys = (pathlib.Path(f).parent / "langfuse.yaml").read_text()
++        assert "langfuse-init-public-key" in keys and "langfuse-init-secret-key" in keys, \
++            f"{f}: annotated langfuse-project-keys but langfuse.yaml pulls no project keys"
++        return
+     guarded = 0
+     for rule in route["spec"]["rules"]:
+         refs = [flt["extensionRef"] for flt in rule.get("filters", []) if flt.get("type") == "ExtensionRef"]
+diff --git a/tests/test_incident_crew325_trace_drill.py b/tests/test_incident_crew325_trace_drill.py
+new file mode 100644
+index 000000000..de14b5641
+--- /dev/null
++++ b/tests/test_incident_crew325_trace_drill.py
+@@ -0,0 +1,43 @@
++"""Incident crew#325, 2026-08-26: the showcase's last step, one routed call visible as a trace at
++langfuse.<zone>, had no command that proved it, and the login ForwardAuth in front of every
++Langfuse path meant no program could have read a trace back anyway. The rule: the trace drill
++exists as a catalogued drill, and Langfuse's key-authenticated public API bypasses the login."""
++import re
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++
++
++def _route(name: str, ns_file: Path) -> dict:
++    docs = [d for d in yaml.safe_load_all(ns_file.read_text()) if d]
++    return next(d for d in docs if d["kind"] == "HTTPRoute" and d["metadata"]["name"] == name)
++
++
++def test_langfuse_public_api_bypasses_the_login_forward_auth() -> None:
++    f = ROOT / "platform" / "observability" / "httproute.yaml"
++    api = _route("langfuse-api", f)
++    assert api["metadata"]["annotations"]["idp.estate/auth"] == "langfuse-project-keys"
++    paths = [m["path"] for r in api["spec"]["rules"] for m in r["matches"]]
++    assert paths == [{"type": "PathPrefix", "value": "/api/public/"}], paths
++    assert not any(r.get("filters") for r in api["spec"]["rules"]), "the public API route must carry no ForwardAuth filter"
++    assert api["spec"]["rules"][0]["backendRefs"][0]["name"] == "langfuse-web"
++    # The browser route keeps the login on every path except the /oauth2/ redirect.
++    ui = _route("langfuse", f)
++    for r in ui["spec"]["rules"]:
++        paths = {m.get("path", {}).get("value") for m in r.get("matches", [])}
++        if "/oauth2/" in paths:
++            continue
++        assert any(x.get("extensionRef", {}).get("name") == "login-forward-auth" for x in r.get("filters", [])), r
++
++
++def test_trace_drill_is_catalogued_and_reads_keys_only_from_the_vault() -> None:
++    drills = {d["name"]: d for d in yaml.safe_load((ROOT / "drills" / "catalogue.yaml").read_text())["drills"]}
++    assert "trace-drill" in drills
++    assert (ROOT / ".github" / "workflows" / drills["trace-drill"]["workflow"]).exists()
++    script = (ROOT / "bin" / "idp-trace-drill").read_text()
++    # The three secrets are named, never typed (LAW 46): a key literal would look like sk-... or pk-lf-...
++    for name in ("litellm-upstream", "langfuse-init-public-key", "langfuse-init-secret-key"):
++        assert name in script, name
++    assert not re.search(r"(sk-lf-|pk-lf-|sk-)[A-Za-z0-9]{8,}", script), "a key literal in the drill"

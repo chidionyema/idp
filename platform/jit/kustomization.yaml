@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# Deliberately NO top-level `namespace:`. Every resource in this directory already names its
+# own, and ten of them are RoleBindings that must land in ten *different* namespaces -- the
+# whole point of rbac.yaml. A namespace transformer here rewrites all ten to `jit`, which is
+# both wrong (the broker would hold nothing anywhere it needs to reach) and unbuildable:
+# kustomize refuses the ten identical RoleBinding/jit ids it produces (LAW 45).
+resources:
+  - fence.yaml
+  - public-door.yaml
+  - rbac.yaml
+  - deployment.yaml
+configMapGenerator:
+  # The broker mints only from this file, and this is the only path by which it reaches the
+  # cluster: git, through Flux, into a ConfigMap. There is no second copy to drift.
+  - name: jit-grants
+    namespace: jit
+    files: [grants.yaml]
+generatorOptions:
+  disableNameSuffixHash: true
+images:
+  # Set by Flux image automation, exactly as backstage, cyrus, lago and the rest are. A tag typed
+  # by hand rots: cyrus sat in ImagePullBackOff from the day it was applied because its deployment
+  # asked for a `:main` tag that was never pushed (platform/image-automation/cyrus.yaml).
+  - name: ghcr.io/chidionyema/jit
+    newTag: main-12613-32f41fd517fa0522b38bfbc2c9a861447b30160d # {"$imagepolicy": "flux-system:jit:tag"}

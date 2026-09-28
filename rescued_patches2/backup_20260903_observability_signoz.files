@@ -1,0 +1,14 @@
+.github/workflows/ci.yml
+bin/idp-ci
+bin/idp-kyverno-render
+clusters/oke/platform.yaml
+platform/observability/kustomization.yaml
+platform/observability/namespace.yaml
+platform/observability/signoz.yaml
+platform/observability/values.yaml
+tests/fixtures/kyverno/must-fail/kustomization.yaml
+tests/fixtures/kyverno/must-fail/release.yaml
+tests/fixtures/kyverno/upstream/admit-acme-solver.yaml
+tests/fixtures/kyverno/upstream/admit-job-pods.yaml
+tests/fixtures/kyverno/upstream/enforce.yaml
+tests/fixtures/kyverno/upstream/kustomization.yaml

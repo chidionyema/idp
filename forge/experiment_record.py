@@ -1,0 +1,496 @@
+"""One Forge run, written up as an experiment: forge/experiments/<utc>-<task>.md
+
+    python forge/experiment_record.py --task forge/task.yaml --run forge-run.json \
+        [--data forge/datasets/<task>.jsonl] [--out forge/experiments]
+
+The record has a YAML front matter (machine-readable: verdict, agreement, dataset hash, trace,
+artifact) and seven sections: hypothesis, setup, data, pre-registered gates, results, provenance,
+reproduce. Every run leaves one, refused or dry or shipped; a run with no record did not happen.
+"""
+
+import argparse
+import json
+import math
+import os
+import pathlib
+import subprocess
+import sys
+import time
+from collections import Counter
+
+import yaml
+
+MIN_EXAMPLES = 500  # forge/common.py; the split refuses under it
+THIN_SUPPORT = (
+    30  # forge/common.py; under this many held-out rows a per-label reading is noise
+)
+
+# forge/modal_app.py writes `verdict: refused` for three different events, and until
+# 2026-09-09 this file described all three as the first one -- so run 34401515600, which
+# met both gates and then lost the model to the GGUF export, was filed as "stopped before
+# it started, because it could have cost more than its budget". A record that misreports
+# its own run is worse than no record. Each kind is read back from the shape modal_app
+# leaves, which is distinct for all three.
+REFUSAL_KINDS = ("budget", "gate", "export", "unknown")
+
+
+def refusal_kind(run: dict, ev: dict) -> str | None:
+    """Which refusal this was, from the record's own fields. None when nothing was refused.
+
+    budget -- the pre-launch cost or spend gate returned before train.py ran: no eval
+              numbers exist and no GPU seconds were billed (modal_app.py, the `refusal`
+              branch, writes seconds 0 and usd 0.0).
+    gate   -- train.py graded the held-out split, missed min_agreement or max_abstain and
+              raised SystemExit, so eval.json carries the refusal string it wrote.
+    export -- eval.json says `passed` with no refusal and the process still exited
+              non-zero: everything after the gates (GGUF export, oras push) failed.
+    """
+    if run.get("verdict") != "refused":
+        return None
+    if ev.get("agreement") is None and not run.get("seconds"):
+        return "budget"
+    if ev.get("refusal"):
+        return "gate"
+    if ev.get("verdict") == "passed":
+        return "export"
+    return "unknown"
+
+
+def git_sha() -> str:
+    if os.environ.get("GITHUB_SHA"):
+        return os.environ["GITHUB_SHA"]
+    try:
+        return subprocess.run(  # noqa: S603,S607
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def run_url() -> str | None:
+    if not os.environ.get("GITHUB_RUN_ID"):
+        return None
+    return f"{os.environ.get('GITHUB_SERVER_URL', 'https://github.com')}/{os.environ.get('GITHUB_REPOSITORY', '')}/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+
+
+def langfuse_host() -> str | None:
+    zone = os.environ.get("ESTATE_ZONE")
+    return os.environ.get("LANGFUSE_HOST") or (
+        f"https://langfuse.{zone}" if zone else None
+    )
+
+
+def data_summary(rows: list[dict] | None) -> dict:
+    if not rows:
+        return {"per_label": {}, "teachers": [], "splits": {}}
+    return {
+        "per_label": dict(sorted(Counter(r.get("output", "") for r in rows).items())),
+        "teachers": sorted({r["teacher"] for r in rows if r.get("teacher")}),
+        "splits": dict(Counter(r.get("split", "") for r in rows)),
+    }
+
+
+def half_width(p: float, n: int) -> float:
+    """95% normal-approximation half width of a proportion; what n held-out rows can resolve."""
+    return 1.96 * math.sqrt(p * (1 - p) / n) if n else 1.0
+
+
+def table(pairs: list[tuple[str, object]]) -> str:
+    out = ["| field | value |", "|---|---|"]
+    for k, v in pairs:
+        out.append(f"| {k} | {'' if v is None else v} |")
+    return "\n".join(out)
+
+
+def envelope_sections(task: dict, ev: dict) -> str:
+    """What it can do, what it cannot do reliably, where the edge is and how to move it.
+
+    Empty for a run whose eval.json predates the envelope (2026-09-09); a record never
+    invents a section it has no measurement for.
+    """
+    env = ev.get("envelope")
+    if not env:
+        return ""
+    per = env["per_label"]
+    names = task["labels"]
+    can = (
+        f"Of {ev.get('held_out')} held-out rows it had never seen, it answered "
+        f"**{env['answered']}** and declined **{env['declined']}**. Of the ones it answered "
+        f"it was right **{env['correct']}** times and wrong **{env['wrong']}**. That is the "
+        "duty it can take: the declined rows still cost a person or a frontier call."
+    )
+    base = ev.get("baseline") or {}
+    learned = []
+    if ev.get("lift_over_untrained") is not None:
+        learned.append(
+            f"the same model before a single gradient step scored "
+            f"{base.get('agreement', 0):.1%} on these rows, so training moved it "
+            f"{ev['lift_over_untrained']:+.1%}"
+        )
+    if ev.get("majority") and ev.get("lift_over_majority") is not None:
+        learned.append(
+            f"answering `{ev['majority']['label']}` every time would score "
+            f"{ev['majority']['agreement']:.1%}, so it is {ev['lift_over_majority']:+.1%} "
+            "over guessing"
+        )
+    per_label = table(
+        [
+            (
+                f"`{lab}` = {names.get(lab, lab)}",
+                f"{r['support']} rows, answered {r['answered']}, right {r['correct']}, "
+                + (
+                    "caught {:.0%}".format(r["recall_answered"])
+                    if r["recall_answered"] is not None
+                    else "never answered"
+                )
+                + (" -- too few rows to judge" if r["thin"] else ""),
+            )
+            for lab, r in sorted(per.items())
+        ]
+    )
+    cannot = [
+        f"`{lab}` = {names.get(lab, lab)}: {r['support']} held-out rows is under "
+        f"{THIN_SUPPORT}, so this run says nothing settled about it"
+        for lab, r in sorted(per.items())
+        if r["thin"]
+    ] + [
+        f"`{lab}` = {names.get(lab, lab)}: caught {r['recall_answered']:.0%} of the time, "
+        "so more than half of them get the wrong answer"
+        for lab, r in sorted(per.items())
+        if not r["thin"]
+        and r["recall_answered"] is not None
+        and r["recall_answered"] < 0.5
+    ]
+    curve = ev.get("frontier") or []
+    curve_table = "\n".join(
+        ["| abstain_below | answers | of held-out | agreement |", "|---|---|---|---|"]
+        + [
+            f"| {p['abstain_below']}{' (this run)' if abs(p['abstain_below'] - task['abstain_below']) < 1e-9 else ''} "
+            f"| {p['answered']} | {p['coverage']:.0%} | {p['agreement']:.1%} |"
+            for p in curve
+        ]
+    )
+    moves = "\n".join(f"- {m}" for m in ev.get("next_move", []))
+    return f"""
+
+## 5a. What it can do
+
+{can}
+
+{" and ".join(learned).capitalize() + "." if learned else ""}
+
+{per_label}
+
+## 5b. What it cannot do reliably
+
+{chr(10).join("- " + c for c in cannot) if cannot else "- Nothing this run's held-out rows can single out."}
+
+## 5c. Where the edge is, and how to move it
+
+The task file abstains under a {task["abstain_below"]} margin. That is one point on a curve,
+and the curve is the edge: every row of it is the same model, re-read at a different
+confidence bar. Lower bars answer more and are wrong more.
+
+{curve_table}
+
+Which lever moves it forward, read off the numbers above:
+
+{moves}
+"""
+
+
+def render(task: dict, run: dict, rows: list[dict] | None, context: dict) -> str:
+    ev = run.get("eval", {})
+    ds = run.get("dataset") or {}
+    summary = data_summary(rows)
+    stamp = context["stamp"]
+    verdict = run.get("verdict", "unknown")
+    kind = refusal_kind(run, ev)
+    agreement = ev.get("agreement")
+    abstain = ev.get("abstain_rate")
+    held = ev.get("held_out", 0)
+    front = {
+        "experiment": f"{stamp}-{task['task']}",
+        "task": task["task"],
+        "base": task["base"],
+        "verdict": verdict,
+        "refusal_kind": kind,
+        "exit_code": run.get("exit_code"),
+        "dry_run": bool(run.get("dry_run")),
+        "held_out": held,
+        "agreement": agreement,
+        "abstain_rate": abstain,
+        "min_agreement": task["min_agreement"],
+        "max_abstain": task["max_abstain"],
+        "dataset_sha256": ds.get("sha256"),
+        "dataset_rows": ds.get("rows"),
+        "lift_over_untrained": ev.get("lift_over_untrained"),
+        "lift_over_majority": ev.get("lift_over_majority"),
+        "answered": (ev.get("envelope") or {}).get("answered"),
+        "wrong": (ev.get("envelope") or {}).get("wrong"),
+        "usd": run.get("usd"),
+        "budget_usd": run.get("budget_usd"),
+        "trace": run.get("trace"),
+        "artifact": run.get("artifact"),
+        "forge_commit": context["sha"],
+        "run_url": context.get("run_url"),
+    }
+    hypothesis = task.get("hypothesis") or (
+        f"A LoRA (r={task['lora']['r']}) on {task['base']}, trained on the teacher-labelled "
+        f"train split, agrees with the teacher on at least {task['min_agreement']:.0%} of the "
+        f"held-out rows it answers while abstaining on at most {task['max_abstain']:.0%} of them "
+        f"(abstain when the top-two label margin is under {task['abstain_below']})."
+    )
+    labels = ", ".join(f"`{k}` = {v}" for k, v in task["labels"].items())
+    trace_line = run.get("trace")
+    if trace_line and context.get("langfuse_host"):
+        trace_line = f"{context['langfuse_host']}/trace/{run['trace']}"
+    if verdict == "shipped":
+        outcome = f"PASSED both gates; model pushed as `{run['artifact']}`."
+    elif verdict == "dry-run":
+        outcome = "Dry run: gates graded, nothing pushed."
+    elif kind == "budget":
+        outcome = (
+            f"REFUSED before the GPU started: {ev.get('refusal')}. "
+            "Nothing was billed and no model was trained."
+        )
+    elif kind == "gate":
+        outcome = (
+            f"REFUSED by the pre-registered gates: {ev.get('refusal')}. "
+            "No model left the Forge."
+        )
+    elif kind == "export":
+        code = run.get("exit_code")
+        where = "" if code is None else f" (exit {code})"
+        rehearsal = (
+            " It was a dry run, which would not have pushed one either way."
+            if run.get("dry_run")
+            else ""
+        )
+        outcome = (
+            f"PASSED both pre-registered gates, then the run failed after them{where}: "
+            "the GPU was billed, the numbers below are real, and no artifact was "
+            f"published.{rehearsal}"
+        )
+    elif verdict == "refused":
+        outcome = f"REFUSED: {ev.get('refusal') or 'reason not recorded'}. No model left the Forge."
+    else:
+        outcome = f"Verdict `{verdict}`."
+    plain = task.get("plain_english") or (
+        f"A small model was trained to do one job: {task['task']}. It learned from "
+        f"{ds.get('rows') or 'the'} examples the estate already had answers for, and was then tested "
+        f"on {held or 'held-out'} examples it had never seen."
+    )
+    if verdict == "shipped":
+        plain += (
+            f" It got {agreement:.0%} of the ones it answered right and declined to answer "
+            f"{abstain:.0%} of them, which clears the bar we set beforehand, so it is now in use."
+        )
+    elif verdict == "dry-run":
+        plain += " This was a rehearsal: it was graded but nothing was published."
+    elif kind == "budget":
+        plain += " The run was stopped before it started, because it could have cost more than its budget."
+    elif kind == "export" and agreement is not None:
+        plain += (
+            f" It got {agreement:.0%} of the ones it answered right and declined to answer "
+            f"{abstain:.0%} of them, which clears the bar we set beforehand -- but the run then "
+            "failed while packaging the model up, so there is nothing to use yet."
+        )
+    elif agreement is not None:
+        plain += (
+            f" It got {agreement:.0%} right and declined {abstain:.0%}, which does not clear the bar, "
+            "so nothing was published."
+        )
+    if held:
+        hw = half_width(agreement or 0.0, held)
+        resolution = (
+            f"{held} held-out rows resolve agreement to about ±{hw:.1%} (95%, normal "
+            f"approximation), so a reading within that band of {task['min_agreement']:.0%} is "
+            "not a settled pass or fail; label more rows before trusting it."
+        )
+    else:
+        resolution = "No held-out rows were graded."
+    reproduce = f"""```
+# 1. label (the teacher through the router; persisted to Langfuse + git)
+uv run --with anthropic --with pyyaml --with 'langfuse<3' forge/generate_teacher_dataset.py \\
+    --task {context["task_path"]} --input raw.jsonl --output forge/datasets/{task["task"]}.jsonl
+# 2. train on Modal from CI (the only road; the root is set once by bin/idp-set-root modal)
+gh workflow run forge-train.yml -f task_file={context["task_path"]} -f dry_run={str(bool(run.get("dry_run"))).lower()} -f max_steps={run.get("max_steps", -1)}
+# 3. this record
+python forge/experiment_record.py --task {context["task_path"]} --run forge-run.json --data forge/datasets/{task["task"]}.jsonl
+```"""
+    body = f"""---
+{yaml.safe_dump(front, sort_keys=False).rstrip()}
+---
+
+# Forge experiment {stamp}: {task["task"]}
+
+{outcome}
+
+## In plain English
+
+{plain}
+
+## 1. Hypothesis
+
+{hypothesis}
+
+## 2. Setup
+
+{
+        table(
+            [
+                ("base model", task["base"]),
+                ("kind", task["kind"]),
+                ("labels", labels),
+                (
+                    "LoRA",
+                    f"r={task['lora']['r']}, alpha={task['lora']['alpha']}, epochs={task['lora']['epochs']}, lr={task['lora']['lr']}",
+                ),
+                ("max_steps", run.get("max_steps", -1)),
+                ("GPU", run.get("gpu")),
+                ("train wall time (s)", run.get("seconds")),
+                ("cost (USD)", run.get("usd")),
+                ("budget (USD)", run.get("budget_usd")),
+                ("forge commit", context["sha"]),
+                ("task file", context["task_path"]),
+                ("CI run", context.get("run_url")),
+            ]
+        )
+    }
+
+Prompt template:
+
+```
+{task["prompt_template"].rstrip()}
+```
+
+## 3. Data
+
+{
+        table(
+            [
+                ("rows", ds.get("rows")),
+                ("train / eval", f"{ds.get('train')} / {ds.get('eval')}"),
+                ("sha256", ds.get("sha256")),
+                ("per label", json.dumps(summary["per_label"])),
+                (
+                    "teacher(s)",
+                    ", ".join(summary["teachers"]) or "not recorded in rows",
+                ),
+                ("Langfuse dataset", ds.get("langfuse_dataset")),
+                ("file", context.get("data_path")),
+            ]
+        )
+    }
+
+Labels come from the source each row's `teacher` field names: a teacher model run
+(forge/generate_teacher_dataset.py), a gold set, or a recorded outcome (forge/collect_ci_runs.py).
+Rows a teacher model marked unsure are in the `-unsure` Langfuse dataset and not here.
+
+## 4. Pre-registered gates
+
+{
+        table(
+            [
+                ("minimum rows", f"{MIN_EXAMPLES} (80/20 split, seed 0)"),
+                (
+                    "abstain_below",
+                    f"{task['abstain_below']} margin between the top two label probabilities",
+                ),
+                ("min_agreement", f"{task['min_agreement']} on answered held-out rows"),
+                ("max_abstain", f"{task['max_abstain']} of held-out rows"),
+            ]
+        )
+    }
+
+Both gates are graded before any export. Agreement bought by abstaining is refused by the
+second gate.
+
+## 5. Results
+
+{
+        table(
+            [
+                ("held-out rows", held),
+                ("agreement (answered rows)", agreement),
+                ("abstain rate", abstain),
+                (
+                    "min_agreement met",
+                    None if agreement is None else agreement >= task["min_agreement"],
+                ),
+                (
+                    "max_abstain met",
+                    None if abstain is None else abstain <= task["max_abstain"],
+                ),
+                ("verdict", verdict),
+                ("which refusal", kind),
+                ("process exit code", run.get("exit_code")),
+                ("refusal", ev.get("refusal")),
+            ]
+        )
+    }
+
+{resolution}
+{envelope_sections(task, ev)}
+
+## 6. Provenance
+
+{
+        table(
+            [
+                ("Langfuse trace", trace_line),
+                ("artifact (GHCR)", run.get("artifact")),
+                ("dataset sha256", ds.get("sha256")),
+                ("forge commit", context["sha"]),
+                ("CI run", context.get("run_url")),
+            ]
+        )
+    }
+
+## 7. Reproduce
+
+{reproduce}
+"""
+    return body
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--task", required=True)
+    ap.add_argument("--run", required=True)
+    ap.add_argument("--data", default=None)
+    ap.add_argument("--out", default="forge/experiments")
+    ap.add_argument(
+        "--stamp",
+        default=None,
+        help="UTC stamp to file under; a re-render of an old run keeps its own name",
+    )
+    args = ap.parse_args(argv)
+    task = yaml.safe_load(pathlib.Path(args.task).read_text(encoding="utf-8"))
+    run = json.loads(pathlib.Path(args.run).read_text(encoding="utf-8"))
+    rows = None
+    if args.data and pathlib.Path(args.data).exists():
+        rows = [
+            json.loads(line)
+            for line in pathlib.Path(args.data).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    context = {
+        "stamp": args.stamp or time.strftime("%Y%m%dT%H%MZ", time.gmtime()),
+        "sha": git_sha(),
+        "run_url": run_url(),
+        "langfuse_host": langfuse_host(),
+        "task_path": args.task,
+        "data_path": args.data,
+    }
+    out = pathlib.Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"{context['stamp']}-{task['task']}.md"
+    path.write_text(render(task, run, rows, context), encoding="utf-8")
+    print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

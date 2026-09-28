@@ -1,0 +1,15 @@
+# The floor, on its own, and that separation is the whole point of this directory.
+#
+# agent-reader used to sit in platform/rbac beside the break-glass bridge. That Kustomization
+# substitutes the bridge instance's OCID into its ClusterRoleBinding with `optional: false`
+# (clusters/oke/platform.yaml), and terraform has never written `bridge-instance-ocid` into the
+# vault -- External Secrets has been answering 404 for it since 2026-09-05. So the identity every
+# agent in this estate runs as, and after it the JIT broker that is the only ceiling above that
+# floor, were both held down by a break-glass machine neither of them uses.
+#
+# Nothing here substitutes anything, so nothing here can be held down by a credential it does not
+# read (LAW 45: the trap gets fixed where it was found, not routed around).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - agent-reader.yaml

@@ -1,0 +1,13 @@
+.mirrord/staging.json
+backstage/platform/catalog-info.yaml
+bin/catalog-platform
+bin/idp-dev
+clusters/oke/platform.yaml
+docs/how-to/test-against-the-cluster.md
+platform/edge/dev-loop-policy.yaml
+platform/features/features.yaml
+platform/staging/kustomization.yaml
+platform/staging/namespace.yaml
+tests/test_incident_crew584_features_plan_reads_git.py
+tests/test_incident_crew584_mirrord_agent_only_where_allowed.py
+tests/test_incident_crew584_staging_is_a_namespace.py

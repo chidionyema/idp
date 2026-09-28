@@ -1,0 +1,23 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: enforce-ephemeral-agent-runtime
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-ephemeral-annotation
+      match:
+        any:
+          - resources:
+              namespaces:
+                - agents
+              kinds:
+                - Deployment
+                - Pod
+      validate:
+        message: "Permanent agent workloads are prohibited. Use Temporal activities with E2B/Modal sandboxes or attach a KEDA ScaledObject."
+        pattern:
+          metadata:
+            annotations:
+              idp.estate.io/runtime: "ephemeral"

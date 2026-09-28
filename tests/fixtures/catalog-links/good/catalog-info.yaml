@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: layer-dagster
+  description: A component with a valid absolute URL in links
+  links:
+    - url: https://catalogue.${ESTATE_ZONE}/dagster
+      title: Open the scheduler
+    - url: https://signoz.${ESTATE_ZONE}
+      title: Live logs and metrics
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform

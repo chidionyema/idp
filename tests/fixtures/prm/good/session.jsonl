@@ -1,0 +1,5 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"diagnose database outage","subgoals":[{"id":"sg1","text":"check database connectivity"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git show HEAD"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"kubectl get pods -n db"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"curl http://db-check/health"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I verified the database is up."}]}}

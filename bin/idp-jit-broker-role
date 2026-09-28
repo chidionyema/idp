@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""Grade the JIT broker's own ClusterRole -- the RBAC floor, not the grant catalogue.
+
+`bin/idp-jit-grants` reads platform/jit/grants.yaml and refuses a *grant* that asks for secrets,
+RBAC, a core namespace or a wildcard (WJ.5). Nothing read this file, and the file said otherwise:
+its header claims "Nothing here touches Secrets, RBAC or the core namespaces ... this file cannot
+grow those verbs without that gate going red first". It does touch RBAC -- `roles` and
+`rolebindings`, create/get/delete -- because that is how a broker mints a grant at all, and no
+gate would have gone red if it had grown `escalate` tomorrow. Trivy found it (KSV-0050, CRITICAL,
+2026-09-07) and trivy was right.
+
+The waiver in .trivyignore.yaml rests on four properties, so this gate holds those four rather
+than the finding:
+
+  1. No `escalate`. Without it Kubernetes' own escalation-prevention rule caps every Role the
+     broker writes at the permissions the broker already holds. That single verb is the whole
+     difference between "may mint what it holds" and "may mint anything".
+  2. No `bind`. Same rule, applied to RoleBindings: without `bind` the broker cannot bind a
+     subject to a role wider than itself.
+  3. No `impersonate`. An identity that may impersonate does not need to escalate.
+  4. No ClusterRoleBinding naming it, and no wildcard. The role reaches the namespaces its
+     RoleBindings name and stops -- a namespace created next week is not automatically in range.
+
+Refuses on stdout with the reason. Exit 0 clean, 1 dirty.
+"""
+import sys
+import yaml
+
+ROLE = "jit-broker"
+FORBIDDEN_VERBS = {"escalate", "bind", "impersonate"}
+FORBIDDEN_RESOURCES = {"secrets"}
+
+
+def rule_faults(rule):
+    groups = rule.get("apiGroups") or []
+    resources = rule.get("resources") or []
+    verbs = rule.get("verbs") or []
+    for field, values in (("apiGroups", groups), ("resources", resources), ("verbs", verbs)):
+        if "*" in values:
+            yield "a wildcard in %s" % field
+    for v in verbs:
+        if v.lower() in FORBIDDEN_VERBS:
+            yield "the verb %r, which lifts Kubernetes' own escalation-prevention rule" % v
+    for r in resources:
+        if r.split("/")[0].lower() in FORBIDDEN_RESOURCES:
+            yield "%r, which the grant catalogue is already refused (WJ.5)" % r
+
+
+def main(path):
+    docs = [d for d in yaml.safe_load_all(open(path).read()) if isinstance(d, dict)]
+    faults = []
+    seen_role = False
+    for d in docs:
+        kind = d.get("kind")
+        name = (d.get("metadata") or {}).get("name")
+        if kind == "ClusterRole" and name == ROLE:
+            seen_role = True
+            for i, rule in enumerate(d.get("rules") or []):
+                for why in rule_faults(rule):
+                    faults.append("ClusterRole/%s rule %d carries %s" % (ROLE, i, why))
+        if kind == "ClusterRoleBinding":
+            ref = d.get("roleRef") or {}
+            if ref.get("kind") == "ClusterRole" and ref.get("name") == ROLE:
+                faults.append(
+                    "ClusterRoleBinding/%s binds %s cluster-wide; the broker reaches the "
+                    "namespaces its RoleBindings name and stops" % (name, ROLE))
+    if not seen_role:
+        faults.append("no ClusterRole/%s in %s: this gate graded nothing, which is not a pass" % (ROLE, path))
+    for f in faults:
+        print(f)
+    return 1 if faults else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1]))

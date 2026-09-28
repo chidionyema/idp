@@ -1,0 +1,258 @@
+#!/usr/bin/env python3
+"""room-eyes -- many looks from one long-lived Node process.
+
+WHY. Measured 2026-09-19: driving the room through a browser costs 556 milliseconds of actual
+work (connect 227 + wall probe 171 + canvas 158), while `import("playwright-core")` alone costs
+3.6 seconds. Every check that spawns a node process therefore pays the dearest part repeatedly
+for the cheapest work, and the proof script sat at 8.6 seconds for eight checks whose real work
+is well under one.
+
+THE FOUNDER'S LAW IS THAT NO COMMAND MAY EXCEED 30 SECONDS, AND THAT 30 IS A CEILING RATHER THAN
+A BUDGET. A check that costs eight seconds is a check that gets run once and then trusted. So the
+fix is not a bigger timeout; it is not paying the 3.6 seconds more than once.
+
+The node process below stays up and speaks one JSON line per request on stdin/stdout, so the
+second and every later look costs only the browser work. `room-eye --up` starts the browser;
+this starts the driver that talks to it.
+
+  bin/room-eyes --up           # start the persistent driver (idempotent)
+  bin/room-eyes look           # one look, ~0.7s
+  bin/room-eyes click X Y      # click a point on the canvas
+  bin/room-eyes menu           # open the radial menu on a node, report its verbs
+  bin/room-eyes quit           # stop the driver
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+APP = ROOT / "backstage"
+SOCK = Path(os.environ.get("ROOM_EYES_SOCK", "/tmp/room-eyes.sock"))
+CDP_PORT = os.environ.get("ROOM_EYE_PORT", "9222")
+
+
+def sock_alive() -> bool:
+    if not SOCK.exists():
+        return False
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(0.4)
+            s.connect(str(SOCK))
+            return True
+    except OSError:
+        return False
+
+
+def driver_source() -> str:
+    return """
+import { chromium } from 'playwright-core';
+import net from 'node:net';
+
+const CDP = process.env.ROOM_EYE_PORT || '9222';
+const SOCK = process.env.ROOM_EYES_SOCK || '/tmp/room-eyes.sock';
+
+const b = await chromium.connectOverCDP(`http://127.0.0.1:${CDP}`);
+/** The last canvas fraction that opened a menu, so the sweep is paid once rather than always. */
+let lastHit = null;
+const findPage = () => {
+  const pages = b.contexts().flatMap((c) => c.pages());
+  return pages.find((x) => x.url().includes('/fleet')) ?? pages[0];
+};
+
+async function look(p) {
+  await p.waitForSelector('canvas', { timeout: 6000 }).catch(() => {});
+  return p.evaluate(() => {
+    const agents = Array.from(document.querySelectorAll('[data-testid^="agent-"]'));
+    const states = {};
+    for (const a of agents) {
+      const m = (a.textContent || '').match(/thinking|waiting|stuck|finished/i);
+      if (m) states[m[0].toLowerCase()] = (states[m[0].toLowerCase()] || 0) + 1;
+    }
+    const c = document.querySelector('canvas');
+    const r = c?.getBoundingClientRect();
+    const menu = document.querySelector('[data-testid="radial-menu"]');
+    return {
+      agents: agents.length,
+      states,
+      first: (agents[0]?.textContent || '').trim().slice(0, 96),
+      canvas: r ? { w: Math.round(r.width), h: Math.round(r.height), x: Math.round(r.x), y: Math.round(r.y) } : null,
+      menu: menu ? Array.from(menu.querySelectorAll('button')).map((x) => ({ verb: x.textContent.trim(), on: !x.disabled })) : null,
+      mind: !!document.querySelector('[data-testid="mind-panel"]'),
+      voice: !!document.querySelector('[data-testid="voice-ptt"]'),
+      url: location.href,
+    };
+  });
+}
+
+async function handle(p, line) {
+  const [cmd, ...args] = line.trim().split(/\\s+/);
+  switch (cmd) {
+    case 'look':
+      return look(p);
+    case 'click': {
+      // Click a fraction of the canvas, which is how a person clicks a node: the layout is
+      // seeded and only the canvas knows where an agent is.
+      const r = await p.evaluate(() => {
+        const c = document.querySelector('canvas');
+        const b = c.getBoundingClientRect();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
+      await p.mouse.click(r.x + r.w * Number(args[0]), r.y + r.h * Number(args[1]));
+      await p.waitForTimeout(120);
+      return look(p);
+    }
+    case 'menu': {
+      // SWEEP, BUT REMEMBER. Measured: a full sweep is 6.2s and the browser work per look is
+      // 0.7s, so almost all of it is the grid. Agents drift about 10% a minute, which means a
+      // point that opened a menu a few seconds ago still opens one -- so the last hit is tried
+      // FIRST and the sweep is usually skipped entirely.
+      const r = await p.evaluate(() => {
+        const c = document.querySelector('canvas');
+        const b = c.getBoundingClientRect();
+        return { x: b.x, y: b.y, w: b.width, h: b.height };
+      });
+      const opens = async (gx, gy) => {
+        await p.mouse.click(r.x + r.w * gx, r.y + r.h * gy);
+        await p.waitForTimeout(90);
+        return p.evaluate(() => !!document.querySelector('[data-testid="radial-menu"]'));
+      };
+      if (lastHit && (await opens(lastHit[0], lastHit[1]))) return look(p);
+      const step = lastHit ? 0.035 : 0.05;
+      for (let gy = 0.14; gy <= 0.90; gy += 0.07) {
+        for (let gx = 0.06; gx <= 0.95; gx += step) {
+          if (await opens(gx, gy)) { lastHit = [gx, gy]; return look(p); }
+        }
+      }
+      return { ...(await look(p)), menu: null, note: 'no node opened a menu' };
+    }
+    case 'eval': {
+      const expr = line.trim().slice(5);
+      return await p.evaluate(expr);
+    }
+    case 'shot': {
+      const c = await p.$('canvas');
+      await c.screenshot({ path: args[0] });
+      return { wrote: args[0] };
+    }
+    case 'quit':
+      return { bye: true };
+    default:
+      throw new Error(`unknown command: ${cmd}`);
+  }
+}
+
+// One JSON line out per request. Separated by a NEWLINE rather than EOF, so the process can stay
+// up and answer again -- the whole point.
+const server = net.createServer((conn) => {
+  let buf = '';
+  conn.on('data', async (chunk) => {
+    buf += chunk.toString();
+    const lines = buf.split('\\n');
+    buf = lines.pop() ?? '';
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let reply;
+      try {
+        reply = { ok: true, result: await handle(findPage(), line) };
+      } catch (e) {
+        reply = { ok: false, error: String(e).slice(0, 300) };
+      }
+      conn.write(JSON.stringify(reply) + '\\n');
+      if (line.trim() === 'quit') { conn.end(); process.exit(0); }
+    }
+  });
+});
+// A stale socket file is removed rather than refused, so a killed driver does not wedge the path.
+import fs from 'node:fs';
+try { fs.unlinkSync(SOCK); } catch {}
+server.listen(SOCK, () => console.error('room-eyes: driver listening'));
+"""
+
+
+def up() -> int:
+    if sock_alive():
+        print(f"room-eyes: driver already listening on {SOCK}")
+        return 0
+    if not APP.exists():
+        print(f"room-eyes: no app at {APP}", file=sys.stderr)
+        return 2
+    src = APP / "packages" / "app" / ".room-eyes-driver.mjs"
+    src.write_text(driver_source(), encoding="utf-8")
+    subprocess.Popen(
+        ["node", str(src.relative_to(APP))],
+        cwd=str(APP),
+        env={**os.environ, "ROOM_EYE_PORT": CDP_PORT, "ROOM_EYES_SOCK": str(SOCK)},
+        stdout=subprocess.DEVNULL,
+        stderr=open("/tmp/room-eyes-driver.log","w"),
+        start_new_session=True,
+    )
+    for _ in range(40):  # 40 * 0.25 = 10s, generous for one node start
+        time.sleep(0.25)
+        if sock_alive():
+            print(f"room-eyes: driver up (browser work is now ~0.7s per look)")
+            return 0
+    print("room-eyes: driver did not come up within 10s", file=sys.stderr)
+    return 2
+
+
+def send(cmd: str) -> int:
+    if not sock_alive():
+        print("room-eyes: driver not up -- run `bin/room-eyes --up`", file=sys.stderr)
+        return 2
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(20)
+        s.connect(str(SOCK))
+        s.sendall((cmd + "\n").encode())
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    try:
+        reply = json.loads(buf.decode().split("\n")[0])
+    except (json.JSONDecodeError, IndexError):
+        print(f"room-eyes: unreadable reply: {buf[:200]!r}", file=sys.stderr)
+        return 2
+
+    if not reply.get("ok"):
+        print(f"room-eyes: {reply.get('error')}", file=sys.stderr)
+        return 1
+    r = reply["result"]
+    if cmd.strip() == "look" or cmd.strip().startswith(("click", "menu")):
+        print(f"room-eyes  {r.get('url')}")
+        print(f"  agents   {r.get('agents')}")
+        if r.get("states"):
+            print("  states   " + ", ".join(f"{k}={v}" for k, v in sorted(r["states"].items())))
+        print(f"  first    {r.get('first')}")
+        c = r.get("canvas")
+        print(f"  canvas   {c['w']}x{c['h']} at y={c['y']}" if c else "  canvas   ABSENT")
+        if r.get("menu"):
+            print("  menu     " + ", ".join(f"{x['verb']}{'' if x['on'] else '(off)'}" for x in r["menu"]))
+        print(f"  mind     {r.get('mind')}  voice {r.get('voice')}")
+    else:
+        print(json.dumps(r, indent=1))
+    return 0 if r.get("agents", 1) else 1
+
+
+def main() -> int:
+    args = sys.argv[1:]
+    if not args or args[0] in ("--help", "-h"):
+        print(__doc__)
+        return 0
+    if args[0] in ("--up", "--restart"):
+        return up()
+    if args[0] == "--down":
+        return send("quit")
+    return send(" ".join(args))
+
+
+if __name__ == "__main__":
+    sys.exit(main())

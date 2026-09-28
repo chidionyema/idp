@@ -1,0 +1,390 @@
+#!/usr/bin/env python3
+"""Grade the JIT broker's grant catalogue: can anything in it be turned into admin? (WJ.5)
+
+WHY THIS EXISTS. The broker mints write access on a cluster where nothing else holds any, so the
+catalogue it mints from is the estate's new crown jewel. A grant that reads small and is not --
+`patch deployment`, which lets its holder swap serviceAccountName for a privileged account -- turns
+ten approved minutes into standing admin. This refuses those at the file, before a founder is ever
+shown one on his phone at 3am.
+
+  bin/idp-jit-grants [FILE ...]     default: platform/jit/grants.yaml
+
+`ok|FAIL  jit-grants  <why>`; exit 0 clean, 1 a grant that could escalate, 2 BLIND (nothing to
+read -- an unreadable catalogue is never treated as an empty one).
+"""
+
+import ast
+import pathlib
+import re
+import sys
+
+import yaml
+
+# WJ.15. Kubernetes is one layer; the estate also runs on OCI, on GitHub and on DNS, and a
+# founder who has to approve a Kubernetes change on his phone and then hand out a standing OCI
+# key has not been given zero standing privilege -- he has been given it in one place. So a grant
+# names the provider it acts on, and every provider is graded here, on the same page, by the same
+# gate. A grant that names a provider this file has never heard of is refused: an ungraded
+# provider is not a small grant, it is an unread one.
+PROVIDERS = {"kubernetes", "github", "oci", "dns"}
+# Who may hand the agent a credential at all (mode: token). The bar is not "this provider has
+# short-lived tokens" -- it is "the platform can mint one scoped to the parameters the founder
+# approved, that dies on its own". Kubernetes clears it: `kubectl create token --duration` against
+# a Role built for one request. The others do not, and each for its own reason:
+#   github  an installation token is short-lived and scoped, but minting one needs the App private
+#           key, and a broker that hands out tokens cut from that key has made the key the blast
+#           radius. The broker keeps the key and performs the act.
+#   oci     a session token carries the whole policy set of the principal that minted it. There is
+#           no per-request scope, so a ten-minute OCI token is ten minutes of everything.
+#   dns     the provider has no request-scoped credential at all.
+# So everything below Kubernetes is broker-applies: the founder approves an outcome, the broker
+# performs it, and the agent never holds anything.
+TOKEN_PROVIDERS = {"kubernetes"}
+# A secret store is not a provider a grant may ever name. The broker exists so that access is
+# short-lived; a secret read once is standing access with extra steps, and it cannot be revoked by
+# an expiry. Reaching a vault is a rotation, not a grant.
+SECRET_PROVIDERS = {"bitwarden", "vault", "estate-vault", "1password", "secretsmanager"}
+
+# GitHub. The repository that holds the broker, its catalogue and its gate is the fence itself
+# (WJ.8): a write grant there is a way to rewrite what may be granted, so no grant reaches it.
+GITHUB_PROTECTED_REPOS = {"idp"}
+# Permissions that are administration by another name, or that rewrite what CI will run.
+GITHUB_FORBIDDEN_PERMISSIONS = {
+    "administration", "members", "organization_administration", "organization_secrets",
+    "secrets", "actions_variables", "environments", "workflows", "pages", "repository_hooks",
+    "deployments", "contents",
+}
+# OCI. Destroying the cluster, the node pool or the tenancy's identity is not a ten-minute act.
+OCI_FORBIDDEN_OPERATIONS = {
+    "delete-cluster", "delete-node-pool", "delete-vcn", "delete-bucket", "delete-db-system",
+    "create-policy", "update-policy", "delete-policy", "create-user", "add-user-to-group",
+    "update-group", "generate-api-key", "create-auth-token", "update-security-list",
+}
+# DNS. The zone apex and the record the gateway answers on are the estate's front door; pointing
+# either somewhere else is an outage for every surface at once, including the one the founder
+# would use to stop the broker (WJ.10).
+DNS_FORBIDDEN_RECORDS = {"@", "*", "www", "gw", "gateway", "auth", "id", "identity"}
+DNS_FORBIDDEN_TYPES = {"NS", "SOA", "CAA", "DNSKEY", "DS"}
+
+# Never, at any TTL, in any namespace, in either mode.
+FORBIDDEN_RESOURCES = {
+    # the credentials themselves
+    "secrets", "serviceaccounts",
+    # the permission system: granting over it grants everything
+    "roles", "rolebindings", "clusterroles", "clusterrolebindings",
+    # cluster-scoped state one namespace should never reach
+    "nodes", "namespaces", "customresourcedefinitions", "persistentvolumes",
+    "priorityclasses", "storageclasses", "csidrivers",
+    # the admission and policy pipeline
+    "validatingwebhookconfigurations", "mutatingwebhookconfigurations",
+    "clusterpolicies", "policies", "networkpolicies",
+    # a shell in any pod is that pod's service account
+    "pods/exec", "pods/attach", "pods/portforward", "pods/ephemeralcontainers",
+    # quotas and limits bound every other grant; moving them moves the ceiling
+    "resourcequotas", "limitranges",
+}
+FORBIDDEN_VERBS = {"*", "escalate", "bind", "impersonate", "deletecollection"}
+# Namespaces where a mistake is an outage for everything, not for one workload.
+CORE_NAMESPACES = {
+    "kube-system", "kube-public", "kube-node-lease", "flux-system", "kyverno",
+    "calico-system", "calico-apiserver", "tigera-operator", "cert-manager",
+    "external-secrets", "spire-mgmt", "spire-server", "gatekeeper-system",
+    "edge", "identity", "rbac", "jit",
+}
+# A verb that can rewrite a pod spec is an escalation path, because a pod spec names the service
+# account it runs as and the host paths it mounts. These may exist -- as an outcome the broker
+# applies, never as a token the agent holds.
+POD_SPEC_RESOURCES = {
+    "deployments", "statefulsets", "daemonsets", "replicasets", "replicationcontrollers",
+    "jobs", "cronjobs", "pods", "podtemplates",
+}
+MUTATING_VERBS = {"create", "patch", "update", "apply"}
+TTL_CEILING_S = 30 * 60
+RATE_CEILING = 10
+TTL = re.compile(r"^(\d+)([smh])$")
+SECONDS = {"s": 1, "m": 60, "h": 3600}
+
+
+def ttl_seconds(v):
+    m = TTL.match(str(v or ""))
+    return int(m.group(1)) * SECONDS[m.group(2)] if m else None
+
+
+def grade_one(g):
+    """Every reason this grant is refused, in the order a reader would find them."""
+    bad, gid = [], g.get("id") or "<a grant with no id>"
+
+    if not g.get("id"):
+        bad.append("has no id, so nothing can name it in an audit line")
+    why = (g.get("why") or "").strip()
+    if len(why) < 12:
+        bad.append("has no plain-English reason; the founder is shown this sentence and nothing else")
+
+    mode = g.get("mode")
+    if mode not in ("token", "broker-applies"):
+        bad.append(f"mode is {mode!r}, and the only modes are token and broker-applies")
+
+    # WJ.15. A grant with no provider is a Kubernetes grant, which is what the first three were
+    # written as; everything else has to say so, and has to be one this file grades.
+    provider = str(g.get("provider") or "kubernetes").lower()
+    if provider in SECRET_PROVIDERS:
+        bad.append(
+            f"acts on {provider!r}, a secret store. A secret handed over once does not expire "
+            f"when the grant does, so it is standing access whatever the TTL says; reaching a "
+            f"vault is a rotation, not a grant"
+        )
+        return gid, bad
+    if provider not in PROVIDERS:
+        bad.append(
+            f"names the provider {provider!r}, which this gate does not grade. An ungraded "
+            f"provider is not a small grant, it is an unread one"
+        )
+        return gid, bad
+    if mode == "token" and provider not in TOKEN_PROVIDERS:
+        bad.append(
+            f"is mode: token on {provider}, where the platform cannot mint a credential that is "
+            f"both scoped to these parameters and self-expiring. Below Kubernetes the founder "
+            f"approves an outcome and the broker performs it: this grant must be broker-applies"
+        )
+
+    bad += GRADERS[provider](g)
+    bad += grade_ttl_and_rate(g)
+    return gid, bad
+
+
+def grade_ttl_and_rate(g):
+    """The two limits every grant carries, whatever it acts on."""
+    bad = []
+    secs = ttl_seconds(g.get("max_ttl"))
+    if secs is None:
+        bad.append(f"has no readable max_ttl (got {g.get('max_ttl')!r})")
+    elif secs <= 0 or secs > TTL_CEILING_S:
+        bad.append(f"lives {g.get('max_ttl')}, past the {TTL_CEILING_S // 60}-minute ceiling")
+
+    rate = g.get("rate_per_hour")
+    if not isinstance(rate, int) or not 1 <= rate <= RATE_CEILING:
+        bad.append(
+            f"has rate_per_hour {rate!r}; one raise is safe and forty in an hour is a capacity "
+            f"incident, so every grant declares 1 to {RATE_CEILING}"
+        )
+    return bad
+
+
+def grade_github(g):
+    """A GitHub grant names repositories and permissions, and may name neither the repository
+    that holds the fence nor a permission that is administration under another name."""
+    bad = []
+    repos = {str(r).rsplit("/", 1)[-1] for r in g.get("repositories") or []}
+    perms = {str(p).lower() for p in g.get("permissions") or []}
+    ops = {str(o).lower() for o in g.get("operations") or []}
+    if not repos:
+        bad.append("names no repositories, and a GitHub grant with no repository is org-wide")
+    if not ops:
+        bad.append("names no operations, so nothing bounds what the broker would do with it")
+    if "*" in repos:
+        bad.append("names every repository")
+    for r in sorted(repos & GITHUB_PROTECTED_REPOS):
+        bad.append(
+            f"reaches {r!r}, the repository that holds the broker, its catalogue and its gate. "
+            f"A write there is a way to rewrite what may be granted (WJ.8)"
+        )
+    for p in sorted(perms & GITHUB_FORBIDDEN_PERMISSIONS):
+        bad.append(f"asks for the {p!r} permission, which is administration under another name")
+    return bad
+
+
+def grade_oci(g):
+    """An OCI grant names the operations it may run, and none of them may destroy a resource
+    or touch identity."""
+    bad = []
+    ops = {str(o).lower() for o in g.get("operations") or []}
+    if not ops:
+        bad.append("names no operations, and an OCI grant with no operation is the whole tenancy")
+    if "*" in ops:
+        bad.append("names every OCI operation")
+    for o in sorted(ops & OCI_FORBIDDEN_OPERATIONS):
+        bad.append(f"may run {o!r}, which is not something a ten-minute grant undoes")
+    for o in sorted(ops):
+        if o.startswith("delete-") and o not in OCI_FORBIDDEN_OPERATIONS:
+            bad.append(f"may run {o!r}; a delete on this layer is not reversible by an expiry")
+    return bad
+
+
+def grade_dns(g):
+    """A DNS grant names the records it may move, and may not move the ones the estate is
+    reached on -- including the one the founder would use to stop the broker."""
+    bad = []
+    records = {str(r).lower() for r in g.get("records") or []}
+    types = {str(t).upper() for t in g.get("record_types") or []}
+    if not records:
+        bad.append("names no records, and a DNS grant with no record is the whole zone")
+    if not types:
+        bad.append("names no record types")
+    for r in sorted(records & DNS_FORBIDDEN_RECORDS):
+        bad.append(
+            f"moves {r!r}, which the estate is reached on. Pointing it elsewhere takes down "
+            f"every surface at once, including the one that stops the broker (WJ.10)"
+        )
+    for t in sorted(types & DNS_FORBIDDEN_TYPES):
+        bad.append(f"writes {t} records, which move the zone itself rather than one name in it")
+    return bad
+
+
+def grade_kubernetes(g):
+    """The original three checks, unchanged in what they refuse."""
+    bad = []
+    mode = g.get("mode")
+    verbs = {str(v).lower() for v in g.get("verbs") or []}
+    resources = {str(r).lower() for r in g.get("resources") or []}
+    namespaces = {str(n) for n in g.get("namespaces") or []}
+    groups = {str(a) for a in g.get("apiGroups", g.get("apigroups")) or []}
+
+    if not verbs:
+        bad.append("names no verbs")
+    if not resources:
+        bad.append("names no resources")
+    if not namespaces:
+        bad.append("names no namespaces, and a grant with no namespace is a cluster-wide grant")
+
+    for v in sorted(verbs & FORBIDDEN_VERBS):
+        bad.append(f"asks for the verb {v!r}, which is a way to widen itself")
+    for r in sorted(resources & FORBIDDEN_RESOURCES):
+        bad.append(f"reaches {r!r}, which no time-boxed grant may ever reach")
+    if "*" in groups:
+        bad.append("asks for every API group")
+    for n in sorted(namespaces & CORE_NAMESPACES):
+        bad.append(f"names the core namespace {n!r}, where a mistake is an estate outage")
+    if "*" in namespaces or "" in namespaces:
+        bad.append("names every namespace")
+
+    # The escalation this file exists for.
+    if mode == "token" and (verbs & MUTATING_VERBS) and (resources & POD_SPEC_RESOURCES):
+        hit = sorted(verbs & MUTATING_VERBS)[0], sorted(resources & POD_SPEC_RESOURCES)[0]
+        bad.append(
+            f"hands over a token for {hit[0]} on {hit[1]}, and a pod spec names the service account "
+            f"it runs as -- so the holder rewrites it and keeps the access after the token dies. "
+            f"This grant must be mode: broker-applies"
+        )
+
+    return bad
+
+
+BROKER = pathlib.Path(__file__).resolve().parent.parent / "platform/jit/broker/broker.py"
+
+
+def implemented(path=BROKER):
+    """The set of grant ids the broker actually has a step for, read out of its source.
+
+    Read with `ast` and not by importing it: the gate must grade a catalogue on a runner that
+    has never installed the broker's dependencies, and importing a web service to ask it a
+    question about itself is a way to make a linter start a server.
+
+    Two names carry the answer. `APPLIES` maps a grant id to the step that performs it below
+    Kubernetes; `KUBERNETES_APPLIES` names the ids `Broker._apply` has a branch for. A
+    `mode: token` grant needs neither -- minting is generic.
+    """
+    tree = ast.parse(path.read_text())
+    found = {"APPLIES": set(), "KUBERNETES_APPLIES": set()}
+    for node in tree.body:
+        if not isinstance(node, ast.Assign) or len(node.targets) != 1:
+            continue
+        name = getattr(node.targets[0], "id", None)
+        if name not in found:
+            continue
+        if isinstance(node.value, ast.Dict):
+            keys = node.value.keys
+        elif isinstance(node.value, (ast.Set, ast.List, ast.Tuple)):
+            keys = node.value.elts
+        else:
+            continue
+        found[name] = {k.value for k in keys if isinstance(k, ast.Constant)}
+    return found["APPLIES"], found["KUBERNETES_APPLIES"]
+
+
+def grade_implemented(g, below, kube):
+    """Can the broker actually do this?
+
+    WHY THIS CHECK EXISTS, and it is the only one here that is not about escalation. On
+    2026-09-08 `oci-vault-write` (#2496) shipped in the catalogue with no step in the broker,
+    and this gate passed it -- because every check above asks whether a grant can be turned
+    into standing access, and none asked whether the grant does anything. So the row was real,
+    the ask was real, the button on the founder's phone was real, and the act behind it did not
+    exist; worse, the broker dispatched below-Kubernetes acts by provider, so the approved vault
+    write would have been handed to the node pool resizer. Founder, that morning: "and also wtf
+    is this" (~/.claude/docs/founder/2026-09-08T0953Z-and-also-wtf-is-this-4991d777.md).
+
+    A grant the broker cannot perform is not a small defect in a catalogue like this one. Every
+    other line of this file works to make the founder's tap mean exactly one thing; a row with
+    no step makes it mean nothing, and he finds out by tapping.
+    """
+    if g.get("mode") != "broker-applies":
+        return []
+    provider = str(g.get("provider") or "kubernetes").lower()
+    known = kube if provider == "kubernetes" else below
+    if str(g.get("id")) in known:
+        return []
+    return [
+        "is broker-applies and the broker has no step for it, so the founder would approve an "
+        "act nothing performs"
+    ]
+
+
+GRADERS = {
+    "kubernetes": grade_kubernetes,
+    "github": grade_github,
+    "oci": grade_oci,
+    "dns": grade_dns,
+}
+
+
+def grade(text, broker=BROKER):
+    below, kube = implemented(broker)
+    try:
+        doc = yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        return None, f"the catalogue does not parse: {str(e).splitlines()[0]}"
+    if not isinstance(doc, dict) or doc.get("kind") != "GrantCatalogue":
+        return None, "this is not a GrantCatalogue, and an unreadable catalogue is never an empty one"
+    grants = doc.get("grants")
+    if not isinstance(grants, list) or not grants:
+        return None, "the catalogue lists no grants; an empty catalogue is never a clean bill"
+
+    problems = []
+    for g in grants:
+        if not isinstance(g, dict):
+            problems.append(f"a grant is {type(g).__name__}, not a mapping")
+            continue
+        gid, bad = grade_one(g)
+        problems += [f"{gid}: {b}" for b in bad + grade_implemented(g, below, kube)]
+
+    if problems:
+        return False, f"{len(problems)} problem(s) in {len(grants)} grant(s): " + "; ".join(problems)
+    return True, (
+        f"{len(grants)} grant(s), none of which can be turned into standing access, and each "
+        f"of which the broker has a step for"
+    )
+
+
+def main():
+    paths = sys.argv[1:] or ["platform/jit/grants.yaml"]
+    rc = 0
+    for p in paths:
+        try:
+            text = open(p).read()
+        except OSError as e:
+            print(f"FAIL    jit-grants  BLIND, cannot read {p}: {e.strerror}")
+            return 2
+        ok, why = grade(text)
+        if ok is None:
+            print(f"FAIL    jit-grants  BLIND, {p}: {why}")
+            rc = max(rc, 2)
+        elif ok:
+            print(f"ok      jit-grants  {p}: {why}")
+        else:
+            print(f"FAIL    jit-grants  {p}: {why}")
+            rc = max(rc, 1)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

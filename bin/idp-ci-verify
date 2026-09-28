@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""idp-ci-verify — run the three-stage verifier gauntlet directly in CI.
+
+WHY THIS EXISTS. The pre-push hook calls the verifier through the estate-mcp
+daemon (propose_patch → verify over a Unix socket). CI runners have no daemon.
+This script calls sovereign/verifier.py directly — same stages, same verdict,
+no daemon, no Datasette, no estate.db — so the CI job is the real gate when
+the daemon is unavailable locally (BLIND mode in bin/idp-prepush-verify).
+
+WHAT IT GRADES. A unified diff read from stdin (or --patch-file), exactly the
+diff that would be proposed in a push. CI passes it as:
+
+    git diff origin/main...HEAD | python3 bin/idp-ci-verify
+
+Exits 0 on PASSED/VERIFIED, 1 on FAILED, 2 on BLIND (nothing to grade).
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+# sovereign/ is the module root; add it to sys.path exactly as daemon.py does.
+sys.path.insert(0, str(REPO / "sovereign"))
+sys.path.insert(0, str(REPO / "platform" / "executor"))
+
+from verifier import (  # noqa: E402
+    Ledger,
+    parse_unified_diff,
+    verify,
+)
+
+
+def _full_content_diff(patch: str) -> str:
+    """Replace hunk diffs for modified (non-new) files with new-file-style diffs.
+
+    parse_unified_diff only keeps '+' lines from each hunk, so a modified file
+    yields a fragment, not the complete content.  stage_structural's YAML/SQL
+    checks then receive a partial document and emit false-positive parse errors.
+    New-file diffs (--- /dev/null) already contain every line, so they are left
+    as-is.  For everything else we read the current file from disk and emit a
+    synthetic new-file diff that the verifier's structural stage can validate.
+    """
+    lines = patch
+    result: list[str] = []
+    pos = 0
+    while pos < len(lines):
+        if not lines[pos:].startswith("diff --git "):
+            break
+        end = lines.find("\ndiff --git ", pos + 1)
+        end = len(lines) if end == -1 else end
+        chunk = lines[pos:end]
+
+        path: str | None = None
+        is_new = False
+        for ln in chunk.splitlines():
+            if ln.startswith("--- "):
+                a = ln[4:].strip().split("\t")[0]
+                if a.startswith("a/"):
+                    a = a[2:]
+                path = a
+            elif ln.startswith("new file mode"):
+                is_new = True
+
+        if path and not is_new and path != "/dev/null":
+            full_path = REPO / path
+            try:
+                content = full_path.read_text(encoding="utf-8", errors="replace")
+                lines_list = content.splitlines(keepends=True)
+                if lines_list and not lines_list[-1].endswith("\n"):
+                    lines_list[-1] += "\n"
+                n = len(lines_list)
+                synthetic = (
+                    f"diff --git a/{path} b/{path}\n"
+                    f"new file mode 100644\n"
+                    f"--- /dev/null\n"
+                    f"+++ b/{path}\n"
+                    f"@@ -0,0 +1,{n} @@\n"
+                )
+                synthetic += "".join(f"+{ln}" for ln in lines_list)
+                result.append(synthetic)
+            except OSError:
+                result.append(chunk)
+        else:
+            result.append(chunk)
+
+        pos = end
+
+    return "".join(result)
+
+
+def _test_source() -> str:
+    candidate = REPO / "tests" / "test_verifier_hooks.py"
+    if candidate.exists():
+        return candidate.read_text()
+    return ""
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--patch-file", help="read diff from file instead of stdin")
+    ap.add_argument("--claim", default="ci-verify: automated CI gauntlet")
+    args = ap.parse_args()
+
+    if args.patch_file:
+        patch = Path(args.patch_file).read_text()
+    else:
+        patch = sys.stdin.read()
+
+    if not patch.strip():
+        print("BLIND verifier: empty diff — nothing to grade", file=sys.stderr)
+        return 2
+
+    patch = _full_content_diff(patch)
+    files = parse_unified_diff(patch)
+    if not files:
+        print("BLIND verifier: diff parses to no files", file=sys.stderr)
+        return 2
+
+    with tempfile.TemporaryDirectory(prefix="kronos-verifier-") as tmp:
+        ledger = Ledger(
+            ledger_id="ci-verify",
+            ledger_dir=Path(tmp),
+            files=files,
+            tests=_test_source(),
+            claim=args.claim,
+        )
+        verdict = verify(ledger)
+
+    cv = verdict.get("claim_verdict", "FAILED")
+    admissible = verdict.get("admissible", False)
+    stages = verdict.get("stages", {})
+
+    for stage, result in stages.items():
+        passed = result.get("passed", False)
+        note = result.get("note", "")
+        print(f"{'ok' if passed else 'FAIL'}  verifier/{stage}  {note}")
+
+    if cv in ("PASSED", "VERIFIED") and admissible:
+        print(f"ok    verifier  {cv}; admissible=true")
+        return 0
+
+    print(f"FAIL  verifier  {cv}; admissible={admissible}")
+    reason = verdict.get("reason", "")
+    if reason:
+        print(f"      {reason}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

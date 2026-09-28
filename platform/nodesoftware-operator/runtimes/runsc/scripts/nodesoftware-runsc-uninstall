@@ -1,0 +1,41 @@
+#!/bin/bash
+#
+# nodesoftware-runsc-uninstall — remove gVisor runsc from a target node.
+#
+# Invoked by the NodeSoftwareOperator controller on a Rollback. Deletes the
+# cri-o drop-in, deletes the runsc binary, then reloads cri-o. If the binary
+# is missing, the script reports success anyway (idempotent — the goal is a
+# clean host state, not "binary removed if present").
+#
+# args:
+#   $1 = runsc version, e.g. "1.27.0" (informational only)
+#   $2 = host root as seen by the handler pod, default "/host"
+#
+# Trap note: see nodesoftware-runsc-probe — ERR, not EXIT, so bash 5.2's
+# shebang-exit-code trap normaliser doesn't clobber the script's exit status.
+
+set -euo pipefail
+
+trap 'printf "uninstall: FAILED before completion (rc=%%d) -- partial host state, check /etc/crio/crio.conf.d/99-gvisor.conf and /usr/local/sbin/runsc\n" "$?" >&2' ERR
+
+VERSION="${1:?usage: nodesoftware-runsc-uninstall <version> [host-root]}"
+HOST_ROOT="${2:-/host}"
+
+# 1. Remove the cri-o drop-in BEFORE removing the binary. If we removed the
+#    binary first, cri-o would still reference a path that no longer exists.
+rm -f "${HOST_ROOT}/etc/crio/crio.conf.d/99-gvisor.conf"
+
+# 2. Remove the runsc binary.
+rm -f "${HOST_ROOT}/usr/local/sbin/runsc"
+
+# 3. Best-effort reload of cri-o. We swallow errors because, on rollback,
+#    the binary may already be gone and cri-o might already be in a state
+#    where the runtime pointer is dangling.
+if ! nsenter --target 1 --mount --uts --ipc --net --pid -- \
+	/usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
+	if ! chroot "${HOST_ROOT}" /usr/bin/systemctl reload cri-o.service >/dev/null 2>&1; then
+		printf 'WARN: could not reload cri-o.service; ops must reload manually\n' >&2
+	fi
+fi
+
+printf 'uninstalled runsc %s from %s\n' "${VERSION}" "${HOST_ROOT}"

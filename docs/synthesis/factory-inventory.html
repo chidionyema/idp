@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Factory Inventory — a thorough, measured record of everything the estate has grown so far</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured factory</div>
+  <h1>The Factory Inventory — a thorough, measured record of everything the estate has grown so far</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#0-the-organising-law-one-paragraph-then-facts">0. The organising law (one paragraph, then facts)</a></li><li><a href="#1-the-complete-repository-inventory-65-repos-measured">1. The complete repository inventory (65 repos, measured)</a></li><li><a href="#2-the-branch-tree-every-branch-the-seed-has-grown-with-its-current-output">2. The branch-tree — every branch the seed has grown, with its current output</a></li><li><a href="#3-the-gaps-capabilities-no-branch-produces-yet-the-architect-s-build-list">3. The gaps — capabilities no branch produces yet (the architect's build list)</a></li><li><a href="#4-the-discovery-mechanism-how-this-inventory-stays-true-without-re-reading-65-repos">4. The discovery mechanism (how this inventory stays true without re-reading 65 repos)</a></li></ol></nav>
+<h1 id="the-factory-inventory-a-thorough-measured-record-of-everything-the-estate-has-grown-so-far">The Factory Inventory — a thorough, measured record of everything the estate has grown so far</h1>
+<p><strong>Document 1 of 3. Written 2026-09-23, for the consultant architect. Companion: the</strong> <strong>Programme (doc 2) and the Factory Contract (doc 3).</strong></p>
+<p>The purpose of this document is <strong>not</strong> to editorialise. It is to hand the architect a <strong>complete, measured inventory</strong> — every repository, every capability, every currently-named "branch" — organised by a single organising law so the architect can <em>shape the product</em> from fact, not from a summary.</p>
+<p>Every number and path below was measured this session against the checked-out tree. Where a repo exists on GitHub but <strong>not</strong> on this checkout, or exists only as a skeleton, that is stated — an inventory that omits its own gaps is not an inventory.</p>
+<hr class="rule">
+<h2 id="0-the-organising-law-one-paragraph-then-facts">0. The organising law (one paragraph, then facts)</h2>
+<p>The estate is a <strong>fractal factory</strong>: one kind of thing — a <em>factory</em>, which takes an order and produces a result — recursing at every scale, where the result it produces is itself a factory. Over time the one seed has grown <strong>branches</strong> (voice, web, evals, sandboxes, memory, compute, workforce, platform, products), and these branches <em>look</em> like a fixed stack of layers, but that is an appearance of the moment, not the law. The law is: <strong>every branch produces, grades, and sheds its own output.</strong> An agent, a swarm, the Concierge, and later a robot or a pair of glasses are all <em>orders placed against the branches</em> — nothing more.</p>
+<p>This document is therefore organised as <strong>the branch-tree the seed has grown so far</strong>, each branch marked with its <code>current</code> / <code>incubating</code> / <code>deprecated</code> state, and each row naming the repository that carries it. The architect reads downward and sees both the fractal and the inventory at once.</p>
+<hr class="rule">
+<h2 id="1-the-complete-repository-inventory-65-repos-measured">1. The complete repository inventory (65 repos, measured)</h2>
+<p>Column key: <strong>py/rs/ts</strong> = source-file counts (depth-bounded where noted). <strong>State</strong> = what the repo <em>is</em> in the branch-tree.</p>
+<div class="tablewrap"><table><thead><tr><th>Repo</th><th>Language</th><th>Size (measured)</th><th>What it is in the tree</th><th>State</th></tr></thead><tbody><tr><td><code>idp</code></td><td>Python</td><td>platform root, ~380 bin scripts</td><td>the platform: portals, MCP doors, gates, workflows, docs</td><td>current</td></tr><tr><td><code>crew</code></td><td>Python</td><td>coordination repo</td><td>shared coordination + verify.d + issue board</td><td>current</td></tr><tr><td><code>zeroedge</code> / <code>zeroedge-repo</code></td><td>Python</td><td>27 py, proto+schema</td><td>cost/routing optimizer (off unless ZEROEDGE_URL set)</td><td>incubating</td></tr><tr><td><code>estate-secrets</code></td><td>Shell</td><td>vault</td><td>SOPS+age secrets store</td><td>current</td></tr><tr><td><code>hermes-agent</code></td><td>Python</td><td>4,481 py (archived)</td><td>the largest agent runtime (superseded)</td><td>deprecated</td></tr><tr><td><code>prospector</code></td><td>Python</td><td>255 py</td><td>research-pack seller; voice gate Python half</td><td>current (money rail 503)</td></tr><tr><td><code>estate-guards</code></td><td>Python</td><td>scripts submodule</td><td>pre-push/CI guards</td><td>current</td></tr><tr><td><code>ironcage</code></td><td>Rust</td><td>7 rs, crates: ledger/api/inference/verifier/kernel</td><td>provable research engine (MCTS + formal)</td><td>incubating</td></tr><tr><td><code>hermes-config</code></td><td>Python</td><td>227 py, 30 skills</td><td>skills/memories/prompts/simulators</td><td>current</td></tr><tr><td><code>sentinel-loop</code></td><td>Python</td><td>61 py</td><td>loop spec + cockpit</td><td>built</td></tr><tr><td><code>acg</code></td><td>Python</td><td>20 py</td><td>asymmetric compute grid (CPU/spot/free-API inference)</td><td>current</td></tr><tr><td><code>estate-graph</code></td><td>Python</td><td>growmos</td><td>model-agnostic knowledge graph</td><td>current</td></tr><tr><td><code>agent-guard</code></td><td>Python</td><td>containment</td><td>subprocess containment (reap, launchd-lint, load-probe)</td><td>current</td></tr><tr><td><code>survival-stack</code></td><td>JS</td><td>serverless</td><td>failover, cold-start-from-phone, degraded mode</td><td>current</td></tr><tr><td><code>hermes-v2</code></td><td>Python</td><td>29 py</td><td>"The Architect": watches prod, opens PRs</td><td>current</td></tr><tr><td><code>sovereign</code></td><td>Rust+Py</td><td>sentinel + vision_brain</td><td>personal agent scaffold; OS input injection; OOB approval</td><td>current</td></tr><tr><td><code>agent-foundry</code></td><td>Python</td><td>26 files</td><td><strong>the seed expression</strong>: order→decompose→manifest→run</td><td>current</td></tr><tr><td><code>haworks-platform</code> / <code>haworks</code></td><td>C#</td><td>microservices</td><td>.NET 9 microservices</td><td>built</td></tr><tr><td><code>kronos</code></td><td>Rust</td><td>23 rs, 5 rings</td><td>five-ring isolation kernel (private)</td><td>incubating (Linux/K8s)</td></tr><tr><td><code>maestro</code></td><td>Python</td><td>10 py</td><td>requirements/board engine</td><td>built</td></tr><tr><td><code>mumchimp-medusa</code></td><td>TS</td><td>commerce</td><td>Medusa commerce</td><td>built</td></tr><tr><td><code>agent-workforce</code></td><td>Python</td><td>12 py</td><td>crewAI 1.9.3 crew (no deploy/merge hands)</td><td>incubating</td></tr><tr><td><code>hermes-operator</code></td><td>Python</td><td>3 py</td><td>Telegram ops shell, daemon control, remote coding</td><td>current</td></tr><tr><td><code>estate-core</code> / <code>estate</code></td><td>Python</td><td>11 py</td><td>laws, guards, checkpoints, job definitions</td><td>current</td></tr><tr><td><code>mums-concierge</code></td><td>Python</td><td>private; 18 modules, 295 tests</td><td>consent-gated personal agent for Nunn</td><td><strong>built-elsewhere</strong></td></tr><tr><td><code>research-engine</code></td><td>Python</td><td>0 files (skeleton)</td><td>research dept as a service (SPEC-v1 CP1)</td><td>incubating (empty)</td></tr><tr><td><code>lux</code> / <code>lux-popdd</code> / <code>popdd-ts</code></td><td>TS+Py</td><td>proof</td><td>proof-driven dev + chain-of-custody</td><td>current</td></tr><tr><td><code>claude-observability-plugin</code></td><td>Python</td><td>plugin</td><td>Langfuse plugin for Claude Code</td><td>current</td></tr><tr><td><code>verdict</code></td><td>TS</td><td>Next.js</td><td>auth/payments/moderation/judges</td><td>built</td></tr><tr><td><code>ecommerce*</code> / <code>ebookStore</code> / <code>portfolio-site</code> / <code>cv</code></td><td>TS/C#</td><td>client sites</td><td>client-facing products</td><td>built</td></tr><tr><td><code>company-root-vault</code></td><td>Python</td><td>vault</td><td>company root vault (private)</td><td>current</td></tr><tr><td><code>QAlgo</code> / <code>Q</code> / <code>signalengine</code></td><td>Python</td><td>algo</td><td>quant/trading algorithms</td><td>built</td></tr><tr><td><code>AuthService</code> / <code>crux</code> / <code>nethermind</code> / <code>merkleroot</code> / <code>Sharp-Architecture</code> / <code>TechMastery.MarketPlace</code> / <code>Home</code> / <code>Web</code> / <code>Cosmonaut</code> / <code>QTrader</code></td><td>C#/JS</td><td>sundry</td><td>assorted products &amp; starters</td><td>built</td></tr><tr><td><code>ci-reach-heal-probe</code></td><td>—</td><td>dead</td><td>one-off probe, proved healer worked, 2026-08-23</td><td>deprecated (delete blocked)</td></tr><tr><td><code>nextjs*</code> / <code>test</code> / <code>glustack-</code> / <code>alwayson</code> / <code>tailwind-*</code></td><td>TS</td><td>starters</td><td>starter templates</td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="2-the-branch-tree-every-branch-the-seed-has-grown-with-its-current-output">2. The branch-tree — every branch the seed has grown, with its current output</h2>
+<p>This is the <em>factory</em> view. Each branch is one recurring family; the rows are the implementations that family has produced, marked <code>current</code> / <code>incubating</code> / <code>deprecated</code> / <code>built</code> / <code>gap</code>. This is the inventory grouped so the architect can see, per capability, what produces it <em>today</em> and what is being grown or shed.</p>
+<h3 id="branch-harness-the-agent-s-runtime">Branch: Harness (the agent's runtime)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>Claude Code + 31 hooks, 77 guards</td><td><code>claude-guards/</code>, <code>~/.claude</code></td><td><strong>current</strong></td></tr><tr><td>pi harness (2 extensions, no block hook)</td><td><code>~/.pi/agent</code></td><td>incubating</td></tr><tr><td>hermes-agent runtime (6,251 files)</td><td><code>hermes-agent/</code></td><td>deprecated</td></tr><tr><td>crewAI workforce</td><td><code>agent-workforce/</code></td><td>incubating</td></tr><tr><td>subprocess containment</td><td><code>agent-guard/</code></td><td>current</td></tr></tbody></table></div>
+<h3 id="branch-voice-speech">Branch: Voice &amp; Speech</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>Rust deterministic voice gate</td><td><code>idp/platform/voice-gate/</code></td><td><strong>current</strong></td></tr><tr><td>Python deny gate (live publish)</td><td><code>prospector/voice_gate/</code></td><td>current</td></tr><tr><td>TTS + NuTTS + streaming</td><td><code>hermes-agent/tools/tts_*.py</code></td><td>current</td></tr><tr><td>Transcription</td><td><code>hermes-agent/tools/transcription_tools.py</code></td><td>current</td></tr><tr><td>Wake-word (<code>hey_hermes</code>)</td><td><code>hermes-agent/tools/wake_word.py</code></td><td>current</td></tr><tr><td>Duplex voice mode</td><td><code>hermes-agent/tools/voice_mode.py</code></td><td>current</td></tr><tr><td>Biometric speaker verification</td><td><code>mums-concierge/</code></td><td><strong>gap (built-elsewhere)</strong></td></tr></tbody></table></div>
+<h3 id="branch-web-browser-the-eyes-hands-on-the-web">Branch: Web &amp; Browser (the eyes + hands on the web)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>6 browser tools + CamouFox + CDP</td><td><code>hermes-agent/tools/browser_*.py</code></td><td><strong>current</strong></td></tr><tr><td>Computer-use (CUA)</td><td><code>hermes-agent/tools/computer_use/</code></td><td>current</td></tr><tr><td>Vision (screenshot→intent→coords)</td><td><code>sovereign/vision_brain/</code></td><td>current</td></tr><tr><td>OS input injection (Quartz/SendInput)</td><td><code>sovereign/sentinel/src/input/</code></td><td>current</td></tr><tr><td>DOM-strip / scrape / extract</td><td><code>agent-foundry/af/nodes.py</code></td><td>current</td></tr><tr><td>Web search (X, open web)</td><td><code>hermes-agent/tools/web_tools.py</code>, <code>x_search_tool.py</code></td><td>current</td></tr><tr><td>Browser operator on a real Chrome profile</td><td><code>mums-concierge/browser_operator.py</code></td><td><strong>gap (built-elsewhere)</strong></td></tr></tbody></table></div>
+<h3 id="branch-evals-judges-verifiers-the-self-critic">Branch: Evals, Judges &amp; Verifiers (the self-critic)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>judge-drift</td><td><code>idp/platform/eval/judge_drift.py</code></td><td><strong>current</strong></td></tr><tr><td>pareval (bootstrap CI)</td><td><code>idp/platform/eval/pareval_*.py</code></td><td>current</td></tr><tr><td>red-team loop</td><td><code>idp/platform/eval/red_team_*.py</code></td><td>current</td></tr><tr><td>otto verify (13 modules)</td><td><code>hermes-v2/otto/verify/</code></td><td>current</td></tr><tr><td>consultd (second mind, cascade)</td><td><code>claude-estate/scripts/consultd.py</code></td><td>current</td></tr><tr><td>prm_grader</td><td><code>idp/bin/prm_grader.py</code></td><td>current</td></tr><tr><td>407 BDD scenarios</td><td><code>idp/features/</code></td><td>current</td></tr><tr><td>crew verify.d (20 steps)</td><td><code>crew/scripts/verify.d/</code></td><td>current</td></tr><tr><td>lux / popdd proof-of-chain</td><td><code>lux/</code>, <code>lux-popdd/</code>, <code>popdd-ts/</code></td><td>current</td></tr><tr><td>5 judge planes (107 files)</td><td>idp, hermes-agent, hermes-v2, hermes-config, prospector</td><td>5 impls → 1 factory (architect decision)</td></tr></tbody></table></div>
+<h3 id="branch-sandbox-isolation-the-boundary">Branch: Sandbox &amp; Isolation (the boundary)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>12 execution arenas</td><td><code>hermes-agent/tools/environments/</code></td><td><strong>current entry rule (fold to 1)</strong></td></tr><tr><td>kronos rings 0–4</td><td><code>kronos/</code></td><td>incubating (Linux/K8s only)</td></tr><tr><td>ironcage verifier/kernel</td><td><code>ironcage/crates/</code></td><td>incubating</td></tr><tr><td>devcontainer / systemd-run / vCluster / k3d / gVisor / colima</td><td><code>agent-guard/</code>, <code>idp/platform/</code></td><td>mixed</td></tr></tbody></table></div>
+<h3 id="branch-trace-observability-the-record">Branch: Trace &amp; Observability (the record)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>Aevum (PQ-signed, hash-chained)</td><td><code>idp/platform/observability/aevum.yaml</code></td><td><strong>current (ledger must wire)</strong></td></tr><tr><td>Langfuse tracing</td><td><code>idp/platform/</code>, <code>claude-observability-plugin/</code></td><td>current</td></tr><tr><td>span-retention</td><td><code>idp/platform/eval/span_retention*.py</code></td><td>current</td></tr><tr><td>ClickHouse twin TTL</td><td><code>idp/bin/idp-clickhouse-twin-ttl</code></td><td>current</td></tr><tr><td>estate-twin (ACTUAL vs DECLARED)</td><td><code>idp/bin/estate-twin-runtime</code>, <code>mcp/plugins/estate_twin.py</code></td><td>current (unwired — wire it)</td></tr><tr><td>decision log / prompt ledger</td><td><code>crew/</code>, <code>claude-guards/</code></td><td>current</td></tr></tbody></table></div>
+<h3 id="branch-memory-knowledge">Branch: Memory &amp; Knowledge</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>growmos knowledge graph</td><td><code>estate-graph/</code>, per-repo <code>.growmos/</code></td><td><strong>current</strong></td></tr><tr><td>estate_memory MCP</td><td><code>idp/mcp/plugins/estate_memory.py</code></td><td>current</td></tr><tr><td>hermes memory (98 files)</td><td><code>hermes-agent/</code></td><td>deprecated</td></tr><tr><td>hermes-v2 memory</td><td><code>hermes-v2/</code></td><td>current</td></tr><tr><td>estate.db</td><td><code>idp/catalog/estate.db</code></td><td>current</td></tr><tr><td><em>(open founder decision: one brain vs pick-backend)</em></td><td>—</td><td><strong>gap</strong></td></tr></tbody></table></div>
+<h3 id="branch-compute-models">Branch: Compute &amp; Models</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>LiteLLM router (one key/identity)</td><td><code>idp/platform/llm/</code></td><td><strong>current</strong></td></tr><tr><td>ACG (asymmetric compute grid)</td><td><code>acg/</code></td><td>current</td></tr><tr><td>ZeroEdge (routing optimizer)</td><td><code>zeroedge/</code>, <code>zeroedge-repo/</code></td><td>incubating</td></tr><tr><td>efficiency gateway / token killer</td><td><code>idp/platform/llm/</code>, <code>platform/efficiency/</code></td><td>current</td></tr></tbody></table></div>
+<h3 id="branch-workforce-swarms-agents-orders-against-the-branches">Branch: Workforce, Swarms &amp; Agents (orders against the branches)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>agent-foundry (the seed expression)</td><td><code>agent-foundry/</code></td><td><strong>current</strong></td></tr><tr><td>hermes-v2 (architect, PRs from phone)</td><td><code>hermes-v2/</code></td><td>current</td></tr><tr><td>hermes-operator (Telegram ops shell)</td><td><code>hermes-operator/</code></td><td>current</td></tr><tr><td>sovereign (personal scaffold)</td><td><code>sovereign/</code></td><td>current</td></tr><tr><td>mums-concierge (consent-gated personal)</td><td><code>mums-concierge/</code></td><td><strong>gap (built-elsewhere)</strong></td></tr><tr><td>research-engine</td><td><code>research-engine/</code></td><td>incubating (empty)</td></tr></tbody></table></div>
+<h3 id="branch-platform-delivery-the-rails">Branch: Platform &amp; Delivery (the rails)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>Flux GitOps + image-automation</td><td><code>idp/clusters/</code>, <code>platform/image-automation/</code></td><td><strong>current</strong></td></tr><tr><td>build-multiarch / deploy-when-green</td><td><code>idp/.github/workflows/</code></td><td>current</td></tr><tr><td>secrets (SOPS+age, vault bridge)</td><td><code>estate-secrets/</code>, <code>idp/platform/human-vault-bridge/</code></td><td>current</td></tr><tr><td>identity (SPIRE, jit-broker)</td><td><code>idp/platform/spire/</code>, <code>platform/jit/</code></td><td>current</td></tr><tr><td>doors (MCP 15 plugins, Backstage, NATS)</td><td><code>idp/mcp/plugins/</code>, <code>idp/backstage/</code></td><td>current</td></tr><tr><td>executor daemon</td><td><code>idp/mcp/plugins/estate_executor.py</code></td><td>built (daemon not started on this box)</td></tr><tr><td>survival-stack / lifeboat</td><td><code>survival-stack/</code>, <code>idp/platform/lifeboat/</code></td><td>current</td></tr><tr><td>estate-core / estate-guards</td><td><code>estate-core/</code>, <code>estate-guards/</code></td><td>current</td></tr></tbody></table></div>
+<h3 id="branch-products-business-facing-instances">Branch: Products (business-facing instances)</h3>
+<div class="tablewrap"><table><thead><tr><th>Output</th><th>Repo</th><th>State</th></tr></thead><tbody><tr><td>prospector (research packs)</td><td><code>prospector/</code></td><td>current (money rail 503)</td></tr><tr><td>verdict (auth/payments/judges)</td><td><code>verdict/</code></td><td>built</td></tr><tr><td>mumchimp-medusa</td><td><code>mumchimp-medusa/</code></td><td>built</td></tr><tr><td>haworks-platform</td><td><code>haworks-platform/</code></td><td>built</td></tr><tr><td>maestro / sentinel-loop</td><td><code>maestro/</code>, <code>sentinel-loop/</code></td><td>built</td></tr><tr><td>ecommerce / ebookStore / portfolio / cv</td><td>multiple</td><td>built</td></tr><tr><td>QAlgo / Q / signalengine</td><td><code>QAlgo/</code>, <code>Q/</code>, <code>signalengine/</code></td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="3-the-gaps-capabilities-no-branch-produces-yet-the-architect-s-build-list">3. The gaps — capabilities no branch produces yet (the architect's build list)</h2>
+<p>Measured, not speculative. These are the rows a 2100-agent world — corporate + personal, then robots and glasses — requires that <strong>no current branch produces</strong>:</p>
+<ol><li><strong>First-class Email</strong> (send/read/triage) — only via Microsoft Graph.</li><li><strong>Calendar / scheduling</strong> — none.</li><li><strong>SMS / phone (grantable)</strong> — only inside <code>mums-concierge</code>, not grantable.</li><li><strong>Slack / Teams</strong> — corporate chat: none.</li><li><strong>Notion / Linear / Jira</strong> — corporate work + knowledge: none.</li><li><strong>Payments / billing rail</strong> — <code>estate.commerce.order_paid</code> exists; rail 503.</li><li><strong>A self-description schema</strong> — only <code>agent-foundry</code> ships <code>capability.yaml</code>; the other 64 repos do not, so discovery is manual, not machine. <strong>Architect priority #1.</strong></li><li><strong>A grant operation</strong> — <code>agent-foundry</code> order has no <code>capabilities: [...]</code> field yet, so no branch output can be <em>granted</em> through one typed, audited step.</li><li><strong>Multi-tenant isolation (operating)</strong> — specced (<code>tasks.&lt;tenant&gt;.&lt;slug&gt;</code>) but not running; the corporate-vs-personal boundary is described, not enforced.</li><li><strong>Biometric speaker-verification + browser-operator</strong> — both live in <code>mums-concierge</code>, which is not in this checkout. Fetch it, or mark "verify before grant".</li></ol>
+<hr class="rule">
+<h2 id="4-the-discovery-mechanism-how-this-inventory-stays-true-without-re-reading-65-repos">4. The discovery mechanism (how this inventory stays true without re-reading 65 repos)</h2>
+<p>The estate already owns the instruments; the architect's job is to wire them into one self-refreshing registry:</p>
+<div class="tablewrap"><table><thead><tr><th>Instrument</th><th>Discovers</th><th>State</th></tr></thead><tbody><tr><td><code>gh repo list chidionyema</code></td><td>full repo set (65)</td><td>current</td></tr><tr><td>growmos graph</td><td>typed entities + provenance</td><td>current</td></tr><tr><td>Backstage catalog + <code>bin/catalog-gen</code></td><td>component/domain entities</td><td>current</td></tr><tr><td><code>capability.yaml</code> (per repo)</td><td>a repo's self-declared factory outputs</td><td><strong>only agent-foundry has it — the gap</strong></td></tr><tr><td>estate_mcp inventory/state/twin</td><td>runtime actual-vs-declared</td><td>built</td></tr></tbody></table></div>
+<p><strong>The single most important architectural move in this document:</strong> define the <code>capability.yaml</code> schema so every repo <em>declares its own branch and outputs</em>, and a collector rolls them into the registry. Then this inventory is produced by the platform itself, every hour, instead of written by hand — which is the fractal factory doing to its <em>own description</em> what it does to everything else: producing it, rather than maintaining it.</p>
+<hr class="rule">
+<p><em>This is document 1 of 3 (the inventory for the consultant). Document 2 is the Programme (the spiral and the factory as its constraint); document 3 is the Factory Contract (the schema and the order language).</em></p>
+<footer>
+  <span>Source: <code>docs/synthesis/factory-inventory.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

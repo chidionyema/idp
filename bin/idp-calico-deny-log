@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Calico deny-flow collector/query: what the 39 generated policies would drop, once they enforce
+(platform/calico README; zero-trust-boundary.md step 1; the deepseek work order item 0).
+
+This cluster runs Calico in the iptables/VXLAN dataplane (platform/calico/calico.yaml replaces
+flannel: calicoNetwork.bgp Disabled + encapsulation VXLAN, tigera-operator v3.32.2). In that
+dataplane a policy rule that is Deny (or a Log rule that sees a flow the fences do not allow) makes
+felix emit one kernel line per packet on the node, in the grammar Calico documents for the iptables
+data plane (docs.tigera.io/calico/latest/network-policy/policy-rules/log-rules):
+
+    ... kernel: calico-packet: IN=calixxxx OUT=eth0 MAC=... SRC=10.244.a.b DST=10.244.c.d ...
+                 PROTO=TCP SPT=<sp> DPT=80 ...
+
+Those lines land on the node / the calico-node pod syslog; the estate reads them through
+bin/idp-kube as estate-ci, never a laptop secret.
+
+This is NOT a separate "flow log" product: Calico Enterprise Flow Logs are a paid feature this
+estate does not run, and naming them here would be a claim the file does not support. What exists
+open-source is the per-packet deny/log line above, and that is what this collector buckets as the
+flow table a full cycle would produce, so allowances.yaml can be corrected BEFORE the 39 policies
+turn on (platform/calico README's cutover gate).
+
+It fails closed: a feed that yields no parseable calico-packet line is a FAIL (no evidence of a
+denied flow is not a clean bill), and a line carrying `calico-packet:` that cannot be parsed is
+counted loudly, never silently ignored, so a future felix format change cannot read as "no flows".
+
+Usage: bin/idp-calico-deny-log FILE...   ('-' = stdin; no FILE = the good fixture)
+Exit 0 = PASS, 1 = FAIL.
+"""
+import os
+import re
+import sys
+
+IDP = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+_GOOD = os.path.join(IDP, "tests", "fixtures", "calico-denyflow", "feed-with-deny.log")
+_EMPTY = os.path.join(IDP, "tests", "fixtures", "calico-denyflow", "feed-no-evidence.log")
+
+# A calico-packet kernel line. SRC/DST are required; PROTO/SPT/DPT may be absent (e.g. ICMP has no
+# port). DOTALL so a feed that glued several lines onto one physical line still parses the last.
+_PACKET = re.compile(
+    r"calico-packet:\s*IN=(?:\S+)\s+OUT=(?:\S+).*?SRC=(\S+)\s+DST=(\S+)"
+    r"(?:.*?PROTO=(\w+))?(?:.*?\sSPT=(\d+))?(?:.*?\sDPT=(\d+))?",
+    re.DOTALL,
+)
+_LINE_SPLIT = re.compile(r"(?<=:)\d{4}-\d\d-\d\dT")  # timestamp that begins a glued-on line
+
+
+def parse(feed):
+    """Split one feed into (rows, junk). A syslog stream that glued several kernel lines onto one
+    physical line is split back at a timestamp boundary first. Each row is a dict of the fields the
+    allowances decision needs; a line bearing `calico-packet:` that lacks SRC/DST is junk."""
+    chunk = _LINE_SPLIT.sub("\n", feed)
+    clean = []
+    junk = 0
+    for ln in chunk.splitlines():
+        if "calico-packet:" not in ln:
+            continue
+        m = _PACKET.search(ln)
+        if not m or not m.group(1) or not m.group(2):
+            junk += 1
+            continue
+        clean.append(
+            {
+                "src": m.group(1),
+                "dst": m.group(2),
+                "proto": (m.group(3) or "ip").upper(),
+                "sp": m.group(4) or "0",
+                "dp": m.group(5) or "0",
+            }
+        )
+    return clean, junk
+
+
+def grade(feed):
+    """Return (ok: bool, flows: list[str], line: str) over one deny-log feed."""
+    clean, junk = parse(feed)
+    if not clean:
+        return False, [], "no calico-packet deny line parsed (%d unparseable): no evidence of a denied flow" % junk
+    by_dst = {}
+    for row in clean:
+        by_dst.setdefault((row["dst"], row["dp"], row["proto"]), []).append(row["src"])
+    flows = sorted(
+        "dst %s port %s %s from %d src ip(s): %s" % (dst, dp, proto, len(s), ", ".join(sorted(set(s))[:3]))
+        for (dst, dp, proto), s in by_dst.items()
+    )
+    note = " (%d unparseable line(s) excluded, not evidence)" % junk if junk else ""
+    return True, flows, "%d unique denied flow target(s)%s" % (len(flows), note)
+
+
+def _rd(path):
+    if path == "-":
+        return sys.stdin.read()
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+def main(argv):
+    files = [a for a in argv[1:] if a != "--ci-green"]
+    if not files:
+        files = [_GOOD]
+    bad = 0
+    for path in files:
+        try:
+            feed = _rd(path)
+        except FileNotFoundError:
+            print("FAIL    calico-deny-log  no log file: %s" % path)
+            bad = 1
+            continue
+        ok, flows, line = grade(feed)
+        if not ok:
+            print("FAIL    calico-deny-log  %s  %s" % (os.path.basename(path), line))
+            bad = 1
+            continue
+        print("ok      calico-deny-log  %s  %s" % (os.path.basename(path), line))
+        for f in flows:
+            print("        flow  %s" % f)
+    if bad:
+        sys.exit(1)
+    print("verdict calico-deny-log PASS")
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv)
+    except BrokenPipeError:
+        sys.exit(1)

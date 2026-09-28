@@ -1,0 +1,28 @@
+{
+ "summary": {
+  "rendered": 1,
+  "objects": 1,
+  "failed": 0,
+  "total": 1
+ },
+ "releases": [
+  {
+   "chart": "tailscale-operator",
+   "repository": "https://pkgs.tailscale.com/helmcharts",
+   "version": "1.102.3",
+   "name": "tailscale-operator",
+   "namespace": "tailscale",
+   "file": "platform/tailscale/operator.yaml",
+   "error": null,
+   "objects": [
+    {
+     "apiVersion": "apps/v1",
+     "kind": "Deployment",
+     "name": "operator",
+     "namespace": "tailscale",
+     "resources": []
+    }
+   ]
+  }
+ ]
+}

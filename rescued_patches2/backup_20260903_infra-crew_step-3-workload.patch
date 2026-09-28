@@ -1,0 +1,1310 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 0d7d5b19f..0fbad2879 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -594,6 +594,47 @@ jobs:
+           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+         run: bin/idp-kini-state --json
+ 
++  infra-crew:
++    # crew#729 step 3: is the infrastructure crew taking its queue? Read from outside the cluster:
++    # the board through the estate App's ticket-verifier lane (issues), and Langfuse through the
++    # project keys in the vault. bin/idp-infra-crew-drill; drills/catalogue.yaml row infra-crew.
++    if: github.event_name != 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
++      - name: oci cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
++      - name: OCI session token from the GitHub OIDC token
++        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
++        with:
++          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
++          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
++          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
++          oci_region: ${{ vars.OCI_REGION }}
++      - name: bin/idp-infra-crew-drill
++        env:
++          OCI_CI: "1"
++          OCI_CLI_AUTH: security_token
++          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
++        run: |
++          set -o pipefail
++          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   infra-crew  no App token: ${tok:0:160}"; exit 2; }
++          echo "::add-mask::$tok"
++          pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)
++          sk=$(bin/idp-cloud secret get langfuse-init-secret-key 2>/dev/null || true)
++          [ -n "$sk" ] && echo "::add-mask::$sk"
++          GH_TOKEN="$tok" LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk" bin/idp-infra-crew-drill 2>&1 | tee drill.out
++          printf '### infra-crew\n```\n%s\n```\n' "$(cat drill.out)" >> "$GITHUB_STEP_SUMMARY"
++
+   telemetry-coverage:
+     # crew#320 / LAW 50: coverage is a backend query, never a file scan. The cluster diffs Running
+     # pods against pods seen in ClickHouse (platform/observability/telemetry-coverage.yaml) and this
+diff --git a/backstage/platform/catalog-info.yaml b/backstage/platform/catalog-info.yaml
+index 2bd16b8ae..c0d399091 100644
+--- a/backstage/platform/catalog-info.yaml
++++ b/backstage/platform/catalog-info.yaml
+@@ -799,6 +799,34 @@ spec:
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
++metadata:
++  name: layer-infra-crew
++  title: 'Infrastructure crew'
++  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
++  annotations:
++    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
++    estate/flux-kustomization: 'infra-crew'
++    estate/path: './platform/infra-crew'
++    estate/cluster: 'oke'
++  tags: [platform, agents]
++  links:
++    - url: https://signoz.${ESTATE_ZONE}
++      title: 'Live logs and metrics'
++    - url: https://langfuse.${ESTATE_ZONE}
++      title: 'Model traces'
++spec:
++  type: platform-layer
++  lifecycle: production
++  owner: group:default/platform
++  system: agents
++  dependsOn:
++    - component:default/layer-scheduling
++    - component:default/layer-secret-store
++    - component:default/layer-alerts-github
++    - component:default/layer-llm
++---
++apiVersion: backstage.io/v1alpha1
++kind: Component
+ metadata:
+   name: layer-keda
+   title: 'Workload autoscaler'
+diff --git a/bin/catalog-platform b/bin/catalog-platform
+index 42e8a0e59..a09f714e4 100755
+--- a/bin/catalog-platform
++++ b/bin/catalog-platform
+@@ -269,6 +269,11 @@ LAYERS = {
+         "Agent tools",
+         "The tools an agent may use, behind one gateway with one audit log.",
+     ),
++    "infra-crew": (
++        "agents",
++        "Infrastructure crew",
++        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
++    ),
+     "hindsight": (
+         "agents",
+         "Agent memory",
+diff --git a/bin/idp-infra-crew-drill b/bin/idp-infra-crew-drill
+new file mode 100755
+index 000000000..26aad5885
+--- /dev/null
++++ b/bin/idp-infra-crew-drill
+@@ -0,0 +1,219 @@
++#!/usr/bin/env python3
++"""The infra-crew drill (crew#729 step 3): is the infrastructure crew taking its queue?
++
++    bin/idp-infra-crew-drill
++
++Reads two surfaces from outside the cluster, with no kube path and no laptop session token:
++
++  1. the board (GitHub issues of <owner>/crew carrying the crew's queue label), through `gh`
++     with GH_TOKEN, an installation token of the estate's App;
++  2. Langfuse's public API at https://langfuse.<zone>, with the project keys in
++     LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY.
++
++The property that breaks, and the only thing graded: a queued ticket is planned within the
++grace period, and every plan the crew leaves has a trace behind it (LAW 50). Exit 0 with an
++`ok` line, 1 with a `FAIL` line naming the ticket, 2 `BLIND` when a surface cannot be read --
++a drill that lost its evidence reports BLIND, never green (silent green is the defect class).
++
++Everything the estate is allowed to name comes from clusters/oke/estate-config.yaml (LAW 46):
++ESTATE_GITHUB_OWNER for the board, ESTATE_ZONE for the Langfuse door. Overridable for tests and
++for a hosted Langfuse: INFRA_CREW_BOARD (owner/repo), INFRA_CREW_QUEUE_LABEL, LANGFUSE_HOST,
++INFRA_CREW_GRACE_MINUTES (default 60), INFRA_CREW_WINDOW_HOURS (default 24).
++"""
++
++from __future__ import annotations
++
++import base64
++import json
++import os
++import re
++import subprocess
++import sys
++import urllib.error
++import urllib.parse
++import urllib.request
++from datetime import datetime, timedelta
++from pathlib import Path
++
++IDP = Path(__file__).resolve().parents[1]
++# Ages are measured against GitHub's own clock, never this machine's (crew#583): the Date header
++# of a response GitHub just served is the same authority that stamped created_at.
++sys.path.insert(0, str(IDP / "bin" / "lib"))
++from receipt_age import served_now  # noqa: E402 - path has to be set before the import
++
++CLAIM_MARK = "Optimised:"  # the plan comment's last line; the crew's own claim mark (src/infra_crew/main.py)
++TRACE_NAME = "infra-crew.run"  # the root span the crew opens on every worked ticket
++
++
++def row(status: str, text: str) -> None:
++    print("%-6s %-11s %s" % (status, "infra-crew", text))
++
++
++def config(key: str) -> str | None:
++    text = (IDP / "clusters" / "oke" / "estate-config.yaml").read_text(encoding="utf-8")
++    m = re.search(r"^\s*%s:\s*\"?([^\"\n]+)\"?\s*$" % re.escape(key), text, re.M)
++    return m.group(1).strip() if m else None
++
++
++def gh_json(path: str) -> list | dict | None:
++    """One `gh api` call; None when GitHub cannot be asked (the caller reports BLIND)."""
++    try:
++        r = subprocess.run(
++            ["gh", "api", "--paginate", path],
++            capture_output=True,
++            text=True,
++            timeout=120,
++            check=False,
++        )
++    except (FileNotFoundError, subprocess.TimeoutExpired):
++        return None
++    if r.returncode != 0:
++        return None
++    try:
++        return json.loads(r.stdout)
++    except json.JSONDecodeError:
++        # --paginate concatenates arrays; a single page is a plain array already
++        pages = [json.loads(p) for p in re.split(r"\]\s*\[", r.stdout) if p.strip()]
++        out: list = []
++        for p in pages:
++            out += p if isinstance(p, list) else [p]
++        return out
++
++
++def when(stamp: str) -> datetime:
++    return datetime.fromisoformat(stamp.replace("Z", "+00:00"))
++
++
++def langfuse_traces(host: str, pk: str, sk: str, since: datetime) -> int | None:
++    """How many traces named TRACE_NAME Langfuse holds since `since`; None when unreachable."""
++    q = urllib.parse.urlencode(
++        {"name": TRACE_NAME, "fromTimestamp": since.isoformat(), "limit": 100}
++    )
++    auth = base64.b64encode(f"{pk}:{sk}".encode()).decode()
++    req = urllib.request.Request(
++        f"{host.rstrip('/')}/api/public/traces?{q}",
++        headers={"Authorization": f"Basic {auth}", "Accept": "application/json"},
++    )
++    try:
++        with urllib.request.urlopen(req, timeout=60) as r:
++            body = json.loads(r.read() or b"{}")
++    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError):
++        return None
++    data = body.get("data")
++    if not isinstance(data, list):
++        return None
++    return len(data)
++
++
++def main() -> int:
++    now = served_now()
++    if now is None:
++        row(
++            "BLIND",
++            "GitHub did not answer `gh api -i rate_limit` with a Date header; no age can be measured",
++        )
++        return 2
++    grace = timedelta(minutes=float(os.environ.get("INFRA_CREW_GRACE_MINUTES", "60")))
++    window = timedelta(hours=float(os.environ.get("INFRA_CREW_WINDOW_HOURS", "24")))
++    label = os.environ.get("INFRA_CREW_QUEUE_LABEL", "lane:infra")
++    owner = config("ESTATE_GITHUB_OWNER")
++    board = os.environ.get("INFRA_CREW_BOARD") or (f"{owner}/crew" if owner else None)
++    if not board:
++        row(
++            "BLIND",
++            "clusters/oke/estate-config.yaml names no ESTATE_GITHUB_OWNER; no board to read",
++        )
++        return 2
++    zone = config("ESTATE_ZONE")
++    host = os.environ.get("LANGFUSE_HOST") or (
++        f"https://langfuse.{zone}" if zone else None
++    )
++    pk, sk = (
++        os.environ.get("LANGFUSE_PUBLIC_KEY", ""),
++        os.environ.get("LANGFUSE_SECRET_KEY", ""),
++    )
++
++    since = now - window
++    q = urllib.parse.urlencode(
++        {"labels": label, "state": "all", "since": since.isoformat(), "per_page": 100}
++    )
++    issues = gh_json(f"repos/{board}/issues?{q}")
++    if issues is None:
++        row(
++            "BLIND",
++            f"cannot list {board} issues labelled {label} through gh (GH_TOKEN?)",
++        )
++        return 2
++    issues = [i for i in issues if isinstance(i, dict) and "pull_request" not in i]
++
++    planned: list[tuple[int, datetime]] = []
++    waiting: list[tuple[int, float]] = []
++    for issue in issues:
++        n = int(issue["number"])
++        comments = gh_json(f"repos/{board}/issues/{n}/comments?per_page=100")
++        if comments is None:
++            row("BLIND", f"cannot read the comments of {board}#{n}")
++            return 2
++        plans = [
++            when(c["created_at"])
++            for c in comments
++            if CLAIM_MARK in (c.get("body") or "")
++        ]
++        if plans:
++            newest = max(plans)
++            if newest >= since:
++                planned.append((n, newest))
++        elif issue.get("state") == "open":
++            age = now - when(issue["created_at"])
++            if age > grace:
++                waiting.append((n, age.total_seconds() / 60))
++
++    if waiting:
++        n, minutes = max(waiting, key=lambda w: w[1])
++        row(
++            "FAIL",
++            f"{board}#{n} has waited {minutes:.0f} min for a plan (grace {grace.total_seconds() / 60:.0f}); the crew is not taking its queue",
++        )
++        return 1
++
++    if not planned:
++        # Nothing was queued past the grace period and nothing was worked: the queue is empty.
++        # That is the state of the world, printed as such -- an empty queue is not a dead crew,
++        # and a dead crew shows up here the moment a ticket is seeded (docs/runbooks/infra-crew.md).
++        row(
++            "ok",
++            f"queue empty: no {label} ticket on {board} waited past {grace.total_seconds() / 60:.0f} min and none was planned in the last {window.total_seconds() / 3600:.0f}h",
++        )
++        return 0
++
++    if not (host and pk and sk):
++        row(
++            "BLIND",
++            f"{len(planned)} plan comment(s) on {board} but no Langfuse door or keys to confirm the trace",
++        )
++        return 2
++    oldest_plan = min(p[1] for p in planned)
++    traces = langfuse_traces(host, pk, sk, oldest_plan - timedelta(hours=1))
++    if traces is None:
++        row(
++            "BLIND",
++            f"{len(planned)} plan comment(s) on {board} but {host} did not answer /api/public/traces",
++        )
++        return 2
++    if traces == 0:
++        n = max(planned, key=lambda p: p[1])[0]
++        row(
++            "FAIL",
++            f"the crew planned {board}#{n} but no trace named {TRACE_NAME} reached Langfuse (LAW 50)",
++        )
++        return 1
++    tickets = ", ".join(f"#{n}" for n, _ in sorted(planned))
++    row(
++        "ok",
++        f"planned {tickets} on {board} in the last {window.total_seconds() / 3600:.0f}h; {traces} trace(s) named {TRACE_NAME} in Langfuse",
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/clusters/oke/estate-config.yaml b/clusters/oke/estate-config.yaml
+index 3e374c724..8d7b3f22c 100644
+--- a/clusters/oke/estate-config.yaml
++++ b/clusters/oke/estate-config.yaml
+@@ -17,6 +17,10 @@ data:
+   # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
+   # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
+   ESTATE_GITHUB_REPO: chidionyema/idp
++  # The GitHub account that owns the estate repositories (crew#729 step 3): the infrastructure
++  # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
++  # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
++  ESTATE_GITHUB_OWNER: chidionyema
+   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
+   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
+   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index b4e9da360..849d95f73 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -409,6 +409,42 @@ spec:
+       - kind: Secret
+         name: github-app
+ ---
++# The infrastructure crew (crew#729 step 3): a crewAI CronJob that takes a `lane:infra` board
++# ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
++# deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
++# App Secret its token generator reads through strict envsubst) and llm (the router it calls).
++# `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
++# readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
++# from outside by the infra-crew drill (drills/catalogue.yaml), never from this row.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: infra-crew
++  namespace: flux-system
++spec:
++  interval: 10m
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/infra-crew
++  prune: true
++  postBuild:
++    substituteFrom:
++      # OTLP_ENDPOINT and ESTATE_GITHUB_OWNER: one value each in estate-config (LAW 46).
++      - kind: ConfigMap
++        name: estate-config
++      # The estate-agents App's id and installation id for the GithubAccessToken generator;
++      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
++      - kind: Secret
++        name: github-app
++  dependsOn:
++    - name: scheduling
++    - name: secret-store
++    - name: alerts-github
++    - name: llm
++  wait: true
++  timeout: 10m
++---
+ # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
+ # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+diff --git a/docs/runbooks/infra-crew.md b/docs/runbooks/infra-crew.md
+new file mode 100644
+index 000000000..df6e080b4
+--- /dev/null
++++ b/docs/runbooks/infra-crew.md
+@@ -0,0 +1,108 @@
++# The infrastructure crew
++
++What it is, how to stop it, how to read what it did, and how to give it a ticket. Every step a
++person takes is quoted from the vendor's own page.
++
++## What it is
++
++The infrastructure crew is a set of five agents (manager, planner, builder, verifier, watcher)
++running on crewAI in one container on the estate cluster. Every 15 minutes it looks at the crew
++board for the oldest open ticket labelled `lane:infra` that has no plan comment yet. It writes a
++plan comment ending in an `Optimised:` line, opens a branch and a pull request on the platform
++repository, and stops. It has no merge tool, no deploy tool and no cluster tool: the founder
++merges and deploys. When the queue is empty it prints `idle` and exits.
++
++Where things live:
++
++| Thing | Place |
++|---|---|
++| The code and the image | the `infra-crew` repository; the image is published on every main commit |
++| The cluster workload | `platform/infra-crew/cronjob.yaml` (one scheduled job, no cluster permissions) |
++| Its credentials | `platform/infra-crew/external-secret.yaml` (a GitHub App token minted in-cluster, the Langfuse keys, the router key; all mounted as files) |
++| The Flux row | `clusters/oke/platform.yaml`, row `infra-crew` |
++| The catalogue page | Backstage, "Infrastructure crew" under the agents system (generated by `bin/catalog-platform`) |
++| The drill | `drills/catalogue.yaml` row `infra-crew`, run by `bin/idp-infra-crew-drill` inside `.github/workflows/oke-check.yml` |
++| The law files it reads | fetched at every start into its laws directory: AGENTS.md and AGENTS-FULL.md from the laws folder of the claude-guards repository, `crew/docs/STANDARDS.md` and `docs/reference/policy/definition-of-done.md` |
++
++Its GitHub hand is the `infra-crew` lane of `platform/github-app/lanes.json`: read metadata,
++write contents, pull requests and issues, read actions and checks. Nothing else.
++
++## Stopping it
++
++Three switches, each one action, each independent of the other two.
++
++### 1. Suspend the GitHub App installation (every token dies at once)
++
++The crew cannot read the board or open a pull request without a token, and the token is minted
++from the App installation. Suspending the installation makes the next run refuse to boot.
++
++From GitHub's page "Reviewing and modifying installed GitHub Apps":
++
++1. "In the upper-right corner of any page, click your profile picture, then click **Settings**."
++2. "Under "Integrations," click **Applications**."
++3. "Click **Installed GitHub Apps**. A list of the GitHub Apps installed on your personal account will be displayed."
++4. "Next to the GitHub App you want to review or modify, click **Configure**." The App is `estate-agents`.
++5. "To keep the GitHub App installed for future use but temporarily block it from accessing resources owned by your account, click **Suspend**."
++
++To bring it back: "If the GitHub App was previously suspended, you can unsuspend the app by clicking **Unsuspend**."
++
++This switch also stops Hermes and the drill dispatcher, which mint from the same App.
++
++### 2. The agents toggle
++
++The one-word switch that turns every agent off at once is the `agents_enabled` toggle the board
++asks for in [the agents toggle ticket](https://github.com/chidionyema/crew/issues/767). It is not
++built yet. Until it lands, switches 1 and 3 are the two that exist.
++
++### 3. Suspend the scheduled job in git
++
++Open `platform/infra-crew/cronjob.yaml`, add `suspend: true` directly under `spec:` of the
++scheduled job, open a pull request, and merge it. Flux applies the change within ten minutes and no
++new run starts; a run already in flight finishes. Remove the line and merge to resume.
++
++## Reading what it did
++
++Every run is a trace in two places, and the drill reads the second one from outside the cluster.
++
++- **Model traces.** Open the "Infrastructure crew" page in Backstage and click "Model traces"
++  (that is Langfuse at `langfuse.<zone>`). Every worked ticket is a trace named `infra-crew.run`
++  whose session is `infra-crew-<ticket number>-<run id>`; the agents, tasks, tool calls and model
++  calls hang under it. The verifier's verdicts are evaluations on the same trace.
++- **Logs.** On the same page click "Live logs and metrics" (SigNoz) and filter the service
++  `infra-crew`. A run that refused to boot prints one line starting `REFUSED:` naming the value
++  it is missing.
++- **The board.** The plan comment on the ticket, and the pull request it opened from a branch
++  named `infra-crew/<ticket number>`.
++- **The drill.** The `infra-crew` row of the drills report: green when no queued ticket has waited
++  more than an hour without a plan and every plan in the last day has a trace behind it; red
++  names the ticket that is waiting or the plan with no trace.
++
++## Giving it a ticket
++
++The board is the `crew` repository. The label `lane:infra` has to exist there once; from GitHub's
++page "Managing labels":
++
++1. "On GitHub, navigate to the main page of the repository."
++2. "Under your repository name, click **Issues** or **Pull requests**."
++3. "Above the list of issues or pull requests, click **Labels**."
++4. "To the right of the search field, click **New label**."
++5. "Under 'Label name', type a name for your label." The name is `lane:infra`.
++6. "To save the new label, click **Create label**."
++
++Then open an issue on the board with what you want done, in plain words, and put the label on it:
++
++1. "Navigate to the issue, pull request, or discussion."
++2. "In the right sidebar, click **Labels**, then click a label." Click `lane:infra`.
++
++Within 15 minutes the crew takes the oldest such ticket that has no plan comment. Expect a plan
++comment ending in an `Optimised:` line, a pull request from a branch `infra-crew/<ticket number>`,
++and a trace in Langfuse. If nothing happens within an hour the drill goes red and names the ticket.
++
++## Not done
++
++- The crew reads the router with the router's own key; a virtual key minted for this crew alone,
++  with its own budget, replaces that line when the router's key management is on.
++- The `agents_enabled` toggle (switch 2) is not built; the board ticket above tracks it.
++- The `lane:infra` label does not exist on the board yet; the seeding steps above create it.
++- The image `infra-crew:main` is published by the crew repository's image workflow on its first
++  main commit; until then the scheduled job's pod cannot pull and Flux reports it.
+diff --git a/drills/catalogue.yaml b/drills/catalogue.yaml
+index 8da027818..c59d3a1ba 100644
+--- a/drills/catalogue.yaml
++++ b/drills/catalogue.yaml
+@@ -107,6 +107,19 @@ drills:
+       of it dying); the receipt is written from the node's identity and graded by
+       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
+ 
++  - name: infra-crew
++    owner: idp
++    workflow: oke-check.yml
++    job: infra-crew
++    schedule: "17 6 * * *"
++    max_age_hours: 26
++    proves: >-
++      The infrastructure crew is taking its queue, read from outside the cluster: no open board
++      ticket with the crew's label has waited more than an hour without a plan comment, and every
++      plan comment the crew left in the last day has a matching trace in Langfuse
++      (bin/idp-infra-crew-drill, as the estate's own GitHub identity). A queued ticket left
++      unplanned, or work with no trace, is the red.
++
+   - name: cluster-state
+     owner: idp
+     workflow: oke-check.yml
+diff --git a/platform/infra-crew/cronjob.yaml b/platform/infra-crew/cronjob.yaml
+new file mode 100644
+index 000000000..2e97afe25
+--- /dev/null
++++ b/platform/infra-crew/cronjob.yaml
+@@ -0,0 +1,193 @@
++# The crew's identity in the cluster is a name and nothing else. No Role, no RoleBinding, no
++# ClusterRoleBinding anywhere names this account, and the token is never mounted: the crew has
++# no cluster hand by construction (founder 2026-09-01: no agent touches the cluster again).
++# tests/test_crew729_infra_crew_workload.py refuses any binding that names it.
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: infra-crew
++  namespace: infra-crew
++automountServiceAccountToken: false
++---
++# crewAI memory and knowledge stores (INFRA_CREW_STORAGE_DIR). A volume that outlives the pod,
++# the same reason platform/hermes-agent keeps HERMES_HOME on one (idp#365): a founder ruling
++# ingested once is recalled on every run, never lost with a finished Job.
++apiVersion: v1
++kind: PersistentVolumeClaim
++metadata:
++  name: infra-crew-data
++  namespace: infra-crew
++spec:
++  accessModes: [ReadWriteOnce]
++  resources:
++    requests:
++      storage: 5Gi
++---
++# Every 15 minutes: with no argument the crew takes the oldest open `lane:infra` ticket on the
++# board that has no plan comment yet, and exits `idle` when there is none. One run at a time
++# (Forbid), so two Jobs never claim one ticket. The image is the newest main of
++# chidionyema/infra-crew (its image workflow publishes every main commit as :main); the tag
++# moves on the vendor side, so the pull policy is Always.
++apiVersion: batch/v1
++kind: CronJob
++metadata:
++  name: infra-crew
++  namespace: infra-crew
++  labels:
++    # The catalogue Component the Backstage Kubernetes plugin reads this workload under
++    # (backstage/platform/catalog-info.yaml, generated by bin/catalog-platform).
++    backstage.io/kubernetes-id: infra-crew
++spec:
++  schedule: "*/15 * * * *"
++  concurrencyPolicy: Forbid
++  successfulJobsHistoryLimit: 1
++  failedJobsHistoryLimit: 2
++  startingDeadlineSeconds: 600
++  jobTemplate:
++    spec:
++      # crew#396: finished Jobs are removed an hour later so their pods never haunt the receipt
++      ttlSecondsAfterFinished: 3600
++      backoffLimit: 0                # a failed run is a red Job to read, never a silent retry
++      activeDeadlineSeconds: 3000    # one ticket, under the 15-minute period times three; then the Job is killed and read
++      template:
++        metadata:
++          labels:
++            backstage.io/kubernetes-id: infra-crew
++        spec:
++          # crew#584 CP-I: a batch job is seated by preempting one balloon pod, so it asks for at
++          # most what one balloon pod holds (platform/scheduling/balloon.yaml) and is never
++          # standing capacity.
++          priorityClassName: platform-batch
++          serviceAccountName: infra-crew
++          automountServiceAccountToken: false
++          restartPolicy: Never
++          imagePullSecrets:
++            - name: ghcr-pull
++          securityContext:
++            runAsNonRoot: true
++            runAsUser: 10001
++            runAsGroup: 10001
++            fsGroup: 10001
++            seccompProfile: { type: RuntimeDefault }
++          initContainers:
++            # The law files the crew's knowledge base is built from, fetched from the repositories
++            # that version them into INFRA_CREW_LAWS_DIR, producing exactly the four names the
++            # crew's knowledge.py expects. All four repositories are public, so no token is
++            # needed; the owner comes from estate-config (LAW 46), never a literal here.
++            # Same pinned image as every estate CronJob (platform/state/cluster-state.yaml): it
++            # ships python3, so no git and no second image.
++            - name: laws
++              image: ghcr.io/oracle/oci-cli:20260826
++              command: ["/bin/sh", "-c"]
++              args:
++                - |
++                  set -eu
++                  exec python3 - <<'PY'
++                  import os, sys, urllib.request
++                  owner = os.environ["LAWS_OWNER"]
++                  out = os.environ["INFRA_CREW_LAWS_DIR"]
++                  sources = {
++                      "AGENTS.md": ("claude-guards", "laws/AGENTS.md"),
++                      "AGENTS-FULL.md": ("claude-guards", "laws/AGENTS-FULL.md"),
++                      "STANDARDS.md": ("crew", "docs/STANDARDS.md"),
++                      "definition-of-done.md": ("idp", "docs/reference/policy/definition-of-done.md"),
++                  }
++                  failed = 0
++                  for name, (repo, path) in sources.items():
++                      url = f"https://raw.githubusercontent.com/{owner}/{repo}/main/{path}"
++                      try:
++                          with urllib.request.urlopen(url, timeout=30) as r:
++                              body = r.read()
++                      except Exception as why:  # noqa: BLE001 - every miss is named, none is hidden
++                          print(f"FAIL laws {name} <- {url}: {why}")
++                          failed += 1
++                          continue
++                      with open(os.path.join(out, name), "wb") as fh:
++                          fh.write(body)
++                      print(f"ok   laws {name} {len(body)} bytes <- {repo}/{path}")
++                  sys.exit(1 if failed else 0)
++                  PY
++              env:
++                - { name: LAWS_OWNER, value: "${ESTATE_GITHUB_OWNER}" }
++                - { name: INFRA_CREW_LAWS_DIR, value: /laws }
++                - { name: HOME, value: /tmp }
++              volumeMounts:
++                - { name: laws, mountPath: /laws }
++                - { name: tmp, mountPath: /tmp }
++              resources:
++                requests: { cpu: 50m, memory: 64Mi }
++                limits: { cpu: 250m, memory: 128Mi }
++              securityContext:
++                runAsNonRoot: true
++                runAsUser: 10001
++                runAsGroup: 10001
++                allowPrivilegeEscalation: false
++                readOnlyRootFilesystem: true
++                capabilities: { drop: ["ALL"] }
++                seccompProfile: { type: RuntimeDefault }
++          containers:
++            - name: crew
++              image: ghcr.io/chidionyema/infra-crew:main
++              imagePullPolicy: Always
++              # No argument: queue mode (the next unplanned `lane:infra` ticket, or `idle`).
++              args: []
++              env:
++                # The one model router (LAW 34); bare aliases, rows in platform/llm/config.yaml (the crew
++                # adds the openai/ provider prefix itself, so a prefixed value reaches the router as a
++                # name it does not have). The verifier runs on a different alias from the builder so it
++                # never grades with the builder's brain. `embed` is the router's embedding row.
++                - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc:4000" }
++                - { name: INFRA_CREW_MODEL, value: "minimax" }
++                - { name: INFRA_CREW_VERIFIER_MODEL, value: "deepseek" }
++                - { name: INFRA_CREW_EMBED_MODEL, value: "embed" }
++                # The estate collector (LAW 50): one value in clusters/oke/estate-config.yaml.
++                - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "${OTLP_ENDPOINT}" }
++                - { name: OTEL_SERVICE_NAME, value: infra-crew }
++                - { name: LANGFUSE_BASE_URL, value: "http://langfuse-web.observability.svc:3000" }
++                - { name: INFRA_CREW_REPO_OWNER, value: "${ESTATE_GITHUB_OWNER}" }
++                - { name: INFRA_CREW_BOARD_REPO, value: crew }
++                - { name: INFRA_CREW_PLATFORM_REPO, value: idp }
++                - { name: INFRA_CREW_QUEUE_LABEL, value: "lane:infra" }
++                - { name: INFRA_CREW_LAWS_DIR, value: /laws }
++                - { name: INFRA_CREW_STORAGE_DIR, value: /var/lib/infra-crew }
++                - { name: CREWAI_STORAGE_DIR, value: /var/lib/infra-crew }
++                - { name: CREWAI_DISABLE_TELEMETRY, value: "true" }
++                - { name: HOME, value: /tmp }
++                # Secrets are files (kyverno secrets-not-from-env-vars); the crew reads NAME_FILE.
++                - { name: INFRA_CREW_GITHUB_TOKEN_FILE, value: /run/secrets/infra-crew/INFRA_CREW_GITHUB_TOKEN }
++                - { name: LITELLM_API_KEY_FILE, value: /run/secrets/infra-crew/LITELLM_API_KEY }
++                - { name: LANGFUSE_PUBLIC_KEY_FILE, value: /run/secrets/infra-crew/LANGFUSE_PUBLIC_KEY }
++                - { name: LANGFUSE_SECRET_KEY_FILE, value: /run/secrets/infra-crew/LANGFUSE_SECRET_KEY }
++              volumeMounts:
++                - { name: laws, mountPath: /laws, readOnly: true }
++                - { name: data, mountPath: /var/lib/infra-crew }
++                - { name: secrets, mountPath: /run/secrets/infra-crew, readOnly: true }
++                - { name: tmp, mountPath: /tmp }
++              resources:
++                requests: { cpu: 250m, memory: 768Mi }
++                limits: { cpu: "1", memory: 1536Mi }
++              securityContext:
++                runAsNonRoot: true
++                runAsUser: 10001
++                runAsGroup: 10001
++                allowPrivilegeEscalation: false
++                readOnlyRootFilesystem: true
++                capabilities: { drop: ["ALL"] }
++                seccompProfile: { type: RuntimeDefault }
++          volumes:
++            - name: laws
++              emptyDir: {}
++            - name: tmp
++              emptyDir: {}
++            - name: data
++              persistentVolumeClaim:
++                claimName: infra-crew-data
++            # One directory, three Secrets: the App token the generator mints, the Langfuse pair
++            # and the router key. A projected volume, the same shape as hermes-agent's env dir.
++            - name: secrets
++              projected:
++                defaultMode: 0440
++                sources:
++                  - secret: { name: infra-crew-github }
++                  - secret: { name: infra-crew-langfuse }
++                  - secret: { name: infra-crew-router }
+diff --git a/platform/infra-crew/external-secret.yaml b/platform/infra-crew/external-secret.yaml
+new file mode 100644
+index 000000000..97aad57d7
+--- /dev/null
++++ b/platform/infra-crew/external-secret.yaml
+@@ -0,0 +1,113 @@
++# Every credential the crew holds, minted or mirrored in-cluster by external-secrets and mounted
++# as files (platform/edge/kyverno-secrets-policy.yaml refuses a secret in an env var). The crew
++# reads each one through its NAME_FILE convention (src/infra_crew/estate.py in
++# chidionyema/infra-crew) and refuses to boot when any is missing: a crew that cannot be seen
++# does not run (LAW 50).
++#
++# 1. GitHub: an installation token of the estate-agents App, narrowed to the infra-crew lane of
++#    platform/github-app/lanes.json (idp#1098): read metadata, write contents, pull requests and
++#    issues, read actions and checks. No workflows, no admin, no secrets -- a buyer's engineer
++#    reads the whole hand in six lines. The mint lives where the consumer lives, exactly as
++#    platform/hermes-agent/gateway.yaml does it: no workflow, no script, no vault hop, and a
++#    10-minute refresh keeps every token inside its 60-minute life.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: infra-crew-github
++  namespace: infra-crew
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target: { name: infra-crew-github, creationPolicy: Owner }
++  dataFrom:
++    - sourceRef:
++        generatorRef:
++          apiVersion: generators.external-secrets.io/v1alpha1
++          kind: GithubAccessToken
++          name: infra-crew-github
++      rewrite:
++        - transform: { template: "INFRA_CREW_GITHUB_TOKEN" }
++---
++# ${githubAppIDQuoted} / ${githubAppInstallationIDQuoted} are substituted by Flux from the
++# flux-system/github-app Secret (platform/alerts-github/github-app.yaml; this row's substituteFrom
++# in clusters/oke/platform.yaml). The Quoted variants carry their own double quotes because
++# kustomize build re-emits every scalar plain and a bare numeral types spec.appID as an int
++# (idp#1027). Account identifiers are never typed in git (LAW 46).
++apiVersion: generators.external-secrets.io/v1alpha1
++kind: GithubAccessToken
++metadata:
++  name: infra-crew-github
++  namespace: infra-crew
++spec:
++  appID: ${githubAppIDQuoted}
++  installID: ${githubAppInstallationIDQuoted}
++  # Mirrors the infra-crew lane in platform/github-app/lanes.json. Suspending the App's
++  # installation (docs/runbooks/infra-crew.md, kill switch 1) makes this mint fail and every
++  # run after it refuse to boot.
++  permissions:
++    metadata: read
++    contents: write
++    pull_requests: write
++    issues: write
++    actions: read
++    checks: read
++  auth:
++    privateKey:
++      secretRef:
++        name: github-app-pem
++        key: key
++---
++# The App's private key for the generator, from the one vault entry `github-app` that
++# bin/idp-github-app writes; same template as platform/hermes-agent/gateway.yaml.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: infra-crew-github-app-pem
++  namespace: infra-crew
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target:
++    name: github-app-pem
++    creationPolicy: Owner
++    template:
++      engineVersion: v2
++      data:
++        key: "{{ .pem_b64 | b64dec }}"
++  dataFrom:
++    - extract: { key: github-app }
++---
++# 2. Langfuse: the project keys Langfuse was initialised with (platform/observability, vault
++#    entries langfuse-init-public-key / langfuse-init-secret-key), the same pair LiteLLM and
++#    Hermes trace with (platform/llm/external-secret.yaml, platform/hermes-agent/langfuse-key.yaml).
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: infra-crew-langfuse
++  namespace: infra-crew
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target: { name: infra-crew-langfuse, creationPolicy: Owner }
++  data:
++    - secretKey: LANGFUSE_PUBLIC_KEY
++      remoteRef: { key: langfuse-init-public-key }
++    - secretKey: LANGFUSE_SECRET_KEY
++      remoteRef: { key: langfuse-init-secret-key }
++---
++# 3. The model router key. The vault holds no per-consumer virtual key yet, so this reads the
++#    router's own key from the `litellm-upstream` entry (platform/llm/external-secret.yaml).
++#    A virtual key minted for this crew alone, with its own budget, replaces this line the day
++#    the router's key management is on (docs/runbooks/infra-crew.md, "Not done").
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: infra-crew-router
++  namespace: infra-crew
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target: { name: infra-crew-router, creationPolicy: Owner }
++  data:
++    - secretKey: LITELLM_API_KEY
++      remoteRef: { key: litellm-upstream, property: LITELLM_MASTER_KEY }
+diff --git a/platform/infra-crew/kustomization.yaml b/platform/infra-crew/kustomization.yaml
+new file mode 100644
+index 000000000..6c0900335
+--- /dev/null
++++ b/platform/infra-crew/kustomization.yaml
+@@ -0,0 +1,12 @@
++# The infrastructure crew on the cluster (crew#729 step 3). One CronJob, no RBAC, secrets as
++# files, the law files fetched at each start. The image tag is `:main`, published by the
++# chidionyema/infra-crew image workflow on every main commit; there is no image-automation
++# marker here because the tag does not change, the digest behind it does.
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++namespace: infra-crew
++resources:
++  - namespace.yaml
++  - pull-secret.yaml
++  - external-secret.yaml
++  - cronjob.yaml
+diff --git a/platform/infra-crew/namespace.yaml b/platform/infra-crew/namespace.yaml
+new file mode 100644
+index 000000000..e497f2f4a
+--- /dev/null
++++ b/platform/infra-crew/namespace.yaml
+@@ -0,0 +1,16 @@
++# The infrastructure crew (crew#729 step 3): a crewAI workload that takes a `lane:infra` board
++# ticket to a plan comment and a pull request, and nothing further. It has no hand on the cluster
++# (no RBAC, no kube path, no deploy tool); the founder merges and deploys. The workload manifests
++# copy platform/mcp and platform/hermes-agent: restricted pod security, secrets as files, every
++# trace to the estate collector and Langfuse (LAW 50).
++apiVersion: v1
++kind: Namespace
++metadata:
++  annotations:
++    # Never garbage-collected by Flux: a namespace moved between Kustomization rows or
++    # dropped from git stays, with everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
++    kustomize.toolkit.fluxcd.io/prune: disabled
++  name: infra-crew
++  labels:
++    app.kubernetes.io/part-of: idp
++    pod-security.kubernetes.io/enforce: restricted
+diff --git a/platform/infra-crew/pull-secret.yaml b/platform/infra-crew/pull-secret.yaml
+new file mode 100644
+index 000000000..689b215fd
+--- /dev/null
++++ b/platform/infra-crew/pull-secret.yaml
+@@ -0,0 +1,19 @@
++# ghcr-pull for this namespace, mirrored from backstage/ghcr-pull through the ClusterSecretStore
++# ghcr-pull (platform/image-automation/pull-secret.yaml, crew#396 step 2), the same way
++# platform/mcp/pull-secret.yaml does it.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: ghcr-pull
++  namespace: infra-crew
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: ghcr-pull }
++  target:
++    name: ghcr-pull
++    creationPolicy: Owner
++    template:
++      type: kubernetes.io/dockerconfigjson
++  data:
++    - secretKey: .dockerconfigjson
++      remoteRef: { key: ghcr-pull, property: .dockerconfigjson }
+diff --git a/tests/test_crew729_infra_crew_workload.py b/tests/test_crew729_infra_crew_workload.py
+new file mode 100644
+index 000000000..a9d66ccfc
+--- /dev/null
++++ b/tests/test_crew729_infra_crew_workload.py
+@@ -0,0 +1,389 @@
++"""crew#729 step 3: the infrastructure crew is a cluster workload with no cluster hand.
++
++Rung 2 over the manifests, the Flux row, the catalogue and the drill; rung 4 for the drill
++reader, driven with a fake `gh` and a local Langfuse stand-in (no network socket leaves the
++machine). The rules:
++
++  1. the crew's ServiceAccount is named by no Role, RoleBinding or ClusterRoleBinding anywhere
++     under platform/, and its token is never mounted -- no agent touches the cluster again
++     (founder 2026-09-01);
++  2. every secret reaches the pod as a file (Kyverno refuses secret env vars); the crew's
++     NAME_FILE variables all point into the one read-only projected directory;
++  3. the memory volume is a PersistentVolumeClaim, never an emptyDir (idp#365's lesson);
++  4. the laws init container produces exactly the four names the crew's knowledge base expects,
++     from the repositories that version them, with the owner substituted from estate-config;
++  5. the Flux row substitutes from estate-config and the github-app Secret, waits on the rows it
++     reads from, and carries no health check (a CronJob has no readiness to check);
++  6. the catalogue Component, the drill row and the runbook exist and agree on the names;
++  7. the drill reader grades the property that breaks: a queued ticket left unplanned is red, a
++     plan with no trace is red, a planned ticket with a trace is green, and a surface it cannot
++     read is BLIND, never green.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import stat
++import subprocess
++import threading
++from datetime import datetime, timedelta, timezone
++from http.server import BaseHTTPRequestHandler, HTTPServer
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++DIR = ROOT / "platform" / "infra-crew"
++LAW_FILES = {"AGENTS.md", "AGENTS-FULL.md", "STANDARDS.md", "definition-of-done.md"}
++
++
++def _docs(name: str) -> list[dict]:
++    return [d for d in yaml.safe_load_all((DIR / name).read_text()) if d]
++
++
++def _cronjob() -> dict:
++    (cj,) = [d for d in _docs("cronjob.yaml") if d["kind"] == "CronJob"]
++    return cj
++
++
++def _pod() -> dict:
++    return _cronjob()["spec"]["jobTemplate"]["spec"]["template"]["spec"]
++
++
++def _crew() -> dict:
++    (c,) = [c for c in _pod()["containers"] if c["name"] == "crew"]
++    return c
++
++
++def _every_platform_doc():
++    for path in sorted((ROOT / "platform").rglob("*.yaml")):
++        try:
++            for d in yaml.safe_load_all(path.read_text()):
++                if isinstance(d, dict) and "kind" in d:
++                    yield path, d
++        except yaml.YAMLError:
++            continue
++
++
++def test_the_crew_has_no_cluster_hand():
++    pod = _pod()
++    assert pod["serviceAccountName"] == "infra-crew"
++    assert pod["automountServiceAccountToken"] is False
++    (sa,) = [d for d in _docs("cronjob.yaml") if d["kind"] == "ServiceAccount"]
++    assert sa["automountServiceAccountToken"] is False
++    for path, d in _every_platform_doc():
++        if d["kind"] in {"RoleBinding", "ClusterRoleBinding"}:
++            for s in d.get("subjects") or []:
++                assert not (
++                    s.get("kind") == "ServiceAccount"
++                    and s.get("name") == "infra-crew"
++                    and s.get("namespace", "infra-crew") == "infra-crew"
++                ), (
++                    f"{path} binds the crew's ServiceAccount: the crew has a cluster hand"
++                )
++        if d["kind"] in {"Role", "ClusterRole"}:
++            assert d["metadata"]["name"] != "infra-crew", (
++                f"{path}: a Role named for the crew"
++            )
++
++
++def test_every_secret_is_a_file_in_one_readonly_directory():
++    crew = _crew()
++    assert "envFrom" not in crew
++    env = {e["name"]: e.get("value") for e in crew["env"]}
++    assert not [e for e in crew["env"] if "valueFrom" in e]
++    files = {k: v for k, v in env.items() if k.endswith("_FILE")}
++    assert set(files) == {
++        "INFRA_CREW_GITHUB_TOKEN_FILE",
++        "LITELLM_API_KEY_FILE",
++        "LANGFUSE_PUBLIC_KEY_FILE",
++        "LANGFUSE_SECRET_KEY_FILE",
++    }
++    mounts = {m["mountPath"]: m for m in crew["volumeMounts"]}
++    (secret_dir,) = {os.path.dirname(p) for p in files.values()}
++    assert mounts[secret_dir]["readOnly"] is True
++    vols = {v["name"]: v for v in _pod()["volumes"]}
++    sources = vols[mounts[secret_dir]["name"]]["projected"]["sources"]
++    projected = {s["secret"]["name"] for s in sources}
++    externals = {
++        d["spec"]["target"]["name"]
++        for d in _docs("external-secret.yaml")
++        if d["kind"] == "ExternalSecret"
++    }
++    assert projected <= externals, projected - externals
++    for key in ("KEY", "TOKEN", "PASSWORD", "SECRET"):
++        assert not [n for n in env if n.endswith(key)], (
++            "a secret named as a plain env value"
++        )
++
++
++def test_the_github_token_is_minted_in_cluster_on_the_infra_crew_lane():
++    docs = _docs("external-secret.yaml")
++    (gen,) = [d for d in docs if d["kind"] == "GithubAccessToken"]
++    assert gen["spec"]["appID"] == "${githubAppIDQuoted}"
++    assert gen["spec"]["installID"] == "${githubAppInstallationIDQuoted}"
++    perms = gen["spec"]["permissions"]
++    assert perms == {
++        "metadata": "read",
++        "contents": "write",
++        "pull_requests": "write",
++        "issues": "write",
++        "actions": "read",
++        "checks": "read",
++    }
++    assert "workflows" not in perms and "administration" not in perms
++    (es,) = [
++        d
++        for d in docs
++        if d["kind"] == "ExternalSecret"
++        and d["metadata"]["name"] == "infra-crew-github"
++    ]
++    (src,) = es["spec"]["dataFrom"]
++    assert src["sourceRef"]["generatorRef"]["name"] == gen["metadata"]["name"]
++    assert es["spec"]["refreshInterval"] == "10m"
++
++
++def test_memory_outlives_the_pod_and_laws_are_fetched_from_git():
++    crew = _crew()
++    env = {e["name"]: e.get("value") for e in crew["env"]}
++    mounts = {m["mountPath"]: m["name"] for m in crew["volumeMounts"]}
++    vols = {v["name"]: v for v in _pod()["volumes"]}
++    (pvc,) = [d for d in _docs("cronjob.yaml") if d["kind"] == "PersistentVolumeClaim"]
++    assert (
++        vols[mounts[env["INFRA_CREW_STORAGE_DIR"]]]["persistentVolumeClaim"][
++            "claimName"
++        ]
++        == pvc["metadata"]["name"]
++    )
++    (laws,) = _pod()["initContainers"]
++    script = laws["args"][0]
++    for name in LAW_FILES:
++        assert f'"{name}"' in script, f"the laws step does not produce {name}"
++    assert "claude-guards" in script and "docs/STANDARDS.md" in script
++    assert "docs/reference/policy/definition-of-done.md" in script
++    assert (ROOT / "docs/reference/policy/definition-of-done.md").is_file()
++    laws_env = {e["name"]: e.get("value") for e in laws["env"]}
++    assert laws_env["LAWS_OWNER"] == "${ESTATE_GITHUB_OWNER}"
++    assert env["INFRA_CREW_REPO_OWNER"] == "${ESTATE_GITHUB_OWNER}"
++    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "${OTLP_ENDPOINT}"
++    cfg = yaml.safe_load((ROOT / "clusters/oke/estate-config.yaml").read_text())["data"]
++    assert cfg["ESTATE_GITHUB_OWNER"] and "/" not in cfg["ESTATE_GITHUB_OWNER"]
++    assert env["INFRA_CREW_MODEL"] != env["INFRA_CREW_VERIFIER_MODEL"], (
++        "the verifier grades with the builder's brain"
++    )
++    assert env["CREWAI_DISABLE_TELEMETRY"] == "true"
++    assert not crew.get("args"), (
++        "an argument pins one ticket; the workload takes the queue"
++    )
++
++
++def test_the_cronjob_is_one_at_a_time_batch_and_restricted():
++    cj = _cronjob()
++    assert cj["spec"]["schedule"] == "*/15 * * * *"
++    assert cj["spec"]["concurrencyPolicy"] == "Forbid"
++    assert cj["metadata"]["labels"]["backstage.io/kubernetes-id"] == "infra-crew"
++    pod = _pod()
++    assert pod["priorityClassName"] == "platform-batch"
++    for c in pod["containers"] + pod["initContainers"]:
++        sc = c["securityContext"]
++        assert sc["runAsUser"] == 10001 and sc["readOnlyRootFilesystem"] is True
++        assert sc["capabilities"] == {"drop": ["ALL"]}
++    ns = _docs("namespace.yaml")[0]
++    assert (
++        ns["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted"
++    )
++    assert (
++        ns["metadata"]["annotations"]["kustomize.toolkit.fluxcd.io/prune"] == "disabled"
++    )
++
++
++def test_the_flux_row_waits_on_what_it_reads_and_checks_no_health():
++    rows = [
++        d
++        for d in yaml.safe_load_all((ROOT / "clusters/oke/platform.yaml").read_text())
++        if d
++    ]
++    (row,) = [r for r in rows if r["metadata"]["name"] == "infra-crew"]
++    spec = row["spec"]
++    assert spec["path"] == "./platform/infra-crew"
++    subs = {(s["kind"], s["name"]) for s in spec["postBuild"]["substituteFrom"]}
++    assert subs == {("ConfigMap", "estate-config"), ("Secret", "github-app")}
++    deps = {d["name"] for d in spec["dependsOn"]}
++    assert {"scheduling", "secret-store", "alerts-github", "llm"} <= deps
++    assert spec["wait"] is True
++    assert "healthChecks" not in spec, (
++        "a CronJob has no readiness; the drill is the proof"
++    )
++
++
++def test_catalogue_drill_and_runbook_agree():
++    cat = (ROOT / "backstage/platform/catalog-info.yaml").read_text()
++    assert "name: layer-infra-crew" in cat
++    assert "kustomize.toolkit.fluxcd.io/name=infra-crew" in cat
++    drills = yaml.safe_load((ROOT / "drills/catalogue.yaml").read_text())["drills"]
++    (drill,) = [d for d in drills if d["name"] == "infra-crew"]
++    assert drill["workflow"] == "oke-check.yml" and drill["job"] == "infra-crew"
++    assert not drill.get("pending")
++    wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
++    assert "infra-crew" in wf["jobs"]
++    assert drill["schedule"] == wf[True]["schedule"][0]["cron"]
++    runbook = (ROOT / "docs/runbooks/infra-crew.md").read_text()
++    for word in (
++        "Suspend",
++        "agents_enabled",
++        "suspend: true",
++        "lane:infra",
++        "infra-crew.run",
++    ):
++        assert word in runbook, f"the runbook does not say {word!r}"
++
++
++# ---- rung 4: the drill reader, driven with a fake gh and a Langfuse stand-in --------------------
++
++NOW = datetime.now(timezone.utc)
++
++
++def _stamp(dt: datetime) -> str:
++    return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
++
++
++class _Langfuse(BaseHTTPRequestHandler):
++    traces = 1
++
++    def do_GET(self):  # noqa: N802 - http.server's name
++        body = json.dumps({"data": [{"id": "t"}] * self.traces, "meta": {}}).encode()
++        self.send_response(200)
++        self.send_header("Content-Type", "application/json")
++        self.end_headers()
++        self.wfile.write(body)
++
++    def log_message(self, *_):
++        pass
++
++
++def _langfuse(traces: int) -> str:
++    _Langfuse.traces = traces
++    srv = HTTPServer(("127.0.0.1", 0), _Langfuse)
++    threading.Thread(target=srv.serve_forever, daemon=True).start()
++    return f"http://127.0.0.1:{srv.server_port}"
++
++
++def _fake_gh(tmp: Path, issues: list[dict], comments: dict[int, list[dict]]) -> Path:
++    bindir = tmp / "bin"
++    bindir.mkdir()
++    (tmp / "issues.json").write_text(json.dumps(issues))
++    (tmp / "comments.json").write_text(
++        json.dumps({str(k): v for k, v in comments.items()})
++    )
++    gh = bindir / "gh"
++    gh.write_text(
++        "#!/usr/bin/env python3\n"
++        "import json, re, sys\n"
++        "from datetime import datetime, timezone\n"
++        "from email.utils import format_datetime\n"
++        f"root = {str(tmp)!r}\n"
++        "path = sys.argv[-1]\n"
++        "m = re.search(r'/issues/(\\d+)/comments', path)\n"
++        "if path == 'rate_limit':\n"
++        "    # the drill reads GitHub's clock off this header (crew#583); the stand-in serves one\n"
++        "    print('Date: ' + format_datetime(datetime.now(timezone.utc), usegmt=True))\n"
++        "    print()\n"
++        "    print('{}')\n"
++        "elif m:\n"
++        "    print(json.dumps(json.load(open(root + '/comments.json')).get(m.group(1), [])))\n"
++        "else:\n"
++        "    print(json.dumps(json.load(open(root + '/issues.json'))))\n"
++    )
++    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
++    return bindir
++
++
++def _run(tmp: Path, issues, comments, traces=1, keys=True):
++    bindir = _fake_gh(tmp, issues, comments)
++    env = dict(
++        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", INFRA_CREW_BOARD="owner/crew"
++    )
++    env["LANGFUSE_HOST"] = _langfuse(traces)
++    if keys:
++        env["LANGFUSE_PUBLIC_KEY"], env["LANGFUSE_SECRET_KEY"] = "pk", "sk"
++    else:
++        env.pop("LANGFUSE_PUBLIC_KEY", None)
++        env.pop("LANGFUSE_SECRET_KEY", None)
++    r = subprocess.run(
++        [str(ROOT / "bin/idp-infra-crew-drill")],
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=60,
++        check=False,
++    )
++    return r.returncode, r.stdout.strip()
++
++
++def _issue(n: int, age: timedelta, state="open") -> dict:
++    return {"number": n, "state": state, "created_at": _stamp(NOW - age)}
++
++
++def _plan(age: timedelta) -> dict:
++    return {"body": "plan\n\nOptimised: 12 -> 4 steps", "created_at": _stamp(NOW - age)}
++
++
++def test_a_queued_ticket_left_unplanned_is_red(tmp_path):
++    rc, out = _run(tmp_path, [_issue(41, timedelta(hours=3))], {})
++    assert rc == 1 and out.startswith("FAIL") and "#41" in out, out
++
++
++def test_a_fresh_ticket_inside_the_grace_period_is_not_yet_red(tmp_path):
++    rc, out = _run(tmp_path, [_issue(41, timedelta(minutes=20))], {})
++    assert rc == 0 and out.startswith("ok") and "queue empty" in out, out
++
++
++def test_a_planned_ticket_with_a_trace_is_green(tmp_path):
++    rc, out = _run(
++        tmp_path,
++        [_issue(41, timedelta(hours=3))],
++        {41: [_plan(timedelta(hours=2))]},
++        traces=1,
++    )
++    assert rc == 0 and out.startswith("ok") and "#41" in out, out
++
++
++def test_a_plan_with_no_trace_behind_it_is_red(tmp_path):
++    rc, out = _run(
++        tmp_path,
++        [_issue(41, timedelta(hours=3))],
++        {41: [_plan(timedelta(hours=2))]},
++        traces=0,
++    )
++    assert rc == 1 and "no trace" in out, out
++
++
++def test_a_plan_the_drill_cannot_confirm_is_blind_never_green(tmp_path):
++    rc, out = _run(
++        tmp_path,
++        [_issue(41, timedelta(hours=3))],
++        {41: [_plan(timedelta(hours=2))]},
++        keys=False,
++    )
++    assert rc == 2 and out.startswith("BLIND"), out
++
++
++def test_a_board_that_cannot_be_read_is_blind(tmp_path):
++    bindir = tmp_path / "bin"
++    bindir.mkdir()
++    gh = bindir / "gh"
++    gh.write_text("#!/bin/sh\nexit 1\n")
++    gh.chmod(gh.stat().st_mode | stat.S_IEXEC)
++    env = dict(
++        os.environ, PATH=f"{bindir}:{os.environ['PATH']}", INFRA_CREW_BOARD="owner/crew"
++    )
++    r = subprocess.run(
++        [str(ROOT / "bin/idp-infra-crew-drill")],
++        env=env,
++        capture_output=True,
++        text=True,
++        timeout=60,
++        check=False,
++    )
++    assert r.returncode == 2 and r.stdout.startswith("BLIND"), r.stdout

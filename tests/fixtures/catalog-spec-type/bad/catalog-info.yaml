@@ -1,0 +1,9 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: rogue-layer
+  description: A component with an invented spec.type not in the ontology
+spec:
+  type: rogue-service-type
+  lifecycle: production
+  owner: group:default/platform

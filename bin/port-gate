@@ -1,0 +1,207 @@
+#!/usr/bin/env python3
+"""port-gate: a port is bound only if catalog/ports.yaml says so.
+
+  port-gate            static: every compose publication in this repo is declared
+  port-gate --live     plus: every listener ON THIS MACHINE RIGHT NOW is declared,
+                       read with lsof at the moment the check runs
+
+Exit 0 clean, 1 on any undeclared bind, undeclared probe, doubled claim, or non-loopback bind that
+ports.yaml does not mark non_loopback (R20), or a bind address that differs from a
+row's declared `bind:`. Prints one line per finding.
+REG and INV can be overridden so bin/idp-ci can prove it both ways on fixtures.
+Setting INV is what puts --live in fixture mode; unset, it takes its own reading.
+"""
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+
+import yaml
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REG = os.environ.get("REG") or os.path.join(IDP, "catalog", "ports.yaml")
+INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
+COMPOSE = os.environ.get("COMPOSE_GLOB") or "board/*.yml llm/*.yml mcp/*.yml observability/*.yml"
+# Overridable for the same reason REG and INV are: bin/idp-ci proves the probe
+# check on a copy of bin/ it is allowed to edit. BIN_DIR=none skips the scan --
+# the other fixture tests hand this gate a three-line ledger to exercise a
+# different rule, and scanning the real bin/ against it would fail every one of
+# them for a reason the test is not about (LAW 38).
+BIN = os.environ.get("BIN_DIR") or os.path.join(IDP, "bin")
+FOREIGN = {"limactl", "ControlCenter", "rapportd", "launchd", "sharingd"}
+PUB = re.compile(r'^\s*-\s*"?(?:(?P<host>[\d.]+):)?(?P<port>\d+):\d+"?\s*$')
+# A loopback URL written into a script. `curl http://127.0.0.1:8001/...` is this
+# repo saying it expects something to be listening there, which is the same claim
+# a compose publication makes and belongs in the same ledger.
+PROBE = re.compile(r'(?:127\.0\.0\.1|localhost|\[::1\]):(\d{2,5})')
+STALE_S = 120
+
+
+def live_listeners():
+    """Every TCP listener on this machine, read now.
+
+    `--live` used to load ~/.estate/state/inventory.json, a file a launchd job
+    rewrites on its own schedule. Measured 2026-08-24 22:00Z: that file was 73
+    minutes old and still recorded 7107 as bind '*', so the gate printed two R20
+    failures against a process that had been rebound to 127.0.0.1 45 minutes
+    earlier -- a guard refusing correct work, which is an outage (LAW 38).
+
+    The false negative is the worse half and is why reading the file cannot be
+    kept as the default: a service that starts world-bound after the snapshot is
+    invisible, so a gate named --live prints "ok" over an exposed port. A check
+    that grades a saved artifact is a check on the artifact.
+
+    Returns rows in the inventory's own shape so the caller is unchanged, or
+    None when lsof cannot be run -- the caller then reports BLIND rather than a
+    verdict, because no reading is not the same as a clean reading.
+    """
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", "-iTCP", "-sTCP:LISTEN", "-F", "pcn"],
+            capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    # lsof exits 1 when it merely skipped a process it could not stat, so the
+    # exit code is not the signal; empty stdout is.
+    if not out.stdout.strip():
+        return None
+
+    rows, pid, cmd = [], None, None
+    for line in out.stdout.splitlines():
+        tag, val = line[:1], line[1:]
+        if tag == "p":
+            pid, cmd = val, None
+        elif tag == "c":
+            cmd = val
+        elif tag == "n":
+            # 127.0.0.1:7107 | [::1]:3100 | *:8080 | 192.168.0.5:5000
+            if "->" in val:          # an established connection, not a listener
+                continue
+            host, _, port = val.rpartition(":")
+            if not port.isdigit():
+                continue
+            # The inventory wrote v6 without brackets and the wildcard as '*';
+            # ports.yaml rows and the comparison below are written against that
+            # spelling, so normalise here rather than teaching the caller a
+            # second one.
+            if host.startswith("[") and host.endswith("]"):
+                host = host[1:-1]
+            if host in ("", "*", "0.0.0.0", "::"):
+                host = "*"
+            rows.append({"kind": "listener", "port": int(port), "bind": host,
+                         "process": cmd or "", "owner": f"{cmd or '?'}[{pid}]"})
+    return rows
+
+
+def main() -> int:
+    reg = yaml.safe_load(open(REG)) or {}
+    declared = {}
+    bad = 0
+    for e in reg.get("ports") or []:
+        if e["port"] in declared:
+            print(f"FAIL  ports    {e['port']} declared twice: {declared[e['port']]['service']}, {e['service']}")
+            bad += 1
+        declared[int(e["port"])] = e
+
+    # static: compose publications
+    for pat in COMPOSE.split():
+        for f in sorted(glob.glob(os.path.join(IDP, pat))):
+            svc = None
+            for n, line in enumerate(open(f), 1):
+                m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", line)
+                if m:
+                    svc = m.group(1)
+                m = PUB.match(line)
+                if not m:
+                    continue
+                port, host = int(m.group("port")), m.group("host") or "0.0.0.0"
+                rel = os.path.relpath(f, IDP)
+                d = declared.get(port)
+                if not d:
+                    print(f"FAIL  ports    {rel}:{n} publishes {port} for {svc}: not in catalog/ports.yaml")
+                    bad += 1
+                elif d["service"] != svc:
+                    print(f"FAIL  ports    {rel}:{n} publishes {port} as {svc}; ports.yaml gives it to {d['service']}")
+                    bad += 1
+                if host not in ("127.0.0.1", "::1") and not (d or {}).get("non_loopback"):
+                    print(f"FAIL  ports    {rel}:{n} binds {host}:{port}; R20 allows only the gateway off loopback")
+                    bad += 1
+
+    # static: ports the repo's own scripts expect something to answer on.
+    #
+    # THE DIRECTION THAT WAS MISSING. The two checks above read what this repo
+    # STARTS. Neither reads what it PROBES, and a probe is the half that outlives
+    # a deletion: on 2026-08-24 the founder ruled one renderer and the Datasette
+    # fallback was deleted from bin/idp-up, but bin/idp-verify kept curling
+    # 127.0.0.1:8001. Nothing served it, idp-verify failed every run, and because
+    # bin/idp-up ends with idp-verify the hourly ai.estate.idp job exited non-zero
+    # for a day with the portal answering 200 the whole time. The class is a
+    # surface removed in one file and still probed from another; the fix is that
+    # a script may only probe a port the ledger declares, so deleting the ledger
+    # row fails CI and names the file that was missed.
+    #
+    # Comment lines are skipped: prose about a port that no longer exists is
+    # documentation, and refusing it would make explaining a deletion impossible
+    # (LAW 38).
+    for f in ([] if BIN == "none" else sorted(glob.glob(os.path.join(BIN, "*")))):
+        if not os.path.isfile(f):
+            continue
+        # Relative to the repo when the file is in it; a fixture copy lives
+        # elsewhere and a ../../.. path helps nobody read the failure.
+        rel = os.path.relpath(f, IDP) if f.startswith(IDP + os.sep) else f
+        try:
+            lines = open(f, encoding="utf-8").read().splitlines()
+        except (OSError, UnicodeDecodeError):
+            continue
+        for n, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue
+            for m in PROBE.finditer(line):
+                port = int(m.group(1))
+                if port not in declared:
+                    print(f"FAIL  ports    {rel}:{n} probes 127.0.0.1:{port}: not in catalog/ports.yaml")
+                    bad += 1
+
+    if "--live" in sys.argv:
+        if os.environ.get("INV"):
+            # Fixture mode: bin/idp-ci proves this gate both ways by handing it a
+            # good and a bad inventory. A recorded reading is the right input for
+            # that and the wrong input for a real run.
+            if not os.path.exists(INV):
+                print(f"BLIND ports    no inventory at {INV}; live check not run")
+                return 1
+            rows = json.load(open(INV)).get("rows", [])
+        else:
+            rows = live_listeners()
+            if rows is None:
+                print("BLIND ports    lsof returned nothing; live check not run")
+                return 1
+        for r in rows:
+            if r.get("kind") != "listener":
+                continue
+            port, proc = int(r["port"]), r.get("process", "")
+            if proc in FOREIGN or port >= 49152:
+                continue
+            d = declared.get(port)
+            if not d:
+                print(f"FAIL  ports    live listener {port} ({r.get('owner')}) is not in catalog/ports.yaml")
+                bad += 1
+            want = (d or {}).get("bind")
+            seen = "[::1]" if r.get("bind") == "::1" else r.get("bind")
+            if want and seen != want:
+                # Declaring 127.0.0.1:7107 and binding *:7107 is the exact shape closed on 2026-08-24.
+                print(f"FAIL  ports    live listener {port} ({r.get('owner')}) binds {seen}; ports.yaml declares {want}")
+                bad += 1
+            if r.get("bind") not in ("127.0.0.1", "[::1]", "::1") and not (d or {}).get("non_loopback"):
+                if proc != "ssh" or d:   # ssh forwards to k3d etc. are the founder's, listed as not gated
+                    print(f"FAIL  ports    live listener {port} ({r.get('owner')}) binds {r.get('bind')}; R20")
+                    bad += 1
+    print(f"{'FAIL' if bad else 'ok  '}  ports    {len(declared)} declared, {bad} findings")
+    return 1 if bad else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

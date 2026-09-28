@@ -1,0 +1,13 @@
+{
+ "pr": {
+  "number": 4003,
+  "files": ["clusters/oke/estate-config.yaml"],
+  "added": "+  secret_limit: 4000\n",
+  "body": "Raise the cluster's secret ceiling so deploys unblock.\n",
+  "labels": [],
+  "founder": "chidionyema",
+  "approvals": [],
+  "denials": []
+ },
+ "budget_monthly_usd": 50
+}

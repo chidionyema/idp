@@ -1,0 +1,11 @@
+# crew#539: a founder-facing surface survives losing one node. Graded by bin/idp-availability-gate.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: weave-gitops
+  namespace: weave-gitops
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: weave-gitops

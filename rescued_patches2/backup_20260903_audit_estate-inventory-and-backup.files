@@ -1,0 +1,5 @@
+bin/idp-estate-audit
+bin/idp-estate-backup
+docs/audit/bootstrap-from-scratch.md
+docs/audit/estate-inventory.md
+tests/test_estate_audit_and_backup_are_rerunnable.py

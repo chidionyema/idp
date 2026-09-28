@@ -1,0 +1,12 @@
+# Layer 1 of the asymmetric collection pattern: the service map.
+#
+# Coroot observes syscalls and network activity at the kernel through eBPF, so every service
+# on every node reports its RED metrics and its dependencies without being instrumented. This
+# kustomization is the unit clusters/oke/platform.yaml applies; the ServiceMonitor is what
+# carries the numbers into the estate's one Prometheus.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: coroot
+resources:
+  - coroot.yaml
+  - servicemonitor.yaml

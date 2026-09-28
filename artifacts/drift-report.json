@@ -1,0 +1,9 @@
+{
+  "verdict": "PASS",
+  "total_intent_nodes": 4,
+  "total_reality_nodes": 2,
+  "missing_in_reality": ["terraform.vpc", "crossplane.postgres"],
+  "extra_in_reality": [],
+  "attribute_drifts": 0,
+  "summary": "intent=4 reality=2 missing=2 extra=0 attr_drift=0 verdict=PASS"
+}

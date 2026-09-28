@@ -1,0 +1,2 @@
+ports:
+  - {port: 38080, service: cp5-caddy, compose: manifest}

@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hermes
+  namespace: default
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          envFrom:
+            - secretRef:
+                name: hermes-secret
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hermes-secret
+  namespace: default

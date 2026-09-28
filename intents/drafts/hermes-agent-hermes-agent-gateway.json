@@ -1,0 +1,22 @@
+{
+  "capability": "workload",
+  "component": "hermes-agent",
+  "env": {
+    "A2A_HOST": "0.0.0.0",
+    "HERMES_ENV_DIR": "/run/secrets/hermes-agent-env",
+    "HERMES_ESTATE_YAML": "/etc/hermes/estate.yaml",
+    "HERMES_HOME": "/data",
+    "HERMES_LANGFUSE_ENV": "production",
+    "HINDSIGHT_API_URL": "http://hindsight-api.hindsight.svc:8888",
+    "HOME": "/data",
+    "LANGFUSE_BASE_URL": "http://langfuse-web.observability.svc:3000",
+    "PYTHONUNBUFFERED": "1",
+    "TELEGRAM_WEBHOOK_PORT": "8443"
+  },
+  "name": "hermes-agent-gateway",
+  "port": 9900,
+  "public_host": "otto",
+  "purpose": "hydrated from the live tree; was hermes-agent/hermes-agent-gateway",
+  "replicas": 2,
+  "size": "s"
+}

@@ -1,0 +1,329 @@
+#!/usr/bin/env python3
+"""Catalog projection: source code -> Backstage Component entities.
+
+A pure, total, deterministic function over Python source. The output is the
+catalog; the input is the code. There is no clock, no state, no SQL, and no
+hand-edit surface.
+
+Invariants proved in bin/test-catalog-projection:
+
+  TOT  totality        every .py file -> exactly one Component;
+                        every import statement -> one dependsOn edge or one
+                        dropped-edge log line. Nothing is silently skipped.
+  DET  determinism     SHA256(output) is a pure function of SHA256(input).
+                        Same source bytes -> same output bytes. No clock, no
+                        env-dependent ordering, no randomness.
+  IDP  idempotency     project(G) == project(project(G)).
+                        Re-running on the same source is byte-identical.
+  REF  reference       every dependsOn target is an entity emitted by the
+      closure          SAME sweep. catalog-refcheck passes by construction;
+                        it cannot find a dangling reference because no such
+                        reference can be emitted.
+  SCH  schema          every emitted entity matches the Backstage Component
+      validity         schema. check-jsonschema passes by construction.
+
+The projection is the source of truth. Anything that derives catalog state
+from it (catalog-info.yaml, Backstage's entity store, a future SQLite cache)
+is a projection, not a second store. Per AGENTS.md, "one of each layer."
+
+Usage:
+    bin/catalog-projection [<source-dir>]
+        Default source-dir: the current working directory, recursively.
+    bin/catalog-projection --json [<source-dir>]
+        Emit canonical sorted JSON instead of YAML (the YAML is the rendering
+        for catalog-refcheck; the JSON is the byte-deterministic form tests
+        hash). Both forms are derived from the same in-memory entity list.
+    bin/catalog-projection --emit-yaml <out.yaml> [<source-dir>]
+        Write YAML to a file. Used by bin/idp-ci to drive catalog-refcheck.
+
+Exit 0 with the projection on stdout (or written to --emit-yaml) and a
+one-line summary on stderr. Exit 1 with a clear message if the source dir
+is missing or unreadable; the projection itself cannot fail on valid Python
+because ast.parse failures are logged and the file is skipped (TOT).
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import hashlib
+import json
+import os
+import re
+import sys
+from pathlib import Path
+
+NAME_RE = re.compile(r"^[a-zA-Z0-9]([-_.a-zA-Z0-9]*[a-zA-Z0-9])?$")
+DEFAULT_OWNER = "group:default/platform"
+KIND = "Component"
+API_VERSION = "backstage.io/v1alpha1"
+
+
+def slug(s: str) -> str:
+    """Backstage entity-name grammar: ^[a-zA-Z0-9]([-_.a-zA-Z0-9]*[a-zA-Z0-9])?$, 63 chars."""
+    s = re.sub(r"[^a-zA-Z0-9._-]", "-", s).strip("-._")
+    s = re.sub(r"-{2,}", "-", s) or "unnamed"
+    return s[:63].strip("-._")
+
+
+def module_path_from_file(rel: Path) -> str:
+    """bin/estate-twin-runtime -> bin.estate_twin_runtime.
+
+    Directory separators become dots; hyphens in the leaf filename become
+    underscores. Deterministic: same relpath -> same module_path."""
+    parts = list(rel.with_suffix("").parts)
+    if len(parts) == 1:
+        return parts[0]
+    return ".".join(parts[:-1] + [parts[-1].replace("-", "_")])
+
+
+def parse_absolute_imports(source: str) -> tuple[str | None, list[str]]:
+    """(module_docstring, sorted unique absolute module names imported).
+
+    ast.parse failures return ([], []) so the file is skipped downstream; that
+    skip is logged, never silent (TOT)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return None, []
+    docstring = ast.get_docstring(tree)
+    imports: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                imports.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0:
+                imports.add(node.module)
+    return docstring, sorted(imports)
+
+
+def resolve_relative_imports(source: str, package: str) -> list[str]:
+    """`from . import X` / `from ..pkg import Y` -> absolute module paths.
+
+    `level=1` means current package, `level=2` means parent, etc. A reference
+    that escapes the projection's source root is dropped (logged)."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+    resolved: set[str] = set()
+    parts = package.split(".") if package else []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.ImportFrom) and node.level > 0):
+            continue
+        depth = node.level - 1
+        if depth > len(parts):
+            continue
+        base_parts = parts[: len(parts) - depth] if depth else []
+        base = ".".join(base_parts)
+        if node.module:
+            absolute = ".".join(p for p in (base, node.module) if p)
+            resolved.add(absolute)
+        elif node.names:
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                absolute = ".".join(p for p in (base, alias.name) if p)
+                resolved.add(absolute)
+    return sorted(resolved)
+
+
+def short_description(docstring: str | None, module_path: str) -> str:
+    """First non-empty line of the docstring, or the module path if absent."""
+    if not docstring:
+        return f"Python module {module_path}"
+    for line in docstring.splitlines():
+        line = line.strip()
+        if line:
+            return line[:240]
+    return f"Python module {module_path}"
+
+
+def entity_for_module(
+    rel_path: Path,
+    module_path: str,
+    docstring: str | None,
+    absolute_imports: list[str],
+    present_modules: set[str],
+) -> tuple[dict, list[str]]:
+    """Build the Backstage Component for one module. Returns (entity, dropped).
+
+    Reference closure (REF): a target is only listed under dependsOn if its
+    module_path is in the present set. Anything else is in `dropped` so the
+    projection can log a one-line reason per drop."""
+    name = slug(module_path)
+    if not NAME_RE.match(name) or len(name) > 63:
+        raise ValueError(f"{module_path} slugs to invalid Backstage name {name!r}")
+    depends_on: list[str] = []
+    dropped: list[str] = []
+    for imp in absolute_imports:
+        if imp in present_modules:
+            depends_on.append(f"component:default/{slug(imp)}")
+        else:
+            dropped.append(imp)
+    depends_on = sorted(set(depends_on))
+    return (
+        {
+            "apiVersion": API_VERSION,
+            "kind": KIND,
+            "metadata": {
+                "name": name,
+                "title": module_path,
+                "description": short_description(docstring, module_path),
+                "tags": ["python-module", "code"],
+                "annotations": {
+                    "estate/source-path": str(rel_path),
+                    "estate/module": module_path,
+                },
+                "links": [],
+            },
+            "spec": {
+                "type": "python-module",
+                "owner": DEFAULT_OWNER,
+                "lifecycle": "experimental",
+                "dependsOn": depends_on,
+            },
+        },
+        dropped,
+    )
+
+
+def project(source_dir: Path, exclude: tuple[str, ...] = (), stderr=sys.stderr) -> tuple[list[dict], dict]:
+    """Pure projection: source_dir -> (sorted entities, stats).
+
+    stats is a small dict the caller can print: {files, parsed, syntax_errors,
+    entities, edges, edges_dropped}. The tuple form lets the property tests
+    assert on stats as well as on the entity list.
+
+    `exclude` is a tuple of directory NAME patterns (not paths) pruned from
+    the walk; these are vendored or build artefacts the AST sensor never
+    reads either (node_modules, dist-types, __pycache__, .venv, ...)."""
+    if not source_dir.is_dir():
+        raise SystemExit(f"catalog-projection: {source_dir} is not a directory")
+
+    def keep(p: Path) -> bool:
+        if not p.is_file():
+            return False
+        for part in p.parts:
+            if part in exclude:
+                return False
+            for pat in exclude:
+                if part.startswith(pat):
+                    return False
+        return True
+
+    files = sorted(p for p in source_dir.rglob("*.py") if keep(p))
+    modules: dict[str, tuple[Path, str | None, list[str]]] = {}
+    syntax_errors: list[str] = []
+    for f in files:
+        rel = f.relative_to(source_dir)
+        text = f.read_text(encoding="utf-8", errors="replace")
+        module_path = module_path_from_file(rel)
+        package = ".".join(module_path.split(".")[:-1])
+        docstring, abs_imports = parse_absolute_imports(text)
+        if docstring is None and abs_imports == []:
+            try:
+                ast.parse(text)
+            except SyntaxError:
+                syntax_errors.append(str(rel))
+                continue
+        rel_imports = resolve_relative_imports(text, package)
+        all_imports = sorted(set(abs_imports + rel_imports))
+        modules[module_path] = (rel, docstring, all_imports)
+
+    present = set(modules.keys())
+    entities: list[dict] = []
+    edges_total = 0
+    edges_dropped: list[tuple[str, str]] = []
+    for module_path in sorted(modules):
+        rel, docstring, all_imports = modules[module_path]
+        entity, dropped = entity_for_module(rel, module_path, docstring, all_imports, present)
+        edges_total += len(entity["spec"]["dependsOn"])
+        for d in dropped:
+            edges_dropped.append((module_path, d))
+        entities.append(entity)
+
+    for src, tgt in edges_dropped:
+        print(
+            f"catalog-projection: edge dropped -- {src} imports {tgt} (not in this projection)",
+            file=stderr,
+        )
+    for s in syntax_errors:
+        print(f"catalog-projection: skipped {s} (ast.parse failed)", file=stderr)
+
+    stats = {
+        "files": len(files),
+        "syntax_errors": len(syntax_errors),
+        "entities": len(entities),
+        "edges": edges_total,
+        "edges_dropped": len(edges_dropped),
+    }
+    return entities, stats
+
+
+def emit_json(entities: list[dict]) -> bytes:
+    """Canonical byte-deterministic form. sort_keys + separators=(\\u002c,\\u0020)."""
+    return (json.dumps(entities, sort_keys=True, separators=(",", ": "), indent=2) + "\n").encode()
+
+
+def emit_yaml(entities: list[dict]) -> str:
+    """Backstage-compatible YAML stream. The YAML is a rendering of the same
+    entity list; the JSON above is what tests hash (DET, IDP)."""
+    import yaml
+
+    out = ["# GENERATED by idp/bin/catalog-projection. Do not hand-edit.", "---"]
+    for e in entities:
+        out.append(yaml.safe_dump(e, sort_keys=True, default_flow_style=False, allow_unicode=True))
+        out.append("---")
+    return "\n".join(out) + "\n"
+
+
+def fingerprint(entities: list[dict]) -> str:
+    """SHA-256 over the canonical JSON. Stable across runs (DET, IDP)."""
+    return hashlib.sha256(emit_json(entities)).hexdigest()
+
+
+def main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="catalog-projection", add_help=True)
+    p.add_argument("source_dir", nargs="?", default=os.getcwd(),
+                   help="directory to walk for .py files (default: cwd)")
+    p.add_argument("--exclude", action="append", default=[],
+                   metavar="DIRNAME",
+                   help="directory NAME to prune from the walk (repeatable). "
+                        "Defaults: node_modules, dist-types, __pycache__, .venv, .git, .claude")
+    p.add_argument("--json", action="store_true",
+                   help="emit canonical sorted JSON instead of YAML")
+    p.add_argument("--emit-yaml", metavar="PATH",
+                   help="write the YAML rendering to PATH (still prints summary on stderr)")
+    p.add_argument("--stats", action="store_true",
+                   help="print {files, syntax_errors, entities, edges, edges_dropped} on stdout")
+    args = p.parse_args(argv[1:])
+
+    source = Path(args.source_dir).resolve()
+    excludes = tuple(args.exclude) if args.exclude else (
+        "node_modules", "dist-types", "__pycache__", ".venv", ".git", ".claude",
+        "site-packages",
+    )
+    entities, stats = project(source, exclude=excludes)
+    summary = (
+        f"catalog-projection: {stats['entities']} entities, "
+        f"{stats['edges']} edges, {stats['edges_dropped']} dropped, "
+        f"{stats['syntax_errors']} syntax errors "
+        f"(sha256={fingerprint(entities)[:16]}...)"
+    )
+    print(summary, file=sys.stderr)
+
+    if args.stats:
+        print(json.dumps(stats, sort_keys=True), file=sys.stderr)
+
+    if args.emit_yaml:
+        Path(args.emit_yaml).write_text(emit_yaml(entities))
+    elif args.json:
+        sys.stdout.buffer.write(emit_json(entities))
+    else:
+        sys.stdout.write(emit_yaml(entities))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

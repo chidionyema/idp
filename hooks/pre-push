@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# hooks/pre-push — mutation testing PR gate (informational)
+# Non-blocking: always exits 0. Reports diff vs main.
+set -euo pipefail
+
+ORCH="$HOME/.estate/bin/mutation-orchestrator"
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+BASE="${1:-origin/main}"
+
+ALL_FILES=$(git diff --name-only "${BASE}...HEAD" \
+  | grep -E '\.(py|rs|ts|tsx|go|cs)$' || true)
+
+if [ -z "$ALL_FILES" ]; then
+  echo "mutation-pr: no testable files changed — pass"
+  exit 0
+fi
+
+echo "mutation-pr: base=$BASE files=$ALL_FILES"
+echo "$ALL_FILES" | python3 "$ORCH" --tier=pr --base="$BASE" --stdin --cwd="$REPO_ROOT"
+echo "mutation-pr: done"

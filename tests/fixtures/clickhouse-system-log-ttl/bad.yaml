@@ -1,0 +1,14 @@
+# The 2026-09-08 break: retention written beside an engine the operator owns.
+# ClickHouse exits 36 on boot. Both forms of the mistake are here.
+clickhouse:
+  settings:
+    merges_mutations_memory_usage_to_ram_ratio: "0.3"
+    trace_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+    query_log/ttl: "event_date + INTERVAL 3 DAY DELETE"
+  files:
+    config.d/system_log.xml: |
+      <clickhouse>
+        <metric_log>
+          <ttl>event_date + INTERVAL 3 DAY DELETE</ttl>
+        </metric_log>
+      </clickhouse>

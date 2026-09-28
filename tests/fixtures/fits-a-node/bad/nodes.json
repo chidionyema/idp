@@ -1,0 +1,1 @@
+{"items":[{"metadata":{"name":"n1"},"spec":{},"status":{"allocatable":{"cpu":"2000m","memory":"4096Mi"},"conditions":[{"type":"Ready","status":"True"}]}},{"metadata":{"name":"n2"},"spec":{},"status":{"allocatable":{"cpu":"2000m","memory":"4096Mi"},"conditions":[{"type":"Ready","status":"True"}]}}]}

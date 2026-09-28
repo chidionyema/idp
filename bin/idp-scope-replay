@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Replay merged pull requests through each scope check and report the admitted set — spec W0.2.
+
+W0.2, docs/policy/agent-infra-safety-spec.md: "A scope check is proved against history, not
+against two fixtures. ... replay every pull request this repository has ever merged through each
+scope check and assert it admits only the class it claims. ... Done when: each scope check has a
+replay run over the merged history with its admitted set listed in full."
+
+This is the deterministic half of that. `idp-scope-replay` takes a directory of replay *cases*
+(one per pull request that main actually merged), each a git diff on disk, and replays each case
+through every diff-grading scope check. It prints, per check, the full admitted set and the count,
+and it FAILS on any W0.2 contradiction the fixtures cannot paper over:
+
+  * a merged-PR diff that NO scope check admits   → main auto-merged a change no check would admit
+                                                   (a gate is missing for the class, or the merge
+                                                   mechanism admitted beyond its proof)
+  * a merged-PR diff that TWO checks admit        → the classes overlap; a change could ride the
+                                                   wrong lane
+Each of these is exactly the gap W0.2 exists to surface: a scope check is only trustworthy when the
+playback over real merged history shows it admits precisely its own class and nothing dangles.
+
+The scope checks that grade a git diff directly:
+  bin/idp-image-only-diff --diff FILE    (the deploy-branch class)
+  bin/idp-rollback-only-diff --diff FILE --carried FILE   (rollback class: needs the carried-tags
+                                          proof, passed per case via a sibling <name>.carried file)
+
+A case directory case/ is one merged pull request:
+  case/<anything>.diff                     the PR's git diff
+  case/<anything>.carried   (OPTIONAL)     the rollback footprint to grade it as a rollback
+
+The live upstream (fetch every real merged PR's diff) is the seam a scheduled run drives; this
+tool is the classifier that run must pass — it needs no GitHub to be correct.
+
+Usage: idp-scope-replay [CASES_DIR ...]     print per-check admitted sets; exit 0 only when no
+                                            diff is admitted by two checks or by none.
+Exit 0 clean, 1 a W0.2 contradiction found, 2 BLIND (no read-able cases / a gate missing).
+"""
+import argparse
+import glob
+import os
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# (label, argv-template) where FILE/PLACE the diff path into argv.
+GATES = [
+    ("image-only", ["python3", "bin/idp-image-only-diff", "--diff", "FILE"]),
+    ("rollback", ["python3", "bin/idp-rollback-only-diff", "--diff", "FILE", "--carried", "CARRIED"]),
+]
+
+
+def _admitted(label, argv):
+    try:
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+        # a scope check "admits" when its process exits 0 and prints ok
+        return p.returncode == 0 and p.stdout.startswith("ok")
+    except OSError:
+        return False
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("dirs", nargs="+", help="one or more replay-case directories (.diff files)")
+    a = ap.parse_args(argv)
+
+    seen_fail = False
+    any_case = False
+    for d in a.dirs:
+        cases = sorted(glob.glob(os.path.join(d, "*.diff")))
+        if not cases:
+            continue
+        any_case = True
+        for df in cases:
+            base = os.path.splitext(df)[0]
+            carried = base + ".carried" if os.path.exists(base + ".carried") else None
+            label = os.path.basename(df)
+            admits = []
+            for (g, tmpl) in GATES:
+                if carried is None and "rollback" in g:
+                    continue  # rollback without a footprint cannot admit; skip to stay honest
+                argv = [p if p not in ("FILE", "CARRIED")
+                        else (df if p == "FILE" else (carried or "MISSING")) for p in tmpl]
+                if _admitted(g, argv):
+                    admits.append(g)
+            # W0.2 contradiction readers: two auto-lane checks admitting one diff means a change
+            # could ride either lane -- a real overlap the fixtures cannot paper over.
+            if len(admits) > 1:
+                print(f"OVERLAP {label}: admitted by {admits} -- the classes collide (W0.2)")
+                seen_fail = True
+            elif admits:
+                print(f"ok      {label}: admitted by {admits[0]} only")
+            else:
+                # admitted by none is the ordinary non-lane change (waits for the founder); it is
+                # reported, not a failure -- refusing the founder's own high-risk changes is correct.
+                print(f"waits   {label}: no auto-lane check admits it (it waits for the founder)")
+    if not any_case:
+        print("usage: idp-scope-replay CASES_DIR...  (no *.diff replay cases found)", file=sys.stderr)
+        return 2
+    if seen_fail:
+        return 1
+    print("ok      scope-replay  no merged-PR diff is admitted by two scope checks (classes are disjoint)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

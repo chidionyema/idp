@@ -1,0 +1,6 @@
+docs/explanation/otto-registration-reconciler.md
+docs/scheduling/CLOCKS.md
+mkdocs.yml
+platform/otto-golden/kustomization.yaml
+platform/otto-golden/registration-reconciler.yaml
+tests/test_otto_registration_reconciler.py

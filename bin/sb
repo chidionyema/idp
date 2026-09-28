@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# Sovereign Bus shim. Ensures sovereign/.venv exists (uv preferred, plain
+# venv as fallback), then execs the CLI. See sovereign/CONTRACT.md.
+# LAW 46: IDP is computed from this script's own location, never a literal.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="$IDP/sovereign/.venv"
+REQ="$IDP/sovereign/requirements.txt"
+
+pick_python() {
+  for cand in python3.10 python3.11 python3.12 python3.13 python3; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      if "$cand" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+        echo "$cand"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+if [ ! -x "$VENV/bin/python" ]; then
+  if command -v uv >/dev/null 2>&1; then
+    uv venv --python 3.10 "$VENV" >/dev/null
+    uv pip install --python "$VENV/bin/python" -r "$REQ" >/dev/null
+  else
+    PY="$(pick_python)" || { echo "sb: no python3 >=3.10 on PATH and no uv available" >&2; exit 2; }
+    "$PY" -m venv "$VENV"
+    "$VENV/bin/python" -m pip install -q --upgrade pip
+    "$VENV/bin/python" -m pip install -q -r "$REQ"
+  fi
+fi
+
+export PYTHONPATH="$IDP${PYTHONPATH:+:$PYTHONPATH}"
+exec "$VENV/bin/python" -m sovereign.cli "$@"

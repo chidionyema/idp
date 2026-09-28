@@ -1,0 +1,30 @@
+# Flux's git writer credential is the estate-agents GitHub App, rendered from the one vault entry
+# `github-app` that bin/idp-github-app writes (crew#66 root trust, 2026-08-28; crew#575).
+# Until this, idp-writer authenticated with a read-write deploy key a person minted by hand
+# (ssh-keygen + `gh api repos/.../keys`) and pasted into SEED_FLUX_WRITER_* (crew#325) — a MISS on
+# docs/reference/policy/root-trust.md. Nothing in the App's lanes can create a deploy key (administration is
+# not a permission the App holds, platform/github-app/manifest.json), and it does not need one:
+# source-controller v1.9 (clusters/oke/flux-system/gotk-components.yaml) authenticates a
+# GitRepository as a GitHub App (`provider: github`) and image-automation-controller pushes with the
+# same installation token (contents: write). So the secret below is the three keys Flux reads for
+# that, templated from the App's id, installation id and private key; no key pair is born anywhere.
+# The bootstrap key (flux-system, bin/idp-flux-bootstrap --read-write-key=false) stays read-only.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: flux-writer
+  namespace: flux-system
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: flux-writer
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        githubAppID: "{{ .app_id }}"
+        githubAppInstallationID: "{{ .installation_id }}"
+        githubAppPrivateKey: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }

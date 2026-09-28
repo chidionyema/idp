@@ -1,0 +1,7 @@
+bin/policy-test
+checkpoints/LATEST.md
+platform/hermes-agent/kustomization.yaml
+policy/node_pool.rego
+policy/node_pool_test.rego
+policy/operating_model.rego
+policy/operating_model_test.rego

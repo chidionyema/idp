@@ -1,0 +1,317 @@
+version: 1
+lanes:
+  storefront:
+    description: Marketing copy a visitor reads
+    deny_patterns: []
+  evidence-export:
+    description: Research artefacts rendered as customer copy
+    inherit:
+    - storefront
+    deny_patterns:
+    - id: EE1
+      pattern: \b(SUPPORTED|REFUTED|PARTIALLY SUPPORTED|UNVERIFIED)\b|\b(?i:verdict):\s*(?i:supported|refuted|unverified)\b
+      message: verdict label is engine scaffolding, not copy
+      flags: ''
+    - id: EE2
+      pattern: \bpassages?\b
+      message: research-mode reference to evidence passages
+      flags: i
+    - id: EE3
+      pattern: \b(the strongest case (for|against)|premortem|adversarial review)\b
+      message: internal diligence framing
+      flags: i
+    - id: EE4
+      pattern: ^\s*\d+\s+[a-z0-9.-]+\.(com|org|uk|net)\s*$
+      message: numbered citation line in prose
+      flags: i
+    - id: EE5
+      pattern: \b(appears open in these passages|cannot be determined from (this|the)
+        evidence|is not shown to be)\b
+      message: hedged research-speak
+      flags: i
+    - id: LEX-001
+      phrase: "delve"
+      message: "look at"
+    - id: LEX-002
+      phrase: "delves"
+      message: "looks at"
+    - id: LEX-003
+      phrase: "delving"
+      message: "looking at"
+    - id: LEX-004
+      phrase: "leveraging"
+      message: "using"
+    - id: LEX-005
+      phrase: "it's worth noting that"
+      message: "(delete it and state the thing)"
+    - id: LEX-006
+      phrase: "it is worth noting that"
+      message: "(delete it and state the thing)"
+    - id: LEX-007
+      phrase: "at the end of the day"
+      message: "(delete it)"
+    - id: LEX-008
+      phrase: "in today's fast-paced"
+      message: "(name the year or the change, or delete it)"
+    - id: LEX-009
+      phrase: "when it comes to"
+      message: "for"
+    - id: LEX-010
+      phrase: "navigate the complexities"
+      message: "deal with"
+    - id: LEX-011
+      phrase: "a testament to"
+      message: "evidence of"
+    - id: LEX-012
+      phrase: "underscores the"
+      message: "shows the"
+    - id: LEX-013
+      phrase: "underscoring"
+      message: "showing"
+    - id: LEX-014
+      phrase: "plays a crucial role"
+      message: "matters because"
+    - id: LEX-015
+      phrase: "plays a key role"
+      message: "matters because"
+    - id: LEX-016
+      phrase: "plays a vital role"
+      message: "matters because"
+    - id: LEX-017
+      phrase: "serves as a"
+      message: "is a"
+    - id: LEX-018
+      phrase: "in the realm of"
+      message: "in"
+    - id: LEX-019
+      phrase: "the landscape of"
+      message: "(name the thing)"
+    - id: LEX-020
+      phrase: "tapestry"
+      message: "(name the thing)"
+    - id: LEX-021
+      phrase: "unlock the potential"
+      message: "(say what it lets them do)"
+    - id: LEX-022
+      phrase: "unlocking"
+      message: "(say what it lets them do)"
+    - id: LEX-023
+      phrase: "harness the power"
+      message: "use"
+    - id: LEX-024
+      phrase: "elevate your"
+      message: "improve your"
+    - id: LEX-025
+      phrase: "seamless"
+      message: "(say what does not break)"
+    - id: LEX-026
+      phrase: "seamlessly"
+      message: "(say what does not break)"
+    - id: LEX-027
+      phrase: "cutting-edge"
+      message: "new"
+    - id: LEX-028
+      phrase: "state-of-the-art"
+      message: "new"
+    - id: LEX-029
+      phrase: "game-changer"
+      message: "(say what changes)"
+    - id: LEX-030
+      phrase: "game-changing"
+      message: "(say what changes)"
+    - id: LEX-031
+      phrase: "holistic"
+      message: "whole"
+    - id: LEX-032
+      phrase: "myriad"
+      message: "many"
+    - id: LEX-033
+      phrase: "plethora"
+      message: "many"
+    - id: LEX-034
+      phrase: "empower"
+      message: "let"
+    - id: LEX-035
+      phrase: "empowers"
+      message: "lets"
+    - id: LEX-036
+      phrase: "empowering"
+      message: "letting"
+    - id: LEX-037
+      phrase: "deep dive"
+      message: "look closely"
+    - id: LEX-038
+      phrase: "dive into"
+      message: "look at"
+    - id: LEX-039
+      phrase: "moving forward"
+      message: "from now on"
+    - id: LEX-040
+      phrase: "needless to say"
+      message: "(delete it)"
+    - id: LEX-041
+      phrase: "that being said"
+      message: "but"
+    - id: LEX-042
+      phrase: "actionable"
+      message: "(say what to do)"
+    - id: LEX-043
+      phrase: "impactful"
+      message: "(say what it changes)"
+    - id: LEX-044
+      phrase: "synergy"
+      message: "(name the two things and what they do together)"
+    - id: LEX-045
+      phrase: "synergies"
+      message: "(name the two things and what they do together)"
+    - id: LEX-046
+      phrase: "paradigm"
+      message: "way"
+    - id: LEX-047
+      phrase: "transformative"
+      message: "(say what it changes)"
+    - id: LEX-048
+      phrase: "unparalleled"
+      message: "(name the comparison)"
+    - id: LEX-049
+      phrase: "unmatched"
+      message: "(name the comparison)"
+    - id: LEX-050
+      phrase: "boasts"
+      message: "has"
+    - id: LEX-051
+      phrase: "meticulously"
+      message: "carefully"
+    - id: LEX-052
+      phrase: "carefully crafted"
+      message: "written"
+    - id: LEX-053
+      phrase: "look no further"
+      message: "(delete it)"
+    - id: LEX-054
+      phrase: "rest assured"
+      message: "(delete it)"
+    - id: LEX-055
+      phrase: "the beauty of"
+      message: "(say the thing plainly)"
+    - id: LEX-056
+      phrase: "here's the thing"
+      message: "(delete it)"
+    - id: LEX-057
+      phrase: "make no mistake"
+      message: "(delete it)"
+    - id: LEX-058
+      phrase: "low-hanging fruit"
+      message: "the easy part"
+    - id: LEX-059
+      phrase: "double down"
+      message: "spend more on"
+    - id: LEX-060
+      phrase: "circle back"
+      message: "come back to"
+    - id: LEX-061
+      phrase: "table stakes"
+      message: "the minimum"
+    - id: LEX-062
+      phrase: "north star"
+      message: "the one thing that matters"
+    - id: LEX-063
+      phrase: "key takeaway"
+      message: "(state it as a sentence)"
+    - id: LEX-064
+      phrase: "key takeaways"
+      message: "(state them as sentences)"
+    - id: LEX-065
+      phrase: "best practices"
+      message: "what works"
+    - id: LEX-066
+      phrase: "in conclusion"
+      message: "(delete it)"
+    - id: LEX-067
+      phrase: "to sum up"
+      message: "(delete it)"
+    - id: LEX-068
+      phrase: "resonates with"
+      message: "(say what they recognise)"
+    - id: LEX-069
+      phrase: "curated"
+      message: "chosen"
+    - id: LEX-070
+      phrase: "wide range of"
+      message: "(say how many, or name them)"
+    - id: LEX-071
+      phrase: "a variety of"
+      message: "(say how many, or name them)"
+    - id: LEX-072
+      phrase: "a host of"
+      message: "(say how many, or name them)"
+    - id: LEX-073
+      phrase: "drive growth"
+      message: "grow"
+    - id: LEX-074
+      phrase: "drive value"
+      message: "(say what it is worth)"
+    - id: LEX-075
+      phrase: "drive results"
+      message: "(say what happens)"
+    - id: LEX-076
+      phrase: "robust"
+      message: "(say what it survives)"
+    - id: LEX-077
+      phrase: "crucial"
+      message: "(say what breaks without it)"
+    - id: LEX-078
+      phrase: "pivotal"
+      message: "(say what turns on it)"
+    - id: LEX-079
+      phrase: "vital"
+      message: "(say what fails without it)"
+    - id: LEX-080
+      phrase: "streamline"
+      message: "(say which step goes away)"
+    - id: LEX-081
+      phrase: "journey"
+      message: "(name the steps)"
+    - id: LEX-082
+      phrase: "value proposition"
+      message: "what it is worth to them"
+    - id: LEX-083
+      phrase: "scalable"
+      message: "(say how big it can get before it breaks)"
+    - id: LEX-084
+      phrase: "innovative"
+      message: "new"
+    - id: LEX-085
+      phrase: "comprehensive"
+      message: "complete"
+    - id: LEX-086
+      phrase: "significantly"
+      message: "(give the number)"
+    - id: LEX-087
+      phrase: "substantially"
+      message: "(give the number)"
+    - id: CTA-01
+      pattern: "(?:^|[.!?])\\s+(?:Ultimately|Essentially|Fundamentally|Importantly|Notably|Crucially|Interestingly|Moreover|Furthermore|Additionally|In essence|In short|Simply put|Put simply|That said|Indeed)\\b"
+      message: "empty opener - the first five words carry the point"
+    - id: CTA-02
+      pattern: ",\\s+(?:ensuring|allowing|enabling|helping|providing|offering|creating|driving|making|highlighting|underscoring|reflecting|leveraging|thereby)\\b"
+      message: "a trailing '-ing' clause bolted on - start a new sentence and name who does it"
+    - id: CTA-03
+      pattern: "(?:^|[^.!?\\w-])(?:not|is not|are not|isn't|aren't|wasn't|weren't)\\s+just\\b"
+      message: "the 'not just X, but Y' shape - say what it is, drop what it is not"
+    - id: CTA-04
+      pattern: "(?:^|[^.!?\\w-])it'?s\\s+not\\b"
+      message: "the 'It's not X. It's Y.' reveal - state the thing once"
+    - id: CTA-05
+      pattern: "(?:^|[^.!?\\w-])not\\s+only\\b[^.\\n!?]{1,120}\\bbut\\s+also\\b"
+      message: "'not only... but also' - two sentences, or one list"
+    - id: CTA-06
+      pattern: "(?:^|[^.!?\\w-])whether\\s+you'?re\\b"
+      message: "'whether you're a X or a Y' - name the one reader this is for"
+    - id: CTA-07
+      pattern: "\\?\\s+(?:Absolutely|Simply put|In short|Yes[.,]|No[.,])\\b"
+      message: "a rhetorical question answered by the writer - ask nothing, or answer a real one"
+    - id: CTA-08
+      pattern: "(?:^|[^.!?\\w-])the\\s+(?:beauty|magic|trick|secret)\\s+of\\b"
+      message: "a flourish standing in for the fact - say the fact"
+rules: {}

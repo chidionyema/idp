@@ -1,0 +1,6 @@
+apiVersion: v1
+kind: Secret
+metadata: { name: leaked, namespace: edge }
+type: Opaque
+stringData:
+  TOKEN: a-real-value-that-is-not-a-shell

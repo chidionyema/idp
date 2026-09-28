@@ -1,0 +1,14 @@
+.github/workflows/oke-check.yml
+backstage/platform/catalog-info.yaml
+bin/catalog-platform
+bin/idp-infra-crew-drill
+clusters/oke/estate-config.yaml
+clusters/oke/platform.yaml
+docs/runbooks/infra-crew.md
+drills/catalogue.yaml
+platform/infra-crew/cronjob.yaml
+platform/infra-crew/external-secret.yaml
+platform/infra-crew/kustomization.yaml
+platform/infra-crew/namespace.yaml
+platform/infra-crew/pull-secret.yaml
+tests/test_crew729_infra_crew_workload.py

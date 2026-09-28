@@ -1,0 +1,17 @@
+== live langfuse-clickhouse before (06:05Z), docker stats + system.part_log merges last 2 min
+langfuse-clickhouse 67.34%   metric_log MergeParts 81   part_log NewPart 15   text_log NewPart 16
+== after DROP of the 6 config-removed tables (06:12Z)
+langfuse-clickhouse 35.40%   merges last 60s: part_log 7, query_log 1, opentelemetry_span_log 1
+== live part_log/text_log still written on main's xml (06:20Z)
+part_log 208495 rows max(event_time) 2026-08-27 06:20:16 ; text_log 79982 rows max 06:20:08
+== throwaway clickhouse-server:25.12, --cpus 1, xml bind-mounted from HOME (colima mounts only HOME)
+== new: mounted as file, removed tags in preprocessed: 0
+== new xml rows after ~35s
+Received exception from server (version 25.12.11): Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Unknown table expression identifier 'system.part_log' in scope SELECT 'part_log', count() FROM syst
+== main: mounted as file, removed tags in preprocessed: 1
+== main xml rows after ~35s
+Received exception from server (version 25.12.11): Code: 60. DB::Exception: Received from localhost:9000. DB::Exception: Unknown table expression identifier 'system.metric_log' in scope SELECT 'metric_log', count() FROM 
+
+  -> branch xml: system.part_log does not exist (UNKNOWN_TABLE at the first table); main xml: part_log and text_log exist, metric_log does not
+== tests
+pytest tests/test_incident_crew340_clickhouse_profiler_logs.py -> 2 passed; same check on origin/main xml -> FAIL on ['part_log','text_log','background_schedule_pool_log','query_metric_log']

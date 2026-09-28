@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""Refuse a catalog entity whose spec.type is not in the estate ontology.
+
+The estate's valid spec.type values are declared once in schema/catalog-ontology.json.
+Any Component or API entity that names a type not in the declared enum is refused at
+commit time (pre-commit hook) and at CI time (bin/idp-ci via rules.yaml).
+
+Template entities are skipped entirely -- they use Backstage's scaffold ``${{ }}``
+syntax rather than real entity values.  scaffold tokens inside spec.type (any value
+containing ``${{``) are also skipped to avoid false positives on template output that
+has not yet been rendered.
+
+Edge cases handled:
+  multi-document YAML (--- separators)   yaml.safe_load_all() flattens all docs
+  empty file                              skipped silently (no entities = nothing to check)
+  non-YAML file                           parse error is caught; file reported as failure
+  spec.type is None / missing             refused for ontology-governed kinds
+  spec.type is a scaffold token           skipped (${{ values.componentType }})
+  kind not in ontology and not skipped    refused (unknown kind)
+  ontology file missing                   fails closed
+  directory argument                      glob for *.yaml / *.yml under it
+
+Usage:
+  idp-catalog-spec-type-gate              scan backstage/ under the repo root
+  idp-catalog-spec-type-gate PATH...      scan the given files or directories
+  idp-catalog-spec-type-gate --self-test  verify the gate catches the bad fixture; exit 0
+
+Exit 0 on clean, 1 on any violation, 2 on usage / setup error.
+"""
+from __future__ import annotations
+
+import glob
+import json
+import os
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ONTOLOGY_PATH = os.path.join(ROOT, "schema", "catalog-ontology.json")
+SCAFFOLD_TOKEN = "${{"
+
+
+def load_ontology() -> dict:
+    try:
+        with open(ONTOLOGY_PATH) as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        print(f"FAIL  ontology  {ONTOLOGY_PATH} not found; failing closed", file=sys.stderr)
+        sys.exit(2)
+    except json.JSONDecodeError as exc:
+        print(f"FAIL  ontology  {ONTOLOGY_PATH} is not valid JSON: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+
+def _is_catalog_path(p: str) -> bool:
+    """Exclude template skeleton dirs and node_modules; they contain non-entity YAML."""
+    norm = p.replace(os.sep, "/")
+    return "/skeleton/" not in norm and "/node_modules/" not in norm
+
+
+def catalog_files(paths: list[str]) -> list[str]:
+    found = []
+    for p in paths:
+        if os.path.isfile(p):
+            if _is_catalog_path(p):
+                found.append(p)
+        elif os.path.isdir(p):
+            for ext in ("*.yaml", "*.yml"):
+                for f in glob.glob(os.path.join(p, "**", ext), recursive=True):
+                    if _is_catalog_path(f):
+                        found.append(f)
+        else:
+            for f in glob.glob(p, recursive=True):
+                if _is_catalog_path(f):
+                    found.append(f)
+    return sorted(set(found))
+
+
+def parse_entities(path: str) -> list[dict]:
+    with open(path, encoding="utf-8-sig") as fh:
+        content = fh.read()
+    if not content.strip():
+        return []
+    docs = list(yaml.safe_load_all(content))
+    entities = []
+    for doc in docs:
+        if doc is None:
+            continue
+        if isinstance(doc, list):
+            entities.extend(doc)
+        elif isinstance(doc, dict):
+            entities.append(doc)
+    return entities
+
+
+def is_backstage_entity(doc: dict) -> bool:
+    return (
+        isinstance(doc.get("apiVersion"), str)
+        and "backstage.io" in doc["apiVersion"]
+        and "kind" in doc
+    )
+
+
+def check_file(path: str, ontology: dict) -> list[str]:
+    skip_kinds = set(ontology.get("skipKinds", []))
+    kind_rules = ontology.get("entityKinds", {})
+    failures = []
+
+    try:
+        entities = parse_entities(path)
+    except yaml.YAMLError as exc:
+        return [f"{path}: YAML parse error: {exc}"]
+    except OSError as exc:
+        return [f"{path}: read error: {exc}"]
+
+    for entity in entities:
+        if not isinstance(entity, dict):
+            continue
+        if not is_backstage_entity(entity):
+            continue
+
+        kind = entity.get("kind", "")
+        if kind in skip_kinds:
+            continue
+
+        spec = entity.get("spec") or {}
+        spec_type = spec.get("type")
+        name = (entity.get("metadata") or {}).get("name", "<unnamed>")
+        label = f"{path}: {kind}/{name}"
+
+        if kind not in kind_rules:
+            # Unknown kind not in skipKinds — refuse it so new kinds are explicit
+            failures.append(
+                f"{label}: kind '{kind}' is not in the ontology and not in skipKinds"
+            )
+            continue
+
+        if spec_type is None:
+            failures.append(f"{label}: missing spec.type")
+            continue
+
+        if not isinstance(spec_type, str):
+            failures.append(f"{label}: spec.type is not a string (got {type(spec_type).__name__})")
+            continue
+
+        # Skip scaffold tokens -- they are template placeholders, not real values
+        if SCAFFOLD_TOKEN in spec_type:
+            continue
+
+        allowed = kind_rules[kind].get("spec.type", {}).get("enum", [])
+        if not allowed:
+            failures.append(f"{label}: ontology has no enum for {kind}.spec.type")
+            continue
+
+        if spec_type not in allowed:
+            failures.append(
+                f"{label}: spec.type '{spec_type}' is not in the ontology enum.\n"
+                f"   Allowed: {', '.join(allowed)}"
+            )
+
+    return failures
+
+
+def run(paths: list[str]) -> int:
+    ontology = load_ontology()
+    files = catalog_files(paths)
+    if not files:
+        print("ok    catalog-spec-type  no catalog files found")
+        return 0
+
+    failures: list[str] = []
+    for f in files:
+        failures.extend(check_file(f, ontology))
+
+    for msg in failures:
+        print(f"FAIL  {msg}", file=sys.stderr)
+
+    if not failures:
+        print(f"ok    catalog-spec-type  {len(files)} file(s) clean")
+        return 0
+
+    print(f"\n{len(failures)} violation(s). Failing.", file=sys.stderr)
+    return 1
+
+
+def self_test() -> int:
+    bad_dir = os.path.join(ROOT, "tests", "fixtures", "catalog-spec-type", "bad")
+    good_dir = os.path.join(ROOT, "tests", "fixtures", "catalog-spec-type", "good")
+
+    bad_result = run([bad_dir])
+    if bad_result == 0:
+        print("FAIL  self-test: bad fixture passed but should have failed", file=sys.stderr)
+        return 1
+
+    good_result = run([good_dir])
+    if good_result != 0:
+        print("FAIL  self-test: good fixture failed but should have passed", file=sys.stderr)
+        return 1
+
+    print("ok    self-test: bad refused, good passed")
+    return 0
+
+
+def main() -> None:
+    args = sys.argv[1:]
+
+    if args == ["--self-test"]:
+        sys.exit(self_test())
+
+    if not args:
+        # Default: scan backstage/ under the repo root
+        paths = [os.path.join(ROOT, "backstage")]
+    else:
+        paths = args
+
+    sys.exit(run(paths))
+
+
+if __name__ == "__main__":
+    main()

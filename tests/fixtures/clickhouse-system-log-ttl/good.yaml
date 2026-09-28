@@ -1,0 +1,16 @@
+# Retention inside the engine string, which is where ClickHouse demands it, plus
+# text_log -- the one system table the operator ships no <engine> for, so the
+# sibling form is correct there and only there.
+clickhouse:
+  settings:
+    merges_mutations_memory_usage_to_ram_ratio: "0.3"
+    trace_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    query_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    text_log/ttl: "event_date + INTERVAL 1 DAY DELETE"
+  files:
+    config.d/system_log.xml: |
+      <clickhouse>
+        <text_log>
+          <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        </text_log>
+      </clickhouse>

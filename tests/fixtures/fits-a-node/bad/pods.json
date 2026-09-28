@@ -1,0 +1,145 @@
+{
+ "items": [
+  {
+   "metadata": {
+    "name": "db-0",
+    "namespace": "observability",
+    "ownerReferences": [
+     {
+      "kind": "StatefulSet",
+      "name": "db"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "1",
+        "memory": "3Gi"
+       }
+      }
+     }
+    ]
+   },
+   "status": {
+    "phase": "Pending",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "False",
+      "reason": "Unschedulable",
+      "message": "0/2 nodes are available: 2 Insufficient memory. preemption: 0/2 nodes are available"
+     }
+    ]
+   }
+  },
+  {
+   "metadata": {
+    "name": "cache-0",
+    "namespace": "observability",
+    "ownerReferences": [
+     {
+      "kind": "StatefulSet",
+      "name": "cache"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "2Gi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n1"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "metadata": {
+    "name": "heavy-0",
+    "namespace": "observability",
+    "ownerReferences": [
+     {
+      "kind": "StatefulSet",
+      "name": "heavy"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "1500Mi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n1"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  },
+  {
+   "metadata": {
+    "name": "web-abc123-x",
+    "namespace": "apps",
+    "ownerReferences": [
+     {
+      "kind": "ReplicaSet",
+      "name": "web-abc123"
+     }
+    ]
+   },
+   "spec": {
+    "containers": [
+     {
+      "name": "c",
+      "resources": {
+       "requests": {
+        "cpu": "500m",
+        "memory": "3Gi"
+       }
+      }
+     }
+    ],
+    "nodeName": "n2"
+   },
+   "status": {
+    "phase": "Running",
+    "conditions": [
+     {
+      "type": "PodScheduled",
+      "status": "True"
+     }
+    ]
+   }
+  }
+ ]
+}

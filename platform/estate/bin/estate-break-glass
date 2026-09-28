@@ -1,0 +1,14 @@
+#!/bin/bash
+# estate-break-glass — emergency override CLI
+# active | add <tool> [--ttl=5m] | revoke <tool> | status
+set -euo pipefail
+DB="${HOME}/.estate/estate.db"
+mkdir -p "${HOME}/.estate"
+sqlite3 "$DB" "CREATE TABLE IF NOT EXISTS break_glass_log (id TEXT PRIMARY KEY,tool TEXT NOT NULL,action TEXT NOT NULL,granted_by TEXT,ttl_seconds INTEGER,granted_at TEXT NOT NULL,expires_at TEXT,revoked_at TEXT,reason TEXT);"
+now_iso() { date -u +"%Y-%m-%dT%H:%M:%S%z"; }
+ttl_sec() { case "${1:-}" in *s) echo "${1%s}";; *m) echo $((${1%m} * 60));; *h) echo $((${1%h} * 3600));; *d) echo $((${1%d} * 86400));; *) echo 300;; esac; }
+cmd_active() { local now; now=$(now_iso); sqlite3 "$DB" "SELECT id,tool,ttl_seconds,granted_at,expires_at FROM break_glass_log WHERE action='grant' AND (expires_at IS NULL OR expires_at > '$now') ORDER BY granted_at DESC;" 2>/dev/null | while IFS='|' read -r id tool ttl granted expires; do echo "  $tool  ttl=${ttl}s  expires=${expires:-never}"; done; }
+cmd_add() { local tool=${1:-} ttl_sec; ttl_sec=$(ttl_sec "${2:-5m}"); if [ "$ttl_sec" -lt 30 ]; then ttl_sec=30; fi; if [ "$ttl_sec" -gt 3600 ]; then ttl_sec=3600; fi; local id; id=$(uuidgen 2>/dev/null || python3 -c "import uuid; print(uuid.uuid4().hex[:12])"); local now; now=$(now_iso); local expires; expires=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc)+timedelta(seconds=$ttl_sec)).isoformat())"); local who; who=${USER:-console}; sqlite3 "$DB" "INSERT INTO break_glass_log (id,tool,action,granted_by,ttl_seconds,granted_at,expires_at,reason) VALUES ('$id','$tool','grant','$who',$ttl_sec,'$now','$expires','');"; echo "GRANTED: $tool for ${ttl_sec}s"; }
+cmd_revoke() { local now; now=$(now_iso); sqlite3 "$DB" "UPDATE break_glass_log SET action='revoke',revoked_at='$now' WHERE tool='${1:-}' AND action='grant' AND revoked_at IS NULL;"; echo "REVOKED: ${1:-}"; }
+cmd_status() { local total; total=$(sqlite3 "$DB" "SELECT count(*) FROM break_glass_log"); local now; now=$(now_iso); local active; active=$(sqlite3 "$DB" "SELECT count(*) FROM break_glass_log WHERE action='grant' AND (expires_at IS NULL OR expires_at > '$now')"); echo "Audit: $total entries | Active: $active"; }
+case "${1:-}" in active) cmd_active;; add) shift; TOOL=$1; TTL=${2:-5m}; cmd_add "$TOOL" "$TTL";; revoke) cmd_revoke "$2";; status) cmd_status;; *) echo "usage: $0 {active|add|revoke|status}" >&2; exit 1;; esac

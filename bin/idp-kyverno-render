@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# Renders every Flux HelmRelease under platform/ the way helm-controller will (helm template,
+# then the HelmRelease's own postRenderers patches) and judges the result with the cluster's
+# admission policies through the Kyverno CLI. Plain workloads the directory ships as YAML
+# (Deployment, StatefulSet, DaemonSet, Job, CronJob, Pod) are judged the same way: until
+# 2026-08-26 only HelmReleases were, and platform/llm/litellm.yaml, a plain Deployment, merged
+# with an envFrom secretRef the cluster then refused for a day (crew#284). Kyverno judges pods at admission, after merge,
+# which is too late; this runs the same ClusterPolicies before the PR is opened.
+#
+# Usage: bin/idp-kyverno-render <dir-with-kustomization> [more dirs...]
+# Policies: this repo's own ClusterPolicies under platform/ are always loaded, from here, because
+# they are here (bin/idp-kyverno-own-policies). On top of them: $IDP_KYVERNO_POLICIES (a kustomize
+# dir), else prospector's deploy/k8s/policies when that checkout sits beside this one, else the
+# same pinned upstream set (public, no token; the two estate-only policies are absent and the
+# verdict says so).
+#
+# IDP_RENDER_KEEP=<dir>: Kyverno judges POLICY on this render; bin/idp-kubeconform judges TYPE on
+# the same bytes (crew#584 comment above: a second renderer would duplicate ~4 minutes of CI).
+# Set this to a directory and every kz-*.yaml (raw kustomize build: the Flux control objects --
+# HelmRelease, Kustomization, ExternalSecret, the GithubAccessToken generator -- and every plain
+# workload) and *.final.yaml (the Helm chart's own render, post postRenderers: the exact bytes
+# admission sees for that release) is copied out before the trap below deletes the scratch
+# directory. plain-*.yaml is deliberately not copied: it is a filtered subset of its kz-*.yaml
+# plus bin/lib/kyverno_pods.py's synthetic Pod stand-ins (ownerReferences[].uid: "offline"), built
+# so Kyverno sees the Pod a controller would create -- real for a policy verdict, not a real
+# object a type-checker should grade twice. One render, judged twice.
+set -euo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+export IDP
+S="$(mktemp -d)"
+save_render() {  # copies whatever this run produced, even a partial render on an early failure
+	local dir="$1" f
+	mkdir -p "$dir"
+	# `[ -f "$f" ] && cp` leaves the loop -- and the function -- at status 1 when the LAST glob
+	# matched nothing, and this function is called from an EXIT trap under `set -e`, so a clean
+	# render exited 1 and CI read "a HelmRelease or workload render fails admission policy" over
+	# `fail: 0`. It fires for a dir that ships plain workloads and no chart, because then no
+	# *.final.yaml is ever written: offline-gate on idp#1056, run 33362659743, where the whole
+	# failure block printed no verdict line because there was no failed verdict to print.
+	for f in "$S"/kz-*.yaml "$S"/*.final.yaml; do
+		[ -f "$f" ] || continue
+		cp -p "$f" "$dir/"
+	done
+}
+trap '[ -n "${IDP_RENDER_KEEP:-}" ] && save_render "$IDP_RENDER_KEEP"; rm -rf "$S"' EXIT
+for t in helm kubectl kyverno python3; do command -v "$t" >/dev/null || { echo "BLIND  $t is not installed; nothing was judged"; exit 2; }; done
+
+# Beside the PRIMARY checkout, not beside this one. This said "$IDP/.." until 2026-08-28, and
+# every agent session works in a linked worktree under a temp directory with no prospector next to
+# it, so the default resolved to nothing and the judge went BLIND on every local run -- which is
+# how CI became the only thing in the estate that ever judged a render (crew#516).
+primary="$("$IDP/bin/idp-repo-root" "$IDP")"
+pol="${IDP_KYVERNO_POLICIES:-$primary/../prospector-main/deploy/k8s/policies}"
+if [ -f "$pol/kustomization.yaml" ]; then src="$pol"
+else src="$IDP/tests/fixtures/kyverno/upstream"; fi
+# This reaches the network, and until 2026-09-07 nothing here said so. Both policy sources --
+# prospector's deploy/k8s/policies and the fallback fixture -- list eight `github.com/kyverno/
+# policies` and `raw.githubusercontent.com` resources pinned at ef9843f0, so `kubectl kustomize`
+# git-fetches them on every single judging run: this script, the offline-gate rung, and the two
+# acceptance tests that call it for real. One GitHub blip is therefore a red verdict about the
+# estate's manifests, which is a verdict the run did not measure.
+#
+# It cost a red run the day this was written: PR #2381, run 34158837766, `fatal: repository
+# 'https://raw.githubusercontent.com/kyverno/policies/' not found : exit status 128`, from the
+# acceptance suite. The identical commit passed on run 34158835555 minutes later with nothing
+# changed, which is the signature of a fetch and not of a defect.
+#
+# Three attempts with a widening pause. A fetch that still fails is BLIND (exit 2), never a pass
+# and never a plain red: the distinction is the whole point, because "GitHub was unreachable" and
+# "your manifests break a policy" are different facts and the second one is the only one worth
+# waking somebody for. LAW 28, and the same reason crew#539 made a missing policy set BLIND.
+for attempt in 1 2 3; do
+  kubectl kustomize "$src" > "$S/policies.yaml" 2>"$S/kustomize.err" && break
+  if [ "$attempt" = 3 ]; then
+    echo "BLIND  policies  could not assemble the policy set from $src after 3 attempts;"
+    echo "                 nothing was judged. Both sources fetch pinned upstream policies over"
+    echo "                 the network, so this is usually GitHub and not this repository:"
+    sed 's/^/                 /' "$S/kustomize.err"   # stdout, like every other BLIND line here
+    exit 2
+  fi
+  sleep $((attempt * 4))
+done
+own=$("$IDP/bin/idp-kyverno-own-policies" "$IDP/platform" "$S/policies.yaml")
+n=$(grep -c '^kind: ClusterPolicy' "$S/policies.yaml")
+echo "policies  $n ClusterPolicies: $src plus this repo's platform/"
+echo "own       ${own:-none}"
+
+# The fallback set is the pinned upstream library and nothing else. The two policies this estate
+# wrote itself -- no-optional-secret-references and money-rail-single-writer -- live in the
+# prospector checkout, and they are the two that encode incidents this estate actually had, so a
+# verdict reached without them is the one verdict that cannot be trusted.
+# crew#539, 2026-08-28: CI has never had that checkout. It judged platform/robusta against 24
+# policies, printed "render clean", and the cluster then refused the same Deployment on
+# no-optional-secret-references -- the release went Failed, Flux could not remediate it, and
+# monitoring and monitoring-rules stayed down for 8h. BLIND, never a pass (LAW 28).
+for want in no-optional-secret-references money-rail-single-writer; do
+  grep -q "^  name: $want$" "$S/policies.yaml" && continue
+  echo "BLIND  policies  $want is not in the set from $src; the estate-only policies were not"
+  echo "                 judged. Point IDP_KYVERNO_POLICIES at prospector deploy/k8s/policies."
+  exit 2
+done
+
+# PolicyExceptions are handed to the CLI as admission sees them: Kyverno honours only the ones in
+# namespace kyverno (platform/kyverno/kyverno.yaml features.policyExceptions), wherever in the estate
+# they are declared, so every path a clusters/oke Kustomization points at is rendered once here.
+# Incident 2026-08-26 (crew#325): the langfuse exception sat beside the release it excused, the
+# directory's namespace transformer rewrote it to observability, and this judge passed a render
+# that admission refused for 41 hours.
+rm -rf "$S/exceptions"; mkdir -p "$S/exceptions"
+python3 - "$IDP" "$S/exceptions" <<'PY'
+import sys, yaml, pathlib, subprocess
+idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = set()
+for k in sorted((idp / "clusters/oke").glob("*.yaml")):
+    for d in yaml.safe_load_all(open(k)):
+        path = ((d or {}).get("spec") or {}).get("path", "")
+        if (d or {}).get("kind") == "Kustomization" and path.startswith("./platform/"):
+            paths.add(path)
+# The estate's own ClusterPolicies (require-priority-class, provider-independence R43, ...) ship in
+# the same tree; until 2026-08-28 (crew#66) only the upstream/prospector set was judged here, so a
+# platform policy could refuse at admission what this judge had passed. They are appended to the set.
+est = 0
+for path in sorted(paths):
+    r = subprocess.run(["kubectl", "kustomize", str(idp / path)], capture_output=True, text=True, check=True)
+    for d in yaml.safe_load_all(r.stdout):
+        if d and d.get("kind") == "PolicyException" and d["metadata"].get("namespace") == "kyverno":
+            (out / f"{n}.yaml").write_text(yaml.safe_dump(d)); n += 1
+        if d and d.get("kind") == "ClusterPolicy":
+            # platform/scheduling's kustomization stamps a namespace on its ClusterPolicies; the API
+            # server ignores it on a cluster-scoped object, the CLI skips the policy with an error
+            # count and no verdict. Strip it so the policy is judged, not skipped.
+            d["metadata"].pop("namespace", None)
+            with open(out.parent / "policies.yaml", "a") as f: f.write("---\n" + yaml.safe_dump(d)); est += 1
+print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths")
+print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
+PY
+
+rc=0
+# 2026-08-28 (crew#584, founder: "tests were supposed to be 9x faster"): this loop ran the 16 platform
+# dirs one after another -- kustomize, then `helm template` pulling the chart over the network, then
+# one `kyverno apply` per object -- and was 4m10s of offline-gate's 8 min (run 33195096448, 17:36:33
+# to 17:40:43). The dirs are independent, so they render together; IDP_RENDER_JOBS caps the fan-out.
+jobs="${IDP_RENDER_JOBS:-8}"
+_slot() { while [ "$(jobs -rp | wc -l)" -ge "$jobs" ]; do sleep 0.2; done; }
+_slug() { echo "$1" | tr '/' '_'; }
+
+render_dir() {
+  local dir="$1" slug; slug="$(_slug "$1")"
+  kubectl kustomize "$dir" > "$S/kz-$slug.yaml"
+  python3 - "$S" "$S/kz-$slug.yaml" <<'PY'
+import sys, os, yaml, subprocess, pathlib, json
+import importlib.machinery, importlib.util
+_hr = pathlib.Path(os.environ["IDP"]) / "bin" / "lib" / "helm_retry.py"
+_s = importlib.util.spec_from_loader("helm_retry",
+                                     importlib.machinery.SourceFileLoader("helm_retry", str(_hr)))
+helm_retry = importlib.util.module_from_spec(_s); _s.loader.exec_module(helm_retry)
+S = pathlib.Path(sys.argv[1]); docs = [d for d in yaml.safe_load_all(open(sys.argv[2])) if d]
+repos = {d["metadata"]["name"]: d["spec"]["url"] for d in docs if d["kind"] == "HelmRepository"}
+cms = {d["metadata"]["name"]: d.get("data", {}) for d in docs if d["kind"] == "ConfigMap"}
+for hr in (d for d in docs if d["kind"] == "HelmRelease"):
+    spec = hr["spec"]["chart"]["spec"]; name = hr["metadata"]["name"]
+    ns = hr["spec"].get("targetNamespace") or hr["metadata"].get("namespace", "default")
+    src = hr["spec"].get("chart", {}).get("spec", {}).get("sourceRef", {})
+    # GitRepository-sourced HelmReleases carry the chart path directly; no HelmRepository lookup.
+    # crew#539-style: the original code raised KeyError on `repos[spec['sourceRef']['name']]`
+    # when sourceRef kind was GitRepository, and the rung printed nothing useful.
+    if src.get("kind") != "HelmRepository":
+        print(f"{name} {ns} 0 (git-sourced, chart at {spec.get('chart','?')})")
+        continue
+    # helm-controller installs into spec.targetNamespace when set (k8s-infra -> observability-agent,
+    # crew#388); the judge must render where the objects land, or an exception scoped to that
+    # namespace looks unused and the DaemonSet fails here while passing on the cluster.
+    # helm-controller names the release spec.releaseName, else `<targetNamespace>-<name>` when
+    # targetNamespace is set, else the name (crew#483: rendering as `k8s-infra` produced a DaemonSet
+    # named k8s-infra-otel-agent, the cluster's is observability-agent-k8s-infra-otel-agent, and a
+    # waiver written for the rendered name never matched at admission).
+    release = hr["spec"].get("releaseName") or (f'{hr["spec"]["targetNamespace"]}-{name}' if hr["spec"].get("targetNamespace") else name)
+    vals = S / f"{name}.values.yaml"; vals.write_text("")
+    for v in hr["spec"].get("valuesFrom", []):
+        if v["kind"] == "ConfigMap": vals.write_text(cms[v["name"]][v.get("valuesKey", "values.yaml")])
+    if "values" in hr["spec"]: vals.write_text(vals.read_text() + "\n" + yaml.safe_dump(hr["spec"]["values"]))
+    render = S / f"{name}.render.yaml"
+    # An OCI HelmRepository (crew#524, hindsight) is addressed as oci://host/path/<chart>; `--repo`
+    # only speaks the HTTP index and helm exits 1, which this script used to read as "no render".
+    url = repos[spec["sourceRef"]["name"]]
+    chart_ref = ([f"{url.rstrip('/')}/{spec['chart']}"] if url.startswith("oci://")
+                 else [spec["chart"], "--repo", url])
+    # crew#584 (idp#631, run 33201855349): eight dirs render at once, and three bdd tests under
+    # `-n auto` each render again, so up to two dozen `helm template --repo` calls wrote helm's one
+    # shared repository cache (index.yaml + chart .tgz) at the same time -- a docs-only PR went red
+    # on `helm template signoz` and the log could not say why because stderr was DEVNULL (LAW 28).
+    # Every template call gets its own cache under $S, and its stderr reaches render-err verbatim.
+    hcache = S / f"helm-{name}"; hcache.mkdir(exist_ok=True)
+    henv = {**os.environ, "HELM_REPOSITORY_CACHE": str(hcache), "HELM_CACHE_HOME": str(hcache),
+            "HELM_REPOSITORY_CONFIG": str(hcache / "repositories.yaml")}
+    cmd = ["helm", "template", release, *chart_ref, "--version", str(spec["version"]),
+           "-n", ns, "-f", str(vals)]
+    # A chart host that hangs up is retried rather than reported as a policy failure; why, and
+    # the run it cost us, are in bin/lib/helm_retry.py.
+    r, tried = helm_retry.template(cmd, henv)
+    if r.returncode != 0:
+        if len(tried) > 1:
+            sys.stderr.write(f"helm template {release}: {len(tried)} attempts, all failed:\n"
+                             + "".join(f"  attempt {i + 1}: {m}\n" for i, m in enumerate(tried)))
+        sys.stderr.write(f"helm template {release} ({spec['chart']} {spec['version']} from {url}) "
+                         f"exited {r.returncode}:\n{r.stderr}")
+        raise SystemExit(1)
+    out = r.stdout
+    # helm prints `Pulled:`/`Digest:` for an OCI chart on stdout before the first document; kustomize
+    # reads that as a resource with no metadata. The render starts at the first `---`.
+    render.write_text(out[out.index("\n---\n") + 1:] if out.startswith(("Pulled:", "Digest:")) else out)
+    kz = S / f"{name}.kz"; kz.mkdir(); (kz / "render.yaml").write_text(render.read_text())
+    patches = [p for pr in hr["spec"].get("postRenderers", []) for p in pr.get("kustomize", {}).get("patches", [])]
+    # Flux's post-renderer takes `images:` as well as `patches:` (helm-controller v2 Kustomize
+    # spec), and this judge read only the patches. A chart that hardcodes a short image name in
+    # its templates -- lago writes `image: getlago/api:v{{ .Values.version }}` with no values key
+    # for the registry -- can only be qualified by that transformer, so leaving it out made the
+    # judge disagree with the cluster in the one direction that matters: it would call a
+    # correctly-qualified release unqualified. run 33341390235, 2026-08-30.
+    images = [i for pr in hr["spec"].get("postRenderers", []) for i in pr.get("kustomize", {}).get("images", [])]
+    # helm-controller semantics (crew#227, SPIRE): an object that names no namespace lands in the
+    # release namespace; one that names its own keeps it, and a Namespace the chart creates keeps
+    # its name. The plain `namespace:` field renames chart-made Namespaces to the release namespace
+    # and two of them collide ("namespace transformation produces ID conflict").
+    (kz / "ns.yaml").write_text(yaml.safe_dump({"apiVersion": "builtin", "kind": "NamespaceTransformer",
+        "metadata": {"name": "release-namespace", "namespace": ns}, "unsetOnly": True}))
+    (kz / "kustomization.yaml").write_text(yaml.safe_dump({"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+        "transformers": ["ns.yaml"], "resources": ["render.yaml"], "patches": patches, "images": images}))
+    print(f"{name} {ns} {len(patches)}")
+PY
+  # Plain workloads in the same kustomize output, judged as they are. Services, Ingresses, claims
+  # and secret stores too (crew#66, R43): provider-independence refuses those, not only pods.
+  python3 - "$S/kz-$slug.yaml" "$S/plain-$slug.yaml" <<'PY2'
+import sys, os, yaml
+kinds = {"Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob", "Pod",
+         "Service", "Ingress", "PersistentVolumeClaim", "ClusterSecretStore", "SecretStore"}
+docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d and d.get("kind") in kinds]
+sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
+from kyverno_pods import pods_for
+docs += pods_for(docs)
+open(sys.argv[2], "w").write(yaml.safe_dump_all(docs) if docs else "")
+PY2
+}
+
+for dir in "$@"; do
+  _slot; render_dir "$dir" > "$S/releases-$(_slug "$dir").txt" 2> "$S/render-err-$(_slug "$dir").txt" &
+done
+wait
+: > "$S/releases.txt"
+for dir in "$@"; do
+  slug="$(_slug "$dir")"
+  # A render that died before any verdict (kustomize `must build at directory`, a chart that will
+  # not pull) says so here, verbatim, and the judge exits 1 -- the shape crew#292's tests hold.
+  if [ -s "$S/render-err-$slug.txt" ]; then cat "$S/render-err-$slug.txt" >&2; echo "FAIL  render   $dir: the render did not complete (above)"; rc=1; fi
+  cat "$S/releases-$slug.txt" >> "$S/releases.txt"
+done
+[ "$rc" = 0 ] || exit "$rc"
+
+_exc() { for x in "$S"/exceptions/*.yaml; do [ -f "$x" ] && printf -- '--exception\n%s\n' "$x"; done; }
+mapfile -t exc < <(_exc)
+
+# 2026-09-07: every resource file used to get its own `kyverno apply`, and the CLI pays its whole
+# fixed cost -- process start, then parsing and compiling every ClusterPolicy and every
+# PolicyException -- before it looks at the first object. Judging one pod against the policy set
+# 50 times measured 32.12s; judging the same 50 in one process, 0.96s (2026-09-07, kyverno 1.19.0).
+# The estate has ~50 plain directories and ~32 rendered releases, so that fixed cost was being paid
+# more than eighty times: 451 of offline-gate's 586 seconds, in one silent stretch, on run
+# 34152221275. Resources are judged in one process per slot now. Attribution is not lost: a batch
+# that reports a failure is re-judged one resource at a time, so a red run prints exactly the
+# per-label block it always printed, and only a red run pays for it.
+judge_batch() {  # judge_batch <verdict-file> <label> <resource-file>...: one kyverno for many resources
+  local vf="$1" label="$2"; shift 2
+  local args=() f verdict file counts got=""
+  for f in "$@"; do args+=(--resource "$f"); done
+  # --policy-report carries every result together with the resource it judged, so one process can
+  # still answer per file. Without it a batch could only print its own total and the per-file
+  # verdict line -- the thing every caller and both bdd suites read -- would be gone.
+  # -o keeps the mutated resources out of stdout; the banner lines announcing them are printed to
+  # stdout regardless, so _attribute reads the report from the first "{" rather than from byte 0.
+  got=$(kyverno apply "$S/policies.yaml" "${exc[@]}" "${args[@]}" \
+          -o "${vf%.txt}-mutated" --policy-report --output-format json 2>/dev/null \
+        | python3 "$S/attribute.py" "$@") || got=""
+  if [ -z "$got" ]; then
+    # The report did not account for every result against a file we asked about. Never guess a
+    # verdict: judge one at a time, which is what this did before the batch existed.
+    echo "note  $label: per-resource attribution incomplete, judging one at a time" >> "$vf"
+    for f in "$@"; do judge_one "$f" >> "$vf" || echo 1 > "${vf%.txt}.rc"; done
+    return 0
+  fi
+  while IFS=$'\t' read -r verdict file counts; do
+    [ -n "$verdict" ] || continue
+    if [ "$verdict" = red ]; then
+      # Only the file that broke pays for a second process, and it prints the block it always did.
+      judge_one "$file" >> "$vf" || echo 1 > "${vf%.txt}.rc"
+    else
+      echo "ok    ${_KIND[$file]} ${_LABEL[$file]}: $counts" >> "$vf"
+    fi
+  done <<< "$got"
+}
+
+# _attribute <resource-file>...: reads a kyverno policy report on stdin and prints one line per
+# file, in the order given: "ok<TAB><file><TAB><counts>" or "red<TAB><file>". It prints nothing at
+# all -- and the caller then judges one at a time -- unless every result in the report lands on
+# exactly one of the files asked about and the per-file counts add back up to the report's own
+# summary. A verdict this gate prints is one something measured, never one it inferred.
+# The attribution program is a file, not a heredoc. `python3 - "$@" <<'ATTRIB'` reads the program
+# from stdin, so stdin is spent by the time the program calls sys.stdin.read() and every batch got
+# an empty report -- attribution fell back every time and the whole speedup measured zero, while
+# kyverno was writing 38KB of perfectly good report into the pipe (2026-09-07).
+cat > "$S/attribute.py" <<'ATTRIB'
+import json, sys, collections, yaml
+
+files = sys.argv[1:]
+
+def bail(why):
+    sys.stderr.write("      kyverno attribution fell back: %s\n" % why)
+    sys.exit(1)
+
+# kyverno prints "Mutation:" / "Mutation has been applied successfully." to stdout for every
+# resource it mutates, whatever -o and --output-format say, and it appends the report to the last
+# of them without a newline. So the report starts at the first "{" in the stream, not at byte 0;
+# no banner contains that character. Reading from byte 0 is what made attribution fall back on
+# every batch on real estate data and the speedup measure zero (2026-09-07, kyverno 1.19.0).
+raw = sys.stdin.read()
+i = raw.find("{")
+if i < 0:
+    bail("the report carried no json object; %d bytes of stdout beginning %r"
+         % (len(raw), raw[:120]))
+try:
+    rep, _ = json.JSONDecoder().raw_decode(raw[i:])
+except Exception:
+    bail("the report did not parse as json")
+
+owner, ambiguous = {}, set()
+for f in files:
+    try:
+        docs = list(yaml.safe_load_all(open(f).read()))
+    except Exception:
+        bail("resource file did not parse as yaml: %s" % f)
+    for d in docs:
+        if not isinstance(d, dict):
+            continue
+        k, n = d.get("kind"), (d.get("metadata") or {}).get("name")
+        if not k or not n:
+            continue
+        key = (k, n)
+        if key in owner and owner[key] != f:
+            ambiguous.add(key)   # two files in this batch carry the same object; cannot attribute
+        owner[key] = f
+
+counts = collections.defaultdict(collections.Counter)
+seen = 0
+for r in rep.get("results", []):
+    res = r.get("resources") or []
+    if not res:
+        bail("a %s result names no resource" % r.get("result"))
+    for x in res:
+        key = (x.get("kind"), x.get("name"))
+        if key in ambiguous:
+            bail("two files in this batch carry %s" % (key,))
+        if key not in owner:
+            bail("no file in this batch declares %s" % (key,))
+        counts[owner[key]][r.get("result")] += 1
+        seen += 1
+
+summary = rep.get("summary") or {}
+if seen != sum(int(v) for v in summary.values()):
+    bail("attributed %d of %d results" % (seen, sum(int(v) for v in summary.values())))
+
+for f in files:
+    c = counts.get(f, collections.Counter())
+    if c["fail"] or c["error"]:
+        print("red\t%s" % f)
+    else:
+        print("ok\t%s\tpass: %d, fail: 0, warn: %d, error: 0, skip: %d "
+              % (f, c["pass"], c["warn"], c["skip"]))
+ATTRIB
+
+judge_one() {  # judge_one <resource-file>: the pre-batch verdict block, for a batch that went red
+  local res="$1" out summary label kind
+  label="${_LABEL[$res]}"; kind="${_KIND[$res]}"
+  out=$(kyverno apply "$S/policies.yaml" "${exc[@]}" --resource "$res" 2>&1 || true)
+  summary=$(grep -E '^pass:' <<<"$out" | tail -1)
+  if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
+    echo "FAIL  $kind $label: $summary"
+    grep -E 'policy .* -> resource .* failed' <<<"$out" | sed 's/^/      /'; return 1
+  fi
+  echo "ok    $kind $label: $summary"
+}
+
+prepare_release() {  # kustomize the post-rendered chart and shape it the way admission sees it
+  local name="$1"
+  kubectl kustomize "$S/$name.kz" > "$S/$name.final.yaml"
+  # helm test hooks never reach the cluster (HelmRelease test.enable is off); drop them before judging.
+  # Every other hook (pre/post-install, pre/post-upgrade, ...) is admitted like any pod and is
+  # judged. Until 2026-08-26 this dropped all hooks, and the langfuse s3 post-upgrade bucket hook
+  # merged with no securityContext; Kyverno then refused every Helm upgrade of the release (crew#325).
+  python3 - "$S/$name.final.yaml" <<'PY'
+import sys, os, yaml
+def _is_test_hook(d):
+    hooks = (d["metadata"].get("annotations") or {}).get("helm.sh/hook", "")
+    return hooks and all(h.strip().startswith("test") for h in hooks.split(","))
+p = sys.argv[1]; docs = [d for d in yaml.safe_load_all(open(p)) if d and not _is_test_hook(d)]
+# A chart may emit a key with no value (`volumes:` on kube-prometheus-stack's operator when no
+# volume is configured). The API server drops a null field before admission sees it; the CLI
+# does not, and disallow-host-path failed the operator over a hostPath it never had (crew#539).
+def _drop_null(x):
+    if isinstance(x, dict): return {k: _drop_null(v) for k, v in x.items() if v is not None}
+    if isinstance(x, list): return [_drop_null(v) for v in x]
+    return x
+docs = [_drop_null(d) for d in docs]
+# Judge the Pod each workload would create, as admission does. Autogen covers Deployment,
+# StatefulSet and DaemonSet, so only Job and CronJob were synthesised here until 2026-08-30 --
+# but autogen covers the POLICY, never the EXCEPTION, and an exception excusing only the autogen
+# rule passed this judge and lost at admission (bin/lib/kyverno_pods.py).
+sys.path.insert(0, os.environ["IDP"] + "/bin/lib")
+from kyverno_pods import pods_for
+docs += pods_for(docs)
+open(p, "w").write(yaml.safe_dump_all(docs))
+PY
+}
+
+declare -A _LABEL _KIND
+res=()
+
+for plain in "$S"/plain-*.yaml; do
+  [ -s "$plain" ] || continue
+  _LABEL["$plain"]=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
+  _KIND["$plain"]="plain   "
+  res+=("$plain")
+done
+
+# The chart post-render is kustomize and python, not kyverno, so it keeps its own fan-out; the
+# judging that follows is what got batched.
+while read -r name ns npatch; do
+  _slot; prepare_release "$name" > "$S/prep-$name.log" 2>&1 || echo "$name" >> "$S/prep-fail.txt" &
+done < "$S/releases.txt"
+wait
+if [ -s "$S/prep-fail.txt" ]; then
+  while read -r name; do
+    echo "FAIL  render   $name: the post-render did not complete"; cat "$S/prep-$name.log"
+  done < "$S/prep-fail.txt" >&2
+  exit 1
+fi
+while read -r name ns npatch; do
+  f="$S/$name.final.yaml"; [ -s "$f" ] || continue
+  _LABEL["$f"]="$name ($ns, $npatch patches)"; _KIND["$f"]="render  "
+  res+=("$f")
+done < "$S/releases.txt"
+
+# One kyverno process per slot rather than one per resource. Files are dealt round-robin so a slot
+# holding several large renders is not the one everything waits on.
+n=0; order=()
+if [ "${#res[@]}" -gt 0 ]; then
+  batches=$(( ${#res[@]} < jobs ? ${#res[@]} : jobs ))
+  for b in $(seq 0 $((batches - 1))); do
+    chunk=(); for i in $(seq "$b" "$batches" $(( ${#res[@]} - 1 ))); do chunk+=("${res[$i]}"); done
+    [ "${#chunk[@]}" -gt 0 ] || continue
+    n=$((n + 1)); order+=("$S/verdict-$n.txt")
+    _slot; judge_batch "$S/verdict-$n.txt" "kyverno batch $((b + 1))/$batches, ${#chunk[@]} resource(s)" "${chunk[@]}" &
+  done
+fi
+wait
+for v in "${order[@]}"; do cat "$v"; [ -f "${v%.txt}.rc" ] && rc=1; done
+exit $rc

@@ -1,0 +1,10 @@
+systems:
+  - name: demo
+    owner: someone
+    role: deployer
+    risk_tier: minimal
+    purpose: fixture
+    technical_file: docs/ai-systems/demo/technical-file.md
+    data_sources:
+      - {name: s1, url: https://example.org, provenance: public, lawful_basis: none, personal_data: none, retention: none}
+    review_due: 2099-01-01

@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Stop Agentgateway and the two MCP servers. Nothing here owns a volume: estate.db is
+# mounted read-only from catalog/ and the board lives on GitHub, so there is nothing to
+# wipe and no --wipe flag (bin/litellm-down has one because it owns a ledger).
+set -euo pipefail
+
+MCP="$(cd "$(dirname "$0")/.." && pwd)/mcp"
+COMPOSE=(docker compose --env-file "$MCP/.env" -f "$MCP/agentgateway.yml")
+
+"${COMPOSE[@]}" down
+echo "stopped"

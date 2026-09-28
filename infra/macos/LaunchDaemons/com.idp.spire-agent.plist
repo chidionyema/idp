@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.idp.spire-agent.plist — the SPIRE agent runs as a user LaunchDaemon under
+  the founder's uid. The agent's only job on this Mac is to:
+
+    * attest against the SPIRE control plane over tailnet (100.74.93.65:8443),
+    * mint X.509-SVIDs + JWT-SVIDs over the Workload API Unix socket,
+    * expose health endpoints on localhost:8080 (/live, /ready).
+
+  install path : infra/macos/LaunchDaemons/com.idp.spire-agent.plist
+  owner       : the founder (loaded by `idp-mac-provision install`)
+  never loaded by an agent session — per AGENTS.md SPIFFE primary rule 3, the
+  agent never runs `launchctl load` for the user. `idp-mac-provision install`
+  is the one place this plist is loaded; that script is the orchestrator, not
+  the agent.
+
+  trust model : - keepalive + ProcessType=Interactive drives launchd to keep
+                  this running between reboots without root ownership.
+                - StandardOutPath/StandardErrorPath go to ~/Library/Logs,
+                  one file each, that the bootstrap's verify rung tails.
+                - SPIRE agent reads agent.conf from /etc/spire/agent.conf,
+                  which `idp-mac-provision install` writes from a template
+                  in infra/macos/spire-agent.conf.template. The template's
+                  only secrets are the SPIRE trust bundle URL and the join
+                  token, both of which `idp-mac-provision install` fetches
+                  from the estate vault via the JIT broker.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.idp.spire-agent</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/spire-agent</string>
+        <string>run</string>
+        <string>-config</string>
+        <string>/etc/spire/agent.conf</string>
+        <string>-expandEnv</string>
+        <string>-logLevel</string>
+        <string>INFO</string>
+    </array>
+
+<key>EnvironmentVariables</key>
+    <dict>
+        <key>ESTATE_ZONE</key>
+        <string>mumchimp.com</string>
+        <key>SPIRE_SERVER_ADDRESS</key>
+        <string>spire-server.jit.svc.cluster.local</string>
+        <key>SPIRE_SERVER_PORT</key>
+        <string>8443</string>
+    </dict>
+
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/Shared/Logs/com.idp.spire-agent.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/Shared/Logs/com.idp.spire-agent.err.log</string>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
+</dict>
+</plist>

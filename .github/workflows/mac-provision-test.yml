@@ -1,0 +1,95 @@
+name: mac-provision-test
+
+# Why this exists (per docs/reference/security-architecture.md):
+# the founder's Mac provisioning is declared in infra/macos/Brewfile +
+# infra/macos/LaunchDaemons + bin/idp-mac-provision. The whole install
+# path converges from zero, hands-off, on a fresh machine — and the only
+# way to prove that is to run it on a fresh machine. There is no founder
+# interaction in this CI lane; the renderer substitutes empty strings for
+# SPIRE secrets so SPIRE never connects.
+
+on:
+  pull_request:
+    paths:
+      - "infra/macos/**"
+      - "bin/idp-mac-provision"
+      - ".github/workflows/mac-provision-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "infra/macos/**"
+      - "bin/idp-mac-provision"
+      - ".github/workflows/mac-provision-test.yml"
+
+jobs:
+  provision:
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Homebrew is present (macos-14 runner has it)
+        run: |
+          brew --version
+          HOMEBREW_NO_AUTO_UPDATE=1 brew update --auto-update=false || true
+
+      - name: bin/idp-mac-provision self-test (parses, files present)
+        run: bin/idp-mac-provision self-test
+
+      - name: brew bundle install --no-upgrade against infra/macos/Brewfile
+        # Idempotent on a clean macos-14 runner. Catches any drift in the
+        # Brewfile (a published tap disappearing, a formula renamed, a
+        # version pulled). Whatever fails here, no founder Mac installs.
+        run: |
+          brew bundle install --file infra/macos/Brewfile --no-upgrade
+          brew bundle check --file infra/macos/Brewfile --verbose
+
+      - name: bin/idp-mac-provision install (dry-run path via IDP_MAC_PROVISION_DRY=1)
+        env:
+          IDP_MAC_PROVISION_DRY: "1"
+        # The dry-run path renders templates and lays plists under
+        # /tmp/idp-mac-provision-test/ so the test is observable in
+        # artifacts but never touches the runner's real LaunchAgent dir
+        # or /etc/spire. Real install runs against a founder Mac on a
+        # properly-tailneted machine.
+        run: |
+          mkdir -p /tmp/idp-mac-provision-test
+          IDP_MAC_PROVISION_DRY=1 bin/idp-mac-provision install 2>&1 | tee /tmp/install.log
+
+      - name: bin/idp-mac-provision status (JSON on stdout)
+        run: bin/idp-mac-provision status
+
+      - name: bin/idp-mac-provision status parses + every component reports a structured field
+        # Catches breakage in the status contract — the consumer of this
+        # JSON is the dashboard at mumchimp.com/devices, which reads the
+        # status and renders a green/red row per component.
+        run: |
+          json=$(bin/idp-mac-provision status)
+          # A quoted python -c "..." with the script at column 0 is NOT valid inside a YAML
+          # block scalar: the block's indentation ends at the first unindented line, so the
+          # parser saw `import json, sys` as a new top-level key and refused the whole file --
+          #   could not find expected ':' at line 69, column 1
+          # -- which is what made bin/idp-ci's multiarch rung report this workflow as
+          # `unparseable workflow (ScannerError)` on 2026-09-23. A heredoc is indented with the
+          # block and keeps the script readable.
+          python3 - "$json" <<'PY'
+          import json, sys
+          d = json.loads(sys.argv[1])
+          required = ['brew', 'tailscale', 'spire', 'executor', 'renew']
+          for k in required:
+              assert k in d, f'missing component: {k}'
+              assert 'installed' in d[k], f'missing installed field on {k}'
+              assert 'status' in d[k], f'missing status field on {k}'
+              assert isinstance(d[k]['installed'], int), f'installed must be int on {k}'
+          print('OK status contract holds for', len(d), 'components')
+          PY
+
+      - name: bin/idp-mac-provision uninstall + install re-runs converge (idempotency)
+        # The whole point of declarative provisioning: install → uninstall →
+        # install converges to the same state, with no diff. A regression
+        # here means the templates drift on re-render and the founder's
+        # Mac accumulates state across re-runs.
+        run: |
+          bin/idp-mac-provision uninstall
+          IDP_MAC_PROVISION_DRY=1 bin/idp-mac-provision install
+          IDP_MAC_PROVISION_DRY=1 bin/idp-mac-provision install  # must be a no-op

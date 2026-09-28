@@ -1,0 +1,136 @@
+{{- /*
+The broker is deployed as a sidecar in the router pod, alongside the LiteLLM container.
+It fetches provider keys from OCI Vault using workload identity and writes them to a
+shared emptyDir volume. The router reads /vault-keys/<keyname> instead of env vars.
+
+When deployed as a sidecar (the normal case), litellm.yaml embeds this container spec
+and the volumes directly; this Deployment template is only used when the broker runs
+standalone (e.g. during development or as a daemon in a different namespace).
+*/ -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: sidecar
+    backstage.io/kubernetes-id: idp-router
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Chart.Name }}
+        app.kubernetes.io/component: sidecar
+    spec:
+      serviceAccountName: idp-router
+      {{- /*
+      OCI Workload Identity: the OCIoke admission controller mutates this pod
+      to use the service account's OCI principal when calling OCI APIs.
+      */ -}}
+      {{- if .Values.oci.workloadIdentity }}
+      podAnnotations:
+        oci.oraclecloud.com/principal: workload
+      {{- end }}
+      containers:
+        - name: broker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: VAULT_OCID_PATH
+              value: {{ .Values.oci.vaultOCIDPath | default "/configmaps/estate-vars/OCI_VAULT_ID" }}
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            {{- /*
+            SPIRE Workload API socket from the CSI driver. The broker verifies the
+            caller's SVID here before returning a key. The router's SVID is
+            verifiable against this socket.
+            */ -}}
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+            {{- /*
+            Shared volume: broker writes keys here, router reads them.
+            Router's litellm container also mounts this at /vault-keys.
+            */ -}}
+            - name: vault-keys
+              mountPath: /vault-keys
+
+            - name: vault-ocid
+              mountPath: /configmaps/vault-ocid
+              readOnly: true
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+        - name: vault-keys
+          emptyDir: {}
+        - name: vault-ocid
+          configMap:
+            name: vault-ocid
+            optional: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+spec:
+  selector:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+{{- if .Values.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: llm
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Chart.Name }}
+  endpoints:
+    - port: http
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

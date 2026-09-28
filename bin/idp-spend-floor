@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""A floor under the estate's spend: report every key approaching its budget, and trip on the shape.
+
+WHY THIS IS NOT THE BREAKER THAT ALREADY EXISTS, and what that one is missing. Read before this
+was written, on 2026-09-13:
+
+`platform/llm/spend-breaker-digest.yaml` grades DOLLARS and TOKENS per hour as a TOTAL ACROSS THE
+ESTATE. It watched 86,525,924 tokens go through one hour -- 43x its own 2,000,000 threshold -- and
+did not trip, for two reasons it cannot see past:
+
+  1. it sums every key together, so one session sending 737,169 tokens per call is numerically
+     identical to two hundred sessions sending 3,700 each. The total was never the problem; the
+     SHAPE was, and a sum cannot see a shape.
+  2. it notifies and does not sever -- its own comment says so: "It reports and warns; it does not
+     sever the router."
+
+And LiteLLM's own `max_budget` is a hard stop with no warning at all. Measured: the key that caused
+this incident sat at $12.13 of $15.00 with no page, no alert and no clamp. It would have died
+silently and taken every session on that machine with it, and that is how the bill was discovered
+-- by a person reading a dashboard, two hours and $2.63 late.
+
+WHAT THIS REPORTS, per key, none of it requiring a total:
+
+    * the biggest single call      -- the shape, which no sum can see
+    * the ratio of input to output -- 3,685:1 is a conversation re-sending itself; 3:1 is work
+    * the share of budget already spent, so a key is named BEFORE it dies rather than after
+
+ONE CONNECTION, ONE QUERY, THREE ANSWERS. The old breaker opened a psql connection per check. This
+takes every number in a single query and prints them together, because the three only mean
+something beside each other.
+
+READ-ONLY AND CANNOT FAIL THE ESTATE. It opens no write path, holds no credentials of its own (it
+reads the password from the mount the router itself uses), and a failed query is a loud non-zero
+exit rather than a silent zero -- the old breaker's swallowed error is why it read $0.00 for weeks.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+# The estate's lanes, and the shape a call must have. A single call above this is not a long
+# document or a large diff -- those arrive as one prompt on one day. Sustained per-call input this
+# large is a session re-sending its history, which is the pattern that cost $2.63 in an hour.
+CALL_OUTLIER_TOKENS = 200_000
+# Input tokens per output token. 3,685:1 was the incident. Genuine work sits in single digits.
+RATIO_OUTLIER = 200
+# Report a key once it has spent this share of its budget, so it is named before it dies.
+BUDGET_WARN_FRACTION = 0.80
+
+DEFAULT_DSN = "estate-rw.estate-db.svc.cluster.local"
+DEFAULT_DB = "litellm"
+DEFAULT_USER = "litellm"
+
+# One query. Every answer this gate needs, in one connection, because the three numbers only mean
+# something beside each other: a big total with a normal max call is a busy estate, and a normal
+# total with a 737k max call is one session eating the estate.
+QUERY = """
+select coalesce(v.key_alias, 'unaliased')                                    as alias,
+       left(s.api_key, 8)                                                     as key8,
+       count(*)                                                               as calls,
+       coalesce(sum(s.prompt_tokens), 0)::bigint                              as input_tokens,
+       coalesce(sum(s.completion_tokens), 0)::bigint                          as output_tokens,
+       coalesce(max(s.prompt_tokens), 0)                                      as biggest_call,
+       round(coalesce(sum(s.spend), 0)::numeric, 4)                           as usd,
+       v.max_budget,
+       -- The key's LIFETIME spend against its budget, not this window's. A budget is spent across
+       -- days, so summing only the looked-back window would understate it and the warning would
+       -- arrive after the key had already died. Aggregated because v.spend is on the joined row.
+       max(v.spend)                                                            as lifetime_spend,
+       case when max(v.max_budget) is null or max(v.max_budget) = 0 then null
+            else round((max(v.spend) / max(v.max_budget) * 100)::numeric, 1) end as pct_of_budget
+  from "LiteLLM_SpendLogs" s
+  left join "LiteLLM_VerificationToken" v on left(v.token, 8) = left(s.api_key, 8)
+ where s."startTime" > now() - make_interval(mins => %(window)s)
+ group by 1, 2, 8
+ order by input_tokens desc
+"""
+
+
+def psql(dsn: str, db: str, user: str, password: str, sql: str) -> list[dict]:
+    """Run one query and return rows as dicts.
+
+    A failure RAISES. It never returns an empty list, because an empty list and a broken query
+    look identical to every caller above this, and the breaker this replaces reported green for
+    weeks on exactly that confusion.
+    """
+    env = {**os.environ, "PGPASSWORD": password}
+    proc = subprocess.run(
+        [
+            "psql",
+            "-h",
+            dsn,
+            "-U",
+            user,
+            "-d",
+            db,
+            "-P",
+            "pager=off",
+            "--csv",
+            "-c",
+            sql,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+    if not lines:
+        return []
+    header, *body = lines
+    cols = [c.strip() for c in header.split(",")]
+    return [
+        dict(zip(cols, [f.strip() for f in ln.split(",")], strict=False)) for ln in body
+    ]
+
+
+def findings(rows: list[dict], window: int) -> list[str]:
+    """Every reason a person should be told, in the order that costs the most money."""
+    out: list[str] = []
+    for r in rows:
+        alias = r.get("alias") or "unaliased"
+        key8 = r.get("key8") or "?"
+        inp = int(r.get("input_tokens") or 0)
+        outp = int(r.get("output_tokens") or 0)
+        biggest = int(r.get("biggest_call") or 0)
+        calls = int(r.get("calls") or 0)
+
+        # The shape. This is the finding the existing breaker structurally cannot make.
+        if biggest >= CALL_OUTLIER_TOKENS:
+            at = f"{biggest:,}"
+            if inp and outp and inp // max(outp, 1) >= RATIO_OUTLIER:
+                out.append(
+                    f"{alias} (...{key8}) sent one call of {at} input tokens against "
+                    f"{outp:,} output across {calls} calls in {window} min -- "
+                    f"{inp // max(outp, 1):,} tokens in per token out. That is a conversation "
+                    f"re-sending its whole history, not a large document. Compact that session."
+                )
+            else:
+                out.append(
+                    f"{alias} (...{key8}) sent one call of {at} input tokens in {window} min. "
+                    f"Above the estate's working window; confirm it is a genuinely large prompt."
+                )
+
+        # The floor under the budget, so a key is NAMED before it dies rather than after.
+        pct = r.get("pct_of_budget")
+        if pct not in (None, "", "null"):
+            lifetime = float(r.get("lifetime_spend") or 0)
+            if float(pct) >= BUDGET_WARN_FRACTION * 100:
+                out.append(
+                    f"{alias} (...{key8}) has spent {float(pct):.1f}% of its budget "
+                    f"(${lifetime:.2f} of ${float(r.get('max_budget')):.2f}). When it reaches "
+                    f"100% LiteLLM stops the key with no warning and every session using it "
+                    f"dies at once."
+                )
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--window", type=int, default=60, help="minutes to look back (default 60)"
+    )
+    ap.add_argument("--dsn", default=DEFAULT_DSN)
+    ap.add_argument("--db", default=DEFAULT_DB)
+    ap.add_argument("--user", default=DEFAULT_USER)
+    ap.add_argument(
+        "--password-file",
+        default="/run/secrets/litellm/upstream/LITELLM_DB_PASSWORD",
+        help="file holding the DB password; the router's own mount, never a new secret",
+    )
+    ap.add_argument(
+        "--json", action="store_true", help="emit rows as JSON for a test to assert on"
+    )
+    ap.add_argument(
+        "--rows",
+        help="grade these ledger rows from a file instead of querying, so the rule's fixture "
+        "pair can prove this gate both ways without a database",
+    )
+    args = ap.parse_args()
+
+    # The fixture path: same findings, same thresholds, same exit codes as the live query. A gate
+    # whose bad case can only be produced by spending real money has no bad case.
+    if args.rows:
+        import json as _json
+
+        try:
+            fixture = _json.loads(pathlib.Path(args.rows).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            print(f"FAIL  spend-floor: rows unreadable ({exc})", file=sys.stderr)
+            return 1
+        found = findings(fixture, args.window)
+        if found:
+            for f in found:
+                print(f"FAIL  spend-floor: {f}")
+            return 1
+        print(
+            f"ok    spend-floor   {len(fixture)} key(s) graded from {args.rows}; none out of shape"
+        )
+        return 0
+
+    pw_path = pathlib.Path(args.password_file)
+    if not pw_path.is_file():
+        print(
+            f"FAIL  spend-floor: no password at {pw_path}. Refusing to run blind -- a checker "
+            f"that cannot read the ledger must fail, never report a clean bill.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        rows = psql(
+            args.dsn,
+            args.db,
+            args.user,
+            pw_path.read_text(encoding="utf-8").strip(),
+            QUERY % {"window": args.window},
+        )
+    except subprocess.CalledProcessError as exc:
+        # Loud. The breaker this replaces swallowed exactly this and read $0.00 for weeks.
+        print(
+            f"FAIL  spend-floor: the ledger could not be read, so spend is UNKNOWN:\n"
+            f"{exc.stderr}",
+            file=sys.stderr,
+        )
+        return 1
+
+    if args.json:
+        print(json.dumps(rows, indent=2))
+        return 0
+
+    if not rows:
+        print(
+            f"ok    spend-floor   no calls in the last {args.window} minutes. That is an empty "
+            f"window, not a clean bill -- if the router should be serving, read this as unknown."
+        )
+        return 0
+
+    found = findings(rows, args.window)
+    top = rows[0]
+    if found:
+        for f in found:
+            print(f"FAIL  spend-floor: {f}")
+        return 1
+
+    print(
+        f"ok    spend-floor   {len(rows)} key(s) in {args.window} min; busiest is "
+        f"{top.get('alias')} with {int(top.get('input_tokens') or 0):,} tokens in "
+        f"{top.get('calls')} calls, biggest single call {int(top.get('biggest_call') or 0):,}"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

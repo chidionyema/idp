@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# bin/idp-pr-risk-gate: the push-time caller of `bin/idp-pr-risk`.
+#
+# WHY THIS FILE EXISTS SEPARATELY FROM idp-pr-risk. The scorer is an ADVISOR: it prints a
+# tier and exits 1 at `high`, and a person (or an agent) may read it and proceed. This is the
+# hook-facing wrapper, and it is the only place a push is refused -- so the place that can
+# stop someone is one small, greppable file rather than buried in the scorer.
+#
+# IT REFUSES AT `high` ONLY, and only when a decision layer is actually reachable. If the
+# scorer cannot read `jev-pr-risk.yml`, or the layer is unreachable, the tier it returns is
+# not evidence of risk -- and a fence a correct machine cannot satisfy is an outage (LAW 38).
+# In those cases this prints the reason and ALLOWS the push.
+#
+# OVERRIDE, deliberately, never by habit:
+#   IDP_PR_RISK_GATE=0 git push
+#
+#   bin/idp-pr-risk-gate            # refuse only at high
+#   bin/idp-pr-risk-gate --advise   # never refuse; print the tier
+set -euo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ADVISE=0
+for arg in "$@"; do
+	case "$arg" in
+	--advise) ADVISE=1 ;;
+	*) echo "unknown argument: $arg" >&2; exit 2 ;;
+	esac
+done
+
+if [ "${IDP_PR_RISK_GATE:-1}" = "0" ]; then
+	echo "idp-pr-risk-gate: overridden by IDP_PR_RISK_GATE=0 -- a person owns this push"
+	exit 0
+fi
+
+set +e
+out="$(cd "$IDP" && bin/idp-pr-risk --json 2>/dev/null)"
+rc=$?
+set -e
+
+# No JSON at all means the scorer could not run. That is BLIND, not risky.
+if [ -z "$out" ]; then
+	echo "idp-pr-risk-gate: scorer produced nothing (rc=$rc); not refusing on a blind check" >&2
+	exit 0
+fi
+
+tier="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("tier",""))' 2>/dev/null || echo "")"
+config_error="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("config_error") or "")' 2>/dev/null || echo "")"
+
+if [ -n "$config_error" ]; then
+	echo "idp-pr-risk-gate: cannot score -- $config_error (not refusing on a blind check)" >&2
+	exit 0
+fi
+
+# A REFUSAL REQUIRES AT LEAST ONE REAL PROBABILITY. When the decision layer is unreachable
+# every condition reports probability:null and the score is a statement about the LAYER, not
+# about the change -- refusing then would block every push on a machine whose layer is down,
+# which is an outage rather than enforcement (LAW 38). Count the conditions that actually
+# answered; zero of them means there is no evidence to refuse on.
+scored="$(printf '%s' "$out" | python3 -c 'import json,sys; print(sum(1 for c in json.load(sys.stdin).get("conditions",[]) if c.get("probability") is not None))' 2>/dev/null || echo 0)"
+
+if [ "$scored" = "0" ]; then
+	echo "idp-pr-risk-gate: no condition could be scored (layer unreachable); tier=$tier is advisory only" >&2
+	echo "idp-pr-risk-gate: push allowed -- a blind check is not evidence of risk" >&2
+	exit 0
+fi
+
+if [ "$tier" = "high" ] && [ "$ADVISE" = "0" ]; then
+	echo "REFUSED: idp-pr-risk scored this change HIGH before submission." >&2
+	(cd "$IDP" && bin/idp-pr-risk 2>&1 | sed 's/^/  /' >&2) || true
+	echo "  override deliberately:  IDP_PR_RISK_GATE=0 git push" >&2
+	exit 1
+fi
+
+echo "idp-pr-risk-gate: tier=$tier -- push allowed"
+exit 0

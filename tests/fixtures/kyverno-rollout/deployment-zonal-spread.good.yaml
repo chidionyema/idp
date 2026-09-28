@@ -1,0 +1,18 @@
+# Hard anti-affinity across ZONES, not hostnames. Two nodes in different zones still leave a
+# hostname free for the surge pod, so this can roll and must not be refused.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: zonal, namespace: backstage}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: zonal}}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxSurge: 1, maxUnavailable: 0}}
+  template:
+    metadata: {labels: {app: zonal}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: topology.kubernetes.io/zone
+              labelSelector: {matchLabels: {app: zonal}}
+      containers: [{name: c, image: busybox}]

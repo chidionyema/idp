@@ -1,0 +1,9 @@
+name: images
+on: { push: { branches: [main] } }
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/build-push-action@v6
+        with: { context: ., push: true, tags: ghcr.io/x/y:main }
+      - run: docker build -t x/y:dev .

@@ -1,0 +1,75 @@
+# button: Check every repository for a hardcoded estate name
+# founder: Reads the main branch of every repository the estate App can see and refuses if any file spells the estate's domain instead of ${ESTATE_ZONE}. A red run is the drift alarm on the Ops dashboard.
+# crew#796 (founder 2026-09-01, P0): "THAT SHOULD NEVER HAPPEN ... CAN'T EVER HAPPEN AGAIN ... needs
+# monitoring for any drift ... and PR rejection". The PR half is rule=no_zone_literal_added in
+# policy/operating_model.rego (bin/pr-report grades the added lines). This is the drift half: the
+# same gate, bin/estate-zone-gate, over every repository's main, on a schedule and on the estate
+# clock (GitHub drops cron; platform/drills/drill-dispatcher.yaml dispatches it). A failing run
+# is a delivery.failed_runs row in the estate state document, the red row every session reads
+# first, so drift cannot sit unread (LAW 28). Read-only on every plane.
+name: name-drift
+on:
+  schedule:
+    - cron: "37 */6 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/name-drift.yml", "bin/estate-zone-gate", "tests/fixtures/estate-zone/**"]
+permissions:
+  contents: read
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: name-drift
+  cancel-in-progress: false
+jobs:
+  drift:
+    if: github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: The gate refuses its bad fixture and passes its good one, before it grades anyone
+        run: |
+          set -euo pipefail
+          if ESTATE_ZONE_ROOT=tests/fixtures/estate-zone/bad python3 bin/estate-zone-gate; then echo "the gate passed its bad fixture"; exit 1; fi
+          ESTATE_ZONE_ROOT=tests/fixtures/estate-zone/good python3 bin/estate-zone-gate
+          if ESTATE_ZONE_ROOT=tests/fixtures/estate-zone/bad python3 bin/estate-zone-gate --diff tests/fixtures/estate-zone/added-literal.diff; then echo "the gate passed a diff that adds a literal"; exit 1; fi
+          ESTATE_ZONE_ROOT=tests/fixtures/estate-zone/bad python3 bin/estate-zone-gate --diff tests/fixtures/estate-zone/added-substituted.diff
+      - id: app
+        if: github.event_name != 'pull_request'
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: Grade the main branch of every repository the estate App can see
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          red=0; total=0
+          {
+            echo "## Estate names on main, every repository (bin/estate-zone-gate)"
+            echo
+            echo "| repository | result |"
+            echo "|---|---|"
+          } > "$RUNNER_TEMP/summary.md"
+          for full in $(gh api --paginate /installation/repositories --jq '.repositories[] | select(.archived | not) | .full_name'); do
+            total=$((total+1))
+            dir="$RUNNER_TEMP/repos/$full"
+            git clone --quiet --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/$full.git" "$dir" 2>/dev/null || { echo "| $full | BLIND, clone failed |" >> "$RUNNER_TEMP/summary.md"; red=$((red+1)); continue; }
+            if out=$(python3 bin/estate-zone-gate --root "$dir" 2>&1); then
+              echo "| $full | $(echo "$out" | tail -1) |" >> "$RUNNER_TEMP/summary.md"
+            else
+              red=$((red+1))
+              echo "| $full | **$(echo "$out" | tail -1)** |" >> "$RUNNER_TEMP/summary.md"
+              echo "::error title=$full::$(echo "$out" | tail -1)"
+              echo "$out" | head -40
+            fi
+          done
+          { echo; echo "$total repositories graded, $red red."; } >> "$RUNNER_TEMP/summary.md"
+          cat "$RUNNER_TEMP/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          [ "$total" -gt 0 ] || { echo "BLIND: the App lists no repositories"; exit 2; }
+          [ "$red" -eq 0 ]

@@ -1,0 +1,20 @@
+resources:
+  - flux-writer.yaml
+  - backstage.yaml
+  - pull-secret.yaml
+  - sovereign-worker.yaml
+  - router-events.yaml
+  - hermes-agent.yaml
+  - estate-mcp.yaml
+  - estate-scheduler.yaml
+  - prospector.yaml
+  - lago-api.yaml
+  - lago-front.yaml
+  - aevum.yaml
+  - jit.yaml
+  - controller.yaml
+  - runsc.yaml
+  - epistemic-ingest.yaml
+  - via-negativa.yaml
+  - fleetview-backend.yaml
+  - zeroedge.yaml

@@ -1,0 +1,195 @@
+# Otto staging (founder order 2026-09-01). Fixed deploy contract from the crew#otto-golden
+# task: container command `python -m otto.boot`, port from OTTO_BOOT_PORT (default 8080),
+# health at GET /healthz, webhook at POST /telegram-webhook, the bot token via env
+# OTTO_TELEGRAM_BOT_TOKEN, the config file path via env OTTO_BOOT_CONFIG. Same image as
+# platform/hermes-agent (ghcr.io/chidionyema/hermes-agent, built from hermes-v2); only the
+# command differs -- this is the new otto.boot process (hermes-v2 branch otto/boot-surface),
+# not the hermes-agent gateway (Telegram poller + a2a + mac-run) that lives in the other
+# namespace and keeps running unchanged.
+#
+# workingDir: the image's Dockerfile (hermes-v2/Dockerfile) sets ENTRYPOINT to
+# deploy/k8s/entrypoint.sh and leaves WORKDIR at /app/hermes-agent (the upstream fork's own
+# checkout and venv, PATH-first). This Deployment's `command:` replaces that entrypoint
+# entirely (Kubernetes `command` overrides a Docker ENTRYPOINT the same way `args` overrides
+# CMD), so entrypoint.sh's own HERMES_BUILD_DIR copy never runs here. The estate repo itself
+# (hermes-v2, which carries the otto/ package) is baked into the image at /app/estate
+# (Dockerfile: `COPY --chown=10001:10001 . /app/estate`) -- so `python -m otto.boot` only
+# resolves the package with the working directory set there; `python -m` adds the current
+# directory to sys.path. Not proven against a running otto.boot yet (the package does not
+# exist on hermes-v2 main as of this branch) -- flagged as a gap, not claimed done.
+#
+# Secrets as files, never pod env (Kyverno secrets-not-from-env-vars, crew#341/crew#284): the
+# ExternalSecret in telegram-secret.yaml is mounted read-only, and the container's own command
+# exports its one file into OTTO_TELEGRAM_BOT_TOKEN before exec'ing the process the fixed
+# contract names -- same shape as deploy/k8s/entrypoint.sh's HERMES_ENV_DIR loop, done inline
+# here because that entrypoint is bypassed (see workingDir note above).
+apiVersion: v1
+kind: Service
+metadata:
+  name: otto-golden
+  namespace: otto-golden
+  labels:
+    backstage.io/kubernetes-id: otto-golden
+    app.kubernetes.io/name: otto-golden
+spec:
+  selector:
+    app: otto-golden
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otto-golden
+  namespace: otto-golden
+  annotations:
+    # Reloader (platform/reloader) rolls the pod when the vault-sourced Secret changes; the
+    # ConfigMap the same way. `auto` discovers every Secret/ConfigMap this pod mounts, so a new
+    # one added later needs no second annotation here (founder blueprint 2026-08-30, idp#955's
+    # enumerated-list mistake).
+    reloader.stakater.com/auto: "true"
+  labels:
+    app: otto-golden
+    app.kubernetes.io/name: otto-golden
+    app.kubernetes.io/part-of: idp
+spec:
+  # Two pods behind the door (crew#539: a routed surface survives one node). The pod is
+  # stateless -- Telegram delivers each update once to the Service and any replica may answer;
+  # nothing exclusive is held (no volume outlives the pod), so the earlier one-pod Recreate
+  # caution protected nothing and went.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: otto-golden
+  template:
+    metadata:
+      labels:
+        app: otto-golden
+        app.kubernetes.io/name: otto-golden
+    spec:
+      # The same door, in its golden copy: a surface that is routed and answers a person ranks
+      # above the nightly batch class, and with no class named the scheduler ranks it at zero.
+      priorityClassName: infrastructure-critical
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: otto-golden }
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: otto-boot
+          image: ghcr.io/chidionyema/hermes-agent
+          imagePullPolicy: IfNotPresent
+          workingDir: /app/estate
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              export OTTO_TELEGRAM_BOT_TOKEN="$(cat /run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN)"
+              export LITELLM_API_KEY="$(cat /run/secrets/otto-golden-router-key/LITELLM_API_KEY)"
+              exec python -m otto.boot
+          # The router lanes, from the one ConfigMap the door reads (declared in
+          # platform/otto-gateway/router-lanes.yaml, second document). envFrom, not env: an
+          # inline entry of the same name would win over the ConfigMap and put the drift
+          # straight back -- which is what the two lane literals that used to sit below were.
+          envFrom:
+            - configMapRef: { name: otto-router-lanes }
+          env:
+            - name: OTTO_BOOT_PORT
+              value: "8080"
+            - name: OTTO_BOOT_CONFIG
+              value: /etc/otto/boot.yaml
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            # The estate's memory (platform/hindsight), one bank for every surface, so a
+            # person remembered from Telegram is remembered on the next channel too.
+            # otto/memory/hindsight.py: unset is a no-op, unreachable never costs an answer.
+            - { name: OTTO_MEMORY_HINDSIGHT_URL, value: "http://hindsight-api.hindsight.svc:8888" }
+            - { name: OTTO_MEMORY_BANK, value: "hermes" }
+            # Recall is on the answering path, so it is bounded: hindsight's own consolidation
+            # timings on 2026-09-05 read recall=96.951s and recall=1.886s in consecutive
+            # batches, and the client's old hardcoded 3s meant hindsight logged
+            # `[RECALL CANCELLED] reason=client disconnected` for every request this gateway
+            # made. Ten seconds was not enough either: on 2026-09-05 hindsight logged the only
+            # two recalls of the day, 09:04:38 and 09:05:19, and cancelled both -- the client
+            # gave up at exactly 10.0s while the server was still working 27s and 31s in.
+            # Not one recall completed, so every answer that day was composed with chars=0.
+            # Thirty seconds is the founder's call (2026-09-05); a recall that overruns still
+            # costs no one their answer, it just arrives without memory.
+            - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
+            - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
+            # LAW 50: every workload emits to the central collector. Same endpoint and mode as
+            # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
+            # directly and refuses to start in otlp mode without it.
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://signoz-otel-collector.observability.svc:4318"
+          ports:
+            - containerPort: 8080
+              name: http
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 25m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: boot-config
+              mountPath: /etc/otto
+              readOnly: true
+            - name: telegram-token
+              mountPath: /run/secrets/otto-staging-telegram
+              readOnly: true
+            - name: router-key
+              mountPath: /run/secrets/otto-golden-router-key
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: boot-config
+          configMap: { name: otto-golden-boot-config }
+        - name: telegram-token
+          secret: { secretName: otto-staging-telegram }
+        - name: router-key
+          secret: { secretName: otto-golden-router-key }

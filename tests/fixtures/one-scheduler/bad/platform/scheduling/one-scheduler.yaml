@@ -1,0 +1,3 @@
+# A launchd job exists in this tree and no row here declares it: a second scheduler,
+# added without anyone recording it. This fixture must be refused.
+still_outside_dagster: []

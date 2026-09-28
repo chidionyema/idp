@@ -1,0 +1,176 @@
+# Spend velocity circuit breaker (crew#74 CP3, founder ruling R74: "spend-velocity circuit
+# breaker on the platform's LiteLLM model router").
+#
+# Rewritten 2026-09-04 because the original measured nothing and stopped nothing. It asked for
+# `SELECT sum(spend) FROM litellm_logs`; no such table exists -- LiteLLM writes "LiteLLM_SpendLogs"
+# with a quoted camel-case "startTime" -- and the query ended `2>/dev/null || echo "0"`, so the
+# error was swallowed and the breaker read $0.00 every five minutes from the day it was deployed
+# and never once tripped. Its state lived in /tmp of a CronJob pod that is destroyed after every
+# run, so a trip could not have survived either, and the notification was a line reading
+# `# TODO: Send message to founder via alert gateway`.
+#
+# What it does now, and why each part is there:
+#   - it queries the real table, and a failed query is a loud failure that notifies, never a zero;
+#   - it grades TOKENS as well as dollars, because the lanes that drained the MiniMax plan were
+#     priced at $0.0000 a call and a dollar threshold cannot see them (the pricing half of this
+#     is in platform/vendors/consoles.yaml);
+#   - it notifies through the estate's own notifier, apprise in namespace notify, which is the
+#     path that already reaches the founder. There is no second alert road.
+#
+# It reports and warns; it does not sever the router. LiteLLM's own general_settings.max_budget
+# is the enforcement, and it works now that the lanes carry prices.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spend-check-scripts
+  namespace: llm
+  annotations:
+    # This ConfigMap is a shell script, not a template. Flux runs envsubst over every resource
+    # in the llm Kustomization, and envsubst cannot tell `${CALLS}` -- a variable the script
+    # assigns to itself on the line above -- from a cluster value someone forgot to define. In
+    # strict mode it does not shrug: it fails the whole build, so from the moment this file
+    # landed on 2026-09-04 the ENTIRE llm namespace stopped reconciling with
+    # `envsubst error: variable substitution failed: variable not set (strict mode): "CALLS"`,
+    # and with it the model router's own config. Two more rows fell over behind it, hindsight
+    # and research-engine, both on `dependency 'flux-system/llm' is not ready`.
+    #
+    # This annotation is Flux's documented answer for exactly this case -- a resource that owns
+    # its dollar signs -- and it covers every variable in the script rather than the one that
+    # happened to be alphabetically unlucky, so escaping `$${...}` one at a time is not needed
+    # and cannot regress.
+    kustomize.toolkit.fluxcd.io/substitute: disabled
+data:
+  check_velocity.sh: |
+    #!/bin/sh
+    # Reads the router's own ledger and says whether the last hour is inside the limits.
+    # Any failure to read is reported as a failure, never as zero spend.
+    set -eu
+
+    MAX_USD="${SPEND_VELOCITY_MAX_DOLLARS:-10.0}"
+    MAX_TOKENS="${SPEND_VELOCITY_MAX_TOKENS:-2000000}"
+    NOTIFY="${APPRISE_URL:-http://apprise.notify.svc.cluster.local:8000/notify/founder-telegram}"
+
+    notify() {
+      # Best effort: a notifier that is down must not hide the log line above it.
+      wget -q -O /dev/null --post-data="title=$1&body=$2" "$NOTIFY" || \
+        echo "SPEND_VELOCITY: notify failed, message was: $2"
+    }
+
+    ROW=$(psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -At -F "|" -c \
+      "select coalesce(round(sum(spend)::numeric, 4), 0), coalesce(sum(total_tokens), 0), count(*)
+         from \"LiteLLM_SpendLogs\" where \"startTime\" > now() - interval '1 hour'") || {
+      echo "SPEND_VELOCITY: FAILED to read the ledger -- the estate is spending unmeasured"
+      notify "Model router: spend is unmeasured" "The spend breaker could not read LiteLLM_SpendLogs on estate-db. Until this reads again, nothing is watching what the router spends."
+      exit 1
+    }
+
+    USD=$(echo "$ROW" | cut -d"|" -f1)
+    TOKENS=$(echo "$ROW" | cut -d"|" -f2)
+    CALLS=$(echo "$ROW" | cut -d"|" -f3)
+    echo "SPEND_VELOCITY: last hour ${CALLS} calls, ${TOKENS} tokens, \$${USD} (limits \$${MAX_USD}, ${MAX_TOKENS} tokens)"
+
+    OVER_USD=$(echo "$USD > $MAX_USD" | bc)
+    OVER_TOKENS=$(echo "$TOKENS > $MAX_TOKENS" | bc)
+    if [ "$OVER_USD" = "1" ] || [ "$OVER_TOKENS" = "1" ]; then
+      echo "SPEND_VELOCITY: OVER LIMIT"
+      # Who did it, so the message names the consumer and not just the number.
+      TOP=$(psql -h estate-rw.estate-db.svc.cluster.local -U litellm -d litellm -At -F " " -c \
+        "select coalesce(v.key_alias, 'no-alias'), s.model, sum(s.total_tokens)
+           from \"LiteLLM_SpendLogs\" s
+           left join \"LiteLLM_VerificationToken\" v on v.token = s.api_key
+          where s.\"startTime\" > now() - interval '1 hour'
+          group by 1, 2 order by 3 desc limit 3" 2>/dev/null || echo "consumer unknown")
+      notify "Model router over its hourly limit" "Last hour: ${CALLS} calls, ${TOKENS} tokens, \$${USD}. Biggest consumers: ${TOP}"
+      exit 0
+    fi
+    echo "SPEND_VELOCITY: within limits"
+
+---
+# Every five minutes: read the ledger, grade the last hour, notify when it is over.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: spend-velocity-check
+  namespace: llm
+spec:
+  schedule: "*/5 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 60
+      ttlSecondsAfterFinished: 300
+      template:
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            # Load password from mounted secret
+            - name: load-password
+              image: docker.io/library/busybox:1.36
+              command: ["sh", "-c"]
+              args:
+                - cp /run/secrets/litellm/LITELLM_DB_PASSWORD /shared/password.txt
+              volumeMounts:
+                - name: password
+                  mountPath: /run/secrets/litellm
+                  readOnly: true
+                - name: shared
+                  mountPath: /shared
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 10m, memory: 16Mi }
+                limits: { cpu: 50m, memory: 32Mi }
+          containers:
+            - name: check
+              image: docker.io/library/postgres:17.6-alpine
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -e
+                  export PGPASSWORD=$(cat /shared/password.txt)
+                  sh /scripts/check_velocity.sh
+              env:
+                # Two ceilings, because a lane priced at zero is invisible to the first one.
+                - name: SPEND_VELOCITY_MAX_DOLLARS
+                  value: "1.0"
+                # 2 million tokens an hour. The three consumers that drained the MiniMax plan
+                # averaged well above this; ordinary estate traffic sits far below it.
+                - name: SPEND_VELOCITY_MAX_TOKENS
+                  value: "2000000"
+              volumeMounts:
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: shared
+                  mountPath: /shared
+                - name: tmp
+                  mountPath: /tmp
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 100m, memory: 128Mi }
+          volumes:
+            - name: scripts
+              configMap:
+                name: spend-check-scripts
+                defaultMode: 0555
+            - name: password
+              secret:
+                secretName: litellm-upstream
+            - name: shared
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

@@ -1,0 +1,5 @@
+[
+  {"alias": "sovereign-kernel", "key8": "bbcd6a50", "calls": "63",
+   "input_tokens": "443", "output_tokens": "21", "biggest_call": "68",
+   "usd": "0.0000", "max_budget": "5", "lifetime_spend": "0.00010912", "pct_of_budget": "0.0"}
+]

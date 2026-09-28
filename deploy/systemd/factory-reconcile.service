@@ -1,0 +1,20 @@
+[Unit]
+Description=Factory reconciliation daemon
+After=network-online.target
+
+[Service]
+Type=simple
+User=factory
+Group=factory
+WorkingDirectory=/opt/factory
+EnvironmentFile=/etc/factory/env
+ExecStart=/usr/bin/python3 -m factory.reconcile --interval 300 --verbose
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/factory
+
+[Install]
+WantedBy=multi-user.target

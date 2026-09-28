@@ -1,0 +1,60 @@
+# crew#892 CP4 — gVisor cell admission policy: every Pod in the otto-gvisor-sandbox
+# namespace must name `runtimeClassName: gvisor` and must NOT ask for
+# `privileged: true`. Any Pod that violates this is refused at admission.
+# This enforces estate decree (zero-trust-boundary.md step 5, deepseek-work-order
+# item 12) without guessing. Kyverno runs already; this is one more policy, not
+# a second engine.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: otto-gvisor-admission
+  annotations:
+    policies.kyverno.io/title: otto-gvisor-sandbox requires runtimeClassName:gvisor and no privileged
+    policies.kyverno.io/category: crew#892 CP4, sandbox compute admission
+    policies.kyverno.io/severity: critical
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Any Pod in the `otto-gvisor-sandbox` namespace must explicitly request
+      `runtimeClassName: gvisor` and must not set `privileged: true` in its
+      security context. This enforces the gVisor sandbox boundary for untrusted
+      code execution.
+spec:
+  background: false
+  rules:
+    - name: require-gvisor-runtime-class
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [otto-gvisor-sandbox]
+      validate:
+        failureAction: Enforce
+        message: >-
+          Pod in {{ request.object.metadata.namespace }} must specify
+          `runtimeClassName: gvisor` for untrusted code execution.
+        deny:
+          conditions:
+            all:
+              - key: "{{ request.object.spec.runtimeClassName || '' }}"
+                operator: NotEquals
+                value: gvisor
+    - name: forbid-privileged-container
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [otto-gvisor-sandbox]
+      validate:
+        failureAction: Enforce
+        message: >-
+          Pod in {{ request.object.metadata.namespace }} must not run as
+          `privileged: true` in the gVisor sandbox.
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.containers[*].securityContext.privileged || '' }}"
+                operator: Equals
+                value: "true"
+              - key: "{{ request.object.spec.initContainers[*].securityContext.privileged || '' }}"
+                operator: Equals
+                value: "true"

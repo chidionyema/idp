@@ -1,0 +1,17 @@
+# idp#3525 CP3 (ROUTE-01) fixture: a LiteLLM router config in a namespace this estate has
+# reviewed and named a reason for (bin/idp-router-egress-gate's REVIEWED_ROUTER_NAMESPACES).
+# Shaped like the real platform/otto-gateway/three-homes.yaml: a ConfigMap whose data.config.yaml
+# embeds the model_list as a string, exactly as it is actually mounted into Otto's sidecar.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: reviewed-router
+  namespace: otto-gateway
+data:
+  config.yaml: |
+    model_list:
+      - model_name: home-direct
+        litellm_params:
+          model: openai/example
+          api_base: https://api.example-vendor.invalid/v1
+          api_key: os.environ/EXAMPLE_API_KEY

@@ -1,0 +1,55 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: llm
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - redis.yaml
+  - litellm.yaml
+  - availability.yaml
+  - httproute.yaml
+  - edge-manners.yaml
+  - spend-breaker-digest.yaml
+configMapGenerator:
+  # The router config is the file, not a copy of it. tests/test_llm_row.py holds
+  # platform/llm/config.yaml to llm/config.yaml model for model.
+  - name: litellm-config
+    files:
+      - config.yaml
+  # The per-request ceiling, as a module the router imports. It is a ConfigMap and not a copied
+  # directory because the wheel or directory a ConfigMap generates is what the pod actually runs:
+  # a value typed into a laptop's ~/.pi/agent/models.json stops nothing, which is exactly how
+  # 86,525,924 tokens went through one hour on 2026-09-13 with every existing guard reporting.
+  - name: litellm-request-ceiling
+    files:
+      - request_ceiling.py
+generatorOptions:
+  disableNameSuffixHash: false
+
+# WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
+#
+# 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
+# race and any pod created from now on is wired by Calico and judged by the estate's 154
+# NetworkPolicy objects. Pods created before that are still on flannel and judged by nothing.
+# Measured 2026-09-08: 108 running pods on flannel, 39 on Calico. Every fence in the estate is
+# decoration for the flannel half.
+#
+# The restart is this annotation, not a command. Changing its value changes the pod template, so
+# Flux performs the rollout; nothing needs a token, a drain or a founder tap, and reverting the
+# value reverts the roll. A drain was measured and refused: two nodes, 144 running pods, a
+# 110-pod ceiling each, so one node's pods do not fit on the other and a third node is capacity
+# we are not buying.
+#
+# Bump the value to roll these workloads again.
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: litellm-cache
+        namespace: llm
+      spec:
+        template:
+          metadata:
+            annotations:
+              idp.internal/cni-generation: "2"

@@ -1,0 +1,134 @@
+[
+ {
+  "issue": 2212,
+  "message": "Deployment/flux-system/image-automation-controller dry-run failed (InternalError): Internal error occurred: failed calling webhook \"mutate.kyverno.svc-fail\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/mutate/fail?timeout=10s\": EOF"
+ },
+ {
+  "issue": 2548,
+  "message": "Deployment/searxng/searxng dry-run failed (InternalError): Internal error occurred: failed calling webhook \"mutate.kyverno.svc-fail\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/mutate/fail?timeout=10s\": context deadline exceeded"
+ },
+ {
+  "issue": 2545,
+  "message": "ClusterPolicy/flux-only-writes dry-run failed (InternalError): Internal error occurred: failed calling webhook \"mutate-policy.kyverno.svc\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/policymutate?timeout=10s\": context deadline exceeded"
+ },
+ {
+  "issue": 2544,
+  "message": "Deployment/staging/canary dry-run failed (InternalError): Internal error occurred: failed calling webhook \"mutate.kyverno.svc-fail\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/mutate/fail?timeout=10s\": context deadline exceeded"
+ },
+ {
+  "issue": 2540,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/9c8aaf0f91cc4ad36f50c6fc025f5f6082d41641.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/9c8aaf0f91cc4ad36f50c6fc025f5f6082d41641.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2532,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/d30360cd5eefa843a6972956342e8781863a90da.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/d30360cd5eefa843a6972956342e8781863a90da.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2517,
+  "message": "health check failed after 10m0.05003715s: timeout waiting for: [Deployment/llm/litellm status: 'InProgress']"
+ },
+ {
+  "issue": 2513,
+  "message": "health check failed after 10m0.028229656s: timeout waiting for: [Deployment/backstage/catalogue status: 'InProgress']"
+ },
+ {
+  "issue": 2512,
+  "message": "health check failed after 10m0.031198657s: timeout waiting for: [Deployment/healthchecks/healthchecks status: 'InProgress']"
+ },
+ {
+  "issue": 2498,
+  "message": "HTTPRoute/jit/jit-broker dry-run failed (Invalid): HTTPRoute.gateway.networking.k8s.io \"jit-broker\" is invalid: spec.hostnames[0]: Invalid value: \"otto.${ESTATE_ZONE}\": spec.hostnames[0] in body should match '^(\\*\\.)?[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$'"
+ },
+ {
+  "issue": 2400,
+  "message": "health check failed after 20m0.028904509s: timeout waiting for: [HelmRelease/observability/signoz status: 'InProgress', HelmRelease/observability/langfuse status: 'InProgress']"
+ },
+ {
+  "issue": 2295,
+  "message": "ClusterPolicy/prospector/disallow-default-namespace dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate-policy.kyverno.svc\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/policyvalidate?timeout=10s\": EOF"
+ },
+ {
+  "issue": 2117,
+  "message": "timeout waiting for: [ClusterRole/calico-node status: 'Terminating', ClusterRole/calico-cni-plugin status: 'Terminating']"
+ },
+ {
+  "issue": 1996,
+  "message": "Workflow/backstage/backstage-pod-kill-first-run dry-run failed (InternalError): Internal error occurred: failed calling webhook \"vworkflow.kb.io\": failed to call webhook: Post \"https://chaos-mesh-controller-manager.chaos-mesh.svc:443/validate-chaos-mesh-org-v1alpha1-workflow?timeout=5s\": EOF"
+ },
+ {
+  "issue": 1728,
+  "message": "health check failed after 15m0.01622301s: timeout waiting for: [HelmRelease/commerce/lago status: 'InProgress']"
+ },
+ {
+  "issue": 2553,
+  "message": "ExternalSecret/backstage/rotation-canary dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate.externalsecret.external-secrets.io\": failed to call webhook: Post \"https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=5s\": context deadline exceeded"
+ },
+ {
+  "issue": 2539,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/9c8aaf0f91cc4ad36f50c6fc025f5f6082d41641.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/9c8aaf0f91cc4ad36f50c6fc025f5f6082d41641.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2538,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2536,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2530,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/sandbox-launch/929c1d79b158fca04a78077ac908699c42f94428.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/sandbox-launch/929c1d79b158fca04a78077ac908699c42f94428.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2529,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./ocirepository/flux-system/estate-catalog/sha256:c36f5e36ce30ecd857122a67a8a7770801ea4b1803f48e032eb9811c47cb76b9.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./ocirepository/flux-system/estate-catalog/sha256:c36f5e36ce30ecd857122a67a8a7770801ea4b1803f48e032eb9811c47cb76b9.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2525,
+  "message": "health check failed after 4m27.576570548s: context canceled"
+ },
+ {
+  "issue": 2524,
+  "message": "health check failed after 9m11.25035247s: context canceled"
+ },
+ {
+  "issue": 2482,
+  "message": "ProviderConfig/default dry-run failed: no matches for kind \"ProviderConfig\" in version \"oci.upbound.io/v1beta1\""
+ },
+ {
+  "issue": 2465,
+  "message": "ClusterSecretStore/ghcr-pull dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate.clustersecretstore.external-secrets.io\": failed to call webhook: Post \"https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-clustersecretstore?timeout=5s\": EOF"
+ },
+ {
+  "issue": 2428,
+  "message": "ExternalSecret/flux-system/bridge-identity dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate.externalsecret.external-secrets.io\": failed to call webhook: Post \"https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=5s\": EOF"
+ },
+ {
+  "issue": 2394,
+  "message": "post build failed for 'CustomResourceDefinition.v1.apiextensions.k8s.io/runtimeinstalls.nodesoftware.estate.io': envsubst error: '.dockerconfigjson' var name is invalid, must match '^[_[:alpha:]][_[:alpha:][:digit:]]*$'"
+ },
+ {
+  "issue": 1988,
+  "message": "Certificate/external-secrets/bitwarden-tls-certs dry-run failed (InternalError): Internal error occurred: failed calling webhook \"webhook.cert-manager.io\": failed to call webhook: Post \"https://cert-manager-webhook.cert-manager.svc:443/validate?timeout=30s\": EOF"
+ },
+ {
+  "issue": 1976,
+  "message": "ClusterSecretStore/estate-vault dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate.clustersecretstore.external-secrets.io\": failed to call webhook: Post \"https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-clustersecretstore?timeout=5s\": EOF"
+ },
+ {
+  "issue": 1934,
+  "message": "HelmRelease/event-bus/nats dry-run failed (InternalError): Internal error occurred: failed calling webhook \"validate.kyverno.svc-fail\": failed to call webhook: Post \"https://kyverno-svc.kyverno.svc:443/validate/fail?timeout=10s\": EOF"
+ },
+ {
+  "issue": 2537,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/flux-system/7528a436673bce16454a9357e81ea23f0dd74970.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2531,
+  "message": "failed to download archive: GET http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/gateway-api/e7677b70ae75d14a4448fba94870e7deea6cf0ad.tar.gz giving up after 10 attempt(s): Get \"http://source-controller.flux-system.svc.cluster.local./gitrepository/flux-system/gateway-api/e7677b70ae75d14a4448fba94870e7deea6cf0ad.tar.gz\": dial tcp 10.96.202.29:80: i/o timeout"
+ },
+ {
+  "issue": 2057,
+  "message": "health check failed after 20m0.041259933s: timeout waiting for: [Job/dagster/estate-db-copy-dagster-r3 status: 'InProgress', Job/guacamole/estate-db-copy-guacamole-r2 status: 'InProgress', Job/backstage/estate-db-copy-backstage-r2 status: 'InProgress', Job/hindsight/estate-db-copy-hindsight-r5 status: 'InProgress', Job/llm/estate-db-copy-litellm-r2 status: 'InProgress', Job/otto-gateway/estate-db-copy-otto-gateway-r3 status: 'InProgress', Job/healthchecks/estate-db-copy-healthchecks-r2 status: 'InProgress', Job/observability/estate-db-copy-langfuse-r2 status: 'InProgress', Job/observability/estate-db-copy-superset-r2 status: 'InProgress']"
+ }
+]

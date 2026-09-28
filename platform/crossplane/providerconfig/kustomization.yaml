@@ -1,0 +1,8 @@
+# The ProviderConfig is a custom resource of kind oci.upbound.io/v1beta1 -- a kind that does not
+# exist until the Provider next door has been installed and has unpacked its package. It is a
+# separate path, and a separate Flux Kustomization, for that reason alone. See the crossplane-
+# providerconfig row in clusters/oke/platform.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - providerconfig.yaml

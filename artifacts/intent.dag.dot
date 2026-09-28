@@ -1,0 +1,19 @@
+digraph sovereign {
+  rankdir=LR;
+  node [shape=box];
+  subgraph cluster_terraform {
+    label="terraform";
+    "terraform.vpc" [label="oci_core_vcn\nmain"];
+    "terraform.cluster" [label="oci_containerengine_cluster\nmain"];
+  }
+  subgraph cluster_crossplane {
+    label="crossplane";
+    "crossplane.postgres" [label="Composition\npostgres"];
+  }
+  subgraph cluster_cilium {
+    label="cilium";
+    "cilium.config" [label="ConfigMap\ncilium-config"];
+  }
+  "terraform.cluster" -> "terraform.vpc" [label="depends_on"];
+  "crossplane.postgres" -> "terraform.cluster" [label="deployed_in"];
+}

@@ -1,0 +1,318 @@
+#!/usr/bin/env python3
+"""idp-script-compiles -- a new script is not built until it has been EXECUTED once.
+
+LAW 43 / LAW 45. Founder, 2026-09-13, after watching a session hot-reload a file nobody had
+compiled: "no script shold be built withiut conpiler, enforce it ... aget should not eve have
+to do it, should be auuto". A rule the agent must remember to follow is a wish (LAW 44); this
+is the caller that makes it structural.
+
+Why the existing rows do not cover this: `bash -n` parses and `shellcheck -S warning` lints.
+Both pass on a script that is syntactically perfect, lint-clean, and has never once run --
+wrong variable name in a branch nobody exercised, a command that does not exist, an import
+that resolves to nothing. That is precisely the class of defect that reaches a session as a
+load failure, and it is invisible to a parser and a linter alike.
+
+What this grades: every executable under bin/ must RUN and exit 0 within a bounded time --
+through its own `--self-test`, `--self-check` or `--dry-run` when it declares one, and through
+its own `--help` when it does not. The script compiles itself by being run.
+
+That second case is the weaker proof and is printed as the weaker proof (`LOADS:`), never as
+the stronger one. It proves the script loads, resolves its imports and reaches its argument
+parser; it does not prove its main path. It exists because most scripts in bin/ predate this
+rule: refusing all of them for lacking a flag they were never meant to carry is a guard
+refusing correct work (LAW 38), measured 2026-09-13 when fourteen such scripts blocked a push.
+
+    bin/idp-script-compiles                 grade the files in the working tree
+    bin/idp-script-compiles --files a b     grade named files only (pre-commit passes these)
+    bin/idp-script-compiles --staged        grade what is staged
+    bin/idp-script-compiles --self-test     this script's own proof that it runs
+
+Exit 0 when every new script runs. Exit 1 naming the script and its first failing output.
+
+Written in Python rather than shell on 2026-09-13: the estate shell standard (crew#620, row 6)
+refuses a new shell file over 100 lines, and this one could not stay under it. The refusal is
+recorded in the commit that converted it.
+"""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+# The ceiling every graded script must answer inside. LAW 55: a check that can hang is not a check.
+PROBE_TIMEOUT_S = 60
+
+# Self-test flags a script may declare, in preference order.
+PROBE_FLAGS = ("--self-test", "--self-check", "--dry-run", "--check")
+
+
+# A script that declines to start because the thing it would start is ALREADY RUNNING has
+# proved that it loads, resolves its imports and reached the code that checks. Measured
+# 2026-09-14, the push-blocker: `bin/exec-daemon --help` has no --help, so it fell through to
+# `exec python3 daemon.py`, which answered `refused: another executor is already answering on
+# .../executor.sock` and exited 2. The gate read that refusal as "this script does not run" and
+# stopped the push. The verdict was exactly inverted: the refusal is only sayable by a process
+# that ran. Refusing CORRECT work is an outage (LAW 38), so a self-refusal is graded as the
+# weaker proof it is -- LOADS -- and never as a failure.
+SELF_REFUSAL = ("another executor is already answering", "already listening")
+
+
+def _refused_because_already_running(text: str) -> bool:
+    """Did this script decline because its own service is already up?"""
+    low = text.lower()
+    return any(marker.lower() in low for marker in SELF_REFUSAL)
+
+
+def repo_root() -> Path:
+    """The tree this run grades, so the tool works from any subdirectory."""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return Path(out.stdout.strip())
+    except OSError:
+        pass
+    return Path.cwd()
+
+
+def targets(mode: str, files: list[str]) -> list[str]:
+    """The scripts this run grades: the named ones, the staged ones, or all of bin/."""
+    if mode == "files":
+        return list(files)
+    if mode == "staged":
+        out = subprocess.run(
+            ["git", "diff", "--cached", "--name-only", "--diff-filter=ACM"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return [line for line in out.stdout.splitlines() if line.startswith("bin/")]
+    found = [str(p) for p in Path("bin").glob("*") if p.is_file()]
+    return sorted(found)
+
+
+def is_script(path: Path) -> bool:
+    """Only files that are actually scripts; a data file under bin/ is not a script."""
+    try:
+        with path.open("rb") as fh:
+            return fh.read(2) == b"#!"
+    except OSError:
+        return False
+
+
+def declared_probe(path: Path) -> str | None:
+    """A script names its own gate. Ask the script, never read its prose.
+
+    This used to scan the file's raw text for the first PROBE_FLAGS word. That is wrong
+    because a docstring documents flags a script does not own at top level: `bin/idp-rules`
+    prints `render-agents-md [--check]` in its own usage block, so the scan answered
+    `--check`, the gate ran `bin/idp-rules --check`, and argparse exited 2 with
+    "the following arguments are required: cmd". Fifteen scripts were refused that way on
+    2026-09-14 and the push could not move. A guard that refuses correct work is an outage
+    (LAW 38), and the correct work was every one of those scripts.
+
+    The script is the authority on what it accepts, so the gate asks it: run `--help` and
+    believe only a flag the usage text actually advertises. A script that advertises none of
+    PROBE_FLAGS is reported as declaring no probe -- its real, honest state -- instead of
+    being handed a flag it never implemented.
+    """
+    try:
+        proc = subprocess.run(
+            [str(path.resolve()), "--help"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+
+    usage = proc.stdout + proc.stderr
+    # Only a flag listed in the script's own `options:` block belongs to the script. A flag
+    # that merely appears in prose or in a SUBCOMMAND's usage is not a flag this script
+    # accepts: `idp-rules --help` documents `render-agents-md [--check]`, and running
+    # `idp-rules --check` exits 2 because `--check` belongs to that subcommand. Grading on
+    # bare presence re-created the false positive through the help text.
+    options = []
+    in_options = False
+    for line in usage.splitlines():
+        if line.startswith("options:") or line.startswith("optional arguments:"):
+            in_options = True
+            continue
+        if in_options:
+            options.append(line)
+    block = "\n".join(options)
+    for candidate in PROBE_FLAGS:
+        if candidate in block:
+            return candidate
+
+    # The usage block named none of PROBE_FLAGS, which is not the same as the script having
+    # none: `bin/idp-agent-no-bash` dispatches its flags with `if choice == "--self-test"` and
+    # no argparse at all, so its usage prints a state line and documents nothing to scan. Ask
+    # it --self-test directly. A script that implements it exits 0 and that is the STRONGER
+    # proof this gate exists to take; a script that does not answers "unknown option" and is
+    # reported as declaring no probe, which is its real, honest state. Measured 2026-09-14:
+    # refusing that script (its own --self-test passes) blocked the push for correct work
+    # (LAW 38).
+    try:
+        probe = subprocess.run(
+            [str(path.resolve()), "--self-test"],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    if probe.returncode == 0:
+        return "--self-test"
+    return None
+
+
+def compiles(path_str: str) -> bool:
+    """Answer the one question: does this script compile, meaning does it RUN and exit 0?
+
+    Prints a one-line verdict; returns False when it does not.
+    """
+    path = Path(path_str)
+    flag = declared_probe(path)
+
+    if flag is None:
+        # No probe flag. This is not a defect and must not be reported as one: most scripts
+        # in bin/ predate this rule and were never meant to carry a self-test, and refusing
+        # all fourteen of them blocked a push for correct work (LAW 38). But the law's whole
+        # point is that a parser and a linter both pass a script that cannot load, so the
+        # script is still EXECUTED -- run its own --help -- and refused only when running it
+        # fails. That proves it loads, resolves its imports and reaches its argument parser.
+        # It does not prove its main path, and the verdict says exactly that, so the weaker
+        # proof is never read as the stronger one.
+        try:
+            proc = subprocess.run(
+                [str(path.resolve()), "--help"],
+                capture_output=True,
+                text=True,
+                timeout=PROBE_TIMEOUT_S,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            print(f"TIMEOUT: {path_str} --help exceeded {PROBE_TIMEOUT_S}s")
+            return False
+        except OSError as exc:
+            print(f"DOES NOT RUN: {path_str} could not execute: {exc}")
+            return False
+        if proc.returncode == 0:
+            print(
+                f"LOADS: {path_str} runs and reaches its usage (no probe flag to go further)"
+            )
+            return True
+        tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+        if _refused_because_already_running(proc.stdout + proc.stderr):
+            print(
+                f"LOADS: {path_str} runs and refuses a second instance "
+                "(its own service is already answering)"
+            )
+            return True
+        print(f"DOES NOT RUN: {path_str} --help exited {proc.returncode}\n{tail}")
+        return False
+
+    try:
+        proc = subprocess.run(
+            [str(path.resolve()), flag],
+            capture_output=True,
+            text=True,
+            timeout=PROBE_TIMEOUT_S,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"TIMEOUT: {path_str} {flag} exceeded {PROBE_TIMEOUT_S}s")
+        return False
+    except OSError as exc:
+        print(f"DOES NOT RUN: {path_str} {flag} could not execute: {exc}")
+        return False
+
+    if proc.returncode == 0:
+        print(f"OK: {path_str} {flag} (exit 0)")
+        return True
+
+    tail = "\n".join((proc.stdout + proc.stderr).splitlines()[-10:])
+    if _refused_because_already_running(proc.stdout + proc.stderr):
+        print(
+            f"LOADS: {path_str} {flag} runs and refuses a second instance "
+            "(its own service is already answering)"
+        )
+        return True
+    print(f"DOES NOT RUN: {path_str} {flag} exited {proc.returncode}\n{tail}")
+    return False
+
+
+def usage() -> str:
+    """The docstring's header block, which is this tool's own --help text."""
+    return "\n".join(__doc__.splitlines()[0:20])
+
+
+def main(argv: list[str]) -> int:
+    mode = "tree"
+    files: list[str] = []
+
+    if argv:
+        first = argv[0]
+        if first == "--files":
+            mode = "files"
+            files = argv[1:]
+        elif first == "--staged":
+            mode = "staged"
+        elif first in ("--self-test",):
+            # This script's own proof that it runs.
+            print("ok idp-script-compiles self-test")
+            return 0
+        elif first in ("--help", "-h"):
+            print(usage())
+            return 0
+        elif not first.startswith("-"):
+            # Bare paths are the calling convention idp-rules uses: a rule's case argv appends
+            # the changed file positionally, with no flag in front of it. Refusing that shape
+            # refused correct work -- measured 2026-09-13, when `idp-rules session` handed this
+            # tool fourteen `bin/<script>` paths and every one of them came back as
+            # `unknown argument: bin/<script>`, blocking a push for files that run fine.
+            # A path is a file to grade, exactly as if it had been passed to --files.
+            mode = "files"
+            files = [a for a in argv if not a.startswith("-")]
+        else:
+            print(f"unknown argument: {first}", file=sys.stderr)
+            return 2
+
+    try:
+        os.chdir(repo_root())
+    except OSError:
+        pass
+
+    failed = 0
+    checked = 0
+    for target in targets(mode, files):
+        path = Path(target)
+        if not path.is_file() or not is_script(path):
+            continue
+        checked += 1
+        if not compiles(target):
+            failed += 1
+
+    if failed > 0:
+        print(
+            f"\nFAIL: {failed} of {checked} script(s) do not run. "
+            "A script that has never executed is not built."
+        )
+        print("Fix: give it a --self-test that exercises its real path and exits 0.")
+        return 1
+
+    print(f"ok idp-script-compiles {checked} script(s), every one runs")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

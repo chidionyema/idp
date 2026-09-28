@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: List
+items:
+- apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: job-20260913t154002z-push-feat-async-dispatch-to-origin-so-ci
+    title: Push feat/async-dispatch to origin so CI judges the commit
+    description: 'exited 0. Dispatched 2026-09-13T15:40:02.992Z. Task: Push feat/async-dispatch to origin so CI judges the commit'
+    annotations:
+      idp.internal/dispatch-id: 20260913T154002Z-Push-feat-async-dispatch-to-origin-so-CI
+    tags:
+    - dispatched-job
+  spec:
+    type: job
+    lifecycle: production
+    owner: platform-team
+    system: estate
+- apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: job-20260913t153931z-commit-the-deterministic-verifier-spec-f
+    title: Commit the deterministic-verifier spec fulfilment after ruff format fix
+    description: 'exited 0. Dispatched 2026-09-13T15:39:31.793Z. Task: Commit the deterministic-verifier spec fulfilment after ruff format fix'
+    annotations:
+      idp.internal/dispatch-id: 20260913T153931Z-Commit-the-deterministic-verifier-spec-f
+    tags:
+    - dispatched-job
+  spec:
+    type: job
+    lifecycle: production
+    owner: platform-team
+    system: estate
+- apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: job-20260913t153843z-commit-the-deterministic-verifier-spec-f
+    title: Commit the deterministic-verifier spec fulfilment (three files only)
+    description: 'exited 0. Dispatched 2026-09-13T15:38:43.885Z. Task: Commit the deterministic-verifier spec fulfilment (three files only)'
+    annotations:
+      idp.internal/dispatch-id: 20260913T153843Z-Commit-the-deterministic-verifier-spec-f
+    tags:
+    - dispatched-job
+  spec:
+    type: job
+    lifecycle: production
+    owner: platform-team
+    system: estate
+- apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: job-20260913t153814z-commit-the-deterministic-verifier-fix-an
+    title: Commit the deterministic-verifier fix and push the branch so CI judges it
+    description: 'exited 0. Dispatched 2026-09-13T15:38:14.579Z. Task: Commit the deterministic-verifier fix and push the branch so CI judges it'
+    annotations:
+      idp.internal/dispatch-id: 20260913T153814Z-Commit-the-deterministic-verifier-fix-an
+    tags:
+    - dispatched-job
+  spec:
+    type: job
+    lifecycle: production
+    owner: platform-team
+    system: estate
+- apiVersion: backstage.io/v1alpha1
+  kind: Component
+  metadata:
+    name: job-20260913t111437z-start-the-local-ollama-server-as-the-fre
+    title: Start the local Ollama server as the free floor of the model fallback chain
+    description: 'still running. Dispatched 2026-09-13T11:14:37.247Z. Task: Start the local Ollama server as the free floor of the model fallback chain'
+    annotations:
+      idp.internal/dispatch-id: 20260913T111437Z-Start-the-local-Ollama-server-as-the-fre
+    tags:
+    - dispatched-job
+  spec:
+    type: job
+    lifecycle: experimental
+    owner: platform-team
+    system: estate

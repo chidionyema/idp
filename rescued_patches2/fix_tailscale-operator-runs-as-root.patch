@@ -1,0 +1,352 @@
+diff --git a/platform/edge/cert-manager.yaml b/platform/edge/cert-manager.yaml
+index fccaae33c..dd88ca36f 100644
+--- a/platform/edge/cert-manager.yaml
++++ b/platform/edge/cert-manager.yaml
+@@ -39,6 +39,19 @@ spec:
+         kind: HelmRepository
+         name: jetstack
+   values:
++    # 2026-08-31, same class as tailscale/operator the same night: chart cert-manager v1.21.1
++    # sets `runAsNonRoot: true` and no `runAsUser` in its top-level securityContext and in each of
++    # webhook/cainjector/startupapicheck (lines 425, 826, 1234, 1542 of `helm show values
++    # jetstack/cert-manager --version v1.21.1`). That works only while the image declares a
++    # non-root USER, which no reader of this repo can see and any image bump can remove -- and
++    # when it goes, the kubelet refuses the pod on every attempt, forever, with 'container has
++    # runAsNonRoot and image will run as root'. The uid below is not a choice; it is what these
++    # images already run as, read off them: `crane config --platform linux/amd64
++    # quay.io/jetstack/cert-manager-{controller,webhook,cainjector,startupapicheck}:v1.21.1`
++    # prints .config.User = 65532 for all four. Writing it down changes no running pod and makes
++    # the dependency visible to platform/edge/require-runasuser-with-nonroot.yaml.
++    securityContext:
++      runAsUser: 65532
+     crds:
+       enabled: true
+     config:
+@@ -57,6 +70,8 @@ spec:
+         cpu: 200m
+         memory: 256Mi
+     webhook:
++      securityContext:
++        runAsUser: 65532
+       resources:
+         requests:
+           cpu: 10m
+@@ -65,6 +80,8 @@ spec:
+           cpu: 100m
+           memory: 128Mi
+     cainjector:
++      securityContext:
++        runAsUser: 65532
+       resources:
+         requests:
+           cpu: 10m
+@@ -73,6 +90,8 @@ spec:
+           cpu: 100m
+           memory: 256Mi
+     startupapicheck:
++      securityContext:
++        runAsUser: 65532
+       resources:
+         requests:
+           cpu: 10m
+diff --git a/platform/edge/kustomization.yaml b/platform/edge/kustomization.yaml
+index 300c119af..15306df6f 100644
+--- a/platform/edge/kustomization.yaml
++++ b/platform/edge/kustomization.yaml
+@@ -26,6 +26,10 @@ resources:
+   - kyverno-secrets-policy.yaml
+   - provider-independence.yaml
+   - require-registry-host.yaml
++  # 2026-08-31: idp#1030 named the registry and tailscale/operator still would not start,
++  # because the second fault was runAsNonRoot with no runAsUser -- a permanent kubelet
++  # refusal that reads as correct in every check upstream of the kubelet.
++  - require-runasuser-with-nonroot.yaml
+   - dev-loop-policy.yaml
+   - provider-edge-exception.yaml
+   - provider-storage-exception.yaml
+diff --git a/platform/edge/require-runasuser-with-nonroot.yaml b/platform/edge/require-runasuser-with-nonroot.yaml
+new file mode 100644
+index 000000000..41125d5c9
+--- /dev/null
++++ b/platform/edge/require-runasuser-with-nonroot.yaml
+@@ -0,0 +1,74 @@
++# 2026-08-31, tailscale/operator. The pod carried `runAsNonRoot: true` and no `runAsUser`, on an
++# image that declares no USER. The kubelet refuses that combination on every attempt, forever:
++#
++#   Error: container has runAsNonRoot and image will run as root
++#
++# It failed for 2d15h. Nothing upstream could see it. The YAML is valid, `helm template` renders
++# it, every posture policy in this estate reads `runAsNonRoot: true` and calls it correct -- the
++# manifest looks MORE secure than one that names a uid. The contradiction only exists once the
++# image's config is merged with the pod's securityContext, which happens in the kubelet and
++# nowhere earlier. Four Helm release revisions failed against it and `helm rollback` had no
++# deployed target to return to, so the release could not self-heal and could not be hand-cleared.
++#
++# Founder's placement rule (~/.claude/docs/founder/2026-08-31T0014Z-good-correction-and-the-guard
++# -moved-to-the-9f88e1fd.md): "place the control at the last point where all inputs are merged."
++# The last point this estate controls before the kubelet is admission, on the Pod -- which also
++# covers pods no manifest declares. The Tailscale operator's whole job is generating proxy
++# StatefulSets from its own config; a render-time check could never have seen those.
++#
++# The rule does not need to read the image. Requiring an explicit non-zero runAsUser whenever
++# runAsNonRoot is true makes the contradiction unrepresentable whatever the image declares, which
++# is the stronger property and the cheaper one to enforce.
++apiVersion: kyverno.io/v1
++kind: ClusterPolicy
++metadata:
++  name: nonroot-names-a-uid
++  annotations:
++    policies.kyverno.io/title: A pod that says non-root names the uid it runs as
++    policies.kyverno.io/category: 2026-08-31 tailscale-operator permanent CreateContainerConfigError
++    policies.kyverno.io/severity: high
++    policies.kyverno.io/subject: Pod
++    policies.kyverno.io/description: >-
++      runAsNonRoot: true with no runAsUser is a permanent kubelet refusal on any image whose
++      config declares no USER, and it reads as correct everywhere upstream of the kubelet. This
++      refuses the combination at admission, on the Pod, so operator-generated pods are covered
++      identically to ones this repo declares.
++spec:
++  background: true
++  rules:
++    - name: pod-level-nonroot-names-a-uid
++      match:
++        any:
++          - resources:
++              kinds: [Pod]
++              operations: [CREATE, UPDATE]
++      preconditions:
++        all:
++          - key: "{{ request.object.spec.securityContext.runAsNonRoot || `false` }}"
++            operator: Equals
++            value: true
++          - key: "{{ request.object.spec.securityContext.runAsUser || `0` }}"
++            operator: Equals
++            value: 0
++      validate:
++        # Enforce, not Audit. The Kyverno CLI counts an Audit violation in `fail:` exactly as
++        # it counts an Enforce one, so bin/idp-kyverno-render refuses the render either way --
++        # landing this as Audit would have bought nothing and said something untrue in a comment.
++        # The one other chart in this estate with the same default (cert-manager v1.21.1, on all
++        # four of its components) is fixed in this same commit by writing down the uid its images
++        # already run as, so Enforce refuses nothing that works today.
++        failureAction: Enforce
++        message: >-
++          This pod sets securityContext.runAsNonRoot: true and names no non-zero runAsUser. The
++          kubelet refuses that on any image with no USER in its config, on every attempt, with
++          'container has runAsNonRoot and image will run as root' -- and no Helm remediation
++          retry ever clears it (tailscale/operator, 2026-08-31, failed for 2d15h). Name the uid:
++          runAsUser: 65532 is the distroless nonroot uid most base images provide.
++        deny:
++          conditions:
++            any:
++              # Pod-level says non-root and no uid: the only escape is that EVERY container names
++              # its own non-zero uid, in which case the pod-level omission changes nothing.
++              - key: "{{ request.object.spec.containers[?!(securityContext.runAsUser) || securityContext.runAsUser == `0`] | length(@) }}"
++                operator: GreaterThan
++                value: 0
+diff --git a/platform/tailscale/operator.yaml b/platform/tailscale/operator.yaml
+index 41c20f2b5..346485b4b 100644
+--- a/platform/tailscale/operator.yaml
++++ b/platform/tailscale/operator.yaml
+@@ -97,14 +97,39 @@ spec:
+       # registry. docker.io is where the chart means to point -- the tag answers 200 there
+       # (registry-1.docker.io/v2/tailscale/k8s-operator/manifests/v1.102.3, measured 2026-08-30).
+       # platform/edge/require-registry-host.yaml is the guard that stops the class returning.
++      # idp#1030 named the registry and the pull still failed, because the name was never the
++      # fault. The literal kubelet event, read off the pod on 2026-08-31: 'toomanyrequests: You
++      # have reached your unauthenticated pull rate limit' -- Docker Hub's anonymous quota, which
++      # a fully-qualified docker.io name does not change. The chart's own values file answers it:
++      # "Repository defaults to DockerHub, but images are also synced to
++      # ghcr.io/tailscale/k8s-operator" (helm show values tailscale-operator --version 1.102.3).
++      # ghcr serves the same tag with no credential and no quota: `crane digest
++      # ghcr.io/tailscale/k8s-operator:v1.102.3` ->
++      # sha256:d86a8be7ad9d38714968f5d4e010ba8dad30c8f672736ef94eda9b250febeb12 (2026-08-31).
+       image:
+-        repository: docker.io/tailscale/k8s-operator
++        repository: ghcr.io/tailscale/k8s-operator
++      # crew#539 platform-workload-names-a-class refused this Deployment for naming no class
++      # (PolicyViolation event on deployment/operator, 2026-08-31). The chart exposes the field
++      # (operatorConfig.priorityClassName in its values), so this needs no PolicyException.
++      priorityClassName: infrastructure-critical
+       podSecurityContext:
++        # runAsNonRoot: true WITHOUT runAsUser is a permanent refusal, not a transient failure.
++        # This image declares no USER, so it would run as uid 0 and the kubelet rejects it on
++        # every single attempt: 'container has runAsNonRoot and image will run as root'. Read off
++        # the image itself, not inferred: `crane config --platform linux/amd64
++        # ghcr.io/tailscale/k8s-operator:v1.102.3` prints .config.User = null (2026-08-31).
++        # This is why no remediation retry count ever cleared it and why `helm rollback` has no
++        # target: all four release revisions failed, none was ever deployed. 65532 is the
++        # distroless 'nonroot' uid/gid this image's base provides.
++        runAsUser: 65532
++        runAsGroup: 65532
++        fsGroup: 65532
+         runAsNonRoot: true
+         seccompProfile: { type: RuntimeDefault }
+       securityContext:
+         allowPrivilegeEscalation: false
+         readOnlyRootFilesystem: true
++        runAsUser: 65532
+         runAsNonRoot: true
+         capabilities: { drop: [ALL] }
+         seccompProfile: { type: RuntimeDefault }
+diff --git a/tests/test_incident_20260831_nonroot_with_no_uid_is_a_permanent_kubelet_refusal.py b/tests/test_incident_20260831_nonroot_with_no_uid_is_a_permanent_kubelet_refusal.py
+new file mode 100644
+index 000000000..0b2d5085d
+--- /dev/null
++++ b/tests/test_incident_20260831_nonroot_with_no_uid_is_a_permanent_kubelet_refusal.py
+@@ -0,0 +1,155 @@
++"""2026-08-31: tailscale/operator would not start for 2d15h and nothing in this repo could see it.
++
++The pod said ``runAsNonRoot: true`` and named no ``runAsUser``. The image
++(``ghcr.io/tailscale/k8s-operator:v1.102.3``) declares no USER, so it would run as uid 0 and the
++kubelet refused it on every single attempt::
++
++    Error: container has runAsNonRoot and image will run as root
++
++That is a permanent refusal, not a transient one. Four Helm release revisions failed against it,
++none was ever deployed, and ``helm rollback`` therefore answered "missing target release for
++rollback: cannot remediate failed release" -- so the release could neither self-heal through
++``upgrade.remediation.retries`` nor be cleared by hand. Kustomization/guacamole sat behind its
++``dependsOn`` the whole time.
++
++Nothing upstream of the kubelet could have caught it: the YAML is valid, ``helm template`` renders
++it, and every posture policy in this estate reads ``runAsNonRoot: true`` and calls it correct. The
++manifest looks MORE secure than one that names a uid. The contradiction only exists once the
++image's config is merged with the pod's securityContext.
++
++The control is a Kyverno ClusterPolicy on Pod (``nonroot-names-a-uid``), because admission is the
++last point where all inputs merge and it covers pods no manifest declares -- the Tailscale
++operator's own job is generating proxy StatefulSets from its config. This file is the CI half:
++it grades the source this repo holds, so a PR is refused before the cluster ever has to.
++"""
++
++import pathlib
++
++import pytest
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++POLICY = ROOT / "platform" / "edge" / "require-runasuser-with-nonroot.yaml"
++
++
++def _docs(path):
++    try:
++        return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
++    except yaml.YAMLError:
++        return []
++
++
++def _walk(node, trail=""):
++    """Every mapping anywhere in a document, with the path that reached it.
++
++    A recursive walk, not a pod-spec walk, and that is the point. The first version of this file
++    walked ``spec.template.spec`` and passed green against the very manifest that caused the
++    incident: in this estate a workload's securityContext usually lives inside a HelmRelease's
++    ``values:`` block, which is not a pod spec and never will be. A check that cannot see where
++    the setting actually lives is the silent-green class, so this one looks everywhere.
++    """
++    if isinstance(node, dict):
++        yield trail, node
++        for k, v in node.items():
++            yield from _walk(v, f"{trail}.{k}" if trail else str(k))
++    elif isinstance(node, list):
++        for i, v in enumerate(node):
++            yield from _walk(v, f"{trail}[{i}]")
++
++
++def _offenders(root=None):
++    """Documents that say non-root and never name a uid.
++
++    Graded per document, not per mapping, because pod-level and container-level securityContexts
++    are two halves of one answer: the kubelet takes the container's uid when it has one and the
++    pod's otherwise, and in a Helm values block those two sit as siblings. A document that sets
++    runAsNonRoot and names a uid *somewhere* has answered the question. A document that never
++    names one has not -- it is trusting the image to declare a USER, which no reader of this repo
++    can see and which any image bump can remove. That is the whole defect.
++    """
++    root = root or ROOT
++    bad = []
++    for path in sorted((root / "platform").rglob("*.yaml")):
++        for doc in _docs(path):
++            mappings = [m for _, m in _walk(doc)]
++            says_nonroot = [m for m in mappings if m.get("runAsNonRoot") is True]
++            if not says_nonroot:
++                continue
++            if any(m.get("runAsUser") for m in mappings):
++                continue
++            name = (doc.get("metadata") or {}).get("name", "?")
++            bad.append(f"{path.relative_to(root)}::{doc.get('kind')}/{name}")
++    return bad
++
++
++def test_the_policy_file_is_wired_into_the_cluster_not_just_present():
++    """A ClusterPolicy the kustomization does not name is a file, not a control (crew#488 CP5:
++    kyverno-secrets-policy.yaml sat unreferenced since PR #259 and the cluster never held it)."""
++    kust = yaml.safe_load(
++        (ROOT / "platform" / "edge" / "kustomization.yaml").read_text()
++    )
++    assert "require-runasuser-with-nonroot.yaml" in kust["resources"]
++
++
++def test_the_policy_enforces_rather_than_audits():
++    """Audit would have bought nothing here and said something untrue. The Kyverno CLI counts an
++    Audit violation in ``fail:`` exactly as it counts an Enforce one, so bin/idp-kyverno-render
++    refuses the render either way -- an audited rule could not have landed any more easily than an
++    enforcing one, it would only have read as weaker. The one chart in this estate carrying the
++    same default (cert-manager v1.21.1) is fixed in the same commit, so Enforce refuses nothing
++    that works today."""
++    doc = next(d for d in _docs(POLICY) if d.get("kind") == "ClusterPolicy")
++    rules = doc["spec"]["rules"]
++    assert rules, "the policy declares no rules"
++    for r in rules:
++        assert r["validate"]["failureAction"] == "Enforce", (
++            f"rule {r['name']} audits; an audited rule would have let this exact pod through"
++        )
++
++
++def test_the_policy_matches_pods_not_only_the_workloads_that_declare_them():
++    """Operator-generated pods carry no Deployment in this repo. Matching Pod is the whole point."""
++    doc = next(d for d in _docs(POLICY) if d.get("kind") == "ClusterPolicy")
++    kinds = set()
++    for r in doc["spec"]["rules"]:
++        for m in r["match"]["any"]:
++            kinds.update(m["resources"]["kinds"])
++    assert "Pod" in kinds
++
++
++def test_no_manifest_in_platform_says_nonroot_without_naming_a_uid():
++    offenders = _offenders()
++    assert not offenders, (
++        "these pod specs would be refused by the kubelet on every attempt with 'container has "
++        "runAsNonRoot and image will run as root' if their image declares no USER: "
++        + ", ".join(offenders)
++    )
++
++
++@pytest.mark.parametrize(
++    "psc,csc,expected_offender",
++    [
++        ({"runAsNonRoot": True}, {}, True),
++        ({"runAsNonRoot": True, "runAsUser": 65532}, {}, False),
++        ({"runAsNonRoot": True}, {"runAsUser": 65532}, False),
++        ({}, {}, False),
++    ],
++)
++def test_the_grader_itself_separates_the_two_shapes(
++    tmp_path, psc, csc, expected_offender
++):
++    """The invariant above is only worth anything if the grader can tell the shapes apart -- a
++    check that never fails is the silent-green class this estate keeps re-learning."""
++    doc = {
++        "apiVersion": "v1",
++        "kind": "Pod",
++        "metadata": {"name": "probe"},
++        "spec": {
++            "securityContext": psc,
++            "containers": [{"name": "c", "image": "x", "securityContext": csc}],
++        },
++    }
++    plat = tmp_path / "platform"
++    plat.mkdir()
++    (plat / "probe.yaml").write_text(yaml.safe_dump(doc))
++    assert bool(_offenders(root=tmp_path)) is expected_offender

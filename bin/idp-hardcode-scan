@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""LAW 46: no file names where the checkout, the home directory or the machine lives.
+
+17 of 19 scripts carried a literal checkout path on 2026-08-24 and the first one CI ran failed on
+the runner. Lifted out of bin/idp-ci on 2026-09-07 so the rule has one implementation the registry
+can point at, and so it can be proved on a fixture pair as well as on the repo.
+
+  idp-hardcode-scan            scan the tracked files this rule covers
+  idp-hardcode-scan FILE...    scan exactly these files (how the fixtures are graded)
+  idp-hardcode-scan DIR...     scan every file under these directories
+
+Two defects were found in this gate on 2026-09-13, both of them the class the estate keeps
+finding -- a guard that answers ok without having read:
+
+  * `docs/gates/defs-load-by-path.md` is GENERATED and carried the absolute path the render ran
+    in, so a committed page named the machine of whoever generated it. LAW 46 exactly. This gate
+    never saw it, because TRACKED covers no markdown -- it scanned 1468 files and not one of them
+    was the page. The page is fixed where it is generated (bin/idp-gate-demo scrubs the checkout
+    and the home directory); widening THIS scan to cover markdown is separate work, and the
+    comment above TRACKED says why it was not done here: 147 pre-existing prose hits came with it.
+  * Handing it a DIRECTORY reported `ok ... 1 file(s) scanned`: `open()` on a directory raises
+    IsADirectoryError, the handler swallowed it as though the file were unreadable, and a scan
+    that read nothing printed the same line a clean scan prints. A caller naming a directory
+    got a clean bill. It now walks one.
+"""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+# Split so this file does not match itself.
+PATTERN = re.compile(r"dev/code/[a-z]|/Users/chidi" + "onyema|/home/[a-z]+/")
+# `*.md` and `docs` are intentionally NOT scanned yet, and the reason is measured rather than a
+# matter of taste. Widening this tuple on 2026-09-13 to cover the generated gate pages found the
+# leak it was widened for -- and 147 hits besides, across files no one was changing: checkpoints/,
+# platform/voice-gate/, docs/tutorials/, docs/evidence/. Those are prose that mentions a path,
+# and the gate cannot tell that from a file that DEPENDS on one. A gate that turns red on work a
+# commit did not touch blocks the pull request and gets itself disabled, which is the failure R38
+# names. The generated-page leak is closed where it actually happened -- in bin/idp-gate-demo's
+# scrubber, so the page is never written with a machine path in the first place. Widening this
+# scan is a real and separate piece of work: it needs the 147 classified as prose or dependency
+# first.
+TRACKED = ("bin", "llm", "observability", "mcp", "launchd", "*.py", "*.yml", "*.yaml", "*.json")
+
+
+def files() -> list[str]:
+    out = subprocess.run(["git", "ls-files", *TRACKED], cwd=ROOT,
+                         capture_output=True, text=True).stdout.split()
+    return [f for f in out if not f.startswith("tests/fixtures/")]
+
+
+def expand(paths: list[str], root: str) -> list[str]:
+    """A directory argument becomes the files under it.
+
+    Without this a caller that names a directory silently scans nothing: `open()` raises
+    IsADirectoryError, the reader below treats that as an unreadable file and skips it, and the
+    run prints the clean line. Measured 2026-09-13 -- `idp-hardcode-scan docs/gates`, a directory
+    of 84 pages, reported `ok ... 1 file(s) scanned`.
+    """
+    out: list[str] = []
+    for path in paths:
+        full = path if os.path.isabs(path) else os.path.join(root, path)
+        if os.path.isdir(full):
+            for base, dirs, names in os.walk(full):
+                dirs[:] = [d for d in dirs if d != ".git"]
+                for name in names:
+                    out.append(os.path.relpath(os.path.join(base, name), root))
+        else:
+            out.append(path)
+    return out
+
+
+def scan(paths: list[str], root: str) -> list[str]:
+    hits = []
+    for path in paths:
+        full = path if os.path.isabs(path) else os.path.join(root, path)
+        try:
+            with open(full, errors="replace") as fh:
+                lines = fh.readlines()
+        except (OSError, IsADirectoryError):
+            continue
+        for n, line in enumerate(lines, 1):
+            if line.lstrip().startswith("#"):
+                continue          # a comment naming a path is prose, not a dependency on it
+            if PATTERN.search(line):
+                hits.append(f"{path}:{n}: {line.strip()}")
+    return hits
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    paths, root = (expand(argv, os.getcwd()), os.getcwd()) if argv else (files(), ROOT)
+    hits = scan(paths, root)
+    if hits:
+        print(f"FAIL  hardcode {len(hits)} line(s) name a checkout path")
+        for hit in hits:
+            print(f"      {hit}")
+        return 1
+    print(f"ok    hardcode {len(paths)} file(s) scanned; 0 hardcode a checkout path")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

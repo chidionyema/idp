@@ -1,0 +1,98 @@
+{
+  "apiVersion": "apps/v1",
+  "kind": "Deployment",
+  "metadata": {
+    "name": "ironcage-api",
+    "namespace": "ironcage"
+  },
+  "spec": {
+    "replicas": 1,
+    "selector": {
+      "matchLabels": {
+        "app": "ironcage-api"
+      }
+    },
+    "template": {
+      "metadata": {
+        "labels": {
+          "app": "ironcage-api"
+        }
+      },
+      "spec": {
+        "containers": [
+          {
+            "env": [
+              {
+                "name": "RUST_LOG",
+                "value": "info"
+              }
+            ],
+            "image": "ironcage-api:v0.1.0",
+            "imagePullPolicy": "IfNotPresent",
+            "livenessProbe": {
+              "httpGet": {
+                "path": "/health",
+                "port": 3001
+              },
+              "initialDelaySeconds": 5,
+              "periodSeconds": 30
+            },
+            "name": "api",
+            "ports": [
+              {
+                "containerPort": 3001,
+                "name": "http"
+              }
+            ],
+            "resources": {
+              "limits": {
+                "cpu": "250m",
+                "memory": "256Mi"
+              },
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "readOnlyRootFilesystem": true,
+              "runAsGroup": 65532,
+              "runAsNonRoot": true,
+              "runAsUser": 65532,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "volumeMounts": [
+              {
+                "mountPath": "/tmp",
+                "name": "tmp"
+              }
+            ]
+          }
+        ],
+        "securityContext": {
+          "runAsGroup": 65532,
+          "runAsNonRoot": true,
+          "runAsUser": 65532,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "volumes": [
+          {
+            "emptyDir": {},
+            "name": "tmp"
+          }
+        ]
+      }
+    }
+  }
+}
+---

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Every path listed here requires a signed X-Idp-Auth trailer on the HEAD commit that touches it.
+# bin/idp-ci-guarded-paths enforces this server-side; the local pre-push hook echoes the same set.
+# The rule: policy files, hook infrastructure, and this list itself cannot be changed without a
+# founder signature. Cryptographic guarantee, not memory.
+cat <<'PATHS'
+platform/edge/otel-endpoint-exception.yaml
+platform/edge/inject-otel-endpoint.yaml
+platform/edge/require-otel-endpoint.yaml
+platform/policies/kyverno/
+.githooks/
+bin/idp-auth
+bin/idp-guarded-paths
+bin/idp-ci-guarded-paths
+PATHS

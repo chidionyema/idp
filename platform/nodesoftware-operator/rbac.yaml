@@ -1,0 +1,146 @@
+# NodeSoftwareOperator RBAC -- the least-privilege surface the controller needs
+# to do its job, and nothing more. The lockdown's spirit ("every mutation the
+# Operator makes must be observable to a reviewer reading the RBAC, not inferred
+# from a debug session") is the rule: the ClusterRole below is small, every verb
+# has a reason, and the reasons are written next to the verbs.
+#
+# Why a separate RBAC file (not embedded in the deployment):
+#   - platform/rbac-identity row owns cluster-scoped RBAC; this SA + ClusterRole
+#     + ClusterRoleBinding land through that same row so a failing RBAC apply
+#     holds only the namespace, not the Operator. (Mirrors the cyrus split.)
+#   - The Operator's RBAC is a reviewer-facing document: a human reading the
+#     policy is the audit trail, and a separated file is the form that makes the
+#     audit read like a table, not a story.
+#
+# What is NOT here, by design:
+#   - cluster-admin verbs (forbidden).
+#   - pod exec (forbidden; the controller never shells into a pod).
+#   - namespace * (forbidden; the controller's namespace fence is its own row).
+#   - secrets read in bulk (forbidden; the controller reads only the probe pod's
+#     own serviceaccount token, mounted automatically).
+#   - any hostPath write from the controller pod (the controller never mounts
+#     a hostPath; the runtime handler image does, on the target node).
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nodesoftware-operator
+  annotations:
+    # Flux never garbage-collects this Namespace. Incident 2026-08-29: idp#648 moved
+    # platform/backstage's namespace.yaml between two prune:true rows and the namespace --
+    # and the portal inside it -- went with the prune. Every Namespace any Flux row renders
+    # carries this mark, and platform/edge/protect-namespaces.yaml refuses a DELETE of one.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+    estate.estate.io/policy-summary: >-
+      Owns the RuntimeInstall CR and the controller Deployment. Default-deny
+      fence; the operator's own RBAC is the only egress.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nodesoftware-operator
+  namespace: nodesoftware-operator
+  annotations:
+    estate.estate.io/policy-summary: >-
+      Identity the controller pod runs as. system:serviceaccount:nodesoftware-operator
+      is not a user principal, so the founder lockdown passes it.
+automountServiceAccountToken: false     # controller mounts its own token explicitly
+---
+# ClusterRole: the smallest surface that lets the controller observe a
+# RuntimeInstall, cordon/drain a target node, schedule a probe pod and a runtime
+# handler pod on that node, read the probe's logs, and write status back.
+# Every verb carries the reason next to it so a reviewer can audit row by row.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nodesoftware-operator
+  annotations:
+    estate.estate.io/policy-summary: >-
+      Read its own CRs (runtimeinstalls); cordon/drain target Nodes via the
+      eviction subresource; create/watch probe and runtime-handler Pods in the
+      operator's own namespace; read the ConfigMaps the runtime handler reads.
+      No secrets read; no cluster-admin; no node shell.
+rules:
+  # -- Observe --
+  - apiGroups: ["nodesoftware.estate.io"]
+    resources: ["runtimeinstalls"]
+    verbs: ["get", "list", "watch"]
+    # why: the controller's reconcile loop is "list all CRs and reconcile each".
+  - apiGroups: ["nodesoftware.estate.io"]
+    resources: ["runtimeinstalls/status"]
+    verbs: ["get", "update", "patch"]
+    # why: writes phase, observedNodes, rolloutHistory, canaryResults.
+
+  # -- Node selection / cordoning --
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+    # why: list() with the CR's selector returns eligible nodes.
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["update", "patch"]
+    # why: set node.spec.unschedulable=true (cordon) and =false (uncordon).
+    # Patch, not replace: a partial-status write that touches only unschedulable
+    # cannot race a concurrent writer on a different field.
+
+  # -- Drain via eviction subresource --
+  - apiGroups: ["policy"]
+    resources: ["evictions"]
+    verbs: ["create"]
+    # why: PDB-aware eviction is the only mechanism that respects existing
+    # PodDisruptionBudgets. A direct DELETE on a pod would bypass them.
+
+  # -- Probe pod + runtime handler pod --
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "delete"]
+    # why: observe the probe pod's phase and logs, clean up on completion.
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["create"]
+    # why: create the probe pod and the runtime handler pod, both in the
+    # controller's own namespace, both with nodeName pinned to the target node.
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+    # why: read the probe pod's stdout to evaluate spec.verification.successCondition.
+
+  # -- ConfigMaps the handler reads (NOT Secrets) --
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+    # why: the runtime handler's drop-in config (e.g. crio.conf.d/99-gvisor.conf)
+    # is rendered into a ConfigMap by the controller; the handler pod mounts it.
+
+  # -- Events (audit trail, not a control plane mechanism) --
+  - apiGroups: ["events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "patch"]
+    # why: every phase transition surfaces as a Warning event with a structured
+    # reason; this is the audit trail, not a control signal.
+
+  # -- Leader election (only with --leader-elect) --
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+    # why: standard controller-runtime lease for HA deployments. Optional; the
+    # controller does not require leader election to reconcile correctly.
+---
+# ClusterRoleBinding: the SA the controller pod mounts.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nodesoftware-operator
+  annotations:
+    estate.estate.io/policy-summary: >-
+      Binds the controller SA to its ClusterRole. Single binding; per-row
+      RBAC increments land here, not in the deployment, so a reviewer reads the
+      whole surface in one file.
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nodesoftware-operator
+subjects:
+  - kind: ServiceAccount
+    name: nodesoftware-operator
+    namespace: nodesoftware-operator

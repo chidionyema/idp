@@ -1,0 +1,13 @@
+name: git.commit
+description: >
+  Apply a patch to the current branch and commit. Never commits to main.
+  Branch must already exist (from git.branch intent).
+args:
+  file: { type: string, help: "File the patch modifies" }
+  patch: { type: string, help: "Path to unified diff file" }
+  message: { type: string, help: "Commit message" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      patch -p1 < {{patch}} && git add {{file}} && git commit -m {{message}} && echo "committed"

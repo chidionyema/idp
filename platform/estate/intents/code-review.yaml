@@ -1,0 +1,25 @@
+name: code-review
+description: >
+  Run the full 4-tier code review pipeline on a diff or files.
+  Tier 0 (deterministic) always runs. Tier 2 (LLM) only runs on Tier 0+1 output.
+  Tier 3 verifies every Tier 2 finding before surfacing.
+  Stochastic judgment proposes; deterministic verification disposes.
+args:
+  target:    {type: string, default: "",   help: "File, dir, or git ref to review."}
+  since:     {type: string, default: "HEAD~1", help: "Git ref for diff base."}
+  tier:      {type: string, default: "all",    help: "0|1|2|3|all. Run only selected tiers."}
+  severity:  {type: string, default: "medium", help: "low|medium|high|critical. Minimum severity."}
+halt_on_failure: false
+steps:
+  - name: t0
+    cmd: >
+      python3 ~/.estate/libexec/code-review-t0.py {{tier}} {{target}} {{since}}
+  - name: t1
+    cmd: >
+      python3 ~/.estate/libexec/code-review-t1.py {{tier}} {{target}} {{since}}
+  - name: t2
+    cmd: >
+      python3 ~/.estate/libexec/code-review-t2.py {{tier}} {{target}} {{since}}
+  - name: t3
+    cmd: >
+      python3 ~/.estate/libexec/code-review-t3.py {{tier}} {{target}} {{since}}

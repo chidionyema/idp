@@ -1,0 +1,413 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 8c15b9e6b..b07b241e5 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -77,6 +77,7 @@ deprecate them. Eradicate them."
+ | A RuntimeInstall CR names a runtime in the closed set the NodeSoftwareOperator knows, requires a canary on ProgressiveCanary rollouts, and rejects pause durations that would make the canary pause a no-op | NodeSoftwareOperator option c, goal b9217bea | `bin/nodesoftware-operator-gate` | tests/fixtures/nodesoftware-operator/bad.yaml | tests/fixtures/nodesoftware-operator/good.yaml |
+ | A conditional's verdict is never a pipeline into grep in a script that sets pipefail: a failing left-hand stage inverts the answer silently. Capture the output first and grade the text. | LAW 55 | `bin/idp-pipeverdict` | tests/fixtures/pipefail-verdict.bad.sh | tests/fixtures/pipefail-verdict.good.sh |
+ | One cloud resource has exactly one owner: a Crossplane external-name that matches an OpenTofu resource under platform/oci is two controllers undoing each other, forever | decision 0026 | `python3 bin/idp-split-brain` | tests/fixtures/split-brain/bad | tests/fixtures/split-brain/good |
++| A release lock the founder wrote is measured against the estate rather than believed: a freeze issue open on the board while a workflow it names can still run is refused | LAW 2, LAW 28, crew#739 | `python3 bin/idp-freeze` | tests/fixtures/freeze/breached.json | tests/fixtures/freeze/honoured.json |
+ <!-- END GENERATED RULES TABLE -->
+ 
+ Rules that are already types or tools, and so need no row: compose files must parse
+diff --git a/bin/idp-freeze b/bin/idp-freeze
+new file mode 100755
+index 000000000..0e8b32515
+--- /dev/null
++++ b/bin/idp-freeze
+@@ -0,0 +1,179 @@
++#!/usr/bin/env python3
++"""A written freeze, measured against the estate it is supposed to be freezing.
++
++The founder opened chidionyema/crew#739 on 2026-08-31 -- "no more releases", "LOCK DOWN",
++"NOTHING ELSE GETS RELEASED" -- and it named eight workflows that were to stay switched off until
++he said otherwise in his own words on that page. Measured on 2026-09-08, eight days later: the
++issue was still open and carried no comment at all, five of the eight had been switched back on,
++the newest of those had run 40 minutes earlier, and main had taken 1,210 commits, 709 of them
++robot image updates -- the exact thing the fifth row of his table barred. Nothing noticed for
++eight days, because nothing read the page. Grep found no mention of the freeze anywhere in bin/,
++policy/ or rules.yaml.
++
++That is the class of defect he named on 2026-09-07: a thing that returns success and has never
++been checked against a real input. A lock is not a lock because it is written down.
++
++So this reads the lock where he actually writes it -- an open issue on the board carrying the
++`freeze` label -- works out which workflows it names by matching its words against the workflow
++files that really exist in this repository, and asks GitHub what state each of those is in right
++now. A freeze that is open while a workflow it named can still run is refused. With no freeze
++open it says so and passes, which is the ordinary day.
++
++  idp-freeze                  measure the live estate and grade it
++  idp-freeze SNAPSHOT.json    grade a recorded snapshot instead (this is what the fixtures are)
++  idp-freeze --snapshot PATH  measure, write the snapshot to PATH, and grade it
++
++Fail closed: if GitHub cannot be read, this refuses rather than passing. A release lock that
++returns green when it could not see anything is worse than no lock, because it is believed.
++
++It reads, and it changes nothing. Lifting a freeze is the founder's word on his own issue and is
++never this script's to give.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import re
++import subprocess
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++CREW = os.environ.get("ESTATE_CREW_REPO", "chidionyema/crew")
++FREEZE_LABEL = os.environ.get("ESTATE_FREEZE_LABEL", "freeze")
++
++# GitHub's own words for a workflow that cannot run. Anything else can.
++OFF = {"disabled_manually", "disabled_inactivity", "disabled_fork"}
++
++
++class Unreadable(Exception):
++    """GitHub could not be read, so nothing was measured."""
++
++
++def gh(*args: str) -> str:
++    proc = subprocess.run(["gh", *args], capture_output=True, text=True)
++    if proc.returncode != 0:
++        raise Unreadable(f"gh {' '.join(args)}: {proc.stderr.strip().splitlines()[-1] if proc.stderr.strip() else 'no output'}")
++    return proc.stdout
++
++
++def this_repo() -> str:
++    """The repository whose workflows a freeze names -- asked, never assumed (LAW 46)."""
++    if os.environ.get("ESTATE_IDP_REPO"):
++        return os.environ["ESTATE_IDP_REPO"]
++    return json.loads(gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"]
++
++
++def workflow_files() -> list[str]:
++    """The closed set a freeze's prose is matched against, so a stray word never becomes a rule."""
++    return sorted(p.stem for p in (ROOT / ".github" / "workflows").glob("*.yml"))
++
++
++def named_in(body: str, known: list[str]) -> list[str]:
++    """Which real workflows this issue locks.
++
++    Read against the real page first: crew#739 lists what it locks in a table, and then ends with
++    a sentence naming what is *still allowed to run* -- "ci, the drills ... estate-state ...".
++    A gate that just looks for workflow names in the body reads that sentence as part of the lock,
++    which is what this one did on its first live run: it reported ci and estate-state as frozen.
++    So the lock is read from structure, never from prose. Two places count, and nothing else:
++
++      * the first column of any markdown table row, which is how the founder wrote it, and
++      * any `name.yml` written out in full, which names a file rather than mentions a subject.
++
++    The candidates are then intersected with the workflows that really exist, so a stray word can
++    never become a rule.
++    """
++    real = set(known)
++    found: set[str] = set()
++    for line in body.splitlines():
++        if line.lstrip().startswith("|"):
++            cells = [c.strip() for c in line.strip().strip("|").split("|")]
++            if cells:
++                cell = cells[0].strip("`* ")
++                stem = cell[:-4] if cell.endswith(".yml") else cell
++                if stem in real:
++                    found.add(stem)
++    for token in re.findall(r"(?<![\w-])([\w][\w-]*)\.yml(?![\w-])", body):
++        if token in real:
++            found.add(token)
++    return sorted(found)
++
++
++def measure() -> dict:
++    repo = this_repo()
++    issues = json.loads(gh("issue", "list", "--repo", CREW, "--label", FREEZE_LABEL,
++                           "--state", "open", "--json", "number,title,body", "--limit", "50"))
++    known = workflow_files()
++    state = {}
++    for row in json.loads(gh("workflow", "list", "--all", "--repo", repo,
++                             "--json", "state,path")):
++        state[Path(row["path"]).stem] = row["state"]
++    freezes = []
++    for issue in issues:
++        freezes.append({
++            "issue": f"{CREW}#{issue['number']}",
++            "title": issue["title"],
++            "workflows": [{"name": n, "state": state.get(n, "absent")}
++                          for n in named_in(issue.get("body") or "", known)],
++        })
++    return {"repo": repo, "freezes": freezes}
++
++
++def grade(snapshot: dict) -> int:
++    freezes = snapshot.get("freezes", [])
++    if not freezes:
++        print("ok    freeze   no freeze is open on the board; nothing is locked")
++        return 0
++    bad = 0
++    for f in freezes:
++        if not f["workflows"]:
++            bad += 1
++            print(f"FAIL  freeze   {f['issue']} is open and this gate could find nothing in it to "
++                  "grade: no table row and no name.yml matches a workflow that exists. A lock "
++                  "nobody can measure is the defect, so this refuses rather than passing.")
++            print(f"               {f['title']}")
++            continue
++        running = [w for w in f["workflows"] if w["state"] not in OFF and w["state"] != "absent"]
++        held = [w for w in f["workflows"] if w["state"] in OFF]
++        if running:
++            bad += 1
++            print(f"FAIL  freeze   {f['issue']} is open and locks {len(f['workflows'])} workflow(s), "
++                  f"but {len(running)} of them can still run: "
++                  + ", ".join(f"{w['name']} ({w['state']})" for w in running))
++            print(f"               {f['title']}")
++            print("               Either the freeze stands and these go back off "
++                  f"(gh workflow disable <name> --repo {snapshot.get('repo', '?')}), "
++                  "or the founder closes the issue. A lock nothing enforces is not a lock.")
++        else:
++            print(f"ok    freeze   {f['issue']} is open and all {len(held)} workflow(s) it "
++                  "names are switched off")
++    return 1 if bad else 0
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    ap.add_argument("snapshot", nargs="?", help="grade this recorded snapshot instead of the estate")
++    ap.add_argument("--snapshot", dest="write", metavar="PATH",
++                    help="measure the estate, write the snapshot here, and grade it")
++    args = ap.parse_args()
++
++    if args.snapshot:
++        return grade(json.loads(Path(args.snapshot).read_text()))
++    try:
++        snap = measure()
++    except Unreadable as exc:
++        # A release lock that goes green because it could not look is the failure this file
++        # exists to end. Refuse, and say what could not be read.
++        print(f"FAIL  freeze   the board and the workflow list could not be read, so no freeze "
++              f"was measured: {exc}")
++        return 1
++    if args.write:
++        Path(args.write).write_text(json.dumps(snap, indent=2) + "\n")
++    return grade(snap)
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/docs/how-to/onboarding/idp-freeze.md b/docs/how-to/onboarding/idp-freeze.md
+new file mode 100644
+index 000000000..755b5fee4
+--- /dev/null
++++ b/docs/how-to/onboarding/idp-freeze.md
+@@ -0,0 +1,39 @@
++# Onboarding: idp-freeze
++
++Nothing to install. It needs the GitHub command line signed in, which every session already has.
++
++## What it is for
++
++The founder sometimes stops the world. When he does, he writes it on the board in his own words
++and names what has to stop. Before this existed, that page was the whole of the enforcement: a
++human had to remember it. Eight days of measurement showed that nobody did.
++
++This turns the page into a measurement. It reads every issue on the board carrying the `freeze`
++label that is still open, works out which workflows the issue names, and asks GitHub what state
++each of those is in right now. If the lock is open and something it named can still run, it
++refuses.
++
++## Running it
++
++```
++bin/idp-freeze                    measure the live estate and grade it
++bin/idp-freeze SNAPSHOT.json      grade a recorded snapshot instead
++bin/idp-freeze --snapshot PATH    measure, save the snapshot there, and grade it
++```
++
++It exits zero when the lock is honoured or no lock is open, and non-zero otherwise. It reads only,
++and it never switches anything on or off.
++
++## Writing a freeze it can read
++
++Give the issue the `freeze` label and name the workflows either in the first column of a table or
++as full filenames ending in `.yml`. Both are how the founder already writes them. Do not rely on
++naming them in a sentence: a sentence is also how a page says what is still *allowed* to run, and
++the two cannot be told apart. A freeze this check cannot read is refused rather than passed, so a
++lock never goes quiet on a formatting mistake.
++
++## Lifting a freeze
++
++The founder closes the issue, in his own words, on his own page. Then the workflows are switched
++back on by hand and this check goes quiet on its own. No session lifts a freeze, and this file
++gives nobody the power to.
+diff --git a/docs/tutorials/demo/idp-freeze.md b/docs/tutorials/demo/idp-freeze.md
+new file mode 100644
+index 000000000..f4fcc21d2
+--- /dev/null
++++ b/docs/tutorials/demo/idp-freeze.md
+@@ -0,0 +1,37 @@
++# Demo: the freeze the estate forgot
++
++On 31 August the founder opened a page on the board and wrote, five times in one minute, that
++nothing was to be released. The page named eight workflows and said they stayed switched off until
++he said otherwise in his own words on that same page.
++
++On 8 September the page was still open. Nobody had written a single comment on it. Five of the
++eight workflows had been switched back on, one of them had run forty minutes earlier, and the main
++branch had taken one thousand two hundred and ten new commits since the page was written, seven
++hundred and nine of them robot image updates — which is the exact thing the fifth row of his own
++table barred. Searching the whole repository for any mention of that page turned up nothing: no
++check read it, so no check could notice.
++
++This is what that looks like now.
++
++```
++$ bin/idp-freeze
++FAIL  freeze   chidionyema/crew#739 is open and locks 8 workflow(s), but 5 of them can still
++               run: build-multiarch (active), catalog-render (active), image-update-pr (active),
++               oke-check (active), vault-seed (active)
++               FREEZE: nothing is released (founder, 2026-08-31)
++               Either the freeze stands and these go back off, or the founder closes the issue.
++               A lock nothing enforces is not a lock.
++```
++
++On a day with no lock written, it is quiet and it passes:
++
++```
++$ bin/idp-freeze tests/fixtures/freeze/none-open.json
++ok    freeze   no freeze is open on the board; nothing is locked
++```
++
++The first time this ran against the real board it was wrong, and being wrong against a real input
++is the whole point of running it there. The founder's page ends with a sentence listing what was
++still allowed to run — the ordinary checks, the drills, the probes. The check read that sentence
++as part of the lock and reported two innocent workflows as frozen. It now reads the lock from the
++rows of his table and from filenames written out in full, and never from a sentence.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index d52b353df..f51b5f85b 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -99,6 +99,7 @@ nav:
+       - Estate next: tutorials/demo/estate-next.md
+       - Messaging: tutorials/demo/messaging.md
+       - Prose-pin gate: tutorials/demo/test-prose-gate.md
++      - Release freeze: tutorials/demo/idp-freeze.md
+       - Incident register: tutorials/demo/incident-register.md
+       - Trace matrix: tutorials/demo/trace-matrix.md
+       - Matrix gate: tutorials/demo/matrix.md
+@@ -231,6 +232,7 @@ nav:
+       - Dockerfiles: how-to/onboarding/dockerfiles.md
+       - LiteLLM: how-to/onboarding/litellm.md
+       - Prose-pin gate: how-to/onboarding/test-prose-gate.md
++      - Release freeze: how-to/onboarding/idp-freeze.md
+       - Router image lanes: how-to/onboarding/llm-images.md
+       - KINI: how-to/onboarding/kini.md
+       - Otto (the founder's agent): how-to/onboarding/otto.md
+diff --git a/rules.yaml b/rules.yaml
+index a79c0f00a..510202aca 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -900,3 +900,30 @@ rules:
+       - {expect: pass, live: true, note: "the estate's own tree, which owns nothing with Crossplane yet"}
+     ok: "no cloud object is claimed by both OpenTofu and Crossplane"
+     fail: "a cloud object is claimed by both OpenTofu and Crossplane; each controller will undo the other at the reconcile interval"
++
++  # The founder wrote a release lock on 2026-08-31 -- "no more releases", "LOCK DOWN" -- naming
++  # eight workflows to stay off until he said otherwise. Measured 2026-09-08: the issue was still
++  # open with no comment on it, five of the eight were back on, the newest had run 40 minutes
++  # earlier, and main had taken 1,210 commits since, 709 of them robot image updates. Nothing read
++  # the page, so nothing noticed for eight days. This row is that page becoming a measurement.
++  - id: freeze
++    label: freeze
++    statement: >-
++      A release lock the founder wrote is measured against the estate rather than believed: a
++      freeze issue open on the board while a workflow it names can still run is refused
++    law: LAW 2, LAW 28, crew#739
++    origin: founder 2026-08-31, "no more releases" -- "LOCK DOWN" -- "NOTHING ELSE GETS RELEASED"
++    planes: [ci]
++    requires: [gh]
++    run: [python3, bin/idp-freeze]
++    fixtures:
++      must_fail: tests/fixtures/freeze/breached.json
++      must_pass: tests/fixtures/freeze/honoured.json
++    cases:
++      - {expect: refuse, args: [tests/fixtures/freeze/breached.json]}
++      - {expect: pass, args: [tests/fixtures/freeze/honoured.json]}
++      - {expect: pass, args: [tests/fixtures/freeze/none-open.json], note: "the ordinary day: no lock is written, so nothing is locked"}
++      - {expect: refuse, args: [tests/fixtures/freeze/names-nothing.json], note: "a lock this gate cannot read is refused, never passed quietly"}
++      - {expect: pass, live: true, note: "the board's open freeze issues against the live state of this repository's workflows"}
++    ok: "every workflow named by an open freeze is switched off, or no freeze is open"
++    fail: "a freeze is open on the board and a workflow it locked can still run; either the lock stands and the switches go back off, or the founder closes the issue"
+diff --git a/tests/fixtures/freeze/breached.json b/tests/fixtures/freeze/breached.json
+new file mode 100644
+index 000000000..fe1ce4fc8
+--- /dev/null
++++ b/tests/fixtures/freeze/breached.json
+@@ -0,0 +1,19 @@
++{
++  "repo": "chidionyema/idp",
++  "freezes": [
++    {
++      "issue": "chidionyema/crew#739",
++      "title": "FREEZE: nothing is released (founder, 2026-08-31)",
++      "workflows": [
++        {"name": "build-multiarch", "state": "active"},
++        {"name": "catalog-render", "state": "active"},
++        {"name": "conscience", "state": "disabled_manually"},
++        {"name": "deploy-when-green", "state": "disabled_manually"},
++        {"name": "image-update-pr", "state": "active"},
++        {"name": "kini-finish", "state": "disabled_manually"},
++        {"name": "oke-check", "state": "active"},
++        {"name": "vault-seed", "state": "active"}
++      ]
++    }
++  ]
++}
+diff --git a/tests/fixtures/freeze/honoured.json b/tests/fixtures/freeze/honoured.json
+new file mode 100644
+index 000000000..4de7e4187
+--- /dev/null
++++ b/tests/fixtures/freeze/honoured.json
+@@ -0,0 +1,19 @@
++{
++  "repo": "chidionyema/idp",
++  "freezes": [
++    {
++      "issue": "chidionyema/crew#739",
++      "title": "FREEZE: nothing is released (founder, 2026-08-31)",
++      "workflows": [
++        {"name": "build-multiarch", "state": "disabled_manually"},
++        {"name": "catalog-render", "state": "disabled_manually"},
++        {"name": "conscience", "state": "disabled_manually"},
++        {"name": "deploy-when-green", "state": "disabled_manually"},
++        {"name": "image-update-pr", "state": "disabled_manually"},
++        {"name": "kini-finish", "state": "disabled_manually"},
++        {"name": "oke-check", "state": "disabled_manually"},
++        {"name": "vault-seed", "state": "disabled_manually"}
++      ]
++    }
++  ]
++}
+diff --git a/tests/fixtures/freeze/names-nothing.json b/tests/fixtures/freeze/names-nothing.json
+new file mode 100644
+index 000000000..2a9dfc387
+--- /dev/null
++++ b/tests/fixtures/freeze/names-nothing.json
+@@ -0,0 +1,10 @@
++{
++  "repo": "chidionyema/idp",
++  "freezes": [
++    {
++      "issue": "chidionyema/crew#999",
++      "title": "FREEZE: stop everything",
++      "workflows": []
++    }
++  ]
++}
+diff --git a/tests/fixtures/freeze/none-open.json b/tests/fixtures/freeze/none-open.json
+new file mode 100644
+index 000000000..7d28e06a6
+--- /dev/null
++++ b/tests/fixtures/freeze/none-open.json
+@@ -0,0 +1 @@
++{"repo": "chidionyema/idp", "freezes": []}

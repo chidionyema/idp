@@ -1,0 +1,94 @@
+# NOT generated: a pasted secret may not travel through a workflow_dispatch input
+# (spec docs/specs/key-ingest-door.md part 1, decision 0020 amendment).
+# bin/idp-portal-buttons must skip this file and never regenerate it as a
+# github:actions:dispatch button. If you are reading this, you are looking at a hand-written
+# scaffolder template, and any tool that rewrites it into a workflow dispatch step has broken the
+# door: workflow_dispatch inputs are recorded in the run and readable by anyone with repository
+# read, and the whole point of this template is to keep a pasted key off that surface.
+#
+# What this template is for (crew#749, key-ingest-door part 3): render the "Activate a key" page a
+# signed-in tenant sees. The page offers the two stores the register names, disables the paste field
+# for the zero-knowledge store (write: false) with the store's `why` sentence visible, and hands the
+# pasted value to the backend only as a POST body to /api/credential-ingest/submit -- never as a
+# scaffolder step parameter (part 1 rule 2, those are recorded) and never through a workflow_dispatch
+# input (rule 1). The endpoint is backstage/packages/backend/src/credentialIngest.ts; the vault write
+# requires the part-4 scoped OCI grant, so until that grant exists the write is refused 502 and the
+# page must say so rather than claim success.
+#
+# The scaffolder shell below exists so the door appears in the catalogue with the right picker words.
+# A scaffolder cannot itself carry the secret (recorded step inputs, part 1 rule 2); the real submit
+# is the portal's authenticated fetch to the backend route. Editing the four `why`/label blocks in
+# platform/vendors/stores.yaml is how the picker's words change; editing this file's prose does not
+# change what the backend accepts.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: activate-key
+  title: Activate a key
+  description: >-
+    Store a pasted access key for one of your services in the estate vault, or see why a
+    zero-knowledge store you keep keys in is offered as a sync source only. The value travels
+    only as a POST body to the estate's credential-ingest door and never reaches a workflow,
+    a scaffolder step log, or this template's own inputs.
+  tags:
+    - onboarding
+    - credential
+    - vault
+  annotations:
+    # The register that decides which store is writable; the page reads it at request time and
+    # never hard-codes a store name here (docs/specs/key-ingest-door.md part 3).
+    backstage.io/credential-ingest-store-register: "platform/vendors/stores.yaml"
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: Which store are you writing into?
+      required:
+        - entry
+      properties:
+        entry:
+          title: Which service owns the key?
+          type: string
+          description: >-
+            The entry name from root-trust.md that is yours (this lives in the Customer plane).
+            The backend allow-list refuses anything outside it with a 400.
+          pattern: '^[a-z0-9][a-z0-9-]{0,40}$'
+        store:
+          title: Where should the key be stored?
+          type: string
+          enum:
+            - estate-vault
+            - human-vault
+          description: >-
+            estate-vault accepts a plaintext write today. Human vault is zero-knowledge and
+            is offered as a sync source only: the paste field is disabled there because fields
+            are encrypted by your own client before they reach its API, so the estate cannot
+            write into it on your behalf.
+
+    - title: The key
+      description: >-
+        This step is never a scaffolder parameter and never a workflow input. The value you type
+        here is held only in the browser until you submit, then travels as the body of one POST to
+        /api/credential-ingest/submit and is dropped. The response shows the first 8 hex of the
+        value's SHA-256 (so you can confirm you pasted the right thing) and nothing of the value.
+        If the store you picked is human-vault (write: false), the submit button is disabled and
+        the page says why.
+      properties: {}
+
+  steps:
+    # No step here carries the secret. A scaffolder step that received the value as an input would
+    # record it in the task log (part 1 rule 2). This step only records that the door was opened and
+    # nothing of the form; the real submit is the frontend's authenticated POST body to the backend
+    # route below, never a scaffolded dispatch and never a logged step input.
+    - id: door
+      name: Open the credential-ingest door
+      action: debug:log
+      input:
+        listToLog:
+          - "activate-key: form opened; no value was taken into a scaffolder step or workflow input"
+
+  output:
+    links:
+      - title: Activate a key (live form)
+        url: /api/credential-ingest/submit

@@ -1,0 +1,53 @@
+# tests/fixtures/nodesoftware-operator/good.yaml
+#
+# The passing fixture the offline gate (bin/nodesoftware-operator-gate, milestone B)
+# admits. Every field passes the validation rules in CRD-SPEC.md and
+# RECONCILE-SPEC.md. This is the "the platform takes a request" shape.
+#
+# The CR is intentionally minimal: one canary node, one runtime, one verification.
+# It exists to prove the gate's shape, not to deploy anything.
+apiVersion: nodesoftware.estate.io/v1alpha1
+kind: RuntimeInstall
+metadata:
+  name: runsc-canary
+  namespace: nodesoftware-operator
+spec:
+  runtime: runsc
+  version: "1.0.0"
+  selector:
+    nodeSelector:
+      matchLabels:
+        sandbox.estate.io/gvisor: "true"
+      matchExpressions:
+        - key: kubernetes.io/os
+          operator: In
+          values: ["linux"]
+    tolerations:
+      - key: nodesoftware.estate.io/canary
+        operator: Exists
+        effect: NoSchedule
+  rolloutStrategy: ProgressiveCanary
+  canaryReplicas: 1
+  pauseDuration: 15m
+  failurePolicy: FailClosed
+  verification:
+    probePod:
+      spec:
+        restartPolicy: Never
+        runtimeClassName: runsc
+        containers:
+          - name: probe
+            image: gcr.io/distroless/static:latest
+            command: ["/bin/sh", "-c", "uname -r"]
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities: {drop: ["ALL"]}
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65532
+              seccompProfile: {type: RuntimeDefault}
+            resources:
+              requests: {cpu: 10m, memory: 16Mi}
+              limits:   {memory: 32Mi}
+    successCondition: "[0-9.]+-gvisor-[0-9]+"
+    timeoutSeconds: 300

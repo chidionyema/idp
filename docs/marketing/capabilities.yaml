@@ -1,0 +1,64 @@
+# The capability register: everything the estate has built, whether or not it is a product yet.
+# Founder, 2026-09-08: "we missed so much from the investor pitch because inventory isn't audited,
+# we don't know what we have"; "capabilities even if undeveloped or appear trivial, the question is:
+# is it useful for business and engineers". One row per capability. `useful_for` answers that
+# question; `range` ties the row into a product line; `state` is what is true today, counted on
+# 2026-09-08 (sweep of every repo under the dev root; tests are test files, not passing runs).
+# A capability with no row here is a gap the register gate names (work order section 5).
+ranges:
+  run-agents:    "Run AI agents: start, watch, steer and stop a workforce of agents"
+  govern-agents: "Govern AI agents: what an agent may reach, spend, sign and ship"
+  run-platform:  "Run the platform: the estate itself, secure, observed, sold as a managed deployment"
+  private-ai:    "Private AI: inference and models on hardware and keys you hold"
+  products:      "Products that run on the platform (a buyer buys these; the platform is what they run on)"
+capabilities:
+- {name: FleetView,                   path: sovereign/cockpit -> backstage/plugins/fleetview, range: run-agents,    useful_for: [business, engineers], state: cockpit built (37 tests) and not running; Backstage rebuild specced, surfaced: page}
+- {name: Sovereign Bus,               path: sovereign/engine,               range: run-agents,    useful_for: [engineers],           state: built (63 tests); worker moved to cluster 2026-08-28,          surfaced: mention}
+- {name: Presence,                    path: sovereign/presence,             range: run-agents,    useful_for: [business],            state: built (5 tests); menu bar, Siri, daily digest,                 surfaced: none}
+- {name: Photo intake,                path: sovereign/intake,               range: run-agents,    useful_for: [business],            state: built (5 tests); whiteboard photo to agent session,            surfaced: none}
+- {name: Shadow founder,              path: sovereign/shadow,               range: run-agents,    useful_for: [engineers],           state: built (6 tests); branch racing and LoRA distillation,          surfaced: none}
+- {name: agent-foundry,               path: ../agent-foundry,               range: run-agents,    useful_for: [business, engineers], state: built (25 test files); CLI and serve,                          surfaced: none}
+- {name: crew,                        path: ../crew,                        range: run-agents,    useful_for: [engineers],           state: built (2897 test files); PM/Eng/QA roles on GitHub issues,     surfaced: mention}
+- {name: Cyrus,                       path: platform/cyrus,                 range: run-agents,    useful_for: [engineers],           state: on cluster, rolling every 10 min (work order s1),               surfaced: mention}
+- {name: The Architect (hermes-v2),   path: ../hermes-v2,                   range: run-agents,    useful_for: [business, engineers], state: on Mac and cluster (6082 test files),                          surfaced: mention}
+- {name: Otto Assistant,              path: sovereign/otto,                 range: run-agents,    useful_for: [business],            state: on cluster; five capabilities unfinished (audit v2 P6),        surfaced: page}
+- {name: Agent Workforce + Research Engine, path: ../agent-workforce ../research-engine, range: run-agents, useful_for: [business, engineers], state: built; 38% of 2769 commits by bots,                  surfaced: page}
+- {name: agent-guard,                 path: ../agent-guard,                 range: run-agents,    useful_for: [engineers],           state: built, no tests; Mac launchd,                                  surfaced: none}
+- {name: maestro,                     path: ../maestro,                     range: run-agents,    useful_for: [engineers],           state: built (8 test files); no README,                               surfaced: none}
+- {name: Hindsight recall,            path: platform/hindsight,             range: run-agents,    useful_for: [business, engineers], state: on cluster, boot blocked by fence (PR 2616),                   surfaced: mention}
+- {name: MCP Gateway,                 path: mcp platform/agentgateway,      range: govern-agents, useful_for: [engineers],           state: on cluster,                                                    surfaced: page}
+- {name: JIT token broker,            path: platform/jit,                   range: govern-agents, useful_for: [business, engineers], state: on cluster (broker, fence, grants); no README,                 surfaced: none}
+- {name: Spend-bounded LLM Gateway,   path: platform/llm,                   range: govern-agents, useful_for: [business, engineers], state: on cluster,                                                    surfaced: page}
+- {name: Conscience,                  path: conscience bin/idp-conscience,  range: govern-agents, useful_for: [business],            state: built; CI and reports; no README,                              surfaced: none}
+- {name: Intent compiler,             path: bin/intent-compile,             range: govern-agents, useful_for: [engineers],           state: built; schemas and BDD; CLI and CI,                            surfaced: none}
+- {name: Estate attach,               path: sovereign/attach,               range: govern-agents, useful_for: [engineers],           state: built (10 tests); CLI,                                         surfaced: none}
+- {name: Hardware trust anchor,       path: sovereign/trust,                range: govern-agents, useful_for: [business, engineers], state: built (12 tests); Secure Enclave, Windows Hello, FIDO2,        surfaced: none}
+- {name: popdd receipt chain,         path: ../popdd-py ../popdd-ts,        range: govern-agents, useful_for: [engineers],           state: publishable libraries (1 test file each),                      surfaced: none}
+- {name: Voice Gate,                  path: platform/voice-gate,            range: govern-agents, useful_for: [business],            state: built,                                                         surfaced: page}
+- {name: The Platform,                path: .,                              range: run-platform,  useful_for: [business, engineers], state: on cluster; 30 min install,                                    surfaced: page}
+- {name: Zero-Trust Boundary,         path: platform/calico platform/ns-fences, range: run-platform, useful_for: [business, engineers], state: on cluster, policies generated, deny feed pending,         surfaced: page}
+- {name: Secrets Bridge,              path: platform/secrets,               range: run-platform,  useful_for: [engineers],           state: on cluster,                                                    surfaced: page}
+- {name: estate-secrets vault,        path: ../estate-secrets,              range: run-platform,  useful_for: [engineers],           state: built, no tests; sops+age, git hooks,                          surfaced: none}
+- {name: Compliance Pack,             path: policy bin/supply-chain,        range: run-platform,  useful_for: [business],            state: built; CI gates,                                               surfaced: page}
+- {name: Inventory + Dual-Renderer,   path: bin/idp-inventory platform/inventory, range: run-platform, useful_for: [engineers],     state: daily workflow green (assets, not products),                   surfaced: page}
+- {name: Self-healing,                path: platform/healing,               range: run-platform,  useful_for: [engineers],           state: on cluster (k8sgpt, descheduler); no README,                   surfaced: mention}
+- {name: Estate messaging bus,        path: platform/messaging,             range: run-platform,  useful_for: [engineers],           state: Go module and NATS on cluster; no README,                      surfaced: none}
+- {name: Sandbox clusters,            path: platform/sandbox,               range: run-platform,  useful_for: [business, engineers], state: on cluster (vcluster on a link); no README,                    surfaced: mention}
+- {name: Screen access (Guacamole),   path: platform/guacamole,             range: run-platform,  useful_for: [engineers],           state: on cluster; no README,                                         surfaced: none}
+- {name: Private search (SearXNG),    path: platform/searxng,               range: run-platform,  useful_for: [engineers],           state: on cluster,                                                    surfaced: none}
+- {name: Science lane,                path: platform/science ../crew/science, range: run-platform, useful_for: [business, engineers], state: built; 41 sources into SigNoz (DORA, coverage),             surfaced: none}
+- {name: Founder's estate view,       path: bin/estate-founder bin/idp-estate-view, range: run-platform, useful_for: [business],   state: built; generated page and JSON,                                surfaced: none}
+- {name: Estate clocks and diagram,   path: bin/estate-clocks bin/estate-diagram, range: run-platform, useful_for: [engineers],    state: built; generated docs,                                         surfaced: none}
+- {name: Roadmap as a command,        path: bin/estate-next,                range: run-platform,  useful_for: [business],            state: built; docs/NEXT.md,                                           surfaced: none}
+- {name: Portal buttons,              path: bin/idp-portal-buttons,         range: run-platform,  useful_for: [business, engineers], state: built; every workflow a Backstage button,                      surfaced: none}
+- {name: Customer identity,           path: platform/customer-identity,     range: run-platform,  useful_for: [business],            state: on cluster (Keycloak realm); no README,                        surfaced: none}
+- {name: Metering and invoicing (Lago), path: platform/commerce,            range: run-platform,  useful_for: [business],            state: on cluster; no README,                                         surfaced: none}
+- {name: Survival Stack,              path: ../survival-stack,              range: run-platform,  useful_for: [business, engineers], state: built (5 test files); Cloudflare Worker,                       surfaced: none}
+- {name: Vendor Key Activation,       path: platform/vendors,               range: run-platform,  useful_for: [business],            state: built,                                                         surfaced: page}
+- {name: Model Forge,                 path: forge,                          range: private-ai,    useful_for: [engineers],           state: built, not operationalised (audit v2),                         surfaced: page}
+- {name: Edge Runtime,                path: platform/edge-runtime,          range: private-ai,    useful_for: [business, engineers], state: built, not operationalised (audit v2),                         surfaced: page}
+- {name: Prospector engine,           path: ../prospector-main,             range: products,      useful_for: [business],            state: on cluster (4050 test files),                                  surfaced: mention}
+- {name: Storefront (paid packs),     path: ../prospector-main/store_platform, range: products,   useful_for: [business],            state: deployed; Stripe money path proven (742 test files),           surfaced: none}
+- {name: mumchimp storefront,         path: ../mumchimp-medusa,             range: products,      useful_for: [business],            state: local only, no tests,                                          surfaced: none}
+- {name: pi-governance,               path: ../prospector-main/pi-governance, range: products,    useful_for: [engineers],           state: library, stale since 2026-06,                                  surfaced: none}
+- {name: QAlgo,                       path: ../QAlgo,                       range: products,      useful_for: [],                    state: stale since 2023; retire or archive,                           surfaced: none}

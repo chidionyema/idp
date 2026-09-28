@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+# bin/tlc-check — run TLC against every .tla spec in scope.
+#
+# TLC (the TLA+ model checker) needs `tla2tools.jar`. This script downloads
+# it on first run into `/usr/local/lib/tla2tools.jar`; if that fails, it
+# tells the user how to install it manually and exits non-zero.
+#
+# Usage:
+#     bin/tlc-check                       # check every specs/*.tla in CWD's repo
+#     bin/tlc-check path/to/specs/        # check a specific specs/ dir
+
+set -euo pipefail
+
+TLA_JAR_CANDIDATES=(
+    "${TLA2TOOLS_JAR:-}"
+    "/usr/local/lib/tla2tools.jar"
+    "$HOME/.local/lib/tla2tools.jar"
+    "$(dirname "$(readlink -f "$0")")/tla2tools.jar"
+)
+TLA_VERSION="1.8.0"
+TLA_URL="https://github.com/tlaplus/tlaplus/releases/download/v${TLA_VERSION}/tla2tools.jar"
+
+find_tla_jar() {
+    for c in "${TLA_JAR_CANDIDATES[@]}"; do
+        [ -n "$c" ] || continue
+        if [ -f "$c" ]; then
+            echo "$c"
+            return 0
+        fi
+    done
+    return 1
+}
+
+TLA_JAR="$(find_tla_jar || true)"
+
+install_tlc() {
+    # Pick the first writable location from the candidates.
+    for c in "${TLA_JAR_CANDIDATES[@]}"; do
+        [ -n "$c" ] || continue
+        local dest
+        dest="$(dirname "$c")"
+        if mkdir -p "$dest" 2>/dev/null; then
+            echo "bin/tlc-check: downloading $TLA_URL -> $c" >&2
+            if command -v curl >/dev/null 2>&1; then
+                if curl -fsSL "$TLA_URL" -o "$c"; then
+                    TLA_JAR="$c"
+                    return 0
+                fi
+            elif command -v wget >/dev/null 2>&1; then
+                if wget -q "$TLA_URL" -O "$c"; then
+                    TLA_JAR="$c"
+                    return 0
+                fi
+            fi
+        fi
+    done
+    echo "bin/tlc-check: no writable location and no jar present." >&2
+    echo "Install manually: download tla2tools.jar from" >&2
+    echo "  https://github.com/tlaplus/tlaplus/releases" >&2
+    echo "and place at one of:" >&2
+    for c in "${TLA_JAR_CANDIDATES[@]}"; do
+        [ -n "$c" ] && echo "  - $c" >&2
+    done
+    exit 2
+}
+
+if [ -z "$TLA_JAR" ]; then
+    install_tlc
+fi
+
+if ! command -v java >/dev/null 2>&1; then
+    echo "bin/tlc-check: java is not on PATH. Install JDK 11+." >&2
+    exit 2
+fi
+
+specs_dir="${1:-specs}"
+if [ ! -d "$specs_dir" ]; then
+    echo "bin/tlc-check: no specs directory at $specs_dir" >&2
+    exit 0                          # nothing to check is not an error
+fi
+
+shopt -s nullglob
+specs=("$specs_dir"/*.tla)
+shopt -u nullglob
+
+if [ ${#specs[@]} -eq 0 ]; then
+    echo "bin/tlc-check: no .tla specs in $specs_dir" >&2
+    exit 0
+fi
+
+failures=0
+for spec in "${specs[@]}"; do
+    cfg="${spec%.tla}.cfg"
+    args=()
+    if [ -f "$cfg" ]; then
+        args=(-config "$cfg")
+    fi
+    echo "bin/tlc-check: $spec"
+    out="$(java -jar "$TLA_JAR" "${args[@]}" "$spec" 2>&1)" || {
+        echo "$out" >&2
+        echo "bin/tlc-check: TLC errored on $spec" >&2
+        failures=$((failures + 1))
+        continue
+    }
+    if echo "$out" | grep -q "No errors found"; then
+        echo "  OK"
+    else
+        echo "$out" >&2
+        echo "bin/tlc-check: counterexample or error in $spec" >&2
+        failures=$((failures + 1))
+    fi
+done
+
+if [ "$failures" -gt 0 ]; then
+    echo "bin/tlc-check: $failures spec(s) failed" >&2
+    exit 1
+fi
+
+echo "bin/tlc-check: all specs verified"

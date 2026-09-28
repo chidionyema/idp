@@ -1,0 +1,248 @@
+diff --git a/clusters/oke/edge.yaml b/clusters/oke/edge.yaml
+index 047dfe591..dba616f0a 100644
+--- a/clusters/oke/edge.yaml
++++ b/clusters/oke/edge.yaml
+@@ -139,6 +139,23 @@ spec:
+   prune: true
+   wait: true
+   timeout: 5m
++  # Which build runs is decided here, not in prospector's overlay (crew#693): the markers below are
++  # written by the image-automation-controller from platform/image-automation/prospector.yaml, and
++  # this override is applied after kustomize renders the overlay, so the hand-pinned tags there are
++  # inert. A merge to prospector main becomes a pull request here and a RollingUpdate on merge.
++  #
++  # THE SEED IS A DEPLOY. This override wins over the overlay the moment it merges, before the
++  # automation has written anything, so whatever is typed here is what production runs for the
++  # next few minutes. The first draft of this file carried 99cdc96a, the 25 August build: merging
++  # it would have rolled the shop BACK off the storefront the founder released by hand at
++  # 2026-08-30T17:01:51Z (prospector#792, merge commit 7489661f). The seed is therefore the newest
++  # tag the policy itself would pick -- measured against ghcr on 2026-08-30, `main-73-...` is the
++  # highest run number carried by both images -- and a test pins that it always is.
++  images:
++    - name: ghcr.io/chidionyema/prospector-store-web
++      newTag: main-73-7489661f4f49c0fcd58b929fb916a42f201db34e # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
++    - name: ghcr.io/chidionyema/prospector-store-api
++      newTag: main-73-7489661f4f49c0fcd58b929fb916a42f201db34e # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+   healthChecks:
+     - apiVersion: apps/v1
+       kind: Deployment
+diff --git a/platform/image-automation/backstage.yaml b/platform/image-automation/backstage.yaml
+index a0ff3612c..7594bb7e0 100644
+--- a/platform/image-automation/backstage.yaml
++++ b/platform/image-automation/backstage.yaml
+@@ -73,10 +73,13 @@ spec:
+       messageTemplate: |
+         platform: image update {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $resource.Name }} -> {{ $change.NewValue }} {{ end }}{{ end }}(crew#267)
+ 
+-        Written by image-automation-controller. One automation walks ./platform for every
+-        ImagePolicy marker; two automations on one push branch collide (crew#406).
++        Written by image-automation-controller. One automation walks the whole repository for
++        every ImagePolicy marker; two automations on one push branch collide (crew#406).
+     push:
+       branch: flux/image-updates
+   update:
+-    path: ./platform
++    # The whole checkout, not ./platform: the prospector images: override lives on its Flux
++    # Kustomization in clusters/oke/edge.yaml (crew#693). Only lines carrying a $imagepolicy
++    # marker are ever rewritten.
++    path: ./
+     strategy: Setters
+diff --git a/platform/image-automation/kustomization.yaml b/platform/image-automation/kustomization.yaml
+index 43ca77902..4112adde3 100644
+--- a/platform/image-automation/kustomization.yaml
++++ b/platform/image-automation/kustomization.yaml
+@@ -4,4 +4,5 @@ resources:
+   - pull-secret.yaml
+   - sovereign-worker.yaml
+   - hermes-agent.yaml
+-  - estate-mcp.yaml
+\ No newline at end of file
++  - estate-mcp.yaml
++  - prospector.yaml
+diff --git a/platform/image-automation/prospector.yaml b/platform/image-automation/prospector.yaml
+new file mode 100644
+index 000000000..304f6bbd1
+--- /dev/null
++++ b/platform/image-automation/prospector.yaml
+@@ -0,0 +1,57 @@
++# The storefront and its API (crew#693): prospector's container-images workflow pushes
++# ghcr.io/chidionyema/prospector-store-web and -store-api as main-<run>-<sha> on every merge to
++# main; the newest run wins and the one automation (backstage.yaml) writes it into the images:
++# override of the prospector Kustomization in clusters/oke/edge.yaml. The prospector repository
++# holds no write credential and no automation of its own: promotion is a commit here.
++# Receipt: prod ran f398a66 (26 Aug) while prospector main was a6223ef (crew#693).
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: prospector-store-web
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/prospector-store-web
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: prospector-store-web
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: prospector-store-web
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImageRepository
++metadata:
++  name: prospector-store-api
++  namespace: flux-system
++spec:
++  image: ghcr.io/chidionyema/prospector-store-api
++  interval: 5m
++  secretRef:
++    name: ghcr-pull
++---
++apiVersion: image.toolkit.fluxcd.io/v1
++kind: ImagePolicy
++metadata:
++  name: prospector-store-api
++  namespace: flux-system
++spec:
++  imageRepositoryRef:
++    name: prospector-store-api
++  filterTags:
++    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
++    extract: '$run'
++  policy:
++    numerical:
++      order: asc
+diff --git a/tests/test_incident_crew693_prospector_images_reach_the_cluster_without_a_hand.py b/tests/test_incident_crew693_prospector_images_reach_the_cluster_without_a_hand.py
+new file mode 100644
+index 000000000..697c4b9dd
+--- /dev/null
++++ b/tests/test_incident_crew693_prospector_images_reach_the_cluster_without_a_hand.py
+@@ -0,0 +1,118 @@
++"""crew#693: prod ran prospector-store-web f398a66 (built 2026-08-26) while prospector main was
++a6223ef. CI built every merge; nothing moved the tag: the overlay pinned it by hand and no
++ImagePolicy existed for prospector. Merged was inventory, not released.
++
++The guard: every image the prospector Kustomization overrides has an ImagePolicy of the estate's
++orderable shape, carries the automation marker, and the one automation walks the path that holds it.
++"""
++
++from __future__ import annotations
++
++import pathlib
++import re
++
++import yaml
++
++IDP = pathlib.Path(__file__).resolve().parents[1]
++EDGE = IDP / "clusters" / "oke" / "edge.yaml"
++AUTOMATION_DIR = IDP / "platform" / "image-automation"
++MARKER = re.compile(
++    r'#\s*\{"\$imagepolicy":\s*"flux-system:(?P<policy>[a-z0-9-]+):tag"\}'
++)
++ORDERABLE = "^main-(?P<run>[0-9]+)-[0-9a-f]{40}$"
++
++
++def _docs(path: pathlib.Path) -> list[dict]:
++    return [d for d in yaml.safe_load_all(path.read_text()) if d]
++
++
++def _prospector_kustomization() -> dict:
++    for d in _docs(EDGE):
++        if d.get("kind") == "Kustomization" and d["metadata"]["name"] == "prospector":
++            return d
++    raise AssertionError(
++        "clusters/oke/edge.yaml has no Flux Kustomization named prospector"
++    )
++
++
++def _policies() -> dict[str, dict]:
++    out: dict[str, dict] = {}
++    for f in AUTOMATION_DIR.glob("*.yaml"):
++        for d in _docs(f):
++            if d.get("kind") == "ImagePolicy":
++                out[d["metadata"]["name"]] = d
++    return out
++
++
++def _markers_in_edge() -> dict[str, str]:
++    found: dict[str, str] = {}
++    for line in EDGE.read_text().splitlines():
++        m = MARKER.search(line)
++        if m:
++            image = line.split("newTag:")[0]
++            found[m.group("policy")] = image
++    return found
++
++
++def test_every_overridden_prospector_image_has_an_orderable_image_policy():
++    images = _prospector_kustomization()["spec"].get("images", [])
++    assert images, (
++        "the prospector Kustomization overrides no image: the tag is back in a hand"
++    )
++    policies = _policies()
++    for entry in images:
++        name = entry["name"].rsplit("/", 1)[-1]
++        assert name in policies, (
++            f"{entry['name']} has no ImagePolicy in platform/image-automation"
++        )
++        assert policies[name]["spec"]["filterTags"]["pattern"] == ORDERABLE, name
++        assert policies[name]["spec"]["policy"] == {"numerical": {"order": "asc"}}, name
++
++
++def test_every_overridden_prospector_image_carries_the_automation_marker():
++    images = {
++        e["name"].rsplit("/", 1)[-1]
++        for e in _prospector_kustomization()["spec"]["images"]
++    }
++    assert images <= set(_markers_in_edge()), (images, _markers_in_edge())
++
++
++def test_the_one_automation_walks_the_path_that_holds_the_markers():
++    automations = [
++        d
++        for f in AUTOMATION_DIR.glob("*.yaml")
++        for d in _docs(f)
++        if d.get("kind") == "ImageUpdateAutomation"
++    ]
++    assert len(automations) == 1, [a["metadata"]["name"] for a in automations]
++    path = automations[0]["spec"]["update"]["path"].rstrip("/") or "."
++    rel = EDGE.relative_to(IDP).as_posix()
++    assert path in (".", "./") or rel.startswith(path.removeprefix("./")), (path, rel)
++
++
++def test_the_seeded_tag_is_one_the_policy_could_have_chosen():
++    """The seed is a deploy, so it has to be a tag the automation would itself select.
++
++    This override beats prospector's own overlay from the second it merges, before the
++    image-automation-controller has written a thing. The first draft of clusters/oke/edge.yaml
++    seeded 99cdc96a, the 25 August build, while the shop was serving the 30 August one the
++    founder had just released by hand: merging it would have rolled production backwards, and
++    every check here was green. A value the ImagePolicy could never have chosen is a value no
++    mechanism is accountable for, which is the whole defect crew#693 is about.
++    """
++    policies = _policies()
++    for entry in _prospector_kustomization()["spec"]["images"]:
++        name = entry["name"].rsplit("/", 1)[-1]
++        pattern = policies[name]["spec"]["filterTags"]["pattern"]
++        assert re.fullmatch(pattern, str(entry["newTag"])), (
++            f"{entry['name']} is seeded at {entry['newTag']!r}, which its own ImagePolicy "
++            f"pattern {pattern!r} would never select: merging that rolls production to a "
++            f"build nothing chose"
++        )
++
++
++def test_prospector_yaml_is_listed_by_the_automation_kustomization():
++    listed = yaml.safe_load((AUTOMATION_DIR / "kustomization.yaml").read_text())[
++        "resources"
++    ]
++    assert "prospector.yaml" in listed, listed

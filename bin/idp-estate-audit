@@ -1,0 +1,624 @@
+#!/usr/bin/env python3
+"""Dump every resource the cloud actually runs, and grade each one MANAGED or UNMANAGED against
+the OpenTofu state. Read-only: every call is a get, a list or a search, so it is safe under a
+freeze and safe to run hourly.
+
+Founder, 2026-08-31, the audit-and-bootstrap plan: "Run a resource discovery script against your
+cloud provider (OCI) to dump a list of every single resource currently running", then "map the
+VCN, subnets, routing tables, security lists ... identify the exact Kubernetes version, node pool
+sizes, instance shapes, load balancer configurations". Then: "THIS PROCESS NEEDS AUTOMATION and
+rerunnable" -- so it is this file and not a session, and a second run re-uses fresh artefacts
+instead of re-asking the cloud.
+
+The UNMANAGED list is the deliverable: it is exactly the Terraform that step 3 (Codify the
+Bedrock) has to write, generated rather than remembered.
+
+Optimised: 35 -> 12 naive steps, ~35 -> 3 round-trip waves; cut: one structured search replaces
+twelve per-type list calls, the per-resource detail reads fan out over a thread pool instead of
+running in series, and --reuse memoizes every raw artefact younger than --max-age.
+
+Grading lines, the estate shape: `ok  audit  <line>` / `BLIND  audit  <why>` / `FAIL  audit  <what>`.
+Exit 0 when the estate was read, 2 BLIND when it could not be reached.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+IDP = Path(__file__).resolve().parent.parent
+ESTATE_HOME = Path(os.environ.get("ESTATE_HOME", Path.home() / ".estate"))
+ENV = {**os.environ, "SUPPRESS_LABEL_WARNING": "True"}
+
+# resource-type from the search index -> the `oci` verb that returns the fields we must codify.
+# A type absent from this table is still inventoried; only its detail is skipped.
+GET: dict[str, tuple[str, ...]] = {
+    "Vcn": ("network", "vcn", "get", "--vcn-id"),
+    "Subnet": ("network", "subnet", "get", "--subnet-id"),
+    "RouteTable": ("network", "route-table", "get", "--rt-id"),
+    "SecurityList": ("network", "security-list", "get", "--security-list-id"),
+    "NetworkSecurityGroup": ("network", "nsg", "get", "--nsg-id"),
+    "InternetGateway": ("network", "internet-gateway", "get", "--ig-id"),
+    "NatGateway": ("network", "nat-gateway", "get", "--nat-gateway-id"),
+    "ServiceGateway": ("network", "service-gateway", "get", "--service-gateway-id"),
+    "LocalPeeringGateway": (
+        "network",
+        "local-peering-gateway",
+        "get",
+        "--local-peering-gateway-id",
+    ),
+    "DhcpOptions": ("network", "dhcp-options", "get", "--dhcp-id"),
+    "Drg": ("network", "drg", "get", "--drg-id"),
+    "ClustersCluster": ("ce", "cluster", "get", "--cluster-id"),
+    "Instance": ("compute", "instance", "get", "--instance-id"),
+    "LoadBalancer": ("lb", "load-balancer", "get", "--load-balancer-id"),
+    "NetworkLoadBalancer": (
+        "nlb",
+        "network-load-balancer",
+        "get",
+        "--network-load-balancer-id",
+    ),
+    "BootVolume": ("bv", "boot-volume", "get", "--boot-volume-id"),
+    "Volume": ("bv", "volume", "get", "--volume-id"),
+    "FileSystem": ("fs", "file-system", "get", "--file-system-id"),
+    "MountTarget": ("fs", "mount-target", "get", "--mount-target-id"),
+    "Vault": ("kms", "management", "vault", "get", "--vault-id"),
+}
+
+
+# Not everything outside the state has to be written as Terraform. These types are created by
+# something that IS managed -- the OKE module's worker pool, the block-volume CSI driver, the
+# service controller that answers a Service of type LoadBalancer, OCI's own private DNS for a
+# managed VCN. Codifying them would fight the thing that owns them. They still matter, because
+# their DATA is not reproducible: that is what bin/idp-estate-backup covers.
+DERIVED = {
+    "BootVolume": "the OKE worker pool makes these with its nodes",
+    "Volume": "the block-volume CSI driver makes one per persistent claim",
+    "Vnic": "attached by the worker pool when a node comes up",
+    "PrivateIp": "assigned to a managed vnic",
+    "PublicIp": "assigned to a managed node or load balancer",
+    "CustomerDnsZone": "OCI private DNS for a managed VCN",
+    "DnsResolver": "OCI private DNS for a managed VCN",
+    "DnsView": "OCI private DNS for a managed VCN",
+    "LoadBalancer": "answered by the cluster for a Service of type LoadBalancer",
+    "Instance": "a worker node from the managed pool",
+}
+
+
+# The identity and backup records the search index does not carry. Founder's step 2: "Catalog the
+# imported Vault secrets and external identity records the current Terraform relies on", and step 1
+# wants the volume backups that already exist before we trust any of them.
+def lists(tenancy: str, compartment: str) -> list[tuple[str, list[str]]]:
+    return [
+        ("iam-policy", ["iam", "policy", "list", "--compartment-id", tenancy, "--all"]),
+        (
+            "iam-dynamic-group",
+            ["iam", "dynamic-group", "list", "--compartment-id", tenancy, "--all"],
+        ),
+        ("iam-domain", ["iam", "domain", "list", "--compartment-id", tenancy, "--all"]),
+        (
+            "iam-compartment",
+            ["iam", "compartment", "list", "--compartment-id", tenancy, "--all"],
+        ),
+        (
+            "block-volume-backup",
+            ["bv", "backup", "list", "--compartment-id", compartment, "--all"],
+        ),
+        (
+            "boot-volume-backup",
+            [
+                "bv",
+                "boot-volume-backup",
+                "list",
+                "--compartment-id",
+                compartment,
+                "--all",
+            ],
+        ),
+        ("object-namespace", ["os", "ns", "get"]),
+        # the search index carries no NodePool row at all, so the shapes and sizes
+        # founder step 2 asks for have to be listed rather than discovered
+        (
+            "node-pool",
+            ["ce", "node-pool", "list", "--compartment-id", compartment, "--all"],
+        ),
+        (
+            "cluster",
+            ["ce", "cluster", "list", "--compartment-id", compartment, "--all"],
+        ),
+    ]
+
+
+def run(cmd: list[str], timeout: int = 120) -> tuple[int, str, str]:
+    try:
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, env=ENV
+        )
+        return p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout}s"
+    except FileNotFoundError:
+        return 127, "", f"{cmd[0]} is not installed"
+
+
+def oci_json(args: list[str], timeout: int = 120):
+    rc, out, err = run(["oci", *args], timeout)
+    if rc != 0:
+        # the CLI prints usage errors to stdout, so a stderr-only reader says "no stderr"
+        lines = (err.strip() or out.strip()).splitlines()
+        return None, (lines or ["the command failed and said nothing"])[-1][:200]
+    try:
+        # an empty body is a legitimate "there are none of those", not a parse failure
+        return json.loads(out or "{}").get("data"), None
+    except (ValueError, AttributeError) as exc:
+        return None, f"unparseable answer: {exc}"
+
+
+def cached(path: Path, max_age: int, reuse: bool):
+    """Return the artefact when --reuse and it is younger than max_age, else None."""
+    if not (reuse and path.exists()):
+        return None
+    if time.time() - path.stat().st_mtime > max_age:
+        return None
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        return None
+
+
+def identifiers() -> tuple[str, str, str]:
+    """tenancy, compartment, region -- environment first, then the gitignored tfvars the login
+    helper writes, so nothing here names an account as a literal (LAW 46)."""
+    ten = os.environ.get("OCI_TENANCY_OCID", "")
+    comp = os.environ.get("OCI_COMPARTMENT_OCID", "")
+    region = os.environ.get("OCI_REGION", "")
+    tfvars = IDP / "platform/oci/terraform.tfvars"
+    if tfvars.exists():
+        text = tfvars.read_text()
+
+        def var(name: str) -> str:
+            m = re.search(rf'^{name}\s*=\s*"([^"]+)"', text, re.M)
+            return m.group(1) if m else ""
+
+        ten = ten or var("tenancy_ocid")
+        comp = comp or var("compartment_ocid")
+        region = region or var("region")
+    return ten, comp or ten, region or "uk-london-1"
+
+
+def kube_env(clusters: list[dict], region: str, out: Path) -> dict[str, str] | None:
+    """The checked-in kubeconfig pins a session-token profile that expires; mint an API-key one
+    through the cloud door instead of asking the founder to sign in again (crew#66)."""
+    env = dict(ENV)
+    rc, _, _ = run(["kubectl", "get", "--raw", "/version"], 30)
+    if rc == 0:
+        return env
+    for c in clusters:
+        cfg = out / "kubeconfig"
+        rc, _, _ = run(
+            [
+                str(IDP / "bin/idp-cloud"),
+                "cluster",
+                "kubeconfig",
+                c["identifier"],
+                "--file",
+                str(cfg),
+                "--region",
+                region,
+            ],
+            120,
+        )
+        if rc == 0:
+            env["KUBECONFIG"] = str(cfg)
+            try:
+                probe = subprocess.run(
+                    ["kubectl", "get", "--raw", "/version"],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=40,
+                )
+            except subprocess.TimeoutExpired:
+                continue
+            if probe.returncode == 0:
+                return env
+    return None
+
+
+def tofu_state(blind: list[str]) -> set[str]:
+    """Every OCID OpenTofu already holds, read from the state itself rather than from the .tf
+    files -- a resource block that was never applied is not management."""
+    managed: set[str] = set()
+    if not shutil.which("tofu"):
+        blind.append("tofu is not installed; coverage is unknown, not zero")
+        return managed
+    for d in (IDP / "platform/oci", IDP / "platform/oci/identity"):
+        if not d.is_dir():
+            continue
+        rc, out, err = run(["tofu", "-chdir=" + str(d), "show", "-json"], 180)
+        if rc != 0 and "init" in err:
+            # a checkout that has never initialised its backend reads as "no state"; initialise it
+            # once rather than reporting every resource in it as hand-built (LAW 5, unblock yourself)
+            run(["tofu", "-chdir=" + str(d), "init", "-input=false"], 300)
+            rc, out, err = run(["tofu", "-chdir=" + str(d), "show", "-json"], 180)
+        if rc != 0:
+            err = ANSI.sub("", err)
+            blind.append(
+                f"tofu show -json failed in {d.relative_to(IDP)}: "
+                f"{(err.strip().splitlines() or ['no stderr'])[-1][:160]}"
+            )
+            continue
+        try:
+            doc = json.loads(out or "{}")
+        except ValueError:
+            blind.append(f"tofu show -json returned no JSON in {d.relative_to(IDP)}")
+            continue
+        stack = [(doc.get("values") or {}).get("root_module") or {}]
+        while stack:
+            mod = stack.pop()
+            for r in mod.get("resources", []):
+                rid = (r.get("values") or {}).get("id")
+                if isinstance(rid, str) and rid.startswith("ocid1."):
+                    managed.add(rid)
+            stack.extend(mod.get("child_modules", []))
+    return managed
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Inventory the running estate and grade it against Terraform."
+    )
+    ap.add_argument(
+        "--out", default=str(ESTATE_HOME / "audit"), help="artefact directory"
+    )
+    ap.add_argument("--report", default=str(IDP / "docs/audit/estate-inventory.md"))
+    ap.add_argument(
+        "--reuse",
+        action="store_true",
+        help="skip any raw artefact younger than --max-age",
+    )
+    ap.add_argument("--max-age", type=int, default=3600)
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=6,
+        help="parallel detail reads (the Mac is 16 GB)",
+    )
+    ap.add_argument("--no-cluster", action="store_true", help="skip the kubectl half")
+    args = ap.parse_args()
+
+    out = Path(args.out)
+    raw = out / "raw"
+    raw.mkdir(parents=True, exist_ok=True)
+    blind: list[str] = []
+    tenancy, compartment, region = identifiers()
+    if not tenancy:
+        print(
+            "BLIND   audit  no tenancy identifier: set OCI_TENANCY_OCID or run bin/idp-oci-login",
+            file=sys.stderr,
+        )
+        return 2
+
+    # --- wave 1: one search for everything that runs -------------------------------------------
+    search_file = raw / "search.json"
+    items = cached(search_file, args.max_age, args.reuse)
+    if items is None:
+        # structured-search has no --all; it pages on --limit, so a full page means more were left
+        limit = 1000
+        items, err = oci_json(
+            [
+                "search",
+                "resource",
+                "structured-search",
+                "--query-text",
+                "query all resources",
+                "--limit",
+                str(limit),
+            ],
+            180,
+        )
+        if items is None:
+            print(
+                f"BLIND   audit  the cloud did not answer the discovery search: {err}",
+                file=sys.stderr,
+            )
+            return 2
+        items = items.get("items", []) if isinstance(items, dict) else items
+        if len(items) >= limit:
+            blind.append(
+                f"the discovery search filled its {limit}-row page, so the inventory is "
+                "a prefix of the estate and not all of it"
+            )
+        search_file.write_text(json.dumps(items, indent=1, sort_keys=True))
+    print(f"ok      audit  discovery: {len(items)} resources running in {region}")
+
+    # --- wave 2: detail and the identity lists, in parallel -------------------------------------
+    tasks: list[tuple[str, list[str]]] = []
+    for it in items:
+        verb = GET.get(it.get("resource-type", ""))
+        if verb:
+            tasks.append(
+                (
+                    f"{it['resource-type']}.{it['identifier']}",
+                    [*verb[:-1], verb[-1], it["identifier"]],
+                )
+            )
+    tasks.extend(lists(tenancy, compartment))
+
+    details: dict[str, object] = {}
+    detail_file = raw / "detail.json"
+    got = cached(detail_file, args.max_age, args.reuse)
+    if got is not None:
+        details = got
+    else:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(oci_json, cmd, 120): name for name, cmd in tasks}
+            for fut in concurrent.futures.as_completed(futures):
+                name = futures[fut]
+                data, err = fut.result()
+                if data is None:
+                    blind.append(f"{name}: {err[:120]}")
+                else:
+                    details[name] = data
+        detail_file.write_text(
+            json.dumps(details, indent=1, sort_keys=True, default=str)
+        )
+    print(f"ok      audit  detail: {len(details)} of {len(tasks)} reads answered")
+
+    # --- wave 3: the cluster's own view of its persistent data ----------------------------------
+    kube: dict[str, object] = {}
+    if not args.no_cluster:
+        clusters = [i for i in items if i.get("resource-type") == "ClustersCluster"]
+        env = kube_env(clusters, region, out)
+        if env is None:
+            blind.append(
+                "kubectl could not reach any cluster; persistent volumes are unread"
+            )
+        else:
+            for name, cmd in (
+                ("storage", ["get", "pv,pvc,storageclass", "-A", "-o", "json"]),
+                ("nodes", ["get", "nodes", "-o", "json"]),
+                ("version", ["version", "-o", "json"]),
+            ):
+                p = subprocess.run(
+                    ["kubectl", *cmd],
+                    capture_output=True,
+                    text=True,
+                    env=env,
+                    timeout=120,
+                )
+                if p.returncode == 0:
+                    try:
+                        kube[name] = json.loads(p.stdout)
+                    except ValueError:
+                        blind.append(f"kubectl {name} returned no JSON")
+                else:
+                    blind.append(
+                        f"kubectl {name}: {(p.stderr.strip().splitlines() or ['?'])[-1][:120]}"
+                    )
+            (raw / "kube.json").write_text(json.dumps(kube, indent=1, sort_keys=True))
+
+    # --- grade every running resource against the state ------------------------------------------
+    managed = tofu_state(blind)
+    by_type: dict[str, dict[str, list[dict]]] = {}
+    for it in items:
+        t = it.get("resource-type", "unknown")
+        slot = by_type.setdefault(t, {"managed": [], "derived": [], "codify": []})
+        if it.get("identifier") in managed:
+            slot["managed"].append(it)
+        elif t in DERIVED:
+            slot["derived"].append(it)
+        else:
+            slot["codify"].append(it)
+    total = len(items)
+    n_managed = sum(len(v["managed"]) for v in by_type.values())
+    n_derived = sum(len(v["derived"]) for v in by_type.values())
+
+    gap = {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "region": region,
+        "total": total,
+        "managed": n_managed,
+        "derived": n_derived,
+        "to_codify": total - n_managed - n_derived,
+        "state_readable": bool(managed),
+        "by_type": {
+            t: {
+                "managed": len(v["managed"]),
+                "derived": len(v["derived"]),
+                "codify": len(v["codify"]),
+            }
+            for t, v in sorted(by_type.items())
+        },
+        "codify": sorted(
+            (
+                {
+                    "type": t,
+                    "name": r.get("display-name"),
+                    "id": r.get("identifier"),
+                    "state": r.get("lifecycle-state"),
+                }
+                for t, v in by_type.items()
+                for r in v["codify"]
+            ),
+            key=lambda r: (r["type"], r["name"] or ""),
+        ),
+        "derived_detail": {t: DERIVED[t] for t, v in by_type.items() if v["derived"]},
+        "blind": blind,
+    }
+    (out / "gap.json").write_text(json.dumps(gap, indent=1, sort_keys=True))
+    write_report(Path(args.report), gap, kube, details, region)
+
+    if not managed:
+        print(
+            "BLIND   audit  the OpenTofu state could not be read; every row reads UNMANAGED "
+            "for that reason, not because nothing is codified",
+            file=sys.stderr,
+        )
+    print(
+        f"ok      audit  {n_managed}/{total} running resources are in the OpenTofu state, "
+        f"{n_derived} are made by something that is, and {gap['to_codify']} exist in no "
+        "repository at all"
+    )
+    print(f"ok      audit  artefacts {out}  report {args.report}")
+    for b in blind[:8]:
+        print(f"BLIND   audit  {b}", file=sys.stderr)
+    if len(blind) > 8:
+        print(
+            f"BLIND   audit  and {len(blind) - 8} more, in {out / 'gap.json'}",
+            file=sys.stderr,
+        )
+    return 0
+
+
+def write_report(path: Path, gap: dict, kube: dict, details: dict, region: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    L = [
+        "# What the estate actually runs, and what holds it",
+        "",
+        f"Generated by `bin/idp-estate-audit` at {gap['generated_at']} in {region}. "
+        "Rerun it any time; nothing here is typed by hand.",
+        "",
+        f"Of {gap['total']} resources running in the tenancy, **{gap['managed']} are described by "
+        f"Terraform**, {gap['derived']} are made by something that is, and "
+        f"**{gap['to_codify']} exist in no repository at all**. That last number is the work: "
+        "until it is zero, a fresh estate cannot be rebuilt from git.",
+        "",
+    ]
+    if not gap["state_readable"]:
+        L += [
+            "> The OpenTofu state could not be read on this run, so every row below reads "
+            "unmanaged for that reason and not because nothing is codified.",
+            "",
+        ]
+    L += [
+        "## Coverage by resource type",
+        "",
+        "| Resource type | Running | In Terraform | Made by a managed thing | To codify |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for t, c in gap["by_type"].items():
+        L.append(
+            f"| {t} | {c['managed'] + c['derived'] + c['codify']} | {c['managed']} | "
+            f"{c['derived']} | {c['codify']} |"
+        )
+    if gap.get("derived_detail"):
+        L += ["", "### Why the middle column is not work", ""]
+        L += [f"- **{t}** — {why}" for t, why in sorted(gap["derived_detail"].items())]
+        L += [
+            "",
+            "Those are recreated by whatever owns them when the estate is rebuilt. What is *not* "
+            "recreated is the data on them, which is why `bin/idp-estate-backup` exists.",
+        ]
+    L += [
+        "",
+        "## The codify list",
+        "",
+        "Every resource below exists because someone made it by hand. Each one is a Terraform "
+        "block that has to be written before step 4 can stand up a second estate.",
+        "",
+        "| Resource type | Name | State |",
+        "|---|---|---|",
+    ]
+    for r in gap["codify"]:
+        L.append(f"| {r['type']} | {r['name'] or '(unnamed)'} | {r['state']} |")
+
+    storage = (kube.get("storage") or {}).get("items", [])
+    pvcs = [i for i in storage if i.get("kind") == "PersistentVolumeClaim"]
+    pvs = [i for i in storage if i.get("kind") == "PersistentVolume"]
+    if storage:
+        delete_policy = sum(
+            1
+            for v in pvs
+            if v.get("spec", {}).get("persistentVolumeReclaimPolicy") == "Delete"
+        )
+        L += [
+            "",
+            "## Persistent data at risk",
+            "",
+            f"{len(pvcs)} claims hold state, and {delete_policy} of the {len(pvs)} volumes behind "
+            "them are set to be destroyed when their claim is. Nothing here can be recreated from "
+            "a repository; it has to be backed up.",
+            "",
+            "| Namespace | Claim | Size | Class | On claim deletion |",
+            "|---|---|---|---|---|",
+        ]
+        policy = {
+            v.get("metadata", {}).get("name"): v.get("spec", {}).get(
+                "persistentVolumeReclaimPolicy", "?"
+            )
+            for v in pvs
+        }
+        for c in sorted(
+            pvcs, key=lambda i: (i["metadata"]["namespace"], i["metadata"]["name"])
+        ):
+            m, sp = c["metadata"], c.get("spec", {})
+            cap = (c.get("status", {}).get("capacity") or {}).get("storage", "?")
+            L.append(
+                f"| {m['namespace']} | {m['name']} | {cap} | {sp.get('storageClassName', '?')} | "
+                f"{policy.get(sp.get('volumeName'), '?')} |"
+            )
+
+    nodes = (kube.get("nodes") or {}).get("items", [])
+    if nodes:
+        L += [
+            "",
+            "## The cluster",
+            "",
+            "| Node | Kubernetes | Shape | Capacity |",
+            "|---|---|---|---|",
+        ]
+        for n in nodes:
+            lab = n["metadata"].get("labels", {})
+            info = n.get("status", {}).get("nodeInfo", {})
+            cap = n.get("status", {}).get("capacity", {})
+            L.append(
+                f"| {n['metadata']['name']} | {info.get('kubeletVersion', '?')} | "
+                f"{lab.get('node.kubernetes.io/instance-type', '?')} | "
+                f"{cap.get('cpu', '?')} cpu, {cap.get('memory', '?')} |"
+            )
+
+    pools = details.get("node-pool")
+    if isinstance(pools, list) and pools:
+        L += [
+            "",
+            "### Node pools",
+            "",
+            "| Pool | Kubernetes | Shape | Nodes |",
+            "|---|---|---|---|",
+        ]
+        for pool in pools:
+            shape = pool.get("node-shape", "?")
+            cfg = pool.get("node-shape-config") or {}
+            if cfg:
+                shape += f" ({cfg.get('ocpus', '?')} ocpu, {cfg.get('memory-in-gbs', '?')} GB)"
+            size = (pool.get("node-config-details") or {}).get("size", "?")
+            L.append(
+                f"| {pool.get('name', '?')} | {pool.get('kubernetes-version', '?')} | {shape} | {size} |"
+            )
+
+    if gap["blind"]:
+        L += ["", "## What this run could not read", ""]
+        L += [f"- {b}" for b in gap["blind"]]
+    L += [
+        "",
+        "---",
+        "",
+        "Rerun: `bin/idp-estate-audit` (add `--reuse` to keep artefacts younger than an hour). "
+        "Read-only, so it is safe under a freeze. Its companion "
+        "`bin/idp-estate-backup` covers the data the table above says cannot be rebuilt.",
+    ]
+    path.write_text("\n".join(L) + "\n")
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,187 @@
+# The recurring jobs that are not Dagster schedules yet.
+#
+# Founder, 2026-09-07: "we should only be using dagster for scheduling". Temporal is a durable
+# workflow engine, not a scheduler, and is not on this list. bin/idp-one-scheduler grades this
+# file against the tree: a new recurring job outside Dagster fails, and a row whose job is gone
+# fails too, so the list can only shrink.
+still_outside_dagster:
+- job: .github/workflows/branch-archive.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/catalog-render.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/demo-sandbox.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/deploy-when-green.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-escrow.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-inventory.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/estate-state.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/login-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/matrix-review.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/messaging-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/models-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/router-events/backup.yaml
+  kind: Kubernetes CronJob
+  fold: 'permanent exception: it is the DISASTER-RECOVERY copy of the router lanes, so it must not
+    depend on the cluster that would be lost. A Dagster schedule runs in this estate and shares its
+    failure domain with the thing it is backing up; a job whose whole purpose is to survive losing
+    estate-db cannot live behind estate-db.'
+- job: .github/workflows/name-drift.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/oke-check.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/otto-parity.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/ping.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/pr-age.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/pr-consolidate.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/probe-mutations.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/scorecard.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/stale.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/storefront-drill.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/ticket-verification.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/vault-reads.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-backstage.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-langfuse.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/verdict-signoz.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: .github/workflows/wake-blocked.yml
+  kind: GitHub Actions cron
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.executor.plist.tmpl
+  kind: launchd job on the laptop
+  # Same argument as otto-home3 below: this is the daemon that holds the 60-second
+  # execution ceiling OUTSIDE an agent's own process tree (founder 2026-09-13, "60
+  # secsos is the nnax"). A control that shares an identity with what it controls
+  # cannot deny it, which is why this is a daemon and not a seventh policy -- and why
+  # it cannot be a Dagster schedule. Dagster runs in the cluster; this exists so an
+  # agent still cannot hold a turn open when the cluster or the router is gone. It is
+  # a persistent daemon, not a recurring job.
+  fold: 'never: Dagster runs in the cluster, and this job is the ceiling that must hold when the cluster is gone (THE EXECUTION BOUNDARY). A scheduler that dies with the estate cannot bound the estate''s agents. It is a persistent daemon, not a recurring job.'
+- job: launchd/ai.estate.headlamp.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.idp.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.kubeapi.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: launchd/ai.estate.otto-home3.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'never: Dagster runs in the cluster, and this job exists so Otto can still think
+    when the cluster is gone (THE MEDIC LAW). A scheduler that dies with the estate cannot
+    own the estate''s last brain. It is a persistent daemon, not a recurring job.'
+- job: launchd/ai.estate.scheduler.plist.tmpl
+  kind: launchd job on the laptop
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/agent-workforce/cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/drills/drill-dispatcher.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/identity/front-door-heartbeat.yaml
+  kind: Kubernetes CronJob
+  # Stays a CronJob, and this row says why rather than carrying the boilerplate a fourth year.
+  # Dagster can do the cadence -- ten of its 46 rows already run at */5 or */10. What it cannot
+  # do is run this job: every one of those 46 rows is `runs_on: mac` (36) or `retire` (10), a
+  # shell command executed by subprocess.run inside the estate-scheduler image, and nothing in
+  # scheduler/estate_scheduler/ imports kubernetes. This job is not a command. It is a pod with
+  # a network position (the identity namespace's fence is what lets it reach edge, measured in
+  # #2419) and a machine identity (OCI instance principal, which is the node's, not a secret's).
+  # Folding it means giving Dagster a pod-launching path it has never had.
+  #
+  # And it should not be folded even then. It is the estate's liveness canary at five-minute
+  # resolution; a canary must not depend on the scheduler, or a silent pulse tells you Dagster
+  # is down and says nothing about the door. kubelet running a CronJob is the shortest
+  # dependency chain available and is not a second scheduler, any more than systemd is.
+  fold: 'no: a pod with a network position and a machine identity, and a canary must not depend on the scheduler it grades the estate for'
+- job: platform/llm/spend-breaker-digest.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/observability/signoz-retention.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/observability/telemetry-coverage.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/otto-gateway/answer-probe.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/otto-gateway/registration-reconciler.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/prospector/store-db-backup.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/prospector/store-db-restore-drill.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/research-engine/cronjob.yaml
+  kind: Kubernetes CronJob
+  # com.estate.research-engine runs in scheduler/schedule.yml and triggers this CronJob
+  # via `kubectl create job --from=cronjob/research-engine -n research`. Scheduled by Dagster.
+  fold: 'no: scheduled by the com.estate.research-engine cluster Dagster schedule'
+- job: platform/sandbox/vcluster/sweeper.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/science/science-facts.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/spire/proof-cronjob.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/staging/canary/scheduler.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/state/cluster-state.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'
+- job: platform/temporal/kini-state.yaml
+  kind: Kubernetes CronJob
+  fold: 'pending: to be declared as a Dagster schedule'

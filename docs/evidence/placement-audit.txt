@@ -1,0 +1,33 @@
+$ bin/placement-audit
+inventory  43 estate jobs, 34 monitored, 34 of those have never pinged -> reports/placement.json
+
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.architect.gateway is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.consultd is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.deepseek-bridge is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.dep-alerts runs every 24h on a laptop. Measured 2026-08-24: 7 of 10 daily jobs here had never run. Confirm this one is meant to be a desk job.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.kimi-bridge is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.hermes.gateway is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.hermes.runaway-reaper is scheduled but not wrapped in hc-wrap.sh, so nothing notices when it stops. An instrument nobody reads is not an instrument.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.chidionyema.maestro is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.founder.boardserve is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.estate-inventory runs every 24h on a laptop. Measured 2026-08-24: 7 of 10 daily jobs here had never run. Confirm this one is meant to be a desk job.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.restore-drill runs every 24h on a laptop. Measured 2026-08-24: 7 of 10 daily jobs here had never run. Confirm this one is meant to be a desk job.
+[33mWARN[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.scheduler is a long-running service on a laptop. Anything depending on it is depending on the lid being open.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.drills is scheduled in the 4 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.key-escrow is scheduled in the 5 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - ai.estate.key-escrow is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.chidionyema.guard-selftest is scheduled in the 7 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.estate.restic-backup is scheduled in the 3 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.estate.restic-backup is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.backup is scheduled in the 3 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.backup is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.offsite-backup is scheduled in the 3 o'clock hour and this machine is asleep then. It belongs on a host that stays awake.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.offsite-backup is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
+[31mFAIL[0m - /Users/chidionyema/dev/code/idp/reports/placement.json - main - com.prospector.restore-drill is survival work (backup, restore drill or key escrow) and it runs only here. If this laptop is what fails, it was never running.
+
+[31m23 tests, 0 passed, 12 warnings, 11 failures, 0 exceptions[0m
+
+FAIL       jobs are placed on hardware that cannot honour their schedule -- see above
+           docs/placement.md says where each class belongs and why
+
+exit=1

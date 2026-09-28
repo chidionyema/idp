@@ -1,0 +1,302 @@
+#!/usr/bin/env python3
+"""bin/idp-pr-scope-audit: refuse a PR whose title says `type(scope): ...` if it touches
+files outside the declared scope's allowlist and does not enumerate them under a
+`co-changes:` block in the PR body.
+
+Founder root-of-roots ruling 2026-09-17: PR #3681 (feat(vault-seed): add langsmith entry)
+merged with THREE unrelated collateral defects tucked in -- a duplicate PDB in
+platform/backstage/base/catalogue.yaml, a new kyverno.yaml under platform/monitoring/rules/
+without updating the test-set literal, and an admission-policies table drift in
+docs/reference/security-policy.md. All three broke the estate for a day. The existing
+gates (rules.yaml render-agents-md --check, script-compiles) do not grade titles against
+touched paths.
+
+This gate does. `.github/scopes.yaml` maps every scope to a path allowlist. A file the
+scope does not own is refused unless the PR body carries:
+
+    co-changes:
+    - <path>: <one-line reason>
+    - <path>: <one-line reason>
+
+Runs in three modes:
+  --pr <n>                  fetch title + body + changed files from gh, grade, exit 0/1
+  --live                    same as `--pr` with number pulled from GITHUB_EVENT_PATH
+  --self-test               exercise the extract + match + refuse-both-ways predicates
+
+Exit codes:
+  0 = ok (scope matches or co-changes covers every out-of-scope path)
+  1 = refused (a file falls outside scope with no co-changes: entry)
+  2 = BLIND (gh absent, scopes.yaml missing, or the PR title is not Conventional Commits)
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+try:
+    import yaml  # noqa: F401 - checked at read time
+except ImportError:
+    print("BLIND idp-pr-scope-audit: pyyaml is not installed", file=sys.stderr)
+    sys.exit(2)
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+SCOPES_YAML = ROOT / ".github" / "scopes.yaml"
+
+# Conventional Commits title shape: `type(scope): rest` OR `type: rest`.
+TITLE_RE = re.compile(r"^(?P<type>[a-z]+)(?:\((?P<scope>[a-z0-9\-]+)\))?:\s*(?P<rest>.+)$")
+
+# co-changes: block in the body. One entry per line: `- path: reason`.
+COCHANGES_RE = re.compile(
+    r"(?ims)^\s*co-changes\s*:\s*$(?P<block>(?:\s*[-*]\s+[^\n]+\n?)+)"
+)
+COCHANGES_ENTRY_RE = re.compile(r"^\s*[-*]\s+(?P<path>[^:\s]+)\s*:\s*(?P<reason>.+)$")
+
+
+def load_scopes() -> dict:
+    if not SCOPES_YAML.is_file():
+        print(f"BLIND scopes.yaml missing at {SCOPES_YAML}", file=sys.stderr)
+        sys.exit(2)
+    return yaml.safe_load(SCOPES_YAML.read_text()) or {}
+
+
+def parse_title(title: str) -> tuple[str | None, str | None]:
+    """Return (type, scope) parsed from a Conventional Commits title, or (None, None)."""
+    m = TITLE_RE.match(title.strip())
+    if not m:
+        return None, None
+    return m.group("type"), m.group("scope")
+
+
+def parse_cochanges(body: str) -> dict[str, str]:
+    """Return {path: reason} for every entry in the body's co-changes: block."""
+    out: dict[str, str] = {}
+    m = COCHANGES_RE.search(body or "")
+    if not m:
+        return out
+    for line in m.group("block").splitlines():
+        em = COCHANGES_ENTRY_RE.match(line)
+        if em:
+            out[em.group("path").strip()] = em.group("reason").strip()
+    return out
+
+
+def path_matches_any(path: str, patterns: list[str]) -> bool:
+    """True when `path` matches any glob pattern. `foo/` matches any file under foo/."""
+    for pat in patterns:
+        if pat.endswith("/") and path.startswith(pat):
+            return True
+        if fnmatch.fnmatch(path, pat):
+            return True
+        # Explicit prefix match for directory-shaped patterns without a wildcard
+        if "*" not in pat and "?" not in pat and "/" in pat and path.startswith(pat):
+            return True
+    return False
+
+
+def audit(title: str, body: str, changed_files: list[str], scopes: dict) -> tuple[int, list[str]]:
+    """Grade one PR. Returns (exit_code, messages)."""
+    msgs: list[str] = []
+    ptype, pscope = parse_title(title)
+    types_allowed = set(scopes.get("types_allowed") or [])
+    always_open = set(scopes.get("always_open_types") or [])
+    scope_map = scopes.get("scopes") or {}
+
+    if ptype is None:
+        msgs.append(f"BLIND: title `{title[:80]}` is not Conventional Commits (`type(scope): rest`)")
+        return 2, msgs
+
+    if types_allowed and ptype not in types_allowed:
+        msgs.append(f"refused: type `{ptype}` is not in .github/scopes.yaml types_allowed")
+        return 1, msgs
+
+    if pscope is None:
+        if ptype in always_open:
+            msgs.append(f"ok: type `{ptype}` is scope-open by policy")
+            return 0, msgs
+        msgs.append(
+            f"refused: title `{ptype}: ...` has no scope; add `{ptype}(<scope>):` "
+            f"per .github/scopes.yaml (or use one of always_open_types: {sorted(always_open)})"
+        )
+        return 1, msgs
+
+    scope_def = scope_map.get(pscope)
+    if scope_def is None:
+        msgs.append(
+            f"refused: scope `({pscope})` is not defined in .github/scopes.yaml. "
+            f"Known: {', '.join(sorted(scope_map.keys()))}"
+        )
+        return 1, msgs
+
+    paths = scope_def.get("paths") or []
+    cochanges = parse_cochanges(body)
+
+    out_of_scope: list[str] = []
+    for f in changed_files:
+        if not f:
+            continue
+        if path_matches_any(f, paths):
+            continue
+        if f in cochanges:
+            continue
+        out_of_scope.append(f)
+
+    if out_of_scope:
+        msgs.append(
+            f"refused: PR title says `({pscope})` but touches {len(out_of_scope)} "
+            f"file(s) outside its scope, and no co-changes: block covers them:"
+        )
+        for f in out_of_scope[:20]:
+            msgs.append(f"    {f}")
+        if len(out_of_scope) > 20:
+            msgs.append(f"    ... and {len(out_of_scope) - 20} more")
+        msgs.append(
+            "  Fix: add a `co-changes:` block to the PR body listing each file with a one-line reason, "
+            "or split the PR by scope, or extend the scope's paths in .github/scopes.yaml."
+        )
+        return 1, msgs
+
+    msgs.append(
+        f"ok: PR `{ptype}({pscope}):` touches {len(changed_files)} file(s), "
+        f"all within scope or covered by co-changes: (n={len(cochanges)})"
+    )
+    return 0, msgs
+
+
+def fetch_pr(pr_number: int) -> tuple[str, str, list[str]]:
+    """gh pr view + gh pr diff to reconstruct title/body/changed files."""
+    out = subprocess.run(
+        ["gh", "pr", "view", str(pr_number),
+         "--json", "title,body,files", "-q", "."],
+        cwd=ROOT, capture_output=True, text=True, timeout=120,
+    )
+    if out.returncode != 0:
+        raise RuntimeError(f"gh pr view refused: {out.stderr.strip()[:200]}")
+    data = json.loads(out.stdout)
+    return (
+        data.get("title") or "",
+        data.get("body") or "",
+        [f["path"] for f in (data.get("files") or [])],
+    )
+
+
+def pr_number_from_event() -> int | None:
+    """Prefer the PR under test from GITHUB_EVENT_PATH (see bin/idp-bdd-proof-gate)."""
+    ev_path = os.environ.get("GITHUB_EVENT_PATH")
+    if not ev_path or not Path(ev_path).is_file():
+        return None
+    try:
+        ev = json.loads(Path(ev_path).read_text())
+        pr_number = (ev.get("pull_request") or {}).get("number")
+        if pr_number:
+            return int(pr_number)
+        head = ((ev.get("merge_group") or {}).get("head_ref") or "")
+        m = re.search(r"/pr-(\d+)-", head)
+        if m:
+            return int(m.group(1))
+    except Exception:  # noqa: S110 - malformed event JSON falls through
+        pass
+    return None
+
+
+def _self_test() -> int:
+    """Exercise parse_title, parse_cochanges, path_matches_any, audit — refuse both ways."""
+    # parse_title
+    assert parse_title("feat(vault-seed): add langsmith") == ("feat", "vault-seed")
+    assert parse_title("chore: bump deps") == ("chore", None)
+    assert parse_title("not a conventional title") == (None, None)
+    # parse_cochanges
+    body = """some prose here
+co-changes:
+- platform/foo/bar.yaml: needed alongside because ...
+- docs/x.md: doc regenerated
+
+trailing paragraph
+"""
+    entries = parse_cochanges(body)
+    assert set(entries.keys()) == {"platform/foo/bar.yaml", "docs/x.md"}
+    assert parse_cochanges("no such block") == {}
+    # path_matches_any
+    assert path_matches_any("platform/backstage/base/catalogue.yaml", ["platform/backstage/"])
+    assert not path_matches_any("platform/monitoring/rules/kyverno.yaml", ["platform/backstage/"])
+    assert path_matches_any("platform/foo-external-secret.yaml", ["platform/*-external-secret.yaml"])
+    # audit — the incident case (PR #3681)
+    scopes = {
+        "scopes": {
+            "vault-seed": {"paths": [
+                ".github/workflows/vault-seed.yml",
+                "bin/idp-estate-seed",
+                "platform/*-external-secret.yaml",
+            ]},
+        },
+        "types_allowed": ["feat", "fix", "chore"],
+        "always_open_types": ["chore"],
+    }
+    bad = [
+        ".github/workflows/vault-seed.yml",
+        "platform/backstage/base/catalogue.yaml",         # NOT in scope
+        "platform/monitoring/rules/kyverno.yaml",         # NOT in scope
+        "docs/reference/security-policy.md",              # NOT in scope
+    ]
+    rc, msgs = audit("feat(vault-seed): add langsmith entry", "no co-changes here", bad, scopes)
+    assert rc == 1, f"the PR #3681 shape must be refused, got {rc}"
+    assert any("outside its scope" in m for m in msgs)
+    # good — all in scope
+    good = [".github/workflows/vault-seed.yml", "platform/foo-external-secret.yaml"]
+    rc, msgs = audit("feat(vault-seed): add x", "", good, scopes)
+    assert rc == 0, f"in-scope PR must pass, got {rc}"
+    # good — out of scope but declared under co-changes:
+    rc, msgs = audit(
+        "feat(vault-seed): add x",
+        "co-changes:\n- platform/backstage/base/catalogue.yaml: PDB coincidentally needed",
+        [".github/workflows/vault-seed.yml", "platform/backstage/base/catalogue.yaml"],
+        scopes,
+    )
+    assert rc == 0, f"declared co-change must pass, got {rc}"
+    # BLIND — non-conventional title
+    rc, _ = audit("added a thing", "", ["x.md"], scopes)
+    assert rc == 2, "non-CC title must BLIND"
+    print("ok idp-pr-scope-audit --self-test: parse + match + refuse-both-ways")
+    return 0
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return _self_test()
+    if "-h" in sys.argv or "--help" in sys.argv:
+        print(__doc__)
+        return 0
+    scopes = load_scopes()
+    if "--pr" in sys.argv:
+        idx = sys.argv.index("--pr")
+        pr_number = int(sys.argv[idx + 1])
+    elif "--live" in sys.argv:
+        pr_number = pr_number_from_event()
+        if not pr_number:
+            print("BLIND idp-pr-scope-audit: no PR number in GITHUB_EVENT_PATH", file=sys.stderr)
+            return 2
+    else:
+        print("usage: bin/idp-pr-scope-audit [--pr N | --live | --self-test]", file=sys.stderr)
+        return 2
+
+    try:
+        title, body, files = fetch_pr(pr_number)
+    except Exception as exc:
+        print(f"BLIND idp-pr-scope-audit: {exc}", file=sys.stderr)
+        return 2
+
+    rc, msgs = audit(title, body, files, scopes)
+    for m in msgs:
+        print(m, file=sys.stderr if rc else sys.stdout)
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())

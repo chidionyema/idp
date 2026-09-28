@@ -1,0 +1,186 @@
+#!/usr/bin/env python3
+"""Keep this device's read-only cluster access alive without a human or a browser tab.
+
+WHY. `bin/idp-jit identity` mints a one-hour `agent-reader` token from the one key this
+device holds. That is correct, and it left a gap: an hour after authorization the device
+silently stops being able to read production, and the only thing that could notice was the
+person it happened to. The founder's words (2026-09-18): "the CEO is not a cron job."
+
+WHAT THIS IS. A single-shot renewal check, meant to be run on a timer:
+
+    bin/idp-jit-device-renew            # renew if needed, do nothing otherwise
+    bin/idp-jit-device-renew --check    # report state, change nothing
+    bin/idp-jit-device-renew --install  # write the LaunchAgent that runs this every 10 min
+
+WHY A TIMER AND NOT A LONG-RUNNING DAEMON. A daemon is a process that can die quietly and
+be missed. A timer that runs a fresh short-lived process every ten minutes cannot be in a
+broken state between runs: either it worked and the token is fresh, or `idp-jit status`
+says it is not. The estate's own `no-local-vm-guard.sh` already names the class of thing to
+avoid on this machine, and a resident daemon earning nothing is that class.
+
+WHY THIS NEEDS NOBODY'S APPROVAL. Renewal re-mints `agent-reader`, which the broker's own
+docstring settles: "agent-reader holds reads and nothing else -- it is the floor every agent
+already stands on, not an elevation above it -- so there is nothing to approve." Minting a
+floor is not a decision, so it must not ask for one. The ONE decision -- putting the key on
+a new device -- stays exactly where it is, with the owner.
+
+WHAT IT NEVER DOES. It never creates a key, never moves a key, and never contacts OCI. If the
+device holds no key, this exits 0 having done nothing, because that state is the owner's to
+resolve and a timer silently retrying it would be noise. A renew with no key is not a failure
+of this script; it is `not_provisioned`, which `bin/idp-jit status` already reports.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+JIT = IDP / "bin" / "idp-jit"
+LABEL = "com.estate.jit-device-renew"
+
+
+def _status() -> dict:
+    p = subprocess.run(
+        [sys.executable, str(JIT), "status"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    try:
+        return json.loads(p.stdout)
+    except ValueError:
+        return {"state": "unknown", "error": (p.stderr or p.stdout or "").strip()[:200]}
+
+
+def _renew(kubeconfig: str) -> int:
+    return subprocess.run(
+        [sys.executable, str(JIT), "renew", "--kubeconfig", kubeconfig, "--quiet"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    ).returncode
+
+
+def agent_path() -> Path:
+    return Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
+
+
+PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{python}</string>
+    <string>{script}</string>
+    <string>--quiet</string>
+  </array>
+  <!-- Every 10 minutes. The token lives 1 hour, so a ten-minute cadence tolerates five
+       consecutive misses (sleep, a dropped tailnet, a broker restart) before the device
+       loses access, and nothing here needs to be precisely on time. -->
+  <key>StartInterval</key><integer>600</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>{log}</string>
+  <key>StandardOutPath</key><string>{log}</string>
+</dict>
+</plist>
+"""
+
+
+def install(quiet: bool) -> int:
+    logdir = Path.home() / "Library" / "Logs"
+    logdir.mkdir(parents=True, exist_ok=True)
+    dest = agent_path()
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_text(
+        PLIST.format(
+            label=LABEL,
+            python=sys.executable,
+            script=str(Path(__file__).resolve()),
+            log=str(logdir / "estate-jit-device-renew.log"),
+        )
+    )
+    # Reload so a changed plist takes effect; both commands are idempotent and a failure to
+    # unload a not-yet-loaded agent is not an error.
+    subprocess.run(["launchctl", "unload", str(dest)], capture_output=True, check=False)
+    r = subprocess.run(["launchctl", "load", str(dest)], capture_output=True, text=True, check=False)
+    if r.returncode != 0:
+        print(f"launchctl load failed: {r.stderr.strip()[:200]}", file=sys.stderr)
+        return 1
+    if not quiet:
+        print(f"installed  {dest}")
+        print(f"           runs every 10 minutes; log: ~/Library/Logs/estate-jit-device-renew.log")
+    return 0
+
+
+def uninstall(quiet: bool) -> int:
+    dest = agent_path()
+    if dest.exists():
+        subprocess.run(["launchctl", "unload", str(dest)], capture_output=True, check=False)
+        dest.unlink()
+    if not quiet:
+        print("removed the renewal timer")
+    return 0
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--check", action="store_true", help="report state; change nothing")
+    ap.add_argument("--install", action="store_true", help="install the 10-minute timer")
+    ap.add_argument("--uninstall", action="store_true", help="remove the timer")
+    ap.add_argument("--quiet", action="store_true", help="say nothing unless something broke")
+    a = ap.parse_args()
+
+    if a.install:
+        return install(a.quiet)
+    if a.uninstall:
+        return uninstall(a.quiet)
+
+    st = _status()
+    state = st.get("state", "unknown")
+
+    if a.check:
+        print(json.dumps(st))
+        return 0
+
+    if state == "not_provisioned":
+        # Owner's state, not ours. Exit 0 and stay silent on the timer: retrying cannot help
+        # and a log that fills with "still not provisioned" is a log nobody reads.
+        if not a.quiet:
+            print("not provisioned -- this device holds no agent key; nothing to renew")
+        return 0
+
+    if state in ("active",):
+        if not a.quiet:
+            print(f"active -- {st.get('expires_in')}s left, no renewal needed")
+        return 0
+
+    if state in ("expiring", "expired"):
+        kc = st.get("kubeconfig") or os.environ.get("IDP_AGENT_KUBECONFIG")
+        if not kc:
+            print("no kubeconfig path to write", file=sys.stderr)
+            return 1
+        rc = _renew(kc)
+        if rc != 0:
+            print(f"renewal failed (exit {rc}); the device keeps its previous token until it expires",
+                  file=sys.stderr)
+            return rc
+        if not a.quiet:
+            after = _status()
+            print(f"renewed -- {after.get('expires_in')}s from now")
+        return 0
+
+    print(f"unexpected state {state!r}: {json.dumps(st)}", file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,79 @@
+# The missing wire of the adversarial loop. The estate could generate a red-team payload
+# (platform/eval/red_team_payloads.py), block a known signature (the proxy), and learn a rule
+# from a REAL failure (the RCA worker) -- but nothing took a payload the red team PROVED
+# defeating and taught the proxy to block it, so a hole found by red team stayed open until the
+# same lesson arrived as an incident. This subscribes to the defeated feed on the estate's one
+# bus (NATS), derives each payload's signature, and writes it through the RCA worker's OWN
+# _persist -- one writer of via_negativa:banned_signatures (LAW 43), no second mechanism.
+#
+# Why a set on the live prompt path is the estate's answer to a "sanitization micro-model":
+# a defeating payload becomes a signature and the proxy rejects it at set-membership cost, so
+# the hot path gains no inference step while the loop improves with every red-team run.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: via-negativa-redteam-promoter
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-redteam-promoter, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: via-negativa-redteam-promoter }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: via-negativa-redteam-promoter, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: promoter
+          image: ghcr.io/chidionyema/redteam_promoter
+          command: ["python", "promoter.py", "consume"]
+          env:
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
+            # The estate's one bus (platform/event-bus, NATS JetStream). The promoted payload is
+            # published as estate.eval.redteam.defeated by whichever loop proves a payload got
+            # through; this is the consumer.
+            - { name: NATS_URL, value: "nats.event-bus.svc.cluster.local:4222" }
+            - { name: REDIS_URL, value: "redis://via-negativa-redis.via-negativa.svc.cluster.local:6379" }
+            - { name: REDIS_PASSWORD_FILE, value: "/run/secrets/via-negativa/redis/REDIS_PASSWORD" }
+            # Same ledger and same convention as the RCA worker: no password in a value, the
+            # file is folded in by the writer itself (Kyverno secrets-not-from-env-vars).
+            - { name: VN_LEDGER_DSN, value: "postgresql://via_negativa@estate-rw.estate-db.svc.cluster.local:5432/via_negativa" }
+            - { name: VN_LEDGER_DSN_PASSWORD_FILE, value: "/run/secrets/via-negativa/db/DB_PASSWORD" }
+            - { name: VN_BANNED_SET, value: "via_negativa:banned_signatures" }
+            - { name: VN_TOP_CONSTRAINTS_KEY, value: "via_negativa:top_constraints" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          # `consume` never writes a heartbeat file today, so the probe checks the interpreter
+          # is alive rather than inventing a file the loop does not create -- a probe that tests
+          # for something the process never makes is a pod that never becomes Ready.
+          readinessProbe:
+            exec: { command: ["python", "-c", "import promoter"] }
+            periodSeconds: 15
+          livenessProbe:
+            exec: { command: ["python", "-c", "import promoter"] }
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 300m, memory: 192Mi }
+          volumeMounts:
+            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
+            - { name: db-secret, mountPath: /run/secrets/via-negativa/db, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: redis-secret
+          secret: { secretName: via-negativa-redis }
+        - name: db-secret
+          secret: { secretName: via-negativa-db }
+        - name: tmp
+          emptyDir: {}

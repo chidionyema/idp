@@ -1,0 +1,23 @@
+# CONFIG-SYNTAX-OK: a scaffolder skeleton, not a workflow. Backstage substitutes the
+# ${{ values.* }} placeholders at render time.
+#
+# The entry stanza for .github/workflows/vault-seed.yml. That workflow already reads every
+# repository secret named SEED_<KEY> and writes them into one estate vault entry, so
+# onboarding ${{ values.name }} is two edits to that file and no new machinery:
+#
+#   1. add `${{ values.name }}` to the `entry` input's options list, and
+#   2. add the seed_secrets lines below to the env: block of the bin/idp-vault-put step,
+#      each one as `SEED_X: $` followed by `{{ secrets.SEED_X }}` in Actions expression form.
+#
+# The value travels repository secret -> vault-seed.yml -> vault -> ExternalSecret. It is
+# never printed, never written to a file outside the runner, and never seen by a person.
+# Where the provider federates (OCI, GCP, AWS, Vault) there is no SEED_ line at all: CI
+# exchanges its GitHub OIDC token for a session and the entry holds no long-lived value.
+entry: ${{ values.name }}
+provider: ${{ values.provider }}
+auth: ${{ values.authMode }}
+seed_secrets:
+  # One name per key the workload needs. The suffix after SEED_ becomes the key inside the
+  # vault entry, which is the key the ExternalSecret extracts.
+  - SEED_${{ values.name | upper | replace("-", "_") }}_CLIENT_ID
+  - SEED_${{ values.name | upper | replace("-", "_") }}_CLIENT_SECRET

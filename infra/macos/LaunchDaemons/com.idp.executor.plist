@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.idp.executor.plist — the gateway-as-floor executor daemon. This is a
+  root LaunchDaemon that runs under a uid the agent does not own (_idp_executor)
+  so that an agent which has lost its mind cannot rewrite what answers at
+  ~/.estate/executor.sock. The agent has a separate, owner-only socket; the
+  daemon listens on that socket; the daemon's UID owns the file the agent
+  reads through.
+
+  install path : infra/macos/LaunchDaemons/com.idp.executor.plist
+  owner       : root (loaded by `sudo bin/idp-executor-install`)
+  never loaded by an agent session — per AGENTS.md SPIFFE primary rule 3
+  and per `bin/idp-executor-install`'s own FOUNDER FENCE that refuses an
+  agent-invoked shell.
+
+  Why a separate plist and not an extension of bin/idp-jit-device-renew:
+  the executor daemon and the renew loop have different owner uids, different
+  failure modes (the executor must survive a user logout to keep the gateway
+  enforced; the renew loop cannot run when the user is logged out because
+  it lives in the user's LaunchAgents directory). Two plists, owned at two
+  levels, mirrors the two trust surfaces.
+
+  How `idp-mac-provision install` lays this: the install path emits the
+  rendered plist into /Library/LaunchDaemons with root ownership AFTER
+  `bin/idp-executor-install` has created the _idp_executor uid. If the
+  uid does not exist, the install FAILS — daemon is not loaded, the
+  bootstrap's verify rung reports it as BLIND, and the agent never has
+  a write path that bypasses the gateway.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.idp.executor</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/executor-daemon</string>
+        <string>--socket</string>
+        <string>/Users/Shared/.estate/executor.sock</string>
+        <string>--workdir</string>
+        <string>/Users/Shared/.estate</string>
+        <string>--audit-log</string>
+        <string>/var/log/idp-executor-audit.log</string>
+    </array>
+
+    <key>UserName</key>
+    <string>_idp_executor</string>
+
+    <key>GroupName</key>
+    <string>_idp_executor</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+        <key>NetworkState</key>
+        <true/>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Standard</string>
+
+    <key>ThrottleInterval</key>
+    <integer>30</integer>
+
+    <key>StandardOutPath</key>
+    <string>/var/log/com.idp.executor.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/var/log/com.idp.executor.err.log</string>
+
+    <key>Sockets</key>
+    <dict>
+        <key>Listener</key>
+        <dict>
+            <key>SockPathName</key>
+            <string>/Users/Shared/.estate/executor.sock</string>
+            <key>SockPathMode</key>
+            <integer>438</integer>
+        </dict>
+    </dict>
+</dict>
+</plist>

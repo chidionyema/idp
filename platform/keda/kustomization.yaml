@@ -1,0 +1,10 @@
+# KEDA core plus the HTTP add-on. Core scales on any metric; the add-on is what lets an HTTP
+# workload sit at zero replicas and wake on the first request (crew#488 CP7). A product opts in
+# from its own repo with an HTTPScaledObject and by pointing its HTTPRoute at the interceptor
+# proxy Service in this namespace; the platform ships nothing product-specific here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - keda.yaml
+  - referencegrant.yaml

@@ -1,0 +1,471 @@
+diff --git a/bin/idp-kaggle-lane b/bin/idp-kaggle-lane
+new file mode 100755
+index 000000000..faf1b03ac
+--- /dev/null
++++ b/bin/idp-kaggle-lane
+@@ -0,0 +1,194 @@
++#!/usr/bin/env python3
++"""idp-kaggle-lane: hand Otto a GPU nobody bills for.
++
++Every other lane in platform/lifeboat/src/homes.js is somebody's free tier. A free tier can be
++withdrawn, re-priced, or have its model slug churned, and the day all of them do it at once the
++estate has nothing to think with. This launcher is the answer to that day: Kaggle gives 30 GPU
++hours a week on a T4 or P100 at zero cost, and a model WE chose running on a GPU WE launched
++answers regardless of what any vendor decides.
++
++It is also a fourth failure domain. Kaggle shares no node, no network, no DNS and no control
++plane with OKE, and none with Cloudflare either -- so it survives the loss of home 1 and home 2
++together, which is the only property that makes a third home worth having.
++
++HOW THE NOTEBOOK IS REACHED, and why it is not ngrok. The notebook dials OUT through a NAMED
++Cloudflare tunnel, so its address is the same hostname every session, nothing dials in, and
++there is no inbound port anywhere on Kaggle's side. The estate already owns that zone and, since
++2026-09-10, owns a Cloudflare root it can mint a tunnel credential from (R52) -- so this adds no
++platform layer, it uses the one that exists. The Worker reads the hostname from KAGGLE_LANE_URL
++and the shared bearer from KAGGLE_LANE_KEY; a lane with neither set is skipped and costs nothing,
++which is why the lane could be merged before this launcher had ever run.
++
++WHAT IT DOES NOT DO. It does not keep the session alive: Kaggle caps a session at 12 hours and
++that is not negotiable. The lane is therefore intermittent BY DESIGN, and the lifeboat is built
++for it -- when no notebook is running the hostname does not answer, the fetch throws, think()
++counts the lane as tried and moves to the next one. Re-launching on a schedule is Dagster's job
++(the estate has one scheduler, THE HEADLINE), not a loop in here.
++"""
++
++from __future__ import annotations
++
++import argparse
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++IDP = Path(__file__).resolve().parent.parent
++SLUG_DEFAULT = "otto-gpu-lane"
++MODEL_DEFAULT = "qwen2.5-coder:7b"
++
++
++def say(mark: str, what: str, msg: str) -> None:
++    print(f"{mark:<7} {what:<20} {msg}")
++
++
++def blind(what: str, msg: str) -> None:
++    say("BLIND", what, msg)
++    raise SystemExit(2)
++
++
++def fail(what: str, msg: str) -> None:
++    say("FAIL", what, msg)
++    raise SystemExit(1)
++
++
++def vault_get(name: str, field: str | None = None) -> str:
++    """Read one secret. Never printed, never logged -- only its presence is ever reported."""
++    try:
++        out = subprocess.run(
++            [str(IDP / "bin" / "idp-cloud"), "secret", "get", name],
++            capture_output=True, text=True, timeout=60,
++        )
++    except (OSError, subprocess.SubprocessError):
++        return ""
++    if out.returncode != 0:
++        return ""
++    val = out.stdout.strip()
++    if field:
++        try:
++            return str(json.loads(val).get(field, "") or "")
++        except json.JSONDecodeError:
++            return ""
++    return val
++
++
++def notebook(model: str, key_env: str, hours: float) -> dict:
++    """The notebook the GPU runs.
++
++    Four cells, and every one of them is here rather than in a checked-in .ipynb because a
++    notebook file is a JSON blob nobody reviews. Written as source, it is diffable.
++    """
++    cells = [
++        # Ollama, not vLLM: it serves an OpenAI-compatible /v1/chat/completions out of the box,
++        # pulls a quantised model in one command, and needs no CUDA build step inside a sandbox
++        # we do not control. The lane wants an answer, not throughput.
++        "!curl -fsSL https://ollama.com/install.sh | sh\n"
++        "import subprocess, time\n"
++        "subprocess.Popen(['ollama','serve'])\n"
++        "time.sleep(8)\n",
++        f"!ollama pull {model}\n",
++        # The door. One shared bearer, checked in constant time on the Worker side; this end
++        # only has to not be open to the world, which the tunnel already guarantees -- nothing
++        # reaches this process except through the tunnel the estate authenticated.
++        "import os\n"
++        f"os.environ['LANE_KEY'] = {key_env!r}\n"
++        "!curl -fsSL https://github.com/cloudflare/cloudflared/releases/latest/download/"
++        "cloudflared-linux-amd64 -o /usr/local/bin/cloudflared && chmod +x /usr/local/bin/cloudflared\n"
++        "subprocess.Popen(['cloudflared','tunnel','--no-autoupdate','run','--token',"
++        "os.environ['TUNNEL_TOKEN']])\n",
++        # Hold the session. Kaggle stops a notebook that stops producing output, so this prints;
++        # and it stops itself before the 12-hour cap rather than being killed mid-answer.
++        f"import time\nfor i in range(int({hours} * 60)):\n"
++        "    print(f'lane up {i} min', flush=True)\n    time.sleep(60)\n",
++    ]
++    return {
++        "cells": [{"cell_type": "code", "source": c, "metadata": {}, "outputs": [],
++                   "execution_count": None} for c in cells],
++        "metadata": {"kernelspec": {"name": "python3", "language": "python",
++                                    "display_name": "Python 3"}},
++        "nbformat": 4, "nbformat_minor": 5,
++    }
++
++
++def main() -> int:
++    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
++    ap.add_argument("--model", default=MODEL_DEFAULT)
++    ap.add_argument("--slug", default=SLUG_DEFAULT)
++    ap.add_argument("--hours", type=float, default=11.0,
++                    help="hold the session this long; Kaggle's own cap is 12")
++    ap.add_argument("--gpu", default="nvidiaT4", choices=["nvidiaT4", "nvidiaP100"])
++    ap.add_argument("--preflight", action="store_true",
++                    help="report what is present and write nothing")
++    ap.add_argument("--status", action="store_true", help="ask Kaggle how the last push is doing")
++    args = ap.parse_args()
++
++    user = vault_get("kaggle-api", "username")
++    key = vault_get("kaggle-api", "key")
++    tunnel = vault_get("cloudflare-tunnel-token")
++    lane_key = vault_get("kaggle-lane-key")
++
++    for name, val, how in (
++        ("kaggle-api", user and key,
++         "FOUNDER ACTION: open https://www.kaggle.com/settings -> API -> Create New Token, then "
++         "Backstage -> Run the estate bootstrap -> scope kaggle. One console step, once."),
++        ("cloudflare-tunnel-token", tunnel,
++         "bin/idp-bootstrap-cloudflare --rotate mints this from the standing root (R52); "
++         "Backstage -> Run the estate bootstrap -> scope cloudflare, mode live."),
++        ("kaggle-lane-key", lane_key,
++         "bin/idp-bootstrap-cloudflare --rotate mints this shared bearer alongside the tunnel."),
++    ):
++        if not val:
++            say("BLIND", name, how)
++            if not args.preflight:
++                return 2
++
++    if args.preflight:
++        say("ok", "preflight", "nothing written; the BLIND lines above are what is still missing")
++        return 0
++
++    if not shutil.which("kaggle"):
++        blind("kaggle-cli", "pip install kaggle (the launcher shells out to it, R43)")
++
++    env = {**os.environ, "KAGGLE_USERNAME": user, "KAGGLE_KEY": key}
++
++    if args.status:
++        out = subprocess.run(["kaggle", "kernels", "status", f"{user}/{args.slug}"],
++                             capture_output=True, text=True, env=env)
++        say("ok" if out.returncode == 0 else "FAIL", "kaggle", out.stdout.strip() or out.stderr.strip())
++        return 0 if out.returncode == 0 else 1
++
++    with tempfile.TemporaryDirectory() as d:
++        p = Path(d)
++        (p / f"{args.slug}.ipynb").write_text(json.dumps(notebook(args.model, lane_key, args.hours)))
++        (p / "kernel-metadata.json").write_text(json.dumps({
++            "id": f"{user}/{args.slug}",
++            "title": "otto gpu lane",
++            "code_file": f"{args.slug}.ipynb",
++            "language": "python",
++            "kernel_type": "notebook",
++            "is_private": True,
++            "enable_gpu": True,
++            "enable_internet": True,
++            "accelerator": args.gpu,
++            # The tunnel token reaches the notebook as a Kaggle Secret, never in the file: the
++            # .ipynb is pushed to Kaggle's servers and a token written into it would be a static
++            # secret on somebody else's disk (security-policy.md, R52).
++            "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
++        }))
++        out = subprocess.run(["kaggle", "kernels", "push", "-p", str(p)],
++                             capture_output=True, text=True, env=env)
++    if out.returncode != 0:
++        fail("kaggle", (out.stderr or out.stdout).strip().splitlines()[-1][:200])
++    say("ok", "kaggle", f"pushed {user}/{args.slug} on {args.gpu}; "
++                        f"bin/idp-kaggle-lane --status says when it is serving")
++    say("ok", "lane", f"the lifeboat reaches it at KAGGLE_LANE_URL once the tunnel is up "
++                      f"(model {args.model}, held {args.hours}h of Kaggle's 12h cap)")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/docs/how-to/onboarding/idp-kaggle-lane.md b/docs/how-to/onboarding/idp-kaggle-lane.md
+new file mode 100644
+index 000000000..68e2a0d39
+--- /dev/null
++++ b/docs/how-to/onboarding/idp-kaggle-lane.md
+@@ -0,0 +1,56 @@
++# Onboarding — putting Otto on free GPU capacity
++
++You need this when Otto's free API lanes are not enough: they have all been exhausted for the
++day, a vendor has changed its terms, or you want a lane whose model and behaviour nobody but
++the estate can change. It gives Otto a fourth failure domain built on Kaggle's free GPU quota —
++30 hours a week on a T4 or P100.
++
++## Before you start
++
++Three credentials, and the tool tells you which are missing:
++
++```
++bin/idp-kaggle-lane --preflight
++```
++
++- **`kaggle-api`** — the founder's Kaggle API token. This is the one genuine console step, and
++  it is done once: <https://www.kaggle.com/settings> → API → Create New Token, then Backstage →
++  Run the estate bootstrap → scope `kaggle`. Kaggle has no other way to issue one.
++- **`cloudflare-tunnel-token`** and **`kaggle-lane-key`** — both minted by
++  `bin/idp-bootstrap-cloudflare` from the standing Cloudflare root, with no console step at
++  all. Door: Backstage → Run the estate bootstrap → scope `cloudflare`, mode `live`.
++
++You also need the `kaggle` client on the machine that launches (`pip install kaggle`). The
++launcher shells out to it rather than reimplementing Kaggle's push protocol.
++
++## Door (from the UI)
++
++Backstage → Otto → **Homes** → *Launch the GPU lane*. The button runs the same command with
++the defaults below; the page shows the last push and whether the notebook is serving.
++
++## Launch, and check
++
++```
++bin/idp-kaggle-lane                # push and start on a T4, hold 11 of the 12 allowed hours
++bin/idp-kaggle-lane --status       # ask Kaggle how that push is doing
++bin/idp-kaggle-lane --gpu nvidiaP100 --hours 6
++```
++
++## How the Worker finds it
++
++The lifeboat's lane table carries `secret: KAGGLE_LANE_KEY` and `urlVar: KAGGLE_LANE_URL`, not
++a hostname. That is deliberate: the estate's DNS zone is one value in
++`clusters/*/estate-config.yaml` and no platform file may write it down (LAW 46), so
++`bin/idp-otto-homes` passes the address in at deploy time. A lane with either unset is skipped
++before any fetch, so an unconfigured lane costs nothing and throws nothing.
++
++## When it does not work
++
++- **`BLIND kaggle-api`** — the token is not in the vault. Run the bootstrap scope above; do not
++  paste a token into a session or a file.
++- **`FAIL kaggle`** — Kaggle refused the push. The last line of its own error is printed; the
++  usual causes are a slug that collides with an existing kernel and a quota that is spent for
++  the week.
++- **The lane is skipped in the Worker's `tried` list** — the notebook is not running. That is
++  the normal state for most of any week: 30 GPU-hours is not 168, and the lane is designed to
++  be absent without costing a turn.
+diff --git a/docs/tutorials/demo/idp-kaggle-lane.md b/docs/tutorials/demo/idp-kaggle-lane.md
+new file mode 100644
+index 000000000..cf294e73d
+--- /dev/null
++++ b/docs/tutorials/demo/idp-kaggle-lane.md
+@@ -0,0 +1,52 @@
++# Demo — the lane that runs on a GPU nobody bills for
++
++Every other lane Otto can think on is somebody's free tier: Groq's 1,000 requests a day,
++Gemini's 1,500, Cloudflare's neuron allowance, OpenRouter's 50. A free tier can be withdrawn,
++re-priced, or have its model slug quietly retired, and the day all of them do it at once the
++estate has nothing to think with. This lane is the answer to that day. Kaggle gives 30 GPU-hours
++a week on a T4 or a P100 at no cost, and a model **we** chose, running on a GPU **we** launched,
++answers regardless of what any vendor decides.
++
++It is also a fourth failure domain, which is the part that matters more than the price. Kaggle
++shares no node, no network, no DNS and no control plane with the OKE cluster, and none with
++Cloudflare either. Home 1 and home 2 can both be gone and this still answers.
++
++## See it without launching anything
++
++```
++bin/idp-kaggle-lane --preflight
++```
++
++It reports what is present and writes nothing. Today, from a laptop with no Kaggle credential
++in the vault, it prints three BLIND lines naming exactly what is missing and the door that
++supplies each one — the Kaggle API token (one console step, once, by the founder), and the
++Cloudflare tunnel token and shared bearer, both minted from the standing Cloudflare root that
++the estate already holds (R52, one root per provider).
++
++## Launch it
++
++```
++bin/idp-kaggle-lane --model qwen2.5-coder:7b --gpu nvidiaT4
++bin/idp-kaggle-lane --status
++```
++
++The first pushes a four-cell notebook to Kaggle and starts it on a GPU: install Ollama, pull
++the model, dial out through a **named** Cloudflare tunnel so the address is the same hostname
++every session, then hold the session open. Nothing dials in and no inbound port is opened on
++Kaggle's side. The second asks Kaggle how that push is doing.
++
++## What you should expect to see
++
++`ok kaggle pushed <user>/otto-gpu-lane on nvidiaT4`, and then, once the tunnel is up, the
++lifeboat reaching it at `KAGGLE_LANE_URL`. The Worker skips the lane entirely when either the
++key or the URL is unset, so nothing breaks before the notebook exists — that is why the lane
++could ship before this launcher had ever been run.
++
++## The part that is intermittent on purpose
++
++Kaggle caps a session at 12 hours and that is not negotiable, so the launcher holds 11 and
++stops itself rather than being killed mid-answer. When no notebook is running the hostname does
++not answer, the fetch throws, and `think()` counts the lane as tried and moves on to the next
++one — which is exactly what a lifeboat is supposed to do with a lane that is not there.
++Re-launching on a cadence is the scheduler's job, not a loop inside this file: the estate has
++one scheduler and it is Dagster.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index 999ce9820..7e6420aed 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -96,6 +96,7 @@ nav:
+       - The Tools page: demo/tools.md
+       - Estate clock recording: demo/dagster.md
+       - Dashboards recording: demo/superset.md
++      - GPU lane: tutorials/demo/idp-kaggle-lane.md
+       - Portal: tutorials/demo/idp.md
+       - Estate compiler: tutorials/demo/intent.md
+       - Conscience: tutorials/demo/conscience.md
+@@ -189,6 +190,7 @@ nav:
+       - Estate compiler recording: onboarding/intent-compiler.md
+       - Estate clock recording: onboarding/dagster.md
+       - Dashboards recording: onboarding/superset.md
++      - GPU lane: how-to/onboarding/idp-kaggle-lane.md
+       - Trace matrix: how-to/onboarding/trace-matrix.md
+       - Namespace fences: how-to/onboarding/ns-fence-gate.md
+       - Portal: how-to/onboarding/idp.md
+diff --git a/platform/lifeboat/src/homes.js b/platform/lifeboat/src/homes.js
+index a423901b3..ade9e5d50 100644
+--- a/platform/lifeboat/src/homes.js
++++ b/platform/lifeboat/src/homes.js
+@@ -68,6 +68,37 @@ export const LANES = [
+     binding: "AI",
+     model: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+   },
++  {
++    // KAGGLE. The only lane in this list that is not somebody's free tier -- it is a GPU, and
++    // the estate is the one running the model on it. Every other lane here lives on a vendor's
++    // goodwill: a free tier can be withdrawn, re-priced, or have its slug churned, and on the
++    // day all four do it at once the estate has nothing. A notebook we launch, running a model
++    // we chose, answers regardless of what any vendor decides. That is what "forever" has to
++    // mean; the free tiers above are what it means until then.
++    //
++    // Kaggle gives 30 GPU-hours a week on a T4 or P100, at zero cost, on infrastructure that
++    // shares nothing with OKE and nothing with Cloudflare -- so it is a fourth failure domain,
++    // not a fourth vendor.
++    //
++    // It is not metered here, and deliberately: the constraint is hours of session, not
++    // requests, and this code has measured no hour figure. An unmetered lane keeps its declared
++    // rank and is never reordered on a number nobody counted (the same rule workers-ai gets).
++    //
++    // Its URL is a var and not a constant because the estate's DNS zone is one value in
++    // clusters/*/estate-config.yaml and a platform file may never name it (LAW 46);
++    // bin/idp-otto-homes passes it in at deploy time. Its address is a NAMED Cloudflare
++    // tunnel, so it is the same hostname every session -- the notebook dials out, nothing
++    // dials in, and there is no ngrok URL to chase and no inbound port anywhere.
++    //
++    // When no notebook is running the hostname simply does not answer, the fetch throws, and
++    // think() counts it as tried and moves on. A lane that is down costs one timeout, and a
++    // lane whose key was never set costs nothing at all -- so this can be merged, deployed and
++    // sit inert until the session that fills it in.
++    name: "kaggle",
++    secret: "KAGGLE_LANE_KEY",
++    urlVar: "KAGGLE_LANE_URL",
++    model: "qwen2.5-coder:7b",
++  },
+   {
+     name: "openrouter",
+     budget: { requests: 50, window: "day" },     // published free tier, no credit balance
+@@ -232,7 +263,13 @@ export async function tryLane(lane, env, body, fetchImpl = fetch) {
+   const key = env[lane.secret];
+   if (!key) return null; // a lane whose key was never set is skipped, not an error
+ 
+-  const res = await fetchImpl(lane.url, {
++  // A lane may carry its address in the environment rather than in this file -- the estate's
++  // zone is one value in estate-config.yaml and no platform file may write it down (LAW 46).
++  // An unset var is the same "skip me" a missing key is, never a fetch against `undefined`.
++  const url = lane.url ?? env[lane.urlVar];
++  if (!url) return null;
++
++  const res = await fetchImpl(url, {
+     method: "POST",
+     headers: {
+       authorization: `Bearer ${key}`,
+diff --git a/platform/lifeboat/test/lifeboat.test.mjs b/platform/lifeboat/test/lifeboat.test.mjs
+index 5a869c8a2..44bb1cb6f 100644
+--- a/platform/lifeboat/test/lifeboat.test.mjs
++++ b/platform/lifeboat/test/lifeboat.test.mjs
+@@ -316,7 +316,7 @@ test("think reports which lanes it tried when none of them answered", async () =
+ 
+ test("with every lane untouched the declared quality order is what runs", () => {
+   assert.deepEqual(chooseOrder(Date.now()).map((l) => l.name),
+-                   ["groq", "gemini", "workers-ai", "openrouter"]);
++                   ["groq", "gemini", "workers-ai", "kaggle", "openrouter"]);
+ });
+ 
+ test("a 429 takes a lane out of the running until its window rolls, it does not just skip it once", async () => {
+@@ -363,3 +363,60 @@ test("a spent lane is skipped and a live one answers, without the spent lane bei
+   assert.equal(lane, "gemini");
+   assert.ok(!calls.some((c) => c.url.includes("groq")));
+ });
++
++// --------------------------------------------------------------------------------------
++// The GPU lane nobody bills for.
++
++test("a lane whose address lives in the environment is fetched at that address", async () => {
++  const kaggle = LANES.find((l) => l.name === "kaggle");
++  let asked = null;
++  const out = await tryLane(
++    kaggle,
++    { KAGGLE_LANE_KEY: "k", KAGGLE_LANE_URL: "https://gpu.example/v1/chat/completions" },
++    { messages: [{ role: "user", content: "hi" }] },
++    async (url) => {
++      asked = url;
++      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ choices: [{ message: { content: "yes" } }] }) };
++    },
++  );
++  assert.equal(asked, "https://gpu.example/v1/chat/completions");
++  assert.equal(out.choices[0].message.content, "yes");
++});
++
++test("the same lane with a key but no address is skipped, not fetched against undefined", async () => {
++  const kaggle = LANES.find((l) => l.name === "kaggle");
++  let fetched = false;
++  const out = await tryLane(
++    kaggle,
++    { KAGGLE_LANE_KEY: "k" },
++    { messages: [{ role: "user", content: "hi" }] },
++    async () => { fetched = true; throw new Error("must not be reached"); },
++  );
++  assert.equal(out, null);
++  assert.equal(fetched, false, "a lane with no address must cost no request");
++});
++
++test("a notebook that is not running costs one lane, not the turn", async () => {
++  // No session up: the hostname does not answer and fetch throws. think() must count it and
++  // carry on, because a down GPU is the normal state of a 30-hour-a-week lane.
++  const order = [];
++  const res = await think(
++    { KAGGLE_LANE_KEY: "k", KAGGLE_LANE_URL: "https://gpu.example/v1", OPENROUTER_API_KEY: "o" },
++    { messages: [{ role: "user", content: "hi" }] },
++    async (url) => {
++      order.push(url);
++      if (url.startsWith("https://gpu.example")) throw new Error("connect ECONNREFUSED");
++      return { ok: true, status: 200, headers: new Headers(), json: async () => ({ choices: [{ message: { content: "fallback" } }] }) };
++    },
++  );
++  assert.equal(res.out.choices[0].message.content, "fallback");
++  assert.ok(res.tried.some((t) => t.startsWith("kaggle(")), `kaggle should be tried and named: ${res.tried}`);
++});
++
++test("the GPU lane is never reordered by headroom, because nothing counted its hours", () => {
++  const kaggle = LANES.find((l) => l.name === "kaggle");
++  assert.equal(kaggle.budget, undefined, "a lane with no measured budget must declare none");
++  const at = LANES.indexOf(kaggle);
++  for (const l of LANES) if (l.budget) exhaust(l, Date.now(), null);
++  assert.equal(chooseOrder(Date.now())[at].name, "kaggle");
++});

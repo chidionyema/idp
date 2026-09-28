@@ -1,0 +1,97 @@
+# Tier 2: the resident brain. A 14B reasoning model, on one node, answering over loopback.
+#
+# WHY 14B AND NOT 32B: 19 Gi allocatable per node and no GPU. A 32B Q4_K_M is ~19 GB plus KV cache
+# and fits alongside NOTHING. A 14B is ~9 GB and fits once 9 Gi of REQUEST is reclaimed. The 32B
+# goes to free cloud for the rare escalation -- see docs/specs/2026-09-11-which-model-to-host.md.
+#
+# WHY A SECOND PROCESS AND NOT ANOTHER ARTIFACT IN edge-runtime: that runtime loads ONE GGUF, and
+# its abstain softmax is built for a label set, not for open-ended reasoning. Two jobs, two
+# processes, one node -- and neither constrains the other.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: resident-brain
+  namespace: edge-runtime
+spec:
+  replicas: 1
+  strategy:
+    # The brain holds 9 GB. A rolling update would need 18 GB on one node for a moment, which is
+    # the whole node. Recreate, so the old one goes before the new one arrives.
+    type: Recreate
+  selector:
+    matchLabels: { app: resident-brain }
+  template:
+    metadata:
+      labels: { app: resident-brain }
+    spec:
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: brain
+          # Served by llama.cpp's own server: an OpenAI-compatible endpoint, which is what every
+          # consumer in this estate already speaks. Writing a second inference server would be
+          # reinventing the wheel worse (LAW 43).
+          image: ghcr.io/ggml-org/llama.cpp:server
+          args:
+            - "--model"
+            - "/models/DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf"
+            - "--host"
+            - "127.0.0.1"
+            - "--port"
+            - "8080"
+            - "--ctx-size"
+            - "8192"
+            - "--threads"
+            - "5"
+            # Deterministic: this is used for decisions, and a decision that changes between two
+            # identical calls is not a decision anybody can audit.
+            - "--temp"
+            - "0.1"
+          ports:
+            - { containerPort: 8080, name: http }
+          resources:
+            # REQUEST EQUALS LIMIT (Guaranteed QoS), because require-priority-class refuses a
+            # container where they differ. 9.5 Gi is the 14B's weights plus a few GB of KV cache at
+            # 8192 context; measure before shrinking.
+            requests: { cpu: "4", memory: "9.5Gi" }
+            limits:   { cpu: "4", memory: "9.5Gi" }
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            # Loading 9 GB from a volume is not instant, and a probe that gives up early is a pod
+            # that never becomes ready while the model is fine.
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 180
+            periodSeconds: 60
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: models, mountPath: /models, readOnly: true }
+      volumes:
+        - name: models
+          # The artifact volume. It must hold
+          # DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf -- a download, not a purchase. Until it exists
+          # the pod will CrashLoop with "failed to load model", which is the correct refusal.
+          emptyDir: {}
+---
+# Loopback only (R20). Nothing outside this namespace reaches the brain; `bin/idp-kube
+# port-forward` is the estate's one road to a private service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: resident-brain
+  namespace: edge-runtime
+spec:
+  type: ClusterIP
+  selector: { app: resident-brain }
+  ports:
+    - { name: http, port: 8080, targetPort: 8080 }

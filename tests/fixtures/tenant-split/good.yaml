@@ -1,0 +1,29 @@
+# Clean end-state after decision 0021 change 1: customer zero is a tenant of its own and the
+# estate operator keeps only the alerts bot. Every secret belongs to exactly one tenant, the
+# estate row carries the alerts-bot: operator prefix, and no customer allowlist references the
+# operator's direct chat. Must PASS bin/idp-tenant-split (change-2 must-pass fixture).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otto-gateway-binding-seed
+  namespace: otto-gateway
+data:
+  seed.sql: |
+    INSERT INTO channel_binding
+        (tenant_id, channel, external_id, secret_ref, token_fingerprint, status,
+         outbound_secret_ref, principal_allowlist)
+    VALUES
+        -- customer zero: a paying tenant on its own telegram chat, its own secret(s), no
+        -- operator principal in the allowlist.
+        ('customer-zero', 'telegram', 'customer-chat',
+         'vault://otto-customer/webhook_secret', :'fingerprint', 'active',
+         'vault://otto-customer/token',
+         jsonb_build_object('customer-chat', 'alice')),
+        -- estate: the operator's alerts bot only; carries the alerts-bot: external-id prefix
+        -- and binds the operator's own chat in the allowlist.
+        ('estate', 'telegram', 'alerts-bot:' || :'chat_id',
+         'vault://flux-telegram/webhook_secret', :'fingerprint_alerts', 'active',
+         'vault://flux-telegram/token',
+         jsonb_build_object(:'chat_id', 'founder'))
+    ON CONFLICT (channel, external_id) DO UPDATE SET
+        tenant_id = excluded.tenant_id;

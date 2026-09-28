@@ -1,0 +1,5 @@
+# A snapshot carries its own ledger so the fixture grades itself, not the live estate.
+budget: 1
+pinned:
+  - workload: apps/Deployment/web
+    why: the fixture's one legitimately pinned workload, here to prove that a named entry passes

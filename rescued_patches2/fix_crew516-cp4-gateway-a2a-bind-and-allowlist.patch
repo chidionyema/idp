@@ -1,0 +1,408 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index c67f94b30..211ceaa0c 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -146,6 +146,9 @@ jobs:
+           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+           TELEGRAM_BOT_TOKEN: ${{ secrets.SEED_HERMES_TELEGRAM_BOT_TOKEN }}
+           TELEGRAM_ALLOWED_USER_IDS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
++          # crew#516 CP4 (receipt 33116314460, "Unauthorized user ... on telegram"): hermes-agent reads
++          # TELEGRAM_ALLOWED_USERS (gateway/run.py); the cockpit reads TELEGRAM_ALLOWED_USER_IDS. Both carry the one value.
++          TELEGRAM_ALLOWED_USERS: ${{ secrets.SEED_HERMES_TELEGRAM_ALLOWED_USER_IDS }}
+           TELEGRAM_HOME_CHANNEL: ${{ secrets.SEED_HERMES_TELEGRAM_HOME_CHANNEL }}
+           ANTHROPIC_API_KEY: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+           OPENROUTER_API_KEY: ${{ secrets.SEED_OPENROUTER_API_KEY }}
+@@ -154,7 +157,7 @@ jobs:
+           EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
+           HERMES_AUTH_JSON: ${{ secrets.SEED_HERMES_AUTH_JSON }}
+         run: |
+-          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
++          keys=TELEGRAM_BOT_TOKEN,TELEGRAM_ALLOWED_USER_IDS,TELEGRAM_ALLOWED_USERS,TELEGRAM_HOME_CHANNEL,ANTHROPIC_API_KEY,OPENROUTER_API_KEY,LITELLM_API_KEY,GITHUB_TOKEN,EXA_API_KEY,HERMES_AUTH_JSON
+           any=0; for k in ${keys//,/ }; do [ -n "${!k:-}" ] && any=1; done
+           [ "$any" = 1 ] || { echo "n/a     hermes-agent-env   no SEED_HERMES_* secrets set; the vault keeps what it holds"; exit 0; }
+           umask 077; f=$(mktemp)
+diff --git a/docs/evidence/pr-493/20260827T212331Z-1.png b/docs/evidence/pr-493/20260827T212331Z-1.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..7dc12afc578935cdb76518c3954eec59e20267d9
+GIT binary patch
+literal 15280
+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
+SpN#(Um6N^8uT>XrKl~qhD>oAW
+
+literal 0
+HcmV?d00001
+
+diff --git a/platform/hermes-agent/gateway.yaml b/platform/hermes-agent/gateway.yaml
+index 315b39f32..9c7437de4 100644
+--- a/platform/hermes-agent/gateway.yaml
++++ b/platform/hermes-agent/gateway.yaml
+@@ -47,6 +47,41 @@ spec:
+   dataFrom:
+     - extract: { key: hermes-agent-env }
+ ---
++# crew#516 CP4 (2026-08-27, receipt 33116314460): the a2a adapter binds 127.0.0.1 unless a bearer
++# token is configured (hermes-agent plugins/platforms/a2a/security.py resolve_bind_host), so the
++# kubelet's probe on the pod IP was "connection refused" 151 times and the pod was killed every five
++# minutes. The token is generated once in the cluster by ESO's Password generator, never seeded,
++# never in git, and projected into the same env dir the entrypoint exports.
++apiVersion: generators.external-secrets.io/v1alpha1
++kind: Password
++metadata:
++  name: hermes-agent-a2a
++  namespace: hermes-agent
++spec:
++  length: 48
++  digits: 8
++  symbols: 0
++  symbolCharacters: ""
++  noUpper: false
++  allowRepeat: true
++---
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: hermes-agent-a2a
++  namespace: hermes-agent
++spec:
++  refreshInterval: "0"   # generated once; a rotation under a running gateway is a deliberate change
++  target: { name: hermes-agent-a2a, creationPolicy: Owner }
++  dataFrom:
++    - sourceRef:
++        generatorRef:
++          apiVersion: generators.external-secrets.io/v1alpha1
++          kind: Password
++          name: hermes-agent-a2a
++      rewrite:
++        - transform: { template: "A2A_BEARER_TOKEN" }
++---
+ # HERMES_HOME. 5Gi is the Mac's checkout today (state.db, sessions, hindsight, kanban) with room.
+ apiVersion: v1
+ kind: PersistentVolumeClaim
+@@ -82,7 +117,7 @@ metadata:
+   annotations:
+     # Reloader (platform/reloader) rolls the pod when the vault entry lands through ESO (1h refresh),
+     # the same way litellm picks up litellm-upstream: the swap seeds TELEGRAM_BOT_TOKEN and the pod restarts.
+-    secret.reloader.stakater.com/reload: "hermes-agent-env"
++    secret.reloader.stakater.com/reload: "hermes-agent-env,hermes-agent-a2a"
+   labels:
+     app: hermes-agent-gateway
+     app.kubernetes.io/name: hermes-agent-gateway
+@@ -131,6 +166,11 @@ spec:
+               value: http://hindsight-api.hindsight.svc:8888
+             - name: PYTHONUNBUFFERED
+               value: "1"
++            # crew#516 CP4: bind a2a on the pod IP so the probes below reach it; A2A_BEARER_TOKEN
++            # (hermes-agent-a2a, above) is what lets the adapter leave loopback. The agent card is
++            # public by design; every POST needs the token.
++            - name: A2A_HOST
++              value: 0.0.0.0
+           ports:
+             - containerPort: 9900
+               name: a2a
+@@ -190,6 +230,9 @@ spec:
+         - name: tmp
+           emptyDir: {}
+         - name: env
+-          secret: { secretName: hermes-agent-env }
++          projected:
++            sources:
++              - secret: { name: hermes-agent-env }
++              - secret: { name: hermes-agent-a2a }   # crew#516 CP4: A2A_BEARER_TOKEN
+         - name: estate
+           configMap: { name: hermes-agent-estate }
+diff --git a/tests/test_hermes_agent_row.py b/tests/test_hermes_agent_row.py
+index b40c69a2b..d8cf7a48f 100644
+--- a/tests/test_hermes_agent_row.py
++++ b/tests/test_hermes_agent_row.py
+@@ -70,10 +70,12 @@ def test_secrets_are_files_the_container_exports_never_pod_env():
+     mounts = {m["mountPath"]: m for m in c["volumeMounts"]}
+     assert mounts[env_dir]["readOnly"] is True
+     vols = {v["name"]: v for v in spec["volumes"]}
+-    secret = vols[mounts[env_dir]["name"]]["secret"]["secretName"]
+-    es = _one(docs, "ExternalSecret")
+-    assert es["spec"]["target"]["name"] == secret
+-    assert es["spec"]["dataFrom"] == [{"extract": {"key": "hermes-agent-env"}}]
++    # crew#516 CP4: the env dir is a projected volume -- the vault entry plus the in-cluster a2a token.
++    secrets = [s["secret"]["name"] for s in vols[mounts[env_dir]["name"]]["projected"]["sources"]]
++    ess = {d["metadata"]["name"]: d for d in docs if d and d.get("kind") == "ExternalSecret"}
++    assert secrets == ["hermes-agent-env", "hermes-agent-a2a"] and set(secrets) == set(ess)
++    assert ess["hermes-agent-env"]["spec"]["target"]["name"] == "hermes-agent-env"
++    assert ess["hermes-agent-env"]["spec"]["dataFrom"] == [{"extract": {"key": "hermes-agent-env"}}]
+ 
+ 
+ def test_the_build_is_the_image_not_a_configmap_copy():
+@@ -115,7 +117,7 @@ def test_oke_check_seeds_the_entry_the_pod_reads():
+     steps = [s for s in wf["jobs"]["check"]["steps"] if "hermes-agent-env" in s.get("name", "")]
+     (step,) = steps
+     assert "bin/idp-vault-put --merge hermes-agent-env" in step["run"]
+-    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "ANTHROPIC_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "HERMES_AUTH_JSON"):
++    for key in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_ALLOWED_USER_IDS", "TELEGRAM_ALLOWED_USERS", "ANTHROPIC_API_KEY", "LITELLM_API_KEY", "GITHUB_TOKEN", "HERMES_AUTH_JSON"):
+         assert key in step["env"] and key in step["run"], key
+ 
+ 
+@@ -135,4 +137,5 @@ def test_incident_apply_dispatch_is_not_displaced_by_pull_request_pushes():
+ 
+ def test_the_pod_rolls_when_the_vault_entry_changes():
+     dep = _one(_docs(), "Deployment")
+-    assert dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"] == _one(_docs(), "ExternalSecret")["spec"]["target"]["name"]
++    targets = sorted(d["spec"]["target"]["name"] for d in _docs() if d and d.get("kind") == "ExternalSecret")
++    assert sorted(dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"].split(",")) == targets
+diff --git a/tests/test_incident_crew516_cp4_gateway_probe_reaches_a2a_and_hermes_reads_the_allowlist.py b/tests/test_incident_crew516_cp4_gateway_probe_reaches_a2a_and_hermes_reads_the_allowlist.py
+new file mode 100644
+index 000000000..2e1f90068
+--- /dev/null
++++ b/tests/test_incident_crew516_cp4_gateway_probe_reaches_a2a_and_hermes_reads_the_allowlist.py
+@@ -0,0 +1,60 @@
++"""crew#516 CP4, receipt run 33116314460 (2026-08-27 21:00Z): the gateway pod ran Telegram but
++
++  1. "Startup probe failed: ... 9900: connect: connection refused" x151 -- the a2a adapter binds
++     127.0.0.1 unless A2A_BEARER_TOKEN (or A2A_PEER_TOKENS) is set and A2A_HOST asks for more
++     (hermes-agent plugins/platforms/a2a/security.py resolve_bind_host); the kubelet probes the pod
++     IP, so the pod was killed every five minutes (BackOff x49 on the previous ReplicaSet);
++  2. "Unauthorized user: <founder> on telegram" -- the vault entry carried TELEGRAM_ALLOWED_USER_IDS
++     (the cockpit's name) and hermes-agent reads TELEGRAM_ALLOWED_USERS (gateway/run.py).
++
++The row now generates the a2a token in the cluster (ESO Password generator, never seeded, never in
++git), projects it into the env dir the entrypoint exports, binds a2a on 0.0.0.0, and seeds the
++allow-list under both names."""
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++DOCS = list(yaml.safe_load_all((ROOT / "platform/hermes-agent/gateway.yaml").read_text()))
++
++
++def by(kind, name):
++    (d,) = [d for d in DOCS if d and d["kind"] == kind and d["metadata"]["name"] == name]
++    return d
++
++
++def test_a2a_token_is_generated_in_cluster_and_projected_into_the_env_dir():
++    gen = by("Password", "hermes-agent-a2a")
++    assert gen["apiVersion"].startswith("generators.external-secrets.io/") and gen["spec"]["length"] >= 32
++    es = by("ExternalSecret", "hermes-agent-a2a")
++    (src,) = es["spec"]["dataFrom"]
++    assert src["sourceRef"]["generatorRef"] == {"apiVersion": gen["apiVersion"], "kind": "Password", "name": "hermes-agent-a2a"}
++    assert src["rewrite"] == [{"transform": {"template": "A2A_BEARER_TOKEN"}}]
++    assert str(es["spec"]["refreshInterval"]) == "0", "a rotation under a running gateway is a deliberate change, not a timer"
++    dep = by("Deployment", "hermes-agent-gateway")
++    spec = dep["spec"]["template"]["spec"]
++    (env_vol,) = [v for v in spec["volumes"] if v["name"] == "env"]
++    names = [s["secret"]["name"] for s in env_vol["projected"]["sources"]]
++    assert names == ["hermes-agent-env", "hermes-agent-a2a"]
++    (c,) = spec["containers"]
++    env = {e["name"]: e.get("value") for e in c["env"]}
++    assert env["A2A_HOST"] == "0.0.0.0" and env["HERMES_ENV_DIR"] == "/run/secrets/hermes-agent-env"
++    (m,) = [m for m in c["volumeMounts"] if m["name"] == "env"]
++    assert m["mountPath"] == env["HERMES_ENV_DIR"]
++    for probe in ("startupProbe", "readinessProbe", "livenessProbe"):
++        assert c[probe]["httpGet"] == {"path": "/.well-known/agent-card.json", "port": "a2a"}
++    assert "hermes-agent-a2a" in dep["metadata"]["annotations"]["secret.reloader.stakater.com/reload"]
++
++
++def test_no_token_or_allowlist_value_is_in_git():
++    text = (ROOT / "platform/hermes-agent/gateway.yaml").read_text() + (ROOT / ".github/workflows/oke-check.yml").read_text()
++    assert "A2A_BEARER_TOKEN:" not in text.replace("template: \"A2A_BEARER_TOKEN\"", "")
++    import re
++    assert not re.search(r"TELEGRAM_ALLOWED_USERS?[A-Z_]*\s*[:=]\s*[\"']?\d{5,}", text)
++
++
++def test_oke_check_seeds_the_allowlist_under_the_name_hermes_reads():
++    wf = yaml.safe_load((ROOT / ".github/workflows/oke-check.yml").read_text())
++    (step,) = [s for s in wf["jobs"]["check"]["steps"] if "hermes-agent-env" in s.get("name", "")]
++    assert step["env"]["TELEGRAM_ALLOWED_USERS"] == step["env"]["TELEGRAM_ALLOWED_USER_IDS"], "one value, both names"
++    assert "TELEGRAM_ALLOWED_USERS," in step["run"] and "TELEGRAM_ALLOWED_USER_IDS," in step["run"]

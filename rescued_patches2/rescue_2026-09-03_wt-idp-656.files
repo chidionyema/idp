@@ -1,0 +1,9 @@
+platform/monitoring/rules/canary-servicemonitor.yaml
+platform/monitoring/rules/kustomization.yaml
+platform/staging/canary/canary-scheduler.py
+platform/staging/canary/canary.yaml
+platform/staging/canary/gauge.yaml
+platform/staging/canary/injection-log.yaml
+platform/staging/canary/kustomization.yaml
+platform/staging/canary/scheduler.yaml
+platform/staging/kustomization.yaml

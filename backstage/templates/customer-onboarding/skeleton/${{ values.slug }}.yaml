@@ -1,0 +1,14 @@
+# The channel binding for {{ values.organisation }}, as requested through the portal.
+# One file per customer, named after the tenant id, so two requests in flight at once
+# do not overwrite each other's row.
+#
+# These four values are the `channel_binding` row otto's ingress reads
+# (hermes-v2 otto/ingress/store.py): tenant_id, channel, external_id, secret_ref.
+# token_fingerprint is computed from the credential when the row is written, and is
+# deliberately not here -- nothing in git ever sees the credential itself.
+tenant_id: {{ values.slug }}
+organisation: {{ values.organisation }}
+channel: {{ values.provider }}
+external_id: {{ values.account }}
+secret_ref: {{ values.secretStore }}:{{ values.secretPath }}
+status: requested

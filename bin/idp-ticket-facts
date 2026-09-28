@@ -1,0 +1,359 @@
+#!/usr/bin/env python3
+"""Print the infrastructure facts a ticket must carry, generated from the repo, never typed.
+
+crew#629 CP1, founder 2026-08-29: "should every ticket auto populate crucial infra details?"
+Another session spent eight attempts on idp#800 re-finding which admission policies applied to
+one Flux row, facts that were in git the whole time. This prints them once, for a Flux row or a
+surface name, in six sections, so a ticket body carries them and a session reads instead of hunts:
+
+    bin/idp-ticket-facts llm            # six sections, live door probe included
+    bin/idp-ticket-facts llm --no-live  # the same without the network (tests, offline)
+
+A section that finds nothing says BLIND with the reason, never an empty heading (LAW 28).
+Nothing here names a host, a zone or a home directory (LAW 46): the zone comes from
+clusters/oke/estate-config.yaml and the standards page is found beside this checkout or by
+ESTATE_STANDARDS_MD.
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import re
+import subprocess
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+PLATFORM_YAML = ROOT / "clusters" / "oke" / "platform.yaml"
+ESTATE_CONFIG = ROOT / "clusters" / "oke" / "estate-config.yaml"
+DRILLS = ROOT / "drills" / "catalogue.yaml"
+ON_OFF_KEYS = ("enabled", "replicas", "suspend", "replicaCount", "wait", "prune")
+
+
+def load_docs(path: Path) -> list[dict]:
+    try:
+        return [d for d in yaml.safe_load_all(path.read_text()) if isinstance(d, dict)]
+    except (OSError, yaml.YAMLError) as e:
+        print(f"BLIND: {path.relative_to(ROOT)} did not parse: {e}", file=sys.stderr)
+        return []
+
+
+def estate_config() -> dict:
+    for d in load_docs(ESTATE_CONFIG):
+        if d.get("kind") == "ConfigMap":
+            return d.get("data") or {}
+    return {}
+
+
+def substitute(s: str, cfg: dict) -> str:
+    return re.sub(r"\$\{([A-Z_]+)\}", lambda m: cfg.get(m.group(1), m.group(0)), s)
+
+
+def flux_rows(name: str) -> tuple[list[dict], list[dict]]:
+    """(rows matching name, rows that depend on a match)."""
+    rows = [d for d in load_docs(PLATFORM_YAML) if d.get("kind") == "Kustomization"]
+    hit = [
+        r
+        for r in rows
+        if r["metadata"]["name"] == name
+        or name in (r.get("spec", {}).get("path") or "")
+    ]
+    names = {r["metadata"]["name"] for r in hit}
+    dependents = [
+        r
+        for r in rows
+        if any(
+            d.get("name") in names for d in (r.get("spec", {}).get("dependsOn") or [])
+        )
+    ]
+    return hit, dependents
+
+
+def row_namespaces(row: dict) -> set[str]:
+    spec = row.get("spec", {})
+    ns = {
+        h.get("namespace") for h in spec.get("healthChecks") or [] if h.get("namespace")
+    }
+    for f in row_files(row):
+        for d in load_docs(f):
+            if d.get("kind") == "Namespace":
+                ns.add(d["metadata"]["name"])
+            elif d.get("metadata", {}).get("namespace"):
+                ns.add(d["metadata"]["namespace"])
+    return ns
+
+
+def row_files(row: dict) -> list[Path]:
+    p = row.get("spec", {}).get("path") or ""
+    d = (ROOT / p.lstrip("./")).resolve()
+    return sorted(d.glob("*.yaml")) if d.is_dir() else []
+
+
+def policies_for(namespaces: set[str]) -> list[tuple[str, str, str]]:
+    """(policy name, file, why) for every admission policy whose rules reach these namespaces."""
+    out = []
+    for f in sorted((ROOT / "platform").rglob("*.yaml")):
+        for d in load_docs(f):
+            if d.get("kind") not in ("ClusterPolicy", "Policy"):
+                continue
+            pol_ns = d.get("metadata", {}).get("namespace")
+            if pol_ns and pol_ns not in namespaces:
+                continue
+            for rule in d.get("spec", {}).get("rules") or []:
+                inc = _namespaces_in(rule.get("match") or {})
+                exc = _namespaces_in(rule.get("exclude") or {})
+                if inc and not (inc & namespaces):
+                    continue
+                if exc and namespaces <= exc:
+                    continue
+                kinds = sorted(
+                    {
+                        k
+                        for b in _blocks(rule.get("match") or {})
+                        for k in b.get("kinds") or []
+                    }
+                )
+                why = f"rule {rule.get('name')} on {', '.join(kinds) or 'any kind'}"
+                why += f" in {', '.join(sorted(inc))}" if inc else " in every namespace"
+                if exc:
+                    why += f" except {', '.join(sorted(exc))}"
+                out.append((d["metadata"]["name"], str(f.relative_to(ROOT)), why))
+                break
+    return out
+
+
+def _blocks(m: dict) -> list[dict]:
+    return [
+        b.get("resources") or {} for key in ("any", "all") for b in m.get(key) or []
+    ] + ([m["resources"]] if m.get("resources") else [])
+
+
+def _namespaces_in(m: dict) -> set[str]:
+    return {ns for b in _blocks(m) for ns in b.get("namespaces") or []}
+
+
+def on_off_keys(row: dict) -> list[tuple[str, str, str]]:
+    found = [
+        (str(PLATFORM_YAML.relative_to(ROOT)), f"spec.{k}", str(row["spec"][k]))
+        for k in ("suspend", "wait", "prune")
+        if k in row.get("spec", {})
+    ]
+    for f in row_files(row):
+        for d in load_docs(f):
+            kind = d.get("kind")
+            if kind in ("Deployment", "StatefulSet") and "replicas" in (
+                d.get("spec") or {}
+            ):
+                found.append(
+                    (
+                        str(f.relative_to(ROOT)),
+                        f"{kind}/{d['metadata']['name']} spec.replicas",
+                        str(d["spec"]["replicas"]),
+                    )
+                )
+            if kind == "HelmRelease":
+                for path, val in _walk(d.get("spec", {}).get("values") or {}):
+                    if path.split(".")[-1] in ON_OFF_KEYS:
+                        found.append(
+                            (
+                                str(f.relative_to(ROOT)),
+                                f"HelmRelease/{d['metadata']['name']} values.{path}",
+                                str(val),
+                            )
+                        )
+                if "suspend" in d.get("spec", {}):
+                    found.append(
+                        (
+                            str(f.relative_to(ROOT)),
+                            f"HelmRelease/{d['metadata']['name']} spec.suspend",
+                            str(d["spec"]["suspend"]),
+                        )
+                    )
+    return found
+
+
+def _walk(node, prefix=""):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            yield from _walk(v, f"{prefix}{k}.")
+    else:
+        yield prefix.rstrip("."), node
+
+
+def doors(row: dict, cfg: dict) -> list[str]:
+    hosts = []
+    for f in row_files(row):
+        for d in load_docs(f):
+            if d.get("kind") in ("HTTPRoute", "Ingress"):
+                for h in d.get("spec", {}).get("hostnames") or []:
+                    hosts.append(substitute(h, cfg))
+                for r in d.get("spec", {}).get("rules") or []:
+                    if r.get("host"):
+                        hosts.append(substitute(r["host"], cfg))
+    return sorted(set(hosts))
+
+
+def login_answer(host: str, cfg: dict) -> str:
+    req = urllib.request.Request(
+        f"https://{host}/", method="HEAD", headers={"User-Agent": "idp-ticket-facts"}
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:  # noqa: S310 - https to a host from git
+            return f"{r.status} no login on the front door"
+    except urllib.error.HTTPError as e:
+        loc = e.headers.get("Location") or ""
+        oidc = cfg.get("ESTATE_OIDC_DOMAIN_URL", "")
+        if e.code in (301, 302, 303, 307) and oidc and loc.startswith(oidc):
+            return f"{e.code} redirects to the identity domain: one login"
+        if e.code in (301, 302, 303, 307) and "/oauth2/" in loc:
+            return f"{e.code} redirects into the front-door proxy: one login"
+        return f"{e.code} {loc[:80] or 'no Location'}"
+    except (urllib.error.URLError, OSError) as e:
+        return f"BLIND: {e}"
+
+
+def drills_for(name: str, hosts: list[str]) -> list[tuple[str, str]]:
+    cat = yaml.safe_load(DRILLS.read_text()) if DRILLS.exists() else {}
+    items = cat.get("drills") if isinstance(cat, dict) else cat
+    out = []
+    needles = [name] + [h.split(".")[0] + ".<zone>" for h in hosts] + hosts
+    for d in items or []:
+        blob = yaml.safe_dump(d)
+        if any(n in blob for n in needles):
+            out.append((d.get("name", "?"), d.get("workflow", "?")))
+    return out
+
+
+def standards_rows(name: str, hosts: list[str]) -> tuple[Path | None, list[str]]:
+    cands = (
+        [Path(os.environ["ESTATE_STANDARDS_MD"])]
+        if os.environ.get("ESTATE_STANDARDS_MD")
+        else []
+    )
+    cands += [
+        ROOT / "docs" / "STANDARDS.md",
+        ROOT.parent / "crew" / "docs" / "STANDARDS.md",
+    ]
+    # A worktree lives anywhere; the crew checkout sits beside the main checkout, which git names.
+    common = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(ROOT),
+            "rev-parse",
+            "--path-format=absolute",
+            "--git-common-dir",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    if common:
+        cands.append(Path(common).parent.parent / "crew" / "docs" / "STANDARDS.md")
+    page = next((c for c in cands if c.is_file()), None)
+    if not page:
+        return None, []
+    needles = [name.lower()] + [h.split(".")[0] + ".<zone>" for h in hosts]
+    rows = [
+        ln
+        for ln in page.read_text().splitlines()
+        if ln.startswith("|") and any(n in ln.lower() for n in needles)
+    ]
+    return page, rows
+
+
+def section(title: str, lines: list[str], blind: str) -> str:
+    body = "\n".join(f"  {ln}" for ln in lines) if lines else f"  BLIND: {blind}"
+    return f"## {title}\n{body}\n"
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "name", help="a Flux row (clusters/oke/platform.yaml) or a surface such as llm"
+    )
+    ap.add_argument(
+        "--no-live", action="store_true", help="skip the door probe (no network)"
+    )
+    ns = ap.parse_args()
+    cfg = estate_config()
+    hit, dependents = flux_rows(ns.name)
+    out = [
+        f"# Infra facts: {ns.name} (generated by bin/idp-ticket-facts; do not type these)\n"
+    ]
+    lines = []
+    for r in hit:
+        spec = r["spec"]
+        deps = ", ".join(d["name"] for d in spec.get("dependsOn") or []) or "none"
+        lines.append(
+            f"{r['metadata']['name']}: path {spec.get('path')}, depends on {deps}, interval {spec.get('interval')}, timeout {spec.get('timeout')}"
+        )
+    for r in dependents:
+        lines.append(f"{r['metadata']['name']} depends on this row")
+    out.append(
+        section(
+            "Flux rows",
+            lines,
+            f"no Kustomization named {ns.name} or with {ns.name} in its path in {PLATFORM_YAML.relative_to(ROOT)}",
+        )
+    )
+    namespaces = set().union(*(row_namespaces(r) for r in hit)) if hit else set()
+    out.append(
+        section("Namespaces", sorted(namespaces), "no namespace found for the row")
+    )
+    pols = policies_for(namespaces) if namespaces else []
+    out.append(
+        section(
+            "Admission policies that apply",
+            [f"{n} ({f}): {why}" for n, f, why in pols],
+            "no policy reaches these namespaces",
+        )
+    )
+    keys = [k for r in hit for k in on_off_keys(r)]
+    out.append(
+        section(
+            "On/off keys",
+            [f"{f}: {k} = {v}" for f, k, v in keys],
+            "no replicas, suspend or enabled key in the row",
+        )
+    )
+    hosts = sorted({h for r in hit for h in doors(r, cfg)})
+    door_lines = [
+        f"{h}: {'not probed (--no-live)' if ns.no_live else login_answer(h, cfg)}"
+        for h in hosts
+    ]
+    out.append(
+        section(
+            "Doors and login", door_lines, "no HTTPRoute or Ingress hostname in the row"
+        )
+    )
+    drills = drills_for(ns.name, hosts)
+    out.append(
+        section(
+            "Drills that grade it",
+            [f"{n} ({w})" for n, w in drills],
+            f"no drill in {DRILLS.relative_to(ROOT)} names {ns.name}",
+        )
+    )
+    page, rows = standards_rows(ns.name, hosts)
+    std_lines = [f"{page}: {r.split('|')[1].strip()}" for r in rows] if page else []
+    out.append(
+        section(
+            "Standards row",
+            std_lines,
+            "no STANDARDS.md found (set ESTATE_STANDARDS_MD) or no row names it",
+        )
+    )
+    print("\n".join(out))
+    return 0 if hit else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

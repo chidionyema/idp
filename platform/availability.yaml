@@ -1,0 +1,157 @@
+# The availability policy in data: what is waived, what the front door is, and what must meet the
+# standard even though no route names it. bin/idp-availability-gate reads this file and nothing else.
+#
+# ## waivers
+# Surfaces that do not meet the availability standard yet, named one by one.
+#
+# A waiver is not a pass. bin/idp-availability-gate prints a WAIVED row for every entry on every
+# run, so the debt is read out loud each time CI speaks, and a waiver with no reason or no issue
+# is a FAIL, not a skip. The list is meant to reach zero; idp#544 is the work that empties it.
+#
+# There is no wildcard and no default: a surface nobody named is BLIND (exit 2), never green.
+waivers:
+  - surface: llm/ollama
+    reason: >-
+      The free local floor keeps its pulled model on one RWO claim (ollama.yaml:17-23), so a
+      second replica is a second writer against a volume only one pod can mount, and the
+      Deployment strategy is Recreate for exactly that reason. This is a fallback lane, not a
+      load-bearing tier: llm/config.yaml's chain already falls through to a paid model when this
+      pod is down. HA here is the model moving off the PVC, not a replica count.
+    issue: chidionyema/idp#3528
+  - surface: jit/jit-broker
+    reason: >-
+      The break-glass broker keeps its ledger on one RWO claim, so a second replica is not a
+      second broker -- it is a second writer against a volume only one pod can mount, and it
+      never starts. HA here is the ledger moving off the PVC, not a replica count. Recorded
+      rather than passed: the tool you reach for during an outage does not currently survive
+      one.
+    issue: chidionyema/idp#2492
+  - surface: observability/signoz
+    reason: >-
+      SigNoz stands on one ClickHouse; two replicas against a single database moves the single
+      point of failure rather than removing it. HA here is a ClickHouse topology change, not a
+      replica count.
+    issue: chidionyema/idp#544
+  - surface: observability/langfuse-web
+    reason: >-
+      A component of the langfuse chart (langfuse-values.yaml:32,44 set replicas 1), sharing the
+      same ClickHouse and Postgres as signoz.
+    issue: chidionyema/idp#544
+  - surface: observability/signoz-otel-collector
+    reason: >-
+      A component of the signoz chart; this repository renders no Deployment for it, so the values
+      are the only lever and they follow the signoz row above.
+    issue: chidionyema/idp#544
+  - surface: hermes-agent/hermes-agent-gateway
+    reason: >-
+      One Telegram token may be long-polled by exactly one process (two are 409s on both,
+      gateway.yaml:18-23) and HERMES_HOME is a ReadWriteOnce volume holding state.db, so
+      replicas 2 here is an outage, not a fix. The remedy is a webhook or a lease, not a number.
+    issue: chidionyema/idp#547
+  - surface: llm/litellm-cache
+    reason: >-
+      One Redis holds the router's answer cache and shared cooldown counters; losing it costs
+      cache hits, not answers -- the router keeps serving. Two plain replicas would split the
+      cache and the cooldown state, moving the failure rather than removing it; the remedy is
+      Sentinel or a managed Redis, not a replica count.
+    issue: chidionyema/idp#1184
+  - surface: flux-system/webhook-receiver
+    reason: >-
+      The service behind this route is Flux's own notification-controller, rendered by
+      clusters/oke/flux-system/gotk-components.yaml -- a path this gate does not scan, so it
+      reads as a backend nothing renders. A replica count is the wrong lever regardless: the
+      Flux controllers are deliberate singletons that hold a leader-election lease, and a
+      second one does not serve, it waits. What a lost webhook costs is latency, not delivery,
+      because the GitRepository still polls every minute underneath it.
+    issue: chidionyema/idp#544
+  - surface: kyverno/kyverno#admissionController
+    reason: >-
+      The third fail-closed admission webhook in the estate, and the only one that stayed half
+      up on 2026-09-08 -- because the scheduler had happened to put its two replicas on
+      different nodes, not because anything required it. The chart's default podAntiAffinity is
+      preferred, and its PodDisruptionBudget is auto-enabled at minAvailable 1; neither is a
+      decision made here. Making the constraint required forces a rollout of the component that
+      gates all admission, and on two nodes the default maxSurge 1 / maxUnavailable 0 surge pod
+      cannot schedule, so the rollout stalls -- safely, but doing that during an admission
+      outage is the wrong order. Graded and named rather than quietly left out.
+    issue: chidionyema/idp#2558
+  - surface: demo-sandbox/demo-shop-x-demo-x-demo-sandbox
+    reason: >-
+      The shop is a Service vCluster mirrors onto the host at runtime from the seeded
+      Deployment in platform/sandbox/vcluster/helmrelease.yaml, so no kustomization this gate
+      scans renders it; the seed itself is graded by
+      tests/test_demo_sandbox_is_defined_and_expires.py. A replica count is the wrong lever
+      regardless: the sandbox is a one-hour throwaway whose deletion on schedule is the
+      product, and the backend exists only while a launch holds it.
+    issue: chidionyema/crew#805
+
+
+# ## front_doors
+# Every HTTPRoute names a Gateway in parentRefs, and something implements that Gateway. Nothing in
+# a manifest says what: gatewayClassName points at a GatewayClass the controller registers at
+# runtime. So the mapping is declared here, once, and the gate refuses to be green without it --
+# a parentRef no row below claims is BLIND, which is how a new gateway can never arrive unseen.
+#
+# This row is the one the estate missed until 2026-08-28: seven surfaces were hardened to survive
+# a node while the single Traefik pod they all entered through was not, which made every one of
+# them decorative.
+front_doors:
+  - gateway: prospector/prospector-edge
+    implemented_by: edge/traefik
+    path: platform/edge
+    reason: >-
+      GatewayClass traefik, the only type: LoadBalancer in platform/. Every founder-facing
+      hostname enters the cluster through this workload.
+
+# ## also_graded
+# Workloads that carry founder traffic without an HTTPRoute of their own (a ClusterIP other
+# services call). Named by a human, graded exactly like a routed surface.
+#
+# `component` is optional and names a values key inside a HelmRelease, for a chart that renders
+# more than one Deployment. Without it the gate reads the top-level `replicaCount`,
+# `podDisruptionBudget` and `affinity`, which is the controller's numbers, not the webhook's.
+#
+# A `component` row also carries `admission_workload`, the namespace/name the cluster must enforce
+# by itself. A whole-namespace row is armed by labelling the namespace `founder-facing`; a
+# component row cannot be, because the same namespace holds workloads that are singletons on
+# purpose and the label would refuse them (LAW 38). So the component names its Deployment, and
+# the gate fails the row unless a rule in platform/scheduling/require-availability.yaml matches
+# it -- the same "CI and the cluster cannot drift" check, keyed on the workload.
+also_graded:
+  - surface: hermes-agent/hermes-agent-gateway
+    path: platform/hermes-agent
+    reason: >-
+      The agent gateway every hermes workload calls: no route reaches it, so nothing in the
+      topology would have graded it.
+
+  # The two rows below are the 2026-09-08 incident written as a standard. An admission webhook
+  # with failurePolicy Fail is not a surface the founder opens -- it is the thing that decides
+  # whether ANY manifest may be applied, so losing it does not cost one hostname, it freezes the
+  # whole cluster, the repair included. Both of these sat at replicas 1 with no budget and no
+  # anti-affinity; both landed on node 10.0.159.197; that node stopped answering the API server
+  # and Flux fell to 14 of 80 Kustomizations Ready with no way to apply its own fix. Kyverno's
+  # admission controller was already 2 replicas with a required anti-affinity, and degraded to
+  # roughly half its calls instead of all of them -- which is the whole argument, measured.
+  - surface: cert-manager/cert-manager
+    component: webhook
+    path: platform/edge
+    admission_workload: cert-manager/cert-manager-webhook
+    reason: >-
+      webhook.cert-manager.io, failurePolicy Fail: every Certificate, Issuer and ClusterIssuer
+      in the estate is admitted through it, and a timeout here failed the `edge` Kustomization
+      that 60-odd others depend on.
+  - surface: kyverno/kyverno
+    component: admissionController
+    path: platform/kyverno
+    admission_workload: kyverno/kyverno-admission-controller
+    reason: >-
+      kyverno-svc, mutate/fail and validate/fail, failurePolicy Fail: every Deployment, CronJob
+      and Namespace in the estate is admitted through it. Waived above, not passing.
+  - surface: external-secrets/external-secrets
+    component: webhook
+    path: platform/secrets
+    admission_workload: external-secrets/external-secrets-webhook
+    reason: >-
+      validate.externalsecret.external-secrets.io, failurePolicy Fail: every ExternalSecret is
+      admitted through it, so a timeout takes out `jit` and `rbac-identity` and with them the
+      break-glass broker's own credentials.

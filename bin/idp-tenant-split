@@ -1,0 +1,374 @@
+#!/usr/bin/env python3
+"""Two-hats gate: a channel binding never crosses the operator/customer plane (decision 0021).
+
+Reads the `INSERT INTO channel_binding ... VALUES` rows of every `*.yaml` under
+platform/otto-gateway/ (the seed is a ConfigMap whose `data.seed.sql` holds the rows) and grades
+three rules, never a proxy for them:
+
+  1. One secret, one tenant.  A secret_ref / outbound_secret_ref appearing under two different
+     tenant_id values is a FAIL -- the cross-plane leak a shared credential is.
+  2. No operator identity on a customer allowlist.  A row whose tenant_id is not `estate` must
+     not carry an operator principal in principal_allowlist.
+  3. The estate tenant owns no customer-facing channel.  A row with tenant_id='estate' must carry
+     an external-id prefix from OPERATOR_CHANNELS (the operator's own endpoint, today: `alerts-bot:`).
+
+The estate is one person wearing two hats: the operator who runs the estate (tenant `estate`) and
+customer zero, a paying tenant like any other. The boundary the infrastructure must enforce is that
+the two never share a credential or a channel, and that what is really a customer endpoint is never
+labelled `estate` -- which is what rule 3 catches before decision 0021 change 1 is applied.
+
+No network, no secret values: it reads seed .yaml files and nothing else. Prints one line per
+finding, then a verdict line. Exit 0 = PASS, 1 = FAIL. Usage: idp-tenant-split [FILE...]; with no
+FILE it grades every platform/otto-gateway/*.yaml it can find.
+"""
+
+import glob
+import os
+import re
+import sys
+
+import yaml
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+IDP = os.environ.get("IDP_ROOT") or os.path.dirname(HERE)
+SEED_GLOB = os.path.join(IDP, "platform", "otto-gateway", "*.yaml")
+
+# Decision 0021 + the two-hats spec change 2 rule 3: the operator's own endpoints, as external-id
+# prefixes an `estate` row must carry. Today exactly one -- the alerts bot. The bare telegram chat
+# of customer zero must NOT count (it is the customer's), which is the mislabel change 1 exists to
+# turn into a customer-zero tenant of its own.
+OPERATOR_CHANNELS = ("alerts-bot:",)
+
+
+def _strip_sql_comments(sql):
+    """Remove SQL -- comments without touching '--' that sits inside a string literal."""
+    out = []
+    i = 0
+    n = len(sql)
+    in_str = False
+    while i < n:
+        c = sql[i]
+        if in_str:
+            out.append(c)
+            if c == "'":
+                if i + 1 < n and sql[i + 1] == "'":
+                    out.append(sql[i + 1])
+                    i += 1
+                else:
+                    in_str = False
+            i += 1
+            continue
+        if c == "'":
+            in_str = True
+            out.append(c)
+            i += 1
+            continue
+        if c == "-" and i + 1 < n and sql[i + 1] == "-":
+            while i < n and sql[i] != "\n":
+                i += 1
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
+def _split_top_level(text):
+    """Split on top-level commas: outside strings and outside any paren nesting."""
+    parts = []
+    cur = []
+    depth = 0
+    in_str = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if in_str:
+            cur.append(ch)
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    cur.append(text[i + 1])
+                    i += 1
+                else:
+                    in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            cur.append(ch)
+            i += 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if depth == 0 and ch == ",":
+            parts.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(ch)
+        i += 1
+    if cur:
+        parts.append("".join(cur))
+    return parts
+
+
+def _balanced_groups(text):
+    """Bodies (contents, not the parens) of every top-level ( ... ) group in text."""
+    groups = []
+    depth = 0
+    start = None
+    i = 0
+    n = len(text)
+    in_str = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            i += 1
+            continue
+        if ch == "(":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0 and start is not None:
+                groups.append(text[start + 1:i])
+                start = None
+        i += 1
+    return groups
+
+
+def _split_statements(text):
+    """Split SQL into statements at top-level semicolons (never inside a string)."""
+    out = []
+    cur = []
+    in_str = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if in_str:
+            cur.append(ch)
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    cur.append(text[i + 1])
+                    i += 1
+                else:
+                    in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            cur.append(ch)
+            i += 1
+            continue
+        if ch == ";":
+            out.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(ch)
+        i += 1
+    if cur:
+        out.append("".join(cur))
+    return out
+
+
+def _find_word(text, word):
+    """Index (or -1) of `word` outside strings, word-bounded, case-insensitive."""
+    i = 0
+    n = len(text)
+    in_str = False
+    while i < n:
+        ch = text[i]
+        if in_str:
+            if ch == "'":
+                if i + 1 < n and text[i + 1] == "'":
+                    i += 2
+                    continue
+                in_str = False
+            i += 1
+            continue
+        if ch == "'":
+            in_str = True
+            i += 1
+            continue
+        if text[i:i + len(word)].upper() == word.upper():
+            prev = text[i - 1] if i > 0 else " "
+            nxt = text[i + len(word)] if i + len(word) < n else " "
+            if not (prev.isalnum() or prev == "_") and not (nxt.isalnum() or nxt == "_"):
+                return i
+        i += 1
+    return -1
+
+
+def _one_value(raw):
+    """Normalise one raw SQL value token into a python scalar.
+
+    'estate' -> 'estate'; :'chat_id' / :'fp' -> "<var:name>" kept distinct; a concat
+    'alerts-bot:' || :'chat_id' -> the whole exp, and since it starts with the prefix we must not
+    strip to the var -- return the concatenated text so an external-id prefix check sees
+    "alerts-bot:". jsonb... -> '[...]' flattened list.
+    """
+    raw = raw.strip().strip('"')
+    if not raw:
+        return raw
+    # a || concat: keep the textual concatenation so prefix checks see the alert label
+    if "||" in raw:
+        lhs = None
+        for part in raw.split("||"):
+            part = part.strip()
+            if not part:
+                continue
+            decoded = _one_value(part)
+            if isinstance(decoded, str) and not decoded.startswith("<var:"):
+                lhs = (lhs or "") + decoded
+            else:
+                lhs = (lhs or "") + (decoded or "")
+        return lhs
+    if raw.startswith("jsonb_build_object") or raw.startswith("json_build_object"):
+        inner = raw[raw.find("(") + 1:]
+        if inner.endswith(")"):
+            inner = inner[:-1]
+        kids = [_one_value(x) for x in _split_top_level(inner)]
+        return "[" + ",".join(str(x) for x in kids) + "]"
+    if raw.startswith(":"):
+        mname = re.match(r":'?([^']+)'?", raw)
+        return "<var:%s>" % (mname.group(1) if mname else raw[1:])
+    if len(raw) >= 2 and raw[0] == "'" and raw[-1] == "'":
+        return raw[1:-1].replace("''", "'")
+    return raw
+
+
+def _extract_inserts(seed_sql):
+    """Every channel_binding INSERT statement -> {columns:[...], rows:[[scalar,..],..]}."""
+    inserts = []
+    for stmt in _split_statements(seed_sql):
+        if not re.match(r"^\s*INSERT\s+INTO\s+channel_binding\b", stmt, re.IGNORECASE):
+            continue
+        groups = _balanced_groups(stmt)
+        if not groups:
+            continue
+        cols = [c.strip().strip('"') for c in _split_top_level(groups[0]) if c.strip()]
+        values_at = _find_word(stmt, "VALUES")
+        after = stmt[values_at:] if values_at >= 0 else ""
+        conflict_at = _find_word(after, "ON CONFLICT")
+        if conflict_at >= 0:
+            after = after[:conflict_at]
+        rows = []
+        for g in _balanced_groups(after):
+            vals = [_one_value(x) for x in _split_top_level(g)]
+            rows.append(vals)
+        inserts.append({"columns": cols, "rows": rows})
+    return inserts
+
+
+def _grade_insert(ins):
+    """Grade one parsed INSERT. Returns a list of finding strings (empty == clean)."""
+    findings = []
+    cols = ins["columns"]
+    index = {name: pos for pos, name in enumerate(cols)}
+    if "tenant_id" not in index or "secret_ref" not in index:
+        findings.append("channel_binding INSERT lacks tenant_id/secret_ref columns")
+        return findings
+    tenants_by_secret = {}
+    for vals in ins["rows"]:
+        row = [None] * len(cols)
+        for k, v in zip(cols, vals):
+            row[index[k]] = v
+
+        def get(name):
+            p = index.get(name)
+            return row[p] if p is not None and p < len(row) else None
+
+        tenant = get("tenant_id")
+        secret = get("secret_ref")
+        outbound = get("outbound_secret_ref")
+        external = get("external_id")
+        allowed = get("principal_allowlist")
+        # accumulate secret -> tenant for rule 1
+        for k in (secret, outbound):
+            if k:
+                tenants_by_secret.setdefault(str(k), []).append(tenant)
+        # rule 3: an estate row must carry an OPERATOR_CHANNELS external-id prefix
+        if tenant == "estate":
+            ext = "" if external is None else str(external)
+            if ext == "<var:chat_id>" or not ext:
+                ext = ""
+            if not any(ext.startswith(op) for op in OPERATOR_CHANNELS):
+                findings.append(
+                    "estate row binds a non-operator endpoint external_id %r -- an estate row must "
+                    "carry an OPERATOR_CHANNELS prefix %s" % (external, sorted(OPERATOR_CHANNELS))
+                )
+        # rule 2: a customer (non-estate) tenant's allowlist must not carry an operator identity.
+        # The operator's own chat id is the operator's direct chat; customer allowlists are theirs.
+        if tenant is not None and tenant != "estate" and allowed:
+            allowlist = str(allowed)
+            # the only operator principal we can recognise from the seed is the estate row's own
+            # :'chat_id' variable; a customer's allowlist must not reference the operator's chat.
+            if "<var:chat_id>" in allowlist:
+                findings.append(
+                    "customer tenant %r allowlist carries the operator's chat principal (:chat_id)"
+                    % tenant
+                )
+    # rule 1
+    for k, seen in sorted(tenants_by_secret.items()):
+        uniq = sorted({t for t in seen if t})
+        if len(uniq) > 1:
+            findings.append("secret %r appears under tenants %s" % (k, uniq))
+    return findings
+
+
+def _grade_file(path):
+    try:
+        with open(path) as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return ["cannot read %s: %s" % (path, exc)]
+    seed_sql = None
+    try:
+        doc = yaml.safe_load(raw)
+    except yaml.YAMLError:
+        doc = None
+    if isinstance(doc, dict):
+        data = doc.get("data") or {}
+        if isinstance(data, dict) and "seed.sql" in data:
+            seed_sql = data["seed.sql"]
+    if seed_sql is None:
+        return ["%s: no data.seed.sql to grade" % path]
+    seed_sql = _strip_sql_comments(seed_sql)
+    findings = []
+    for ins in _extract_inserts(seed_sql):
+        for f in _grade_insert(ins):
+            findings.append("%s: %s" % (os.path.basename(path), f))
+    if not findings and not _extract_inserts(seed_sql):
+        return ["%s: no channel_binding INSERT found to grade" % path]
+    return findings
+
+
+def main(argv):
+    targets = argv if argv else sorted(glob.glob(SEED_GLOB))
+    findings = []
+    for path in targets:
+        findings.extend(_grade_file(path))
+    if findings:
+        for f in findings:
+            print("FAIL  %s" % f)
+        print("FAIL    tenant-split: %d finding(s)" % len(findings))
+        return 1
+    print("PASS    tenant-split: every channel_binding row keeps the two hats apart")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

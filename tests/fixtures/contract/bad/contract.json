@@ -1,0 +1,9 @@
+{
+  "tool": "restart_pod",
+  "pre": "pod uptime > 0s",
+  "post": "readiness probe passes within 30s",
+  "observations": {
+    "pod uptime": [[0, 5]],
+    "readiness probe": [[10, false], [20, false], [45, true]]
+  }
+}

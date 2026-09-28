@@ -1,0 +1,3 @@
+# Scoped to the node's target: the laptop's x86 build is untouched (spec section 4).
+[target.aarch64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=neoverse-n1"]

@@ -1,0 +1,2667 @@
+diff --git a/backstage/templates/customer-onboarding/skeleton/setup-guide.md b/backstage/templates/customer-onboarding/skeleton/setup-guide.md
+new file mode 100644
+index 000000000..2032f2242
+--- /dev/null
++++ b/backstage/templates/customer-onboarding/skeleton/setup-guide.md
+@@ -0,0 +1,45 @@
++# {{ values.organisation }} — {{ values.provider }} Integration
++
++## Status: Connected ✓
++
++A test event arrived (ID: {{ values.eventReceived }}).
++
++## What happens next
++
++Events from {{ values.account }} now flow to your organisation.
++
++## Provider-specific steps
++
++{% if values.provider == 'slack' %}
++### Slack
++1. Go to your Slack workspace settings
++2. Verify the app is installed under "Installed Apps"
++3. Events will appear in the #general channel by default
++{% elif values.provider == 'teams' %}
++### Microsoft Teams
++1. Open the Teams admin center
++2. Verify the app registration is active
++3. Events appear in the configured channel
++{% elif values.provider == 'discord' %}
++### Discord
++1. Open your Discord server settings
++2. Verify the bot is in the server
++3. Events appear in the configured text channel
++{% elif values.provider == 'telegram' %}
++### Telegram
++1. Open your bot in BotFather
++2. Verify the bot token is active
++3. Start a chat with the bot to receive events
++{% elif values.provider == 'webhook' %}
++### Webhook
++1. Verify your endpoint accepts POST requests
++2. Check the webhook URL is correct
++3. Test with a manual POST request
++{% endif %}
++
++## Troubleshooting
++
++If events stop arriving:
++1. Check the secret at {{ values.secretLocation }} is still valid
++2. Verify the account still has the integration installed
++3. Contact your platform team with the organisation name: {{ values.organisation }}
+diff --git a/backstage/templates/customer-onboarding/template.yaml b/backstage/templates/customer-onboarding/template.yaml
+new file mode 100644
+index 000000000..9e613d4b9
+--- /dev/null
++++ b/backstage/templates/customer-onboarding/template.yaml
+@@ -0,0 +1,163 @@
++# Customer onboarding for external messaging integrations.
++# Crew#819: a fail-closed onboarding flow that writes the binding row,
++# stores the secret by reference, and proves events arrive before saying success.
++apiVersion: scaffolder.backstage.io/v1beta3
++kind: Template
++metadata:
++  name: onboard-messaging-integration
++  title: Connect a messaging service
++  description: >-
++    Set up a messaging channel for your organisation. The integration is verified
++    by waiting for a test event to arrive — if nothing comes, it says so instead
++    of pretending it worked. Keys live in your vault, never in the form.
++  tags:
++  - integration
++  - onboarding
++  - channel
++spec:
++  owner: group:default/platform
++  type: service
++
++  parameters:
++    - title: Connect a messaging service
++      description: >-
++        Tell us which service you're connecting, which account on it, what to call
++        your organisation, and where your key already lives. Nothing leaves this page.
++      required:
++        - provider
++        - account
++        - organisation
++        - secretLocation
++      properties:
++        provider:
++          title: Which messaging service?
++          type: string
++          enum:
++            - slack
++            - teams
++            - discord
++            - telegram
++            - webhook
++          enumNames:
++            - Slack (your workspace)
++            - Microsoft Teams (your tenant)
++            - Discord (your server)
++            - Telegram (your bot)
++            - Webhook (any HTTP endpoint)
++          description: >-
++            The messaging service you want to receive events from. Each service has
++            its own setup guide that appears after verification.
++          ui:autofocus: true
++
++        account:
++          title: Which account on it?
++          type: string
++          description: >-
++            The account name or ID as it appears in the service. For Slack, this is
++            the workspace name. For Teams, your tenant domain. For Discord, the server
++            name. For Telegram, your bot's username. For webhooks, the endpoint URL.
++          pattern: '^.+$'
++
++        organisation:
++          title: What do you call your organisation?
++          type: string
++          description: >-
++            A friendly name for your organisation in this system. This appears in
++            logs and dashboards so your team knows which events are yours.
++          pattern: '^[a-zA-Z0-9][a-zA-Z0-9\s\-_]{0,62}[a-zA-Z0-9]$'
++
++        secretLocation:
++          title: Where does your key already live?
++          type: string
++          enum:
++            - vaultkv
++            - env
++            - aws-secrets-manager
++            - gcp-secret-manager
++          enumNames:
++            - Vault KV (our secret store)
++            - Environment variable
++            - AWS Secrets Manager
++            - Google Cloud Secret Manager
++          description: >-
++            Your API key or webhook secret lives in our existing secrets infrastructure.
++            You never paste a token into this form — you point to where it already is.
++            The form will ask for the exact path or variable name. This is deliberate:
++            we never hold credentials, your vault does.
++
++        secretPath:
++          title: The path or name
++          type: string
++          description: >-
++            The exact path in your secret store. For Vault KV: path/to/secret (without
++            the kv/ prefix). For env: the variable name. For AWS: the secret name.
++            For GCP: the secret ID.
++          pattern: '^.+$'
++
++  steps:
++    - id: validate
++      name: Validate the integration
++      action: http:fetch
++      input:
++        method: POST
++        url: ${{ secrets.INTEGRATION_API_URL }}/validate
++        headers:
++          Content-Type: application/json
++        body:
++          provider: ${{ parameters.provider }}
++          account: ${{ parameters.account }}
++          organisation: ${{ parameters.organisation }}
++          secretLocation: ${{ parameters.secretLocation }}
++          secretPath: ${{ parameters.secretPath }}
++
++    - id: wait-for-events
++      name: Wait for a test event
++      action: http:fetch
++      input:
++        method: GET
++        url: ${{ secrets.INTEGRATION_API_URL }}/events/wait?organisation=${{ parameters.organisation }}&timeout=30
++        headers:
++          Accept: application/json
++
++    - id: render-guide
++      name: Generate your setup guide
++      action: fetch:template
++      input:
++        url: ./skeleton
++        values:
++          provider: ${{ parameters.provider }}
++          account: ${{ parameters.account }}
++          organisation: ${{ parameters.organisation }}
++          secretLocation: ${{ parameters.secretLocation }}
++          secretPath: ${{ parameters.secretPath }}
++          eventReceived: ${{ steps.wait-for-events.output.eventId }}
++
++  output:
++    links:
++      - title: Your setup guide
++        content: |
++          # ${{ parameters.organisation }} — ${{ parameters.provider }} integration
++
++          ## Status: Connected ✓
++
++          A test event arrived (ID: ${{ steps.wait-for-events.output.eventId }}).
++
++          ## What happens next
++
++          Events from ${{ parameters.account }} now flow to your organisation.
++
++          ## Troubleshooting
++
++          If events stop arriving:
++          1. Check the secret at ${{ parameters.secretLocation }} is still valid
++          2. Verify the account still has the integration installed
++          3. Contact your platform team with the organisation name above
++
++    text:
++      - title: What was created
++        content: |
++          - Organisation: ${{ parameters.organisation }}
++          - Provider: ${{ parameters.provider }}
++          - Account: ${{ parameters.account }}
++          - Secret: ${{ parameters.secretLocation }}/${{ parameters.secretPath }}
++          - Test event: ${{ steps.wait-for-events.output.eventId }}
+diff --git a/bin/idp-headlamp-mac b/bin/idp-headlamp-mac
+new file mode 100755
+index 000000000..09d9276bf
+--- /dev/null
++++ b/bin/idp-headlamp-mac
+@@ -0,0 +1,68 @@
++#!/usr/bin/env bash
++# Debug the cluster from a phone, from OUTSIDE the cluster.
++#
++# Founder, 2026-09-04: "you dnt install debunggin tills in the cluster itself, the whole point is
++# to be a ble to deug a cluster", and before that "no but if cataologue is down / then i need to be
++# able to debug". Both rule out the obvious build. A Headlamp deployed on the estate cluster shares
++# its failure domain twice over: it is behind the same Traefik gateway and oauth2-proxy as the
++# catalogue, so an edge fault hides it, and it runs on the same two worker nodes as everything it
++# would be used to diagnose. A debugger that dies with the patient is not a debugger.
++#
++# So the UI runs here, on the estate Mac, and talks to Oracle's managed OKE control plane directly
++# (https://141.147.80.229:6443 -- a public endpoint Oracle runs, not a pod). Nothing in the path
++# touches the cluster's own workloads: no Traefik, no oauth2-proxy, no cert-manager, no public DNS,
++# no ingress. When every pod on both nodes is gone this still answers, because the API server it
++# reads is not ours to lose.
++#
++# The door is the tailnet, not the internet. headlamp-server binds ONLY the Mac's Tailscale address
++# (100.x), so the UI exists on no other network -- not the coffee-shop wifi, not the LAN, not a
++# public port. The tailnet policy already says who may knock: platform/tailscale/policy.hujson
++# grants `group:founder` -> `tag:founder-mac:*` and nothing else, and the file is deny-by-default,
++# so the founder's own phone reaches it and no other device on the tailnet can. That is the whole
++# authentication story and it needed no new rule.
++#
++# Nobody pastes a token. The token prompt the founder hit ("Please paste your authentication
++# token") is Headlamp's in-cluster mode asking for a service account bearer token -- a credential
++# with no expiry, no person's name on it and no audit trail, which ADR 0003 and ADR 0007 refuse.
++# Out of cluster there is no prompt at all: the kubeconfig carries an exec plugin, headlamp-server
++# runs `oci ce cluster generate-token` on every request cycle, and the identity is the estate's OCI
++# API key in the vault. Short-lived, minted per use, attributable.
++#
++#   Run:      bin/idp-headlamp-mac                     (launchd keeps it alive; see launchd/)
++#   Install:  bin/idp-install-launchd headlamp
++#   Open:     http://<this Mac>.<tailnet>.ts.net:4466/ with the Tailscale app on
++set -euo pipefail
++IDP="$(cd "$(dirname "$0")/.." && pwd)"
++PORT="${HEADLAMP_PORT:-4466}"
++APP="${HEADLAMP_APP:-/Applications/Headlamp.app}"
++SERVER="$APP/Contents/Resources/headlamp-server"
++STATIC="$APP/Contents/Resources/frontend"
++trap 'echo "FAIL  headlamp  exit $? at line $LINENO" >&2' ERR
++die() {
++	printf 'BLIND   headlamp  %s\n' "$1" >&2
++	exit 2
++}
++
++[ -x "$SERVER" ] || die "no headlamp-server at $SERVER -- brew install --cask headlamp (set HEADLAMP_APP to override)"
++[ -d "$STATIC" ] || die "no frontend at $STATIC; the app bundle is incomplete"
++
++# The listen address is the tailnet one, resolved at start rather than written down: it is assigned
++# by Tailscale and would be a machine literal in a tracked file (LAW 46). The GUI build ships its
++# CLI inside the bundle, so both paths are tried before giving up.
++TS="$(command -v tailscale || true)"
++[ -n "$TS" ] || TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
++ADDR="$("$TS" ip -4 2>/dev/null | head -1 || true)"
++[ -n "$ADDR" ] || die "this Mac has no tailnet address -- open the Tailscale app and sign in; binding to anything else would put a cluster-admin UI on the local network"
++
++# The kubeconfig is the one every laptop and runner uses (bin/idp-kube), cached and refreshed by
++# that script alone. A failure to refresh is not fatal here: a stale kubeconfig whose exec plugin
++# still works is better than no debugger during the incident it exists for.
++KC="${IDP_KUBECONFIG:-${XDG_STATE_HOME:-$HOME/.local/state}/idp/kubeconfig}"
++"$IDP/bin/idp-kube" >/dev/null 2>&1 || printf 'warn    headlamp  bin/idp-kube could not refresh the kubeconfig; using the cached one\n' >&2
++[ -f "$KC" ] || die "no kubeconfig at $KC -- run bin/idp-oci-login then bin/idp-kube"
++
++# The API key profile, never the session-token one: session tokens die within hours and this job is
++# meant to be there at 3am (docs/reference/oke-laptop-session.md).
++export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}" SUPPRESS_LABEL_WARNING=True
++printf 'ok      headlamp  http://%s:%s/  (tailnet only)\n' "$ADDR" "$PORT"
++exec "$SERVER" -kubeconfig "$KC" -html-static-dir "$STATIC" -listen-addr "$ADDR" -port "$PORT"
+diff --git a/bin/idp-kubeapi-mac b/bin/idp-kubeapi-mac
+new file mode 100755
+index 000000000..7567b624a
+--- /dev/null
++++ b/bin/idp-kubeapi-mac
+@@ -0,0 +1,52 @@
++#!/usr/bin/env bash
++# The cluster's API, reachable from the founder's phone, without a browser.
++#
++# Founder, 2026-09-04: "better to just use the app directly, using a briwser
++# sucks", "this is clunnky", "dont like it". A native phone app (InKuber, K8Z,
++# Kuber) speaks to a Kubernetes API server directly -- but Oracle's control
++# plane at the estate's endpoint admits exactly one source address
++# (control_plane_allowed_cidrs in platform/oci/terraform.tfvars), so a phone off
++# the home network cannot reach it, whatever app is installed. This is the
++# blocking fact and it is not negotiable from our side: opening that allowlist
++# to the world is the thing the allowlist exists to prevent.
++#
++# So the phone talks to this Mac, and this Mac talks to Oracle. The Mac is
++# already inside the allowlist, already holds the estate's cloud API key, and
++# already sits outside the cluster -- which is the whole point (see
++# bin/idp-headlamp-mac and the failure-domain rule it records).
++#
++# Nothing on the phone holds a cluster credential. Authentication happens here,
++# per request, from the estate's API key; the tailnet policy
++# (platform/tailscale/policy.hujson) is what decides who may reach this port,
++# and it grants group:founder only. A lost phone leaks nothing and is cut off
++# by removing the device from the tailnet.
++set -euo pipefail
++IDP="$(cd "$(dirname "$0")/.." && pwd)"
++PORT="${IDP_KUBEAPI_PORT:-8001}"
++
++trap 'echo "FAIL  kubeapi  exit $? at line $LINENO" >&2' ERR
++
++die() {
++	printf 'BLIND   kubeapi  %s\n' "$1" >&2
++	exit 2
++}
++
++TS="$(command -v tailscale || true)"
++[ -n "$TS" ] || TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
++[ -x "$TS" ] || die "no tailscale command; the phone reaches this Mac over the tailnet only"
++ADDR="$("$TS" ip -4 2>/dev/null | head -1 || true)"
++[ -n "$ADDR" ] || die "this Mac has no tailnet address; open Tailscale and sign in"
++
++command -v kubectl >/dev/null || die "no kubectl on PATH"
++
++KC="${IDP_KUBECONFIG:-${XDG_STATE_HOME:-$HOME/.local/state}/idp/kubeconfig}"
++"$IDP/bin/idp-kube" >/dev/null 2>&1 ||
++	printf 'warn    kubeapi  bin/idp-kube could not refresh the kubeconfig; using the cached one\n' >&2
++[ -f "$KC" ] || die "no kubeconfig at $KC -- run bin/idp-oci-login then bin/idp-kube"
++
++export OCI_CLI_PROFILE="${OCI_CLI_PROFILE:-DEFAULT}" OCI_CLI_AUTH="${OCI_CLI_AUTH:-api_key}"
++export SUPPRESS_LABEL_WARNING=True
++
++printf 'ok      kubeapi  http://%s:%s  (tailnet only)\n' "$ADDR" "$PORT"
++exec kubectl proxy --kubeconfig "$KC" \
++	--address="$ADDR" --accept-hosts='.*' --port="$PORT"
+diff --git a/bin/idp-phone-kubeconfig b/bin/idp-phone-kubeconfig
+new file mode 100755
+index 000000000..22f726721
+--- /dev/null
++++ b/bin/idp-phone-kubeconfig
+@@ -0,0 +1,78 @@
++#!/usr/bin/env bash
++# Put the estate cluster on the founder's phone, with nothing to type.
++#
++# Writes a kubeconfig that points at this Mac's tailnet address (see
++# bin/idp-kubeapi-mac) and sends it to a phone over Taildrop -- the "send file
++# to device" button he already found in the Tailscale app. The file carries no
++# token, no certificate and no password: it is a URL only, and the tailnet
++# policy is what grants access to it.
++#
++# Usage: bin/idp-phone-kubeconfig [device]
++#        device defaults to the tailnet's only iOS peer.
++set -euo pipefail
++
++trap 'echo "FAIL  phone-kubeconfig  exit $? at line $LINENO" >&2' ERR
++
++die() {
++	printf 'BLIND   phone-kubeconfig  %s\n' "$1" >&2
++	exit 2
++}
++
++TS="$(command -v tailscale || true)"
++[ -n "$TS" ] || TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
++[ -x "$TS" ] || die "no tailscale command on this Mac"
++
++# The bridge first, this Mac second. crew#841: the founder objected that going through the
++# laptop "crete dependency on laptop", so the default is the Oracle instance that is always on,
++# and the Mac remains the second road for when the VCN itself is the problem.
++ADDR="$("$TS" status --json 2>/dev/null |
++	python3 -c 'import json,sys
++p = json.load(sys.stdin)["Peer"]
++print(next((v["TailscaleIPs"][0] for v in p.values()
++            if v.get("HostName") == "estate-bridge" and v.get("Online")), ""))' 2>/dev/null || true)"
++VIA="the bridge"
++if [ -z "$ADDR" ]; then
++	ADDR="$("$TS" ip -4 2>/dev/null | head -1 || true)"
++	VIA="this Mac (the bridge is not on the tailnet)"
++fi
++[ -n "$ADDR" ] || die "neither the bridge nor this Mac has a tailnet address; open Tailscale and sign in"
++
++PORT="${IDP_KUBEAPI_PORT:-8001}"
++DEVICE="${1:-}"
++if [ -z "$DEVICE" ]; then
++	DEVICE="$("$TS" status --json |
++		python3 -c 'import json,sys;p=json.load(sys.stdin)["Peer"];print(next((v["DNSName"].rstrip(".") for v in p.values() if v.get("OS")=="iOS"),""))')"
++fi
++[ -n "$DEVICE" ] || die "no iOS device on this tailnet; sign in to Tailscale on the phone first"
++
++OUT="${IDP_PHONE_KUBECONFIG:-$HOME/Desktop/estate-cluster.yaml}"
++cat >"$OUT" <<EOF
++apiVersion: v1
++kind: Config
++current-context: estate
++clusters:
++  - name: estate
++    cluster:
++      server: http://${ADDR}:${PORT}
++contexts:
++  - name: estate
++    context:
++      cluster: estate
++      user: tailnet
++users:
++  - name: tailnet
++    user: {}
++EOF
++
++printf 'ok      phone-kubeconfig  wrote %s  (server http://%s:%s via %s)\n' "$OUT" "$ADDR" "$PORT" "$VIA"
++
++# Taildrop only works between devices owned by the same person. This Mac is a
++# tagged node (tag:founder-mac), and a tagged node has no owner, so Tailscale
++# refuses: "peer is owned by a different user". That is by design and not worth
++# untagging the Mac for -- the tag is what the ACL grants on. AirDrop the file
++# from the Desktop instead; the phone opens it straight into the app.
++if "$TS" file cp "$OUT" "${DEVICE}:" 2>/dev/null; then
++	printf 'ok      phone-kubeconfig  sent to %s over Taildrop\n' "$DEVICE"
++else
++	printf 'note    phone-kubeconfig  Taildrop cannot send from a tagged Mac to %s; AirDrop %s instead\n' "$DEVICE" "$OUT"
++fi
+diff --git a/bin/idp/migrate-domain/console/checks.mjs b/bin/idp/migrate-domain/console/checks.mjs
+new file mode 100644
+index 000000000..9f4ea9556
+--- /dev/null
++++ b/bin/idp/migrate-domain/console/checks.mjs
+@@ -0,0 +1,208 @@
++// Every field is checked against the service that owns it, not against a regex.
++// A token that looks right and does not work is the failure this whole file
++// exists to stop: it passes setup, and then the first cold start at 2am is the
++// thing that discovers it.
++//
++// A check returns { ok, note }. The note is what the service said about itself
++// — an account name, a bot username, a key count — never the credential.
++import { createHmac, createHash } from 'node:crypto'
++
++const CF = () => (process.env.CF_API_BASE || 'https://api.cloudflare.com') + '/client/v4'
++
++const UA = { 'user-agent': 'survival-stack-setup' }
++
++// `wrangler whoami` prints "You are not authenticated" and exits 0. Its exit code
++// is not a login test, and treating it as one sent one setup run all the way to a
++// failed KV create before anything said the word login.
++export function isLoggedIn(whoamiOutput) {
++  return /Account ID|associated with the email/.test(String(whoamiOutput || ''))
++}
++
++async function json(url, opts = {}) {
++  const ctl = AbortSignal.timeout(15000)
++  const r = await fetch(url, { ...opts, signal: ctl, headers: { ...UA, ...(opts.headers || {}) } })
++  let body = null
++  try { body = await r.json() } catch { /* some errors are not json */ }
++  return { status: r.status, ok: r.ok, body }
++}
++
++const fail = (note) => ({ ok: false, note })
++const pass = (note, extra = {}) => ({ ok: true, note, ...extra })
++
++// ---------------------------------------------------------------- Cloudflare
++
++export async function checkCfToken(token) {
++  if (!token) return fail('nothing pasted')
++  const v = await json(CF() + '/user/tokens/verify', {
++    headers: { authorization: `Bearer ${token}` },
++  })
++  // Cloudflare answers a malformed token with 400 "Invalid request headers", which
++  // reads as a bug in this tool rather than a bad paste. Say what it means.
++  if (!v.body?.success) return fail('Cloudflare rejected this token')
++  const z = await json(CF() + '/zones?per_page=50', {
++    headers: { authorization: `Bearer ${token}` },
++  })
++  if (!z.body?.success) return fail('the token works but cannot read zones — add Zone:Read')
++  const zones = (z.body.result || []).map((r) => ({ id: r.id, name: r.name }))
++  // No zones used to be a failure. It is now a starting state: the console can
++  // create the zone itself, so a fresh account with nothing in it is fine.
++  if (zones.length === 0) return pass('valid, no domains on this account yet', { zones })
++  return pass(`valid, ${zones.length} zone(s) in scope`, { zones })
++}
++
++// The apex A record is what failover rewrites. Asking a person to copy its id out
++// of the dashboard is two clicks and a chance to paste the wrong one, so find it.
++// If the domain has no A record yet, make one pointing at TEST-NET-1, which is
++// reserved and routes nowhere. The first cold start overwrites it.
++export async function findOrCreateApex(token, zoneId, domain) {
++  const h = { authorization: `Bearer ${token}`, 'content-type': 'application/json' }
++  const base = `${CF()}/zones/${zoneId}/dns_records`
++  const list = await json(`${base}?type=A&name=${encodeURIComponent(domain)}`, { headers: h })
++  if (!list.body?.success) return fail(list.body?.errors?.[0]?.message || 'could not read DNS records')
++  const found = list.body.result?.[0]
++  if (found) return pass(`apex A record found (${found.content})`, { recordId: found.id, created: false })
++  const made = await json(base, {
++    method: 'POST',
++    headers: h,
++    body: JSON.stringify({ type: 'A', name: domain, content: '192.0.2.1', proxied: true, ttl: 1 }),
++  })
++  if (!made.body?.success) {
++    return fail(made.body?.errors?.[0]?.message || 'could not create the apex A record — add Zone:DNS:Edit')
++  }
++  return pass('apex A record created, parked until the first box comes up',
++    { recordId: made.body.result.id, created: true })
++}
++
++// ------------------------------------------------------------------ Telegram
++
++export async function checkTelegramBot(token) {
++  if (!token) return fail('nothing pasted')
++  const r = await json(`https://api.telegram.org/bot${token}/getMe`)
++  if (!r.body?.ok) return fail(r.body?.description || 'Telegram rejected this token')
++  return pass(`@${r.body.result.username}`, { username: r.body.result.username })
++}
++
++// Nobody should have to go and find @userinfobot. Message the bot and it tells us.
++export async function findChatId(token) {
++  const r = await json(`https://api.telegram.org/bot${token}/getUpdates?limit=10&timeout=0`)
++  if (!r.body?.ok) return fail(r.body?.description || 'Telegram would not hand over updates')
++  const msgs = (r.body.result || []).map((u) => u.message || u.edited_message).filter(Boolean)
++  const last = msgs[msgs.length - 1]
++  if (!last) return fail('no message yet — send your bot anything from your phone')
++  const who = last.from?.first_name || last.chat?.title || 'you'
++  return pass(`heard from ${who}`, { chatId: String(last.chat.id) })
++}
++
++export async function sendTelegram(token, chatId, text) {
++  return json(`https://api.telegram.org/bot${token}/sendMessage`, {
++    method: 'POST',
++    headers: { 'content-type': 'application/json' },
++    body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'Markdown' }),
++  })
++}
++
++export async function setWebhook(token, url, secret) {
++  return json(`https://api.telegram.org/bot${token}/setWebhook`, {
++    method: 'POST',
++    headers: { 'content-type': 'application/json' },
++    body: JSON.stringify({ url, secret_token: secret, allowed_updates: ['message'] }),
++  })
++}
++
++// ------------------------------------------------------------------ Providers
++// Each one is asked for its SSH keys as well as its identity, because the next
++// question setup would otherwise ask is "what is your SSH key called".
++
++export async function checkHetzner(token) {
++  if (!token) return fail('nothing pasted')
++  const r = await json('https://api.hetzner.cloud/v1/ssh_keys', {
++    headers: { authorization: `Bearer ${token}` },
++  })
++  if (r.status === 401) return fail('Hetzner rejected this token')
++  if (!r.ok) return fail(`Hetzner said ${r.status}`)
++  const keys = (r.body.ssh_keys || []).map((k) => k.name)
++  return pass(keys.length ? `${keys.length} SSH key(s): ${keys.join(', ')}` : 'valid, but no SSH key uploaded yet',
++    { keys })
++}
++
++export async function checkDigitalOcean(token) {
++  if (!token) return fail('nothing pasted')
++  const h = { authorization: `Bearer ${token}` }
++  const acct = await json('https://api.digitalocean.com/v2/account', { headers: h })
++  if (acct.status === 401) return fail('DigitalOcean rejected this token')
++  if (!acct.ok) return fail(`DigitalOcean said ${acct.status}`)
++  const k = await json('https://api.digitalocean.com/v2/account/keys', { headers: h })
++  const keys = (k.body?.ssh_keys || []).map((x) => x.name)
++  return pass(`${acct.body.account.email_verified ? 'verified' : 'unverified'} account, ${keys.length} SSH key(s)`,
++    { keys })
++}
++
++export async function checkVultr(token) {
++  if (!token) return fail('nothing pasted')
++  const h = { authorization: `Bearer ${token}` }
++  const acct = await json('https://api.vultr.com/v2/account', { headers: h })
++  if (acct.status === 401) return fail('Vultr rejected this key')
++  if (!acct.ok) return fail(`Vultr said ${acct.status}`)
++  const k = await json('https://api.vultr.com/v2/ssh-keys', { headers: h })
++  const keys = (k.body?.ssh_keys || []).map((x) => x.name)
++  return pass(`balance ${acct.body.account?.balance ?? '?'}, ${keys.length} SSH key(s)`, { keys })
++}
++
++// -------------------------------------------------------------------- Stripe
++
++export async function checkStripe(key) {
++  if (!key) return fail('nothing pasted')
++  const r = await json('https://api.stripe.com/v1/balance', {
++    headers: { authorization: `Bearer ${key}` },
++  })
++  if (r.status === 401) return fail('Stripe rejected this key')
++  if (!r.ok) return fail(r.body?.error?.message || `Stripe said ${r.status}`)
++  return pass(r.body.livemode ? 'live key, working' : 'TEST key — real orders will not charge')
++}
++
++// ------------------------------------------------------------------------ R2
++// The one credential where a typo is silent. It is only used by litestream on a
++// box you cannot see, so a wrong key means backups that never happened and a
++// restore that finds nothing. Signed and sent, so it is checked here or never.
++
++function sigv4Headers({ method, host, path, accessKey, secretKey, region = 'auto', service = 's3', payload = '' }) {
++  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '')
++  const dateStamp = amzDate.slice(0, 8)
++  const hash = (s) => createHash('sha256').update(s).digest('hex')
++  const hmac = (k, s) => createHmac('sha256', k).update(s).digest()
++  const payloadHash = hash(payload)
++  const canonicalHeaders = `host:${host}\nx-amz-content-sha256:${payloadHash}\nx-amz-date:${amzDate}\n`
++  const signedHeaders = 'host;x-amz-content-sha256;x-amz-date'
++  const canonical = [method, path, '', canonicalHeaders, signedHeaders, payloadHash].join('\n')
++  const scope = `${dateStamp}/${region}/${service}/aws4_request`
++  const toSign = ['AWS4-HMAC-SHA256', amzDate, scope, hash(canonical)].join('\n')
++  let k = hmac(`AWS4${secretKey}`, dateStamp)
++  for (const part of [region, service, 'aws4_request']) k = hmac(k, part)
++  const signature = createHmac('sha256', k).update(toSign).digest('hex')
++  return {
++    authorization: `AWS4-HMAC-SHA256 Credential=${accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
++    'x-amz-content-sha256': payloadHash,
++    'x-amz-date': amzDate,
++  }
++}
++
++export async function checkR2(accountId, accessKey, secretKey) {
++  if (!accessKey || !secretKey) return fail('both halves are needed')
++  if (!accountId) return fail('log in to Cloudflare first — the endpoint is built from your account id')
++  const host = `${accountId}.r2.cloudflarestorage.com`
++  const headers = sigv4Headers({ method: 'GET', host, path: '/', accessKey, secretKey })
++  let r
++  try {
++    r = await fetch(`https://${host}/`, { headers: { ...headers, ...UA }, signal: AbortSignal.timeout(15000) })
++  } catch (e) {
++    return fail(`could not reach R2: ${e.message}`)
++  }
++  if (r.status === 403) return fail('R2 rejected this key pair')
++  if (!r.ok) return fail(`R2 said ${r.status}`)
++  const xml = await r.text()
++  const buckets = [...xml.matchAll(/<Name>([^<]+)<\/Name>/g)].map((m) => m[1])
++  return pass(buckets.length ? `signed in, sees ${buckets.length} bucket(s)` : 'signed in, no buckets yet',
++    { buckets })
++}
++
++export { sigv4Headers }
+diff --git a/bin/idp/migrate-domain/console/phases.mjs b/bin/idp/migrate-domain/console/phases.mjs
+new file mode 100644
+index 000000000..eaf31f081
+--- /dev/null
++++ b/bin/idp/migrate-domain/console/phases.mjs
+@@ -0,0 +1,311 @@
++// The migration as six named phases, each one runnable on its own.
++//
++// It was one long script. That was fine to write and impossible to test: the
++// only way to exercise "what happens when record 4 is refused" was to have
++// record 4 refused on a live domain. Phases give every failure mode an entry
++// point, and the state file gives a failed run something to undo.
++//
++// The gates are the point. Each phase refuses to start unless the one before
++// it finished, and the state file - not an agent's memory, not a chat message
++// - is what says whether it did.
++import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
++import { join } from 'node:path'
++import { promises as dnsp } from 'node:dns'
++import * as z from './zone.mjs'
++
++export const PHASES = ['discover', 'validate', 'prepare', 'verify', 'cutover', 'lockdown']
++
++// Five minutes. A verify older than that describes a zone that may have been
++// edited since, and cutover is the one step that cannot be undone quickly.
++export const VERIFY_TTL_MS = 5 * 60 * 1000
++
++const STATE_DIR = process.env.MIGRATION_STATE_DIR || '.migration'
++
++export function statePath(domain, dir = STATE_DIR) {
++  return join(dir, `${domain}.json`)
++}
++
++export async function loadState(domain, dir = STATE_DIR) {
++  try { return JSON.parse(await readFile(statePath(domain, dir), 'utf8')) } catch { return null }
++}
++
++export async function saveState(domain, patch, dir = STATE_DIR) {
++  const now = { ...(await loadState(domain, dir)), domain, ...patch }
++  await mkdir(dir, { recursive: true })
++  await writeFile(statePath(domain, dir), JSON.stringify(now, null, 2) + '\n')
++  return now
++}
++
++export async function clearState(domain, dir = STATE_DIR) {
++  await rm(statePath(domain, dir), { force: true })
++}
++
++// A phase returns this shape and never throws for an expected failure. `stop`
++// is a sentence a person can act on; `need` names the permission when that is
++// what is missing, because "403 Forbidden" sends people to the wrong page.
++const done = (extra = {}) => ({ ok: true, ...extra })
++const stop = (why, extra = {}) => ({ ok: false, stop: why, ...extra })
++
++// ------------------------------------------------------------- 1. DISCOVER
++
++// Reads the zone off the nameservers actually answering for it. Touches
++// nothing, needs no credential, and is the baseline every later phase is
++// compared against.
++export async function discover(domain, { dir = STATE_DIR, dns = z } = {}) {
++  const ns = await dns.authoritativeServers(domain).catch((e) => ({ error: e.message }))
++  if (ns.error) return stop(`cannot read ${domain} from its nameservers: ${ns.error}`)
++
++  const all = await dns.readZone(domain, ns.ips)
++  const records = all.filter((r) => !(r.type === 'NS' && r.name === domain))
++  if (!records.length) return stop(`no records found for ${domain} - check the spelling`)
++
++  const lock = await dns.registrarLock(domain)
++  const state = await saveState(domain, {
++    discoveredAt: new Date().toISOString(),
++    oldNameServers: ns.names,
++    oldIps: ns.ips,
++    records,
++    registrar: lock,
++    hasMx: records.some((r) => r.type === 'MX'),
++  }, dir)
++  return done({ records, nameServers: ns.names, registrar: lock, state })
++}
++
++// ------------------------------------------------------------- 2. VALIDATE
++
++// Prove the credential can do every part of the job before any of it happens.
++//
++// Whether a token can write DNS is a question about a zone, so there has to be
++// a zone to ask about. Three cases, and only the third one changes anything:
++//
++//   this zone exists     ask there, change nothing on failure
++//   another zone exists  ask there, change nothing on failure
++//   nothing exists       create this one, ask, delete it again on failure
++export async function validate(domain, token, { dir = STATE_DIR } = {}) {
++  const state = await loadState(domain, dir)
++  if (!state?.records) return stop('run discover first - there is nothing to validate against')
++
++  // Zone read comes first because every other check is phrased in terms of a
++  // zone, and a token that cannot list zones fails all of them for one reason.
++  // It is also the only check that runs before anything could be created, so
++  // getting it wrong is the difference between a clear sentence and a zone
++  // created by a credential that could never have finished the job.
++  if (!(await z.zoneReadable(token))) {
++    return stop('this credential cannot list zones', { need: 'Zone → Zone → Read' })
++  }
++
++  const got = await z.ensureZone(token, domain, {})
++    .catch((e) => ({ error: 'create-refused', message: e.message }))
++
++  if (got.error === 'create-refused') {
++    return stop('this credential cannot create a zone', { need: 'Zone → Zone → Edit', detail: got.message })
++  }
++  if (got.error === 'no-dns') {
++    return stop('this credential cannot write DNS records', {
++      need: 'Zone → DNS → Edit',
++      rolledBack: got.rolledBack,
++    })
++  }
++
++  const next = await saveState(domain, {
++    validatedAt: new Date().toISOString(),
++    zoneId: got.zone.id,
++    zoneStatus: got.zone.status,
++    newNameServers: (got.zone.name_servers || []).map((s) => s.toLowerCase()).sort(),
++    // The single most important field in the file. Rollback reads it to decide
++    // whether deleting the zone is undoing our own work or destroying someone
++    // else's.
++    zoneCreatedByUs: Boolean(got.fresh),
++  }, dir)
++  return done({ zone: got.zone, fresh: Boolean(got.fresh), state: next })
++}
++
++// ------------------------------------------------------------- 3. PREPARE
++
++// Write every discovered record into the zone. Live traffic is still on the
++// old nameservers throughout, so this phase is invisible from outside.
++//
++// A partial write is the failure this phase is shaped around. Four records in
++// and a refusal on the fifth used to leave four records and a zone behind, and
++// the next run then could not tell them from configuration somebody meant.
++// Now the run undoes exactly what it wrote, and nothing else.
++export async function prepare(domain, token, { dir = STATE_DIR, onEach = () => {} } = {}) {
++  const state = await loadState(domain, dir)
++  if (!state?.zoneId) return stop('run validate first - there is no zone to write into')
++  if (!state.records?.length) return stop('run discover first - there is nothing to write')
++
++  const res = await z.writeRecords(token, state.zoneId, state.records, onEach)
++  await saveState(domain, { addedRecordIds: res.addedIds }, dir)
++
++  if (res.failed.length) {
++    const undone = await undo(domain, token, { dir })
++    return stop(`${res.failed.length} of ${state.records.length} records were refused`, {
++      failed: res.failed,
++      rolledBack: undone,
++    })
++  }
++
++  const next = await saveState(domain, { preparedAt: new Date().toISOString(), written: res.added }, dir)
++  return done({ added: res.added, already: res.already, state: next })
++}
++
++// -------------------------------------------------------------- 4. VERIFY
++
++// Ask both nameserver sets the same questions and refuse to say ready unless
++// the answers match. This is the gate that stands between a half-written zone
++// and a shop that stops answering.
++// A record written a second ago is not yet a record the edge answers with.
++// Measured on mumchimp.com: prepare wrote all 8, verify ran immediately after
++// and reported all 8 missing; the same command 40 seconds later said Identical.
++// A gate that cries wolf on its own writes teaches people to re-run it until it
++// agrees, which is the one habit this gate exists to prevent. So it waits.
++export async function verify(domain, {
++  dir = STATE_DIR, dns = z, resolve4 = dnsp.resolve4,
++  attempts = 6, waitMs = 8000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
++  onWait = () => {},
++} = {}) {
++  const state = await loadState(domain, dir)
++  if (!state?.preparedAt) return stop('run prepare first - the zone has not been written yet')
++
++  const newIps = []
++  for (const n of state.newNameServers || []) {
++    for (const ip of await resolve4(n).catch(() => [])) newIps.push(ip)
++  }
++  if (!newIps.length) return stop('the new nameservers do not resolve yet - wait and run verify again')
++
++  let d = await dns.compare(domain, state.oldIps, newIps)
++  for (let i = 1; i < attempts && !d.ready; i++) {
++    onWait(d.missing.length, i, attempts)
++    await sleep(waitMs)
++    d = await dns.compare(domain, state.oldIps, newIps)
++  }
++  if (!d.ready) {
++    await saveState(domain, { verifiedAt: null }, dir)
++    return stop(`${d.missing.length} records are missing on the new side`, { diff: d })
++  }
++  const next = await saveState(domain, { verifiedAt: new Date().toISOString(), newIps, diff: d }, dir)
++  return done({ diff: d, state: next })
++}
++
++// ------------------------------------------------------------- 5. CUTOVER
++
++// The registrar step, and the one this tool does not perform.
++//
++// 123-reg has no public API for a retail account, so the nameserver change is
++// two strings pasted into one form by a person. What the tool can do is refuse
++// to print those strings until it is safe, which is the part that goes wrong.
++export async function cutover(domain, { dir = STATE_DIR, dns = z, now = Date.now() } = {}) {
++  const state = await loadState(domain, dir)
++  if (!state?.verifiedAt) return stop('verify has not passed - the new nameservers do not answer identically yet')
++
++  const age = now - Date.parse(state.verifiedAt)
++  if (age > VERIFY_TTL_MS) {
++    return stop(`the last verify was ${Math.round(age / 60000)} minutes ago - run verify again before switching`)
++  }
++
++  const lock = await dns.registrarLock(domain)
++  if (lock.locked) {
++    return stop('the domain is locked at the registrar, so the form will reject the change', {
++      need: 'turn Domain Lock off at 123-reg, then run this again',
++      statuses: lock.statuses,
++    })
++  }
++
++  return done({
++    from: state.oldNameServers,
++    to: state.newNameServers,
++    manual: true,
++    where: `https://www.123-reg.co.uk/secure/cpanel/domain/${domain}/manage-nameservers`,
++    rollback: `put ${(state.oldNameServers || []).join(' and ')} back`,
++  })
++}
++
++// ------------------------------------------------------------ 6. LOCKDOWN
++
++// Did the change actually land everywhere, and is the door shut again.
++const RESOLVERS = { '1.1.1.1': '1.1.1.1', '8.8.8.8': '8.8.8.8', '9.9.9.9': '9.9.9.9' }
++
++export async function lockdown(domain, { dir = STATE_DIR, dns = z, resolvers = RESOLVERS, ask = askNs } = {}) {
++  const state = await loadState(domain, dir)
++  if (!state?.newNameServers?.length) return stop('there is no target nameserver set to check against')
++
++  const want = state.newNameServers.join(',')
++  const seen = {}
++  for (const [label, ip] of Object.entries(resolvers)) {
++    seen[label] = (await ask(domain, ip)).join(',')
++  }
++  const behind = Object.entries(seen).filter(([, got]) => got !== want).map(([l]) => l)
++
++  const lock = await dns.registrarLock(domain)
++  if (behind.length) {
++    return stop(`${behind.join(', ')} still answer with the old nameservers`, { seen, want, lock })
++  }
++  if (!lock.locked) {
++    return stop('propagated, but the registrar lock is still off', {
++      need: 'turn Domain Lock back on at 123-reg',
++      seen, want,
++    })
++  }
++  const next = await saveState(domain, { lockedDownAt: new Date().toISOString() }, dir)
++  return done({ seen, want, lock, state: next })
++}
++
++async function askNs(domain, serverIp) {
++  const { Resolver } = await import('node:dns')
++  const r = new Resolver({ timeout: 3000, tries: 2 })
++  r.setServers([serverIp])
++  return new Promise((res) => r.resolveNs(domain, (e, out) => res(e ? [] : out.map((s) => s.toLowerCase()).sort())))
++}
++
++// ------------------------------------------------------------- rollback
++
++// Undo exactly what this run did, and refuse anything else.
++//
++// The refusal is the important half. A zone that was already there when the
++// run started belongs to a decision somebody made, and deleting it because a
++// permission was wrong turns a bad first run into a lost configuration.
++export async function undo(domain, token, { dir = STATE_DIR, log = () => {} } = {}) {
++  const state = await loadState(domain, dir)
++  if (!state) return { ok: false, stop: 'nothing recorded for this domain - there is nothing to undo' }
++
++  const removed = []
++  for (const rid of state.addedRecordIds || []) {
++    if (await z.deleteRecord(token, state.zoneId, rid)) removed.push(rid)
++  }
++  log('records', removed.length)
++
++  // Deleting the zone is the irreversible half, so it gets a second question
++  // that does not depend on the state file being right. If anything is left in
++  // the zone after our own records have gone, somebody put it there and the
++  // zone stays. That makes a state file written from a guess safe: the worst a
++  // wrong `zoneCreatedByUs` can do is delete something already empty.
++  let zoneDeleted = false
++  let notEmpty = 0
++  if (state.zoneCreatedByUs && state.zoneId) {
++    notEmpty = (await z.allRecords(token, state.zoneId))
++      .filter((r) => !(r.type === 'NS' && r.name === domain)).length
++    if (notEmpty === 0) {
++      zoneDeleted = await z.deleteZone(token, state.zoneId)
++      log('zone', zoneDeleted)
++    }
++  }
++
++  await saveState(domain, {
++    addedRecordIds: [],
++    preparedAt: null,
++    verifiedAt: null,
++    ...(zoneDeleted ? { zoneId: null, zoneCreatedByUs: false, validatedAt: null } : {}),
++    rolledBackAt: new Date().toISOString(),
++  }, dir)
++
++  return {
++    ok: true,
++    recordsRemoved: removed.length,
++    zoneDeleted,
++    zoneKept: Boolean(state.zoneId) && !zoneDeleted,
++    keptBecause: !state.zoneId ? null
++      : !state.zoneCreatedByUs ? 'the zone was already there before this run started'
++        : notEmpty ? `${notEmpty} record(s) in it were not written by this run`
++          : null,
++  }
++}
+diff --git a/bin/idp/migrate-domain/console/zone.mjs b/bin/idp/migrate-domain/console/zone.mjs
+new file mode 100644
+index 000000000..63f30f48c
+--- /dev/null
++++ b/bin/idp/migrate-domain/console/zone.mjs
+@@ -0,0 +1,310 @@
++// Moving a domain to Cloudflare, without a dashboard.
++//
++// The manual version is: log in, add a site, wait for a scan, check every
++// record it guessed, add the ones it missed, then compare by eye. The eye is
++// the part that fails, and mail records are what it fails on — an SPF or DKIM
++// record that did not come across breaks nothing visible and quietly costs you
++// deliverability for a week.
++//
++// So this reads the zone from the nameservers actually answering for it, writes
++// every record into Cloudflare through the API, and then asks both sides the
++// same questions and refuses to say ready unless the answers match.
++import { Resolver, promises as dnsp } from 'node:dns'
++import { execFile } from 'node:child_process'
++
++// CF_API_BASE points the whole tool at the mock server in test/helpers, which
++// is how the failure matrix exercises the real HTTP path - headers, JSON,
++// status codes - instead of a stubbed fetch that agrees with itself.
++// Read per call, not at import. A test points this at the mock server after
++// the module graph is already loaded, and a constant captured at import time
++// would send every one of those calls to the live API instead.
++const CF = () => (process.env.CF_API_BASE || 'https://api.cloudflare.com') + '/client/v4'
++
++// Everything a small business is likely to have, plus every DKIM selector the
++// common mail providers use. A name nobody ever asks about costs one UDP packet.
++const NAMES = ['@', 'www', 'mail', 'smtp', 'imap', 'pop', 'webmail', 'autodiscover',
++  'autoconfig', 'ftp', 'blog', 'shop', 'app', 'api', 'dev', 'staging', 'm', 'cdn',
++  'static', 'assets', 'calendar', 'docs', 'drive', 'sites', 'status', 'support',
++  'help', 'admin', 'portal', 'vpn', 'git', 'ns1', 'ns2',
++  '_dmarc', 'google._domainkey', 'mailjet._domainkey', 'default._domainkey',
++  'selector1._domainkey', 'selector2._domainkey', 'k1._domainkey', 'k2._domainkey',
++  's1._domainkey', 's2._domainkey', 'mandrill._domainkey', 'sendgrid._domainkey',
++  'em._domainkey', 'dkim._domainkey', 'smtp._domainkey', 'pm._domainkey',
++  'zoho._domainkey', 'mail._domainkey', 'fm1._domainkey', 'fm2._domainkey', 'fm3._domainkey']
++
++const TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'CAA', 'SRV', 'NS']
++
++async function cf(token, path, opts = {}) {
++  const r = await fetch(CF() + path, {
++    ...opts,
++    signal: AbortSignal.timeout(25000),
++    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(opts.headers || {}) },
++  })
++  const body = await r.json().catch(() => ({}))
++  return { status: r.status, ok: r.ok && body.success !== false, body }
++}
++
++const firstError = (b) => b?.errors?.[0]?.message || b?.messages?.[0]?.message || 'Cloudflare said no'
++
++// -------------------------------------------------------------- reading a zone
++
++// Ask the servers that hold the zone, not a resolver. A resolver hands back
++// whatever it has cached, which during a migration is exactly the wrong answer.
++export async function authoritativeServers(domain) {
++  const names = await dnsp.resolveNs(domain)
++  const ips = []
++  for (const n of names) {
++    for (const ip of await dnsp.resolve4(n).catch(() => [])) ips.push(ip)
++  }
++  if (!ips.length) throw new Error(`no reachable nameserver for ${domain}`)
++  return { names: names.sort(), ips }
++}
++
++function resolverOn(ips) {
++  const r = new Resolver({ timeout: 3000, tries: 2 })
++  r.setServers(ips)
++  return r
++}
++
++const ask = (res, name, type) => new Promise((resolve) => {
++  res.resolve(name, type, (err, out) => resolve(err ? [] : out))
++})
++
++// One flat list of strings, so two zones can be compared by set difference.
++export async function readZone(domain, ips, { names = NAMES } = {}) {
++  const res = resolverOn(ips)
++  const out = []
++  const jobs = []
++  for (const n of names) {
++    const fqdn = n === '@' ? domain : `${n}.${domain}`
++    for (const type of TYPES) {
++      jobs.push(ask(res, fqdn, type).then((rows) => {
++        for (const row of rows) out.push({ name: fqdn, type, ...normalise(type, row) })
++      }))
++    }
++  }
++  await Promise.all(jobs)
++  return out.sort((a, b) => key(a).localeCompare(key(b)))
++}
++
++function normalise(type, row) {
++  if (type === 'MX') return { content: row.exchange.replace(/\.$/, ''), priority: row.priority }
++  if (type === 'TXT') return { content: (Array.isArray(row) ? row.join('') : row) }
++  if (type === 'SRV') return { content: `${row.weight} ${row.port} ${row.name}`, priority: row.priority }
++  if (type === 'CAA') return { content: `${row.critical} ${row.issue ? 'issue' : 'iodef'} "${row.issue || row.iodef}"` }
++  return { content: String(row).replace(/\.$/, '') }
++}
++
++export const key = (r) => `${r.name} ${r.type} ${r.priority ?? ''} ${r.content}`.trim()
++
++// ------------------------------------------------------------- writing a zone
++
++export async function accountId(token) {
++  const r = await cf(token, '/accounts?per_page=5')
++  if (!r.ok) return null
++  return r.body.result?.[0]?.id || null
++}
++
++export async function findZone(token, domain) {
++  const r = await cf(token, `/zones?name=${encodeURIComponent(domain)}`)
++  if (!r.ok) return null
++  return r.body.result?.[0] || null
++}
++
++// jump_start is left on deliberately. Cloudflare's scanner looks for records the
++// same way this file does and gets different answers, because neither can list a
++// zone it cannot transfer — both are guessing names. Two guessers that agree is
++// the closest thing to a listing available without the registrar's own API, and
++// where they disagree is the only part worth a human's attention.
++// `account` is optional, and a null one is the normal case rather than an
++// error. A token scoped to zones and not to the account reads GET /accounts as
++// 200 with an empty list - not a 403 - so there is no account id to send, and
++// the old code stopped there saying the token needed Account:Read. It does not.
++// POST /zones with no account attaches the zone to the only account the
++// credential belongs to. Measured: 200, zone created, nameservers returned.
++export async function createZone(token, account, domain, jumpStart = true) {
++  const body = { name: domain, type: 'full', jump_start: jumpStart }
++  if (account) body.account = { id: account }
++  const r = await cf(token, '/zones', { method: 'POST', body: JSON.stringify(body) })
++  if (!r.ok) throw new Error(firstError(r.body))
++  return r.body.result
++}
++
++// Whether this credential can actually touch DNS on this zone, asked of the
++// API rather than inferred from the token being "valid".
++//
++// The incident: a token with Zone:Edit and no DNS permission created the zone,
++// reported "valid, 1 zone in scope", and then refused all eight record writes
++// with eight identical lines reading "Authentication error". Nothing in that
++// output named the missing permission. One call up front does.
++export async function dnsReachable(token, zoneId) {
++  const r = await cf(token, `/zones/${zoneId}/dns_records?per_page=1`)
++  return r.ok
++}
++
++// Everything goes in grey-clouded. Today nothing is proxied, so proxying on the
++// way in would change how traffic reaches the origin and how TLS terminates, on
++// the same day as the move, with two changes to untangle if anything breaks.
++export async function writeRecords(token, zoneId, records, onEach = () => {}) {
++  const existing = await allRecords(token, zoneId)
++  const have = new Set(existing.map((r) => key(fromCf(r))))
++  // addedIds is what makes a failed prepare undoable: the ids of the records
++  // this run put there, and nothing else. Without it a rollback would have to
++  // guess which records were already somebody's configuration.
++  const results = { added: 0, already: 0, skipped: [], failed: [], addedIds: [] }
++
++  for (const rec of records) {
++    if (rec.type === 'NS' && rec.name === records.domain) continue
++    if (have.has(key(rec))) { results.already++; onEach({ ...rec, state: 'already there' }); continue }
++    const body = {
++      type: rec.type,
++      name: rec.name,
++      content: rec.content,
++      ttl: 300,
++      proxied: false,
++      ...(rec.priority !== undefined ? { priority: rec.priority } : {}),
++    }
++    const r = await cf(token, `/zones/${zoneId}/dns_records`, { method: 'POST', body: JSON.stringify(body) })
++    if (r.ok) { results.added++; results.addedIds.push(r.body.result.id); onEach({ ...rec, state: 'added' }) }
++    else { results.failed.push({ ...rec, why: firstError(r.body) }); onEach({ ...rec, state: `refused: ${firstError(r.body)}` }) }
++  }
++  return results
++}
++
++// Undo one record this run wrote. The rollback path only ever passes ids from
++// writeRecords' own addedIds, so it can never remove a record that was already
++// there before the run started.
++export async function deleteRecord(token, zoneId, recordId) {
++  const r = await cf(token, `/zones/${zoneId}/dns_records/${recordId}`, { method: 'DELETE' })
++  return r.ok
++}
++
++export async function allRecords(token, zoneId) {
++  const out = []
++  for (let page = 1; page <= 10; page++) {
++    const r = await cf(token, `/zones/${zoneId}/dns_records?per_page=100&page=${page}`)
++    if (!r.ok) break
++    out.push(...r.body.result)
++    if (r.body.result.length < 100) break
++  }
++  return out
++}
++
++const fromCf = (r) => ({
++  name: r.name, type: r.type, content: String(r.content).replace(/\.$/, ''),
++  ...(r.priority !== undefined && r.priority !== null ? { priority: r.priority } : {}),
++})
++
++// ------------------------------------------------------------------- the check
++
++// The guard. Two nameserver sets, the same questions, and a refusal unless the
++// answers match. NS records are excluded because they differ by definition
++// while a migration is in progress.
++export async function compare(domain, oldIps, newIps) {
++  const [before, after] = await Promise.all([readZone(domain, oldIps), readZone(domain, newIps)])
++  const real = (rs) => rs.filter((r) => !(r.type === 'NS' && r.name === domain))
++  const a = new Set(real(before).map(key))
++  const b = new Set(real(after).map(key))
++  return {
++    total: a.size,
++    missing: [...a].filter((k) => !b.has(k)).sort(),
++    extra: [...b].filter((k) => !a.has(k)).sort(),
++    ready: [...a].every((k) => b.has(k)),
++  }
++}
++
++// Can this credential list zones at all - as distinct from listing them and
++// finding none. findZone and listZones both flatten a 403 into an empty
++// answer, which reads as "no such zone" and sends you to create one. This is
++// the only call that tells the two apart, so it runs first.
++export async function zoneReadable(token) {
++  const r = await cf(token, '/zones?per_page=1')
++  return r.ok
++}
++
++export async function listZones(token, limit = 5) {
++  const r = await cf(token, `/zones?per_page=${limit}`)
++  return r.ok ? r.body.result || [] : []
++}
++
++// Undo a zone this run created. Only ever called on a zone this run created:
++// a pre-existing zone belongs to somebody else's decision, and deleting one on
++// a permission failure would turn a bad first run into a lost configuration.
++export async function deleteZone(token, zoneId) {
++  const r = await cf(token, `/zones/${zoneId}`, { method: 'DELETE' })
++  return r.ok
++}
++
++// Get a zone to work in, or fail having changed nothing.
++//
++// The incident: a token with Zone:Edit and no DNS permission created the zone,
++// then failed on record 1 of 8 with "Authentication error". The founder was
++// left holding a half-created zone and a message naming no permission.
++// Founder: "This is not nice debugging."
++//
++// The rule that came out of it: the probe runs before the mutation, and a
++// failed run leaves zero side effects. Whether a credential can write DNS is a
++// question about a zone, so there has to be a zone to ask about, and there are
++// three cases:
++//
++//   the zone exists      ask there, change nothing on failure
++//   another zone exists  ask there, change nothing on failure
++//   nothing exists       create this one, ask, delete it again on failure
++//
++// Returns { zone } or { error: 'no-dns', rolledBack }. It never returns a zone
++// it has not proved it can write DNS in.
++export async function ensureZone(token, domain, { log = () => {} } = {}) {
++  const existing = await findZone(token, domain)
++  if (existing) {
++    log('exists', existing)
++    if (!(await dnsReachable(token, existing.id))) return { error: 'no-dns', rolledBack: false }
++    return { zone: existing }
++  }
++
++  // Any zone answers "can this token touch DNS at all", and using one that is
++  // already there means a bad credential costs nothing.
++  const [other] = await listZones(token, 1)
++  if (other && !(await dnsReachable(token, other.id))) return { error: 'no-dns', rolledBack: false }
++
++  const account = await accountId(token)
++  const zone = await createZone(token, account, domain)
++  log('created', zone)
++
++  // Nothing was in scope to ask first, so the new zone is the question, and it
++  // is withdrawn if the answer is no. Only ever this one: a zone somebody else
++  // created is their decision, and deleting it over a permission would turn a
++  // bad first run into a lost configuration.
++  if (!other && !(await dnsReachable(token, zone.id))) {
++    return { error: 'no-dns', rolledBack: await deleteZone(token, zone.id) }
++  }
++  return { zone, fresh: true }
++}
++
++// Whether the registry will accept a nameserver change at all.
++//
++// The incident: the founder was given the two Cloudflare nameservers, pasted
++// them into 123-reg, and got "Invalid nameservers". Nothing was wrong with the
++// nameservers - both resolve, both already answer authoritatively for the
++// zone. The domain carried clientUpdateProhibited, which is the registrar lock,
++// and it blocks updates to the domain object including its nameserver set. The
++// form reports that as a problem with what was typed.
++//
++// One whois call before the registrar step turns a mystifying rejection into a
++// sentence naming the toggle to turn off. It degrades quietly: no whois binary,
++// or a registry that does not answer, means no claim either way.
++export async function registrarLock(domain) {
++  const out = await new Promise((resolve) => {
++    execFile('whois', [domain], { timeout: 15000 }, (err, stdout) => resolve(err && !stdout ? null : String(stdout || '')))
++  })
++  if (out === null) return { known: false, locked: false, statuses: [] }
++  const statuses = [...new Set(
++    [...out.matchAll(/^\s*Domain Status:\s*(client\w+)/gim)].map((m) => m[1]),
++  )]
++  return { known: true, locked: statuses.includes('clientUpdateProhibited'), statuses }
++}
++
++export async function nameserversNowServing(domain) {
++  return (await dnsp.resolveNs(domain).catch(() => [])).map((n) => n.toLowerCase()).sort()
++}
++
++export { NAMES }
+diff --git a/bin/idp/migrate-domain/lib/cf-auth.mjs b/bin/idp/migrate-domain/lib/cf-auth.mjs
+new file mode 100644
+index 000000000..e77af51d8
+--- /dev/null
++++ b/bin/idp/migrate-domain/lib/cf-auth.mjs
+@@ -0,0 +1,161 @@
++// Finding a Cloudflare credential that can actually do the job.
++//
++// This version uses vault for credential storage. The original clipboard/keychain
++// approach is removed - the idp platform owns secrets.
++import { execFile } from 'node:child_process'
++import { promisify } from 'node:util'
++import { readFile } from 'node:fs/promises'
++
++const run = promisify(execFile)
++
++// -------------------------------------------------------------- vault credential
++
++const VAULT_KEY = 'cloudflare-api-token'
++
++// Get token from vault via idp-cloud
++export async function getVaultToken() {
++  try {
++    const { stdout } = await run('bin/idp-cloud', ['secret', 'get', VAULT_KEY])
++    const token = stdout.trim()
++    if (token && token.length >= 20) return token
++    return null
++  } catch {
++    return null
++  }
++}
++
++// -------------------------------------------------------------- credential validation
++
++export const MIN_TOKEN_LENGTH = 20
++
++const NOT_OURS = [
++  'sk-', 'sk_', 'pk_', 'rk_', 'whsec_',
++  'ghp_', 'gho_', 'ghs_', 'ghu_', 'ghr_', 'github_pat_',
++  'xoxb-', 'xoxp-', 'xapp-', 'xoxa-', 'xoxr-',
++  'AKIA', 'ASIA', 'ABIA', 'ACCA',
++  'AIza', 'ya29.',
++  'hf_', 'glpat-', 'gldt-', 'dop_v1_', 'doo_v1_', 'dor_v1_',
++  'shpat_', 'shpss_', 'SG.', 'npm_', 'pypi-', 'atlasv1.',
++  'fly_', 'FlyV1', 'lin_api_', 'sntrys_', 'sq0atp-', 'sq0csp-',
++  'EAAC', 'EAAG', 'r8_', 'tvly-', 'nvapi-', 'ntn_', 'secret_',
++]
++
++export function tokenCandidate(s) {
++  const v = String(s || '').trim()
++  if (!v) return { ok: false, why: 'nothing to check' }
++  if (v.length < MIN_TOKEN_LENGTH) {
++    return { ok: false, why: `${v.length} characters is too short to be a credential` }
++  }
++  if (/\s/.test(v)) return { ok: false, why: 'it contains spaces or newlines, so it is text' }
++  if (v.includes('://')) return { ok: false, why: 'it is a URL' }
++  const vendor = NOT_OURS.find((pfx) => v.startsWith(pfx))
++  if (vendor) {
++    return { ok: false, why: `it starts with "${vendor}" - that is another vendor's key` }
++  }
++  return { ok: true }
++}
++
++export function looksLikeToken(s) {
++  return tokenCandidate(s).ok
++}
++
++// -------------------------------------------------------------- discovery
++
++// In order: env var, then vault
++export async function findToken() {
++  if (process.env.CF_API_TOKEN) return { token: process.env.CF_API_TOKEN, from: 'CF_API_TOKEN' }
++  if (process.env.CLOUDFLARE_API_TOKEN) return { token: process.env.CLOUDFLARE_API_TOKEN, from: 'CLOUDFLARE_API_TOKEN' }
++
++  const vaultToken = await getVaultToken()
++  if (vaultToken) return { token: vaultToken, from: 'vault' }
++
++  return { token: null, from: null }
++}
++
++// -------------------------------------------------------------- tokens minting tokens
++
++const API_BASE = () => (process.env.CF_API_BASE || 'https://api.cloudflare.com') + '/client/v4'
++
++async function api(token, path, opts = {}) {
++  try {
++    const r = await fetch(API_BASE() + path, {
++      ...opts,
++      signal: AbortSignal.timeout(25000),
++      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(opts.headers || {}) },
++    })
++    const body = await r.json().catch(() => ({}))
++    return { ok: r.ok && body.success !== false, body }
++  } catch (e) {
++    return { ok: false, body: {}, offline: true, error: String(e.message || e) }
++  }
++}
++
++export async function permissionGroups(token) {
++  const r = await api(token, '/user/tokens/permission_groups?per_page=200')
++  if (!r.ok) return null
++  return r.body.result || []
++}
++
++const findGroup = (groups, name, scope) =>
++  groups.find((g) => g.name === name && (g.scopes || []).includes(scope))
++
++export async function mintEphemeral(token, accountId, { hours = 1 } = {}) {
++  const groups = await permissionGroups(token)
++  if (!groups) return null
++
++  const zoneWrite = findGroup(groups, 'Zone Write', 'com.cloudflare.api.account')
++  const dnsWrite = findGroup(groups, 'DNS Write', 'com.cloudflare.api.account.zone')
++  if (!zoneWrite || !dnsWrite) return null
++
++  const expires = new Date(Date.now() + hours * 3600_000).toISOString().replace(/\.\d{3}/, '')
++  const r = await api(token, '/user/tokens', {
++    method: 'POST',
++    body: JSON.stringify({
++      name: `idp ephemeral ${expires.slice(0, 16)}`,
++      status: 'active',
++      expires_on: expires,
++      policies: [{
++        effect: 'allow',
++        resources: { [`com.cloudflare.api.account.${accountId}`]: '*' },
++        permission_groups: [{ id: zoneWrite.id }, { id: dnsWrite.id }],
++      }],
++    }),
++  })
++  if (!r.ok || !r.body.result?.value) return null
++  return { token: r.body.result.value, id: r.body.result.id, expires }
++}
++
++export async function revokeToken(rootToken, tokenId) {
++  const r = await api(rootToken, `/user/tokens/${tokenId}`, { method: 'DELETE' })
++  return r.ok
++}
++
++// --------------------------------------------------------------- what it can do
++
++export async function capability(token) {
++  const v = await api(token, '/user/tokens/verify')
++  if (!v.ok) return { valid: false, canMint: false, canWriteDns: null, accountId: null, zones: null, offline: !!v.offline }
++
++  const acc = await api(token, '/accounts?per_page=1')
++  const accountId = acc.ok ? acc.body.result?.[0]?.id || null : null
++
++  const zr = await api(token, '/zones?per_page=50')
++  const zoneList = zr.ok ? zr.body.result || [] : null
++  const zones = zoneList ? zoneList.map((z) => z.name) : null
++
++  let canWriteDns = null
++  if (zoneList && zoneList.length) {
++    const r = await api(token, `/zones/${zoneList[0].id}/dns_records?per_page=1`)
++    canWriteDns = r.offline ? null : r.ok
++  }
++
++  let canMint = false
++  if (accountId) {
++    const probe = await mintEphemeral(token, accountId, { hours: 1 })
++    if (probe) {
++      canMint = true
++      await revokeToken(token, probe.id)
++    }
++  }
++  return { valid: true, canMint, canWriteDns, accountId, zones }
++}
+diff --git a/bin/idp/migrate-domain/lib/notify.mjs b/bin/idp/migrate-domain/lib/notify.mjs
+new file mode 100644
+index 000000000..2b0cfce31
+--- /dev/null
++++ b/bin/idp/migrate-domain/lib/notify.mjs
+@@ -0,0 +1,108 @@
++// Migration status notifications via webhook.
++//
++// This module sends migration events to an ops portal webhook. Telegram support
++// is handled by the platform's alert system, not directly here.
++import { createHmac, timingSafeEqual } from 'node:crypto'
++
++export const EVENTS = [
++  'migration.phase_start',
++  'migration.phase_complete',
++  'migration.phase_failed',
++  'migration.cutover_ready',
++  'migration.cutover_done',
++  'migration.lockdown_done',
++  'migration.rollback',
++]
++
++const ICON = {
++  'migration.phase_start': '▶️',
++  'migration.phase_complete': '✅',
++  'migration.phase_failed': '❌',
++  'migration.cutover_ready': '🔓',
++  'migration.cutover_done': '🚀',
++  'migration.lockdown_done': '🔒',
++  'migration.rollback': '↩️',
++}
++
++const cfg = (env) => ({
++  webhookUrl: env.OPS_WEBHOOK_URL || null,
++  webhookSecret: env.OPS_WEBHOOK_SECRET || null,
++})
++
++export function redact(text, env = process.env) {
++  let s = String(text ?? '')
++  const secrets = [
++    env.OPS_WEBHOOK_SECRET, env.OPS_WEBHOOK_URL,
++    env.CF_API_TOKEN,
++  ].filter((v) => typeof v === 'string' && v.length >= 8)
++  for (const v of secrets) s = s.split(v).join('[redacted]')
++  return s
++}
++
++export function formatEvent(p) {
++  const icon = ICON[p.event] || 'ℹ️'
++  const lines = [`${icon} ${p.domain} — ${p.phase || p.event}`]
++  if (p.status) lines.push(`Status: ${p.status}`)
++  if (p.records !== undefined) lines.push(`Records: ${p.records}`)
++  if (p.seconds !== undefined) lines.push(`Took: ${p.seconds}s`)
++  if (p.error) lines.push(`Error: ${redact(p.error)}`)
++  return lines.join('\n')
++}
++
++export function sign(body, secret, timestamp) {
++  return createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex')
++}
++
++export function verify(body, secret, timestamp, signature, { now = Date.now(), toleranceMs = 300_000 } = {}) {
++  if (!body || !secret || !timestamp || !signature) return false
++  if (Math.abs(now - Number(timestamp) * 1000) > toleranceMs) return false
++  const want = Buffer.from(sign(body, secret, timestamp), 'utf8')
++  const got = Buffer.from(String(signature), 'utf8')
++  if (want.length !== got.length) return false
++  return timingSafeEqual(want, got)
++}
++
++async function postWebhook(payload, c, { env, fetchImpl, timeoutMs }) {
++  const body = JSON.stringify({
++    ...payload,
++    timestamp: new Date().toISOString(),
++    source: 'idp/migrate-domain',
++  })
++  const headers = { 'content-type': 'application/json' }
++  if (c.webhookSecret) {
++    const ts = Math.floor(Date.now() / 1000).toString()
++    headers['x-migration-timestamp'] = ts
++    headers['x-migration-signature'] = `sha256=${sign(body, c.webhookSecret, ts)}`
++  }
++  const res = await fetchImpl(c.webhookUrl, {
++    method: 'POST', headers, body, signal: AbortSignal.timeout(timeoutMs),
++  })
++  if (!res.ok) {
++    return { ok: false, why: `ops webhook answered ${res.status}` }
++  }
++  return { ok: true }
++}
++
++export async function notify(payload, {
++  env = process.env,
++  fetchImpl = globalThis.fetch,
++  timeoutMs = 5000,
++  log = (m) => process.stderr.write(m + '\n'),
++} = {}) {
++  const c = cfg(env)
++  const out = { webhook: 'not configured' }
++
++  if (c.webhookUrl) {
++    try {
++      const r = await postWebhook(payload, c, { env, fetchImpl, timeoutMs })
++      out.webhook = r.ok ? 'sent' : 'failed'
++      if (!r.ok) log(redact('  ' + r.why, env))
++    } catch (err) {
++      out.webhook = 'failed'
++      const why = err?.name === 'TimeoutError' ? `no answer in ${timeoutMs}ms` : (err?.message || String(err))
++      log(redact(`  ops webhook notify failed: ${why}`, env))
++    }
++  }
++
++  return out
++}
+diff --git a/bin/idp/migrate-domain/migrate-domain.mjs b/bin/idp/migrate-domain/migrate-domain.mjs
+new file mode 100755
+index 000000000..d88301428
+--- /dev/null
++++ b/bin/idp/migrate-domain/migrate-domain.mjs
+@@ -0,0 +1,313 @@
++#!/usr/bin/env node
++// Move a domain onto Cloudflare without opening a dashboard.
++//
++//   node bin/idp/migrate-domain/migrate-domain.mjs mumchimp.com                 all four safe phases
++//   node bin/idp/migrate-domain/migrate-domain.mjs mumchimp.com --watch         then wait for the registrar
++//   node bin/idp/migrate-domain/migrate-domain.mjs mumchimp.com --phase=verify  one phase on its own
++//   node bin/idp/migrate-domain/migrate-domain.mjs mumchimp.com --rollback      undo what a run did
++//   node bin/idp/migrate-domain/migrate-domain.mjs mumchimp.com --dry-run       read, print, change nothing
++//
++// It reads the zone off the nameservers currently answering for it, proves the
++// credential can do the whole job before it does any of it, writes every record
++// in, and refuses to print the go-ahead unless both sides answer identically.
++//
++// The only step it cannot do is the registrar. 123-reg has no public API for a
++// retail account, so the last move is two strings pasted into one form. It
++// prints them, gates them, and with --watch tells you when the change lands.
++import * as z from './console/zone.mjs'
++import * as ph from './console/phases.mjs'
++import * as auth from './lib/cf-auth.mjs'
++import { checkCfToken } from './console/checks.mjs'
++import { notify } from './lib/notify.mjs'
++
++const b = (s) => `\x1b[1m${s}\x1b[0m`
++const dim = (s) => `\x1b[2m${s}\x1b[0m`
++const red = (s) => `\x1b[31m${s}\x1b[0m`
++const grn = (s) => `\x1b[32m${s}\x1b[0m`
++const say = (s = '') => process.stdout.write(s + '\n')
++
++const argv = process.argv.slice(2)
++const domain = argv[0]
++const flag = (n) => argv.find((a) => a === `--${n}` || a.startsWith(`--${n}=`))
++const value = (n) => (flag(n) || '').split('=')[1] || null
++
++const watch = Boolean(flag('watch'))
++const dryRun = Boolean(flag('dry-run'))
++const rollback = Boolean(flag('rollback'))
++const phase = value('phase')
++// Notifications are on when they are configured, off when they are not. There
++// is no flag to remember. --no-notify is for the run you do not want on the
++// record, and for tests.
++const quiet = Boolean(flag('no-notify'))
++
++// What phase we are in, so a failure can say so without being handed it.
++let current = null
++const note = async (event, extra = {}) => {
++  if (quiet) return
++  await notify({ event, domain, phase: current, ...extra })
++}
++
++if (!domain || domain.startsWith('-') || (phase && !ph.PHASES.includes(phase))) {
++  say('usage: node bin/idp/migrate-domain/migrate-domain.mjs <domain> [--watch] [--dry-run]')
++  say('                                       [--phase=' + ph.PHASES.join('|') + ']')
++  say('                                       [--rollback] [--no-notify]')
++  process.exit(2)
++}
++
++// A phase that fails says one sentence, names the permission when that is the
++// problem, and exits. Every failure path goes through here so none of them can
++// end in a stack trace with a status code in it.
++async function halt(r) {
++  say('')
++  say(red('  ' + r.stop))
++  if (r.need) say(dim('  what is missing: ' + r.need))
++  if (r.rolledBack === true) say(dim('  the zone this run created has been removed - nothing was left behind'))
++  if (r.rolledBack && typeof r.rolledBack === 'object') {
++    say(dim(`  rolled back: ${r.rolledBack.recordsRemoved} record(s)`
++      + (r.rolledBack.zoneDeleted ? ' and the zone this run created' : '')))
++    if (r.rolledBack.keptBecause) say(dim(`  the zone was kept - ${r.rolledBack.keptBecause}`))
++  }
++  if (r.need && /DNS|Zone/.test(r.need)) { say(''); say('  Token needs Zone:Edit and DNS:Edit permissions') }
++  await note('migration.phase_failed', { status: 'blocked', error: r.stop, need: r.need || null })
++  await cleanUp()
++  process.exit(1)
++}
++
++// ------------------------------------------------------------- the credential
++
++async function getToken() {
++  const { token: T, from } = await auth.findToken()
++  if (T) { say(dim(`  credential from ${from}`)); return T }
++  if (dryRun) return null
++
++  say('')
++  say(red('  No Cloudflare token found'))
++  say(dim('  Set CF_API_TOKEN env var or add cloudflare-api-token to vault:'))
++  say(dim('    bin/idp-cloud secret set cloudflare-api-token <token>'))
++  process.exit(1)
++}
++
++const needsToken = !dryRun && phase !== 'discover' && phase !== 'lockdown' && phase !== 'cutover'
++const ROOT = needsToken || rollback ? await getToken() : null
++
++if (ROOT) {
++  const v = await checkCfToken(ROOT)
++  if (!v.ok) {
++    say(red(`Cloudflare will not accept this credential: ${v.note}`))
++    say(dim('  To update the vault token: bin/idp-cloud secret set cloudflare-api-token <token>'))
++    process.exit(1)
++  }
++  say(dim(`  ${v.note}`))
++}
++
++// A credential that can mint others is not used for the work. Mint one that
++// dies in an hour, use that, delete it on the way out — including on Ctrl-C,
++// which is the exit path that actually happens.
++let T = ROOT
++let ephemeral = null
++if (ROOT && !dryRun) {
++  const id = await z.accountId(ROOT)
++  if (id) {
++    ephemeral = await auth.mintEphemeral(ROOT, id, { hours: 1 })
++    if (ephemeral) {
++      T = ephemeral.token
++      say(dim(`  minted a token that expires ${ephemeral.expires} and is deleted when this finishes`))
++    }
++  }
++}
++
++async function cleanUp() {
++  if (!ephemeral) return
++  const gone = await auth.revokeToken(ROOT, ephemeral.id)
++  ephemeral = null
++  say(dim(gone ? '  ephemeral token deleted' : '  could not delete the ephemeral token — it expires within the hour'))
++}
++process.on('exit', () => { if (ephemeral) process.stderr.write('\n  ephemeral token left to expire\n') })
++for (const sig of ['SIGINT', 'SIGTERM']) {
++  process.on(sig, async () => { await cleanUp(); process.exit(130) })
++}
++const finish = async (code) => { await cleanUp(); process.exit(code) }
++
++// ----------------------------------------------------------------- rollback
++
++if (rollback) {
++  say('')
++  say(b(`Undoing what the last run did to ${domain}`))
++  const r = await ph.undo(domain, T)
++  if (!r.ok) { say(red('  ' + r.stop)); await finish(1) }
++  say(`  ${r.recordsRemoved} record(s) removed`)
++  say(r.zoneDeleted
++    ? '  the zone this run created has been deleted'
++    : dim(`  the zone was kept — ${r.keptBecause || 'it was not created by a run'}`))
++  say('')
++  say(dim('  Live traffic was never on Cloudflare, so nothing outside changed.'))
++  await note('migration.rollback', {
++    status: 'done', records: r.recordsRemoved, zoneDeleted: Boolean(r.zoneDeleted),
++  })
++  await finish(0)
++}
++
++// -------------------------------------------------------------- the phases
++
++const only = phase ? [phase] : ['discover', 'validate', 'prepare', 'verify']
++
++for (const step of only) {
++  current = step
++  const startedAt = Date.now()
++  const completed = (extra = {}) => note('migration.phase_complete', {
++    status: 'ok', seconds: Math.round((Date.now() - startedAt) / 1000), ...extra,
++  })
++  await note('migration.phase_start', { status: 'running' })
++
++  if (step === 'discover') {
++    say('')
++    say(b(`Reading ${domain} from the nameservers answering for it now`))
++    const r = await ph.discover(domain)
++    if (!r.ok) await halt(r)
++    say(`  ${r.nameServers.join(', ')}`)
++    for (const rec of r.records) say('  ' + dim(z.key(rec).slice(0, 110)))
++    say(`  ${r.records.length} records`)
++    if (!r.records.some((x) => x.type === 'MX')) {
++      say(red('  no MX — if this domain takes mail, the sweep missed it. Stop.'))
++    }
++    if (dryRun) { say(''); say('--dry-run: nothing was created.'); await finish(0) }
++    await completed({ records: r.records.length })
++  }
++
++  if (step === 'validate') {
++    say('')
++    say(b('Proving the credential can do the whole job before it does any of it'))
++    const r = await ph.validate(domain, T)
++    if (!r.ok) await halt(r)
++    say(r.fresh ? `  zone created (${r.zone.status})` : `  zone already exists (${r.zone.status})`)
++    if (r.fresh) {
++      say(dim('  waiting for its own scan, as a second opinion on the record list'))
++      await new Promise((res) => setTimeout(res, 20000))
++    }
++    await completed({ zoneCreated: Boolean(r.fresh), zoneStatus: r.zone.status })
++  }
++
++  if (step === 'prepare') {
++    say('')
++    say(b('Writing the records in, all grey-clouded'))
++    const r = await ph.prepare(domain, T, {
++      onEach: (rec) => {
++        const mark = rec.state === 'added' ? grn('+') : rec.state === 'already there' ? dim('=') : red('!')
++        say(`  ${mark} ${rec.type.padEnd(5)} ${rec.name.padEnd(38)} `
++          + (rec.state === 'added' || rec.state === 'already there' ? '' : rec.state))
++      },
++    })
++    if (!r.ok) await halt(r)
++    say(dim(`  ${r.added} written, ${r.already} already there`))
++    await completed({ records: r.added + r.already, written: r.added })
++  }
++
++  if (step === 'verify') {
++    say('')
++    say(b('Asking both sets of nameservers the same questions'))
++    const r = await ph.verify(domain, {
++      onWait: (missing, i, of) =>
++        say(dim(`  ${missing} not answered by Cloudflare yet - waiting (${i}/${of - 1})`)),
++    })
++    if (!r.ok) {
++      if (r.diff) for (const k of r.diff.missing) say(red('  missing on Cloudflare: ') + k.slice(0, 100))
++      say('')
++      say(red(b('NOT READY. Do not touch the registrar.')))
++      await halt(r)
++    }
++    say(`  ${r.diff.total} records asked for on the old side`)
++    for (const k of r.diff.extra) say(dim('  extra on Cloudflare:   ') + k.slice(0, 100))
++    say('')
++    say(grn(b('Identical. Cloudflare answers exactly as the old nameservers do.')))
++    await completed({ status: 'identical', records: r.diff.total })
++    // The one worth waking up for: everything is staged and the registrar is
++    // the only thing left.
++    await note('migration.cutover_ready', { status: 'ready', records: r.diff.total })
++  }
++
++  if (step === 'cutover') {
++    const r = await ph.cutover(domain)
++    if (!r.ok) await halt(r)
++    printRegistrarStep(r.from, r.to)
++    await note('migration.cutover_ready', { status: 'unlocked, waiting for the paste', to: r.to })
++    await finish(0)
++  }
++
++  if (step === 'lockdown') {
++    say('')
++    say(b('Checking the change landed everywhere and the door is shut again'))
++    const r = await ph.lockdown(domain)
++    if (!r.ok) {
++      say(red('  ' + r.stop))
++      for (const [who, got] of Object.entries(r.seen || {})) say(dim(`  ${who}: ${got || 'no answer'}`))
++      await finish(1)
++    }
++    say(grn('  every resolver answers with the new nameservers, and the lock is back on'))
++    await completed({ status: 'complete' })
++    await note('migration.lockdown_done', { status: 'complete' })
++    await finish(0)
++  }
++}
++
++// Nothing past here calls Cloudflare — the watch loop only asks nameservers.
++await cleanUp()
++
++if (phase) {
++  // --watch lives past this line, so a run that asked for both got neither the
++  // wait nor a word about it. Say so rather than exit quietly: a command that
++  // silently ignores half of what you typed teaches you to distrust the rest.
++  if (watch) say(dim('  --watch does nothing with --phase. Run without --phase to wait for the registrar.'))
++  process.exit(0)
++}
++
++// --------------------------------------------------------- the one manual step
++
++const state = await ph.loadState(domain)
++printRegistrarStep(state.oldNameServers, state.newNameServers)
++
++function printRegistrarStep(from, to) {
++  say('')
++  say(b('Your one step, at 123-reg — nowhere else'))
++  const lock = state?.registrar
++  if (lock?.locked) {
++    say('')
++    say(red('  First, turn the domain lock off. It is on right now.'))
++    say(dim(`  The registry has ${lock.statuses.join(', ')} set, which blocks a nameserver`))
++    say(dim('  change. The form does not say that — it says "Invalid nameservers".'))
++    say(dim('  123-reg: Manage Domain → Domain Lock → off. Turn it back on afterwards.'))
++    say('')
++  }
++  say('  https://www.123-reg.co.uk/secure/cpanel/domain/' + domain + '/manage-nameservers')
++  say('  Replace the two nameservers with:')
++  say('')
++  for (const n of to || []) say('    ' + b(n))
++  say('')
++  say(dim('  Nothing else changes. Every record above already answers identically,'))
++  say(dim('  so the shop and the mail carry on through the switch. To undo: put'))
++  say(dim(`  ${(from || []).join(' and ')} back.`))
++}
++
++if (!watch) {
++  say('')
++  say(dim('  Run again with --watch and it will tell you when the change lands.'))
++  process.exit(0)
++}
++
++// ------------------------------------------------------------- wait for it
++
++say('')
++say(b('Watching for the registrar change. Ctrl-C to stop.'))
++const want = (state.newNameServers || []).join(',')
++for (let i = 0; i < 720; i++) {
++  const now = await z.nameserversNowServing(domain)
++  if (now.join(',') === want) {
++    say('')
++    say(grn(b('Live on Cloudflare.')) + ` ${domain} is answered by ${state.newNameServers.join(' and ')}.`)
++    say(dim('  Next: node scripts/migrate-domain.mjs ' + domain + ' --phase=lockdown'))
++    current = 'cutover'
++    await note('migration.cutover_done', { status: 'live on cloudflare', to: state.newNameServers })
++    process.exit(0)
++  }
++  process.stdout.write(`\r  ${new Date().toISOString().slice(11, 19)}  still ${now.join(', ') || 'unresolved'}   `)
++  await new Promise((r) => setTimeout(r, 60000))
++}
+diff --git a/checkpoints/LATEST.md b/checkpoints/LATEST.md
+index 550672334..f7aea475f 100644
+--- a/checkpoints/LATEST.md
++++ b/checkpoints/LATEST.md
+@@ -1,14 +1,33 @@
+-# LATEST — session a0d64ea4 (crew#66 founder lane)
+-
+-## RESUME HERE
+-
+-Branch `feat/crew66-root-trust` (from crew459-portal-polish worktree): root-trust gate PR
+-for crew#66 ruling 5453747447 / crew#580. Files: bin/idp-root-trust (+ test
+-tests/test_incident_crew66_root_trust_register.py, 5 passed), docs/reference/policy/root-trust.md
+-(register, 33 entries, MEETS 11 / PARTIAL 1 / MISS 19), bin/idp-bootstrap-tailscale (written,
+-not run end to end), security-policy row, idp-ci + verify-drill rows, stale comments fixed,
+-vault-seed tailscale entry refused. Next: commit, push, bin/pr-report, PR (Tracked: crew#66,
+-Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready to run.
+-Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
+-bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
+-Founder plan recorded crew#66 5453918598 (one-shot, "just you").
++# Checkpoint
++
++## RESUME HERE — the agent workforce (crew#850)
++
++The founder asked for three things in a row on 2026-09-05: take CrewAI to its full advanced
++surface, rename it to something general rather than "infra", and get it right because "we
++[are] setting up a company and [a] proper crew". The design, the research and the checkpoints
++are all on https://github.com/chidionyema/crew/issues/850.
++
++**Where the work is.** `~/dev/code/infra-crew`, branch `crew850-agent-workforce`. The pass in
++flight renames the package `infra_crew` to `agent_workforce`, the environment prefix
++`INFRA_CREW_*` to `AGENT_WORKFORCE_*`, and the queue from the single label `lane:infra` to the
++general lane set already on the board. After that comes the feature adoption: a Flow with
++structured state and `@persist`, `CheckpointConfig` so a killed pod resumes, `MCPServerAdapter`
++against the estate MCP server, a `PRE_TOOL_CALL` hook that raises `HookAborted` on merge,
++deploy, dispatch and cluster verbs, the unified `Memory` class, native `planning`, and the
++version move from 1.9.3 to 1.15.20.
++
++**Two measured facts that shape it.** The `lane:infra` label never existed on the board, so the
++CronJob has matched nothing on every run since it was deployed — that is why "we have it set up"
++produced nothing. And the estate MCP server offers nine tools including `remember`, `recall` and
++`get_workload_logs`, which replaces our own `tools/estate.py`, while the github route offers only
++six read tools, so the write path still needs the official GitHub MCP server (CP7).
++
++**Cannot be verified on this Mac.** It is an Intel machine, and `crewai==1.15.20` depends on
++lancedb, which publishes no macOS x86_64 wheel. Verification is the repository's own CI on
++ubuntu, not a local run.
++
++**Other lanes.** idp#1656 (the one-shot cleanup) is open with auto-merge on and deletes the two
++crew539 incident tests that are the last red on idp#1521 (Cyrus). idp#1521 also carries the
++CA-bundle fix, commit 92196da5. The founder still owes two calls on crew#850: CrewAI AMP against
++self-hosting, and whether the customer-facing agent surface is CrewAI's frontend protocol or
++Backstage. BuilderPack, which he sent as an input, is recorded on crew#846.
+diff --git a/docs/founder/debug-the-cluster-from-your-phone.md b/docs/founder/debug-the-cluster-from-your-phone.md
+new file mode 100644
+index 000000000..b8b4bc743
+--- /dev/null
++++ b/docs/founder/debug-the-cluster-from-your-phone.md
+@@ -0,0 +1,45 @@
++# Debug the cluster from your phone
++
++A native app on the phone. No browser in this.
++
++## Once
++
++1. Install **InKuber** from the App Store. K8Z and Kuber do the same job if you
++   prefer one of them -- all three read a standard kubeconfig, so the file below
++   works with any of them.
++2. Open the `estate-cluster.yaml` file you were sent and choose "Open in
++   InKuber".
++
++That is the whole setup. The file holds a URL and nothing else -- no token, no
++certificate, no password -- so it is not a secret, and a lost phone leaks
++nothing.
++
++## After that
++
++Open the app. Nodes, pods, logs, events, restarts, describe. Nothing to sign in
++to and nothing to paste, ever.
++
++## Why it goes through the Mac
++
++Oracle's API server admits exactly one source address -- the house -- set in
++`platform/oci/terraform.tfvars` as `control_plane_allowed_cidrs`. A phone on
++mobile data is not that address, and opening the allowlist wider is the one
++thing the allowlist exists to stop. So the phone reaches the Mac over the
++tailnet, and the Mac reaches Oracle. That holds for any phone app you pick.
++
++The Mac is outside the cluster on purpose. When the cluster, the gateway or the
++catalogue is the thing that is broken, this still answers, because none of them
++is in the path.
++
++Authentication happens on the Mac, per request, from the estate's cloud API key.
++Who may reach the port is decided by the tailnet policy in
++`platform/tailscale/policy.hujson`, which grants your own devices and nothing
++else; removing a device from the tailnet cuts it off immediately.
++
++## If the app cannot connect
++
++- Tailscale has to be on and connected on the phone.
++- The Mac has to be awake. It is the bridge.
++- Restart the bridge: `bin/idp-install-launchd kubeapi`.
++- Regenerate the file, for example after the Mac's tailnet address changes:
++  `bin/idp-phone-kubeconfig`, then AirDrop it from the Desktop.
+diff --git a/docs/how-to/onboarding/deepseek-build-lane.md b/docs/how-to/onboarding/deepseek-build-lane.md
+new file mode 100644
+index 000000000..e78e5d296
+--- /dev/null
++++ b/docs/how-to/onboarding/deepseek-build-lane.md
+@@ -0,0 +1,64 @@
++# DeepSeek as the cheap build lane
++
++Founder, 2026-09-03, verbatim: "use deepseek for cheap build." Graded by
++`tests/test_llm_row.py::test_build_alias_names_the_cheap_build_lane`,
++`test_build_alias_falls_back_to_the_other_funded_cheap_lane` and
++`test_deepseek_reasoner_row_shares_the_deepseek_account`.
++
++## What changed
++
++The router already had a `deepseek` row (`deepseek/deepseek-chat`) and its own key. This adds
++two more rows on that same DeepSeek account, in `platform/vendors/consoles.yaml` (the one file
++allowed to name a model vendor; no other file in the estate ever names one) and rendered by
++`bin/idp-vendor-render` into both `llm/config.yaml` (the developer's local mirror) and
++`platform/llm/config.yaml` (the cluster):
++
++- **`build`.** A capability name, not a vendor name, the same pattern as `vision` on the Gemini
++  row. A worker that does executor work asks the router for `build` and lands on
++  `deepseek/deepseek-chat`, and its own code never names DeepSeek. If DeepSeek answers a
++  failure, the router falls back to `minimax`, the other funded cheap lane, so a build turn does
++  not fail outright.
++- **`deepseek-reasoner`.** DeepSeek's thinking-mode model on the same account, for callers that
++  ask for it by name.
++
++## No new founder step
++
++Both new rows read the same environment variable the existing `deepseek` row already reads,
++`os.environ/DEEPSEEK_API_KEY`, from the same vault entry, `litellm-upstream`
++(`platform/llm/external-secret.yaml`). No new area of that vault entry was added, so this change
++needs no new key and no repeat of the one-time step below.
++
++## The one founder step, only if the DeepSeek root is ever missing
++
++This is the step that put the account's key in the vault in the first place
++(`platform/vendors/consoles.yaml`, vendor `deepseek`: `page:
++https://platform.deepseek.com/api_keys`, `secret: SEED_DEEPSEEK_API_KEY`). Every vendor
++credential on the estate follows the same rule: the founder makes the key once, by hand, at the
++vendor's own page, and sets it as one repository secret. Code does everything after that. It
++does not go through `vault-seed.yml`. That workflow's own choice list does not offer a vendor
++key, and its own script refuses one by name and points at the step below
++(`.github/workflows/vault-seed.yml:87`, function `retired()`):
++
++```
++echo "bin/idp-estate-seed (estate keys), bin/idp-bootstrap-vendors (vendor keys), bin/idp-bootstrap-cloudflare (R2), bin/idp-github-app refresh (GitHub tokens)"
++```
++
++The two commands, run from a phone or a laptop, no cluster access needed for either:
++
++```
++gh secret set SEED_DEEPSEEK_API_KEY -R chidionyema/idp
++gh workflow run oke-check.yml -f mode=apply -R chidionyema/idp
++```
++
++That run's `bin/idp-bootstrap-vendors (crew#579, R52)` step
++(`.github/workflows/oke-check.yml:263`) reads `SEED_DEEPSEEK_API_KEY`
++(`.github/workflows/oke-check.yml:271`), proves it against DeepSeek's own API, and writes it into
++`litellm-upstream` as `DEEPSEEK_API_KEY`; a key the vault already holds that still proves out is
++kept as is, so this step is safe to run again and the repository secret may be deleted once the
++run is green.
++
++## Checking it
++
++`GET https://llm.<zone>/v1/models` with a router key lists `build` and `deepseek-reasoner`
++alongside every other row. `platform/llm/config.yaml` is generated; a hand edit to it, or a
++registry edit with no re-render, fails `bin/idp-vendor-render --check` (run by `bin/idp-ci`).
+diff --git a/launchd/ai.estate.headlamp.plist.tmpl b/launchd/ai.estate.headlamp.plist.tmpl
+new file mode 100644
+index 000000000..9dfcb5ccc
+--- /dev/null
++++ b/launchd/ai.estate.headlamp.plist.tmpl
+@@ -0,0 +1,43 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<!--
++  The cluster's debugger, kept alive outside the cluster (bin/idp-headlamp-mac says why it
++  cannot live inside it). KeepAlive because headlamp-server blocks forever serving HTTP, so
++  launchd is the only thing that brings it back after a crash, a sleep or a reboot: the same
++  reasoning as ai.estate.cockpit. It must be up before the incident, not started during one.
++
++  Install:  bin/idp-install-launchd headlamp
++  Remove:   launchctl bootout gui/$(id -u)/ai.estate.headlamp
++  Open:     http://<this Mac>.<tailnet>.ts.net:4466/ with the Tailscale app on
++-->
++<plist version="1.0">
++<dict>
++	<key>EnvironmentVariables</key>
++	<dict>
++		<key>PATH</key>
++		<string>${PATH}</string>
++		<key>HOME</key>
++		<string>${HOME}</string>
++	</dict>
++	<key>Label</key>
++	<string>ai.estate.headlamp</string>
++	<key>Nice</key>
++	<integer>5</integer>
++	<key>ProgramArguments</key>
++	<array>
++		<string>${IDP}/bin/idp-headlamp-mac</string>
++	</array>
++	<key>RunAtLoad</key>
++	<true/>
++	<key>KeepAlive</key>
++	<true/>
++	<key>ThrottleInterval</key>
++	<integer>30</integer>
++	<key>StandardErrorPath</key>
++	<string>${IDP}/run/headlamp-launchd.log</string>
++	<key>StandardOutPath</key>
++	<string>${IDP}/run/headlamp-launchd.log</string>
++	<key>WorkingDirectory</key>
++	<string>${IDP}</string>
++</dict>
++</plist>
+diff --git a/launchd/ai.estate.kubeapi.plist.tmpl b/launchd/ai.estate.kubeapi.plist.tmpl
+new file mode 100644
+index 000000000..d49333d4a
+--- /dev/null
++++ b/launchd/ai.estate.kubeapi.plist.tmpl
+@@ -0,0 +1,23 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<!-- The cluster's API on the tailnet, so a phone app can read the cluster.
++     Always on: it must already be running when something breaks. -->
++<plist version="1.0">
++<dict>
++  <key>Label</key><string>ai.estate.kubeapi</string>
++  <key>ProgramArguments</key>
++  <array>
++    <string>${IDP}/bin/idp-kubeapi-mac</string>
++  </array>
++  <key>WorkingDirectory</key><string>${IDP}</string>
++  <key>EnvironmentVariables</key>
++  <dict>
++    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
++  </dict>
++  <key>RunAtLoad</key><true/>
++  <key>KeepAlive</key><true/>
++  <key>ThrottleInterval</key><integer>30</integer>
++  <key>StandardOutPath</key><string>${IDP}/run/kubeapi-launchd.log</string>
++  <key>StandardErrorPath</key><string>${IDP}/run/kubeapi-launchd.log</string>
++</dict>
++</plist>
+diff --git a/llm/config.yaml b/llm/config.yaml
+index 32171da54..c12f92417 100644
+--- a/llm/config.yaml
++++ b/llm/config.yaml
+@@ -70,6 +70,29 @@ model_list:
+       api_key: os.environ/DEEPSEEK_API_KEY
+       timeout: 300
+ 
++  # Founder, 2026-09-03 tonight, verbatim: "use deepseek for cheap build". deepseek-reasoner
++  # is the same account's thinking-mode model (api-docs.deepseek.com/updates/, read
++  # 2026-09-03: both deepseek-chat and deepseek-reasoner are live model ids on the DeepSeek
++  # API today, aliased onto DeepSeek-V3.1-Terminus/V4-Flash upstream; a legacy-name
++  # discontinuation was announced for 2026-07-24 and has not happened as of that same page's
++  # 2026-08-21 entry, so both names still resolve and this row uses the same id family the
++  # `deepseek` row above already runs in production).
++  - model_name: deepseek-reasoner
++    litellm_params:
++      model: deepseek/deepseek-reasoner
++      api_key: os.environ/DEEPSEEK_API_KEY
++      timeout: 300
++
++  # `build` is a capability alias, not a vendor (same grammar as `vision` on the gemini row
++  # below): an executor lane asks the router for "build" and gets the estate's cheap
++  # build/executor model, without naming DeepSeek. Same account, same key, same model
++  # string as the `deepseek` row above.
++  - model_name: build
++    litellm_params:
++      model: deepseek/deepseek-chat
++      api_key: os.environ/DEEPSEEK_API_KEY
++      timeout: 300
++
+   # --- the moat's cheap primary --------------------------------------------------------
+   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
+   # with an explicit api_base rather than a provider prefix.
+@@ -166,6 +189,9 @@ router_settings:
+     - openrouter: [minimax, deepseek]
+ 
+     - deepseek: [minimax]
++    # A "build" turn that meets a DeepSeek 4xx/5xx falls to the other funded cheap lane
++    # (minimax) rather than failing an executor's whole turn.
++    - build: [minimax]
+ 
+     - minimax: [deepseek]
+ 
+diff --git a/mkdocs.yml b/mkdocs.yml
+index f4581d540..26a58eb00 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -213,6 +213,7 @@ nav:
+       - DB gen: how-to/onboarding/db-gen.md
+       - Dockerfiles: how-to/onboarding/dockerfiles.md
+       - LiteLLM: how-to/onboarding/litellm.md
++      - DeepSeek build lane: how-to/onboarding/deepseek-build-lane.md
+       - Router image lanes: how-to/onboarding/llm-images.md
+       - KINI: how-to/onboarding/kini.md
+       - Otto (the founder's agent): how-to/onboarding/otto.md
+diff --git a/platform/features/features.yaml b/platform/features/features.yaml
+index cdd56ef2e..82deef34d 100644
+--- a/platform/features/features.yaml
++++ b/platform/features/features.yaml
+@@ -80,13 +80,21 @@ features:
+     why: multi-step agent work survives a restart and is replayable
+     tiers:
+       - name: enterprise
+-        what: "Temporal on Postgres (already the light backend, no Cassandra, no Elasticsearch)"
++        what: "Temporal on Postgres: the backup, kept in the stack and offered here, not deployed"
+         switches: [temporal]
+         depends: [postgres]
++      # Windmill is the choice and Temporal is the backup -- founder, 2026-09-04, confirming his
++      # earlier ruling in crew#695 (carried in docs/decisions/decision-matrix.yaml:458 and :475).
++      # "Kubernetes CronJobs only" stood in this tier from 2026-08-29 (f9f96bdb, crew#584) and was
++      # never a decision anyone took: the session that wrote this register invented it, and then
++      # read it back to him as fact. Neither tier is deployed today -- the temporal Kustomization
++      # is suspended in clusters/oke/platform.yaml and there is no Windmill row on the cluster --
++      # so `switches` stays empty until one exists. This register is what the self-service template
++      # offers, never a claim about what is running.
+       - name: lean
+-        what: Kubernetes CronJobs only
++        what: "Windmill: scripts, flows and schedules on Postgres, the chosen durable workflow engine"
+         switches: []
+-    default: enterprise
++    default: lean
+ 
+   - name: agent-memory
+     title: Agent long-term memory
+diff --git a/platform/llm/config.yaml b/platform/llm/config.yaml
+index 42a34c2b3..332045248 100644
+--- a/platform/llm/config.yaml
++++ b/platform/llm/config.yaml
+@@ -64,6 +64,29 @@ model_list:
+       api_key: os.environ/DEEPSEEK_API_KEY
+       timeout: 300
+ 
++  # Founder, 2026-09-03 tonight, verbatim: "use deepseek for cheap build". deepseek-reasoner
++  # is the same account's thinking-mode model (api-docs.deepseek.com/updates/, read
++  # 2026-09-03: both deepseek-chat and deepseek-reasoner are live model ids on the DeepSeek
++  # API today, aliased onto DeepSeek-V3.1-Terminus/V4-Flash upstream; a legacy-name
++  # discontinuation was announced for 2026-07-24 and has not happened as of that same page's
++  # 2026-08-21 entry, so both names still resolve and this row uses the same id family the
++  # `deepseek` row above already runs in production).
++  - model_name: deepseek-reasoner
++    litellm_params:
++      model: deepseek/deepseek-reasoner
++      api_key: os.environ/DEEPSEEK_API_KEY
++      timeout: 300
++
++  # `build` is a capability alias, not a vendor (same grammar as `vision` on the gemini row
++  # below): an executor lane asks the router for "build" and gets the estate's cheap
++  # build/executor model, without naming DeepSeek. Same account, same key, same model
++  # string as the `deepseek` row above.
++  - model_name: build
++    litellm_params:
++      model: deepseek/deepseek-chat
++      api_key: os.environ/DEEPSEEK_API_KEY
++      timeout: 300
++
+   # --- the moat's cheap primary --------------------------------------------------------
+   # MiniMax has no first-class LiteLLM provider; it is OpenAI-compatible, so it is declared
+   # with an explicit api_base rather than a provider prefix.
+@@ -182,6 +205,9 @@ router_settings:
+     - openrouter: [minimax, deepseek]
+ 
+     - deepseek: [minimax]
++    # A "build" turn that meets a DeepSeek 4xx/5xx falls to the other funded cheap lane
++    # (minimax) rather than failing an executor's whole turn.
++    - build: [minimax]
+ 
+     - minimax: [deepseek]
+ 
+diff --git a/platform/oci/bridge.tf b/platform/oci/bridge.tf
+new file mode 100644
+index 000000000..64c2d1015
+--- /dev/null
++++ b/platform/oci/bridge.tf
+@@ -0,0 +1,130 @@
++# crew#841: the break-glass bridge, off the founder's laptop.
++#
++# Founder, 2026-09-04: "while this works fir now t crete dependency on laptop so while we can
++# use this w need t consider debugging fro aother nachine, we have oracle login so not sure why
++# ll this". He is right. Reading a pod log needs the Kubernetes API, the Oracle Console has no
++# pod log view, and the API's public endpoint admits one address -- the house. So something
++# other than his Mac has to hold the door open.
++#
++# This is that something: one Always Free instance (R14: EUR 0), inside the VCN, with no public
++# IP at all. It reaches the control plane's PRIVATE endpoint, so `control_plane_allowed_cidrs`
++# is not widened and nothing new is exposed to the internet. It joins the tailnet outbound
++# through the NAT gateway the workers already use, so no ingress rule is opened either. Identity
++# is an instance principal: nothing is stored on the machine and nobody types a credential.
++#
++# It is not in the cluster. A pod would die with the thing it is meant to debug; a separate
++# instance survives a node event, a gateway failure and a bad Flux reconcile. The Mac
++# (bin/idp-kubeapi-mac) stays as the second road, on a different failure domain again -- two
++# ways in, never one.
++
++data "oci_identity_availability_domains" "ads" {
++  compartment_id = var.tenancy_ocid
++}
++
++# The workers subnet is private and regional, and its route already reaches the NAT gateway and
++# the control plane. Looked up rather than passed in, so this file names no OCID (LAW 46).
++data "oci_core_subnets" "workers" {
++  compartment_id = var.compartment_ocid
++  filter {
++    name   = "display_name"
++    values = ["^workers-"]
++    regex  = true
++  }
++}
++
++# Always Free capacity is not offered in every availability domain, and Oracle moves it: on
++# 2026-09-04 VM.Standard.E2.1.Micro was offered in UK-LONDON-1-AD-2 only, and launching into
++# AD-1 answers 404-NotAuthorizedOrNotFound. So the domain is chosen by asking which ones carry
++# the shape today, never by taking the first one in the list.
++data "oci_core_shapes" "by_ad" {
++  for_each            = toset([for ad in data.oci_identity_availability_domains.ads.availability_domains : ad.name])
++  compartment_id      = var.compartment_ocid
++  availability_domain = each.value
++}
++
++locals {
++  bridge_shape = "VM.Standard.E2.1.Micro" # Always Free; a shape change here costs money
++  bridge_ads = sort([
++    for ad, s in data.oci_core_shapes.by_ad : ad
++    if contains([for sh in s.shapes : sh.name], local.bridge_shape)
++  ])
++}
++
++data "oci_core_images" "ol9" {
++  compartment_id           = var.compartment_ocid
++  operating_system         = "Oracle Linux"
++  operating_system_version = "9"
++  shape                    = local.bridge_shape
++  sort_by                  = "TIMECREATED"
++  sort_order               = "DESC"
++}
++
++# The OAuth client the Tailscale operator already uses (platform/tailscale/external-secret.yaml).
++# The bridge reads the same entry to join the tailnet; no second credential is minted.
++data "oci_vault_secrets" "tailscale" {
++  compartment_id = var.compartment_ocid
++  name           = "tailscale-operator"
++}
++
++resource "oci_core_instance" "bridge" {
++  compartment_id      = var.compartment_ocid
++  availability_domain = local.bridge_ads[0]
++  display_name        = "${var.cluster_name}-bridge"
++  shape               = local.bridge_shape
++
++  create_vnic_details {
++    subnet_id        = data.oci_core_subnets.workers.subnets[0].id
++    assign_public_ip = false # the whole point: no door on the internet
++    display_name     = "${var.cluster_name}-bridge"
++  }
++
++  source_details {
++    source_type = "image"
++    source_id   = data.oci_core_images.ol9.images[0].id
++  }
++
++  metadata = {
++    ssh_authorized_keys = var.ssh_public_key
++    user_data = base64encode(templatefile("${path.module}/cloud-init/bridge.yaml", {
++      cluster_id          = module.oke.cluster_id
++      region              = var.region
++      tailscale_secret_id = data.oci_vault_secrets.tailscale.secrets[0].id
++    }))
++  }
++
++  # The image is rebuilt by Oracle constantly; a new one is not a reason to replace a working
++  # bridge. Recreate deliberately with -replace when the base image should move.
++  lifecycle {
++    precondition {
++      condition     = length(local.bridge_ads) > 0
++      error_message = "No availability domain in this region currently offers ${local.bridge_shape}; the bridge would cost money on any other shape (R14)."
++    }
++
++    ignore_changes = [source_details[0].source_id, metadata["ssh_authorized_keys"]]
++  }
++}
++
++resource "oci_identity_dynamic_group" "bridge" {
++  provider       = oci.home
++  compartment_id = var.tenancy_ocid
++  name           = "${var.cluster_name}-bridge"
++  description    = "the break-glass bridge instance, and only it (crew#841)"
++  matching_rule  = "ALL {instance.id = '${oci_core_instance.bridge.id}'}"
++}
++
++resource "oci_identity_policy" "bridge" {
++  provider       = oci.home
++  compartment_id = var.compartment_ocid
++  name           = "${var.cluster_name}-bridge"
++  description    = "the bridge may reach the cluster and read the tailnet join credential, nothing else (crew#841)"
++  statements = [
++    "Allow dynamic-group ${oci_identity_dynamic_group.bridge.name} to use cluster-family in compartment id ${var.compartment_ocid}",
++    "Allow dynamic-group ${oci_identity_dynamic_group.bridge.name} to read secret-family in compartment id ${var.compartment_ocid} where target.secret.name = 'tailscale-operator'",
++  ]
++}
++
++# The subject a ClusterRoleBinding names for an instance principal is the instance's OCID
++# (platform/rbac/bridge.yaml). Printed here so the binding can be filled in without a console.
++output "bridge_instance_ocid" {
++  value = oci_core_instance.bridge.id
++}
+diff --git a/platform/oci/cloud-init/bridge.yaml b/platform/oci/cloud-init/bridge.yaml
+new file mode 100644
+index 000000000..c907e8888
+--- /dev/null
++++ b/platform/oci/cloud-init/bridge.yaml
+@@ -0,0 +1,68 @@
++#cloud-config
++# crew#841: what the break-glass bridge runs. Nothing here holds a credential -- the instance
++# authenticates to Oracle as itself (instance principal) and reads the tailnet join credential
++# out of the estate vault at boot.
++write_files:
++  - path: /etc/estate/bridge-up
++    permissions: "0755"
++    content: |
++      #!/usr/bin/env bash
++      set -euo pipefail
++      trap 'echo "FAIL bridge-up exit $? at line $LINENO" >&2' ERR
++      export OCI_CLI_AUTH=instance_principal SUPPRESS_LABEL_WARNING=True
++
++      # Join the tailnet with the OAuth client the operator already uses. The secret never
++      # touches disk: it is read into a variable and passed on tailscale's stdin-free flag,
++      # and the process is the only place it exists.
++      if ! tailscale status >/dev/null 2>&1; then
++        client_secret="$(oci secrets secret-bundle get \
++          --secret-id '${tailscale_secret_id}' --region '${region}' \
++          --query 'data."secret-bundle-content".content' --raw-output |
++          base64 -d | python3 -c 'import json,sys; print(json.load(sys.stdin)["client_secret"])')"
++        tailscale up --authkey="$client_secret?ephemeral=false&preauthorized=true" \
++          --advertise-tags=tag:estate-bridge --hostname=estate-bridge --ssh=false
++        unset client_secret
++      fi
++
++      # A kubeconfig against the PRIVATE endpoint: this instance is inside the VCN, so it never
++      # needs the public one and no allowlist has to know it exists.
++      mkdir -p /etc/estate
++      oci ce cluster create-kubeconfig \
++        --cluster-id '${cluster_id}' --region '${region}' \
++        --kube-endpoint PRIVATE_ENDPOINT \
++        --file /etc/estate/kubeconfig --overwrite
++      chmod 0600 /etc/estate/kubeconfig
++
++      addr="$(tailscale ip -4 | head -1)"
++      [ -n "$addr" ] || { echo "BLIND bridge-up: no tailnet address" >&2; exit 2; }
++      exec kubectl proxy --kubeconfig /etc/estate/kubeconfig \
++        --address="$addr" --accept-hosts='.*' --port=8001
++
++  - path: /etc/systemd/system/estate-bridge.service
++    content: |
++      [Unit]
++      Description=The estate cluster's API on the tailnet (crew#841)
++      After=network-online.target
++      Wants=network-online.target
++
++      [Service]
++      Environment=OCI_CLI_AUTH=instance_principal
++      ExecStart=/etc/estate/bridge-up
++      Restart=always
++      RestartSec=15
++
++      [Install]
++      WantedBy=multi-user.target
++
++runcmd:
++  - dnf install -y oraclelinux-developer-release-el9
++  - dnf install -y python3-oci-cli
++  - dnf config-manager --add-repo https://pkgs.tailscale.com/stable/oracle/9/tailscale.repo
++  - dnf install -y tailscale
++  - systemctl enable --now tailscaled
++  - |
++    v=$(curl -fsSL https://dl.k8s.io/release/stable.txt)
++    curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/$v/bin/linux/amd64/kubectl"
++    chmod 0755 /usr/local/bin/kubectl
++  - systemctl daemon-reload
++  - systemctl enable --now estate-bridge
+diff --git a/platform/otto-golden/quota.yaml b/platform/otto-golden/quota.yaml
+deleted file mode 100644
+index 3404a9cb2..000000000
+--- a/platform/otto-golden/quota.yaml
++++ /dev/null
+@@ -1,28 +0,0 @@
+-# crew#191 fence, half of it (network-policy.yaml is the other half). Two replicas
+-# (deployment.yaml, crew#539 availability) plus one surge pod during a rolling update, so the
+-# ceiling is sized for three pods -- a runaway process still cannot starve the node, and a
+-# rollout is never forbidden by its own quota (the main-62 roll wedged on exactly that).
+-apiVersion: v1
+-kind: LimitRange
+-metadata:
+-  name: otto-golden-defaults
+-  namespace: otto-golden
+-spec:
+-  limits:
+-    - type: Container
+-      default: { cpu: 200m, memory: 256Mi }
+-      defaultRequest: { cpu: 50m, memory: 128Mi }
+-      max: { cpu: 500m, memory: 512Mi }
+----
+-apiVersion: v1
+-kind: ResourceQuota
+-metadata:
+-  name: otto-golden-ceiling
+-  namespace: otto-golden
+-spec:
+-  hard:
+-    requests.cpu: 200m
+-    requests.memory: 384Mi
+-    limits.cpu: 600m
+-    limits.memory: 768Mi
+-    pods: "5"
+diff --git a/platform/rbac/bridge.yaml b/platform/rbac/bridge.yaml
+new file mode 100644
+index 000000000..26de9c696
+--- /dev/null
++++ b/platform/rbac/bridge.yaml
+@@ -0,0 +1,22 @@
++# crew#841: what the break-glass bridge is allowed to do inside the cluster.
++#
++# The bridge authenticates as an OCI instance principal, and the subject OKE presents for one is
++# the instance's OCID -- which terraform prints as `bridge_instance_ocid` after the apply. That
++# OCID is an identifier, not a secret.
++#
++# view, not cluster-admin: this exists to read a pod log during an outage, and a debugger that
++# can delete things is a debugger that can cause one. `view` excludes secrets by design.
++apiVersion: rbac.authorization.k8s.io/v1
++kind: ClusterRoleBinding
++metadata:
++  name: estate-bridge-read
++  annotations:
++    estate.io/why: "the founder reads pods and logs from his phone without his laptop (crew#841)"
++roleRef:
++  apiGroup: rbac.authorization.k8s.io
++  kind: ClusterRole
++  name: view
++subjects:
++  - kind: User
++    apiGroup: rbac.authorization.k8s.io
++    name: ocid1.instance.oc1.uk-london-1.anwgiljtpixfknicz2iqsyh7joynf2qrda4w3m6m66llreozo55iobkfwmsq
+diff --git a/platform/rbac/kustomization.yaml b/platform/rbac/kustomization.yaml
+new file mode 100644
+index 000000000..ebfe712cc
+--- /dev/null
++++ b/platform/rbac/kustomization.yaml
+@@ -0,0 +1,4 @@
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++resources:
++  - bridge.yaml
+diff --git a/platform/staging/quota.yaml b/platform/staging/quota.yaml
+deleted file mode 100644
+index 1760c1a6e..000000000
+--- a/platform/staging/quota.yaml
++++ /dev/null
+@@ -1,16 +0,0 @@
+-# The staging floor from the register (features.yaml `staging/namespace`: cpu 0.2, memory 1 GiB,
+-# storage 2 GiB, before the switch existed) is now summed from git; this quota is the ceiling, so a staging copy of a product
+-# can never crowd out production on the shared node. A request over 250m CPU still needs the
+-# capacity label (platform/edge/capacity-policy.yaml); the quota bounds the sum, the fence
+-# bounds each ask.
+-apiVersion: v1
+-kind: ResourceQuota
+-metadata:
+-  name: staging-ceiling
+-  namespace: staging
+-spec:
+-  hard:
+-    requests.cpu: "1"
+-    requests.memory: 2Gi
+-    requests.storage: 2Gi
+-    services.loadbalancers: "0"   # reached over Tailscale only; no public door from staging
+diff --git a/platform/tailscale/policy.hujson b/platform/tailscale/policy.hujson
+index 34b0644c0..dac8a0d45 100644
+--- a/platform/tailscale/policy.hujson
++++ b/platform/tailscale/policy.hujson
+@@ -55,11 +55,19 @@
+     // mint 400d again with the policy already applied (run 33447033447, 22:43Z vs apply 22:40Z).
+     "tag:k8s-operator": ["tag:k8s"],
+     "tag:founder-mac": [],
++    // crew#841: the break-glass bridge instance, so debugging does not depend on the founder's
++    // laptop being awake. Owned by tag:k8s for the same reason tag:k8s-operator is: the root
++    // OAuth client carries tag:k8s, and a client may only request tags its own tags own
++    // (kb/1215). [] here would 400 the join exactly as it did for the operator.
++    "tag:estate-bridge": ["tag:k8s"],
+   },
+   "acls": [
+     {"action": "accept", "src": ["tag:k8s"],
+      "dst":    ["tag:founder-mac:22", "tag:founder-mac:5900"]},
+     {"action": "accept", "src": ["group:founder"],
+      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
++    // His phone reads the cluster through the bridge, and only the one port the bridge serves.
++    {"action": "accept", "src": ["group:founder"],
++     "dst":    ["tag:estate-bridge:8001"]},
+   ],
+ }
+diff --git a/platform/vendors/consoles.yaml b/platform/vendors/consoles.yaml
+index 943c0d4c9..14a8d98fb 100644
+--- a/platform/vendors/consoles.yaml
++++ b/platform/vendors/consoles.yaml
+@@ -147,8 +147,34 @@ vendors:
+             model: deepseek/deepseek-chat
+             api_key: os.environ/DEEPSEEK_API_KEY
+             timeout: 300
++
++        # Founder, 2026-09-03 tonight, verbatim: "use deepseek for cheap build". deepseek-reasoner
++        # is the same account's thinking-mode model (api-docs.deepseek.com/updates/, read
++        # 2026-09-03: both deepseek-chat and deepseek-reasoner are live model ids on the DeepSeek
++        # API today, aliased onto DeepSeek-V3.1-Terminus/V4-Flash upstream; a legacy-name
++        # discontinuation was announced for 2026-07-24 and has not happened as of that same page's
++        # 2026-08-21 entry, so both names still resolve and this row uses the same id family the
++        # `deepseek` row above already runs in production).
++        - model_name: deepseek-reasoner
++          litellm_params:
++            model: deepseek/deepseek-reasoner
++            api_key: os.environ/DEEPSEEK_API_KEY
++            timeout: 300
++
++        # `build` is a capability alias, not a vendor (same grammar as `vision` on the gemini row
++        # below): an executor lane asks the router for "build" and gets the estate's cheap
++        # build/executor model, without naming DeepSeek. Same account, same key, same model
++        # string as the `deepseek` row above.
++        - model_name: build
++          litellm_params:
++            model: deepseek/deepseek-chat
++            api_key: os.environ/DEEPSEEK_API_KEY
++            timeout: 300
+       fallbacks: |
+         - deepseek: [minimax]
++        # A "build" turn that meets a DeepSeek 4xx/5xx falls to the other funded cheap lane
++        # (minimax) rather than failing an executor's whole turn.
++        - build: [minimax]
+   minimax:
+     kind: secret
+     secret: SEED_MINIMAX_API_KEY
+diff --git a/tests/test_llm_row.py b/tests/test_llm_row.py
+index 7f97a9202..acc5440c0 100644
+--- a/tests/test_llm_row.py
++++ b/tests/test_llm_row.py
+@@ -51,6 +51,32 @@ def test_vision_alias_names_a_capability() -> None:
+     assert cluster["vision"]["model"] == cluster["gemini"]["model"]
+ 
+ 
++def test_build_alias_names_the_cheap_build_lane() -> None:
++    """Founder, 2026-09-03: "use deepseek for cheap build". `build` is a capability alias
++    (same grammar as `vision` above), never a vendor name in a caller's config (LAW 34)."""
++    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
++        models = _models(cfg)
++        assert models["build"]["model"] == models["deepseek"]["model"]
++        assert models["build"]["api_key"] == "os.environ/DEEPSEEK_API_KEY"
++
++
++def test_build_alias_falls_back_to_the_other_funded_cheap_lane() -> None:
++    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
++        chains = {
++            src: targets
++            for entry in cfg["router_settings"]["fallbacks"]
++            for src, targets in entry.items()
++        }
++        assert chains["build"] == ["minimax"]
++
++
++def test_deepseek_reasoner_row_shares_the_deepseek_account() -> None:
++    for cfg in (LAPTOP_CFG, CLUSTER_CFG):
++        models = _models(cfg)
++        assert models["deepseek-reasoner"]["model"] == "deepseek/deepseek-reasoner"
++        assert models["deepseek-reasoner"]["api_key"] == "os.environ/DEEPSEEK_API_KEY"
++
++
+ def test_image_version_matches_laptop_compose() -> None:
+     laptop = re.search(
+         r"image:\s*ghcr\.io/berriai/litellm-database:(\S+)",

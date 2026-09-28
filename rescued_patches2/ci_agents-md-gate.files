@@ -1,0 +1,11 @@
+.github/workflows/agents-md-gate.yml
+backstage/platform/catalog-info.yaml
+bin/catalog-platform
+clusters/oke/alerts.yaml
+clusters/oke/platform.yaml
+platform/alerts-github/kustomization.yaml
+platform/github-app-creds/github-app.yaml
+platform/github-app-creds/kustomization.yaml
+platform/otto-gateway/OWNER.yaml
+tests/test_crew729_agent_workforce_workload.py
+tests/test_hermes_agent_row.py

@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  com.estate.jit-device-renew.plist — every 10 minutes, re-mint a 1-hour
+  agent-reader kubeconfig from the per-device X25519 key the broker holds for
+  this machine. The original (2026-09-18) commit `5955d76c0`:
+  "the CEO is not a cron job" — the timer path runs a fresh short-lived
+  process every 10 minutes, not a daemon, so a stale state between runs is
+  impossible.
+
+  install path : infra/macos/LaunchDaemons/com.estate.jit-device-renew.plist
+  owner       : the founder (loaded by bin/idp-jit-device-renew install flag)
+  never loaded by an agent session. Per AGENTS.md SPIFFE primary rule 3.
+
+  StartInterval vs StartCalendarInterval:
+  StartInterval at 600s is exact-10-minute, drift-free; the agent-reader
+  SVID has a 1-hour TTL and the renewal threshold is 10 minutes before
+  expiry, so the math is: TTL=3600s, start_interval=600s, renewal_threshold=600s;
+  the kubeconfig is rewritten before its embedded token expires with two
+  intervals of slack.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.estate.jit-device-renew</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/roseonyema/Documents/code/idp/bin/idp-jit-device-renew</string>
+        <string>--quiet</string>
+        <string>--kubeconfig</string>
+        <string>/Users/roseonyema/.local/state/idp/agent.kubeconfig</string>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StartInterval</key>
+    <integer>600</integer>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>StandardOutPath</key>
+    <string>/Users/roseonyema/Library/Logs/com.estate.jit-device-renew.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/roseonyema/Library/Logs/com.estate.jit-device-renew.err.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/roseonyema</string>
+    </dict>
+
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>4096</integer>
+    </dict>
+</dict>
+</plist>

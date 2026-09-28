@@ -1,0 +1,8 @@
+bin/idp-flux-bootstrap
+clusters/oke/edge.yaml
+clusters/oke/platform.yaml
+clusters/oke/secrets.yaml
+docs/demo/oke.md
+docs/onboarding/oke.md
+platform/secrets/external-secrets.yaml
+tests/test_incident_eso_controller_without_probes.py

@@ -1,0 +1,4 @@
+.githooks/pre-push
+PROOF_gate.md
+bin/pr-report
+docs/FEED.md

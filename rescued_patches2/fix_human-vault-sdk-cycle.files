@@ -1,0 +1,8 @@
+backstage/platform/catalog-info.yaml
+clusters/oke/secrets.yaml
+docs/explanation/sdk-server-certificate-deadlock.md
+mkdocs.yml
+platform/human-vault/kustomization.yaml
+platform/secrets/certs.yaml
+platform/secrets/kustomization.yaml
+tests/test_incident_sdk_server_certs_ride_their_own_row.py

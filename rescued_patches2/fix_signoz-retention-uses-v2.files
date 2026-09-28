@@ -1,0 +1,8 @@
+AGENTS.md
+bin/test-executes-gate
+docs/how-to/onboarding/signoz-retention.md
+docs/tutorials/demo/signoz-retention.md
+mkdocs.yml
+platform/observability/signoz-retention.yaml
+rules.yaml
+tests/bdd/test_signoz_retention_ttl_engine.py

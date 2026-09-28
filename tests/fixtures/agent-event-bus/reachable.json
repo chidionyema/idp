@@ -1,0 +1,1 @@
+{"founder_agent":{"pod":"otto-gateway-x","namespace":"otto-gateway","node":"10.0.159.197"},"event_bus":{"pod":"nats-0","namespace":"event-bus","node":"10.0.148.221"},"reachable":true}

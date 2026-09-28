@@ -1,0 +1,64 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mcp
+resources:
+  - namespace.yaml
+  - external-secret.yaml
+  - pull-secret.yaml
+  - agentgateway-deploy.yaml
+  - availability.yaml
+  - github-mcp.yaml
+  - estate-mcp.yaml
+  - httproute.yaml
+  - edge-manners.yaml
+images:
+  # build-multiarch pushes ghcr.io/chidionyema/estate-mcp:main-<run>-<sha> (crew#458 row 3, crew#516 CP3).
+  # The first main build after this file merges writes the tag; until then the Deployment cannot
+  # pull and Flux reports it. image-automation-controller rewrites the newTag line from
+  # ImagePolicy flux-system/estate-mcp; the marker is how it finds the line.
+  - name: ghcr.io/chidionyema/estate-mcp
+    newTag: main-12615-455cbe3c61657cc067f4e77fe8ba9f3f1ad12bd2 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
+configMapGenerator:
+  - name: mcp-config
+    files:
+      - agentgateway.yaml
+generatorOptions:
+  disableNameSuffixHash: false
+# WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
+#
+# 10-calico.conflist sorts before 10-flannel.conflist in /etc/cni/net.d, so Calico wins the CNI
+# race and any pod created from now on is wired by Calico and judged by the estate's 154
+# NetworkPolicy objects. Pods created before that are still on flannel and judged by nothing.
+# Measured 2026-09-08: 108 running pods on flannel, 39 on Calico. Every fence in the estate is
+# decoration for the flannel half.
+#
+# The restart is this annotation, not a command. Changing its value changes the pod template, so
+# Flux performs the rollout; nothing needs a token, a drain or a founder tap, and reverting the
+# value reverts the roll. A drain was measured and refused: two nodes, 144 running pods, a
+# 110-pod ceiling each, so one node's pods do not fit on the other and a third node is capacity
+# we are not buying.
+#
+# Bump the value to roll these workloads again.
+patches:
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: estate-mcp
+        namespace: mcp
+      spec:
+        template:
+          metadata:
+            annotations:
+              idp.internal/cni-generation: "2"
+  - patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: github-mcp
+        namespace: mcp
+      spec:
+        template:
+          metadata:
+            annotations:
+              idp.internal/cni-generation: "2"

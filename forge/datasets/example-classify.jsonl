@@ -1,0 +1,600 @@
+{"input": "is a success .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "steals so freely from other movies and combines enough disparate types of films", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "noticeably less energy and imagination", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "rated eee for excitement", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that proceeds", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "nutty cliches", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an off-beat and fanciful film about the human need for monsters to blame for all that is amiss in the world .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "food-spittingly", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "trying to make head or tail of the story in the hip-hop indie snipes is enough to give you brain strain --", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it 's a scorcher .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'' is a perfect family film to take everyone to since there 's no new `` a christmas carol '' out in the theaters this year .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "world traveler might not go anywhere new , or arrive anyplace special , but it 's certainly an honest attempt to get at something", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s tough to watch", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "which might have been called freddy gets molested by a dog )", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the dialogue is cumbersome , the simpering soundtrack and editing more so", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "truth-telling", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "higher", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the last kiss", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is a rancorous curiosity : a movie without an apparent audience .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "old-fashioned-movie movie", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "edge to it .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "there are n't too many films that can be as simultaneously funny , offbeat and heartwarming ( without a thick shmear of the goo , at least ) , but `` elling '' manages to do all three quite well , making it one of the year 's most enjoyable releases", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "explains its characters ' decisions only unsatisfactorily", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the final effect is like having two guys yelling in your face for two hours .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "repetitive", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "we also need movies like tim mccann 's revolution no. 9 .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "goes where you expect and often surprises you with unexpected comedy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the hours , a delicately crafted film", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the structure is simple , but in its own way , rabbit-proof fence is a quest story as grand as the lord of the rings .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "this flat run", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about schmidt is nicholson 's goofy , heartfelt , mesmerizing king lear .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a long , unfunny one at that", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of french cinema 's master craftsmen", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "have been more enjoyable had the balance shifted in favor of water-bound action over the land-based ` drama", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is more frustrating than a modem that disconnects every 10 seconds .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", illuminating study", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "keep the proceedings as funny for grown-ups as for rugrats", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the most fluent of actors", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s always enthralling", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "funny and", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "warm , fuzzy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "are more deeply thought through than in most ` right-thinking ' films", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "haul 'em to the theater", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "... is , also , frequently hilarious .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "take the viewer inside the wave", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "has-been", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "undeniably touched", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "want my money back .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'ll derive from this choppy and sloppy affair", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "ugly as the shabby digital photography", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "bolster director and co-writer", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to ensnare its target audience .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "who has little clue about either the nature of women or of friendship", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "goldmember has none of the visual wit of the previous pictures , and it looks as though jay roach directed the film from the back of a taxicab", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a powerful and reasonably fulfilling gestalt", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s better than its predecessor", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "infuriatingly quirky and taken with its own style .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that is listless , witless , and devoid of anything resembling humor", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "report that it is instead a cheap cliché", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "may shape hawke 's artistic aspirations", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "real writer plot", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "enough vitality to justify the notion of creating a screen adaptation of evans ' saga of hollywood excess", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the perverse pleasure", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "zinger-filled", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "great artistic significance", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to win a wide summer audience through word-of-mouth reviews", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is surprisingly brilliant , deftly sewing together what could have been a confusing and horrifying vision into an intense and engrossing head-trip", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "in the way that makes you ache with sadness ( the way chekhov is funny ) , profound without ever being self-important , warm without ever succumbing to sentimentality", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "works - mostly due to its superior cast of characters", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "only unsatisfactorily", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is n't a terrible movie , just a stultifyingly obvious one -- an unrewarding collar for a murder mystery", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the trip there is a great deal of fun .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "reenacting a historic scandal", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "high art", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "standing in the shadows of motown is the best kind of documentary , one that makes a depleted yesterday feel very much like a brand-new tomorrow .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "amounts to is a mildly funny , sometimes tedious , ultimately insignificant film", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "yielded such a flat , plodding picture", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a deficit of flim-flam", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that make williams sink into melancholia", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of warmth and gentle humor", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "rediscovers his passion in life", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "seem repetitive and designed to fill time , providing no real sense of suspense", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "forced drama in this wildly uneven movie", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "crawlies", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "nicolas cage is n't the first actor to lead a group of talented friends astray , and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "emerging in world cinema", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "leave feeling like you 've endured a long workout without your pulse ever racing .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "visually engrossing", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "itself is ultimately quite unengaging .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "lowered your entertainment standards", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "bouncing bravado", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "those visual in-jokes , as in the film 's verbal pokes at everything from the likes of miramax chief", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the bottom line is the piece works brilliantly .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "goofily endearing and well-lensed gorefest", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the movie is too impressed with its own solemn insights to work up much entertainment value .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "schütte 's dramatic snapshot", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "yet lacking about everything", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "satisfies -- from its ripe recipe , inspiring ingredients , certified cuisine and palatable presentation .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "fabuleux", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it 's definitely not made for kids or their parents , for that matter ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the silliness", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "onto the screen -- loud , violent and mindless", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "knows everything and answers all questions , is visually smart , cleverly written", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "less a movie", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "oscar caliber cast", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "jones has tackled a meaty subject and drawn engaging characters while peppering the pages with memorable zingers .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "hashiguchi vividly captures the way young japanese live now , chafing against their culture 's manic mix of millennial brusqueness and undying , traditional politesse .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "real psychological grounding", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "blab", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "has much to recommend it , even if the top-billed willis is not the most impressive player .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "breathless", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "pick your nose instead because you 're sure to get more out of the latter experience", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "as the libretto directs , ideally capturing the opera 's drama and lyricism", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "something rare and riveting : a wild ride that relies on more than special effects", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "... the kind of movie you see because the theater has air conditioning .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that could so easily have been fumbled by a lesser filmmaker", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "spirit is a visual treat , and it takes chances that are bold by studio standards ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "stuffy , full of itself", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "its one-sidedness ... flirts with propaganda .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'ll love it and probably want to see it twice .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "well-characterized", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "bring a heart and reality that buoy the film , and at times , elevate it to a superior crime movie .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "raucous and sappy", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of the human heart", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "cheery and tranquil", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it 's a satisfying summer blockbuster and worth a look .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s drab .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the gutless direction by laurice guillen", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "populates his movie with a wonderful ensemble cast of characters that bring the routine day to day struggles of the working class to life", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "by predictable plotting and tiresome histrionics", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an off-beat and fanciful film", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the film lacks momentum and its position remains mostly undeterminable", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "bracingly nasty", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "kiddie-oriented stinker", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "stuffiest cinema goers", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the result is somewhat satisfying -- it still comes from spielberg , who has never made anything that was n't at least watchable", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "easily the most thoughtful fictional examination of the root causes of anti-semitism ever seen on screen .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "remains a perfect wildean actor", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "its bold presentation", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "drag along the dead ( water ) weight of the other", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "could be a single iota worse ... a soulless hunk of exploitative garbage", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "could n't someone take rob schneider and have him switch bodies with a funny person ?", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "you 'll like promises .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "make a hip comedy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is less about a superficial midlife crisis", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "you value your time and money", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that made me want to scream", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "sci-fi drama that takes itself all too seriously", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a compelling pre-wwii drama", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that have become a spielberg trademark", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "for an eagerness", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "sit through -- despite some first-rate performances", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the sorriest and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is , more often then", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is pushed into the margins by predictable plotting and tiresome histrionics", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "washed out", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of one of the best films", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "one of the best films of the year with its exquisite acting , inventive screenplay , mesmerizing music , and many inimitable scenes of tenderness , loss , discontent , and yearning", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "often look smeary and blurry , to the point of distraction", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "marvelous film", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "but it 's hard to imagine a more generic effort in the genre .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "time and art", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "more complex and honest", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is an elegantly balanced movie -- every member of the ensemble has something fascinating to do -- that does n't reveal even a hint of artifice .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "slow , uneventful", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the film has an infectious enthusiasm and we 're touched by the film 's conviction that all life centered on that place , that time and that sport", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "exploitative and largely devoid of the depth or sophistication that would make watching such a graphic treatment of the crimes bearable .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "play their roles with vibrant charm", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", witless mess", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "all of dean 's mannerisms and self-indulgence , but", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "could be any flatter", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a strange film , one that was hard for me to warm up to", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "who anchors the film with his effortless performance and that trademark grin of his -- so perfect for a ballplayer", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "pull it back", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it has its faults , but it is a kind , unapologetic , sweetheart of a movie , and mandy moore leaves a positive impression", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the real issues tucked between the silly and crude storyline", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "heartbreak", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an unmistakable , easy joie de vivre", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "been much better", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "dislocation", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "snide and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with phony imagery or music", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the best comedy concert movie i 've seen since cho 's previous concert comedy film", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is a shaky , uncertain film that nevertheless touches a few raw nerves .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the day-old shelf would be a more appropriate location to store it", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a young woman who knows how to hold the screen", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "its courage , ideas ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "incredible subtlety and acumen", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a meatier deeper beginning and/or ending would have easily tipped this film into the `` a '' range , as is , it 's a very very strong `` b + . ''", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "88-minute rip-off", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a dark-as-pitch comedy", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "clean-cut", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a fascinating examination of the joyous , turbulent self-discovery made by a proper , middle-aged woman .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "no way", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s mired in a shabby script that piles layer upon layer of action man cliché atop wooden dialogue and a shifting tone that falls far short of the peculiarly moral amorality of ( woo 's ) best work .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "plotless collection of moronic stunts", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "if you , like me , think an action film disguised as a war tribute is disgusting to begin with", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "we 've liked klein 's other work but rollerball left us cold .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to enjoy its own transparency", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "for laughs", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a more graceful way", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( reynolds ) takes a classic story , casts attractive and talented actors and uses a magnificent landscape to create a feature film that is wickedly fun to watch .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "i loved on first sight and , even more important", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "curves", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a first-rate cast", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( jeff 's ) gorgeous , fluid compositions", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "rehashes to feed to the younger generations", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "apparently designed as a reverie about memory and regret , but the only thing you 'll regret is remembering the experience of sitting through it .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "smacks of exhibitionism more than it does cathartic truth telling .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "will lead when given the opportunity", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "smart and taut .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "seems as funny", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "captive by mediocrity .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "more revealing , more emotional and more surprising", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "like a room stacked with pungent flowers", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the cat 's meow marks a return to form for director peter bogdanovich ...", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the extraordinarily rich landscape", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is a complete mess", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the movie is as padded as allen 's jelly belly .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is a discreet moan of despair about entrapment in the maze of modern life .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( swimfan ) falls victim to sloppy plotting , an insultingly unbelievable final act and a villainess who is too crazy to be interesting .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "are especially fine", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about as enjoyable , i would imagine , as searching for a quarter in a giant pile of elephant feces ... positively dreadful .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "decent ones", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "solid sci-fi thriller", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "repetitive and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of terrific", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "refreshing and", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "looks like the six-time winner of the miss hawaiian tropic pageant , so i do n't know what she 's doing in here", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "largely flat and uncreative", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "`` home movie '' is a sweet treasure and something well worth your time .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with a story that tries to grab us , only to keep letting go at all the wrong moments", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "got", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "keeps being cast in action films when none of them are ever any good", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "still does n't quite know how to fill a frame .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it falls far short of poetry , but", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the movie 's vision of a white american zealously spreading a puritanical brand of christianity to south seas islanders is one only a true believer could relish .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "no real sense", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that has no point and goes nowhere", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a successful example of the lovable-loser protagonist", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( a ) crushing disappointment", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it would be better as a diary or documentary", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "complete shambles", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "in creating an emotionally complex , dramatically satisfying heroine", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the most creative , energetic and original", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "described as a ghost story gone badly awry .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to be delightfully compatible here", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a particularly amateurish episode of bewitched that takes place during spring break", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the thriller form to examine the labyrinthine ways in which people 's lives cross and change", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to remarkable performances", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "relentlessly saccharine", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "can not sustain the buoyant energy level of the film 's city beginnings into its country conclusion '", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an odd , haphazard , and inconsequential romantic comedy .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "gets the tone just right -- funny in the middle of sad in the middle of hopeful .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is almost nothing in this flat effort that will amuse or entertain them , either .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "horrifyingly ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the best script that besson has written in years .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "anything special , save for a few comic turns ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a so-so , made-for-tv something posing as a real movie .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "smart", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "rewarding", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "its intriguing subject", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "funny without hitting below the belt", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a truly magical movie", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "wonders , enhancing the cultural and economic subtext , bringing richer meaning to the story 's morals", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s just a movie that happens to have jackie chan in it .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to offend", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "this film is too busy hitting all of its assigned marks to take on any life of its own .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'re most likely to find on the next inevitable incarnation of the love boat", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an oddly winning portrayal of one of life 's ultimate losers", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a small fortune in salaries and stunt cars", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an engaging and exciting narrative of man confronting the demons of his own fear and paranoia", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "could have guessed at the beginning", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "will see nothing in it to match the ordeal of sitting through it .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it finds its moviegoing pleasures in the tiny events that could make a person who has lived her life half-asleep suddenly wake up and take notice .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "despite some comic sparks , welcome to collinwood never catches fire .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", secretary is a genial romance that maintains a surprisingly buoyant tone throughout , notwithstanding some of the writers ' sporadic dips into pop freudianism .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "mike leigh populates his movie with a wonderful ensemble cast of characters that bring the routine day to day struggles of the working class to life", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "modern-day royals", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "demme finally succeeds in diminishing his stature from oscar-winning master to lowly studio hack .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "covers this territory with wit and originality , suggesting that with his fourth feature --", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "ai n't art", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "hooks us", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "often funny", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", entertaining and , ultimately , more perceptive moment", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a culture-clash comedy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of scorn", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to put a human face on the travail of thousands of vietnamese", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "for most movies , 84 minutes is short", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "might have been called freddy gets molested by a dog", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "by amateurish", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an amusing and unexpectedly insightful examination of sexual jealousy , resentment and the fine", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "great missed opportunity", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "as good ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the charisma", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "where one 's imagination will lead when given the opportunity", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it 's packed with adventure and a worthwhile environmental message", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "as it 's too loud to shout insults at the screen", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a powerfully evocative mood", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about as much resemblance to the experiences of most battered women as spider-man", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "like an oily arms dealer , squad car pile-ups and the requisite screaming captain", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "mystical", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it may not be a huge cut of above the rest , but i enjoyed barbershop .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "sit through , enjoy on a certain level and then", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "his cipherlike personality and bad behavior would play fine if the movie knew what to do with him", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about the long and eventful spiritual journey of the guru who helped", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "backbone", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "seems hopelessly juvenile .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a fine , focused piece of work", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "would n't exist without the precedent of yiddish theater , whose jolly , fun-for-fun 's - sake communal spirit goes to the essence of broadway", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "pleasurable movies", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "trudge out of the theater feeling", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "consider it ` perfection .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "clever and cutting , quick and dirty look", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with zero-dimensional , unlikable characters and hackneyed , threadbare comic setups", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the plot grows thin soon ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "so poorly plotted and scripted .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "emerges as another key contribution", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "feeble", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s horribly depressing and not very well done .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "unnoticed", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "confusion and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "truly egregious lip-non-synching", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "strong and convincing", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an inelegant combination of two unrelated shorts that falls far short of the director 's previous work in terms of both thematic content and narrative strength .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "boxes these women 's souls right open for us .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "does n't deliver a great story , nor is the action as gripping as in past seagal films .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is about quiet , decisive moments between members of the cultural elite as they determine how to proceed as the world implodes .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "since its poignancy hooks us completely", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "unfunny and unoriginal mess", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that 's critic-proof , simply because it aims so low", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "expiration date", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "i can channel one of my greatest pictures , drunken master", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "fun one", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", lawrence unleashes his trademark misogyny -- er , comedy -- like a human volcano or an overflowing septic tank ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "sorority boys is a bowser .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "his effortless performance", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "could easily be called the best korean film of 2002", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "special effect", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "faith , love and power", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "entertaining british hybrid", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "excruciatingly tedious", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a sane regimen", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a step further , richer", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "this is more appetizing than a side dish of asparagus .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "stomach so much tongue-in-cheek weirdness", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "i heard that apollo 13 was going to be released in imax format", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "at once visceral and spiritual , wonderfully vulgar and sublimely lofty --", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "make it look as though they are having so much fun", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "wewannour money back , actually .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "one of those movies barely registering a blip on the radar screen of 2002", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "will certainly appeal to asian cult cinema fans and asiaphiles interested to see what all the fuss is about .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "straight out of a cellular phone commercial", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "like `` horrible '' and `` terrible", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "are jarring and deeply out of place in what could have ( and probably should have )", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "much panache , but with material this rich it does n't need it", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "mined his personal horrors and", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it feels like a glossy rehash .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s far from a groundbreaking endeavor", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "never rises above superficiality .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "or , worse yet , nonexistent --", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "engaging simplicity", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "feels as if ( there 's ) a choke leash around your neck so director nick cassavetes can give it a good , hard yank whenever he wants you to feel something", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is a throwback war movie that fails on so many levels", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it may be because teens are looking for something to make them laugh .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with enough energy and excitement", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "giddy and whimsical and relevant today", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the film occasionally tries the viewer 's patience with slow pacing and a main character who sometimes defies sympathy , but it ultimately satisfies with its moving story", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "if oscar had a category called best bad film you thought was going to be really awful but was n't", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "has rewards , from the exoticism of its seas of sand to the fierce grandeur of its sweeping battle scenes .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the château is never quite able to overcome the cultural moat surrounding its ludicrous and contrived plot . '", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to appreciate the wonderful cinematography and naturalistic acting", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "writing , skewed characters", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "philosophical emptiness and maddeningly sedate pacing", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "extraordinarily good", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "slide down the slippery slope of dishonesty after an encounter with the rich and the powerful who have nothing but", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "help be entertained by the sight of someone getting away with something", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "poignant if familiar story of a young person suspended between two cultures .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( a ) satisfying niblet", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "more recent successes", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s something i would rather live in denial about", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "captures , in luminous interviews and amazingly evocative film from three decades ago , the essence of the dogtown experience .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "such a lousy way , complete with some of the year 's ( unintentionally ) funniest moments , that it 's impossible to care", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with few respites", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "allowed to use the word `` new '' in its title", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "as one of the cleverest , most deceptively amusing comedies of the year", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "get out your pooper-scoopers .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "retelling a historically significant , and personal , episode", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about whose fate it is hard to care", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "reign of fire is so incredibly inane that it is laughingly enjoyable .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the performances by harris , phifer and cam ` ron seal the deal", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "against governmental odds", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the french director has turned out nearly 21/2 hours of unfocused , excruciatingly tedious cinema that , half an hour in , starts making water torture seem appealing .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "hugely imaginative and successful casting", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "return to never land may be another shameless attempt by disney to rake in dough from baby boomer families , but", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "gut-wrenching , frightening war scenes since `` saving private ryan ''", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "often messy and frustrating , but very pleasing at its best moments , it 's very much like life itself .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "ice age wo n't drop your jaw ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "does not really make the case the kissinger should be tried as a war criminal", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "deficit", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "horrible .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "` time waster '", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "said , except : film overboard !", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "straining to produce another smash", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "might i suggest that the wayward wooden one end it all by stuffing himself into an electric pencil sharpener", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "cutting-edge", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the idea of making kahlo 's art a living , breathing part of the movie , often catapulting the artist into her own work", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the best espionage picture to come out in weeks", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "so slick and watered-down it almost loses what made you love it", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "chilling style", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "put a lump in your throat while reaffirming washington as possibly the best actor working in movies today", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "you feel good , you feel sad , you feel pissed off , but in the end , you feel alive - which is what they did .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "folds under its own thinness", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "has not spawned a single good film", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "an american tragedy", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "several plodding action sequences", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "shiri is an action film that delivers on the promise of excitement , but it also has a strong dramatic and emotional pull that gradually sneaks up on the audience .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it would have worked so much better dealing in only one reality", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", reflective and beautifully", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "wo n't feel like it 's wasted yours", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "some genuine quirkiness", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "goes by quickly", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "life in the performances", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "best part ' of the movie", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "potential success", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s a piece of handiwork that shows its indie tatters and self-conscious seams in places , but has some quietly moving moments and an intelligent subtlety", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "inane and awful", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "about one of cinema 's directorial giants", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is barely an hour long .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with ambitious , eager first-time filmmakers", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s easier to change the sheets than to change hackneyed concepts when it comes to dreaming up romantic comedies", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "well-thought stunts or", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "unstable", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "salvation and good intentions", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "( and literally ) tosses around sex toys and offers half-hearted paeans to empowerment that are repeatedly undercut by the brutality of the jokes , most at women 's expense .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "the talk alone is enough to keep us", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "xxx is a blast of adrenalin ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "sumptuous", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "town", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of the more serious-minded concerns of other year-end movies", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "is its reliance on formula , though", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s meandering , low on energy , and too eager", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "juliette binoche 's sand is vivacious ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a fun adventure movie", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "one of world cinema 's most wondrously gifted artists", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "ugly and destructive", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "leaden script", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "have rarely seen", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "her pale , dark beauty and", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "of the best , most", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "that you 've wasted nearly two hours of your own precious life with this silly little puddle of a movie", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "interested in the sights and sounds of battle", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "kinky fun", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "plot and paper-thin supporting characters", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "wewannour money back", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "unpleasant debate that 's been given the drive of a narrative and that 's been acted out", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "do n't feel the least bit ashamed in admitting that my enjoyment came at the expense of seeing justice served , even if it 's a dish that 's best served cold", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "every member of the ensemble has something fascinating to do", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a fascinating , unnerving examination of the delusions of one unstable man", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "` fatal script error", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "brings this unknown slice of history affectingly to life .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "with roussillon providing comic relief", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "you can taste it , but there 's no fizz .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "parker and co-writer catherine di napoli are faithful to melville 's plotline , they and a fully engaged supporting cast", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "by the time the credits roll across the pat ending", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "inside the massive waves that lifts blue crush into one of the summer 's most pleasurable movies", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "directed , barely , by there", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "are n't - kids-cute sentimentality by a warmth that is n't faked and a stately sense of composition .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "attempts to be grandiloquent , but ends up merely pretentious -- in a grisly sort of way .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s no fizz", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": ", this could be a movie that ends up slapping its target audience in the face by shooting itself in the foot .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "a pointed , often tender , examination", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "it certainly does n't feel like a film that strays past the two and a half mark", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "as little cleavage", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s splash without the jokes .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "to worry about being subjected to farts , urine , feces , semen , or any of the other foul substances", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "'s a film that affirms the nourishing aspects of love and companionship", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "overladen with plot conceits", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "... director john schultz colors the picture in some evocative shades .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "am baffled by jason x.", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "train"}
+{"input": "old-fashioned , occasionally charming", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that `` gangs '' is never lethargic", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "low-budget hybrid", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "estela bravo 's documentary is cloyingly hagiographic in its portrait of cuban leader fidel castro", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "is definitely worth seeing", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "one long , numbing action sequence made up mostly of routine stuff yuen has given us before .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "were more repulsive than the first 30 or 40 minutes", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "grisly and engagingly quixotic", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "offers an intriguing what-if premise .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that the german film industry can not make a delightful comedy centering on food", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "it 's difficult to feel anything much while watching this movie , beyond mild disturbance or detached pleasure at the acting .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "dare i say , entertaining !", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "` yes , that 's right : it 's forrest gump , angel of death . '", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "move over bond ;", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "an imponderably stilted and self-consciously arty movie", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "what is essentially an extended soap opera", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that could make a person who has lived her life half-asleep suddenly wake up and take notice", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "is why film criticism can be considered work .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that it looks neat", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "disposible", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the actors are simply too good ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "of the greatest natural sportsmen of modern times", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "shines on all the characters", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "erotically frank", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "zzzzzzzzz", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "feel like a 10-course banquet .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "complex story", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "virtually absent", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "cheesiest", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "for most of its footage , the new thriller proves that director m. night shyamalan can weave an eerie spell and that mel gibson can gasp , shudder and even tremble without losing his machismo .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "what redeems the film is the cast , particularly the ya-yas themselves .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "to visit , this laboratory of laughter", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "polished and vastly entertaining", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "charismatic rising star jake gyllenhaal", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "lack contrast , are murky", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "purports to be a hollywood satire but winds up as the kind of film that should be the target of something deeper and more engaging .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "only about as sexy and dangerous as an actress in a role that reminds at every turn of elizabeth berkley 's flopping dolphin-gasm .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "is bright and flashy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that , in their own idiosyncratic way , sum up the strange horror of life in the new millennium", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "as a hole in the head", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "do well to check this one out", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "good-natured and sometimes quite funny", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "is serry 's ability to take what is essentially a contained family conflict and put it into a much larger historical context .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "funny , touching , dramatically forceful , and beautifully shot", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the most original fantasy film ever made", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "this quiet , introspective and entertaining independent", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "offers the none-too-original premise that everyone involved with moviemaking is a con artist and a liar", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "does because ( the leads ) are such a companionable couple", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "pay your $ 8 and get ready for the big shear", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "for what we can get on television for free", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "virtually nothing to show", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "movie rapes", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "a cinematic corpse", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "'s about as convincing as any other arnie musclefest ,", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "to capture the novel 's deeper intimate resonances", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "american musical comedy as we know it would n't exist without the precedent of yiddish theater , whose jolly , fun-for-fun 's - sake communal spirit goes to the essence of broadway .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the script 's endless assault", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the most interesting writer/directors", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "needlessly", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "hot-button items", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "liked sometimes", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "'s to realize that as far as these shootings are concerned , something is rotten in the state of california", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "captures both the beauty of the land and the people", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "'s rare to see a movie that takes such a speedy swan dive from `` promising '' to `` interesting '' to `` familiar '' before landing squarely on `` stupid '' .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "for kids , spirit", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "by corrupt and hedonistic weasels", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "even while his characters are acting horribly", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the real star of this movie is the score , as in the songs translate well to film , and", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "witty , improbable romantic comedy", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "oddly fascinating depiction", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "good pace", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "add", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "deniro 's once promising career", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the project should have been made for the tube .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "rather unfocused", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "moving", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "a sleep-inducing thriller with a single twist that everyone except the characters in it can see coming a mile away .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the first half of his movie generates by orchestrating a finale that is impenetrable and dull", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the beauty and power of the opera", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "sillier , not scarier", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the story that emerges has elements of romance , tragedy and even silent-movie comedy .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "most audacious ,", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "you 'll need a stronger stomach than us .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "have used my two hours better watching being john malkovich again", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "with us", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "who are either too goodly , wise and knowing or downright comically evil", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "and powerful documentary", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "drew to a close", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "it does n't work .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "can only point the way -- but thank goodness for this signpost", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "a riddle wrapped in a mystery inside an enigma", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "retread , with the emphasis on self-empowering schmaltz and big-wave surfing that gives pic its title an afterthought", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "why this did n't connect with me would require another viewing", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "as in aimless , arduous , and arbitrary", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "is refreshingly undogmatic about its characters", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "really rattling the viewer", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the innate theatrics that provide its thrills and extreme emotions", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "what lifts the film high above run-of-the-filth gangster flicks", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the best rock", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "the best ensemble casts of the year", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "bracingly truthful", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "uninspired , and peopled mainly by characters so unsympathetic that you 're left with a sour taste in your mouth", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "chicanery and self-delusion", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "an enjoyable 100 minutes", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "a clear-eyed", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "of nostalgic comments from the now middle-aged participants", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "confusion and pain", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "natural affability", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that were once amusing", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "while insomnia is in many ways a conventional , even predictable remake , nolan 's penetrating undercurrent of cerebral and cinemantic flair lends ( it ) stimulating depth .", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "most likely to find on the next inevitable incarnation of the love boat", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "make a gorgeous pair", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "stylish and", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "concept doofus", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "plodding , peevish and gimmicky .", "output": "0", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "that come by once in a while with flawless amounts of acting , direction , story and pace", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "amusing study", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "compelling story", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "hungry for quality and a nostalgic , twisty yarn that will keep them guessing", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}
+{"input": "on all cylinders", "output": "1", "teacher": "stanfordnlp/sst2 gold", "split": "eval"}

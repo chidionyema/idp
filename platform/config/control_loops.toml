@@ -1,0 +1,41 @@
+# Control-Loop Registry (same pattern as [routing])
+# Each loop registers mode + config. Orchestrator reads this, not code imports.
+# Modes: off | shadow | enforce
+
+[control_loops]
+
+# ParEvalLayer: halts agent when statistical confidence is reached
+[control_loops.pareval]
+mode = "shadow"
+required_margin = 0.05
+max_tasks = 100
+max_wall_clock_minutes = 120
+
+# JudgeDrift: monitors judge calibration, enqueues recalibration tasks
+[control_loops.judge_drift]
+mode = "shadow"
+baseline_window = 500
+current_window = 100
+js_threshold = 0.15
+kappa_threshold = 0.75
+
+# RedTeam: payload generation, mutation, lifecycle (shadow only in staging)
+[control_loops.red_team]
+mode = "off"
+payload_generation_enabled = false
+mutation_enabled = false
+weekly_refresh_enabled = false
+
+# SpanRetention: four-tier storage management (periodic job, not request-path)
+[control_loops.span_retention]
+mode = "off"
+tier1_retention_days = 14
+tier2_retention_days = 90
+vacuum_enabled = true
+
+# Global settings
+[control_loops.global]
+backpressure_queue_limit = 1000
+fail_open_on_gates = true
+auto_demote_on_error = true
+emit_langfuse_traces = true

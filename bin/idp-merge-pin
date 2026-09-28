@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+"""Is the head this pull request was GRADED under the head that is about to merge? (spec W0.3)
+
+W0.3, docs/policy/agent-infra-safety-spec.md: a scope check grades a diff; a force-push between the
+check and the merge changes what lands. The merge is pinned to the exact commit that passed, and a
+moved head is a refusal, not a re-check.
+
+This is the W0.3 pin, made a command so a lane that is about to auto-merge can refuse a PR whose
+head moved after the scope check ran. It FAILS CLOSED on any mismatch or on absence of either sha:
+
+    * checked_head equals merge_head  -> ok      the head that proved itself is the one landing
+    * checked_head != merge_head      -> refuse  the head moved after the check; the old proof no
+                                            longer covers what is about to land (a forced push
+                                            rewrote the diff the gate approved)
+    * either sha missing              -> refuse  a gate that cannot compare is not a pass (LAW 28)
+
+`checked_head` is the commit the scope-check/proof ran against (the CI run's head). `merge_head`
+is the current head of the pull request at merge time. They are read from one JSON argument of
+{checkedHead, mergeHead}, or two positional arguments.
+
+  bin/idp-merge-pin PIN.json   |   bin/idp-merge-pin <checked-sha> <merge-sha>
+Exit 0 when the heads are the same; 1 (refuse) when they differ or are unreadable; 2 = BLIND.
+"""
+import argparse
+import json
+import sys
+
+
+def grade(checked, merge):
+    """Return (verdict_bool_or_None, reason). None = the shas could not be compared at all."""
+    if not checked or not merge:
+        return None, "a head sha is missing; a gate that cannot compare is not a pass"
+    if checked != merge:
+        return False, f"head moved after the check ({checked[:12]} -> {merge[:12]}); the proof " \
+                      f"no longer covers what is about to land (force-pushed between check and merge)"
+    return True, f"merge is pinned to the exact head that passed the check ({checked[:12]})"
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("pin", nargs="?", help="a JSON file of {\"checkedHead\", \"mergeHead\"}")
+    ap.add_argument("merge_head_alt", nargs="?", help="or: the merge head sha (second arg form)")
+    a = ap.parse_args(argv)
+
+    if a.pin and a.pin.endswith(".json"):
+        try:
+            doc = json.load(open(a.pin, encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            print(f"BLIND   merge-pin  cannot read {a.pin}: {e}")
+            return 2
+        checked, merge = doc.get("checkedHead"), doc.get("mergeHead")
+    elif a.pin and not a.merge_head_alt:
+        # pin given as the checked sha alone is ambiguous; require both or a json
+        print("usage: idp-merge-pin PIN.json | idp-merge-pin CHECKED_SHA MERGE_SHA", file=sys.stderr)
+        return 2
+    else:
+        # two positional shas
+        if not a.pin or not a.merge_head_alt:
+            print("usage: idp-merge-pin PIN.json | idp-merge-pin CHECKED_SHA MERGE_SHA", file=sys.stderr)
+            return 2
+        checked, merge = a.pin, a.merge_head_alt
+
+    ok, why = grade(checked, merge)
+    if ok is None:
+        print(f"BLIND   merge-pin  {why}")
+        return 2
+    print(f"{'ok  ' if ok else 'FAIL   '} merge-pin  {why}")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,6 @@
+source    204 entities in catalog-info.yaml
+schema    204/204 entity documents valid against https://json.schemastore.org/catalog-info.json
+fallback  204 rows served over HTTP -- matches
+primary   all 204 entities ingested by Backstage -- matches
+
+PASS      both renderers agree with the inventory: 204 entities

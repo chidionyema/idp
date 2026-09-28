@@ -1,0 +1,159 @@
+# FleetView Voice - Enterprise Configuration
+# Override values for enterprise deployments with SSO, Kafka, and production settings
+
+# ============================================================================
+# Enterprise Authentication (OIDC with Okta/Azure AD/etc)
+# ============================================================================
+auth:
+  provider: "oidc"
+  # Set these in your release-specific values:
+  # issuerUrl: "https://your-idp.okta.com"
+  # clientId: "fleetview-voice"
+  clientSecretRef:
+    name: "fleetview-voice-oidc"
+    key: "client-secret"
+
+# ============================================================================
+# Enterprise Event Bus (Kafka)
+# ============================================================================
+eventBus:
+  type: "kafka"
+  kafka:
+    # Set in release-specific values:
+    # brokers:
+    #   - "kafka-1.example.com:9092"
+    #   - "kafka-2.example.com:9092"
+    topic: "fleetview.voice.events"
+    sasl:
+      enabled: true
+      mechanism: "SCRAM-SHA-256"
+      # Set in release-specific values:
+      # username: "fleetview-voice"
+      passwordSecretRef:
+        name: "fleetview-voice-kafka"
+        key: "password"
+    tls:
+      enabled: true
+      caSecretRef:
+        name: "kafka-ca"
+        key: "ca.crt"
+
+# Disable bundled NATS when using enterprise Kafka
+nats:
+  enabled: false
+
+# ============================================================================
+# Enterprise Privacy Settings
+# ============================================================================
+privacy:
+  defaultTtlMinutes: 15
+  durableRetentionEnabled: false
+  redaction:
+    enabled: true
+    # Enterprise may add custom PII patterns
+    patterns: []
+
+# ============================================================================
+# Production API Configuration
+# ============================================================================
+api:
+  replicas: 3
+
+  resources:
+    requests:
+      cpu: "250m"
+      memory: "512Mi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 75
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
+
+  maxStreamClients: 64
+
+  # Anti-affinity for HA
+  affinity:
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values:
+                    - fleetview-voice
+                - key: app.kubernetes.io/component
+                  operator: In
+                  values:
+                    - api
+            topologyKey: topology.kubernetes.io/zone
+
+# ============================================================================
+# Production Worker Configuration
+# ============================================================================
+worker:
+  replicas: 2
+
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"
+    limits:
+      cpu: "1000m"
+      memory: "1Gi"
+
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# ============================================================================
+# Production Ingress (with TLS)
+# ============================================================================
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # WebSocket support for streaming
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$binary_remote_addr"
+  hosts:
+    - host: voice.fleetview.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: fleetview-voice-tls
+      hosts:
+        - voice.fleetview.example.com
+
+# ============================================================================
+# Production Observability
+# ============================================================================
+observability:
+  otel:
+    enabled: true
+    # Set in release-specific values:
+    # endpoint: "otel-collector.observability:4317"
+    serviceName: "fleetview-voice"
+
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: 15s
+      labels:
+        release: prometheus

@@ -1,0 +1,114 @@
+# via-negativa's own memory: the proxy's banned-signature set and top-constraints ranking
+# (Primitives A and C) and the RCA worker's failure stream (Primitive D). One dedicated Redis,
+# not the shared llm cache -- THE HEADLINE's "never add a second store" is about not building a
+# second kind of store for one estate, not about sharing one cache instance across unrelated
+# components; the shape here is a direct copy of platform/llm/redis.yaml.
+#
+# The password is minted inside the cluster by the secret machinery's own password generator --
+# no vault entry, no console, no person ever sees it. refreshInterval 0h: minted once at
+# creation and stable, so the proxy and the worker can never disagree about it.
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
+  name: via-negativa-redis
+  namespace: via-negativa
+spec:
+  length: 42
+  digits: 10
+  symbols: 0
+  symbolCharacters: ""
+  noUpper: false
+  allowRepeat: true
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: via-negativa-redis
+  namespace: via-negativa
+spec:
+  refreshInterval: 0h
+  target: { name: via-negativa-redis, creationPolicy: Owner }
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: via-negativa-redis
+      rewrite:
+        - transform: { template: "REDIS_PASSWORD" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: via-negativa-redis
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: via-negativa }
+spec:
+  type: ClusterIP
+  selector: { app.kubernetes.io/name: via-negativa-redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: 6379 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: via-negativa-redis
+  namespace: via-negativa
+  labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp }
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  # One memory: two caches behind one name would briefly disagree, so replace, never overlap.
+  # Losing it for the seconds of a replace is safe -- the proxy fails open (patternStore.match
+  # sees an empty set) and the worker's XREADGROUP simply resumes from its consumer group
+  # position once the store is back.
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app.kubernetes.io/name: via-negativa-redis }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: via-negativa-redis, app.kubernetes.io/part-of: idp }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999   # redis uid in the alpine image
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: docker.io/library/redis:7.4-alpine
+          command: ["/bin/sh", "-c"]
+          args:
+            - exec redis-server --requirepass "$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)" --maxmemory 192mb --maxmemory-policy allkeys-lru --save "" --appendonly no
+          ports:
+            - { containerPort: 6379, name: redis }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)\" redis-cli ping"]
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "REDISCLI_AUTH=\"$(cat /run/secrets/via-negativa/redis/REDIS_PASSWORD)\" redis-cli ping"]
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests: { cpu: 25m, memory: 64Mi }
+            limits: { cpu: 250m, memory: 256Mi }
+          volumeMounts:
+            - { name: redis-secret, mountPath: /run/secrets/via-negativa/redis, readOnly: true }
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: redis-secret
+          secret: { secretName: via-negativa-redis }
+        - name: data
+          emptyDir: { sizeLimit: 256Mi }
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,9 @@
+{
+  "_comment": "The REFUSING direction of the breaker rule: four targets, each printing the same three 'hello' lines. None of them carries a finding, so the fingerprint is null and nothing is ever observed. The pattern that must never lock, does not lock. bin/idp-circuit-breaker --replay exits 0 because zero findings were observed -- the breaker refused to be a raw hash of the output.",
+  "findings": [
+    {"target": "pr-1", "log": "hello\nhello\nhello"},
+    {"target": "pr-2", "log": "hello\nhello\nhello"},
+    {"target": "pr-3", "log": "hello\nhello\nhello"},
+    {"target": "pr-4", "log": "hello\nhello\nhello"}
+  ]
+}

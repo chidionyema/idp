@@ -1,0 +1,3 @@
+.github/workflows/catalog-render.yml
+tests/test_incident_crew516_catalog_render_has_a_home_off_the_mac.py
+tests/test_incident_crew624_the_schedule_publishes_the_catalogue.py

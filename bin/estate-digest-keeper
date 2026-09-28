@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# estate-digest-keeper — slot 7 of the local ops tier (crew#929): the no-op/heartbeat worker.
+# It holds the local model resident and proves the tier is alive, so every other worker slot
+# starts warm instead of paying a 30 s+ cold reload (measured crew#284 30.8 s cold vs 16.9 s warm).
+#
+#   bin/estate-digest-keeper            ping: answer ALIVE:<ts> if the model answers, else FAIL
+#   bin/estate-digest-keeper --load     force a small warm-up generation (load the weights)
+#   bin/estate-digest-keeper --loop N   keep-alive loop: ping + report every N seconds (default 300)
+#
+# The keeper never fabricates liveness: ALIVE is only printed when the model actually answered a
+# minimal generation. LAW 2 — no claim without a measurement.
+set -euo pipefail
+_on_exit() {
+	local e=$?
+	[ $e -ne 0 ] && echo "estate-digest-keeper exit $e" >&2
+}
+trap _on_exit EXIT
+MODEL="${ESTATE_DIGEST_MODEL:-qwen2.5-coder:7b}"
+OLLAMA="${ESTATE_OLLAMA:-http://localhost:11434}"
+
+# A minimal warm-up — several tokens of real generation, not a guessed health.
+warm() {
+	title=$(curl -s --max-time 90 "$OLLAMA/api/generate" \
+		-d "{\"model\":\"$MODEL\",\"prompt\":\"Reply with the single word ALIVE.\",\"stream\":false,\"options\":{\"num_predict\":4}}" 2>&1)
+	case "$title" in
+	*'"response":"ALIVE"'* | *'"response": "ALIVE"'*) echo "model-warm" ;;
+	*) echo "model-COLD-or-unreachable" ;;
+	esac
+}
+ping() {
+	r=$(warm)
+	case "$r" in
+	model-warm) echo "ALIVE:$(date -u +%s)" ;;
+	*) echo "FAIL keeper: $r" && return 1 ;;
+	esac
+}
+
+case "${1:-}" in
+--load) warm ;;
+--loop)
+	delay=${2:-300}
+	while true; do
+		ping
+		sleep "$delay"
+	done
+	;;
+*) ping ;;
+esac

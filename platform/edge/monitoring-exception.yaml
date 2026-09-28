@@ -1,0 +1,43 @@
+# THE ESTATE HAD NO ALERTING FOR 7 DAYS AND 13 HOURS, AND THIS FILE IS WHY IT WILL AGAIN.
+#
+# Measured on the running cluster 2026-09-05:
+#   kubectl -n monitoring get prometheus,alertmanager
+#   prometheus/kps    DESIRED 1  READY 0  RECONCILED False  AGE 7d13h
+#   alertmanager/kps  REPLICAS 1 READY 0  RECONCILED False  AGE 7d13h
+#   kubectl -n monitoring get sts        ->  No resources found
+#   kubectl -n monitoring get pods       ->  blackbox, kps-operator, kube-state-metrics. Nothing else.
+#
+# The reason both objects give is the same, and it is ours:
+#   failed to create statefulset: admission webhook "validate.kyverno.svc-fail" denied the request:
+#   resource StatefulSet/monitoring/prometheus-kps was blocked due to the following policies
+#   require-pod-probes:
+#     autogen-validate-probes: 'Liveness, readiness, or startup probes are required for all containers.'
+#
+# The Prometheus Operator builds these two StatefulSets itself from the Prometheus and Alertmanager
+# custom resources. It gives the prometheus and alertmanager containers their own probes, but the
+# config-reloader sidecar it injects alongside them has none, and neither custom resource has a field
+# to add one (prometheus-operator v0.90, pkg/prometheus/statefulset.go builds the sidecar). So the
+# policy refused the object, the operator had nothing else to try, and the estate lost Prometheus,
+# Alertmanager and every alert route that depends on them -- including the KubePodCrashLooping and
+# KubePodNotReady rules that would have said Otto was mute.
+#
+# Nothing reported this because the thing that reports is the thing that was refused. That is LAW 38
+# exactly: a guard that refuses correct work is an outage, and this one was silent for a week.
+#
+# The waiver is the narrowest that lets the operator work: one policy, the two StatefulSets it owns
+# and the pods they make, in one namespace. Same shape as platform/edge/temporal-exception.yaml.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: monitoring-operator-sidecar-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+  match:
+    any:
+      - resources:
+          kinds: [StatefulSet, Pod]
+          namespaces: [monitoring]
+          names: [prometheus-kps*, alertmanager-kps*]

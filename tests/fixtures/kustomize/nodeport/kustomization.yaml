@@ -1,0 +1,12 @@
+# Must FAIL the idp-ci kustomize row: a NodePort publishes the catalogue on
+# every interface of every node (R20).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../../../platform/backstage/base
+patches:
+  - target: { kind: Service, name: catalogue }
+    patch: |
+      - op: replace
+        path: /spec/type
+        value: NodePort

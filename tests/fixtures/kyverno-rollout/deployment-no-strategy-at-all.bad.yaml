@@ -1,0 +1,20 @@
+# The same deadlock reached by writing NOTHING. Kubernetes defaults maxUnavailable and maxSurge
+# both to 25%, and ResolveFenceposts rounds maxUnavailable DOWN and maxSurge UP: at replicas 2
+# that is maxUnavailable 0, maxSurge 1 -- the incident above, character for character, in a
+# manifest whose author never typed a strategy. This is the fixture that proves the policy
+# refuses the DEFAULT and not merely the literal 0.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: catalogue-defaults, namespace: backstage}
+spec:
+  replicas: 2
+  selector: {matchLabels: {app: catalogue}}
+  template:
+    metadata: {labels: {app: catalogue}}
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: {matchLabels: {app: catalogue}}
+      containers: [{name: c, image: busybox}]

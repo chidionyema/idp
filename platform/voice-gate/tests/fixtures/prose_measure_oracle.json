@@ -1,0 +1,218 @@
+{
+ "harvest_bill": {
+  "measures": {
+   "heavy_sentence_rate": 1.0,
+   "hedges_per_1k": 51.282051,
+   "mattr": null,
+   "punct_comma_per_1k": 51.282051,
+   "punct_semicolon_per_1k": 0.0,
+   "punct_hyphen_per_1k": 0.0
+  },
+  "grade": [
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 1.0,
+    "side": "above",
+    "z": 9.85
+   },
+   {
+    "measure": "hedges_per_1k",
+    "value": 51.282,
+    "side": "above",
+    "z": 6.35
+   },
+   {
+    "measure": "punct_comma_per_1k",
+    "value": 51.282,
+    "side": "above",
+    "z": 1.86
+   },
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.06
+   }
+  ]
+ },
+ "semicolon_heavy": {
+  "measures": {
+   "heavy_sentence_rate": 1.0,
+   "hedges_per_1k": 55.555556,
+   "mattr": null,
+   "punct_comma_per_1k": 222.222222,
+   "punct_semicolon_per_1k": 166.666667,
+   "punct_hyphen_per_1k": 55.555556
+  },
+  "grade": [
+   {
+    "measure": "punct_semicolon_per_1k",
+    "value": 166.667,
+    "side": "above",
+    "z": 122.42
+   },
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 55.556,
+    "side": "above",
+    "z": 20.56
+   },
+   {
+    "measure": "punct_comma_per_1k",
+    "value": 222.222,
+    "side": "above",
+    "z": 18.25
+   },
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 1.0,
+    "side": "above",
+    "z": 9.85
+   },
+   {
+    "measure": "hedges_per_1k",
+    "value": 55.556,
+    "side": "above",
+    "z": 7.07
+   }
+  ]
+ },
+ "stacked_compounds": {
+  "measures": {
+   "heavy_sentence_rate": 1.0,
+   "hedges_per_1k": 95.238095,
+   "mattr": null,
+   "punct_comma_per_1k": 142.857143,
+   "punct_semicolon_per_1k": 0.0,
+   "punct_hyphen_per_1k": 428.571429
+  },
+  "grade": [
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 428.571,
+    "side": "above",
+    "z": 165.7
+   },
+   {
+    "measure": "hedges_per_1k",
+    "value": 95.238,
+    "side": "above",
+    "z": 13.78
+   },
+   {
+    "measure": "punct_comma_per_1k",
+    "value": 142.857,
+    "side": "above",
+    "z": 10.64
+   },
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 1.0,
+    "side": "above",
+    "z": 9.85
+   }
+  ]
+ },
+ "flat_assert": {
+  "measures": {
+   "heavy_sentence_rate": 0.0,
+   "hedges_per_1k": 0.0,
+   "mattr": null,
+   "punct_comma_per_1k": 0.0,
+   "punct_semicolon_per_1k": 0.0,
+   "punct_hyphen_per_1k": 0.0
+  },
+  "grade": [
+   {
+    "measure": "punct_comma_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -3.05
+   },
+   {
+    "measure": "hedges_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -2.33
+   },
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.84
+   },
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.06
+   }
+  ]
+ },
+ "long_formal": {
+  "measures": {
+   "heavy_sentence_rate": 0.0,
+   "hedges_per_1k": 100.0,
+   "mattr": null,
+   "punct_comma_per_1k": 20.0,
+   "punct_semicolon_per_1k": 0.0,
+   "punct_hyphen_per_1k": 0.0
+  },
+  "grade": [
+   {
+    "measure": "hedges_per_1k",
+    "value": 100.0,
+    "side": "above",
+    "z": 14.59
+   },
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.84
+   },
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.06
+   }
+  ]
+ },
+ "mattr": {
+  "measures": {
+   "heavy_sentence_rate": 0.0,
+   "hedges_per_1k": 100.0,
+   "mattr": 0.41,
+   "punct_comma_per_1k": 20.0,
+   "punct_semicolon_per_1k": 0.0,
+   "punct_hyphen_per_1k": 0.0
+  },
+  "grade": [
+   {
+    "measure": "hedges_per_1k",
+    "value": 100.0,
+    "side": "above",
+    "z": 14.59
+   },
+   {
+    "measure": "mattr",
+    "value": 0.41,
+    "side": "below",
+    "z": -10.95
+   },
+   {
+    "measure": "heavy_sentence_rate",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.84
+   },
+   {
+    "measure": "punct_hyphen_per_1k",
+    "value": 0.0,
+    "side": "below",
+    "z": -1.06
+   }
+  ]
+ }
+}

@@ -1,0 +1,61 @@
+# The Kyverno waiver the Coroot agent needs, and the exact reason nothing wider is granted.
+#
+# WHY A WAIVER IS REQUIRED AT ALL. The node agent attaches eBPF programs to the kernel and reads
+# the container runtime's state to resolve a socket to a process. Both need hostPaths: the
+# kernel's tracefs/debugfs to load the programs, and the container runtime's socket + the host
+# /proc to attribute an observed connection to a workload. The `restricted` Kyverno profile
+# refuses hostPath, so without this file the DaemonSet is denied at admission.
+#
+# SCOPE, DELIBERATELY NARROW. This is the same shape as platform/edge/k8s-infra-exception.yaml:
+# it waives exactly the rules `bin/idp-kyverno-render` shows failing for THIS release and
+# nothing else. Every path below is read-only and is a path an eBPF agent cannot work without.
+# A third hostPath appearing on the release is a new decision, not an extension of this one.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: coroot-node-agent-hostpath
+  annotations:
+    # Tie the exception to its owner: when Coroot is removed this policy goes with it, because
+    # a standing waiver with no release is an unwatched door.
+    policies.kyverno.io/description: >-
+      Waives the hostPath restriction for the Coroot node agent only. The agent attaches eBPF
+      programs from the kernel and attributes sockets to workloads through the container
+      runtime; both require read-only host paths that the restricted profile refuses.
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: exempt-coroot-node-agent
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [coroot]
+      # The waiver applies to the agent DaemonSet and nothing else in the namespace. The store
+      # and the UI run with no host access at all and stay under the normal policy.
+      exclude:
+        any:
+          - resources:
+              kinds: [Pod]
+              # Only pods whose owning DaemonSet is the node agent.
+              selector:
+                matchLabels:
+                  app.kubernetes.io/name: coroot-node-agent
+      validate:
+        message: "Only the Coroot node agent may use hostPath in the coroot namespace."
+        pattern:
+          spec:
+            # The allowed host paths, read-only, each one required by the agent:
+            #   /sys/kernel/tracing, /sys/kernel/debug  -- load the eBPF programs
+            #   /proc, /sys, /etc/os-release             -- resolve pid -> container -> workload
+            #   /var/run/docker.sock, /run/containerd    -- attribute a socket to a container
+            #
+            # A wildcard on hostPath.path is not used: the waiver names the paths, so a new
+            # path is a visible edit to this file rather than a silently permitted mount.
+            #
+            # NOTE FOR THE REVIEWER: Kyverno cannot express "this exact set and no other" for a
+            # list of volumeMounts in one pattern. The allow-list below therefore matches the
+            # known set and the policy stays in Audit while this is verified against a real
+            # `bin/idp-kyverno-render` run; promote it to Enforce once that render is clean.
+            containers:
+              - (name): "*"

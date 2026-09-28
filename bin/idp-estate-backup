@@ -1,0 +1,321 @@
+#!/usr/bin/env python3
+"""Take an out-of-band backup of every persistent volume the cluster holds, and refuse to be
+quiet about any volume it could not cover.
+
+Founder, 2026-08-31, step 1 of the bootstrap plan: "We cannot start over until the existing data
+is safe. Snapshot the Volumes: Immediately take manual, out-of-band backups of the shop database
+volume and any other unmanaged persistent volumes." Then: "THIS PROCESS NEEDS AUTOMATION and
+rerunnable" -- so this is a script that can run on a schedule, not a morning of typing.
+
+Rerunnable and idempotent: a volume that already carries a backup younger than --max-age is left
+alone, so running this hourly costs one list call and nothing else. The exit code is the answer to
+the only question that matters -- 0 when every volume is covered, 1 when any is not.
+
+Every OCI block volume in this cluster is provisioned with reclaimPolicy Delete, which means
+deleting a claim destroys the volume with it. That is the reason this script exists before any
+rebuild starts.
+
+Optimised: 16 -> 1 naive backup-state reads, 16 -> 2 round-trip waves; cut: one `bv backup list`
+answers the freshness question for every volume instead of one describe per volume, and the
+creates fan out over a thread pool.
+"""
+
+from __future__ import annotations
+
+import argparse
+import concurrent.futures
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+ENV = {**os.environ, "SUPPRESS_LABEL_WARNING": "True"}
+
+
+def run(cmd: list[str], timeout: int = 180, env: dict[str, str] | None = None):
+    try:
+        p = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=timeout, env=env or ENV
+        )
+        return p.returncode, p.stdout, p.stderr
+    except subprocess.TimeoutExpired:
+        return 124, "", f"timed out after {timeout}s"
+    except FileNotFoundError:
+        return 127, "", f"{cmd[0]} is not installed"
+
+
+def oci_json(args: list[str], timeout: int = 180):
+    rc, out, err = run(["oci", *args], timeout)
+    if rc != 0:
+        # the CLI prints usage errors to stdout, so a stderr-only reader says "no stderr"
+        lines = (err.strip() or out.strip()).splitlines()
+        return None, (lines or ["the command failed and said nothing"])[-1][:200]
+    try:
+        return json.loads(out or "{}").get("data"), None
+    except ValueError as exc:
+        return None, f"unparseable answer: {exc}"
+
+
+def compartment() -> str:
+    got = os.environ.get("OCI_COMPARTMENT_OCID", "")
+    tfvars = IDP / "platform/oci/terraform.tfvars"
+    if not got and tfvars.exists():
+        m = re.search(r'^compartment_ocid\s*=\s*"([^"]+)"', tfvars.read_text(), re.M)
+        got = m.group(1) if m else ""
+    return got
+
+
+def kubeconfig_env() -> dict[str, str] | None:
+    """The checked-in kubeconfig pins a session-token profile that expires. Prefer whatever the
+    caller has; otherwise use the API-key one bin/idp-cloud mints."""
+    for env in (
+        ENV,
+        {**ENV, "KUBECONFIG": str(Path.home() / ".kube/config-estate-apikey")},
+    ):
+        if run(["kubectl", "get", "--raw", "/version"], 30, env)[0] == 0:
+            return env
+    return None
+
+
+def volumes(env: dict[str, str]) -> tuple[list[dict], str | None]:
+    """Every bound persistent volume, as (claim, volume OCID, reclaim policy)."""
+    rc, out, err = run(["kubectl", "get", "pv", "-o", "json"], 120, env)
+    if rc != 0:
+        return [], (err.strip().splitlines() or ["kubectl said nothing"])[-1][:200]
+    found = []
+    for i in json.loads(out).get("items", []):
+        spec = i.get("spec", {})
+        handle = (spec.get("csi") or {}).get("volumeHandle", "")
+        claim = spec.get("claimRef") or {}
+        if handle.startswith("ocid1.volume."):
+            found.append(
+                {
+                    "pv": i["metadata"]["name"],
+                    "volume_id": handle,
+                    "namespace": claim.get("namespace", "-"),
+                    "claim": claim.get("name", "(unbound)"),
+                    "reclaim": spec.get("persistentVolumeReclaimPolicy", "?"),
+                    "size": (spec.get("capacity") or {}).get("storage", "?"),
+                }
+            )
+    return found, None
+
+
+def region() -> str:
+    got = os.environ.get("OCI_REGION", "")
+    tfvars = IDP / "platform/oci/terraform.tfvars"
+    if not got and tfvars.exists():
+        m = re.search(r'^region\s*=\s*"([^"]+)"', tfvars.read_text(), re.M)
+        got = m.group(1) if m else ""
+    return got
+
+
+def blockstorage_endpoint() -> tuple[str, str | None]:
+    """The block-storage API endpoint for the region, from the vendor's own SDK table (the CLI
+    ships it), never a domain typed here: the platform stays blind to who owns the servers (R36).
+    OCI_BLOCKSTORAGE_ENDPOINT overrides it."""
+    got = os.environ.get("OCI_BLOCKSTORAGE_ENDPOINT", "")
+    if got:
+        return got.rstrip("/"), None
+    reg = region()
+    if not reg:
+        return "", "no region: set OCI_REGION or platform/oci/terraform.tfvars"
+    rc, cli, err = run(["which", "oci"], 10)
+    if rc != 0:
+        return "", "oci is not installed"
+    try:
+        shebang = Path(cli.strip()).read_text(errors="replace").splitlines()[0]
+    except (OSError, IndexError):
+        return "", "could not read the oci CLI's interpreter"
+    py = shebang[2:].strip() if shebang.startswith("#!") else sys.executable
+    rc, out, err = run(
+        [py, "-c", f"import oci; print(oci.regions.endpoint_for('blockstorage', {reg!r}))"], 60
+    )
+    if rc != 0 or not out.strip().startswith("https://"):
+        return "", f"the SDK named no block-storage endpoint for {reg}: {(err.strip() or out.strip())[-200:]}"
+    return out.strip().rstrip("/"), None
+
+
+def newest_backups(comp: str) -> tuple[dict[str, str], str | None, str]:
+    """Newest AVAILABLE backup per volume, and the clock that came back with them.
+
+    The listing goes through `oci raw-request` so the response headers travel with the data:
+    `Date` is what the provider's clock said as it stamped this answer, and `time-created` on
+    each backup was stamped by that same clock. Age is one clock minus itself; this machine's
+    clock is never consulted (crew#583: a Mac whose battery died reads 1970 and every local age
+    is wrong in one direction or the other). Returns (newest, error, served_rfc2822)."""
+    endpoint, err = blockstorage_endpoint()
+    if err:
+        return {}, err, ""
+    base = f"{endpoint}/20160918/volumeBackups?compartmentId={comp}&limit=500"
+    newest: dict[str, str] = {}
+    served, page = "", ""
+    while True:
+        uri = base + (f"&page={page}" if page else "")
+        rc, out, err = run(["oci", "raw-request", "--http-method", "GET", "--target-uri", uri], 180)
+        if rc != 0:
+            lines = (err.strip() or out.strip()).splitlines()
+            return {}, (lines or ["the listing failed and said nothing"])[-1][:200], ""
+        try:
+            body = json.loads(out or "{}")
+        except json.JSONDecodeError as exc:
+            return {}, f"unparseable answer: {exc}", ""
+        headers = {str(k).lower(): v for k, v in (body.get("headers") or {}).items()}
+        served = served or str(headers.get("date", ""))
+        for b in body.get("data") or []:
+            if b.get("lifecycle-state") in ("CREATING", "AVAILABLE"):
+                vid, when = b.get("volume-id", ""), b.get("time-created", "")
+                if when > newest.get(vid, ""):
+                    newest[vid] = when
+        page = str(headers.get("opc-next-page", "") or "")
+        if not page:
+            break
+    if not served:
+        return {}, "the listing carried no Date header, so no age can be measured (crew#583)", ""
+    return newest, None, served
+
+
+def age_hours(stamp: str, served: str) -> float:
+    """Hours between a backup's time-created and the Date header that came back with it."""
+    try:
+        t = datetime.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+        now = parsedate_to_datetime(served)
+    except (ValueError, TypeError):
+        return float("inf")
+    return (now - t).total_seconds() / 3600
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Back up every persistent volume in the cluster."
+    )
+    ap.add_argument(
+        "--max-age", type=float, default=24.0, help="hours; a newer backup is enough"
+    )
+    ap.add_argument("--type", default="FULL", choices=("FULL", "INCREMENTAL"))
+    ap.add_argument(
+        "--dry-run", action="store_true", help="say what would be taken, take nothing"
+    )
+    ap.add_argument("--workers", type=int, default=4)
+    ap.add_argument("--json", action="store_true")
+    args = ap.parse_args()
+
+    comp = compartment()
+    if not comp:
+        print(
+            "BLIND   backup no compartment identifier: set OCI_COMPARTMENT_OCID or run "
+            "bin/idp-oci-login",
+            file=sys.stderr,
+        )
+        return 2
+    env = kubeconfig_env()
+    if env is None:
+        print(
+            "BLIND   backup kubectl reaches no cluster, so no volume could be listed",
+            file=sys.stderr,
+        )
+        return 2
+
+    vols, err = volumes(env)
+    if err:
+        print(
+            f"BLIND   backup the cluster did not list its volumes: {err}",
+            file=sys.stderr,
+        )
+        return 2
+    newest, err, served = newest_backups(comp)
+    if err:
+        print(
+            f"BLIND   backup the cloud did not list existing backups: {err}",
+            file=sys.stderr,
+        )
+        return 2
+
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    todo = []
+    for v in vols:
+        have = newest.get(v["volume_id"], "")
+        v["last_backup"] = have or None
+        v["age_hours"] = round(age_hours(have, served), 1) if have else None
+        if have and age_hours(have, served) <= args.max_age:
+            v["action"] = "fresh"
+        else:
+            v["action"] = "would-create" if args.dry_run else "create"
+            todo.append(v)
+
+    if todo and not args.dry_run:
+
+        def create(v: dict):
+            name = f"estate-{v['namespace']}-{v['claim']}-{stamp}"[:255]
+            data, e = oci_json(
+                [
+                    "bv",
+                    "backup",
+                    "create",
+                    "--volume-id",
+                    v["volume_id"],
+                    "--type",
+                    args.type,
+                    "--display-name",
+                    name,
+                    "--freeform-tags",
+                    json.dumps(
+                        {
+                            "estate": "bootstrap-rescue",
+                            "namespace": v["namespace"],
+                            "claim": v["claim"],
+                        }
+                    ),
+                ],
+                300,
+            )
+            v["backup_id"] = (data or {}).get("id")
+            v["error"] = e
+            v["action"] = "created" if data else "failed"
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+            list(pool.map(create, todo))
+
+    # "would-create" is not coverage. Counting it was the silent-green shape: a dry run said
+    # 16/16 covered on an estate where not one volume had ever been backed up.
+    covered = [v for v in vols if v["action"] in ("fresh", "created")]
+    failed = [v for v in vols if v["action"] == "failed"]
+    if args.json:
+        print(
+            json.dumps(
+                {"generated_at": stamp, "volumes": vols}, indent=1, sort_keys=True
+            )
+        )
+    else:
+        width = max((len(f"{v['namespace']}/{v['claim']}") for v in vols), default=10)
+        for v in sorted(vols, key=lambda v: (v["namespace"], v["claim"])):
+            note = v.get("error") or (
+                f"last backup {v['age_hours']}h old"
+                if v["age_hours"] is not None
+                else "had no backup at all"
+            )
+            print(
+                f"{v['action']:<13} {v['namespace'] + '/' + v['claim']:<{width}} "
+                f"{v['size']:>6}  reclaim={v['reclaim']:<7} {note}"
+            )
+    sys.stdout.flush()
+    verdict = (
+        "ok     " if covered and not failed and len(covered) == len(vols) else "FAIL   "
+    )
+    print(
+        f"{verdict} backup {len(covered)}/{len(vols)} volumes "
+        f"carry a backup younger than {args.max_age}h"
+        + (f"; {len(failed)} could not be backed up" if failed else ""),
+        file=sys.stderr,
+    )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

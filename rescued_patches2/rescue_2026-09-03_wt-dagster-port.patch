@@ -1,0 +1,182 @@
+diff --git a/checkpoints/LATEST.md b/checkpoints/LATEST.md
+index 550672334..c0a39c850 100644
+--- a/checkpoints/LATEST.md
++++ b/checkpoints/LATEST.md
+@@ -12,3 +12,18 @@ Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready
+ Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
+ bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
+ Founder plan recorded crew#66 5453918598 (one-shot, "just you").
++
++## RESUME HERE (2026-09-02T19:2xZ, lane .wt-dagster-port)
++Founder instruction: user-deployment probe timeouts to 30s. Measured in-pod: exec health-check healthy path = 5s wall at 250m CPU, so the handler moves to the kubelet-native gRPC probe (server answers grpc.health.v1 SERVING, measured). Branch fix/dagster-probe-grpc-30s off origin/main: platform/dagster/dagster.yaml probe block + tests/test_incident_dagster_user_deployment_probe_defaults.py. Next: push, PR, green, founder merges.
++
++## RESUME HERE (54539261, 2026-09-02T21:05Z)
++Silent-green: notify+otto-staging kustomizations True, all pods CrashLoopBackOff.
++Two measured roots, two fixes in flight:
++1. idp branch fix/notify-apprise-boots — apprise manifest exported secret file `founder-telegram`
++   (dash = invalid shell identifier, set -eu fatal, and bash printed the token value into the pod
++   log — rotation queued for the founder). Fix: ES template key founder-telegram.cfg,
++   APPRISE_STATEFUL_MODE=simple + APPRISE_CONFIG_DIR=/run/secrets/notify, image default CMD.
++2. hermes-v2 worktree ~/dev/code/.wt-otto-image-deps branch fix/otto-image-deps — image never
++   installs otto/requirements.txt (jsonschema ModuleNotFoundError in otto-staging). Fix: uv pip
++   install runtime section into the venv + otto rows in deploy/k8s/boot-contract.txt.
++Watcher b9c14c543 follows apply run 33681830297 (new deepseek key verdict).
+diff --git a/drills/catalogue.yaml b/drills/catalogue.yaml
+index ab4aead7e..387d0bc75 100644
+--- a/drills/catalogue.yaml
++++ b/drills/catalogue.yaml
+@@ -394,3 +394,15 @@ drills:
+       probe is quoted in docs/runbooks/otto-staging.md). Pending until the founder
+       deploys platform/otto-staging; the oke-check job lands with the deploy and
+       this line comes off.
++
++  - name: notify
++    owner: idp
++    workflow: oke-check.yml
++    job: notify-drill
++    schedule: "17 6 * * *"
++    max_age_hours: 26
++    pending: true
++    proves: >-
++      From the node's identity a POST to the apprise service at /notify/founder-telegram
++      returns 200 and the message reaches the founder's phone, so the publish-once alert
++      channel is graded end to end, never by its manifests applying cleanly.
+diff --git a/platform/notify/apprise-api.yaml b/platform/notify/apprise-api.yaml
+index 80b529ac1..7d7f9ffef 100644
+--- a/platform/notify/apprise-api.yaml
++++ b/platform/notify/apprise-api.yaml
+@@ -49,19 +49,20 @@ spec:
+       containers:
+         - name: apprise
+           image: docker.io/caronc/apprise:1.5.3
+-          # Secrets are mounted as files (Kyverno policy secrets-not-from-env-vars); the container
+-          # reads them and starts the Apprise API server. The container defaults to running the
+-          # API server; we just set up environment before that.
+-          command: ["/bin/bash", "-c"]
+-          args:
+-            - |
+-              set -eu
+-              # Export channel URLs from mounted secret files
+-              for f in /run/secrets/notify/*; do
+-                export "$(basename "$f")=$(cat "$f")"
+-              done
+-              # Let the container's default entry point run Apprise with our environment
+-              exec apprise-api -b 0.0.0.0:8000 -s 1 -t 60
++          # Channels are files, never environment (Kyverno secrets-not-from-env-vars — and a shell
++          # that expands a secret value can print it into the pod log; it did on 2026-09-02, which
++          # is why no script touches these files at all). Stateful "simple" mode reads
++          # {channel}.cfg straight from APPRISE_CONFIG_DIR (vendor README), so the vault-synced
++          # mount IS the config store and the image's own entrypoint (supervisord: nginx on 8000 +
++          # gunicorn) runs unmodified. Everything it writes at runtime sits under /tmp
++          # (supervisord.conf, nginx.conf in the image) — the emptyDir below.
++          env:
++            - name: APPRISE_STATEFUL_MODE
++              value: simple
++            - name: APPRISE_CONFIG_DIR
++              value: /run/secrets/notify
++            - name: APPRISE_ATTACH_SIZE
++              value: "0"  # attachments off: nothing sends files and /attach is read-only here
+           ports:
+             - { containerPort: 8000, name: http }
+           securityContext:
+diff --git a/platform/notify/external-secret.yaml b/platform/notify/external-secret.yaml
+index f29f5c26c..8441626e5 100644
+--- a/platform/notify/external-secret.yaml
++++ b/platform/notify/external-secret.yaml
+@@ -15,9 +15,11 @@ spec:
+     creationPolicy: Owner
+     # The vault entry holds the two halves the bootstrapper verified as a pair (token, chat);
+     # the template composes the one URL Apprise reads. No store ever holds a half-URL.
++    # The key is a FILE name: Apprise stateful "simple" mode serves /notify/founder-telegram from
++    # founder-telegram.cfg in APPRISE_CONFIG_DIR (vendor README), which is this secret's mount.
+     template:
+       data:
+-        founder-telegram: "tgram://{{ .token }}/{{ .chat }}/"
++        founder-telegram.cfg: "tgram://{{ .token }}/{{ .chat }}/"
+   dataFrom:
+     - extract: { key: notify-apprise-founder-telegram }
+     # - secretKey: slack
+diff --git a/tests/test_incident_notify_apprise_channel_is_a_config_file.py b/tests/test_incident_notify_apprise_channel_is_a_config_file.py
+new file mode 100644
+index 000000000..d852ddb08
+--- /dev/null
++++ b/tests/test_incident_notify_apprise_channel_is_a_config_file.py
+@@ -0,0 +1,78 @@
++"""Incident 2026-09-02: the notify kustomization reported True while every apprise pod
++crash-looped, and the crash printed the founder alert channel's telegram token into the
++pod log. Root: the manifest fed the mounted secret files through a shell export loop; the
++file is named founder-telegram, a dash is illegal in a shell identifier, ``set -eu`` made
++that fatal, and bash's error message carried the whole assignment, value included. The
++exec line was dead too: the image has no ``apprise-api`` binary (its CMD is
++supervisord-startup). The fix removes every shell from the road: Apprise stateful
++"simple" mode serves /notify/founder-telegram from founder-telegram.cfg inside
++APPRISE_CONFIG_DIR, which is the secret mount itself.
++
++This test pins the class."""
++
++import pathlib
++
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++
++
++def _apprise_pod_spec():
++    docs = yaml.safe_load_all((ROOT / "platform/notify/apprise-api.yaml").read_text())
++    dep = next(d for d in docs if d and d.get("kind") == "Deployment")
++    return dep["spec"]["template"]["spec"]
++
++
++def test_no_shell_sits_between_the_secret_and_apprise():
++    container = _apprise_pod_spec()["containers"][0]
++    assert "command" not in container and "args" not in container, (
++        "the apprise container must run the image's own entrypoint: a shell that expands "
++        "mounted secret files can print their values into the pod log, and did on 2026-09-02"
++    )
++
++
++def test_simple_mode_reads_exactly_the_secret_mount():
++    container = _apprise_pod_spec()["containers"][0]
++    env = {e["name"]: e.get("value") for e in container.get("env", [])}
++    assert env.get("APPRISE_STATEFUL_MODE") == "simple", env
++    mounts = {m["name"]: m["mountPath"] for m in container["volumeMounts"]}
++    assert env.get("APPRISE_CONFIG_DIR") == mounts["channels"], (env, mounts)
++
++
++def test_channel_key_is_the_cfg_file_simple_mode_serves():
++    docs = yaml.safe_load_all(
++        (ROOT / "platform/notify/external-secret.yaml").read_text()
++    )
++    es = next(d for d in docs if d)
++    data = es["spec"]["target"]["template"]["data"]
++    assert list(data) == ["founder-telegram.cfg"], (
++        "simple mode serves /notify/<name> from <name>.cfg; a key without .cfg is a "
++        "channel apprise cannot find, and a dash-named env var was the 2026-09-02 crash"
++    )
++    assert data["founder-telegram.cfg"].startswith("tgram://"), (
++        "no store holds a half-URL"
++    )
++
++
++# Ratchet, not amnesty: these three predate the incident and their secret keys happen to be
++# valid identifiers today, so they run -- but each is one dash-named key away from the same
++# crash-and-leak and is queued for the same files-not-environment rework. A NEW instance of
++# the pattern is refused outright.
++KNOWN_EXPORT_LOOPS = frozenset(
++    {
++        "platform/llm/litellm.yaml",
++        "platform/healthchecks/healthchecks.yaml",
++        "platform/guacamole/guacamole.yaml",
++    }
++)
++
++
++def test_no_new_manifest_exports_secret_files_through_a_shell():
++    offenders = [
++        str(p.relative_to(ROOT))
++        for p in (ROOT / "platform").rglob("*.yaml")
++        if 'export "$(basename' in p.read_text()
++    ]
++    assert set(offenders) <= KNOWN_EXPORT_LOOPS, sorted(
++        set(offenders) - KNOWN_EXPORT_LOOPS
++    )

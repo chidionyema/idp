@@ -1,0 +1,7 @@
+bin/idp-vendor-render
+platform/human-vault-bridge/externalsecrets.yaml
+platform/human-vault-bridge/pushsecrets.yaml
+platform/otto-gateway/deployment.yaml
+platform/otto-gateway/quota.yaml
+platform/otto-gateway/three-homes-secrets.yaml
+platform/vendors/consoles.yaml

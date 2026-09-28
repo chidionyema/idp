@@ -1,0 +1,2919 @@
+diff --git a/.github/workflows/catalog-render.yml b/.github/workflows/catalog-render.yml
+index 0a57b6113..61cef4244 100644
+--- a/.github/workflows/catalog-render.yml
++++ b/.github/workflows/catalog-render.yml
+@@ -72,12 +72,19 @@ jobs:
+           set -euo pipefail
+           rclone copyto ":s3:$BUCKET/state/inventory/latest.json" "$RUNNER_TEMP/inventory.json" --s3-no-check-bucket
+           python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print("inventory taken", d.get("at"), "assets", len(d.get("rows",[])))' "$RUNNER_TEMP/inventory.json" | tee -a "$GITHUB_STEP_SUMMARY"
+-          # the session feed (estate#10 publishes it beside the inventory); absent = estate-next says BLIND itself
+-          # rclone copyto exits 0 for an absent object (run 33102084969 said "feed taken" with no file): the file is the receipt
+-          rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
++          # crew#786: the Mac sessions publish the feed to state/live-diagram. Try that first, fall back to bucket.
++          # The render script also carries the feed from the branch, so this is a second source for redundancy.
++          git -C idp fetch --depth 1 origin state/live-diagram 2>/dev/null || true
++          git -C idp show origin/state/live-diagram:docs/FEED.md > "$RUNNER_TEMP/feed.md" 2>/dev/null || true
+           if [ -s "$RUNNER_TEMP/feed.md" ]; then
+-            echo "feed taken, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
+-          else echo "feed: not in the bucket yet (state/feed/latest.md), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
++            echo "feed taken from state/live-diagram, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
++          else
++            # rclone copyto exits 0 for an absent object (run 33102084969 said "feed taken" with no file): the file is the receipt
++            rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
++            if [ -s "$RUNNER_TEMP/feed.md" ]; then
++              echo "feed taken from the bucket, last handoff $(grep -E '^## ' "$RUNNER_TEMP/feed.md" | tail -1 | cut -c4-40)" | tee -a "$GITHUB_STEP_SUMMARY"
++            else echo "feed: not in the bucket yet (state/live-diagram and bucket both empty), NEXT.md renders BLIND" | tee -a "$GITHUB_STEP_SUMMARY"; fi
++          fi
+       # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
+       # workflow on main; the App's token arms it as an App push.
+       - id: app
+diff --git a/.github/workflows/estate-state.yml b/.github/workflows/estate-state.yml
+index 1a445017b..155026d2b 100644
+--- a/.github/workflows/estate-state.yml
++++ b/.github/workflows/estate-state.yml
+@@ -31,7 +31,7 @@ jobs:
+       ARTIFACT: oci://ghcr.io/chidionyema/idp/estate-state:latest
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
++      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+         with:
+           python-version: "3.12"
+           cache: pip
+@@ -70,7 +70,7 @@ jobs:
+           bin/idp-cloud object get --bucket estate-drill-receipts --name state/cluster > "$RUNNER_TEMP/cluster.txt" \
+             || { echo "BLIND cluster receipt not read (exit $?)"; : > "$RUNNER_TEMP/cluster.txt"; }
+           head -c 160 "$RUNNER_TEMP/cluster.txt"; echo
+-      - name: feed from the state bucket (same door as catalog-render)
++      - name: feed from the state branch, fall back to bucket (crew#786)
+         env:
+           RCLONE_S3_PROVIDER: Cloudflare
+           RCLONE_S3_ENDPOINT: https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+@@ -79,9 +79,18 @@ jobs:
+           BUCKET: ${{ secrets.SEED_R2_BUCKET || 'prospector-packs' }}
+         run: |
+           set -uo pipefail
+-          # rclone copyto exits 0 for an absent object; the file is the receipt, the builder says BLIND without it
+-          rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
+-          echo "feed $(wc -c < "$RUNNER_TEMP/feed.md" 2>/dev/null || echo 0) bytes"
++          # crew#786: try the feed from state/live-diagram first (published by Mac sessions)
++          git fetch --depth 1 origin state/live-diagram 2>/dev/null || true
++          git show origin/state/live-diagram:docs/FEED.md > "$RUNNER_TEMP/feed.md" 2>/dev/null || true
++          if [ -s "$RUNNER_TEMP/feed.md" ]; then
++            echo "feed taken from state/live-diagram, $(wc -c < "$RUNNER_TEMP/feed.md") bytes"
++          else
++            # rclone copyto exits 0 for an absent object; the file is the receipt, the builder says BLIND without it
++            rclone copyto ":s3:$BUCKET/state/feed/latest.md" "$RUNNER_TEMP/feed.md" --s3-no-check-bucket 2>/dev/null || true
++            if [ -s "$RUNNER_TEMP/feed.md" ]; then
++              echo "feed taken from the bucket, $(wc -c < "$RUNNER_TEMP/feed.md") bytes"
++            else echo "feed: not published yet, state/live-diagram and bucket both empty"; fi
++          fi
+       - name: rulings, issues, runs and the newest login-drill log (App token)
+         env:
+           GH_TOKEN: ${{ steps.app.outputs.token }}
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index cfb14f3fe..0fbad2879 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -273,6 +273,7 @@ jobs:
+           SEED_GROQ_API_KEY: ${{ secrets.SEED_GROQ_API_KEY }}
+           SEED_GEMINI_API_KEY: ${{ secrets.SEED_GEMINI_API_KEY }}
+           SEED_EXA_API_KEY: ${{ secrets.SEED_EXA_API_KEY }}
++          SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}
+           SEED_TELEGRAM_HERMES_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_HERMES_BOT_TOKEN }}
+           SEED_TELEGRAM_ALERTS_BOT_TOKEN: ${{ secrets.SEED_TELEGRAM_ALERTS_BOT_TOKEN }}
+           SEED_STRIPE_SECRET_KEY: ${{ secrets.SEED_STRIPE_SECRET_KEY }}
+@@ -552,7 +553,7 @@ jobs:
+           echo "$(wc -l < founder-links.txt) links"
+       - uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8 # v2.9.0
+         with:
+-          args: --no-progress --max-redirects 5 --accept '200..=399,401,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
++          args: --no-progress --max-redirects 5 --accept '200..=399,401,403,405' --timeout 20 --retry-wait-time 5 --max-retries 2 --exclude 'github.com/chidionyema/mumchimp-medusa' founder-links.txt
+           # mumchimp-medusa is private; this repo's token cannot read it, the founder's browser can.
+           fail: true
+           token: ${{ secrets.GITHUB_TOKEN }}
+@@ -593,6 +594,47 @@ jobs:
+           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+         run: bin/idp-kini-state --json
+ 
++  infra-crew:
++    # crew#729 step 3: is the infrastructure crew taking its queue? Read from outside the cluster:
++    # the board through the estate App's ticket-verifier lane (issues), and Langfuse through the
++    # project keys in the vault. bin/idp-infra-crew-drill; drills/catalogue.yaml row infra-crew.
++    if: github.event_name != 'pull_request'
++    runs-on: ubuntu-latest
++    timeout-minutes: 10
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
++      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
++      - name: oci cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
++      - name: OCI session token from the GitHub OIDC token
++        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
++        with:
++          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
++          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
++          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
++          oci_region: ${{ vars.OCI_REGION }}
++      - name: bin/idp-infra-crew-drill
++        env:
++          OCI_CI: "1"
++          OCI_CLI_AUTH: security_token
++          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
++        run: |
++          set -o pipefail
++          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   infra-crew  no App token: ${tok:0:160}"; exit 2; }
++          echo "::add-mask::$tok"
++          pk=$(bin/idp-cloud secret get langfuse-init-public-key 2>/dev/null || true)
++          sk=$(bin/idp-cloud secret get langfuse-init-secret-key 2>/dev/null || true)
++          [ -n "$sk" ] && echo "::add-mask::$sk"
++          GH_TOKEN="$tok" LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk" bin/idp-infra-crew-drill 2>&1 | tee drill.out
++          printf '### infra-crew\n```\n%s\n```\n' "$(cat drill.out)" >> "$GITHUB_STEP_SUMMARY"
++
+   telemetry-coverage:
+     # crew#320 / LAW 50: coverage is a backend query, never a file scan. The cluster diffs Running
+     # pods against pods seen in ClickHouse (platform/observability/telemetry-coverage.yaml) and this
+diff --git a/.gitignore b/.gitignore
+index 12af8ce8e..e4aadfba6 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -67,3 +67,4 @@ docs/reference/incident-register.yaml
+ 
+ # Vale downloads the Microsoft style on `vale sync`; only the estate boundary (styles/Estate, styles/config) is ours
+ styles/Microsoft/
++.aider*
+diff --git a/backstage/app-config.yaml b/backstage/app-config.yaml
+index a0f8de172..93a512ed7 100644
+--- a/backstage/app-config.yaml
++++ b/backstage/app-config.yaml
+@@ -11,12 +11,76 @@ app:
+     # bookmark) a client-side ERROR 404 while the login drill, visiting "/", stayed green.
+     # crew#307. The Home page takes "/".
+     #
+-    # The home plugin's widget grid, its toolkit (whose links pointed at 127.0.0.1) and the
+-    # "Welcome to Backstage" card are gone: packages/app/src/modules/home overrides
+-    # `page:home` with the founder god view, read from the catalogue (crew#459).
++    # The front page is Backstage's home plugin. Widgets stay; the drag-and-resize
++    # board does not (founder 2026-09-03: outdated look and outdated interactions).
++    # packages/app/src/modules/home/homeLayout.tsx pins them. The crew#459 god view
++    # stays at /estate.
+     - page:home:
+         config:
+           path: /
++          defaultConfig:
++            - component: HomePageSearchBar
++              column: 0
++              row: 0
++              width: 12
++              height: 2
++              deletable: false
++              movable: false
++              resizable: false
++            - component: HomePageToolkit
++              column: 0
++              row: 2
++              width: 6
++              height: 6
++              deletable: false
++              movable: false
++              resizable: false
++            - component: HomePageStarredEntities
++              column: 6
++              row: 2
++              width: 6
++              height: 4
++              deletable: false
++              movable: false
++              resizable: false
++            - component: HomePageRecentlyVisited
++              column: 6
++              row: 6
++              width: 6
++              height: 4
++              deletable: false
++              movable: false
++              resizable: false
++            - component: HomePageMostVisited
++              column: 0
++              row: 8
++              width: 6
++              height: 4
++              deletable: false
++              movable: false
++              resizable: false
++    # Visit tracking feeds the "Recently visited" and "Most visited" widgets; it is off in the
++    # plugin until switched on here, and it stores visits in the browser.
++    - api:home/visits: true
++    - app-root-element:home/visit-listener: true
++    # A joke widget and world clocks. Off. The page is not a rearrangeable dashboard.
++    - home-page-widget:home/random-joke: false
++    - home-page-widget:home/world-clock: false
++    # The toolkit is the same ten doors as the menu, in the same order
++    # (packages/app/src/modules/nav/EstateNav.tsx); a test holds the two lists equal.
++    - home-page-widget:home/toolkit:
++        config:
++          tools:
++            - { url: /, label: Today, icon: dashboard }
++            - { url: '/catalog?filters%5Bkind%5D=Component', label: Kubernetes, icon: 'kind:resource' }
++            - { url: /catalog, label: What we run, icon: catalog }
++            - { url: /create, label: Create, icon: scaffolder }
++            - { url: /catalog-graph, label: Map, icon: 'kind:system' }
++            - { url: /tools, label: Tools, icon: 'kind:component' }
++            - { url: /ops, label: Ops, icon: warning }
++            - { url: /search, label: Find, icon: search }
++            - { url: /docs, label: How-to, icon: docs }
++            - { url: /settings, label: You, icon: user }
+ 
+     # crew#612 CP5: no empty tab on an entity page. The TechDocs content ships with no filter,
+     # so every one of the 338 entities grew a "TechDocs" tab and 334 of them opened on an
+diff --git a/backstage/founder/catalog-info.yaml b/backstage/founder/catalog-info.yaml
+index 8d14037d5..4de4eba2f 100644
+--- a/backstage/founder/catalog-info.yaml
++++ b/backstage/founder/catalog-info.yaml
+@@ -48,6 +48,9 @@ metadata:
+     - title: "Open (GitHub, docs/FOUNDER.md)"
+       url: "https://github.com/chidionyema/idp/blob/main/docs/FOUNDER.md"
+       icon: dashboard
++    - title: "Open (the one-page estate view, parked off the menu)"
++      url: "https://catalogue.${ESTATE_ZONE}/estate"
++      icon: dashboard
+     - title: "Planned, blocking, when (NEXT.md)"
+       url: "https://github.com/chidionyema/idp/blob/main/docs/NEXT.md"
+       icon: dashboard
+@@ -453,7 +456,7 @@ apiVersion: backstage.io/v1alpha1
+ kind: Component
+ metadata:
+   name: founder-store
+-  title: "The store (mumchimp)"
++  title: "The store, live (mumchimp)"
+   description: "The one place a customer pays this estate: the storefront and the Medusa API behind it. Revenue is read by the crew science outcomes script. No API health link here: the api hostname answers 404 on every path, so the Medusa API is not published there; the link returns when mumchimp-medusa publishes one."
+   annotations:
+     estate/group: "Companies"
+@@ -491,7 +494,7 @@ kind: Component
+ metadata:
+   name: founder-otto
+   title: "Otto (the Architect agent)"
+-  description: "The one agent that acts for you from anywhere: message @Ottototbot on Telegram (see the founder-telegram surface) in, a pull request or a run URL out. Runs in-cluster with a single Telegram poller (two pollers on one token block each other) and executes its shell tools on your Mac through a wrapper that reaches your machine over its own Tailscale sidecar, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). No ssh key is ever held by this pod; the tailnet does the authenticating."
++  description: "The one agent that acts for you from anywhere: message @Ottototbot on Telegram (see the founder-telegram surface) in, a pull request or a run URL out. Runs in-cluster with a single Telegram poller (two pollers on one token block each other) and executes its shell tools on your Mac through a wrapper that reaches your machine over its own Tailscale sidecar, so it always has your machine's tools and files. Model calls route through the estate's one router (see founder-model-router); traces land in Langfuse (see founder-traces). WORK dispatch can run Cursor (see founder-cursor); Architect stays on the router. No ssh key is ever held by this pod; the tailnet does the authenticating."
+   annotations:
+     estate/group: "Run"
+     backstage.io/kubernetes-id: hermes-agent-gateway
+@@ -520,6 +523,46 @@ spec:
+   lifecycle: production
+   owner: group:default/platform
+   system: system:default/estate
++  dependsOn:
++    - resource:default/vendor-cursor
++---
++# crew#751: Cursor is the Hermes WORK harness. It is not a LiteLLM lane and it is
++# not a second login. The Resource vendor-cursor is generated from the vendor
++# registry; this card is the door a person opens. Mint the key once at Console;
++# oke-check apply (already on founder-drills) seeds the vault. Never paste the
++# value into chat.
++apiVersion: backstage.io/v1alpha1
++kind: Component
++metadata:
++  name: founder-cursor
++  title: "Cursor (Hermes worker)"
++  description: "The agent harness Hermes WORK dispatch runs. Architect stays on the model router; this is the worker, not a second Telegram brain. The catalogue Resource vendor-cursor is generated from the vendor registry. Mint the key once at the console; the cluster check apply seeds the vault. The value never crosses chat or a terminal."
++  annotations:
++    estate/group: "Run"
++    github.com/project-slug: "chidionyema/idp"
++    backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/vendors/"
++    idp/updated-by: "bin/catalog-gen from platform/vendors/consoles.yaml; Flux from platform/hermes-agent"
++  tags: [founder]
++  links:
++    - title: "Open (catalogue Resource)"
++      url: "https://catalogue.${ESTATE_ZONE}/catalog/default/resource/vendor-cursor"
++      icon: dashboard
++    - title: "Console (mint the key once)"
++      url: "https://cursor.com/dashboard/integrations"
++      icon: dashboard
++    - title: "Vendor registry (source)"
++      url: "https://github.com/chidionyema/idp/blob/main/platform/vendors/consoles.yaml"
++      icon: docs
++    - title: "Where this is tracked"
++      url: "https://github.com/chidionyema/crew/issues/751"
++      icon: dashboard
++spec:
++  type: founder-surface
++  lifecycle: production
++  owner: group:default/platform
++  system: system:default/estate
++  dependsOn:
++    - resource:default/vendor-cursor
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
+@@ -612,8 +655,8 @@ apiVersion: backstage.io/v1alpha1
+ kind: Component
+ metadata:
+   name: company-mumchimp
+-  title: "Mumchimp: the store"
+-  description: "Everything that takes a customer's money: the storefront, its API, the cluster it runs on and the jobs that keep it up. Open it to see every product and asset the store owns, and what is red."
++  title: "Mumchimp — our company: the store, and Prospector, its idea engine"
++  description: "One company. The storefront, its API and everything that takes a customer's money — and Prospector, the business-idea and prospect engine it grew from. The two read as one company; the catalogue's deeper split merges on the founder's word."
+   annotations:
+     estate/group: "Companies"
+     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+@@ -632,12 +675,12 @@ apiVersion: backstage.io/v1alpha1
+ kind: Component
+ metadata:
+   name: company-prospector
+-  title: "Prospector: finds and qualifies prospects"
++  title: "Prospector: finds and qualifies prospects (part of mumchimp)"
+   description: "The product you sell, whatever the platform under it does. Open it to see its repositories, its jobs and its data, and what is red."
+   annotations:
+-    estate/group: "Companies"
++    estate/group: "Products"
+     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+-  tags: [founder, company]
++  tags: [founder, product]
+   links:
+     - title: "Open (everything this company owns)"
+       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector"
+@@ -652,12 +695,12 @@ apiVersion: backstage.io/v1alpha1
+ kind: Component
+ metadata:
+   name: company-hermes
+-  title: "Hermes: acts for you from anywhere"
+-  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red."
++  title: "Hermes: our product that acts for you from anywhere"
++  description: "Telegram in, a pull request or a run out. Open it to see the gateway, its schedules and its receipts, and what is red. A product, not a company."
+   annotations:
+-    estate/group: "Companies"
++    estate/group: "Products"
+     idp/updated-by: "bin/catalog-gen builds the company tree under this card from the inventory, four times a day"
+-  tags: [founder, company]
++  tags: [founder, product]
+   links:
+     - title: "Open (everything this company owns)"
+       url: "https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2"
+diff --git a/backstage/packages/app/package.json b/backstage/packages/app/package.json
+index 42cbee2fd..284cb4181 100644
+--- a/backstage/packages/app/package.json
++++ b/backstage/packages/app/package.json
+@@ -46,6 +46,7 @@
+     "@backstage/ui": "^0.17.1",
+     "@material-ui/core": "^4.12.2",
+     "@material-ui/icons": "^4.9.1",
++    "@remixicon/react": "4.8.0",
+     "@roadiehq/backstage-plugin-prometheus": "3.3.1",
+     "react": "^18.0.2",
+     "react-dom": "^18.0.2",
+diff --git a/backstage/packages/app/src/App.tsx b/backstage/packages/app/src/App.tsx
+index 93ecd436a..85ead3333 100644
+--- a/backstage/packages/app/src/App.tsx
++++ b/backstage/packages/app/src/App.tsx
+@@ -13,6 +13,10 @@ import techdocsPlugin from '@backstage/plugin-techdocs/alpha';
+ import scaffolderPlugin from '@backstage/plugin-scaffolder/alpha';
+ import userSettingsPlugin from '@backstage/plugin-user-settings/alpha';
+ import apiDocsPlugin from '@backstage/plugin-api-docs/alpha';
++// The front page is Backstage's own home page (founder, 2026-09-01: "use Backstage templates").
++// The widgets still come from that plugin. The drag-and-resize board does not
++// (founder 2026-09-03). Layout lives in modules/home/homeLayout.tsx.
++import homePlugin from '@backstage/plugin-home/alpha';
+ import { navModule } from './modules/nav';
+ import { homeModule } from './modules/home';
+ import { signInModule } from './modules/signin';
+@@ -29,6 +33,7 @@ export default createApp({
+     techdocsPlugin,
+     scaffolderPlugin,
+     apiDocsPlugin,
++    homePlugin,
+     userSettingsPlugin,
+     navModule,
+     homeModule,
+diff --git a/backstage/packages/app/src/index.tsx b/backstage/packages/app/src/index.tsx
+index ac9e52bdc..0faf31211 100644
+--- a/backstage/packages/app/src/index.tsx
++++ b/backstage/packages/app/src/index.tsx
+@@ -2,5 +2,6 @@ import '@backstage/cli/asset-types';
+ import ReactDOM from 'react-dom/client';
+ import App from './App';
+ import '@backstage/ui/css/styles.css';
++import './styles.css';
+ 
+ ReactDOM.createRoot(document.getElementById('root')!).render(App.createRoot());
+diff --git a/backstage/packages/app/src/modules/home/EstateHome.test.tsx b/backstage/packages/app/src/modules/home/EstateHome.test.tsx
+index e2982c5ed..116f7a5e7 100644
+--- a/backstage/packages/app/src/modules/home/EstateHome.test.tsx
++++ b/backstage/packages/app/src/modules/home/EstateHome.test.tsx
+@@ -365,7 +365,7 @@ describe('EstateHome', () => {
+     ).toHaveTextContent('6');
+     expect(
+       screen.getByTestId('held-component-founder-surface'),
+-    ).toHaveTextContent('doors');
++    ).toHaveTextContent('sign-in pages');
+     expect(screen.getByTestId('held-component-platform-layer')).toHaveAttribute(
+       'href',
+       '/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=platform-layer&filters%5Buser%5D=all',
+diff --git a/backstage/packages/app/src/modules/home/EstateHome.tsx b/backstage/packages/app/src/modules/home/EstateHome.tsx
+index aa1f36c1f..8690a9b37 100644
+--- a/backstage/packages/app/src/modules/home/EstateHome.tsx
++++ b/backstage/packages/app/src/modules/home/EstateHome.tsx
+@@ -1129,7 +1129,7 @@ const Ready = ({ estate, brand }: { estate: Estate; brand: string }) => {
+         <p className={classes.hDesc}>{SECTIONS.doors.blurb}</p>
+         {estate.doors.length === 0 ? (
+           <p className={classes.note} data-testid="no-surfaces">
+-            No doors yet. Doors appear here on their own once they are
++            No sign-in pages yet. They appear here on their own once they are
+             registered.
+           </p>
+         ) : (
+diff --git a/backstage/packages/app/src/modules/home/Ops.tsx b/backstage/packages/app/src/modules/home/Ops.tsx
+index 57066b58d..d9a0e2c0f 100644
+--- a/backstage/packages/app/src/modules/home/Ops.tsx
++++ b/backstage/packages/app/src/modules/home/Ops.tsx
+@@ -3,7 +3,8 @@
+ // plugin. CP2 adds the open-reds table: every firing alert, red drill and door down, with its
+ // owner, since when, the next action and the board link; a red with no owner is itself a red.
+ import { Content, Link, Page } from '@backstage/core-components';
+-import { Typography, makeStyles } from '@material-ui/core';
++import { Header, Text } from '@backstage/ui';
++import { makeStyles } from '@material-ui/core';
+ import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
+ import { Pill } from './EstateHome';
+ import { ClusterHealth, healthSentence } from './clusterHealth';
+@@ -27,7 +28,6 @@ import { ago } from './estate';
+ import { monoFamily } from '../theme/tokens';
+ 
+ const useStyles = makeStyles(theme => ({
+-  header: { marginBottom: theme.spacing(3) },
+   lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
+   grid: {
+     display: 'grid',
+@@ -38,11 +38,12 @@ const useStyles = makeStyles(theme => ({
+     display: 'flex',
+     flexDirection: 'column',
+     gap: theme.spacing(1),
+-    padding: theme.spacing(2),
+-    borderRadius: 12,
+-    border: `1px solid ${theme.palette.divider}`,
+-    background: theme.palette.background.paper,
++    padding: theme.spacing(2.5),
++    borderRadius: 'var(--bui-radius-4, 1rem)',
++    border: '1px solid var(--bui-border-2)',
++    background: 'var(--bui-bg-neutral-1)',
+     minWidth: 0,
++    minHeight: 8.5 * 16,
+   },
+   tileTop: {
+     display: 'flex',
+@@ -342,31 +343,31 @@ export const Ops = () => {
+   const now = Date.now();
+   return (
+     <Page themeId="home">
++      <Header title={TITLE} description={LEAD} />
+       <Content>
+-        <header className={classes.header}>
+-          <Typography variant="h1" component="h1">
+-            {TITLE}
+-          </Typography>
+-          <p className={classes.lead} data-testid="ops-lead">
+-            {LEAD}
++        <Text
++          variant="body-large"
++          color="secondary"
++          data-testid="ops-lead"
++        >
++          {LEAD}
++        </Text>
++        {loaded.state === 'loading' && (
++          <p className={classes.lead} data-testid="ops-loading">
++            Reading the cluster.
+           </p>
+-          {loaded.state === 'loading' && (
+-            <p className={classes.lead} data-testid="ops-loading">
+-              Reading the cluster.
+-            </p>
+-          )}
+-          {loaded.state === 'error' && (
+-            <p className={classes.lead} data-testid="ops-error">
+-              The cluster could not be read, so nothing below is known.{' '}
+-              <span className={classes.mono}>{loaded.error}</span>
+-            </p>
+-          )}
+-          {loaded.state === 'ready' && (
+-            <p className={classes.lead} data-testid="ops-sentence">
+-              {healthSentence(loaded.health)}
+-            </p>
+-          )}
+-        </header>
++        )}
++        {loaded.state === 'error' && (
++          <p className={classes.lead} data-testid="ops-error">
++            The cluster could not be read, so nothing below is known.{' '}
++            <span className={classes.mono}>{loaded.error}</span>
++          </p>
++        )}
++        {loaded.state === 'ready' && (
++          <p className={classes.lead} data-testid="ops-sentence">
++            {healthSentence(loaded.health)}
++          </p>
++        )}
+         <div className={classes.grid}>
+           {loaded.state === 'ready' && <ClusterTile health={loaded.health} />}
+           {founder.state === 'ready' && (
+diff --git a/backstage/packages/app/src/modules/home/Tools.test.tsx b/backstage/packages/app/src/modules/home/Tools.test.tsx
+index 3d6f9d69f..3583f0691 100644
+--- a/backstage/packages/app/src/modules/home/Tools.test.tsx
++++ b/backstage/packages/app/src/modules/home/Tools.test.tsx
+@@ -37,7 +37,7 @@ const render = (entities: Entity[]) =>
+ describe('Tools', () => {
+   it('draws one tile per door, in its group, with every link the door publishes', async () => {
+     await render([door('signal', 'Watch', 'Signal'), door('runner', 'Run', 'Runner')]);
+-    expect(await screen.findByTestId('tools-sentence')).toHaveTextContent('2 doors in 2 groups');
++    expect(await screen.findByTestId('tools-sentence')).toHaveTextContent('2 sign-in pages in 2 groups');
+     const watch = await screen.findByTestId('tools-group-Watch');
+     expect(watch).toHaveTextContent('Signal');
+     expect(screen.getByTestId('tools-group-Run')).toHaveTextContent('Runner');
+diff --git a/backstage/packages/app/src/modules/home/Tools.tsx b/backstage/packages/app/src/modules/home/Tools.tsx
+index 86929c38a..282100bc0 100644
+--- a/backstage/packages/app/src/modules/home/Tools.tsx
++++ b/backstage/packages/app/src/modules/home/Tools.tsx
+@@ -4,145 +4,136 @@
+ // founder-surface entity, its `links:` as buttons, its probe state as the pill the front page
+ // uses. Nothing here names a tool; the catalogue is the list (LAW 46).
+ import { Entity } from '@backstage/catalog-model';
+-import { Content, Link, LinkButton, Page } from '@backstage/core-components';
+-import { Typography, makeStyles } from '@material-ui/core';
++import { Content, Link, Page } from '@backstage/core-components';
++import {
++  ButtonLink,
++  Card,
++  CardBody,
++  CardFooter,
++  CardHeader,
++  Flex,
++  Grid,
++  Header,
++  Text,
++} from '@backstage/ui';
+ import { doorState, entityPath } from './estate';
+ import { useDoors } from './useDoors';
+ import { ToolGroup, groupTools, toolsSentence } from './toolGroups';
+ import { Pill } from './EstateHome';
+-import { monoFamily } from '../theme/tokens';
+-
+-const useStyles = makeStyles(theme => ({
+-  header: { marginBottom: theme.spacing(3) },
+-  lead: { fontSize: 17, margin: theme.spacing(1, 0, 0) },
+-  group: { marginBottom: theme.spacing(4) },
+-  groupTitle: { fontSize: 20, fontWeight: 600, margin: theme.spacing(0, 0, 1.5) },
+-  grid: {
+-    display: 'grid',
+-    gap: theme.spacing(1.5),
+-    gridTemplateColumns: 'repeat(auto-fill, minmax(18em, 1fr))',
+-  },
+-  tile: {
+-    display: 'flex',
+-    flexDirection: 'column',
+-    gap: theme.spacing(1),
+-    padding: theme.spacing(2),
+-    borderRadius: 12,
+-    border: `1px solid ${theme.palette.divider}`,
+-    background: theme.palette.background.paper,
+-    minWidth: 0,
+-  },
+-  tileTop: { display: 'flex', alignItems: 'center', gap: theme.spacing(1), flexWrap: 'wrap' },
+-  tileTitle: { fontWeight: 500, flex: '1 1 10em', minWidth: 0, overflowWrap: 'anywhere' },
+-  tileDesc: {
+-    fontSize: 13,
+-    color: theme.palette.text.secondary,
+-    margin: 0,
+-    display: '-webkit-box',
+-    WebkitLineClamp: 3,
+-    WebkitBoxOrient: 'vertical',
+-    overflow: 'hidden',
+-  },
+-  links: { display: 'flex', gap: theme.spacing(0.5), flexWrap: 'wrap' },
+-  door: {
+-    maxWidth: '100%',
+-    '& .MuiButton-label': { whiteSpace: 'normal', overflowWrap: 'anywhere' },
+-  },
+-  mono: { fontFamily: monoFamily, fontSize: 12, overflowWrap: 'anywhere' },
+-}));
+ 
+ export const TITLE = 'Tools';
+ 
+ /** One tile per door: state, name, what it is for, and every link it publishes. */
+ const Tile = ({ entity }: { entity: Entity }) => {
+-  const classes = useStyles();
+   const s = doorState(entity);
+   const links = entity.metadata.links ?? [];
++  const title = entity.metadata.title ?? entity.metadata.name;
+   return (
+-    <div
+-      className={classes.tile}
++    <Card
+       data-testid={`tool-${entity.metadata.name}`}
+       data-state={s.state}
+     >
+-      <div className={classes.tileTop}>
+-        <Pill state={s.state} why={s.why} testId={`tool-health-${entity.metadata.name}`} />
+-        <Link to={entityPath(entity)} className={classes.tileTitle}>
+-          {entity.metadata.title ?? entity.metadata.name}
+-        </Link>
+-      </div>
++      <CardHeader>
++        <Flex align="center" gap="2">
++          <Pill
++            state={s.state}
++            why={s.why}
++            testId={`tool-health-${entity.metadata.name}`}
++          />
++          <Link to={entityPath(entity)}>{title}</Link>
++        </Flex>
++      </CardHeader>
+       {entity.metadata.description && (
+-        <p className={classes.tileDesc} title={entity.metadata.description}>
+-          {entity.metadata.description}
+-        </p>
++        <CardBody>
++          <Text variant="body-small" color="secondary">
++            {entity.metadata.description}
++          </Text>
++        </CardBody>
+       )}
+-      <div className={classes.links}>
+-        {links.map((link, i) => (
+-          <LinkButton
+-            key={link.url}
+-            to={link.url}
+-            color="primary"
+-            variant={i === 0 ? 'contained' : 'outlined'}
+-            size="small"
+-            className={classes.door}
+-          >
+-            {link.title ?? link.url}
+-          </LinkButton>
+-        ))}
+-      </div>
+-    </div>
++      {links.length > 0 && (
++        <CardFooter>
++          <Flex gap="2">
++            {links.map((link, i) => (
++              <ButtonLink
++                key={link.url}
++                href={link.url}
++                variant={i === 0 ? 'primary' : 'secondary'}
++                size="small"
++              >
++                {link.title ?? link.url}
++              </ButtonLink>
++            ))}
++          </Flex>
++        </CardFooter>
++      )}
++    </Card>
+   );
+ };
+ 
+-const Group = ({ group }: { group: ToolGroup }) => {
+-  const classes = useStyles();
+-  return (
+-    <section className={classes.group} data-testid={`tools-group-${group.name}`}>
+-      <h2 className={classes.groupTitle}>
++const Group = ({ group }: { group: ToolGroup }) => (
++  <section data-testid={`tools-group-${group.name}`}>
++    <Flex direction="column" gap="3">
++      <Text as="h2" variant="title-small" weight="bold">
+         {group.name}{' '}
+-        <Typography component="span" color="textSecondary">
++        <Text as="span" variant="body-small" color="secondary">
+           {group.tools.length}
+-        </Typography>
+-      </h2>
+-      <div className={classes.grid}>
++        </Text>
++      </Text>
++      <Grid.Root columns={{ initial: '1', md: '2', lg: '3' }} gap="3">
+         {group.tools.map(e => (
+           <Tile key={e.metadata.name} entity={e} />
+         ))}
+-      </div>
+-    </section>
+-  );
+-};
++      </Grid.Root>
++    </Flex>
++  </section>
++);
+ 
+ export const Tools = () => {
+-  const classes = useStyles();
+   const doors = useDoors();
+   const groups = doors.state === 'ready' ? groupTools(doors.doors) : [];
++  const sentence =
++    doors.state === 'loading'
++      ? 'Reading the catalogue.'
++      : doors.state === 'error'
++        ? `The catalogue did not answer, so nothing can be listed. ${doors.error.message}`
++        : toolsSentence(groups);
++
+   return (
+     <Page themeId="home">
++      <Header title={TITLE} description={sentence} />
+       <Content>
+-        <header className={classes.header}>
+-          <Typography variant="h1" component="h1">
+-            {TITLE}
+-          </Typography>
+-          {doors.state === 'loading' && (
+-            <p className={classes.lead} data-testid="tools-loading">
+-              Reading the catalogue.
+-            </p>
+-          )}
+-          {doors.state === 'error' && (
+-            <p className={classes.lead} data-testid="tools-error">
+-              The catalogue did not answer, so nothing can be listed.{' '}
+-              <span className={classes.mono}>{doors.error.message}</span>
+-            </p>
+-          )}
+-          {doors.state === 'ready' && (
+-            <p className={classes.lead} data-testid="tools-sentence">
+-              {toolsSentence(groups)}
+-            </p>
+-          )}
+-        </header>
+-        {groups.map(g => (
+-          <Group key={g.name} group={g} />
+-        ))}
++        {doors.state === 'loading' && (
++          <Text
++            variant="body-large"
++            color="secondary"
++            data-testid="tools-loading"
++          >
++            {sentence}
++          </Text>
++        )}
++        {doors.state === 'error' && (
++          <Text
++            variant="body-large"
++            color="secondary"
++            data-testid="tools-error"
++          >
++            {sentence}
++          </Text>
++        )}
++        {doors.state === 'ready' && (
++          <Flex direction="column" gap="6">
++            <Text
++              variant="body-large"
++              color="secondary"
++              data-testid="tools-sentence"
++            >
++              {sentence}
++            </Text>
++            {groups.map(g => (
++              <Group key={g.name} group={g} />
++            ))}
++          </Flex>
++        )}
+       </Content>
+     </Page>
+   );
+diff --git a/backstage/packages/app/src/modules/home/homeModule.tsx b/backstage/packages/app/src/modules/home/homeModule.tsx
+index 95b51443c..5b15689ee 100644
+--- a/backstage/packages/app/src/modules/home/homeModule.tsx
++++ b/backstage/packages/app/src/modules/home/homeModule.tsx
+@@ -1,15 +1,23 @@
+-// The home plugin's own page is replaced: a module for `home` that makes a page
+-// extension with the default name yields the id `page:home`, which overrides the
+-// plugin's page at "/". The widget grid (and the toolkit whose links pointed at
+-// 127.0.0.1) goes with it; the front page is the founder god view (crew#459).
+-import {
+-  createFrontendModule,
+-  PageBlueprint,
+-} from '@backstage/frontend-plugin-api';
++// The front page at "/" is still Backstage's home plugin (page:home, widgets from
++// app-config.yaml). The drag-and-resize board is gone: HomePageLayoutBlueprint lets
++// us arrange those same widgets in a fixed layout (founder 2026-09-03: outdated look
++// and outdated interactions). The god view from crew#459 stays at /estate.
++import { createFrontendModule, PageBlueprint } from '@backstage/frontend-plugin-api';
++import { HomePageLayoutBlueprint } from '@backstage/plugin-home-react/alpha';
++import { EstateHomeLayout } from './homeLayout';
+ 
+-const estateHomePage = PageBlueprint.make({
++const homeLayout = HomePageLayoutBlueprint.make({
+   params: {
+-    path: '/',
++    loader: async () => EstateHomeLayout,
++  },
++});
++
++// /estate: the crew#459 god view, one card per founder-surface entity, kept off the front
++// page and off the menu. Graded by bin/idp-login-drill like every other published path.
++const estatePage = PageBlueprint.make({
++  name: 'estate',
++  params: {
++    path: '/estate',
+     loader: () => import('./EstateHome').then(m => <m.EstateHome />),
+   },
+ });
+@@ -48,5 +56,5 @@ const opsPage = PageBlueprint.make({
+ 
+ export const homeModule = createFrontendModule({
+   pluginId: 'home',
+-  extensions: [estateHomePage, pairPhonePage, toolsPage, opsPage],
++  extensions: [homeLayout, estatePage, pairPhonePage, toolsPage, opsPage],
+ });
+diff --git a/backstage/packages/app/src/modules/home/openReds.ts b/backstage/packages/app/src/modules/home/openReds.ts
+index 2c28ef426..b3770c0ed 100644
+--- a/backstage/packages/app/src/modules/home/openReds.ts
++++ b/backstage/packages/app/src/modules/home/openReds.ts
+@@ -144,7 +144,7 @@ export const redsFromEntities = (
+           h === 'down' ? ann['estate/health'] ?? 'Down' : 'Not checked lately',
+         owner,
+         since: ann['estate/health-checked-at'],
+-        nextAction: 'Open the door and read the probe',
++        nextAction: 'Open the sign-in page and read the probe',
+         boardUrl: boardOf(e),
+         link: screenUrl(e),
+       });
+diff --git a/backstage/packages/app/src/modules/home/toolGroups.test.ts b/backstage/packages/app/src/modules/home/toolGroups.test.ts
+index 7365bec01..f608055a4 100644
+--- a/backstage/packages/app/src/modules/home/toolGroups.test.ts
++++ b/backstage/packages/app/src/modules/home/toolGroups.test.ts
+@@ -37,9 +37,9 @@ describe('the Tools page groups every door from the catalogue', () => {
+ 
+   it('says the count inside a sentence, never a bare number', () => {
+     expect(toolsSentence([])).toMatch(/No tools are registered yet/);
+-    expect(toolsSentence(groupTools([door('w', 'Watch')]))).toMatch(/1 door in 1 group/);
++    expect(toolsSentence(groupTools([door('w', 'Watch')]))).toMatch(/1 sign-in page in 1 group/);
+     expect(toolsSentence(groupTools([door('w', 'Watch'), door('r', 'Run')]))).toMatch(
+-      /2 doors in 2 groups/,
++      /2 sign-in pages in 2 groups/,
+     );
+   });
+ 
+diff --git a/backstage/packages/app/src/modules/home/toolGroups.ts b/backstage/packages/app/src/modules/home/toolGroups.ts
+index 29b337cb0..f2f6dd633 100644
+--- a/backstage/packages/app/src/modules/home/toolGroups.ts
++++ b/backstage/packages/app/src/modules/home/toolGroups.ts
+@@ -40,11 +40,10 @@ export const groupTools = (doors: Entity[]): ToolGroup[] => {
+     );
+ };
+ 
+-/** The first sentence on the page: how many doors, in how many groups, never a bare number. */
++/** The first sentence on the page: how many sign-in pages, in how many groups, never a bare number. */
+ export const toolsSentence = (groups: ToolGroup[]): string => {
+   const n = groups.reduce((s, g) => s + g.tools.length, 0);
+-  if (n === 0) return 'No tools are registered yet; they appear here on their own once a door is listed.';
+-  const doors = n === 1 ? 'door' : 'doors';
++  if (n === 0) return 'No tools are registered yet; they appear here on their own once a sign-in page is listed.';
+   const gs = groups.length === 1 ? 'group' : 'groups';
+-  return `Every tool we use, ${n} ${doors} in ${groups.length} ${gs}; choose one and it opens on your estate login, unless its tile says it asks for a second credential.`;
++  return `Every tool we use, ${n} sign-in ${n===1?'page':'pages'} in ${groups.length} ${gs}; choose one and it opens on your estate login, unless its tile says it asks for a second credential.`;
+ };
+diff --git a/backstage/packages/app/src/modules/home/words.test.ts b/backstage/packages/app/src/modules/home/words.test.ts
+index 1ce8678c1..90ba4545d 100644
+--- a/backstage/packages/app/src/modules/home/words.test.ts
++++ b/backstage/packages/app/src/modules/home/words.test.ts
+@@ -127,7 +127,7 @@ describe('STATE_MEANING', () => {
+ describe('SECTIONS', () => {
+   it('gives every section a plain title and a one-sentence blurb', () => {
+     expect(SECTIONS.layers.title).toBe('What we run');
+-    expect(SECTIONS.doors.title).toBe('Doors');
++    expect(SECTIONS.doors.title).toBe('Sign-in pages');
+     expect(SECTIONS.actions.title).toBe('Do');
+     [SECTIONS.layers, SECTIONS.doors, SECTIONS.actions].forEach(s => {
+       expect(s.blurb.endsWith('.')).toBe(true);
+@@ -138,7 +138,7 @@ describe('SECTIONS', () => {
+ 
+ describe('GLOSSARY', () => {
+   it('defines each word without using the word to define itself alone', () => {
+-    (['service', 'door', 'system', 'cluster'] as const).forEach(term => {
++    (['service', 'sign-in page', 'system', 'cluster'] as const).forEach(term => {
+       expect(GLOSSARY[term].toLowerCase()).toContain(term);
+       expect(GLOSSARY[term].endsWith('.')).toBe(true);
+     });
+@@ -190,7 +190,7 @@ describe('no insider words anywhere on the page', () => {
+ describe('inventory words', () => {
+   it('names each kind of thing in plain words, one or many', () => {
+     expect(inventoryWord('Component', 'platform-layer', 1)).toBe('service');
+-    expect(inventoryWord('Component', 'founder-surface', 29)).toBe('doors');
++    expect(inventoryWord('Component', 'founder-surface', 29)).toBe('sign-in pages');
+     expect(inventoryWord('Resource', 'ledger', 187)).toBe('ledgers');
+     expect(inventoryWord('Domain', undefined, 4)).toBe('companies');
+     expect(inventoryWord('Resource', 'odd-thing', 2)).toBe('odd things');
+diff --git a/backstage/packages/app/src/modules/home/words.ts b/backstage/packages/app/src/modules/home/words.ts
+index b1d18ce34..2e193385f 100644
+--- a/backstage/packages/app/src/modules/home/words.ts
++++ b/backstage/packages/app/src/modules/home/words.ts
+@@ -34,7 +34,7 @@ export type PageWords = {
+ export const PAGE: PageWords = {
+   title: 'The Bytesync estate',
+   tagline:
+-    'This is every service of software we run and every door we sign in through, read live from the machines that run them.',
++    'This is every service of software we run and every page we sign in through, read live from the machines that run them.',
+   liveLabel: (readAtClock: string) => `Live: read at ${readAtClock}`,
+   notLive: (why: string) => endStop(`Not live: ${why}`),
+   notLivePlain:
+@@ -181,7 +181,7 @@ export const SECTIONS: {
+       'Every service of software we run, grouped by the job it does; open a group to see each service and how it is doing.',
+   },
+   doors: {
+-    title: 'Doors',
++    title: 'Sign-in pages',
+     blurb:
+       'The places you sign in to; choose one and it opens in a new tab, already knowing who you are.',
+   },
+@@ -206,7 +206,7 @@ export const OPEN_WORD = 'Open';
+  */
+ export const INVENTORY_WORDS: Record<string, { one: string; many: string }> = {
+   'Component/platform-layer': { one: 'service', many: 'services' },
+-  'Component/founder-surface': { one: 'door', many: 'doors' },
++  'Component/founder-surface': { one: 'sign-in page', many: 'sign-in pages' },
+   'Component/flux-row': { one: 'deployment row', many: 'deployment rows' },
+   'Component/helm-chart': { one: 'chart', many: 'charts' },
+   'Component/service': { one: 'app', many: 'apps' },
+@@ -244,12 +244,13 @@ export function inventoryWord(
+ export const everythingSentence = (n: number) =>
+   n === 1 ? 'We hold 1 thing.' : `We hold ${n} things.`;
+ 
+-export type GlossaryTerm = 'service' | 'door' | 'system' | 'cluster';
++export type GlossaryTerm = 'service' | 'sign-in page' | 'system' | 'cluster';
+ 
+ export const GLOSSARY: Record<GlossaryTerm, string> = {
+   service:
+     'A service is one running service of our software. Some screens call it a layer; it means the same thing.',
+-  door: 'A door is somewhere you sign in, such as the place we keep code or the screen for a tool we pay for.',
++  'sign-in page':
++    'A sign-in page is somewhere you sign in, such as the place we keep code or the screen for a tool we pay for.',
+   system: 'A system is a group of services that work together to do one job.',
+   cluster:
+     'A cluster is the set of machines that runs our software and tells us whether each service is working.',
+diff --git a/backstage/packages/app/src/modules/nav/EstateNav.tsx b/backstage/packages/app/src/modules/nav/EstateNav.tsx
+index 416386198..f2b4710de 100644
+--- a/backstage/packages/app/src/modules/nav/EstateNav.tsx
++++ b/backstage/packages/app/src/modules/nav/EstateNav.tsx
+@@ -1,33 +1,77 @@
+-// Nine doors and nothing else (crew#459 redesign, 2026-08-29). The vendor sidebar carried a
++// Ten doors and nothing else (crew#459 redesign, 2026-08-29). The vendor sidebar carried a
+ // search modal, a notifications bell, a visualizer and every plugin's page; the founder
+-// reads it on a phone. Backstage's own Sidebar stays underneath: it already collapses to a
+-// bottom bar below 600px (one tab per SidebarGroup) and handles focus and keyboard, so this
+-// is a list, not a component (LAW 43). Every page it hides is still published at its path
+-// and still graded by bin/idp-login-drill.
++// reads it on a phone. On a desktop Backstage's own Sidebar stays underneath: it handles
++// focus, keyboard and the collapsed rail, so the desktop nav is a list, not a component
++// (LAW 43). Each door is a SidebarItem, not a SidebarGroup of one — a group made hover
++// expand into a second click (founder 2026-09-03). Find is Backstage's own search modal
++// (Cmd/Ctrl+K). Every page it hides is still published at its path and still graded by
++// bin/idp-login-drill.
++//
++// On a phone (founder, 2026-09-01: "I am the one using it and I don't like it") the menu
++// slides in from the left behind a menu button in the top-left corner. Backstage's Sidebar
++// folds itself into a bottom bar under 600px, ten tabs wide, and the founder read that as
++// "there is no menu". The phone menu is Material UI's own Drawer, temporary variant: it is
++// the component every phone menu on the web is built from, it closes on tap, on Escape and
++// on the backdrop, and it is the same ten doors in the same order.
+ //
+ // crew#612 item 3: /#screens and /#kubernetes were hash-jumps that looked like pages;
+ // removed. Screens section is visible on Today (/). Kubernetes is in the catalog.
+ // crew#612 item 1: /create added; scaffolderPlugin registered in App.tsx.
+ // crew#612 item 3: DnsIcon for Kubernetes so Ops keeps the single gear icon.
++import { useEffect, useState } from 'react';
+ import {
++  Link,
+   Sidebar,
+   SidebarDivider,
+-  SidebarGroup,
+   SidebarItem,
+   SidebarSpace,
+ } from '@backstage/core-components';
+ import { NavContentBlueprint } from '@backstage/plugin-app-react';
+-import TodayIcon from '@material-ui/icons/Today';
+-import LayersIcon from '@material-ui/icons/Layers';
+-import DnsIcon from '@material-ui/icons/Dns';
+-import AddCircleOutlineIcon from '@material-ui/icons/AddCircleOutline';
+-import AccountTreeIcon from '@material-ui/icons/AccountTree';
+-import TimelineIcon from '@material-ui/icons/Timeline';
+-import SearchIcon from '@material-ui/icons/Search';
+-import MenuBookIcon from '@material-ui/icons/MenuBook';
+-import AccountCircleIcon from '@material-ui/icons/AccountCircle';
+-import BuildIcon from '@material-ui/icons/Build';
++import {
++  SearchModalProvider,
++  SidebarSearchModal,
++  useSearchModal,
++} from '@backstage/plugin-search';
++import Drawer from '@material-ui/core/Drawer';
++import IconButton from '@material-ui/core/IconButton';
++import List from '@material-ui/core/List';
++import ListItem from '@material-ui/core/ListItem';
++import ListItemIcon from '@material-ui/core/ListItemIcon';
++import ListItemText from '@material-ui/core/ListItemText';
++import Typography from '@material-ui/core/Typography';
++import { makeStyles, useTheme } from '@material-ui/core/styles';
++import useMediaQuery from '@material-ui/core/useMediaQuery';
++import {
++  RiAddCircleLine,
++  RiBookOpenLine,
++  RiCalendarLine,
++  RiCloseLine,
++  RiMenuLine,
++  RiNodeTree,
++  RiPulseLine,
++  RiSearchLine,
++  RiServerLine,
++  RiStackLine,
++  RiToolsLine,
++  RiUserLine,
++} from '@remixicon/react';
++import { remix } from './remixIcon';
+ import { SidebarLogo } from './SidebarLogo';
++import { LogoIcon } from './LogoIcon';
++import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
++
++const MenuIcon = remix(RiMenuLine);
++const CloseIcon = remix(RiCloseLine);
++const TodayIcon = remix(RiCalendarLine);
++const DnsIcon = remix(RiServerLine);
++const LayersIcon = remix(RiStackLine);
++const AddCircleOutlineIcon = remix(RiAddCircleLine);
++const AccountTreeIcon = remix(RiNodeTree);
++const BuildIcon = remix(RiToolsLine);
++const TimelineIcon = remix(RiPulseLine);
++const SearchIcon = remix(RiSearchLine);
++const MenuBookIcon = remix(RiBookOpenLine);
++const AccountCircleIcon = remix(RiUserLine);
+ 
+ export const NAV = [
+   { title: 'Today', to: '/', icon: TodayIcon },
+@@ -45,24 +89,152 @@ export const NAV = [
+   { title: 'You', to: '/settings', icon: AccountCircleIcon },
+ ] as const;
+ 
++// The words a person reads on the phone menu. bin/idp-login-drill grades the phone view on
++// these words, never on a selector (R53).
++export const PHONE_MENU_LABEL = 'Menu';
++
++const usePhoneStyles = makeStyles(theme => ({
++  // A fixed strip at the top of every page: the menu button and the wordmark. 56px is
++  // Material's own phone toolbar height, so page content starts under it, not behind it.
++  bar: {
++    position: 'fixed',
++    top: 0,
++    left: 0,
++    right: 0,
++    height: 56,
++    zIndex: theme.zIndex.appBar,
++    display: 'flex',
++    alignItems: 'center',
++    gap: theme.spacing(1),
++    paddingLeft: theme.spacing(1),
++    paddingRight: theme.spacing(1),
++    background: theme.palette.background.paper,
++    borderBottom: `1px solid ${theme.palette.divider}`,
++  },
++  grow: { flex: 1, minWidth: 0 },
++  spacer: { height: 56 },
++  brand: { display: 'flex', alignItems: 'center', gap: theme.spacing(1) },
++  word: { fontWeight: 600, color: theme.palette.text.primary },
++  drawer: { width: 280, maxWidth: '85vw' },
++  head: {
++    display: 'flex',
++    alignItems: 'center',
++    justifyContent: 'space-between',
++    padding: theme.spacing(1, 1, 1, 2),
++    borderBottom: `1px solid ${theme.palette.divider}`,
++  },
++  item: { minHeight: 48 },
++}));
++
++// The phone nav: a menu button, and the ten doors in a drawer that slides in from the left.
++const FindShortcut = () => {
++  const { toggleModal } = useSearchModal();
++  useEffect(() => {
++    const onKey = (event: KeyboardEvent) => {
++      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== 'k') {
++        return;
++      }
++      event.preventDefault();
++      toggleModal();
++    };
++    window.addEventListener('keydown', onKey);
++    return () => window.removeEventListener('keydown', onKey);
++  }, [toggleModal]);
++  return null;
++};
++
++const PhoneNav = () => {
++  const classes = usePhoneStyles();
++  const [open, setOpen] = useState(false);
++  const { toggleModal } = useSearchModal();
++  // The wordmark in the bar is the estate's name from app.title (LAW 46), in the page's own
++  // ink: LogoFull is drawn for the navy sidebar and would vanish on the phone bar.
++  const title = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
++  return (
++    <div data-testid="estate-nav-phone">
++      <div className={classes.bar}>
++        <IconButton
++          aria-label={`Open ${PHONE_MENU_LABEL.toLowerCase()}`}
++          onClick={() => setOpen(true)}
++          edge="start"
++        >
++          <MenuIcon />
++        </IconButton>
++        <Link to="/" underline="none" aria-label="Home" className={classes.brand}>
++          <LogoIcon />
++          <Typography variant="subtitle1" className={classes.word}>
++            {title}
++          </Typography>
++        </Link>
++        <span className={classes.grow} />
++        <IconButton aria-label="Find" onClick={() => toggleModal()}>
++          <SearchIcon />
++        </IconButton>
++      </div>
++      <div className={classes.spacer} />
++      <Drawer
++        anchor="left"
++        open={open}
++        onClose={() => setOpen(false)}
++        classes={{ paper: classes.drawer }}
++      >
++        <div className={classes.head}>
++          <Typography variant="h6">{PHONE_MENU_LABEL}</Typography>
++          <IconButton aria-label="Close menu" onClick={() => setOpen(false)}>
++            <CloseIcon />
++          </IconButton>
++        </div>
++        <List component="nav" aria-label={PHONE_MENU_LABEL}>
++          {NAV.map(({ title, to, icon: Icon }) => (
++            <ListItem
++              key={to}
++              button
++              component={Link}
++              to={to}
++              className={classes.item}
++              onClick={() => setOpen(false)}
++            >
++              <ListItemIcon>
++                <Icon />
++              </ListItemIcon>
++              <ListItemText primary={title} />
++            </ListItem>
++          ))}
++        </List>
++      </Drawer>
++    </div>
++  );
++};
++
++// The desktop nav: Backstage's own Sidebar. One click per door.
++const DesktopNav = () => (
++  <div data-testid="estate-nav">
++    <Sidebar>
++      <SidebarLogo />
++      <SidebarSearchModal />
++      <SidebarDivider />
++      {NAV.map(({ title, to, icon: Icon }) => (
++        <SidebarItem key={to} icon={Icon} to={to} text={title} />
++      ))}
++      <SidebarSpace />
++    </Sidebar>
++  </div>
++);
++
+ export const EstateNav = NavContentBlueprint.make({
+   params: {
+     component: ({ navItems }) => {
+-      // Every plugin's nav item is taken so nothing renders twice; the nine above are the nav.
++      // Every plugin's nav item is taken so nothing renders twice; the ten above are the nav.
+       navItems.withComponent(() => null);
++      const theme = useTheme();
++      // Backstage's own breakpoint for its bottom bar is 'xs' (under 600px); the phone menu
++      // takes over at exactly the width the bottom bar would have appeared.
++      const phone = useMediaQuery(theme.breakpoints.down('xs'));
+       return (
+-        <div data-testid="estate-nav">
+-          <Sidebar>
+-            <SidebarLogo />
+-            <SidebarDivider />
+-            {NAV.map(({ title, to, icon: Icon }) => (
+-              <SidebarGroup key={to} label={title} icon={<Icon />} to={to}>
+-                <SidebarItem icon={Icon} to={to} text={title} />
+-              </SidebarGroup>
+-            ))}
+-            <SidebarSpace />
+-          </Sidebar>
+-        </div>
++        <SearchModalProvider>
++          <FindShortcut />
++          {phone ? <PhoneNav /> : <DesktopNav />}
++        </SearchModalProvider>
+       );
+     },
+   },
+diff --git a/backstage/packages/app/src/modules/signin/index.tsx b/backstage/packages/app/src/modules/signin/index.tsx
+index 4dd0bae63..daf60ed99 100644
+--- a/backstage/packages/app/src/modules/signin/index.tsx
++++ b/backstage/packages/app/src/modules/signin/index.tsx
+@@ -8,71 +8,38 @@ import { createFrontendModule } from '@backstage/frontend-plugin-api';
+ import { SignInPageBlueprint } from '@backstage/plugin-app-react';
+ import { ProxiedSignInPage } from '@backstage/core-components';
+ import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
+-import { Button, Typography, makeStyles } from '@material-ui/core';
+-import {
+-  accent,
+-  accentSoft,
+-  inkOnAccent,
+-  inkOnNavy,
+-  navy,
+-} from '../theme/tokens';
+-
+-const useStyles = makeStyles({
+-  page: {
+-    minHeight: '100vh',
+-    display: 'flex',
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-    background: navy,
+-    color: inkOnNavy,
+-    padding: 24,
+-  },
+-  card: { maxWidth: 420, textAlign: 'center' },
+-  mark: {
+-    width: 56,
+-    height: 56,
+-    borderRadius: 14,
+-    margin: '0 auto 20px',
+-    background: `linear-gradient(135deg, ${accentSoft} 0%, ${accent} 100%)`,
+-    color: inkOnAccent,
+-    display: 'flex',
+-    alignItems: 'center',
+-    justifyContent: 'center',
+-    fontSize: 28,
+-    fontWeight: 700,
+-  },
+-  body: { opacity: 0.85, margin: '12px 0 24px' },
+-  detail: { display: 'block', marginTop: 24, opacity: 0.6, fontSize: 12 },
+-});
++import { Box, Button, Flex, Text } from '@backstage/ui';
+ 
+ export const SignInUnavailable = ({ error }: { error?: Error }) => {
+-  const classes = useStyles();
+   const title = useApi(configApiRef).getOptionalString('app.title') ?? 'Estate';
+   return (
+-    <div className={classes.page} data-testid="signin-unavailable">
+-      <div className={classes.card}>
+-        <div className={classes.mark} aria-hidden="true">
+-          {title.trim().charAt(0).toUpperCase()}
+-        </div>
+-        <Typography variant="h4">{title}</Typography>
+-        <Typography variant="body1" className={classes.body}>
+-          Your sign-in did not reach the portal. Open the estate from its front
+-          door and it signs you in on the way through.
+-        </Typography>
+-        <Button
+-          variant="contained"
+-          style={{ background: accent, color: inkOnAccent }}
+-          onClick={() => window.location.reload()}
+-        >
+-          Try again
+-        </Button>
+-        {error && (
+-          <Typography component="span" className={classes.detail}>
+-            {error.message}
+-          </Typography>
+-        )}
+-      </div>
+-    </div>
++    <Flex
++      data-testid="signin-unavailable"
++      direction="column"
++      align="center"
++      justify="center"
++      style={{ minHeight: '100vh', padding: 24 }}
++    >
++      <Box style={{ maxWidth: 420, textAlign: 'center' }}>
++        <Flex direction="column" align="center" gap="4">
++          <Text as="h1" variant="title-large" weight="bold">
++            {title}
++          </Text>
++          <Text variant="body-large" color="secondary">
++            Your sign-in did not reach the portal. Open the estate from its
++            front door and it signs you in on the way through.
++          </Text>
++          <Button variant="primary" onPress={() => window.location.reload()}>
++            Try again
++          </Button>
++          {error && (
++            <Text variant="body-x-small" color="secondary">
++              {error.message}
++            </Text>
++          )}
++        </Flex>
++      </Box>
++    </Flex>
+   );
+ };
+ 
+diff --git a/backstage/packages/app/src/modules/theme/index.tsx b/backstage/packages/app/src/modules/theme/index.tsx
+index 360e51e83..b4f71b866 100644
+--- a/backstage/packages/app/src/modules/theme/index.tsx
++++ b/backstage/packages/app/src/modules/theme/index.tsx
+@@ -26,9 +26,12 @@ import {
+   light,
+   phone,
+   reducedMotion,
++  stateDark,
++  stateLight,
+   statusDark,
+   statusLight,
+ } from './tokens';
++import { buiVars } from './buiVars';
+ 
+ export * from './tokens';
+ 
+@@ -65,13 +68,16 @@ const pageThemesFor = (t: Tone) => {
+   };
+ };
+ 
+-const componentsFor = (t: Tone) => ({
++const componentsFor = (t: Tone, states: typeof stateDark) => ({
+   MuiCssBaseline: {
+     styleOverrides: {
+       html: {
+         WebkitFontSmoothing: 'antialiased',
+         MozOsxFontSmoothing: 'grayscale',
+       },
++      // BUI reads [data-theme-mode]. Override its defaults with the estate palette
++      // so Header, Card and Button speak the same colours as the rest of the portal.
++      '[data-theme-mode]': buiVars(t, states),
+       body: { overscrollBehaviorY: 'none', backgroundColor: t.canvas },
+       '*::-webkit-scrollbar': { width: 10, height: 10 },
+       '*::-webkit-scrollbar-thumb': {
+@@ -98,7 +104,7 @@ const componentsFor = (t: Tone) => ({
+         backgroundImage: 'none',
+         backgroundColor: t.canvas,
+         boxShadow: 'none',
+-        padding: '20px 24px 16px',
++        padding: '16px 24px 12px',
+         minHeight: 0,
+         borderBottom: `1px solid ${t.borderSubtle}`,
+         [phone]: { flexWrap: 'wrap', padding: '12px 16px', rowGap: 8 },
+@@ -134,7 +140,7 @@ const componentsFor = (t: Tone) => ({
+   BackstageContent: {
+     styleOverrides: {
+       root: {
+-        maxWidth: 1120,
++        maxWidth: 1280,
+         width: '100%',
+         marginLeft: 'auto',
+         marginRight: 'auto',
+@@ -148,8 +154,8 @@ const componentsFor = (t: Tone) => ({
+   },
+   BackstageInfoCard: {
+     styleOverrides: {
+-      header: { padding: '16px 20px 8px' },
+-      headerTitle: { fontSize: 16, fontWeight: 600 },
++      header: { padding: '20px 24px 12px' },
++      headerTitle: { fontSize: 17, fontWeight: 600, letterSpacing: '-0.01em' },
+       headerSubheader: { fontSize: 13, fontWeight: 400, color: t.textSecondary },
+     },
+   },
+@@ -181,10 +187,16 @@ const componentsFor = (t: Tone) => ({
+   MuiCard: {
+     styleOverrides: {
+       root: {
+-        borderRadius: 12,
++        borderRadius: 16,
+         boxShadow: 'none',
+         border: `1px solid ${t.border}`,
+         backgroundColor: t.surface1,
++        transition: `border-color 160ms ${ease}, transform 160ms ${ease}, box-shadow 160ms ${ease}`,
++        '&:hover': {
++          borderColor: t.borderStrong,
++          transform: 'translateY(-1px)',
++          boxShadow: `0 8px 24px ${t.canvas === '#ffffff' ? 'rgba(15,23,42,.06)' : 'rgba(0,0,0,.35)'}`,
++        },
+       },
+     },
+   },
+@@ -192,10 +204,12 @@ const componentsFor = (t: Tone) => ({
+     styleOverrides: {
+       root: {
+         textTransform: 'none',
+-        borderRadius: 8,
++        borderRadius: 10,
+         fontWeight: 600,
+         letterSpacing: 0,
+-        transition: `background-color 120ms ${ease}, color 120ms ${ease}`,
++        minHeight: 40,
++        padding: '8px 16px',
++        transition: `background-color 120ms ${ease}, color 120ms ${ease}, border-color 120ms ${ease}`,
+       },
+       contained: { boxShadow: 'none', '&:hover': { boxShadow: 'none' } },
+       outlined: { borderColor: t.border },
+@@ -214,7 +228,7 @@ const componentsFor = (t: Tone) => ({
+   },
+   MuiOutlinedInput: {
+     styleOverrides: {
+-      root: { borderRadius: 8, backgroundColor: t.surface1 },
++      root: { borderRadius: 12, backgroundColor: t.surface1, minHeight: 44 },
+       notchedOutline: { borderColor: t.border },
+     },
+   },
+@@ -275,7 +289,7 @@ export const estateLightTheme = createUnifiedTheme({
+   }),
+   defaultPageTheme: 'home',
+   pageTheme: pageThemesFor(light),
+-  components: componentsFor(light),
++  components: componentsFor(light, stateLight),
+ });
+ 
+ export const estateDarkTheme = createUnifiedTheme({
+@@ -294,7 +308,7 @@ export const estateDarkTheme = createUnifiedTheme({
+   }),
+   defaultPageTheme: 'home',
+   pageTheme: pageThemesFor(dark),
+-  components: componentsFor(dark),
++  components: componentsFor(dark, stateDark),
+ });
+ 
+ const lightTheme = ThemeBlueprint.make({
+diff --git a/backstage/platform/catalog-info.yaml b/backstage/platform/catalog-info.yaml
+index 10986a820..c0d399091 100644
+--- a/backstage/platform/catalog-info.yaml
++++ b/backstage/platform/catalog-info.yaml
+@@ -688,12 +688,28 @@ spec:
+   lifecycle: production
+   owner: group:default/platform
+   system: agents
++  providesApis:
++    - api:default/hermes-agent-api
+   dependsOn:
+     - component:default/layer-scheduling
+     - component:default/layer-secret-store
+     - component:default/layer-alerts-github
+ ---
+ apiVersion: backstage.io/v1alpha1
++kind: API
++metadata:
++  name: hermes-agent-api
++  description: 'Hermes: the HTTP interface, answering at otto.${ESTATE_ZONE}.'
++spec:
++  type: openapi
++  lifecycle: production
++  owner: group:default/platform
++  system: system:default/agents
++  definition: |
++    # Not published. hermes-agent answers at otto.${ESTATE_ZONE}; this entity
++    # exists so the catalogue records that the interface is reachable and who owns it.
++---
++apiVersion: backstage.io/v1alpha1
+ kind: Component
+ metadata:
+   name: layer-hindsight
+@@ -783,6 +799,34 @@ spec:
+ ---
+ apiVersion: backstage.io/v1alpha1
+ kind: Component
++metadata:
++  name: layer-infra-crew
++  title: 'Infrastructure crew'
++  description: 'The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.'
++  annotations:
++    backstage.io/kubernetes-label-selector: 'kustomize.toolkit.fluxcd.io/name=infra-crew'
++    estate/flux-kustomization: 'infra-crew'
++    estate/path: './platform/infra-crew'
++    estate/cluster: 'oke'
++  tags: [platform, agents]
++  links:
++    - url: https://signoz.${ESTATE_ZONE}
++      title: 'Live logs and metrics'
++    - url: https://langfuse.${ESTATE_ZONE}
++      title: 'Model traces'
++spec:
++  type: platform-layer
++  lifecycle: production
++  owner: group:default/platform
++  system: agents
++  dependsOn:
++    - component:default/layer-scheduling
++    - component:default/layer-secret-store
++    - component:default/layer-alerts-github
++    - component:default/layer-llm
++---
++apiVersion: backstage.io/v1alpha1
++kind: Component
+ metadata:
+   name: layer-keda
+   title: 'Workload autoscaler'
+diff --git a/backstage/yarn.lock b/backstage/yarn.lock
+index b2a43933b..a0dfbea89 100644
+--- a/backstage/yarn.lock
++++ b/backstage/yarn.lock
+@@ -8679,7 +8679,7 @@ __metadata:
+   languageName: node
+   linkType: hard
+ 
+-"@remixicon/react@npm:>=4.6.0 <4.9.0":
++"@remixicon/react@npm:4.8.0, @remixicon/react@npm:>=4.6.0 <4.9.0":
+   version: 4.8.0
+   resolution: "@remixicon/react@npm:4.8.0"
+   peerDependencies:
+@@ -12780,6 +12780,7 @@ __metadata:
+     "@material-ui/core": "npm:^4.12.2"
+     "@material-ui/icons": "npm:^4.9.1"
+     "@playwright/test": "npm:^1.32.3"
++    "@remixicon/react": "npm:4.8.0"
+     "@roadiehq/backstage-plugin-prometheus": "npm:3.3.1"
+     "@testing-library/dom": "npm:^9.0.0"
+     "@testing-library/jest-dom": "npm:^6.0.0"
+diff --git a/bin/catalog-gen b/bin/catalog-gen
+index adb0dc126..81d33767a 100755
+--- a/bin/catalog-gen
++++ b/bin/catalog-gen
+@@ -502,6 +502,23 @@ def _idp_source_link(rel):
+             ("Cluster state", f"https://github.com/{gh}/actions/workflows/oke-check.yml")]
+ 
+ 
++def registry_vendors():
++    """Named vendor roots from platform/vendors/consoles.yaml (crew#751).
++
++    Inventory `coupling` is the blast-radius field. The vendor registry is the
++    list of third parties the estate actually holds a root for. A vendor in the
++    registry with no inventory tag still belongs in the catalogue: otherwise
++    Cursor (Hermes WORK) is invisible until some Mac path happens to be tagged.
++    Missing file: inventory couplings only, same as before this function existed.
++    """
++    path = os.path.join(IDP_ROOT, "platform", "vendors", "consoles.yaml")
++    if not os.path.isfile(path):
++        return {}
++    import yaml
++    data = yaml.safe_load(open(path)) or {}
++    return data.get("vendors") or {}
++
++
+ def cluster_entities():
+     import glob as _glob
+     import yaml
+@@ -615,6 +632,9 @@ def main() -> int:
+     #     "what survives losing this vendor". Emitting it as a Resource turns the
+     #     portal's relations graph into the blast radius: click the vendor, see
+     #     every asset that stops. 139 of 241 rows on the same inventory.
++    #     Unioned with platform/vendors/consoles.yaml so a named root with no
++    #     inventory tag (Cursor, crew#751) still has a Resource the portal can
++    #     open. One entity per name; inventory dependents stay the measured count.
+     #
+     # Deliberately NOT emitted: providesApis. No repository in the estate publishes
+     # an OpenAPI document -- measured, 0 of 26 -- so the field would be an empty
+@@ -710,16 +730,35 @@ def main() -> int:
+             return real_index.get(main)
+         return None
+ 
+-    couplings = sorted({r.get("coupling") for r in rows
+-                        if r.get("coupling") and r.get("coupling") != "none"})
++    inv_couplings = {r.get("coupling") for r in rows
++                     if r.get("coupling") and r.get("coupling") != "none"}
++    reg = registry_vendors()
++    couplings = sorted(inv_couplings | set(reg.keys()))
++    vendor_docs = []
+     for c in couplings:
+         n = sum(1 for r in rows if r.get("coupling") == c)
+-        docs.append(entity(
++        links = []
++        page = (reg.get(c) or {}).get("page")
++        if page:
++            links.append(("Console", page))
++        for title, url in _idp_source_link("platform/vendors/consoles.yaml"):
++            if title == "Source":
++                links.append((title, url))
++                break
++        if n:
++            desc = f"External vendor {c}: {n} estate assets stop if it does."
++        else:
++            desc = (f"External vendor {c}: named in the vendor registry; "
++                    "inventory has not tagged an asset against it yet.")
++        vendor_docs.append(entity(
+             "Resource", f"vendor-{slug(c)}", f"Vendor: {c}", "vendor",
+             {"coupling": c, "dependents": n,
+-             "why": "every asset tagged with this coupling stops if it does"},
++             "why": "every asset tagged with this coupling stops if it does",
++             "registry": "platform/vendors/consoles.yaml" if c in reg else "inventory-only"},
+             ["vendor", f"coupling-{slug(c)}"],
+-            description=f"External vendor {c}: {n} estate assets stop if it does."))
++            links,
++            description=desc))
++    docs += vendor_docs
+ 
+     # Domain and System take no spec.type/spec.system, so they are written out
+     # literally rather than through entity(), which exists for the 194 rows.
+@@ -1022,7 +1061,7 @@ def main() -> int:
+     # Founder, 2026-08-27: "i thought i could see all my interface urls in one spot". One
+     # entity carries every link the catalogue publishes, so the answer is one card in the
+     # portal (Component `interfaces`), never a grep over 362 entities.
+-    for d in front + founder + cluster:
++    for d in front + founder + cluster + vendor_docs:
+         m = yaml_links(d)
+         all_links += m
+     all_links = sorted(set(all_links) | set(HIER_LINKS))
+diff --git a/bin/catalog-platform b/bin/catalog-platform
+index 42e8a0e59..a09f714e4 100755
+--- a/bin/catalog-platform
++++ b/bin/catalog-platform
+@@ -269,6 +269,11 @@ LAYERS = {
+         "Agent tools",
+         "The tools an agent may use, behind one gateway with one audit log.",
+     ),
++    "infra-crew": (
++        "agents",
++        "Infrastructure crew",
++        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
++    ),
+     "hindsight": (
+         "agents",
+         "Agent memory",
+diff --git a/bin/catalog-render b/bin/catalog-render
+index c4fae4d31..17d320ef1 100755
+--- a/bin/catalog-render
++++ b/bin/catalog-render
+@@ -40,7 +40,11 @@ TRACE_JSON = "docs/trace-matrix.json"
+ # crew#740: the estate-inventory workflow writes these two onto the same branch. This render
+ # force-pushes the branch from origin/main, so they are checked out from origin first and staged
+ # with the rest; otherwise every render would drop the Ops tile's data.
++# crew#786: the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md) from feed-guard;
++# the render carries both across renders, reads FEED.md as estate-next's input, and re-renders
++# NEXT.md from it, so a published page is never older than the last render.
+ CARRIED = ["docs/inventory.json", "docs/inventory.md"]
++CARRIED += ["docs/FEED.md", "docs/NEXT.md"]  # the feed and its answer ride the same carry (crew#786)
+ INV = Path(os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json"))
+ 
+ 
+@@ -76,8 +80,8 @@ def reexec_from_worktree(driver: Path, on_main: Path, argv: list[str]) -> None:
+     os.execv(sys.executable, [sys.executable, str(on_main), *argv])
+ 
+ 
+-def sh(cmd: list[str], cwd: Path, timeout: int = 120) -> tuple[int, str]:
+-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
++def sh(cmd: list[str], cwd: Path, timeout: int = 120, env: dict | None = None) -> tuple[int, str]:
++    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
+     return p.returncode, (p.stdout + p.stderr).strip()
+ 
+ 
+@@ -118,7 +122,21 @@ def main(argv: list[str]) -> int:
+     step("estate-diagram", [sys.executable, str(WT / "bin" / "estate-diagram")], WT)
+     # crew#474: the graded page, red rows first, from the same catalogue in the same run.
+     # crew#403 CP6: planned / blocking / when, before the showcase so its bar can quote it.
+-    step("estate-next", [sys.executable, str(WT / "bin" / "estate-next")], WT)
++    # crew#786: the Mac sessions publish docs/FEED.md and docs/NEXT.md from feed-guard. The render
++    # carries them. Before calling estate-next, check out the carried files from the previous branch
++    # and use the carried FEED.md as input if it exists and is non-empty (fall back to bucket copy).
++    carried_feed = WT / "docs" / "FEED.md"
++    # the Mac sessions publish docs/FEED.md (and an hourly docs/NEXT.md as a stop-gap) to the
++    # state branch; the render never overwrites FEED.md and always re-renders NEXT.md from it,
++    # so the page is at least as fresh as the newest handoff plus the newest issue state.
++    sh(["git", "checkout", "-q", f"origin/{BRANCH}", "--", "docs/FEED.md"], WT)
++    feed_arg: list[str] = []
++    if carried_feed.is_file() and carried_feed.stat().st_size > 0:
++        feed_arg = ["--feed", str(carried_feed)]
++        print(f"catalog-render: estate-next reads the feed from the state branch ({carried_feed})")
++    else:
++        print("catalog-render: no published feed on the state branch yet; estate-next reads its default")
++    step("estate-next", [sys.executable, str(WT / "bin" / "estate-next"), *feed_arg], WT)
+     # crew#412 (R38): the founder's three questions, from GitHub, on the same schedule.
+     # crew#596: the same goal block is the pinned GOAL message in the home channel (Otto's), refreshed here;
+     # --dry-run and a runner with no token leave the pin alone.
+diff --git a/bin/idp-login-drill b/bin/idp-login-drill
+index dbfa15ab2..676ad9151 100755
+--- a/bin/idp-login-drill
++++ b/bin/idp-login-drill
+@@ -295,13 +295,87 @@ with sync_playwright() as p:
+         fail("home", f"{HOME} did not reload for the home-page check: {e}")
+     # Founder, 2026-08-29: the look and feel is being iterated on and the drill grades none of it.
+     # The home page is graded by the founder path only: it answered, and it threw no error.
++    def painted_words(pg):
++        # R66 (crew#764): run 33427731536 shipped a blank grey rectangle as its photograph --
++        # the shot fired before the page painted. A photograph is taken only after words drew.
++        # Settled, not merely started: the first Hermes photograph met a bare word-count
++        # threshold on the header alone while the overview cards were still loading, and the
++        # capability under proof was invisible. Words must exist AND stop growing.
++        w, prev = "", None
++        for _ in range(int(TIMEOUT / 1000)):
++            try:
++                w = " ".join(pg.locator("body").inner_text(timeout=1000).split())
++            except PWError:
++                w = ""
++            if len(w) > 40 and w == prev:
++                return w
++            prev = w
++            time.sleep(1)
++        return w
++
+     shot = os.environ.get("DRILL_SHOT")
+     if shot:
++        painted_words(page)
+         try:
+             page.screenshot(path=shot, full_page=True)
+         except PWError:
+             pass
+     print(f"home    login-drill  {n_surfaces} founder-surface entities in the catalogue, {expected} declared in the repository")
++
++    # 6c. The phone, and the Create page. Founder, 2026-09-01, on his phone: "where the fuck is
++    # the menu" -- Backstage had folded the sidebar into a bottom bar and five review rounds had
++    # only ever looked at desktop screenshots. The drill now reads the page at a phone width,
++    # opens the menu by its spoken name (what a screen reader says, never a selector, R53),
++    # grades that every door is on screen, and photographs both states plus the Create page.
++    # The Create page is graded on what it lists: a Template count of zero means the scaffolder
++    # templates never reached the catalogue, whatever the door says.
++    shot_dir = os.environ.get("DRILL_SHOT_DIR") or os.path.dirname(shot or ".") or "."
++    os.makedirs(shot_dir, exist_ok=True)
++    try:
++        tpl = page.request.get(f"{HOME}api/catalog/entities?filter=kind=template&fields=metadata.name,metadata.title",
++                               headers={"Authorization": f"Bearer {token}"})
++        n_templates = len(tpl.json()) if tpl.status == 200 else -1
++    except (PWError, ValueError):
++        n_templates = -1
++    print(f"create  login-drill  {n_templates} templates in the catalogue")
++    if n_templates <= 0:
++        fail("create", f"the catalogue holds {n_templates} Template entities; the Create page lists nothing")
++    PHONE = {"width": 390, "height": 844}
++    DESKTOP = page.viewport_size or {"width": 1280, "height": 720}
++    page.set_viewport_size(PHONE)
++    try:
++        page.goto(HOME, wait_until="domcontentloaded")
++    except PWError as e:
++        fail("phone", f"{HOME} did not load at a phone width: {e}")
++    painted_words(page)
++    page.screenshot(path=os.path.join(shot_dir, "home-phone.png"), full_page=True)
++    menu_btn = page.get_by_role("button", name=re.compile(r"^open menu$", re.I))
++    if menu_btn.count() == 0:
++        fail("phone", "no 'Open menu' button on the phone view; the founder has no menu")
++    menu_btn.first.click()
++    page.wait_for_timeout(800)
++    on_screen = " ".join(page.locator("body").inner_text().split())
++    DOORS = ("Today", "Kubernetes", "What we run", "Create", "Map", "Tools", "Ops", "Find", "How-to", "You")
++    missing = [d for d in DOORS if d not in on_screen]
++    page.screenshot(path=os.path.join(shot_dir, "home-phone-menu.png"))
++    if missing:
++        fail("phone", f"the phone menu opened without these doors: {missing}")
++    page.keyboard.press("Escape")
++    for name, path in (("create-phone", "create"),):
++        try:
++            page.goto(f"{HOME}{path}", wait_until="domcontentloaded")
++        except PWError as e:
++            fail("phone", f"{HOME}{path} did not load at a phone width: {e}")
++        painted_words(page)
++        page.screenshot(path=os.path.join(shot_dir, f"{name}.png"), full_page=True)
++    page.set_viewport_size(DESKTOP)
++    try:
++        page.goto(f"{HOME}create", wait_until="domcontentloaded")
++        painted_words(page)
++        page.screenshot(path=os.path.join(shot_dir, "create.png"), full_page=True)
++    except PWError as e:
++        fail("create", f"{HOME}create did not load: {e}")
++    print(f"phone   login-drill  menu opens from the left with all {len(DOORS)} doors at {PHONE['width']}px; photographs in {shot_dir}")
+     # A missing surface is one of two different outages and the founder cannot tell them apart from
+     # a count. Backstage keeps every configured location as a Location entity and hangs the read
+     # error off its status, so the catalogue itself says which: a location that is absent means the
+@@ -350,6 +424,7 @@ with sync_playwright() as p:
+         ("tools", "text=Every tool we use"),
+         ("ops", "text=The cluster right now"),
+         ("pair", "text=Type the PIN Moonlight shows you"),
++        ("estate", "text=to find · Enter opens the first"),
+     )
+     broken = []
+     for path, must_see in PUBLISHED:
+@@ -586,6 +661,29 @@ with sync_playwright() as p:
+     if not l3[0]["ok"] and os.environ.get("DRILL_STRICT_IDENTITY") == "1":
+         fail("identity", f"langfuse session is not {USER}@{ZONE}: {l3[0]['actual']}")
+ 
++    # 10. R66 (crew#764): picture evidence for UI work. DRILL_EVIDENCE_PATHS is a comma-separated
++    # list of portal paths; each is walked with the signed-in session and photographed only after
++    # words drew on it. A page that never answers or never paints is a red drill, never a grey
++    # rectangle handed to the founder as proof.
++    ev_paths = [p.strip() for p in os.environ.get("DRILL_EVIDENCE_PATHS", "").split(",") if p.strip()]
++    if ev_paths:
++        shot_dir = os.environ.get("DRILL_SHOT_DIR") or os.path.dirname(os.environ.get("DRILL_SHOT") or ".") or "."
++        os.makedirs(shot_dir, exist_ok=True)
++        for ev in ev_paths:
++            try:
++                r = page.goto(f"{HOME}{ev.lstrip('/')}", wait_until="domcontentloaded", timeout=TIMEOUT)
++            except PWError as e:
++                fail("evidence", f"{ev} never loaded: {e}")
++            if r and r.status >= 400:
++                fail("evidence", f"{ev} answered {r.status}")
++            words = painted_words(page)
++            if len(words) <= 40:
++                fail("evidence", f"{ev} answered but never painted words; a blank photograph is not evidence")
++            slug = re.sub(r"[^a-z0-9]+", "-", ev.lower()).strip("-") or "root"
++            dest = os.path.join(shot_dir, f"{slug}.png")
++            page.screenshot(path=dest, full_page=True)
++            print(f"shot    login-drill  {ev} painted {len(words)} chars, photographed to {dest}")
++
+     ctx.close()
+     browser.close()
+ 
+diff --git a/bin/idp-set-root b/bin/idp-set-root
+index 98d8b33c1..8be6e4458 100755
+--- a/bin/idp-set-root
++++ b/bin/idp-set-root
+@@ -1,6 +1,6 @@
+ #!/usr/bin/env bash
+ # The founder's whole part for one provider, in one command, zero copying between windows (R52; crew#618).
+-#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | stripe | telegram-hermes | telegram-alerts | google-oauth
++#   bin/idp-set-root tailscale | cloudflare | anthropic | openrouter | deepseek | minimax | groq | gemini | exa | cursor | stripe | telegram-hermes | telegram-alerts | google-oauth
+ #   bin/idp-set-root all        every provider above in turn, skipping any whose secrets are already set; one apply run at the end
+ #
+ # It opens the provider's page, says exactly what to click and what to type, then asks for each
+@@ -13,7 +13,7 @@ set -euo pipefail
+ REPO=${IDP_REPO:-chidionyema/idp}
+ IDP=$(cd "$(dirname "$0")/.." && pwd)
+ P=${1:-}; [ -n "$P" ] || { sed -n 3,4p "$0"; exit 2; }
+-ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa stripe telegram-hermes telegram-alerts google-oauth"
++ALL="tailscale cloudflare anthropic openrouter deepseek minimax groq gemini exa cursor stripe telegram-hermes telegram-alerts google-oauth"
+ if [ "$P" = all ]; then
+   # Founder, 2026-08-29: "a single command for the master key for all". Each provider is one turn;
+   # one already set (its secret names exist on the repository) is skipped, so this is safe to re-run.
+@@ -75,7 +75,7 @@ T
+         5. "Continue to summary", "Create Token". Copy the token when asked below.
+ T
+     ask SEED_CLOUDFLARE_ROOT_TOKEN "the token shown" ;;
+-  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|stripe)
++  anthropic|openrouter|deepseek|minimax|groq|gemini|exa|cursor|stripe)
+     page=$(field "$P" page); name=$(field "$P" secret)
+     [ -n "$page" ] && [ -n "$name" ] || { echo "FAIL    no page/secret for $P in platform/vendors/consoles.yaml"; exit 1; }
+     echo "$P: one API key, once. The key page is opening."
+diff --git a/checkpoints/LATEST.md b/checkpoints/LATEST.md
+index 550672334..7a6fff7ce 100644
+--- a/checkpoints/LATEST.md
++++ b/checkpoints/LATEST.md
+@@ -12,3 +12,20 @@ Drill: root-trust), then tell the founder `bin/idp-bootstrap-tailscale` is ready
+ Then the bootstrappers PR (#575–#579): bin/idp-estate-seed, router keys, github-app tokens,
+ bin/idp-bootstrap-cloudflare, bin/idp-bootstrap-vendors, umbrella bin/idp-bootstrap-estate.
+ Founder plan recorded crew#66 5453918598 (one-shot, "just you").
++
++## RESUME HERE (2026-09-02T19:25Z, lane .wt-dagster-port)
++Founder instruction: user-deployment probe timeouts to 30s. Measured in-pod: exec health-check healthy path = 5s wall at 250m CPU, so the handler moves to the kubelet-native gRPC probe (server answers grpc.health.v1 SERVING, measured). Branch fix/dagster-probe-grpc-30s off origin/main carries platform/dagster/dagster.yaml probe block + tests/test_incident_dagster_user_deployment_probe_defaults.py (6/6 local green). Next: push, PR, green, founder merges. Cluster note: dagster kustomization+HelmRelease read CONVERGED-GREEN at 19:2xZ under the 5s exec probe — the flap class is still live until this lands.
++
++## RESUME HERE (2026-09-03T00:0xZ, session a14fc078, lane idp)
++Founder said "ship it" for feat/techdocs-publish-under-tmp (52d9acd7 — Docs tabs publish under /tmp, fixes the founder-gods-view ENOENT/404 he pasted). Main moved bb4b2113→116e8b63 so a fast-forward is impossible; next step: isolated worktree at scratchpad/ship-techdocs on 116e8b63, merge 52d9acd7 with estate-agents[bot] identity, push HEAD:main (fall back to PR+--admin if the ruleset refuses direct push). feat/reports-tab (f901d8c4) still awaits his word — do NOT ship it on this word.
++
++## RESUME HERE (54539261, 2026-09-03T02:58Z)
++Fix in flight: otto-golden never rolls — platform/otto-golden/kustomization.yaml has no images: block, so the untagged hermes-agent image (IfNotPresent) is frozen at first pull; days of merges never reached the pod. Branch otto-image-roll (worktree scratchpad/idp-pin) adds the images: block pinned to main-63-9fdff657c3ad225f7b7b7e107214103b5fe49157 with the flux-system:hermes-agent:tag marker (same pattern as platform/hermes-agent/kustomization.yaml:32). Then PR, green, founder word.
++
++## RESUME HERE (2026-09-03T10:16Z, session 54539261)
++Otto-golden allowlist SHIPPED: PR 1234 merged 2fbdd965, chain verified live 10:07Z (pods rolled, fail-loud config parsed) — founder can message @numun_bot but boot has NO live model yet (deterministic stub; router lanes exist unwired).
++Live thread: founder wants KIMI as PRIMARY, refuses terminal steps (R73) and ruled "founder = enterprise client zero" (recording as R75 in crew docs/rulings now). His existing Kimi key: ~/.kimi-code holds only OAuth tokens (not a root). One answer chosen: he pastes his key in the LiteLLM console (llm.mumchimp.com/ui alive, 200/200, SSO), model row `kimi`; follow-up = remove env-based kimi row from llm config once DB row live, then wire otto router (needs his "wire it").
++Open: crew#819/#820 DO NOT START; kimi lane overlap with session 2c88870e flagged on feed 10:10Z.
++
++## RESUME HERE (2026-09-03T10:50Z, session 54539261)
++R76 purge mandate (founder doc 2026-09-03T1036Z...25579e42.md + explicit "Do it now"): worktree .wt-purge off origin/main — delete prose-pinning tests via one AST pass, AGENTS.md No-Prose rule + gate, push PR. Merge stays the founder's.
+diff --git a/clusters/oke/edge.yaml b/clusters/oke/edge.yaml
+index 6627085a1..bbe4eed10 100644
+--- a/clusters/oke/edge.yaml
++++ b/clusters/oke/edge.yaml
+@@ -73,7 +73,7 @@ spec:
+   timeout: 10m
+   # The only place OKE's load balancer is named (R36): platform/edge stays provider-free.
+   patches:
+-    - target: { kind: HelmRelease, name: traefik, namespace: edge }
++    - target: {kind: HelmRelease, name: traefik, namespace: edge}
+       patch: |
+         apiVersion: helm.toolkit.fluxcd.io/v2
+         kind: HelmRelease
+@@ -160,9 +160,9 @@ spec:
+   # images carry main-85 in ghcr, listed 2026-08-30T22:0xZ.
+   images:
+     - name: ghcr.io/chidionyema/prospector-store-web
+-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
++      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-web:tag"}
+     - name: ghcr.io/chidionyema/prospector-store-api
+-      newTag: main-85-0299e2c4bbc059f58cabe2e6dde968d64fae20bd # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
++      newTag: main-96-b658a1a8eda1700b3787c4005cd5660e8cab09bf # {"$imagepolicy": "flux-system:prospector-store-api:tag"}
+   healthChecks:
+     - apiVersion: apps/v1
+       kind: Deployment
+@@ -177,7 +177,6 @@ spec:
+       # The Gateway's catalogue and auth listeners name the zone as ${ESTATE_ZONE} (prospector#734).
+       - kind: ConfigMap
+         name: estate-config
+-
+ ---
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+ kind: Kustomization
+diff --git a/clusters/oke/estate-config.yaml b/clusters/oke/estate-config.yaml
+index 3e374c724..8d7b3f22c 100644
+--- a/clusters/oke/estate-config.yaml
++++ b/clusters/oke/estate-config.yaml
+@@ -17,6 +17,10 @@ data:
+   # The repository the estate's GitHub App acts on (crew#554): platform/drills/drill-dispatcher.yaml
+   # dispatches the hourly drills here. Same repo as clusters/oke/flux-system/gotk-sync.yaml; one value.
+   ESTATE_GITHUB_REPO: chidionyema/idp
++  # The GitHub account that owns the estate repositories (crew#729 step 3): the infrastructure
++  # crew reads its board and its law files under this owner (platform/infra-crew). Flux envsubst
++  # is strict and takes no shell modifiers, so the owner cannot be cut from the line above.
++  ESTATE_GITHUB_OWNER: chidionyema
+   # crew#516 CP5, founder's locked spec (crew#66 5451926212): the founder's Mac, reached by mac-run
+   # (platform/hermes-agent/mac-run.tpl) over the Tailscale sidecar's SOCKS5 proxy, and named in
+   # platform/tailscale/policy.hujson's ssh rule (bin/idp-tailscale-policy reads FOUNDER_MAC_USER
+diff --git a/clusters/oke/platform.yaml b/clusters/oke/platform.yaml
+index b4e9da360..849d95f73 100644
+--- a/clusters/oke/platform.yaml
++++ b/clusters/oke/platform.yaml
+@@ -409,6 +409,42 @@ spec:
+       - kind: Secret
+         name: github-app
+ ---
++# The infrastructure crew (crew#729 step 3): a crewAI CronJob that takes a `lane:infra` board
++# ticket to a plan comment and a pull request. No RBAC, no cluster hand; the founder merges and
++# deploys. After scheduling (its priority class), secret-store (the vault), alerts-github (the
++# App Secret its token generator reads through strict envsubst) and llm (the router it calls).
++# `wait: true` on a CronJob proves the objects applied, nothing more: a CronJob carries no
++# readiness, so kstatus reads it Current the moment it exists. Whether a run succeeds is read
++# from outside by the infra-crew drill (drills/catalogue.yaml), never from this row.
++apiVersion: kustomize.toolkit.fluxcd.io/v1
++kind: Kustomization
++metadata:
++  name: infra-crew
++  namespace: flux-system
++spec:
++  interval: 10m
++  sourceRef:
++    kind: GitRepository
++    name: flux-system
++  path: ./platform/infra-crew
++  prune: true
++  postBuild:
++    substituteFrom:
++      # OTLP_ENDPOINT and ESTATE_GITHUB_OWNER: one value each in estate-config (LAW 46).
++      - kind: ConfigMap
++        name: estate-config
++      # The estate-agents App's id and installation id for the GithubAccessToken generator;
++      # rendered into flux-system by platform/alerts-github/github-app.yaml from the vault.
++      - kind: Secret
++        name: github-app
++  dependsOn:
++    - name: scheduling
++    - name: secret-store
++    - name: alerts-github
++    - name: llm
++  wait: true
++  timeout: 10m
++---
+ # crew#345: the cluster writes its own state receipt to Object Storage every 15 minutes, so no
+ # session needs a kube path or `oci session authenticate` to read it (bin/idp-cluster-state).
+ apiVersion: kustomize.toolkit.fluxcd.io/v1
+diff --git a/docs/decisions/portal-defects-crew612.md b/docs/decisions/portal-defects-crew612.md
+index 034c321eb..8928d5020 100644
+--- a/docs/decisions/portal-defects-crew612.md
++++ b/docs/decisions/portal-defects-crew612.md
+@@ -36,3 +36,52 @@ Bytesync is the name the catalogue hierarchy uses today; the parent-company name
+ open decision on [the company-name ticket](https://github.com/chidionyema/crew/issues/691).
+ If that decision lands a different name, the fix is the same two config lines this change
+ touched.
++
++
++## 2026-09-01: The phone had no menu, and the front page was ours
++
++Founder, on his phone, looking at the live portal: "where the fuck is the menu"; "why would
++someone scroll to bottom of page to see menu"; "I need things organised so I can find
++information quickly, not scrolling and wondering"; "use Backstage templates"; "our UI and
++design skills are shit"; "so don't bother." Five review rounds had graded desktop screenshots
++only. Two defects, one fix each, no design of our own:
++
++6. **The phone menu.** Backstage's Sidebar folds into a bottom bar under 600px. The nav
++   (`modules/nav/EstateNav.tsx`) now switches on that same breakpoint to Material UI's own
++   `Drawer` anchored left, behind a button a screen reader calls "Open menu," listing the ten
++   doors in order; the desktop Sidebar is untouched. `bin/idp-login-drill` reads the page at
++   390px every hour, opens the menu by its spoken name, fails unless all ten doors are on
++   screen, and photographs `home-phone.png`, `home-phone-menu.png`, `create-phone.png` and
++   `create.png` into the run's artifact. It also counts Template entities and fails on zero.
++7. **The front page.** "/" was 1,200 lines of this repository's own design (the god view from the earlier redesign)
++   in one long scroll. It is now Backstage's own home page: `@backstage/plugin-home` 0.9.9 is
++   loaded in `App.tsx`, the module no longer overrides `page:home`, and `app-config.yaml`
++   seeds the grid (search bar, the ten doors as the toolkit, starred entities, recently and
++   most visited) with the plugin's documented `defaultConfig`. The layout is the documented
++   custom-layout template (Page, Header, Content, CustomHomepageGrid) with the estate's name
++   in the header. The god view is kept at `/estate`, unlinked, graded by the drill, until its
++   numbers become widgets or it is deleted. Research on record: the plugin's changelog entry
++   for 0.9.9 ("new frontend system widget blueprints ... `defaultConfig`") and the docs page
++   https://backstage.io/docs/getting-started/homepage/ ; the extension ids and config keys
++   were read from the published 0.9.9 tarball's `dist/alpha.esm.js`, not from memory.
++
++Test: `tests/test_crew612_portal_doors_are_real_and_distinct.py` (phone menu, front page,
++toolkit equals menu). Founder receipt: none yet; he sees it on his phone after his deploy.
++
++## 2026-09-03: The stock home looked and behaved old
++
++Founder: the portal needs better UX and a modern look; it looks outdated and the
++interactions feel outdated. The cause was the plugin's drag-and-resize widget board
++(`CustomHomepageGrid`) and a sidebar where every door was a `SidebarGroup` of one, so
++hover opened a second click. Widgets stay; the board does not.
++
++8. **Fixed home layout.** `HomePageLayoutBlueprint` still renders Backstage's search,
++   toolkit, starred and visited widgets. `homeLayout.tsx` pins them. Create and Find
++   sit in the header. The joke/clock add-widget dialog stays off.
++9. **One-click nav.** Desktop doors are `SidebarItem`. Find is Backstage's
++   `SidebarSearchModal` plus Cmd/Ctrl+K. The phone menu closes with a Close control
++   and has Find in the top bar.
++10. **Chrome.** Cards lift on hover, buttons are 40px, content is 1280px, headers are
++    tighter. Still Material through Backstage's theme, not a second design system.
++
++Test: the crew#612 portal test plus `homeLayout.test.ts`.
+diff --git a/docs/how-to/onboarding/hermes.md b/docs/how-to/onboarding/hermes.md
+new file mode 100644
+index 000000000..8f201049f
+--- /dev/null
++++ b/docs/how-to/onboarding/hermes.md
+@@ -0,0 +1,46 @@
++# Onboarding: Cursor as Otto's WORK worker
++
++## What it is
++
++Otto's WORK jobs run Cursor CLI on the founder's Mac (`agent -p --force`). The
++pod reaches the Mac through `cursor-agent`, which reads `CURSOR_API_KEY` from
++the vault file and passes it on ssh stdin. Architect, Telegram and the watch
++lane stay on the one model router. Cursor single sign-on is for people in a
++browser; it does not mint this key.
++
++## What it costs
++
++Cursor usage on the key, billed on Cursor's usage page. No extra cluster
++compute: the wrapper is a hashed ConfigMap next to `mac-run`. Until the seed
++exists, WORK fails closed (exit 2) and nothing is charged.
++
++## Where it lives
++
++```
++platform/hermes-agent/estate.yaml          dispatch.runtime: cursor
++platform/hermes-agent/cursor-agent.tpl     vault key required; execs mac-run then agent
++platform/hermes-agent/gateway.yaml         subPath mount of cursor-agent
++platform/vendors/consoles.yaml             SEED_CURSOR_API_KEY, dashboard page, verify GET /v1/me
++backstage/founder/catalog-info.yaml        founder-cursor card, dependsOn vendor-cursor
++docs/reference/policy/credential-lifecycle.md   the SEED_CURSOR_API_KEY row
++```
++
++## Direct login (no automation)
++
++1. Open https://cursor.com/dashboard/integrations and create an API key.
++2. Put the value in the GitHub Actions secret `SEED_CURSOR_API_KEY` on
++   `chidionyema/idp` (Settings → Secrets and variables → Actions).
++3. The next `oke-check` apply (`bin/idp-bootstrap-vendors`) proves the key and
++   writes vault field `hermes-agent-env.CURSOR_API_KEY`.
++
++Do not paste the key into chat, into git, or onto a command line. Do not use
++this Mac's Cursor IDE login. Do not run a laptop set-root command.
++
++## How to turn it off
++
++Set `dispatch.runtime` in `platform/hermes-agent/estate.yaml` back to `claude`
++and ship that change. Delete the dashboard key to revoke. Removing the GitHub
++secret stops the next apply from refreshing the vault field; the wrapper then
++refuses WORK until a new key is seeded.
++
++Tracked on [this ticket](https://github.com/chidionyema/crew/issues/751).
+diff --git a/docs/reference/policy/credential-lifecycle.md b/docs/reference/policy/credential-lifecycle.md
+index d3fe94ef3..857b728a7 100644
+--- a/docs/reference/policy/credential-lifecycle.md
++++ b/docs/reference/policy/credential-lifecycle.md
+@@ -41,6 +41,7 @@ list, a slug) are listed at the end so the gate knows them; they have no life cy
+ | `SEED_GROQ_API_KEY` | Groq | console, keys | model calls | none | as Anthropic | delete the key | Groq usage |
+ | `SEED_GEMINI_API_KEY` | Google | AI Studio, API key; restrict to Generative Language API | model calls | none | as Anthropic | delete the key | Google Cloud API key usage |
+ | `SEED_EXA_API_KEY` | Exa | dashboard, API keys | search calls | none | as Anthropic | delete the key | Exa usage |
++| `SEED_CURSOR_API_KEY` | Cursor | dashboard, Integrations / API Keys | WORK dispatch (`agent -p` on the Mac through cursor-agent); cannot mint further keys. Architect stays on the model router. A person Cursor login is not this root. | none | new key, same name, apply (`bin/idp-bootstrap-vendors` proves and vaults it); delete the old key | delete the key in the dashboard | Cursor usage page per key |
+ | `SEED_STRIPE_SECRET_KEY` | Stripe | dashboard, API keys; restricted key with the store's needs only | payments on the store account | none | new restricted key, same name, apply; roll the old key | roll the key in the dashboard | Stripe request log |
+ | `SEED_GOOGLE_OAUTH_CLIENT_ID` / `SEED_GOOGLE_OAUTH_CLIENT_SECRET` (one client, two halves) | Google | `bin/idp-set-root google-oauth`: Clients page, Create Client, Web application, one authorised redirect URI `https://api.mumchimp.com/signin-google`. Google publishes no create-client API — the IAP one cannot set a redirect URI — so the client is the root | the shop's "Continue with Google" button and nothing else: it identifies the store to Google during a sign-in. It reads no Google data beyond the signed-in person's email, profile and `email_verified`, and holds no token (`SaveTokens = false`) | none; a Google OAuth client does not expire | make a second client with the same redirect URI, set both secret names, apply, then delete the old client. Both halves move together or the pair stops working | delete the client on the Clients page; every sign-in is refused at once and the button disappears from the panel at the next provider read | Google Cloud audit log on the project; the apply run logs the field names, never a value |
+ | `github-app` (vault bundle: app id, client id, private key) | GitHub | once, by `bin/idp-github-app convert <code>` after the App manifest flow; the bundle lands in the vault, never in a repository secret | mints installation tokens narrowed to one lane in `platform/github-app/lanes.json` (issues, checks, contents), each valid one hour | the private key never expires; every minted token dies in one hour | generate a new private key on the App (docs.github.com, managing private keys for GitHub Apps), `bin/idp-vault-put github-app pem_b64=<new>`, delete the old key on the App | delete the private key on the App, or uninstall the App from the organisation; every token minted from it stops at once | the App's recent deliveries on GitHub and the organisation audit log (`integration_installation` events); apply and workflow logs name lanes, never tokens |
+diff --git a/docs/reference/policy/root-trust.md b/docs/reference/policy/root-trust.md
+index a5b74477f..a28b71926 100644
+--- a/docs/reference/policy/root-trust.md
++++ b/docs/reference/policy/root-trust.md
+@@ -71,7 +71,7 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
+ | `prospector-engine-env` (`R2_*`) | platform/prospector/engine-external-secret.yaml | Cloudflare R2 | R2 token via `POST /user/tokens`, S3 credential derived in-process, bucket created if absent | MEETS | `bin/idp-bootstrap-cloudflare` |
+ | `prospector-engine-env` (`STORE_*`) | platform/prospector/engine-external-secret.yaml | estate | store URL is a constant of the cluster; `STORE_INTERNAL_API_KEY` copied from the store's own entry | MEETS | `bin/idp-estate-seed` |
+ | `cloudflare-api-token` | platform/prospector/cloudflare-external-secret.yaml, platform/dns/external-dns.yaml | Cloudflare | one root token minted by a driver over the dashboard, then DNS token via `POST /user/tokens`, root token deleted | MEETS | `bin/idp-bootstrap-cloudflare` |
+-| `hermes-agent-env` (vendor keys, Telegram) | platform/hermes-agent/gateway.yaml | Anthropic, OpenRouter, Exa, Telegram | same registry; the bot token is `SEED_TELEGRAM_HERMES_BOT_TOKEN`, made once with BotFather | MEETS | `bin/idp-bootstrap-vendors` |
++| `hermes-agent-env` (vendor keys, Telegram) | platform/hermes-agent/gateway.yaml | Anthropic, OpenRouter, Exa, Cursor, Telegram | same registry; the bot token is `SEED_TELEGRAM_HERMES_BOT_TOKEN`, made once with BotFather; Cursor is `SEED_CURSOR_API_KEY` | MEETS | `bin/idp-bootstrap-vendors` |
+ | `hermes-agent-env` (`GITHUB_TOKEN`) | platform/hermes-agent/gateway.yaml | GitHub | App installation token, minted in-cluster every 45m (GithubAccessToken generator in the row) | MEETS | `bin/idp-github-app` |
+ | `hermes-agent-env` (`LITELLM_API_KEY`) | platform/hermes-agent/gateway.yaml | estate router | `POST /key/generate` via `bin/idp-router-key --entry hermes-agent-env` | MEETS | `bin/idp-estate-seed` |
+ | `flux-telegram` | platform/alerts-secret/flux-telegram.yaml, platform/robusta/external-secret.yaml | Telegram | `SEED_TELEGRAM_ALERTS_BOT_TOKEN`, made once with BotFather, verified with `getMe` | MEETS | `bin/idp-bootstrap-vendors` |
+diff --git a/docs/tutorials/demo/hermes.md b/docs/tutorials/demo/hermes.md
+new file mode 100644
+index 000000000..1d5d8fbad
+--- /dev/null
++++ b/docs/tutorials/demo/hermes.md
+@@ -0,0 +1,41 @@
++# Demo: Cursor is Otto's WORK worker
++
++Otto's WORK lane runs Cursor on the Mac through `cursor-agent`, which only starts
++when the vault holds `CURSOR_API_KEY`. Architect stays on the model router. A
++person Cursor login is not this key.
++
++The live dispatch file names the runtime and the wrapper, and never puts a key
++on the command line:
++
++```
++$ python3 -c "import yaml; from pathlib import Path
++p=Path('platform/hermes-agent/estate.yaml')
++doc=yaml.safe_load(yaml.safe_load(p.read_text())['data']['estate.yaml'])
++print(doc['dispatch']['runtime'])
++print(doc['dispatch']['runtimes']['cursor'])"
++cursor
++['cursor-agent', '-p', '--force', '--model', 'composer-2.5', '{prompt}']
++```
++
++The control that refuses a Mac login without the vault key, and that Cursor is
++a catalogue vendor the founder card opens:
++
++```
++$ .venv/bin/pytest -o addopts= -q tests/test_incident_crew751_cursor_is_the_hermes_worker.py
++.......
++7 passed, 49 warnings in 213.24s (0:03:33)
++```
++
++`bin/catalog-gen` against the fixture inventory emits `vendor-cursor` among the
++registry vendors (captured 2026-08-31 on this branch):
++
++```
++catalog-gen: 129 entities, 3 dependsOn edges -> .../catalog-info.yaml
++  vendors        11  (anthropic, cursor, deepseek, exa, gemini, google_oauth, groq, minimax, openrouter, stripe, telegram)
++```
++
++The key is minted once in the Cursor dashboard and stored as the GitHub secret
++`SEED_CURSOR_API_KEY`. Apply proves it and writes the vault. Until that secret
++exists the wrapper prints `cursor-agent: no CURSOR_API_KEY in the vault; refusing the Mac login` and exits 2.
++
++Tracked on [this ticket](https://github.com/chidionyema/crew/issues/751).
+diff --git a/drills/catalogue.yaml b/drills/catalogue.yaml
+index be559a9c5..c59d3a1ba 100644
+--- a/drills/catalogue.yaml
++++ b/drills/catalogue.yaml
+@@ -107,6 +107,19 @@ drills:
+       of it dying); the receipt is written from the node's identity and graded by
+       bin/idp-chaos-drill langfuse-alert-drill alert-drill (age max 194h).
+ 
++  - name: infra-crew
++    owner: idp
++    workflow: oke-check.yml
++    job: infra-crew
++    schedule: "17 6 * * *"
++    max_age_hours: 26
++    proves: >-
++      The infrastructure crew is taking its queue, read from outside the cluster: no open board
++      ticket with the crew's label has waited more than an hour without a plan comment, and every
++      plan comment the crew left in the last day has a matching trace in Langfuse
++      (bin/idp-infra-crew-drill, as the estate's own GitHub identity). A queued ticket left
++      unplanned, or work with no trace, is the red.
++
+   - name: cluster-state
+     owner: idp
+     workflow: oke-check.yml
+@@ -295,3 +308,17 @@ drills:
+       the 17:01 build for eight hours; the login drill, flux and the front door all read green
+       because no drill in this estate ever opened the shop, and the founder found it by looking at
+       the site.
++  - name: realm-drift
++    owner: idp
++    workflow: oke-check.yml
++    job: realm-drift
++    schedule: "17 6 * * *"
++    max_age_hours: 26
++    pending: true
++    proves: >-
++      The settings that decide who may sign in to the shop are what the repository says they
++      are: the running realm is exported and graded key by key against
++      platform/customer-identity/realm/shop.yaml, so a console change that turns off the
++      lock-out, stretches a session to a day or adds a web address a sign-in may be sent back to
++      is named within a day instead of living unseen. Pending until the sign-in service is
++      turned on; the check itself is proved today against two shipped exports.
+diff --git a/mkdocs.yml b/mkdocs.yml
+index 3ab19ebce..c6aa7a602 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -104,6 +104,7 @@ nav:
+       - Langfuse: tutorials/demo/langfuse.md
+       - SigNoz: tutorials/demo/signoz.md
+       - LiteLLM: tutorials/demo/litellm.md
++      - Hermes (Cursor WORK worker): tutorials/demo/hermes.md
+       - Router image lanes: tutorials/demo/llm-images.md
+       - KINI: tutorials/demo/kini.md
+       - Migration gate: tutorials/demo/migration.md
+@@ -171,6 +172,7 @@ nav:
+       - Router image lanes: how-to/onboarding/llm-images.md
+       - KINI: how-to/onboarding/kini.md
+       - Otto (the founder's agent): how-to/onboarding/otto.md
++      - Hermes (Cursor WORK worker): how-to/onboarding/hermes.md
+       - Migration gate: how-to/onboarding/migration.md
+       - Multiarch gate: how-to/onboarding/multiarch.md
+       - Policy test: how-to/onboarding/policy-test.md
+diff --git a/platform/backstage/overlays/oke/kustomization.yaml b/platform/backstage/overlays/oke/kustomization.yaml
+index 0beef4168..d286a2cc2 100644
+--- a/platform/backstage/overlays/oke/kustomization.yaml
++++ b/platform/backstage/overlays/oke/kustomization.yaml
+@@ -34,7 +34,7 @@ images:
+     newName: ghcr.io/chidionyema/backstage
+     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
+     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
+-    newTag: main-3142-372d7cf64ad7e07375c03e2ed5629a68d82e1c0b # {"$imagepolicy": "flux-system:backstage:tag"}
++    newTag: main-3190-163d6cd80ed13f49faf85032005e6580fa070501 # {"$imagepolicy": "flux-system:backstage:tag"}
+   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
+   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
+   # arrives qualified from the base, so this entry no longer renames anything; it is kept
+diff --git a/platform/edge/catalogue-entity-exception.yaml b/platform/edge/catalogue-entity-exception.yaml
+index 5411fc7dc..9bbafcb9d 100644
+--- a/platform/edge/catalogue-entity-exception.yaml
++++ b/platform/edge/catalogue-entity-exception.yaml
+@@ -26,3 +26,13 @@ spec:
+           kinds: [Service]
+           namespaces: [healing]
+           names: [k8sgpt-*]
++      # crew#768 (2026-09-01): cert-manager presents every HTTP-01 challenge through a Service and
++      # an HTTPRoute it mints itself, labelled acme.cert-manager.io/http01-solver. Neither is a
++      # door a person opens, and neither can carry a catalogue label. With this rule in Enforce
++      # since 2026-08-29 every edge certificate renewal was refused at admission; otto.mumchimp.com
++      # served the Traefik placeholder and Telegram could not deliver.
++      - resources:
++          kinds: [Service, HTTPRoute]
++          selector:
++            matchLabels:
++              acme.cert-manager.io/http01-solver: "true"
+diff --git a/platform/github-app/lanes.json b/platform/github-app/lanes.json
+index c8154c973..0155fee05 100644
+--- a/platform/github-app/lanes.json
++++ b/platform/github-app/lanes.json
+@@ -1,5 +1,5 @@
+ {
+-  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository. The vault-writer lane (crew#568) writes one sops file into estate-secrets from vault-seed.yml: a router virtual key for the founder's Mac, encrypted to the age recipient the repo names, so the runner never holds a decryption key.",
++  "_comment": "Permissions an installation token is narrowed to at mint time (POST /app/installations/{id}/access_tokens). A lane never gets more than the App's default_permissions in manifest.json. The recovery lane (crew#290/crew#300) is read-only: bin/idp-escrow and bin/idp-recover-drill clone with it and can never write to a repository. The vault-writer lane (crew#568) writes one sops file into estate-secrets from vault-seed.yml: a router virtual key for the founder's Mac, encrypted to the age recipient the repo names, so the runner never holds a decryption key. The infra-crew lane (crew#729) is the infra crew's only GitHub identity: it can open and update pull requests and push to a branch, and it can never merge, dispatch a workflow or reach a cluster; deleting the lane from this file is its kill switch, because `token infra-crew` is refused before the vault is read.",
+   "platform-engineer": {
+     "metadata": "read",
+     "contents": "write",
+@@ -32,5 +32,13 @@
+     "metadata": "read",
+     "issues": "write",
+     "actions": "read"
++  },
++  "infra-crew": {
++    "metadata": "read",
++    "contents": "write",
++    "pull_requests": "write",
++    "issues": "write",
++    "actions": "read",
++    "checks": "read"
+   }
+ }
+diff --git a/platform/hermes-agent/cursor-agent.tpl b/platform/hermes-agent/cursor-agent.tpl
+new file mode 100755
+index 000000000..9a223663f
+--- /dev/null
++++ b/platform/hermes-agent/cursor-agent.tpl
+@@ -0,0 +1,29 @@
++#!/bin/bash
++# crew#751 CP1: WORK dispatch runs Cursor CLI on the Mac through mac-run.
++# Auth is the vault CURSOR_API_KEY (SEED_CURSOR_API_KEY). A person Cursor login
++# is not a machine identity; Cursor SSO (SAML) is for people and does not mint
++# a machine credential, and there is no GitHub OIDC exchange (unlike Tailscale).
++# The key never appears in argv (--api-key and env CURSOR_API_KEY= are both
++# visible in ps): it is read from the vault file and passed on ssh stdin.
++# `$$` escapes a dollar Flux must leave alone (same as mac-run.tpl). The `.tpl`
++# extension keeps this file a template until Flux renders it.
++# Non-interactive ssh often misses ~/.local/bin; the remote login shell puts it back.
++# shellcheck disable=SC1083,SC2034,SC2016
++set -euo pipefail
++on_exit() {
++	rc=$?
++	[ "$rc" -eq 0 ] || echo "cursor-agent: gave up before agent started (exit $rc)" >&2
++}
++trap on_exit EXIT
++command -v mac-run >/dev/null || {
++	echo "cursor-agent: mac-run is not on PATH" >&2
++	exit 2
++}
++dir=$${HERMES_ENV_DIR:-/run/secrets/hermes-agent-env}
++file="$dir/CURSOR_API_KEY"
++if [ ! -s "$file" ]; then
++	echo "cursor-agent: no CURSOR_API_KEY in the vault; refusing the Mac login" >&2
++	exit 2
++fi
++IFS= read -r key <"$file" || exit 2
++printf '%s\n' "$key" | exec mac-run bash -lc 'IFS= read -r CURSOR_API_KEY; export CURSOR_API_KEY; export PATH="$$HOME/.local/bin:/usr/local/bin:$$PATH"; exec agent "$$@"' agent "$$@"
+diff --git a/platform/hermes-agent/estate.yaml b/platform/hermes-agent/estate.yaml
+index b8c68f159..213d49cde 100644
+--- a/platform/hermes-agent/estate.yaml
++++ b/platform/hermes-agent/estate.yaml
+@@ -9,8 +9,9 @@ metadata:
+   namespace: hermes-agent
+ data:
+   estate.yaml: |
+-    # This machine's estate. Generated by ./install, safe to edit by hand.
+-    # After editing, run: bin/render     (then bin/verify)
++    # LIVE estate the cluster runs. hermes-v2/estate.yaml is the Mac ancestor
++    # (work: off) and is not this file. Two live dispatch.runtime values was the
++    # inventory bug; this ConfigMap is the only one Flux applies.
+ 
+     estate:
+       name: prospector
+@@ -59,7 +60,11 @@ data:
+       claimed: in-progress
+       never: [icebox]
+       checkouts: ..
+-      runtime: claude
++      runtime: cursor
++      # crew#751 CP1: Cursor CLI on the Mac is the WORK worker. Auth is the vault
++      # CURSOR_API_KEY (SEED_CURSOR_API_KEY); a person Cursor login is not a machine
++      # identity. cursor-agent.tpl execs mac-run then agent; missing vault file
++      # fails closed. Architect stays on the router.
+       # crew#516 CP5 (founder order 2026-08-28, crew#66 5451614620 + addendum, supersedes the
+       # operator/mac-egress design of the first CP5 pass, crew#66 5451452409): Otto stays in this
+       # pod (the single Telegram poller lock) and executes on the founder's Mac through mac-run
+@@ -75,6 +80,7 @@ data:
+       # sentence into — recorded here as Not done, with the follow-up path, rather than claimed.
+       runtimes:
+         claude: [mac-run, claude, -p, "{prompt}", --permission-mode, acceptEdits, --allowedTools, "Bash(git *) Bash(gh *) Bash(bin/idp-cluster-state*)"]
++        cursor: [cursor-agent, -p, --force, --model, composer-2.5, "{prompt}"]
+         gemini: [gemini, -p, "{prompt}", --yolo]
+         opencode: [opencode, run, "{prompt}"]
+         codex: [codex, exec, --full-auto, "{prompt}"]
+diff --git a/platform/hermes-agent/gateway.yaml b/platform/hermes-agent/gateway.yaml
+index bcc36704c..8acc00eac 100644
+--- a/platform/hermes-agent/gateway.yaml
++++ b/platform/hermes-agent/gateway.yaml
+@@ -328,6 +328,11 @@ spec:
+             - name: mac-run
+               mountPath: /usr/local/bin/mac-run
+               subPath: mac-run
++            # crew#751 CP1: same hashed ConfigMap as mac-run, second subPath. A new file in the
++            # generator changes the ConfigMap name, so the pod rolls (crew#561).
++            - name: mac-run
++              mountPath: /usr/local/bin/cursor-agent
++              subPath: cursor-agent
+               readOnly: true
+             # crew#561: mac-run's key to the Mac's sshd (mac-run-key.yaml); optional so the gateway
+             # still starts before the first apply has minted it, and mac-run says so (exit 2).
+diff --git a/platform/hermes-agent/kustomization.yaml b/platform/hermes-agent/kustomization.yaml
+index b3471caa2..1d0beb732 100644
+--- a/platform/hermes-agent/kustomization.yaml
++++ b/platform/hermes-agent/kustomization.yaml
+@@ -6,6 +6,8 @@ kind: Kustomization
+ namespace: hermes-agent
+ resources:
+   - gateway.yaml
++  - httproute.yaml
++  - edge-manners.yaml
+   - estate.yaml
+   - mac-run-key.yaml
+   - tailscale.yaml
+@@ -24,6 +26,7 @@ configMapGenerator:
+   - name: hermes-agent-mac-run
+     files:
+       - mac-run=mac-run.tpl
++      - cursor-agent=cursor-agent.tpl
+ images:
+   - name: ghcr.io/chidionyema/hermes-agent
+-    newTag: main-47-577cf23f81c14ccf89f6f269057da6293ff23319 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
++    newTag: main-56-78e54b5c35292b87917c00d32f5fca36b9e40f53 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+diff --git a/platform/monitoring/rules/founder-surfaces-probe.yaml b/platform/monitoring/rules/founder-surfaces-probe.yaml
+index 9f68c08ab..e2e752033 100644
+--- a/platform/monitoring/rules/founder-surfaces-probe.yaml
++++ b/platform/monitoring/rules/founder-surfaces-probe.yaml
+@@ -22,9 +22,11 @@ spec:
+         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/hermes-v2
+         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/mumchimp
+         - https://catalogue.${ESTATE_ZONE}/catalog/default/domain/prospector
++        - https://catalogue.${ESTATE_ZONE}/catalog/default/resource/vendor-cursor
+         - https://catalogue.${ESTATE_ZONE}/catalog?filters%5Bkind%5D=component&filters%5Btype%5D=founder-surface
+         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/FOUNDER/
+         - https://catalogue.${ESTATE_ZONE}/docs/default/component/founder-gods-view/explanation/architecture/model-stack/
++        - https://catalogue.${ESTATE_ZONE}/estate
+         - https://catalogue.${ESTATE_ZONE}/ops
+         - https://catalogue.${ESTATE_ZONE}/pair
+         - https://catalogue.${ESTATE_ZONE}/screen/
+@@ -32,6 +34,7 @@ spec:
+         - https://catalogue.${ESTATE_ZONE}/screen/#ollama
+         - https://catalogue.${ESTATE_ZONE}/tools
+         - https://cloud.oracle.com/?region=uk-london-1
++        - https://cursor.com/dashboard/integrations
+         - https://hc.${ESTATE_ZONE}
+         - https://hc.${ESTATE_ZONE}/api/v3/status/
+         - https://langfuse.${ESTATE_ZONE}
+diff --git a/platform/oci/policy/estate-operators.statements.json b/platform/oci/policy/estate-operators.statements.json
+index 5b25b1600..cfea1949c 100644
+--- a/platform/oci/policy/estate-operators.statements.json
++++ b/platform/oci/policy/estate-operators.statements.json
+@@ -21,5 +21,6 @@
+   "Allow group estate-operators to manage keys in compartment estate",
+   "Allow group estate-operators to manage secret-family in compartment estate where target.secret.name != 'verdict-hmac-key'",
+   "Allow group estate-operators to manage domains in tenancy",
+-  "Allow group estate-operators to read audit-events in compartment estate"
++  "Allow group estate-operators to read audit-events in compartment estate",
++  "Allow service objectstorage-uk-london-1 to manage object-family in compartment estate where any {request.permission='BUCKET_INSPECT', request.permission='BUCKET_READ', request.permission='OBJECT_INSPECT', request.permission='OBJECT_DELETE', request.permission='OBJECT_VERSION_DELETE'}"
+ ]
+diff --git a/platform/temporal/kustomization.yaml b/platform/temporal/kustomization.yaml
+index 2e4676cd6..032c2373e 100644
+--- a/platform/temporal/kustomization.yaml
++++ b/platform/temporal/kustomization.yaml
+@@ -17,4 +17,4 @@ images:
+   # ImagePolicy flux-system/sovereign-worker; the marker is how it finds the line.
+   - name: idp/sovereign-worker
+     newName: ghcr.io/chidionyema/sovereign-worker
+-    newTag: main-3142-372d7cf64ad7e07375c03e2ed5629a68d82e1c0b # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
++    newTag: main-3199-bee102dbf8c92ac69b0ff9fe466355034050cb4a # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
+diff --git a/platform/vendors/consoles.yaml b/platform/vendors/consoles.yaml
+index e56e15dc2..3607b18ba 100644
+--- a/platform/vendors/consoles.yaml
++++ b/platform/vendors/consoles.yaml
+@@ -89,6 +89,17 @@ vendors:
+     targets:
+       - { entry: prospector-engine-env, field: EXA_API_KEY }
+       - { entry: hermes-agent-env, field: EXA_API_KEY }
++  cursor:
++    # crew#751: Cursor is an agent harness, not a LiteLLM completions lane. The key authenticates
++    # `agent -p` on the Mac via cursor-agent. Architect stays on the model router. Cursor publishes
++    # no create-key API (dashboard Integrations / API Keys, read 2026-08-31); the key is the root.
++    kind: secret
++    secret: SEED_CURSOR_API_KEY
++    page: https://cursor.com/dashboard/integrations
++    shape: "(key_|crsr_|cursor_)[A-Za-z0-9_-]{16,}"
++    verify: { method: GET, url: https://api.cursor.com/v1/me, headers: { Authorization: "Bearer {key}" } }
++    targets:
++      - { entry: hermes-agent-env, field: CURSOR_API_KEY }
+   telegram:
+     # BotFather has no HTTP API; each bot token is a root of its own, made once with /newbot.
+     kind: secret
+diff --git a/tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py b/tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py
+index 147de39cf..9913f021d 100644
+--- a/tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py
++++ b/tests/test_crew539_dod1_prometheus_alertmanager_page_the_founder.py
+@@ -195,10 +195,12 @@ def test_probe_targets_are_exactly_the_founder_surfaces_and_the_module_accepts_4
+     )
+     targets = sorted(probe["spec"]["targets"]["staticConfig"]["static"])
+     assert targets == founder_surface_urls(), targets
+-    # the estate's own hostnames are never literal (LAW 46); the two external surfaces are the only ones without the placeholder
++    # the estate's own hostnames are never literal (LAW 46); vendor consoles and Telegram are the only ones without the placeholder
+     assert all(
+         "${ESTATE_ZONE}" in t
+-        or t.startswith(("https://cloud.oracle.com/", "https://t.me/"))
++        or t.startswith(
++            ("https://cloud.oracle.com/", "https://t.me/", "https://cursor.com/")
++        )
+         for t in targets
+     ), targets
+     assert (
+diff --git a/tests/test_crew612_portal_doors_are_real_and_distinct.py b/tests/test_crew612_portal_doors_are_real_and_distinct.py
+index 95272ebc2..928252d50 100644
+--- a/tests/test_crew612_portal_doors_are_real_and_distinct.py
++++ b/tests/test_crew612_portal_doors_are_real_and_distinct.py
+@@ -66,13 +66,105 @@ def test_every_nav_door_has_its_page_wired():
+ 
+ 
+ def test_every_imported_icon_is_used():
++    # An icon counts as used when the file body names it anywhere but its import line: the
++    # menu button's MenuIcon is used in JSX, not in the NAV table (2026-09-01, phone menu).
+     src = NAV.read_text()
+     imported = re.findall(r"import (\w+Icon) from '@material-ui/icons/", src)
+-    used = {i["icon"] for i in nav_items()}
+-    dead = [icon for icon in imported if icon not in used]
++    body = re.sub(r"^import .*$", "", src, flags=re.M)
++    dead = [icon for icon in imported if not re.search(rf"\b{icon}\b", body)]
+     assert not dead, f"icon imports nothing uses: {dead}"
+ 
+ 
++def test_the_phone_gets_a_menu_that_slides_in_from_the_left():
++    """Founder, 2026-09-01, on his phone: "where the fuck is the menu"; "why would someone scroll
++    to bottom of page to see menu". Backstage folds its sidebar into a bottom bar under 600px.
++    The nav now switches on that same breakpoint to a Material Drawer anchored left, opened by
++    a button a screen reader calls "Open menu", listing every door in NAV in order."""
++    src = NAV.read_text()
++    assert "useMediaQuery(theme.breakpoints.down('xs'))" in src, (
++        "the phone switch is not Backstage's own xs breakpoint"
++    )
++    assert re.search(r"<Drawer\s+anchor=\"left\"", src), (
++        "the phone menu is not a Drawer anchored left"
++    )
++    assert (
++        "aria-label={`Open ${PHONE_MENU_LABEL.toLowerCase()}`}" in src
++        and "PHONE_MENU_LABEL = 'Menu'" in src
++    ), "the menu button has no spoken name; the drill opens it by that name (R53)"
++    phone = src.split("const PhoneNav")[1].split("const DesktopNav")[0]
++    assert "NAV.map(" in phone and "component={Link}" in phone, (
++        "the drawer does not list the NAV doors as links"
++    )
++    assert "onClose={() => setOpen(false)}" in phone, (
++        "the drawer does not close on the backdrop or Escape"
++    )
++
++
++APP_CONFIG = ROOT / "backstage/app-config.yaml"
++HOME_MODULE = ROOT / "backstage/packages/app/src/modules/home/homeModule.tsx"
++
++
++def test_the_front_page_is_backstage_own_home_page_and_its_toolkit_is_the_menu():
++    """ "/" is @backstage/plugin-home's own page. Widgets come from the plugin; the drag board
++    does not (founder 2026-09-03). The toolkit is the ten menu doors in the same order."""
++    import yaml
++
++    app = APP.read_text()
++    assert "from '@backstage/plugin-home/alpha'" in app and re.search(
++        r"^\s+homePlugin,$", app, re.M
++    ), "App.tsx does not load Backstage's home plugin; page:home would be undefined"
++    module = HOME_MODULE.read_text()
++    layout = (
++        ROOT / "backstage/packages/app/src/modules/home/homeLayout.tsx"
++    ).read_text()
++    code = lambda src: re.sub(r"//.*", "", src)
++    assert not re.search(r"path:\s*'/'", module), (
++        "modules/home still defines a page at '/', which overrides page:home"
++    )
++    assert "HomePageLayoutBlueprint.make(" in module, (
++        "the home plugin has no custom layout wired"
++    )
++    assert "CustomHomepageGrid" not in code(
++        module
++    ) and "CustomHomepageGrid" not in code(layout), (
++        "the drag-and-resize board is back on the front page"
++    )
++    assert "<Header" in layout and (
++        'to="/create"' in layout or 'href="/create"' in layout
++    ), "Today has no header and no Create action"
++    nav = NAV.read_text()
++    assert "SidebarGroup" not in code(nav), (
++        "a SidebarGroup of one door makes hover a second click"
++    )
++    assert "SidebarSearchModal" in nav and "keydown" in nav, (
++        "Find is not Backstage's search modal, or Cmd+K is missing"
++    )
++    ext = {}
++    for row in yaml.safe_load(APP_CONFIG.read_text())["app"]["extensions"]:
++        ext.update(row)
++    grid = ext["page:home"]["config"]
++    assert grid["path"] == "/", "page:home is not served at /"
++    components = [w["component"] for w in grid["defaultConfig"]]
++    assert components[0] == "HomePageSearchBar" and "HomePageToolkit" in components, (
++        components
++    )
++    assert grid["defaultConfig"][0].get("deletable") is False, (
++        "the search bar can be deleted from the page"
++    )
++    tools = ext["home-page-widget:home/toolkit"]["config"]["tools"]
++    assert [(t["label"], t["url"]) for t in tools] == [
++        (i["title"], i["to"]) for i in nav_items()
++    ], (
++        "the toolkit on the front page and the menu list different doors or a different order"
++    )
++    assert (
++        ext.get("api:home/visits") is True
++        and ext.get("app-root-element:home/visit-listener") is True
++    ), (
++        "Recently visited and Most visited are on the grid with visit tracking switched off"
++    )
++
++
+ def test_the_portal_is_not_branded_as_the_store():
+     """The portal is the estate portal; Mumchimp is the store it runs, not its name."""
+     cfg = CONFIG.read_text()
+diff --git a/tests/test_incident_crew516_otto_hands_on_the_mac.py b/tests/test_incident_crew516_otto_hands_on_the_mac.py
+index 085e51b80..3165d22e5 100644
+--- a/tests/test_incident_crew516_otto_hands_on_the_mac.py
++++ b/tests/test_incident_crew516_otto_hands_on_the_mac.py
+@@ -430,7 +430,10 @@ def test_kustomization_carries_the_new_resources():
+     # mount keeps its name forever, so the pod keeps the script it started with; the generator's
+     # content hash is what rolls it.
+     gens = {g["name"]: g for g in ks.get("configMapGenerator", [])}
+-    assert gens["hermes-agent-mac-run"]["files"] == ["mac-run=mac-run.tpl"]
++    assert gens["hermes-agent-mac-run"]["files"] == [
++        "mac-run=mac-run.tpl",
++        "cursor-agent=cursor-agent.tpl",
++    ]
+ 
+ 
+ # ---------------------------------------------------------------------------
+diff --git a/tests/test_incident_crew612_entity_pages_have_no_empty_tab.py b/tests/test_incident_crew612_entity_pages_have_no_empty_tab.py
+index cb8f2bbdd..c50d5e416 100644
+--- a/tests/test_incident_crew612_entity_pages_have_no_empty_tab.py
++++ b/tests/test_incident_crew612_entity_pages_have_no_empty_tab.py
+@@ -71,7 +71,8 @@ def _extension_config():
+     for item in app["app"]["extensions"]:
+         if isinstance(item, dict):
+             (name, body), = item.items()
+-            out[name] = (body or {}).get("config") or {}
++            # `extension: true|false` is Backstage's own on/off shape; it carries no config.
++            out[name] = (body.get("config") if isinstance(body, dict) else None) or {}
+     return out
+ 
+ 
+diff --git a/tests/test_incident_crew618_set_root_is_one_command.py b/tests/test_incident_crew618_set_root_is_one_command.py
+index e307739b0..aa063be98 100644
+--- a/tests/test_incident_crew618_set_root_is_one_command.py
++++ b/tests/test_incident_crew618_set_root_is_one_command.py
+@@ -14,7 +14,7 @@ def test_every_founder_set_root_has_a_provider_road():
+     for name in ("SEED_TAILSCALE_CLIENT_ID", "SEED_TAILSCALE_CLIENT_SECRET", "SEED_CLOUDFLARE_ROOT_TOKEN",
+                  "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN"):
+         assert name in SCRIPT, name
+-    for vendor in ("anthropic", "openrouter", "deepseek", "minimax", "groq", "gemini", "exa", "stripe"):
++    for vendor in ("anthropic", "openrouter", "deepseek", "minimax", "groq", "gemini", "exa", "cursor", "stripe"):
+         assert re.search(rf"\b{vendor}\b", SCRIPT), vendor
+ 
+ 
+@@ -46,7 +46,7 @@ def test_all_walks_every_provider_once_and_skips_the_ones_already_set(tmp_path):
+     assert "tailscale already set; skipped" in r.stdout
+     names = [l.split()[1] for l in (tmp_path / "set.log").read_text().splitlines()]
+     assert names == ["SEED_CLOUDFLARE_ROOT_TOKEN", "SEED_ANTHROPIC_API_KEY", "SEED_OPENROUTER_API_KEY", "SEED_DEEPSEEK_API_KEY",
+-                     "SEED_MINIMAX_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_STRIPE_SECRET_KEY",
++                     "SEED_MINIMAX_API_KEY", "SEED_GROQ_API_KEY", "SEED_GEMINI_API_KEY", "SEED_EXA_API_KEY", "SEED_CURSOR_API_KEY", "SEED_STRIPE_SECRET_KEY",
+                      "SEED_TELEGRAM_HERMES_BOT_TOKEN", "SEED_TELEGRAM_ALERTS_BOT_TOKEN",
+                      # a pair: two hidden reads, two repository secrets, one client (the shop's
+                      # Continue with Google button)
+diff --git a/tests/test_incident_crew66_federated_identity_mints_the_operator_client_with_no_secret.py b/tests/test_incident_crew66_federated_identity_mints_the_operator_client_with_no_secret.py
+index 84ed6c8be..5cc8ef58d 100644
+--- a/tests/test_incident_crew66_federated_identity_mints_the_operator_client_with_no_secret.py
++++ b/tests/test_incident_crew66_federated_identity_mints_the_operator_client_with_no_secret.py
+@@ -8,10 +8,14 @@ tailscale operator, the hermes-agent gateway and guacamole sat Failed on every a
+ (oke-check 33235976992: `could not get secret data`). A federated identity's client id is public,
+ lives in estate-config, and the exchange needs only the job's `id-token: write`.
+ """
++
+ import json
+ import pathlib
+ 
+-from test_incident_crew66_tailscale_operator_client_is_minted_through_the_api import _estate, _run
++from test_incident_crew66_tailscale_operator_client_is_minted_through_the_api import (
++    _estate,
++    _run,
++)
+ 
+ IDP = pathlib.Path(__file__).resolve().parents[1]
+ 
+@@ -19,9 +23,13 @@ IDP = pathlib.Path(__file__).resolve().parents[1]
+ def _federated(tmp_path, cid="kFED111111", oidc_ok=True):
+     env, log, vault = _estate(tmp_path, seed=None)
+     sh = pathlib.Path(env["IDP_VAULT_PUT"]).parent
+-    mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client"}'
++    mint = '{"id":"kNEW987654","key":"tskey-client-new-1","keyType":"client","tags":["tag:k8s","tag:k8s-operator"]}'
+     (sh / "curl").write_text(f'''#!/bin/bash
+ echo "$@" >> "{log}"
++# `-K -` means the config (the credential pair) arrives on stdin; read it the way real curl does.
++# Run 33461818477 (idp#1098): this stand-in exited without reading, the writer's printf took
++# SIGPIPE, and under pipefail the verify step read "token exchange did not answer" on a green path.
++for a in "$@"; do [ "$a" = -K ] && cat >/dev/null; done
+ # honour -o <file> and -w '%{{http_code}}' the way the federated exchange calls curl
+ out=/dev/stdout; code=""
+ args=("$@"); for i in "${{!args[@]}}"; do [ "${{args[$i]}}" = -o ] && out="${{args[$((i+1))]}}"; [ "${{args[$i]}}" = -w ] && code=200; done
+@@ -36,12 +44,19 @@ esac
+ ''')
+     cfg = tmp_path / "estate-config.yaml"
+     cfg.write_text(f'data:\n  TAILSCALE_FEDERATED_CLIENT_ID: "{cid}"\n')
+-    env.update({"ESTATE_CONFIG": str(cfg), "ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.test/token?api-version=2",
+-                "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "runner-token"})
++    env.update(
++        {
++            "ESTATE_CONFIG": str(cfg),
++            "ACTIONS_ID_TOKEN_REQUEST_URL": "https://oidc.test/token?api-version=2",
++            "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "runner-token",
++        }
++    )
+     return env, log, vault
+ 
+ 
+-def test_crew66_in_actions_the_oidc_token_is_exchanged_and_the_client_minted_without_a_seed(tmp_path):
++def test_crew66_in_actions_the_oidc_token_is_exchanged_and_the_client_minted_without_a_seed(
++    tmp_path,
++):
+     env, log, vault = _federated(tmp_path)
+     p = _run(env)
+     assert p.returncode == 0, p.stdout + p.stderr
+@@ -50,27 +65,38 @@ def test_crew66_in_actions_the_oidc_token_is_exchanged_and_the_client_minted_wit
+     ex = [l for l in calls.splitlines() if "token-exchange" in l][0]
+     assert "client_id=kFED111111" in ex and "jwt=eyJhbGciOi.jwt.sig" in ex
+     assert "tailnet/-/keys" in calls and "at-fed" in calls
+-    assert json.load(open(vault))["tailscale-operator"] == {"client_id": "kNEW987654", "client_secret": "tskey-client-new-1"}
++    assert json.load(open(vault))["tailscale-operator"] == {
++        "client_id": "kNEW987654",
++        "client_secret": "tskey-client-new-1",
++    }
+     assert "federated" in p.stdout and "tskey" not in p.stdout
+ 
+ 
+ def test_crew66_no_oidc_token_fails_before_any_mint_and_writes_nothing(tmp_path):
+     env, log, vault = _federated(tmp_path, oidc_ok=False)
+     p = _run(env)
+-    assert p.returncode == 1 and "FAIL    federated" in p.stdout + p.stderr, p.stdout + p.stderr
++    assert p.returncode == 1 and "FAIL    federated" in p.stdout + p.stderr, (
++        p.stdout + p.stderr
++    )
+     assert "tailnet/-/keys" not in log.read_text()
+     assert "tailscale-operator" not in json.load(open(vault))
+ 
+ 
+-def test_crew66_outside_actions_with_an_identity_the_script_stops_and_never_falls_to_a_seed(tmp_path):
++def test_crew66_outside_actions_with_an_identity_the_script_stops_and_never_falls_to_a_seed(
++    tmp_path,
++):
+     # founder 2026-08-29: if federated fails the script stops; no secret-based fallback
+     env, log, vault = _federated(tmp_path)
+     for k in ("ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"):
+         env.pop(k)
+     p = _run(env)
+     out = p.stdout + p.stderr
+-    assert p.returncode == 1 and "FAIL    federated" in out and "only on the runner" in out, out
+-    assert "token-exchange" not in log.read_text() and "oauth/token" not in log.read_text()
++    assert (
++        p.returncode == 1 and "FAIL    federated" in out and "only on the runner" in out
++    ), out
++    assert (
++        "token-exchange" not in log.read_text() and "oauth/token" not in log.read_text()
++    )
+ 
+ 
+ def test_crew66_the_apply_run_mints_the_operator_client_and_estate_config_names_the_identity():
+diff --git a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+index 49022df13..0e62af596 100644
+--- a/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
++++ b/tests/test_incident_crew66_vendor_roots_are_named_secrets.py
+@@ -28,6 +28,7 @@ FAKE = {
+     "SEED_GROQ_API_KEY": "gsk_" + "A" * 40,
+     "SEED_GEMINI_API_KEY": "AIza" + "B" * 35,
+     "SEED_EXA_API_KEY": "01234567-0123-0123-0123-0123456789ab",
++    "SEED_CURSOR_API_KEY": "key_" + "a" * 24,
+     "SEED_TELEGRAM_HERMES_BOT_TOKEN": "12345678:" + "C" * 35,
+     "SEED_TELEGRAM_ALERTS_BOT_TOKEN": "87654321:" + "D" * 35,
+     "SEED_STRIPE_SECRET_KEY": "sk_test_" + "E" * 24,
+diff --git a/tests/test_incident_crew751_cursor_is_the_hermes_worker.py b/tests/test_incident_crew751_cursor_is_the_hermes_worker.py
+new file mode 100644
+index 000000000..1fc66aef6
+--- /dev/null
++++ b/tests/test_incident_crew751_cursor_is_the_hermes_worker.py
+@@ -0,0 +1,168 @@
++"""crew#751: Cursor is Hermes's WORK runtime. Architect stays on the router.
++
++Cursor is an agent harness, not a LiteLLM completions lane. WORK dispatch must name
++`cursor` as the live runtime, reach the Mac only through `cursor-agent` (which execs
++`mac-run`), and never put the API key in git or in argv. The key is a vendor root
++(SEED_CURSOR_API_KEY) proved and vaulted by bin/idp-bootstrap-vendors.
++"""
++
++# ruff: noqa: S101, S105, S603
++
++import os
++import subprocess
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++HERMES = ROOT / "platform" / "hermes-agent"
++GATEWAY = HERMES / "gateway.yaml"
++ESTATE = HERMES / "estate.yaml"
++REG = ROOT / "platform/vendors/consoles.yaml"
++WF = ROOT / ".github/workflows/oke-check.yml"
++WRAPPER = HERMES / "cursor-agent.tpl"
++FOUNDER = ROOT / "backstage/founder/catalog-info.yaml"
++GEN = ROOT / "bin/catalog-gen"
++FIX = ROOT / "tests/fixtures/inventory.json"
++
++
++def _estate():
++    cfg = yaml.safe_load(ESTATE.read_text())
++    return yaml.safe_load(cfg["data"]["estate.yaml"])
++
++
++def _gateway():
++    for doc in yaml.safe_load_all(GATEWAY.read_text()):
++        if doc and doc.get("kind") == "Deployment":
++            return doc
++    raise AssertionError("no Deployment in gateway.yaml")
++
++
++def test_work_dispatch_runtime_is_cursor_through_the_wrapper():
++    doc = _estate()
++    assert doc["dispatch"]["runtime"] == "cursor"
++    argv = doc["dispatch"]["runtimes"]["cursor"]
++    assert argv[0] == "cursor-agent"
++    assert "{prompt}" in argv
++    assert "CURSOR_API_KEY" not in argv
++    joined = " ".join(argv)
++    assert "sk-" not in joined and "key_" not in joined
++
++
++def test_cursor_agent_wrapper_refuses_the_mac_login_without_a_vault_key():
++    text = WRAPPER.read_text()
++    assert "mac-run" in text and "exec mac-run" in text
++    assert "exec agent" in text
++    assert "\ncp " not in text and " cp " not in text
++    assert "key_" not in text and "crsr_" not in text
++    code = "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
++    assert "--api-key" not in code
++    assert "env CURSOR_API_KEY=" not in code
++    assert "no CURSOR_API_KEY" in text
++    assert "refusing the Mac login" in text
++    assert "exit 2" in text
++
++
++def test_the_cluster_estate_is_the_only_live_dispatch_file():
++    text = ESTATE.read_text()
++    assert "LIVE estate the cluster runs" in text
++    assert "hermes-v2/estate.yaml is the Mac ancestor" in text
++    doc = _estate()
++    assert doc["dispatch"]["runtime"] == "cursor"
++    assert "claude" in doc["dispatch"]["runtimes"]
++
++
++def test_cursor_agent_is_a_subpath_on_the_hashed_configmap():
++    gw = next(
++        c
++        for c in _gateway()["spec"]["template"]["spec"]["containers"]
++        if c["name"] == "gateway"
++    )
++    mounts = [m for m in gw["volumeMounts"] if m["name"] == "mac-run"]
++    by_path = {m["mountPath"]: m["subPath"] for m in mounts}
++    assert by_path["/usr/local/bin/mac-run"] == "mac-run"
++    assert by_path["/usr/local/bin/cursor-agent"] == "cursor-agent"
++
++
++def test_cursor_is_a_named_vendor_root_mapped_into_apply():
++    vendors = yaml.safe_load(REG.read_text())["vendors"]
++    row = vendors["cursor"]
++    assert row["secret"] == "SEED_CURSOR_API_KEY"
++    assert row["targets"] == [{"entry": "hermes-agent-env", "field": "CURSOR_API_KEY"}]
++    assert "SEED_CURSOR_API_KEY: ${{ secrets.SEED_CURSOR_API_KEY }}" in WF.read_text()
++    assert "bin/idp-bootstrap-vendors" in WF.read_text()
++
++
++def _founder():
++    return [d for d in yaml.safe_load_all(FOUNDER.read_text()) if d]
++
++
++def test_cursor_is_a_founder_surface_that_opens_the_catalogue_resource():
++    docs = {d["metadata"]["name"]: d for d in _founder()}
++    card = docs["founder-cursor"]
++    assert card["spec"]["type"] == "founder-surface"
++    assert "resource:default/vendor-cursor" in card["spec"]["dependsOn"]
++    urls = {l["url"] for l in card["metadata"]["links"]}
++    assert (
++        "https://catalogue.${ESTATE_ZONE}/catalog/default/resource/vendor-cursor"
++        in urls
++    )
++    assert "https://cursor.com/dashboard/integrations" in urls
++    assert "https://github.com/chidionyema/crew/issues/751" in urls
++    otto = docs["founder-otto"]
++    assert "resource:default/vendor-cursor" in otto["spec"]["dependsOn"]
++    assert "founder-cursor" in otto["metadata"]["description"]
++    ours = {l["url"] for l in card["metadata"]["links"]}
++    others = {
++        l["url"]
++        for d in docs.values()
++        if d is not card
++        for l in d["metadata"].get("links") or []
++    }
++    assert not ours & others, ours & others
++
++
++def test_catalog_gen_emits_vendor_cursor_from_the_registry(tmp_path):
++    """Cursor has no inventory coupling today; the registry row is the source (STANDARDS row 6)."""
++    out = tmp_path / "out"
++    out.mkdir()
++    r = subprocess.run(
++        [str(GEN)],
++        env={
++            **os.environ,
++            "INV": str(FIX),
++            "OUT": str(out),
++            "ESTATE_ENV": "dev",
++            "CATALOG_GEN_ROOT": str(ROOT),
++            "CATALOG_GEN_PROBE": "0",
++        },
++        capture_output=True,
++        text=True,
++    )
++    assert r.returncode == 0, r.stderr
++    docs = {
++        d["metadata"]["name"]: d
++        for d in yaml.safe_load_all((out / "catalog-info.yaml").read_text())
++        if d
++    }
++    vendors = yaml.safe_load(REG.read_text())["vendors"]
++    for name, row in vendors.items():
++        entity = docs[f"vendor-{name}"]
++        assert entity["kind"] == "Resource"
++        assert entity["spec"]["type"] == "vendor"
++        if row.get("page"):
++            assert row["page"] in {l["url"] for l in entity["metadata"]["links"]}
++    cursor = docs["vendor-cursor"]
++    assert (
++        cursor["metadata"]["annotations"]["estate/registry"]
++        == "platform/vendors/consoles.yaml"
++    )
++    assert "https://cursor.com/dashboard/integrations" in {
++        l["url"] for l in cursor["metadata"]["links"]
++    }
++
++
++def test_founder_link_checker_accepts_a_login_walled_console():
++    """cursor.com/dashboard/integrations answers 403 to an unauthenticated crawler."""
++    text = (ROOT / ".github/workflows/oke-check.yml").read_text()
++    assert "401,403,405" in text

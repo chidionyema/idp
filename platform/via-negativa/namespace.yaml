@@ -1,0 +1,20 @@
+# The via-negativa engine (bin/negative-constraints-proxy, bin/rca_worker): an interception
+# proxy that pre-flight-rejects banned tool-call signatures, an async worker that turns a real
+# agent failure into a negative constraint, and a Postgres ledger of what was learned. Own
+# namespace, own Redis (platform/llm/redis.yaml's own-dedicated-cache pattern, not a shared
+# store per THE HEADLINE), own row on the one Postgres (platform/estate-db).
+#
+# Restricted profile, default-deny NetworkPolicy + ResourceQuota + LimitRange from
+# platform/ns-fences (bin/idp-ns-fence-gen, allowances.yaml) -- not hand-written here, same
+# deferred-until-measured state platform/epistemic-fabric/namespace.yaml is in.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux (idp#648): a namespace dropped from git stays, with
+    # everything in it, and the next reconcile reads as a portability break.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: via-negativa
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted

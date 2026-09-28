@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""One cloud resource has exactly one owner: OpenTofu or Crossplane, never both.
+
+Decision 0026 (docs/decisions/0026-crossplane-owns-day-2-and-terraform-owns-the-ground.md) lets the
+two coexist -- OpenTofu builds the six things that must exist before the cluster does, Crossplane
+owns the rest as Day-2. The one failure that argument has to survive is two controllers reconciling
+the same cloud object. That is not a philosophical risk. It is a write loop that runs at
+Crossplane's reconcile interval, forever, until the bill says so, and neither side ever reports an
+error: each one keeps finding the object drifted and putting it back.
+
+Nothing in Kubernetes or in Terraform can see that collision, because each tool only knows its own
+half. It is visible in exactly one place -- the pull request that adds the second owner -- so this
+runs there, and it runs before the operator is installed. The guard predates the thing it guards.
+
+What it compares is the cloud identity, not the file. A Crossplane managed resource names the object
+it owns in `crossplane.io/external-name` (falling back to spec.forProvider.name, then metadata.name,
+which is what the provider itself does). An OpenTofu resource under platform/oci names it in its
+`name` attribute. Same string, two owners. The resource address `type.label` is compared too, for
+the case where a Claim is named after the HCL block rather than after the bucket.
+
+  idp-split-brain [ROOT]
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+TF_DIR = os.path.join("platform", "oci")
+
+# `resource "oci_objectstorage_bucket" "estate_receipts" {`
+RESOURCE = re.compile(r'^\s*resource\s+"([^"]+)"\s+"([^"]+)"\s*\{', re.M)
+# `  name = "estate-receipts"` -- the cloud-side identity, not the HCL label.
+NAME_ATTR = re.compile(r'^\s*name\s*=\s*"([^"]+)"\s*$', re.M)
+# A Crossplane API group: the provider families (oci.upbound.io, aws.upbound.io) and core.
+CROSSPLANE_GROUP = re.compile(r"\.(upbound\.io|crossplane\.io)/")
+
+
+def tofu_owns(root: str) -> dict[str, str]:
+    """Every cloud identity OpenTofu claims, as identity -> where it is claimed."""
+    owned: dict[str, str] = {}
+    base = os.path.join(root, TF_DIR)
+    if not os.path.isdir(base):
+        return owned
+    for dirpath, _, names in os.walk(base):
+        for fname in sorted(names):
+            if not fname.endswith(".tf"):
+                continue
+            path = os.path.join(dirpath, fname)
+            text = open(path, errors="replace").read()
+            where = os.path.relpath(path, root)
+            starts = [(m.start(), m.group(1), m.group(2)) for m in RESOURCE.finditer(text)]
+            for idx, (pos, rtype, label) in enumerate(starts):
+                end = starts[idx + 1][0] if idx + 1 < len(starts) else len(text)
+                block = text[pos:end]
+                owned[f"{rtype}.{label}"] = where
+                found = NAME_ATTR.search(block)
+                if found:
+                    owned[found.group(1)] = where
+    return owned
+
+
+def crossplane_claims(root: str) -> list[tuple[str, str, str]]:
+    """Every Crossplane managed resource in the tree, as (identity, kind, where)."""
+    claims: list[tuple[str, str, str]] = []
+    skip = {os.path.join(root, "tests", "fixtures"), os.path.join(root, "scratchpad")}
+    for dirpath, dirnames, names in os.walk(root):
+        # tests/fixtures holds this rule's own two fixtures, which are deliberately a collision and
+        # deliberately not one; counting them as live claims would make the estate's own run lie.
+        dirnames[:] = [d for d in dirnames
+                       if d not in (".git", "node_modules", "__pycache__")
+                       and os.path.join(dirpath, d) not in skip]
+        for fname in sorted(names):
+            if not fname.endswith((".yaml", ".yml")):
+                continue
+            path = os.path.join(dirpath, fname)
+            text = open(path, errors="replace").read()
+            if not CROSSPLANE_GROUP.search(text):
+                continue
+            try:
+                docs = list(yaml.safe_load_all(text))
+            except yaml.YAMLError:
+                continue
+            for doc in docs:
+                if not isinstance(doc, dict):
+                    continue
+                api = str(doc.get("apiVersion", ""))
+                if not CROSSPLANE_GROUP.search(api + "/"):
+                    continue
+                meta = doc.get("metadata") or {}
+                spec = doc.get("spec") or {}
+                for_provider = spec.get("forProvider") or {}
+                identity = (
+                    (meta.get("annotations") or {}).get("crossplane.io/external-name")
+                    or for_provider.get("name")
+                    or meta.get("name")
+                )
+                if identity:
+                    claims.append((str(identity), str(doc.get("kind", "?")),
+                                   os.path.relpath(path, root)))
+    return claims
+
+
+def main() -> int:
+    root = sys.argv[1] if len(sys.argv) > 1 else ROOT
+    if not os.path.isabs(root):
+        root = os.path.join(os.getcwd(), root)
+    owned = tofu_owns(root)
+    claims = crossplane_claims(root)
+
+    collisions = [(i, k, w) for i, k, w in claims if i in owned]
+    if collisions:
+        print("FAIL  split    a cloud resource has two owners; each controller will undo the other")
+        for identity, kind, where in sorted(collisions):
+            print(f"      TWO OWNERS  {identity!r}: Crossplane {kind} in {where}, and OpenTofu in "
+                  f"{owned[identity]} -- delete one side in this same pull request, never both")
+        return 1
+    print(f"ok    split    {len(claims)} Crossplane resource(s) against {len(owned)} OpenTofu "
+          f"identity/identities; no cloud object has two owners")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

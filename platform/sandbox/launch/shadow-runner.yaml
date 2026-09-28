@@ -1,0 +1,50 @@
+# The shadow-runner identity (spec W2.2 / item 2 of decision 0025). STANDING, in the launch lane.
+#
+# The closed loop (#2751) lets a proved type:auto-remediation PR auto-land only when its rollup
+# holds a SUCCESS shadow-verify on its own head. That check is produced by bin/idp-shadow-run,
+# fed by applying the change inside the sandbox vcluster and reading state back. An executor that
+# reaches the estate's control plane would need the CI-held cluster credential the estate refuses
+# (clusters/oke/sandbox.yaml: "Nothing in continuous integration holds a cluster credential").
+# This identity is the estate-consistent alternative, scoped to the SANDBOX ONLY:
+#
+#   read the demo-sandbox vcluster's own kubeconfig secret (vc-demo-sandbox) so the runner can
+#   reach the *throwaway virtual* control plane -- a tenant cluster that carries no Flux row, is
+#   pruned hourly, and cannot touch flux-system. It gets NOTHING on the estate's host namespace
+#   beyond that read; no pod-create, no secret-write, no flux-system, no other namespace. The
+#   Role is named here verbatim so a reviewer reads exactly the verbs an agent may not widen.
+#
+# This is the "scoped, least-privilege, recorded, never a standing broad write" identity 0025
+# authorizes; it provably cannot create a Flux row (no flux-system RBAC) and cannot write on the
+# estate's host. The runner that USES it (applying into the sandbox vcluster) is a separate,
+# founder-approved in-cluster component; this file is the identity it must run under.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: shadow-runner
+  namespace: demo-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: shadow-runner
+  namespace: demo-sandbox
+rules:
+  # the sandbox's vcluster kubeconfig -- nothing else in this namespace may be written or read
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [vc-demo-sandbox]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shadow-runner
+  namespace: demo-sandbox
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: shadow-runner
+subjects:
+  - kind: ServiceAccount
+    name: shadow-runner
+    namespace: demo-sandbox

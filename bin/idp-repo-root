@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Prints the directory of the PRIMARY checkout that <dir> belongs to, so a caller can find a
+# sibling repository beside it.
+#
+# Every script that wanted a sibling checkout wrote "$IDP/.." and every one of them was wrong for
+# an agent session, because an agent session works in a linked worktree under a temp directory and
+# nothing sits beside that. bin/idp-kyverno-render resolved its policy set that way and went BLIND
+# on every local run, which is how CI became the only thing in the estate that ever judged a
+# render (crew#516); bin/scheduler-up resolved crew's science facts the same way.
+#
+# git already knows the answer. --git-common-dir is the primary checkout's .git from a linked
+# worktree and from the primary alike, so one expression covers both cases and no file has to name
+# where the checkout lives (LAW 46). A directory that is not a git checkout at all prints itself,
+# so a caller in a tarball or a container degrades to the old behaviour rather than failing.
+#
+# Usage: bin/idp-repo-root <dir>   ->   /path/to/primary-checkout
+set -euo pipefail
+dir="${1:?usage: idp-repo-root <dir>}"
+if gcd="$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" \
+   && [ -n "$gcd" ]; then
+  dirname "$gcd"
+else
+  cd "$dir" && pwd
+fi

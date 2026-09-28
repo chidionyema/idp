@@ -1,0 +1,24 @@
+# Applies the launch branch. While a sandbox is held the branch carries the Flux row demo-sandbox
+# (pointing at platform/sandbox/vcluster on main) and a ConfigMap the portal reads for the hold
+# and its expiry; between sandboxes it carries the ConfigMap alone, saying idle. Prune is what
+# ends a sandbox: when the sweep empties the branch, the row goes, and Flux removes everything the
+# row created except the marked namespace (platform/sandbox/vcluster/namespace.yaml).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: sandbox-live
+  namespace: flux-system
+spec:
+  interval: 1m
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: sandbox-launch
+  path: ./
+  prune: true
+  wait: false
+  timeout: 5m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

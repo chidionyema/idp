@@ -1,0 +1,63 @@
+# A pod that never calls Kubernetes should not be carrying a key to it.
+#
+# Founder, 2026-09-04 (~/.claude/docs/founder/2026-09-04T1230Z-lets-address-quick-y-and-get-back-tyoresearch-b8b2c98d.md):
+# close the gap where most pods auto-mount a Kubernetes API token they never use. Measured in
+# the cluster at 12:31Z: 130 of 180 pods mount one, and 23 of those run as the `default` service
+# account -- an account with no role bindings, so the token opens nothing a workload needs and
+# everything an attacker inside that container would start with.
+#
+# This rule takes the token away from that class and only that class. A workload with a service
+# account of its own has been given one deliberately, usually because it does talk to the API,
+# and mutating those would be guessing. The `default` account is the one nobody chose.
+#
+# The way out, for a pod on the default account that genuinely needs the API: annotate it
+# `estate.io/needs-kube-api: "true"` and the rule steps aside. That is the opt-in, and it is
+# visible in the pod's own manifest rather than in a list kept somewhere else.
+#
+# It mutates on admission, so it reaches a pod when it is next created. Pods already running
+# keep the token they were given until they roll.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: no-token-by-default
+  annotations:
+    policies.kyverno.io/title: A pod on the default account gets no Kubernetes token
+    policies.kyverno.io/category: Identity
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Sets automountServiceAccountToken to false on any pod that runs as the default service
+      account and has not asked for the API by annotation. The default account holds no role
+      bindings, so the token it mounts grants nothing a workload needs.
+spec:
+  background: false
+  rules:
+    - name: default-account-mounts-nothing
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          # The control plane's own namespaces. Their pods are not ours to reason about, and a
+          # cluster that cannot start is a worse outcome than a token nobody uses.
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - flux-system
+                - kyverno
+          # The stated opt-in.
+          - resources:
+              annotations:
+                estate.io/needs-kube-api: "true"
+      preconditions:
+        all:
+          - key: "{{ request.object.spec.serviceAccountName || 'default' }}"
+            operator: Equals
+            value: default
+      mutate:
+        patchStrategicMerge:
+          spec:
+            automountServiceAccountToken: false

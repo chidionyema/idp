@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# Otto's key to the founder's Mac, one command, no paste (crew#561; root trust per crew#66, R52).
+#   bin/idp-bootstrap-macrun            mint an ed25519 keypair on this runner and write vault entry
+#                                       `hermes-mac-run` (private_key_b64, public_key); a complete entry is kept
+#   bin/idp-bootstrap-macrun --check    exit 0 when the entry holds both halves, 1 when not
+#   bin/idp-bootstrap-macrun --rotate   mint anew even though the entry is complete
+#   bin/idp-bootstrap-macrun --public   print the public half (one line, never the private one)
+#
+# Why a key at all: Tailscale SSH cannot run on the founder's GUI Tailscale build and tagging his
+# Mac breaks his phone's route to it (platform/tailscale/policy.hujson header, kb/1193, kb/1068).
+# sshd on the Mac (Remote Login) is what answers port 22, and sshd wants a key. Why the key is born
+# here and not on the Mac: CI holds the OIDC identity that writes the vault (oke-check apply, the
+# same step shape as bin/idp-bootstrap-sunshine); the Mac holds no cloud identity and the founder
+# never pastes a secret. The private half reaches the hermes-agent pod through
+# platform/hermes-agent/mac-run-key.yaml; the public half is adopted into the Mac's
+# authorized_keys by bin/idp-mac-adopt-otto, which reads it from this step's log line.
+# Nothing but the PUBLIC key and key NAMES is ever printed.
+set -euo pipefail
+on_exit() {
+	local ec=$?
+	[ "$ec" -eq 0 ] || echo "  (exit $ec)" >&2
+}
+trap on_exit EXIT
+IDP=$(cd "$(dirname "$0")/.." && pwd)
+CLOUD="$IDP/bin/idp-cloud"
+SECRET=hermes-mac-run
+MODE=mint
+case "${1:-}" in
+"") ;;
+--check | --rotate | --public) MODE=${1#--} ;;
+*)
+	sed -n 2,7p "$0"
+	exit 2
+	;;
+esac
+say() { printf '%-7s %-16s %s\n' "$1" "$2" "$3"; }
+fail() {
+	say FAIL "$1" "$2"
+	exit 1
+}
+
+current() { "$CLOUD" secret get "$SECRET" 2>/dev/null; }
+complete() {
+	local cur
+	cur=$(current) && [ -n "$cur" ] || return 1
+	jq -e '.private_key_b64 and .public_key' <<<"$cur" >/dev/null 2>&1
+}
+public() { current | jq -r '.public_key'; }
+
+if complete; then
+	case "$MODE" in
+	check)
+		say ok "$SECRET" "vault entry holds private_key_b64/public_key"
+		exit 0
+		;;
+	public)
+		public
+		exit 0
+		;;
+	mint)
+		say ok "$SECRET" "vault entry complete; kept (--rotate to mint anew)"
+		say ok "$SECRET" "public key: $(public)"
+		exit 0
+		;;
+	esac
+else
+	[ "$MODE" = check ] && fail "$SECRET" "vault entry absent or incomplete; run $0 to mint"
+	[ "$MODE" = public ] && fail "$SECRET" "vault entry absent; run $0 to mint"
+fi
+
+umask 077
+P=$(mktemp -d)
+trap 'rm -rf "$P"' EXIT
+ssh-keygen -q -t ed25519 -N '' -C "otto@hermes-agent $(date -u +%Y-%m-%dT%H:%MZ)" -f "$P/key"
+# The private key is multi-line and the env file the vault writer reads is one value per line, so
+# the private half travels base64 in one line (property private_key_b64); the ExternalSecret decodes
+# it for the pod (mac-run-key.yaml, `b64dec`). vault-put stays the one writer (preflight, audit line).
+printf 'MACRUN_PRIVATE_KEY=%s\nMACRUN_PUBLIC_KEY=%s\n' "$(base64 <"$P/key" | tr -d '\n')" "$(cat "$P/key.pub")" >"$P/env"
+ESTATE_ENV_FILE="$P/env" "$IDP/bin/idp-vault-put" "$SECRET" \
+	private_key_b64=MACRUN_PRIVATE_KEY public_key=MACRUN_PUBLIC_KEY >/dev/null
+complete || fail "$SECRET" "written but does not read back complete"
+say ok "$SECRET" "minted; adopt on the Mac with bin/idp-mac-adopt-otto"
+say ok "$SECRET" "public key: $(cat "$P/key.pub")"

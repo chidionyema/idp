@@ -1,0 +1,87 @@
+# Tests/fixtures/sessions/catalog-info.yaml
+#
+# Three sample session rows (matches the real shape the inventory emits) plus one
+# non-session row so a missing filter is caught at test time. Format mirrors the
+# real catalog-info.yaml output of bin/catalog-gen for kind: Resource ledgers in
+# {@HOME@}/.claude/state/prompt-ledger/.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: claude-state-prompt-ledger-private-tmp-claude-501-Users-chidion
+  title: .claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-9b9c8ae6-8d6c-49d4-8bdf-3513de7c9c81-scratchpad.jsonl
+  description: Append-only ledger at {@HOME@}/.claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-9b9c8ae6-8d6c-49d4-8bdf-3513de7c9c81-scratchpad.jsonl, 17 rows, read by something in the estate.
+  annotations:
+    estate/coupling: anthropic
+    estate/kind: ledger
+    estate/path: '{@HOME@}/.claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-9b9c8ae6-8d6c-49d4-8bdf-3513de7c9c81-scratchpad.jsonl'
+    estate/referenced: 'True'
+    estate/root: ~/.claude
+    estate/rows: '17'
+  tags:
+    - ledger
+    - coupling-anthropic
+spec:
+  type: ledger
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: claude-state-prompt-ledger-private-tmp-claude-501-Users-429a4e
+  title: .claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-130c903b-056b-4580-b5c6-8e80ec1fabdc-scratchpad-claude-runner-repo.jsonl
+  description: Append-only ledger at {@HOME@}/.claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-130c903b-056b-4580-b5c6-8e80ec1fabdc-scratchpad-claude-runner-repo.jsonl, 4 rows, read by something in the estate.
+  annotations:
+    estate/coupling: anthropic
+    estate/kind: ledger
+    estate/path: '{@HOME@}/.claude/state/prompt-ledger/-private-tmp-claude-501--Users-chidionyema-130c903b-056b-4580-b5c6-8e80ec1fabdc-scratchpad-claude-runner-repo.jsonl'
+    estate/referenced: 'True'
+    estate/root: ~/.claude
+    estate/rows: '4'
+  tags:
+    - ledger
+    - coupling-anthropic
+spec:
+  type: ledger
+  owner: group:default/platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: claude-state-prompt-ledger-private-tmp-claude-501-Users-chidion-empty
+  title: .claude/state/prompt-ledger/empty-session.jsonl
+  description: Append-only ledger at {@HOME@}/.claude/state/prompt-ledger/empty-session.jsonl, 0 rows, read by something in the estate.
+  annotations:
+    estate/coupling: anthropic
+    estate/kind: ledger
+    estate/path: '{@HOME@}/.claude/state/prompt-ledger/empty-session.jsonl'
+    estate/referenced: 'True'
+    estate/root: ~/.claude
+    estate/rows: '0'
+  tags:
+    - ledger
+    - coupling-anthropic
+spec:
+  type: ledger
+  owner: group:default/platform
+# A non-session ledger under a different root, included so the test has something
+# to filter OUT -- if every row came back, list_sessions would be lying.
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: some-other-ledger
+  title: Not a session ledger
+  description: An unrelated estate ledger.
+  annotations:
+    estate/coupling: none
+    estate/kind: ledger
+    estate/path: '{@HOME@}/.estate/state/other.jsonl'
+    estate/referenced: 'True'
+    estate/root: ~/.estate
+    estate/rows: '12'
+  tags:
+    - ledger
+spec:
+  type: ledger
+  owner: group:default/platform

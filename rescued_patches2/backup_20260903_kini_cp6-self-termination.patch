@@ -1,0 +1,232 @@
+diff --git a/bin/scheduler-down b/bin/scheduler-down
+index 82647e386..8e9a8892a 100755
+--- a/bin/scheduler-down
++++ b/bin/scheduler-down
+@@ -4,4 +4,8 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ for n in dagster-daemon dagster-web; do
+   f="$IDP/run/$n.pid"; [ -f "$f" ] && { kill "$(cat "$f")" 2>/dev/null && echo "stopped $n"; rm -f "$f"; }
+ done
+-pkill -f "dagster-daemon run.*$IDP/scheduler" 2>/dev/null; pkill -f "dagster-webserver.*$IDP/scheduler" 2>/dev/null; true
++# The daemon and webserver are started from $IDP/scheduler with a relative
++# workspace path (`-w workspace.yaml`), so the checkout path is not in their
++# argv and a pattern that expects it kills nothing (2026-08-26: the 6-hour-old
++# daemon survived scheduler-down and never loaded a new schedule.yml row).
++pkill -f "dagster-daemon run -w workspace.yaml" 2>/dev/null; pkill -f "dagster-webserver -w workspace.yaml" 2>/dev/null; true
+diff --git a/features/sovereign-bus/cp6_self_termination.feature b/features/sovereign-bus/cp6_self_termination.feature
+new file mode 100644
+index 000000000..e6c675cc0
+--- /dev/null
++++ b/features/sovereign-bus/cp6_self_termination.feature
+@@ -0,0 +1,28 @@
++@cp6 @kini @self-termination
++Feature: Auto-termination acts, it does not only report
++  KINI master spec (crew#284) CP6, spec section 5. engine/termination.py
++  evaluates four rules; `sb self-check --enforce` acts on the verdict and a
++  five-minute row on the estate scheduler runs it. Every session is treated
++  as non-critical until a critical marker exists (residual on the ticket).
++
++  Scenario: Langfuse unreachable for more than blind.halt_after_min minutes halts
++    Given langfuse_blind_s one second over blind.halt_after_min
++    Then the action is halt, and at the threshold it is continue
++
++  Scenario: Confidence below terminate.min_confidence for low_confidence_steps steps soft-halts
++    Given a low-confidence streak of terminate.low_confidence_steps
++    Then the action is soft_halt, and one step fewer is continue
++
++  Scenario: More than alerts.digest_over_per_hour alerts in an hour compresses to a signed digest
++    Given alerts_last_hour one over alerts.digest_over_per_hour
++    Then the action is digest, and at the cap it is continue
++
++  Scenario: Enforcement stops running sessions on halt and nothing on continue
++    Given sessions running, asking and done
++    When sb self-check --enforce sees a halt verdict
++    Then the running and asking sessions receive a stop signal naming self-termination and the reason
++    And a continue verdict signals nothing
++
++  Scenario: The check is a row on the estate scheduler
++    Given scheduler/schedule.yml
++    Then ai.estate.sovereign-self-check runs `sovereign.cli self-check --enforce --json` every five minutes
+diff --git a/scheduler/schedule.yml b/scheduler/schedule.yml
+index 4f0b87c45..7fe50c8e6 100644
+--- a/scheduler/schedule.yml
++++ b/scheduler/schedule.yml
+@@ -95,6 +95,20 @@ jobs:
+     max_load: 6.0
+     skip_on_battery: false
+     timeout_s: 300
++  ai.estate.sovereign-self-check:
++    command:
++    - $IDP/sovereign/.venv/bin/python
++    - -m
++    - sovereign.cli
++    - self-check
++    - --enforce
++    - --json
++    cwd: $IDP
++    description: Evaluates the self-termination rules (KINI spec 5, crew#284 CP6) every five minutes and acts on the verdict; Langfuse blind over blind.halt_after_min or a low-confidence streak stops running sessions, an alert flood posts one signed digest.
++    cron: '*/5 * * * *'
++    max_load: 6.0
++    skip_on_battery: false
++    timeout_s: 120
+   ai.estate.tracked-guard:
+     command:
+     - /usr/bin/python3
+diff --git a/sovereign/cli.py b/sovereign/cli.py
+index ef5911796..993c13693 100644
+--- a/sovereign/cli.py
++++ b/sovereign/cli.py
+@@ -353,7 +353,10 @@ def cmd_self_check(args: argparse.Namespace) -> int:
+         alerts_last_hour=termination.alerts_in_last_hour(),
+     )
+     res = termination.evaluate(signals)
+-    _emit({**res, "signals": vars(signals)}, args.json)
++    enforced: dict[str, Any] = {}
++    if getattr(args, "enforce", False):
++        enforced = termination.enforce(res, by=args.by)
++    _emit({**res, "signals": vars(signals), "enforced": enforced}, args.json)
+     return 0 if res["action"] == termination.ACTIONS[0] else 1
+ 
+ 
+@@ -650,6 +653,9 @@ def main(argv: list[str] | None = None) -> int:
+     p.add_argument("--low-confidence-streak", type=int, default=0, dest="low_confidence_streak")
+     p.add_argument("--last-latency-s", type=float, default=0.0, dest="last_latency_s")
+     p.add_argument("--latency-retries-used", type=int, default=0, dest="latency_retries_used")
++    p.add_argument("--enforce", action="store_true",
++                   help="act on the verdict: halt/soft_halt stop every running session, digest posts one signed digest (crew#284 CP6)")
++    p.add_argument("--by", default="kernel", help="who the stop receipt names")
+     _add_json(p)
+     p.set_defaults(func=cmd_self_check)
+ 
+diff --git a/sovereign/engine/termination.py b/sovereign/engine/termination.py
+index 4cde224ac..83800d8b7 100644
+--- a/sovereign/engine/termination.py
++++ b/sovereign/engine/termination.py
+@@ -158,3 +158,41 @@ def alerts_in_last_hour(now: float | None = None) -> int:
+         if float(row.get("ts") or 0) >= cutoff:
+             count += 1
+     return count
++
++
++STOPPING_ACTIONS = ("soft_halt", "halt")
++
++
++def enforce(verdict: dict[str, Any], *, by: str = "kernel") -> dict[str, Any]:
++    """Act on evaluate()'s verdict (spec section 5, crew#284 CP6).
++
++    halt / soft_halt: signal `stop` to every session whose status is running,
++    asking or waiting. There is no critical marker on a session yet, so every
++    session counts as non-critical; the residual is recorded on the ticket.
++    digest: build the signed digest and post it once instead of the flood.
++    continue / retry_fallback: nothing to do here; the runner retries.
++    Returns what was done so the receipt records the action, not just the
++    verdict."""
++    import asyncio
++
++    action = verdict["action"]
++    reason = ",".join(r["reason"] for r in verdict.get("reasons", []))
++    if action in STOPPING_ACTIONS:
++        from sovereign.engine import client as engine_client
++
++        async def _stop_all() -> list[str]:
++            stopped: list[str] = []
++            for row in await engine_client.list_sessions():
++                if row.get("status") in ("running", "asking", "waiting"):
++                    await engine_client.signal(row["session_id"], "stop", by, f"self-termination:{reason}")
++                    stopped.append(row["session_id"])
++            return stopped
++
++        return {"action": action, "stopped": asyncio.run(_stop_all())}
++    if action == "digest":
++        from sovereign.presence import chat, digest as digest_mod
++
++        d = digest_mod.build()
++        chat.send(chat.TelegramSink(), d)
++        return {"action": action, "digest_lines": len(d.lines)}
++    return {"action": action}
+diff --git a/sovereign/tests/test_incident_cp6_termination.py b/sovereign/tests/test_incident_cp6_termination.py
+new file mode 100644
+index 000000000..d73f43e97
+--- /dev/null
++++ b/sovereign/tests/test_incident_cp6_termination.py
+@@ -0,0 +1,66 @@
++"""crew#284 CP6: self-termination rules, one incident test per rule (rung 4),
++and the enforcement step with the Temporal boundary stubbed.
++
++Before this, evaluate() was a pure function only `sb self-check` printed;
++nothing halted. The thresholds are read from config, never typed here.
++"""
++from __future__ import annotations
++
++import asyncio
++from typing import Any
++
++from sovereign import config
++from sovereign.engine import termination
++from sovereign.engine import config_keys as ck
++
++
++def _blind_s(extra: float) -> float:
++    return float(config.get("blind.halt_after_min").value) * termination.SECONDS_PER_MINUTE + extra
++
++
++def test_incident_cp6_langfuse_blind_over_five_minutes_halts() -> None:
++    assert termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(+1)))["action"] == "halt"
++    assert termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(0)))["action"] == "continue"
++
++
++def test_incident_cp6_low_confidence_three_steps_soft_halts() -> None:
++    n = int(ck.get("terminate.low_confidence_steps"))
++    assert termination.evaluate(termination.Signals(low_confidence_streak=n))["action"] == "soft_halt"
++    assert termination.evaluate(termination.Signals(low_confidence_streak=n - 1))["action"] == "continue"
++    assert termination.is_low_confidence(float(ck.get("terminate.min_confidence")) - 0.01)
++
++
++def test_incident_cp6_alert_flood_over_fifty_per_hour_digests() -> None:
++    cap = int(config.get("alerts.digest_over_per_hour").value)
++    assert termination.evaluate(termination.Signals(alerts_last_hour=cap + 1))["action"] == "digest"
++    assert termination.evaluate(termination.Signals(alerts_last_hour=cap))["action"] == "continue"
++
++
++def test_incident_cp6_enforce_stops_running_sessions_only_on_halt(monkeypatch: Any) -> None:
++    from sovereign.engine import client as engine_client
++
++    rows = [
++        {"session_id": "s-run", "status": "running"},
++        {"session_id": "s-ask", "status": "asking"},
++        {"session_id": "s-done", "status": "done"},
++    ]
++    signalled: list[tuple[str, str, str]] = []
++
++    async def fake_list() -> list[dict[str, Any]]:
++        return rows
++
++    async def fake_signal(session_id: str, name: str, by: str, reason: str = "") -> dict[str, Any]:
++        signalled.append((session_id, name, reason))
++        return {"ok": True}
++
++    monkeypatch.setattr(engine_client, "list_sessions", fake_list)
++    monkeypatch.setattr(engine_client, "signal", fake_signal)
++
++    halt = termination.evaluate(termination.Signals(langfuse_blind_s=_blind_s(+1)))
++    done = termination.enforce(halt)
++    assert done["stopped"] == ["s-run", "s-ask"]
++    assert all(n == "stop" and r.startswith("self-termination:blind") for _, n, r in signalled)
++
++    signalled.clear()
++    assert termination.enforce(termination.evaluate(termination.Signals())) == {"action": "continue"}
++    assert signalled == []
+diff --git a/tests/test_cp5_digest_schedule.py b/tests/test_cp5_digest_schedule.py
+index 45eb8bf32..328131d51 100644
+--- a/tests/test_cp5_digest_schedule.py
++++ b/tests/test_cp5_digest_schedule.py
+@@ -52,3 +52,10 @@ def test_digest_job_is_described() -> None:
+     )
+     line = next((l for l in r.stdout.splitlines() if JOB in l), "")
+     assert line.startswith("ok"), line or r.stdout
++
++
++def test_self_check_job_enforces_every_five_minutes() -> None:
++    jobs = yaml.safe_load((ROOT / "scheduler" / "schedule.yml").read_text())["jobs"]
++    job = jobs["ai.estate.sovereign-self-check"]
++    assert job["command"][-4:] == ["sovereign.cli", "self-check", "--enforce", "--json"]
++    assert str(job["cron"]).split()[0] == "*/5"

@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""The JIT broker's morning summary — WJ.11 (spec W0.10).
+
+WJ.11, docs/policy/agent-infra-safety-spec.md: "The morning summary (W0.10). One message: what
+was asked, what he approved while asleep, what expired unused, what was denied. The cheapest item
+here and the one that decides whether he trusts it [the lane]."
+
+This reads the broker's append-only ledger (`platform/jit/broker/broker.py:Ledger`, each line a
+JSON record `{at, event, prev, this, sig, ...}`) and prints that one digest. The ledger's own
+events give the four buckets directly:
+
+  asked    event == "asked"      an agent asked for a grant
+  approved event == "granted"    he approved it and the broker acted
+  expired  event == "expired"    an approved grant lapsed unused (TTL passed with no use)
+  denied   event == "denied"     he refused it
+
+  (anomalies: "forged" attempted forgery; "failed" an approved act that then failed -- both
+   belong in the digest as the reasons not to trust a quiet green count)
+
+It also verifies the ledger's hash chain the way the broker does (each record's prev/this links to the
+line before it, WJ.7): a summary read off a tampered ledger must refuse, not quietly mis-count,
+because trusting a lane begins with the truth of what it recorded. The broker-keyed HMAC `sig` is
+checked by the broker's own verify(); this tool checks the self-contained hash chain, which already
+makes any edit or reordering a refusal.
+
+  bin/idp-jit-morning-summary LEDGER [--since ISO_OR_UNIX_TS]
+Exit 0 after printing the digest over a verified chain; refuse (1) if a ledger line fails the hash
+chain; 2 = BLIND (cannot read the ledger). --since limits to records at or after that time
+(default: the last 24h).
+"""
+import argparse
+import hashlib
+import hmac
+import json
+import sys
+import time
+
+
+def _render(ts: float) -> str:
+    return time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(ts))
+
+
+def summarize(path, since=0.0):
+    """Return (ok, reason_or_None, digest_lines). ok False on chain/template failure."""
+    lines = []
+    try:
+        with open(path, encoding="utf-8") as fh:
+            for ln in fh:
+                if ln.strip():
+                    lines.append(json.loads(ln))
+    except OSError as e:
+        return False, f"cannot read ledger: {e}", []
+    except ValueError as e:
+        return False, f"ledger line is not JSON: {e}", []
+
+    counts = {"asked": 0, "granted": 0, "approved": 0, "expired": 0,
+              "denied": 0, "forged": 0, "failed": 0}
+    period_records = 0
+    prev = "0" * 64
+    for rec in lines:
+        # chain integrity (WJ.7): every line carries prev+this
+        if rec.get("prev") != prev:
+            return False, f"line does not follow the one before it (tampered ledger)", []
+        body = {k: v for k, v in rec.items() if k not in ("this", "sig")}
+        payload = json.dumps(body, sort_keys=True, separators=(",", ":"))
+        if hashlib.sha256((prev + payload).encode()).hexdigest() != rec.get("this"):
+            return False, f"hash mismatch on a ledger line (tampered)", []
+        prev = rec.get("this")
+        at = rec.get("at") or 0
+        if at < since:
+            continue
+        event = rec.get("event")
+        if event in counts:
+            counts[event] += 1
+        period_records += 1
+
+    # approved == granted (the two names for one outcome); bucket "approved" shows granted.
+    approved = counts["granted"]
+    out = [
+        f"jit-morning-summary  ledger={path or '(stdin)'} verified",
+        f"  asked   {counts['asked']:>3}   what agents asked for",
+        f"  approved {approved:>3}   what was granted while you slept",
+        f"  expired  {counts['expired']:>3}   approved but never used (lapsed unused)",
+        f"  denied   {counts['denied']:>3}   what was refused",
+    ]
+    if counts["forged"] or counts["failed"]:
+        out.append(f"  ANOMALY forged={counts['forged']} failed={counts['failed']} -- grade, do not trust silently")
+    return True, None, out
+
+
+def main(argv):
+    ap = argparse.ArgumentParser()
+    ap.add_argument("ledger", nargs="?", help="the broker ledger file (or - for stdin)")
+    ap.add_argument("--since", default=0, help="ISO/epoch lower bound; default 24h ago")
+    a = ap.parse_args(argv)
+
+    since = 0.0
+    if a.since:
+        try:
+            since = float(a.since)
+        except ValueError:
+            try:
+                import datetime
+                dt = datetime.datetime.fromisoformat(a.since.replace("Z", "+00:00"))
+                since = dt.timestamp()
+            except ValueError:
+                print(f"BLIND   jit-morning-summary  bad --since {a.since!r}", file=sys.stderr)
+                return 2
+    else:
+        since = time.time() - 86400  # last 24h
+
+    if a.ledger and a.ledger != "-":
+        ok, why, out = summarize(a.ledger, since)
+    else:
+        # stdin: read into a temp file so summarize stays path-based (deterministic for tests)
+        import tempfile
+        with tempfile.NamedTemporaryFile("w+", suffix=".ledger") as fh:
+            fh.write(sys.stdin.read()); fh.flush()
+            ok, why, out = summarize(fh.name, since)
+    if not ok:
+        print(f"FAIL   jit-morning-summary  {why}")
+        return 1
+    for line in out:
+        print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,17 @@
+[package]
+name = "idp_atomics"
+version = "0.1.0"
+edition = "2021"
+description = "Hardware-backed lock-free MPMC queue for the idp estate. Bypasses the GIL via crossbeam + pyo3."
+
+[lib]
+name = "idp_atomics"
+crate-type = ["cdylib"]
+
+[dependencies]
+crossbeam = "0.8"
+pyo3 = { version = "0.25", features = ["extension-module"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

@@ -1,0 +1,10 @@
+# A pod on the default service account with no annotation: the token must be taken away.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: takes-a-token-it-never-uses
+  namespace: observability
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/chidionyema/example:1

@@ -1,0 +1,79 @@
+#!/bin/bash
+# Put the dispatch boundary in every session. Run once; it is a symlink, so a later edit to the
+# repository copy reaches every session without re-running this.
+#
+# WHY A SYMLINK AND NOT A COPY. A copy drifts: the repository and the session would hold two
+# versions of one tool, and the one that runs would be whichever was written second. This estate
+# has deleted that pattern before; a link has one source.
+#
+# WHY RE-RUNNING IS SAFE. It replaces the link. It never deletes a directory a person put there --
+# if the destination exists and is not a symlink, this refuses and says so, because silently
+# removing somebody's file to install yours is how a working tool disappears.
+set -euo pipefail
+
+cleanup() {
+	local rc=$?
+	# A half-installed symlink is worse than none: pi would try to load a directory that points
+	# at nothing and fail at session start, which reads as "the tool is broken" rather than
+	# "the install was interrupted". Remove it on any non-zero exit.
+	if [ $rc -ne 0 ] && [ -L "$DEST" ] && [ ! -f "$DEST/index.ts" ]; then
+		rm -f "$DEST"
+		echo "rolled back the dangling link at $DEST" >&2
+	fi
+	exit $rc
+}
+trap cleanup EXIT
+
+SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/extensions/dispatch"
+DEST="$HOME/.pi/agent/extensions/dispatch"
+
+# A loose dispatch.ts beside the directory registers the same tools twice and pi refuses to start
+# the extension at all:
+#   Tool "dispatch_job" conflicts with .../extensions/dispatch/index.ts
+# Hit on 2026-09-13 when an earlier single-file version was left behind. Remove it and say so --
+# silently deleting a file the installer did not create is how somebody's work vanishes.
+if [ -e "$HOME/.pi/agent/extensions/dispatch.ts" ]; then
+	echo "removing the stale $HOME/.pi/agent/extensions/dispatch.ts"
+	echo "  (it registers the same tools as the directory and pi refuses both)"
+	rm -f "$HOME/.pi/agent/extensions/dispatch.ts"
+fi
+
+[ -f "$SRC/index.ts" ] || {
+	echo "no extension at $SRC/index.ts" >&2
+	exit 1
+}
+
+mkdir -p "$(dirname "$DEST")"
+
+if [ -L "$DEST" ]; then
+	rm -f "$DEST"
+elif [ -e "$DEST" ]; then
+	echo "REFUSED: $DEST exists and is not a symlink." >&2
+	echo "  It is a real directory -- someone's own copy. Move it aside and re-run," >&2
+	echo "  or leave it and the repository copy stays uninstalled." >&2
+	exit 1
+fi
+
+ln -s "$SRC" "$DEST"
+
+# Prove it is in place rather than reporting that the command ran. A symlink that points at
+# nothing reads as installed to `ls` and fails at session start, which is the exact shape of
+# failure this file exists to avoid.
+[ -f "$DEST/index.ts" ] || {
+	echo "FAILED: $DEST/index.ts is not readable through the link" >&2
+	exit 1
+}
+
+cat <<MSG
+installed  $DEST -> $SRC
+
+  dispatch_job      start work, get an id back in milliseconds, turn ends
+  dispatch_result   read what is on disk; never waits
+
+  A session ALREADY RUNNING will not see these -- pi loads extensions once, at session_start.
+  The next session has them. To check from here:
+
+    bin/idp-jobs-page
+
+  Logs land in ~/.estate/runs/<id>.log and the ledger in ~/.estate/dispatch/jobs.jsonl.
+MSG

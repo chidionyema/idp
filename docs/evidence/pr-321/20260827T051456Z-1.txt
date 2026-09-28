@@ -1,0 +1,4 @@
+== incident tests, cluster-state collector (crew227 CP4 + crew396)
+5 passed in 1.19s
+== manifest parses
+5 docs; ['ServiceAccount', 'ClusterRole', 'ClusterRoleBinding', 'ConfigMap', 'CronJob']

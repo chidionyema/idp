@@ -1,0 +1,433 @@
+# The concierge's road to Modal (crew#885 pattern). Founder 2026-09-11: no terminal, no token on a
+# laptop -- the same rule the Forge follows, for the same reason.
+#
+# WHY THIS EXISTS. The concierge's runtime is one microVM per order: it boots, hydrates a customer's
+# encrypted profile into RAM, verifies the voiceprint, drives the browser with the model never
+# seeing a card, commits state atomically, and dies. Idle cost is zero. Deploying that needs the
+# Modal root, which lives as a repository secret and is never on a machine -- so the deployment is
+# a workflow, exactly as forge-train is.
+#
+# WHY THIS IS HERE AND NOT IN mums-concierge. The code, the sidecar and the model all live in
+# chidionyema/mums-concierge, so the obvious home is there. That workflow ran and failed with
+# `no Modal root`: SEED_MODAL_TOKEN_ID / SEED_MODAL_TOKEN_SECRET are set on THIS repository, and
+# GitHub secrets are write-only -- they cannot be read or copied. So the run happens where the root
+# is, and checks the code out with the estate's own App token (the road forge-train already uses).
+# No new credential, no second copy of the root, nothing for a person to paste.
+#
+# THE TWO ARTIFACTS THIS RUN BUILDS, in dependency order:
+#
+#   1. the Rust vault sidecar (ephemeral/cdp-vault-proxy) -- the Iron Rule. It must be COMPILED
+#      before the image can carry it, which is why this is a workflow and not a `modal deploy`.
+#   2. the CAM++ voice model, 29.6 MB, from its real upstream release. The name in the original
+#      plan (3dspeaker_speech_ecapa_tdnn_sv_en_voxceleb_16k.onnx) returns HTTP 404; the release has
+#      36 assets and none is named `ecapa`.
+#
+# until 2026-09-11 the image fetched both from https://internal.repo/..., which exists nowhere, so
+# it could never build. Everything here is now built in the run and handed to Modal as bytes.
+#
+# button: Deploy the concierge runtime
+# founder: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
+#
+# WHAT IT DEPLOYS (updated when the always-on endpoint got its own road). Two Modal apps, both
+# gated on dry_run: `agent.py`, the per-order microVM that touches a shop and a card, and
+# `webapp.py`, the thin FastAPI/Twilio/WhatsApp endpoint that dispatches it. The endpoint was a
+# launchd LaunchAgent on a Mac until 2026-09-15; it is now deployed here and the vault entry the
+# endpoint reads its own public URL from is cut over automatically in the same run (LAW 31), into the
+# entry the ESTATE's registry already declares for it -- `concierge-twilio`, not the `concierge-tunnel`
+# name in mums_concierge.bootstrap, which has never existed and is reconciled separately. The one thing this workflow cannot do for itself is the Twilio console webhook,
+# which is a console step and is tracked as one.
+name: concierge-deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: build and verify, deploy nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  id-token: write   # traded for the OCI session that reads vault entries (R52)
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The App token, because GITHUB_TOKEN is scoped to this repository and cannot clone another.
+      # The lane needs contents: read on the code repo; nothing wider is asked for.
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          lane: recovery
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+
+      - name: check out the code the runtime is built from
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: chidionyema/mums-concierge
+          path: code
+          token: ${{ steps.app.outputs.token }}
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: the Modal root must answer before anything is built
+        run: |
+          set -euo pipefail
+          test -n "$MODAL_TOKEN_ID" && test -n "$MODAL_TOKEN_SECRET" \
+            || { echo "FAIL    concierge-deploy  no Modal root: run bin/idp-set-root modal once (R52)"; exit 1; }
+          python -m pip install --quiet 'modal==1.5.5'
+          modal secret list >/dev/null \
+            || { echo "FAIL    concierge-deploy  Modal refused the root pair; rotate with bin/idp-set-root modal"; exit 1; }
+          echo "ok      modal root answers"
+
+      # STAGE 1 -- the sidecar. The image cannot carry a binary that has not been built, and this is
+      # the piece four drafts fetched from a URL that does not exist.
+      - name: build the vault sidecar (the Iron Rule)
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path code/ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=code/ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          test -x "$BIN" || { echo "FAIL    concierge-deploy  the sidecar did not build at $BIN"; exit 1; }
+          echo "ok      sidecar built ($(stat -c%s "$BIN") bytes)"
+
+      - name: the sidecar refuses to run without a card, and passes its own tests
+        run: |
+          set -euo pipefail
+          cargo test --release --manifest-path code/ephemeral/cdp-vault-proxy/Cargo.toml
+          BIN=code/ephemeral/cdp-vault-proxy/target/release/cdp-vault-proxy
+          # Fail-closed check: without REAL_PAN it must REFUSE, not run as a passthrough that
+          # claims to be a fence. Graded on the EXIT CODE, not on a pipe into grep: the first
+          # version of this check piped the binary into grep under `set -o pipefail`, so the
+          # pipe failed before grep could read anything and the check reported a failure that had
+          # not happened. The binary was refusing correctly the whole time. Same defect class as
+          # bin/idp-pipeverdict exists to catch.
+          set +e
+          OUT=$("$BIN" 2>&1)
+          RC=$?
+          set -e
+          if [ "$RC" -eq 0 ]; then
+            echo "FAIL    concierge-deploy  the sidecar started without a card (exit 0)"; exit 1
+          fi
+          case "$OUT" in
+            *"REAL_PAN is not set"*) echo "ok      sidecar fails closed with no card (exit $RC)" ;;
+            *) echo "FAIL    concierge-deploy  the sidecar refused for a reason nobody named:"; echo "$OUT"; exit 1 ;;
+          esac
+
+      # STAGE 2 -- the voice model, from its real release.
+      - name: fetch the CAM++ voice model
+        run: |
+          set -euo pipefail
+          mkdir -p code/models
+          URL="https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
+          curl -fsSL -o code/models/campplus.onnx "$URL"
+          SIZE=$(stat -c%s code/models/campplus.onnx)
+          # A 9-byte file is GitHub's "Not Found" body, which is how the bad URL in the plan would
+          # have failed -- silently, as a model that loads nothing. Size is the check.
+          [ "$SIZE" -gt 20000000 ] || { echo "FAIL    concierge-deploy  model is $SIZE bytes; the URL served an error body"; exit 1; }
+          echo "ok      voice model $SIZE bytes"
+
+      - name: the runtime module imports with both artifacts present
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet boto3 cryptography zstandard 'sherpa-onnx' numpy
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "code")
+          import ephemeral.agent as a
+          from pathlib import Path
+          for name, path in (("sidecar", a.LOCAL_SIDECAR), ("model", a.LOCAL_MODEL)):
+              p = Path(path)
+              assert p.is_file(), f"{name} missing at {path}"
+              print(f"ok      {name} resolves ({p.stat().st_size} bytes)")
+          assert a.VOICEPRINT_THRESHOLD == 0.6, "threshold drifted from the model family's default"
+          print("ok      threshold is 0.6 (the model family's own default)")
+          PY
+
+      - name: mint the secrets the runtime declares, from the roots the estate already holds
+        run: |
+          set -euo pipefail
+          # LAW 52: ONE ROOT PER PROVIDER, SET ONCE; CODE MINTS THE REST; NEVER A CONSOLE STEP.
+          #
+          # The estate already holds the R2 root (SEED_R2_*), and the Modal root answers in this very
+          # run. So every secret the function declares is derivable here, and a deploy that stops to
+          # ask a human for them would be the console step R52 exists to remove.
+          #
+          # Each is created only when missing. Re-minting on every deploy would rotate the card key
+          # out from under whatever encrypted card is already on file -- a rotation that silently
+          # makes every stored card unreadable is worse than no rotation at all.
+          # THREE defects, and only the third was real.
+          #
+          # 1. `modal secret list` renders a BOXED TABLE, so `grep "^name "` never matches a cell.
+          # 2. `grep -q` exits on match and SIGPIPEs the writer, which `pipefail` turns into a
+          #    failure even though grep matched.
+          # 3. THE ACTUAL ONE: MODAL TRUNCATES THE NAME TO FIT THE COLUMN. A 25-character name is
+          #    printed as `cloudflare-r2-cred…`. No pattern matches a name that is not fully there,
+          #    which is why three attempts failed while the secret had existed since the first run.
+          #
+          # Rather than guess a fourth pattern, the output was printed and read. That is why the
+          # probe step exists in this workflow's history -- and why it is the right instinct: two of
+          # the three defects above were invented by me and fixed nothing.
+          #
+          # So the check does not read the table at all. `modal secret create` is idempotent in
+          # effect: creating one that exists fails with "already exists", which is a POSITIVE
+          # confirmation the secret is there. That is the fact being asked for, from the command
+          # that owns it, rather than a rendering of it.
+          ensure_secret() {
+            local name="$1"; shift
+            local out
+            if out=$(modal secret create "$name" "$@" 2>&1); then
+              echo "ok      minted $name"
+            elif printf '%s' "$out" | grep -q "already exists"; then
+              echo "ok      $name exists (Modal said so)"
+            else
+              echo "FAIL    could not mint or confirm $name:"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            fi
+          }
+
+          # THE PROBE IS GONE with the guessing: it printed the output precisely because three
+          # patterns had failed on a name that was never fully printed.
+          ensure_secret cloudflare-r2-credentials \
+            R2_ENDPOINT_URL="https://${{ secrets.SEED_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com" \
+            R2_ACCESS_KEY="${{ secrets.SEED_R2_ACCESS_KEY_ID }}" \
+            R2_SECRET_KEY="${{ secrets.SEED_R2_SECRET_ACCESS_KEY }}" \
+            R2_BUCKET="${{ secrets.SEED_R2_BUCKET }}"
+
+          # The profile key. Random, generated here, never typed by anybody -- a key a human chooses
+          # is a key a human can be guessed at having reused.
+          ensure_secret kms-master-key KMS_MASTER_KEY="$(openssl rand -hex 32)"
+
+          # A DIFFERENT key from the profile's: one key decrypting both her browsing session and her
+          # card would make a leaked profile key a leaked card, and the profile key is the one that
+          # moves on every order.
+          ensure_secret card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
+
+          # THE VISION LANE. It was missing entirely, so the first real order would have failed on
+          # its first screenshot with a missing-key error -- and `OPENAI_API_KEY`, which the runtime
+          # asked for, DOES NOT EXIST anywhere in the estate.
+          #
+          # The estate's router is the destination (LAW 34), but its master key lives in the cluster
+          # and GitHub does not hold it, so a router secret cannot be minted from CI. What CI does
+          # hold is a vendor key. So the vendor lane is minted here, and the runtime PREFERS the
+          # router the moment one is configured -- printing that it is not, rather than falling back
+          # silently, because a silent vendor call is how a provider-agnostic rule stops being one.
+          ensure_secret vision-lane \
+            VISION_API_KEY="${{ secrets.SEED_ANTHROPIC_API_KEY }}" \
+            CONCIERGE_VISION_MODEL="claude-sonnet-4-6"
+
+      - name: what the deploy needs, and whether it is there
+        run: |
+          set -euo pipefail
+          # The runtime declares 4 modal secrets. Named here, in the run's own output, rather
+          # than discovered at the deploy step -- where a missing one looks like a broken workflow
+          # instead of a piece of the architecture that has not been minted yet.
+          #
+          # The residential proxy is NOT among them any more. It was declared for a bypass that was
+          # never built and would not have worked: a shop reads its anti-bot layers at SIGN-IN, and
+          # moving one checkout POST moves the request, not the fingerprint. What replaced it is
+          # the carried session -- her signed-in state, minted once at enrolment, carried in from
+          # the profile. So the runtime needs no proxy and no bypass.
+          # ASKED BY CREATING, NOT BY READING THE TABLE. `modal secret list` TRUNCATES names to fit
+          # the column, so `cloudflare-r2-credentials` is printed as `cloudflare-r2-cred…` and no
+          # pattern matches it. Three attempts failed on that while the secret had existed since the
+          # first run. Creating an existing secret fails with "already exists", which is a positive
+          # confirmation from the command that owns the fact.
+          missing=0
+          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              # A secret that did NOT exist now holds a stray PROBE key. Removed immediately, so
+              # this report cannot leave a half-made secret behind for the deploy to trip over.
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "MISSING modal secret $s (created empty and removed again)"
+              missing=$((missing + 1))
+              continue
+            }
+            if printf '%s' "$out" | grep -q "already exists"; then
+              echo "ok      modal secret $s exists"
+            else
+              echo "MISSING modal secret $s"
+              missing=$((missing + 1))
+            fi
+          done
+          echo "        $missing of 4 missing"
+
+      - name: deploy to Modal
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          # Every secret the function declares must exist, because Modal refuses a deploy whose
+          # declared secret is absent -- and that refusal is right: it is the platform telling us a
+          # piece is missing rather than letting a run believe a bypass it does not have.
+          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "FAIL    concierge-deploy  the secret '$s' does not exist and the mint step"
+              echo "        above should have created it. Nothing has been deployed."
+              exit 1
+            }
+            printf '%s' "$out" | grep -q "already exists" || {
+              echo "FAIL    concierge-deploy  could not confirm '$s':"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            }
+          done
+          modal deploy code/ephemeral/agent.py
+          echo "ok      concierge runtime deployed"
+
+      # THE OTHER HALF: the always-on endpoint. agent.py above is the per-order microVM; this is the
+      # thin FastAPI/Twilio/WhatsApp endpoint it is dispatched BY. Until now only agent.py had a road
+      # to Modal, so the endpoint was still a launchd LaunchAgent on whatever Mac ran the installer --
+      # torn down the moment that laptop slept. Founder 2026-09-15: "a consumer product that assumes
+      # the consumer has expensive hardware is a fail."
+      #
+      # WHY THIS IS IN idp AND NOT mums-concierge: the Modal root is set on THIS repository, for the
+      # reason in this file's header. Same constraint, same answer.
+      #
+      # dry_run GATES IT, like the step above: a dry run must stop before it changes production. The
+      # first version of the plan for this step deployed unconditionally, which would have made
+      # dry_run=true a lie for exactly the artifact that faces the public internet.
+      - name: deploy the always-on endpoint to Modal
+        if: ${{ inputs.dry_run == false }}
+        id: webapp
+        run: |
+          set -euo pipefail
+          # ephemeral/webapp.py does not exist on mums-concierge main until the endpoint PR lands
+          # there. Say that plainly instead of failing on a missing file, because "the code is not on
+          # main yet" and "the deploy broke" are different facts and only one is actionable here.
+          if [ ! -f code/ephemeral/webapp.py ]; then
+            echo "FAIL    concierge-deploy  code/ephemeral/webapp.py is not on mums-concierge main."
+            echo "        The endpoint PR has not merged there yet. Deploy it first, or this step"
+            echo "        will keep finding nothing to deploy. agent.py IS deployed; nothing is lost."
+            exit 1
+          fi
+          # The endpoint declares exactly these three secret names (ephemeral/webapp.py:94-100).
+          # Modal refuses a deploy whose declared secret is absent, so confirm them by CREATING, not by
+          # reading `modal secret list` -- that table truncates names to fit the column
+          # (cloudflare-r2-credentials prints as cloudflare-r2-cred...), which is the defect this
+          # file's mint step already documents at length.
+          #
+          # STOP AND READ BEFORE DEPLOYING THIS. These three names are what the CODE asks for, and two
+          # of them do not match the estate's own registry:
+          #
+          #   code asks for        the estate actually has
+          #   human-twilio    vs   concierge-twilio   (platform/vendors/consoles.yaml:1024)
+          #   concierge-tunnel vs  (no such entry -- bin/idp-cloud:160 records two runs that tried)
+          #
+          # That is a real two-repo mismatch, not a naming preference. mums_concierge.bootstrap's
+          # CLUSTER_SECRETS (bootstrap.py:94-101) is internally consistent with webapp.py, so the
+          # concierge is self-consistent -- and wrong about the estate. The fix is to reconcile the
+          # NAMES in one place and then cut over, which is a product decision about which side moves;
+          # this step does not guess it. It fails closed on the missing entry (below) rather than
+          # creating a secret under a name the estate does not use, because a second secret holding
+          # the same token is exactly the duplication LAW 44 exists to prevent.
+          for s in human-twilio concierge-tunnel cloudflare-r2-credentials; do
+            out=$(modal secret create "$s" PROBE=1 2>&1) && {
+              modal secret delete "$s" --yes >/dev/null 2>&1 || true
+              echo "FAIL    concierge-deploy  the endpoint declares secret '$s' and it does not exist."
+              echo "        Modal will refuse the deploy. Nothing has been deployed."
+              exit 1
+            }
+            printf '%s' "$out" | grep -q "already exists" || {
+              echo "FAIL    concierge-deploy  could not confirm '$s':"
+              printf '%s\n' "$out" | sed 's/^/        /'
+              exit 1
+            }
+            echo "ok      endpoint secret $s exists"
+          done
+          modal deploy code/ephemeral/webapp.py
+          echo "ok      concierge endpoint deployed"
+
+      # THE CUTOVER, AUTOMATED (LAW 31: no step is handed to a person to run).
+      #
+      # The endpoint reads PUBLIC_SERVER_URL / PUBLIC_WSS_URL through mums_concierge.bootstrap's
+      # CLUSTER_SECRETS as the entry `concierge-tunnel` (bootstrap.py:94-101). bootstrap.load() checks
+      # os.environ FIRST, so if those fields arrive as Modal secret env vars the (absent, in a Modal
+      # image) kubectl path never runs.
+      #
+      # BUT THE ESTATE'S REGISTRY PUTS THIS VALUE SOMEWHERE ELSE, and this step follows the estate.
+      # platform/vendors/consoles.yaml:1051 already declares `PUBLIC_SERVER_URL` as a field of the
+      # `concierge-twilio` entry -- one vendor, one ExternalSecret, five fields (LAW 44). There is no
+      # `concierge-tunnel` entry and there never was: bin/idp-cloud:160 records two runs
+      # (35008063886, 35016765336) that tried to read it and found nothing -- "no secret named
+      # concierge-tunnel ever existed in the compartment, checked directly, both times". Writing to a
+      # NEW `concierge-tunnel` entry here would create a third name for the same fact, which is the
+      # duplication LAW 44 forbids. So this writes into `concierge-twilio`, where the estate already
+      # expects it, and the concourse's own bootstrap name is reconciled separately (see the note on
+      # the deploy step above -- it is a two-repo naming decision, not one this step should take).
+      #
+      # PUBLIC_WSS_URL is underived from any registry row and is added here. It belongs in
+      # consoles.yaml as a sixth target; that registry edit is the durable half and is NOT done by
+      # this workflow, so it is called out rather than silently absorbed.
+      #
+      # --merge, deliberately: PUBLIC_SERVER_URL sits beside TWILIO_AUTH_TOKEN, MOM_PHONE_NUMBER,
+      # GUARDIAN_PHONE_NUMBER and TWILIO_WHATSAPP_NUMBER in that entry. An --unset or a fresh write
+      # would drop four fields and take the Twilio door down with them.
+      - name: cut the vault over to the Modal URL
+        if: ${{ inputs.dry_run == false }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+        run: |
+          set -euo pipefail
+          # Read the URL back from the platform that issued it, with the API that actually carries it.
+          #
+          # NOT `modal app history --json`: that output is Version / Time deployed / Client / Deployed
+          # by / Commit / Tag (modal/cli/app.py:627), with NO url field at all. An earlier draft of
+          # this step parsed `a["url"]` out of it, which would have silently matched nothing on every
+          # run and failed the cutover forever while looking like a Modal outage. Read the source.
+          #
+          # get_web_url() is the real door, and it is typed `-> str | None` -- so the None case is a
+          # real state (the app exists but has no web endpoint yet) and is handled, not assumed away.
+          # Kept to one line so it stays inside this block scalar: a heredoc's terminator has to sit at
+          # column 0 and that ends the YAML block, which is how this broke the file once already.
+          URL=$(python -c 'import modal; print(modal.Function.from_name("mums-concierge-web", "web").get_web_url() or "")') || URL=""
+          [ -n "$URL" ] || {
+            echo "FAIL    concierge-deploy  Modal returned no web URL for mums-concierge-web/web."
+            echo "        The app may exist without a web endpoint, or the name changed. The vault"
+            echo "        still holds whatever it held; the endpoint is NOT reachable by URL."
+            exit 1
+          }
+          case "$URL" in https://*) ;; *) echo "FAIL    concierge-deploy  Modal returned a non-HTTPS url: $URL"; exit 1;; esac
+          # wss:// for the /ws/live-call bridge, derived from the https host that Modal actually issued.
+          WSS="wss://${URL#https://}"
+          umask 077; f=$(mktemp)
+          printf 'PUBLIC_SERVER_URL=%s\nPUBLIC_WSS_URL=%s\n' "$URL" "$WSS" > "$f"
+          ESTATE_ENV_FILE="$f" bin/idp-vault-put --merge concierge-twilio PUBLIC_SERVER_URL=PUBLIC_SERVER_URL PUBLIC_WSS_URL=PUBLIC_WSS_URL
+          rm -f "$f"
+          # The entry's other four fields must survive an --merge write; if the Twilio token leaves
+          # this entry the webhook stops verifying HMAC and silently trusts any sender. Names only --
+          # bin/idp-vault-put prints key NAMES and never values (LAW 21).
+          echo "        the entry also holds: TWILIO_AUTH_TOKEN, MOM_PHONE_NUMBER,"
+          echo "        GUARDIAN_PHONE_NUMBER, TWILIO_WHATSAPP_NUMBER -- all preserved by --merge"
+          # Printed because it is a public URL, not a secret -- and because a cutover nobody can read
+          # back in the run's own log is a cutover nobody can audit.
+          echo "ok      vault   concierge-twilio now holds $URL"
+          echo "next    the Twilio console webhook must point here; that is a console step, tracked"
+          echo "        separately, and it is the one thing this workflow cannot do for itself"
+
+      - name: dry run -- say plainly what was not done
+        if: ${{ inputs.dry_run == true }}
+        run: |
+          echo "dry run: the sidecar built, the model fetched, the module imports; NOTHING was deployed."
+          echo "         That includes BOTH Modal apps: agent.py (per-order microVM) and webapp.py"
+          echo "         (the always-on endpoint). The vault was not touched and no URL was cut over."
+          echo "Re-run with dry_run=false to deploy."

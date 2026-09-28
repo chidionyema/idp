@@ -1,0 +1,142 @@
+# Langfuse on the OKE node pool (crew#286 CP6). Sized like SigNoz next door: requests small
+# enough to fit beside Backstage, limits so a runaway cannot take the node. Kyverno enforces the
+# restricted profile, so every workload declares non-root, seccomp and drop-ALL.
+global:
+  seaweedfs:
+    image:
+      # Incident 2026-08-26 (crew#325): the seaweedfs sub-chart renders `chrislusf/seaweedfs:4.23`
+      # with no registry, and the OKE node runtime enforces short-name mode, so the S3 pod sat in
+      # ImageInspectError for 3 hours ("returns ambiguous list"). Same class as the zookeeper
+      # image in values.yaml. `repository` is the namespace part of the image name in this chart.
+      repository: docker.io/chrislusf
+langfuse:
+  nodeEnv: production
+  image:
+    # Chart 2.0.2 is the newest chart and ships app 4.17.0, which predates
+    # AUTH_CUSTOM_FETCH_USERINFO (added in app 4.21.0). 4.24.0 is the newest app release
+    # (github langfuse/langfuse releases) and the tag answers 200 on the chart's own
+    # registry (docker.langfuse.com/v2/langfuse/langfuse/manifests/4.24.0 -- the registry
+    # is a Docker Hub proxy and the tags carry no "v"). langfuse.image.tag sets web and
+    # worker together (chart values: web/worker image.tag default to it).
+    tag: "4.24.0"
+  features:
+    telemetryEnabled: false
+    # crew#307 (second hop, measured 2026-08-31 by verdict-langfuse.yml: every SSO sign-in of the
+    # drill user ends at /auth/sign-in?error=OAuthCreateAccount). The chart maps this key to
+    # AUTH_DISABLE_SIGNUP (langfuse-k8s _helpers.tpl, read 2026-08-31), and Langfuse's createUser
+    # throws "Sign up is disabled." for any identity it has not seen (langfuse v4.24.0
+    # web/src/server/auth.ts), which NextAuth reports as OAuthCreateAccount. The only door into
+    # Langfuse is the identity domain (username/password is off, AUTH_DISABLE_USERNAME_PASSWORD in
+    # langfuse.yaml), so who may sign in is decided there, by the app grant -- not by this flag.
+    # Off, a first single sign-on creates the account; the founder's own account is the init user
+    # and links by email either way.
+    signUpDisabled: false
+  nextauth:
+    url: https://langfuse.${ESTATE_ZONE}   # substituted by Flux postBuild (clusters/oke/platform.yaml)
+  additionalEnvFrom:
+    - secretRef: { name: langfuse-init }
+    - secretRef: { name: langfuse-sso }   # crew#503: OIDC client for the front-door identity, written by tofu
+  # Incident 2026-08-26 (crew#325): Langfuse 4.x defaults LANGFUSE_MIGRATION_V4_WRITE_MODE to
+  # events_only, and langfuse-web logged "Rejected 2 event(s) from the legacy /api/public/ingestion
+  # endpoint ... These events were not stored" for every routed call. The router's `langfuse`
+  # callback (platform/llm/config.yaml) posts to that legacy endpoint, so every trace was dropped
+  # while the health check answered 200. `dual` is the documented bridge, on web and worker;
+  # the end state is the router's `langfuse_otel` callback, after which this line goes.
+  additionalEnv:
+    - { name: LANGFUSE_MIGRATION_V4_WRITE_MODE, value: dual }
+  podSecurityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, seccompProfile: { type: RuntimeDefault } }
+  securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: false, capabilities: { drop: [ALL] } }
+  web:
+    replicas: 1
+    # Incident 2026-08-26 (crew#325): langfuse-web died on its first ClickHouse migration with
+    # "FATAL ERROR: Ineffective mark-compacts near heap limit" at 500 MB, under a 1Gi pod limit.
+    # Node caps the V8 heap below the cgroup limit unless told otherwise, so the limit alone is
+    # not the fix: set the heap explicitly and give the pod room above it.
+    additionalEnv:
+      - name: NODE_OPTIONS
+        value: --max-old-space-size=1536
+    resources:
+      # crew#626 CP15 (run 33259031857): at 50m the Next.js server never listened inside the 50 s
+      # liveness window (delay 20 s + 3 x 10 s) and was killed with exit 143, 164 times in 9 h, so
+      # the SSO change in idp#810 never reached a serving pod. 250m is the admission fence's own
+      # line (capacity-policy: above it needs a label) and equal to the limit for Guaranteed QoS.
+      # 250m was not enough either (idp#820; diagnose run 33262424618): the new web pod hit 10
+      # restarts with liveness /api/public/health "context deadline exceeded" and the worker
+      # CrashLooped, while the only serving pod was the 15 h old one from the 1000m-limit era
+      # (helm-retry run 33260661133: "failed early due to stalled rollout"). One core, Guaranteed
+      # (crew#539 CP9: radio-room set is request == limit), admitted above the fence line by the
+      # capacity-approved label the way clickhouse is (values.yaml). The chart's pod label key is
+      # `pod.labels`, not `podLabels`.
+      # SUPERSEDED for cpu, 2026-09-08. The reasoning above is sound about the symptom and wrong
+      # about the cause: exit 143 at 50m is the kubelet killing the pod on a 50-second liveness
+      # window, not the app needing a core. Measured steady state is 9m against this 1000m. The
+      # startupProbe patch in langfuse.yaml gives boot 300 seconds and sets cpu 500m on both
+      # sides. Not 250m request / 1000m limit: require-priority-class's radio-room-set-is-
+      # guaranteed rule (crew#539 CP9, Enforce) refuses a split, because Guaranteed QoS is what
+      # makes the kubelet evict this workload last -- so the reservation and the boot ceiling are
+      # one number. Memory is untouched and genuinely needed: NODE_OPTIONS pins the heap at 1536 MB.
+      requests: { cpu: 500m, memory: 2Gi }
+      limits: { cpu: 500m, memory: 2Gi }
+    pod:
+      labels: { idp.platform/capacity-approved: "true" }   # kept: 500m is still above the fence line
+  worker:
+    replicas: 1
+    resources:
+      # crew#626 CP15: same boot failure as web at 50m (163 restarts in 9 h, run 33259031857) and
+      # CrashLoop at 250m (run 33262424618, pod sqrq9); one core, Guaranteed, like web.
+      # SUPERSEDED for cpu, 2026-09-08, same as web: startupProbe in langfuse.yaml, cpu 500m on
+      # both sides (Guaranteed QoS, crew#539 CP9). Measured steady state is 108m. The 134 restarts on 2026-09-06 were ClickHouse
+      # refusing inserts at its own 3.60 GiB ceiling until this worker's Node heap died -- a
+      # downstream failure, not a CPU one; it has run unbroken for 27 h since.
+      requests: { cpu: 500m, memory: 1Gi }
+      limits: { cpu: 500m, memory: 1Gi }
+    pod:
+      labels: { idp.platform/capacity-approved: "true" }   # kept: 500m is still above the fence line
+postgresql:
+  # crew: one Postgres for the estate. This chart bundled its own server (docker.io/postgres:18,
+  # the only PostgreSQL 18 in the estate, which is why the estate cluster is 18 too) and it no
+  # longer does. The copy Job in platform/estate-db/migrate/jobs.yaml lifts database `langfuse`
+  # off that server before Flux is allowed to prune the StatefulSet.
+  deploy: false
+  host: estate-rw.estate-db.svc.cluster.local
+  port: 5432
+  auth:
+    username: langfuse
+    database: langfuse
+    # Written into this namespace by platform/estate-db/cluster/secrets.yaml, so it is there
+    # before the copy runs and before langfuse is asked to connect.
+    existingSecret: estate-db-langfuse
+    secretKeys:
+      userPasswordKey: password
+redis:
+  deploy: true
+  resources:
+    requests: { cpu: 50m, memory: 256Mi }   # crew#539 CP9: == limits, Guaranteed QoS
+    limits: { cpu: 100m, memory: 256Mi }
+clickhouse:
+  # SigNoz already runs the estate's ClickHouse (values.yaml, Altinity operator). Langfuse 2.x would
+  # bring a second operator (clickhouse.com/v1alpha1) plus cert-manager for its own; one database
+  # in the existing server instead.
+  deploy: false
+  crdCheck: false
+  host: signoz-clickhouse
+  httpPort: 8123
+  nativePort: 9000
+  # SigNoz's ClickHouseInstallation names its one cluster `cluster`; the chart default here is
+  # true and langfuse would run ON CLUSTER default, which does not exist. Single node, so off.
+  cluster:
+    enabled: false
+  database: langfuse
+  auth:
+    username: admin
+    existingSecret: clickhouse-auth
+    existingSecretKey: password
+s3:
+  deploy: true
+  allInOne:
+    data:
+      size: 10Gi
+      storageClass: oci-bv
+    resources:
+      requests: { cpu: 30m, memory: 128Mi }
+      limits: { cpu: 500m, memory: 512Mi }

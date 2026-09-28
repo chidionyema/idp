@@ -1,0 +1,101 @@
+#!/bin/sh
+# bin/idp-sandbox-sweep — end an expired buyer sandbox by force-pushing the idle commit to
+# branch sandbox/launch. Runs in the alpine/git image (platform/sandbox/vcluster/sweeper.yaml):
+# sh, git, base64, date, mktemp, sed; nothing else. POSIX sh, no bashisms (under the estate
+# 100-line shell ceiling only because the image has no Python).
+#
+# Env: SANDBOX_EXPIRES_AT (required, 2026-09-06T06:09:40Z shape), SANDBOX_LAUNCHED_AT (may be
+# empty), SANDBOX_HOLD (default 1h), GITHUB_REPOSITORY (required), SANDBOX_SWEEPER_TOKEN_FILE
+# (required), SANDBOX_BRANCH (default sandbox/launch), SANDBOX_RUN_REF (provenance; default
+# ${HOSTNAME:-sandbox-sweeper}), SANDBOX_SWEEPER_REMOTE (TEST SEAM: overrides the push URL;
+# tests point it at a local bare repo. Never set in the CronJob).
+# busybox ash and macOS sh honour pipefail; Debian dash (GitHub's /bin/sh) does not, so it is
+# opted in only where the shell accepts it instead of dying on line one.
+set -eu
+# shellcheck disable=SC3040
+(set -o pipefail 2>/dev/null) && set -o pipefail
+
+blind() {
+	echo "BLIND   sandbox-sweep  $1"
+	exit 2
+}
+
+expires=${SANDBOX_EXPIRES_AT:-}
+launched=${SANDBOX_LAUNCHED_AT:-}
+hold=${SANDBOX_HOLD:-1h}
+repo=${GITHUB_REPOSITORY:-}
+token_file=${SANDBOX_SWEEPER_TOKEN_FILE:-}
+branch=${SANDBOX_BRANCH:-sandbox/launch}
+# shellcheck disable=SC3028 # k8s always sets HOSTNAME; the default covers every other runner
+run_ref=${SANDBOX_RUN_REF:-${HOSTNAME:-sandbox-sweeper}}
+
+[ -n "$repo" ] || blind "GITHUB_REPOSITORY is not set"
+[ -n "$token_file" ] || blind "SANDBOX_SWEEPER_TOKEN_FILE is not set"
+[ -f "$token_file" ] || blind "token file $token_file does not exist"
+[ -s "$token_file" ] || blind "token file $token_file is empty"
+
+case "$expires" in
+[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z) ;;
+*) blind "SANDBOX_EXPIRES_AT '$expires' is not YYYY-MM-DDTHH:MM:SSZ" ;;
+esac
+
+# busybox/GNU date take -d; BSD date (dev machines) takes -j -f. The container only ever
+# needs the first form; the second keeps the same script testable off a Mac.
+to_epoch() {
+	date -u -d "$1" +%s 2>/dev/null && return 0
+	date -u -j -f "%Y-%m-%d %H:%M:%S" "$1" +%s 2>/dev/null
+}
+
+# busybox date wants 'YYYY-MM-DD HH:MM:SS'; GNU date takes the T and Z too. Normalize.
+exp_epoch=$(to_epoch "$(printf '%s' "$expires" | sed 's/T/ /; s/Z$//')") ||
+	blind "SANDBOX_EXPIRES_AT '$expires' does not parse as a date"
+now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+now_epoch=$(date -u +%s)
+
+if [ "$now_epoch" -lt "$exp_epoch" ]; then
+	echo "ok      sandbox-sweep  launched, expires $expires; not yet"
+	exit 0
+fi
+
+token=$(sed -e 's/[[:space:]]*$//' "$token_file" | tr -d '\n')
+remote=${SANDBOX_SWEEPER_REMOTE:-https://github.com/$repo.git}
+
+out=$(mktemp -d)
+trap 'rm -rf "$out"' EXIT
+
+cat >"$out/kustomization.yaml" <<EOF
+# Written by bin/idp-sandbox-sweep ($run_ref). Read by clusters/oke/sandbox.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - state.yaml
+EOF
+
+cat >"$out/state.yaml" <<EOF
+# What the portal's Showcase page reads: the sandbox's state, hold and expiry.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-launch
+  namespace: flux-system
+data:
+  state: "idle"
+  hold: "$hold"
+  launched_at: "$launched"
+  expires_at: "$expires"
+  written_at: "$now"
+  run_url: "$run_ref"
+EOF
+
+(
+	cd "$out"
+	git init -q -b "$branch"
+	git config user.name demo-sandbox
+	git config user.email demo-sandbox@users.noreply.github.com
+	git add -A
+	git commit -q -m "sandbox: idle (expired $expires; in-cluster sweep)"
+	git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$token" | base64 | tr -d '\n')" \
+		push --force "$remote" "HEAD:refs/heads/$branch"
+)
+
+echo "ok      sandbox-sweep  expired $expires; ended the sandbox"

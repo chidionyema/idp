@@ -1,0 +1,10 @@
+{
+  "_comment": "The bad case: 8 OCPU / 48 GB. Six OCPU and 36 GB are paid: (6 * 0.01 + 36 * 0.0015) * 730 = USD 83.22 a month, over the USD 50 cap. This must be REFUSED with the FOUNDER ACTION wording.",
+  "capacity": {
+    "ocpus": 8,
+    "memory_gb": 48,
+    "free": {"ocpus": 2, "memory_gb": 12},
+    "price_usd_hr": {"ocpu": 0.01, "memory_gb": 0.0015},
+    "monthly_cap_usd": 50
+  }
+}

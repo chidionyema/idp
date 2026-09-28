@@ -1,0 +1,99 @@
+# infra/macos/Brewfile — declarative dependency list for the founder's Mac.
+#
+# Why a Brewfile and not the curl recipes in bin/idp-workstation-bootstrap:
+#
+#   brew bundle install is the enterprise-Mac idiom. It is idempotent (a present
+#   keg is a no-op), it is version-controlled, it survives a clean `git clone` of
+#   this repo, it converges on a fresh Mac in one command, and it is testable in
+#   CI on `macos-14` (where the founder installed Homebrew takes <2 min). The curl
+#   recipes were the opposite of every one of those properties, and the founder's
+#   2026-09-23 "we have memory systems, documents, code yet no one knows how
+#   anything works" was the bill.
+#
+# Idempotency model:
+#
+#   * Every formula is pinned to an exact version. `brew bundle install` will not
+#     upgrade a present keg; out-of-date deps stay pinned until a deliberate
+#     `brew bundle upgrade --formula=X` lands. This makes "what does this Mac
+#     have on it" reproducible from the file.
+#
+#   * The CI rung `infra-macos-bundle` (in bin/idp-ci) runs `brew bundle check
+#     --verbose` after every PR that touches this file. A missing dep is FAIL.
+#
+#   * `brew bundle dump --file infra/macos/Brewfile --force` is the one command
+#     that overwrites this file from the live install; the CI rung will refuse
+#     any PR that runs the same command against an unchanged dep set.
+#
+# Install-from-source rows (spire, tailscale) use the official upstream recipe.
+# Where a stable tap exists (fluxcd/tap/flux) the Brewfile names it explicitly;
+# building from head is never the right default.
+
+# --- Taps ---
+# No `tap` line. `brew "flux"` names the tap itself (flux is not in homebrew/core), and
+# homebrew auto-taps a formula on install.
+
+# --- CLI formulae, pinned ---
+#
+# The version is an OPTION, not a second positional argument. `brew "jq", "1.7.1"` (Brewfile v1
+# shape) makes the DSL read the String as an options hash and refuse the entire file:
+#
+#   Invalid Brewfile: brew options must be a Hash
+#
+# (mac-provision-test, runs 35905107203 and 35905402616, 2026-09-23). That error was first blamed
+# on the `tap` line above; removing the tap line did NOT clear it, which is what proved the real
+# cause and is why the comment that used to sit here was wrong. Nothing after the first bad entry
+# is evaluated, so no formula in this file had ever been read by the lane that installs them.
+brew "jq",    version: "1.7.1"
+brew "yq",    version: "4.40.5"
+brew "gh",    version: "2.50.0"
+# NOT a `brew` row: there is no `kubectl` formula AND no `kubernetes-cli` formula in
+# homebrew-core (`curl https://formulae.brew.sh/api/formula.json`, filtered for either name,
+# returns neither; cask.json returns nothing either). This row was impossible from the day it
+# was written and nothing noticed, because the file died earlier on `spire` -- one failure
+# hid the next. kubectl arrives with the container runtime on this estate: Rancher Desktop
+# provides /usr/local/bin/kubectl via ~/.rd/bin, which is where `which kubectl` resolves on
+# the machine this file provisions. Installing a second copy from a package manager is the
+# "one of each layer" defect with a binary as the layer.
+brew "helm",  version: "3.14.0"
+brew "flux",  version: "2.3.0"   # fluxcd/tap -- the formula name carries the tap
+brew "sops",  version: "3.8.1"
+brew "age",   version: "1.2.1"
+brew "mas",   version: "1.8.7"   # Mac App Store CLI for App Store casks
+brew "shellcheck", version: "0.9.0"
+brew "shfmt",      version: "3.7.0"
+brew "actionlint", version: "1.6.27"
+
+# --- SPIRE / SPIFFE primary ---
+# The cluster SPIRE control plane + agent run in the cluster (platform/spire);
+# the Workload API socket + JWT-SVID minting runs on this Mac.
+#
+# NOT a `brew` row, and this is measured rather than assumed: there is NO `spire` formula in
+# homebrew-core (`curl https://formulae.brew.sh/api/formula.json | jq '[.[]|select(.name|test("spire"))]'`
+# returns nothing). `brew "spire"` therefore failed the whole file on main at 20:13:43Z
+# (mac-provision-test run 35914524439) with `brew bundle failed! 1 Brewfile dependency failed
+# to install`, which is why the comment above used to describe a source build while the line
+# below asked Homebrew for a formula that does not exist.
+#
+# The agent is built from Go source at the version the cluster's HelmRelease pins, exactly as
+# bin/idp-mac-provision:111 already instructs the operator when the binary is absent:
+#
+#   GOBIN=/opt/homebrew/bin go install github.com/spiffe/spire/cmd/spire-agent@v1.15.3
+#
+# `go` is the Brewfile row that makes that instruction executable, so the installer is declared
+# here and the artefact is built by the provisioner. One version, named once: SPIRE_AGENT_VERSION
+# in bin/idp-mac-provision.
+brew "go"
+
+# --- GUI / system-extension casks ---
+# Tailscale installs the daemon (`tailscaled`) plus the Mac system extension that
+# the OS approves per-machine. The .pkg-install system extension approval is
+# the one Mac GUI prompt in the whole install path; `idp-mac-provision install`
+# invokes `tailscaled` once via launchctl after brew lays the binary, and
+# the user-facing approval happens when the .app is first opened from /Applications.
+cask "tailscale"
+
+# --- Mac App Store ---
+# No MAS apps today. Add here when one ships. `mas signin` once, then
+# `mas install <id>` on every Mac. CI test skips this row because the
+# runner is signed out of MAS.
+# mas "Example App Name", id: 1234567890

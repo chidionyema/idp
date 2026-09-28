@@ -1,0 +1,12 @@
+{
+  "capability": "workload",
+  "component": "oci-cluster-autoscaler",
+  "env": {
+    "OCI_USE_INSTANCE_PRINCIPAL": "true"
+  },
+  "name": "cluster-autoscaler",
+  "port": 8085,
+  "purpose": "hydrated from the live tree; was kube-system/cluster-autoscaler",
+  "replicas": 2,
+  "size": "s"
+}

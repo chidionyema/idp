@@ -1,0 +1,101 @@
+# button: Re-render every demo recording
+# founder: Replays every demo script against the real tools and commits fresh recordings, so a demo can never show what the software no longer does.
+# Demo Standard (crew#805): demos are code; the machines render them so they never go stale.
+name: demo-render
+on:
+  push:
+    paths:
+      - 'demos/**'
+      - 'bin/intent-compile'
+      - 'schema/intent/**'
+      - '.github/workflows/demo-render.yml'
+      - '!docs/demos/**'
+      - '!**/*.gif'
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: demo-render-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: .github/requirements/demo-render.txt
+      - name: dependencies the demos exercise
+        run: pip install -r .github/requirements/demo-render.txt
+      - name: install vhs and dependencies
+        run: |
+          # vhs and ttyd are pinned together, because vhs is what reads ttyd's version and the
+          # two must agree. Measured 2026-09-12: apt ships whatever vhs is current, which was
+          # v0.12.0, and v0.12.0 refuses the ttyd this workflow pins --
+          #     ttyd version (<nil>) is out of date, VHS requires 1.7.2
+          # -- and then EXITS 0 having written no GIF at all. Every tape rendered before that
+          # vhs release landed still has its recording, so the breakage only showed on a new
+          # tape: a green workflow and no demo, which is the silent-green class this estate
+          # keeps finding. Both binaries are release-pinned here (LAW 43: no unauthenticated
+          # latest-lookup, and no two components drifting apart).
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          # vhs, pinned release
+          VHS=v0.11.0
+          curl -fsSL "https://github.com/charmbracelet/vhs/releases/download/${VHS}/vhs_${VHS#v}_Linux_x86_64.tar.gz" -o /tmp/vhs.tgz
+          tar xzf /tmp/vhs.tgz -C /tmp
+          sudo install -m 0755 "/tmp/vhs_${VHS#v}_Linux_x86_64/vhs" /usr/local/bin/vhs
+          # ttyd, pinned release (the version vhs v0.11.0 accepts)
+          curl -sL "https://github.com/tsl0922/ttyd/releases/download/1.7.7/ttyd.x86_64" -o /tmp/ttyd
+          chmod +x /tmp/ttyd && sudo mv /tmp/ttyd /usr/local/bin/ttyd
+          echo "vhs:  $(vhs --version)"
+          echo "ttyd: $(ttyd --version)"
+      - name: render every tape
+        run: |
+          # vhs's parser does not support \" escapes inside a quoted string (run 33570143182);
+          # a tape needing quotes-in-quotes uses a backtick string. Refuse the class before rendering.
+          if grep -n '\\"' demos/*.tape; then
+            echo 'FAIL: tape uses \" escapes; vhs cannot parse them — use a backtick string'; exit 1
+          fi
+          for tape in demos/*.tape; do
+            if [ -f "$tape" ]; then
+              out=$(grep -m1 '^Output ' "$tape" | awk '{print $2}')
+              vhs < "$tape"
+              # vhs returns before it has flushed the GIF. A tape that is not the last one gets
+              # slack from the next tape's render, so the race was invisible until the tape
+              # sorted last: measured 2026-09-12, the truthteller tape finished 30ms before the
+              # commit step inspected the tree, and the run went green with no recording.
+              # Wait for the file to appear, and touch nothing else.
+              for _ in $(seq 1 20); do
+                [ -s "$out" ] && break
+                sleep 0.5
+              done
+              [ -s "$out" ] || echo "warn: $tape did not land $out during render (the commit step decides)"
+            fi
+          done
+      - name: commit the rendered demo back
+        run: |
+          git config user.name 'estate-agents[bot]'
+          git config user.email 'estate-agents[bot]@users.noreply.github.com'
+          # Every tape declares its recording. If one is missing, the tape did not render and
+          # the run must be red -- vhs prints 'Creating <file>...' even when nothing lands, so
+          # the only witness is the file itself. Measured 2026-09-12: truthteller-demo.tape
+          # printed Creating and this workflow reported success with no GIF committed.
+          missing=0
+          for tape in demos/*.tape; do
+            out=$(grep -m1 '^Output ' "$tape" | awk '{print $2}')
+            if [ -n "$out" ] && [ ! -s "$out" ]; then
+              echo "FAIL: $tape declares $out and no recording is on disk"
+              missing=$((missing + 1))
+            fi
+          done
+          [ "$missing" -eq 0 ] || { echo "FAIL: $missing tape(s) produced no recording"; exit 1; }
+          git add docs/demos/
+          if git diff --cached --quiet; then echo 'render unchanged'; exit 0; fi
+          git commit -m 'demo-render: machines refreshed the rendered demos'
+          # A tape that dirties the tree outside docs/demos/ must not wedge the rebase; the
+          # residue is the demo's scratch, never a change anyone wants committed.
+          git -c rebase.autoStash=true pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

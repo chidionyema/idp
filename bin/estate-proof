@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""Deterministic git+cluster join. Zero LLM in the write path.
+
+Founder, 2026-09-15: every status answer so far has been an agent reading git, reading the
+cluster, and narrating a join between them live, by eye, every single time -- which is exactly
+the "patching holes" pattern he told the session to stop. This is that join done once, in code,
+as a standing artifact instead of a conversation:
+
+  Source A -- git:  every commit on origin/main in the lookback window, filtered by commit
+              AUTHOR (not committer -- every squash-merge shows committer "GitHub" regardless
+              of who wrote it, so committer carries no bot signal at all; author does) so bot
+              commits (estate-agents[bot], estate-bot, dependabot[bot], ...) never count as
+              "work." Live measurement 2026-09-15, 10-day window: 985 estate-agents[bot], 471
+              Chidi Onyema (human), 29 estate-bot, 4 dependabot[bot], 2 pi-showcase-lane.
+  Source B -- cluster: every live Flux Kustomization, its spec.path (which part of the repo it
+              applies), its Ready condition, and status.lastAppliedRevision -- the SHA Flux
+              itself says is live, read off the object, not asserted.
+  Join key: for each human commit, which Kustomization's spec.path is a prefix of a path the
+            commit touched, and is that commit an ancestor of (or equal to) that Kustomization's
+            applied SHA. `git merge-base --is-ancestor` answers this mechanically -- no model
+            judgment call.
+
+Output is a table: commit -> live or not, and if live, at which Kustomization/SHA. Nothing here
+is an LLM guessing whether something "seems deployed." Agents read this output; they do not
+compute it by narrating kubectl output at the founder again.
+
+Usage: bin/estate-proof [--days N]   (default 10, per "past 10 days")
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from dataclasses import dataclass, field
+
+BOT_PATTERNS = (
+    re.compile(r"\[bot\]$"),
+    re.compile(r"^estate-bot$"),
+    re.compile(r"^dependabot"),
+    re.compile(r"^github-actions"),
+)
+
+RECORD_MARK = "\x02ESTATE-PROOF-RECORD\x1f"
+
+
+def run(argv: list[str]) -> str:
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=55)
+    if result.returncode != 0:
+        raise RuntimeError(f"{' '.join(argv)} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+def is_bot(author: str) -> bool:
+    return any(p.search(author) for p in BOT_PATTERNS)
+
+
+@dataclass
+class Commit:
+    sha: str
+    author: str
+    date: str
+    subject: str
+    paths: list[str] = field(default_factory=list)
+
+
+def load_commits(days: int) -> list[Commit]:
+    # Marker goes BEFORE the header, not after: git's own trailing newline + blank-line-separated
+    # --name-only file list sits between one commit's header and the next, so a trailing marker
+    # (the first thing tried here) splits a file list away from the header it belongs to. A
+    # leading marker keeps header+filelist together as one clean segment per commit.
+    log = run(
+        [
+            "git",
+            "log",
+            f"--since={days}.days.ago",
+            "origin/main",
+            f"--pretty=format:{RECORD_MARK}%H%x1f%an%x1f%cI%x1f%s",
+            "--name-only",
+        ]
+    )
+    commits: list[Commit] = []
+    for block in log.split(RECORD_MARK):
+        block = block.strip("\n")
+        if not block:
+            continue
+        head, *paths = block.split("\n")
+        sha, author, date, subject = head.split("\x1f")
+        commits.append(Commit(sha, author, date, subject, [p for p in paths if p]))
+    return [c for c in commits if not is_bot(c.author)]
+
+
+@dataclass
+class Kustomization:
+    name: str
+    path: str
+    ready: bool
+    applied_sha: str | None
+
+
+def load_kustomizations() -> list[Kustomization]:
+    raw = run(["bin/idp-kube", "get", "kustomizations", "-n", "flux-system", "-o", "json"])
+    data = json.loads(raw)
+    out = []
+    for item in data["items"]:
+        path = item["spec"].get("path", "").lstrip("./")
+        conds = {c["type"]: c for c in item["status"].get("conditions", [])}
+        ready = conds.get("Ready", {}).get("status") == "True"
+        applied = item["status"].get("lastAppliedRevision") or ""
+        sha = None
+        if "sha1:" in applied:
+            sha = applied.split("sha1:")[-1]
+        out.append(Kustomization(item["metadata"]["name"], path, ready, sha))
+    return out
+
+
+def is_ancestor(sha: str, of_sha: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, of_sha],
+        capture_output=True,
+        timeout=10,
+    )
+    return result.returncode == 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--days", type=int, default=10)
+    args = parser.parse_args()
+
+    commits = load_commits(args.days)
+    kustomizations = load_kustomizations()
+    by_path = sorted(kustomizations, key=lambda k: len(k.path), reverse=True)
+
+    rows = []
+    for c in commits:
+        matches = [k for k in by_path if k.path and any(p.startswith(k.path + "/") or p == k.path for p in c.paths)]
+        if not matches:
+            rows.append((c, None, "no Kustomization owns a path this commit touched"))
+            continue
+        live_at = None
+        for k in matches:
+            if k.applied_sha and is_ancestor(c.sha, k.applied_sha):
+                live_at = k
+                break
+        if live_at:
+            rows.append((c, live_at, "live"))
+        else:
+            names = ",".join(k.name for k in matches)
+            reason = "not live yet" if all(k.applied_sha for k in matches) else "owning Kustomization never reconciled"
+            rows.append((c, None, f"{reason} (owner: {names})"))
+
+    print(f"{'SHA':8}  {'DATE':10}  {'AUTHOR':16}  {'STATUS':38}  SUBJECT")
+    for c, k, status in rows:
+        label = f"live @ {k.name} ({k.applied_sha[:8]})" if k else status
+        print(f"{c.sha[:8]}  {c.date[:10]}  {c.author[:16]:16}  {label:38}  {c.subject[:60]}")
+
+    live_count = sum(1 for _, k, _ in rows if k)
+    print(f"\n{len(rows)} human commits in {args.days}d, {live_count} confirmed live by Flux-applied-SHA ancestry, {len(rows) - live_count} not.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,26 @@
+{
+  "title": "Estate catalogue — fallback renderer",
+  "description_html": "<p>Every asset the estate owns, generated from <code>~/.estate/state/inventory.json</code> by <code>idp/bin/db-gen</code>. This is the <b>fallback</b> renderer. The primary is Backstage on port 8443. They share no runtime, so a broken Node install cannot take this page down.</p><p>Every number here is a SQL query you can edit and re-run. Nothing is asserted.</p>",
+  "license": "Apache-2.0",
+  "license_url": "https://www.apache.org/licenses/LICENSE-2.0",
+  "databases": {
+    "estate": {
+      "tables": {
+        "assets": {
+          "description": "One row per asset: repositories, scheduled jobs, guards, ledgers, data stores and drills.",
+          "sort": "kind"
+        },
+        "meta": {
+          "description": "When the inventory this database was built from was taken."
+        }
+      },
+      "queries": {
+        "risk_summary": {
+          "sql": "select 'repos with no licence file' as risk, count(*) as n from assets where kind='repo' and licence_file='ABSENT' union all select 'drills never run', count(*) from assets where kind='drill' and (last_status is null or last_status='NEVER RUN') union all select 'repos with uncommitted work', count(*) from assets where kind='repo' and dirty > 0 union all select 'repos not backed up offsite', count(*) from assets where kind='repo' and offsite is not 1 union all select 'assets coupled to one provider', count(*) from assets where coupling is not null and coupling != 'none'",
+          "title": "What a buyer asks first",
+          "description": "The five counts diligence starts with. Edit the SQL to check any of them yourself."
+        }
+      }
+    }
+  }
+}

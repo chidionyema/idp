@@ -1,0 +1,15 @@
+# Local dev only: Redis for platform/idp_agent/gateway.py and engine.py.
+# Production Redis runs in-cluster with requirepass set -- see
+# docs/specs/orbstack-event-driven-agents.md section 10.
+version: "3.9"
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

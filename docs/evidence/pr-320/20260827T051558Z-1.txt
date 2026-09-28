@@ -1,0 +1,2 @@
+1 passed in 3.21s
+1 skipped in 0.06s

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Does each MCP backend round-trip through Agentgateway? ok/FAIL per backend.
+#
+# Standard: bin/litellm-status's contract -- exit non-zero only when something is actually
+# down, so this can be used as a check (LAW 28). The probe is a real MCP tools/list and one
+# tools/call per backend, through the gateway with the gateway's key, and nothing else:
+# a container that is Up but whose route answers 400, 401 or 502 is exactly what this must catch.
+# Rejected: `docker ps | grep mcp` for that reason.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+MCP="$IDP/mcp"
+ENVF="$MCP/.env"
+GATEWAY="http://127.0.0.1:3310"
+fail=0
+
+key=""
+[ -r "$ENVF" ] && key=$(grep -m1 '^MCP_GATEWAY_KEY=' "$ENVF" | cut -d= -f2-)
+
+# rpc ROUTE JSON -> prints "HTTPCODE<TAB>BODY". Stateless mode: no session header needed.
+rpc() {
+  curl -sS --max-time 20 -w '\n%{http_code}' \
+    -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+    -d "$2" "$GATEWAY/$1/mcp" 2>/dev/null \
+    | python3 -c 'import sys,json
+raw = sys.stdin.read().rsplit("\n", 1)
+body, code = (raw[0], raw[1]) if len(raw) == 2 else ("", "000")
+# The body may be an SSE stream ("data: {...}") or plain JSON; take the JSON either way.
+payload = ""
+for line in body.splitlines():
+    if line.startswith("data:"): payload = line[5:].strip()
+if not payload: payload = body.strip()
+print(code + "\t" + payload)'
+}
+
+# check NAME ROUTE CALL_JSON DESCRIPTION
+check() {
+  local name=$1 route=$2 call=$3 what=$4 out code body n
+  out=$(rpc "$route" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+  code=${out%%$'\t'*}; body=${out#*$'\t'}
+  n=$(printf '%s' "$body" | python3 -c 'import sys,json
+try: print(len(json.load(sys.stdin)["result"]["tools"]))
+except Exception: print(0)')
+  if [ "$code" != "200" ] || [ "$n" -eq 0 ]; then
+    printf '%-8s FAIL  tools/list  http %s  %s\n' "$name" "$code" "$(printf '%s' "$body" | head -c 160)"
+    fail=1; return
+  fi
+  out=$(rpc "$route" "$call")
+  code=${out%%$'\t'*}; body=${out#*$'\t'}
+  if [ "$code" = "200" ] && printf '%s' "$body" | python3 -c 'import sys,json
+d=json.load(sys.stdin); r=d.get("result",{})
+raise SystemExit(0 if r and not r.get("isError") else 1)' 2>/dev/null; then
+    printf '%-8s ok    %s tools; %s\n' "$name" "$n" "$what"
+  else
+    printf '%-8s FAIL  tools/call  http %s  %s\n' "$name" "$code" "$(printf '%s' "$body" | head -c 160)"
+    fail=1
+  fi
+}
+
+echo "GATEWAY    LOCAL            ROUTE                              KEY"
+printf "%-10s %-16s %-34s %s\n" "agentgw" "127.0.0.1:3310" "$GATEWAY/<backend>/mcp" "$([ -n "$key" ] && echo "mcp/.env" || echo "MISSING (bin/mcp-up)")"
+echo
+echo "ROUND-TRIP THROUGH THE GATEWAY"
+check estate estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"execute_sql","arguments":{"database":"estate","sql":"select count(*) as n from assets"}}}' \
+  "execute_sql on catalog/estate.db"
+check estate-inventory estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_estate_inventory","arguments":{}}}' \
+  "get_estate_inventory: crew#216 CP1, catalog + crew/STATE.md in one call"
+check workload-state estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_workload_state","arguments":{"app":"idp"}}}' \
+  "get_workload_state(idp): crew#216 CP2, catalog + desired/actual + metrics in one call"
+check workload-logs estate \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_workload_logs","arguments":{"app":"idp","tail":10}}}' \
+  "get_workload_logs(idp): crew#216 CP3 -- degrades (no plist mount yet) rather than erroring"
+check github github \
+  '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_issues","arguments":{"owner":"chidionyema","repo":"crew","state":"OPEN","perPage":1}}}' \
+  "list_issues on chidionyema/crew (the board)"
+
+echo
+echo "CONTAINERS"
+names=$(docker ps --filter 'label=com.docker.compose.project=mcp' --format '{{.Names}}' 2>/dev/null)
+if [ -n "$names" ]; then
+  # shellcheck disable=SC2086
+  docker stats --no-stream --format '  {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' $names 2>/dev/null \
+    | sort | expand -t 34,58
+  echo "  ---"
+  echo "  ceilings: agentgateway 256m + github-mcp 128m + estate-mcp 256m = 640m"
+  echo "  published: 127.0.0.1:3310 only; neither MCP server has a host port"
+else
+  echo "  none running -- bin/mcp-up"
+fi
+
+exit "$fail"

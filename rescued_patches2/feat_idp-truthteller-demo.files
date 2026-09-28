@@ -1,0 +1,5 @@
+bin/idp-truthteller-demo
+docs/demo/agent-cannot-lie.html
+docs/how-to/index.md
+docs/how-to/prove-a-change-the-agent-cannot-lie.md
+tests/test_truthteller_demo.py

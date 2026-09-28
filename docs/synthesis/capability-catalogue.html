@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Capability Catalogue — every capability an agent can be granted, and what is missing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured capability</div>
+  <h1>Capability Catalogue — every capability an agent can be granted, and what is missing</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#state-vocabulary-same-as-the-map-applied-per-row">State vocabulary (same as the map, applied per-row)</a></li><li><a href="#0-how-to-read-the-class-column">0. How to read the Class column</a></li><li><a href="#1-perceive-the-eyes">1. Perceive (the eyes)</a></li><li><a href="#2-act-the-hands">2. Act (the hands)</a></li><li><a href="#3-surface-the-reach-where-agents-meet-people">3. Surface (the reach — where agents meet people)</a></li><li><a href="#4-memory-the-brain-s-persistence">4. Memory (the brain's persistence)</a></li><li><a href="#5-compute-where-the-agent-runs">5. Compute (where the agent runs)</a></li><li><a href="#6-safety-what-makes-it-safe-to-grant-anything-at-all">6. Safety (what makes it safe to grant anything at all)</a></li><li><a href="#7-make-the-media-the-agent-produces">7. Make (the media the agent produces)</a></li><li><a href="#8-the-doors-how-a-builder-reaches-all-of-the-above">8. The doors (how a builder reaches all of the above)</a></li><li><a href="#9-the-capability-classes-counted">9. The capability classes, counted</a></li><li><a href="#10-the-honest-verdict">10. The honest verdict</a></li><li><a href="#11-next-step-offered">11. Next step, offered</a></li></ol></nav>
+<h1 id="capability-catalogue-every-capability-an-agent-can-be-granted-and-what-is-missing">Capability Catalogue — every capability an agent can be granted, and what is missing</h1>
+<p><strong>Written 2026-09-23 (measured, not inherited).</strong> This is the <em>grantable</em> view of the estate's capability surface, for a builder that assembles agents — corporate and personal — against a single catalogue. It merges the five disjoint inventories that already exist on disk into one table, and it is the prerequisite the consolidation needs: <strong>before we build a "grant any capability" interface, we enumerate the capabilities.</strong></p>
+<p>It is the companion to <code>2026-09-20-full-capability-map.md</code>. The map answers <em>"what exists, categorised by where it runs."</em> This catalogue answers <em>"what can an agent be granted, from which source, and where are the holes."</em> The map is an inventory; this is the order surface.</p>
+<h2 id="state-vocabulary-same-as-the-map-applied-per-row">State vocabulary (same as the map, applied per-row)</h2>
+<div class="tablewrap"><table><thead><tr><th>State</th><th>Means</th></tr></thead><tbody><tr><td><strong>live</strong></td><td>running, wired, observed</td></tr><tr><td><strong>wired</strong></td><td>connected to something that runs; will fire</td></tr><tr><td><strong>built</strong></td><td>exists, tested, not connected to anything that runs</td></tr><tr><td><strong>built-elsewhere</strong></td><td>exists per its own docs/ticket, but <strong>not present in this checkout</strong> — verify before granting</td></tr><tr><td><strong>missing</strong></td><td>not found anywhere; a capability a 2100-agent brain plausibly needs that the estate has not built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="0-how-to-read-the-class-column">0. How to read the Class column</h2>
+<p>Every capability gets exactly one class, so a builder can grant along an axis a client understands:</p>
+<ul><li><strong>perceive</strong> — the agent senses: vision, hearing, reading.</li><li><strong>act</strong> — the agent does: run, type, click, control.</li><li><strong>surface</strong> — the agent reaches a person through a channel.</li><li><strong>memory</strong> — the agent remembers.</li><li><strong>compute</strong> — the agent chooses where it runs.</li><li><strong>safety</strong> — the agent is constrained and audited.</li><li><strong>make</strong> — the agent produces media (image/voice/video).</li></ul>
+<hr class="rule">
+<h2 id="1-perceive-the-eyes">1. Perceive (the eyes)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Vision / screenshot</td><td>read the screen, screenshot + OCR + coordinates</td><td><code>hermes-agent/tools/vision_tools.py</code>, <code>computer_use/</code> (8 files incl. <code>vision_routing.py</code>, <code>cua_backend.py</code>)</td><td>built</td></tr><tr><td>Camera / computer-use</td><td>drive a real desktop via computer-use agent (<code>cua_backend</code>)</td><td><code>hermes-agent/tools/computer_use/</code></td><td>built</td></tr><tr><td>Browser (see + act)</td><td>6 browser tools + CamouFox stealth + CDP</td><td><code>hermes-agent/tools/browser_tool.py</code>, <code>browser_cdp_tool.py</code>, <code>browser_camofox.py</code>, <code>browser_supervisor.py</code>, <code>browser_use_cli.py</code>, <code>browser_dialog_tool.py</code></td><td>built</td></tr><tr><td>Voice intake / transcription</td><td>speech → text (Whisper etc.)</td><td><code>hermes-agent/tools/transcription_tools.py</code></td><td>built</td></tr><tr><td>Wake-word</td><td>on-device wake detection (<code>hey_hermes.onnx</code> + tflite)</td><td><code>hermes-agent/tools/wake_word.py</code>, <code>wakewords/</code></td><td>built</td></tr><tr><td>Biometric speaker verification</td><td>refuse a cold/hoarse/imposter voice</td><td><code>mums-concierge</code> (voice gate)</td><td><strong>built-elsewhere</strong></td></tr><tr><td>Document read</td><td>Feishu docs/drive, Microsoft Graph, file read</td><td><code>hermes-agent/tools/feishu_doc_tool.py</code>, <code>feishu_drive_tool.py</code>, <code>microsoft_graph_client.py</code>, <code>file_tools.py</code></td><td>built</td></tr><tr><td>Web search</td><td>X search, open web tools, SERP</td><td><code>hermes-agent/tools/web_tools.py</code>, <code>x_search_tool.py</code></td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="2-act-the-hands">2. Act (the hands)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Code execution</td><td>run code in guarded environments</td><td><code>hermes-agent/tools/code_execution_tool.py</code></td><td>built</td></tr><tr><td>Terminal / shell</td><td>shell with heredoc, hints, output limits</td><td><code>hermes-agent/tools/terminal_tool.py</code>, <code>shell_heredoc.py</code>, <code>terminal_hints.py</code>, <code>tool_output_limits.py</code></td><td>built</td></tr><tr><td>File operations</td><td>read/write/move files, working-diff</td><td><code>hermes-agent/tools/file_operations.py</code>, <code>working_diff.py</code>, <code>patch_parser.py</code></td><td>built</td></tr><tr><td>OS input injection</td><td><strong>type/clicks at the OS level</strong> — macOS Quartz + Windows SendInput</td><td><code>sovereign/sentinel/src/input/macos.rs</code> (184), <code>windows.rs</code> (151), <code>keys.rs</code> (136)</td><td>built</td></tr><tr><td>GUI automation</td><td>screenshot → intent → coordinates → injected input</td><td><code>sovereign/vision_brain/</code> (planner + Anthropic/local backends)</td><td>built</td></tr><tr><td>Browser operator (real profile)</td><td>Playwright against Nunn's <em>own</em> Chrome, vision click + screenshot receipt</td><td><code>mums-concierge/browser_operator.py</code></td><td><strong>built-elsewhere</strong></td></tr><tr><td>Cron / scheduling</td><td>scheduled jobs</td><td><code>hermes-agent/tools/cronjob_tools.py</code></td><td>built</td></tr><tr><td>Kanban / todos</td><td>task boards, todo lists</td><td><code>hermes-agent/tools/kanban_tools.py</code>, <code>todo_tool.py</code></td><td>built</td></tr><tr><td>Delegation / sub-agents</td><td>delegate, subagent worktrees, async delegation</td><td><code>hermes-agent/tools/delegate_tool.py</code>, <code>async_delegation.py</code>, <code>subagent_worktree.py</code></td><td>built</td></tr><tr><td>Smart-home control</td><td>Home Assistant</td><td><code>hermes-agent/tools/homeassistant_tool.py</code></td><td>built</td></tr><tr><td>Project / workspace</td><td>project_tools, apply-layout, focus-pane</td><td><code>hermes-agent/tools/project_tools.py</code>, <code>apply_layout_tool.py</code>, <code>focus_pane_tool.py</code></td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="3-surface-the-reach-where-agents-meet-people">3. Surface (the reach — where agents meet people)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Voice out (TTS)</td><td>text → speech, streaming, NuTTS synth</td><td><code>hermes-agent/tools/tts_tool.py</code>, <code>tts_streaming.py</code>, <code>tts_text_normalize.py</code>, <code>neutts_synth.py</code></td><td>built</td></tr><tr><td>Voice mode</td><td>full duplex voice session</td><td><code>hermes-agent/tools/voice_mode.py</code></td><td>built</td></tr><tr><td>Discord</td><td>Discord bot channel</td><td><code>hermes-agent/tools/discord_tool.py</code></td><td>built</td></tr><tr><td>Feishu</td><td>Feishu docs + drive</td><td><code>hermes-agent/tools/feishu_doc_tool.py</code>, <code>feishu_drive_tool.py</code></td><td>built</td></tr><tr><td>Microsoft Graph</td><td>email/calendar/files via Graph</td><td><code>hermes-agent/tools/microsoft_graph_client.py</code>, <code>microsoft_graph_auth.py</code></td><td>built</td></tr><tr><td>Send message</td><td>generic send/announce</td><td><code>hermes-agent/tools/send_message_tool.py</code>, <code>react_to_message_tool.py</code></td><td>built</td></tr><tr><td>X (Twitter)</td><td>X search + post</td><td><code>hermes-agent/tools/x_search_tool.py</code></td><td>built</td></tr><tr><td>SMS fan-out + DTMF (OOB approval)</td><td>Twilio SMS + phone DTMF confirmation</td><td><code>sovereign/concierge/oob.py</code>, <code>sentinel/src/approval.rs</code></td><td>built</td></tr><tr><td>Twilio / WhatsApp webhook</td><td>voice/webhook entry for a personal agent</td><td><code>mums-concierge/voice_endpoints.py</code>, <code>request_auth.py</code></td><td><strong>built-elsewhere</strong></td></tr><tr><td>Telegram</td><td>gateway exists; operator shell</td><td><code>idp/platform/otto-gateway</code>, <code>hermes-operator</code>, <code>idp/platform/jit</code></td><td>built</td></tr><tr><td><strong>Email (first-class)</strong></td><td>send/read/triage as a <em>tool</em> (not via Graph)</td><td>—</td><td><strong>missing</strong></td></tr><tr><td><strong>Calendar / scheduling</strong></td><td>first-class calendar tool</td><td>—</td><td><strong>missing</strong></td></tr><tr><td><strong>SMS / phone (grantable)</strong></td><td>SMS as a grantable tool (exists only inside Concierge)</td><td>—</td><td><strong>missing</strong></td></tr><tr><td><strong>Slack / Teams</strong></td><td>corporate chat</td><td>—</td><td><strong>missing</strong></td></tr><tr><td><strong>Notion / Linear / Jira</strong></td><td>corporate work + knowledge</td><td>—</td><td><strong>missing</strong></td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="4-memory-the-brain-s-persistence">4. Memory (the brain's persistence)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Memory provider(s)</td><td>memory_tool + provider system (40+ tests)</td><td><code>hermes-agent/tools/memory_tool.py</code>, <code>plugins/memory/</code></td><td>built</td></tr><tr><td>estate_memory MCP</td><td><code>remember</code> / <code>recall</code>, one memory for every agent</td><td><code>idp/mcp/plugins/estate_memory.py</code></td><td>built</td></tr><tr><td>growmos knowledge graph</td><td>cross-repo typed memory (entities/relations/provenance)</td><td><code>estate-graph/</code>, per-repo <code>.growmos/</code></td><td><strong>live</strong></td></tr><tr><td>hermes memory subsystem</td><td>98 memory-related files</td><td><code>hermes-agent/</code></td><td>built</td></tr><tr><td>hermes-v2 memory</td><td>architect's own store</td><td><code>hermes-v2/</code></td><td>built</td></tr><tr><td>decision log / prompt ledger</td><td>shared research trail, one close-per-prompt</td><td><code>crew/</code>, <code>claude-guards/prompt-ledger.py</code>, <code>decision-log.py</code></td><td><strong>live</strong></td></tr></tbody></table></div>
+<blockquote><p><strong>Founder decision needed (open):</strong> four memory systems exist (estate_memory MCP, hermes, growmos, hermes-v2). Does the builder expose "pick a memory backend" as a <em>grantable choice</em> per agent, or fold them into <strong>one</strong> shared brain? This catalogue lists all four until that is decided — it is the single biggest "one of each layer" violation in the capability surface (AGENTS.md law 6).</p></blockquote>
+<hr class="rule">
+<h2 id="5-compute-where-the-agent-runs">5. Compute (where the agent runs)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>12 execution arenas</td><td>local, docker, modal, managed_modal, daytona, vercel_sandbox, singularity, ssh, base, file_sync, modal_utils</td><td><code>hermes-agent/tools/environments/</code> (12 files)</td><td>built</td></tr><tr><td>kronos rings 0–4</td><td>Firecracker VM, Wasm fuel, eBPF, vsock+Vault, SQLite ledger</td><td><code>kronos/crates/ring{0..4}-*</code></td><td>built (Linux/K8s only)</td></tr><tr><td>devcontainer / systemd-run / vCluster / k3d / colima / gVisor</td><td>additional sandboxes</td><td><code>agent-guard/sandbox/</code>, <code>idp/platform/sandbox/</code>, <code>idp/platform/gvisor-runtime/</code></td><td>mixed; colima <strong>live</strong></td></tr></tbody></table></div>
+<blockquote><p>The map's verdict stands: 4 sandbox systems (12 backends + kronos + devcontainer + vcluster) should be <strong>1 entry rule</strong>, not a client choice. The builder exposes <em>one</em> "where does it run" grant; the arena is resolved underneath.</p></blockquote>
+<hr class="rule">
+<h2 id="6-safety-what-makes-it-safe-to-grant-anything-at-all">6. Safety (what makes it safe to grant anything at all)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Guardian 3-tier engine</td><td>autonomous / human-confirm / founder-gate risk tiers</td><td><code>mums-concierge/guardian_engine.py</code> (30 tests)</td><td><strong>built-elsewhere</strong></td></tr><tr><td>Budget + rate gates</td><td>daily $, per-minute rate, approval thresholds</td><td><code>sovereign/sentinel/src/guardrails/mod.rs</code></td><td>built</td></tr><tr><td>Semantic boundary</td><td>intent vs allowed-action boundary</td><td><code>sentinel/src/guardrails/mod.rs</code> L23-31</td><td>built</td></tr><tr><td>Out-of-band approval</td><td>human confirms from phone (SMS/DTMF)</td><td><code>sentinel/src/approval.rs</code>, <code>concierge/oob.py</code></td><td>built</td></tr><tr><td>Hash-chained audit ledger</td><td>SQLite WAL + tamper verification</td><td><code>sentinel/src/ledger/</code></td><td>built</td></tr><tr><td>Credential vault</td><td>Keychain / Credential Manager</td><td><code>sentinel/src/</code></td><td>built</td></tr><tr><td>Aevum</td><td>Ed25519 + ML-DSA-65, COSE_Sign1, RFC 3161, hash-chained</td><td><code>idp/platform/observability/aevum.yaml</code>, <code>.aevum/local.jsonl</code></td><td>built (ledger empty)</td></tr><tr><td>JIT broker</td><td>one named write at a time, founder approves by phone</td><td><code>idp/platform/jit/</code></td><td>built</td></tr><tr><td>Guard / policy</td><td>5 implementations (see map)</td><td><code>idp/bin/*-gate</code>, <code>claude-guards/</code></td><td><strong>live</strong></td></tr><tr><td>Threat detection / policy</td><td>threat_patterns, Tirith, path/url/website policy</td><td><code>hermes-agent/tools/threat_patterns.py</code>, <code>tirith_security.py</code>, <code>path_security.py</code>, <code>url_safety.py</code>, <code>website_policy.py</code></td><td>built</td></tr><tr><td>Approval / write gate</td><td>approval, slash-confirm, write-approval</td><td><code>hermes-agent/tools/approval.py</code>, <code>slash_confirm.py</code>, <code>write_approval.py</code></td><td>built</td></tr><tr><td>Multi-tenant isolation</td><td>tenant-scoped subjects <code>tasks.&lt;tenant&gt;.&lt;slug&gt;</code></td><td><code>agent-foundry/af/bus.py</code>, ORDER.md §4</td><td>built (not operating)</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="7-make-the-media-the-agent-produces">7. Make (the media the agent produces)</h2>
+<div class="tablewrap"><table><thead><tr><th>Capability</th><th>What it does</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>Image generation</td><td>text → image</td><td><code>hermes-agent/tools/image_generation_tool.py</code></td><td>built</td></tr><tr><td>Video generation</td><td>text → video (flux3, xai video)</td><td><code>hermes-agent/tools/flux3_video_tool.py</code>, <code>xai_video_tools.py</code>, <code>video_generation_tool.py</code>, <code>xai_http.py</code></td><td>built</td></tr><tr><td>TTS synthesis</td><td>NuTTS + streaming voice</td><td><code>hermes-agent/tools/neutts_synth.py</code>, <code>tts_streaming.py</code></td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="8-the-doors-how-a-builder-reaches-all-of-the-above">8. The doors (how a builder reaches all of the above)</h2>
+<div class="tablewrap"><table><thead><tr><th>Door</th><th>Tools exposed</th><th>Source</th><th>State</th></tr></thead><tbody><tr><td>estate_mcp (15 plugins)</td><td><code>estate_executor</code>, <code>estate_memory</code>, <code>estate_state</code>, <code>estate_twin</code>, <code>estate_holmes</code>, <code>estate_inventory</code>, <code>estate_sessions</code>, <code>estate_guards</code>, <code>estate_simulate</code>, <code>voice</code>, <code>jev</code>, <code>workload_state</code>, <code>workload_logs</code>, <code>deploy_journeys</code></td><td><code>idp/mcp/plugins/</code></td><td>built</td></tr><tr><td>LiteLLM router</td><td>one router key per identity (the model door)</td><td><code>idp/platform/llm/</code></td><td><strong>live</strong></td></tr><tr><td>30 skill domains</td><td>research, data-science, devops, mlops, frontend/creative, media, email, social, smart-home, apple, github, security, yuanbao, + meta-skills (skill-creator, mcp-builder, safe-commit-protocol, supervised-process-contract)</td><td><code>hermes-config/skills/</code></td><td>built</td></tr><tr><td>agent-foundry</td><td>order → decompose → manifest → run (8 nodes: army, nodes, worker, bus, meter, order, serve, db)</td><td><code>agent-foundry/af/</code></td><td>built</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="9-the-capability-classes-counted">9. The capability classes, counted</h2>
+<div class="tablewrap"><table><thead><tr><th>Class</th><th>Rows</th><th>Mostly</th><th>Biggest hole</th></tr></thead><tbody><tr><td>perceive</td><td>8</td><td>built</td><td>biometric speaker-verify is <strong>built-elsewhere</strong></td></tr><tr><td>act</td><td>12</td><td>built</td><td>browser-operator (real profile) is <strong>built-elsewhere</strong></td></tr><tr><td>surface</td><td>15</td><td>built, but…</td><td><strong>5 missing</strong>: email, calendar, SMS, Slack/Teams, Notion/Linear/Jira</td></tr><tr><td>memory</td><td>6</td><td>live/built</td><td><strong>4 systems where law 6 wants 1</strong> — founder decision open</td></tr><tr><td>compute</td><td>3</td><td>built</td><td>4 sandbox systems where the map wants 1 entry rule</td></tr><tr><td>safety</td><td>12</td><td>live/built</td><td>Aevum ledger empty; multi-tenant isolation built-not-operating</td></tr><tr><td>make</td><td>3</td><td>built</td><td>nothing missing</td></tr><tr><td>doors</td><td>4</td><td>live/built</td><td>agent-foundry built, never wired to the live bus</td></tr></tbody></table></div>
+<hr class="rule">
+<h2 id="10-the-honest-verdict">10. The honest verdict</h2>
+<ol><li><strong>The estate already has a world-class capability surface.</strong> ~140 Hermes tools, the full <code>sovereign/</code> personal-agent scaffold (OS input injection, OOB approval, budget/audit), the <code>mums-concierge</code> consent stack, 30 skills, 12 arenas, 4 memory systems, 15 MCP doors. The "need more" is mostly <strong>not</strong> more capabilities.</li></ol>
+<ol><li><strong>The real gap is grantability.</strong> None of the ~190 capabilities above register as a typed, grantable row in one builder. <code>agent-foundry</code> exposes 8 nodes. The catalogue above is the missing registry — each row is a capability a client could be granted, and today every one of them is granted only by hand-wiring code.</li></ol>
+<ol><li><strong>The genuine "need more"</strong> — the rows a 2100-agent brain demands that the estate has not built — is a short, honest list: <strong>first-class email, calendar, SMS, Slack/Teams, Notion/Linear/Jira.</strong> Five integrations. Everything else the estate already has, scattered.</li></ol>
+<ol><li><strong>Two things need a founder decision, and block the builder:</strong> - <strong>Memory</strong>: one shared brain, or pick-a-backend per agent? (4 systems today.) - <strong><code>mums-concierge</code> is not in this checkout.</strong> Its capabilities (biometric voice gate, browser operator, guardian engine, Twilio/WhatsApp) are judged <strong>built-elsewhere</strong>. Before the builder can grant them, either fetch the repo into the estate root or re-mark them "verify before grant."</li></ol>
+<hr class="rule">
+<h2 id="11-next-step-offered">11. Next step, offered</h2>
+<p>Wire the catalogue as the source of truth for a grant model: add a <code>capabilities: [...]</code> field to the <code>agent-foundry</code> order object, where each entry is <code>{ name, class, scope, mode }</code> and <code>name</code> resolves against the rows above. The builder then grants <em>any</em> row to <em>any</em> agent, corporate or personal, through one schema'd, audited operation — and the catalogue is what makes "grant any capability" a typed fact instead of prose.</p>
+<p>This document is read-only evidence. Confirm and I'll turn it into the grant-model ADR + the foundry order-schema change.</p>
+<footer>
+  <span>Source: <code>docs/synthesis/capability-catalogue.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

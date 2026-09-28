@@ -1,0 +1,9 @@
+{
+  "tool": "restart_database",
+  "pre": "db uptime > 0s",
+  "post": "readiness probe passes within 30s",
+  "observations": {
+    "db uptime": [[0, 12]],
+    "readiness probe": [[10, false], [20, false], [50, true]]
+  }
+}

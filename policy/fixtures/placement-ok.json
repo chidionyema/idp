@@ -1,0 +1,10 @@
+{
+  "_comment": "The good case, and the one that matters most (LAW 38). Correct placement must PASS: short-interval jobs that only matter while a session is open, all monitored, none scheduled inside the sleep window, no survival work. If this fixture ever fails, the guard has started refusing work that is right, which is an outage and not a false positive.",
+  "jobs": [
+    {"label": "ai.estate.friction-relay", "slug": "friction-relay", "schedule": "interval", "period_seconds": 600, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh friction-relay relay.py", "check": {"status": "up", "last_ping": "2026-08-24T01:54:59+00:00"}},
+    {"label": "ai.estate.tracked-guard", "slug": "tracked-guard", "schedule": "interval", "period_seconds": 1800, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh tracked-guard tracked.py", "check": {"status": "up", "last_ping": "2026-08-24T01:20:30+00:00"}},
+    {"label": "com.estate.downshift", "slug": "downshift", "schedule": "interval", "period_seconds": 900, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh downshift downshift.sh", "check": {"status": "up", "last_ping": "2026-08-24T01:49:08+00:00"}},
+    {"label": "ai.estate.idp", "slug": "idp", "schedule": "interval", "period_seconds": 3600, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh idp idp-refresh", "check": {"status": "up", "last_ping": "2026-08-24T01:18:44+00:00"}},
+    {"label": "com.chidionyema.reflect", "slug": "reflect", "schedule": "interval", "period_seconds": 14400, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh reflect reflect.py", "check": {"status": "up", "last_ping": "2026-08-24T01:20:25+00:00"}}
+  ]
+}

@@ -1,0 +1,7 @@
+# A route whose parentRef names a Gateway platform/availability.yaml does not claim. The
+# workload implementing a Gateway is not derivable from any manifest, so an unclaimed one is
+# BLIND: that is the hole that let Traefik run one replica behind seven hardened surfaces.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - surface.yaml

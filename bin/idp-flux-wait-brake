@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Refuse a Flux Kustomization that sets both ``wait: true`` and ``healthChecks``.
+
+kustomize-controller treats the two as mutually exclusive and ``wait`` wins: when
+it is true the ``healthChecks`` list is ignored entirely and the row waits on the
+health of *every* object its path applies. The list an author wrote is not a
+narrowing of that wait -- it is dead text, and nothing tells them so.
+
+Incident 2026-09-10. ``clusters/oke/platform.yaml`` gave the ``otto-gateway`` row a
+single health check, ``Deployment/otto-gateway``, and also ``wait: true``. The
+gateway Deployment was healthy. A one-shot backfill in the same path,
+``Job/otto-memory-store-6``, timed out reaching the LLM router and went Failed, so
+the row reported::
+
+  Healthy=False HealthCheckFailed: failed early due to stalled resources:
+  [Job/otto-gateway/otto-memory-store-6 status: 'Failed']
+
+and stopped applying. The Job's own manifest says, in as many words, "If this never
+runs, nothing breaks" -- yet it held every otto-gateway change out of the cluster,
+including the change that repairs the router path the Job was failing to reach.
+
+The same file already carries this scar once. ``estate-db-migrate`` was dropped from
+``dependsOn`` in a comment that reads "the guard is spent, and while it stood it was
+a permanent brake -- ... every otto-gateway change since then ... could not reach the
+cluster". Second instance, same shape: an optional one-shot object braking a row.
+So it becomes a gate rather than a third comment.
+
+The fix is always the same and never removes a check: keep the ``healthChecks`` the
+author wrote, drop ``wait: true``. A row with no ``healthChecks`` keeps ``wait: true``
+-- there, it is the only readiness signal it has.
+
+Usage: idp-flux-wait-brake            scan the repository's clusters/ tree
+       idp-flux-wait-brake FILE...    scan the named files
+Exit 0 clean, 1 on any hit.
+"""
+import glob
+import os
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def scan(path):
+    """Yield (name, count) for every Kustomization whose healthChecks wait discards."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            docs = list(yaml.safe_load_all(handle))
+    except (OSError, yaml.YAMLError):
+        return
+    for doc in docs:
+        if not isinstance(doc, dict) or doc.get("kind") != "Kustomization":
+            continue
+        spec = doc.get("spec")
+        if not isinstance(spec, dict):
+            continue
+        checks = spec.get("healthChecks")
+        if spec.get("wait") is True and checks:
+            name = (doc.get("metadata") or {}).get("name", "<unnamed>")
+            yield name, len(checks)
+
+
+def main(argv):
+    if argv:
+        paths = argv
+    else:
+        paths = sorted(glob.glob(os.path.join(ROOT, "clusters", "**", "*.yaml"), recursive=True))
+    hits = 0
+    for path in paths:
+        for name, count in scan(path):
+            rel = os.path.relpath(path, ROOT)
+            print(
+                f"{rel}: Kustomization/{name} sets wait: true and {count} healthCheck(s); "
+                "wait wins, so those checks are ignored and the row waits on every object "
+                "in its path -- drop wait: true and keep the checks"
+            )
+            hits += 1
+    if hits:
+        print(f"FAIL  idp-flux-wait-brake: {hits} row(s) whose healthChecks Flux discards")
+        return 1
+    print("PASS  idp-flux-wait-brake: no Kustomization declares healthChecks that wait would discard")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

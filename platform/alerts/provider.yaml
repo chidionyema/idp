@@ -1,0 +1,11 @@
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Provider
+metadata:
+  name: telegram
+  namespace: flux-system
+spec:
+  type: telegram
+  # Substituted by the alerts Kustomization from the flux-telegram Secret (postBuild).
+  channel: ${channel}   # unquoted on purpose: the synced value carries its own quotes (see alerts-secret/flux-telegram.yaml)
+  secretRef:
+    name: flux-telegram

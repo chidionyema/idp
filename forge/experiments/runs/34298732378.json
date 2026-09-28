@@ -1,0 +1,28 @@
+{
+    "task": "ci-flake-triage",
+    "task_file": "forge/tasks/ci-flake-triage.yaml",
+    "dry_run": true,
+    "max_steps": -1,
+    "gpu": "T4",
+    "seconds": 996,
+    "usd": 0.1632,
+    "trace": "6214d318-8fc7-4b1f-9750-c81e6bea3c9b",
+    "artifact": null,
+    "eval": {
+        "held_out": 160,
+        "agreement": 0.9847328244274809,
+        "abstain_rate": 0.18125,
+        "verdict": "passed",
+        "refusal": null
+    },
+    "dataset": {
+        "rows": 799,
+        "train": 639,
+        "eval": 160,
+        "sha256": "9517e48d9df50c3402a242e0f59f6be8a761853af256831a7062a39be02fa06f",
+        "langfuse_dataset": "ci-flake-triage"
+    },
+    "verdict": "refused",
+    "budget_usd": 1.0,
+    "exit_code": 1
+}

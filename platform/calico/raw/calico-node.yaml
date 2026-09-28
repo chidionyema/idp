@@ -1,0 +1,334 @@
+# calico-node DaemonSet (operatorless, kubernetes datastore).
+#
+# Byte-source: Calico v3.32.2 `manifests/calico.yaml` calico-node DaemonSet
+# (raw.githubusercontent.com/projectcalico/calico/v3.32.2/manifests/calico.yaml). Deltas from
+# canonical, per the Road B decisions the operator-deck header (`platform/calico/calico.yaml`)
+# already fixed for this cluster:
+#   - IP: autodetect tuned to IP_AUTODETECTION_METHOD=interface=enp0s6  (fixes the phantom
+#     underlay: the live operator calico-node on 10.0.148.221 autodetected cilium_host
+#     10.0.1.218/32 and never peered cross-node; the good node's real underlay is enp0s6).
+#   - CALICO_IPV4POOL_CIDR=10.244.0.0/16  (exact CIDR flannel uses today; a different pool would
+#     strand every running pod's address).
+#   - IPIP off:    CALICO_IPV4POOL_IPIP  None   (canonical ships Always; Road B is VXLAN-only).
+#   - VXLAN on:    CALICO_IPV4POOL_VXLAN Always, FELIX_VXLANENABLED=true.
+#   - CALICO_NETWORKING_BACKEND keeps bird (no literal "vxlan" string exists in Calico OSS);
+#     with no BGP peers and VXLAN pools, bird is the harmless control backend.
+#   - CALICO_IPV6POOL_VXLAN = Never and FELIX_IPV6SUPPORT=false (IPv4-only, as the operator deck).
+#   - Upgrade-ipam and ebpf-bootstrap init containers kept for byte-fidelity with the reviewed
+#     vendor reference; both are no-ops outside a host-local IPAM upgrade / eBPF dataplane.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: calico-node
+  namespace: kube-system
+  labels:
+    k8s-app: calico-node
+spec:
+  selector:
+    matchLabels:
+      k8s-app: calico-node
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        k8s-app: calico-node
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      hostNetwork: true
+      tolerations:
+        # Make sure calico-node gets scheduled on all nodes.
+        - effect: NoSchedule
+          operator: Exists
+        # Mark the pod as a critical add-on for rescheduling.
+        - key: CriticalAddonsOnly
+          operator: Exists
+        - effect: NoExecute
+          operator: Exists
+      serviceAccountName: calico-node
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      # Minimize downtime during a rolling upgrade or deletion; force deletion.
+      terminationGracePeriodSeconds: 0
+      priorityClassName: system-node-critical
+      initContainers:
+        # Upgrades from host-local IPAM to calico-ipam; a no-op on a fresh install or one that
+        # already uses calico-ipam (this estate: the prior operator install used calico-ipam).
+        - name: upgrade-ipam
+          image: quay.io/calico/cni:v3.32.2
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/cni/bin/calico-ipam", "-upgrade"]
+          envFrom:
+            - configMapRef:
+                name: kubernetes-services-endpoint
+                optional: true
+          env:
+            - name: KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: CALICO_NETWORKING_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: calico_backend
+          volumeMounts:
+            - mountPath: /var/lib/cni/networks
+              name: host-local-net-dir
+            - mountPath: /host/opt/cni/bin
+              name: cni-bin-dir
+          securityContext:
+            privileged: true
+        # Installs the CNI binaries and config file on each node.
+        - name: install-cni
+          image: quay.io/calico/cni:v3.32.2
+          imagePullPolicy: IfNotPresent
+          command: ["/opt/cni/bin/install"]
+          envFrom:
+            - configMapRef:
+                name: kubernetes-services-endpoint
+                optional: true
+          env:
+            # Name of the CNI config file to create.
+            - name: CNI_CONF_NAME
+              value: "10-calico.conflist"
+            # The CNI network config to install on each node.
+            - name: CNI_NETWORK_CONFIG
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: cni_network_config
+            # Set the hostname based on the k8s node name.
+            - name: KUBERNETES_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # CNI MTU Config variable
+            - name: CNI_MTU
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: veth_mtu
+            # Prevents the container from sleeping forever.
+            - name: SLEEP
+              value: "false"
+          volumeMounts:
+            - mountPath: /host/opt/cni/bin
+              name: cni-bin-dir
+            - mountPath: /host/etc/cni/net.d
+              name: cni-net-dir
+          securityContext:
+            privileged: true
+        # Mounts filesystems the BPF data plane needs. Runs best-effort so it never disrupts pod
+        # creation in the (default) iptables mode this estate runs.
+        - name: "ebpf-bootstrap"
+          image: quay.io/calico/node:v3.32.2
+          imagePullPolicy: IfNotPresent
+          command: ["calico-node", "-init", "-best-effort"]
+          volumeMounts:
+            - mountPath: /sys/fs
+              name: sys-fs
+              mountPropagation: Bidirectional
+            - mountPath: /var/run/calico
+              name: var-run-calico
+              mountPropagation: Bidirectional
+            - mountPath: /nodeproc
+              name: nodeproc
+              readOnly: true
+          securityContext:
+            privileged: true
+      containers:
+        # Runs calico-node on each Kubernetes node: programs policy and routes on each host.
+        - name: calico-node
+          image: quay.io/calico/node:v3.32.2
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: kubernetes-services-endpoint
+                optional: true
+          env:
+            # Use Kubernetes API as the backing datastore.
+            - name: DATASTORE_TYPE
+              value: "kubernetes"
+            # Wait for the datastore.
+            - name: WAIT_FOR_DATASTORE
+              value: "true"
+            # Set based on the k8s node name.
+            - name: NODENAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            # Choose the backend to use (from calico-config: bird).
+            - name: CALICO_NETWORKING_BACKEND
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: calico_backend
+            # Cluster type to identify the deployment type.
+            - name: CLUSTER_TYPE
+              value: "k8s,bgp"
+            # Auto-detect the BGP/VXLAN node address.
+            - name: IP
+              value: "autodetect"
+            # THE PHANTOM-UNDERLAY FIX: force autodetection to the real host NIC (enp0s6) rather
+            # than letting firstFound pick the phantom cilium_host 10.0.1.218 that broke
+            # cross-node peering on 10.0.148.221. Both OKE nodes expose the pod network on
+            # enp0s6 (10.0.148.221/20 and 10.0.159.197/20).
+            - name: IP_AUTODETECTION_METHOD
+              value: "interface=enp0s6"
+            # Road B is VXLAN-only: IPIP disabled, VXLAN enabled on the default IPv4 pool.
+            - name: CALICO_IPV4POOL_IPIP
+              value: "None"
+            - name: CALICO_IPV4POOL_VXLAN
+              value: "Always"
+            # Enable VXLAN in Felix (the datapath switch; no literal backend string exists).
+            - name: FELIX_VXLANENABLED
+              value: "true"
+            # VXLAN never used on IPv6 (this cluster is IPv4-only).
+            - name: CALICO_IPV6POOL_VXLAN
+              value: "Never"
+            # The default IPv4 pool Calico creates on startup. MUST match the CIDR flannel uses
+            # today (10.244.0.0/16, vxlan backend) so pod addressing is unchanged.
+            - name: CALICO_IPV4POOL_CIDR
+              value: "10.244.0.0/16"
+            # Set MTU for tunnel devices (auto-detected via the 0 in calico-config).
+            - name: FELIX_IPINIPMTU
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: veth_mtu
+            - name: FELIX_VXLANMTU
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: veth_mtu
+            - name: FELIX_WIREGUARDMTU
+              valueFrom:
+                configMapKeyRef:
+                  name: calico-config
+                  key: veth_mtu
+            # Disable file logging so `kubectl logs` works.
+            - name: CALICO_DISABLE_FILE_LOGGING
+              value: "true"
+            # Felix endpoint-to-host default action ACCEPT.
+            - name: FELIX_DEFAULTENDPOINTTOHOSTACTION
+              value: "ACCEPT"
+            # Disable IPv6 on Kubernetes.
+            - name: FELIX_IPV6SUPPORT
+              value: "false"
+            - name: FELIX_HEALTHENABLED
+              value: "true"
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 250m
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/calico-node
+                  - -shutdown
+          livenessProbe:
+            exec:
+              command:
+                - /bin/calico-node
+                - -felix-live
+                - -bird-live
+            periodSeconds: 10
+            initialDelaySeconds: 10
+            failureThreshold: 6
+            timeoutSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - /bin/calico-node
+                - -felix-ready
+                - -bird-ready
+            periodSeconds: 10
+            timeoutSeconds: 10
+          volumeMounts:
+            # For maintaining CNI plugin API credentials.
+            - mountPath: /host/etc/cni/net.d
+              name: cni-net-dir
+              readOnly: false
+            - mountPath: /lib/modules
+              name: lib-modules
+              readOnly: true
+            - mountPath: /run/xtables.lock
+              name: xtables-lock
+              readOnly: false
+            - mountPath: /var/run/calico
+              name: var-run-calico
+              readOnly: false
+            - mountPath: /var/lib/calico
+              name: var-lib-calico
+              readOnly: false
+            - name: policysync
+              mountPath: /var/run/nodeagent
+            # For eBPF mode we mount the parent so we can mount BPF fs at /sys/fs/bpf.
+            - name: bpffs
+              mountPath: /sys/fs/bpf
+            # securityfs, read by Felix to detect kernel lockdown.
+            - name: sys-kernel-security
+              mountPath: /sys/kernel/security
+              readOnly: true
+            - name: cni-log-dir
+              mountPath: /var/log/calico/cni
+              readOnly: true
+      volumes:
+        # Used by calico-node.
+        - name: lib-modules
+          hostPath:
+            path: /lib/modules
+        - name: var-run-calico
+          hostPath:
+            path: /var/run/calico
+            type: DirectoryOrCreate
+        - name: var-lib-calico
+          hostPath:
+            path: /var/lib/calico
+            type: DirectoryOrCreate
+        - name: xtables-lock
+          hostPath:
+            path: /run/xtables.lock
+            type: FileOrCreate
+        - name: sys-fs
+          hostPath:
+            path: /sys/fs/
+            type: DirectoryOrCreate
+        - name: bpffs
+          hostPath:
+            path: /sys/fs/bpf
+            type: Directory
+        - name: sys-kernel-security
+          hostPath:
+            path: /sys/kernel/security
+        - name: nodeproc
+          hostPath:
+            path: /proc
+        # Used to install CNI.
+        - name: cni-bin-dir
+          hostPath:
+            path: /opt/cni/bin
+            type: DirectoryOrCreate
+        - name: cni-net-dir
+          hostPath:
+            path: /etc/cni/net.d
+        # Used to access CNI logs.
+        - name: cni-log-dir
+          hostPath:
+            path: /var/log/calico/cni
+        # Host-local IPAM allocations dir; only used during an upgrade (no-op here).
+        - name: host-local-net-dir
+          hostPath:
+            path: /var/lib/cni/networks
+        # Used to create per-pod Unix Domain Sockets.
+        - name: policysync
+          hostPath:
+            type: DirectoryOrCreate
+            path: /var/run/nodeagent

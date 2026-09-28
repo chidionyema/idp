@@ -1,0 +1,125 @@
+{# deploy-time-scrub page -- drag the date to replay history.
+   Each journey is a single card. Focus pauses replay. No chrome. #}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deploy time-scrub</title>
+<style>
+  :root {
+    --bg: #06080d; --ink: #d6dee8; --dim: #5a6577;
+    --merged: #54c08a; --in_flight: #c89a3a; --failed: #d05656;
+    --abandoned: #6a6a6a; --unknown: #c89a3a;
+    --line: #1a2030;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+               background: var(--bg); color: var(--ink);
+               font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+               font-size: 13px; line-height: 1.45; }
+  body { display: grid; grid-template-rows: auto auto 1fr; gap: 16px;
+         padding: 24px 32px; }
+
+  h1 { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase;
+       font-weight: 600; color: var(--dim); }
+
+  .scrubber { display: flex; align-items: center; gap: 12px; }
+  .scrubber input[type=date] { background: transparent; color: var(--ink);
+                                border: 1px solid var(--line); padding: 6px 10px;
+                                font: inherit; }
+  .scrubber .stat { color: var(--dim); font-size: 11px;
+                     letter-spacing: 0.04em; }
+
+  .list { overflow-y: auto; padding-right: 8px; }
+  .card { display: grid; grid-template-columns: 56px 1fr 100px;
+          gap: 16px; padding: 12px 0; border-top: 1px solid var(--line); }
+  .card:first-child { border-top: 0; }
+  .state { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+           font-weight: 600; padding-top: 2px; }
+  .state.merged    { color: var(--merged); }
+  .state.in_flight { color: var(--in_flight); }
+  .state.failed    { color: var(--failed); }
+  .state.abandoned { color: var(--abandoned); }
+  .state.unknown   { color: var(--unknown); }
+
+  .meta { color: var(--ink); }
+  .meta .pr    { font-size: 13px; font-weight: 500; }
+  .meta .branch{ font-size: 11px; color: var(--dim);
+                 font-family: ui-monospace, "SF Mono", monospace; }
+  .meta .sha   { font-size: 10px; color: var(--dim);
+                 font-family: ui-monospace, "SF Mono", monospace; }
+
+  .time { text-align: right; color: var(--dim); font-size: 11px;
+          font-family: ui-monospace, "SF Mono", monospace; }
+  .time .open  { display: block; }
+  .time .merge { display: block; color: var(--merged); }
+
+  .empty { color: var(--dim); padding: 32px 0; text-align: center; }
+</style>
+</head>
+<body>
+<h1>time-scrub</h1>
+<div class="scrubber">
+  <input type="date" id="day" value="2026-09-23">
+  <span class="stat" id="stat">—</span>
+</div>
+<div class="list" id="list">
+  <div class="empty">loading…</div>
+</div>
+
+<script>
+  // The page can either be opened directly (data inlined below) or served
+  // by bin/estate-web-server with the date fetched live. We honour both.
+  const INLINED = {"available": true, "day": "2026-09-23", "journeys": [{"sha": "14ace2097fc0599c52992c943bdcf0ace913e198", "branch": "feat/spiffe-primary-v3", "pr_number": 3909, "state": "in_flight", "started_at": "2026-09-23T11:28:02Z", "merged_at": null}, {"sha": "3cd515d847ff6a21cfdbfa23100535acf50a379b", "branch": "feat/spiffe-primary-v2", "pr_number": 3908, "state": "abandoned", "started_at": "2026-09-23T07:50:48Z", "merged_at": null}, {"sha": "c273c6cc4b715921114c3a4f7170f9d060878cb7", "branch": "feat/spiffe-primary", "pr_number": 3907, "state": "abandoned", "started_at": "2026-09-23T07:27:14Z", "merged_at": null}, {"sha": "856fb452862034e7af6ce4e7ec57eed0b3b3c99d", "branch": "consolidate/all-into-main", "pr_number": 3906, "state": "in_flight", "started_at": "2026-09-23T04:47:09Z", "merged_at": null}, {"sha": "4bc87ab02fab629091b98808c98cdc7da75a31d6", "branch": "flux/image-updates", "pr_number": 3904, "state": "abandoned", "started_at": "2026-09-23T04:27:02Z", "merged_at": null}, {"sha": "f537cd78165f778ed942dbf277be1fcbf5ea5703", "branch": "flux/image-updates", "pr_number": 3903, "state": "merged", "started_at": "2026-09-23T04:22:50Z", "merged_at": "2026-09-23T04:22:55Z"}, {"sha": "d5cc42d09aad8b4c1d9dd9cdf62e48b6887bab92", "branch": "flux/image-updates", "pr_number": 3902, "state": "merged", "started_at": "2026-09-23T04:19:08Z", "merged_at": "2026-09-23T04:19:23Z"}]};
+
+  const $ = (s) => document.querySelector(s);
+  const dayInput = $("#day");
+  const list = $("#list");
+  const stat = $("#stat");
+
+  function render(data) {
+    stat.textContent = data.journeys.length
+      ? data.journeys.length + " journey" + (data.journeys.length === 1 ? "" : "s")
+      : (data.error || "no data");
+    if (!data.journeys.length) {
+      list.innerHTML = '<div class="empty">' +
+        (data.error || "no journeys on this date") + '</div>';
+      return;
+    }
+    list.innerHTML = data.journeys.map(j => `
+      <div class="card">
+        <div class="state ${j.state}">${j.state}</div>
+        <div class="meta">
+          <div class="pr">#${j.pr_number || "—"} ${escape(j.title || "")}</div>
+          <div class="branch">${escape(j.branch || "—")}</div>
+          <div class="sha">${escape(j.sha || "").slice(0,12)}</div>
+        </div>
+        <div class="time">
+          <span class="open">open ${(j.started_at || "").slice(11,16)}</span>
+          <span class="merge">${j.merged_at ? "merge " + j.merged_at.slice(11,16) : "—"}</span>
+        </div>
+      </div>
+    `).join("");
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"']/g, c =>
+      ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+  }
+
+  if (INLINED) {
+    render(INLINED);
+  } else {
+    fetch("/api/scrub?day=" + encodeURIComponent(dayInput.value))
+      .then(r => r.json()).then(render).catch(e => {
+        list.innerHTML = '<div class="empty">BLIND: ' + e + '</div>';
+      });
+  }
+  dayInput.addEventListener("change", () => {
+    if (!INLINED) {
+      fetch("/api/scrub?day=" + encodeURIComponent(dayInput.value))
+        .then(r => r.json()).then(render);
+    }
+  });
+</script>
+</body>
+</html>

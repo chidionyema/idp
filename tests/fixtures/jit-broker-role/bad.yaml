@@ -1,0 +1,190 @@
+# NOT a real manifest. The broker's floor with `bind` and `escalate` added to its
+# rolebindings rule -- the two verbs that lift Kubernetes' escalation-prevention rule and
+# turn "may mint what it holds" into "may mint anything". This is the shape the KSV-0050
+# waiver in .trivyignore.yaml would be lying about, so the gate must refuse it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: jit-broker
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - serviceaccounts/token
+  verbs:
+  - create
+- apiGroups:
+  - rbac.authorization.k8s.io
+  resources:
+  - roles
+  - rolebindings
+  verbs:
+  - create
+  - get
+  - delete
+  - bind
+  - escalate
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - delete
+  - get
+  - list
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  - statefulsets
+  verbs:
+  - get
+  - list
+  - patch
+- apiGroups:
+  - apps
+  resources:
+  - replicasets
+  verbs:
+  - get
+  - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: backstage
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: commerce
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: hermes-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: llm
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: notify
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: observability
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: otto-gateway
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: prospector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: jit-broker
+  namespace: research
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: jit-broker
+subjects:
+- kind: ServiceAccount
+  name: jit-broker
+  namespace: jit

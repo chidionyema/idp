@@ -1,0 +1,9 @@
+# The break: this names a reusable workflow that no longer exists in the tree. GitHub fails
+# the run at startup with no job and no log, so the mechanism is off and every check stays green.
+name: caller
+on:
+  issue_comment:
+    types: [created]
+jobs:
+  gate:
+    uses: ./.github/workflows/deleted-gate.yml

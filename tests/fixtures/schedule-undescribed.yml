@@ -1,0 +1,9 @@
+# must-fail fixture: each job here would reach the Dagster UI as an opaque name.
+jobs:
+  test.undescribed.no-docstring:
+    command: [/usr/bin/python3, $IDP/tests/fixtures/describe/undocumented.py]
+    cron: "0 4 * * *"
+  test.undescribed.output-path-is-not-a-script:
+    # founder-board class: the only readable file is where the job WRITES
+    command: [/usr/bin/python3, --html, $IDP/tests/fixtures/describe/out.html]
+    cron: "0 5 * * *"

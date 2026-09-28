@@ -1,0 +1,330 @@
+diff --git a/bin/db-gen b/bin/db-gen
+index c27055c9c..f2afea2be 100755
+--- a/bin/db-gen
++++ b/bin/db-gen
+@@ -1,9 +1,14 @@
+ #!/usr/bin/env bash
+-# Estate inventory -> SQLite, for the fallback renderer.
++# Estate inventory -> SQLite, for commands that need to count it without
++# asking Backstage.
+ #
+-# The second of two renderings of the same source. bin/catalog-gen writes YAML
+-# for Backstage; this writes SQLite for Datasette. Neither is the source: the
+-# source is ~/.estate/state/inventory.json, which LAW 39 already produces.
++# This used to be the second of two renderings of the same source, feeding a
++# Datasette fallback portal on 8001. That second portal is gone (founder,
++# 2026-08-24: "ive seen 5 ui faces today"). What is left is a queryable file:
++# bin/idp-status reads it for the asset count, and it answers "how many assets
++# does the inventory hold" without a running service. Neither this nor the
++# YAML is the source -- the source is ~/.estate/state/inventory.json, which
++# LAW 39 already produces.
+ #
+ # It is deliberately sqlite-utils rather than a Python script. The transform is
+ # "put this JSON array in a table", which is the one thing sqlite-utils exists
+diff --git a/bin/idp-down b/bin/idp-down
+index 4270789f2..24c901343 100755
+--- a/bin/idp-down
++++ b/bin/idp-down
+@@ -1,5 +1,5 @@
+ #!/usr/bin/env bash
+-# Stop both renderers and unpublish both ports. The off switch LAW 32 requires,
++# Stop the catalogue and unpublish its ports. The off switch LAW 32 requires,
+ # and the one thing the founder should be able to run without reading anything.
+ #
+ # It stops processes and removes tailscale listeners. It deletes nothing: the
+@@ -30,10 +30,9 @@ kill_port() {
+   stopped=$((stopped + 1))
+ }
+ 
+-echo "RENDERERS"
++echo "CATALOGUE"
+ kill_port 3100 "Backstage app"
+ kill_port 7107 "Backstage backend"
+-kill_port 8001 "Datasette"
+ 
+ echo
+ echo "PUBLISHED PORTS"
+diff --git a/bin/idp-status b/bin/idp-status
+index ca5f4ff4c..ddd5547b8 100755
+--- a/bin/idp-status
++++ b/bin/idp-status
+@@ -14,12 +14,14 @@ probe() {
+   case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
+ }
+ 
+-primary=$(probe http://127.0.0.1:3100)
+-fallback=$(probe http://127.0.0.1:8001/-/versions.json)
++# localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
++# returns 000 and this command reports the catalogue down while a browser on
++# the same machine is reading it. Measured 2026-08-24: curl 127.0.0.1:3100
++# -> 000, curl localhost:3100 -> 200, lsof: node IPv6 TCP [::1]:3100 (LISTEN).
++catalogue=$(probe http://localhost:3100)
+ 
+-echo "RENDERER   LOCAL                  HTTP   PUBLISHED"
+-printf "%-10s %-22s %-6s %s\n" "primary"  "127.0.0.1:3100 backstage" "$primary"  "http://$host:8443/"
+-printf "%-10s %-22s %-6s %s\n" "fallback" "127.0.0.1:8001 datasette" "$fallback" "http://$host:10000/"
++echo "SURFACE    LOCAL                  HTTP   PUBLISHED"
++printf "%-10s %-22s %-6s %s\n" "catalogue" "localhost:3100 backstage" "$catalogue" "http://$host:8443/"
+ 
+ echo
+ echo "CATALOGUE"
+@@ -44,8 +46,8 @@ else
+   echo "  tailnet only -- not reachable from the public internet"
+ fi
+ 
+-# Exit non-zero when NOTHING is serving. One renderer down is the design
+-# working; both down is an outage, and a status command that returns 0 either
+-# way cannot be used as a check.
+-[ "$primary" = "down" ] && [ "$fallback" = "down" ] && exit 1
++# Exit non-zero when the catalogue is not serving. There is one surface now,
++# so "down" is an outage with no second opinion to soften it, and a status
++# command that returns 0 anyway cannot be used as a check.
++[ "$catalogue" = "down" ] && exit 1
+ exit 0
+diff --git a/bin/idp-switch b/bin/idp-switch
+deleted file mode 100755
+index 2be957272..000000000
+--- a/bin/idp-switch
++++ /dev/null
+@@ -1,50 +0,0 @@
+-#!/usr/bin/env bash
+-# Repoint the primary URL at the other renderer. This is the 10-second switch.
+-#
+-#   idp-switch fallback    http://<host>:8443/  ->  Datasette
+-#   idp-switch primary     http://<host>:8443/  ->  Backstage
+-#
+-# The 0-second switch needs no command at all: both renderers are already
+-# running at their own URLs, so the answer to "Backstage is broken" is to open
+-# the other link. This command exists for the case where the link itself has
+-# been handed to somebody -- a buyer, a page, a Telegram message -- and the
+-# thing behind it has to change without the link changing.
+-set -euo pipefail
+-
+-case "${1:-}" in
+-  primary|backstage) target=3100; name="Backstage" ;;
+-  fallback|datasette) target=8001; name="Datasette" ;;
+-  *) echo "usage: idp-switch primary|fallback" >&2; exit 2 ;;
+-esac
+-
+-# Refuse to point the public link at something that is not answering. A switch
+-# to a dead renderer is not a failover, it is a second outage.
+-# curl writes %{http_code} even on failure -- "000" -- so an `|| echo down`
+-# here produced "000down", which matched neither branch and let the switch
+-# proceed to a dead renderer. Read the code and decide on it.
+-code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 "http://127.0.0.1:$target" 2>/dev/null || true)
+-case "$code" in ""|000) code=down ;; esac
+-if [ "$code" = "down" ]; then
+-  echo "idp-switch: $name on 127.0.0.1:$target is not answering -- refusing to switch to it" >&2
+-  echo "            start it with bin/idp-up, or switch to the other one" >&2
+-  exit 1
+-fi
+-
+-# `|| echo` matters: on the first ever switch there is nothing on 8443, grep
+-# exits 1, and under `set -e` the script would die reporting nothing wrong.
+-before=$(tailscale serve status 2>/dev/null | grep -A1 '8443' | tail -1 | tr -s ' ' || true)
+-[ -n "$before" ] || before="(nothing was published on 8443)"
+-tailscale serve --bg --http=8443 "http://127.0.0.1:$target" >/dev/null
+-host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+-
+-echo "was:  $before"
+-echo "now:  http://$host:8443/  ->  $name (127.0.0.1:$target, HTTP $code)"
+-# Probed through the tailnet listener with an explicit Host header rather than
+-# by name. This Mac does not resolve its own MagicDNS name -- other devices on
+-# the tailnet do -- so resolving here would report a failure that is not one.
+-tsip=$(tailscale ip -4 2>/dev/null | head -1)
+-if [ -n "$tsip" ]; then
+-  curl -fsS -o /dev/null -w 'live: the tailnet listener answered %{http_code} in %{time_total}s\n' \
+-    --max-time 10 -H "Host: $host:8443" "http://$tsip:8443/" 2>/dev/null \
+-    || echo "live: the tailnet listener on 8443 did not answer"
+-fi
+diff --git a/bin/idp-up b/bin/idp-up
+index 58891443d..79ecf0936 100755
+--- a/bin/idp-up
++++ b/bin/idp-up
+@@ -1,60 +1,55 @@
+ #!/usr/bin/env bash
+-# Start both renderers over one catalogue, then publish them on the tailnet.
++# Start the catalogue and publish it on the tailnet.
+ #
+-# Two renderers run at once on purpose. That is the 0-second switch: if one is
+-# wrong, broken or mid-upgrade, the other is already serving the same facts at
+-# its own URL and nobody has to do anything. It is the same shape as Fly and
+-# this laptop -- the fallback is not a plan, it is already running.
++# ONE RENDERER. Founder ruling, 2026-08-24: "ive seen 5 ui faces today", and
++# "backstge is for catalog". Backstage is the catalogue and there is no second
++# one. The Datasette fallback this script used to start on 8001 served the same
++# facts under the title "Estate catalogue -- fallback renderer", which meant the
++# owner of the estate met two pages claiming to be the catalogue and had no way
++# to know which one to believe.
+ #
+-#   primary   Backstage   node    127.0.0.1:3100
+-#   fallback  Datasette   python  127.0.0.1:8001
++# The argument it was removed against was availability: a second renderer with
++# no shared runtime survives a broken node_modules or a Backstage upgrade. That
++# is a real property and it is not worth what it cost. A fallback nobody was
++# told about is not availability, it is a second source of truth that is right
++# by coincidence. If the portal being down during an upgrade becomes a real
++# problem, the answer is to make the upgrade not take it down.
+ #
+-# They share no runtime. A broken node_modules, a bad yarn install or a
+-# Backstage upgrade cannot take the fallback down, because the fallback has
+-# never heard of node.
++#   catalogue   Backstage   node   localhost:3100
+ set -euo pipefail
+ 
+ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ RUN="$IDP/logs"; mkdir -p "$RUN"
+ PORT_PRIMARY=3100
+-PORT_FALLBACK=8001
+ 
+ log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
+ 
+-# 1. Regenerate both renderings from the one source.
++# 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
++#    the queryable copy of the same facts, and dropping a renderer is not a
++#    reason to stop producing the data underneath it.
+ "$IDP/bin/catalog-gen"
+ "$IDP/bin/db-gen"
+ 
+-# 2. Fallback first. It starts in under a second and has no build step, so if
+-#    the primary is broken there is still something serving before we find out.
+-if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_FALLBACK/-/versions.json" 2>/dev/null; then
+-  nohup "$IDP/.venv/bin/datasette" serve "$IDP/catalog/estate.db" \
+-      --host 127.0.0.1 --port "$PORT_FALLBACK" \
+-      --metadata "$IDP/datasette-metadata.json" \
+-      --setting sql_time_limit_ms 5000 \
+-      --setting default_page_size 100 \
+-      > "$RUN/datasette.log" 2>&1 &
+-  echo $! > "$RUN/datasette.pid"
+-  log "fallback  starting on $PORT_FALLBACK (pid $(cat "$RUN/datasette.pid"))"
+-else
+-  log "fallback  already up on $PORT_FALLBACK"
+-fi
+-
+-# 3. Primary.
++# 2. The catalogue.
+ if [ -d "$IDP/backstage/node_modules" ]; then
+-  if ! curl -fsS -o /dev/null "http://127.0.0.1:$PORT_PRIMARY" 2>/dev/null; then
++  # localhost, NOT 127.0.0.1. Backstage's app binds [::1] only, so a v4 probe
++  # returns 000 and this script concludes it is down every single time -- then
++  # starts a second `yarn start` on top of a portal that was already serving.
++  # Measured 2026-08-24: curl 127.0.0.1:3100 -> 000, curl localhost:3100 -> 200,
++  # while lsof showed `node 56620 IPv6 TCP [::1]:3100 (LISTEN)`.
++  if ! curl -fsS -o /dev/null "http://localhost:$PORT_PRIMARY" 2>/dev/null; then
+     ( cd "$IDP/backstage"
+       export NVM_DIR="$HOME/.nvm"; . "$NVM_DIR/nvm.sh" >/dev/null
+       export PATH="$HOME/.nvm/versions/node/v22.13.1/bin:$PATH"
+       export PORT="$PORT_PRIMARY"
+       nohup yarn start > "$RUN/backstage.log" 2>&1 &
+       echo $! > "$RUN/backstage.pid" )
+-    log "primary   starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
++    log "catalogue starting on $PORT_PRIMARY (pid $(cat "$RUN/backstage.pid")) -- first boot takes a minute"
+   else
+-    log "primary   already up on $PORT_PRIMARY"
++    log "catalogue already up on $PORT_PRIMARY"
+   fi
+ else
+-  log "primary   NOT BUILT ($IDP/backstage/node_modules missing) -- fallback is serving alone"
++  log "catalogue NOT BUILT ($IDP/backstage/node_modules missing) -- nothing is serving"
+ fi
+ 
+ # 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
+@@ -62,19 +57,16 @@ fi
+ #    public is bin/idp-publish, which is one command and the founder's call.
+ if command -v tailscale >/dev/null; then
+   # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
+-  # and re-pointing it at the primary every hour would silently undo a
+-  # bin/idp-switch fallback -- the link would go back on its own, which is the
+-  # worst kind of bug because it looks like it worked and then does not.
++  # and re-pointing it every hour would silently undo a hand-made change to
++  # where the published link goes -- the link would move back on its own, which
++  # is the worst kind of bug because it looks like it worked and then does not.
+   if tailscale serve status 2>/dev/null | grep -q ':8443'; then
+-    log "publish   8443 already points somewhere -- left alone (idp-switch owns it)"
++    log "publish   8443 already points somewhere -- left alone"
+   else
+     tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+   fi
+-  # 10000 is the fallback's own address and never moves, so it is always set.
+-  tailscale serve --bg --http=10000 "http://127.0.0.1:$PORT_FALLBACK" >/dev/null 2>&1 || true
+   host=$(tailscale status --json | /usr/local/bin/jq -r '.Self.DNSName' | sed 's/\.$//')
+-  log "primary   http://$host:8443/"
+-  log "fallback  http://$host:10000/"
++  log "catalogue http://$host:8443/"
+ fi
+ 
+ "$IDP/bin/idp-status"
+diff --git a/bin/idp-verify b/bin/idp-verify
+index 699f7ba62..7fc5789e6 100755
+--- a/bin/idp-verify
++++ b/bin/idp-verify
+@@ -12,15 +12,15 @@
+ #   idp-verify          check once
+ #   idp-verify --wait   allow up to 180s for Backstage to finish ingesting
+ #
+-# Exit 0 only when every entity in the generated file is present in both
+-# renderers.
++# Exit 0 only when every entity in the generated file is present in the
++# catalogue. There is one catalogue: Backstage. Founder ruling 2026-08-24,
++# "backstge is for catalog" and "ive seen 5 ui faces today" -- the Datasette
++# fallback this script used to check as a second renderer is gone.
+ set -uo pipefail
+ 
+ IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ YAML="$IDP/catalog/catalog-info.yaml"
+-DB="$IDP/catalog/estate.db"
+ BACKEND="http://127.0.0.1:7107"
+-FALLBACK="http://127.0.0.1:8001"
+ JQ=/usr/local/bin/jq
+ 
+ deadline=0
+@@ -95,22 +95,7 @@ PY
+   rm -rf "$split_dir"
+ fi
+ 
+-# --- fallback renderer --------------------------------------------------------
+-db_rows=$(sqlite3 "$DB" "select count(*) from assets" 2>/dev/null || echo 0)
+-http_rows=$(curl -sS --max-time 10 "$FALLBACK/estate/assets.json?_shape=array&_size=0" \
+-  -o /dev/null -w '%{http_code}' 2>/dev/null || echo 000)
+-# The row count the generator wrote and the row count Datasette serves are two
+-# different facts. 194 in the file and 194 over HTTP is what proves it serving.
+-served=$(curl -sS --max-time 10 "$FALLBACK/estate.json?sql=select+count(*)+as+n+from+assets&_shape=array" \
+-  2>/dev/null | $JQ -r '.[0].n // "none"' 2>/dev/null || echo none)
+-if [ "$served" = "$want" ]; then
+-  say "fallback  $served rows served over HTTP -- matches"
+-else
+-  say "FAIL      fallback serves '$served', expected $want (db has $db_rows, HTTP $http_rows)"
+-  fail=1
+-fi
+-
+-# --- primary renderer ---------------------------------------------------------
++# --- the catalogue ------------------------------------------------------------
+ ingested_names() {
+   local tok
+   tok=$(curl -sS --max-time 8 -X POST "$BACKEND/api/auth/guest/refresh" 2>/dev/null \
+@@ -128,11 +113,12 @@ wanted_names() {
+   ' "$YAML"
+ }
+ 
++# There is no second renderer to fall back to, so a backend that is not
++# answering is a failing verification, not a partial one. This used to exit 0
++# on the strength of Datasette serving the same rows.
+ if ! curl -sS -o /dev/null --max-time 4 "$BACKEND/api/catalog/entities" 2>/dev/null; then
+-  say "SKIP      primary (Backstage backend on 7107 is not answering)"
+-  say
+-  [ "$fail" -eq 0 ] && say "PARTIAL   fallback verified, primary not running" || say "FAIL"
+-  exit "$fail"
++  say "FAIL      the Backstage backend on 7107 is not answering -- nothing is serving the catalogue"
++  exit 1
+ fi
+ 
+ tmp_w=$(mktemp); tmp_i=$(mktemp)
+@@ -159,7 +145,7 @@ rm -f "$tmp_w" "$tmp_i"
+ 
+ say
+ if [ "$fail" -eq 0 ]; then
+-  say "PASS      both renderers agree with the inventory: $want entities"
++  say "PASS      the catalogue matches the inventory: $want entities"
+ else
+   say "FAIL      the portal does not match the inventory"
+ fi

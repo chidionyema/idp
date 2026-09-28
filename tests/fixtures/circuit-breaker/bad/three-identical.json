@@ -1,0 +1,5 @@
+{"findings": [
+  {"target": "pr-1", "log": "Total: 3 (CRITICAL: 3)\nCVE-2026-13221\nCVE-2026-42496\nCVE-2026-8376"},
+  {"target": "pr-2", "log": "CVE-2026-8376\nCVE-2026-13221\nCVE-2026-42496\n   at base.pm:118:9"},
+  {"target": "pr-3", "log": "Total: 3 (CRITICAL: 3)\nCVE-2026-42496\nCVE-2026-8376\nCVE-2026-13221"}
+]}

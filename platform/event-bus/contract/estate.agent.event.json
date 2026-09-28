@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:estate:schema:estate.agent.event",
+  "title": "estate.agent.event",
+  "description": "One row of an agent's live mind (MUM-287, FleetView part two): what a session is doing, emitted on subjects estate.agent.<runtime>.<session_id>.<kind> with kinds phase / tool / wait / done / steer. The subject family and schema are one (docs/specs/2026-09-08-fleetview-live-mind-steering-and-the-board-view.md, 'one subject family, one schema'). An adapter that emits a row this schema refuses fails CI. Fields pin the spec; the `tool` field names a file, command or URL target, never its output; `at` is UTC RFC3339.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["session_id", "runtime", "kind", "at", "phase"],
+  "properties": {
+    "session_id": { "type": "string", "minLength": 1, "description": "the agent session id this row belongs to" },
+    "runtime": {
+      "enum": ["claude-code", "sovereign", "cyrus", "otto", "dagster", "github-actions"],
+      "description": "which process emits the row; adapters map each runtime's own record (hook ledger, Temporal history, session API, Langfuse trace, run state)"
+    },
+    "kind": {
+      "enum": ["phase", "tool", "wait", "done", "steer"],
+      "description": "which kind of row: a phase change, a tool call, a wait, a done, a mid-flight steer"
+    },
+    "tenant": { "type": "string", "description": "which tenant's fleet this row belongs to (decision 0021: a tenant sees only its own fleet)" },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "when the row happened, UTC RFC3339"
+    },
+    "phase": {
+      "enum": ["planning", "executing", "waiting", "done", "failed"],
+      "description": "the session phase (or the phase being entered when kind=phase)"
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "target"],
+      "properties": {
+        "name": { "type": "string", "description": "the tool name, e.g. bash, read, delegate" },
+        "target": {
+          "type": "string",
+          "description": "what the tool acts on: a file path, a shell command or a URL. Never the tool's output."
+        }
+      },
+      "description": "present when kind=tool: what tool ran and on what, never its output"
+    },
+    "trace_id": { "type": "string", "description": "the Langfuse trace id for the call, when the runtime records one" },
+    "needs": {
+      "type": "string",
+      "description": "what a waiting phase waits for, in one sentence (present when phase=waiting)"
+    },
+    "steer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "author"],
+      "properties": {
+        "text": { "type": "string", "description": "the steering instruction, in the founder's or an operator's words" },
+        "author": { "type": "string", "description": "the identity of the person steering; the estate never runs a steer with no attributed author" },
+        "audit_row": { "type": "string", "description": "the audit ledger row id that already recorded this steer (the estate writes the audit row first)" }
+      },
+      "description": "present when kind=steer: a human corrected the session mid-flight, already on the audit ledger"
+    }
+  },
+  "examples": [
+    {
+      "session_id": "s-7f3a",
+      "runtime": "claude-code",
+      "kind": "tool",
+      "tenant": "default",
+      "at": "2026-09-09T21:40:00Z",
+      "phase": "executing",
+      "tool": { "name": "bash", "target": "kubectl -n mcp get pods" },
+      "trace_id": "tr_9f2c"
+    },
+    {
+      "session_id": "s-7f3a",
+      "runtime": "claude-code",
+      "kind": "wait",
+      "tenant": "default",
+      "at": "2026-09-09T21:42:00Z",
+      "phase": "waiting",
+      "needs": "the founder approves scaling the node pool"
+    },
+    {
+      "session_id": "s-7f3a",
+      "runtime": "claude-code",
+      "kind": "steer",
+      "tenant": "default",
+      "at": "2026-09-09T21:43:00Z",
+      "phase": "executing",
+      "steer": { "text": "stop, look in the auth folder instead", "author": "user/chidionyema", "audit_row": "44821" }
+    }
+  ]
+}

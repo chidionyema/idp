@@ -1,0 +1,16 @@
+name: ci.run
+description: >
+  Trigger CI on a branch and wait for the result.
+  Returns pass/fail with the first failing job name.
+args:
+  branch: { type: string, help: "Branch name to trigger CI on" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      BRANCH="${branch}";
+      git push origin "$BRANCH" 2>&1 | tail -3;
+      RUN=$(gh run list --repo chidionyema/idp --branch "$BRANCH" --status queued --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null);
+      echo "run: $RUN";
+      if [ -z "$RUN" ]; then echo "no queued run found"; exit 1; fi;
+      gh run watch "$RUN" --repo chidionyema/idp --exit-status 2>&1 | tail -5

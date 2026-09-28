@@ -1,0 +1,36 @@
+terminals:
+  - terminal:
+      id: capability-collector
+      name: "Capability Collector"
+      input:  { shape: "{root: text}" }
+      output: { shape: registry.entry }
+      grade:
+        metric: admission_test
+        polarity: maximize
+        scale: [0,1]
+        gate: { terminal: grammar.admission_test, sandbox: subprocess }
+      state: current
+      since: "2026-09-24"
+      annotations:
+        class: safety
+        mode: function
+        scope: { resources: [filesystem], secrets: {}, tenant_isolated: true }
+        role: branch
+
+  - terminal:
+      id: resolver
+      name: "Resolver"
+      input:  { shape: need }
+      output: { shape: resolution }
+      grade:
+        metric: accuracy
+        polarity: maximize
+        scale: [0,1]
+        gate: { terminal: grammar.admission_test, sandbox: subprocess }
+      state: current
+      since: "2026-09-24"
+      annotations:
+        class: act
+        mode: function
+        scope: { resources: [filesystem], secrets: {}, tenant_isolated: true }
+        role: branch

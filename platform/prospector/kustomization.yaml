@@ -1,0 +1,15 @@
+# What the platform hands prospector before its own manifests apply: the namespace, the registry
+# pull secret, and the API's secret files. The product repo holds no credential and no reference
+# to where one lives (LAW 21, LAW 46).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - store-api-external-secret.yaml
+  # Secret prospector-engine-env: the scheduler's env files (crew#248).
+  - engine-external-secret.yaml
+  # crew#713 CP1: the daily copy of the shop database, off the volume, made by the cluster.
+  - store-db-backup.yaml
+  # crew, 2026-09-15 platform-maturity pass: a weekly proof that the daily copy above actually
+  # restores, not just that it uploaded.
+  - store-db-restore-drill.yaml

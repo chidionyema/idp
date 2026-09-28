@@ -1,0 +1,7 @@
+bin/scheduler-down
+features/sovereign-bus/cp6_self_termination.feature
+scheduler/schedule.yml
+sovereign/cli.py
+sovereign/engine/termination.py
+sovereign/tests/test_incident_cp6_termination.py
+tests/test_cp5_digest_schedule.py

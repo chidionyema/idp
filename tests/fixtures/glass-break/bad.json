@@ -1,0 +1,7 @@
+{
+  "_why": "The exact shape of the accident this gate exists for: a change to the grant catalogue -- the closed set of everything the broker may ever mint -- riding in on auto-merge with no approval from the founder. Green checks would land it, and the grant catalogue is not a thing that should land because a workflow was satisfied.",
+  "files": ["platform/jit/grants.yaml", "docs/policy/agent-infra-safety-spec.md"],
+  "autoMerge": true,
+  "approvals": [],
+  "author": "estate-bot"
+}

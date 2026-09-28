@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Generate estate topology DAG from source code (no terraform binary needed).
+
+Phase 1: Parse Terraform HCL → extract resource/module dependencies → .dot DAG
+Phase 2: Query Cilium Hubble → runtime network topology → OpenTelemetry JSON
+Phase 3: Validate (intended vs actual state)
+
+This approach is deterministic and doesn't require Terraform binary or state access.
+"""
+
+import re
+import sys
+from pathlib import Path
+from collections import defaultdict
+
+REPO_ROOT = Path(__file__).parent.parent
+TF_ROOT = REPO_ROOT / "platform" / "oci"
+DIAGRAMS_DIR = REPO_ROOT / "docs" / "diagrams"
+
+
+def parse_terraform_files():
+    """Extract resources and dependencies from Terraform HCL files."""
+    resources = {}
+    dependencies = defaultdict(set)
+
+    tf_files = list(TF_ROOT.glob("*.tf"))
+    if not tf_files:
+        print("[ERROR] No .tf files found in platform/oci")
+        return None, None
+
+    # Pattern to match: resource "type" "name" or module "name"
+    resource_pattern = re.compile(r'(resource|module)\s+"([^"]+)"\s+"([^"]+)"')
+
+    # Pattern to match references: var.X, module.X, aws_X.name, etc.
+    ref_pattern = re.compile(r'(?:var|module|data|aws_\w+|google_\w+|oci_\w+|azurerm_\w+)\.\w+')
+
+    for tf_file in tf_files:
+        content = tf_file.read_text()
+
+        # Find all resource/module declarations
+        for match in resource_pattern.finditer(content):
+            res_type = match.group(1)
+            res_class = match.group(2)
+            res_name = match.group(3)
+            res_id = f"{res_class}.{res_name}" if res_type == "resource" else f"module.{res_name}"
+            resources[res_id] = res_class
+
+    # Extract dependencies by scanning for references
+    for res_id, res_class in resources.items():
+        # Find the resource block and extract its references
+        pattern = rf'(resource|module)\s+"{re.escape(res_class)}"\s+"{re.escape(res_id.split(".")[-1])}".*?(?=\n(resource|module|output|variable|data)|\Z)'
+        for tf_file in tf_files:
+            content = tf_file.read_text()
+            for match in re.finditer(pattern, content, re.DOTALL):
+                block = match.group(0)
+                # Find all references in this block
+                for ref_match in ref_pattern.finditer(block):
+                    ref = ref_match.group(0)
+                    # Convert reference to resource ID
+                    if ref.startswith("module."):
+                        dep_id = ref
+                    elif "." in ref and not ref.startswith("var."):
+                        dep_id = ref.replace(".", "_", 1)  # e.g., oci_core_vcn.main → oci_core_vcn_main
+                    else:
+                        continue
+
+                    if dep_id in resources:
+                        dependencies[res_id].add(dep_id)
+
+    return resources, dependencies
+
+
+def gen_dot_graph(resources, dependencies):
+    """Generate Graphviz DOT format from resources and dependencies."""
+    if not resources:
+        return None
+
+    lines = ["digraph {"]
+    lines.append('  rankdir=LR;')
+    lines.append('  node [shape=box];')
+
+    # Add nodes
+    for res_id, res_class in resources.items():
+        label = f"{res_class}\\n{res_id.split('.')[-1]}"
+        lines.append(f'  "{res_id}" [label="{label}"];')
+
+    # Add edges
+    for src, targets in dependencies.items():
+        for target in sorted(targets):
+            lines.append(f'  "{target}" -> "{src}";')
+
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def gen_terraform_dag():
+    """Phase 1: Generate Terraform DAG from HCL parsing."""
+    DIAGRAMS_DIR.mkdir(parents=True, exist_ok=True)
+
+    print("[INFO] Parsing Terraform HCL files...")
+    resources, dependencies = parse_terraform_files()
+
+    if not resources:
+        print("[WARN] No resources found")
+        return False
+
+    dot_graph = gen_dot_graph(resources, dependencies)
+    if not dot_graph:
+        print("[ERROR] Failed to generate DAG")
+        return False
+
+    dag_file = DIAGRAMS_DIR / "estate-dag.dot"
+    dag_file.write_text(dot_graph)
+
+    num_resources = len(resources)
+    num_edges = sum(len(deps) for deps in dependencies.values())
+    print(f"[OK] Generated estate-dag.dot: {num_resources} resources, {num_edges} dependencies")
+    return True
+
+
+def gen_runtime_topology():
+    """Phase 2: Placeholder for Cilium/eBPF topology (future implementation)."""
+    DIAGRAMS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Placeholder artifact for Phase 2
+    topology = {
+        "nodes": [],
+        "edges": [],
+        "status": "Phase 2: Cilium Hubble integration pending",
+        "note": "Generated when Cilium is deployed with eBPF packet tracking enabled"
+    }
+
+    import json
+    topo_file = DIAGRAMS_DIR / "estate-topology.json"
+    topo_file.write_text(json.dumps(topology, indent=2))
+    print(f"[INFO] Created estate-topology.json (Phase 2 placeholder)")
+    return True
+
+
+def main():
+    print("=" * 70)
+    print("Estate Topology DAG Generator (HCL-based, no Terraform binary required)")
+    print("=" * 70)
+
+    # Phase 1: Deploy-time DAG
+    if not gen_terraform_dag():
+        return 1
+
+    # Phase 2: Runtime topology
+    if not gen_runtime_topology():
+        return 1
+
+    print("=" * 70)
+    print("[SUCCESS] Estate topology DAG generated")
+    print(f"  Location: {DIAGRAMS_DIR}")
+    print(f"  - estate-dag.dot (Terraform dependency graph)")
+    print(f"  - estate-topology.json (Runtime topology stub)")
+    print("=" * 70)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

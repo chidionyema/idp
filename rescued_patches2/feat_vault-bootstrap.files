@@ -1,0 +1,5 @@
+.github/workflows/vault-bootstrap.yml
+backstage/templates/founder-actions/vault-bootstrap/template.yaml
+docs/demo/vault-bootstrap.md
+docs/onboarding/vault-bootstrap.md
+tests/test_vault_bootstrap_workflow.py

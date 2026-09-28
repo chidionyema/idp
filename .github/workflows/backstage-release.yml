@@ -1,0 +1,105 @@
+name: Build & Release Backstage
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backstage/**'
+      - '.github/workflows/backstage-release.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version'
+        required: false
+        type: string
+
+env:
+  NODE_VERSION: '22'
+  YARN_CACHE_FOLDER: .yarn-cache
+
+jobs:
+  build-backstage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: yarn
+          cache-dependency-path: backstage/yarn.lock
+
+      - name: Install deps
+        run: |
+          cd backstage
+          yarn install --frozen-lockfile
+
+      - name: Build
+        run: |
+          cd backstage
+          yarn build
+
+      # Package as a macOS .app bundle
+      - name: Package as .app
+        run: |
+          mkdir -p Backstage.app/Contents/{MacOS,Resources}
+          
+          # Info.plist — use Python to avoid shell escaping issues with YAML vars
+          python3 << 'PYEOF'
+          import pathlib
+          plist = pathlib.Path('Backstage.app/Contents/Info.plist')
+          plist.parent.mkdir(parents=True, exist_ok=True)
+          plist.write_text('''<?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleExecutable</key><string>start.sh</string>
+            <key>CFBundleIdentifier</key><string>ai.estate.backstage</string>
+            <key>CFBundleName</key><string>IDP Estate Backstage</string>
+            <key>CFBundleDisplayName</key><string>Backstage</string>
+            <key>CFBundleVersion</key><string>${{ github.run_number }}</string>
+            <key>CFBundleShortVersionString</key><string>1.0.0</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>13.0</string>
+            <key>LSUIElement</key><false/>
+            <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          ''')
+          PYEOF
+
+          # Start script
+          cat > Backstage.app/Contents/MacOS/start.sh << 'SCRIPT'
+          #!/bin/sh
+          BACKSTAGE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+          cd "$BACKSTAGE_DIR"
+          
+          # Find Node
+          for p in /opt/homebrew/bin/node /usr/local/bin/node; do
+            [ -x "$p" ] && exec "$p" serve --port 3000 || true
+          done
+          exec node serve --port 3000
+          SCRIPT
+          chmod +x Backstage.app/Contents/MacOS/start.sh
+
+          # Copy built app
+          cp -a backstage/packages/app/dist/* Backstage.app/Contents/Resources/
+
+          # Tar it up
+          tar -czvf backstage-app.tar.gz Backstage.app
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: backstage-latest
+          name: Backstage (latest main build)
+          draft: false
+          prerelease: true
+          files: backstage-app.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

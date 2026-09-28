@@ -1,0 +1,70 @@
+# Every hosting tier the Battalion spec considered, one row each, carrying
+# a receipt grade (idp#3525 CP1, COST-04): "vendor-doc" (checked against the
+# vendor's own page), "survey" (a third-party aggregator/press source), or
+# "founder-supplied-unverified" (the founder's own figure, not yet
+# cross-checked). A row with no grade fails schema
+# (sovereign/engine/cost_table.py validate(), platform/llm/cost-table.schema.json).
+#
+# Source: docs/evidence/2026-09-15-asymmetric-compute-leverage-research.md,
+# the hosting matrix. This file makes that matrix machine-checkable instead
+# of prose a human has to re-read before trusting a number.
+version: 1
+
+rows:
+  - id: oci_a1_free
+    label: "OCI Ampere A1, free"
+    grade: vendor-doc
+    usd_per_month: 0.0
+    billing: "none, always-on"
+    receipt: "docs/reference/oci-tenancy.md:18; InfoQ 2026-07 confirms independently"
+
+  - id: oci_a1_paid_overflow
+    label: "OCI Ampere A1, paid overflow"
+    grade: vendor-doc
+    usd_per_month_approx: 28.0
+    billing: "$0.01/OCPU-hr + $0.0015/GB-hr, per-second"
+    receipt: "Oracle Ampere A1 pricing page"
+
+  - id: scaleway_apple_silicon_hourly
+    label: "Rented Apple Silicon, hourly (Scaleway)"
+    grade: vendor-doc
+    eur_per_hour: 0.17
+    billing: "24-hour minimum per activation, Apple licensing term"
+    receipt: "Scaleway Apple silicon concepts docs"
+
+  - id: hetzner_apple_silicon_flat
+    label: "Rented Mac Mini, flat monthly (Hetzner)"
+    grade: founder-supplied-unverified
+    eur_per_month_approx: 64.0
+    billing: "none named, standing monthly lease"
+    receipt: "founder email 2026-09-14; not checked against Hetzner's own pricing page (D1)"
+
+  - id: scaleway_apple_silicon_flat
+    label: "Rented Mac Mini, flat monthly (Scaleway)"
+    grade: founder-supplied-unverified
+    eur_per_month_approx: 80.0
+    billing: "none named, standing monthly lease"
+    receipt: "founder email 2026-09-14; possibly the same product as the hourly row, not reconciled (D1)"
+
+  - id: vast_ai_rtx3090_continuous
+    label: "Vast.ai, RTX 3090 (24GB), continuous"
+    grade: founder-supplied-unverified
+    usd_per_month_low: 73.0
+    usd_per_month_high: 146.0
+    billing: "none, native point-of-use"
+    receipt: "founder email 2026-09-14; not re-pulled from Vast.ai's live marketplace (D4)"
+
+  - id: vast_ai_rtx3090_part_time
+    label: "Vast.ai, RTX 3090 (24GB), 2hr/day"
+    grade: founder-supplied-unverified
+    usd_per_month_approx: 9.0
+    billing: "none"
+    receipt: "founder email 2026-09-14 (D4)"
+
+  - id: frontier_paid_pool
+    label: "Frontier paid pool (MiniMax, default floor)"
+    grade: vendor-doc
+    usd_per_million_input: 0.30
+    usd_per_million_output: 1.20
+    billing: "metered per-token, capped near $139.50/mo by AGENTS.md budget block"
+    receipt: "platform/llm/config.yaml"

@@ -1,0 +1,21 @@
+# crew#892 CP4 fixture: a Pod that violates the gVisor cell boundary. It asks to run in the
+# otto-gvisor-sandbox cell namespace but sets no spec.runtimeClassName, is privileged, and mounts
+# a hostPath. bin/gvisor-cell-gate must refuse it; the Kyverno policy (platform/edge/
+# gvisor-admission.yaml) refuses the same object at admission.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: untrusted-model-code
+  namespace: otto-gvisor-sandbox
+spec:
+  hostNetwork: true
+  containers:
+    - name: python
+      image: example.invalid/code-runner:1
+      securityContext:
+        privileged: true
+      command: ["python3", "-c", "import os; os.system('uname -r')"]
+  volumes:
+    - name: host-fs
+      hostPath:
+        path: /var/run/docker.sock

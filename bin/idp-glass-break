@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""WJ.8: the broker cannot be changed by the thing the broker exists to restrain.
+
+The JIT broker mints write access on a cluster where nothing else holds any, so an agent that
+can edit the broker, its catalogue, its RBAC or `bin/idp-kube` does not need to ask for
+anything -- it grants itself. CODEOWNERS already names the founder on every path in this
+repository, which is necessary and is not sufficient: a merge bot that arms auto-merge lands a
+PR the moment its checks go green, and a review that arrives after the merge is not a review.
+
+So this refuses two things on a PR that touches the protected set:
+
+  * auto-merge, in any form. These changes land because he pressed the button, not because a
+    workflow decided the checks were green.
+  * an approval from the same identity that wrote it. Self-approval is the whole hole.
+
+Everything else in the repository is untouched. The protected set is small on purpose -- a
+glass-break list long enough to cover ordinary work is a list people learn to route around.
+
+Usage:  bin/idp-glass-break PR.json
+where PR.json carries {"files": [...], "autoMerge": bool, "approvals": [...], "author": "..."}
+-- the shape of `gh pr view --json files,autoMergeRequest,reviews,author`.
+"""
+
+from __future__ import annotations
+
+import json
+import sys
+
+#: Changing any of these is changing what an agent is allowed to do. Ordered by how directly:
+#: the catalogue is the closed set of grants, the broker mints them, the RBAC is the floor
+#: underneath, idp-kube is the door every session comes through, and the gates are what proves
+#: the other four.
+PROTECTED = (
+    "platform/jit/",
+    "platform/rbac/",
+    "bin/idp-kube",
+    "bin/idp-jit",
+    "bin/idp-jit-grants",
+    "bin/idp-glass-break",
+    "CODEOWNERS",
+)
+
+FOUNDER = "chidionyema"
+
+
+def touched(files: list[str]) -> list[str]:
+    return sorted(f for f in files if any(f.startswith(p) or f == p for p in PROTECTED))
+
+
+def grade(pr: dict) -> list[str]:
+    hits = touched(pr.get("files") or [])
+    if not hits:
+        return []
+    faults = []
+    if pr.get("autoMerge"):
+        faults.append(
+            f"auto-merge is armed on a pull request that changes {hits[0]}. These land when "
+            f"he presses merge, never when a workflow decides the checks are green"
+        )
+    approvals = {a for a in (pr.get("approvals") or [])}
+    author = pr.get("author") or ""
+    if author in approvals:
+        faults.append(f"{author} approved their own change to {hits[0]}")
+    if FOUNDER not in approvals:
+        faults.append(
+            f"{hits[0]} is glass-break and carries no approval from {FOUNDER}. "
+            f"CODEOWNERS asks for it; this refuses to land without it"
+        )
+    return faults
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("SKIP    usage: bin/idp-glass-break PR.json")
+        return 0
+    with open(argv[1]) as fh:
+        pr = json.load(fh)
+    faults = grade(pr)
+    for f in faults:
+        print(f"FAIL    glass {f}")
+    if not faults:
+        n = len(touched(pr.get("files") or []))
+        print(f"ok      glass {n} protected path(s), and he approved every one of them")
+    return 1 if faults else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

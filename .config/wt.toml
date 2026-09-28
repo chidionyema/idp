@@ -1,0 +1,25 @@
+# .config/wt.toml -- the worktree lifecycle, declared.
+#
+# WHAT THIS IS. The mechanism that makes the gate AUTOMATIC instead of manual: a worktree is
+# created for a task, the declared hooks run at the declared moments, and a failed hook aborts
+# the merge rather than letting a broken branch survive. The branch lifetime is the task's
+# lifetime -- which is what stops the 346-branch pile-up, because nothing depends on someone
+# remembering to clean up.
+#
+# THE TOOL IS A DECLARED DEPENDENCY, NOT A HAND INSTALL. `wt` is not on this machine today.
+# It belongs in the host tool set (host-tools.yml) and installed by bin/idp-install-deps, the
+# same as kyverno/helm/conftest/flux/kustomize/kubeconform -- otherwise the next machine lacks
+# it and the workflow silently degrades to plain branches, which is the state this replaces.
+#
+# THE COMMANDS ARE THE ESTATE'S OWN. IDP_CI_FAST=1 bin/idp-ci is the same gate the pre-push
+# hook and CI run, so a worktree merge cannot be greener than a push.
+
+# After `wt switch` creates the worktree: make it usable without a second command.
+[post-create]
+deps = "bin/idp-install-deps"
+
+# After the branch is rebased onto agent-trunk and BEFORE the merge finalizes. Any non-zero
+# exit terminates the merge; the branch stays and the author sees the failure immediately --
+# minutes after the change, not weeks later when it would be a conflict against a moved trunk.
+[pre-merge]
+gate = "env IDP_CI_FAST=1 bin/idp-ci"

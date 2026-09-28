@@ -1,0 +1,3379 @@
+diff --git a/.githooks/pre-push b/.githooks/pre-push
+index f0641cc0e..d730d48ea 100755
+--- a/.githooks/pre-push
++++ b/.githooks/pre-push
+@@ -43,10 +43,15 @@ for v in $(compgen -e | grep '^GIT_' || true); do unset "$v"; done
+ # correct work in a file it does not understand (LAW 38).
+ sess_base="$(git rev-parse --verify --quiet origin/main || true)"
+ if [ -n "$sess_base" ]; then
+-	sess_files="$(git diff --name-only --diff-filter=d "$sess_base"...HEAD | tr '\n' ' ')"
+-	if [ -n "${sess_files// /}" ]; then
+-		# shellcheck disable=SC2086  # the file list is meant to split
+-		python3 "$IDP/bin/idp-rules" session --files $sess_files || exit 1
++	# NUL-delimited, not `tr '\n' ' '` then unquoted word-splitting: a real tracked path can
++	# contain a space (backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug
++	# }}.sh is one, by Backstage's own convention), and splitting that on IFS whitespace turns one
++	# path into three bogus fragments -- one of them literally "}}.sh", which then fnmatches the
++	# pipeverdict rule's `*.sh` session_glob and is graded as a file that does not exist (incident
++	# 2026-09-15: FAIL pipeverdict }}.sh / BLIND "no shell file was read").
++	mapfile -d '' -t sess_files < <(git diff -z --name-only --diff-filter=d "$sess_base"...HEAD)
++	if [ "${#sess_files[@]}" -gt 0 ]; then
++		python3 "$IDP/bin/idp-rules" session --files "${sess_files[@]}" || exit 1
+ 	fi
+ fi
+ # crew#623 (founder 2026-08-29, "why did you not investigate cluster before starting"): the money
+diff --git a/.github/workflows/concierge-deploy.yml b/.github/workflows/concierge-deploy.yml
+index 7e81a00a5..b3c42e01b 100644
+--- a/.github/workflows/concierge-deploy.yml
++++ b/.github/workflows/concierge-deploy.yml
+@@ -25,8 +25,27 @@
+ # until 2026-09-11 the image fetched both from https://internal.repo/..., which exists nowhere, so
+ # it could never build. Everything here is now built in the run and handed to Modal as bytes.
+ #
++# A THIRD DEPLOY LIVES HERE TOO (2026-09-15): ephemeral/webapp.py, the always-on endpoint (Twilio
++# webhook, voice bridge, receipts -- holds no card and no profile) that docs/EPHEMERAL-RUNTIME.md
++# already specified alongside the per-order runtime above. It was Mac-only until now
++# (src/mums_concierge/install.py, a launchd LaunchAgent that dies when the laptop sleeps) --
++# a straight contradiction of docs/DEPLOYMENT.md's own first line ("Not her machine, not a
++# developer's laptop"). Founder, 2026-09-15: "a consumer product that assumes the consumer has
++# expensive hardware is a fail." Both halves are Modal apps now, deployed by the one workflow that
++# already holds the Modal root and already checks the code out (LAW 44: one deploy door, not two).
++# Its own secrets are synced, not re-minted from GitHub secrets like the four below --
++# bin/idp-sync-modal-secret (idp repo) is the generic sync this runtime already needed. Two
++# different sources, because this estate has two: concierge-tunnel is an estate-vault (OCI)
++# entry; TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER / GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER
++# are Bitwarden's (a founder paste, no create-API, R52) -- read directly with the estate's own
++# bitwarden-machine account via `bws` (decision 0017/0020, the same client vault-bootstrap.yml
++# already uses), not through the cluster's human-twilio Secret: no identity this estate mints for
++# a CI job may read a Secret's value out of the cluster (agent-reader and the JIT broker both
++# withhold it by design, LAW 21) -- a run 2026-09-15 (idp#3537) proved that the hard way, FAIL
++# "cannot get resource secrets", not a fixable RBAC gap but the floor working as designed.
++#
+ # button: Deploy the concierge runtime
+-# founder: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
++# founder: Builds the vault sidecar and fetches the voice model, then deploys both concierge Modal apps -- the per-order runtime and the always-on endpoint -- and proves the sidecar is in the path; a dry run stops before deploy.
+ name: concierge-deploy
+ 
+ on:
+@@ -89,6 +108,43 @@ jobs:
+             || { echo "FAIL    concierge-deploy  Modal refused the root pair; rotate with bin/idp-set-root modal"; exit 1; }
+           echo "ok      modal root answers"
+ 
++      # webapp.py's secrets, synced rather than minted here: TWILIO_AUTH_TOKEN / MOM_PHONE_NUMBER /
++      # GUARDIAN_PHONE_NUMBER / TWILIO_WHATSAPP_NUMBER live in Bitwarden Secrets Manager (a founder
++      # paste, decision 0017/0020) and PUBLIC_SERVER_URL / PUBLIC_WSS_URL already exist in
++      # estate-vault as concierge-tunnel; re-typing either into a second `ensure_secret` call below
++      # would give Modal's copy a second place someone edits (R52). The OCI session this step reads
++      # the vault entry through is the one the github-app-token step above already traded for --
++      # same job, same runner, no second exchange.
++      #
++      # Read from Bitwarden directly, not from the cluster's human-twilio Secret: the first dry run
++      # of this workflow (2026-09-15, idp#3537, run 34985195681) tried the cluster path and got a
++      # real, correct refusal -- `agent-reader` cannot get resource "secrets" in any namespace, by
++      # design (platform/rbac-floor/agent-reader.yaml), and the JIT broker cannot mint a grant that
++      # touches Secrets either (platform/jit/rbac.yaml: "no secrets" is a hard invariant, not an
++      # oversight). LAW 21 means no identity this estate mints for an agent or a CI job may read a
++      # Secret's value out of the cluster, full stop -- so the fix is reading the one hop closer to
++      # the source, not widening that floor. Bitwarden is where the founder actually pasted these
++      # four values; the cluster's copy is a downstream sync ESO already keeps current, not a
++      # second source of truth to invent a read path for.
++      - name: bws, the vendor's own tool, pinned and checksummed
++        run: |
++          set -euo pipefail
++          curl -sSLo bws.zip https://github.com/bitwarden/sdk-sm/releases/download/bws-v2.1.0/bws-x86_64-unknown-linux-gnu-2.1.0.zip
++          echo "ba8233c3a4aee5d43e3c73bbd04d99e9bc5aba13bbbfd06d89b073abe732b860  bws.zip" | sha256sum -c -
++          unzip -q bws.zip bws
++          sudo install -m 0755 bws /usr/local/bin/bws
++          rm -f bws bws.zip
++
++      - name: sync human-twilio (Bitwarden) and concierge-tunnel (estate-vault) to Modal (webapp.py's secrets)
++        env:
++          OCI_CLI_AUTH: security_token
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++        run: |
++          set -euo pipefail
++          bin/idp-sync-modal-secret --from-bitwarden GUARDIAN_PHONE_NUMBER,MOM_PHONE_NUMBER,TWILIO_AUTH_TOKEN,TWILIO_WHATSAPP_NUMBER human-twilio
++          bin/idp-sync-modal-secret concierge-tunnel
++
+       # STAGE 1 -- the sidecar. The image cannot carry a binary that has not been built, and this is
+       # the piece four drafts fetched from a URL that does not exist.
+       - name: build the vault sidecar (the Iron Rule)
+@@ -152,6 +208,9 @@ jobs:
+           print("ok      threshold is 0.6 (the model family's own default)")
+           PY
+ 
++      - name: webapp.py compiles (full import needs main.py's own deps, installed by the Modal image, not this runner)
++        run: python -m py_compile code/ephemeral/webapp.py
++
+       - name: mint the secrets the runtime declares, from the roots the estate already holds
+         run: |
+           set -euo pipefail
+@@ -228,9 +287,9 @@ jobs:
+       - name: what the deploy needs, and whether it is there
+         run: |
+           set -euo pipefail
+-          # The runtime declares 4 modal secrets. Named here, in the run's own output, rather
+-          # than discovered at the deploy step -- where a missing one looks like a broken workflow
+-          # instead of a piece of the architecture that has not been minted yet.
++          # The two runtimes together declare 6 modal secrets. Named here, in the run's own output,
++          # rather than discovered at the deploy step -- where a missing one looks like a broken
++          # workflow instead of a piece of the architecture that has not been minted yet.
+           #
+           # The residential proxy is NOT among them any more. It was declared for a bypass that was
+           # never built and would not have worked: a shop reads its anti-bot layers at SIGN-IN, and
+@@ -243,7 +302,7 @@ jobs:
+           # first run. Creating an existing secret fails with "already exists", which is a positive
+           # confirmation from the command that owns the fact.
+           missing=0
+-          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
++          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane human-twilio concierge-tunnel; do
+             out=$(modal secret create "$s" PROBE=1 2>&1) && {
+               # A secret that did NOT exist now holds a stray PROBE key. Removed immediately, so
+               # this report cannot leave a half-made secret behind for the deploy to trip over.
+@@ -259,19 +318,19 @@ jobs:
+               missing=$((missing + 1))
+             fi
+           done
+-          echo "        $missing of 4 missing"
++          echo "        $missing of 6 missing"
+ 
+       - name: deploy to Modal
+         if: ${{ inputs.dry_run == false }}
+         run: |
+           set -euo pipefail
+-          # Every secret the function declares must exist, because Modal refuses a deploy whose
++          # Every secret either function declares must exist, because Modal refuses a deploy whose
+           # declared secret is absent -- and that refusal is right: it is the platform telling us a
+           # piece is missing rather than letting a run believe a bypass it does not have.
+-          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane; do
++          for s in cloudflare-r2-credentials kms-master-key card-key vision-lane human-twilio concierge-tunnel; do
+             out=$(modal secret create "$s" PROBE=1 2>&1) && {
+               modal secret delete "$s" --yes >/dev/null 2>&1 || true
+-              echo "FAIL    concierge-deploy  the secret '$s' does not exist and the mint step"
++              echo "FAIL    concierge-deploy  the secret '$s' does not exist and the mint or sync step"
+               echo "        above should have created it. Nothing has been deployed."
+               exit 1
+             }
+@@ -282,10 +341,36 @@ jobs:
+             }
+           done
+           modal deploy code/ephemeral/agent.py
+-          echo "ok      concierge runtime deployed"
++          echo "ok      per-order runtime deployed"
++          modal deploy code/ephemeral/webapp.py
++          echo "ok      always-on endpoint deployed"
++
++      # LAW 31: the founder does not run a script to finish a deploy this workflow started. The
++      # Cloudflare Tunnel hostname `concierge-tunnel` held is now the wrong answer -- Twilio and
++      # voice_endpoints.py need Modal's own host -- so the cutover happens here, not as a follow-up
++      # command handed back to a person. get_web_url(), not a grep against `modal deploy`'s banner:
++      # that text is not a contract, and the platform's own API is the actual source of the fact.
++      # Idempotent: Modal keeps this URL stable across redeploys of the same app/function name, so
++      # a second run of this step writes the same value, not a rotation.
++      - name: point PUBLIC_SERVER_URL / PUBLIC_WSS_URL at the endpoint just deployed
++        if: ${{ inputs.dry_run == false }}
++        run: |
++          set -euo pipefail
++          URL=$(python3 -c "import modal; print(modal.Function.from_name('mums-concierge-web', 'web').get_web_url())")
++          [ -n "$URL" ] || { echo "FAIL    concierge-deploy  Modal returned no URL for mums-concierge-web/web"; exit 1; }
++          # The WebSocket Twilio's <Stream> bridges to is one exact URL (voice_endpoints.py passes
++          # it straight into <Stream url="...">, no path appended by the caller), so the path lives
++          # here, once, rather than being assumed again at read time.
++          WSS_URL=$(python3 -c "import sys; u=sys.argv[1]; print('wss://' + u.split('://', 1)[1].rstrip('/') + '/ws/live-call')" "$URL")
++          ENVF=$(mktemp)
++          trap 'rm -f "$ENVF"' EXIT
++          printf 'MODAL_PUBLIC_SERVER_URL=%s\nMODAL_PUBLIC_WSS_URL=%s\n' "$URL" "$WSS_URL" > "$ENVF"
++          ESTATE_ENV_FILE="$ENVF" bin/idp-vault-put --merge concierge-tunnel \
++            PUBLIC_SERVER_URL=MODAL_PUBLIC_SERVER_URL PUBLIC_WSS_URL=MODAL_PUBLIC_WSS_URL
++          echo "ok      concierge-tunnel now points at $URL"
+ 
+       - name: dry run -- say plainly what was not done
+         if: ${{ inputs.dry_run == true }}
+         run: |
+-          echo "dry run: the sidecar built, the model fetched, the module imports; NOTHING was deployed."
+-          echo "Re-run with dry_run=false to deploy."
++          echo "dry run: the sidecar built, the model fetched, both modules import/compile; NOTHING was deployed."
++          echo "Re-run with dry_run=false to deploy both the per-order runtime and the always-on endpoint."
+diff --git a/.github/workflows/estate-bootstrap.yml b/.github/workflows/estate-bootstrap.yml
+index ea932b3fb..32b5b56ee 100644
+--- a/.github/workflows/estate-bootstrap.yml
++++ b/.github/workflows/estate-bootstrap.yml
+@@ -34,6 +34,7 @@ on:
+           - estate-seed
+           - tailscale
+           - cloudflare
++          - concierge-tunnel
+           - vendors
+         default: estate-seed
+       reason:
+@@ -103,6 +104,11 @@ jobs:
+           OCI_REGION: ${{ vars.OCI_REGION }}
+           SCOPE: ${{ inputs.scope }}
+           REASON: ${{ inputs.reason }}
++          # Same road live-cloudflare/live-concierge-tunnel take (SEED_CLOUDFLARE_ROOT_TOKEN, R52);
++          # harmless for estate-seed/tailscale/vendors, which never read it. Without this, preflight
++          # tested the interactive browser-mint road instead of the one live actually runs, and that
++          # road's own dashboard check 403s from a CI IP regardless (run 34988252536, idp#3537).
++          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+         # set +e is intentional: the orchestrator's exit code (0 ok, 1 FAIL, 2 BLIND) is the
+         # verdict, not bash's. bash -e would mask it.
+         run: |
+@@ -115,6 +121,7 @@ jobs:
+             estate-seed) CMD=(bin/idp-estate-seed --preflight) ;;
+             tailscale)   CMD=(bin/idp-bootstrap-tailscale --preflight) ;;
+             cloudflare)  CMD=(bin/idp-bootstrap-cloudflare --preflight) ;;
++            concierge-tunnel) CMD=(bin/idp-bootstrap-concierge-tunnel --preflight) ;;
+             vendors)     CMD=(bin/idp-bootstrap-vendors --preflight) ;;
+             *) echo "FAIL    estate-bootstrap: unknown scope '$SCOPE'" >&2; exit 2 ;;
+           esac
+@@ -236,14 +243,59 @@ jobs:
+           tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
+           exit "$rc"
+ 
++  # PUBLIC_SERVER_URL for the concierge, same root as live-cloudflare, one more child under it
++  # (crew#832; root-trust.md's `concierge-tunnel` row, corrected 2026-09-15 from Customer to
++  # Operator). Requires cloudflare-api-token already vaulted -- run scope=cloudflare first if this
++  # is a fresh estate.
++  live-concierge-tunnel:
++    needs: [preflight]
++    if: ${{ always() && inputs.mode == 'live' && inputs.scope == 'concierge-tunnel' && needs.preflight.outputs.rc != '1' && needs.preflight.result != 'cancelled' }}
++    runs-on: ubuntu-latest
++    timeout-minutes: 15
++    outputs:
++      rc: ${{ steps.preflight.outputs.rc }}
++    steps:
++      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
++      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
++        with:
++          python-version: "3.12"
++      - name: oci cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
++      - name: OCI session token from the GitHub OIDC token
++        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
++        with:
++          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
++          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
++          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
++          oci_region: ${{ vars.OCI_REGION }}
++      - name: bin/idp-bootstrap-concierge-tunnel (R52, same standing root as cloudflare)
++        env:
++          OCI_CLI_AUTH: security_token
++          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
++          OCI_REGION: ${{ vars.OCI_REGION }}
++          CLOUDFLARE_ROOT_TOKEN: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
++          REASON: ${{ inputs.reason }}
++        run: |
++          [ -n "$CLOUDFLARE_ROOT_TOKEN" ] || {
++            echo "BLIND   concierge-tunnel: no SEED_CLOUDFLARE_ROOT_TOKEN repository secret; one token with 'User API Tokens: Edit', set once, is the root (R52)"
++            exit 2
++          }
++          set +e
++          out=$(bin/idp-bootstrap-concierge-tunnel --rotate 2>&1)
++          rc=$?
++          set -e
++          printf '%s\n' "$out"
++          tail -1 <<<"$out" >> "$GITHUB_STEP_SUMMARY"
++          exit "$rc"
++
+   # Vendor scopes refuse the live run on purpose: cloud-execution cannot complete a vendor
+-  # bootstrap without a long-lived service principal for that vendor -- Cloudflare excepted,
+-  # which has one and is handled above. The preflight still runs
+-  # above (so the operator sees the verdict), the live job returns a non-zero that points the
+-  # operator at the laptop runbook under bin/estate-preflight.d/. No silent skip.
++  # bootstrap without a long-lived service principal for that vendor -- Cloudflare and
++  # concierge-tunnel excepted (same root, same standing repository secret), handled above. The
++  # preflight still runs above (so the operator sees the verdict), the live job returns a non-zero
++  # that points the operator at the laptop runbook under bin/estate-preflight.d/. No silent skip.
+   live-vendor-refused:
+     needs: [preflight]
+-    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' && inputs.scope != 'cloudflare' }}
++    if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' && inputs.scope != 'cloudflare' && inputs.scope != 'concierge-tunnel' }}
+     runs-on: ubuntu-latest
+     timeout-minutes: 5
+     steps:
+diff --git a/backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug }}.sh b/backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug }}.sh
+index 9bd9a5042..53de2aff7 100755
+--- a/backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug }}.sh	
++++ b/backstage/templates/estate-bootstrap-preflight/skeleton/${{ values.filename_slug }}.sh	
+@@ -43,6 +43,7 @@ case "$SCOPE" in
+ full) CMD="bin/idp-bootstrap-estate --preflight" ;;
+ tailscale) CMD="bin/idp-bootstrap-tailscale --preflight" ;;
+ cloudflare) CMD="bin/idp-bootstrap-cloudflare --preflight" ;;
++concierge-tunnel) CMD="bin/idp-bootstrap-concierge-tunnel --preflight" ;;
+ vendors) CMD="bin/idp-bootstrap-vendors --preflight" ;;
+ estate-seed) CMD="bin/idp-estate-seed --preflight" ;;
+ *)
+diff --git a/backstage/templates/estate-bootstrap-preflight/template.yaml b/backstage/templates/estate-bootstrap-preflight/template.yaml
+index fb3166062..86f4b72b7 100644
+--- a/backstage/templates/estate-bootstrap-preflight/template.yaml
++++ b/backstage/templates/estate-bootstrap-preflight/template.yaml
+@@ -58,12 +58,14 @@ spec:
+             - full
+             - tailscale
+             - cloudflare
++            - concierge-tunnel
+             - vendors
+             - estate-seed
+           enumNames:
+             - The whole estate (idp-bootstrap-estate)
+             - Tailscale only (idp-bootstrap-tailscale)
+             - Cloudflare only (idp-bootstrap-cloudflare)
++            - Concierge tunnel only (idp-bootstrap-concierge-tunnel)
+             - Vendor keys only (idp-bootstrap-vendors)
+             - Estate-born credentials only (idp-estate-seed)
+           description: >-
+diff --git a/backstage/templates/founder-actions/concierge-deploy/template.yaml b/backstage/templates/founder-actions/concierge-deploy/template.yaml
+index 20877c501..740d22bae 100644
+--- a/backstage/templates/founder-actions/concierge-deploy/template.yaml
++++ b/backstage/templates/founder-actions/concierge-deploy/template.yaml
+@@ -4,8 +4,9 @@ kind: Template
+ metadata:
+   name: run-concierge-deploy
+   title: Deploy the concierge runtime
+-  description: Builds the vault sidecar and fetches the voice model, then deploys the concierge's ephemeral
+-    runtime to Modal and proves the sidecar is in the path; a dry run stops before deploy.
++  description: Builds the vault sidecar and fetches the voice model, then deploys both concierge Modal
++    apps -- the per-order runtime and the always-on endpoint -- and proves the sidecar is in the path;
++    a dry run stops before deploy.
+   tags:
+   - founder-action
+   - estate
+diff --git a/backstage/templates/founder-actions/estate-bootstrap/template.yaml b/backstage/templates/founder-actions/estate-bootstrap/template.yaml
+index 3361179d2..2132aff2f 100644
+--- a/backstage/templates/founder-actions/estate-bootstrap/template.yaml
++++ b/backstage/templates/founder-actions/estate-bootstrap/template.yaml
+@@ -21,6 +21,7 @@ spec:
+         - estate-seed
+         - tailscale
+         - cloudflare
++        - concierge-tunnel
+         - vendors
+         default: estate-seed
+       reason:
+diff --git a/bin/estate-flux-dag b/bin/estate-flux-dag
+new file mode 100755
+index 000000000..2072fe2bf
+--- /dev/null
++++ b/bin/estate-flux-dag
+@@ -0,0 +1,159 @@
++#!/usr/bin/env python3
++"""estate-flux-dag: the deploy-time map, drawn from what Flux itself will honour.
++
++The estate's spec: the map must be a deterministic byproduct of the GitOps engine, never
++hand-drawn (R29, crew#236 row 2), because a hand-drawn map is a claim with no receipt and it
++desyncs the moment a `dependsOn:` line changes and nobody updates a diagram. This estate's
++GitOps engine is Flux (`clusters/oke/flux-system/gotk-components.yaml`); this script is the
++only reader of the `dependsOn:` edges Flux honours BEFORE a reconcile (`bin/estate-twin-runtime`
++G4 comment: "the estate's real ordering, declared by its own GitOps controller, not inferred by
++us"). It parses every Kustomization/HelmRelease across clusters/ and platform/ -- the same
++files Flux itself applies -- and writes one Graphviz `.dot` DAG. It collects nothing live, so
++it can never disagree with git; `--check` fails the moment the committed `.dot` drifts from
++what these manifests now declare.
++
++    estate-flux-dag                 render clusters/ + platform/ -> docs/architecture/flux-deploy-map.dot
++    estate-flux-dag --root R --out F   other paths (the tests use a fixture tree)
++    estate-flux-dag --check         exit 1 when the file on disk is not what the manifests say
++
++Node id `flux:{kind}:{namespace}/{name}` matches `bin/estate-twin-runtime`'s own identity rule
++(same G4 comment) so this git-declared graph and the live-receipt-derived one in
++`catalog/estate.db` name the same object the same way -- a future cross-check needs no
++translation table. A `dependsOn` entry with no matching node in this tree (a target defined
++elsewhere, or misspelled) still gets a node, drawn dashed, so a broken reference is visible on
++the map rather than silently absent from it.
++
++Deterministic: node and edge order is sorted before rendering, so two sweeps of one working
++tree that changed nothing agree byte for byte -- the same property every generator in this
++estate must hold (AGENTS.md, unconditional in `bin/idp-ci`).
++"""
++
++from __future__ import annotations
++
++import argparse
++import sys
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parent.parent
++OUT = ROOT / "docs" / "architecture" / "flux-deploy-map.dot"
++SCAN_DIRS = ("clusters", "platform")
++FLUX_KINDS = ("Kustomization", "HelmRelease")
++
++
++def _iter_flux_objects(root: Path):
++    for scan in SCAN_DIRS:
++        base = root / scan
++        if not base.is_dir():
++            continue
++        for fp in sorted(base.rglob("*.yaml")):
++            if "/.terraform/" in str(fp):
++                continue
++            try:
++                docs = list(yaml.safe_load_all(fp.read_text(encoding="utf-8")))
++            except Exception as e:
++                # Unparseable YAML under clusters/ or platform/ is a broken manifest, not an
++                # absent one -- printed so it is visible on the map's own render, never a
++                # silently-clean skip (the estate's own recurring defect class).
++                print(f"estate-flux-dag: {fp} did not parse: {e}", file=sys.stderr)
++                continue
++            for d in docs:
++                if not isinstance(d, dict):
++                    continue
++                kind = d.get("kind")
++                api = d.get("apiVersion") or ""
++                if kind not in FLUX_KINDS or "fluxcd.io" not in api:
++                    continue
++                yield fp, d
++
++
++def build_graph(root: Path) -> tuple[set[str], list[tuple[str, str]]]:
++    """Returns (declared node ids, sorted unique edges). Pure function of the manifests on disk.
++
++    A `dependsOn` target with no manifest doc of its own is not a node here -- it is drawn as
++    a dashed reference by `render`, kept separate so "declared" never silently absorbs "only
++    referenced" (that distinction is the whole point of drawing it dashed).
++    """
++    declared: set[str] = set()
++    edges: set[tuple[str, str]] = set()
++    for _fp, d in _iter_flux_objects(root):
++        kind = d["kind"]
++        md = d.get("metadata") or {}
++        name = md.get("name")
++        if not name:
++            continue
++        ns = md.get("namespace") or "flux-system"
++        nid = f"flux:{kind}:{ns}/{name}"
++        declared.add(nid)
++        for dep in (d.get("spec") or {}).get("dependsOn") or []:
++            dname = dep.get("name")
++            if not dname:
++                continue
++            dns = dep.get("namespace") or ns
++            edges.add((nid, f"flux:Kustomization:{dns}/{dname}"))
++    return declared, sorted(edges)
++
++
++def dot_id(node_id: str) -> str:
++    return '"' + node_id.replace('"', '\\"') + '"'
++
++
++def render(root: Path) -> str:
++    declared, edges = build_graph(root)
++    referenced_only = sorted({t for _, t in edges} - declared)
++    lines = [
++        "// GENERATED by bin/estate-flux-dag from clusters/ and platform/. Do not edit: the",
++        "// next render overwrites it. `bin/estate-flux-dag --check` fails when this file and",
++        "// the manifests disagree (R29: a hand-drawn map is deleted).",
++        "digraph flux_deploy_map {",
++        "  rankdir=LR;",
++    ]
++    for nid in sorted(declared):
++        lines.append(f"  {dot_id(nid)};")
++    for nid in referenced_only:
++        lines.append(
++            f'  {dot_id(nid)} [style=dashed,label="{nid}\\n(depended on, not declared in this tree)"];'
++        )
++    for src, dst in edges:
++        lines.append(f"  {dot_id(src)} -> {dot_id(dst)};")
++    lines.append("}")
++    lines.append("")
++    return "\n".join(lines)
++
++
++def main(argv: list[str]) -> int:
++    ap = argparse.ArgumentParser(add_help=True)
++    ap.add_argument("--root", default=str(ROOT))
++    ap.add_argument("--out", default=str(OUT))
++    ap.add_argument(
++        "--check",
++        action="store_true",
++        help="exit 1 when the file on disk differs from the manifests",
++    )
++    args = ap.parse_args(argv)
++    root, out = Path(args.root), Path(args.out)
++    if not (root / "clusters").is_dir() and not (root / "platform").is_dir():
++        print(
++            f"BLIND estate-flux-dag: no clusters/ or platform/ under {root}",
++            file=sys.stderr,
++        )
++        return 3
++    page = render(root)
++    if args.check:
++        if out.is_file() and out.read_text(encoding="utf-8") == page:
++            print(f"ok    estate-flux-dag: {out} matches clusters/ + platform/")
++            return 0
++        print(
++            f"FAIL  estate-flux-dag: {out} is not what clusters/ + platform/ declare; run bin/estate-flux-dag"
++        )
++        return 1
++    out.parent.mkdir(parents=True, exist_ok=True)
++    out.write_text(page, encoding="utf-8")
++    nodes, edges = build_graph(root)
++    print(f"estate-flux-dag: {len(nodes)} nodes, {len(edges)} edges -> {out}")
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv[1:]))
+diff --git a/bin/idp-bootstrap-cloudflare b/bin/idp-bootstrap-cloudflare
+index a140f10f6..884961278 100755
+--- a/bin/idp-bootstrap-cloudflare
++++ b/bin/idp-bootstrap-cloudflare
+@@ -33,7 +33,11 @@ PROFILE="$HOME_DIR/cloudflare-browser"
+ VENV="$HOME_DIR/bootstrap-venv"
+ CFG="$IDP/clusters/oke/estate-config.yaml"
+ MODE=${1:-mint}
+-case "$MODE" in mint|--preflight|--rotate) ;; *) sed -n 2,5p "$0"; exit 2;; esac
++case "$MODE" in
++  --help|-h) sed -n 2,5p "$0"; exit 0 ;;
++  mint|--preflight|--rotate) ;;
++  *) sed -n 2,5p "$0"; exit 2 ;;
++esac
+ 
+ say()  { printf '%-7s %-20s %s\n' "$1" "$2" "$3"; }
+ fail() { say FAIL "$1" "$2"; exit 1; }
+@@ -88,8 +92,17 @@ if [ "$MODE" = mint ]; then
+   unset dns eng
+ fi
+ if [ "$MODE" = --preflight ]; then
+-  code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
+-  case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
++  if [ -n "${CLOUDFLARE_ROOT_TOKEN:-}" ]; then
++    # The dashboard is only ever opened by mint_root_via_browser, which the root-token road (R52,
++    # the only road CI/live ever takes) skips entirely -- checking it here tests a road this run
++    # will never take, and Cloudflare's own bot-management WAF 403s a bare curl from a CI IP with
++    # no browser session, so this check could never go green from CI regardless (measured run
++    # 34988252536, idp#3537). A root token in hand already proves what CI/live actually need.
++    say ok console "root token from the environment; browser road not needed, dashboard reachability moot"
++  else
++    code=$(curl -sS -o /dev/null -w '%{http_code}' "$CONSOLE") || code=curl-failed
++    case "$code" in 200|301|302|303) say ok console "$CONSOLE answers $code";; *) fail console "$CONSOLE answers $code";; esac
++  fi
+   say ok preflight "vault, driver and dashboard reachable; nothing written"; exit 0
+ fi
+ 
+diff --git a/bin/idp-bootstrap-concierge-tunnel b/bin/idp-bootstrap-concierge-tunnel
+new file mode 100755
+index 000000000..bfc2354ec
+--- /dev/null
++++ b/bin/idp-bootstrap-concierge-tunnel
+@@ -0,0 +1,506 @@
++#!/usr/bin/env python3
++# The concierge's public origin, minted, not asked for (crew#832; docs/reference/policy/root-trust.md).
++#   bin/idp-bootstrap-concierge-tunnel              mint a Cloudflare Tunnel + DNS record, write vault entry concierge-tunnel
++#   bin/idp-bootstrap-concierge-tunnel --preflight   prove the vault, the driver and the dashboard reachability, write nothing
++#   bin/idp-bootstrap-concierge-tunnel --rotate      mint anew even though the vault entry already verifies
++#
++# The gap this closes: mums-concierge/docs/DEPLOYMENT.md documents `PUBLIC_SERVER_URL` as "the
++# Cloudflare Tunnel origin" but the only tunnel command in that runbook is `cloudflared tunnel
++# --url http://127.0.0.1:8000` -- an ephemeral quick tunnel that hands back a random
++# `trycloudflare.com` host that changes on every restart, and a placeholder
++# `https://concierge.yourdomain.com` in the env template that nobody ever fills in
++# (mums-concierge/docs/STATUS.md: "the Twilio image delivery has never been verified end to
++# end"). That is not a founder task sitting undone -- it is a founder task that was never
++# actually askable, because a Cloudflare Tunnel is provider infrastructure, and R52 (founder
++# 2026-08-29) already settled how provider infrastructure gets made: one root token per
++# provider, set once, and code mints everything under it. The estate already holds that root for
++# Cloudflare (SEED_CLOUDFLARE_ROOT_TOKEN, "User API Tokens: Edit") and already uses it, unattended,
++# to mint the DNS and Workers tokens in bin/idp-bootstrap-cloudflare. This script is the same root,
++# the same pattern, one more child: a named, remotely-managed Tunnel bound to a stable hostname on
++# the estate's own zone, so `PUBLIC_SERVER_URL` is a value the estate hands the founder, not one it
++# asks him to go and find.
++#
++# What it mints, all via the API, none of it typed by a person:
++#   1. A short-lived token scoped to Account: Cloudflare Tunnel Read + Write (looked up by name, LAW 46).
++#   2. A remotely-managed Tunnel named "concierge" (POST /accounts/{account}/cfd_tunnel), whose
++#      token is what `cloudflared tunnel run --token ...` needs on the Mac -- no cert.pem, no
++#      credentials.json to copy by hand.
++#   3. Its public-hostname route, configured to point at the concierge's own port (127.0.0.1:8000,
++#      the same port DEPLOYMENT.md's launchd plist already binds).
++#   4. A DNS CNAME for the hostname -> <tunnel-id>.cfargotunnel.com, written with the estate's
++#      EXISTING cloudflare-api-token (Zone:DNS:Edit on ESTATE_ZONE) rather than minting a second
++#      DNS credential -- one root, and the fewest possible standing tokens under it.
++# Vaulted as `concierge-tunnel`: PUBLIC_SERVER_URL, PUBLIC_WSS_URL, TUNNEL_TOKEN, TUNNEL_ID. The
++# platform/concierge/tunnel-external-secret.yaml ExternalSecret reads it from estate-vault (the
++# store code writes to) into the concierge namespace -- never human-vault, because nothing here
++# was pasted by a person for a person to see again (LAW 44: a code-minted fact does not also live
++# in Bitwarden as if the founder produced it). Nothing but the NAMES of what got written is ever
++# printed.
++#
++# Rewritten from shell to Python 2026-09-15 (estate shell standard, crew#620: a new shell file
++# over 100 lines is written in Python instead). Same steps, same two roads for the root token,
++# same idempotency and revocation behaviour as the shell original.
++from __future__ import annotations
++
++import json
++import os
++import re
++import shutil
++import subprocess
++import sys
++import tempfile
++import urllib.error
++import urllib.request
++from pathlib import Path
++
++IDP = Path(__file__).resolve().parent.parent
++API = os.environ.get("CLOUDFLARE_API_URL", "https://api.cloudflare.com/client/v4")
++CONSOLE = os.environ.get("CLOUDFLARE_CONSOLE_URL", "https://dash.cloudflare.com/profile/api-tokens")
++HOME_DIR = Path(os.environ.get("ESTATE_HOME", str(Path.home() / ".estate")))
++PROFILE = HOME_DIR / "cloudflare-browser"
++VENV = HOME_DIR / "bootstrap-venv"
++CFG = IDP / "clusters" / "oke" / "estate-config.yaml"
++
++
++def say(status: str, tag: str, msg: str) -> None:
++    print(f"{status:<7} {tag:<20} {msg}")
++
++
++def fail(tag: str, msg: str) -> None:
++    say("FAIL", tag, msg)
++    sys.exit(1)
++
++
++def bl(tag: str, msg: str) -> None:
++    say("BLIND", tag, msg)
++    sys.exit(2)
++
++
++def usage_and_exit(code: int = 2) -> None:
++    lines = Path(__file__).read_text().splitlines()[1:5]
++    print("\n".join(lines))
++    sys.exit(code)
++
++
++def cf(token: str, method: str, path: str, data: dict | None = None) -> dict:
++    # The token never reaches argv of a child process; it rides the Authorization header only.
++    body = json.dumps(data).encode() if data is not None else None
++    req = urllib.request.Request(API + path, data=body, method=method)
++    req.add_header("Authorization", f"Bearer {token}")
++    if body is not None:
++        req.add_header("Content-Type", "application/json")
++    try:
++        with urllib.request.urlopen(req, timeout=30) as fh:  # noqa: S310 -- fixed Cloudflare API host
++            return json.loads(fh.read())
++    except urllib.error.HTTPError as exc:
++        return json.loads(exc.read())
++
++
++def verify(token: str) -> bool:
++    try:
++        result = cf(token, "GET", "/user/tokens/verify")
++        return bool(result.get("success")) and result.get("result", {}).get("status") == "active"
++    except (urllib.error.URLError, json.JSONDecodeError):
++        return False
++
++
++def run(cmd: list[str], **kw) -> subprocess.CompletedProcess:
++    kw.setdefault("check", False)
++    return subprocess.run(cmd, **kw)
++
++
++def read_secret(name: str) -> dict:
++    proc = run([str(IDP / "bin" / "idp-cloud"), "secret", "get", name], capture_output=True, text=True)
++    if proc.returncode != 0 or not proc.stdout.strip():
++        return {}
++    try:
++        return json.loads(proc.stdout)
++    except json.JSONDecodeError:
++        return {}
++
++
++def http_status(url: str) -> str:
++    try:
++        with urllib.request.urlopen(url, timeout=15) as fh:  # noqa: S310 -- URL is a fixed estate/vendor console
++            return str(fh.status)
++    except urllib.error.HTTPError as exc:
++        return str(exc.code)
++    except urllib.error.URLError:
++        return "curl-failed"
++
++
++PLAYWRIGHT_DRIVER = '''
++import re, sys, time
++from playwright.sync_api import sync_playwright
++console, profile, name, out = sys.argv[1:5]
++def step(s): print(f"        step    {s}", flush=True)
++with sync_playwright() as p:
++    ctx = p.chromium.launch_persistent_context(profile, headless=False, viewport={"width": 1280, "height": 900})
++    page = ctx.pages[0] if ctx.pages else ctx.new_page()
++    page.goto(console, wait_until="domcontentloaded"); step("dashboard opened")
++    create = page.get_by_role("link", name=re.compile(r"create token", re.I)).or_(page.get_by_role("button", name=re.compile(r"create token", re.I)))
++    deadline = time.time() + 300
++    while time.time() < deadline:
++        if create.count() and create.first.is_visible(): break
++        time.sleep(2)
++    else:
++        sys.exit("FAIL    console   no API Tokens page after 5 minutes; login not completed")
++    step("signed in"); create.first.click()
++    page.get_by_role("link", name=re.compile(r"get started", re.I)).or_(page.get_by_role("button", name=re.compile(r"get started", re.I))).last.click()
++    step("custom token form")
++    page.get_by_label(re.compile(r"token name", re.I)).first.fill(name)
++    selects = page.locator("form select, form [role=combobox]")
++    def pick(i, text):
++        s = selects.nth(i); s.click()
++        opt = page.get_by_role("option", name=re.compile(text, re.I)).first
++        if opt.count(): opt.click()
++        else: s.select_option(label=re.compile(text, re.I))
++    pick(0, r"^user$"); pick(1, r"api tokens"); pick(2, r"^edit$")
++    step("permission User:API Tokens:Edit")
++    page.get_by_role("button", name=re.compile(r"continue to summary", re.I)).first.click()
++    page.get_by_role("button", name=re.compile(r"^create token$", re.I)).first.click()
++    step("created")
++    page.wait_for_timeout(1500)
++    text = page.inner_text("body")
++    m = re.search(r"\\b([A-Za-z0-9_-]{40})\\b", text)
++    if not m:
++        sys.exit("FAIL    console   token created but not found on the result page (selector drift); revoke the token named " + name + " and rerun after the driver is fixed")
++    open(out, "w").write(m.group(1) + "\\n")
++    ctx.close()
++'''
++
++
++def ensure_deps() -> None:
++    for tool in ("python3",):
++        if shutil.which(tool) is None:
++            bl("deps", f"{tool} missing")
++
++
++def read_zone() -> str:
++    if CFG.is_file():
++        for line in CFG.read_text().splitlines():
++            m = re.search(r"ESTATE_ZONE:\s*(\S+)", line)
++            if m:
++                return m.group(1)
++    bl("config", f"no ESTATE_ZONE in {CFG}")
++    return ""  # unreachable, keeps type-checkers happy
++
++
++def ensure_oci_session() -> tuple[str, str]:
++    # idp-oci-whoami only exports the right OCI_CLI_AUTH (api_key vs security_token) when
++    # sourced -- a plain subprocess call only gives back the profile name on stdout, and
++    # assuming security_token for an API-key fallback profile (e.g. DEFAULT) breaks every
++    # OCI call after it. Source it in a throwaway shell and read both vars back.
++    probe = run(
++        ["bash", "-c", f'source "{IDP}/bin/idp-oci-whoami" >&2 && printf "%s\\n%s\\n" "$OCI_CLI_PROFILE" "$OCI_CLI_AUTH"'],
++        capture_output=True,
++        text=True,
++    )
++    if probe.returncode == 0:
++        lines = probe.stdout.strip().splitlines()
++        if len(lines) >= 2 and lines[0]:
++            return lines[0], lines[1]
++    common_dir = run(
++        ["git", "-C", str(IDP), "rev-parse", "--path-format=absolute", "--git-common-dir"],
++        capture_output=True,
++        text=True,
++        check=True,
++    ).stdout.strip()
++    main_dir = Path(common_dir).parent
++    secrets_root = Path(os.environ.get("ESTATE_SECRETS", str(main_dir.parent / "estate-secrets")))
++    sv = secrets_root / "secrets" / os.environ.get("OCI_ENV", "dev")
++    os.environ.setdefault("SOPS_AGE_KEY_FILE", str(Path.home() / ".config" / "prospector" / "age-key.txt"))
++    region = run(
++        ["sops", "-d", "--extract", '["OCI_REGION"]', str(sv / "OCI_REGION.yaml")], capture_output=True, text=True
++    ).stdout.strip()
++    tenancy = run(
++        ["sops", "-d", "--extract", '["OCI_TENANCY_NAME"]', str(sv / "OCI_TENANCY_NAME.yaml")],
++        capture_output=True,
++        text=True,
++    ).stdout.strip()
++    if not region or not tenancy:
++        bl("oci", f"no live session and no OCI_REGION / OCI_TENANCY_NAME in {sv}")
++    say("", "oci", "no live session: the browser opens once for OCI SSO")
++    auth_result = run(
++        ["oci", "session", "authenticate", "--region", region, "--tenancy-name", tenancy, "--profile-name", "estate-bootstrap"],
++        capture_output=True,
++    )
++    if auth_result.returncode != 0:
++        bl("oci", "session sign-in did not complete")
++    proc = run([str(IDP / "bin" / "idp-oci-whoami")], capture_output=True, text=True)
++    if proc.returncode != 0 or not proc.stdout.strip():
++        bl("oci", "signed in, but no session profile is live")
++    return proc.stdout.strip(), "security_token"
++
++
++def ensure_driver(py: Path) -> None:
++    if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
++        return
++    # py is VENV/bin/python, which does not exist before the first install below -- bash's
++    # `"$VENV/bin/python" -c ...` (the pre-2026-09-15 original) just returns nonzero for a missing
++    # binary, but subprocess.run raises FileNotFoundError for the same case, uncaught, which is
++    # exactly what killed the concierge-tunnel preflight the first time it ran on a bare CI runner
++    # (run 34987035759): treat "not there yet" the same as "there, but doesn't import" rather than
++    # letting the exception through.
++    check = run([str(py), "-c", "import playwright"], capture_output=True) if py.is_file() else None
++    if check is not None and check.returncode == 0:
++        version_proc = run(
++            [str(py), "-c", 'import playwright,importlib.metadata as m;print(m.version("playwright"))'],
++            capture_output=True,
++            text=True,
++        )
++        say("ok", "driver", f"playwright {version_proc.stdout.strip()}")
++        return
++    say("", "driver", f"installing playwright into {VENV} (once)")
++    run(["python3", "-m", "venv", str(VENV)], check=True, capture_output=True)
++    run([str(VENV / "bin" / "pip"), "install", "-q", "playwright"], check=True, capture_output=True)
++    run([str(VENV / "bin" / "playwright"), "install", "chromium"], check=True, capture_output=True)
++    version_proc = run(
++        [str(py), "-c", 'import playwright,importlib.metadata as m;print(m.version("playwright"))'],
++        capture_output=True,
++        text=True,
++    )
++    say("ok", "driver", f"playwright {version_proc.stdout.strip()}")
++
++
++def mint_root_via_browser(py: Path, tmp: Path) -> tuple[str, str]:
++    name = f"estate-root {__import__('datetime').datetime.utcnow().strftime('%Y-%m-%dT%H:%MZ')}"
++    say("", "console", f"opening {CONSOLE} in the estate browser profile; if Cloudflare asks you to sign in, do — that is the only hand")
++    out_path = tmp / "root"
++    proc = run(
++        [str(py), "-", CONSOLE, str(PROFILE), name, str(out_path)],
++        input=PLAYWRIGHT_DRIVER,
++        text=True,
++        capture_output=True,
++    )
++    if proc.returncode != 0:
++        fail("console", proc.stdout.strip() or proc.stderr.strip() or "driver failed")
++    root = out_path.read_text().strip() if out_path.is_file() else ""
++    if not root:
++        fail("console", "driver produced no token")
++    return root, name
++
++
++def main() -> None:
++    mode = sys.argv[1] if len(sys.argv) > 1 else "mint"
++    if mode in ("--help", "-h"):
++        usage_and_exit(0)
++    if mode not in ("mint", "--preflight", "--rotate"):
++        usage_and_exit()
++
++    ensure_deps()
++    zone = read_zone()
++    hostname = os.environ.get("CONCIERGE_HOSTNAME", f"concierge.{zone}")
++    HOME_DIR.mkdir(parents=True, exist_ok=True)
++    HOME_DIR.chmod(0o700)
++
++    # 0. driver, once, into the estate venv -- only on the laptop road, same as idp-bootstrap-cloudflare.
++    py = VENV / "bin" / "python"
++    ensure_driver(py)
++
++    # 1. the vault first (same OCI SSO fallback as bin/idp-bootstrap-cloudflare)
++    oci_profile, oci_auth = ensure_oci_session()
++    os.environ["OCI_CLI_PROFILE"] = oci_profile
++    os.environ["OCI_CLI_AUTH"] = oci_auth
++    preflight = run(
++        [str(IDP / "bin" / "idp-vault-put"), "concierge-tunnel", "--preflight"],
++        capture_output=True,
++        text=True,
++        env={**os.environ, "VAULT_PUT_PREFLIGHT": "1"},
++    )
++    if preflight.returncode != 0:
++        bl("vault", f"not reachable as {oci_profile}")
++    for line in preflight.stdout.splitlines():
++        print(f"        {line}")
++
++    # 2. the DNS token this script reuses (bin/idp-bootstrap-cloudflare must have run first) and
++    #    idempotency: a complete, still-live tunnel is kept.
++    dns_proc = run([str(IDP / "bin" / "idp-cloud"), "secret", "get", "cloudflare-api-token"], capture_output=True, text=True)
++    dns = dns_proc.stdout.strip() if dns_proc.returncode == 0 else ""
++    if not dns or not verify(dns):
++        bl("cloudflare", "no verifying cloudflare-api-token in the vault; run bin/idp-bootstrap-cloudflare first (it owns the estate's one Cloudflare root)")
++    zone_result = cf(dns, "GET", f"/zones?name={zone}")
++    zone_list = zone_result.get("result") or []
++    if not zone_list:
++        fail("zone", f"{zone} is not a zone of this account")
++    zone_id = zone_list[0]["id"]
++    account_id = zone_list[0]["account"]["id"]
++
++    if mode == "mint":
++        cur = read_secret("concierge-tunnel")
++        tid = cur.get("TUNNEL_ID", "")
++        if (
++            tid
++            and cur.get("PUBLIC_SERVER_URL") == f"https://{hostname}"
++            and len(cur.get("TUNNEL_TOKEN", "")) > 0
++        ):
++            check = cf(dns, "GET", f"/accounts/{account_id}/cfd_tunnel/{tid}")
++            if check.get("success") and check.get("result", {}).get("deleted_at") is None:
++                say("ok", "concierge-tunnel", f"tunnel {tid} for {hostname} already verifies; kept (--rotate to mint anew)")
++                sys.exit(0)
++
++    if mode == "--preflight":
++        if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
++            # Same guard as ensure_driver, and the same fix as bin/idp-bootstrap-cloudflare: the
++            # dashboard is only ever opened by mint_root_via_browser, a road the root-token road
++            # (R52, the only one CI/live ever takes) skips outright -- checking it here tests a
++            # road this run will never take, and Cloudflare's own bot-management WAF 403s a bare
++            # urllib request from a CI IP with no browser session regardless (run 34988252536).
++            say("ok", "console", "root token from the environment; browser road not needed, dashboard reachability moot")
++        else:
++            code = http_status(CONSOLE)
++            if code in ("200", "301", "302", "303"):
++                say("ok", "console", f"{CONSOLE} answers {code}")
++            else:
++                fail("console", f"{CONSOLE} answers {code}")
++        say("ok", "preflight", f"vault, driver, dashboard and DNS token (for {zone}) all reachable; nothing written")
++        sys.exit(0)
++
++    # 3. the root -- same two roads as bin/idp-bootstrap-cloudflare (env or a one-hour browser token).
++    tmp = Path(tempfile.mkdtemp())
++    os.umask(0o077)
++    try:
++        name = ""
++        if os.environ.get("CLOUDFLARE_ROOT_TOKEN"):
++            root = os.environ.pop("CLOUDFLARE_ROOT_TOKEN")
++            say("ok", "root", "root token from the environment (repository secret SEED_CLOUDFLARE_ROOT_TOKEN); no browser")
++        else:
++            root, name = mint_root_via_browser(py, tmp)
++        if not verify(root):
++            fail("verify", f"the root token does not verify at {API}/user/tokens/verify")
++        say("ok", "root", "root token verifies (User API Tokens: Edit)")
++
++        # 4. a single-purpose child: Account: Cloudflare Tunnel Read + Write, looked up by name (LAW 46),
++        #    never typed. Held only for the length of this run and revoked in step 9.
++        groups = cf(root, "GET", "/user/tokens/permission_groups")
++
++        def gid(gname: str, scope: str) -> str:
++            for g in groups.get("result", []):
++                if g["name"] == gname and scope in g.get("scopes", []):
++                    return g["id"]
++            return ""
++
++        # Cloudflare has since split the old combined "Cloudflare Tunnel:Edit" scope into two
++        # separate account-level groups; this run does GET (list/read token) and POST/PUT
++        # (create/configure), so it needs both (measured live, run 34997514190, idp#3537).
++        tun_gids = [gid(n, "com.cloudflare.api.account") for n in ("Cloudflare Tunnel Read", "Cloudflare Tunnel Write")]
++        if not all(tun_gids):
++            # Names are metadata, not a secret (LAW 21 is about credential values, not group
++            # labels) -- print what this account's token actually offers at account scope so the
++            # real name can be read straight out of the CI log instead of guessed blind.
++            account_names = sorted(
++                g["name"] for g in groups.get("result", []) if "com.cloudflare.api.account" in g.get("scopes", [])
++            )
++            fail(
++                "perms",
++                "no permission group 'Cloudflare Tunnel Read'/'Write' (account) -- LAW 46. "
++                f"account-scoped groups this token actually sees: {account_names}",
++            )
++        tunpol = [
++            {
++                "effect": "allow",
++                "resources": {f"com.cloudflare.api.account.{account_id}": "*"},
++                "permission_groups": [{"id": g} for g in tun_gids],
++            }
++        ]
++        tuntok_result = cf(root, "POST", "/user/tokens", {"name": f"estate-concierge-tunnel {hostname}", "policies": tunpol})
++        if not tuntok_result.get("success"):
++            fail("mint", "tunnel-mgmt token not created")
++        tun = tuntok_result["result"]["value"]
++        tun_tok_id = tuntok_result["result"]["id"]
++        if not verify(tun):
++            fail("verify", "tunnel-mgmt token does not verify")
++        say("ok", "mint", f"tunnel-management token minted (account {account_id}, Cloudflare Tunnel Read+Write)")
++
++        # 5. the tunnel itself: a remotely-managed tunnel (config_src=cloudflare) so `cloudflared
++        #    tunnel run --token ...` needs no cert.pem/credentials.json on the Mac.
++        existing_result = cf(tun, "GET", f"/accounts/{account_id}/cfd_tunnel?name=concierge&is_deleted=false")
++        existing = (existing_result.get("result") or [None])[0]
++        if existing:
++            tunnel_id = existing["id"]
++            say("ok", "tunnel", f"reusing existing tunnel 'concierge' ({tunnel_id})")
++        else:
++            created = cf(tun, "POST", f"/accounts/{account_id}/cfd_tunnel", {"name": "concierge", "config_src": "cloudflare"})
++            if not created.get("success"):
++                fail("tunnel", f"POST /cfd_tunnel refused: {created.get('errors')}")
++            tunnel_id = created["result"]["id"]
++            say("ok", "tunnel", f"tunnel 'concierge' created ({tunnel_id})")
++        token_result = cf(tun, "GET", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/token")
++        tunnel_token = token_result.get("result") or ""
++        if not tunnel_token:
++            fail("tunnel", f"no token returned for tunnel {tunnel_id}")
++
++        # 6. the public hostname route -> the concierge's own port.
++        ingress = {"config": {"ingress": [{"hostname": hostname, "service": "http://127.0.0.1:8000"}, {"service": "http_status:404"}]}}
++        if not cf(tun, "PUT", f"/accounts/{account_id}/cfd_tunnel/{tunnel_id}/configurations", ingress).get("success"):
++            fail("tunnel", "ingress configuration refused")
++        say("ok", "tunnel", f"public hostname {hostname} routed to 127.0.0.1:8000")
++
++        # 7. the DNS record, with the estate's EXISTING DNS-edit token (never a second one) --
++        #    LAW 15, prove it reads before it's trusted to write.
++        if not cf(dns, "GET", f"/zones/{zone_id}/dns_records?per_page=1").get("success"):
++            fail("verify", f"cloudflare-api-token cannot read {zone} records")
++        rec_result = cf(dns, "GET", f"/zones/{zone_id}/dns_records?type=CNAME&name={hostname}")
++        rec = (rec_result.get("result") or [None])[0]
++        body = {"type": "CNAME", "name": hostname, "content": f"{tunnel_id}.cfargotunnel.com", "proxied": True, "ttl": 1}
++        if rec:
++            if not cf(dns, "PUT", f"/zones/{zone_id}/dns_records/{rec['id']}", body).get("success"):
++                fail("dns", f"CNAME update for {hostname} refused")
++            say("ok", "dns", f"{hostname} CNAME updated -> {tunnel_id}.cfargotunnel.com")
++        else:
++            if not cf(dns, "POST", f"/zones/{zone_id}/dns_records", body).get("success"):
++                fail("dns", f"CNAME create for {hostname} refused")
++            say("ok", "dns", f"{hostname} CNAME created -> {tunnel_id}.cfargotunnel.com")
++
++        # 8. vault, in-process, key names only. PUBLIC_WSS_URL rides the same entry: it is the
++        #    same hostname, same tunnel, and voice_endpoints.py reads it as a hard os.environ[...].
++        env_path = tmp / "env"
++        env_path.write_text(
++            f"V_URL=https://{hostname}\nV_WSS=wss://{hostname}/ws/live-call\nV_TOKEN={tunnel_token}\nV_ID={tunnel_id}\n"
++        )
++        vault_write = run(
++            [
++                str(IDP / "bin" / "idp-vault-put"),
++                "--merge",
++                "concierge-tunnel",
++                "PUBLIC_SERVER_URL=V_URL",
++                "PUBLIC_WSS_URL=V_WSS",
++                "TUNNEL_TOKEN=V_TOKEN",
++                "TUNNEL_ID=V_ID",
++            ],
++            capture_output=True,
++            text=True,
++            env={**os.environ, "ESTATE_ENV_FILE": str(env_path)},
++        )
++        if vault_write.returncode != 0:
++            # idp-vault-put prints key NAMES only, by its own header contract -- never a value --
++            # so its real stdout/stderr is safe to surface here instead of the generic one-liner
++            # that hid it (run 34998308859, idp#3537).
++            cause = (vault_write.stderr.strip() or vault_write.stdout.strip()).splitlines()
++            fail("vault", "concierge-tunnel write refused: " + (cause[-1][:200] if cause else "no output"))
++
++        # 9. the single-purpose tunnel-mgmt token is revoked; the DNS token it borrowed was
++        #    already standing and stays. A driver-born root dies with this process.
++        cf(root, "DELETE", f"/user/tokens/{tun_tok_id}")
++        if name:
++            tokens = cf(root, "GET", "/user/tokens")
++            match = next((t["id"] for t in tokens.get("result", []) if t.get("name") == name), None)
++            if match:
++                cf(root, "DELETE", f"/user/tokens/{match}")
++            revoked = "root token revoked"
++        else:
++            revoked = "standing root kept"
++        say(
++            "ok",
++            "concierge-tunnel",
++            f"concierge-tunnel vault entry written (PUBLIC_SERVER_URL https://{hostname}); "
++            f"tunnel-mgmt token revoked; {revoked}. cloudflared on the Mac still needs: launchctl "
++            "load with TUNNEL_TOKEN (docs/DEPLOYMENT.md #7); reachability itself is unverified "
++            "until cloudflared actually runs.",
++        )
++    finally:
++        shutil.rmtree(tmp, ignore_errors=True)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/bin/idp-bootstrap-estate b/bin/idp-bootstrap-estate
+index ab847cbbd..b5f8fd9be 100755
+--- a/bin/idp-bootstrap-estate
++++ b/bin/idp-bootstrap-estate
+@@ -14,9 +14,13 @@
+ set -uo pipefail
+ IDP=$(cd "$(dirname "$0")/.." && pwd)
+ MODE=${1:-run}
+-case "$MODE" in run|--preflight) ;; *) sed -n 2,4p "$0"; exit 2;; esac
++case "$MODE" in
++  run|--preflight) ;;
++  --help|-h) sed -n 2,4p "$0"; exit 0;;
++  *) sed -n 2,4p "$0"; exit 2;;
++esac
+ ARG=""; [ "$MODE" = --preflight ] && ARG=--preflight
+-STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-vendors"
++STEPS="idp-estate-seed idp-bootstrap-tailscale idp-bootstrap-cloudflare idp-bootstrap-concierge-tunnel idp-bootstrap-vendors"
+ rc=0
+ for s in $STEPS; do
+   printf '\n== %s %s\n' "$s" "$ARG"
+diff --git a/bin/idp-cardinality-budget b/bin/idp-cardinality-budget
+new file mode 100755
+index 000000000..1f244173b
+--- /dev/null
++++ b/bin/idp-cardinality-budget
+@@ -0,0 +1,149 @@
++#!/usr/bin/env python3
++"""Cardinality-budget gate for agent metrics (spec: 2026-09-15 metrics/CI-CD overhaul,
++Part A). Every metric name a real emitter creates over OTLP must have exactly one row in
++observability/agent-metrics.yaml naming its owner, cardinality budget, retention tier and
++consumer -- and every row with status: emitted must name a metric a real emitter creates.
++The two are graded against each other so they cannot drift apart, same discipline
++AGENTS.md's rules.yaml table already applies to itself.
++
++Deterministic, no model: this is a regex over `create_counter(`/`create_histogram(` call
++sites and a YAML parse of the manifest, nothing else.
++
++  idp-cardinality-budget --check [emitter.py ...] --manifest <path>
++  idp-cardinality-budget --self-test
++"""
++
++from __future__ import annotations
++
++import re
++import sys
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parent.parent
++DEFAULT_EMITTERS = [ROOT / "sovereign" / "engine" / "metrics.py"]
++DEFAULT_MANIFEST = ROOT / "observability" / "agent-metrics.yaml"
++
++# Matches both a direct meter.create_counter("name", ...) / create_histogram("name", ...)
++# call and sovereign/engine/metrics.py's own _instrument("name", "counter"|"histogram", ...)
++# dispatch helper -- one real declaration site per metric, not a naming convention emitters
++# must each reimplement.
++_CALL_RE = re.compile(
++    r'(?:create_(?:counter|histogram)|_instrument)\(\s*["\']([a-zA-Z0-9_]+)["\']'
++)
++
++
++def _emitted_names(paths: list[Path]) -> set[str]:
++    names: set[str] = set()
++    for p in paths:
++        if not p.exists():
++            continue
++        names |= set(_CALL_RE.findall(p.read_text()))
++    return names
++
++
++def _manifest_rows(manifest: Path) -> list[dict]:
++    doc = yaml.safe_load(manifest.read_text()) or {}
++    return doc.get("metrics", []) or []
++
++
++def check(emitter_paths: list[Path], manifest: Path) -> tuple[bool, list[str]]:
++    problems: list[str] = []
++    emitted = _emitted_names(emitter_paths)
++    rows = _manifest_rows(manifest)
++    declared_emitted = {r["name"] for r in rows if r.get("status") == "emitted"}
++
++    for name in sorted(emitted - declared_emitted):
++        problems.append(
++            f"metric {name!r} is emitted in code but has no status: emitted row in {manifest}"
++        )
++    for name in sorted(declared_emitted - emitted):
++        problems.append(
++            f"manifest row {name!r} is status: emitted but no emitter creates it"
++        )
++
++    seen: dict[str, int] = {}
++    for r in rows:
++        seen[r["name"]] = seen.get(r["name"], 0) + 1
++    for name, count in seen.items():
++        if count > 1:
++            problems.append(
++                f"metric {name!r} has {count} rows in {manifest}, must have exactly one"
++            )
++
++    for r in rows:
++        if r.get("status") == "emitted":
++            for field in ("owner", "cardinality_budget", "retention_tier", "consumer"):
++                if not r.get(field):
++                    problems.append(
++                        f"metric {r['name']!r} is status: emitted but declares no {field}"
++                    )
++        elif r.get("status") == "declared_not_emitted":
++            if not r.get("reason"):
++                problems.append(
++                    f"metric {r['name']!r} is declared_not_emitted but names no reason"
++                )
++        else:
++            problems.append(
++                f"metric {r.get('name')!r} has unknown status {r.get('status')!r}"
++            )
++
++    return (not problems, problems)
++
++
++def _self_test() -> int:
++    root = ROOT / "tests" / "fixtures" / "cardinality-budget"
++    bad_dir, good_dir = root / "bad", root / "good"
++    if not bad_dir.exists() or not good_dir.exists():
++        print(f"SKIP cardinality-budget --self-test: fixtures not found under {root}")
++        return 0
++
++    ok_bad, _ = check([bad_dir / "emitter.py"], bad_dir / "manifest.yaml")
++    if ok_bad:
++        print(
++            "FAIL cardinality-budget --self-test: bad fixture should have been refused and was not"
++        )
++        return 1
++
++    ok_good, problems = check([good_dir / "emitter.py"], good_dir / "manifest.yaml")
++    if not ok_good:
++        print(
++            f"FAIL cardinality-budget --self-test: good fixture should have passed and was refused: {problems}"
++        )
++        return 1
++
++    print(
++        "ok   cardinality-budget --self-test: bad fixture refused, good fixture passed"
++    )
++    return 0
++
++
++def main(argv: list[str]) -> int:
++    if len(argv) > 1 and argv[1] in ("--help", "-h"):
++        print(__doc__)
++        return 0
++    if len(argv) > 1 and argv[1] == "--self-test":
++        return _self_test()
++
++    emitter_paths = list(DEFAULT_EMITTERS)
++    manifest = DEFAULT_MANIFEST
++    if "--manifest" in argv:
++        manifest = Path(argv[argv.index("--manifest") + 1])
++    positional = [a for a in argv[1:] if not a.startswith("--") and a != str(manifest)]
++    if positional:
++        emitter_paths = [Path(p) for p in positional]
++
++    ok, problems = check(emitter_paths, manifest)
++    if not ok:
++        for p in problems:
++            print(f"FAIL: {p}")
++        return 1
++    print(
++        f"ok   cardinality-budget: {len(_emitted_names(emitter_paths))} emitted metric(s) match {manifest}"
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/bin/idp-ci b/bin/idp-ci
+index 0230edbc5..c94284130 100755
+--- a/bin/idp-ci
++++ b/bin/idp-ci
+@@ -184,6 +184,24 @@ if "$MPY" "$IDP/bin/catalog-dark-matter" --check >/dev/null 2>&1; then
+   say "ok    darkmatter  backstage/platform/dark-matter.yaml matches a fresh sweep of git and the cluster"
+ else say "FAIL  darkmatter  dark-matter.yaml is stale; run bin/catalog-dark-matter"; fail=1; fi
+ 
++# 4b5. estate-twin-runtime --code-graph is a generator like catalog-gen (AGENTS.md: "every
++#      generator must be idempotent"), so the same property applies to the map it draws: the
++#      code:module:* nodes and imports edges are a pure function of the git-tracked .py files
++#      (bin/estate-twin-runtime's own sweep_code_graph docstring), never of wall-clock or the
++#      live cluster. Two independent sweeps into two empty databases must agree exactly, or
++#      the "mathematically synced" claim for this graph is false the moment CI stops proving
++#      it. Compares only id/domain/type/status/metadata and edge triples -- never last_seen,
++#      which is a clock stamp, not a claim -- so a determinism regression fails here, not
++#      three sessions later as an unexplained diagram drift.
++db_a="$tmp/twin-a.db"; db_b="$tmp/twin-b.db"
++ESTATE_DB="$db_a" "$MPY" "$IDP/bin/estate-twin-runtime" --once --code-graph >/dev/null 2>&1
++ESTATE_DB="$db_b" "$MPY" "$IDP/bin/estate-twin-runtime" --once --code-graph >/dev/null 2>&1
++n=$(sqlite3 "$db_a" "select count(*) from nodes where id like 'code:module:%'")
++dump() { sqlite3 "$1" "select id,domain,type,status,metadata from nodes where id like 'code:module:%' order by id; select '--edges--'; select source_id,target_id,relation from edges where source_id like 'code:module:%' order by source_id, target_id, relation;"; }
++if [ "$n" -gt 0 ] && diff -q <(dump "$db_a") <(dump "$db_b") >/dev/null 2>&1; then
++  say "ok    idempot  estate-twin-runtime --code-graph twice over one repo: identical ($n code:module nodes)"
++else say "FAIL  idempot  estate-twin-runtime --code-graph is not deterministic (n=$n):"; diff <(dump "$db_a") <(dump "$db_b") | head -10 | sed 's/^/      /'; fail=1; fi
++
+ # 4c. The catalogue must carry relationships. An entity list with no edges renders
+ #     exactly like a mapped estate and is the failure a peer session named on
+ #     2026-08-24: "Backstage doesn't magically discover your architecture". Two
+@@ -420,6 +438,16 @@ else say "FAIL  schema   check-jsonschema rejected a generated entity"; fail=1;
+ if out=$("$MPY" "$IDP/tests/test_estate_diagram.py" 2>&1); then say "ok    diagram  tests/test_estate_diagram.py"
+ else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
+ 
++# 8b. The deploy-time map (R29 applied to Flux): docs/architecture/flux-deploy-map.dot is a
++#     pure function of the dependsOn: edges clusters/ and platform/ declare -- the same
++#     ordering Flux itself honours before a reconcile (bin/estate-twin-runtime's G4 comment).
++#     bin/estate-flux-dag collects nothing live, so a stale map here is a generator bug, not a
++#     cluster drift; --check fails the moment a manifest's dependsOn changes and nobody re-ran it.
++if out=$("$MPY" "$IDP/tests/test_estate_flux_dag.py" 2>&1); then say "ok    flux-dag  tests/test_estate_flux_dag.py"
++else say "FAIL  flux-dag  tests/test_estate_flux_dag.py"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
++if out=$("$MPY" "$IDP/bin/estate-flux-dag" --check 2>&1); then say "ok    flux-dag  $out"
++else say "FAIL  flux-dag  docs/architecture/flux-deploy-map.dot is stale: run bin/estate-flux-dag"; printf '%s\n' "$out" | sed 's/^/      /'; fail=1; fi
++
+ 
+ # 11. crew#219 R39: the acceptance suite is executable. The 35 Gherkin files in
+ #     features/sovereign-bus/ were prose until now -- crew#200 measured "61
+@@ -466,7 +494,21 @@ fi
+ #     named files and the bdd suite, ci.yml ran sovereign/tests/bdd. A PR body that says
+ #     "bin/idp-ci runs the incident test on every PR" was a claim with no receipt. Tests
+ #     that need kyverno or a sibling checkout skip as BLIND and say so; a skip is printed.
+-inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "$IDP"/tests/test_incident_*.py 2>&1); inc_rc=$?
++#
++#     Omit lever (crew CI/CD overhaul, 2026-09-15): on a pull request (IDP_CI_BASE set),
++#     bin/idp-test-impact runs only the incident tests it can prove a real repo path this
++#     diff touches -- a change it cannot attribute to a subset returns its own FULL
++#     sentinel, and the full sweep below is what runs. main and the merge queue
++#     (IDP_CI_BASE empty) always get the full sweep -- same rule kyverno already follows.
++inc_targets=("$IDP"/tests/test_incident_*.py)
++if [ -n "${IDP_CI_BASE:-}" ]; then
++  inc_sel=$(cd "$IDP" && python3 bin/idp-test-impact --select --base "$IDP_CI_BASE" --tests "$IDP"/tests/test_incident_*.py 2>/dev/null)
++  if [ "$inc_sel" != "FULL" ] && [ -n "$inc_sel" ]; then
++    mapfile -t inc_targets < <(printf '%s\n' "$inc_sel" | sed "s|^|$IDP/|")
++    say "omit  incident: ${#inc_targets[@]}/$(ls "$IDP"/tests/test_incident_*.py | wc -l | tr -d ' ') incident test file(s) selected for this diff"
++  fi
++fi
++inc=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "${inc_targets[@]}" 2>&1); inc_rc=$?
+ if [ "$inc_rc" -eq 0 ]; then
+   say "ok    incident $(printf '%s' "$inc" | grep -oE '[0-9]+ passed' | head -1), $(printf '%s' "$inc" | grep -oE '[0-9]+ skipped' | head -1 || printf '0 skipped') (BLIND skips)"
+   printf '%s\n' "$inc" | grep -oE 'BLIND: [^)]*' | sort -u | sed 's/^/      /'
+diff --git a/bin/idp-cloud b/bin/idp-cloud
+index 4da2d53e4..9a6207b1c 100755
+--- a/bin/idp-cloud
++++ b/bin/idp-cloud
+@@ -63,7 +63,13 @@ print("\n".join(str(n) for n in old[int(sys.argv[1]):]))' "$keep" 2>/dev/null) |
+ # A grading line is one line. Fold a multi-line CLI diagnosis onto it, drop anything shaped like
+ # a bearer token or key so a diagnosis can never become a leak, and cap it so one row stays one row.
+ oneline() { printf '%s' "$1" | tr '\n\r\t' '   ' | sed -E 's/[A-Za-z0-9_-]{40,}/<redacted>/g; s/  +/ /g; s/^ //' | cut -c1-300; }
+-prim=$1; verb=$2; shift 2
++# `--help` with fewer than two args used to fall straight into `verb=$2`, an unbound variable
++# under `set -u` -- this file had never once run to completion (bin/idp-script-compiles, idp#3537).
++if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
++  sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'
++  exit 0
++fi
++prim=${1:-}; verb=${2:-}; shift $(( $# < 2 ? $# : 2 ))
+ BUCKET=""; NAME=""; FILE=""; PREFIX=""; VAULT=""; REGION=""
+ while [ $# -gt 0 ]; do
+   case "$1" in
+@@ -134,6 +140,31 @@ oci_vault_id() {
+   printf '%s' "$ids"
+ }
+ 
++# Same bug class as oci_vault_id (see the comment above it), never fixed for the key: a GitHub
++# runner has no local tofu state, so `tofu output -raw vault_key_id` failed loudly every time and
++# `secret put`'s create-base64 branch swallowed that failure (idp-cloud has no `set -e`), passing
++# an empty --key-id straight to OCI. OCI accepted the request as a client validation error
++# ("keyId cannot be an empty string"), on this backend's own stderr, unreported by the caller --
++# so `settle_secret` waited 120 s to read back a secret that was never created (idp#3537, runs
++# 35008063886 and 35016765336: no secret named concierge-tunnel ever existed in the compartment,
++# checked directly, both times). Ask the compartment the same way oci_vault_id does.
++oci_vault_key_id() { # <vault ocid> -> the vault's one ENABLED key id
++  if [ -n "${ESTATE_VAULT_KEY_OCID:-}" ]; then printf '%s' "$ESTATE_VAULT_KEY_OCID"; return 0; fi
++  local vid="$1" MAIN K mgmt ids n
++  MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
++  K=$(cd "$MAIN/platform/oci" 2>/dev/null && tofu output -raw vault_key_id 2>/dev/null) || K=""
++  if [ -n "$K" ]; then printf '%s' "$K"; return 0; fi
++  local C; C=$(oci_compartment) || return 2
++  mgmt=$(oci kms management vault get --vault-id "$vid" --query 'data."management-endpoint"' --raw-output 2>/dev/null) || mgmt=""
++  [ -n "$mgmt" ] || { echo "BLIND   vault   could not read the management endpoint for vault $vid" >&2; return 2; }
++  ids=$(oci kms management key list --compartment-id "$C" --endpoint "$mgmt" --all \
++          --query "data[?\"lifecycle-state\"=='ENABLED'].id" --output json 2>/dev/null \
++        | jq -r '.[]?' 2>/dev/null) || ids=""
++  n=$(printf '%s\n' "$ids" | grep -c . || true)
++  [ "$n" = 1 ] || { echo "BLIND   vault   vault $vid has $n ENABLED key(s), so which one encrypts new secrets is not a question this can answer; set ESTATE_VAULT_KEY_OCID" >&2; return 2; }
++  printf '%s' "$ids"
++}
++
+ case "$prim" in
+   object)
+     case "$verb" in
+@@ -286,13 +317,15 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
+             payload=$(base64 < "$FILE" | tr -d '\n')
+             if [ -n "$sid" ] && [ "$sid" != null ]; then
+               prune_secret_versions "$sid"
+-              oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" >/dev/null
++              out=$(oci vault secret update-base64 --secret-id "$sid" --secret-content-content "$payload" 2>&1 >/dev/null) \
++                || blind "secret $NAME update-base64 failed: $(oneline "$out")"
+               settle_secret "$payload"
+               printf '%s' updated
+             else
+               V=$(oci_vault_id) || exit 2
+-              K=${ESTATE_VAULT_KEY_OCID:-$(cd "$MAIN/platform/oci" && tofu output -raw vault_key_id)}
+-              oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" >/dev/null
++              K=$(oci_vault_key_id "$V") || exit 2
++              out=$(oci vault secret create-base64 --compartment-id "$C" --vault-id "$V" --key-id "$K" --secret-name "$NAME" --secret-content-content "$payload" 2>&1 >/dev/null) \
++                || blind "secret $NAME create-base64 failed: $(oneline "$out")"
+               settle_secret "$payload"
+               printf '%s' created
+             fi
+diff --git a/bin/idp-sync-modal-secret b/bin/idp-sync-modal-secret
+new file mode 100755
+index 000000000..98e2e38f0
+--- /dev/null
++++ b/bin/idp-sync-modal-secret
+@@ -0,0 +1,241 @@
++#!/usr/bin/env python3
++"""Sync one vault entry, or a named set of Bitwarden Secrets Manager entries, into one Modal
++secret.
++
++The problem this replaces: `ephemeral/agent.py` (mums-concierge) already reads
++`modal.Secret.from_name("kms-master-key")` etc, but nothing in this estate ever put those secrets
++into Modal except a person typing `modal secret create ... KEY=VALUE` by hand once, off-vault --
++so a rotation in Bitwarden/estate-vault never reaches Modal, and there is no receipt of what was
++sent. This script is the missing other half of R52 for Modal: the vault (or Bitwarden, for the
++fields only Bitwarden holds) stays the one source of truth, and Modal's copy is a sync, not a
++second place someone edits.
++
++Two sources, because this estate has two: `estate-vault` (OCI Vault, read by bin/idp-cloud, holds
++secrets this estate mints itself -- e.g. concierge-tunnel) and Bitwarden Secrets Manager (holds
++secrets a vendor console hands out with no create-API, e.g. Twilio's; a founder pastes them once,
++decision 0017/0020). `--from-bitwarden` reads Bitwarden directly with the estate's own machine
++account (`bitwarden-machine` in estate-vault, the same credential and `bws` client vault-
++bootstrap.yml already uses) -- it does NOT read the cluster's `human-twilio` Secret that
++platform/human-vault-bridge/externalsecrets.yaml materializes from the same fields, because no
++identity this estate mints for an agent or a CI job may read a Secret's value out of the cluster
++(platform/rbac-floor/agent-reader.yaml and platform/jit/rbac.yaml both withhold it, by design,
++LAW 21) -- Bitwarden is the actual origin, so reading it directly is one hop, not two, and needs
++no new grant anywhere.
++
++Never runs `modal token new`: this estate's own rule (R52, R75, bin/idp-set-root) is that the
++Modal root lives once, as SEED_MODAL_TOKEN_ID / SEED_MODAL_TOKEN_SECRET (a GitHub Actions repo
++secret, minted by bin/idp-set-root modal), never in a laptop's ~/.modal.toml. This script only
++ever uses whatever MODAL_TOKEN_ID/MODAL_TOKEN_SECRET are already in its environment -- normally
++set by the estate-bootstrap.yml CI job, not typed by a person before running this.
++
++Usage:
++    bin/idp-sync-modal-secret <vault-entry> [modal-secret-name]
++    bin/idp-sync-modal-secret --from-bitwarden KEY1,KEY2,... <modal-secret-name>
++    bin/idp-sync-modal-secret --preflight <vault-entry>
++
++    vault-entry           Name of an idp-cloud secret, e.g. "concierge-tunnel".
++    --from-bitwarden K,.. Reads these Bitwarden Secrets Manager entries by name (the same names
++                          an ExternalSecret's remoteRef.key already uses, e.g. TWILIO_AUTH_TOKEN)
++                          via the `bws` CLI, using the estate's bitwarden-machine access token.
++                          Requires `bws` on PATH -- the caller installs it (pinned, checksummed,
++                          same block as .github/workflows/vault-bootstrap.yml).
++    modal-secret-name     Defaults to the vault-entry name (LAW 44: one fact, one name,
++                          everywhere); mandatory for --from-bitwarden, since there is no single
++                          source name a list of keys could default from.
++    --preflight           Checks the vault entry is readable and `modal` can reach the API with
++                          whatever MODAL_TOKEN_ID/MODAL_TOKEN_SECRET are already set -- writes
++                          nothing to Modal. Not available for --from-bitwarden.
++
++What it never does: print a field's value, log the source's contents, or fall back to a
++placeholder when a field is empty -- an empty value is sent to Modal as sent, not silently dropped,
++so a rotation that clears a field is reflected here rather than papered over with a stale copy.
++
++Exit 2 (BLIND) when --from-bitwarden cannot reach Bitwarden at all (no `bws` on PATH, the machine
++token refused, the identity call failing) -- a fence this runner cannot satisfy refuses nothing
++else it could have judged (LAW 38), but it does mean the fact never reached Modal this run, and a
++deploy that needs it should treat that exit code as real, not paper over it. A named key that
++Bitwarden answers about but does not have is FAIL (1): the account works, the value just was
++never pasted.
++"""
++
++from __future__ import annotations
++
++import json
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++IDP = Path(__file__).resolve().parent.parent
++
++
++def say(status: str, tag: str, msg: str) -> None:
++    print(f"{status:<7} {tag:<20} {msg}")
++
++
++def fail(tag: str, msg: str) -> None:
++    say("FAIL", tag, msg)
++    sys.exit(1)
++
++
++def blind(tag: str, msg: str) -> None:
++    say("BLIND", tag, msg)
++    sys.exit(2)
++
++
++def _read_vault(name: str) -> dict[str, str]:
++    proc = subprocess.run(
++        [str(IDP / "bin" / "idp-cloud"), "secret", "get", name],
++        capture_output=True,
++        text=True,
++    )
++    if proc.returncode != 0 or not proc.stdout.strip():
++        fail("vault", f"{name} not readable from estate-vault")
++    try:
++        fields: dict[str, str] = json.loads(proc.stdout)
++    except json.JSONDecodeError:
++        fail("vault", f"{name} did not decode as JSON")
++        return {}  # unreachable, keeps type-checkers happy
++    if not fields:
++        fail("vault", f"{name} has no fields")
++    return fields
++
++
++def _bws_token() -> str:
++    proc = subprocess.run(
++        [str(IDP / "bin" / "idp-cloud"), "secret", "get", "bitwarden-machine"],
++        capture_output=True,
++        text=True,
++    )
++    if proc.returncode != 0 or not proc.stdout.strip():
++        blind("bitwarden", "bitwarden-machine not readable from estate-vault")
++    token = proc.stdout.strip()
++    # The founder may have pasted the raw token or a JSON wrapper; accept both shapes (same
++    # tolerance as .github/workflows/vault-bootstrap.yml, which reads this same vault entry).
++    try:
++        wrapped = json.loads(token)
++        if isinstance(wrapped, dict) and "token" in wrapped:
++            token = wrapped["token"]
++    except json.JSONDecodeError:
++        pass
++    return token.strip('"')
++
++
++def _read_bitwarden(keys: list[str]) -> dict[str, str]:
++    bws = shutil.which("bws")
++    if not bws:
++        blind("bitwarden", "no bws CLI on PATH")
++    env = dict(os.environ)
++    env["BWS_ACCESS_TOKEN"] = _bws_token()
++    listed = subprocess.run(
++        [bws, "secret", "list", "--output", "json"],
++        capture_output=True,
++        text=True,
++        env=env,
++        timeout=30,
++    )
++    if listed.returncode != 0:
++        blind("bitwarden", f"secret list failed: {listed.stderr.strip()[-200:]}")
++    try:
++        rows = json.loads(listed.stdout)
++    except json.JSONDecodeError:
++        blind("bitwarden", "secret list did not decode as JSON")
++        return {}  # unreachable, keeps type-checkers happy
++    by_key = {row.get("key"): row.get("id") for row in rows if row.get("key") in keys}
++    missing = [k for k in keys if k not in by_key]
++    if missing:
++        fail("bitwarden", f"not in Secrets Manager (never pasted?): {', '.join(missing)}")
++    fields: dict[str, str] = {}
++    for key, secret_id in by_key.items():
++        got = subprocess.run(
++            [bws, "secret", "get", secret_id, "--output", "json"],
++            capture_output=True,
++            text=True,
++            env=env,
++            timeout=30,
++        )
++        if got.returncode != 0:
++            fail("bitwarden", f"{key} not readable: {got.stderr.strip()[-200:]}")
++        try:
++            fields[key] = json.loads(got.stdout)["value"]
++        except (json.JSONDecodeError, KeyError):
++            fail("bitwarden", f"{key} did not decode as a Bitwarden secret")
++    return fields
++
++
++def _push_to_modal(modal_name: str, fields: dict[str, str]) -> None:
++    # `modal secret create KEY=VALUE` on argv is a process listing (ps, an audit log, a crashed
++    # subprocess's argv in a core dump) away from readable -- exactly what LAW 21 means by "never
++    # appears anywhere it can be read again." `--from-json` on a short-lived file (mode 0600,
++    # deleted with the tempdir) keeps every value off argv and stdout, and JSON has no dotenv-style
++    # ambiguity over a value that itself contains `=` or a newline.
++    with tempfile.TemporaryDirectory() as tmp:
++        json_path = Path(tmp) / "secret.json"
++        json_path.write_text(json.dumps(fields))
++        json_path.chmod(0o600)
++        result = subprocess.run(
++            ["modal", "secret", "create", modal_name, "--from-json", str(json_path), "--force"],
++            capture_output=True,
++            text=True,
++        )
++    if result.returncode != 0:
++        fail("modal", f"secret create {modal_name} failed: {result.stderr.strip()[-300:]}")
++    say("OK", "modal", f"{modal_name} synced ({len(fields)} field(s))")
++
++
++def main() -> None:
++    args = sys.argv[1:]
++    if args and args[0] in ("--help", "-h"):
++        print(__doc__)
++        return
++
++    if args and args[0] == "--from-bitwarden":
++        args = args[1:]
++        if len(args) != 2:
++            fail(
++                "usage",
++                "bin/idp-sync-modal-secret --from-bitwarden KEY1,KEY2,... <modal-secret-name>",
++            )
++        fields = _read_bitwarden(args[0].split(","))
++        _push_to_modal(args[1], fields)
++        return
++
++    preflight = False
++    if args and args[0] == "--preflight":
++        preflight = True
++        args = args[1:]
++    if len(args) not in (1, 2):
++        fail(
++            "usage",
++            "bin/idp-sync-modal-secret [--preflight] <vault-entry> [modal-secret-name] | "
++            "--from-bitwarden KEY1,KEY2,... <modal-secret-name>",
++        )
++    source = args[0]
++    modal_name = args[1] if len(args) == 2 else source
++
++    if preflight:
++        check = subprocess.run(
++            [str(IDP / "bin" / "idp-cloud"), "secret", "get", source],
++            capture_output=True,
++            text=True,
++        )
++        if check.returncode != 0 or not check.stdout.strip():
++            fail("vault", f"{source} not readable from estate-vault")
++        # `modal secret list` is read-only (names only, no values) but actually calls Modal's API,
++        # unlike `modal profile current` which only reads the local config file and would report
++        # "fine" against an expired or wrong token.
++        modal_check = subprocess.run(
++            ["modal", "secret", "list"], capture_output=True, text=True, timeout=30
++        )
++        if modal_check.returncode != 0:
++            fail("modal", f"modal CLI not authenticated: {modal_check.stderr.strip()[-200:]}")
++        say("OK", "preflight", f"{source} readable, modal API reachable")
++        return
++
++    _push_to_modal(modal_name, _read_vault(source))
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/bin/idp-test-impact b/bin/idp-test-impact
+new file mode 100755
+index 000000000..4a689d90f
+--- /dev/null
++++ b/bin/idp-test-impact
+@@ -0,0 +1,218 @@
++#!/usr/bin/env python3
++"""Omit lever (spec: 2026-09-15 metrics/CI-CD overhaul, Part B): skip a test file only when
++we can prove a changed file cannot affect it, never by guessing.
++
++Most of this estate's test files (tests/test_incident_*.py) are not unit tests importing
++Python source -- they build a synthetic manifest tree in tmp_path and grade it, or they
++shell out to a real bin/idp-* script and grade its stdout (see the file headers). So there
++is no coverage.py line-trace to select from; the only real, checkable signal a test file
++carries is which repo paths it actually names: a `bin/idp-*` script it subprocess.run()s,
++or a repo-rooted path literal (platform/..., clusters/..., sovereign/..., rules.yaml, ...).
++Bare fixture filenames a test writes into its own tmp_path ("kustomization.yaml",
++"values.yaml") are NOT such a signal -- they name no real file, so this tool never treats
++them as one.
++
++Selection rule, safe by construction: a changed file selects every test file whose
++extracted repo-path set contains it, is its directory ancestor, or is its descendant, plus
++any test file that IS the changed file. A changed file matched by ZERO test files, or a
++changed file in the "always full" set (this script, bin/idp-ci, rules.yaml, a workflow
++file, conftest.py) forces FULL -- the caller must run everything, because this tool found
++no proof a narrower run is safe. It only ever narrows a run; it is never the reason a real
++defect goes ungraded.
++
++  idp-test-impact --select --base <ref> --tests <dir-or-file> [<dir-or-file> ...]
++  idp-test-impact --select --changed <file> [<file> ...] --tests <dir-or-file> [...]
++  idp-test-impact --self-test
++"""
++
++from __future__ import annotations
++
++import re
++import subprocess
++import sys
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parent.parent
++
++# Real repo-rooted directories a test can legitimately depend on, plus the two root files
++# every gate already treats as estate-wide (rules.yaml, AGENTS.md/CLAUDE.md).
++_REPO_DIRS = (
++    "platform",
++    "clusters",
++    "sovereign",
++    "observability",
++    "catalog",
++    "docs",
++    ".github/workflows",
++)
++_BIN_RE = re.compile(r"\bbin/idp-[a-zA-Z0-9_-]+")
++_REPO_PATH_RE = re.compile(
++    r"""["'](?:%s)/[a-zA-Z0-9_./-]+["']|["'](?:rules\.yaml|AGENTS\.md|CLAUDE\.md)["']"""
++    % "|".join(re.escape(d) for d in _REPO_DIRS)
++)
++
++# A change to any of these can affect how every test runs, not just the ones that happen to
++# name it -- so it is never a selection question, it is always FULL.
++_ALWAYS_FULL = {
++    "bin/idp-ci",
++    "bin/idp-test-impact",
++    "rules.yaml",
++    "conftest.py",
++    "sovereign/conftest.py",
++    "sovereign/pytest.ini",
++}
++
++
++def _rel(p: Path) -> str:
++    return p.resolve().relative_to(ROOT).as_posix()
++
++
++def _discover_tests(test_args: list[str]) -> list[Path]:
++    out: list[Path] = []
++    for arg in test_args:
++        p = ROOT / arg if not Path(arg).is_absolute() else Path(arg)
++        if p.is_dir():
++            out.extend(sorted(p.rglob("test_*.py")))
++        elif p.is_file():
++            out.append(p)
++    return out
++
++
++def _refs(test_file: Path) -> set[str]:
++    text = test_file.read_text(errors="replace")
++    refs: set[str] = set()
++    for m in _BIN_RE.finditer(text):
++        refs.add(m.group(0))
++    for m in _REPO_PATH_RE.finditer(text):
++        refs.add(m.group(0).strip("\"'"))
++    return refs
++
++
++def _hits(changed: str, ref: str) -> bool:
++    if changed == ref:
++        return True
++    if changed.startswith(ref.rstrip("/") + "/"):
++        return True
++    if ref.startswith(changed.rstrip("/") + "/"):
++        return True
++    return False
++
++
++def select(changed: list[str], test_files: list[Path]) -> list[str] | None:
++    """Returns sorted relative test-file paths to run, or None meaning FULL."""
++    test_refs = {t: _refs(t) | {_rel(t)} for t in test_files}
++    selected: set[Path] = set()
++    for c in changed:
++        if c in _ALWAYS_FULL:
++            return None
++        hit_any = False
++        for t, refs in test_refs.items():
++            if any(_hits(c, r) for r in refs):
++                selected.add(t)
++                hit_any = True
++        if not hit_any:
++            return None
++    return sorted(_rel(t) for t in selected)
++
++
++def _changed_from_base(base: str) -> list[str]:
++    out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
++        ["git", "diff", "--name-only", f"{base}...HEAD"],  # noqa: S607 -- git resolved via PATH, same as elsewhere in this estate
++        cwd=ROOT,
++        capture_output=True,
++        text=True,
++        check=True,
++    ).stdout
++    return [line for line in out.splitlines() if line]
++
++
++def _self_test() -> int:
++    fx = ROOT / "tests" / "fixtures" / "test-impact"
++    scoped = fx / "scoped"
++    if not scoped.exists():
++        print(f"SKIP test-impact --self-test: fixtures not found under {fx}")
++        return 0
++
++    tests = _discover_tests([str(scoped)])
++    if len(tests) != 2:
++        print(
++            f"FAIL test-impact --self-test: expected 2 fixture tests under {scoped}, found {len(tests)}"
++        )
++        return 1
++
++    got = select(["platform/alerts/alert.yaml"], tests)
++    want = ["tests/fixtures/test-impact/scoped/test_alerts.py"]
++    if got != want:
++        print(f"FAIL test-impact --self-test: scoped selection was {got}, want {want}")
++        return 1
++
++    got_full = select(["platform/nothing/names/this.yaml"], tests)
++    if got_full is not None:
++        print(
++            f"FAIL test-impact --self-test: unmapped change should force FULL, got {got_full}"
++        )
++        return 1
++
++    got_full2 = select(["rules.yaml"], tests)
++    if got_full2 is not None:
++        print("FAIL test-impact --self-test: rules.yaml change should force FULL")
++        return 1
++
++    print(
++        "ok   test-impact --self-test: scoped change narrows, unmapped change forces FULL"
++    )
++    return 0
++
++
++def main(argv: list[str]) -> int:
++    if len(argv) > 1 and argv[1] in ("--help", "-h"):
++        print(__doc__)
++        return 0
++    if len(argv) > 1 and argv[1] == "--self-test":
++        return _self_test()
++
++    if "--select" not in argv:
++        print(__doc__)
++        return 2
++
++    test_args: list[str] = []
++    if "--tests" in argv:
++        i = argv.index("--tests") + 1
++        while i < len(argv) and not argv[i].startswith("--"):
++            test_args.append(argv[i])
++            i += 1
++    if not test_args:
++        print("FAIL: --select needs --tests <dir-or-file> [...]", file=sys.stderr)
++        return 2
++
++    if "--base" in argv:
++        changed = _changed_from_base(argv[argv.index("--base") + 1])
++    elif "--changed" in argv:
++        i = argv.index("--changed") + 1
++        changed = []
++        while i < len(argv) and not argv[i].startswith("--"):
++            changed.append(argv[i])
++            i += 1
++    else:
++        print(
++            "FAIL: --select needs --base <ref> or --changed <file> [...]",
++            file=sys.stderr,
++        )
++        return 2
++
++    test_files = _discover_tests(test_args)
++    result = select(changed, test_files)
++    if result is None:
++        print("FULL")
++        return 0
++    for t in result:
++        print(t)
++    print(
++        f"# selected {len(result)}/{len(test_files)} test file(s) for {len(changed)} changed file(s)",
++        file=sys.stderr,
++    )
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main(sys.argv))
+diff --git a/docs/architecture/flux-deploy-map.dot b/docs/architecture/flux-deploy-map.dot
+new file mode 100644
+index 000000000..75a227895
+--- /dev/null
++++ b/docs/architecture/flux-deploy-map.dot
+@@ -0,0 +1,280 @@
++// GENERATED by bin/estate-flux-dag from clusters/ and platform/. Do not edit: the
++// next render overwrites it. `bin/estate-flux-dag --check` fails when this file and
++// the manifests disagree (R29: a hand-drawn map is deleted).
++digraph flux_deploy_map {
++  rankdir=LR;
++  "flux:HelmRelease:cert-manager/cert-manager";
++  "flux:HelmRelease:chaos-mesh/chaos-mesh";
++  "flux:HelmRelease:commerce/lago";
++  "flux:HelmRelease:crossplane-system/crossplane";
++  "flux:HelmRelease:dagster/dagster";
++  "flux:HelmRelease:demo-sandbox/demo-sandbox";
++  "flux:HelmRelease:edge/external-dns";
++  "flux:HelmRelease:edge/traefik";
++  "flux:HelmRelease:estate-db/cloudnative-pg";
++  "flux:HelmRelease:event-bus/nats";
++  "flux:HelmRelease:external-secrets/external-secrets";
++  "flux:HelmRelease:flux-system/langfuse";
++  "flux:HelmRelease:flux-system/signoz";
++  "flux:HelmRelease:healing/descheduler";
++  "flux:HelmRelease:healing/k8sgpt-operator";
++  "flux:HelmRelease:hindsight/hindsight";
++  "flux:HelmRelease:identity/oauth2-proxy";
++  "flux:HelmRelease:keda/keda";
++  "flux:HelmRelease:keda/keda-add-ons-http";
++  "flux:HelmRelease:kyverno/kyverno";
++  "flux:HelmRelease:metrics-server/metrics-server";
++  "flux:HelmRelease:monitoring/blackbox";
++  "flux:HelmRelease:monitoring/kube-prometheus-stack";
++  "flux:HelmRelease:observability-agent/k8s-infra";
++  "flux:HelmRelease:observability/superset";
++  "flux:HelmRelease:reloader/reloader";
++  "flux:HelmRelease:robusta/robusta";
++  "flux:HelmRelease:spire-mgmt/spire";
++  "flux:HelmRelease:spire-mgmt/spire-crds";
++  "flux:HelmRelease:tailscale/tailscale-operator";
++  "flux:HelmRelease:temporal/temporal";
++  "flux:HelmRelease:trivy-system/trivy-operator";
++  "flux:HelmRelease:weave-gitops/weave-gitops";
++  "flux:Kustomization:flux-system/agent-workforce";
++  "flux:Kustomization:flux-system/alerts";
++  "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/alerts-secret";
++  "flux:Kustomization:flux-system/autoscaler";
++  "flux:Kustomization:flux-system/backstage";
++  "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/calico";
++  "flux:Kustomization:flux-system/chaos";
++  "flux:Kustomization:flux-system/chaos-mesh";
++  "flux:Kustomization:flux-system/cluster-state";
++  "flux:Kustomization:flux-system/commerce";
++  "flux:Kustomization:flux-system/commerce-data";
++  "flux:Kustomization:flux-system/concierge";
++  "flux:Kustomization:flux-system/cross-node-drill";
++  "flux:Kustomization:flux-system/crossplane";
++  "flux:Kustomization:flux-system/crossplane-providerconfig";
++  "flux:Kustomization:flux-system/crossplane-providers";
++  "flux:Kustomization:flux-system/dagster";
++  "flux:Kustomization:flux-system/dns";
++  "flux:Kustomization:flux-system/drills";
++  "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/epistemic-fabric";
++  "flux:Kustomization:flux-system/estate-catalog";
++  "flux:Kustomization:flux-system/estate-db";
++  "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/estate-db-operator";
++  "flux:Kustomization:flux-system/event-bus";
++  "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/feature-register";
++  "flux:Kustomization:flux-system/flux-system";
++  "flux:Kustomization:flux-system/flux-webhook";
++  "flux:Kustomization:flux-system/gateway-api-crds";
++  "flux:Kustomization:flux-system/guacamole";
++  "flux:Kustomization:flux-system/gvisor-runtime";
++  "flux:Kustomization:flux-system/healing";
++  "flux:Kustomization:flux-system/healing-analyzer";
++  "flux:Kustomization:flux-system/healing-k8sgpt";
++  "flux:Kustomization:flux-system/healthchecks";
++  "flux:Kustomization:flux-system/hermes-agent";
++  "flux:Kustomization:flux-system/hindsight";
++  "flux:Kustomization:flux-system/human-vault";
++  "flux:Kustomization:flux-system/human-vault-bridge";
++  "flux:Kustomization:flux-system/identity";
++  "flux:Kustomization:flux-system/image-automation";
++  "flux:Kustomization:flux-system/jit";
++  "flux:Kustomization:flux-system/keda";
++  "flux:Kustomization:flux-system/kyverno";
++  "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/mcp";
++  "flux:Kustomization:flux-system/metrics-server";
++  "flux:Kustomization:flux-system/monitoring";
++  "flux:Kustomization:flux-system/monitoring-rules";
++  "flux:Kustomization:flux-system/nodesoftware-operator";
++  "flux:Kustomization:flux-system/notify";
++  "flux:Kustomization:flux-system/ns-fences";
++  "flux:Kustomization:flux-system/observability";
++  "flux:Kustomization:flux-system/observability-collector";
++  "flux:Kustomization:flux-system/otto-gateway";
++  "flux:Kustomization:flux-system/otto-golden";
++  "flux:Kustomization:flux-system/otto-golden-secret";
++  "flux:Kustomization:flux-system/priority-classes";
++  "flux:Kustomization:flux-system/prospector";
++  "flux:Kustomization:flux-system/prospector-platform";
++  "flux:Kustomization:flux-system/rbac";
++  "flux:Kustomization:flux-system/rbac-floor";
++  "flux:Kustomization:flux-system/rbac-identity";
++  "flux:Kustomization:flux-system/reloader";
++  "flux:Kustomization:flux-system/research-engine";
++  "flux:Kustomization:flux-system/robusta";
++  "flux:Kustomization:flux-system/router-events";
++  "flux:Kustomization:flux-system/sandbox-launch";
++  "flux:Kustomization:flux-system/sandbox-live";
++  "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/science";
++  "flux:Kustomization:flux-system/searxng";
++  "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/spire";
++  "flux:Kustomization:flux-system/staging";
++  "flux:Kustomization:flux-system/tailscale";
++  "flux:Kustomization:flux-system/temporal";
++  "flux:Kustomization:flux-system/trivy";
++  "flux:Kustomization:flux-system/verification";
++  "flux:Kustomization:flux-system/via-negativa";
++  "flux:Kustomization:flux-system/weave-gitops";
++  "flux:Kustomization:flux-system/signoz" [style=dashed,label="flux:Kustomization:flux-system/signoz\n(depended on, not declared in this tree)"];
++  "flux:Kustomization:keda/keda" [style=dashed,label="flux:Kustomization:keda/keda\n(depended on, not declared in this tree)"];
++  "flux:Kustomization:spire-mgmt/spire-crds" [style=dashed,label="flux:Kustomization:spire-mgmt/spire-crds\n(depended on, not declared in this tree)"];
++  "flux:HelmRelease:flux-system/langfuse" -> "flux:Kustomization:flux-system/signoz";
++  "flux:HelmRelease:keda/keda-add-ons-http" -> "flux:Kustomization:keda/keda";
++  "flux:HelmRelease:spire-mgmt/spire" -> "flux:Kustomization:spire-mgmt/spire-crds";
++  "flux:Kustomization:flux-system/agent-workforce" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/agent-workforce" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/agent-workforce" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/agent-workforce" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/alerts" -> "flux:Kustomization:flux-system/alerts-secret";
++  "flux:Kustomization:flux-system/alerts-github" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/alerts-secret" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/autoscaler" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/backstage" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/chaos" -> "flux:Kustomization:flux-system/backstage";
++  "flux:Kustomization:flux-system/chaos" -> "flux:Kustomization:flux-system/chaos-mesh";
++  "flux:Kustomization:flux-system/chaos" -> "flux:Kustomization:flux-system/monitoring";
++  "flux:Kustomization:flux-system/chaos" -> "flux:Kustomization:flux-system/observability";
++  "flux:Kustomization:flux-system/chaos-mesh" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/cluster-state" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/cluster-state" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/cluster-state" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/commerce" -> "flux:Kustomization:flux-system/commerce-data";
++  "flux:Kustomization:flux-system/commerce" -> "flux:Kustomization:flux-system/event-bus";
++  "flux:Kustomization:flux-system/commerce-data" -> "flux:Kustomization:flux-system/estate-db";
++  "flux:Kustomization:flux-system/commerce-data" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/commerce-data" -> "flux:Kustomization:flux-system/priority-classes";
++  "flux:Kustomization:flux-system/commerce-data" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/concierge" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/crossplane" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/crossplane-providerconfig" -> "flux:Kustomization:flux-system/crossplane-providers";
++  "flux:Kustomization:flux-system/crossplane-providers" -> "flux:Kustomization:flux-system/crossplane";
++  "flux:Kustomization:flux-system/dagster" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/dagster" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/dagster" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/dagster" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/dns" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/dns" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/drills" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/edge" -> "flux:Kustomization:flux-system/gateway-api-crds";
++  "flux:Kustomization:flux-system/edge" -> "flux:Kustomization:flux-system/kyverno";
++  "flux:Kustomization:flux-system/edge" -> "flux:Kustomization:flux-system/priority-classes";
++  "flux:Kustomization:flux-system/epistemic-fabric" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/epistemic-fabric" -> "flux:Kustomization:flux-system/event-bus";
++  "flux:Kustomization:flux-system/epistemic-fabric" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/estate-db" -> "flux:Kustomization:flux-system/estate-db-operator";
++  "flux:Kustomization:flux-system/estate-db" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/estate-db-migrate" -> "flux:Kustomization:flux-system/estate-db";
++  "flux:Kustomization:flux-system/event-bus" -> "flux:Kustomization:flux-system/priority-classes";
++  "flux:Kustomization:flux-system/external-secrets" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/feature-register" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/flux-webhook" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/flux-webhook" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/guacamole" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/guacamole" -> "flux:Kustomization:flux-system/identity";
++  "flux:Kustomization:flux-system/guacamole" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/guacamole" -> "flux:Kustomization:flux-system/tailscale";
++  "flux:Kustomization:flux-system/gvisor-runtime" -> "flux:Kustomization:flux-system/nodesoftware-operator";
++  "flux:Kustomization:flux-system/healing" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/healing-analyzer" -> "flux:Kustomization:flux-system/healing-k8sgpt";
++  "flux:Kustomization:flux-system/healing-k8sgpt" -> "flux:Kustomization:flux-system/healing";
++  "flux:Kustomization:flux-system/healing-k8sgpt" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/healing-k8sgpt" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/healthchecks" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/healthchecks" -> "flux:Kustomization:flux-system/identity";
++  "flux:Kustomization:flux-system/healthchecks" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/hermes-agent" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/hermes-agent" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/hermes-agent" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/hindsight" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/hindsight" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/hindsight" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/human-vault" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/human-vault" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/human-vault" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/human-vault-bridge" -> "flux:Kustomization:flux-system/concierge";
++  "flux:Kustomization:flux-system/human-vault-bridge" -> "flux:Kustomization:flux-system/human-vault";
++  "flux:Kustomization:flux-system/identity" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/identity" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/image-automation" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/image-automation" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/jit" -> "flux:Kustomization:flux-system/rbac-floor";
++  "flux:Kustomization:flux-system/keda" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/llm" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/llm" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/llm" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/mcp" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/mcp" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/mcp" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/mcp" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/metrics-server" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/monitoring" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/monitoring" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/monitoring-rules" -> "flux:Kustomization:flux-system/monitoring";
++  "flux:Kustomization:flux-system/nodesoftware-operator" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/nodesoftware-operator" -> "flux:Kustomization:flux-system/image-automation";
++  "flux:Kustomization:flux-system/nodesoftware-operator" -> "flux:Kustomization:flux-system/rbac-identity";
++  "flux:Kustomization:flux-system/nodesoftware-operator" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/nodesoftware-operator" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/notify" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/notify" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/observability" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/observability" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/observability" -> "flux:Kustomization:flux-system/observability-collector";
++  "flux:Kustomization:flux-system/observability" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/observability-collector" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/observability-collector" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/otto-gateway" -> "flux:Kustomization:flux-system/alerts-github";
++  "flux:Kustomization:flux-system/otto-gateway" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/otto-gateway" -> "flux:Kustomization:flux-system/event-bus";
++  "flux:Kustomization:flux-system/otto-gateway" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/otto-gateway" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/otto-golden" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/otto-golden" -> "flux:Kustomization:flux-system/otto-golden-secret";
++  "flux:Kustomization:flux-system/otto-golden" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/otto-golden" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/otto-golden-secret" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/prospector" -> "flux:Kustomization:flux-system/prospector-platform";
++  "flux:Kustomization:flux-system/prospector-platform" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/prospector-platform" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/rbac" -> "flux:Kustomization:flux-system/rbac-identity";
++  "flux:Kustomization:flux-system/reloader" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/research-engine" -> "flux:Kustomization:flux-system/estate-db";
++  "flux:Kustomization:flux-system/research-engine" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/research-engine" -> "flux:Kustomization:flux-system/searxng";
++  "flux:Kustomization:flux-system/research-engine" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/robusta" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/router-events" -> "flux:Kustomization:flux-system/event-bus";
++  "flux:Kustomization:flux-system/router-events" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/sandbox-launch" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/sandbox-launch" -> "flux:Kustomization:flux-system/kyverno";
++  "flux:Kustomization:flux-system/scheduling" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/scheduling" -> "flux:Kustomization:flux-system/priority-classes";
++  "flux:Kustomization:flux-system/science" -> "flux:Kustomization:flux-system/observability";
++  "flux:Kustomization:flux-system/secret-store" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/spire" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/spire" -> "flux:Kustomization:flux-system/scheduling";
++  "flux:Kustomization:flux-system/tailscale" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/temporal" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/temporal" -> "flux:Kustomization:flux-system/estate-db-migrate";
++  "flux:Kustomization:flux-system/temporal" -> "flux:Kustomization:flux-system/image-automation";
++  "flux:Kustomization:flux-system/temporal" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/verification" -> "flux:Kustomization:flux-system/backstage-namespace";
++  "flux:Kustomization:flux-system/verification" -> "flux:Kustomization:flux-system/external-secrets";
++  "flux:Kustomization:flux-system/verification" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/via-negativa" -> "flux:Kustomization:flux-system/estate-db";
++  "flux:Kustomization:flux-system/via-negativa" -> "flux:Kustomization:flux-system/llm";
++  "flux:Kustomization:flux-system/via-negativa" -> "flux:Kustomization:flux-system/secret-store";
++  "flux:Kustomization:flux-system/weave-gitops" -> "flux:Kustomization:flux-system/edge";
++  "flux:Kustomization:flux-system/weave-gitops" -> "flux:Kustomization:flux-system/identity";
++}
+diff --git a/docs/how-to/onboarding/estate-flux-dag.md b/docs/how-to/onboarding/estate-flux-dag.md
+new file mode 100644
+index 000000000..4b52746d0
+--- /dev/null
++++ b/docs/how-to/onboarding/estate-flux-dag.md
+@@ -0,0 +1,23 @@
++# Onboarding: estate-flux-dag
++
++What it is: the deploy-time map that cannot drift, because it is a pure function of the
++`dependsOn:` edges declared in `clusters/` and `platform/` -- the same manifests Flux itself
++reads before a reconcile. It answers "what does Flux wait on before it applies this" without a
++person maintaining a diagram by hand.
++
++How to use it:
++
++- `bin/estate-flux-dag` renders `docs/architecture/flux-deploy-map.dot` from every
++  Kustomization/HelmRelease under `clusters/` and `platform/`.
++- `bin/estate-flux-dag --check` is the gate (rung 8b in `bin/idp-ci`): exits 1 when the `.dot` on
++  disk is not what the manifests currently declare, 3 (BLIND) when neither `clusters/` nor
++  `platform/` exists.
++- Never edit `docs/architecture/flux-deploy-map.dot`. Change a manifest's `dependsOn:` and
++  re-render.
++
++Spec: R29 (crew#236 row 2) applied to Flux. Test: `tests/test_estate_flux_dag.py` (200-seed
++property test + the R29 incident: drift refused, passes after render, BLIND with no tree).
++
++Not automated yet: no scheduled re-render or Backstage TechDocs rendering of the `.dot` --
++`bin/idp-ci` only proves the committed file matches HEAD's manifests on each run; the render
++itself still happens locally before a commit, same as `bin/estate-diagram`.
+diff --git a/docs/policy/rules-table.md b/docs/policy/rules-table.md
+index cced101bb..5a32c9152 100644
+--- a/docs/policy/rules-table.md
++++ b/docs/policy/rules-table.md
+@@ -98,4 +98,6 @@ still grades it every run via `bin/idp-rules render-agents-md --check`.
+ | Nothing an agent runs may hold a turn open. The 60-second ceiling is applied by the executor daemon outside the caller's process tree, stated once in the door and imported by the daemon -- a second copy of the number is a second answer, and a daemon that swallows its own door import answers health while unable to run anything | founder 2026-09-13 (verbatim) "60 secsos is the nnax" / "it should not even get bera teh" / "a breach of law or gaurd is a security breach" -- after the cap was breached six times; "find where we have done this, operationalise it, make sure every agent session is aware, and remove bash access afterward" | `python3 bin/idp-execution-boundary` | tests/fixtures/execution-boundary/bad | tests/fixtures/execution-boundary/good |
+ | A script added to bin/ is not built until it has been EXECUTED once: it must answer --self-test, --self-check or --dry-run with exit 0 in bounded time. A parser and a linter both pass a script that has never run, which is exactly how a wrong variable name, a missing command or an unresolvable import reaches a session as a load failure -- so the compile is the run. | LAW 43 / LAW 45, founder 2026-09-13 (verbatim) "no script shold be built withiut conpiler, enforce it ... aget should not eve have to do it, should be auuto" | `python3 bin/idp-script-compiles` | tests/fixtures/script-compiles/bad | tests/fixtures/script-compiles/good |
+ | A claim of completed work is not the agent's to make: the agent may only propose a patch into an ephemeral ledger, three graders the proposer does not control run against the exact bytes -- structural (the bytes compile), symbolic (Z3 over the guard the patch itself declares, which refuses to discharge "tests pass"), and execution (the SUPPLIED TEST SUITE runs in a throwaway tree and the pytest exit code is the verdict, so a proposal carrying no test is refused) -- and an attestation is minted only when all three pass, bound to the SHA-256 of the artifact actually verified. Take the claim away from the claimant | founder 2026-09-13 "the fact u are able toi lie eans he his rules isnt operation al and the firs thig we need to addres" / "thats why i dont belive clains without hard prrov 3 different w3ys" | `python3 bin/idp-verifier-oath` | tests/fixtures/verifier-oath/no-seal | tests/fixtures/verifier-oath/sealed |
++| Every metric name sovereign/engine/metrics.py emits over OTLP is declared exactly once in observability/agent-metrics.yaml with an owner, a cardinality budget, a retention tier and a consumer, and every row that manifest marks status:emitted names a metric a real emitter creates -- the same contract-graph discipline this file's own render-agents-md check already applies to rules.yaml itself, applied to telemetry (spec 2026-09-15, metrics/CI-CD overhaul Part A) | founder spec 2026-09-15, "the same contract-graph idea applied to telemetry" | `python3 bin/idp-cardinality-budget` | tests/fixtures/cardinality-budget/bad | tests/fixtures/cardinality-budget/good |
++| On a pull request, bin/idp-ci runs only the tests/test_incident_*.py files bin/idp-test-impact can prove a real repo path in the diff touches (a bin/idp-* script it subprocess.run()s, or a repo-rooted path literal) -- any changed file it cannot attribute to a subset forces its FULL sentinel and the full sweep runs instead, so a narrower run is never a silent omission (spec 2026-09-15, CI/CD overhaul Part B, the Omit lever, first and highest-priority of Omit/Share/Speculate/Parallelize) | founder spec 2026-09-15, "elite exponential asymmetry rather than tool explosion" -- Omit ranks above Share, Speculate and Parallelize | `python3 bin/idp-test-impact` | — | tests/fixtures/test-impact/scoped |
+ <!-- END GENERATED RULES TABLE -->
+diff --git a/docs/reference/policy/root-trust.md b/docs/reference/policy/root-trust.md
+index 9cc4c1b35..df9fd24b2 100644
+--- a/docs/reference/policy/root-trust.md
++++ b/docs/reference/policy/root-trust.md
+@@ -109,7 +109,8 @@ absent here is red. Audit of 2026-08-28 (crew#66, session a0d64ea4): re-graded b
+ | `concierge-card-key` (`CONCIERGE_CARD_KEY`, delivered as `CARD_KEY_HEX`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `card-key` row) | none -- a symmetric key, not a vendor credential | Customer | The key the concierge's card object is encrypted with, and the last thing standing between the product and a live order. It rides the human door like every other credential: born once, held in Bitwarden Secrets Manager under `CONCIERGE_CARD_KEY`, read by name as `CARD_KEY_HEX`, never typed into a terminal or an estate env file (LAW 54, R52). **Deliberately NOT the profile key.** The profile key decrypts her browsing profile and is copied into a container on every order; the card key decrypts one object per customer and is needed only by enrolment and the sandbox. One key for both would make a leaked profile key a leaked card. The card ITSELF is not a vault entry: it is one object per customer at `<customer>/pan.enc` in the `agent-cards` bucket, written by the concierge's own enrolment and read once per order into the sandbox's memory, handed to the vault sidecar through the environment, and written into nothing that is kept -- not the profile (archived every order), not a log, not a receipt. The runtime REFUSES to run an order when this is absent rather than injecting a placeholder into a shop's payment form, because a placeholder fails at the last step, after she has been told the order is happening. | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
+ | `concierge-twilio` (`TWILIO_AUTH_TOKEN`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | The founder created the Twilio account on 2026-09-10 for Mum's Sovereign Concierge, whose WhatsApp surface is the product's main door. The webhook at `/webhook/whatsapp` verifies Twilio's HMAC signature on the raw bytes before it trusts anything in the request -- including `From`, which whoever sends the POST controls. The Auth Token is that signature's key. It rides the human door: born once in the Twilio Console, held in Bitwarden Secrets Manager, read by name as `TWILIO_AUTH_TOKEN`, never typed into a terminal or an estate env file (LAW 54, R52 -- Twilio publishes no create-token API). The Account SID is deliberately NOT in this entry: it is an identifier, not a credential, and it lives in the concierge's own `~/.concierge/env` beside the sender number. The namespace the ExternalSecret lands in carries no workload: the concierge is Mac-hosted (mums-concierge/docs/DEPLOYMENT.md pins Homebrew, a Python 3.12 venv, ffmpeg, Chromium and torch 2.2.2 / speechbrain 0.5.15), so this entry delivers a credential to a machine rather than to a pod. | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
+ | `concierge-twilio` phone numbers (`MOM_PHONE_NUMBER`, `GUARDIAN_PHONE_NUMBER`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | The two E.164 numbers are **not credentials** -- they are the allowlist the product's one door reads, and they are declared as separate `data[]` fields on this entry rather than in a second store (LAW 44: one credential is not two entries). `MOM_PHONE_NUMBER` is Nunn's WhatsApp number and the ONLY sender `/webhook/whatsapp` will answer; `GUARDIAN_PHONE_NUMBER` is the founder's, for the alerts a failed order must raise. Both are `optional: true` on the ExternalSecret on purpose: a missing sender must not hold out the deployment that would report it missing, so the service starts, refuses every unknown sender with a bare acknowledgement, and says loudly which key is absent (`bin/idp-externalsecret-blockers` distinguishes a value only a person can produce from an estate defect). Measured 2026-09-13: this entry carried only `TWILIO_AUTH_TOKEN`, so the concierge had no idea which number is Nunn's, refused every sender, and answered HTTP 200 with silence on her phone -- every probe the estate had reported the service healthy while it could not answer her. The numbers are born on the Twilio Console and pasted into Bitwarden Secrets Manager by the founder; there is no create-API for a phone number's ownership (R52), and the paste is the human door this row exists to declare. | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
+-| `concierge-twilio` (`TWILIO_WHATSAPP_NUMBER`, `PUBLIC_SERVER_URL`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | Same fact class as the two phone numbers above, and the same LAW 44 reasoning: declared as separate `data[]` fields on this one entry rather than a second store. `TWILIO_WHATSAPP_NUMBER` is the sender identity Twilio's API requires on every outbound message (the concierge's own number, not Mum's or the founder's); `PUBLIC_SERVER_URL` is the base URL the concierge registers with Twilio so its webhook can be reached from outside. Measured 2026-09-15: `mums_concierge/bootstrap.py`'s `CLUSTER_SECRETS` fetches five fields from `human-twilio` and only three were ever declared on this bridge row -- a founder who filled in Bitwarden completely would still never see these two land in the cluster. Both are `optional: true` for the same reason as the phone numbers: their absence must not hold out a deployment, only narrow what the service can do. Both are born on the Twilio Console (the WhatsApp sender is assigned when the Sandbox/number is provisioned; the server URL is whatever the concierge is actually reachable at) and pasted into Bitwarden Secrets Manager by the founder; there is no create-API for either (R52). | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
++| `concierge-twilio` (`TWILIO_WHATSAPP_NUMBER`) | platform/human-vault-bridge/externalsecrets.yaml (generated from the `twilio` vendor row) | Twilio | Customer | Same fact class as the two phone numbers above, and the same LAW 44 reasoning: declared as a `data[]` field on this one entry rather than a second store. It is the sender identity Twilio's API requires on every outbound message (the concierge's own number, not Mum's or the founder's), assigned when the Sandbox/registered number is provisioned on the Twilio Console -- there is no create-API for it (R52), so it is pasted into Bitwarden Secrets Manager by the founder, `optional: true` so its absence narrows the service rather than blocking the deployment. Measured 2026-09-15: `mums_concierge/bootstrap.py`'s `CLUSTER_SECRETS` fetched it from `human-twilio` and this row had never declared it -- a founder who filled in Bitwarden completely would still never see it land in the cluster. | MISS | [the API key lifecycle ticket](https://github.com/chidionyema/crew/issues/832) |
++| `concierge-tunnel` (`PUBLIC_SERVER_URL`, `PUBLIC_WSS_URL`, `TUNNEL_TOKEN`) | platform/concierge/tunnel-external-secret.yaml | Cloudflare | Operator | Corrected 2026-09-15: this was first written into the row above as a Customer/FOUNDER-ACTION value -- "born on the Twilio Console... the server URL is whatever the concierge is actually reachable at" -- on the theory that where the concierge is reachable is the founder's to go and find. It is not: `mums-concierge/docs/DEPLOYMENT.md` §3 and §7 already name the mechanism as a Cloudflare Tunnel, and the estate already holds the one Cloudflare root R52 provides for (the same root `bin/idp-bootstrap-cloudflare` already uses, unattended, to mint the DNS and Workers tokens above). A stable hostname on the estate's own zone (`concierge.$ESTATE_ZONE`) is exactly the class of fact code mints, not a person pastes. `bin/idp-bootstrap-concierge-tunnel` mints a remotely-managed Tunnel under that root, points its public-hostname route at the concierge's own port, and writes the CNAME with the estate's existing DNS-edit token -- one root, no new standing credential beyond a single-run, revoked-after-use Tunnel-management token. Landed via `estate-vault`, never `human-vault`: nothing here was pasted by a person for a person to see again (LAW 44). `PUBLIC_WSS_URL` rides the same entry because it is the same hostname read by `voice_endpoints.py` as a hard `os.environ[...]` (no silent-empty path). What this bootstrapper cannot yet prove is the last mile: `cloudflared` still has to actually run on the founder's Mac with `TUNNEL_TOKEN` (docs/DEPLOYMENT.md §7, rewritten from the old ephemeral `cloudflared tunnel --url` quick-tunnel to a persistent `cloudflared tunnel run --token` launchd service) before `https://concierge.$ESTATE_ZONE` answers for real -- `mums-concierge/docs/STATUS.md`'s "never verified end to end" note stays true until that step is run and watched. | MEETS | `bin/idp-bootstrap-concierge-tunnel` |
+ | `flux-telegram` | platform/alerts-secret/flux-telegram.yaml, platform/robusta/external-secret.yaml | Telegram | Customer | `SEED_TELEGRAM_ALERTS_BOT_TOKEN`, made once with BotFather, verified with `getMe` | MEETS | `bin/idp-bootstrap-vendors` |
+ | `jit-broker` | platform/jit/deployment.yaml | Estate | Operator | `JIT_SIGNING_KEY` minted by `bin/idp-vault-put jit-broker JIT_SIGNING_KEY=...` from a value `secrets.token_urlsafe` generates; never typed by a human and never outside the vault. Nothing else in this entry is read: the bot token, the chat id AND the webhook secret all come from `flux-telegram`, because the broker collects his tap from a mirrored copy of the webhook otto-gateway registered on that one bot (platform/otto-gateway/telegram-mirror.yaml), and Telegram signs each delivery with the secret that registration used. A second bot token, or a webhook secret of the broker's own, would be a second copy of one credential and would refuse every real tap (LAW 54). `JIT_AGENT_KEY` is minted the same way (`bin/idp-vault-put --merge jit-broker JIT_AGENT_KEY=...` over a `secrets.token_urlsafe` value) and is the weakest key in the entry on purpose: presenting it at the broker's `/identity` door buys a one-hour `agent-reader` token, which is reads, and nothing else. It exists because WJ.1's last clause -- "`bin/idp-kube` stops minting the founder's OCI principal" -- could not be met while the only credential on a laptop able to create an agent identity was the founder's own OCI principal. `--merge`, so the entry's other two keys are kept rather than re-seeded. | MEETS | `bin/idp-vault-put` |
+ | `healthchecks-db-password`, `healthchecks-ping-key`, `healthchecks-secret-key`, `healthchecks-ro-key` | platform/healthchecks/external-secret.yaml | estate (Terraform random) | Operator | `random_password` + `oci_vault_secret` (platform/oci/healthchecks.tf), applied by oke-check | MEETS | Terraform · `bin/idp-oke-rebuild` |
+diff --git a/docs/runbooks/merge-queue.md b/docs/runbooks/merge-queue.md
+index 4fb46334c..60496d665 100644
+--- a/docs/runbooks/merge-queue.md
++++ b/docs/runbooks/merge-queue.md
+@@ -19,10 +19,18 @@ peer lanes ship their work. The bridge below is the standing state until then.
+ ## Normal operation (automatic merge bridge)
+ Nothing to do. Queue each green pull request with
+ `gh pr merge <number> --squash --auto`; it merges itself when the required
+-checks pass. One difference from the true queue: automatic merge does not rebuild
+-the pull request on the latest main before landing, so the required checks
+-graded the branch head. The push run on main is the backstop when two pull
+-requests land close together.
++checks pass. As of 2026-09-15 both `required_status_checks` rulesets
++(`idp-required-checks`, `estate-security-scan`) carry
++`strict_required_status_checks_policy: true` — the branch must be up to date
++with main before GitHub allows the merge, so a stale-base merge (checks that
++graded an old main) is refused rather than landed. GitHub reruns the required
++checks against the rebuilt branch automatically; nothing to do beyond
++retrying the merge if it reports out of date. The push run on main is still
++the backstop when two pull requests land close together. Declared in
++`platform/github/ruleset.idp.required-checks.json` and
++`platform/github/ruleset.@active.security-scan.json`; `bin/repo-rulesets`
++reads these as the source of truth, so the live GitHub setting and the git
++history stay in sync.
+ 
+ ## A pull request will not merge itself
+ 1. `gh pr view <number> --json mergeStateStatus,statusCheckRollup` — a failing
+diff --git a/docs/tutorials/demo/estate-flux-dag.md b/docs/tutorials/demo/estate-flux-dag.md
+new file mode 100644
+index 000000000..b3a9b4c65
+--- /dev/null
++++ b/docs/tutorials/demo/estate-flux-dag.md
+@@ -0,0 +1,26 @@
++# Demo: estate-flux-dag
++
++R29 (founder, 2026-08-25) applied to Flux: the deploy-time map is generated from what Flux
++itself will honour, never hand-drawn. `bin/estate-flux-dag` parses every Kustomization/HelmRelease
++under `clusters/` and `platform/` -- the same manifests Flux applies -- and writes
++`docs/architecture/flux-deploy-map.dot`.
++
++```
++$ bin/estate-flux-dag
++estate-flux-dag: 118 nodes, 153 edges -> .../docs/architecture/flux-deploy-map.dot
++$ bin/estate-flux-dag --check
++ok    estate-flux-dag: .../flux-deploy-map.dot matches clusters/ + platform/
++$ echo "hand drawn" >> docs/architecture/flux-deploy-map.dot && bin/estate-flux-dag --check; echo rc=$?
++FAIL  estate-flux-dag: .../flux-deploy-map.dot is not what clusters/ + platform/ declare; run bin/estate-flux-dag
++rc=1
++```
++
++The `.dot` is a Graphviz file: `dot -Tsvg docs/architecture/flux-deploy-map.dot -o flux-deploy-map.svg`
++renders it. Every declared Kustomization/HelmRelease is a node (`flux:{kind}:{namespace}/{name}`,
++the same id `bin/estate-twin-runtime` uses for the live-receipt graph); a `dependsOn` target with
++no manifest of its own is drawn dashed, so a broken reference is visible on the map rather than
++silently absent from it.
++
++Door (from the UI): not wired into a Backstage portal page yet -- open it from the repository's
++file browser at `docs/architecture/flux-deploy-map.dot`, same as any other generated file, until
++a TechDocs Graphviz plugin lands (tracked as "not automated yet" in the onboarding doc).
+diff --git a/mkdocs.yml b/mkdocs.yml
+index dd4a0b211..91ee65183 100644
+--- a/mkdocs.yml
++++ b/mkdocs.yml
+@@ -178,6 +178,7 @@ nav:
+       - Otto's three homes: tutorials/demo/otto-three-homes.md
+       - Otto homes, grade and deploy: tutorials/demo/idp-otto-homes.md
+       - Estate diagram: tutorials/demo/estate-diagram.md
++      - Estate flux DAG: tutorials/demo/estate-flux-dag.md
+       - Spend breaker: tutorials/demo/spend-breaker.md
+       - Notifications: tutorials/demo/notify.md
+       - Catalog render: tutorials/demo/catalog-render.md
+@@ -293,6 +294,7 @@ nav:
+       - Estate security rollout: how-to/onboarding/estate-security-rollout.md
+       - Spec gate: how-to/onboarding/spec-gate.md
+       - Estate diagram: how-to/onboarding/estate-diagram.md
++      - Estate flux DAG: how-to/onboarding/estate-flux-dag.md
+       - Catalog render: how-to/onboarding/catalog-render.md
+       - Customer sign-in: how-to/onboarding/customer-identity.md
+       - owner-account: how-to/onboarding/owner-account.md
+diff --git a/observability/agent-metrics.yaml b/observability/agent-metrics.yaml
+new file mode 100644
+index 000000000..ccb89cf7a
+--- /dev/null
++++ b/observability/agent-metrics.yaml
+@@ -0,0 +1,152 @@
++# Cardinality-budget contract for agent-level metrics (spec: 2026-09-15 metrics/CI-CD
++# overhaul, Part A -- "the same contract-graph idea applied to telemetry"). Every metric
++# name sovereign/engine/metrics.py emits over OTLP is declared here, once, with an owner,
++# a cardinality budget (max distinct label-value combinations expected), a retention tier
++# and the consumer that reads it. bin/idp-cardinality-budget (rules.yaml row
++# "cardinality-budget") greps sovereign/engine/metrics.py for every `create_counter(` /
++# `create_histogram(` call and refuses a run where a name in the code has no row here, or a
++# row here names a metric no code emits -- the two cannot drift apart, same discipline as
++# the AGENTS.md rules table.
++#
++# `status: emitted` rows are real and flowing today (see sovereign/engine/metrics.py's own
++# module docstring for exactly which activity call site produces each one).
++# `status: declared_not_emitted` rows are the spec's named metrics this engine cannot yet
++# produce, with the real reason it cannot -- listed so the gap is visible instead of silent.
++
++metrics:
++  - name: agent_turn_total
++    status: emitted
++    owner: sovereign-engine
++    kind: counter
++    labels: [runner, status]
++    cardinality_budget: 50   # small fixed set of runners x FSM terminal statuses
++    retention_tier: standard
++    consumer: SigNoz (otlphttp/signoz pipeline, observability/otel-collector.yaml)
++
++  - name: agent_turn_duration_seconds
++    status: emitted
++    owner: sovereign-engine
++    kind: histogram
++    labels: [runner]
++    cardinality_budget: 10
++    retention_tier: standard
++    consumer: SigNoz
++
++  - name: agent_wall_clock_seconds
++    status: emitted
++    owner: sovereign-engine
++    kind: counter
++    labels: [runner]
++    cardinality_budget: 10
++    retention_tier: standard
++    consumer: SigNoz
++
++  - name: agent_tokens_total
++    status: emitted
++    owner: sovereign-engine
++    kind: counter
++    labels: [runner]
++    cardinality_budget: 10
++    retention_tier: standard
++    consumer: SigNoz
++    note: >
++      One undifferentiated figure (runners.py's real usage or its
++      len(output)//divisor estimate). Not the spec's split names below.
++
++  - name: agent_tokens_input_total
++    status: declared_not_emitted
++    reason: >
++      runners.py's RunnerFn contract returns one `tokens` field, never a
++      provider-reported input/output split; no runner in sovereign/engine/runners.py
++      distinguishes them today.
++
++  - name: agent_tokens_output_total
++    status: declared_not_emitted
++    reason: same as agent_tokens_input_total
++
++  - name: agent_tokens_cached_total
++    status: declared_not_emitted
++    reason: no runner reports a cache-hit token count
++
++  - name: agent_cost_usd_total
++    status: declared_not_emitted
++    reason: >
++      sovereign/engine/budget.py tracks tokens against a per-day USD ceiling
++      (AGENTS.md [budget.usd_per_day]) but a step's result never carries a
++      $-denominated cost, only a token count; no per-model $/token table is
++      wired to the engine.
++
++  - name: agent_tool_call_total
++    status: declared_not_emitted
++    reason: >
++      An individual tool call happens inside the vendor CLI subprocess a
++      runner shells out to. LAW 34 ("Runner registry: the only place in the
++      engine where a vendor CLI or model name appears") keeps that CLI
++      opaque past its own stdout -- this engine sees one step, not the tool
++      calls inside it.
++
++  - name: agent_tool_call_duration_seconds
++    status: declared_not_emitted
++    reason: same opacity boundary as agent_tool_call_total
++
++  - name: agent_reasoning_tokens_total
++    status: declared_not_emitted
++    reason: not reported by any runner
++
++  - name: agent_context_size_tokens
++    status: declared_not_emitted
++    reason: not tracked by this engine
++
++  - name: agent_compaction_total
++    status: declared_not_emitted
++    reason: this engine has no compaction step to count
++
++  - name: agent_compaction_tokens_lost
++    status: declared_not_emitted
++    reason: same as agent_compaction_total
++
++  - name: agent_mailbox_reads_total
++    status: declared_not_emitted
++    reason: no mailbox abstraction exists in sovereign/engine today
++
++  - name: agent_commit_total
++    status: declared_not_emitted
++    reason: >
++      activities.run_step already computes a real commit hash (before/after
++      gitops.head diff) -- this is the next metric to wire, not a gap in
++      what the engine knows, just in what it has emitted so far.
++
++  - name: agent_verification_latency_seconds
++    status: declared_not_emitted
++    reason: >
++      bin/idp-verifier-oath's three graders (structural/symbolic/execution)
++      run outside sovereign/engine entirely, in the CI gate plane -- no
++      timing from that path is piped back into this metrics module yet.
++
++  - name: agent_repair_loops_total
++    status: declared_not_emitted
++    reason: >
++      sovereign/engine/fsm.py counts cycles (CyclePause) but runs inside the
++      Temporal workflow sandbox, which may take no side effect (its own
++      docstring: "no Temporal import, no disk, no clock"). Emitting a metric
++      there would risk workflow replay determinism. Needs the count moved
++      into an activity first; not done in this pass.
++
++  - name: agent_policy_violation_total
++    status: declared_not_emitted
++    reason: >
++      policy violations are refused and receipted (bin/idp-rules, rules.yaml
++      planes) but the refusal is never mirrored to a metric today.
++
++  - name: agent_hallucination_proxy_total
++    status: declared_not_emitted
++    reason: >
++      bin/idp-epistemic grades this deterministically per rules.yaml
++      (label: epistemic) but its verdict is a CI exit code, not a metric.
++
++  - name: agent_speculation_depth
++    status: declared_not_emitted
++    reason: >
++      no speculative-execution / pre-merge batch path exists yet (Part B of
++      the spec, "Speculate" lever) -- there is nothing to measure the depth
++      of.
+diff --git a/platform/concierge/kustomization.yaml b/platform/concierge/kustomization.yaml
+index 5956ae6df..e1f612513 100644
+--- a/platform/concierge/kustomization.yaml
++++ b/platform/concierge/kustomization.yaml
+@@ -1,10 +1,14 @@
+-# The concierge namespace, with its fence in the same apply. One object runs here: nothing.
++# The concierge namespace, with its fence in the same apply. No workload runs here -- the
++# concierge is Mac-hosted (mums-concierge/docs/DEPLOYMENT.md) -- only the bridged secrets it
++# reads with its own kubectl (human-vault-bridge's human-twilio, and tunnel-external-secret.yaml's
++# concierge-tunnel).
+ apiVersion: kustomize.config.k8s.io/v1beta1
+ kind: Kustomization
+ resources:
+   - namespace.yaml
+   - ns-fence.yaml
+   - network.yaml
++  - tunnel-external-secret.yaml
+ labels:
+   - pairs:
+       app.kubernetes.io/part-of: idp
+diff --git a/platform/concierge/tunnel-external-secret.yaml b/platform/concierge/tunnel-external-secret.yaml
+new file mode 100644
+index 000000000..48833b042
+--- /dev/null
++++ b/platform/concierge/tunnel-external-secret.yaml
+@@ -0,0 +1,25 @@
++# The concierge's public origin, pulled from OCI Vault by the node's instance principal
++# (ClusterSecretStore estate-vault, platform/secret-store) -- same store, same pattern as
++# platform/dns/cloudflare-external-secret.yaml. NOT human-vault: nothing here was pasted by a
++# person for a person to see again. bin/idp-bootstrap-concierge-tunnel is the only writer of the
++# `concierge-tunnel` vault entry (root-trust.md, crew#832): a Cloudflare Tunnel minted under the
++# estate's one Cloudflare root (R52), bound to a stable hostname on ESTATE_ZONE.
++#
++# The concierge itself is Mac-hosted, not a pod (mums-concierge/docs/DEPLOYMENT.md) -- this
++# namespace carries no workload for it, same as human-twilio above. What lands here is read by the
++# machine's own `kubectl`, the same way mums_concierge/bootstrap.py already reads human-twilio.
++# One JSON object of KEY: value (PUBLIC_SERVER_URL, PUBLIC_WSS_URL, TUNNEL_TOKEN, TUNNEL_ID),
++# through ClusterSecretStore estate-vault -- same shape as platform/prospector/engine-external-secret.yaml.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: concierge-tunnel
++  namespace: concierge
++spec:
++  refreshInterval: 10m
++  secretStoreRef:
++    kind: ClusterSecretStore
++    name: estate-vault
++  target: { name: concierge-tunnel, creationPolicy: Owner }
++  dataFrom:
++    - extract: { key: concierge-tunnel }
+diff --git a/platform/github/ruleset.@active.security-scan.json b/platform/github/ruleset.@active.security-scan.json
+index 5443b7b78..59f422e2d 100644
+--- a/platform/github/ruleset.@active.security-scan.json
++++ b/platform/github/ruleset.@active.security-scan.json
+@@ -14,7 +14,7 @@
+     {
+       "type": "required_status_checks",
+       "parameters": {
+-        "strict_required_status_checks_policy": false,
++        "strict_required_status_checks_policy": true,
+         "required_status_checks": [
+           {
+             "context": "security-scan"
+diff --git a/platform/github/ruleset.idp.required-checks.json b/platform/github/ruleset.idp.required-checks.json
+index 307156c30..55ac7900e 100644
+--- a/platform/github/ruleset.idp.required-checks.json
++++ b/platform/github/ruleset.idp.required-checks.json
+@@ -14,16 +14,34 @@
+     {
+       "type": "required_status_checks",
+       "parameters": {
+-        "strict_required_status_checks_policy": false,
++        "strict_required_status_checks_policy": true,
+         "required_status_checks": [
+           {
+-            "context": "offline-gate"
++            "context": "bdd"
+           },
+           {
+-            "context": "bdd"
++            "context": "bdd-suites (tests)"
++          },
++          {
++            "context": "bdd-suites (acceptance)"
+           },
+           {
+             "context": "security-scan"
++          },
++          {
++            "context": "fast-gate / fast-gate"
++          },
++          {
++            "context": "executes-gate"
++          },
++          {
++            "context": "portal-app"
++          },
++          {
++            "context": "messaging-demo"
++          },
++          {
++            "context": "offline-gate"
+           }
+         ]
+       }
+diff --git a/platform/human-vault-bridge/externalsecrets.yaml b/platform/human-vault-bridge/externalsecrets.yaml
+index 67521fb7f..bc9b211e6 100644
+--- a/platform/human-vault-bridge/externalsecrets.yaml
++++ b/platform/human-vault-bridge/externalsecrets.yaml
+@@ -594,8 +594,6 @@ spec:
+       remoteRef: { key: GUARDIAN_PHONE_NUMBER }
+     - secretKey: MOM_PHONE_NUMBER
+       remoteRef: { key: MOM_PHONE_NUMBER }
+-    - secretKey: PUBLIC_SERVER_URL
+-      remoteRef: { key: PUBLIC_SERVER_URL }
+     - secretKey: TWILIO_AUTH_TOKEN
+       remoteRef: { key: TWILIO_AUTH_TOKEN }
+     - secretKey: TWILIO_WHATSAPP_NUMBER
+diff --git a/platform/human-vault-bridge/pushsecrets.yaml b/platform/human-vault-bridge/pushsecrets.yaml
+index d0a075595..c87bc8ca3 100644
+--- a/platform/human-vault-bridge/pushsecrets.yaml
++++ b/platform/human-vault-bridge/pushsecrets.yaml
+@@ -69,24 +69,6 @@ spec:
+ ---
+ apiVersion: external-secrets.io/v1alpha1
+ kind: PushSecret
+-metadata:
+-  name: seed-public-server-url
+-  namespace: concierge
+-spec:
+-  refreshInterval: 1h
+-  updatePolicy: IfNotExists
+-  deletionPolicy: None
+-  secretStoreRefs:
+-    - { kind: ClusterSecretStore, name: human-vault }
+-  selector:
+-    secret: { name: concierge-twilio }
+-  data:
+-    - match:
+-        secretKey: PUBLIC_SERVER_URL
+-        remoteRef: { remoteKey: PUBLIC_SERVER_URL }
+----
+-apiVersion: external-secrets.io/v1alpha1
+-kind: PushSecret
+ metadata:
+   name: seed-twilio-auth-token
+   namespace: concierge
+diff --git a/platform/llm/config.yaml b/platform/llm/config.yaml
+index 61888ea4a..a8d565f2b 100644
+--- a/platform/llm/config.yaml
++++ b/platform/llm/config.yaml
+@@ -3,10 +3,17 @@
+ # Edit those two, never this file; bin/idp-ci fails when this file and a fresh render differ.
+ # LiteLLM config for the cluster. Every hosted model here is the same entry as llm/config.yaml
+ # (tests/test_llm_row.py diffs them); what is missing is on purpose:
+-#   - the ollama* entries: they point at the founder's Mac (host.docker.internal), which the
+-#     cluster cannot reach. The free local lane stays on the laptop compose.
+-#   - the ollama fallbacks, for the same reason.
++#   - ollama-vision and ollama-llama: llm/config.base.yaml's copies point at the founder's Mac
++#     (host.docker.internal), killed 2026-09-10 ("no i killed ollama because machine is slow",
++#     platform/otto-gateway/three-homes.yaml:28-29) and never reachable from the cluster anyway.
++#     No room for a second or third resident local model on the 2 OCPU / 12 GB free pool
++#     (docs/reference/oci-tenancy.md:18) alongside `ollama` below, litellm, redis, postgres,
++#     temporal-worker, langfuse and signoz.
+ # `vision` is an alias so photo intake names a capability, not a vendor (crew#284 CP1).
++#
++# `ollama` below is the one that WAS also missing here for the same host.docker.internal
++# reason -- fixed 2026-09-15 by giving the cluster its own local model instead
++# (platform/llm/ollama.yaml), so this lane no longer depends on any laptop being on.
+ 
+ model_list:
+   # This key has been mounted in the router pod for days and served no model row, so the
+@@ -558,6 +565,20 @@ model_list:
+     model_info:
+       mode: embedding
+ 
++  # Local, free, and reachable from the cluster: platform/llm/ollama.yaml, on the always-free
++  # Ampere pool, not the founder's Mac. 1.5B, not the 7B llm/config.base.yaml names for the
++  # laptop, because the whole free allowance here is 2 OCPU / 12 GB, already shared with
++  # litellm, redis, postgres, temporal-worker, langfuse and signoz -- no room for a 7B working
++  # set. `cost-based-routing` above prefers this lane automatically once it's healthy: it
++  # carries no input_cost_per_token/output_cost_per_token, so LiteLLM prices it $0.0000, the
++  # same convention the three free vendor pools use.
++  - model_name: ollama
++    litellm_params:
++      model: ollama/qwen2.5-coder:1.5b
++      api_base: http://ollama.llm.svc.cluster.local:11434
++      timeout: 300
++      keep_alive: 24h
++
+ router_settings:
+   fallbacks:
+     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
+diff --git a/platform/vendors/consoles.yaml b/platform/vendors/consoles.yaml
+index 0781e6bf1..d3953b104 100644
+--- a/platform/vendors/consoles.yaml
++++ b/platform/vendors/consoles.yaml
+@@ -1048,7 +1048,14 @@ vendors:
+       # silently absent from the bridge, so even a founder who filled in Bitwarden completely
+       # would never see them land in the cluster. Same vendor, same ExternalSecret (LAW 44).
+       - { entry: concierge-twilio, ns: concierge, field: TWILIO_WHATSAPP_NUMBER, bw: TWILIO_WHATSAPP_NUMBER, optional: true }
+-      - { entry: concierge-twilio, ns: concierge, field: PUBLIC_SERVER_URL, bw: PUBLIC_SERVER_URL, optional: true }
++      # PUBLIC_SERVER_URL is NOT here. Measured 2026-09-15: it was declared as a FOUNDER ACTION
++      # value beside the phone numbers, on the theory that "wherever you're hosting/tunnelling it"
++      # is something only the founder can answer. It isn't -- mums-concierge/docs/DEPLOYMENT.md
++      # already names the mechanism as a Cloudflare Tunnel, and the estate already holds the one
++      # Cloudflare root R52 provides for, unattended, in bin/idp-bootstrap-cloudflare. A hostname
++      # under the estate's own zone is exactly the class of fact code mints, not a person pastes.
++      # bin/idp-bootstrap-concierge-tunnel is the bootstrapper; platform/concierge/tunnel-external-secret.yaml
++      # carries the result into this namespace from estate-vault. See root-trust.md's `concierge-tunnel` row.
+ 
+   # The card key. Not a vendor: it is the symmetric key the concierge's card object is encrypted
+   # with, and it arrives the same way every other credential does -- the founder drops it into
+diff --git a/rules.yaml b/rules.yaml
+index 1f6047406..3c96fbbc9 100644
+--- a/rules.yaml
++++ b/rules.yaml
+@@ -22,7 +22,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/api-version/bad
+     must_pass: tests/fixtures/api-version/good
+-  live_elsewhere: bin/idp-ci:647 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
++  live_elsewhere: bin/idp-ci:714 -- the apiversion rung grades the REAL platform/ and clusters/ trees the cluster reconciles, not the fixture pair
+   cases:
+   - expect: refuse
+     args:
+@@ -52,7 +52,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/aevum-evidence/bad/chain.json
+     must_pass: tests/fixtures/aevum-evidence/good/chain.json
+-  live_elsewhere: 'bin/idp-ci:662 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
++  live_elsewhere: 'bin/idp-ci:704 -- the evidence rung grades the REAL platform/observability/aevum.yaml the cluster reconciles: that it is wired into the observability kustomization, that it never configures the in-memory store, and that its gate refuses an altered record while passing a clean one'
+   cases:
+   - expect: refuse
+     args:
+@@ -422,7 +422,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/migration-not-idempotent
+     must_pass: bin/scheduler-migrate
+-  live_elsewhere: bin/idp-ci:401 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
++  live_elsewhere: bin/idp-ci:419 -- the migration rung applies bin/scheduler-migrate twice against a real dagster and rolls it back
+   cases:
+   - expect: refuse
+     args:
+@@ -1232,7 +1232,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/reloader-blind
+     must_pass: tests/fixtures/reloader
+-  live_elsewhere: bin/idp-ci:501 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
++  live_elsewhere: bin/idp-ci:543 -- the kyverno rung applies the estate's policy set to the platform directories the diff touches, the reloader policy among them
+   cases:
+   - expect: refuse
+     args:
+@@ -1855,7 +1855,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/catalogue-entity-runtime-service-blind
+     must_pass: tests/fixtures/catalogue-entity-runtime-service
+-  live_elsewhere: bin/idp-ci:501 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
++  live_elsewhere: bin/idp-ci:543 -- the kyverno rung renders every platform dir the diff touches and judges it against the estate policy set, require-catalogue-entity among them
+   cases:
+   - expect: refuse
+     args:
+@@ -2039,7 +2039,7 @@ rules:
+   fixtures:
+     must_fail: tests/fixtures/catalog-platform-owner/bad.py
+     must_pass: tests/fixtures/catalog-platform-owner/good.py
+-  live_elsewhere: bin/idp-ci:231 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
++  live_elsewhere: bin/idp-ci:245 -- the layers rung runs catalog-platform --check, which calls the same missing_owners() guard against the real LAYERS dict, not the fixture pair
+   cases:
+   - expect: refuse
+     args:
+@@ -2710,3 +2710,55 @@ rules:
+       line 227 invokes it. A root-cwd run dies on import with IndexError: list index out of range.'
+   ok: a patch is admitted only through the three-stage gauntlet, the ledger is the only place an agent can write, and the seal binds the attestation to the bytes that were actually graded (measured 2026-09-13, 9 passed, PYTEST_RC=0)
+   fail: a claim of completed work reaches the estate on the word of the agent that made it, with no structural, symbolic or execution grader in front of it, or an attestation whose subject is not the SHA-256 of the graded artifact
++- id: cardinality-budget
++  label: cardinality-budget
++  statement: 'Every metric name sovereign/engine/metrics.py emits over OTLP is declared exactly once in observability/agent-metrics.yaml with an owner, a cardinality budget, a retention tier and a consumer, and every row that manifest marks status:emitted names a metric a real emitter creates -- the same contract-graph discipline this file''s own render-agents-md check already applies to rules.yaml itself, applied to telemetry (spec 2026-09-15, metrics/CI-CD overhaul Part A)'
++  law: founder spec 2026-09-15, "the same contract-graph idea applied to telemetry"
++  origin: docs decision -- the metrics/observability half of the 2026-09-15 pasted spec named a cardinality-budget governance model with zero implementation in the repo as of that date
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-cardinality-budget
++  - --check
++  fixtures:
++    must_fail: tests/fixtures/cardinality-budget/bad
++    must_pass: tests/fixtures/cardinality-budget/good
++  cases:
++  - expect: refuse
++    args:
++    - tests/fixtures/cardinality-budget/bad/emitter.py
++    - --manifest
++    - tests/fixtures/cardinality-budget/bad/manifest.yaml
++  - expect: pass
++    args:
++    - tests/fixtures/cardinality-budget/good/emitter.py
++    - --manifest
++    - tests/fixtures/cardinality-budget/good/manifest.yaml
++  - expect: pass
++    live: true
++    note: graded against the real sovereign/engine/metrics.py and observability/agent-metrics.yaml, not only the fixtures above
++  ok: a metric emitted in code always has a governance row, and a governance row marked emitted always corresponds to a real emitter, so telemetry cardinality cannot grow un-owned
++  fail: a metric ships with no owner/budget/retention/consumer, or a manifest row claims a metric that no code emits -- either way the manifest and the code have drifted apart
++
++- id: test-impact
++  label: test-impact
++  statement: 'On a pull request, bin/idp-ci runs only the tests/test_incident_*.py files bin/idp-test-impact can prove a real repo path in the diff touches (a bin/idp-* script it subprocess.run()s, or a repo-rooted path literal) -- any changed file it cannot attribute to a subset forces its FULL sentinel and the full sweep runs instead, so a narrower run is never a silent omission (spec 2026-09-15, CI/CD overhaul Part B, the Omit lever, first and highest-priority of Omit/Share/Speculate/Parallelize)'
++  law: founder spec 2026-09-15, "elite exponential asymmetry rather than tool explosion" -- Omit ranks above Share, Speculate and Parallelize
++  origin: docs decision -- the CI/CD half of the 2026-09-15 pasted spec named Omit (test impact analysis) as the first lever, with zero implementation in the repo as of that date; bin/idp-ci ran every tests/test_incident_*.py file on every pull request regardless of what it touched
++  planes:
++  - ci
++  run:
++  - python3
++  - bin/idp-test-impact
++  - --self-test
++  fixtures:
++    must_pass: tests/fixtures/test-impact/scoped
++  cases:
++  - expect: pass
++    note: scoped/test_alerts.py names bin/idp-alert-rows and platform/alerts/alert.yaml; scoped/test_catalog.py names bin/idp-catalog-gen and catalog/estate.db -- --self-test asserts a change to platform/alerts/alert.yaml selects only test_alerts.py, and a change to a path no fixture test names forces FULL
++  - expect: pass
++    live: true
++    note: graded against the real tests/test_incident_*.py suite (bin/idp-ci rung 8b), not only the fixtures above
++  ok: a diff that only touches a path this tool can prove is covered by a subset of incident tests runs only that subset; every other diff runs the full incident suite, same as before this rule existed
++  fail: bin/idp-test-impact selects a narrower run than the diff actually justifies, silently dropping a test that could have caught the defect
+diff --git a/sovereign/config.py b/sovereign/config.py
+index 8604863dd..282dc0c76 100644
+--- a/sovereign/config.py
++++ b/sovereign/config.py
+@@ -268,6 +268,8 @@ KEYS: dict[str, KeySpec] = {
+     "langfuse.public_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_PUBLIC_KEY"), "str", "LANGFUSE_PUBLIC_KEY", "", secret=True),
+     "langfuse.secret_key": KeySpec(_ENV_FILE_VALUES.get("LANGFUSE_SECRET_KEY"), "str", "LANGFUSE_SECRET_KEY", "", secret=True),
+ 
++    "otel.otlp_endpoint": KeySpec(_ENV_FILE_VALUES.get("OTEL_EXPORTER_OTLP_ENDPOINT"), "str", "OTEL_EXPORTER_OTLP_ENDPOINT", "standard OTel SDK env var; the same otlp receiver observability/otel-collector.yaml already declares. Absent means sovereign.engine.metrics is a no-op (same guard shape as Langfuse tracing)."),
++
+     "litellm.base_url": KeySpec(_secret("LITELLM_BASE_URL"), "str", "LITELLM_BASE_URL", "from the estate secret store (secrets/<env>/LITELLM_BASE_URL.yaml), estate.env as the fallback"),
+     "litellm.api_key": KeySpec(_secret("LITELLM_API_KEY"), "str", "LITELLM_API_KEY", "a budgeted LiteLLM virtual key (alias sovereign-kernel), never the proxy master key; from the secret store", secret=True),
+     "litellm.chat_completions_path": KeySpec("/chat/completions", "str", "LITELLM_CHAT_COMPLETIONS_PATH", ""),
+@@ -731,6 +733,8 @@ LANGFUSE_HOST: str | None = _R["langfuse.host"].value
+ LANGFUSE_PUBLIC_KEY: str | None = _R["langfuse.public_key"].value
+ LANGFUSE_SECRET_KEY: str | None = _R["langfuse.secret_key"].value
+ 
++OTEL_EXPORTER_OTLP_ENDPOINT: str | None = _R["otel.otlp_endpoint"].value
++
+ LITELLM_BASE_URL: str | None = _R["litellm.base_url"].value
+ LITELLM_API_KEY: str | None = _R["litellm.api_key"].value
+ LITELLM_CHAT_COMPLETIONS_PATH: str = _R["litellm.chat_completions_path"].value
+@@ -773,7 +777,7 @@ FLIP_RECEIPT_TEMPLATE: str = _R["flip.receipt_template"].value
+ FLIP_ROLLBACK_RECEIPT_TEMPLATE: str = _R["flip.rollback_receipt_template"].value
+ FLIP_HASH_CHUNK_BYTES: int = _R["flip.hash_chunk_bytes"].value
+ PROJECTION_STORE_PATH: Path = Path(_R["projection.store_path"].value)
+-REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value,
++REBUILD_RECEIPT_TEMPLATE: str = _R["rebuild.receipt_template"].value
+ CROSS_STACK_GIT_TIMEOUT_S: int = _R["cross_stack.git_timeout_s"].value
+ 
+ TEMPORAL_PID_FILE: Path = ESTATE_HOME / "temporal" / "dev-server.pid"
+diff --git a/sovereign/engine/activities.py b/sovereign/engine/activities.py
+index ccf835b50..5d014da1b 100644
+--- a/sovereign/engine/activities.py
++++ b/sovereign/engine/activities.py
+@@ -20,6 +20,7 @@ from __future__ import annotations
+ 
+ import asyncio
+ import hashlib
++import time
+ from typing import Any
+ 
+ from temporalio import activity
+@@ -28,6 +29,7 @@ from sovereign import config
+ from sovereign.engine import budget
+ from sovereign.engine import gitops
+ from sovereign.engine import interventions as interventions_mod
++from sovereign.engine import metrics
+ from sovereign.engine import receipts as receipts_mod
+ from sovereign.engine import runners
+ from sovereign.engine import tracing
+@@ -45,17 +47,23 @@ async def run_step(inp: dict[str, Any]) -> dict[str, Any]:
+     changed nothing, so a receipt never claims a commit that a later step
+     actually produced."""
+     repo = inp.get("repo")
++    runner_name = inp["runner"]
+     before = (
+         await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
+     )
++    started = time.monotonic()
+     result = await runners.run(
+-        inp["runner"],
++        runner_name,
+         inp["task"],
+         repo,
+         inp["step"],
+         inp.get("steer") or [],
+         session_id=inp.get("session_id"),
+     )
++    elapsed = time.monotonic() - started
++    metrics.turn_duration(runner_name, elapsed)
++    metrics.wall_clock(runner_name, elapsed)
++    metrics.tokens(runner_name, int(result.get("tokens", 0)))
+     after = await asyncio.to_thread(gitops.head, repo) if gitops.is_repo(repo) else None
+     result = dict(result)
+     result["commit"] = after if after and after != before else None
+@@ -127,6 +135,7 @@ async def notify_change(state: dict[str, Any]) -> dict[str, int]:
+         state.get("status", ""),
+         {"step": state.get("step", 0), "asking": state.get("asking")},
+     )
++    metrics.turn(state.get("runner", ""), state.get("status", ""))
+     try:
+         from sovereign.otto import card  # type: ignore
+ 
+diff --git a/sovereign/engine/metrics.py b/sovereign/engine/metrics.py
+new file mode 100644
+index 000000000..32440a038
+--- /dev/null
++++ b/sovereign/engine/metrics.py
+@@ -0,0 +1,155 @@
++"""Agent-level OTel metrics, guarded exactly like sovereign/engine/tracing.py:
++if OTEL_EXPORTER_OTLP_ENDPOINT is absent the whole module is a no-op that
++warns once to stderr and never raises. A missing metrics backend must never
++take a session down, same reasoning as R33 for Langfuse.
++
++Emits only what this engine actually observes today. It does NOT emit
++agent_tokens_input_total / agent_tokens_output_total / agent_tokens_cached_total
++(runners.py returns one undifferentiated `tokens` estimate, never a real
++provider-reported input/output/cached split), agent_tool_call_total /
++agent_tool_call_duration_seconds (an individual tool call happens inside the
++vendor CLI subprocess a runner shells out to -- LAW 34 keeps the vendor
++opaque past that boundary, so this engine cannot see one), or
++agent_repair_loops_total (fsm.py's cycle counter lives inside the Temporal
++workflow sandbox, which may take no side effect -- counting it here would
++require moving the count into an activity, not yet done). Those names are
++declared, with the reason they are unmet, in observability/agent-metrics.yaml
++so the gap is visible rather than silently faked.
++"""
++
++from __future__ import annotations
++
++import sys
++import threading
++from typing import Any
++
++from sovereign import config
++
++_warned = False
++_warn_lock = threading.Lock()
++_meter = None
++_meter_lock = threading.Lock()
++_instruments: dict[str, Any] = {}
++
++
++def _warn_once(msg: str) -> None:
++    global _warned
++    with _warn_lock:
++        if _warned:
++            return
++        _warned = True
++        print(f"[sovereign.metrics] {msg}", file=sys.stderr)
++
++
++def configured() -> bool:
++    return bool(config.OTEL_EXPORTER_OTLP_ENDPOINT)
++
++
++def _get_meter():
++    global _meter
++    if not configured():
++        _warn_once("OTEL_EXPORTER_OTLP_ENDPOINT not configured; metrics are a no-op")
++        return None
++    with _meter_lock:
++        if _meter is not None:
++            return _meter
++        try:
++            from opentelemetry import metrics as otel_metrics
++            from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
++                OTLPMetricExporter,
++            )
++            from opentelemetry.sdk.metrics import MeterProvider
++            from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
++
++            exporter = OTLPMetricExporter(endpoint=config.OTEL_EXPORTER_OTLP_ENDPOINT)
++            reader = PeriodicExportingMetricReader(exporter)
++            provider = MeterProvider(metric_readers=[reader])
++            otel_metrics.set_meter_provider(provider)
++            _meter = otel_metrics.get_meter("sovereign.engine")
++        except Exception as exc:  # pragma: no cover - defensive, never fatal
++            _warn_once(f"opentelemetry unavailable ({exc}); metrics are a no-op")
++            _meter = None
++        return _meter
++
++
++def _instrument(name: str, kind: str, unit: str, description: str):
++    key = f"{kind}:{name}"
++    if key in _instruments:
++        return _instruments[key]
++    meter = _get_meter()
++    if meter is None:
++        return None
++    factory = meter.create_counter if kind == "counter" else meter.create_histogram
++    inst = factory(name, unit=unit, description=description)
++    _instruments[key] = inst
++    return inst
++
++
++def turn(runner: str, status: str) -> None:
++    """agent_turn_total: one call site, activities.notify_change, on every
++    session state change notify_change already reports (real signal:
++    workflow.py drives one notify_change per FSM transition)."""
++    try:
++        inst = _instrument(
++            "agent_turn_total",
++            "counter",
++            "1",
++            "count of agent turns by runner and terminal status",
++        )
++        if inst is not None:
++            inst.add(1, {"runner": runner or "unknown", "status": status or "unknown"})
++    except Exception as exc:  # pragma: no cover - defensive, never fatal
++        _warn_once(f"turn() failed: {exc}")
++
++
++def turn_duration(runner: str, seconds: float) -> None:
++    """agent_turn_duration_seconds: wall time of one run_step activity call
++    (subprocess launch through result), measured in activities.py where the
++    side effect already lives."""
++    try:
++        inst = _instrument(
++            "agent_turn_duration_seconds",
++            "histogram",
++            "s",
++            "wall time of one run_step activity call",
++        )
++        if inst is not None:
++            inst.record(max(seconds, 0.0), {"runner": runner or "unknown"})
++    except Exception as exc:  # pragma: no cover - defensive, never fatal
++        _warn_once(f"turn_duration() failed: {exc}")
++
++
++def wall_clock(runner: str, seconds: float) -> None:
++    """agent_wall_clock_seconds: cumulative real time spent, same
++    measurement as turn_duration but a running total rather than a
++    distribution -- the spec names both, and both are cheap from one
++    timer."""
++    try:
++        inst = _instrument(
++            "agent_wall_clock_seconds",
++            "counter",
++            "s",
++            "cumulative wall-clock time spent in run_step",
++        )
++        if inst is not None:
++            inst.add(max(seconds, 0.0), {"runner": runner or "unknown"})
++    except Exception as exc:  # pragma: no cover - defensive, never fatal
++        _warn_once(f"wall_clock() failed: {exc}")
++
++
++def tokens(runner: str, count: int) -> None:
++    """agent_tokens_total: the one undifferentiated figure runners.py
++    reports (real usage from a real runner, or len(output)//divisor from
++    the estimate fallback -- runners.py's own docstring names the
++    fallback). Not split into input/output/cached; see module docstring."""
++    try:
++        inst = _instrument(
++            "agent_tokens_total",
++            "counter",
++            "1",
++            "tokens spent per step, undifferentiated",
++        )
++        if inst is not None:
++            inst.add(max(int(count), 0), {"runner": runner or "unknown"})
++    except Exception as exc:  # pragma: no cover - defensive, never fatal
++        _warn_once(f"tokens() failed: {exc}")
+diff --git a/sovereign/engine/test_metrics.py b/sovereign/engine/test_metrics.py
+new file mode 100644
+index 000000000..109588ebf
+--- /dev/null
++++ b/sovereign/engine/test_metrics.py
+@@ -0,0 +1,111 @@
++"""unittest for sovereign/engine/metrics.py. Run:
++    PYTHONPATH=. sovereign/.venv/bin/python -m unittest sovereign.engine.test_metrics -v
++
++Both ways, per DoD v3 (verified, not asserted): (1) unconfigured -- no
++OTEL_EXPORTER_OTLP_ENDPOINT -- every public function is a real no-op, proved
++by patching config so configured() is False and asserting no meter is ever
++built. (2) configured -- a real opentelemetry InMemoryMetricReader is wired
++in place of the module's own PeriodicExportingMetricReader/OTLPMetricExporter
++(no network), and the actual recorded values are read back and asserted,
++not merely "did not raise".
++"""
++
++from __future__ import annotations
++
++import unittest
++from unittest.mock import patch
++
++from opentelemetry.sdk.metrics import MeterProvider
++from opentelemetry.sdk.metrics.export import InMemoryMetricReader
++
++from sovereign import config
++from sovereign.engine import metrics
++
++
++class _ResetMeterState(unittest.TestCase):
++    def setUp(self) -> None:
++        metrics._meter = None
++        metrics._instruments = {}
++        metrics._warned = False
++        self.addCleanup(self._reset)
++
++    def _reset(self) -> None:
++        metrics._meter = None
++        metrics._instruments = {}
++        metrics._warned = False
++
++
++class UnconfiguredIsANoOpTest(_ResetMeterState):
++    def test_every_public_function_no_ops_and_never_raises(self) -> None:
++        with patch.object(config, "OTEL_EXPORTER_OTLP_ENDPOINT", None):
++            metrics.turn("claude", "terminal")
++            metrics.turn_duration("claude", 1.5)
++            metrics.wall_clock("claude", 1.5)
++            metrics.tokens("claude", 42)
++        # No instrument was ever created -- proves this is a real no-op,
++        # not a call that happened to swallow an exception.
++        self.assertEqual(metrics._instruments, {})
++
++
++class ConfiguredRecordsRealValuesTest(_ResetMeterState):
++    def setUp(self) -> None:
++        super().setUp()
++        # Built and bound directly off this test's own provider, never
++        # through the global opentelemetry.metrics API -- that registry
++        # accepts set_meter_provider() exactly once per process, so a
++        # second test's call would silently no-op and every later test
++        # would keep reading the first test's meter/reader.
++        self.reader = InMemoryMetricReader()
++        provider = MeterProvider(metric_readers=[self.reader])
++        self.meter = provider.get_meter("sovereign.engine.test")
++        p = patch.object(metrics, "_get_meter", lambda: self.meter)
++        p.start()
++        self.addCleanup(p.stop)
++
++    def _collected(self) -> dict[str, list]:
++        data = self.reader.get_metrics_data()
++        out: dict[str, list] = {}
++        if data is None:
++            return out
++        for rm in data.resource_metrics:
++            for sm in rm.scope_metrics:
++                for m in sm.metrics:
++                    out.setdefault(m.name, []).extend(m.data.data_points)
++        return out
++
++    def test_turn_records_one_count_with_runner_and_status_labels(self) -> None:
++        metrics.turn("claude", "terminal")
++        points = self._collected()["agent_turn_total"]
++        self.assertEqual(len(points), 1)
++        self.assertEqual(points[0].value, 1)
++        self.assertEqual(points[0].attributes["runner"], "claude")
++        self.assertEqual(points[0].attributes["status"], "terminal")
++
++    def test_turn_duration_records_the_real_elapsed_seconds(self) -> None:
++        metrics.turn_duration("claude", 2.75)
++        points = self._collected()["agent_turn_duration_seconds"]
++        self.assertEqual(points[0].sum, 2.75)
++
++    def test_wall_clock_accumulates_across_calls(self) -> None:
++        metrics.wall_clock("claude", 1.0)
++        metrics.wall_clock("claude", 2.0)
++        points = self._collected()["agent_wall_clock_seconds"]
++        self.assertEqual(points[0].value, 3.0)
++
++    def test_tokens_records_the_real_count(self) -> None:
++        metrics.tokens("claude", 123)
++        points = self._collected()["agent_tokens_total"]
++        self.assertEqual(points[0].value, 123)
++
++    def test_negative_duration_and_tokens_are_clamped_not_rejected(self) -> None:
++        # A clock skew or a bad estimate must not crash a step; the metric
++        # floors at zero rather than raising or recording a negative value
++        # a downstream dashboard would render nonsensically.
++        metrics.turn_duration("claude", -5.0)
++        metrics.tokens("claude", -5)
++        self.assertEqual(self._collected()["agent_turn_duration_seconds"][0].sum, 0.0)
++        self.assertEqual(self._collected()["agent_tokens_total"][0].value, 0)
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/sovereign/requirements.txt b/sovereign/requirements.txt
+index 156015b5b..16043d663 100644
+--- a/sovereign/requirements.txt
++++ b/sovereign/requirements.txt
+@@ -40,3 +40,11 @@ PyYAML>=6.0
+ redis>=5.0
+ prometheus_client>=0.19.0
+ requests>=2.31
++# sovereign/engine/metrics.py emits agent_turn_total / agent_turn_duration_seconds /
++# agent_wall_clock_seconds / agent_tokens_total over OTLP to the collector
++# observability/otel-collector.yaml already runs (otlp receiver -> SigNoz). Guarded like
++# langfuse above: metrics.py catches ImportError and no-ops rather than crashing a step if
++# these are absent, so -- unlike cryptography/z3-solver/PyYAML/redis above -- an undeclared
++# copy fails silent-safe, not closed. Declared anyway so the real signal actually ships.
++opentelemetry-sdk>=1.27
++opentelemetry-exporter-otlp-proto-http>=1.27
+diff --git a/tests/fixtures/cardinality-budget/bad/emitter.py b/tests/fixtures/cardinality-budget/bad/emitter.py
+new file mode 100644
+index 000000000..963117620
+--- /dev/null
++++ b/tests/fixtures/cardinality-budget/bad/emitter.py
+@@ -0,0 +1,15 @@
++class _Meter:
++    def create_counter(self, *a, **kw):
++        pass
++
++
++meter = _Meter()
++
++
++def make():
++    meter.create_counter("agent_turn_total", unit="1", description="turns")
++    meter.create_counter(
++        "agent_undeclared_total",
++        unit="1",
++        description="a metric nobody wrote a row for",
++    )
+diff --git a/tests/fixtures/cardinality-budget/bad/manifest.yaml b/tests/fixtures/cardinality-budget/bad/manifest.yaml
+new file mode 100644
+index 000000000..0e291bdb5
+--- /dev/null
++++ b/tests/fixtures/cardinality-budget/bad/manifest.yaml
+@@ -0,0 +1,7 @@
++metrics:
++  - name: agent_turn_total
++    status: emitted
++    owner: sovereign-engine
++    cardinality_budget: 50
++    retention_tier: standard
++    consumer: SigNoz
+diff --git a/tests/fixtures/cardinality-budget/good/emitter.py b/tests/fixtures/cardinality-budget/good/emitter.py
+new file mode 100644
+index 000000000..67c7616b4
+--- /dev/null
++++ b/tests/fixtures/cardinality-budget/good/emitter.py
+@@ -0,0 +1,10 @@
++class _Meter:
++    def create_counter(self, *a, **kw):
++        pass
++
++
++meter = _Meter()
++
++
++def make():
++    meter.create_counter("agent_turn_total", unit="1", description="turns")
+diff --git a/tests/fixtures/cardinality-budget/good/manifest.yaml b/tests/fixtures/cardinality-budget/good/manifest.yaml
+new file mode 100644
+index 000000000..a71ed4330
+--- /dev/null
++++ b/tests/fixtures/cardinality-budget/good/manifest.yaml
+@@ -0,0 +1,11 @@
++metrics:
++  - name: agent_turn_total
++    status: emitted
++    owner: sovereign-engine
++    cardinality_budget: 50
++    retention_tier: standard
++    consumer: SigNoz
++
++  - name: agent_cost_usd_total
++    status: declared_not_emitted
++    reason: no per-model $/token table is wired to the engine yet
+diff --git a/tests/fixtures/test-impact/scoped/test_alerts.py b/tests/fixtures/test-impact/scoped/test_alerts.py
+new file mode 100644
+index 000000000..2240ea14b
+--- /dev/null
++++ b/tests/fixtures/test-impact/scoped/test_alerts.py
+@@ -0,0 +1,9 @@
++"""Fixture for bin/idp-test-impact --self-test: names one real repo path, so a change to
++that path (and only that path) selects this test file."""
++
++import subprocess
++
++subprocess.run(
++    ["bin/idp-alert-rows", "platform/alerts/alert.yaml"],  # noqa: S603,S607 -- fixture only
++    check=False,
++)
+diff --git a/tests/fixtures/test-impact/scoped/test_catalog.py b/tests/fixtures/test-impact/scoped/test_catalog.py
+new file mode 100644
+index 000000000..c493b65cc
+--- /dev/null
++++ b/tests/fixtures/test-impact/scoped/test_catalog.py
+@@ -0,0 +1,9 @@
++"""Fixture for bin/idp-test-impact --self-test: names a different real repo path, so it must
++NOT be selected by a change under platform/alerts/."""
++
++import subprocess
++
++subprocess.run(
++    ["bin/idp-catalog-gen", "catalog/estate.db"],  # noqa: S603,S607 -- fixture only
++    check=False,
++)
+diff --git a/tests/test_estate_flux_dag.py b/tests/test_estate_flux_dag.py
+new file mode 100644
+index 000000000..6b9b97226
+--- /dev/null
++++ b/tests/test_estate_flux_dag.py
+@@ -0,0 +1,141 @@
++#!/usr/bin/env python3
++"""bin/estate-flux-dag: property + incident tests (R29, the deploy-time map).
++
++Rungs, per ~/AGENTS.md "How to test":
++  property  for random synthetic Kustomization/HelmRelease trees, every declared object is a
++            node, every dependsOn entry is an edge, a dependsOn target with no manifest of its
++            own is drawn dashed rather than silently dropped, and rendering twice over one
++            unchanged tree gives the same bytes (every generator must be idempotent).
++  incident  named for R29 "a hand-drawn one is deleted": --check fails when the .dot on disk
++            drifts from the manifests and passes after a real render, and BLINDs when there is
++            no clusters/ or platform/ tree to read, proved in one run.
++
++Run: python3 tests/test_estate_flux_dag.py (needs pyyaml). Exit 0 pass, 1 fail.
++"""
++
++import importlib.machinery
++import importlib.util
++import random
++import subprocess
++import sys
++import tempfile
++from pathlib import Path
++
++import yaml
++
++ROOT = Path(__file__).resolve().parent.parent
++BIN = ROOT / "bin" / "estate-flux-dag"
++spec = importlib.util.spec_from_loader(
++    "estate_flux_dag", importlib.machinery.SourceFileLoader("estate_flux_dag", str(BIN))
++)
++mod = importlib.util.module_from_spec(spec)
++spec.loader.exec_module(mod)
++
++
++def synth_tree(root: Path, rng: random.Random) -> None:
++    """A random Kustomization/HelmRelease tree, one file per object, some with dependsOn
++    targets that have no manifest of their own -- the dashed-node case must be exercised."""
++    (root / "clusters").mkdir(parents=True, exist_ok=True)
++    n = rng.randint(3, 12)
++    names = [f"obj{i}" for i in range(n)]
++    for i, name in enumerate(names):
++        kind = rng.choice(["Kustomization", "HelmRelease"])
++        ns = rng.choice(["flux-system", "ns-a", "ns-b"])
++        deps = []
++        for prior in names[:i]:
++            if rng.random() < 0.4:
++                deps.append({"name": prior})
++        if rng.random() < 0.2:
++            deps.append({"name": "not-in-this-tree"})
++        doc = {
++            "apiVersion": "kustomize.toolkit.fluxcd.io/v1"
++            if kind == "Kustomization"
++            else "helm.toolkit.fluxcd.io/v2",
++            "kind": kind,
++            "metadata": {"name": name, "namespace": ns},
++            "spec": {"dependsOn": deps} if deps else {"path": "./x"},
++        }
++        (root / "clusters" / f"{name}.yaml").write_text(yaml.safe_dump(doc))
++
++
++def prop_every_object_is_a_node_and_deps_are_edges(n=200) -> int:
++    fails = 0
++    for seed in range(n):
++        rng = random.Random(seed)  # noqa: S311 -- synthetic fixture data, not cryptographic
++        with tempfile.TemporaryDirectory() as td:
++            root = Path(td)
++            synth_tree(root, rng)
++            declared, edges = mod.build_graph(root)
++            page = mod.render(root)
++            page2 = mod.render(root)
++            if page != page2:
++                fails += 1
++                print(f"FAIL seed={seed}: not idempotent")
++                continue
++            for nid in declared:
++                if mod.dot_id(nid) + ";" not in page:
++                    fails += 1
++                    print(f"FAIL seed={seed}: {nid} missing as a node")
++                    break
++            else:
++                for src, dst in edges:
++                    if f"{mod.dot_id(src)} -> {mod.dot_id(dst)};" not in page:
++                        fails += 1
++                        print(f"FAIL seed={seed}: edge {src}->{dst} missing")
++                        break
++    return fails
++
++
++def incident_r29_hand_drawn_map_is_refused() -> int:
++    with tempfile.TemporaryDirectory() as td:
++        root, out = Path(td), Path(td) / "map.dot"
++        synth_tree(root, random.Random(3))  # noqa: S311 -- synthetic fixture data, not cryptographic
++        out.write_text("digraph hand_drawn {}\n")
++        bad = subprocess.run(
++            [sys.executable, str(BIN), "--root", root, "--out", out, "--check"],
++            capture_output=True,
++            text=True,
++        )
++        subprocess.run(
++            [sys.executable, str(BIN), "--root", root, "--out", out],
++            check=True,
++            capture_output=True,
++        )
++        good = subprocess.run(
++            [sys.executable, str(BIN), "--root", root, "--out", out, "--check"],
++            capture_output=True,
++            text=True,
++        )
++        empty = Path(tempfile.mkdtemp())
++        missing = subprocess.run(
++            [sys.executable, str(BIN), "--root", empty, "--check"],
++            capture_output=True,
++            text=True,
++        )
++    ok = (
++        bad.returncode == 1
++        and "FAIL" in bad.stdout
++        and good.returncode == 0
++        and "ok" in good.stdout
++        and missing.returncode == 3
++        and "BLIND" in missing.stderr
++    )
++    print(
++        f"{'ok  ' if ok else 'FAIL'}  incident r29: drifted rc={bad.returncode}, rendered rc={good.returncode}, no manifests rc={missing.returncode}"
++    )
++    return 0 if ok else 1
++
++
++def test_property_every_object_is_a_node_and_deps_are_edges():
++    assert prop_every_object_is_a_node_and_deps_are_edges() == 0
++
++
++def test_incident_r29_hand_drawn_map_is_refused():
++    assert incident_r29_hand_drawn_map_is_refused() == 0
++
++
++if __name__ == "__main__":
++    f = prop_every_object_is_a_node_and_deps_are_edges()
++    print(f"{'ok  ' if not f else 'FAIL'}  property: 200 synthetic trees, {f} failures")
++    f += incident_r29_hand_drawn_map_is_refused()
++    sys.exit(1 if f else 0)

@@ -1,0 +1,17 @@
+.aevum/local.jsonl
+backstage/platform/catalog-info.yaml
+bin/catalog-platform
+clusters/oke/platform.yaml
+platform/acg/acg.yaml
+platform/acg/ingress.yaml
+platform/acg/kustomization.yaml
+platform/acg/observability.yaml
+platform/image-automation/acg.yaml
+platform/ns-fences/acg.yaml
+platform/ns-fences/allowances.yaml
+platform/ns-fences/kustomization.yaml
+platform/ns-fences/live-namespaces.txt
+platform/ns-fences/network/acg.yaml
+platform/ns-fences/network/edge.yaml
+platform/ns-fences/network/kustomization.yaml
+platform/ns-fences/network/observability.yaml

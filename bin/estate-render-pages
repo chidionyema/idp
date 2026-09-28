@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""Render the three deploy-river HTML pages from the CLI data.
+
+Usage:
+  bin/estate-render-pages [--out web/out]
+
+Reads:
+  bin/estate-river-data        -> web/out/deploy-river.html
+  bin/estate-time-scrub <day>  -> web/out/deploy-time-scrub.html
+  bin/estate-planes-snapshot   -> web/out/deploy-observatory.html
+
+Each output is a self-contained file you can `open` in a browser. The data
+is inlined; no server, no network, no fetch. The river must not lie.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import json
+import math
+import subprocess
+import sys
+from datetime import date, datetime
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "mcp" / "plugins"))
+sys.path.insert(0, str(ROOT / "bin"))
+
+OUT = ROOT / "web" / "out"
+TEMPLATES = ROOT / "web" / "templates"
+
+
+def _load(path: Path, name: str):
+    loader = importlib.machinery.SourceFileLoader(name, str(path))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    m = importlib.util.module_from_spec(spec)
+    sys.modules[name] = m
+    loader.exec_module(m)
+    return m
+
+
+_river_mod = _load(ROOT / "bin" / "estate-river-data", "estate_river_data")
+_scrub_mod = _load(ROOT / "bin" / "estate-time-scrub", "estate_time_scrub")
+_planes_mod = _load(ROOT / "bin" / "estate-planes-snapshot", "estate_planes_snapshot")
+
+
+# ----------------------------------------------------------- river page
+
+_AMBIENT_COLORS = {
+    "green": ("#54c08a", "rgba(84, 192, 138, 0.18)"),
+    "amber": ("#c89a3a", "rgba(200, 154, 58, 0.16)"),
+    "red": ("#d05656", "rgba(208, 86, 86, 0.20)"),
+    "dark": ("#5a6577", "rgba(90, 101, 119, 0.10)"),
+}
+
+
+def _render_comets(comets: list[dict]) -> str:
+    """Each comet is a small SVG group: glowing body, tail, gate progress."""
+    parts: list[str] = []
+    for i, c in enumerate(comets):
+        if not c.get("available"):
+            continue
+        # Spread comets around an arc above the four gate rings
+        angle = math.pi + (math.pi * (i + 1) / max(len(comets) + 1, 2))
+        x = 600 + 360 * math.cos(angle)
+        y = 420 + 360 * math.sin(angle)
+        # Gate progress: green for passed, red for failed, amber for unknown
+        gate_marks: list[str] = []
+        gate_radii = {"pr_opened": 100, "checks": 180, "merged": 260, "reconcile": 340}
+        for g in ("pr_opened", "checks", "merged", "reconcile"):
+            r = gate_radii[g]
+            if g in (e for e in c.get("passed_gates", [])):
+                cls = "gate-pass"
+            elif any(
+                e.startswith(g + ":") or e == g for e in c.get("failed_gates", [])
+            ):
+                cls = "gate-fail"
+            elif any(
+                e.startswith(g + ":") or e == g for e in c.get("unknown_gates", [])
+            ):
+                cls = "gate-unkn"
+            else:
+                cls = "gate-future"
+            gate_marks.append(f'<circle cx="600" cy="420" r="{r}" class="{cls}"/>')
+        parts.append(f"""
+<g transform="translate({x:.0f} {y:.0f})">
+  <circle r="22" class="comet-glow" fill="url(#cometGrad)"/>
+  <circle r="6" class="comet-body"/>
+  <text x="14" y="-12" class="gate-name">{c.get("branch", "").split("/")[-1]}</text>
+  <text x="14" y="0" class="sha">{c.get("sha", "")[:7]}</text>
+  <text x="14" y="12" class="label">{c.get("state", "")}</text>
+</g>""")
+        parts.extend(gate_marks)
+    return "\n".join(parts)
+
+
+def _render_recent(recent: list[dict]) -> str:
+    """Recent merged journeys: faded comet trail across the lower half."""
+    parts: list[str] = []
+    for i, c in enumerate(recent[:11]):
+        if not c.get("available"):
+            continue
+        t = i / 11.0
+        x = 80 + t * 1040
+        y = 660 - i * 6
+        opacity = max(0.1, 0.7 - t * 0.6)
+        parts.append(f'''
+<g transform="translate({x:.0f} {y:.0f})" opacity="{opacity:.2f}">
+  <circle r="3" fill="#7da4d6"/>
+  <text x="8" y="3" class="sha" font-size="8">{c.get("sha", "")[:7]}</text>
+</g>''')
+    return "\n".join(parts)
+
+
+def _render_river_page(out: Path):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    data = _river_mod.render_scene(limit=20)
+    if data["available"]:
+        ambient = data["ambient"]
+        color, tint = _AMBIENT_COLORS.get(ambient["state"], _AMBIENT_COLORS["dark"])
+        template = (TEMPLATES / "deploy-river.html").read_text()
+        page = (
+            template.replace("{{AMBIENT_COLOR}}", color)
+            .replace("{{AMBIENT_TINT}}", tint)
+            .replace("{{AMBIENT_LABEL}}", ambient["state"])
+            .replace("{{AMBIENT_REASON}}", ambient["reason"][:60])
+            .replace("{{COMETS_SVG}}", _render_comets(data["comets"]))
+            .replace("{{RECENT_SVG}}", _render_recent(data["recent"]))
+        )
+    else:
+        page = (
+            (TEMPLATES / "deploy-river.html")
+            .read_text()
+            .replace("{{AMBIENT_COLOR}}", "#5a6577")
+            .replace("{{AMBIENT_TINT}}", "rgba(0,0,0,0)")
+            .replace("{{AMBIENT_LABEL}}", "BLIND")
+            .replace("{{AMBIENT_REASON}}", data.get("error", "ledger missing"))
+            .replace("{{COMETS_SVG}}", "")
+            .replace("{{RECENT_SVG}}", "")
+        )
+    out.write_text(page)
+
+
+# ----------------------------------------------------------- scrub page
+
+
+def _render_scrub_page(out: Path, day: str):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    data = _scrub_mod._scrub(day)
+    template = (TEMPLATES / "deploy-time-scrub.html").read_text()
+    page = template.replace("{{DAY}}", day).replace("{{DATA_JSON}}", json.dumps(data))
+    out.write_text(page)
+
+
+# ----------------------------------------------------------- observatory
+
+
+def _render_stars(ring: list[dict], radius: float) -> str:
+    """One star per item on the ring, evenly spaced."""
+    parts: list[str] = []
+    n = len(ring)
+    if not n:
+        return ""
+    for i, item in enumerate(ring):
+        angle = (2 * math.pi * i / n) - math.pi / 2
+        x = radius * math.cos(angle)
+        y = radius * math.sin(angle)
+        if item.get("escalated"):
+            cls = "star escalate"
+        elif item.get("verdict") == "pass":
+            cls = "star pass"
+        elif item.get("verdict") == "fail":
+            cls = "star fail"
+        else:
+            cls = "star pass"
+        size = 2 + 4 * (item.get("confidence") or 0.5)
+        parts.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{size:.1f}" class="{cls}"/>'
+        )
+    return "\n".join(parts)
+
+
+def _render_observatory_page(out: Path):
+    out.parent.mkdir(parents=True, exist_ok=True)
+    data = _planes_mod.snapshot(limit=24)
+    template = (TEMPLATES / "deploy-observatory.html").read_text()
+    rings = data.get("rings", {}) if data["available"] else {}
+    stars = (
+        _render_stars(rings.get("jev", []), 120)
+        + _render_stars(rings.get("judges", []), 200)
+        + _render_stars(rings.get("physics", []), 280)
+    )
+    empty = ""
+    if data["available"] and not any(rings.values()):
+        empty = (
+            '<text x="0" y="6" class="label-empty">no ring data yet — feed the planes'
+        )
+    elif not data["available"]:
+        empty = '<text x="0" y="6" class="label-empty">BLIND: ' + data.get(
+            "error", "ledger missing"
+        )
+    page = template.replace("{{STARS_SVG}}", stars).replace("{{EMPTY_LABEL}}", empty)
+    out.write_text(page)
+
+
+# ----------------------------------------------------------- entry
+
+
+def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+    day = sys.argv[1] if len(sys.argv) > 1 else date.today().isoformat()
+    if "--out" in sys.argv:
+        i = sys.argv.index("--out")
+        target = Path(sys.argv[i + 1]) if i + 1 < len(sys.argv) else OUT
+    else:
+        target = OUT
+    target.mkdir(parents=True, exist_ok=True)
+    _render_river_page(target / "deploy-river.html")
+    _render_scrub_page(target / "deploy-time-scrub.html", day)
+    _render_observatory_page(target / "deploy-observatory.html")
+    print(f"rendered 3 pages into {target}/", file=sys.stderr)
+    print(str(target / "deploy-river.html"))
+    print(str(target / "deploy-time-scrub.html"))
+    print(str(target / "deploy-observatory.html"))
+
+
+if __name__ == "__main__":
+    main()

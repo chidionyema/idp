@@ -1,0 +1,7 @@
+{
+  "_comment": "The monitoring-outage case, isolated. Exactly one job, and it breaks exactly one rule: it is monitored (slug is set) but its check record could not be read, because Healthchecks was down when the audit ran. Nothing else here is wrong -- the schedule is a short interval, the hours are empty, it is not survival work, it is wrapped in hc-wrap.sh. So if this fixture passes, the blind rule is not firing, and no other rule can hide that.",
+  "_incident": "2026-08-24 03:22. estate-healthchecks went unhealthy (uWSGI harakiri, requests over the 30s limit under load average 7.71). bin/placement-audit degraded all 34 monitored jobs to check:null. The never-pinged deny rule stopped matching, because rego evaluates null.last_ping as undefined rather than null and an undefined term simply fails the rule body. The audit reported 11 failures where the previous run reported 22. The guard got quieter at the exact moment it lost its evidence, which reads as things improving.",
+  "jobs": [
+    {"label": "com.example.blinded-only", "slug": "graphify-sweep", "schedule": "interval", "period_seconds": 3600, "hours": [], "asleep_hours": [], "command": "hc-wrap.sh graphify-sweep sweep.sh", "check": null}
+  ]
+}

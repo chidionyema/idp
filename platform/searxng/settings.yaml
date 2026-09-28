@@ -1,0 +1,67 @@
+# The search backend's own settings, carried over from the one place in the estate where they
+# were measured: prospector's engine (searxng/settings.yml and deploy/searxng/Dockerfile, both
+# written 2026-08-18 after every keyless provider died from a datacenter IP).
+#
+# What that measurement found, verbatim from the Dockerfile header:
+#
+#   html.duckduckgo.com   000 after 12s   (lite. too, over both IPv4 and IPv6)
+#   api.exa.ai            402             {"tag":"NO_MORE_CREDITS"}
+#   searx.be              200 but HTML    "Verifying your browser..." anti-bot captcha
+#
+# while https://example.com answered 200 in 0.08s from the same shell -- those hosts refuse
+# datacenter traffic, the egress is fine. Of the free engines probed from that machine exactly
+# two answered 200: bing and wikipedia. SearXNG drives both, keylessly, which is why a
+# self-hosted instance is the only search backend that works from a cluster at all.
+#
+# Re-measured on the founder's laptop 2026-09-04, from the research engine: exa answers 401
+# INVALID_API_KEY, duckduckgo-search and its successor ddgs both die with a DNS error inside
+# their own resolver, and the four public SearXNG instances probed (searx.be, searxng.site,
+# baresearch.org, priv.au) answer 200/403/429 with the JSON format switched off. There is no
+# keyless search path the estate does not host itself.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: searxng-settings
+  namespace: searxng
+data:
+  settings.yml: |
+    use_default_settings: true
+
+    server:
+      # Replaced at pod start with 32 random bytes (searxng.yaml initContainer). The key signs
+      # preference URLs and the image proxy; this instance serves one JSON API to one caller
+      # inside the cluster, so a per-pod value costs nothing and puts no secret in git.
+      secret_key: "__SECRET_KEY__"
+      # Safe: the Service is ClusterIP, there is no Gateway route and no public address.
+      limiter: false
+      bind_address: "0.0.0.0:8080"
+
+    search:
+      formats:
+        - html
+        - json
+      safe_search: 0
+
+    # Fail fast on blocked or hanging upstream engines. Public engines rate-limit or captcha a
+    # self-hosted scraper under continuous load; without a tight timeout SearXNG waits the full
+    # default on every dead engine and stalls the caller. 2.5s soft / 5s hard lets it give up
+    # and answer with what did come back.
+    outgoing:
+      request_timeout: 2.5
+      max_request_timeout: 5.0
+      pool_connections: 100
+      pool_maxsize: 20
+
+    # Keyless engines. bing and wikipedia are the two that answered from a datacenter; the other
+    # three stay declared because they cost nothing when they fail fast and they work from a laptop.
+    engines:
+      - name: duckduckgo
+        disabled: false
+      - name: bing
+        disabled: false
+      - name: brave
+        disabled: false
+      - name: wikipedia
+        disabled: false
+      - name: mojeek
+        disabled: false

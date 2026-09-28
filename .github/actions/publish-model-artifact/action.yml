@@ -1,0 +1,92 @@
+# Publish a model artifact to GHCR, the one way.
+#
+# WHY THIS IS AN ACTION AND NOT A COPIED BLOCK. Two publishers exist: the Forge (trains a model for a
+# task nobody has solved) and fetch-model-artifacts (downloads a model somebody else trained). Both
+# must write the SAME artifact shape, because `platform/edge-runtime` reads one shape -- and a
+# mismatch is a model that loads for one and not the other, which nobody would look for.
+#
+# Copying the Forge's lines into the fetch workflow was the first attempt, and it got FIVE things
+# different: oras version, login credential, media types, tag scheme, and which files ship. Every
+# one of those is a silent failure at the far end. So the shape lives here once and both callers
+# name it.
+#
+# ORAS VERSION AND MEDIA TYPES COME FROM forge/modal_app.py, which was writing artifacts correctly
+# before this action existed. They are not re-decided here; they are lifted.
+name: publish a model artifact
+description: Push model.gguf, model-card.yaml and eval.json to GHCR as one OCI artifact the edge-runtime can load by digest.
+
+inputs:
+  model_key:
+    description: "artifact name, e.g. ci-flake-triage or falcon-h1-7b"
+    required: true
+  directory:
+    description: "directory holding model.gguf, model-card.yaml and (optionally) eval.json"
+    required: false
+    default: "."
+  token:
+    description: "a token with packages:write. The Forge passes secrets.GITHUB_TOKEN."
+    required: true
+  owner:
+    description: "the GHCR owner; the repository owner unless told otherwise"
+    required: false
+    default: ""
+
+outputs:
+  ref:
+    description: "the published reference, tag included"
+    value: ${{ steps.push.outputs.ref }}
+  digest:
+    description: "the artifact digest -- what a Deployment pins"
+    value: ${{ steps.push.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: install oras, pinned as forge/modal_app.py pins it
+      shell: bash
+      run: |
+        set -euo pipefail
+        # The SAME VERSION the Forge installs. Two versions of the tool that writes and reads the
+        # same artifacts is a mismatch nobody looks for.
+        curl -sSL "https://github.com/oras-project/oras/releases/download/v1.2.0/oras_1.2.0_linux_amd64.tar.gz" \
+          | tar -zx -C /usr/local/bin oras
+        oras version
+
+    - name: push
+      id: push
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.token }}
+        OWNER: ${{ inputs.owner }}
+        KEY: ${{ inputs.model_key }}
+        DIR: ${{ inputs.directory }}
+      run: |
+        set -euo pipefail
+        OWNER="${OWNER:-${GITHUB_REPOSITORY_OWNER}}"
+
+        # THE WORKFLOW TOKEN, AS THE FORGE USES IT. `permissions: packages: write` is what grants
+        # it. A PAT is not needed, and asking for one that does not exist is a failure at the last
+        # step after a 4 GB download.
+        echo "$TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+        # A VERSIONED TAG. A bare `v1` is OVERWRITTEN by the next model of the same name, and a
+        # digest pinned in a Deployment would then point at bytes nobody tested -- which is the
+        # whole reason artifacts are addressed by digest.
+        TAG="v1.$(date +%s)"
+        REF="ghcr.io/${OWNER}/models/${KEY}:${TAG}"
+
+        # THE FILES ARE NAMED, NOT GLOBBED, and each carries a media type a reader looks for.
+        # `application/vnd.gguf.model` is the Forge's; a reader looking for it does not find
+        # `application/octet-stream`, and the failure reads as a missing file.
+        set -- \
+          "$DIR/model.gguf:application/vnd.gguf.model" \
+          "$DIR/model-card.yaml:application/yaml"
+        [ -f "$DIR/eval.json" ] && set -- "$@" "$DIR/eval.json:application/json"
+        [ -f "$DIR/tokenizer.json" ] && set -- "$@" "$DIR/tokenizer.json:application/json"
+
+        oras push "$REF" "$@"
+        DIGEST=$(oras manifest fetch "$REF" --descriptor | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')
+        echo "ok      published $REF"
+        echo "        digest $DIGEST"
+        echo "ref=$REF"       >> "$GITHUB_OUTPUT"
+        echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"

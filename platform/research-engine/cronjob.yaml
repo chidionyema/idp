@@ -1,0 +1,160 @@
+# The estate's intake for the research engine: one `lane: subject` per line, in git.
+# The lane is a profile in the engine's own repository (research-engine profiles/*.yaml)
+# and it holds the questions; a line here only says which lane asks and about what. The
+# founder or any session changes a line and the next hour asks it. A queue, an API and a
+# priority floor are the spec's later checkpoints; a file the estate can edit is what makes
+# the engine run today rather than after them.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: research-questions
+  namespace: research
+data:
+  subjects: |
+    market-demand: a hosted service catalogue for companies of fewer than ten people
+    market-demand: model-routing gateways sold with per-key lane scoping
+    market-demand: evidence-cited research delivered as a subscription
+    estate-guards: fail-closed admission policy for autonomous agent workloads
+    incident-postmortem: a required status check whose action no longer exists
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: research-engine
+  namespace: research
+automountServiceAccountToken: false
+---
+# The hourly pass. One lane and one subject per run, chosen by the hour so the intake
+# rotates without a scheduler holding state. `run` writes the ledger; the delivery and the
+# row counts go to the pod log, which is where the estate collector reads them.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: research-engine
+  namespace: research
+  labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
+spec:
+  # A CronJob without `schedule` is schema-invalid (batch/v1 requires it), and Kubectl's
+  # `--from=cronjob` needs a valid CronJob to clone. Dagster owns the actual cadence; this
+  # value keeps the object valid and is not what fires the run.
+  schedule: "23 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      ttlSecondsAfterFinished: 3600
+      backoffLimit: 1
+      # The worker deadline inside the engine is 300s per question and the router lanes are
+      # given 300s each; 25 minutes is that with room for the crawl, and it is a hard stop so
+      # a run that hangs cannot hold the next hour's slot.
+      activeDeadlineSeconds: 1500
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
+        spec:
+          serviceAccountName: research-engine
+          automountServiceAccountToken: false
+          # ghcr.io is private, so the pod needs the estate's pull credential by name. Measured
+          # 2026-09-04: without it every hourly job died in ErrImagePull, "unable to retrieve
+          # auth token: invalid username/password: unauthorized".
+          imagePullSecrets:
+            - name: ghcr-pull
+          restartPolicy: Never
+          priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: engine
+              # Pinned to the commit that built it, so the image the cluster runs can be read
+              # in the repository it came from. Built by the research-engine repository's own
+              # image workflow on a GitHub runner, never on the founder's Mac (LAW 31).
+              # 2026-09-09: ea2d561 fixed the VERBOSE env; 3e3527b bakes the tiktoken o200k_base
+              # cache into the image. Without that bake, gpt-researcher's per-response cost
+              # estimate tried to download the encoding file from OpenAI's public blob on every
+              # run, which this namespace has no internet egress to -> ConnectTimeout -> None ->
+              # no question answered. Index amd64+arm64.
+              image: ghcr.io/chidionyema/research-engine:sha-3e3527b7acd49787469e79ff67a808d89cad9a18
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # Both credentials arrive as FILES and are exported here. The estate's
+                  # admission policy refuses a workload that takes a secret from an env var,
+                  # and the engine reads its configuration from the environment, so this line
+                  # is the join between the two.
+                  LITELLM_API_KEY="$(cat /secrets/router/LITELLM_API_KEY)"
+                  # The estate's one Postgres, one database on it, not a server of our own.
+                  # The database and the role are declared to the operator in
+                  # platform/estate-db/cluster/databases.yaml, so nothing here creates either.
+                  PG="postgresql://research:$(cat /secrets/db/POSTGRES_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432"
+                  RESEARCH_PG_DSN="${PG}/research"
+                  export LITELLM_API_KEY RESEARCH_PG_DSN
+                  # One line per hour, rotating through the intake without a scheduler
+                  # holding state. Each line is `lane: subject`: the lane names a profile
+                  # in the engine, and the profile holds the questions it asks (SPEC-v1 §8),
+                  # so changing what a lane asks is a change in the engine's repository and
+                  # changing what it asks about is a change here.
+                  n=$(grep -c . /questions/subjects)
+                  # Rotate by the hour from the integer epoch (no octal trap): dash's $(( ))
+                  # reads "08"/"09" as invalid octal, so a day/hour string failed the whole
+                  # run on the hours that start with 0 (measured 2026-09-09, UTC 08/09).
+                  i=$(( ( ($(date -u +%s) / 3600) % n ) + 1 ))
+                  line=$(sed -n "${i}p" /questions/subjects)
+                  lane=${line%%:*}
+                  subject=${line#*: }
+                  echo "research-engine running lane ${lane} on subject ${i} of ${n}"
+                  # Tiktoken's estimator (costs.py) needs a writable cache dir: the image bakes the
+                  # encoding files under /app/tiktoken_cache but the root fs is readOnlyRootFilesystem,
+                  # and tiktoken writes a lazy-download .tmp file there -> [Errno 30] Read-only file
+                  # system (measured 2026-09-09, right after the earlier tracebacks cleared). Copy the
+                  # baked files into the writable /state volume and point the cache there; any encoding
+                  # the bake missed (cl100k_base) then downloads from the internet the research fence
+                  # now allows. This is why TIKTOKEN_CACHE_DIR is set here, not as an image ENV.
+                  mkdir -p /state/tiktoken
+                  cp -f /app/tiktoken_cache/* /state/tiktoken/ 2>/dev/null || true
+                  export TIKTOKEN_CACHE_DIR=/state/tiktoken
+                  exec python -m engine.cli run --profile "$lane" --subject "$subject" --out /state
+              env:
+                # Nothing here is a secret and nothing here is a default in the image: the
+                # engine hardcodes no host, no port and no model name (LAW 46).
+                - { name: LITELLM_BASE_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+                - { name: RESEARCH_SEARXNG_URL, value: "http://searxng.searxng.svc.cluster.local:8080" }
+                # Producer and verifier must be different providers -- the engine refuses to
+                # start otherwise, and the database CHECK refuses the row. These are lane names
+                # on the estate router, never vendor model identifiers (LAW 34).
+                - { name: RESEARCH_PRODUCER_MODEL, value: "minimax" }
+                - { name: RESEARCH_VERIFIER_MODEL, value: "gemini" }
+                - { name: RESEARCH_EMBEDDING_MODEL, value: "embed" }
+                - { name: RESEARCH_RETRIEVER, value: "searx" }
+                - { name: RESEARCH_WORKER_TIMEOUT_S, value: "300" }
+                - { name: HOME, value: "/state" }
+              volumeMounts:
+                - { name: router, mountPath: /secrets/router, readOnly: true }
+                - { name: db, mountPath: /secrets/db, readOnly: true }
+                - { name: questions, mountPath: /questions, readOnly: true }
+                - { name: state, mountPath: /state }
+                - { name: tmp, mountPath: /tmp }
+              resources:
+                requests: { cpu: 200m, memory: 512Mi }
+                limits: { cpu: "1", memory: 1Gi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+          volumes:
+            - name: router
+              secret: { secretName: research-router }
+            - name: db
+              secret: { secretName: research-db }
+            - name: questions
+              configMap: { name: research-questions }
+            - name: state
+              emptyDir: {}
+            - name: tmp
+              emptyDir: {}

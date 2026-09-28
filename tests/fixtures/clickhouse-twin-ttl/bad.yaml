@@ -1,0 +1,14 @@
+# The refusing fixture: this is the exact shape that cost 49 OOMKilled restarts.
+#
+# `metric_log` carries a 3-day TTL on the base name. Its `_0` twin -- the table
+# ClickHouse actually kept open on a server that had run before -- is not configured
+# anywhere, so it holds the clickhouse-operator's 30-day default. On the live pod that
+# twin reached 222 active parts and 12 concurrent merges against itself.
+clickhouse:
+  settings:
+    metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    asynchronous_metric_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 3 day"
+    # `trace_log_0` IS configured, but for 7 days where its base carries 1. The twin is
+    # the table that grows, so a longer twin is the same defect wearing a different hat.
+    trace_log/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 1 day"
+    trace_log_0/engine: "Engine = MergeTree PARTITION BY event_date ORDER BY event_time TTL event_date + interval 7 day"

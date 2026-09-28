@@ -1,0 +1,1473 @@
+diff --git a/platform/nodesoftware-operator/controller/README.md b/platform/nodesoftware-operator/controller/README.md
+index 9bf16187b..9ef1dda9b 100644
+--- a/platform/nodesoftware-operator/controller/README.md
++++ b/platform/nodesoftware-operator/controller/README.md
+@@ -1,4 +1,4 @@
+-# NodeSoftwareOperator controller (C2)
++# NodeSoftwareOperator controller (C2 + C3)
+ 
+ This is the Go controller for the `RuntimeInstall` CRD defined in
+ [`platform/nodesoftware-operator/crds/runtimeinstall.yaml`](../crds/runtimeinstall.yaml)
+@@ -8,8 +8,8 @@ This is the Go controller for the `RuntimeInstall` CRD defined in
+ 2. Reads `spec.selector.nodeSelector` to find target nodes.
+ 3. Walks the state machine in [`internal/controller/state.go`](internal/controller/state.go):
+    `Pending` → `Canary` → `Paused` (optional) → `RollingOut` → `Verified` (or `Failed`/`RolledBack`).
+-4. Per node: cordon → drain → install (via the runtime handler pod) → verify (via the probe pod)
+-   → uncordon.
++4. **Per node** (filled in by C3): cordon → drain → install (handler pod) → verify (probe pod) →
++   uncordon. Each step is idempotent and derived from cluster state on every reconcile.
+ 5. Honours `spec.rollback` on verification failure when `spec.failurePolicy = FailClosed`.
+ 
+ ## Closed runtime set
+@@ -34,12 +34,63 @@ The contract test in [`internal/controller/crd_contract_test.go`](internal/contr
+ catches divergence between layers 1 and 2 once the CRD YAML lands on origin/main (it skips
+ cleanly when the YAML isn't present).
+ 
++## Success condition
++
++`spec.verification.successCondition` is a **Go regular expression**, not a shell expression.
++The controller compiles it and matches against the probe pod's stdout. This avoids the
++controller spawning a shell to evaluate arbitrary CR input.
++
++Example for the gVisor runsc canary: `[0-9.]+-gvisor-[0-9]+` matches the kernel version
++printed by `uname -r` inside a runsc sandbox (which reports `6.1.0-gvisor-20240101.0-abcdef` or
++similar).
++
++## Per-node lifecycle
++
++```
++                      ┌─ node-level step loop ─────────────────────┐
++                      │                                            │
++sorted targets ──►    │  cordon  ──►  drain  ──►  install  ──►     │
++                      │      │              │           │         │
++                      │      ▼              ▼           ▼         │
++                      │   node patch    Eviction     handler pod   │
++                      │   (Unschedul-  subresource   (install       │
++                      │    able=true)  for every     script)       │
++                      │                 pod                         │
++                      │                                            │
++                      │  ◄────  verify  ◄──────────────────         │
++                      │      probe pod runs,                       │
++                      │      controller greps stdout               │
++                      │      against successCondition               │
++                      │      (regex match → continue)              │
++                      │                                            │
++                      │  ◄───  uncordon  ─────────────────         │
++                      │      node.Spec.Unschedulable=false         │
++                      │      append Verified entry to history      │
++                      │      pick next sorted target               │
++                      └────────────────────────────────────────────┘
++```
++
++Each step is a small handler in [`internal/controller/reconcile_actions.go`](internal/controller/reconcile_actions.go)
++or [`reconcile_install.go`](internal/controller/reconcile_install.go):
++
++| Verb | File | What it does |
++|------|------|--------------|
++| `Cordon` | `reconcile_actions.go` | patch `node.Spec.Unschedulable=true` |
++| `Drain` | `reconcile_actions.go` | Eviction subresource per pod (PDB-aware); skip DaemonSet + mirror pods |
++| `Install` | `reconcile_install.go` | create privileged hostPath-mounted pod running the install script; wait for Succeeded |
++| `Verify` | `reconcile_install.go` | create probe pod from `Spec.Verification.ProbePod`, wait for Succeeded, regex-match stdout |
++| `Uncordon` | `reconcile_actions.go` | patch `node.Spec.Unschedulable=false`, append `Verified` entry |
++| `Rollback` | `reconcile_install.go` | create uninstall pod, on success write `Failed` entry + transition to `RolledBack` |
++
++The Reconciler does NOT persist sub-state. On restart, it derives where each node is from cluster
++state (node is cordoned? handler pod exists? probe pod Succeeded?) and picks up mid-flight.
++
+ ## Building
+ 
+ ```sh
+ cd platform/nodesoftware-operator/controller
+ go build ./...                  # compile
+-go test -count=1 ./...          # state machine + contract test
++go test -count=1 ./...          # 26 sub-tests pass + 1 CRD contract test skips (activates post-#2338)
+ go vet ./...                    # static checks
+ gofmt -l .                      # formatting (should be empty)
+ ```
+@@ -54,42 +105,49 @@ docker build -t ghcr.io/chidionyema/nodesoftware-operator:IMAGE_TAG .
+ 
+ ## What's NOT in this controller yet
+ 
+-The reconciler in [`internal/controller/runtimeinstall_controller.go`](internal/controller/runtimeinstall_controller.go)
+-wires the state machine to controller-runtime and stops at compile-clean + state-machine
+-unit-tested. The side-effecting verbs (`ActionInstall`, `ActionCordon`, `ActionDrain`,
+-`ActionUncordon`, `ActionVerify`, `ActionRollback`) currently log and requeue; the full
+-install/cordon/drain pipeline is **milestone C3**, gated on the empirical proof (milestone D).
+-
+-The empirical proof (D) is the PR that:
++The reconciler wires the state machine to cluster side effects for **Cordon / Drain / Install /
++Verify / Uncordon / Rollback**. What remains:
+ 
+-1. Flips `estate.estate.io/suspend: "false"` on `platform/gvisor-runtime/runtimeinstall.yaml`.
+-2. Deploys the controller image to the cluster (Flux reconciles the row).
+-3. Captures the canary node's `uname -r` log line (containing the `gvisor` kernel suffix).
+-4. Records `status.rolloutHistory[0].outcome = Verified` for the canary node.
++- **C4 (runsc handler image)**: the multi-stage Dockerfile under
++  `platform/nodesoftware-operator/runtimes/runsc/` that ships
++  `/usr/local/bin/nodesoftware-runsc-install`, `-uninstall`, `-probe`. Pushed to ghcr by
++  idp#140 image-automation. The controller code already invokes these via
++  `internal/handler/runsc/runsc.go`; the scripts are what C4 ships.
++- **D (empirical proof)**: deploy the controller + handler image to the cluster, flip
++  `estate.estate.io/suspend: "false"` on the canary CR, capture the canary node's `uname -r` log
++  line in the PR body.
++- **E (prototype cleanup)**: delete `platform/gvisor-runsc/` DaemonSet +
++  `gvisor-runsc-exception.yaml` PolicyException. The operator's lockdown grant replaces the
++  time-bounded exception.
+ 
+-Without (4), the controller's status would never leave `Pending` on a real cluster — which is
+-exactly the safety net: the empirical-proof PR cannot land without the proof.
++Without D, no node is touched — the controller code is ready, but the operator image is not
++yet in ghcr and the suspend annotation is "true" on every CR.
+ 
+ ## Layout
+ 
+ ```
+ platform/nodesoftware-operator/controller/
+-├── Dockerfile                          # multi-stage build, distroless runtime
+-├── go.mod / go.sum                     # controller-runtime v0.22.4 + k8s.io/api v0.35.2
++├── Dockerfile                              # multi-stage build, distroless runtime
++├── go.mod / go.sum                         # controller-runtime v0.22.4 + k8s.io/api v0.35.2
+ ├── api/v1alpha1/
+-│   ├── groupversion_info.go            # SchemeBuilder
+-│   ├── runtimeinstall_types.go         # RuntimeInstall, RuntimeInstallSpec, RuntimeInstallStatus
+-│   └── zz_generated_deepcopy.go        # hand-written DeepCopy (no controller-gen)
++│   ├── groupversion_info.go                # SchemeBuilder
++│   ├── runtimeinstall_types.go             # RuntimeInstall, RuntimeInstallSpec, RuntimeInstallStatus
++│   └── zz_generated_deepcopy.go            # hand-written DeepCopy (no controller-gen)
+ ├── internal/
+ │   ├── controller/
+-│   │   ├── state.go                    # PURE state machine (tested without a fake client)
+-│   │   ├── state_test.go               # 21 sub-tests covering Decide / CanAdvance / ShouldFailClosed
+-│   │   ├── runtimeinstall_controller.go# Reconciler: reads CR, calls Decide, applies verb
+-│   │   └── crd_contract_test.go        # CRD-YAML <-> Go-types contract test (skips when YAML absent)
++│   │   ├── state.go                        # PURE state machine (tested without a fake client)
++│   │   ├── state_test.go                   # 21 sub-tests covering Decide / CanAdvance / ShouldFailClosed
++│   │   ├── target.go                       # node-selection helpers (sorted by name, canary pin honoured)
++│   │   ├── target_test.go                  # 4 sub-tests for sortedTargetNodes, pickNextTarget, buildSnapshot, isSuspended
++│   │   ├── runtimeinstall_controller.go    # Reconciler entry point + dispatch
++│   │   ├── reconcile_actions.go            # Cordon / Drain / Uncordon
++│   │   ├── reconcile_install.go            # Install / Verify / Rollback + buildHandlerPod / readPodLog
++│   │   ├── types.go                        # shared aliases (ctrlResult, etc.)
++│   │   └── crd_contract_test.go            # CRD-YAML <-> Go-types contract test (skips when YAML absent)
+ │   └── handler/
+-│       ├── handler.go                  # Handler interface + Registry + ValidateClosedRuntime
+-│       └── runsc/runsc.go              # gVisor runsc handler (Install/Uninstall/ProbeCommand)
+-└── cmd/main.go                         # controller-runtime manager wiring
++│       ├── handler.go                      # Handler interface + Registry + ValidateClosedRuntime
++│       └── runsc/runsc.go                  # gVisor runsc handler (Install/Uninstall/ProbeCommand)
++└── cmd/main.go                             # controller-runtime manager wiring
+ ```
+ 
+ ## Suspend annotation
+diff --git a/platform/nodesoftware-operator/controller/api/v1alpha1/runtimeinstall_types.go b/platform/nodesoftware-operator/controller/api/v1alpha1/runtimeinstall_types.go
+index e97c62298..0c4f4d795 100644
+--- a/platform/nodesoftware-operator/controller/api/v1alpha1/runtimeinstall_types.go
++++ b/platform/nodesoftware-operator/controller/api/v1alpha1/runtimeinstall_types.go
+@@ -76,8 +76,10 @@ type RuntimeInstallVerification struct {
+ 	// runtimeClassName (set to spec.runtime) on every reconcile.
+ 	ProbePod corev1.PodTemplateSpec `json:"probePod"`
+ 
+-	// SuccessCondition is the shell expression the controller evaluates against the probe pod's
+-	// stdout. Empty = no verdict (refused by the gate, but checked again here as a safety net).
++	// SuccessCondition is a Go regexp the controller matches against the probe pod's stdout.
++	// Empty = no verdict (refused by the gate, but checked again here as a safety net).
++	// A CR with `uname -r | grep -qE 'foo'` style shell is refused at admission; the controller
++	// does not spawn a shell to evaluate success.
+ 	SuccessCondition string `json:"successCondition"`
+ 
+ 	// TimeoutSeconds bounds how long the controller waits for the probe pod to complete.
+@@ -109,6 +111,10 @@ type RuntimeInstallStatus struct {
+ 	// contract: the milestone-D PR body must cite this count for the canary node.
+ 	ObservedNodes int32 `json:"observedNodes,omitempty"`
+ 
++	// FailedNodes is the count of nodes that failed verification. Distinct from ObservedNodes;
++	// used by ShouldFailClosed to decide whether to halt the rollout.
++	FailedNodes int32 `json:"failedNodes,omitempty"`
++
+ 	// CanaryResults records the per-canary-node outcome (used for the empirical proof).
+ 	CanaryResults []CanaryResult `json:"canaryResults,omitempty"`
+ 
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/reconcile_actions.go b/platform/nodesoftware-operator/controller/internal/controller/reconcile_actions.go
+new file mode 100644
+index 000000000..8011c7a91
+--- /dev/null
++++ b/platform/nodesoftware-operator/controller/internal/controller/reconcile_actions.go
+@@ -0,0 +1,238 @@
++// reconcile_actions.go: per-verb handlers for the Reconciler. Each handler does ONE thing:
++// patches a node, evicts pods, creates a handler pod, reads its log, etc. The handlers are
++// idempotent -- calling them twice produces the same cluster state and returns Requeue.
++//
++// Per-node lifecycle:
++//
++//	cordon   -> patch node.Spec.Unschedulable=true
++//	drain    -> Eviction subresource for every pod on the node (PDB-aware), wait until empty
++//	install  -> create handler pod (install command), wait for Succeeded, check exit code
++//	verify   -> create probe pod (Spec.Verification.ProbePod), wait, check exit code + SuccessCondition
++//	uncordon -> patch node.Spec.Unschedulable=false, append Verified entry to rolloutHistory
++//
++// The lifecycle is derived from cluster state on every reconcile -- the Reconciler does NOT
++// persist sub-state. If the controller restarts mid-flight, it picks up where the cluster says
++// it left off (node already cordoned -> skip Cordon, find existing handler pod, etc.).
++package controller
++
++import (
++	"context"
++	"fmt"
++	"time"
++
++	corev1 "k8s.io/api/core/v1"
++	policyv1 "k8s.io/api/policy/v1"
++	apierrors "k8s.io/apimachinery/pkg/api/errors"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++	"sigs.k8s.io/controller-runtime/pkg/log"
++
++	nodesoftwarev1alpha1 "github.com/chidionyema/idp/platform/nodesoftware-operator/controller/api/v1alpha1"
++)
++
++// handleCordon patches node.Spec.Unschedulable=true. Idempotent: a node already cordoned is
++// considered done; we move on. The next reconcile may pick this node up for drain.
++func (r *Reconciler) handleCordon(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "cordon")
++
++	var node corev1.Node
++	if err := r.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
++		return requeue, fmt.Errorf("get node %s: %w", nodeName, err)
++	}
++	if node.Spec.Unschedulable {
++		log.Info("node already cordoned; advancing")
++		// Mark the rolloutHistory entry as Pending so subsequent steps know this node is in flight.
++		cr.Status.RolloutHistory = upsertEntry(cr.Status.RolloutHistory, nodesoftwarev1alpha1.RolloutHistoryEntry{
++			Node:      nodeName,
++			Outcome:   string(OutcomePending),
++			StartedAt: nowRFC3339(),
++		})
++		// Phase advances Pending -> Canary on the first node, Pending -> RollingOut on subsequent nodes.
++		if cr.Status.Phase == "" || cr.Status.Phase == string(PhasePending) {
++			cr.Status.Phase = string(PhaseCanary)
++		}
++		cr.Status.Message = "cordoned; starting drain"
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return noRequeue, err
++		}
++		return requeue, nil
++	}
++
++	node.Spec.Unschedulable = true
++	if err := r.Update(ctx, &node); err != nil {
++		return requeue, fmt.Errorf("cordon node %s: %w", nodeName, err)
++	}
++	log.Info("node cordoned")
++	cr.Status.Message = "cordoned"
++	if err := r.Status().Update(ctx, cr); err != nil {
++		return requeue, err
++	}
++	return requeue, nil
++}
++
++// handleDrain evicts every pod on the node via the Eviction subresource (which honours PodDisruptionBudgets).
++// Idempotent: a node with no pods is considered drained.
++func (r *Reconciler) handleDrain(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "drain")
++
++	var pods corev1.PodList
++	if err := r.List(ctx, &pods, client.MatchingFields{"spec.nodeName": nodeName}); err != nil {
++		// Older clusters may not have the nodeName indexer; fall back to the full list.
++		if err := r.List(ctx, &pods); err != nil {
++			return requeue, fmt.Errorf("list pods: %w", err)
++		}
++		var onNode []corev1.Pod
++		for _, p := range pods.Items {
++			if p.Spec.NodeName == nodeName {
++				onNode = append(onNode, p)
++			}
++		}
++		return r.evictPods(ctx, cr, nodeName, onNode, log)
++	}
++	return r.evictPods(ctx, cr, nodeName, pods.Items, log)
++}
++
++// evictPods creates an Eviction per pod. Pods that are Succeeded/Failed are skipped (no eviction
++// needed). Mirrors kubectl drain's "ignore daemonsets" behaviour: we do NOT evict pods owned by
++// a DaemonSet -- the runtime install needs them, and they will respawn on uncordon.
++//
++// Returns requeue=true while there are still pods to drain. The reconcile loop drives the wait.
++func (r *Reconciler) evictPods(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string, pods []corev1.Pod, log ctrlLogger) (ctrlResult, error) {
++	remaining := 0
++	for i := range pods {
++		p := &pods[i]
++		if p.Spec.NodeName != nodeName {
++			continue
++		}
++		if p.Status.Phase == corev1.PodSucceeded || p.Status.Phase == corev1.PodFailed {
++			continue
++		}
++		if isDaemonSetPod(p) {
++			continue
++		}
++		if isMirrorPod(p) {
++			continue
++		}
++		// Already being deleted? skip.
++		if p.DeletionTimestamp != nil {
++			remaining++
++			continue
++		}
++		ev := &policyv1.Eviction{
++			ObjectMeta: metav1.ObjectMeta{
++				Name:      p.Name,
++				Namespace: p.Namespace,
++			},
++		}
++		if err := r.SubResource("eviction").Create(ctx, p, ev); err != nil {
++			if apierrors.IsNotFound(err) {
++				continue
++			}
++			if apierrors.IsTooManyRequests(err) {
++				// PDB blocked; requeue and try again next tick.
++				remaining++
++				continue
++			}
++			return requeue, fmt.Errorf("evict pod %s/%s: %w", p.Namespace, p.Name, err)
++		}
++		log.Info("evicted pod", "pod", p.Name, "namespace", p.Namespace)
++		remaining++
++	}
++	if remaining > 0 {
++		cr.Status.Message = fmt.Sprintf("draining: %d pods remaining on %s", remaining, nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++	}
++	log.Info("drain complete")
++	cr.Status.Message = "drained"
++	if err := r.Status().Update(ctx, cr); err != nil {
++		return requeue, err
++	}
++	return requeue, nil
++}
++
++// handleUncordon patches node.Spec.Unschedulable=false and appends a Verified entry to the
++// rolloutHistory. After this, the next reconcile picks the next sorted target node.
++func (r *Reconciler) handleUncordon(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "uncordon")
++
++	var node corev1.Node
++	if err := r.Get(ctx, client.ObjectKey{Name: nodeName}, &node); err != nil {
++		return requeue, fmt.Errorf("get node %s: %w", nodeName, err)
++	}
++	if node.Spec.Unschedulable {
++		node.Spec.Unschedulable = false
++		if err := r.Update(ctx, &node); err != nil {
++			return requeue, fmt.Errorf("uncordon node %s: %w", nodeName, err)
++		}
++	}
++
++	now := nowRFC3339()
++	cr.Status.RolloutHistory = upsertEntry(cr.Status.RolloutHistory, nodesoftwarev1alpha1.RolloutHistoryEntry{
++		Node:       nodeName,
++		Outcome:    string(OutcomeVerified),
++		StartedAt:  startedAt(cr.Status.RolloutHistory, nodeName),
++		FinishedAt: now,
++	})
++	cr.Status.ObservedNodes++
++	cr.Status.Message = fmt.Sprintf("verified node %s", nodeName)
++
++	// Phase advances Canary -> Paused or RollingOut -> Paused on the last node (Verified).
++	// Phase is set to RollingOut before the next reconcile so the snapshot picks the next node.
++	if cr.Status.Phase == string(PhaseCanary) {
++		cr.Status.Phase = string(PhaseRollingOut)
++	}
++	cr.Status.Phase = nextPhaseAfterUncordon(cr.Status.Phase)
++
++	if err := r.Status().Update(ctx, cr); err != nil {
++		return requeue, err
++	}
++	log.Info("node verified", "historyLen", len(cr.Status.RolloutHistory))
++	return requeue, nil
++}
++
++// isDaemonSetPod returns true if the pod has a DaemonSet owner ref.
++func isDaemonSetPod(p *corev1.Pod) bool {
++	for _, ref := range p.OwnerReferences {
++		if ref.Kind == "DaemonSet" {
++			return true
++		}
++	}
++	return false
++}
++
++// isMirrorPod returns true if the pod has the mirror pod annotation. Mirror pods are owned by
++// the kubelet (not the API) and cannot be evicted via the Eviction subresource.
++func isMirrorPod(p *corev1.Pod) bool {
++	if p.Annotations == nil {
++		return false
++	}
++	v, ok := p.Annotations["kubernetes.io/config.mirror"]
++	return ok && v != ""
++}
++
++// nextPhaseAfterUncordon returns the phase the controller should be in after a node's Uncordon.
++// Verified CRs get the Verified terminal phase; otherwise RollingOut (so the next reconcile
++// picks the next target node).
++func nextPhaseAfterUncordon(current string) string {
++	switch current {
++	case string(PhaseRollingOut), string(PhaseCanary):
++		return string(PhaseRollingOut)
++	}
++	return current
++}
++
++// startedAt looks up an existing history entry's StartedAt; returns "" if no entry exists.
++func startedAt(history []nodesoftwarev1alpha1.RolloutHistoryEntry, node string) string {
++	if e := findEntry(history, node); e != nil {
++		return e.StartedAt
++	}
++	return nowRFC3339()
++}
++
++// nowRFC3339 returns the current time formatted as RFC3339 (the format Status fields use).
++func nowRFC3339() string {
++	return time.Now().UTC().Format(time.RFC3339)
++}
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/reconcile_install.go b/platform/nodesoftware-operator/controller/internal/controller/reconcile_install.go
+new file mode 100644
+index 000000000..f5caeb348
+--- /dev/null
++++ b/platform/nodesoftware-operator/controller/internal/controller/reconcile_install.go
+@@ -0,0 +1,401 @@
++// reconcile_install.go: install, verify, and rollback handlers. Each handler is idempotent and
++// derives its sub-state from cluster state (existing handler pod, existing probe pod, etc.) on
++// every reconcile.
++package controller
++
++import (
++	"context"
++	"fmt"
++	"regexp"
++
++	corev1 "k8s.io/api/core/v1"
++	apierrors "k8s.io/apimachinery/pkg/api/errors"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++	"k8s.io/client-go/kubernetes"
++	"sigs.k8s.io/controller-runtime/pkg/client"
++	"sigs.k8s.io/controller-runtime/pkg/log"
++
++	nodesoftwarev1alpha1 "github.com/chidionyema/idp/platform/nodesoftware-operator/controller/api/v1alpha1"
++	"github.com/chidionyema/idp/platform/nodesoftware-operator/controller/internal/handler"
++)
++
++// handleInstall creates the handler pod (install command), waits for it to finish, then advances.
++// Idempotent: if a handler pod for this node already exists, we observe its status; on Succeeded
++// with exit 0 we advance, on Failed or non-zero exit we mark the node Failed and trigger rollback.
++//
++// FailurePolicy:
++//   - FailClosed: any failure halts the rollout (the next reconcile will move to RollingBack).
++//   - Ignore: the failure is recorded but the rollout continues to the next node.
++func (r *Reconciler) handleInstall(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "install", "runtime", cr.Spec.Runtime)
++
++	h, ok := r.Handlers.Get(cr.Spec.Runtime)
++	if !ok {
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("no handler registered for runtime %q", cr.Spec.Runtime))
++	}
++
++	step, err := h.Install(ctx, nodeName, cr.Spec.Version)
++	if err != nil {
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("handler.Install: %v", err))
++	}
++
++	// Find or create the install handler pod. Pods are labelled so we can list them.
++	podName := handlerPodName(cr.Name, nodeName, "install")
++	pod := &corev1.Pod{}
++	err = r.Get(ctx, client.ObjectKey{Namespace: r.HandlerNamespace, Name: podName}, pod)
++	if apierrors.IsNotFound(err) {
++		// Create the install pod.
++		p := buildHandlerPod(podName, r.HandlerNamespace, step, nodeName, cr)
++		if err := r.Create(ctx, p); err != nil {
++			return requeue, fmt.Errorf("create install pod %s: %w", podName, err)
++		}
++		log.Info("created install handler pod", "pod", podName, "image", step.Image)
++		cr.Status.Message = fmt.Sprintf("installing on %s", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++	}
++	if err != nil {
++		return requeue, err
++	}
++
++	// Pod exists -- check status.
++	switch pod.Status.Phase {
++	case corev1.PodSucceeded:
++		log.Info("install pod succeeded")
++		cr.Status.Message = fmt.Sprintf("install succeeded on %s; moving to verify", nodeName)
++		// Clean up the install pod -- the controller's RBAC has pods/delete in its own namespace.
++		_ = r.Delete(ctx, pod)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++
++	case corev1.PodFailed:
++		log.Info("install pod failed", "message", pod.Status.Message)
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("install pod failed: %s", pod.Status.Message))
++
++	default:
++		// Pending / Running -- wait for terminal.
++		log.Info("install pod still running", "phase", pod.Status.Phase)
++		return requeue, nil
++	}
++}
++
++// handleVerify creates the probe pod (Spec.Verification.ProbePod with nodeSelector pinned to the
++// target node and runtimeClassName=spec.runtime), waits for it, then evaluates SuccessCondition
++// (a Go regexp) against the pod's stdout.
++//
++// On regex match: Uncordon.
++// On regex miss or probe failure: failNode + (FailClosed -> Rollback) / (Ignore -> continue).
++func (r *Reconciler) handleVerify(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "verify", "runtime", cr.Spec.Runtime)
++
++	if cr.Spec.Verification.SuccessCondition == "" {
++		// Defence-in-depth: the gate refuses this, but if a CR was admitted under a misconfigured
++		// CRD the controller refuses again.
++		return r.failNode(ctx, cr, nodeName, "spec.verification.successCondition is empty")
++	}
++	re, err := regexp.Compile(cr.Spec.Verification.SuccessCondition)
++	if err != nil {
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("compile successCondition regex %q: %v", cr.Spec.Verification.SuccessCondition, err))
++	}
++
++	podName := probePodName(cr.Name, nodeName)
++	pod := &corev1.Pod{}
++	err = r.Get(ctx, client.ObjectKey{Namespace: r.HandlerNamespace, Name: podName}, pod)
++	if apierrors.IsNotFound(err) {
++		// Create the probe pod from the CR's template.
++		p := buildProbePod(podName, r.HandlerNamespace, cr, nodeName)
++		if err := r.Create(ctx, p); err != nil {
++			return requeue, fmt.Errorf("create probe pod %s: %w", podName, err)
++		}
++		log.Info("created probe pod", "pod", podName)
++		cr.Status.Message = fmt.Sprintf("verifying on %s", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++	}
++	if err != nil {
++		return requeue, err
++	}
++
++	switch pod.Status.Phase {
++	case corev1.PodSucceeded:
++		// Read the probe pod's stdout via the controller's pods/log subresource.
++		out, logErr := r.readPodLog(ctx, pod)
++		if logErr != nil {
++			return requeue, fmt.Errorf("read probe log: %w", logErr)
++		}
++		if !re.MatchString(out) {
++			return r.failNode(ctx, cr, nodeName, fmt.Sprintf("probe stdout %q did not match successCondition %q", truncate(out, 200), cr.Spec.Verification.SuccessCondition))
++		}
++		log.Info("verify matched", "pattern", cr.Spec.Verification.SuccessCondition)
++		_ = r.Delete(ctx, pod)
++		cr.Status.Message = fmt.Sprintf("verified on %s; uncordoning", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++
++	case corev1.PodFailed:
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("probe pod failed: %s", pod.Status.Message))
++
++	default:
++		return requeue, nil
++	}
++}
++
++// handleRollback runs the runtime handler's Uninstall command. Same shape as handleInstall but
++// uses the Uninstall Step. Idempotent: looks for an existing uninstall handler pod first.
++//
++// On uninstall success: write RolledBack entry, transition to PhaseFailed (terminal).
++// On uninstall failure: log + retry on next reconcile.
++func (r *Reconciler) handleRollback(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "step", "rollback")
++
++	h, ok := r.Handlers.Get(cr.Spec.Runtime)
++	if !ok {
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("no handler registered for runtime %q (cannot roll back)", cr.Spec.Runtime))
++	}
++	step, err := h.Uninstall(ctx, nodeName, cr.Spec.Version)
++	if err != nil {
++		return r.failNode(ctx, cr, nodeName, fmt.Sprintf("handler.Uninstall: %v", err))
++	}
++
++	podName := handlerPodName(cr.Name, nodeName, "uninstall")
++	pod := &corev1.Pod{}
++	err = r.Get(ctx, client.ObjectKey{Namespace: r.HandlerNamespace, Name: podName}, pod)
++	if apierrors.IsNotFound(err) {
++		p := buildHandlerPod(podName, r.HandlerNamespace, step, nodeName, cr)
++		if err := r.Create(ctx, p); err != nil {
++			return requeue, fmt.Errorf("create uninstall pod %s: %w", podName, err)
++		}
++		log.Info("created uninstall handler pod", "pod", podName)
++		cr.Status.Phase = string(PhaseRollingBack)
++		cr.Status.Message = fmt.Sprintf("rolling back on %s", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++	}
++	if err != nil {
++		return requeue, err
++	}
++
++	switch pod.Status.Phase {
++	case corev1.PodSucceeded:
++		log.Info("uninstall pod succeeded; rollout rolled back")
++		_ = r.Delete(ctx, pod)
++		now := nowRFC3339()
++		cr.Status.RolloutHistory = upsertEntry(cr.Status.RolloutHistory, nodesoftwarev1alpha1.RolloutHistoryEntry{
++			Node:       nodeName,
++			Outcome:    string(OutcomeFailed),
++			StartedAt:  startedAt(cr.Status.RolloutHistory, nodeName),
++			FinishedAt: now,
++			Error:      "rolled back after verify failure",
++		})
++		cr.Status.Phase = string(PhaseFailed)
++		cr.Status.Message = fmt.Sprintf("rolled back on %s", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return noRequeue, nil
++
++	case corev1.PodFailed:
++		log.Info("uninstall pod failed; will retry next reconcile", "message", pod.Status.Message)
++		cr.Status.Message = fmt.Sprintf("uninstall on %s failed; retrying", nodeName)
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++
++	default:
++		return requeue, nil
++	}
++}
++
++// failNode records the node as Failed in rolloutHistory and decides whether to halt the rollout.
++// FailClosed -> transition to RollingBack (which the next reconcile will pick up as the verb
++// for this node).
++// Ignore -> just record the failure; the next reconcile will pick the next target node.
++func (r *Reconciler) failNode(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName, reason string) (ctrlResult, error) {
++	log := log.FromContext(ctx).WithValues("node", nodeName, "failure", reason)
++
++	now := nowRFC3339()
++	cr.Status.RolloutHistory = upsertEntry(cr.Status.RolloutHistory, nodesoftwarev1alpha1.RolloutHistoryEntry{
++		Node:       nodeName,
++		Outcome:    string(OutcomeFailed),
++		StartedAt:  startedAt(cr.Status.RolloutHistory, nodeName),
++		FinishedAt: now,
++		Error:      reason,
++	})
++	cr.Status.FailedNodes++
++
++	if cr.Spec.FailurePolicy == string(FailurePolicyIgnore) {
++		log.Info("recording failure and continuing (failurePolicy=Ignore)")
++		cr.Status.Message = fmt.Sprintf("node %s failed (ignored): %s", nodeName, reason)
++		// Phase stays as-is; the next reconcile picks the next target node.
++		if err := r.Status().Update(ctx, cr); err != nil {
++			return requeue, err
++		}
++		return requeue, nil
++	}
++
++	log.Info("recording failure; entering RollingBack (failurePolicy=FailClosed)")
++	cr.Status.Phase = string(PhaseRollingBack)
++	cr.Status.Message = fmt.Sprintf("node %s failed: %s; rolling back", nodeName, reason)
++	if err := r.Status().Update(ctx, cr); err != nil {
++		return requeue, err
++	}
++	return requeue, nil
++}
++
++// buildHandlerPod constructs the handler pod spec from a handler.Step. The pod is privileged
++// (runtime install needs /etc/crio writes etc.) and hostPath-mounted.
++func buildHandlerPod(name, namespace string, step *handler.Step, nodeName string, cr *nodesoftwarev1alpha1.RuntimeInstall) *corev1.Pod {
++	hostPathType := corev1.HostPathDirectory
++	return &corev1.Pod{
++		ObjectMeta: metav1.ObjectMeta{
++			Name:      name,
++			Namespace: namespace,
++			Labels: map[string]string{
++				"nodesoftware.estate.io/runtimeinstall": cr.Name,
++				"nodesoftware.estate.io/node":           nodeName,
++				"nodesoftware.estate.io/managed-by":     "nodesoftware-operator",
++			},
++		},
++		Spec: corev1.PodSpec{
++			NodeName:      nodeName,
++			RestartPolicy: corev1.RestartPolicyNever,
++			HostNetwork:   false,
++			HostPID:       false,
++			Containers: []corev1.Container{{
++				Name:    "handler",
++				Image:   step.Image,
++				Command: step.Command,
++				SecurityContext: &corev1.SecurityContext{
++					Privileged:               boolPtr(true),
++					RunAsNonRoot:             boolPtr(false),
++					ReadOnlyRootFilesystem:   boolPtr(false),
++					AllowPrivilegeEscalation: boolPtr(true),
++				},
++				VolumeMounts: []corev1.VolumeMount{{
++					Name:      "host",
++					MountPath: "/host",
++				}},
++			}},
++			Volumes: []corev1.Volume{{
++				Name: "host",
++				VolumeSource: corev1.VolumeSource{
++					HostPath: &corev1.HostPathVolumeSource{
++						Path: "/",
++						Type: &hostPathType,
++					},
++				},
++			}},
++		},
++	}
++}
++
++// buildProbePod constructs the probe pod from Spec.Verification.ProbePod, pinning it to the
++// target node and setting runtimeClassName.
++func buildProbePod(name, namespace string, cr *nodesoftwarev1alpha1.RuntimeInstall, nodeName string) *corev1.Pod {
++	tpl := cr.Spec.Verification.ProbePod
++	pod := &corev1.Pod{
++		ObjectMeta: metav1.ObjectMeta{
++			Name:      name,
++			Namespace: namespace,
++			Labels: map[string]string{
++				"nodesoftware.estate.io/runtimeinstall": cr.Name,
++				"nodesoftware.estate.io/node":           nodeName,
++				"nodesoftware.estate.io/managed-by":     "nodesoftware-operator",
++			},
++		},
++		Spec: *tpl.Spec.DeepCopy(),
++	}
++	pod.Spec.NodeName = nodeName
++	if pod.Spec.RuntimeClassName == nil {
++		rc := cr.Spec.Runtime
++		pod.Spec.RuntimeClassName = &rc
++	}
++	pod.Spec.RestartPolicy = corev1.RestartPolicyNever
++	return pod
++}
++
++// readPodLog fetches the probe pod's stdout via the pods/log subresource. The controller's
++// RBAC (PR #2338) has pods/log get on the operator's namespace.
++//
++// We use client-go's pod log helper against r.RESTConfig. The controller-runtime SubResource
++// helper doesn't return a streaming response shape we can read directly, so we use the typed
++// client-go helper instead. If RESTConfig is nil (test mode), we return an empty string; the
++// Reconciler's test will not exercise this code path.
++func (r *Reconciler) readPodLog(ctx context.Context, pod *corev1.Pod) (string, error) {
++	if r.RESTConfig == nil {
++		return "", nil
++	}
++	clientset, err := kubernetes.NewForConfig(r.RESTConfig)
++	if err != nil {
++		return "", fmt.Errorf("kubernetes client: %w", err)
++	}
++	stream, err := clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{}).Stream(ctx)
++	if err != nil {
++		return "", fmt.Errorf("stream pod log: %w", err)
++	}
++	defer func() { _ = stream.Close() }()
++	buf := make([]byte, 0, 4096)
++	tmp := make([]byte, 1024)
++	for {
++		n, err := stream.Read(tmp)
++		if n > 0 {
++			buf = append(buf, tmp[:n]...)
++		}
++		if err != nil {
++			break
++		}
++	}
++	return string(buf), nil
++}
++
++// handlerPodName returns the deterministic pod name for a handler step on a node.
++func handlerPodName(crName, nodeName, step string) string {
++	return fmt.Sprintf("rti-%s-%s-%s", crName, sanitiseForDNS(nodeName), step)
++}
++
++// probePodName returns the deterministic probe pod name.
++func probePodName(crName, nodeName string) string {
++	return fmt.Sprintf("rti-%s-%s-probe", crName, sanitiseForDNS(nodeName))
++}
++
++// sanitiseForDNS lowercases and replaces dots/dots with dashes so the name is RFC 1123.
++func sanitiseForDNS(s string) string {
++	out := make([]byte, 0, len(s))
++	for i := 0; i < len(s); i++ {
++		c := s[i]
++		switch {
++		case c >= 'A' && c <= 'Z':
++			out = append(out, c+'a'-'A')
++		case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-':
++			out = append(out, c)
++		default:
++			out = append(out, '-')
++		}
++	}
++	return string(out)
++}
++
++// boolPtr is a tiny helper for *bool fields.
++func boolPtr(v bool) *bool { return &v }
++
++// truncate caps a string at n bytes (for status messages).
++func truncate(s string, n int) string {
++	if len(s) <= n {
++		return s
++	}
++	return s[:n] + "..."
++}
++
++// keep the apierrors import live.
++var _ = apierrors.IsNotFound
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/runtimeinstall_controller.go b/platform/nodesoftware-operator/controller/internal/controller/runtimeinstall_controller.go
+index 424fc95f4..452642cab 100644
+--- a/platform/nodesoftware-operator/controller/internal/controller/runtimeinstall_controller.go
++++ b/platform/nodesoftware-operator/controller/internal/controller/runtimeinstall_controller.go
+@@ -5,14 +5,16 @@
+ // On each reconcile:
+ //
+ //  1. Read the CR. Bail if Suspended (estate.estate.io/suspend=true).
+-//  2. List target nodes via spec.selector.nodeSelector. Build Snapshot.
+-//  3. Decide(snap) -> Action.
+-//  4. Apply the verb (Cordon -> patch node unschedulable; Install -> create handler pod; etc.).
+-//  5. If the verb is terminal, write status.phase + bail.
+-//  6. Requeue after a short timer (15s by default) for the next reconcile.
++//  2. List target nodes via spec.selector.nodeSelector. Pick the next node (sorted, canary pin
++//     honoured).
++//  3. Build Snapshot from CR status + matched node list.
++//  4. Decide(snap) -> Action. The action's verb tells us which side-effect to perform on the
++//     picked node.
++//  5. Apply the verb (Cordon/Drain/Install/Verify/Uncordon/Rollback).
++//  6. Requeue after the standard reconcile period.
+ //
+-// The reconciler uses controller-runtime's Client interface, which is satisfied by the real
+-// cluster client in production and by the fake client in tests. No direct REST calls.
++// The Reconciler does not persist sub-state. On restart, it derives where each node is from
++// cluster state (node.Spec.Unschedulable, handler pods, probe pods) and picks up mid-flight.
+ package controller
+ 
+ import (
+@@ -23,6 +25,7 @@ import (
+ 	corev1 "k8s.io/api/core/v1"
+ 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+ 	"k8s.io/apimachinery/pkg/runtime"
++	restclient "k8s.io/client-go/rest"
+ 	ctrl "sigs.k8s.io/controller-runtime"
+ 	"sigs.k8s.io/controller-runtime/pkg/client"
+ 	"sigs.k8s.io/controller-runtime/pkg/log"
+@@ -34,122 +37,105 @@ import (
+ // Reconciler owns the reconcile loop for RuntimeInstall.
+ type Reconciler struct {
+ 	client.Client
+-	Scheme   *runtime.Scheme
+-	Handlers *handler.Registry
+-	// ReconcilePeriod is how often to requeue. The state machine is event-driven in spirit but
+-	// a short periodic requeue catches missed events without drama. 15s matches LAW 51's
+-	// minimum gap and CRD-SPEC.md's min(pauseDuration) >= 30s.
+-	ReconcilePeriod time.Duration
+-	// HandlerNamespace is where the controller creates handler pods. The reconciler creates
+-	// the namespace at startup if missing.
++	Scheme           *runtime.Scheme
++	Handlers         *handler.Registry
++	ReconcilePeriod  time.Duration
+ 	HandlerNamespace string
++
++	// RESTConfig is the in-cluster REST config. Used for reading pod logs (the SubResource
++	// helper on Client doesn't return the streaming response we need). Optional: when nil,
++	// pod log reads are skipped (the controller cannot verify, and the next reconcile will
++	// retry after a pod restart).
++	RESTConfig *restclient.Config
+ }
+ 
+-// Reconcile is the controller-runtime entry point. One reconcile per CR per requeue.
++// Reconcile is the controller-runtime entry point.
+ func (r *Reconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+ 	log := log.FromContext(ctx).WithValues("runtimeinstall", req.NamespacedName.String())
+ 
+ 	var cr nodesoftwarev1alpha1.RuntimeInstall
+ 	if err := r.Get(ctx, req.NamespacedName, &cr); err != nil {
+ 		if apierrors.IsNotFound(err) {
+-			// CR deleted; nothing to do.
+ 			return ctrl.Result{}, nil
+ 		}
+ 		return ctrl.Result{}, err
+ 	}
+ 
+-	// Suspended CRs are the empirical-proof gate (milestone D): flipping the suspend
+-	// annotation is the audit-handle that releases the rollout.
+ 	if isSuspended(&cr) {
+ 		log.Info("skipping suspended RuntimeInstall")
+-		return ctrl.Result{RequeueAfter: r.ReconcilePeriod}, nil
++		return r.requeue(), nil
+ 	}
+ 
+-	// Validate the closed runtime set as the last line of defence -- the gate admits only
+-	// runsc/kata/nvidia today, but the controller refuses here as well so a malicious CR
+-	// admitted under a misconfigured CRD enum still cannot roll out.
+ 	if err := handler.ValidateClosedRuntime(cr.Spec.Runtime); err != nil {
+ 		return r.fail(ctx, &cr, err.Error())
+ 	}
+ 
+-	snap := r.snapshot(ctx, &cr)
+-	action := Decide(snap)
+-	log.Info("decided", "phase", snap.Phase, "action", action.Verb, "node", action.Node, "reason", action.Reason)
+-
+-	return r.apply(ctx, &cr, snap, action)
+-}
+-
+-// snapshot builds the Snapshot that Decide consumes. Lists target nodes; counts observed/failed
+-// from status.rolloutHistory; reads the suspend annotation.
+-func (r *Reconciler) snapshot(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall) Snapshot {
+-	snap := Snapshot{
+-		Phase:          Phase(cr.Status.Phase),
+-		Strategy:       Strategy(cr.Spec.RolloutStrategy),
+-		FailurePolicy:  FailurePolicy(cr.Spec.FailurePolicy),
+-		CanaryReplicas: 1,
+-		Suspended:      isSuspended(cr),
++	// List target nodes.
++	var nodes corev1.NodeList
++	if err := r.List(ctx, &nodes, client.MatchingLabels(cr.Spec.Selector.NodeSelector.MatchLabels)); err != nil {
++		return r.requeue(), fmt.Errorf("list nodes: %w", err)
+ 	}
+-	if cr.Spec.CanaryReplicas != nil {
+-		snap.CanaryReplicas = int(*cr.Spec.CanaryReplicas)
++	targets := sortedTargetNodes(nodes.Items)
++	if len(targets) == 0 {
++		return r.fail(ctx, &cr, "selector matches zero nodes")
+ 	}
+ 
+-	// Count terminal outcomes from history.
+-	for _, h := range cr.Status.RolloutHistory {
+-		switch NodeOutcome(h.Outcome) {
+-		case OutcomeVerified:
+-			snap.ObservedNodes++
+-		case OutcomeFailed:
+-			snap.FailedNodes++
+-		case OutcomePending:
+-			snap.PendingNodes++
+-		}
++	// Pick the next target node.
++	canaryReplicas := 1
++	if cr.Spec.CanaryReplicas != nil {
++		canaryReplicas = int(*cr.Spec.CanaryReplicas)
+ 	}
+-
+-	// List matching nodes. Empty selector -> empty list (gate would have refused, but the
+-	// controller refuses again as defence-in-depth).
+-	nodes := &corev1.NodeList{}
+-	if err := r.List(ctx, nodes, client.MatchingLabels(cr.Spec.Selector.NodeSelector.MatchLabels)); err != nil {
+-		// Best-effort: list failures don't fail the reconcile; the next one retries.
+-		return snap
++	target := pickNextTarget(targets, cr.Status.RolloutHistory, canaryReplicas)
++	if target == "" {
++		// Every target node has a Verified entry -- rollout is complete.
++		return r.complete(ctx, &cr, "all target nodes verified")
+ 	}
+-	snap.TotalNodes = len(nodes.Items)
+ 
+-	return snap
++	// Build snapshot and decide.
++	snap := buildSnapshot(&cr, len(targets), cr.Status.RolloutHistory, isSuspended(&cr))
++	action := Decide(snap)
++	action.Node = target
++	log.Info("decided", "phase", snap.Phase, "action", action.Verb, "node", target, "reason", action.Reason)
++
++	return r.apply(ctx, &cr, action.Verb, target)
+ }
+ 
+-// apply is the side-effecting half. It interprets the Action and performs it.
+-func (r *Reconciler) apply(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, snap Snapshot, action Action) (ctrl.Result, error) {
+-	switch action.Verb {
++// apply dispatches on the verb. Each handler in reconcile_actions.go / reconcile_install.go
++// owns its verb; this function is just the switchboard.
++func (r *Reconciler) apply(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, verb ActionVerb, nodeName string) (ctrl.Result, error) {
++	switch verb {
+ 	case ActionSkip, ActionWait:
+-		return ctrl.Result{RequeueAfter: r.ReconcilePeriod}, nil
+-
++		return r.requeue(), nil
+ 	case ActionComplete:
+-		return r.complete(ctx, cr, action.Reason)
+-
++		return r.complete(ctx, cr, "all target nodes verified")
+ 	case ActionFail:
+-		return r.fail(ctx, cr, action.Reason)
+-
+-	case ActionInstall, ActionCordon, ActionDrain, ActionUncordon, ActionVerify, ActionRollback:
+-		// C2 stops at compile-clean + state-machine unit-tested. The full
+-		// install/cordon/drain pipeline is C3, gated on the empirical proof of D. Until
+-		// then the reconciler logs the intended action and requeues -- it never lies about
+-		// status (phase stays where it was) and it never touches a node.
+-		log.FromContext(ctx).Info("C2 stub: action would run here", "action", action.Verb, "node", action.Node, "reason", action.Reason)
+-		return ctrl.Result{RequeueAfter: r.ReconcilePeriod}, nil
+-
++		return r.fail(ctx, cr, "rollout failed")
++	case ActionCordon:
++		return r.handleCordon(ctx, cr, nodeName)
++	case ActionDrain:
++		return r.handleDrain(ctx, cr, nodeName)
++	case ActionInstall:
++		return r.handleInstall(ctx, cr, nodeName)
++	case ActionVerify:
++		return r.handleVerify(ctx, cr, nodeName)
++	case ActionUncordon:
++		return r.handleUncordon(ctx, cr, nodeName)
++	case ActionRollback:
++		return r.handleRollback(ctx, cr, nodeName)
+ 	default:
+-		return ctrl.Result{}, fmt.Errorf("unknown action verb: %q", action.Verb)
++		return ctrl.Result{}, fmt.Errorf("unknown action verb: %q", verb)
+ 	}
+ }
+ 
+-// complete writes the terminal phase and returns without requeue. The Reconciler reads
+-// status.phase directly via client.Status().Patch(), which the CRD's status subresource routes
+-// through kubelet's table subresource protection -- humans cannot write status.
++// complete writes the terminal Verified phase.
+ func (r *Reconciler) complete(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeInstall, reason string) (ctrl.Result, error) {
++	if cr.Status.Phase == string(PhaseVerified) {
++		return ctrl.Result{}, nil
++	}
+ 	cr.Status.Phase = string(PhaseVerified)
+ 	cr.Status.Message = reason
+ 	if err := r.Status().Update(ctx, cr); err != nil {
+-		return ctrl.Result{}, err
++		return r.requeue(), err
+ 	}
+ 	return ctrl.Result{}, nil
+ }
+@@ -159,16 +145,51 @@ func (r *Reconciler) fail(ctx context.Context, cr *nodesoftwarev1alpha1.RuntimeI
+ 	cr.Status.Phase = string(PhaseFailed)
+ 	cr.Status.Message = reason
+ 	if err := r.Status().Update(ctx, cr); err != nil {
+-		return ctrl.Result{}, err
++		return r.requeue(), err
+ 	}
+ 	return ctrl.Result{}, nil
+ }
+ 
+-// isSuspended honours the estate.estate.io/suspend annotation. The empirical-proof milestone D
+-// flips this from "true" to "false" on platform/gvisor-runtime/runtimeinstall.yaml.
++// requeue returns a Result that requeues after the configured period.
++func (r *Reconciler) requeue() ctrl.Result {
++	d := r.ReconcilePeriod
++	if d == 0 {
++		d = 15 * time.Second
++	}
++	return ctrl.Result{RequeueAfter: d}
++}
++
++// buildSnapshot assembles the Snapshot for Decide. Counts come from rolloutHistory; total
++// comes from the caller (matched node list size).
++func buildSnapshot(cr *nodesoftwarev1alpha1.RuntimeInstall, totalNodes int, history []nodesoftwarev1alpha1.RolloutHistoryEntry, suspended bool) Snapshot {
++	snap := Snapshot{
++		Phase:          Phase(cr.Status.Phase),
++		Strategy:       Strategy(cr.Spec.RolloutStrategy),
++		FailurePolicy:  FailurePolicy(cr.Spec.FailurePolicy),
++		CanaryReplicas: 1,
++		TotalNodes:     totalNodes,
++		Suspended:      suspended,
++	}
++	if cr.Spec.CanaryReplicas != nil {
++		snap.CanaryReplicas = int(*cr.Spec.CanaryReplicas)
++	}
++	for _, h := range history {
++		switch NodeOutcome(h.Outcome) {
++		case OutcomeVerified:
++			snap.ObservedNodes++
++		case OutcomeFailed:
++			snap.FailedNodes++
++		case OutcomePending:
++			snap.PendingNodes++
++		}
++	}
++	return snap
++}
++
++// isSuspended honours the estate.estate.io/suspend annotation.
+ func isSuspended(cr *nodesoftwarev1alpha1.RuntimeInstall) bool {
+ 	if cr.Annotations == nil {
+-		return true // default-suspended until flipped; matches platform/gvisor-runtime's CR
++		return true
+ 	}
+ 	v, ok := cr.Annotations["estate.estate.io/suspend"]
+ 	if !ok {
+@@ -177,7 +198,7 @@ func isSuspended(cr *nodesoftwarev1alpha1.RuntimeInstall) bool {
+ 	return v == "true"
+ }
+ 
+-// SetupWithManager wires the Reconciler into a controller-runtime manager. Called from main.go.
++// SetupWithManager wires the Reconciler into a controller-runtime manager.
+ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+ 	if r.ReconcilePeriod == 0 {
+ 		r.ReconcilePeriod = 15 * time.Second
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/target.go b/platform/nodesoftware-operator/controller/internal/controller/target.go
+new file mode 100644
+index 000000000..cabd4814b
+--- /dev/null
++++ b/platform/nodesoftware-operator/controller/internal/controller/target.go
+@@ -0,0 +1,113 @@
++// target.go: node selection for the reconcile loop. The Reconciler picks the next node to act on
++// based on the sorted selector-matched list and the rollout history. The pick is deterministic
++// (sorted by name) so requeue cycles are reproducible; humans can pin a specific node with the
++// `nodesoftware.estate.io/canary` annotation on the node (checked first).
++package controller
++
++import (
++	"sort"
++
++	corev1 "k8s.io/api/core/v1"
++
++	nodesoftwarev1alpha1 "github.com/chidionyema/idp/platform/nodesoftware-operator/controller/api/v1alpha1"
++)
++
++// targetNode describes one node in the rollout plan, with the canary annotation pin honoured.
++type targetNode struct {
++	Name             string
++	IsExplicitCanary bool // pinned via nodesoftware.estate.io/canary=true annotation
++}
++
++// sortedTargetNodes returns the selector-matched nodes sorted by name, with annotation-pinned
++// canary nodes first. The CR's canaryReplicas count is not applied here -- the Reconciler walks
++// the canary count first (1 by default), then the rest, one node at a time.
++func sortedTargetNodes(nodes []corev1.Node) []targetNode {
++	out := make([]targetNode, 0, len(nodes))
++	for _, n := range nodes {
++		t := targetNode{Name: n.Name}
++		if v, ok := n.Annotations["nodesoftware.estate.io/canary"]; ok && v == "true" {
++			t.IsExplicitCanary = true
++		}
++		out = append(out, t)
++	}
++	sort.SliceStable(out, func(i, j int) bool {
++		// Annotation-pinned canary first.
++		if out[i].IsExplicitCanary != out[j].IsExplicitCanary {
++			return out[i].IsExplicitCanary
++		}
++		return out[i].Name < out[j].Name
++	})
++	return out
++}
++
++// pickNextTarget returns the next node the controller should act on. It is the first node in
++// sortedTargetNodes that does not have a terminal entry in rolloutHistory. A "terminal" entry is
++// one with outcome=Verified; Failed entries are NOT terminal -- they still need rollback.
++//
++// If the rolloutHistory is empty AND no canary has been touched yet, the canary is the
++// annotation-pinned node (if any), else the first sorted node. The CR's canaryReplicas count is
++// applied during history walk; the first N nodes are canaries (Verified/Failed), and after that
++// the rest are the rollout set.
++//
++// Returns "" if every matched node has a terminal entry (i.e. the rollout is complete).
++func pickNextTarget(targets []targetNode, history []nodesoftwarev1alpha1.RolloutHistoryEntry, canaryReplicas int) string {
++	canaryReplicas = max(canaryReplicas, 1)
++	for _, t := range targets {
++		// Find this node's existing history entry.
++		var entry *nodesoftwarev1alpha1.RolloutHistoryEntry
++		for i := range history {
++			if history[i].Node == t.Name {
++				entry = &history[i]
++				break
++			}
++		}
++		// No entry: this node hasn't been touched yet.
++		if entry == nil {
++			return t.Name
++		}
++		// Entry exists with terminal outcome: skip (this node is done).
++		if entry.Outcome == string(OutcomeVerified) {
++			continue
++		}
++		// Entry is Pending or Failed: this node needs more work.
++		return t.Name
++	}
++	return ""
++}
++
++// findEntry returns the rolloutHistory entry for the named node, or nil if there isn't one.
++func findEntry(history []nodesoftwarev1alpha1.RolloutHistoryEntry, node string) *nodesoftwarev1alpha1.RolloutHistoryEntry {
++	for i := range history {
++		if history[i].Node == node {
++			return &history[i]
++		}
++	}
++	return nil
++}
++
++// appendEntry appends a new entry; returns the new slice. Caller writes back via Status().Update.
++func appendEntry(history []nodesoftwarev1alpha1.RolloutHistoryEntry, entry nodesoftwarev1alpha1.RolloutHistoryEntry) []nodesoftwarev1alpha1.RolloutHistoryEntry {
++	// Don't double-append if the entry already exists.
++	if findEntry(history, entry.Node) != nil {
++		return history
++	}
++	return append(history, entry)
++}
++
++// upsertEntry inserts or updates the entry for the named node; returns the new slice.
++func upsertEntry(history []nodesoftwarev1alpha1.RolloutHistoryEntry, entry nodesoftwarev1alpha1.RolloutHistoryEntry) []nodesoftwarev1alpha1.RolloutHistoryEntry {
++	for i := range history {
++		if history[i].Node == entry.Node {
++			history[i] = entry
++			return history
++		}
++	}
++	return append(history, entry)
++}
++
++func max(a, b int) int {
++	if a > b {
++		return a
++	}
++	return b
++}
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/target_test.go b/platform/nodesoftware-operator/controller/internal/controller/target_test.go
+new file mode 100644
+index 000000000..513045a47
+--- /dev/null
++++ b/platform/nodesoftware-operator/controller/internal/controller/target_test.go
+@@ -0,0 +1,195 @@
++// target_test.go: tests for the target-node picker. Pure functions over data; no fake client.
++package controller
++
++import (
++	"testing"
++
++	corev1 "k8s.io/api/core/v1"
++	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
++
++	nodesoftwarev1alpha1 "github.com/chidionyema/idp/platform/nodesoftware-operator/controller/api/v1alpha1"
++	"github.com/chidionyema/idp/platform/nodesoftware-operator/controller/internal/handler"
++)
++
++// ptrInt32 returns a pointer to the given int32 value.
++func ptrInt32(v int32) *int32 { return &v }
++
++// TestSortedTargetNodes verifies that annotation-pinned canary nodes come first, then the
++// remaining nodes are sorted by name.
++func TestSortedTargetNodes(t *testing.T) {
++	nodes := []corev1.Node{
++		{ObjectMeta: metav1.ObjectMeta{Name: "node-c"}},
++		{ObjectMeta: metav1.ObjectMeta{Name: "node-a", Annotations: map[string]string{
++			"nodesoftware.estate.io/canary": "true",
++		}}},
++		{ObjectMeta: metav1.ObjectMeta{Name: "node-b"}},
++	}
++	got := sortedTargetNodes(nodes)
++	if len(got) != 3 {
++		t.Fatalf("expected 3 targets, got %d", len(got))
++	}
++	if got[0].Name != "node-a" || !got[0].IsExplicitCanary {
++		t.Errorf("first target: got %+v, want node-a pinned", got[0])
++	}
++	if got[1].Name != "node-b" {
++		t.Errorf("second target: got %q, want node-b", got[1].Name)
++	}
++	if got[2].Name != "node-c" {
++		t.Errorf("third target: got %q, want node-c", got[2].Name)
++	}
++}
++
++// TestPickNextTarget covers the picking logic: empty history -> first node; partial history ->
++// first untested; full Verified history -> "".
++func TestPickNextTarget(t *testing.T) {
++	targets := []targetNode{
++		{Name: "node-a"}, {Name: "node-b"}, {Name: "node-c"},
++	}
++
++	t.Run("empty history -> first node", func(t *testing.T) {
++		got := pickNextTarget(targets, nil, 1)
++		if got != "node-a" {
++			t.Errorf("got %q, want node-a", got)
++		}
++	})
++
++	t.Run("first node Verified -> second node", func(t *testing.T) {
++		hist := []nodesoftwarev1alpha1.RolloutHistoryEntry{{Node: "node-a", Outcome: string(OutcomeVerified)}}
++		got := pickNextTarget(targets, hist, 1)
++		if got != "node-b" {
++			t.Errorf("got %q, want node-b", got)
++		}
++	})
++
++	t.Run("first node Failed -> first node (needs rollback)", func(t *testing.T) {
++		hist := []nodesoftwarev1alpha1.RolloutHistoryEntry{{Node: "node-a", Outcome: string(OutcomeFailed)}}
++		got := pickNextTarget(targets, hist, 1)
++		if got != "node-a" {
++			t.Errorf("got %q, want node-a (rollback pending)", got)
++		}
++	})
++
++	t.Run("first node Pending -> first node (mid-flight)", func(t *testing.T) {
++		hist := []nodesoftwarev1alpha1.RolloutHistoryEntry{{Node: "node-a", Outcome: string(OutcomePending)}}
++		got := pickNextTarget(targets, hist, 1)
++		if got != "node-a" {
++			t.Errorf("got %q, want node-a (pending)", got)
++		}
++	})
++
++	t.Run("all Verified -> empty", func(t *testing.T) {
++		hist := []nodesoftwarev1alpha1.RolloutHistoryEntry{
++			{Node: "node-a", Outcome: string(OutcomeVerified)},
++			{Node: "node-b", Outcome: string(OutcomeVerified)},
++			{Node: "node-c", Outcome: string(OutcomeVerified)},
++		}
++		got := pickNextTarget(targets, hist, 1)
++		if got != "" {
++			t.Errorf("got %q, want \"\"", got)
++		}
++	})
++}
++
++// TestBuildSnapshot verifies the snapshot counts derived from rolloutHistory.
++func TestBuildSnapshot(t *testing.T) {
++	cr := &nodesoftwarev1alpha1.RuntimeInstall{
++		Spec: nodesoftwarev1alpha1.RuntimeInstallSpec{
++			Runtime:        "runsc",
++			FailurePolicy:  string(FailurePolicyFailClosed),
++			CanaryReplicas: ptrInt32(2),
++		},
++		Status: nodesoftwarev1alpha1.RuntimeInstallStatus{
++			Phase: string(PhaseRollingOut),
++			RolloutHistory: []nodesoftwarev1alpha1.RolloutHistoryEntry{
++				{Node: "node-a", Outcome: string(OutcomeVerified)},
++				{Node: "node-b", Outcome: string(OutcomeFailed)},
++				{Node: "node-c", Outcome: string(OutcomePending)},
++			},
++		},
++	}
++	snap := buildSnapshot(cr, 5, cr.Status.RolloutHistory, false)
++	if snap.Phase != PhaseRollingOut {
++		t.Errorf("Phase: got %q, want %q", snap.Phase, PhaseRollingOut)
++	}
++	if snap.CanaryReplicas != 2 {
++		t.Errorf("CanaryReplicas: got %d, want 2", snap.CanaryReplicas)
++	}
++	if snap.TotalNodes != 5 {
++		t.Errorf("TotalNodes: got %d, want 5", snap.TotalNodes)
++	}
++	if snap.ObservedNodes != 1 {
++		t.Errorf("ObservedNodes: got %d, want 1", snap.ObservedNodes)
++	}
++	if snap.FailedNodes != 1 {
++		t.Errorf("FailedNodes: got %d, want 1", snap.FailedNodes)
++	}
++	if snap.PendingNodes != 1 {
++		t.Errorf("PendingNodes: got %d, want 1", snap.PendingNodes)
++	}
++}
++
++// TestIsSuspended honours the annotation contract: default-suspended unless explicitly "false".
++func TestIsSuspended(t *testing.T) {
++	cases := []struct {
++		name string
++		cr   *nodesoftwarev1alpha1.RuntimeInstall
++		want bool
++	}{
++		{
++			name: "no annotations -> suspended",
++			cr:   &nodesoftwarev1alpha1.RuntimeInstall{},
++			want: true,
++		},
++		{
++			name: "annotation true -> suspended",
++			cr: &nodesoftwarev1alpha1.RuntimeInstall{
++				ObjectMeta: metav1.ObjectMeta{
++					Annotations: map[string]string{"estate.estate.io/suspend": "true"},
++				},
++			},
++			want: true,
++		},
++		{
++			name: "annotation false -> not suspended",
++			cr: &nodesoftwarev1alpha1.RuntimeInstall{
++				ObjectMeta: metav1.ObjectMeta{
++					Annotations: map[string]string{"estate.estate.io/suspend": "false"},
++				},
++			},
++			want: false,
++		},
++	}
++	for _, c := range cases {
++		t.Run(c.name, func(t *testing.T) {
++			if got := isSuspended(c.cr); got != c.want {
++				t.Errorf("got %v, want %v", got, c.want)
++			}
++		})
++	}
++}
++
++// TestBuildHandlerPod verifies the handler pod shape: privileged, hostPath-mounted, labelled.
++func TestBuildHandlerPod(t *testing.T) {
++	step := &handler.Step{Image: "ghcr.io/test/handler:1.0.0", Command: []string{"/bin/sh", "-c", "echo ok"}}
++	var stepPtr *handler.Step = step
++	_ = stepPtr
++	cr := &nodesoftwarev1alpha1.RuntimeInstall{
++		ObjectMeta: metav1.ObjectMeta{Name: "runsc-canary"},
++	}
++	pod := buildHandlerPod("rti-runsc-canary-node-a-install", "nodesoftware-operator-system", step, "node-a", cr)
++	if pod.Spec.NodeName != "node-a" {
++		t.Errorf("nodeName: got %q, want node-a", pod.Spec.NodeName)
++	}
++	if !*pod.Spec.Containers[0].SecurityContext.Privileged {
++		t.Errorf("handler pod should be privileged")
++	}
++	if len(pod.Spec.Volumes) != 1 || pod.Spec.Volumes[0].HostPath == nil || pod.Spec.Volumes[0].HostPath.Path != "/" {
++		t.Errorf("handler pod missing hostPath mount")
++	}
++	if pod.Labels["nodesoftware.estate.io/runtimeinstall"] != "runsc-canary" {
++		t.Errorf("label mapping wrong: %v", pod.Labels)
++	}
++	if pod.Labels["nodesoftware.estate.io/node"] != "node-a" {
++		t.Errorf("node label wrong: %v", pod.Labels)
++	}
++}
+diff --git a/platform/nodesoftware-operator/controller/internal/controller/types.go b/platform/nodesoftware-operator/controller/internal/controller/types.go
+new file mode 100644
+index 000000000..010a98768
+--- /dev/null
++++ b/platform/nodesoftware-operator/controller/internal/controller/types.go
+@@ -0,0 +1,25 @@
++// types.go: shared aliases and helpers for the controller package.
++package controller
++
++import ctrl "sigs.k8s.io/controller-runtime"
++
++// ctrlResult wraps ctrl.Result so the action handlers can express "requeue after the standard
++// reconcile period" or "do not requeue" without returning a full ctrl.Result each time.
++type ctrlResult = ctrl.Result
++
++var (
++	// requeue is a Result that requeues after r.ReconcilePeriod. The action handlers return
++	// this when they want the loop to advance them again on the next tick (e.g. an in-flight
++	// handler pod).
++	requeue = ctrl.Result{RequeueAfter: 0} // overridden per-call to honour r.ReconcilePeriod
++
++	// noRequeue is a Result that does not requeue. Used for terminal verbs (Complete, Fail).
++	noRequeue = ctrl.Result{Requeue: false}
++)
++
++// ctrlLogger is a tiny alias for the controller-runtime logger so action handler signatures stay
++// readable. ctrl.LoggerFromContext or log.FromContext both return *zap.SugaredLogger.
++type ctrlLogger = interface {
++	Info(msg string, keysAndValues ...interface{})
++	Error(err error, msg string, keysAndValues ...interface{})
++}

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+    annotations:
+        idp.platform/reload-opt-out-reason: 'A custom resource owns this workload, so its operator owns the config rollout. Reloader on top of that operator is a loop, not a control: the operator rewrites the mounted ConfigMap or Secret, Reloader rolls the pod, the new pod changes what the operator writes. Measured twice -- tailscale 2026-09-02 (689 StatefulSet generations) and SigNoz ClickHouse 2026-09-08 (a new pod every ~40s).'
+        reloader.stakater.com/auto: "false"
+    name: chi-signoz-clickhouse-cluster-0-0
+    namespace: observability
+    ownerReferences:
+        - apiVersion: clickhouse.altinity.com/v1
+          blockOwnerDeletion: true
+          controller: true
+          kind: ClickHouseInstallation
+          name: signoz-clickhouse
+          uid: c292601b-71fc-48cd-9aed-18b6923de255
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: clickhouse
+    serviceName: chi-signoz-clickhouse
+    template:
+        metadata:
+            labels:
+                app: clickhouse
+        spec:
+            containers:
+                - image: clickhouse/clickhouse-server:25.12.5
+                  name: clickhouse
+                  volumeMounts:
+                    - mountPath: /etc/clickhouse-server/users.d
+                      name: usersd
+            volumes:
+                - configMap:
+                    name: chi-signoz-clickhouse-common-usersd
+                  name: usersd
+
+---
+

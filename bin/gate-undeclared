@@ -1,0 +1,351 @@
+#!/usr/bin/env python3
+"""Fail on an identifier that is REFERENCED but never DECLARED.
+
+    bin/gate-undeclared <file.tsx> [more files...]
+
+Exit 0 clean, 1 on a finding, 2 on bad usage. No network, no build, no dependencies.
+
+WHY THIS EXISTS. Three times on 2026-09-19/20 a one-word omission blanked the Fleet page:
+
+    voiceDraft is not defined      used in JSX, never declared as state
+    useCallback is not defined     used, never imported
+    threadRef is not defined       used in a ref={} attribute, never declared
+    force is not defined           a callback body calling a name that does not exist
+
+Every one COMPILED CLEAN. `@ts-nocheck` is at the top of the target file -- for reasons documented
+there, and they are good reasons -- so `tsc` says nothing; Rspack bundles it happily; the server
+serves a 200; and the browser shows a blank page with a ReferenceError. `curl` cannot see it,
+because the BYTES are correct. Only a render can, and a render is too slow to run behind every edit.
+
+WHAT IT CHECKS. One rule, stated once:
+
+    an identifier is SUSPECT if it is REFERENCED somewhere and DECLARED nowhere.
+
+...where "referenced" means one of the four shapes that have actually caused a blank page:
+
+    {bareName}                       a JSX expression
+    ref={someRef}                    a JSX attribute (NOT a `{}` expression -- this is why
+                                     threadRef survived the first version of this check)
+    name(...)                        a call, including inside a callback body (this is what
+                                     catches `force(v => v + 1)`)
+    useXxx(...)                      a React hook, reported separately because the fix is always
+                                     "add it to the import"
+
+and "declared" is read from imports, consts, lets, vars, functions, classes, parameters,
+destructures and catch bindings.
+
+WHAT IT DELIBERATELY DOES NOT DO. It is a heuristic, not a compiler, and it is tuned so that it
+NEVER cries wolf -- because a guard that reports `absolute`, `about` or `across` (all real
+findings from an earlier version) gets switched off, and a switched-off guard is worse than none.
+
+    * it cannot see across files, so an identifier imported from a sibling is declared here and
+      fine;
+    * it does not understand scope, so a name declared in one function and used in another is
+      reported as declared (a false negative, deliberately);
+    * it cannot follow types, re-exports, or dynamic property access.
+
+Its blind spots are named rather than hidden. `npx eslint --rule '{"no-undef":"error"}'` is the
+mechanical check that covers the rest, and it needs the file's own `/* eslint-disable */` line
+removed for one run.
+"""
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+# Hooks that must come from 'react'. Named explicitly rather than pattern-matched, so a project
+# helper called `useThing` is not accused of a missing import it never needed.
+REACT_HOOKS = {
+    "useCallback", "useContext", "useDebugValue", "useDeferredValue", "useEffect", "useId",
+    "useImperativeHandle", "useInsertionEffect", "useLayoutEffect", "useMemo", "useReducer",
+    "useRef", "useState", "useSyncExternalStore", "useTransition", "useOptimistic",
+    "useActionState",
+}
+
+# Language keywords. `if (` matches the "called" shape and produced a false `if` finding.
+KEYWORDS = {
+    "if", "for", "while", "switch", "catch", "return", "typeof", "new", "delete", "void", "await",
+    "async", "yield", "function", "class", "const", "let", "var", "else", "do", "try", "finally",
+    "throw", "case", "default", "break", "continue", "in", "of", "instanceof", "super", "this",
+    "import", "export", "from", "as", "with", "debugger", "true", "false", "null",
+}
+
+# Browser and JS globals. Named explicitly rather than pattern-matched, so a project helper with
+# the same shape is still reported.
+GLOBALS = {
+    "window", "document", "console", "fetch", "setTimeout", "setInterval", "clearTimeout",
+    "clearInterval", "requestAnimationFrame", "cancelAnimationFrame", "alert", "confirm", "prompt",
+    "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent", "decodeURIComponent",
+    "structuredClone", "queueMicrotask", "getComputedStyle", "matchMedia", "open", "close", "print",
+    "scrollTo", "scrollBy", "requestIdleCallback", "addEventListener", "removeEventListener",
+    "dispatchEvent", "require", "module", "exports", "process", "globalThis", "undefined",
+    "Number", "String", "Boolean", "Array", "Object", "JSON", "Math", "Date", "RegExp", "Promise",
+    "Map", "Set", "WeakMap", "WeakSet", "Symbol", "Proxy", "Reflect", "Error", "TypeError",
+    "Function", "Intl", "URL", "URLSearchParams", "TextEncoder", "TextDecoder", "AbortController",
+    "EventSource", "WebSocket", "AudioContext", "AudioBufferSourceNode", "SpeechSynthesisUtterance",
+    "Image", "HTMLElement", "Node", "Response", "Request", "Headers", "Blob", "FileReader",
+    "ResizeObserver", "MutationObserver", "IntersectionObserver", "CustomEvent", "Event",
+    "requestAnimationFrame", "atob", "btoa", "crypto", "performance", "navigator", "location",
+    "history", "localStorage", "sessionStorage", "postMessage", "importScripts", "Uint8Array",
+    "Float32Array", "Int16Array", "ArrayBuffer", "DataView", "parseFloat", "eval", "global",
+}
+
+
+def strip_literals_and_comments(text: str) -> str:
+    """Blank out strings, template literals, regexes and comments by SCANNING characters.
+
+    WHY A SCANNER AND NOT REGEXES. The target file is a codebase whose comments quote identifiers
+    and paths in backticks, constantly. A regex that removes template literals cannot tell an
+    escaped or nested backtick from a terminator, and it cannot know that a backtick inside a `//`
+    comment is not a delimiter at all -- so ONE stray backtick desynchronises everything after it,
+    the stripper starts treating code as string, and the guard silently stops detecting anything.
+
+    Measured 2026-09-20: exactly that happened. `force(v => v + 1)` -- a real ReferenceError -- was
+    stripped from the text before the check looked at it, so the guard reported the file clean. A
+    false negative is the worst failure a guard can have, because it is indistinguishable from
+    passing.
+
+    `${...}` inside a template literal IS kept: it is real code, and a use of an identifier can
+    hide there. Newlines are preserved so any line number in a message stays meaningful.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while i < n:
+        # -- comments --------------------------------------------------------
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j == -1 else j
+            continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            if j == -1:
+                break
+            out.append("\n" * text.count("\n", i, j))
+            i = j + 2
+            continue
+        ch = text[i]
+        # -- plain strings ---------------------------------------------------
+        if ch in "'\"":
+            j = i + 1
+            while j < n:
+                if text[j] == "\\":
+                    j += 2
+                    continue
+                if text[j] == ch or text[j] == "\n":
+                    break
+                j += 1
+            out.append(" " * (min(j, n) - i))
+            i = j + 1
+            continue
+        # -- template literals, keeping ${...} -------------------------------
+        if ch == "`":
+            j = i + 1
+            while j < n:
+                c = text[j]
+                if c == "\\":
+                    j += 2
+                    continue
+                if c == "`":
+                    break
+                if c == "$" and j + 1 < n and text[j + 1] == "{":
+                    out.append(" " * (j - i + 1))
+                    j += 2
+                    start = j
+                    depth = 0
+                    while j < n:
+                        if text[j] == "{":
+                            depth += 1
+                        elif text[j] == "}":
+                            if depth == 0:
+                                break
+                            depth -= 1
+                        j += 1
+                    # RECURSE INTO THE EXPRESSION. Its body is real code and is KEPT -- but it can
+                    # contain its own strings, which must still be stripped.
+                    #
+                    # Without this, a nested template like
+                    #     className={`a ${cond ? 'shadow-[rgba(1,2,3,.4)]' : 'b'}`}
+                    # leaked the single-quoted Tailwind class as code, and `rgba(` in it was
+                    # reported as an undeclared function. That is how sixteen false findings --
+                    # `rgba`, `ff0055`, `listening`, `interrupt` -- appeared at once.
+                    out.append(strip_literals_and_comments(text[start:j]))
+                    i = j
+                    continue
+                j += 1
+            out.append(" " * (min(j, n) - i))
+            i = j + 1
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def declared_names(src: str) -> set[str]:
+    """Every name the file brings into scope."""
+    names: set[str] = set()
+
+    # import ... from '...', including `{ a, b as c }` and `* as ns`
+    for m in re.finditer(r"import\s+([^;]+?)\s+from\s+['\"]", src, re.S):
+        clause = m.group(1)
+        brace = re.search(r"\{([^}]*)\}", clause, re.S)
+        if brace:
+            for part in brace.group(1).split(","):
+                part = part.strip()
+                if part:
+                    names.add(part.split(" as ")[-1].strip())
+        head = clause.split("{")[0].replace(",", " ").strip()
+        for token in head.split():
+            if token and token not in ("*", "as"):
+                names.add(token)
+
+    # const / let / var, including destructures
+    for m in re.finditer(r"\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+    for m in re.finditer(r"\b(?:const|let|var)\s*[\[{]([^\]}]*)[\]}]", src):
+        for part in re.split(r"[,\s]+", m.group(1)):
+            part = part.split(":")[-1].split("=")[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part or ""):
+                names.add(part)
+
+    # function / class declarations
+    for m in re.finditer(r"\bfunction\s+([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+    for m in re.finditer(r"\bclass\s+([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+
+    # parameters, of every shape: `(a, b)`, `(a = 1)`, `(a: T)`, `x =>`, `.map((x) =>`
+    #
+    # GENERIC TYPE PARAMETERS CONTAIN PARENTHESES AND COMMAS: `Record<Activity, number>` inside a
+    # signature means the naive split on `,` sees `spendPerMin: number` correctly but a signature
+    # like `f(a: Record<X, Y>, b: number)` had its first parameter mangled. Types are stripped from
+    # each parameter before the name is read, rather than the whole parameter list being split
+    # blindly.
+    for m in re.finditer(r"\(([^()]*)\)\s*(?:=>|\{)", src):
+        for part in m.group(1).split(","):
+            part = part.split("=")[0].split(":")[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part or ""):
+                names.add(part)
+    # `name: Type` inside any parameter list, including one containing generics -- covers the case
+    # the regex above cannot bracket correctly.
+    for m in re.finditer(r"([A-Za-z_$][\w$]*)\s*:\s*[A-Za-z_$][\w$.<>\[\]| ]*", src):
+        names.add(m.group(1))
+    for m in re.finditer(r"(?<![\w$])([A-Za-z_$][\w$]*)\s*=>", src):
+        names.add(m.group(1))
+
+    # object destructuring in assignments and attributes: `{ a, b: c } = ...`, `({ a }) =>`
+    for m in re.finditer(r"\{([^{}]*)\}\s*=", src):
+        for part in m.group(1).split(","):
+            part = part.split(":")[-1].split("=")[0].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", part or ""):
+                names.add(part)
+
+    # catch bindings and for-of/for-in
+    for m in re.finditer(r"\bcatch\s*\(\s*([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+    for m in re.finditer(r"\bfor\s*\(\s*(?:const|let|var)?\s*([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+
+    # TypeScript type/interface/enum names, so a type used in a cast is not reported
+    for m in re.finditer(r"\b(?:type|interface|enum)\s+([A-Za-z_$][\w$]*)", src):
+        names.add(m.group(1))
+
+    return names
+
+
+def find_suspects(src: str) -> tuple[list[str], list[str], list[str]]:
+    """Return (missing_hooks, called_but_undeclared, other_suspects).
+
+    ONE PLACE. This function was rewritten four times while chasing four misses, and the last edit
+    left TWO divergent bodies in the file -- the new shapes landed in a branch that never ran, so
+    `find_suspects` returned empty lists and the guard silently passed everything. A guard that
+    returns nothing is indistinguishable from a guard that found nothing, which is why that went
+    unnoticed for several edits.
+
+    The five reference shapes below are each here because a real defect got past the other four:
+
+      1  camelCase in a JSX expression        (voiceDraft)
+      2  a JSX attribute, `ref={x}`           (threadRef)
+      3  anything CALLED                      (force)
+      4  a bare lowercase name before `&&`    (hovered -- took the whole room down)
+         or after `!`
+      5  hooks, reported separately           (useCallback)
+
+    and one declaration scan covering imports, consts, functions, classes, parameters,
+    destructures, catch bindings and type declarations.
+    """
+    code = strip_literals_and_comments(src)
+    declared = declared_names(src)
+
+    # ---- 5. hooks, reported separately: the fix is always "add it to the import"
+    used_hooks = {m.group(1) for m in re.finditer(r"\b(use[A-Z][\w$]*)\s*\(", code)}
+    missing_hooks = sorted((used_hooks & REACT_HOOKS) - declared)
+
+    candidates: set[str] = set()
+
+    # ---- 1. a bare camelCase identifier in a JSX expression
+    jsx_expr = " ".join(m.group(1) for m in re.finditer(r"\{([^{}]*)\}", code))
+    jsx_expr = re.sub(r"\.[A-Za-z_$][\w$]*", " ", jsx_expr)
+    jsx_expr = re.sub(r"[A-Za-z_$][\w$]*\s*:", " ", jsx_expr)
+    jsx_expr = re.sub(r"\b[A-Za-z_$][\w$]*\s*=(?!=)", " ", jsx_expr)
+    candidates |= set(re.findall(r"(?<![.\w$])([a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9]*)\b", jsx_expr))
+
+    # ---- 2. a JSX attribute: `ref={threadRef}`. Braces here are not a JSX expression.
+    for m in re.finditer(r"\b[a-zA-Z-]+=\{([^{}]+)\}", code):
+        inner = re.sub(r"\.[A-Za-z_$][\w$]*", " ", m.group(1))
+        candidates |= set(re.findall(r"(?<![.\w$])([a-z][A-Za-z0-9]*[A-Z][A-Za-z0-9_$]*)\b", inner))
+
+    # property access binds nothing, so strip it before shapes 3 and 4
+    no_props = re.sub(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\.[A-Za-z_$][\w$]*", " ", code)
+
+    # ---- 3. anything CALLED
+    candidates |= set(re.findall(r"(?<![.\w$])([a-z][A-Za-z0-9_$]*)\s*\(", no_props))
+
+    # ---- 4. a bare lowercase NAME read as a value: before `&&`, after `!`/`!!`
+    candidates |= set(re.findall(r"(?<![.\w$!])([a-z][A-Za-z0-9_$]*)\s*&&", no_props))
+    candidates |= set(re.findall(r"!{1,2}([a-z][A-Za-z0-9_$]*)", no_props))
+
+    suspects = {n for n in candidates if n not in declared}
+    suspects -= KEYWORDS
+    suspects -= GLOBALS
+
+    called_suspects = sorted(set(re.findall(r"(?<![.\w$])([a-z][A-Za-z0-9_$]*)\s*\(", no_props)) & suspects)
+    others = sorted(suspects - set(called_suspects))
+    return missing_hooks, called_suspects, others
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        print(__doc__)
+        return 2
+    bad = 0
+    for arg in argv[1:]:
+        p = Path(arg)
+        if not p.is_file():
+            print(f"skip  {arg} (not a file)")
+            continue
+        try:
+            src = p.read_text()
+        except OSError as exc:
+            print(f"FAIL  {p}  (unreadable: {exc})")
+            bad = 1
+            continue
+
+        hooks, called, others = find_suspects(src)
+        if hooks or called or others:
+            bad = 1
+            print(f"FAIL  {p}")
+            if hooks:
+                print(f"      hooks used but not imported: {', '.join(hooks)}")
+            if called:
+                print(f"      called but never declared here: {', '.join(called)}")
+            if others:
+                print(f"      referenced but never declared here: {', '.join(others)}")
+        else:
+            print(f"ok    {p}")
+    return bad
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

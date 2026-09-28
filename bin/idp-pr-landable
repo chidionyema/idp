@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Is this pull request genuinely finished? (idp#1046)
+
+crew answered this on 2026-08-23 in crew/.github/workflows/merge-when-green.yml, where the same
+logic sits inline in a shell heredoc. This is that logic, lifted into a file so it can be tested
+without a repository, and reading idp's required contexts from
+platform/github/ruleset.idp.required-checks.json rather than a list typed here -- a required check
+that is added to the ruleset and not to this tool would otherwise be a check nothing waits for.
+
+WHAT IT REFUSES, each a real case rather than a precaution:
+  draft                     ONLY when it is otherwise unfinished. A draft that is green, clean
+                            and unheld gets READY instead: the flag is the author's, and the
+                            author is a session that ended (crew, 2026-09-08, five green drafts
+                            sat ten days on it)
+  hold / do-not-merge / wip the one-word way for any session or the founder to stop one merge
+  BEHIND                    not a refusal: main moved underneath it. Refresh, land next tick --
+                            skipping this is how crew's two stalled pull requests became conflicts
+  DIRTY                     a real conflict; a person has to choose
+  no checks at all          unproven, not green
+  a required check absent   crew#105: PR #111 merged unreviewed on 2026-08-24 because review-gate
+                            was not on main, so its check never appeared and "not failing" read as
+                            green. A required context must be PRESENT and SUCCESS
+  a check still running     a verdict that has not been reached is not a pass
+  any completed check that is not SUCCESS / SKIPPED / NEUTRAL
+
+  bin/idp-pr-landable PR.json      (the output of `gh pr view --json isDraft,mergeStateStatus,labels,statusCheckRollup`)
+
+Since the W3.3 low-risk lane (docs/policy/agent-infra-safety-spec.md W3.3), an admitted
+auto-remediation pull request refuses to merge without a green shadow proof: a PR bearing the
+`type: auto-remediation` label is only MERGE when the checks rollup actually contains a
+SUCCESSful 'shadow-verify' / convergence check -- i.e. a real shadow run proved the change on
+this head. A label alone, or a label on a PR with no such green check, is SKIP, never MERGE: an
+unproven remediation never rides the normal green path.
+
+Prints one line: `MERGE|READY|UPDATE|SKIP  <why>`. Exit 0 always -- the verdict is the answer, and a
+tool that exits 1 on "not yet" turns a normal wait into a red run.
+"""
+
+import json
+import os
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RULESET = os.path.join(ROOT, "platform", "github", "ruleset.idp.required-checks.json")
+HOLD = {"hold", "do-not-merge", "wip"}
+
+
+def required_contexts(path=RULESET):
+    """The contexts main actually requires, from the file that installs them."""
+    try:
+        doc = json.load(open(path, encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    out = set()
+    for rule in doc.get("rules", []):
+        if rule.get("type") == "required_status_checks":
+            for c in rule.get("parameters", {}).get("required_status_checks", []):
+                if c.get("context"):
+                    out.add(c["context"])
+    return out
+
+
+def latest_per_name(checks):
+    """One entry per check NAME, not one per run.
+
+    statusCheckRollup returns a row for every run of every check, so a run that was superseded --
+    cancelled because a newer push started, or re-run after a fix -- stays in the list beside the
+    run that replaced it. Reading the list raw makes a green pull request report as failing and a
+    merge lane wait forever on a verdict that was already reached. Measured on the deploy itself,
+    #1011: `open` carried a FAILURE from the broken robot and a SUCCESS from the re-run that fixed
+    it, and the unfiltered read called the pull request failing while GitHub called it mergeable.
+
+    The later run wins, ordered by when it finished and then by when it started, so a re-run that
+    is still going beats the completed run it supersedes rather than the other way round -- which
+    lands as "still running", the honest answer, instead of a stale pass.
+    """
+    latest = {}
+    for c in checks:
+        name = c.get("name") or c.get("context") or "?"
+        key = (c.get("completedAt") or "", c.get("startedAt") or "")
+        if name not in latest or key >= latest[name][0]:
+            latest[name] = (key, c)
+    return [c for _, c in latest.values()]
+
+
+def verdict(pr, required):
+    labels = {lbl["name"].lower() for lbl in pr.get("labels") or []}
+    checks = latest_per_name(pr.get("statusCheckRollup") or [])
+    names = {c.get("name") or c.get("context") for c in checks}
+    done = [c for c in checks if (c.get("status") or "COMPLETED") == "COMPLETED"]
+    bad = [
+        c
+        for c in done
+        if (c.get("conclusion") or "") not in ("SUCCESS", "SKIPPED", "NEUTRAL")
+    ]
+    missing = sorted(required - names)
+    state = pr.get("mergeStateStatus")
+
+    if labels & HOLD:
+        return "SKIP", "labelled " + ",".join(sorted(labels & HOLD))
+    if state == "DIRTY":
+        return "SKIP", "a real conflict; a person has to choose"
+    # Refresh before judging the checks, and on more than GitHub's BEHIND.
+    #
+    # Measured 2026-09-12, and this is the defect this ordering fixes: eight pull requests were
+    # failing their builds because they were behind main and lacked a fix that had already
+    # merged. Here is what GitHub reported for them, and how far behind each was:
+    #
+    #     #3253 UNSTABLE  behind 7      #3254 UNSTABLE  behind 8
+    #     #3243 BLOCKED   behind 14     #3231 behind 2, #3241 behind 19, #3214 behind 21
+    #
+    # Not one reported BEHIND. A branch that is behind main AND carries a failing check reports
+    # UNSTABLE or BLOCKED, so the UPDATE below never fired for exactly the population that
+    # needed it: a red pull request could not pick up the fix that would make it green. That is
+    # a deadlock, and it is why nine pull requests sat red while main was green -- the refresh
+    # waited for the thing only the refresh could produce.
+    #
+    # `behind_by` is the honest signal: it comes from the compare API (main...<branch>), which
+    # answers 9 for a branch nine commits behind and 0 for one that is current. It is supplied
+    # by the caller, because it costs one API call per pull request and gh's `pr list` does not
+    # carry it. `rebaseable` was tried first and is the wrong field: it is true for a current
+    # branch as well, so it reported every pull request as behind.
+    #
+    # DIRTY is handled above and never reaches here, so a real conflict is still a person's to
+    # choose. With no `behind_by` at all the old behaviour stands, which is BEHIND only.
+    #
+    # The refresh is refused while any check is still RUNNING, and that ordering is the whole fix.
+    #
+    # Measured 2026-09-13: `update-branch` pushes a merge commit, which starts a new CI run and
+    # CANCELS the one in flight. So a branch that was behind and mid-CI got refreshed, had its own
+    # `bdd-suites` killed, came back as `behind_by > 0` on the next tick, and was refreshed again.
+    # Nine pull requests sat BLOCKED in that loop, each with every job green except the two that
+    # never got to finish: bdd-suites (tests) and bdd-suites (acceptance), cancelled on every run
+    # while `gh run list` showed only the cancellations. The estate's own merge bot was the thing
+    # holding its own merges out.
+    #
+    # A refresh helps exactly one population: a branch whose checks are FINISHED and some of them
+    # are red, where the redness is because main has moved on. A branch whose checks are still
+    # running is not that, and refreshing it destroys the evidence rather than repairing it.
+    # `bin/idp-circuit-breaker` names the same shape: do not repeat a step that is not converging.
+    behind_by = pr.get("behind_by", 0) or 0
+    behind = state == "BEHIND" or behind_by > 0
+    if behind and state in ("BEHIND", "UNSTABLE", "BLOCKED", "CLEAN"):
+        running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]
+        if running:
+            return "SKIP", (
+                f"behind main by {behind_by} commit(s), but {len(running)} check(s) are still "
+                f"running: a refresh now cancels them, and the branch would come back behind with "
+                f"its evidence destroyed. It lands or goes red on this run; the refresh waits"
+            )
+        return "UPDATE", (
+            f"behind main by {behind_by} commit(s); refreshed now, so a check that is red only "
+            f"because main has moved on gets the fix it needs and lands next tick"
+            if behind_by
+            else "behind main; refresh now, land next tick"
+        )
+    if state not in ("CLEAN", "UNSTABLE", "BLOCKED"):
+        return "SKIP", f"state {state}"
+    if not checks:
+        return "SKIP", "no checks ran, so it is unproven rather than green"
+    if missing:
+        return "SKIP", "required check(s) never ran: " + ",".join(missing)
+    if len(done) != len(checks):
+        return "SKIP", f"{len(checks) - len(done)} check(s) still running"
+    if bad:
+        return "SKIP", "failing: " + ",".join(
+            (c.get("name") or "?") + "=" + (c.get("conclusion") or "none")
+            for c in bad[:4]
+        )
+    # The W3.3 low-risk lane: an admitted auto-remediation PR merges only on a real shadow proof.
+    # A label is not a proof -- a PR claiming type:auto-remediation but with no green shadow-verify
+    # / convergence check in its rollup must NOT auto-merge, or an unproven change would ride the
+    # ordinary green path straight into the cluster. Fail closed: no green shadow check, no merge.
+    if "type:auto-remediation" in labels:
+        shadow_ok = any(
+            (c.get("name") or "").strip().lower()
+            in ("shadow-verify", "proof-of-convergence")
+            and c.get("conclusion") == "SUCCESS"
+            for c in done
+        )
+        if not shadow_ok:
+            return (
+                "SKIP",
+                "labelled type:auto-remediation but has no green shadow-verify/proof-of-convergence "
+                "check; a label is not a proof (W3.3)",
+            )
+    # The draft flag is judged LAST, and only on a pull request that is otherwise finished, so a
+    # draft that is red, held or conflicted is never touched. Five green pull requests sat in crew
+    # for ten days on nothing but this flag, because the sessions that opened them never came back
+    # to clear it. Founder, 2026-09-08: "agents should be responsiblefor their own own, all this
+    # chasing is fricion". A green draft nobody marked ready is marked ready and lands next tick.
+    if pr.get("isDraft"):
+        return "READY", "a green draft nobody marked ready"
+    return "MERGE", "green, clean, unblocked"
+
+
+def main(argv):
+    if len(argv) != 1:
+        print("SKIP    usage: bin/idp-pr-landable PR.json")
+        return 0
+    try:
+        pr = json.load(open(argv[0], encoding="utf-8"))
+    except (OSError, ValueError) as e:
+        print(f"SKIP    cannot read {argv[0]}: {e}")
+        return 0
+    v, why = verdict(pr, required_contexts())
+    print(f"{v}    {why}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# A conditional whose verdict is a pipeline into grep, in a script that sets `pipefail`.
+#
+# Incident 2026-08-25: the portprobe test read `port-gate | grep -q '<message>'`, port-gate
+# exited 1 on purpose, pipefail reported that 1, and the leg failed with the message exactly
+# right -- it cost a debugging round to attribute. The class is wider than one test: the same
+# shape decides whether bin/idp-up re-points the tailnet link and whether bin/langfuse-status
+# calls Langfuse down, and there a failing left-hand command inverts the answer silently.
+#
+# The mature tool cannot see this. Running `-S style --enable=all` over
+# tests/fixtures/pipefail-verdict.bad.sh returns rc=0 with zero findings, which is why the pair
+# was written and why this file exists rather than a lint flag (LAW 43: name the mature tool and
+# what it cannot do). Its name is not spelled at the start of a comment line here, because that
+# is how it reads its own directives and it refuses the file (SC1072).
+#
+# Scope, 2026-09-07: this used to be a function inside bin/idp-ci that scanned "$IDP"/bin/* and
+# nothing else. The discovery below reads every tracked shell file. Eight of them sit outside
+# bin/, and those eight are the whole widening -- the total moves with the tree, so it is not
+# frozen here, but the eight are, and a count nobody can check is not a count:
+# .githooks/pre-commit, .githooks/pre-push, architecture/render, platform/cyrus/entrypoint.sh,
+# platform/hermes-agent/cursor-agent.tpl, platform/hermes-agent/mac-run.tpl,
+# platform/sandbox/vcluster/idp-sandbox-sweep, sovereign/presence/swiftbar/estate-presence.5s.sh.
+# Two of them are the git hooks, which are shell that decides whether other shell may run.
+# The same pattern over those eight hits zero times today, so the widening refuses no correct
+# work (LAW 38) and only closes the door for tomorrow.
+#
+# With no arguments it scans every tracked shell file except tests/fixtures, which holds the
+# deliberate bad case. With arguments it scans exactly those paths, which is how the registry
+# grades it against the fixture pair.
+set -euo pipefail
+
+# rc 0 is "ok", rc 1 is "FAIL" -- both are verdicts this rule is entitled to return. Anything else
+# is the scan itself falling over, and a gate that dies quietly is a gate that never refuses
+# anything, which is the defect this file exists to catch. Say so in the estate's own grammar.
+rc=0 blind=''
+# shellcheck disable=SC2317  # the trap body runs on EXIT, which shellcheck cannot see reaching
+trap 'rc=$?; if [ "$rc" -gt 1 ]; then printf "BLIND pipeverdict %s; nothing was graded\n" "${blind:-the scan aborted (rc=$rc)}" >&2; fi; exit "$rc"' EXIT
+
+# The `([0-9]+:)?` prefix is not decoration: grep -n stamps a line number on every line, and an
+# anchored pattern without it silently matches nothing on the second pass -- a guard that never
+# refuses anything, which is the defect this whole rule is about.
+PIPEVERDICT='^([0-9]+:)?[[:space:]]*(if|elif|while)[[:space:]].*\|[[:space:]]*(/usr/bin/)?grep[[:space:]]+-[a-zA-Z]*[qc]'
+
+scan_one() {
+	# A file that does not set pipefail cannot have this defect: the pipeline's verdict is grep's.
+	/usr/bin/grep -q 'pipefail' "$1" || return 1
+	# `$( ... )` spans are removed first: a pipeline in a command substitution is graded by its
+	# output, and the enclosing test is what decides the branch. A left side of printf/echo/cat/head
+	# is the fix shape itself and must not be refused.
+	# SC2016: the single quotes are the point. `$(` is sed's own text to match, not a
+	# substitution this shell should perform.
+	# shellcheck disable=SC2016
+	grep -nE "$PIPEVERDICT" "$1" |
+		sed 's/\$([^)]*)//g' |
+		grep -E "$PIPEVERDICT" |
+		grep -vE '^[0-9]+:[[:space:]]*(if|elif|while)[[:space:]]+(!?[[:space:]]*)?(printf|echo|cat|head)[[:space:]]'
+}
+
+files() {
+	if [ "$#" -gt 0 ]; then
+		printf '%s\n' "$@"
+		return
+	fi
+	# One grep over every tracked file, not three processes per file: the per-file shape spent 13s
+	# on 230 files and this gate has a 60-second budget for every rung together.
+	{
+		git ls-files -- '*.sh' '*.bash' 'bin/*'
+		git ls-files -z | xargs -0 grep -l -m1 -E '^#!.*\b(ba)?sh\b' 2>/dev/null || true
+	} | sort -u | grep -v '^tests/fixtures/'
+}
+
+# Resolved here, not inside files(): that function runs in a process substitution, so its death
+# is a subshell's, the loop reads EOF, and a scan of nothing reports a clean pass (idp-1a, #2390).
+if [ "$#" -eq 0 ]; then
+	if ! root=$(git rev-parse --show-toplevel 2>/dev/null); then
+		blind='not inside a git checkout, so there is no file set to discover'
+		exit 2
+	fi
+	cd "$root"
+fi
+
+hits=0 scanned=0
+while IFS= read -r f; do
+	[ -f "$f" ] || continue
+	scanned=$((scanned + 1))
+	if out=$(scan_one "$f"); then
+		hits=$((hits + 1))
+		printf 'FAIL  pipeverdict %s\n' "$f"
+		printf '%s\n' "$out" | sed 's/^/      /'
+	fi
+done < <(files "$@")
+
+if [ "$scanned" -eq 0 ]; then
+	blind='no shell file was read'
+	exit 2
+fi
+if [ "$hits" -eq 0 ]; then
+	printf 'ok    pipeverdict %d shell file(s); none let a pipeline exit status stand in for a grep match\n' "$scanned"
+	exit 0
+fi
+printf 'FAIL  pipeverdict %d of %d shell file(s) let a pipeline exit status stand in for a grep match\n' "$hits" "$scanned"
+exit 1

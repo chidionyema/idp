@@ -1,0 +1,284 @@
+diff --git a/features/self-aware-platform/cp1_inventory_tool.feature b/features/self-aware-platform/cp1_inventory_tool.feature
+new file mode 100644
+index 000000000..cf8d5bd94
+--- /dev/null
++++ b/features/self-aware-platform/cp1_inventory_tool.feature
+@@ -0,0 +1,26 @@
++@cp1
++Feature: Inventory tool — one call answers what the estate is
++  Founder: "the platform has all the maps and internal state to answer any
++  question about itself." An agent asking "what is running, and who owns it"
++  costs eight shell commands today. This is the first MCP call that answers
++  it from what the estate already computed — crew/STATE.md and the Backstage
++  catalog — never by re-measuring the estate itself.
++
++  Scenario: One MCP call replaces the shell-command chain
++    Given the estate MCP server is running behind Agentgateway
++    When an agent calls mcp__estate__get_estate_inventory with no arguments
++    Then the response lists every catalog entity with its owner and repo
++    And the response cites the crew/STATE.md snapshot timestamp it read
++    And the agent made exactly one tool call to get the answer
++
++  Scenario: The tool never shells out
++    Given the estate MCP server source for get_estate_inventory
++    Then it contains no subprocess call, no shell="true", and no os.system
++    And every fact in its response traces to crew/STATE.md or the Backstage
++      catalog API, not a fresh probe of a running process
++
++  Scenario: A stale snapshot is disclosed, not hidden
++    Given crew/STATE.md is older than the freshness threshold in its own header
++    When an agent calls get_estate_inventory
++    Then the response marks itself "stale" with the snapshot's age in minutes
++    And no field is silently dropped to hide the staleness
+diff --git a/features/self-aware-platform/cp2_get_workload_state.feature b/features/self-aware-platform/cp2_get_workload_state.feature
+new file mode 100644
+index 000000000..1cdd3619c
+--- /dev/null
++++ b/features/self-aware-platform/cp2_get_workload_state.feature
+@@ -0,0 +1,28 @@
++@cp2
++Feature: get_workload_state — one fat tool call, catalog plus metrics plus desired state
++  Founder's pasted design: "get_workload_state(app) returns catalog + metrics +
++  desired state in one payload." Failure mode he named: payload bloat — raw
++  logs and raw timeseries kill the context. Fix he named: summarize by
++  default; drilling is a separate tool (cp3).
++
++  Scenario: One call answers "why is X down"
++    Given a workload "app-x" registered in the Backstage catalog
++    When an agent calls mcp__estate__get_workload_state("app-x")
++    Then the response includes the catalog entry (owner, repo, dependencies)
++    And the response includes summarized metrics (not raw timeseries points)
++    And the response includes desired vs actual state for app-x
++    And the agent needed exactly one tool call, not eight shell commands
++
++  Scenario: The payload never carries raw logs or raw timeseries
++    Given a workload with 10,000 log lines and 90 days of metric samples
++    When get_workload_state is called for it
++    Then the response contains no raw log line
++    And the response contains no per-sample timeseries array
++    And numeric metrics are pre-aggregated (min, max, mean, last, or similar)
++
++  Scenario: Payload stays under the byte ceiling regardless of workload size
++    Given a property test generating workloads with 1 to 100,000 log lines,
++      0 to 500 dependencies, and 0 to 10,000 metric samples
++    When get_workload_state is called for each generated workload
++    Then every response body is under the configured byte ceiling
++    And this holds for at least 500 generated cases in one property-test run
+diff --git a/features/self-aware-platform/cp3_get_workload_logs.feature b/features/self-aware-platform/cp3_get_workload_logs.feature
+new file mode 100644
+index 000000000..3ffe6f8cf
+--- /dev/null
++++ b/features/self-aware-platform/cp3_get_workload_logs.feature
+@@ -0,0 +1,22 @@
++@cp3
++Feature: get_workload_logs — the separate drill-down tool for raw detail
++  Founder's fix for fat-tool bloat: "summarize by default, drill on demand
++  via a separate get_workload_logs(tail=50)." This tool exists precisely so
++  cp2 never has to inline raw logs.
++
++  Scenario: An agent drills into logs only when it asks
++    Given get_workload_state("app-x") returned a summary with no raw logs
++    When an agent calls mcp__estate__get_workload_logs("app-x", tail=50)
++    Then the response contains the last 50 log lines for app-x
++    And no other tool call was needed to reach the raw log content
++
++  Scenario: tail is bounded even when a larger value is requested
++    When get_workload_logs("app-x", tail=1000000) is called
++    Then the response contains at most the server's configured maximum tail
++      lines, not 1,000,000 lines
++    And the response states the maximum it enforced
++
++  Scenario: get_workload_state and get_workload_logs are distinct tools
++    Given the MCP tool list exposed by the estate server
++    Then get_workload_state and get_workload_logs are registered as two
++      separate tools, not one tool with a hidden verbose flag
+diff --git a/features/self-aware-platform/cp4_get_catalog_drift.feature b/features/self-aware-platform/cp4_get_catalog_drift.feature
+new file mode 100644
+index 000000000..78f9de5a0
+--- /dev/null
++++ b/features/self-aware-platform/cp4_get_catalog_drift.feature
+@@ -0,0 +1,36 @@
++@cp4
++Feature: get_catalog_drift — dark matter is visible, on the laptop substrate
++  Founder's pasted design: "the server reads typed catalog-info.yaml
++  annotations, never string-greps. Failure: dark matter, resources applied
++  outside the catalog are invisible. Fix: get_catalog_drift() compares
++  catalog vs live API and lists untracked resources." Substrate is the
++  laptop until k8s (fly-destroyed, oke-not-live): live state here is launchd
++  jobs, colima containers, and catalog/ports.yaml.
++
++  Scenario: A launchd job with no catalog entity is reported as drift
++    Given a launchd job "com.example.orphan" is loaded and running
++    And no Backstage catalog entity references "com.example.orphan"
++    When mcp__estate__get_catalog_drift() is called
++    Then the response lists "com.example.orphan" under untracked launchd jobs
++
++  Scenario: A colima container with no catalog entity is reported as drift
++    Given a colima container is running with no matching catalog entity
++    When get_catalog_drift() is called
++    Then the response lists that container under untracked containers
++
++  Scenario: A port bound outside catalog/ports.yaml is reported as drift
++    Given a process is listening on a port absent from catalog/ports.yaml
++    When get_catalog_drift() is called
++    Then the response lists that port under untracked ports
++
++  Scenario: Everything cataloged and running is not flagged
++    Given every currently running launchd job, colima container and bound
++      port has a matching catalog-info.yaml entity or ports.yaml row
++    When get_catalog_drift() is called
++    Then the response's untracked lists are all empty
++
++  Scenario: Drift detection reads typed annotations, never string-greps
++    Given the get_catalog_drift implementation
++    Then it parses catalog-info.yaml as structured YAML
++    And it contains no regex or substring match against free-text file content
++      used to decide whether an entity is cataloged
+diff --git a/features/self-aware-platform/cp5_event_aggregation.feature b/features/self-aware-platform/cp5_event_aggregation.feature
+new file mode 100644
+index 000000000..15a907a32
+--- /dev/null
++++ b/features/self-aware-platform/cp5_event_aggregation.feature
+@@ -0,0 +1,31 @@
++@cp5
++Feature: Event aggregation behind Temporal — a storm becomes one event
++  Founder's pasted design: "state changes are pushed to a bus the agent
++  subscribes to. Failure: alert storms flood the agent's context and cause
++  reaction loops. Fix: debounce and aggregate behind Temporal; 50 crashes in
++  10s arrive as one cascading_failure event." This sits on the existing
++  Sovereign Bus (crew#213), not a second event bus.
++
++  Scenario: 50 crashes in 10 seconds collapse to one event
++    Given the Sovereign Bus event aggregation window is 10 seconds
++    When 50 crash events for related workloads are emitted within 10 seconds
++    Then the subscribing agent receives exactly one "cascading_failure" event
++    And that event lists all 50 underlying crashes by workload and timestamp
++
++  Scenario: Events outside the window are not merged
++    Given the aggregation window is 10 seconds
++    When one crash event fires, then 15 seconds pass, then a second crash fires
++    Then the agent receives two separate events, not one
++
++  Scenario: Storm test proves the collapse ratio
++    Given a test harness emitting N events uniformly across T seconds, for
++      N in {10, 50, 200, 1000} and T in {1, 5, 10} seconds
++    When the aggregation window is T seconds
++    Then the agent-visible event count is less than N for every case where
++      events fall inside a shared window
++    And the harness prints N, T, and the resulting event count for each case
++
++  Scenario: Aggregation does not drop information, only delivery count
++    Given a cascading_failure event produced by aggregating 50 crashes
++    Then every one of the 50 source crashes is still retrievable from the
++      event's detail payload or a linked receipt, not discarded
+diff --git a/features/self-aware-platform/cp6_propose_execute_state_hash.feature b/features/self-aware-platform/cp6_propose_execute_state_hash.feature
+new file mode 100644
+index 000000000..f276b3e78
+--- /dev/null
++++ b/features/self-aware-platform/cp6_propose_execute_state_hash.feature
+@@ -0,0 +1,34 @@
++@cp6
++Feature: propose_action / execute_action carry a state hash, refuse on TOCTOU
++  Founder's pasted design: "split propose_action() from execute_action():
++  agent proposes, founder approves from the phone. Failure: TOCTOU, the
++  cluster changed between proposal and approval. Fix: the proposal carries a
++  state hash; execute refuses if the current hash differs and forces
++  re-evaluation." This lands on the existing Sovereign Bus propose/approve
++  path (crew#213); the state hash goes into the signed receipt it already
++  writes.
++
++  Scenario: A proposal carries the state hash it was computed against
++    When an agent calls propose_action for a change to workload "app-x"
++    Then the proposal includes a hash of app-x's current state
++    And that hash is written into the signed receipt for the proposal
++
++  Scenario: Execute succeeds when state has not changed
++    Given a proposal was made with state hash H for app-x
++    And app-x's state hash is still H at approval time
++    When the founder approves via /sb-approve
++    Then execute_action runs the change
++    And the receipt chain records the same hash H for propose and execute
++
++  Scenario: Execute refuses when state changed between propose and approve — TOCTOU
++    Given a proposal was made with state hash H for app-x
++    And app-x's state hash changes to H2 before the founder approves
++    When the founder approves via /sb-approve
++    Then execute_action refuses to run
++    And the response states the proposal's hash H and the current hash H2
++    And the agent is told to re-propose against the current state
++
++  Scenario: A stale approval never mutates anything
++    Given execute_action has refused a stale-hash approval
++    Then no write was made to app-x
++    And the refusal itself is written to the signed receipt chain
+diff --git a/features/self-aware-platform/cp7_token_receipt.feature b/features/self-aware-platform/cp7_token_receipt.feature
+new file mode 100644
+index 000000000..d3c48cae2
+--- /dev/null
++++ b/features/self-aware-platform/cp7_token_receipt.feature
+@@ -0,0 +1,33 @@
++@cp7
++Feature: Token receipt — the waste the founder named, measured before and after
++  Founder: "think of all the tool calls and tokens wasted repeating the same
++  actions." This checkpoint is a script that measures three recurring
++  questions against the old path (shell commands, repeated probes) and the
++  new path (this MCP surface) and prints both numbers, so the claim is a
++  measured number, not an assertion.
++
++  Scenario: The script defines three recurring questions
++    Given a script "bin/self-aware-token-receipt"
++    Then it names three recurring questions agents ask today, for example
++      "why is X down", "what is running that isn't cataloged", and
++      "what changed since the last approval"
++
++  Scenario: Before numbers are measured, not remembered
++    When the script runs the "before" path for each question using the
++      pre-existing shell-command chain
++    Then it prints the tool-call count and token count actually consumed for
++      each question, sourced from a fresh run, not a prior log line
++
++  Scenario: After numbers are measured against the new MCP surface
++    When the script runs the "after" path for each question using
++      get_estate_inventory, get_workload_state, get_workload_logs, or
++      get_catalog_drift as appropriate
++    Then it prints the tool-call count and token count actually consumed for
++      each question from that same fresh run
++
++  Scenario: The receipt is the number, not a claim
++    When bin/self-aware-token-receipt runs end to end
++    Then its final output is a table with one row per question and columns
++      for before-tool-calls, after-tool-calls, before-tokens, after-tokens
++    And the script's exit code is nonzero if any "after" row fails to
++      complete, so a broken measurement cannot print a comparison
+diff --git a/features/self-aware-platform/cp8_k8s_adapter.feature b/features/self-aware-platform/cp8_k8s_adapter.feature
+new file mode 100644
+index 000000000..55a9d0fd0
+--- /dev/null
++++ b/features/self-aware-platform/cp8_k8s_adapter.feature
+@@ -0,0 +1,26 @@
++@cp8
++Feature: k8s adapter — the same desired-vs-actual interface, deferred until a cluster exists
++  Substrate is the laptop until k8s (Fly destroyed 2026-08-25, OKE planned
++  but not live). cp4's drift tool and cp2's fat tool stand in launchd and
++  colima state for "desired vs actual" today. This checkpoint proves the
++  adapter interface without a live cluster call, so swapping in Flux/k8s
++  later touches one adapter, not every caller.
++
++  Scenario: Desired-vs-actual is read through one interface, not two code paths
++    Given the get_workload_state and get_catalog_drift implementations
++    Then both call a single "desired_vs_actual" interface function
++    And neither contains launchd- or colima-specific logic inline outside
++      that interface's laptop implementation
++
++  Scenario: A k8s implementation of the interface can be registered without
++    touching the callers
++    Given a stub Flux/k8s implementation of the desired_vs_actual interface
++    When it is registered in place of the laptop implementation
++    Then get_workload_state and get_catalog_drift run unchanged
++    And their output shape (fields and types) is identical to the laptop path
++
++  Scenario: The adapter is not activated against a live cluster yet
++    Given no OKE or other k8s cluster is reachable from this estate
++    When the k8s desired_vs_actual implementation is exercised
++    Then it runs only against a recorded fixture or a documented stub
++    And the checkpoint does not claim a live cluster call succeeded

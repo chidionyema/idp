@@ -1,0 +1,21 @@
+# crew#892 CP4 fixture: a Pod that conforms to the gVisor cell boundary. It names the `gvisor`
+# RuntimeClass, is not privileged, does not use host networking and mounts no hostPath, so it
+# belongs in the otto-gvisor-sandbox cell. bin/gvisor-cell-gate must admit it, and the Kyverno
+# policy admits the same object.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cell-code-runner
+  namespace: otto-gvisor-sandbox
+spec:
+  runtimeClassName: gvisor
+  containers:
+    - name: python
+      image: example.invalid/code-runner:1
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+        seccompProfile:
+          type: RuntimeDefault
+      command: ["python3", "-c", "print('sandboxed')"]

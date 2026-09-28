@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# What is receiving traces right now, and what has actually landed.
+#
+#   langfuse-status              both receivers, memory, trace counts
+#   langfuse-status --fallback   what the fallback file holds
+#
+# Exit non-zero only when BOTH receivers are down. One down is the design
+# working; both down is an outage, and a status command that returns 0 either
+# way cannot be used as a check.
+set -uo pipefail
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+OBS="$IDP/observability"
+ENVF="$OBS/.env"
+JQ=/usr/local/bin/jq
+
+probe() {
+  local c
+  c=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 "$1" 2>/dev/null || true)
+  case "$c" in ""|000) echo "down" ;; *) echo "$c" ;; esac
+}
+
+if [ "${1:-}" = "--fallback" ]; then
+  echo "FALLBACK TRACE FILE"
+  docker exec langfuse-otel-fallback sh -c \
+    'ls -la /data/ 2>/dev/null; echo; echo "spans recorded:"; wc -l < /data/traces.jsonl 2>/dev/null || echo 0' \
+    2>/dev/null | sed 's/^/  /' || echo "  fallback container is not running"
+  exit 0
+fi
+
+primary=$(probe http://127.0.0.1:3200/api/public/health)
+# The collector has no health endpoint on the OTLP port; an OTLP POST with an
+# empty resourceSpans is the cheapest honest probe -- it returns 200 and writes
+# nothing.
+fallback=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 \
+  -X POST http://127.0.0.1:4318/v1/traces \
+  -H 'Content-Type: application/json' -d '{"resourceSpans":[]}' 2>/dev/null || true)
+case "$fallback" in ""|000) fallback="down" ;; esac
+
+echo "RECEIVER   LOCAL                          HTTP   ENDPOINT FOR OTEL_EXPORTER_OTLP_ENDPOINT"
+printf "%-10s %-30s %-6s %s\n" "primary"  "127.0.0.1:3200 langfuse"  "$primary"  "http://127.0.0.1:3200/api/public/otel"
+printf "%-10s %-30s %-6s %s\n" "fallback" "127.0.0.1:4318 otel-col"  "$fallback" "http://127.0.0.1:4318"
+
+echo
+echo "CONTAINERS"
+# Captured and tested for emptiness rather than piped into grep: under
+# `set -o pipefail` a failing docker daemon would decide this branch.
+lf_names=$(docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' 2>/dev/null || true)
+if [ -n "$lf_names" ]; then
+  # shellcheck disable=SC2046  # the container list is meant to split into arguments
+  docker stats --no-stream \
+    --format '  {{.Name}}\t{{.MemUsage}}\t{{.CPUPerc}}' \
+    $(docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' | tr '\n' ' ') 2>/dev/null \
+    | sort | expand -t 34,58
+  # shellcheck disable=SC2046
+  total=$(docker stats --no-stream --format '{{.MemUsage}}' \
+      $(docker ps --filter 'label=com.docker.compose.project=langfuse' --format '{{.Names}}' | tr '\n' ' ') 2>/dev/null \
+      | awk -F'/' '{print $1}' | awk '/MiB/{s+=$1} /GiB/{s+=$1*1024} END{printf "%.0f", s}')
+  echo "  ---"
+  echo "  total ${total:-0}MiB in use against 3717MiB of ceilings"
+else
+  echo "  none running -- bin/langfuse-up"
+fi
+
+echo
+echo "WHAT HAS LANDED"
+if [ -f "$ENVF" ] && [ "$primary" != "down" ]; then
+  # Read the keys without echoing them: the values go straight into curl.
+  pk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$ENVF" | cut -d= -f2-)
+  sk=$(grep -m1 '^LANGFUSE_INIT_PROJECT_SECRET_KEY=' "$ENVF" | cut -d= -f2-)
+  n=$(curl -sS --max-time 10 -u "$pk:$sk" \
+        'http://127.0.0.1:3200/api/public/traces?limit=1' 2>/dev/null \
+        | $JQ -r '.meta.totalItems // "unreadable"' 2>/dev/null || echo unreadable)
+  echo "  primary   $n traces in langfuse"
+else
+  echo "  primary   not readable (langfuse down or no .env)"
+fi
+fb=$(docker exec langfuse-otel-fallback sh -c 'wc -l < /data/traces.jsonl 2>/dev/null || echo 0' 2>/dev/null | tr -d ' \r')
+echo "  fallback  ${fb:-0} batches written to /data/traces.jsonl"
+
+echo
+echo "UI        http://127.0.0.1:3200/    (password: bin/langfuse-password)"
+
+[ "$primary" = "down" ] && [ "$fallback" = "down" ] && exit 1
+exit 0

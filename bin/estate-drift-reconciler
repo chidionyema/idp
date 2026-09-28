@@ -1,0 +1,68 @@
+#!/usr/bin/env python3
+"""estate-drift-reconciler — slot 4 of the local ops tier (crew#929).
+
+Reports branch/ticket/PR drift on a repo so a human (or the ops tier) can clear it: open PRs that
+are stale or draft, and topic branches whose work has not merged. Deterministic, model-free — it
+reads gh + git state and writes an action line per finding. It never closes or deletes anything;
+it only reports (the roster: cleaner/executor is a separate, suggest-only boundary).
+
+    bin/estate-drift-reconciler [--repo owner/name] [--stale-days 14] [--max 12]
+    bin/estate-drift-reconciler --check     # exit 0 clean, 1 when drift is found (for a gate)
+
+Lanes and thresholds override via env (ESTATE_DRIFT_STALE_DAYS). No secrets, no writes.
+"""
+import json
+import os
+import subprocess
+import sys
+import datetime
+
+REPO = os.getenv("ESTATE_DRIFT_REPO", "chidionyema/idp")
+STALE = int(os.getenv("ESTATE_DRIFT_STALE_DAYS", "14"))
+MAX = int(os.getenv("ESTATE_DRIFT_MAX", "12"))
+
+
+def gh(args):
+    r = subprocess.run(["gh"] + args + ["--repo", REPO], capture_output=True, text=True)
+    return r.stdout.strip()
+
+
+def check(prjs):
+    """Given a list of open PR dicts, return list of (type, pr#, line)."""
+    lines = []
+    now = datetime.datetime.now(datetime.timezone.utc)
+    for p in sorted(prjs, key=lambda x: x["number"]):
+        days = (now - datetime.datetime.fromisoformat(p["createdAt"].replace("Z", "+00:00"))).days
+        draft = p.get("isDraft") is True or p.get("isDraft")
+        if draft:
+            lines.append(("draft", p["number"], f"#{p['number']} DRAFT: {p['title'][:48]}"))
+        elif days >= STALE:
+            lines.append(("stale", p["number"], f"#{p['number']} stale {days}d: {p['title'][:48]}"))
+    return lines
+
+
+def main(argv):
+    mode = argv[1] if len(argv) > 1 else ""
+    try:
+        raw = gh(["pr", "list", "--state", "open", "--limit", str(MAX),
+                  "--json", "number,title,createdAt,isDraft"])
+        prs = json.loads(raw) if raw else []
+    except Exception as e:
+        print(f"REFUSED: estate-drift-reconciler could not read {REPO} PRs ({e})", file=sys.stderr)
+        return 2
+    finds = check(prs)
+    print(f"estate-drift-reconciler: {len(finds)} actionable item(s) on {REPO} "
+          f"({len(prs)} open PRs read, stale threshold {STALE}d)")
+    for kind, num, line in finds[:MAX]:
+        print(f"  [{kind:<5}] {line}")
+    if not finds:
+        print("  none — no open PR is draft or stale.")
+    # --check is a gate: drift found means exit 1 so the ops tier notices it.
+    if mode == "--check":
+        return 1 if finds else 0
+    # report mode is informational: exit 0 after printing the state either way.
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

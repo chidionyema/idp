@@ -1,0 +1,77 @@
+temporalio==1.32.0
+httpx>=0.27
+langfuse>=2.0,<3
+tomli>=2.0; python_version < "3.11"
+# sovereign/verifier.py mints the attestation's Ed25519 signature from this
+# library. Declared here rather than left to whatever the developer's machine
+# happened to carry: it was UNDECLARED until 2026-09-13, and CI run 34796984403
+# is what that cost. The seal is not an optional path -- `sign()` is called by
+# every successful `verify()` and by `seal` -- so this is a runtime dependency
+# and not a dev one. The failure it caused is recorded on `_signing_key`
+# itself: three BDD scenarios and the offline-gate's `verifier` row all read
+# `ModuleNotFoundError: No module named 'cryptography'` at the point of
+# signing, hundreds of lines after the module had loaded clean.
+cryptography>=42
+# Stage 2 of the gauntlet, `stage_symbolic`, asks Z3 for a counterexample to the
+# guard a patch declares. Declared here for the same reason as `cryptography`
+# above, and found the same way -- CI run 34798223412, one commit later:
+# `z3` was present on the developer's machine (5.1.0) and absent on the runner,
+# so the stage took its `ImportError` branch and returned `True, ""`. A stage
+# that cannot run was reporting `passed: True`, and
+# `test_a_proposed_patch_contains_structural_symbolic_or_execution_flaws`
+# refused it: "a broken patch verified at symbolic". That assertion is right
+# and the branch is wrong -- declaring the dependency keeps the solver in the
+# loop, and `stage_symbolic` now also fails closed when it is genuinely absent,
+# because a proof that did not run is never a proof that held (LAW 2).
+z3-solver>=4.12
+# `stage_structural`'s k8s_manifest branch parses every proposed `.yaml`/`.yml` file with
+# `yaml.safe_load_all` before admitting it, the same real-proof-or-fail-closed shape as
+# cryptography and z3-solver above (2026-09-15, the typed multi-domain ledger). Declared here for
+# the same reason: undeclared, this stage would pass a broken manifest silently on any runner
+# that happened to lack PyYAML, which is exactly the defect this file's own history twice caught
+# on cryptography and z3-solver.
+PyYAML>=6.0
+# mcp/plugins/estate_executor.py's report_failure() lazily imports redis (read_job must keep
+# working with no redis installed or reachable, so the import happens at the write path, not
+# at module load). Undeclared, the same class of defect cryptography/z3-solver/PyYAML above
+# already caught twice would recur a third time: CI's runner has no redis, so
+# tests/test_executor_mcp.py::test_report_failure_sends_a_real_xadd_over_the_wire_on_a_real_failure
+# never actually exercises the wire path it is named for.
+redis>=5.0
+prometheus_client>=0.19.0
+requests>=2.31
+# sovereign/engine/cost_table.py's validate() checks platform/llm/hosting-cost-table.yaml
+# against cost-table.schema.json at module scope, the same real-proof-or-fail-closed shape as
+# cryptography/z3-solver/PyYAML above (idp#3525 COST-04). Declared here, not left to
+# requirements-dev.txt's test-only pin (crew#648), because a caller other than a test can import
+# cost_table at runtime to refuse an ungraded row before it enters cost_ladder.py's arithmetic.
+jsonschema>=4.20
+# platform/eval/judge_drift.py's Jensen-Shannon histogram binning and
+# platform/eval/pareval_layer.py's bootstrap confidence interval (idp#3564) both need real
+# array math, not a hand-rolled substitute. Undeclared, the same class of defect
+# cryptography/z3-solver/PyYAML/redis above already caught: bdd-suites (tests) has no
+# requirements file that names it, so tests/judge/*, tests/pareval/* and
+# tests/integration/test_claude_code_hook.py fail collection with ModuleNotFoundError
+# rather than actually exercising the judge/pareval code they're named for.
+numpy>=1.26
+# tests/idp_agent/test_gateway.py imports fastapi.testclient to exercise the real
+# platform/idp_agent/gateway.py FastAPI app (idp#3599). Undeclared, same class of defect
+# as the numpy/redis rows above: bdd-suites (tests) has no requirements file that names
+# it, so the whole file fails collection with ModuleNotFoundError rather than exercising
+# the real webhook signature verification and event-normalization it's named for.
+# python-multipart is FastAPI's own runtime dependency for form parsing (request.form());
+# TestClient constructs the app, which imports it whether or not a test posts a form.
+fastapi>=0.141.0
+python-multipart>=0.0.18
+# platform/idp_agent/gateway.py imports uvicorn unconditionally at module level
+# (its __main__ block calls uvicorn.run), so importing the module at all -- which
+# test_gateway.py does to get at verify_github_signature and the FastAPI app --
+# needs it present even though no test here actually starts a server.
+uvicorn>=0.30.6
+# starlette.testclient (what fastapi.testclient.TestClient wraps) requires httpx2 at
+# import time now, not the older httpx -- installing it here, not as a fastapi extra,
+# since fastapi does not declare it as a hard dependency (it's a test-time need only).
+httpx2
+# mcp/plugins/jev.py -- JevLayer unified confidence service (ADR 0030).
+# TYPESAFE_API_KEY is loaded from estate-secrets; the key lives in the estate, not here.
+typesafe-sdk>=0.7.0

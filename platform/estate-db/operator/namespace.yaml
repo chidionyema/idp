@@ -1,0 +1,21 @@
+# The one database platform. Founder, 2026-09-04, on being shown that nine Postgres servers
+# run in this estate: "we need urgent consolidtion to one in few steps as possible fast, this
+# is a crazy situation". Nine servers is nine backup stories, nine upgrades, nine passwords and
+# nine volumes; features.yaml has carried `target: 1` for weeks without anything moving.
+#
+# CloudNativePG, not a StatefulSet of our own (LAW 43, and the headline rule: buy the mature
+# platform, do not stitch one). It is the CNCF-hosted PostgreSQL operator: it does the failover,
+# the base backups and the point-in-time recovery, and -- the part that makes consolidation
+# cheap -- it creates a database and a role per consumer from a manifest, so onboarding the
+# tenth consumer is a file, not a server.
+#
+# This namespace holds the operator only. The cluster itself is applied by a second Flux row
+# that waits for these CRDs to exist.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: estate-db
+  labels:
+    pod-security.kubernetes.io/enforce: baseline

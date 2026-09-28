@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""bin/idp-admission-dryrun — does the live admission chain accept this manifest? (MUM-288)
+
+The world model's `admission` grader (docs/specs/2026-09-08-estate-world-model-simulate-before-
+execute.md, "Where it lands"): "Will the API server and admission accept it?" is answered by
+`kubectl apply --dry-run=server`, which runs Kyverno's ClusterPolicies and every validating/hook
+for real and persists nothing (KEP-576/G A server-side dry-run). This program is that grader for
+one manifest file: it shells to kubectl with the estate kubeconfig and returns a verdict the
+MCP `simulate_change` envelope can consume, fail-closed.
+
+Why a separate program and not logic inside mcp/plugins/estate_simulate.py: the plugin's contract
+is "no subprocess, no shell, one file grades the diff" (ADR 0006, the estate MCP server is the one
+voice and shells out to the existing bin programs; no logic is copied). This bin is the shell-out
+seam the plugin calls only when the live door is on.
+
+Fail-closed rule, inherited from bin/idp-fence-enforcement and the fence-drill gate: if kubectl
+cannot be reached, or the manifest cannot be read, the verdict is BLIND (exit 2) and callers treat
+that as UNKNOWN — never a pass. A dry-run that reports an admission denial is FAIL (exit 1 == the
+manifest is UNSAFE). A manifest admission accepts is exit 0 (SAFE).
+
+    idp-admission-dryrun  MANIFEST.yaml [--kubeconfig PATH]
+        exit 0  admission accepts  (SAFE)
+        exit 1  admission refuses  (UNSAFE) — kyverno_denials / webhook_errors on stderr
+        exit 2  BLIND — could not reach admission, so nothing is proven (UNKNOWN)
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+KUBECONFIG_ENV = "ESTATE_ADMISSION_KUBECONFIG"
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("manifest", help="YAML manifest file to dry-run")
+    ap.add_argument("--kubeconfig", default=None)
+    a = ap.parse_args(argv)
+
+    manifest = Path(a.manifest)
+    if not manifest.is_file():
+        print(f"BLIND    admission-dryrun  {a.manifest}: not a readable file", file=sys.stderr)
+        return 2
+
+    kc = a.kubeconfig or os.environ.get(KUBECONFIG_ENV) or os.environ.get("KUBECONFIG")
+    cmd = ["kubectl", "apply", "--dry-run=server", "-o", "json", "-f", str(manifest)]
+    if kc:
+        cmd = ["kubectl", "--kubeconfig", kc] + cmd[1:]
+
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=60
+        )
+    except FileNotFoundError:
+        print("BLIND    admission-dryrun  kubectl not on PATH", file=sys.stderr)
+        return 2
+    except subprocess.TimeoutExpired:
+        print("BLIND    admission-dryrun  kubectl dry-run timed out after 60s", file=sys.stderr)
+        return 2
+
+    joined = (proc.stderr or "").strip() + "\n" + (proc.stdout or "").strip()
+    if proc.returncode == 0:
+        print("ok    admission-dryrun  the live admission chain accepts the manifest (SAFE)")
+        return 0
+    # A refusal or an unreachable API server both exit non-zero. Distinguish them: a refusal from
+    # Kyverno/webhooks is a known denial; an unreachable API server (no matches / connection
+    # refused) is BLIND because the chain did not run.
+    low = joined.lower()
+    if any(t in low for t in ("unable to connect", "connection refused", "couldn't get current",
+                              "the server is currently unable to handle")):
+        print("BLIND    admission-dryrun  could not reach the admission chain:", low[-400:],
+              file=sys.stderr)
+        return 2
+    print("FAIL    admission-dryrun  the admission chain refused the manifest (UNSAFE)")
+    print((proc.stderr or "").strip()[-1500:], file=sys.stderr)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,165 @@
+#!/usr/bin/env python3
+"""CP2 River scene data binding -- the Three.js river reads this.
+
+The river itself is a Three.js scene (out of scope here); what is in scope is the
+data that scene consumes: comets (journeys in flight) with their gate progress,
+ambient Andon state, and a recent-history buffer for the comet-tail animation.
+
+Same input -> same bytes. The river must not lie.
+"""
+
+from __future__ import annotations
+
+import importlib.machinery
+import importlib.util
+import json
+import os
+import sqlite3
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "mcp" / "plugins"))
+
+import deploy_journeys as _plugin  # noqa: E402
+
+
+def _connect():
+    return sqlite3.connect(_plugin._db_path())
+
+
+def _gate_order() -> list[str]:
+    """The river's gate order, fixed by the spec. The basin lights the next gate
+    amber when an in-flight PR is between stages."""
+    return ["pr_opened", "checks", "merged", "reconcile"]
+
+
+def _ambient() -> dict:
+    """Andon ambient light: red if any open journey is on a failed gate; amber if
+    any open journey is on an unknown gate; green if the most recent merged
+    journey is also reconciled-pass."""
+    con = _connect()
+    rows = con.execute(
+        "SELECT sha FROM deploy_journeys WHERE state IN ('in_flight','failed','pending')"
+    ).fetchall()
+    open_shas = [r[0] for r in rows]
+    if not open_shas:
+        last = con.execute(
+            "SELECT sha, state FROM deploy_journeys ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        if last and last[1] == "merged":
+            rec_row = con.execute(
+                "SELECT status FROM deploy_journey_events WHERE sha = ?"
+                " AND stage = 'reconcile' ORDER BY seq DESC LIMIT 1",
+                (last[0],),
+            ).fetchone()
+            if rec_row and rec_row[0] == "pass":
+                con.close()
+                return {"state": "green", "reason": "last deploy reconciled clean"}
+        con.close()
+        return {"state": "dark", "reason": "no open journeys"}
+
+    for sha in open_shas:
+        evs = con.execute(
+            "SELECT stage, status FROM deploy_journey_events WHERE sha = ?"
+            " ORDER BY seq",
+            (sha,),
+        ).fetchall()
+        for stage, status in evs:
+            if status == "fail":
+                con.close()
+                return {"state": "red", "reason": f"{sha}:{stage} failed"}
+    for sha in open_shas:
+        evs = con.execute(
+            "SELECT status FROM deploy_journey_events WHERE sha = ?"
+            " ORDER BY seq DESC LIMIT 1",
+            (sha,),
+        ).fetchone()
+        if evs and evs[0] == "unknown":
+            con.close()
+            return {"state": "amber", "reason": f"{sha} has unknown stage"}
+    con.close()
+    return {"state": "amber", "reason": "open journeys without failures"}
+
+
+def _comet_for(sha: str) -> dict:
+    env = _plugin.get_deploy_journey(sha)
+    if not env["available"]:
+        return {
+            "available": False,
+            "sha": sha,
+            "error": env.get("error") or "unreadable",
+        }
+    j = env["journey"]
+    events = j.get("events") or []
+    passed = [e["stage"] for e in events if e.get("status") == "pass"]
+    failed = [e["stage"] for e in events if e.get("status") == "fail"]
+    unknown = [e["stage"] for e in events if e.get("status") == "unknown"]
+    last_stage = events[-1]["stage"] if events else "pr_opened"
+    next_gate_idx = 0
+    for g in _gate_order():
+        if g not in passed:
+            next_gate_idx = _gate_order().index(g)
+            break
+    return {
+        "available": True,
+        "sha": sha,
+        "branch": j.get("branch"),
+        "pr_number": j.get("pr_number"),
+        "state": j.get("state"),
+        "passed_gates": passed,
+        "failed_gates": failed,
+        "unknown_gates": unknown,
+        "next_gate": _gate_order()[next_gate_idx],
+        "last_event_ts": events[-1]["ts"] if events else None,
+    }
+
+
+def render_scene(limit: int = 20) -> dict:
+    """Return everything the River scene needs for one frame.
+
+    Schema:
+      ambient:        Andon state {state, reason}
+      comets:         list of in-flight journeys with gate progress
+      recent:         last `limit` merged journeys (for the comet-tail history)
+      available:      False only when the ledger is unreadable
+    """
+    if not Path(_plugin._db_path()).exists():
+        return {
+            "available": False,
+            "ambient": None,
+            "comets": [],
+            "recent": [],
+            "error": "ledger missing",
+        }
+    con = _connect()
+    open_rows = con.execute(
+        "SELECT sha FROM deploy_journeys WHERE state IN ('in_flight','failed','pending')"
+        " ORDER BY started_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    recent_rows = con.execute(
+        "SELECT sha FROM deploy_journeys WHERE state = 'merged'"
+        " ORDER BY merged_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    con.close()
+    comets = [_comet_for(sha) for (sha,) in open_rows]
+    recent = [_comet_for(sha) for (sha,) in recent_rows]
+    return {
+        "available": True,
+        "ambient": _ambient(),
+        "comets": comets,
+        "recent": recent,
+    }
+
+
+def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--json-pretty":
+        print(json.dumps(render_scene(), indent=2))
+    else:
+        print(json.dumps(render_scene()))
+
+
+if __name__ == "__main__":
+    main()

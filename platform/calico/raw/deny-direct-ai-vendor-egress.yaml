@@ -1,0 +1,105 @@
+# ESTATE-WIDE AI VENDOR EGRESS DENY
+#
+# Problem: every namespace with egress_internet: [443] (21 namespaces as of 2026-09-17:
+# backstage, dagster, monitoring, hermes-agent, agent-workforce, mcp, robusta, otto-gateway,
+# research, observability, edge, identity, cert-manager, external-secrets, tailscale, searxng,
+# temporal, prospector, epistemic-fabric, trivy-system, notify) can dial api.anthropic.com:443,
+# api.openai.com:443 etc. directly, bypassing the llm proxy and all 8 efficiency mechanisms.
+# A new namespace without any fence has zero protection.
+#
+# Fix: one Calico GlobalNetworkPolicy (cluster-scoped, evaluated before any namespace NetworkPolicy)
+# that denies TCP:443 to AI vendor endpoints from every pod in every namespace except the proxy.
+#
+# This is the network-layer guarantee. Code-layer controls (ChatOpenAI base_url, the ceiling,
+# the gateway callbacks) are all bypassed by code that does not use those paths. A packet the
+# kernel drops cannot reach a vendor, regardless of which SDK, framework, or subprocess is used.
+#
+# Architecture (two resources, one file):
+#   GlobalNetworkSet   — declares the AI vendor domains; Calico Felix resolves them to IPs at
+#                        pod start and as DNS TTLs expire. No static CIDR list to maintain.
+#   GlobalNetworkPolicy — deny rule that references the set by label selector. Order: 1 means
+#                         it is evaluated before every namespace-level NetworkPolicy (order: 1000).
+#                         A Deny action terminates; no namespace policy can reinstate the traffic.
+#
+# Exemptions:
+#   llm           — the LiteLLM proxy; its job is calling vendor APIs.
+#   kube-system   — Calico and kube-dns; must not be fenced by a policy they enforce.
+#   flux-system   — the cluster's writer; a quota that refuses Flux locks the cluster's repair path.
+#   kube-public, kube-node-lease — empty by design; no pods run there.
+#
+# FIXED 2026-09-19 — and this one took three corrections, all measured live, because
+# every earlier reading of the failure was wrong.
+#
+#   1. The file asked for `projectcalico.org/v3`. The cluster serves the same kinds under
+#      group/version `crd.projectcalico.org/v1` ONLY. `/apis/projectcalico.org/v3` is a
+#      404 on this cluster, so admission rejected the whole file with `no matches for kind
+#      "GlobalNetworkPolicy" in version "projectcalico.org/v3"` and this policy has never
+#      existed as an object. That 404 was read as "the CRD is missing" and then as "the
+#      operator is suspended" -- both wrong. The CRDs are installed and serving.
+#
+#   2. `allowedEgressDomains` is NOT a field in v1. `kubectl get crd
+#      globalnetworksets... -o json` shows the v1 spec carries exactly one property, `nets`
+#      (<[]string>). So the FQDN/IPSet feature this file was built on is unavailable at this
+#      API version, and no amount of correct YAML brings it back.
+#
+#   3. `ports` sat at the top of the egress entry. v1 wants it under `destination`.
+#
+# WHAT THAT MEANS FOR ROUTE-01, stated plainly because the previous version of this file
+# claimed enforcement it did not have. The DNS-aware deny ("block api.openai.com whatever IP
+# it resolves to") requires Calico's operator-era v3 API. On this cluster the honest options
+# are narrower:
+#
+#   (a) Restore the v3 API (the tigera-operator install that platform/calico/raw deliberately
+#       replaced), which is the only way to get allowedEgressDomains back; or
+#   (b) Express the deny as `nets` CIDRs, with no DNS awareness -- it rots as vendor IPs change
+#       and cannot cover shared CDN ranges without false positives; or
+#   (c) Enforce the same intent at L7 inside the interceptor (bin/negative-constraints-proxy),
+#       which is domain-aware by construction because it reads the request, not the packet.
+#
+# So the GlobalNetworkSet is REMOVED below rather than left as decoration, and the policy now
+# denies egress to the vendor ports from every namespace except the proxy. That is a real,
+# enforceable control (it stops an unnamed namespace reaching anything on 443/80 through this
+# path only if combined with nets), but it is NOT the domain deny the header above describes.
+# Do not read this file as the FQDN guarantee until (a) or (c) lands. Tracked as the gap in
+# the ROUTE-01 note; the interceptor's own Redis fix (same date) is what makes (c) viable.
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkSet
+metadata:
+  name: ai-vendor-api-endpoints
+  labels:
+    estate.internal/role: ai-vendor-endpoint
+spec:
+  # v1's ONLY field. These are the vendor API addresses as literal /32s is not something this
+  # file can keep current -- see (b) above. Left empty deliberately rather than populated with
+  # a stale IP list that would silently stop matching; an empty set denies nothing and says so.
+  nets: []
+---
+apiVersion: crd.projectcalico.org/v1
+kind: GlobalNetworkPolicy
+metadata:
+  name: deny-direct-ai-vendor-egress
+spec:
+  order: 1
+  namespaceSelector: >-
+    kubernetes.io/metadata.name not in {
+      'llm',
+      'kube-system',
+      'flux-system',
+      'kube-public',
+      'kube-node-lease'
+    }
+  selector: all()
+  types:
+  - Egress
+  egress:
+  # v1 schema: `ports` lives under `destination`, not on the egress entry (correction 3).
+  # With an empty GlobalNetworkSet this denies nothing yet -- it is the shape the estate needs,
+  # landed so the kustomization can converge and the object exists to be measured. Populating
+  # `nets` (option b) or restoring v3 (option a) is what makes it bite.
+  - action: Deny
+    protocol: TCP
+    destination:
+      selector: 'estate.internal/role == "ai-vendor-endpoint"'
+      ports:
+      - 443
+

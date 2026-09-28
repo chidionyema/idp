@@ -1,0 +1,8 @@
+# crew#892 CP4 fixture: a wholly-formed allowances file whose gVisor-cell namespace fence is
+# clean -- default-deny with the gateway (`edge`) the one declared app route and no egress to the
+# internet, exactly zero `egress_internet` anywhere on it. bin/gvisor-cell-fence-gate must admit it.
+flows:
+  otto-gvisor-sandbox:
+    egress: [edge]
+  edge:
+    ingress_from: [otto-gvisor-sandbox]

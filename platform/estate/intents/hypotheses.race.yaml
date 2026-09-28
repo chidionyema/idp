@@ -1,0 +1,17 @@
+name: hypotheses.race
+description: >
+  Test N hypotheses CONCURRENTLY and rank by Bayesian posterior.
+  Write all hypotheses with priors up front, each with a probe command
+  and a falsified_if condition. All probes run in parallel. Returns ranked
+  list with credible intervals. USE THIS INSTEAD OF TESTING SEQUENTIALLY.
+  Stochastic judgment proposes; deterministic verification disposes.
+args:
+  file:     {type: string, default: ""}
+  parallel: {type: int,    default: 8}
+  timeout:  {type: int,    default: 30}
+  eps:      {type: float,  default: 0.05}
+halt_on_failure: false
+steps:
+  - name: race
+    cmd: >
+      python3 ~/.estate/libexec/hypotheses-race.py {{file}}

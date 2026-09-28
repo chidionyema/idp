@@ -1,0 +1,30 @@
+# This Secret holds no secret. Under Workload Identity the credentials blob is a two-key statement
+# of which authentication mode to use and where the tenancy is; the identity itself arrives from
+# the kubelet as a projected token the provider exchanges with OCI IAM. It is in git because it is
+# configuration, and bin/static-secret-gate is right to scan for the case where it is not: if this
+# file ever grows a private_key, a fingerprint or a user_ocid, the authentication mode has silently
+# changed back to API keys and the estate has a static credential on disk again.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-creds
+  namespace: crossplane-system
+type: Opaque
+stringData:
+  credentials: |
+    {
+      "auth": "OKEWorkloadIdentity",
+      "region": "${ESTATE_OCI_REGION}"
+    }
+---
+apiVersion: oci.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  credentials:
+    source: Secret
+    secretRef:
+      name: oci-creds
+      namespace: crossplane-system
+      key: credentials

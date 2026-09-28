@@ -1,0 +1,23 @@
+diff --git a/platform/backstage/overlays/oke/kustomization.yaml b/platform/backstage/overlays/oke/kustomization.yaml
+index e322f174b..fc5bac418 100644
+--- a/platform/backstage/overlays/oke/kustomization.yaml
++++ b/platform/backstage/overlays/oke/kustomization.yaml
+@@ -21,7 +21,7 @@ images:
+     newName: ghcr.io/chidionyema/backstage
+     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
+     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
+-    newTag: main-727-e056265c035edee1b1d8f38f1c9034b74bbca338 # {"$imagepolicy": "flux-system:backstage:tag"}
++    newTag: main-783-8490d36abd7aea6fbaed533534c60f0d13304050 # {"$imagepolicy": "flux-system:backstage:tag"}
+   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
+   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form.
+   - name: postgres
+diff --git a/platform/temporal/kustomization.yaml b/platform/temporal/kustomization.yaml
+index 1ccb26232..e2dd1f664 100644
+--- a/platform/temporal/kustomization.yaml
++++ b/platform/temporal/kustomization.yaml
+@@ -17,4 +17,4 @@ images:
+   # ImagePolicy flux-system/sovereign-worker; the marker is how it finds the line.
+   - name: idp/sovereign-worker
+     newName: ghcr.io/chidionyema/sovereign-worker
+-    newTag: main-727-e056265c035edee1b1d8f38f1c9034b74bbca338 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}
++    newTag: main-783-8490d36abd7aea6fbaed533534c60f0d13304050 # {"$imagepolicy": "flux-system:sovereign-worker:tag"}

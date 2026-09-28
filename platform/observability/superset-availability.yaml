@@ -1,0 +1,13 @@
+# One Superset pod may be down at a time (bin/idp-availability-gate): with two replicas pinned to
+# different nodes (superset-values.yaml anti-affinity), the dashboards survive losing one node.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: superset
+  namespace: observability
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: superset
+      app.kubernetes.io/component: web

@@ -1,0 +1,32 @@
+# The cluster autoscaler takes the node pool it is allowed to resize as a command-line argument,
+# `--nodes=1:2:$(NODEPOOL_ID)`, and Kubernetes expands `$(VAR)` inside args from the container's
+# env and from nowhere else. There is no file form: upstream's flag parser reads the string from
+# argv (kubernetes/autoscaler, cluster-autoscaler-1.34.0, config/flags/flags.go), and the OCI
+# provider reads OCI_REGION and OCI_COMPARTMENT_ID from the environment. So the four values that
+# reach this pod from the vault-fed `oke-autoscaler` Secret cannot become a mounted volume without
+# a wrapper script, and a wrapper script to satisfy a policy is the stitching we do not ship.
+#
+# What is actually excused is narrow: the two secrets-from-env rules, on this one Deployment. The
+# four values are an OCI region name and three OCIDs -- identifiers the console shows in plain
+# text, not credentials; the pod's actual authority is the instance principal, which is a node
+# identity and never a value in git. Every other policy still applies, and the same change that
+# added this file gave the Deployment the securityContext and the probes Oracle's copy omitted.
+#
+# Reconsider when OKE gains workload identity on BASIC clusters (crew#289 is the row that tracks
+# it): the compartment and pool ids could then come from the provider's own discovery instead.
+# Lives in platform/edge because Kyverno honours exceptions from namespace kyverno only (crew#325).
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: cluster-autoscaler-ids-from-env
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: secrets-not-from-env-vars
+      ruleNames: [secrets-not-from-env-vars, secrets-not-from-envfrom, autogen-secrets-not-from-env-vars, autogen-secrets-not-from-envfrom]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [kube-system]
+          names: [cluster-autoscaler, cluster-autoscaler-*]

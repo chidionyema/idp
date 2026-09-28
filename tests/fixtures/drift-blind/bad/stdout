@@ -1,0 +1,2 @@
+BLIND gitops-drift: kubectl is not installed, so nothing was read
+ok    gitops-drift 0 drift(s)

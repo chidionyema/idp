@@ -1,0 +1,30 @@
+# The fleetview-backend sidecar rolls on every main build that touches it, same mechanism as
+# backstage.yaml in this directory: image-reflector lists tags, the policy picks the highest run
+# number, and the one ImageUpdateAutomation named "backstage" (path: ./, whole checkout) rewrites
+# any $imagepolicy marker it finds -- this needs no second automation, only a second
+# ImageRepository/ImagePolicy pair for the new image name.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: fleetview-backend
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/fleetview-backend
+  interval: 1m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: fleetview-backend
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: fleetview-backend
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

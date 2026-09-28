@@ -1,0 +1,160 @@
+# Operator-side preflight for a fresh estate bring-up or a re-bootstrap after a long absence.
+# CI catches the file-only gate (idp-root-trust --check) on every PR that touches platform/
+# or bin/idp-bootstrap-*; this tile is the *live* preflight an operator runs on their own laptop
+# before they type `bin/idp-bootstrap-estate` for real.
+#
+# Why it is a scaffolder tile and not a custom scaffolder action: the live preflight needs the
+# operator's OCI admin context, their SSO consent, and their ~/.estate/.env. A scaffolder
+# action that did any of that would either leak the operator's tenancy to Backstage or invent
+# a second identity, both of which break "Backstage stays stateless" (Option 2 picked 2026-09-08
+# for the agent-foundry secrets; the same ruling binds here). The tile instead opens a PR with
+# a runbook script the operator executes, and it does that via github:actions:dispatch so the
+# audit row lands in Actions, not in a chat channel.
+#
+# What this tile does NOT do: it does not run the bootstrap. It does not write the vault. It
+# does not invent a credential, open a console, or paste a value. It opens a preflight PR
+# against bin/ so the operator's preflight run is reviewed like every other change.
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: estate-bootstrap-preflight
+  title: Preflight the estate bootstrap
+  description: >-
+    Open a PR carrying the operator-side preflight command for `bin/idp-bootstrap-estate`,
+    plus a checklist of what the live run will need (an SSO consent the bootstrapper opens,
+    one Create tap for a GitHub App if one does not exist, a populated `~/.estate/.env`).
+    The PR is the audit trail; the actual preflight runs on the operator's machine.
+  tags:
+    - estate
+    - bootstrap
+    - operator
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: Why is the preflight running
+      required:
+        - reason
+      properties:
+        reason:
+          title: One-line reason
+          type: string
+          description: >-
+            What brought you here: a fresh estate bring-up, a credential drift in the root-trust
+            register, a vendor console rotation, an estate copy at a new region. This becomes
+            the PR title so reviewers know what to expect.
+          ui:autofocus: true
+          pattern: '^[a-zA-Z0-9][a-zA-Z0-9 \-_.]{0,80}[a-zA-Z0-9]$'
+
+    - title: Scope
+      required:
+        - scope
+      properties:
+        scope:
+          title: What is being preflighted
+          type: string
+          enum:
+            - full
+            - tailscale
+            - cloudflare
+            - vendors
+            - estate-seed
+          enumNames:
+            - The whole estate (idp-bootstrap-estate)
+            - Tailscale only (idp-bootstrap-tailscale)
+            - Cloudflare only (idp-bootstrap-cloudflare)
+            - Vendor keys only (idp-bootstrap-vendors)
+            - Estate-born credentials only (idp-estate-seed)
+          description: >-
+            The bootstrapper to preflight. `full` walks every provider in dependency order.
+            A single-provider preflight skips providers whose keys are not in the drift.
+
+    - title: Operator identity (for the audit row)
+      required:
+        - operator
+      properties:
+        operator:
+          title: Who is running this
+          type: string
+          description: >-
+            The GitHub handle that will execute `bin/idp-bootstrap-estate --preflight` on
+            their own machine. The Actions dispatch below is recorded under this handle; the
+            audit row in task_executions (LAW 50) inherits the same identity.
+          pattern: '^[a-zA-Z0-9]([a-zA-Z0-9-]{0,38}[a-zA-Z0-9])?$'
+
+  steps:
+    - id: render
+      name: Render the preflight script
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          reason: ${{ parameters.reason }}
+          scope: ${{ parameters.scope }}
+          operator: ${{ parameters.operator }}
+          # The reason pattern above restricts to [a-zA-Z0-9 -_.]; the lower + replace chain
+          # turns it into a safe filename slug. The PR still ships a branch whose name carries
+          # the original reason for readability; only the runbook file's name is slugified.
+          filename_slug: '${{ parameters.operator }}-${{ parameters.reason | lower | replace(" ", "-") | replace("_", "-") | replace("/", "-") }}'
+
+    - id: publish
+      name: Open the preflight PR
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=chidionyema&repo=idp
+        branchName: 'estate-bootstrap-preflight/${{ parameters.operator }}-${{ parameters.reason | lower | replace(" ", "-") | replace("_", "-") | replace("/", "-") }}'
+        targetPath: bin/estate-preflight.d
+        title: "Estate bootstrap preflight: ${{ parameters.reason }}"
+        description: |
+          Operator-side preflight for **${{ parameters.reason }}**, scope **${{ parameters.scope }}**,
+          run by **@${{ parameters.operator }}**.
+
+          What this PR carries: one runbook script under `bin/estate-preflight.d/` that prints
+          the exact `bin/idp-bootstrap-estate --preflight` command (or the single-provider
+          equivalent for a narrower scope) and the pre-flight checklist the founder's standing
+          ruling requires (one SSO consent in a browser the bootstrapper opens, no paste, no
+          console click).
+
+          What this PR does not do: it does not run the preflight. It does not write the vault.
+          It does not invent a credential or hold one. The preflight still runs on the
+          operator's laptop, against the operator's OCI admin context. The reason it is a PR is
+          that **what gets preflighted is reviewed like every other change to the platform**,
+          the same way bin/idp-root-trust --check reviews a credential row.
+
+          What to do after this lands:
+            1. Merge this PR.
+            2. On the operator's laptop, run the script the PR added:
+               `bin/estate-preflight.d/<operator>-<reason>.sh`
+            3. The script prints the preflight command, the SSO consent it will open, and the
+               `idp-root-trust --check` line that ends every preflight.
+            4. If the preflight exits 0, run `bin/idp-bootstrap-estate` for real (the script
+               does not do this; it stops at the green gate).
+            5. If the preflight exits non-zero, the script names the row in
+               `docs/reference/policy/root-trust.md` that is still MISS or PARTIAL; that row
+               needs a bootstrapper or a crew ticket before the live run can start.
+
+          This scaffolder tile exists so the operator does not need to remember the bootstrap
+          command, the SSO consent, or the `idp-root-trust --check` post-condition. The
+          runbook script carries the procedure, the PR carries the audit trail, the running
+          command is the only thing the operator types.
+
+  output:
+    links:
+      - title: The preflight PR
+        url: ${{ steps.publish.output.remoteUrl }}
+      - title: Root-trust register (every credential, its bootstrapper, its verdict)
+        url: https://github.com/chidionyema/idp/blob/main/docs/reference/policy/root-trust.md
+      - title: The umbrella orchestrator
+        url: https://github.com/chidionyema/idp/blob/main/bin/idp-bootstrap-estate
+    text:
+      - title: What happens next
+        content: |
+          A PR is open with the runbook script. The preflight itself runs on the operator's
+          laptop, against the operator's OCI admin context. Backstage stays stateless, the
+          vault stays un-pasted, the audit row lands in Actions under the operator's handle.
+
+          If the runbook script prints `BLIND` or `FAIL` after the preflight, the next step is
+          a register row in `docs/reference/policy/root-trust.md` -- a new bootstrapper, or a
+          crew ticket if a bootstrapper is not the right fix. Bypassing that step is the path
+          that ends in a customer in a terminal.

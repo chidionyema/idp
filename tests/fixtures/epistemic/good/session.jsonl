@@ -1,0 +1,5 @@
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"declare_plan","input":{"goal":"verify the epistemic gate against committed history, the gate itself, and the gate source","subgoals":[{"id":"sg1","text":"read the committed change in git history"},{"id":"sg2","text":"run the epistemic gate against a fixture"},{"id":"sg3","text":"read the epistemic gate source"}]}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"git show HEAD --stat"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"bash","input":{"command":"python3 bin/idp-epistemic tests/fixtures/epistemic/good/session.jsonl"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"read","input":{"file_path":"bin/epistemic_firewall.py"}}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I verified the epistemic gate against committed history, the gate itself, and the gate source."}]}}

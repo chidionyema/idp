@@ -1,0 +1,25 @@
+# The Service Crossplane's package manager mints for a provider's webhook. Nothing in this
+# repository renders it, so it can carry no catalogue label; the exception lets it through.
+apiVersion: v1
+kind: Service
+metadata:
+  name: oracle-provider-family-oci
+  namespace: crossplane-system
+spec:
+  ports:
+    - port: 9443
+      targetPort: 9443
+  selector:
+    pkg.crossplane.io/revision: oracle-provider-family-oci-0d8a708c267b
+---
+# A Service in the same namespace that no package manager mints. The exception is a name glob,
+# not the namespace, so this one is still refused -- which is what stops the fix for one runtime
+# object from becoming a hole the size of a namespace.
+apiVersion: v1
+kind: Service
+metadata:
+  name: crossplane-console
+  namespace: crossplane-system
+spec:
+  ports:
+    - port: 8080

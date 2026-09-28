@@ -1,0 +1,9 @@
+apiVersion: objectstorage.oci.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: receipts
+  annotations:
+    crossplane.io/external-name: estate-receipts
+spec:
+  forProvider:
+    accessType: NoPublicAccess

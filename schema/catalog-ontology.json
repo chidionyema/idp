@@ -1,0 +1,40 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "catalog-model-ontology",
+  "version": "1.0.0",
+  "description": "Versioned ontology for estate catalog entities. Add a type here before using it; remove only after all entities are migrated. Breaking changes need a coordinated rollout.",
+  "entityKinds": {
+    "Component": {
+      "spec.type": {
+        "enum": [
+          "platform-layer",
+          "founder-surface",
+          "service",
+          "website",
+          "model",
+          "experimental"
+        ]
+      }
+    },
+    "API": {
+      "spec.type": {
+        "enum": [
+          "openapi",
+          "asyncapi",
+          "graphql",
+          "grpc",
+          "trpc"
+        ]
+      }
+    }
+  },
+  "skipKinds": [
+    "Template",
+    "Group",
+    "User",
+    "Location",
+    "Domain",
+    "System",
+    "Resource"
+  ]
+}

@@ -1,0 +1,60 @@
+# The ingress proxy the Tailscale operator renders for the JIT broker (StatefulSet
+# ts-jit-broker-* in namespace tailscale, from the tailscale.com/expose annotation on
+# Service jit-broker in namespace jit, PR #2389). Same physics and the same nine policies
+# as tailscale-egress-exception.yaml next to this file: the proxy runs tailscaled, which
+# programs the pod's network -- tun device, routing -- and so needs NET_ADMIN via a
+# privileged init container the operator hardcodes. This repository does not render that
+# pod spec and cannot patch it field by field.
+#
+# A separate object rather than three more names on the egress one, because these are not
+# egress proxies: this one publishes a cluster Service onto the tailnet, and a name that
+# says what a thing is stays worth more than one fewer file.
+#
+# Measured, not assumed: operator log 2026-09-07T23:36:04Z, reconcileID
+# c10fe26d-3ef7-4b98-9681-07082569546b, denying StatefulSet/tailscale/ts-jit-broker-85shp
+# and naming exactly these nine policies -- disallow-capabilities-strict,
+# disallow-privilege-escalation, disallow-privileged-containers, drop-all-capabilities,
+# require-pod-probes, require-requests-limits, require-ro-rootfs, require-run-as-nonroot,
+# restrict-seccomp-strict. No other policy failed and no other is excused. The earlier
+# denial in the same log (23:02:43Z, 23:19:23Z) was a different fault -- the tailnet had
+# not been told about tag:estate-jit yet -- and is fixed, which is why the operator now
+# gets far enough to be refused by admission instead.
+#
+# Scope is mathematically locked: namespace tailscale only, names ts-jit-broker* only. No
+# other pod can piggyback, and every other namespace still refuses these objects. What is
+# behind the proxy grants nothing on its own: reaching the broker's /ask sends the request
+# to the founder's phone, the tap is HMAC-checked, and the token dies on the grant's TTL.
+# Tightening path, the same one the egress file names: when the operator ships a ProxyClass
+# with a least-privilege securityContext (drop ALL, add NET_ADMIN), several rows here go.
+# Lives in namespace kyverno because platform/kyverno/kyverno.yaml restricts exceptions to it.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: tailscale-ingress-proxies
+  namespace: kyverno
+spec:
+  match:
+    any:
+      - resources:
+          namespaces: [tailscale]
+          names: [ts-jit-broker*]
+          kinds: [StatefulSet, Pod, ReplicaSet]
+  exceptions:
+    - policyName: disallow-capabilities-strict
+      ruleNames: [require-drop-all, autogen-require-drop-all]
+    - policyName: disallow-privilege-escalation
+      ruleNames: [privilege-escalation, autogen-privilege-escalation]
+    - policyName: disallow-privileged-containers
+      ruleNames: [privileged-containers, autogen-privileged-containers]
+    - policyName: drop-all-capabilities
+      ruleNames: [require-drop-all, autogen-require-drop-all]
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+    - policyName: require-requests-limits
+      ruleNames: [validate-resources, autogen-validate-resources]
+    - policyName: require-ro-rootfs
+      ruleNames: [validate-readOnlyRootFilesystem, autogen-validate-readOnlyRootFilesystem]
+    - policyName: require-run-as-nonroot
+      ruleNames: [run-as-non-root, autogen-run-as-non-root]
+    - policyName: restrict-seccomp-strict
+      ruleNames: [check-seccomp-strict, autogen-check-seccomp-strict]

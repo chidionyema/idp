@@ -1,0 +1,95 @@
+{
+ "at": "2026-08-24T00:00:00Z",
+ "findings": [],
+ "rows": [
+  {
+   "id": "shared name",
+   "kind": "repo",
+   "root": "a",
+   "path": "/tmp/a/shared name",
+   "coupling": null
+  },
+  {
+   "id": "shared name",
+   "kind": "repo",
+   "root": "b",
+   "path": "/tmp/b/shared name",
+   "coupling": null
+  },
+  {
+   "id": "shared name",
+   "kind": "repo",
+   "root": "b",
+   "path": "/tmp/b2/shared name",
+   "coupling": null
+  },
+  {
+   "id": "ai.example.job",
+   "kind": "scheduled_job",
+   "root": "launchd",
+   "path": "/tmp/x.plist",
+   "plist": "/tmp/x.plist",
+   "interval_s": 3600,
+   "loaded": true,
+   "last_status": "clean",
+   "coupling": "anthropic"
+  },
+  {
+   "id": "ledger.sqlite",
+   "kind": "ledger",
+   "root": "a",
+   "path": "/tmp/a/shared name/ledger.sqlite",
+   "coupling": null
+  },
+  {
+   "kind": "container",
+   "id": "example-web",
+   "path": "",
+   "root": "(outside)",
+   "image": "example:1.0",
+   "project": "example",
+   "service": "web",
+   "health": "none",
+   "running": true,
+   "published_ports": "9901",
+   "pinned": true,
+   "coupling": "none"
+  },
+  {
+   "kind": "listener",
+   "id": "port-9901",
+   "port": 9901,
+   "bind": "127.0.0.1",
+   "process": "ssh",
+   "command": "ssh -N -L 9901",
+   "path": "",
+   "root": "(outside)",
+   "coupling": "none",
+   "owner": "example-web"
+  },
+  {
+   "kind": "listener",
+   "id": "port-9902",
+   "port": 9902,
+   "bind": "*",
+   "process": "python3",
+   "command": "python3 serve.py",
+   "path": "/usr/bin/python3",
+   "root": "(outside)",
+   "coupling": "none",
+   "owner": "python3"
+  },
+  {
+   "kind": "listener",
+   "id": "port-9901-b",
+   "port": 9901,
+   "bind": "*",
+   "process": "node",
+   "command": "node other.js",
+   "path": "/usr/bin/node",
+   "root": "(outside)",
+   "coupling": "none",
+   "owner": "node"
+  }
+ ]
+}

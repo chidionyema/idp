@@ -1,0 +1,11 @@
+{
+  "capability": "secret",
+  "name": "agent-foundry-hf",
+  "workload": "agent-foundry",
+  "purpose": "The runner publishes a built Space and needs the write token the vendor issues for that account",
+  "origin": "vendor",
+  "rotation_days": 90,
+  "keys": [
+    { "key": "HF_TOKEN", "purpose": "write token for the Space the runner publishes to" }
+  ]
+}

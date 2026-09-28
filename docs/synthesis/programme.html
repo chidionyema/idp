@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Programme — the spiral, the factory, and the direction that gives it lasting shape</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured programme</div>
+  <h1>The Programme — the spiral, the factory, and the direction that gives it lasting shape</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#1-the-problem-stated-plainly-this-is-not-a-solution-looking-for-a-problem">1. The problem, stated plainly (this is not a solution looking for a problem)</a></li><li><a href="#2-the-answer-the-fractal-factory">2. The answer: the fractal factory</a></li><li><a href="#3-what-the-seed-actually-is-resolving-the-one-ambiguity-that-matters">3. What the seed actually is (resolving the one ambiguity that matters)</a></li><li><a href="#4-what-this-means-for-the-product-the-direction-for-the-architect">4. What this means for the product (the direction, for the architect)</a></li><li><a href="#5-the-long-term-direction-where-this-matures">5. The long-term direction (where this matures)</a></li><li><a href="#6-the-one-line-brief-for-the-architect">6. The one-line brief for the architect</a></li></ol></nav>
+<h1 id="the-programme-the-spiral-the-factory-and-the-direction-that-gives-it-lasting-shape">The Programme — the spiral, the factory, and the direction that gives it lasting shape</h1>
+<p><strong>Document 2 of 2. Written 2026-09-23, from the programme director, for the consultant</strong> <strong>architect. Companion: the Factory Inventory (document 1).</strong></p>
+<p>If document 1 is the <em>map of the tree the seed has grown so far</em>, this document is the <em>why that tree was grown at all, and where it is going</em>. The architect reads document 1 to know what exists; they read this to know what <strong>must</strong> exist and why. This is a strategy document, not an inventory — every claim in it is braced against the measured estate where it matters, but its job is to state the problem and the direction, because that is what the inventory alone cannot do.</p>
+<hr class="rule">
+<h2 id="1-the-problem-stated-plainly-this-is-not-a-solution-looking-for-a-problem">1. The problem, stated plainly (this is not a solution looking for a problem)</h2>
+<p>The industry we live in moves fast, and it accelerates. That is not a threat we can manage by being careful. It is a <strong>spiral</strong>:</p>
+<ol><li>The frontier moves, so we must build the bleeding edge to stay relevant.</li><li>The bleeding edge produces many overlapping things, because we are a research lab and overlap is how we discover what wins.</li><li>The overlap accumulates — many harnesses, many voice gates, many judges, many sandboxes, many memories — each one a thing that must be watched, maintained, and reconciled.</li><li>The cost of managing the overlap grows faster than the value the overlap creates.</li><li>So we spend our energy <em>managing what we have</em> instead of <em>building what's next</em>.</li><li>So we fall behind the frontier we were chasing — which restarts the cycle, harder.</li></ol>
+<p>The end state, if nothing constrains the spiral, is the one we refuse to write down idly: <strong>no coherence (nothing composes), no product (nothing ships), no moat (nothing is defensible), and eternal chaos (the management cost is the product).</strong></p>
+<p>This document exists because the spiral is real and the end state is unacceptable. The question is not <em>whether</em> to fight it. The question is: <strong>what shape can constrain a system that fast-moving, without slowing it down — and still give it a lasting identity?</strong></p>
+<hr class="rule">
+<h2 id="2-the-answer-the-fractal-factory">2. The answer: the fractal factory</h2>
+<p>The only shape we have found that constrains the spiral <strong>without resisting it</strong> is this:</p>
+<blockquote><p><strong>Every capability is produced by a factory. A factory is a thing that takes an order and produces a result. The result it produces is itself a factory. There is one kind of factory, recursing at every scale — the platform is that recursion, nothing more.</strong></p></blockquote>
+<p>This is not a component architecture with a theme. It is a <strong>law</strong>, and the law has one rule:</p>
+<blockquote><p><strong>Produce. Grade. Shed.</strong></p></blockquote>
+<ul><li><strong>Produce</strong> — every factory, given an order, births other factories (narrower, or rival). Staying bleeding-edge is <em>producing rival factories and letting the better one win</em>.</li><li><strong>Grade</strong> — every factory grades its own output against the order (the judge factory, the verifier, the red-team, the twin). Nothing ships on a green light alone; it ships on a measurement.</li><li><strong>Shed</strong> — every factory retires its obsolete output. Deprecation is not cleanup done later; it is a <em>first-class operation of the factory</em>, as fundamental as producing.</li></ul>
+<p>Why this is the <strong>only</strong> answer to the spiral — measured, not rhetorical:</p>
+<ol><li><strong>A component is finished; a factory is never finished.</strong> A finished thing is obsolete the day the frontier moves. A factory's whole nature is change, so it <em>cannot</em> be made obsolete by change. It absorbs it.</li><li><strong>A layered architecture has a fixed number of kinds.</strong> The future will demand a kind we did not predict, and the architecture will break. A fractal has <strong>no fixed kinds</strong> — it is one rule — so it cannot be out-evolved: robots, glasses, whatever comes, are <em>new branches of the same seed</em>, never a new layer the architecture must invent.</li><li><strong>The moat is the recursion, not any leaf.</strong> Any competitor can copy a voice gate. No competitor can copy a platform where "the industry moved" is <em>input into the factory</em> rather than a threat to it. Our moat is that we are the ones who can stay bleeding-edge <em>forever without drowning</em> — because the factory sheds what no longer serves and births what does, and that capacity is not a product, it is the platform itself.</li></ol>
+<hr class="rule">
+<h2 id="3-what-the-seed-actually-is-resolving-the-one-ambiguity-that-matters">3. What the seed actually is (resolving the one ambiguity that matters)</h2>
+<p>The seed is <strong>not <code>agent-foundry</code>.</strong> <code>agent-foundry</code> is the rule's <em>first-grown expression</em> — the first time we embodied "order → produce → grade → shed" in a repository. The seed is older and outlives it:</p>
+<blockquote><p><strong>The seed is the rule itself: a system that takes an order, produces instances that are themselves order-taking systems, grades them, and sheds them.</strong></p></blockquote>
+<p><code>agent-foundry</code> gets deprecated the moment a better embodiment of the rule wins — and when that happens, the platform does not lose its anchor, because the anchor was never a repo; it was the rule the repo demonstrated. This is why the fractal framing is not vanity: <strong>it is the one architecture whose anchor cannot be deprecated.</strong></p>
+<p>Document 1 already shows this is not abstract. The estate has grown — without ever naming the rule — exactly the branches the rule predicts: harness, voice, web, evals, sandbox, trace, memory, compute, workforce, platform, products. They are not eleven layers we designed; they are <strong>eleven places the one seed has chosen to grow</strong>, and the overlap the map records is not debt — it is the seed <em>producing rivals and letting them compete</em>, exactly as the rule says.</p>
+<hr class="rule">
+<h2 id="4-what-this-means-for-the-product-the-direction-for-the-architect">4. What this means for the product (the direction, for the architect)</h2>
+<p>The product we are building is not "a personal agent." It is not "a concierge." It is not "a swarm platform." Those are all <strong>orders against the factory</strong> — and they matter, but they are <em>instances</em>, not the thing itself.</p>
+<p><strong>The product is the factory.</strong> Concretely, the product is:</p>
+<ol><li><strong>One order language</strong> — a single way to ask the factory for anything: an agent, a swarm, a concierge, a robot, a pair of glasses. (Document 1 named the seed of this: <code>agent-foundry</code>'s order object, which still lacks the <code>capabilities: [...]</code> grant field — the architect's job.)</li><li><strong>One recursion</strong> — every produced thing is itself an order-taking factory, so an agent can produce a sub-agent, a swarm can produce a specialist, a robot can produce a skill, with the <em>same mechanism</em> at every scale.</li><li><strong>One shed operation</strong> — deprecation is a primitive. Old voice gates, old judges, old sandboxes don't linger; they are <em>shed on a schedule</em>, and the factory records that they were shed (the trace branch is the memory of every shed).</li><li><strong>One self-description</strong> — the factory produces its <strong>own description</strong>. Every repo declares its branch and outputs (the <code>capability.yaml</code> schema from document 1 §4), and a collector rolls them into a living registry, so the map of the tree is <em>produced</em>, hourly, not maintained by hand. (This is the single most important move: once the platform can describe itself, "exhaustive inventory" stops being a document someone writes and becomes a fact the factory emits.)</li></ol>
+<p>Serving <strong>corporate and personal clients</strong> is then not two products — it is the <em>same</em> factory issued two kinds of order (a corporate swarm vs. a private, consent-gated concierge), which is exactly the <code>make-to-order</code> (private) vs <code>make-to-stock</code> (marketplace) split <code>agent-foundry</code>'s ORDER.md already describes. The builder's "grant any capability" surface — the thing that lets a founder assemble an agent in real time — is just <strong>placing an order against the factory and letting it resolve each capability to a branch's current output.</strong></p>
+<hr class="rule">
+<h2 id="5-the-long-term-direction-where-this-matures">5. The long-term direction (where this matures)</h2>
+<p>The same rule, extended across time, is the roadmap — and it needs no redesign, only growth:</p>
+<ul><li><strong>Today</strong>: the factory produces <em>agents</em> — Claude/pi harnesses, the Concierge, swarms, the Architect. The branches are software running on laptops and a cluster.</li><li><strong>Near</strong>: the factory produces <em>first-class surfaces</em> — voice, web, telegram — and the corporate/personal split becomes a running multi-tenant fact, not a description.</li><li><strong>Later</strong>: the factory produces <em>embodied agents</em> — a robot is not a new architecture; it is the same order language issued against an <em>actuation</em> branch (the OS-input injection and computer-use branches document 1 already records are the first buds of it). A pair of glasses is the same order language issued against a <em>perception + display</em> branch.</li><li><strong>Enduring</strong>: the factory produces <em>itself</em> — new factories that produce factories, at finer and finer grain, until the platform <em>is</em> the recursion and the inventory <em>is</em> a fact the recursion emits.</li></ul>
+<p>None of these are speculative moon-shots bolted on later. Each is the <strong>same rule applied to a new order</strong>, and document 1 already shows the estate has quietly grown the first branches of every one of them (actuation, perception, vision, voice, memory) without anyone having named the rule they were obeying.</p>
+<hr class="rule">
+<h2 id="6-the-one-line-brief-for-the-architect">6. The one-line brief for the architect</h2>
+<blockquote><p><strong>Design the platform as one fractal factory: a single order language, a single recursion (every produced thing is itself a factory), a single shed primitive, and a self-describing registry — so that the entire estate, today's agents through tomorrow's robots and glasses, is the same rule applied to successive orders, and the moat is the recursion itself, not any leaf it has yet grown.</strong></p></blockquote>
+<p>Document 1 is the measured tree the seed has grown. This document is the rule that explains the tree and the direction it is growing in. Together they are the brief: <strong>shape the product from the tree, and constrain it with the rule.</strong></p>
+<hr class="rule">
+<p><em>End of document 2 of 2.</em></p>
+<footer>
+  <span>Source: <code>docs/synthesis/programme.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

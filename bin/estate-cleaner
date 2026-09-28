@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""estate-cleaner — slot 6 of the local ops tier (crew#929).
+
+Proposes cleanup, never executes it. Reads the real remote-topic branches that have NO open pull
+request (dead ends a human may want to archive) and suggests one action per candidate, each with an
+owning-review line. The intentional archive namespace (backup/) is NOT proposed — that is the
+recycle bin, not drift. Deterministic, model-free, and strictly suggest-only: the cleaner returns a
+list of what COULD be archived and who should confirm; it never deletes or force-pushes anything. A
+proposal with no review line is a refusal (the roster's no-op rule).
+
+    bin/estate-cleaner [--repo owner/name] [--dry-run]     --dry-run is the ONLY mode it runs
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+REPO = os.getenv("ESTATE_CLEAN_REPO", "chidionyema/idp")
+KEEP = ("main", "dev", "HEAD")
+# The intentional archive namespace: work already backed up should not be re-proposed as dead.
+ARCHIVE_NS = ("backup/", "archive/")
+
+
+def g(*a):
+    r = subprocess.run(["git", *a], capture_output=True, text=True)
+    return r.stdout
+
+
+def open_pr_heads():
+    """set of branch heads that currently back an OPEN PR (so break them from dead-end proposals)."""
+    r = subprocess.run(["gh", "pr", "list", "--state", "open", "--repo", REPO,
+                        "--json", "headRefName,number", "--limit", "100"], capture_output=True, text=True)
+    out = set()
+    try:
+        for p in json.loads(r.stdout or "[]"):
+            out.add(p.get("headRefName", ""))
+    except Exception:
+        pass
+    return out
+
+
+def main(argv):
+    remote_only = []
+    for line in g("branch", "-r").splitlines():
+        b = line.strip()
+        if not b or " -> " in b:
+            continue
+        name = b[len("origin/") :] if b.startswith("origin/") else ""
+        if name in KEEP or not name:
+            continue
+        remote_only.append(name)
+    live = open_pr_heads()
+    proposals = []
+    for name in sorted(remote_only):
+        # never propose the intentional archive namespace or anything a live PR backs
+        if any(name.startswith(ns) for ns in ARCHIVE_NS):
+            continue
+        if name in live:
+            continue
+        # only feature-looking topic branches; never mere release/tag-named refs
+        if not re.match(r"^[a-z]+[/-][A-Za-z0-9._/-]+$", name):
+            continue
+        proposals.append(name)
+    mode = "--dry-run"
+    print(f"estate-cleaner: {len(proposals)} topic branch(es) with no open PR = archive candidates "
+          f"({mode}; the cleaner never deletes)")
+    for b in proposals[:30]:
+        print(f"  SUGGEST archive branch '{b}' (no open PR); owner to confirm before any delete.")
+    if not proposals:
+        print("  none — every feature topic branch backs an open PR.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

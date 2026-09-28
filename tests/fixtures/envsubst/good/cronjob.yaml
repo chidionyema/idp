@@ -1,0 +1,8 @@
+# the same script with the shell expansions escaped for Flux ($$ renders as one $)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: probe
+data:
+  probe.sh: |
+    out=$(curl -s https://door.${ESTATE_ZONE}/); code=$${out%% *}; loc=$${out#* }

@@ -1,0 +1,50 @@
+# Founder ruling 2026-09-16: "mathematical guarantees only — never out of sync".
+# Every application Deployment or StatefulSet admitted to the cluster must declare
+# OTEL_EXPORTER_OTLP_ENDPOINT in at least one container. Violations refused at CREATE/UPDATE.
+# Existing dark workloads are named in otel-endpoint-exception.yaml — that list can only shrink.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-otel-endpoint
+  annotations:
+    policies.kyverno.io/title: Every application workload declares an OTel endpoint
+    policies.kyverno.io/category: founder ruling 2026-09-16, telemetry
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Deployment, StatefulSet
+    policies.kyverno.io/description: >-
+      A Deployment or StatefulSet outside system and observability namespaces must
+      declare OTEL_EXPORTER_OTLP_ENDPOINT in at least one container.
+spec:
+  background: true
+  rules:
+    - name: application-workload-declares-otel-endpoint
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet]
+              operations: [CREATE, UPDATE]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, flux-system, kyverno, cert-manager, spire-mgmt,
+                           metrics-server, reloader, keda, external-secrets, trivy-system, tailscale]
+          - resources:
+              namespaces: [observability]
+          - resources:
+              namespaces: [monitoring]
+          - resources:
+              namespaces: [healing, nodesoftware-operator, crossplane-system, calico-system, calico-apiserver]
+      validate:
+        failureAction: Enforce
+        message: >-
+          {{ request.object.kind }} {{ request.namespace }}/{{ request.object.metadata.name }}
+          has no container declaring OTEL_EXPORTER_OTLP_ENDPOINT. Wire it to
+          http://signoz-otel-collector.observability.svc:4318 following hermes-v2/otto/obs/core.py.
+          If this workload cannot emit OTel, add a named entry to
+          platform/edge/otel-endpoint-exception.yaml with a crew# justification.
+        deny:
+          conditions:
+            all:
+              - key: OTEL_EXPORTER_OTLP_ENDPOINT
+                operator: NotIn
+                value: "{{ request.object.spec.template.spec.containers[].env[].name }}"

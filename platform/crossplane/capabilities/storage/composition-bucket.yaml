@@ -1,0 +1,57 @@
+# provider-adapter: oci
+# The one place "storage.estate.io" becomes "objectstorage.oci.upbound.io" (xrd-bucket.yaml's
+# header). ${ESTATE_OCI_COMPARTMENT_OCID} and ${ESTATE_OCI_NAMESPACE} are substituted by Flux
+# postBuild from the estate-config ConfigMap (clusters/oke/platform.yaml,
+# crossplane-storage-capability row) -- the same mechanism providerconfig.yaml already uses for
+# ${ESTATE_OCI_REGION}, not a hand-kept literal here.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: xobjectstoragebuckets.storage.estate.io
+spec:
+  compositeTypeRef:
+    apiVersion: storage.estate.io/v1alpha1
+    kind: XObjectStorageBucket
+  resources:
+    - name: bucket
+      base:
+        apiVersion: objectstorage.oci.upbound.io/v1alpha1
+        kind: Bucket
+        spec:
+          forProvider:
+            compartmentId: "${ESTATE_OCI_COMPARTMENT_OCID}"
+            namespace: "${ESTATE_OCI_NAMESPACE}"
+            accessType: NoPublicAccess
+            storageTier: Standard
+            versioning: Disabled
+            freeformTags:
+              managed-by: crossplane
+          providerConfigRef:
+            name: default
+      patches:
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.name
+          toFieldPath: spec.forProvider.name
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.name
+          toFieldPath: metadata.annotations[crossplane.io/external-name]
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.purpose
+          toFieldPath: spec.forProvider.freeformTags.purpose
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.size_gb
+          toFieldPath: spec.forProvider.freeformTags.size_gb
+          transforms:
+            - type: convert
+              convert: { toType: string }
+        - type: FromCompositeFieldPath
+          fromFieldPath: spec.access
+          toFieldPath: spec.forProvider.accessType
+          transforms:
+            - type: map
+              map:
+                private: NoPublicAccess
+                public-read: ObjectRead
+        - type: ToCompositeFieldPath
+          fromFieldPath: status.atProvider.name
+          toFieldPath: status.bucketName

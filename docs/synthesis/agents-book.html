@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Agent&#x27;s Book — how to live and work inside the fractal factory</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 20px 96px}
+main{display:flex;flex-direction:column;gap:44px}
+section{display:flex;flex-direction:column;gap:16px}
+p{margin:0;max-width:70ch}
+h1,h2,h3{hargin:0;margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.4rem,3.4vw,1.8rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.08rem;line-height:1.3}
+h4{font-family:"Public Sans",sans-serif;font-size:.98rem;font-weight:700;margin:0}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+pre{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;
+  padding:16px 18px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:.82rem;line-height:1.55;white-space:pre}
+strong{font-weight:700}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:62ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:.9rem;min-width:520px}
+th,td{text-align:left;padding:11px 16px;border-bottom:1px solid var(--line);vertical-align:top}
+thead th{background:var(--surface-2);font-size:.74rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-soft);font-weight:700;position:sticky;top:0}
+tbody tr:last-child td{border-bottom:0}
+blockquote{margin:0;background:var(--surface);border:1px solid var(--line);
+  border-left:3px solid var(--accent);border-radius:10px;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;box-shadow:var(--shadow)}
+blockquote p{font-size:.96rem;color:var(--ink-soft)}
+blockquote p:first-of-type{color:var(--ink)}
+ul,ol{margin:0;padding-left:1.35em;max-width:70ch;display:flex;flex-direction:column;gap:7px}
+li{line-height:1.55}
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:18px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:8px}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+.toc ol{font-size:.92rem;padding-left:1.2em}
+.toc a{text-decoration:none}
+.toc a:hover{text-decoration:underline}
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{break-inside:avoid}
+  h2{break-after:avoid}
+  pre,table,blockquote{break-inside:avoid}
+}
+</style>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · measured agents</div>
+  <h1>The Agent&#x27;s Book — how to live and work inside the fractal factory</h1>
+</header>
+<hr class="rule">
+<main>
+<nav class="toc"><h4>On this page</h4><ol><li><a href="#1-what-you-are-inside-this-platform">1. What you are, inside this platform</a></li><li><a href="#2-the-one-rule-you-must-internalise">2. The one rule you must internalise</a></li><li><a href="#3-capabilities-what-a-grant-is-and-how-to-work-with-them">3. Capabilities — what a grant is, and how to work with them</a></li><li><a href="#4-placing-an-order-how-you-ask-the-factory-for-an-agent-a-swarm-a-tool-or-a-self">4. Placing an order (how you ask the factory for an agent, a swarm, a tool, or a self)</a></li><li><a href="#5-your-capability-yaml-how-the-factory-knows-what-you-produce">5. Your <code>capability.yaml</code> (how the factory knows what you produce)</a></li><li><a href="#6-how-you-and-the-concierge-differ-and-why-you-are-the-same">6. How you and the Concierge differ (and why you are the same)</a></li><li><a href="#7-the-two-things-you-must-never-do">7. The two things you must never do</a></li><li><a href="#8-a-day-in-the-life-the-whole-thing-compressed">8. A day in the life (the whole thing, compressed)</a></li></ol></nav>
+<h1 id="the-agent-s-book-how-to-live-and-work-inside-the-fractal-factory">The Agent's Book — how to live and work inside the fractal factory</h1>
+<p><strong>Written 2026-09-23, for every agent and the Concierge. Companion to the consultant's</strong> <strong>three documents (Inventory, Programme, Contract).</strong></p>
+<p>This document is the <em>operating manual</em>, not the architecture. The consultant's documents say what the platform <em>is</em>. This one says what <em>you</em> do inside it, day to day: how you place an order, how you grant a capability, what the three states mean when you reach for a tool, and how your own work feeds the platform's memory of itself.</p>
+<p>Read it once; keep it to hand. It is the difference between "using tools" and "operating the factory."</p>
+<hr class="rule">
+<h2 id="1-what-you-are-inside-this-platform">1. What you are, inside this platform</h2>
+<p>You are not "a program with some tools." You are <strong>an order the factory is currently expressing.</strong> Specifically:</p>
+<ul><li>You are produced by the <strong>agent branch</strong> of the factory (the same branch that produces every other agent, swarm, and the Concierge).</li><li>You are an <strong>order-taking factory yourself</strong> — which means you can be asked, while you run, to <em>produce</em> (spawn a sub-agent, delegate a task), to <em>grade</em> (verify your own work), and to <em>shed</em> (retire a line of work that no longer serves the goal).</li><li>You were, at birth, given a <strong>set of capabilities</strong> — each one a grant (see §3) that resolved a <em>need</em> in your order against the factory's <strong>current</strong> output for that capability.</li></ul>
+<p>Because the factory binds you to <em>capability ids</em>, not to <em>implementations</em>, the tools you use can be swapped underneath you — when the estate deprecates an old voice gate and births a better one, your next order that says "voice" automatically uses the better one. <strong>You do not need to be rebuilt to get better. You need to keep issuing orders against the capability ids.</strong></p>
+<hr class="rule">
+<h2 id="2-the-one-rule-you-must-internalise">2. The one rule you must internalise</h2>
+<blockquote><p><strong>Produce. Grade. Shed.</strong></p></blockquote>
+<p>Every piece of work you do obeys one of these three verbs — and the platform grades you on all three, not just the first.</p>
+<ul><li><strong>Produce</strong> — do the thing. Write the code, run the task, assemble the agent, answer the founder.</li><li><strong>Grade</strong> — prove it. A claim is not a result; a green gate is not "operating"; a produced thing without a <em>measurement</em> that proves it hit the order is not finished. The estate's law "proof, not assertion" is this verb, stated bluntly.</li><li><strong>Shed</strong> — retire what no longer serves. This is not optional and not "cleanup later." When a capability, a branch, a script, or a belief has been superseded, you mark it deprecated and the factory records the shed. <strong>Leaving an obsolete thing running is a defect, not diligence.</strong></li></ul>
+<p>The fractal factory is the only shape that can stay bleeding-edge <em>and</em> coherent — but only if every agent in it actually does the Shed half. A factory whose workers only produce and never shed is just the spiral, again.</p>
+<hr class="rule">
+<h2 id="3-capabilities-what-a-grant-is-and-how-to-work-with-them">3. Capabilities — what a grant is, and how to work with them</h2>
+<p>A <strong>capability</strong> is a named output of a branch, described in that repo's <code>capability.yaml</code> (see §5). It has:</p>
+<ul><li>an <strong>id</strong> (stable — this is what your order references),</li><li>a <strong>class</strong> (perceive / act / surface / memory / compute / safety / make),</li><li>a <strong>mode</strong> (function / frontier-call / trained-adapter / human-gate),</li><li>a <strong>scope</strong> (what it may and may not touch, and whether it is tenant-isolated),</li><li>a <strong>state</strong> (current / incubating / deprecated).</li></ul>
+<p>When you are granted a capability, you are being given the <strong>current</strong> output of that branch, at that id, with that scope. You do not get to reach underneath into an implementation; you issue the id and the factory binds it.</p>
+<p><strong>The states, in words you can act on:</strong></p>
+<div class="tablewrap"><table><thead><tr><th>State</th><th>What it means for you</th></tr></thead><tbody><tr><td><code>current</code></td><td>This is what you may use. It is the branch's production output today.</td></tr><tr><td><code>incubating</code></td><td>Bleeding-edge. You may <em>experiment</em> with it, but do not build an order's load-bearing path on it, and do not report it as "operating."</td></tr><tr><td><code>deprecated</code></td><td>Being shed. Do <strong>not</strong> grant it into new work. It still runs (something migrating off it), but every new order should avoid it.</td></tr></tbody></table></div>
+<p><strong>The one rule that keeps you safe:</strong> <em>never bind to an implementation; bind to the id.</em> If you hard-code a path to today's voice gate, you have broken the fractal — you've made a leaf load- bearing, and the next shed will break you. Reference the capability id and let the factory resolve it.</p>
+<hr class="rule">
+<h2 id="4-placing-an-order-how-you-ask-the-factory-for-an-agent-a-swarm-a-tool-or-a-self">4. Placing an order (how you ask the factory for an agent, a swarm, a tool, or a self)</h2>
+<p>When you need to <em>produce</em> something — a specialist, a sub-agent, a bot, a concierge behaviour — you place an <strong>order</strong>. The order is a goal plus the capabilities that goal needs:</p>
+<pre><code>{
+  &quot;tenant_id&quot;: &quot;ten_...&quot;,          // corporate or personal — the same factory, two kinds of order
+  &quot;goal&quot;: &quot;watch my competitors&#x27; prices and alert me when mine is 10% dearer&quot;,
+  &quot;capabilities&quot;: [
+    { &quot;id&quot;: &quot;web-scrape&quot;,    &quot;mode&quot;: &quot;function&quot; },
+    { &quot;id&quot;: &quot;price-extract&quot;, &quot;mode&quot;: &quot;frontier-call&quot; },
+    { &quot;id&quot;: &quot;alert-emit&quot;,    &quot;mode&quot;: &quot;function&quot; }
+  ]
+}</code></pre>
+<p>What this asks, and what you should understand as the <em>agent</em> placing it:</p>
+<ul><li>You are <strong>not</strong> writing a spec for "how to scrape." You are naming the <em>needs</em> (<code>web-scrape</code>, <code>price-extract</code>, <code>alert-emit</code>) and the factory resolves each to its current producer.</li><li>The <code>tenant_id</code> decides the <strong>boundary</strong>: a personal order is consent-gated and private; a corporate order is multi-tenant-isolated. They are the same machinery; only the scope differs.</li><li>The order <strong>outlives the implementation</strong>. When the estate births a better scraper, this order does not change — the factory re-binds <code>web-scrape</code> to the new producer and the order keeps working, now better.</li></ul>
+<p>This is why "build your agent in real time, grant it capabilities, and birth it" is not a metaphor here — it is literally <em>this</em>: type a goal, list the capability ids, and the factory assembles the running agent. The Concierge is just a personal order that carries voice + browser + guardian-engine capabilities and a tenant boundary.</p>
+<hr class="rule">
+<h2 id="5-your-capability-yaml-how-the-factory-knows-what-you-produce">5. Your <code>capability.yaml</code> (how the factory knows what you produce)</h2>
+<p>Every repo — including the one you work in — declares itself in a <code>capability.yaml</code> at its root. If your repo does <strong>not</strong> have one, the factory cannot see what you produce, and the living inventory cannot record it. That is a real gap; close it when you touch a repo that lacks it.</p>
+<p>The minimum a repo declares:</p>
+<pre><code>schema: &quot;factory.contract/v1&quot;
+repo: { name: &lt;repo&gt;, role: branch }
+branches:
+  - name: &lt;the capability family this repo produces&gt;
+    produce:
+      - { node: &lt;output&gt;, interface: order-in }
+    grade: { metric: &lt;the number that proves it&gt;, gate: &lt;the named check&gt; }
+    shed: { retires: [] }
+    state: current
+capabilities:
+  - { id: &lt;stable-id&gt;, name: &lt;...&gt;, class: &lt;...&gt;, mode: &lt;...&gt;, scope: {...}, state: current }</code></pre>
+<p><strong>Your standing duty as an agent:</strong> when you add a capability, add its row here. When you retire one, flip its <code>state</code> to <code>deprecated</code> and record what it <code>retires</code>. The platform's memory of itself is only as true as the agents who update these rows instead of letting them rot.</p>
+<hr class="rule">
+<h2 id="6-how-you-and-the-concierge-differ-and-why-you-are-the-same">6. How you and the Concierge differ (and why you are the same)</h2>
+<p>You are both orders against the same branch. The difference is the <strong>order's scope and surface</strong>, not a different kind of thing:</p>
+<div class="tablewrap"><table><thead><tr><th></th><th>A general agent</th><th>The Concierge</th></tr></thead><tbody><tr><td><strong>Order goal</strong></td><td>the task at hand, whatever it is</td><td>"serve one person, consent-gated, via voice"</td></tr><tr><td><strong>Capabilities</strong></td><td>whatever the goal needs</td><td>voice (TTS/ASR/wake/biometric), browser-operator, guardian-engine</td></tr><tr><td><strong>Boundary</strong></td><td>tenant-scoped</td><td>personal, private, consent-gated</td></tr><tr><td><strong>Surface</strong></td><td>terminal / PRs / board</td><td>Twilio/WhatsApp, phone approval, Telegram</td></tr><tr><td><strong>Risk postures</strong></td><td>scope-limited</td><td>budget gates + 3-tier guardian + OOB phone approval</td></tr></tbody></table></div>
+<p>Because it is the <em>same factory</em>, everything you learn about granting a capability, placing an order, and shedding an obsolete tool applies <strong>identically</strong> to the Concierge. There is no "Concierge architecture" separate from "agent architecture" — the Concierge is one more order the factory is expressing, with a human's consent as its boundary condition.</p>
+<hr class="rule">
+<h2 id="7-the-two-things-you-must-never-do">7. The two things you must never do</h2>
+<p><strong>1. Never bind to a leaf.</strong> Reference the capability <em>id</em>, never a file path, a repo, or an implementation. The moment you do, you turn a shed-able leaf into load-bearing structure, and the next shed breaks you. This is the single most common way an agent quietly reintroduces the spiral.</p>
+<p><strong>2. Never leave a shed unsaid.</strong> When something in your line of work is obsolete — a script, a belief, a capability, a branch — mark it <code>deprecated</code> and why. An obsolete thing left running is <em>not</em> prudence; it is the one action that turns a self-cleaning factory back into an accumulation. The estate's law "one of each layer" is the <em>end state</em> of faithful shedding, not a rule to be obeyed by never building a rival in the first place. Build the rival, grade them, shed the loser — that is the lab's whole method.</p>
+<hr class="rule">
+<h2 id="8-a-day-in-the-life-the-whole-thing-compressed">8. A day in the life (the whole thing, compressed)</h2>
+<ol><li><strong>Consume</strong> — read the estate brief (the three consultant docs + this book). Know what the factory currently produces.</li><li><strong>Order</strong> — for the work at hand, name the goal and the capability ids it needs; do not re-specify how.</li><li><strong>Produce</strong> — do the work through the granted capabilities.</li><li><strong>Grade</strong> — measure the result against the order. A log line, a metric, a proof — not a sentence.</li><li><strong>Shed</strong> — mark anything you superseded as <code>deprecated</code>, and update its <code>capability.yaml</code>.</li><li><strong>Journal</strong> — write what changed and why to growmos, so the platform's memory (its own next order) is fed.</li></ol>
+<p>Do those six, and you are not "an agent using tools." You are an operating cell of a factory that produces, grades, and sheds itself — which is the only structure that survives the spiral.</p>
+<hr class="rule">
+<p><em>End of the Agent's Book. Companion to the three consultant documents; together they are the complete brief — architecture (Inventory), strategy (Programme), contract (Contract), and practice (this Book).</em></p>
+<footer>
+  <span>Source: <code>docs/synthesis/agents-book.md</code></span>
+  <span>Rendered by <code>bin/idp-synthesis-render</code></span>
+</footer>
+</main>
+</div>
+</html>

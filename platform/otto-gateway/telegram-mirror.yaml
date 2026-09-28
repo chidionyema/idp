@@ -1,0 +1,48 @@
+# One bot, one webhook URL, two workloads that need the same POST.
+#
+# This estate registers exactly one Telegram bot. docs/reference/policy/root-trust.md says so
+# for the JIT broker in as many words -- it "reads the estate's one bot from `flux-telegram`
+# rather than holding a second copy (LAW 54)" -- and registration-reconciler.yaml in this
+# directory points that bot's webhook at otto's door every five minutes and repairs it if
+# anything moves it. Telegram allows a bot exactly one registered URL and exactly one reader,
+# so until this file the choice was otto or the broker, and both roads had been tried:
+#
+#   * the broker registers its own webhook -> otto's inbound Telegram stops, until the
+#     reconciler takes it back five minutes later, and then the broker's stops.
+#   * the broker calls getUpdates instead -> Telegram answers 409 Conflict on every poll for
+#     as long as a webhook is registered, which it always is. Shipped on 2026-09-07; the pod
+#     logged `jit telegram: getUpdates failed: HTTP Error 409: Conflict` every five seconds
+#     for hours and collected no tap at all, and its deleteWebhook call at each start knocked
+#     otto's registration out until the next reconcile.
+#
+# Traefik's mirroring service needs neither. otto stays the service that answers Telegram; the
+# broker is handed a copy of the same request. The copy is fire-and-forget -- Traefik discards
+# a mirror's response -- so a broker that is down, slow or restarting can never delay a
+# delivery otto already accepted, or make Telegram retry one.
+#
+# Two cluster facts this depends on, both already true: the edge runs Traefik with
+# `--providers.kubernetescrd.allowCrossNamespace=true`, which is what lets the mirror name a
+# Service in namespace `jit`; and `--providers.kubernetesgateway` resolves a `traefik.io`
+# `TraefikService` in an HTTPRoute's backendRefs (Traefik v3 registers exactly that group and
+# kind as a backend builder). httproute.yaml is where it is referenced.
+apiVersion: traefik.io/v1alpha1
+kind: TraefikService
+metadata:
+  name: otto-and-the-jit-broker
+  namespace: otto-gateway
+  labels:
+    backstage.io/kubernetes-id: otto-gateway
+spec:
+  mirroring:
+    name: otto-gateway
+    port: 8080
+    # A Telegram update is a few kilobytes. This is a memory bound, not a policy: mirroring
+    # buffers the body so it can be replayed, and an unbounded buffer behind a public door is
+    # a way for anyone who can POST to make the edge hold memory. A body over the cap is not
+    # mirrored; otto still gets it whole.
+    maxBodySize: 65536
+    mirrors:
+      - name: jit-broker
+        namespace: jit
+        port: 8080
+        percent: 100

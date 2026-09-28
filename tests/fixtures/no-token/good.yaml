@@ -1,0 +1,12 @@
+# A pod that says it talks to the Kubernetes API: left exactly as written.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: really-does-call-the-api
+  namespace: observability
+  annotations:
+    estate.io/needs-kube-api: "true"
+spec:
+  containers:
+    - name: app
+      image: ghcr.io/chidionyema/example:1

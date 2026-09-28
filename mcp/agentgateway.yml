@@ -1,0 +1,141 @@
+# Agentgateway in front of the estate's two MCP servers -- the crew board and estate.db.
+#
+# Standard: docs/reference/specs/fortress-stack.md CP5. Every MCP call passes through one auditable,
+# authenticated proxy instead of none. The gateway is the only thing published to the host;
+# neither MCP server has a port on 127.0.0.1, so no agent reaches either by any other path.
+#
+# WHAT RUNS.
+#   agentgateway  ghcr.io/agentgateway/agentgateway, pinned to v1.4.1 (2026-07-29). Config
+#                 is ./agentgateway.yaml: one bind on 3000 (published as 127.0.0.1:3310),
+#                 one route per backend, static API key on both routes.
+#   github-mcp    ghcr.io/github/github-mcp-server, the official server, pinned v1.10.1.
+#                 `http` mode on the compose network only, --read-only, toolset `issues`.
+#                 The crew board IS the GitHub issues of chidionyema/crew; a hand-written
+#                 board server would be a second schema, which is the stitching the headline
+#                 of $HOME/AGENTS.md bans.
+#   estate-mcp    Datasette 1.0a38 + datasette-mcp 0.1a0 (the Datasette org's own plugin,
+#                 released 2026-07-29 against the 2026-07-28 MCP spec) serving
+#                 catalog/estate.db mounted :ro and opened with -i (immutable). Its tools
+#                 are read-only by construction: execute_sql goes through Datasette's
+#                 validate_sql_select(), so a write is refused before it reaches SQLite.
+#                 crew#216 CP1 adds a fourth tool, get_estate_inventory, from
+#                 plugins/estate_inventory.py loaded with --plugins-dir (ADR 0006: the
+#                 estate answers for itself over this one server, never a second one).
+#                 It reads catalog-info.yaml and crew/STATE.md, both mounted :ro next to
+#                 estate.db, and returns kind/name/owner/repo per catalog entity plus the
+#                 snapshot's own age -- see mcp/plugins/estate_inventory.py for the field
+#                 list and the byte-ceiling/staleness config keys.
+#                 crew#216 CP2 adds a fifth tool, get_workload_state(app), from
+#                 plugins/workload_state.py -- same --plugins-dir mechanism, no new
+#                 mount: it reads the same catalog-info.yaml plus the estate.db already
+#                 mounted below, and returns one app's catalog entry (owner/repo/
+#                 dependencies), desired-vs-actual state, and summarized metrics. See
+#                 mcp/plugins/workload_state.py for the field list, the join key
+#                 (estate/path annotation), and why metrics are an explicit stub
+#                 pending crew#180.
+#                 crew#216 CP3 adds a sixth tool, get_workload_logs(app, tail=50),
+#                 from plugins/workload_logs.py -- the separate drill-down tool
+#                 CP2's own docstring names, registered independently (not a flag
+#                 on get_workload_state). It resolves a scheduled_job asset's own
+#                 launchd plist (named in estate.db) to that job's
+#                 StandardOutPath/StandardErrorPath and tails it, bounded by
+#                 ESTATE_LOGS_MAX_TAIL. RESIDUAL: the plist paths estate.db names
+#                 (~/Library/LaunchAgents/*.plist) are host paths, not mounted into
+#                 this container, so a live call degrades with "plist unreadable"
+#                 for every asset until that mount is added -- an infra decision
+#                 (which host directories, how broad) outside this checkpoint's
+#                 diff. See mcp/plugins/workload_logs.py for the full residual.
+#     Rejected: modelcontextprotocol's reference mcp-server-sqlite -- moved to
+#       servers-archived, last release 2025.4.25, unpatched SQL injection.
+#     Rejected: panasenco/mcp-sqlite -- stdio only (no HTTP transport, so it would have
+#       to run inside the gateway's distroless image), and sqlite_execute takes any SQL
+#       with no read-only mode.
+#     Residual: datasette-mcp is a 0.1 alpha on a Datasette 1.0 alpha. Both are pinned.
+#
+# PORTS. The gateway is 127.0.0.1:3310 (3300 was Kanboard's until it was retired, crew#282).
+# 3100/3200/4000/4318/7107/8000/8001 are the other published ports in this repo.
+#
+# AUTH. Agentgateway's standalone runtime supports static API keys (`apiKey` policy,
+# mode strict, `Authorization: Bearer`), so the listener requires one. The key is
+# MCP_GATEWAY_KEY, generated once by bin/mcp-up into mcp/.env (600, gitignored) and
+# expanded into agentgateway.yaml at start; it is never committed.
+#
+# GITHUB TOKEN. GITHUB_MCP_TOKEN has no default here, on purpose (LAW 21). The gateway
+# attaches it as a bearer on the way to github-mcp (backendAuth), so the token reaches
+# exactly one process. bin/mcp-up reads it from the vault; if the vault has no such key
+# it writes the word "missing" (an empty value makes agentgateway reject the whole config),
+# the github route answers 400 and bin/mcp-status prints FAIL for it, not a fake ok.
+#
+# HEALTH. The agentgateway image is chainguard glibc-dynamic with no shell, so it has no
+# container healthcheck; bin/mcp-up and bin/mcp-status probe it from the host with a real
+# MCP initialize. The two backends are checked the same way, through the gateway.
+#
+# MEMORY. 256m + 128m + 256m = 640m on top of llm/ and observability/.
+
+name: mcp
+
+services:
+  agentgateway:
+    image: ghcr.io/agentgateway/agentgateway:v1.4.1
+    container_name: mcp-agentgateway
+    restart: unless-stopped
+    mem_limit: 256m
+    command: ["-f", "/config/agentgateway.yaml"]
+    volumes:
+      - ./agentgateway.yaml:/config/agentgateway.yaml:ro
+    environment:
+      MCP_GATEWAY_KEY: ${MCP_GATEWAY_KEY}
+      GITHUB_MCP_TOKEN: ${GITHUB_MCP_TOKEN}
+    ports:
+      - 127.0.0.1:3310:3000
+    depends_on:
+      - github-mcp
+      - estate-mcp
+
+  github-mcp:
+    image: ghcr.io/github/github-mcp-server:v1.10.1
+    container_name: mcp-github
+    restart: unless-stopped
+    mem_limit: 128m
+    # No token in this container. It arrives per request from the gateway as a bearer.
+    command: ["http", "--listen-host", "0.0.0.0", "--port", "8082", "--read-only", "--toolsets", "issues"]
+
+  estate-mcp:
+    build:
+      context: .
+      dockerfile: estate-mcp.Dockerfile
+    image: idp/estate-mcp:datasette-1.0a38-mcp-0.1a0
+    container_name: mcp-estate
+    restart: unless-stopped
+    mem_limit: 256m
+    # -i opens the file immutable; the mount is :ro as well, so two layers say no to writes.
+    # --plugins-dir loads plugins/estate_inventory.py (crew#216 CP1), a Datasette
+    # "one-off plugin" (docs.datasette.io/en/latest/writing_plugins.html#writing-one-off-plugins)
+    # -- no packaging, just a .py file the server reads at start. It adds one tool,
+    # get_estate_inventory, through datasette-mcp's register_mcp_tools hook: still the
+    # one estate MCP server, per ADR 0006 ("no second server").
+    command: ["datasette", "serve", "-i", "/data/estate.db", "-h", "0.0.0.0", "-p", "8001", "--plugins-dir", "/app/plugins"]
+    volumes:
+      - ../catalog/estate.db:/data/estate.db:ro
+      # catalog-info.yaml and STATE.md are read-only inputs to get_estate_inventory
+      # only; execute_sql/list_databases/get_database_schema never see them. Both
+      # generated files, both :ro, same shape as the estate.db mount above. The host
+      # paths are relative (idp and crew are sibling checkouts, the same assumption
+      # bin/mcp-up already makes for AGE_BLOB) and overridable, so no checkout or home
+      # directory is a literal here (LAW 46).
+      - ${ESTATE_CATALOG_HOST_PATH:-../catalog/catalog-info.yaml}:/data/catalog-info.yaml:ro
+      - ${ESTATE_STATE_MD_HOST_PATH:-../../crew/STATE.md}:/data/STATE.md:ro
+    environment:
+      ESTATE_CATALOG_PATH: /data/catalog-info.yaml
+      ESTATE_STATE_MD_PATH: /data/STATE.md
+      ESTATE_DB_PATH: /data/estate.db
+      ESTATE_INVENTORY_BYTE_CEILING: ${ESTATE_INVENTORY_BYTE_CEILING:-8000}
+      ESTATE_INVENTORY_STALE_MINUTES: ${ESTATE_INVENTORY_STALE_MINUTES:-90}
+      ESTATE_WORKLOAD_BYTE_CEILING: ${ESTATE_WORKLOAD_BYTE_CEILING:-8000}
+      ESTATE_LOGS_MAX_TAIL: ${ESTATE_LOGS_MAX_TAIL:-500}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8001/-/versions.json',timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 6s
+      retries: 5
+      start_period: 20s

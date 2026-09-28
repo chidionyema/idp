@@ -1,0 +1,325 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 9c75e0687..472021ca0 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -19,7 +19,7 @@ on:
+       playbook:
+         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose is read-only."
+         type: choice
+-        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]
++        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]
+         default: diagnose
+   pull_request:
+     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+diff --git a/bin/idp-oke-break-glass b/bin/idp-oke-break-glass
+index f7f792426..6f786c0c7 100755
+--- a/bin/idp-oke-break-glass
++++ b/bin/idp-oke-break-glass
+@@ -307,8 +307,39 @@ pb_node_uncordon() {
+   show nodes $K get nodes -o wide
+ }
+ 
++# chi-resize: run 33147086133 (diagnose after idp#536): the signoz HelmRelease carries 4Gi for
++# clickhouse, and "Helm upgrade failed ... pre-upgrade hooks failed: timeout waiting for
++# Job/observability/signoz-telemetrystore-migrator". The migrator's init containers wait for a
++# ClickHouse that is Ready; ClickHouse exits 137 at the old 2Gi every few minutes; the 4Gi that
++# would let it live sits behind the hook that waits for it. Helm cannot break its own deadlock,
++# so the ClickHouseInstallation is patched to the value the HelmRelease already declares (read
++# from the values ConfigMap, never typed here); the Altinity operator rolls the StatefulSet, the
++# pod comes up at 4Gi, the migrator finishes and the next Helm reconcile converges on the same
++# value: there is nothing to undo, the patch IS the declared state.
++CHI_VALUES="${CHI_VALUES:-observability/signoz-values}"   # <namespace>/<ConfigMap> holding values.yaml
++chi_links() {
++  $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tCHI podTemplate limits: "}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{"\n"}{end}' 2>&1
++  $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tsts limits: "}{.spec.template.spec.containers[0].resources.limits}{"\n"}{end}' 2>&1
++  $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\tpod limits: "}{.spec.containers[0].resources.limits}{"\t"}{.status.phase}{"\n"}{end}' 2>&1
++}
++pb_chi_resize() {
++  local want
++  want=$($K get configmap "${CHI_VALUES#*/}" -n "${CHI_VALUES%/*}" -o jsonpath='{.data.values\.yaml}' 2>/dev/null \
++    | python3 -c 'import sys,json,yaml; r=(yaml.safe_load(sys.stdin) or {}).get("clickhouse",{}).get("resources"); print(json.dumps(r,separators=(",",":")) if r else "")')
++  [ -n "$want" ] || { echo "FAIL  chi-resize: no clickhouse.resources in ConfigMap $CHI_VALUES"; FAILED="$FAILED chi-resize"; return 1; }
++  echo "--- want $want"
++  show chi-before chi_links
++  local row ns name
++  for row in $($K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{" "}{end}' 2>/dev/null); do
++    ns="${row%/*}"; name="${row#*/}"
++    step "patch-$name" $K patch chi "$name" -n "$ns" --type=json -p "[{\"op\":\"replace\",\"path\":\"/spec/templates/podTemplates/0/spec/containers/0/resources\",\"value\":$want}]"
++    step "rollout-$name" $K rollout status sts -n "$ns" -l "clickhouse.altinity.com/chi=$name" --timeout=600s
++  done
++  show chi-after chi_links
++}
++
+ case "${1:-}" in
+-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon"; exit 0 ;;
++  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon chi-resize"; exit 0 ;;
+   diagnose) pb_diagnose ;;
+   dns-per-node) pb_dns_per_node ;;
+   dns-per-namespace) pb_dns_per_namespace ;;
+@@ -317,6 +348,7 @@ case "${1:-}" in
+   helm-retry) pb_helm_retry ;;
+   node-drain) pb_node_drain ;;
+   node-uncordon) pb_node_uncordon ;;
++  chi-resize) pb_chi_resize ;;
+   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
+ esac
+ [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
+diff --git a/docs/evidence/pr-541/20260828T062328Z-1.png b/docs/evidence/pr-541/20260828T062328Z-1.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..aae397478422d0ebcb15ad0868115d293d8e43ef
+GIT binary patch
+literal 13792
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/docs/how-to/check-the-cluster-from-github.md b/docs/how-to/check-the-cluster-from-github.md
+index 6170b39b7..a33fea78f 100644
+--- a/docs/how-to/check-the-cluster-from-github.md
++++ b/docs/how-to/check-the-cluster-from-github.md
+@@ -52,7 +52,7 @@ could not fetch the merged revert idp#514) no session has a kube path: runners a
+ `bin/idp-oke-rebuild --break-glass` appends the runner's egress `/32` to the applied list, applies it
+ through tofu (one NSG rule), mints a kubeconfig on the same one-hour session token, runs ONE named
+ playbook from `bin/idp-oke-break-glass` (`diagnose` is read-only; `cilium-unchain` executes
+-idp#514 by hand; `helm-retry` resets every Failed HelmRelease with `flux reconcile --reset`; `dns-per-node` runs an in-cluster and an external nslookup pinned to every node; `dns-per-namespace` resolves every headless Service of each not-Ready namespace from a probe inside it and lists its EndpointSlices; `tcp-per-node` connects from a probe inside each not-Ready namespace, pinned to every node, to every ClusterIP Service port of that namespace and prints the reachable matrix; `node-drain` cordons and drains the Ready node carrying the most not-Running pods so the autoscaler replaces it, `node-uncordon` is its undo), and applies the original list again from an `EXIT` trap, so a failed playbook
++idp#514 by hand; `helm-retry` resets every Failed HelmRelease with `flux reconcile --reset`; `dns-per-node` runs an in-cluster and an external nslookup pinned to every node; `dns-per-namespace` resolves every headless Service of each not-Ready namespace from a probe inside it and lists its EndpointSlices; `tcp-per-node` connects from a probe inside each not-Ready namespace, pinned to every node, to every ClusterIP Service port of that namespace and prints the reachable matrix; `node-drain` cordons and drains the Ready node carrying the most not-Running pods so the autoscaler replaces it, `node-uncordon` is its undo; `chi-resize` patches the ClickHouseInstallation to the resources the signoz values ConfigMap declares when a Helm upgrade is deadlocked behind a pre-upgrade hook that waits for a ClickHouse the old limit keeps killing (Helm converges on the same value, so there is nothing to undo)), and applies the original list again from an `EXIT` trap, so a failed playbook
+ never leaves the door open. The job log is the receipt: `admit-apply`, the playbook's step lines,
+ `revoke-apply`. Nothing is typed ad hoc: a new playbook is a reviewed function in the script and a
+ name in the workflow's `playbook` choice.
+diff --git a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+index 240bd9acf..6a7021f5a 100644
+--- a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
++++ b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
+     p, _ = _run("rm-rf-everything", tmp_path)
+     assert p.returncode == 64
+     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
+-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon"]
++    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon", "chi-resize"]
+ 
+ 
+ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+ def test_workflow_offers_break_glass_with_a_named_playbook():
+     wf = WORKFLOW.read_text()
+     assert "surge-finish, break-glass]" in wf
+-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]" in wf
++    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon, chi-resize]" in wf
+     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
+ 
+ 
+@@ -473,3 +473,48 @@ def test_node_uncordon_uncordons_every_cordoned_node_and_nothing_else(tmp_path):
+     calls = [c for c in log.read_text().splitlines() if "uncordon" in c]
+     assert sorted(calls) == sorted(["kubectl --request-timeout=60s uncordon 10.0.148.221", "kubectl --request-timeout=60s uncordon 10.0.1.1"]), calls
+     assert not any("drain" in c or " cordon " in c for c in log.read_text().splitlines())
++
++
++def _chi_kubectl(bin_dir: Path, log: Path, values: str, chis: str = "observability/signoz-clickhouse ") -> None:
++    (bin_dir / "kubectl").write_text(
++        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
++        "case \"$*\" in\n"
++        "  *'get configmap signoz-values -n observability'*) printf '" + values + "';;\n"
++        "  *'get chi -A -o jsonpath={range .items[*]}{.metadata.namespace}/{.metadata.name}{\" \"}{end}'*) printf '" + chis + "';;\n"
++        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
++    )
++
++
++def test_chi_resize_patches_the_installation_to_what_the_values_configmap_declares(tmp_path):
++    # run 33147086133: signoz.v41 upgrade to 4Gi failed on its pre-upgrade migrator Job, whose init
++    # containers wait for a ClickHouse that exits 137 at 2Gi. The value is read from the ConfigMap
++    # the HelmRelease already consumes, the CHI is patched to it, and the StatefulSet roll is waited on.
++    bin_dir, log = _fake_path(tmp_path)
++    _chi_kubectl(bin_dir, log, "clickhouse:\\n  resources:\\n    requests: {cpu: 1000m, memory: 4Gi}\\n    limits: {cpu: 1000m, memory: 4Gi}\\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "chi-resize"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    calls = log.read_text().splitlines()
++    patch = [c for c in calls if "patch chi signoz-clickhouse -n observability --type=json" in c]
++    assert len(patch) == 1, calls
++    assert '"memory":"4Gi"' in patch[0] and "/spec/templates/podTemplates/0/spec/containers/0/resources" in patch[0], patch
++    assert '"requests":{"cpu":"1000m","memory":"4Gi"}' in patch[0], patch   # requests == limits stays (Guaranteed QoS)
++    assert any("rollout status sts -n observability -l clickhouse.altinity.com/chi=signoz-clickhouse --timeout=600s" in c for c in calls), calls
++    assert calls.index(patch[0]) < [i for i, c in enumerate(calls) if "rollout status" in c][0]
++    assert "--- want " in p.stdout and "--- chi-before" in p.stdout and "--- chi-after" in p.stdout, p.stdout
++
++
++def test_chi_resize_refuses_when_the_values_declare_no_resources(tmp_path):
++    # a typed fallback would be the hardcode LAW 46 forbids: no declared value, no patch
++    bin_dir, log = _fake_path(tmp_path)
++    _chi_kubectl(bin_dir, log, "clickhouse:\\n  persistence: {size: 20Gi}\\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "chi-resize"], capture_output=True, text=True, env=env)
++    assert p.returncode != 0 and "no clickhouse.resources" in p.stdout, p.stdout + p.stderr
++    assert not any("patch" in c for c in log.read_text().splitlines())
++
++
++def test_chi_resize_is_listed_and_wired():
++    assert "chi-resize" in subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
++    wf = (PLAYBOOK.parent.parent / ".github" / "workflows" / "oke-check.yml").read_text()
++    assert "chi-resize" in wf

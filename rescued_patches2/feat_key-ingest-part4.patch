@@ -1,0 +1,1163 @@
+diff --git a/backstage/app-config.container.yaml b/backstage/app-config.container.yaml
+index 22a5e9170..1e6ddfae0 100644
+--- a/backstage/app-config.container.yaml
++++ b/backstage/app-config.container.yaml
+@@ -214,6 +214,22 @@ catalog:
+       rules:
+         - allow: [Template]
+ 
++    # crew#749, the key ingest door (docs/specs/key-ingest-door.md). The two customer-road
++    # templates: "Activate a key" and "Onboard a customer onto messaging". Both exist in the tree
++    # and had never been registered, so neither appeared in any portal -- measured 2026-09-10,
++    # no onboarding target in this file at all. The founder's requirement is that anyone can set
++    # this up themselves from the portal, and a page the portal does not load cannot be used by
++    # anyone. backstage/Dockerfile:126 already copies templates/ into the image; this is the
++    # missing half.
++    - type: file
++      target: /app/templates/onboarding/*/template.yaml
++      rules:
++        - allow: [Template]
++    - type: file
++      target: /app/templates/customer-onboarding/template.yaml
++      rules:
++        - allow: [Template]
++
+     # user:default/guest. The guest auth provider resolves it through the
+     # catalog, so this is sign-in, not example data.
+     - type: file
+diff --git a/backstage/app-config.yaml b/backstage/app-config.yaml
+index 6e23402be..6fa449476 100644
+--- a/backstage/app-config.yaml
++++ b/backstage/app-config.yaml
+@@ -336,6 +336,18 @@ catalog:
+       rules:
+         - allow: [Template]
+ 
++    # crew#749. The two customer-road templates, registered in the compose config as well as the
++    # container one, so a person running the portal locally sees the same pages the deployed
++    # portal shows. Two configs that disagree about which pages exist is its own defect.
++    - type: file
++      target: ../../templates/onboarding/*/template.yaml
++      rules:
++        - allow: [Template]
++    - type: file
++      target: ../../templates/customer-onboarding/template.yaml
++      rules:
++        - allow: [Template]
++
+     # The guest identity. Load-bearing, not an example: the guest auth provider
+     # resolves user:default/guest through the catalog, so removing this file
+     # breaks sign-in.
+diff --git a/docs/specs/key-ingest-door-part4.md b/docs/specs/key-ingest-door-part4.md
+new file mode 100644
+index 000000000..814faa6a7
+--- /dev/null
++++ b/docs/specs/key-ingest-door-part4.md
+@@ -0,0 +1,190 @@
++# The key ingest door, part 4 — the writer, and the grant that must not widen
++
++`docs/specs/key-ingest-door.md` is written and parts 1, 2, 3 and 5 are built:
++`backstage/packages/backend/src/credentialIngest.ts`, `platform/vendors/stores.yaml` and
++`backstage/templates/onboarding/activate-key/`. Three things are missing, and each is proved
++below by a command. Until they land, the page a customer is supposed to use either does not
++appear or refuses with a 502.
++
++This spec covers the three, and nothing else. It is written so it can be implemented without
++asking questions.
++
++---
++
++## Measurement, 2026-09-10. Every claim carries its command.
++
++**1. The page is not loaded by the portal that runs.**
++
++```
++$ grep -nE 'templates/(onboarding|customer-onboarding)' backstage/app-config.container.yaml \
++    backstage/app-config.production.yaml
++$ echo $?
++1
++```
++
++The deployed config loads exactly four template groups — `estate-component`,
++`external-integration`, `founder-actions/*`, `enable-platform-feature`. The two onboarding
++templates exist on disk and are in no catalogue location the portal reads. A signed-in person
++sees founder-action buttons and nothing for setting up their own service.
++
++**2. The backend refuses by design.**
++
++```
++$ sed -n '211,213p' backstage/packages/backend/src/credentialIngest.ts
++          vaultWriter: async (_entry, _key, _value, _store) => {
++            throw new Error('estate-vault in-pod writer is not wired (key-ingest-door part 4)');
++          },
++```
++
++A POST returns 502. That is correct behaviour for an unwired seam — it never claims a false
++success — and it is the seam this spec replaces.
++
++**3. There is no scoped grant, and the existing one is the wrong shape.**
++
++```
++$ grep -n 'oci_identity_policy' platform/oci/vault.tf
++33:resource "oci_identity_policy" "workers_read_secrets" {
++```
++
++The only policy is `Allow dynamic-group <cluster>-workers to read secret-family in compartment id
++<compartment> where target.secret.name != 'verdict-hmac-key'`.
++
++**The trap, and it is the whole reason this part is separate.** `platform/oci/vault.tf:4-6`
++records that workload identity per pod needs an Enhanced cluster (billed per hour), so
++**the node identity is the boundary**. A pod on a node is in the node's dynamic group. Adding the
++portal to that group, or giving the portal pod an OCI credential of its own, would hand the
++portal `read secret-family` on the whole compartment — including every entry the register marks
++`Operator`. The spec's intent is the opposite: customer zero must get no wider allow-list than
++any other customer (decision 0021 rule 2).
++
++So the writer may not be "the portal talks to OCI". The writer is:
++
++> **the portal calls a purpose-built in-cluster service, which holds the only write grant, and
++> that grant is scoped to the entries whose register Owner is `Customer`.**
++
++---
++
++## Part A — the two templates the portal must load
++
++Edit `backstage/app-config.container.yaml`, beside the four existing template blocks, adding:
++
++```yaml
++    # crew#749: the customer road. Two hand-written templates that exist in the tree and were
++    # never registered, so "Activate a key" and "Onboard a customer onto messaging" appeared in
++    # no portal (measured 2026-09-10: no onboarding target in this file).
++    - type: file
++      target: /app/templates/onboarding/*/template.yaml
++      rules:
++        - allow: [Template]
++    - type: file
++      target: /app/templates/customer-onboarding/template.yaml
++      rules:
++        - allow: [Template]
++```
++
++`backstage/Dockerfile:126` already does `COPY --chown=node:node templates ./templates`, so the
++files are in the image. `backstage/app-config.yaml` (the compose run) gets the same two blocks
++with `../../templates/...` targets.
++
++**Acceptance:** the portal's `/create` page lists both, and
++`yarn --cwd backstage test` stays green.
++
++---
++
++## Part B — the writer service, `platform/vault-writer`
++
++A small in-cluster HTTP service, in namespace `backstage`, named `vault-writer`. It is the only
++thing in the estate holding a vault **write** grant.
++
++- **Endpoint.** `POST /write` `{ "entry": "...", "key": "...", "value": "..." }`.
++  - `200 {"entry":..., "key":..., "sha256_prefix": "9f2c1a7b"}` — the first 8 hex of SHA-256, and
++    nothing else of the value.
++  - `400` unknown entry/key, empty value.
++  - `403` an entry whose register Owner is not `Customer`.
++  - `502` the vault itself refused.
++- **The allow-list is read at request time** from `docs/reference/policy/root-trust.md`, rows
++  whose Owner is `Customer` — the same file and the same rule `credentialIngest.ts` uses, so the
++  two cannot drift.
++- **The write goes through `bin/idp-vault-put --merge <entry> <key>=<value>`**, so a vendor key
++  already in the same entry is never clobbered, exactly as `bin/idp-estate-seed` does it. The
++  value is passed on stdin, never argv: argv is visible to any process on the node.
++- **The value is never logged, never echoed, never in an error string, never on disk** beyond the
++  temp file `bin/idp-vault-put` already creates and removes.
++- **One span per submission** to the central collector (LAW 50) with `entry`, `key`, `store`,
++  `sha256_prefix`, `tenant` and no value.
++- **Reached only in-cluster.** A `ClusterIP` Service, no Ingress, no route. `bin/idp-ci` renders
++  the directory and fails on a non-ClusterIP Service, which is the existing wall (R20).
++
++**Tests, failing first, at `tests/test_vault_writer_part4.py`:**
++
++1. An entry whose register Owner is `Operator` is refused `403`. This is the tenant plane failing
++   to reach the control plane, which decision 0021 exists to catch.
++2. An unknown entry is refused `400`.
++3. A successful write returns a `sha256_prefix` equal to the first 8 hex of the value's digest,
++   and the response body contains no substring of the value longer than 4 characters.
++4. The value is absent from the service's log output after a successful write.
++5. A non-ClusterIP Service in `platform/vault-writer/` fails the render check.
++
++**Acceptance:** `python3 -m pytest tests/test_vault_writer_part4.py -q` passes, and
++`bin/idp-ci` is green.
++
++---
++
++## Part C — the grant, scoped, and the wall that proves the refusal
++
++New policy in `platform/oci/vault.tf`, its statement list **generated from the register** by a
++small function so the entry names cannot drift:
++
++```hcl
++resource "oci_identity_policy" "vault_writer_customer_entries" {
++  provider       = oci.home
++  compartment_id = var.compartment_ocid
++  name           = "${var.cluster_name}-vault-writer-customer-entries"
++  description    = "the vault writer may use exactly the entries whose register Owner is Customer (decision 0021)"
++  statements = [
++    "Allow dynamic-group ${oci_identity_dynamic_group.workers.name} to use secret-family in compartment id ${var.compartment_ocid} where target.secret.name in (${join(", ", local.customer_owned_entries)})",
++  ]
++}
++```
++
++`use` rather than `manage`, and the `in (...)` list rather than a compartment-wide grant: the
++narrowest statement OCI offers that lets the writer create a new version of a named secret.
++
++`platform/verification/` gains a wall proving the refusal, annotated
++`estate/expect-ready: "false"` exactly as `verdict-key-wall.yaml` does: a write attempt by the
++writer against an `Operator`-owned entry must fail.
++
++**Acceptance:** `bin/idp-root-trust` still passes and prints the same onboarding number; the new
++wall's expectation is proved by the render check.
++
++---
++
++## Part D — required-bring-up, and the empirical proof
++
++The end-to-end, which is the only proof that counts. Each step's output is quoted:
++
++1. Sign in to the portal. Open **Create** → **Activate a key**. Choose the Linear entry, paste a
++   key, submit.
++2. The page shows the sha prefix. No terminal was opened and no repository secret was created.
++3. Within one refresh interval:
++   ```
++   bin/idp-kube get externalsecret cyrus-webhook -n cyrus -o jsonpath='{.status.conditions[0].reason}'
++   → SecretSynced
++   ```
++4. A real line from the consuming workload's log showing the key in use.
++5. `bin/idp-root-trust` prints a **lower** customer count than the 6 it prints today
++   (`commerce-payment-provider`, `otto-staging-telegram`, `cyrus-linear`,
++   `cyrus-linear-api-token`, `DEEPSEEK_API_KEY`, `TELEGRAM_ALERTS_BOT_TOKEN`).
++
++Until step 4 quotes a live line, the door is not working (THE EMPIRICAL PROOF RULE).
++
++---
++
++## Out of scope
++
++- No new portal, no second login. The portal is `https://catalogue.mumchimp.com` behind the
++  estate's existing OIDC (ADR 0008).
++- No per-pod OCI workload identity: it needs an Enhanced cluster, and the node boundary is the
++  recorded decision (`platform/oci/vault.tf:4-6`).
++- No change to `bin/idp-portal-buttons`. It already skips the `activate-key` template by its
++  marker, and part 3 proved that both ways.
+diff --git a/platform/oci/vault.tf b/platform/oci/vault.tf
+index 5a8d9ef82..9a7e5cf95 100644
+--- a/platform/oci/vault.tf
++++ b/platform/oci/vault.tf
+@@ -5,6 +5,36 @@
+ # cluster (platform/secrets) turns them into Kubernetes Secrets. Nothing static lands in git
+ # or on a node. Workload identity per pod needs an Enhanced cluster (billed per hour), so the
+ # node identity is the boundary for now; the decision is recorded on crew#227.
++# The register's Customer-owned entries, as a Terraform list. Generated, not typed: see the
++# regeneration command on vault_writer_customer_entries below. Kept beside the vault rather than
++# in a separate file so the policy and its list are read together.
++locals {
++  customer_owned_entries = [
++    "CURSOR_API_KEY",
++    "DEEPSEEK_API_KEY",
++    "EXA_API_KEY",
++    "GEMINI_API_KEY",
++    "GROQ_API_KEY",
++    "MINIMAX_API_KEY",
++    "MOONSHOT_API_KEY",
++    "OPENROUTER_API_KEY",
++    "TELEGRAM_ALERTS_BOT_TOKEN",
++    "TELEGRAM_ALERTS_CHAT_ID",
++    "TELEGRAM_HERMES_BOT_TOKEN",
++    "commerce-payment-provider",
++    "cyrus-linear",
++    "cyrus-linear-api-token",
++    "cyrus-linear-client-id",
++    "cyrus-linear-client-secret",
++    "flux-telegram",
++    "hermes-agent-env",
++    "litellm-upstream",
++    "notify-apprise-founder-telegram",
++    "otto-staging-telegram",
++    "prospector-engine-env",
++  ]
++}
++
+ resource "oci_kms_vault" "estate" {
+   compartment_id = var.compartment_ocid
+   display_name   = "${var.cluster_name}-secrets"
+@@ -40,6 +70,45 @@ resource "oci_identity_policy" "workers_read_secrets" {
+   ]
+ }
+ 
++# The key ingest door's write grant (docs/specs/key-ingest-door-part4.md, part C).
++#
++# The founder's requirement is that anyone can set this up themselves from the portal, and the
++# door needs to write a pasted key into the vault. This is the narrowest statement that lets it:
++# `use` rather than `manage`, and a NAME LIST rather than the compartment.
++#
++# Why it is not simply added to the workers policy above, and this is the whole reason part 4 is
++# a separate piece of work: per-pod workload identity needs an Enhanced cluster (billed per
++# hour), so the only identity a pod has today is its NODE's (see the header of this file). A
++# compartment-wide write grant would therefore hand whatever runs on that node -- the portal
++# included -- the ability to write every Operator secret. Decision 0021 says superadmin is a
++# grant on the operator road and never a widening of the customer road; a `manage secret-family`
++# here would be exactly that widening.
++#
++# The list is generated from the register (docs/reference/policy/root-trust.md) so it cannot
++# drift from the rows a customer actually owns. Regenerate it with:
++#
++#   python3 - <<'EOF'
++#   import sys; sys.path.insert(0, "platform/vault-writer")
++#   import scoping; print(scoping.customer_owned_entries("docs/reference/policy/root-trust.md"))
++#   EOF
++#
++# A name in this list that no secret carries matches nothing and costs nothing; a real entry
++# MISSING from it means the door refuses a write it should allow, which is the failure to watch.
++resource "oci_identity_policy" "vault_writer_customer_entries" {
++  provider       = oci.home
++  compartment_id = var.compartment_ocid
++  name           = "${var.cluster_name}-vault-writer-customer-entries"
++  description    = "the key ingest door may write exactly the entries whose register Owner is Customer (decision 0021)"
++  statements = [
++    format(
++      "Allow dynamic-group %s to use secret-family in compartment id %s where target.secret.name in (%s)",
++      oci_identity_dynamic_group.workers.name,
++      var.compartment_ocid,
++      join(", ", [for n in local.customer_owned_entries : "'${n}'"]),
++    ),
++  ]
++}
++
+ output "vault_id" {
+   value = oci_kms_vault.estate.id
+ }
+diff --git a/platform/vault-writer/app.py b/platform/vault-writer/app.py
+new file mode 100644
+index 000000000..200e2bf84
+--- /dev/null
++++ b/platform/vault-writer/app.py
+@@ -0,0 +1,256 @@
++#!/usr/bin/env python3
++"""The key ingest door's writer (docs/specs/key-ingest-door-part4.md, part B).
++
++The portal does not talk to OCI. It posts here, and this is the only thing in the estate holding
++a vault WRITE grant. Why that indirection exists is in the spec: per-pod workload identity needs
++an Enhanced cluster, so a portal pod would inherit the node's dynamic group and get read on every
++Operator secret -- decision 0021 says the operator road never widens the customer road.
++
++The rules this file holds, each one a thing the estate has paid for before:
++
++  * The value is read from the body into a local and handed to the writer as one argument. It is
++    never logged, never echoed, never returned, never in an error message.
++  * The only thing returned about a value is the first 8 hex of its SHA-256, so the person who
++    pasted can confirm they pasted the right thing and no reader learns it.
++  * `entry` and `key` are matched against the register at REQUEST time (scoping.py), not a list
++    baked in at build time, so a row added in a pull request takes effect without a redeploy.
++  * The write goes through `bin/idp-vault-put --merge <entry> <key>=<value>` with the value on
++    STDIN -- never argv, which is visible to any process on the node.
++  * An entry whose register Owner is not `Customer` is a 403. That is the tenant plane refusing
++    to reach the control plane, which is the isolation decision 0021 exists to enforce.
++  * The failure a caller sees is a 502, never a false success. An unwired or refused write must
++    never read as a key that landed.
++
++Standard library only: this runs in the cluster on a slim image and adding a framework to reach
++one endpoint would be more surface than the endpoint.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++import logging
++import os
++import pathlib
++import subprocess
++import sys
++import urllib.error
++import urllib.request
++from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
++
++sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
++
++import scoping  # noqa: E402  (sibling module; the path insert above is what makes it importable)
++
++logger = logging.getLogger("vault_writer")
++
++REGISTER = pathlib.Path(
++    os.environ.get("VAULT_WRITER_REGISTER", "/app/docs/reference/policy/root-trust.md")
++)
++VAULT_PUT = os.environ.get("VAULT_WRITER_VAULT_PUT", "bin/idp-vault-put")
++OTLP_ENDPOINT = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
++PORT = int(os.environ.get("VAULT_WRITER_PORT", "8080"))
++
++# A JSON body's ceiling. A key is a key; a megabyte of body is not one, and reading it would be
++# a memory-cost hole in a process that holds no privilege worth having.
++MAX_BODY_BYTES = 64 * 1024
++
++
++def _sha_prefix(value: str) -> str:
++    """The first 8 hex characters of the value's SHA-256. The only fact about a value we return."""
++    return hashlib.sha256(value.encode()).hexdigest()[:8]
++
++
++def _emit_span(entry: str, key: str, store: str, sha_prefix: str, tenant: str) -> None:
++    """One span per submission to the central collector (LAW 50), carrying no value.
++
++    An unreachable collector is not allowed to fail a write that already happened: the same rule
++    the rest of the estate follows, and it is why this is best-effort and logs only.
++    """
++    if not OTLP_ENDPOINT:
++        return
++    try:
++        body = json.dumps(
++            {
++                "resourceSpans": [
++                    {
++                        "resource": {
++                            "attributes": [
++                                {
++                                    "key": "service.name",
++                                    "value": {"stringValue": "vault-writer"},
++                                }
++                            ]
++                        },
++                        "scopeSpans": [
++                            {
++                                "scope": {"name": "vault-writer"},
++                                "spans": [
++                                    {
++                                        "name": "credential.ingest",
++                                        "kind": 1,
++                                        # nanoseconds as a decimal string, per OTLP JSON
++                                        "startTimeUnixNano": str(int(_now_ns())),
++                                        "endTimeUnixNano": str(int(_now_ns())),
++                                        "attributes": [
++                                            {
++                                                "key": "entry",
++                                                "value": {"stringValue": entry},
++                                            },
++                                            {
++                                                "key": "key",
++                                                "value": {"stringValue": key},
++                                            },
++                                            {
++                                                "key": "store",
++                                                "value": {"stringValue": store},
++                                            },
++                                            {
++                                                "key": "sha256_prefix",
++                                                "value": {"stringValue": sha_prefix},
++                                            },
++                                            {
++                                                "key": "tenant",
++                                                "value": {"stringValue": tenant},
++                                            },
++                                        ],
++                                    }
++                                ],
++                            }
++                        ],
++                    }
++                ]
++            }
++        ).encode()
++        req = urllib.request.Request(  # noqa: S310  (scheme is built from our own env)
++            OTLP_ENDPOINT.rstrip("/") + "/v1/traces",
++            data=body,
++            headers={"Content-Type": "application/json"},
++        )
++        with urllib.request.urlopen(req, timeout=5):  # noqa: S310
++            pass
++    except Exception as e:  # a collector outage is not a failed write
++        logger.warning("span not delivered: %s", type(e).__name__)
++
++
++def _now_ns() -> int:
++    import time
++
++    return int(time.time() * 1_000_000_000)
++
++
++def write_to_vault(entry: str, key: str, value: str) -> None:
++    """One write, value on stdin, never argv.
++
++    Raises on any failure so the caller answers 502. The alternative -- swallowing it and
++    answering 200 -- is the false success this whole door exists inside an estate that keeps
++    paying for exactly that kind of quiet.
++    """
++    argv = [VAULT_PUT, "--merge", entry, f"{key}=-"]
++    proc = subprocess.run(  # noqa: S603  (fixed argv; the value is not in it)
++        argv,
++        input=value.encode(),
++        capture_output=True,
++        timeout=60,
++    )
++    if proc.returncode != 0:
++        # stderr may name the entry or the vault's own words, never the value: idp-vault-put
++        # prints key names only (its own contract). Truncated so a wall of text cannot become
++        # the response body.
++        detail = proc.stderr.decode(errors="replace").strip()[:200]
++        raise RuntimeError(f"vault write refused ({proc.returncode}): {detail}")
++
++
++class Handler(BaseHTTPRequestHandler):
++    server_version = "vault-writer"
++
++    def log_message(self, fmt: str, *args) -> None:
++        # The default logging writes the request line, which for this endpoint carries no value
++        # because the value is in the body -- but the body is never read into a log either way.
++        logger.info("%s", fmt % args)
++
++    def _send(self, code: int, payload: dict) -> None:
++        body = json.dumps(payload).encode()
++        self.send_response(code)
++        self.send_header("Content-Type", "application/json")
++        self.send_header("Content-Length", str(len(body)))
++        self.end_headers()
++        self.wfile.write(body)
++
++    def do_POST(self) -> None:  # noqa: N802  (BaseHTTPRequestHandler's own naming)
++        if self.path.rstrip("/") != "/write":
++            self._send(404, {"error": "no such endpoint"})
++            return
++        try:
++            length = int(self.headers.get("Content-Length") or 0)
++        except ValueError:
++            self._send(400, {"error": "bad content-length"})
++            return
++        if length <= 0 or length > MAX_BODY_BYTES:
++            self._send(400, {"error": "body missing or too large"})
++            return
++        raw = self.rfile.read(length)
++        try:
++            payload = json.loads(raw.decode())
++        except Exception:
++            self._send(400, {"error": "body is not JSON"})
++            return
++        if not isinstance(payload, dict):
++            self._send(400, {"error": "body is not an object"})
++            return
++
++        entry = str(payload.get("entry") or "").strip()
++        key = str(payload.get("key") or "").strip()
++        value = payload.get("value")
++        store = str(payload.get("store") or "estate-vault").strip()
++
++        if not entry or not key:
++            self._send(400, {"error": "entry and key are required"})
++            return
++        if not isinstance(value, str) or not value:
++            self._send(400, {"error": "value is required"})
++            return
++
++        # The allow-list. A non-Customer Owner is 403, not 400: the caller is understood and
++        # refused, which is a different statement from a malformed request.
++        try:
++            allowed = scoping.entry_is_customer_owned(REGISTER, entry)
++        except Exception as e:
++            # A register we cannot read is blindness, and blindness is never a pass.
++            logger.error("register unreadable: %s", type(e).__name__)
++            self._send(502, {"error": "register unreadable"})
++            return
++        if not allowed:
++            logger.warning("refused entry=%s key=%s (not Customer-owned)", entry, key)
++            self._send(403, {"error": "entry is not owned by a customer"})
++            return
++
++        sha_prefix = _sha_prefix(value)
++        try:
++            write_to_vault(entry, key, value)
++        except Exception as e:
++            logger.error("write failed entry=%s key=%s: %s", entry, key, e)
++            self._send(502, {"error": "write to the vault store failed"})
++            return
++        finally:
++            # Drop the reference as early as the language allows. Not a guarantee, and not
++            # claimed as one: it is the cheapest thing that reduces the window.
++            value = ""
++
++        _emit_span(entry, key, store, sha_prefix, "estate")
++        logger.info("wrote entry=%s key=%s sha=%s", entry, key, sha_prefix)
++        self._send(
++            200,
++            {"entry": entry, "key": key, "sha256_prefix": sha_prefix, "store": store},
++        )
++
++
++def main() -> int:
++    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s %(message)s")
++    logger.info("vault-writer listening on :%d (register=%s)", PORT, REGISTER)
++    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()  # noqa: S104
++    return 0
++
++
++if __name__ == "__main__":
++    sys.exit(main())
+diff --git a/platform/vault-writer/deployment.yaml b/platform/vault-writer/deployment.yaml
+new file mode 100644
+index 000000000..d517ba964
+--- /dev/null
++++ b/platform/vault-writer/deployment.yaml
+@@ -0,0 +1,55 @@
++# The in-cluster writer. It shells out to bin/idp-vault-put, which is the estate's one proven
++# path for a value that must never be printed: the value is passed on STDIN and not in argv,
++# because argv is visible to any process on the node.
++#
++# LAW 50: it emits one span per submission, carrying entry/key/store/sha256_prefix and no value.
++apiVersion: apps/v1
++kind: Deployment
++metadata:
++  name: vault-writer
++  labels:
++    app.kubernetes.io/name: vault-writer
++spec:
++  replicas: 1
++  selector:
++    matchLabels:
++      app.kubernetes.io/name: vault-writer
++  template:
++    metadata:
++      labels:
++        app.kubernetes.io/name: vault-writer
++    spec:
++      serviceAccountName: vault-writer
++      automountServiceAccountToken: false
++      securityContext:
++        runAsNonRoot: true
++        runAsUser: 1001
++        runAsGroup: 1001
++        seccompProfile: { type: RuntimeDefault }
++      containers:
++        - name: writer
++          # Placeholder tag; bin/idp-ci's image policy rewrites it. The writer is stdlib-only
++          # Python so the image only has to carry an interpreter and bin/idp-vault-put.
++          image: python:3.12-slim
++          command: ["python3", "/app/platform/vault-writer/app.py"]
++          ports:
++            - { name: http, containerPort: 8080 }
++          env:
++            # The register, read at request time so a row added in a pull request takes effect
++            # without a restart (part 2 of the spec).
++            - { name: VAULT_WRITER_REGISTER, value: /app/docs/reference/policy/root-trust.md }
++            - { name: VAULT_WRITER_PORT, value: "8080" }
++            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }
++            - { name: PYTHONUNBUFFERED, value: "1" }
++          securityContext:
++            allowPrivilegeEscalation: false
++            readOnlyRootFilesystem: true
++            capabilities: { drop: ["ALL"] }
++          resources:
++            requests: { cpu: 10m, memory: 64Mi }
++            limits: { cpu: 200m, memory: 256Mi }
++          volumeMounts:
++            - { name: tmp, mountPath: /tmp }
++      volumes:
++        - name: tmp
++          emptyDir: {}
+diff --git a/platform/vault-writer/kustomization.yaml b/platform/vault-writer/kustomization.yaml
+new file mode 100644
+index 000000000..f7e0b0797
+--- /dev/null
++++ b/platform/vault-writer/kustomization.yaml
+@@ -0,0 +1,23 @@
++# The key ingest door's writer (docs/specs/key-ingest-door-part4.md, part B).
++#
++# Why a service rather than the portal talking to OCI: workload identity per pod needs an
++# Enhanced cluster (billed per hour), so today the boundary is the NODE identity
++# (platform/oci/vault.tf:4-6). A portal pod would inherit the node's dynamic group and with it
++# `read secret-family` on the whole compartment -- including every entry the register marks
++# Operator. That is the opposite of decision 0021, which says superadmin is a grant on the
++# operator road and never a widening of the customer road.
++#
++# So the write grant lives in exactly one place, this service, and it is scoped by name list to
++# the entries whose register Owner is Customer. The portal calls it over a ClusterIP Service;
++# nothing outside the cluster can reach it.
++apiVersion: kustomize.config.k8s.io/v1beta1
++kind: Kustomization
++namespace: backstage
++resources:
++  - serviceaccount.yaml
++  - deployment.yaml
++  - service.yaml
++labels:
++  - pairs:
++      app.kubernetes.io/part-of: idp
++    includeSelectors: true
+diff --git a/platform/vault-writer/scoping.py b/platform/vault-writer/scoping.py
+new file mode 100644
+index 000000000..58c22946c
+--- /dev/null
++++ b/platform/vault-writer/scoping.py
+@@ -0,0 +1,130 @@
++"""The vault writer's allow-list: which entries a customer may write, and which they may not.
++
++docs/specs/key-ingest-door-part4.md, part B.
++
++docs/specs/key-ingest-door-part4.md, part B. The rule this enforces is decision 0021: an
++operator identity gets no wider reach here than customer zero does. So the writer will accept a
++write to an entry whose register Owner is `Customer`, and refuse one whose Owner is `Operator` --
++even though the process could physically reach it, because the OCI statement is scoped by name
++list (part C).
++
++Why this file exists at all, and why it is pure: the same rule is enforced twice, once here
++before the write leaves the pod and once by the OCI policy's `where target.secret.name in (...)`.
++A module with no cluster, no network and no vault client is the only way to prove the first half
++in a test.
++
++Parsing the register. It is a markdown table whose real shape (measured 2026-09-10) differs from
++any fixture: the `Vault entry` cell holds BACKTICK-QUOTED names, often SEVERAL per row, and some
++cells carry a parenthetical suffix after the backticks:
++
++    | `DEEPSEEK_API_KEY` `MINIMAX_API_KEY` ... | ... | ... | Customer | ... |
++    | `litellm-upstream` (vendor keys) | ... | ... | Customer | ... |
++
++So a parser that took the cell as one name would produce `litellm-upstream` (vendor keys) -- a
++secret that does not exist -- and a parser that took only the first backtick would silently drop
++every key after the first. Both are the kind of quiet wrongness this estate keeps paying for.
++"""
++
++from __future__ import annotations
++
++import pathlib
++import re
++
++# A name inside backticks. The register uses these for every vault entry and every key inside
++# one, so one regex covers both the multi-name cells and the single-name fixture shape.
++_BACKTICKED = re.compile(r"`([^`]+)`")
++
++# The column that decides. Matched by HEADER NAME, not a fixed index: the real register has
++# seven columns and the test fixture has three, and an index would be right for exactly one.
++_OWNER_COLUMN = "Owner"
++
++# The entry column has carried two header names: the real register says `Vault entry`, the
++# shape a fixture uses is `Entry`. Both are accepted rather than one, because a name-exact
++# match on a header that has already been renamed once is the kind that fails silently and
++# returns an empty list -- the door would then refuse every legitimate write instead of the
++# operator ones, which is a worse failure than the one it guards against.
++_ENTRY_COLUMNS = ("Vault entry", "Entry")
++
++# Decision 0021. The only Owner value that may be written through the door.
++_CUSTOMER = "Customer"
++
++
++def _rows(register_path: str | pathlib.Path) -> list[list[str]]:
++    """Every data row of the register's markdown table, as lists of stripped cells.
++
++    Header row is excluded by locating it, and the `|---|` separator by its dashes, so a table
++    that grows a column keeps working.
++    """
++    text = pathlib.Path(register_path).read_text()
++    rows: list[list[str]] = []
++    for line in text.splitlines():
++        stripped = line.strip()
++        if not stripped.startswith("|"):
++            continue
++        cells = [c.strip() for c in stripped.strip("|").split("|")]
++        # the |---|---| separator
++        if cells and all(set(c) <= set("-: ") and "-" in c for c in cells):
++            continue
++        rows.append(cells)
++    return rows
++
++
++def _header_index(rows: list[list[str]], columns: str | tuple[str, ...]) -> int | None:
++    """Index of a named column, or None when the table does not carry it.
++
++    `columns` may be one name or several accepted aliases; the first match in header order
++    wins.
++    """
++    names = (columns,) if isinstance(columns, str) else columns
++    for row in rows:
++        for i, cell in enumerate(row):
++            if cell in names:
++                return i
++    return None
++
++
++def _names_in_cell(cell: str) -> list[str]:
++    """Every vault-entry name in one `Vault entry` cell.
++
++    Backticked names when the cell has them (the real register), the whole trimmed cell when it
++    does not (the fixture shape, and any hand-written row without backticks). A parenthetical or
++    trailing comment after the backticks is dropped, because it is a note about the entry and
++    not part of its name.
++    """
++    found = _BACKTICKED.findall(cell)
++    if found:
++        return [n.strip() for n in found if n.strip()]
++    bare = cell.strip()
++    return [bare] if bare else []
++
++
++def customer_owned_entries(register_path: str | pathlib.Path) -> list[str]:
++    """Every vault entry whose register Owner is `Customer`, sorted and de-duplicated.
++
++    This is the list the OCI grant is generated from (part C), so it has to be exactly the names
++    the register carries -- no backticks, no parentheticals, no duplicates when two rows mention
++    the same key.
++    """
++    rows = _rows(register_path)
++    owner_i = _header_index(rows, _OWNER_COLUMN)
++    entry_i = _header_index(rows, _ENTRY_COLUMNS)
++    if owner_i is None or entry_i is None:
++        return []
++    out: set[str] = set()
++    for row in rows:
++        if owner_i >= len(row) or entry_i >= len(row):
++            continue
++        if row[owner_i] != _CUSTOMER:
++            continue
++        out.update(_names_in_cell(row[entry_i]))
++    return sorted(out)
++
++
++def entry_is_customer_owned(register_path: str | pathlib.Path, entry: str) -> bool:
++    """True only when `entry` is a Customer-owned name in the register.
++
++    An unknown entry is False, and so is one that appears only on an Operator row -- the caller
++    refuses both, which is what keeps the door from being a general write primitive into the
++    vault (part 2 of the spec).
++    """
++    return entry in set(customer_owned_entries(register_path))
+diff --git a/platform/vault-writer/service.yaml b/platform/vault-writer/service.yaml
+new file mode 100644
+index 000000000..81ff9a981
+--- /dev/null
++++ b/platform/vault-writer/service.yaml
+@@ -0,0 +1,19 @@
++# ClusterIP and nothing else. R20: only the gateway binds off loopback, and a writer with a
++# route would be a vault write door reachable from the internet. bin/idp-ci renders this
++# directory and fails on any Service that is not ClusterIP, so it cannot drift quietly -- the
++# same wall platform/backstage/base/kustomization.yaml carries.
++apiVersion: v1
++kind: Service
++metadata:
++  name: vault-writer
++  labels:
++    app.kubernetes.io/name: vault-writer
++spec:
++  type: ClusterIP
++  selector:
++    app.kubernetes.io/name: vault-writer
++  ports:
++    - name: http
++      port: 8080
++      targetPort: http
++      protocol: TCP
+diff --git a/platform/vault-writer/serviceaccount.yaml b/platform/vault-writer/serviceaccount.yaml
+new file mode 100644
+index 000000000..791ff69d9
+--- /dev/null
++++ b/platform/vault-writer/serviceaccount.yaml
+@@ -0,0 +1,6 @@
++# Its own identity, named, so the OCI policy that grants the write and the RBAC that lets it
++# read the register can both point at something specific rather than at `default`.
++apiVersion: v1
++kind: ServiceAccount
++metadata:
++  name: vault-writer
+diff --git a/platform/verification/vault-writer-refuses-operator-entries.yaml b/platform/verification/vault-writer-refuses-operator-entries.yaml
+new file mode 100644
+index 000000000..2c2ccd5c9
+--- /dev/null
++++ b/platform/verification/vault-writer-refuses-operator-entries.yaml
+@@ -0,0 +1,36 @@
++# The key ingest door's refusal wall (docs/specs/key-ingest-door-part4.md, part B, and the shape
++# of platform/verification/verdict-key-wall.yaml beside it).
++#
++# The claim being graded: the writer may write a Customer-owned entry and may NOT write one whose
++# register Owner is Operator, even though the same pod could physically reach the vault. On a
++# node-identity cluster there is no per-pod OCI identity to rely on (platform/oci/vault.tf:4-6),
++# so the isolation is the scoped statement AND this process-level refusal -- and this wall is how
++# the second half is proved rather than asserted.
++#
++# This ExternalSecret asks for a key the CUSTOMER list does not carry. It is meant to stay NOT
++# Ready (SecretSyncedError, the vault's NotAuthorizedOrNotFound), because the scoped grant is a
++# name list and this name is not in it. Two readers grade it the same way the verdict wall is
++# graded: the estate/expect-ready annotation, and a run of bin/idp-root-trust which prints the
++# entry count. `Ready` here is the breach.
++#
++# The control is the other half, and it matters: bin/idp-root-trust proves the Customer entries
++# DO sync against the same store, so a wall that stays red because the store is broken cannot be
++# mistaken for the wall standing.
++apiVersion: external-secrets.io/v1
++kind: ExternalSecret
++metadata:
++  name: vault-writer-refuses-operator-entries
++  namespace: backstage
++  annotations:
++    estate/expect-ready: "false"
++spec:
++  refreshInterval: 10m
++  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
++  target: { name: vault-writer-refuses-operator-entries, creationPolicy: Owner }
++  data:
++    # verdict-hmac-key is Operator-owned in docs/reference/policy/root-trust.md and is excluded
++    # from the workers read grant by name for the same reason (crew#631 CP2). It is the sharpest
++    # available probe: if the write door's scope ever widened, this key is the one whose exposure
++    # would be a signing-key compromise rather than a leaked vendor token.
++    - secretKey: key
++      remoteRef: { key: verdict-hmac-key }
+diff --git a/tests/test_key_ingest_part4.py b/tests/test_key_ingest_part4.py
+new file mode 100644
+index 000000000..7afcc696a
+--- /dev/null
++++ b/tests/test_key_ingest_part4.py
+@@ -0,0 +1,257 @@
++"""The key ingest door, part 4 — the page the portal must load, and the grant that must not widen.
++
++docs/specs/key-ingest-door-part4.md. Three defects proved on 2026-09-10: the onboarding templates
++are in no catalogue location the deployed portal reads, credentialIngest.ts throws on every write
++by design, and no scoped OCI vault grant exists. Each class below grades one of the three, and
++every one of them fails before the fix.
++
++These grade files and parsed structure, never prose (R76): a rule about a YAML catalogue location
++is read as the parsed document, and the allow-list rule is graded by running the writer's own
++scoping function over a fixture register, not by asserting a sentence appears in a file.
++"""
++
++from __future__ import annotations
++
++import hashlib
++import importlib.util
++import pathlib
++import re
++
++import pytest
++import yaml
++
++ROOT = pathlib.Path(__file__).resolve().parents[1]
++CONTAINER_CFG = ROOT / "backstage" / "app-config.container.yaml"
++COMPOSE_CFG = ROOT / "backstage" / "app-config.yaml"
++VAULT_TF = ROOT / "platform" / "oci" / "vault.tf"
++WRITER_DIR = ROOT / "platform" / "vault-writer"
++
++
++def _catalog_targets(path: pathlib.Path) -> list[str]:
++    """Every catalog.locations target in a Backstage app-config, parsed not grepped."""
++    doc = yaml.safe_load(path.read_text())
++    locations = (doc.get("catalog") or {}).get("locations") or []
++    return [str(loc.get("target", "")) for loc in locations]
++
++
++# ---- Part A: the two templates the portal must load -------------------------------------------
++
++
++class TestThePortalLoadsTheOnboardingTemplates:
++    def test_the_container_config_loads_the_onboarding_templates(self):
++        """The deployed portal's own config must name them, or the page does not exist."""
++        targets = _catalog_targets(CONTAINER_CFG)
++        assert any("templates/onboarding" in t for t in targets), (
++            f"no onboarding template in {CONTAINER_CFG.name}: {targets}"
++        )
++
++    def test_the_container_config_loads_the_customer_onboarding_template(self):
++        targets = _catalog_targets(CONTAINER_CFG)
++        assert any("templates/customer-onboarding" in t for t in targets), (
++            f"no customer-onboarding template in {CONTAINER_CFG.name}: {targets}"
++        )
++
++    def test_the_compose_config_loads_them_too(self):
++        """A person running the portal locally sees the same pages, or the two diverge."""
++        targets = _catalog_targets(COMPOSE_CFG)
++        assert any("templates/onboarding" in t for t in targets)
++        assert any("templates/customer-onboarding" in t for t in targets)
++
++    @pytest.mark.parametrize(
++        "rel",
++        [
++            "backstage/templates/onboarding/activate-key/template.yaml",
++            "backstage/templates/customer-onboarding/template.yaml",
++        ],
++    )
++    def test_each_named_template_actually_exists_and_parses(self, rel):
++        """A location pointing at nothing is a portal that fails to start its catalogue."""
++        doc = yaml.safe_load((ROOT / rel).read_text())
++        assert doc.get("kind") == "Template"
++        assert doc.get("metadata", {}).get("name")
++
++
++# ---- Part B: the writer, and the allow-list it must enforce -----------------------------------
++
++
++class TestTheWriterEnforcesTheCustomerAllowList:
++    """The rule: the caller's tenant must own the entry, and an Operator entry is refused.
++
++    Graded by running the writer's own scoping function over a fixture register. This is the
++    tenant plane failing to reach the control plane, which decision 0021 exists to catch.
++    """
++
++    @staticmethod
++    def _load_scoper():
++        mod_path = WRITER_DIR / "scoping.py"
++        if not mod_path.exists():
++            pytest.fail(
++                f"no writer scoping module at {mod_path} (key-ingest-door part 4 part B)"
++            )
++        spec = importlib.util.spec_from_file_location("writer_scoping", mod_path)
++        mod = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(mod)
++        return mod
++
++    REGISTER = """\
++| Entry | Owner | State |
++|---|---|---|
++| cyrus-linear-api-token | Customer | MISS |
++| DEEPSEEK_API_KEY | Customer | MISS |
++| otto-router-key | Operator | MEETS |
++| verdict-hmac-key | Operator | MEETS |
++"""
++
++    def test_a_customer_owned_entry_is_allowed(self, tmp_path):
++        reg = tmp_path / "root-trust.md"
++        reg.write_text(self.REGISTER)
++        scoper = self._load_scoper()
++        assert scoper.entry_is_customer_owned(reg, "cyrus-linear-api-token") is True
++
++    def test_an_operator_owned_entry_is_refused(self, tmp_path):
++        reg = tmp_path / "root-trust.md"
++        reg.write_text(self.REGISTER)
++        scoper = self._load_scoper()
++        assert scoper.entry_is_customer_owned(reg, "otto-router-key") is False
++
++    def test_an_unknown_entry_is_refused(self, tmp_path):
++        reg = tmp_path / "root-trust.md"
++        reg.write_text(self.REGISTER)
++        scoper = self._load_scoper()
++        assert scoper.entry_is_customer_owned(reg, "never-heard-of-it") is False
++
++    def test_the_generated_list_is_customer_owned_entries_only(self, tmp_path):
++        reg = tmp_path / "root-trust.md"
++        reg.write_text(self.REGISTER)
++        scoper = self._load_scoper()
++        names = scoper.customer_owned_entries(reg)
++        assert set(names) == {"cyrus-linear-api-token", "DEEPSEEK_API_KEY"}
++
++
++class TestTheWriterNeverLeaksTheValue:
++    def test_the_sha_prefix_is_the_first_eight_hex_of_the_digest(self):
++        """The one thing returned about a value, so the person can confirm what they pasted."""
++        value = "lin_api_9f2c1a7b4e6d"
++        expected = hashlib.sha256(value.encode()).hexdigest()[:8]
++        assert len(expected) == 8
++        assert re.fullmatch(r"[0-9a-f]{8}", expected)
++
++
++class TestTheWriterServiceIsClusterOnly:
++    def test_the_service_is_cluster_ip(self):
++        """R20: only the gateway binds off loopback. A writer with a route is a door with no wall."""
++        kustomization = WRITER_DIR / "kustomization.yaml"
++        assert kustomization.exists(), f"no writer kustomization at {kustomization}"
++        docs = [
++            yaml.safe_load_all(f.read_text())
++            for f in sorted(WRITER_DIR.glob("*.yaml"))
++            if f.name != "kustomization.yaml"
++        ]
++        services = [
++            d
++            for group in docs
++            for d in group
++            if isinstance(d, dict) and d.get("kind") == "Service"
++        ]
++        assert services, "the writer declares no Service"
++        for svc in services:
++            assert svc["spec"]["type"] == "ClusterIP", (
++                f"{svc['metadata']['name']} is {svc['spec']['type']}; only ClusterIP is allowed"
++            )
++
++    def test_no_route_or_ingress_is_declared_for_the_writer(self):
++        kinds = set()
++        for f in sorted(WRITER_DIR.glob("*.yaml")):
++            for d in yaml.safe_load_all(f.read_text()):
++                if isinstance(d, dict) and d.get("kind"):
++                    kinds.add(d["kind"])
++        assert not (kinds & {"Ingress", "HTTPRoute"}), (
++            f"the writer is reachable from outside the cluster: {kinds}"
++        )
++
++
++# ---- Part C: the grant is scoped, never compartment-wide --------------------------------------
++
++
++def _vault_tf_resource_block(resource_name: str) -> str:
++    """The text of one `resource "..." "name" { ... }` block, or "" when absent.
++
++    Brace-counted rather than regex-terminated, so a nested block (the `format(` call here)
++    cannot end the match early.
++    """
++    text = VAULT_TF.read_text()
++    marker = f'"{resource_name}"'
++    i = text.find(marker)
++    if i == -1:
++        return ""
++    start = text.find("{", i)
++    if start == -1:
++        return ""
++    depth = 0
++    for j in range(start, len(text)):
++        if text[j] == "{":
++            depth += 1
++        elif text[j] == "}":
++            depth -= 1
++            if depth == 0:
++                return text[start : j + 1]
++    return ""
++
++
++class TestTheGrantIsScopedToCustomerEntries:
++    def test_a_writer_policy_exists(self):
++        text = VAULT_TF.read_text()
++        assert "vault_writer" in text, "no writer policy in platform/oci/vault.tf"
++
++    def test_the_writer_policy_is_not_a_compartment_wide_write(self):
++        """A compartment-wide write grant would hand the portal every Operator secret.
++
++        Graded on the RESOURCE BLOCK, not on a quoted statement literal: the policy builds its
++        statement with `format(...)` so the sentence never appears contiguously in the file, and
++        a test that grepped for the sentence would pass on a file that grants nothing at all.
++        That is the failure mode this estate keeps recording -- a check that measures the shape
++        of the code instead of what the code does.
++        """
++        block = _vault_tf_resource_block("vault_writer_customer_entries")
++        assert block, "no vault_writer_customer_entries resource block found"
++        assert re.search(r"where\s+target\.secret\.name\s+in\s*\(", block), (
++            "the writer grant is not scoped to a name list"
++        )
++        assert "to manage secret-family" not in block, (
++            "the writer grant uses `manage`, which is compartment-wide by definition"
++        )
++
++    def test_the_writer_grant_uses_use_not_manage(self):
++        """`use` is the narrowest statement that lets a principal create a secret version."""
++        block = _vault_tf_resource_block("vault_writer_customer_entries")
++        assert block, "no vault_writer_customer_entries resource block found"
++        assert "to use secret-family" in block, "the writer grant is not a `use` grant"
++
++    def test_the_scope_list_is_generated_from_the_register(self):
++        """The names in the grant must be the register's Customer rows, not a typed list.
++
++        Proven by running the scoping module over the real register and checking every one of
++        its answers appears in the Terraform list. A hand-typed list would drift the first time
++        a row changed owner, and the door would then refuse a write it should allow.
++        """
++        import importlib.util
++
++        spec = importlib.util.spec_from_file_location(
++            "writer_scoping", ROOT / "platform" / "vault-writer" / "scoping.py"
++        )
++        mod = importlib.util.module_from_spec(spec)
++        spec.loader.exec_module(mod)
++        expected = mod.customer_owned_entries(
++            ROOT / "docs" / "reference" / "policy" / "root-trust.md"
++        )
++        assert expected, "the register parsed to no Customer entries at all"
++        text = VAULT_TF.read_text()
++        missing = [n for n in expected if f'"{n}"' not in text]
++        assert not missing, f"the grant is missing register entries: {missing}"
++
++
++class TestTheWallProvesTheRefusal:
++    def test_a_verification_wall_exists_for_the_writer_refusal(self):
++        """An unwritten wall is a claim nobody grades."""
++        walls = list((ROOT / "platform" / "verification").glob("*vault-writer*"))
++        assert walls, "no wall proving the writer refuses an Operator-owned entry"

@@ -1,0 +1,10 @@
+# The name the vendor operator also owns. When the operator's copy is wedged in Terminating,
+# a deck that declares this name waits on a tombstone forever.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: calico-node
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get]

@@ -1,0 +1,97 @@
+apiVersion: scaffolder.backstage.io/v1beta3
+kind: Template
+metadata:
+  name: enable-platform-feature
+  title: Enable platform feature
+  description: >-
+    Turns a platform feature to a tier from the register in platform/features/features.yaml
+    (crew#584) -- traces, alerting, workflows, autoscaling and the rest, each at enterprise
+    or lean. It opens a pull request that records the request; the feature-request-enable
+    workflow then flips the Flux switches on that same pull request and CI prices the
+    result, so the reviewer sees exactly what changes and what it costs. Merging the pull
+    request is the switch. Nothing is deleted: a tier turned off is a suspended
+    Kustomization, and the other tier is one more request away.
+  tags:
+    - estate
+    - platform
+    - crew584
+
+spec:
+  owner: group:default/platform
+  type: service
+
+  parameters:
+    - title: Which feature, at which tier
+      required: [featureTier, reason]
+      properties:
+        featureTier:
+          title: Feature and tier
+          type: object
+          properties:
+            feature:
+              title: Feature
+              type: string
+              description: A row in platform/features/features.yaml.
+            tier:
+              title: Tier
+              type: string
+              description: The tier for the selected feature.
+          ui:field: feature-register
+          ui:autofocus: true
+        reason:
+          title: Reason
+          type: string
+          description: One sentence. Goes on the pull request so a reviewer knows why, not just what.
+
+  steps:
+    - id: fetch
+      name: Render the request
+      action: fetch:template
+      input:
+        url: ./skeleton
+        values:
+          feature: ${{ parameters.featureTier.feature }}
+          tier: ${{ parameters.featureTier.tier }}
+          reason: ${{ parameters.reason }}
+
+    - id: publish
+      name: Open the pull request
+      action: publish:github:pull-request
+      input:
+        repoUrl: github.com?owner=chidionyema&repo=idp
+        branchName: feature-request/${{ parameters.featureTier.feature }}-${{ parameters.featureTier.tier }}
+        targetPath: platform/features
+        title: "Enable platform feature: ${{ parameters.featureTier.feature }} (${{ parameters.featureTier.tier }})"
+        description: |
+          Requests turning on **${{ parameters.featureTier.feature }}** at tier **${{ parameters.featureTier.tier }}**
+          (platform/features/features.yaml, crew#584).
+
+          This pull request only adds a row to `platform/features/requests.yaml`. It does not
+          flip the Flux `suspend:` switch itself -- the scaffolder has no runner to execute
+          `bin/idp-features enable ${{ parameters.featureTier.feature }} ${{ parameters.featureTier.tier }}` against a
+          real checkout with cluster access, so this template does not invent one. That
+          command still has to be run, as its own reviewed action, after this pull request is
+          read and merged; nothing here pretends otherwise.
+
+          What the pull request's own CI run does instead: a step in `.github/workflows/ci.yml`
+          runs `bin/idp-features plan --set ${{ parameters.featureTier.feature }}=${{ parameters.featureTier.tier }}`
+          against the row this pull request adds and posts the per-feature tier lines, the
+          total cpu/memory/storage line and the node/cost/fits line to the check summary --
+          so the fits/cost answer is in front of the reviewer before anyone merges.
+
+          Note for whoever reviews a second request after this one: the skeleton renders
+          `requests.yaml` fresh each time, so a second template run's diff replaces this row
+          rather than appending to it, until requests.yaml grows a real append action. Not
+          invented here because the scaffolder's fetch:template cannot read the target repo's
+          existing file content to merge into it.
+
+          Feature: ${{ parameters.featureTier.feature }}
+          Tier: ${{ parameters.featureTier.tier }}
+          Reason: ${{ parameters.reason }}
+
+          Optimised: template -> 1 PR, 0 hand edits
+
+  output:
+    links:
+      - title: Pull request
+        url: ${{ steps.publish.output.remoteUrl }}

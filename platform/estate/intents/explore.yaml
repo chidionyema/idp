@@ -1,0 +1,12 @@
+name: explore
+description: >
+  Freeform exploration. Requires --goal. Output must be a new intent
+  file written to ~/.estate/intents/.yaml. Always set halt_on_failure: false
+  so the agent can recover from bad commands.
+tools: [curl, git, gh, cat, ls, rg, python3]
+models: []
+halt_on_failure: false
+max_turns: 100
+steps:
+  - cmd: echo "explore mode -- write output to ~/.estate/intents/"
+    on_fail: continue

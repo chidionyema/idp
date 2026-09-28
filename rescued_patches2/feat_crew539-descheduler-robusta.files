@@ -1,0 +1,7 @@
+clusters/oke/platform.yaml
+platform/descheduler/descheduler.yaml
+platform/descheduler/kustomization.yaml
+platform/robusta/external-secret.yaml
+platform/robusta/kustomization.yaml
+platform/robusta/namespace.yaml
+platform/robusta/robusta.yaml

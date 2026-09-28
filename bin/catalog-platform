@@ -1,0 +1,864 @@
+#!/usr/bin/env python3
+"""Every layer the cluster runs, as catalogue entities (crew#459, founder 2026-08-29: "where are all
+our components, tools, services ... all the tooling we use in our cluster is hidden away").
+
+Reads the Flux Kustomizations under clusters/<cluster>/*.yaml, the one list of what the cluster is
+made of, and writes backstage/platform/catalog-info.yaml: one System per area and one Component
+(type `platform-layer`) per Kustomization, with `backstage.io/kubernetes-label-selector` set to the
+label Flux stamps on every object it applies, so the Kubernetes plugin finds the live pods with
+nothing typed by hand. `spec.dependsOn` mirrors Flux `dependsOn`. A layer whose own manifests carry
+a `kind: HTTPRoute` or `kind: Ingress` also gets one `kind: API`, linked with `providesApis`, its
+hostname read off that manifest -- so the APIs tab answers "what can I call" instead of staying
+empty. Nothing here names a host, a provider or a path outside the repository (LAW 46, R36).
+
+    bin/catalog-platform                        # rewrite the file
+    bin/catalog-platform --check                # exit 1 when the file is stale or a layer has no owner
+    bin/catalog-platform --check-fixture <path>  # rules.yaml only: grade a fixture LAYERS dict, not the cluster
+"""
+
+import glob
+import os
+import runpy
+import sys
+
+import yaml
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CLUSTER = os.environ.get("CLUSTER", "oke")
+OUT = os.path.join(ROOT, "backstage", "platform", "catalog-info.yaml")
+TYPE = "platform-layer"
+
+# area -> (title, one sentence a buyer reads)
+SYSTEMS = {
+    "delivery": (
+        "Delivery",
+        "How code becomes a running thing: secrets, images, the catalogue and the portal.",
+    ),
+    "edge": (
+        "Edge",
+        "How traffic gets in: the gateway, the policy engine, DNS and the store's front door.",
+    ),
+    "identity": (
+        "Identity",
+        "Who may open a door: single sign-on in front of every surface and remote hands.",
+    ),
+    "observability": (
+        "Observability",
+        "What the estate saw: traces, model calls, metrics, alerts and the pages they raise.",
+    ),
+    "scheduling": (
+        "Scheduling",
+        "Where work runs and how it scales: priorities, autoscaling, workflows and node repair.",
+    ),
+    "agents": (
+        "Agents",
+        "The AI that acts for the founder: the model router, the agent gateway, memory and tools.",
+    ),
+    "resilience": (
+        "Resilience",
+        "How the estate breaks on purpose and heals: chaos, drills, self-healing and health checks.",
+    ),
+    "products": (
+        "Products",
+        "What a customer buys: the store and the prospecting product, on the platform.",
+    ),
+    "data": (
+        "Data",
+        "Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.",
+    ),
+    "commerce": (
+        "Money",
+        "How a customer pays and what they are owed: subscriptions, credit packs, invoices and the ledger. The products never see a card.",
+    ),
+}
+
+# kustomization name -> (area, plain title, one sentence, owner)
+#
+# owner is a real, required field per layer -- not decoration. Before crew#(this fix), every
+# Component/API this file emitted was silently stamped "group:default/platform" from one
+# global constant, so via-negativa's Kyverno-catching-a-missing-description gate could never
+# have caught a missing OWNER even if it had one to check: there was no per-layer owner to be
+# missing. Every row below is explicit now so a new layer must state one instead of silently
+# inheriting a default nobody chose (Spotify's own Soundcheck treats exactly this -- "every
+# Component has a real owning Group, not a placeholder" -- as a scored, enforced rule, not a
+# convention). Real per-team owners are still a follow-up: this repo has no Group entities
+# beyond the one default, so "group:default/platform" here is today's honest answer, not a
+# forgotten TODO -- render() below refuses a row with no owner at all, same as no description.
+LAYERS = {
+    "router-events": (
+        "model-routing",
+        "Router change events and their backup",
+        "Every change to a model-routing lane announces itself the moment the database commits it, so the estate never holds a belief it stopped being true seconds ago: a listener passes the change to the estate bus and the catalogue is accurate within the second. A second job writes the lanes to git as they change, which is the copy that survives losing the database the lanes live in. The events carry what changed and which lane, never a key, because a database notification is visible to every session on it.",
+        "group:default/platform",
+    ),
+    "crossplane": (
+        "delivery",
+        "Cloud control loop",
+        "Keeps the cloud resources the estate asks for looking the way the repository says they should; a change made in a provider console is put back at the next reconcile instead of surviving until someone runs a plan.",
+        "group:default/platform",
+    ),
+    "crossplane-providers": (
+        "delivery",
+        "Cloud control loop providers",
+        "The provider packages the cloud control loop uses to talk to Oracle Cloud, kept separate so a provider can be upgraded without touching the loop itself.",
+        "group:default/platform",
+    ),
+    "crossplane-providerconfig": (
+        "delivery",
+        "Cloud control loop credentials",
+        "How the cloud control loop signs in to Oracle Cloud, deployed after the providers rather than beside them: the sign-in names a kind that only a provider installs, and the estate checks a whole folder before it applies any of it, so the two together would wait on each other forever.",
+        "group:default/platform",
+    ),
+    "crossplane-storage-capability": (
+        "delivery",
+        "Cloud storage capability",
+        "The template that lets the cloud control loop hand out a storage bucket: installing it creates nothing by itself, it only makes 'ask for a bucket' possible once something asks.",
+        "group:default/platform",
+    ),
+    "flux-webhook": (
+        "delivery",
+        "Push-to-deploy door",
+        "The door GitHub knocks on the moment a change is merged, so the estate reconciles at once instead of waiting out the one-minute poll; the knock is refused unless it carries the shared token.",
+        "group:default/platform",
+    ),
+    "concierge": (
+        "products",
+        "Concierge's mailbox",
+        "A namespace that holds one thing: the Twilio token the Mums concierge needs to prove a phone call really came from Twilio. Nothing runs here -- the concierge itself lives on a Mac -- but the token rides the estate's human door, and a delivered secret needs somewhere to land.",
+        "group:default/platform",
+    ),
+    "demo-sandbox": (
+        "products",
+        "Buyer sandbox",
+        "A one-hour throwaway cluster inside the cluster for a buyer's engineer; launched by hand from the runbook, reaped by the platform when the hour is up.",
+        "group:default/platform",
+    ),
+    "jit": (
+        "identity",
+        "Just-in-time access",
+        "The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.",
+        "group:default/platform",
+    ),
+    "rbac-floor": (
+        "identity",
+        "Who agents are",
+        "The identity every agent on this estate actually uses, and it can read the cluster and write nothing; the ceiling above it is the just-in-time broker, and there is no third road.",
+        "group:default/platform",
+    ),
+    "rbac": (
+        "identity",
+        "Break-glass bridge",
+        "The one road in that does not go through an agent at all: a machine the founder can reach when the cluster will not let anyone else in.",
+        "group:default/platform",
+    ),
+    "rbac-identity": (
+        "identity",
+        "Bridge identity",
+        "The credential the human-vault bridge signs in with, carried from the vault into flux-system so the binding that trusts it can be substituted before it is applied.",
+        "group:default/platform",
+    ),
+    "human-vault-bridge": (
+        "identity",
+        "Vendor key bridge",
+        "The human door: a vendor key the founder types once into a console reaches every workload that needs it, generated from platform/vendors/consoles.yaml so adding a vendor is one row and a renderer run.",
+        "group:default/platform",
+    ),
+    "calico": (
+        "edge",
+        "Packet policy engine",
+        "The engine that actually drops a packet a NetworkPolicy refuses; without it every fence in the estate is a comment.",
+        "group:default/platform",
+    ),
+    "ns-fences": (
+        "edge",
+        "Namespace fences",
+        "Both-ways default-deny, a quota and request defaults around every namespace, generated from one allowances file so no namespace can be stood up without its walls.",
+        "group:default/platform",
+    ),
+    "trivy": (
+        "resilience",
+        "Vulnerability scanning",
+        "What is wrong with the images and nodes already running: the operator that reads every workload and files a vulnerability report the security scan reads.",
+        "group:default/platform",
+    ),
+    "feature-register": (
+        "products",
+        "Store register",
+        "What the store sells and what each plan costs, computed once from features.yaml so the catalogue and the checkout read the same answer.",
+        "group:default/platform",
+    ),
+    "sandbox-launch": (
+        "products",
+        "Sandbox launcher",
+        "The moving lane behind the buyer sandbox: a branch only the founder's button writes, so a person launches a demo and agents never deploy one.",
+        "group:default/platform",
+    ),
+    "notify": (
+        "observability",
+        "Notification fan-out",
+        "One place every alert goes; it delivers to the founder's phone and any channel after it.",
+        "group:default/platform",
+    ),
+    "external-secrets": (
+        "delivery",
+        "Secrets bridge",
+        "Pulls every secret from the vault into the cluster; nothing is typed into a console.",
+        "group:default/platform",
+    ),
+    "verification": (
+        "identity",
+        "Verification wall",
+        "Proves, on every run, that the cluster's pods are refused the key that signs a verdict; the probe is meant to stay refused.",
+        "group:default/platform",
+    ),
+    "secret-store": (
+        "delivery",
+        "Vault connection",
+        "The cluster's one root credential to the vault; every other secret is minted from it.",
+        "group:default/platform",
+    ),
+    "human-vault": (
+        "delivery",
+        "Human secret door",
+        "The one place a person's secret enters the estate: a phone browser writes it into Bitwarden and the cluster pulls it; no terminal, no file, no chat.",
+        "group:default/platform",
+    ),
+    "image-automation": (
+        "delivery",
+        "Image roll-out",
+        "Watches the registry and rolls each new build of the portal into the cluster.",
+        "group:default/platform",
+    ),
+    "backstage-namespace": (
+        "delivery",
+        "Portal namespace",
+        "The namespace and quota the portal runs in.",
+        "group:default/platform",
+    ),
+    "backstage": (
+        "delivery",
+        "The portal",
+        "This site: the catalogue, the front page and every door the founder opens.",
+        "group:default/platform",
+    ),
+    "estate-catalog": (
+        "delivery",
+        "Estate inventory",
+        "The generated inventory of every asset, delivered to the portal as a ConfigMap.",
+        "group:default/platform",
+    ),
+    "cluster-state": (
+        "delivery",
+        "Cluster state",
+        "Renders what the cluster is right now, for the checks that read it.",
+        "group:default/platform",
+    ),
+    "reloader": (
+        "delivery",
+        "Config reloader",
+        "Restarts a workload when its secret or config changes, so nothing runs stale.",
+        "group:default/platform",
+    ),
+    "gateway-api-crds": (
+        "edge",
+        "Gateway API",
+        "The standard the gateway speaks; installed before anything routes.",
+        "group:default/platform",
+    ),
+    "kyverno": (
+        "edge",
+        "Policy engine",
+        "Refuses a workload that breaks a rule: no unsigned image, no missing quota, no silent door.",
+        "group:default/platform",
+    ),
+    "edge": (
+        "edge",
+        "Gateway",
+        "The one front door: TLS, routes to every surface, and the manners on every reply.",
+        "group:default/platform",
+    ),
+    "data": (
+        # Pre-existing bug, found and fixed in the same pass: this row had no `area` field at
+        # all (2 elements, not 3) since before this fix -- dead until something was actually
+        # named "data", which never happened, so `area, title, desc, owner = LAYERS[n]` never
+        # ran on it. Given the correct shape now rather than left as a landmine.
+        "data",
+        "Data",
+        "Where the estate keeps its records: one PostgreSQL cluster, a database per service, backed up and failed over once for everything.",
+        "group:default/platform",
+    ),
+    "commerce": (
+        "commerce",
+        "Money",
+        "Subscriptions, credit packs and invoices. Not switched on yet: it is built and waiting for the founder's word to take over from the store's own payment code.",
+        "group:default/platform",
+    ),
+    "commerce-data": (
+        "commerce",
+        "Money ledger",
+        "The separate database and queue that hold every payment taken and what each customer is owed. Not switched on yet.",
+        "group:default/platform",
+    ),
+    "event-bus": (
+        "commerce",
+        "Event bus",
+        "Carries 'this customer paid' to whatever needs to know, so nothing waits on the payment provider to answer. Not switched on yet.",
+        "group:default/platform",
+    ),
+    "epistemic-fabric": (
+        "data",
+        "Estate memory ingestion",
+        "Four small pollers that watch GitHub, Slack, CI/CD and the incident log and drop what they see onto the estate's existing event bus, so later work can ask what actually happened instead of guessing from what shipped.",
+        "group:default/platform",
+    ),
+    "research-engine": (
+        "agents",
+        "Research department",
+        "Asks one question an hour, retrieves and snapshots the sources behind it, and keeps "
+        "only the claims a second model from a different vendor could confirm against the page "
+        "they came from. What it refused is kept too, with the reason.",
+        "group:default/platform",
+    ),
+    "searxng": (
+        "agents",
+        "Search backend",
+        "The estate's own web search, keyless and internal: what the research engine and the grounding chain ask when they need to know which pages are about something.",
+        "group:default/platform",
+    ),
+    "priority-classes": (
+        "scheduling",
+        "Priorities",
+        "Which pods survive when a node is short: platform first, batch last.",
+        "group:default/platform",
+    ),
+    "dns": (
+        "edge",
+        "DNS",
+        "Every hostname the estate answers to, managed from git.",
+        "group:default/platform",
+    ),
+    "prospector-platform": (
+        "products",
+        "Prospector platform",
+        "What Prospector needs from the platform: its routes, secrets and namespace.",
+        "group:default/platform",
+    ),
+    "prospector": (
+        "products",
+        "Prospector",
+        "The product that finds and qualifies prospects.",
+        "group:default/platform",
+    ),
+    "acg": (
+        "products",
+        "ACG inference gateway",
+        "One door to every free inference lane the estate can reach: a caller presents a bearer key and the gateway picks the provider, so a product never holds a vendor key of its own.",
+        "group:default/platform",
+    ),
+    "identity": (
+        "identity",
+        "Single sign-on",
+        "One login in front of every door; the founder signs in once.",
+        "group:default/platform",
+    ),
+    "guacamole": (
+        "identity",
+        "Remote hands",
+        "A browser desktop into the estate over the private network.",
+        "group:default/platform",
+    ),
+    "tailscale": (
+        "identity",
+        "Private network",
+        "The mesh that joins the cluster, the Mac and the phone without a public port.",
+        "group:default/platform",
+    ),
+    "healthchecks": (
+        "resilience",
+        "Health checks",
+        "Pings every scheduled job and pages when one goes quiet.",
+        "group:default/platform",
+    ),
+    "metrics-server": (
+        "scheduling",
+        "Metrics",
+        "Pod and node usage, the numbers autoscaling reads.",
+        "group:default/platform",
+    ),
+    "nodesoftware-operator": (
+        "scheduling",
+        "Node software installs",
+        "The one controller that installs software onto the nodes themselves -- a sandbox runtime, a GPU driver -- one node at a time, cordoning it first and rolling back if the probe on that node fails.",
+        "group:default/platform",
+    ),
+    "gvisor-runtime": (
+        "scheduling",
+        "The gVisor sandbox runtime",
+        "The RuntimeInstall that puts gVisor on the sandbox nodes, so a pod in the sandbox cell runs against a kernel of its own instead of the host's.",
+        "group:default/platform",
+    ),
+    "scheduling": (
+        "scheduling",
+        "Scheduling",
+        "Node pools, spread rules and what runs where.",
+        "group:default/platform",
+    ),
+    "autoscaler": (
+        "scheduling",
+        "Node autoscaler",
+        "Adds and removes nodes as the estate's load moves.",
+        "group:default/platform",
+    ),
+    "keda": (
+        "scheduling",
+        "Workload autoscaler",
+        "Scales a workload on its queue or its traffic, to zero when idle.",
+        "group:default/platform",
+    ),
+    "dagster": (
+        "scheduling",
+        "The estate clock",
+        "Runs the estate's schedules from the cluster, off the Mac; every run and its logs on one screen.",
+        "group:default/platform",
+    ),
+    "weave-gitops": (
+        "edge",
+        "Deploy button",
+        "Flux's own dashboard: every layer, the revision it is running, and a button that applies main now.",
+        "group:default/platform",
+    ),
+    "temporal": (
+        "scheduling",
+        "Workflows",
+        "Durable workflows: every long job resumes where it stopped.",
+        "group:default/platform",
+    ),
+    "spire": (
+        "identity",
+        "Workload identity",
+        "Every pod gets a cryptographic identity; no shared passwords between services.",
+        "group:default/platform",
+    ),
+    "staging": (
+        "scheduling",
+        "Staging namespace",
+        "Where a change runs before production: the same cluster, its own quota ceiling, no public door (ADR 0012).",
+        "group:default/platform",
+    ),
+    "observability-collector": (
+        "observability",
+        "Collector",
+        "Every workload's traces, logs and metrics land here first.",
+        "group:default/platform",
+    ),
+    "observability": (
+        "observability",
+        "Traces and model calls",
+        "Where every request and every model call is kept and searched.",
+        "group:default/platform",
+    ),
+    "monitoring": (
+        "observability",
+        "Metrics and alerts",
+        "Cluster metrics, uptime probes and the alert rules that page.",
+        "group:default/platform",
+    ),
+    "monitoring-rules": (
+        "observability",
+        "Alert rules",
+        "What counts as broken, one rule per promise.",
+        "group:default/platform",
+    ),
+    "alerts": (
+        "observability",
+        "Alert routing",
+        "Where a page goes: the founder's phone, the board, never a private chat.",
+        "group:default/platform",
+    ),
+    "alerts-secret": (
+        "observability",
+        "Alert credentials",
+        "The credentials alert routing needs, from the vault.",
+        "group:default/platform",
+    ),
+    "alerts-github": (
+        "observability",
+        "Alerts to GitHub",
+        "Opens an issue for every page, so nothing fires into the void.",
+        "group:default/platform",
+    ),
+    "github-app-creds": (
+        "security",
+        "GitHub App credentials",
+        "The GitHub App ExternalSecret in isolation; eight rows depend on this Secret for postBuild substitution.",
+        "group:default/platform",
+    ),
+    "science": (
+        "observability",
+        "Science",
+        "The experiment record: every run's result, graded.",
+        "group:default/platform",
+    ),
+    "llm": (
+        "agents",
+        "Model router",
+        "One door to every model provider; the estate never calls a vendor directly.",
+        "group:default/platform",
+    ),
+    "hermes-agent": (
+        "agents",
+        "Hermes",
+        "The agent that acts for the founder from anywhere: a message in, a pull request out.",
+        "group:default/platform",
+    ),
+    "idp-agent": (
+        "agents",
+        "OrbStack agent platform",
+        "GitHub and Flux webhooks in, PRs verified by the judge/red-team/honesty harness out (docs/specs/orbstack-event-driven-agents.md).",
+        "group:default/platform",
+    ),
+    "otto-golden": (
+        "agents",
+        "Otto (golden)",
+        "The new agent's own webhook and health door, running its own pod ahead of production.",
+        "group:default/platform",
+    ),
+    "otto-gateway": (
+        "agents",
+        "Customer event door",
+        "One door for every chat channel and every customer; adding a customer is a row in a table, not a release.",
+        "group:default/platform",
+    ),
+    "otto-golden-secret": (
+        "agents",
+        "Otto (golden) webhook secret",
+        "Feeds the secret word Telegram must echo from the vault into the gateway rule on Otto's door.",
+        "group:default/platform",
+    ),
+    "mcp": (
+        "agents",
+        "Agent tools",
+        "The tools an agent may use, behind one gateway with one audit log.",
+        "group:default/platform",
+    ),
+    "agent-workforce": (
+        "agents",
+        "Infrastructure crew",
+        "The crew that takes an infrastructure ticket from the board to a plan and a pull request. It has no hand on the cluster; the founder merges and deploys.",
+        "group:default/platform",
+    ),
+    "hindsight": (
+        "agents",
+        "Agent memory",
+        "What the agents learned, kept between sessions.",
+        "group:default/platform",
+    ),
+    "via-negativa": (
+        "resilience",
+        "Negative-constraint engine",
+        "Sits in front of every LLM call, watches for repeat failures, and learns a short list of things not to do next time -- so the estate stops paying to make the same mistake twice instead of catching it after the fact.",
+        "group:default/platform",
+    ),
+    "estate-db-operator": (
+        "data",
+        "Database operator",
+        "Runs the estate's databases: failover, backups and a database per team without anyone touching a server.",
+        "group:default/platform",
+    ),
+    "estate-db": (
+        "data",
+        "The estate database",
+        "One PostgreSQL for the whole estate. Every service that needs a database gets one here instead of running its own.",
+        "group:default/platform",
+    ),
+    "estate-db-migrate": (
+        "data",
+        "Database move",
+        "Lifts each service's data off the server it used to run and puts it on the one estate database.",
+        "group:default/platform",
+    ),
+    "healing": (
+        "resilience",
+        "Self-healing",
+        "Spots a sick workload, explains it and moves it.",
+        "group:default/platform",
+    ),
+    "healing-k8sgpt": (
+        "resilience",
+        "Failure explainer",
+        "Reads a stuck or crashing workload and says in plain English what is wrong with it.",
+        "group:default/platform",
+    ),
+    "healing-analyzer": (
+        "resilience",
+        "Healing analyser",
+        "Reads the healer's findings and files the fix.",
+        "group:default/platform",
+    ),
+    "robusta": (
+        "resilience",
+        "Incident enrichment",
+        "Adds the why to every alert before a person reads it.",
+        "group:default/platform",
+    ),
+    "chaos": (
+        "resilience",
+        "Chaos drills",
+        "The scheduled breakages and the proof each one was survived.",
+        "group:default/platform",
+    ),
+    "drills": (
+        "resilience",
+        "Drills",
+        "Every rehearsed failure and the run that last passed it.",
+        "group:default/platform",
+    ),
+}
+
+
+# kustomization name -> (path, title) for the layer's own web UI, opened through the
+# Backstage backend proxy (LAW 46: never a hostname typed here; the proxy entry in
+# backstage/app-config.yaml is the door, the same shape as /holmes). A layer with no entry
+# here gets no UI link; the catalog never invents a URL it cannot back.
+UI_DOORS = {
+    "dagster": ("https://catalogue.${ESTATE_ZONE}/dagster", "Open the scheduler"),
+}
+
+
+# Layers launched by hand, on purpose, so they never sit in clusters/<cluster>/*.yaml: the buyer
+# sandbox is launched by the founder's portal button (docs/runbooks/demo-sandbox.md) and reaped on a
+# one-hour timer. The catalogue still records it -- the launch stamps exactly the label the
+# selector below matches, so the page lights up while the sandbox lives and reads empty after.
+IMPERATIVE = [
+    {
+        "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
+        "kind": "Kustomization",
+        "metadata": {"name": "demo-sandbox"},
+        "spec": {"path": "./platform/sandbox/vcluster"},
+    },
+]
+
+
+def kustomizations():
+    rows = []
+    for f in sorted(glob.glob(os.path.join(ROOT, "clusters", CLUSTER, "*.yaml"))):
+        for d in yaml.safe_load_all(open(f)):
+            if (
+                d
+                and d.get("kind") == "Kustomization"
+                and str(d.get("apiVersion", "")).startswith("kustomize.toolkit")
+            ):
+                rows.append(d)
+    return rows + [dict(r) for r in IMPERATIVE]
+
+
+def q(s):
+    return "'" + str(s).replace("'", "''") + "'"
+
+
+def http_hostnames(src):
+    """Hostnames a layer declares reachable over HTTP: kind: HTTPRoute (spec.hostnames) or
+    kind: Ingress (spec.rules[].host), read only from the *.yaml files sitting directly in the
+    Kustomization's own spec.path -- never typed here as a literal (LAW 46, R36). A layer with
+    neither gets no API: an API entity with no reachable interface is a promise the catalogue
+    cannot back."""
+    hosts = []
+    for f in sorted(glob.glob(os.path.join(src, "*.yaml"))):
+        try:
+            docs = list(yaml.safe_load_all(open(f)))
+        except yaml.YAMLError:
+            continue
+        for d in docs:
+            if not isinstance(d, dict):
+                continue
+            if d.get("kind") == "HTTPRoute":
+                hosts += (d.get("spec") or {}).get("hostnames", [])
+            elif d.get("kind") == "Ingress":
+                hosts += [
+                    rule["host"]
+                    for rule in (d.get("spec") or {}).get("rules", [])
+                    if rule.get("host")
+                ]
+    return sorted(set(hosts))
+
+
+def observability_doors(rows):
+    """The estate's two observability doors -- logs/metrics (signoz.*) and model traces
+    (langfuse.*) -- read from the observability layer's own route manifests via
+    http_hostnames, never typed here (LAW 46). Founder, 2026-08-31 (crew#758): a layer's
+    logs and traces are opened from its catalogue page, not from a URL he has to remember."""
+    for r in rows:
+        if r["metadata"]["name"] == "observability":
+            src = os.path.normpath(os.path.join(ROOT, r["spec"].get("path", "./")))
+            hosts = http_hostnames(src)
+            signoz = next((h for h in hosts if h.startswith("signoz.")), None)
+            langfuse = next((h for h in hosts if h.startswith("langfuse.")), None)
+            return signoz, langfuse
+    return None, None
+
+
+def emits_model_traces(src):
+    """A layer traces to Langfuse when its own manifests project LANGFUSE_ keys into the
+    workload -- the same self-gating the pods use, so the link exists exactly when traces do."""
+    for f in sorted(glob.glob(os.path.join(src, "*.yaml"))):
+        try:
+            if "LANGFUSE_" in open(f).read():
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def missing_owners(layers):
+    """Which LAYERS rows carry no owner -- pulled out of render() so rules.yaml can prove this
+    guard both ways (a fixture LAYERS dict) without exercising the real cluster/catalog paths."""
+    return sorted(n for n in layers if not layers[n][3])
+
+
+def render(rows):
+    names = {r["metadata"]["name"] for r in rows}
+    missing = sorted(names - set(LAYERS))
+    if missing:
+        sys.exit(
+            f"catalog-platform: no plain-English row for {missing}; add it to LAYERS in bin/catalog-platform"
+        )
+    no_owner = [n for n in missing_owners(LAYERS) if n in names]
+    if no_owner:
+        sys.exit(
+            f"catalog-platform: no owner for {no_owner}; every LAYERS row's 4th field must be a real group"
+        )
+    out = [
+        "# GENERATED by bin/catalog-platform from clusters/%s/*.yaml. Do not edit; edit LAYERS there."
+        % CLUSTER,
+        "# One System per area, one Component per Flux Kustomization. The Kubernetes plugin reads the live",
+        "# pods through the label Flux stamps on every applied object (crew#459).",
+    ]
+    used = {LAYERS[n][0] for n in names}
+    signoz_door, langfuse_door = observability_doors(rows)
+    for area in SYSTEMS:
+        if area not in used:
+            continue
+        title, desc = SYSTEMS[area]
+        out += [
+            "---",
+            "apiVersion: backstage.io/v1alpha1",
+            "kind: System",
+            "metadata:",
+            f"  name: {area}",
+            f"  title: {q(title)}",
+            f"  description: {q(desc)}",
+            "  tags: [platform]",
+            "spec:",
+            # An area (e.g. "resilience") groups many layers with different owners; it has no
+            # single owning team of its own, so it stays the blanket default on purpose -- the
+            # per-layer Component/API owner below is the one that must be a real, named owner.
+            "  owner: group:default/platform",
+            "  domain: platform",
+        ]
+    for r in sorted(rows, key=lambda r: r["metadata"]["name"]):
+        n = r["metadata"]["name"]
+        area, title, desc, owner = LAYERS[n]
+        spec = r["spec"]
+        src = os.path.normpath(os.path.join(ROOT, spec.get("path", "./")))
+        hosts = http_hostnames(src)
+        out += [
+            "---",
+            "apiVersion: backstage.io/v1alpha1",
+            "kind: Component",
+            "metadata:",
+            f"  name: layer-{n}",
+            f"  title: {q(title)}",
+            f"  description: {q(desc)}",
+            "  annotations:",
+            f"    backstage.io/kubernetes-label-selector: {q('kustomize.toolkit.fluxcd.io/name=' + n)}",
+            f"    estate/flux-kustomization: {q(n)}",
+            f"    estate/path: {q(spec.get('path', './'))}",
+            f"    estate/cluster: {q(CLUSTER)}",
+            f"  tags: [platform, {area}]",
+        ]
+        # crew#758: every layer's page opens its own observability. The logs door is the
+        # estate's one log backend; the traces door appears exactly on the layers whose
+        # manifests project Langfuse keys, so a link never promises traces that do not land.
+        doors = []
+        if signoz_door:
+            doors.append(("Live logs and metrics", f"https://{signoz_door}"))
+        if langfuse_door and emits_model_traces(src):
+            doors.append(("Model traces", f"https://{langfuse_door}"))
+        if n in UI_DOORS:
+            ui_path, ui_title = UI_DOORS[n]
+            doors.append((ui_title, ui_path))
+        if doors:
+            out.append("  links:")
+            for door_title, door_url in doors:
+                out += [f"    - url: {door_url}", f"      title: {q(door_title)}"]
+        out += [
+            "spec:",
+            f"  type: {TYPE}",
+            "  lifecycle: production",
+            f"  owner: {owner}",
+            f"  system: {area}",
+        ]
+        if hosts:
+            out += ["  providesApis:", f"    - api:default/{n}-api"]
+        deps = [d["name"] for d in spec.get("dependsOn", []) if d.get("name") in names]
+        if deps:
+            out.append("  dependsOn:")
+            out += [f"    - component:default/layer-{d}" for d in deps]
+        # crew#459 follow-up: a layer with an HTTPRoute or an Ingress is reachable over HTTP, so
+        # the APIs tab gets an entry, not an empty tab -- "what can I call" answered from the
+        # cluster's own manifests, never invented.
+        if hosts:
+            host_str = " and ".join(hosts)
+            out += [
+                "---",
+                "apiVersion: backstage.io/v1alpha1",
+                "kind: API",
+                "metadata:",
+                f"  name: {n}-api",
+                f"  description: {q(title + ': the HTTP interface, answering at ' + host_str + '.')}",
+                "spec:",
+                "  type: openapi",
+                "  lifecycle: production",
+                f"  owner: {owner}",
+                f"  system: system:default/{area}",
+                "  definition: |",
+                f"    # Not published. {n} answers at {host_str}; this entity",
+                "    # exists so the catalogue records that the interface is reachable and who owns it.",
+            ]
+    return "\n".join(out) + "\n"
+
+
+def main(argv):
+    if "--check-fixture" in argv:
+        # rules.yaml's catalog-platform-owner rule: proves missing_owners() refuses a row with
+        # no owner and passes a full one, without touching the real cluster/ tree or OUT.
+        path = argv[argv.index("--check-fixture") + 1]
+        fixture = runpy.run_path(path)
+        bad = missing_owners(fixture["LAYERS"])
+        if bad:
+            print(f"FAIL    catalog-platform  no owner for {bad}")
+            return 1
+        print(f"ok      catalog-platform  every layer in {path} carries an owner")
+        return 0
+    text = render(kustomizations())
+    if "--check" in argv:
+        cur = open(OUT).read() if os.path.exists(OUT) else ""
+        if cur != text:
+            print(
+                "FAIL    catalog-platform  backstage/platform/catalog-info.yaml is stale; run bin/catalog-platform"
+            )
+            return 1
+        print(
+            f"ok      catalog-platform  {text.count('kind: Component')} layers, {text.count('kind: System')} systems current"
+        )
+        return 0
+    os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    open(OUT, "w").write(text)
+    print(
+        f"ok      catalog-platform  wrote {os.path.relpath(OUT, ROOT)}: {text.count('kind: Component')} layers, {text.count('kind: System')} systems"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

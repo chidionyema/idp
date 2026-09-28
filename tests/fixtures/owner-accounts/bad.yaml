@@ -1,0 +1,2 @@
+providers:
+  - {name: example, login: founder-gmail, second_owner: none, recovery: founder-gmail}

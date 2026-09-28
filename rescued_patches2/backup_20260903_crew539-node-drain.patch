@@ -1,0 +1,432 @@
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 179bf6576..9c75e0687 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -19,7 +19,7 @@ on:
+       playbook:
+         description: "break-glass only (crew#539): the one named playbook bin/idp-oke-break-glass runs while the runner's /32 is admitted to the API endpoint through tofu; the list is restored on every exit path. diagnose is read-only."
+         type: choice
+-        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node]
++        options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]
+         default: diagnose
+   pull_request:
+     paths: [".github/workflows/oke-check.yml", "bin/idp-oci-login", "bin/idp-oke-rebuild", "bin/idp-login-drill", "bin/idp-cluster-state", "bin/idp-kini-state", "bin/idp-telemetry-coverage", "platform/oci/**", "platform/state/**", "platform/temporal/kini-state.yaml", "platform/observability/telemetry-coverage.yaml", "bin/idp-science-facts", "platform/science/**"]
+diff --git a/bin/idp-oke-break-glass b/bin/idp-oke-break-glass
+index 9ba029a31..f7f792426 100755
+--- a/bin/idp-oke-break-glass
++++ b/bin/idp-oke-break-glass
+@@ -124,7 +124,9 @@ pb_diagnose() {
+   # StatefulSet -> pod is four links; print the memory limit at each so the broken one is named.
+   show clickhouse-installation sh -c "$K get chi -A -o wide 2>&1; $K get chi -A -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tCHI podTemplate limits: \"}{range .spec.templates.podTemplates[*]}{.spec.containers[0].resources.limits}{end}{\"\n\"}{end}' 2>&1; $K get sts -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tsts limits: \"}{.spec.template.spec.containers[0].resources.limits}{\"\tobservedGeneration=\"}{.status.observedGeneration}{\" generation=\"}{.metadata.generation}{\"\n\"}{end}' 2>&1; $K get pods -A -l clickhouse.altinity.com/chi -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{\"\tpod limits: \"}{.spec.containers[0].resources.limits}{\"\n\"}{end}' 2>&1"
+   # kubectl logs takes no -A (idp#538 review): resolve the operator's namespace first.
+-  show clickhouse-operator-log sh -c "ns=\$($K get pods -A -l app=clickhouse-operator -o jsonpath='{.items[0].metadata.namespace}' 2>/dev/null); [ -n \"\$ns\" ] || { echo 'no pod with app=clickhouse-operator'; exit 0; }; $K logs -n \"\$ns\" -l app=clickhouse-operator --tail=40 --prefix 2>&1 | tail -40"
++  # run 33145711762: `-l app=clickhouse-operator` matched nothing (the signoz chart labels the
++  # operator pod by its own names); the pod is found by name, which every chart version keeps
++  show clickhouse-operator-log sh -c "set -- \$($K get pods -A --no-headers 2>/dev/null | awk '\$2 ~ /clickhouse-operator/ {print \$1, \$2; exit}'); [ -n \"\${2:-}\" ] || { echo 'no pod named *clickhouse-operator*'; exit 0; }; $K logs -n \"\$1\" \"\$2\" --all-containers --tail=40 --prefix 2>&1 | tail -40"
+   # Run 33143467334: 21 descheduler pods in Error with no row saying whether the CronJob's later
+   # runs succeed; jobs are the receipt, pods are the history.
+   show cronjobs $K get cronjobs,jobs -A
+@@ -265,14 +267,56 @@ pb_helm_retry() {
+   show kustomizations $K get kustomizations -A
+ }
+ 
++# node-drain: run 33144789785 + diagnose 33144117286 (crew#539 5448912676): every crashing
++# observability pod (clickhouse, langfuse-web, langfuse-worker) sat on the 6h-old spot replacement
++# 10.0.148.221, each timing out to a Service whose backend was on that same node, while the
++# replica on the other node and every cross-node probe answered. A node whose same-node ClusterIP
++# path drops packets is retired the way Kubernetes retires a node: cordon, drain, and let the
++# cluster-autoscaler remove the empty node and add a fresh one. The target is not typed: it is the
++# Ready node carrying the most pods that are not Running/Succeeded, and the placement before and
++# after is the receipt. Undo: node-uncordon.
++sick_pods() {
++  # "<node> <ns>/<pod> <phase> <ready…>" for every Pending pod and every Running pod with any
++  # container not ready. Succeeded and Failed are finished pods (Jobs); idp#540 review: 21 Failed
++  # descheduler pods on the healthy node would have out-voted the three crashers
++  $K get pods -A -o jsonpath='{range .items[*]}{.spec.nodeName}{" "}{.metadata.namespace}{"/"}{.metadata.name}{" "}{.status.phase}{" "}{range .status.containerStatuses[*]}{.ready}{" "}{end}{"\n"}{end}' 2>/dev/null \
++    | awk '$1!="" && $3!="Succeeded" && $3!="Failed" { sick=($3!="Running"); for(i=4;i<=NF;i++) if($i=="false") sick=1; if(sick) print }'
++}
++ready_nodes() { $K get nodes -o jsonpath='{range .items[*]}{.metadata.name}{" "}{range .status.conditions[?(@.type=="Ready")]}{.status}{end}{"\n"}{end}' 2>/dev/null | awk '$2=="True"{print $1}'; }
++# the pick is among Ready nodes only: a NotReady node is the cloud layer's to replace, and draining
++# it would only evict pods the scheduler has already given up on
++pick_sick_node() { sick_pods | awk -v r="$(ready_nodes | tr '\n' ' ')" 'BEGIN{split(r,a," "); for(i in a) ok[a[i]]=1} ok[$1]{n[$1]++} END{for(k in n) print n[k], k}' | sort -rn | head -1 | awk '{print $2}'; }
++pb_node_drain() {
++  show nodes-before $K get nodes -o wide
++  show pods-not-ready-by-node sh -c "$(declare -f sick_pods); K='$K'; sick_pods | sort"
++  local node; node=$(pick_sick_node)
++  [ -n "$node" ] || { echo "no pod outside Running/Succeeded on a Ready node: nothing to drain"; return 0; }
++  echo "--- target $node"
++  # refusing to drain the last Ready node: the workloads would have nowhere to go and the API's
++  # own pods (coredns, kube-proxy are DaemonSets, but the autoscaler and flux are not) would be evicted into Pending
++  local ready; ready=$(ready_nodes | wc -l | tr -d ' ')
++  [ "$ready" -gt 1 ] || { echo "FAIL  node-drain: $node is the only Ready node; refusing"; FAILED="$FAILED node-drain"; return 1; }
++  step cordon $K cordon "$node"
++  step drain $K drain "$node" --ignore-daemonsets --delete-emptydir-data --timeout=600s
++  show nodes-after $K get nodes -o wide
++  show pods-after $K get pods -A -o wide --field-selector=status.phase!=Succeeded
++}
++pb_node_uncordon() {
++  local n
++  for n in $($K get nodes -o jsonpath='{range .items[?(@.spec.unschedulable==true)]}{.metadata.name}{" "}{end}'); do step "uncordon-$n" $K uncordon "$n"; done
++  show nodes $K get nodes -o wide
++}
++
+ case "${1:-}" in
+-  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node"; exit 0 ;;
++  --list) echo "diagnose cilium-unchain helm-retry dns-per-node dns-per-namespace tcp-per-node node-drain node-uncordon"; exit 0 ;;
+   diagnose) pb_diagnose ;;
+   dns-per-node) pb_dns_per_node ;;
+   dns-per-namespace) pb_dns_per_namespace ;;
+   tcp-per-node) pb_tcp_per_node ;;
+   cilium-unchain) pb_cilium_unchain ;;
+   helm-retry) pb_helm_retry ;;
++  node-drain) pb_node_drain ;;
++  node-uncordon) pb_node_uncordon ;;
+   *) echo "usage: $0 <$(sed -n 's/^  --list) echo "\(.*\)"; exit 0 ;;$/\1/p' "$0" | tr " " "|")>"; exit 64 ;;
+ esac
+ [ -z "$FAILED" ] && { echo "PASS  break-glass $1"; exit 0; }
+diff --git a/docs/evidence/pr-540/20260828T055642Z-1.png b/docs/evidence/pr-540/20260828T055642Z-1.png
+new file mode 100644
+index 0000000000000000000000000000000000000000..a6ba0192218c1c14486b8ce148449bca8c1eb156
+GIT binary patch
+literal 13397
+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
+
+literal 0
+HcmV?d00001
+
+diff --git a/docs/how-to/check-the-cluster-from-github.md b/docs/how-to/check-the-cluster-from-github.md
+index 9ea7db9b6..6170b39b7 100644
+--- a/docs/how-to/check-the-cluster-from-github.md
++++ b/docs/how-to/check-the-cluster-from-github.md
+@@ -52,7 +52,7 @@ could not fetch the merged revert idp#514) no session has a kube path: runners a
+ `bin/idp-oke-rebuild --break-glass` appends the runner's egress `/32` to the applied list, applies it
+ through tofu (one NSG rule), mints a kubeconfig on the same one-hour session token, runs ONE named
+ playbook from `bin/idp-oke-break-glass` (`diagnose` is read-only; `cilium-unchain` executes
+-idp#514 by hand; `helm-retry` resets every Failed HelmRelease with `flux reconcile --reset`; `dns-per-node` runs an in-cluster and an external nslookup pinned to every node; `dns-per-namespace` resolves every headless Service of each not-Ready namespace from a probe inside it and lists its EndpointSlices; `tcp-per-node` connects from a probe inside each not-Ready namespace, pinned to every node, to every ClusterIP Service port of that namespace and prints the reachable matrix), and applies the original list again from an `EXIT` trap, so a failed playbook
++idp#514 by hand; `helm-retry` resets every Failed HelmRelease with `flux reconcile --reset`; `dns-per-node` runs an in-cluster and an external nslookup pinned to every node; `dns-per-namespace` resolves every headless Service of each not-Ready namespace from a probe inside it and lists its EndpointSlices; `tcp-per-node` connects from a probe inside each not-Ready namespace, pinned to every node, to every ClusterIP Service port of that namespace and prints the reachable matrix; `node-drain` cordons and drains the Ready node carrying the most not-Running pods so the autoscaler replaces it, `node-uncordon` is its undo), and applies the original list again from an `EXIT` trap, so a failed playbook
+ never leaves the door open. The job log is the receipt: `admit-apply`, the playbook's step lines,
+ `revoke-apply`. Nothing is typed ad hoc: a new playbook is a reviewed function in the script and a
+ name in the workflow's `playbook` choice.
+diff --git a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+index b8c06a813..240bd9acf 100644
+--- a/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
++++ b/tests/test_incident_crew539_break_glass_admits_the_runner_for_one_job.py
+@@ -75,7 +75,7 @@ def test_unknown_playbook_is_refused_and_list_names_both(tmp_path):
+     p, _ = _run("rm-rf-everything", tmp_path)
+     assert p.returncode == 64
+     listed = subprocess.run([str(PLAYBOOK), "--list"], capture_output=True, text=True).stdout.split()
+-    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node"]
++    assert listed == ["diagnose", "cilium-unchain", "helm-retry", "dns-per-node", "dns-per-namespace", "tcp-per-node", "node-drain", "node-uncordon"]
+ 
+ 
+ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+@@ -91,7 +91,7 @@ def test_rebuild_break_glass_restores_the_list_on_every_exit_path():
+ def test_workflow_offers_break_glass_with_a_named_playbook():
+     wf = WORKFLOW.read_text()
+     assert "surge-finish, break-glass]" in wf
+-    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node]" in wf
++    assert "options: [diagnose, cilium-unchain, helm-retry, dns-per-node, dns-per-namespace, tcp-per-node, node-drain, node-uncordon]" in wf
+     assert "BREAK_GLASS_PLAYBOOK: ${{ inputs.playbook || 'diagnose' }}" in wf
+ 
+ 
+@@ -310,8 +310,17 @@ def test_tcp_per_node_connects_from_inside_the_failing_namespace_pinned_to_every
+ 
+ def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp_path):
+     # run 33144117286: signoz.v40 carried the 4Gi limit and the clickhouse pod kept "maximum: 1.80
+-    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod
+-    p, calls = _run("diagnose", tmp_path)
++    # GiB"; the link that did not roll has to be named from the CHI, the StatefulSet and the pod.
++    # Run 33145711762: `-l app=clickhouse-operator` matched nothing; the operator is found by name.
++    bin_dir, log = _fake_path(tmp_path)
++    (bin_dir / "kubectl").write_text(
++        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
++        "case \"$*\" in\n"
++        "  *'get pods -A --no-headers'*) printf 'kube-system coredns-1 1/1 Running 0 1h\\nobservability signoz-clickhouse-operator-9946d55c-n8z7q 2/2 Running 1 2h\\n';;\n"
++        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "diagnose"], capture_output=True, text=True, env=env)
++    calls = log.read_text().splitlines()
+     assert p.returncode == 0, p.stdout + p.stderr
+     assert "--- clickhouse-installation" in p.stdout
+     assert "--- clickhouse-operator-log" in p.stdout
+@@ -320,8 +329,8 @@ def test_diagnose_prints_the_clickhouse_limit_at_every_link_and_the_cronjobs(tmp
+     assert "get chi -A -o jsonpath" in joined
+     assert "get sts -A -l clickhouse.altinity.com/chi" in joined
+     assert "get pods -A -l clickhouse.altinity.com/chi" in joined
+-    assert "get pods -A -l app=clickhouse-operator -o jsonpath" in joined
+-    assert "logs -n" in joined and "-l app=clickhouse-operator --tail=40" in joined
++    assert "get pods -A --no-headers" in joined
++    assert "logs -n observability signoz-clickhouse-operator-9946d55c-n8z7q --all-containers --tail=40" in joined
+     assert "get cronjobs,jobs -A" in joined
+ 
+ 
+@@ -355,3 +364,112 @@ def test_probe_log_prints_every_target_line_not_only_the_last(tmp_path):
+     assert p.returncode == 0, p.stdout + p.stderr
+     assert "FAIL a.observability.svc.cluster.local:5432" in p.stdout, p.stdout
+     assert "ok b.observability.svc.cluster.local:6379" in p.stdout, p.stdout
++
++
++def _node_drain_kubectl(bin_dir: Path, log: Path, pods: str, nodes: str = "10.0.148.221 True \\n10.0.159.197 True \\n") -> None:
++    (bin_dir / "kubectl").write_text(
++        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
++        "case \"$*\" in\n"
++        "  *'get pods -A -o jsonpath'*) printf '" + pods + "';;\n"
++        "  *'get nodes -o jsonpath'*) printf '" + nodes + "';;\n"
++        "  *) cat >/dev/null 2>&1; echo ok;;\nesac\n"
++    )
++
++
++def test_node_drain_retires_the_node_carrying_the_crashing_pods_and_only_that_node(tmp_path):
++    # crew#539 5448912676: clickhouse, langfuse-web and langfuse-worker all crashed on 10.0.148.221,
++    # each timing out to a Service whose backend was on that same node; the replica on 10.0.159.197
++    # ran. The node is picked from the pods, never typed; it is cordoned before it is drained; the
++    # drain keeps DaemonSets and lets emptyDir go so the autoscaler can remove the empty node.
++    bin_dir, log = _fake_path(tmp_path)
++    _node_drain_kubectl(bin_dir, log,
++        "10.0.148.221 observability/langfuse-web-a Running false \\n"
++        "10.0.148.221 observability/langfuse-worker-a Running false \\n"
++        "10.0.148.221 observability/chi-0 Running false \\n"
++        "10.0.159.197 observability/langfuse-web-b Running true \\n"
++        "10.0.159.197 observability/migrator Succeeded false \\n"
++        "10.0.159.197 healing/descheduler-1 Failed false \\n"
++        "10.0.159.197 healing/descheduler-2 Failed false \\n"
++        "10.0.159.197 healing/descheduler-3 Failed false \\n"
++        "10.0.159.197 healing/descheduler-4 Failed false \\n"
++        "10.0.159.197 healing/descheduler-5 Failed false \\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    calls = log.read_text().splitlines()
++    assert "--- target 10.0.148.221" in p.stdout, p.stdout
++    cordon = [i for i, c in enumerate(calls) if c.endswith("cordon 10.0.148.221")]
++    drain = [i for i, c in enumerate(calls) if "drain 10.0.148.221 --ignore-daemonsets --delete-emptydir-data --timeout=600s" in c]
++    assert cordon and drain and cordon[0] < drain[0], calls
++    assert not any("10.0.159.197" in c for c in calls if "cordon" in c or "drain" in c), calls
++    assert "observability/langfuse-web-a" in p.stdout and "observability/migrator" not in p.stdout
++    assert "healing/descheduler-1" not in p.stdout   # five Failed job pods on .197 do not out-vote three crashers on .221
++
++
++def test_node_drain_reads_every_container_not_only_the_first(tmp_path):
++    # idp#540 review: a 2/3 pod whose third container crashes is sick; $4 alone missed it
++    bin_dir, log = _fake_path(tmp_path)
++    _node_drain_kubectl(bin_dir, log,
++        "10.0.159.197 observability/operator Running true true false \\n"
++        "10.0.148.221 a/ok Running true true true \\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    assert "--- target 10.0.159.197" in p.stdout, p.stdout
++
++
++def test_node_drain_touches_nothing_when_every_pod_runs(tmp_path):
++    bin_dir, log = _fake_path(tmp_path)
++    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/b Running true \\n10.0.159.197 a/c Succeeded false \\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0 and "nothing to drain" in p.stdout, p.stdout + p.stderr
++    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
++
++
++def test_node_uncordon_is_the_undo(tmp_path):
++    bin_dir, log = _fake_path(tmp_path)
++    (bin_dir / "kubectl").write_text(
++        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
++        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 ';;\n  *) echo ok;;\nesac\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    assert "kubectl --request-timeout=60s uncordon 10.0.148.221" in log.read_text()
++
++
++def test_node_drain_never_picks_a_node_that_is_not_ready(tmp_path):
++    # a NotReady node carries every pod the scheduler gave up on; it is the cloud layer's to replace
++    bin_dir, log = _fake_path(tmp_path)
++    _node_drain_kubectl(bin_dir, log,
++        "10.0.1.1 a/x Running false \\n10.0.1.1 a/y Running false \\n10.0.1.1 a/z Pending \\n"
++        "10.0.148.221 observability/langfuse-web-a Running false \\n10.0.159.197 a/ok Running true \\n",
++        nodes="10.0.1.1 False \\n10.0.148.221 True \\n10.0.159.197 True \\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    assert "--- target 10.0.148.221" in p.stdout, p.stdout
++    assert not any("10.0.1.1" in c for c in log.read_text().splitlines() if "cordon" in c or "drain" in c)
++
++
++def test_node_drain_refuses_the_only_ready_node(tmp_path):
++    bin_dir, log = _fake_path(tmp_path)
++    _node_drain_kubectl(bin_dir, log, "10.0.148.221 a/x Running false \\n",
++                        nodes="10.0.148.221 True \\n10.0.159.197 False \\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-drain"], capture_output=True, text=True, env=env)
++    assert p.returncode == 1 and "only Ready node; refusing" in p.stdout, p.stdout + p.stderr
++    assert not any(("cordon" in c or "drain" in c) for c in log.read_text().splitlines())
++
++
++def test_node_uncordon_uncordons_every_cordoned_node_and_nothing_else(tmp_path):
++    bin_dir, log = _fake_path(tmp_path)
++    (bin_dir / "kubectl").write_text(
++        "#!/bin/sh\nprintf '%s %s\\n' kubectl \"$*\" >> \"" + str(log) + "\"\n"
++        "case \"$*\" in\n  *'get nodes -o jsonpath'*) printf '10.0.148.221 10.0.1.1 ';;\n  *) echo ok;;\nesac\n")
++    env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"}
++    p = subprocess.run([str(PLAYBOOK), "node-uncordon"], capture_output=True, text=True, env=env)
++    assert p.returncode == 0, p.stdout + p.stderr
++    calls = [c for c in log.read_text().splitlines() if "uncordon" in c]
++    assert sorted(calls) == sorted(["kubectl --request-timeout=60s uncordon 10.0.148.221", "kubectl --request-timeout=60s uncordon 10.0.1.1"]), calls
++    assert not any("drain" in c or " cordon " in c for c in log.read_text().splitlines())

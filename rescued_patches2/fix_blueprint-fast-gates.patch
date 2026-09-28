@@ -1,0 +1,123 @@
+diff --git a/.pr-body-fastgates.md b/.pr-body-fastgates.md
+new file mode 100644
+index 000000000..1e236875d
+--- /dev/null
++++ b/.pr-body-fastgates.md
+@@ -0,0 +1,33 @@
++crew#726: the founder's fast-gates blueprint (2026-08-31, verbatim record in the claude-estate founder docs at 2026-08-31T0225Z), rule 1: a laptop never runs a test suite in a git hook — local hooks are lint and static analysis; CI on the pull request runs the suite. Measured cause: four sessions each ran the pre-push suite (13-52 minutes) at once on 2026-08-30/31; load hit 530 and pushes were refused on subprocess.TimeoutExpired reds with zero real failures (session a7b41022 push log: 26 reds = 3 real + 23 timeouts). The gate was grading the machine's load, not the branch.
++
++Optimised: 3 steps -> 1, 2 round trips -> 1; cut: the machine-wide push lock and the cheap-file floor pruning, both subsumed by one 9-line early exit that stops local suite runs entirely (nothing long runs locally, so nothing needs a lock).
++
++Verify: `python3 -m pytest -q tests/test_incident_crew726_local_hooks_never_run_suites.py`
++
++## Options considered
++- Keep local suites but add a machine-wide flock so they queue: still burns 13-52 minutes per push serially, still babysits (blueprint rule 4), and a queue four deep is an hour of latency. Rejected.
++- Delete bin/idp-tests-for from the hook entirely: loses the printed selection (the record of what CI will grade) and the CI path that reuses this selector. Rejected.
++- Chosen: an early exit in the selector itself — local prints the selection and exits 0; CI (CI env set) behavior is byte-identical; TESTS_FOR_RUN=1 keeps the old local run for hand debugging.
++
++## Architecture laws
++- LAW 1 zero-gravity: `bin/idp-tests-for` -> the pre-push hook rung every idp push runs
++- LAW 2 fractal: `bash -n bin/idp-tests-for && bin/idp-tests-for --list`
++- LAW 3 nervous system: tests/test_incident_crew726_local_hooks_never_run_suites.py (3: the laptop road skips and still prints the selection; CI reaches the runner unchanged; TESTS_FOR_RUN=1 keeps the hand-debug road)
++- LAW 4 calibration: 60-second command budget (founder rule 3); the remaining local rungs run in seconds
++Cost-delta-usd-month: 0 (CI runs what it already ran; laptops stop burning 13-52 min per push)
++Tile: none — developer tooling; the PR checks page is the surface
++
++## Definition of done
++1. Tracked item — crew#726 D1 (founder ruling on the record, comment 5473019074)
++2. Code or config — bin/idp-tests-for early exit outside CI + tests/test_incident_crew726_local_hooks_never_run_suites.py
++3. Gate proved both ways — before: push refused after 52 min on timeout reds (task by8hi53kh); after: this branch's own push ran the hook in seconds and the suite runs here in CI
++4. Reference doc — crew#726 decision record + the founder document named above
++5. How-to and demo — push any idp branch: the hook prints "tests-for: local run skipped (R58 fast-gates)" and CI grades the PR
++6. Catalog entity — existing idp component
++7. Operational proof — this PR's own CI run is the selector running in CI mode
++8. Scheduled re-grade — every push exercises the local path; every PR exercises the CI path
++9. Standard row — CI; no provider names, no hardcoded paths added
++10. Evidence block — this PR's green checks page
++Standard: CI
++
++Author-session: a7b41022
+diff --git a/bin/idp-tests-for b/bin/idp-tests-for
+index 488a71295..6a9ad6459 100755
+--- a/bin/idp-tests-for
++++ b/bin/idp-tests-for
+@@ -109,6 +109,15 @@ if [ -z "$sel" ]; then echo "ok    tests-for: $(printf '%s\n' "$changed" | wc -l
+ n=$(printf '%s\n' "$sel" | wc -l | tr -d ' ')
+ echo "tests-for: $n test file(s) read the changed files"
+ if [ "$list" = 1 ]; then printf '%s\n' "$sel"; exit 0; fi
++# R58 (founder 2026-08-31, fast-gates blueprint, crew#726): a laptop never runs a test suite in
++# a git hook. Four sessions each ran this rung's ~13-52 minute suite at once on 2026-08-31; load
++# hit 530 and pushes were refused on TimeoutExpired reds with zero real failures. Locally this
++# rung now prints the selection for the record and defers to CI on the pull request, which runs
++# on a clean runner. TESTS_FOR_RUN=1 runs the selection here anyway (a hand debug, never a gate).
++if [ -z "${CI:-}" ] && [ "${TESTS_FOR_RUN:-0}" != 1 ]; then
++  echo "ok    tests-for: local run skipped (R58 fast-gates); CI runs the suite for these $n file(s) on the PR"
++  exit 0
++fi
+ # The venv lives beside the main checkout; a worktree has none of its own (LAW 46: resolved, never typed).
+ main="$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)/.."
+ py="${IDP_PY:-}"
+diff --git a/tests/test_incident_crew726_local_hooks_never_run_suites.py b/tests/test_incident_crew726_local_hooks_never_run_suites.py
+new file mode 100644
+index 000000000..0cc15fea5
+--- /dev/null
++++ b/tests/test_incident_crew726_local_hooks_never_run_suites.py
+@@ -0,0 +1,58 @@
++"""crew#726 D1 / R58 fast-gates (founder 2026-08-31, verbatim record in the founder docs at
++2026-08-31T0225Z): a laptop never runs a test suite in a git hook. On 2026-08-30/31 four
++sessions each ran the pre-push suite (13-52 minutes) at once; load hit 530 and pushes were
++refused on subprocess.TimeoutExpired reds with zero real failures - the gate graded the
++machine's load, not the branch. This pins the selector's three roads: outside CI the run is
++skipped right after the selection prints; in CI the suite runs unchanged; TESTS_FOR_RUN=1
++keeps the hand-debug road. The runner is stubbed through IDP_PY so the proof costs
++milliseconds, never a suite.
++"""
++
++import os
++import stat
++import subprocess
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[1]
++TOOL = ROOT / "bin" / "idp-tests-for"
++
++
++def _run(tmp_path, **env_over):
++    marker = tmp_path / "py-ran"
++    stub = tmp_path / "stub-python"
++    stub.write_text(f"#!/bin/sh\necho ran >> {marker}\nexit 0\n")
++    stub.chmod(stub.stat().st_mode | stat.S_IEXEC)
++    env = {k: v for k, v in os.environ.items() if k not in ("CI", "TESTS_FOR_RUN")}
++    env["IDP_PY"] = str(stub)
++    env.update(env_over)
++    p = subprocess.run(
++        [str(TOOL), "--for", "bin/idp-tests-for"],
++        capture_output=True,
++        text=True,
++        env=env,
++        timeout=120,
++        cwd=ROOT,
++    )
++    return p, marker.exists()
++
++
++def test_local_push_skips_the_suite_and_defers_to_ci(tmp_path):
++    p, ran = _run(tmp_path)
++    assert p.returncode == 0, p.stdout + p.stderr
++    assert "local run skipped (R58 fast-gates)" in p.stdout
++    assert "test file(s) read the changed files" in p.stdout, (
++        "the selection record must still print"
++    )
++    assert not ran, "the suite ran on the laptop path (R58)"
++
++
++def test_ci_runs_the_suite_unchanged(tmp_path):
++    p, ran = _run(tmp_path, CI="true")
++    assert "local run skipped" not in p.stdout
++    assert ran, "the CI path never reached the test runner: " + p.stdout + p.stderr
++
++
++def test_hand_debug_road_still_runs_locally(tmp_path):
++    p, ran = _run(tmp_path, TESTS_FOR_RUN="1")
++    assert "local run skipped" not in p.stdout
++    assert ran, "TESTS_FOR_RUN=1 must keep the old local run: " + p.stdout + p.stderr

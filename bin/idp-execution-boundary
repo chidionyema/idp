@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""bin/idp-execution-boundary -- nothing an agent runs may hold a turn open, proved both ways.
+
+ORDER (founder, 2026-09-13, verbatim, after the 60-second cap was breached six times):
+    "nononoits a security breac" / "a breach of law or gaurd is a security breach"
+    "60 secsos is the nnax" / "it should not even get bera teh"
+    "look follow orders, direct -- find where we have done this, operationalise it, make sure every
+     agent session is aware, and remove bash access afterward"
+
+The estate's habit that this gate exists to end: a control is built, a suite goes green, and the
+control is never switched on. Six rounds of that happened on this one rule. So this gate does not
+grade whether the executor EXISTS -- a file existing proved nothing six times. It grades the two
+things that were actually missing each time:
+
+  1. THE BOUNDARY IS OUTSIDE THE CALLER. The command runs through the daemon, and the ceiling is
+     applied there, in `platform/executor/daemon.py` and `mcp/plugins/estate_executor.py`, not
+     re-derived by whoever calls it. A caller that carries its own ceiling is refused.
+
+  2. THE BOUNDARY IS SWITCHED ON AND SAID TO BE. `bin/idp-executor-status` must exist, must run,
+     and must distinguish `MEASURED_OK` from `UNKNOWN` -- because the honest answer for the half
+     that is not done yet (the separate uid) is `UNKNOWN`, and a status tool that reports `OK`
+     while the agent can rewrite the daemon is the lie this estate keeps catching.
+
+`--check` grades this repository. A bare path grades a fixture tree the same way, so the must-fail
+and must-pass fixtures are graded by the SAME code that grades the repo -- never a second parser
+that agrees with this one by construction.
+
+Exit: 0 pass, 1 refuse, 2 BLIND (could not answer -- never a pass; LAW 2, R38).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+
+# The ceiling, and the spellings that must not get past it. Kept identical to the executor's own
+# list on purpose: this gate and the door must not be able to disagree about what 60 means.
+CEILING_SEC = 60
+_UNIT_S = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+_TIMEOUT_RE = re.compile(r"\b(?:timeout|gtimeout)\b([^;|&]*)")
+
+
+def explicit_ceiling_sec(command: str) -> int | None:
+    """The ceiling a command sets on itself, in seconds, or None.
+
+    The unit must be ATTACHED (`60s`, `2m`, a bare number) and never scavenged from the next word.
+    Measured 2026-09-13: with `\\s*` between the digits and the unit, `gtimeout -k 5 60 make` read
+    `make`'s `m` as minutes and returned 3600 -- a one-minute bound silently became an hour.
+    """
+    ceiling: int | None = None
+    for match in _TIMEOUT_RE.finditer(command):
+        args = match.group(1)
+        without_kill = re.sub(r"(?:-k|--kill-after[=\s])\s*\d+[smhd]?", " ", args)
+        num = re.search(r"(\d+)([smhd])?", without_kill)
+        if not num:
+            continue
+        value = int(num.group(1))
+        unit = num.group(2)
+        ceiling = value * (_UNIT_S[unit] if unit else 1)
+    return ceiling
+
+
+def _refusals(root: str) -> list[dict]:
+    """Every reason this tree fails the rule. Empty list means it passes."""
+    problems: list[dict] = []
+
+    # --- 1. the executor exists, in the two places the boundary needs -------------------------
+    door = os.path.join(root, "mcp", "plugins", "estate_executor.py")
+    daemon = os.path.join(root, "platform", "executor", "daemon.py")
+    entry = os.path.join(root, "bin", "exec-daemon")
+    status = os.path.join(root, "bin", "idp-executor-status")
+    plist = os.path.join(root, "launchd", "ai.estate.executor.plist.tmpl")
+
+    for path, what in [
+        (door, "the MCP door (the ceiling and the refusals)"),
+        (daemon, "the daemon (the boundary outside the caller)"),
+        (entry, "the launchd entry point (ProgramArguments[0])"),
+        (status, "the status tool (which half is actually in place)"),
+        (plist, "the launchd job (so it is switched on at login)"),
+    ]:
+        if not os.path.exists(os.path.join(root, path) if not os.path.isabs(path) else path):
+            problems.append({"kind": "missing", "path": what, "expected": path})
+
+    # --- 2. the ceiling is stated ONCE, in the door, and the daemon uses the door's number ---
+    # A second copy of 60 is a second answer, and they drift. The daemon must IMPORT it.
+    if os.path.exists(daemon):
+        text = open(daemon, encoding="utf-8", errors="replace").read()
+        if not re.search(r"from estate_executor import[\s\S]{0,200}CEILING_SEC", text):
+            problems.append({
+                "kind": "duplicate-ceiling",
+                "path": "platform/executor/daemon.py",
+                "detail": "the daemon does not import CEILING_SEC from the door; a second copy of "
+                          "the number is a second answer, and they drift",
+            })
+        if "except ImportError" in text and "NameError" not in text:
+            # Measured 2026-09-13: the first daemon swallowed ImportError, came up, answered
+            # `health` with ok:true, and raised NameError on every execute. A fallback that hides
+            # a failure is worse than no fallback.
+            problems.append({
+                "kind": "swallowed-import",
+                "path": "platform/executor/daemon.py",
+                "detail": "the door import is caught and silently degraded; a daemon that starts "
+                          "without its door answers health while unable to run anything",
+            })
+
+    # --- 3. the fixtures, graded by THE SAME CODE that grades the repo ------------------------
+    # This is the part that makes the gate real rather than decorative. The bad fixture must be
+    # refused BY THIS FUNCTION and the good one accepted BY THIS FUNCTION.
+    fixture_dir = os.path.join(root, "tests", "fixtures", "execution-boundary")
+    if os.path.isdir(fixture_dir):
+        for name, expect_refusal in (("bad", True), ("good", False)):
+            case = os.path.join(fixture_dir, name)
+            if not os.path.isdir(case):
+                problems.append({"kind": "fixture-missing", "path": f"tests/fixtures/execution-boundary/{name}"})
+                continue
+            got = bool(_fixture_problems(case))
+            if got != expect_refusal:
+                problems.append({
+                    "kind": "fixture-wrong-way",
+                    "path": f"tests/fixtures/execution-boundary/{name}",
+                    "detail": f"expected {'refusal' if expect_refusal else 'pass'}, got "
+                              f"{'refusal' if got else 'pass'}",
+                })
+
+    return problems
+
+
+def _fixture_problems(case_root: str) -> list[dict]:
+    """Grade a fixture tree with the same checks that grade the repository.
+
+    Deliberately the same predicate, called on a different root: a fixture graded by a different
+    parser only proves the two parsers agree with each other.
+    """
+    problems: list[dict] = []
+    door = os.path.join(case_root, "mcp", "plugins", "estate_executor.py")
+    daemon = os.path.join(case_root, "platform", "executor", "daemon.py")
+    entry = os.path.join(case_root, "bin", "exec-daemon")
+    status = os.path.join(case_root, "bin", "idp-executor-status")
+    plist = os.path.join(case_root, "launchd", "ai.estate.executor.plist.tmpl")
+
+    for path, what in [
+        (door, "the MCP door"), (daemon, "the daemon"), (entry, "the entry point"),
+        (status, "the status tool"), (plist, "the launchd job"),
+    ]:
+        if not os.path.exists(path):
+            problems.append({"kind": "missing", "path": what, "expected": os.path.relpath(path, case_root)})
+
+    for path, kind in ((daemon, "duplicate-ceiling"),):
+        if os.path.exists(path):
+            text = open(path, encoding="utf-8", errors="replace").read()
+            if not re.search(r"from estate_executor import[\s\S]{0,200}CEILING_SEC", text):
+                problems.append({"kind": kind, "path": os.path.relpath(path, case_root),
+                                 "detail": "does not import CEILING_SEC from the door"})
+            if "except ImportError" in text and "NameError" not in text:
+                problems.append({"kind": "swallowed-import", "path": os.path.relpath(path, case_root),
+                                 "detail": "the door import is swallowed"})
+
+    # An entry point that a launchd job cannot exec (not a file, or not executable) is a job that
+    # exits 78 with an empty log -- exactly the failure mode the plist gate already names.
+    if os.path.exists(entry) and not os.access(entry, os.X_OK):
+        problems.append({"kind": "not-executable", "path": "bin/exec-daemon",
+                         "detail": "launchd cannot exec a file without the execute bit"})
+
+    return problems
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="idp-execution-boundary",
+        description="nothing an agent runs may hold a turn open (founder 2026-09-13)",
+    )
+    parser.add_argument("root", nargs="?", default=None,
+                        help="the tree to grade (default: this repository)")
+    parser.add_argument("--check", action="store_true", help="grade the repository")
+    parser.add_argument("--json", action="store_true", help="machine-readable answer")
+    args = parser.parse_args(argv)
+
+    root = args.root or os.environ.get("IDP_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    if not os.path.isdir(root):
+        # BLIND, never a pass: a gate that cannot find its tree has not graded anything.
+        print(json.dumps({"status": "BLIND", "reason": f"no such tree: {root}"}))
+        return 2
+
+    if args.root:
+        problems = _fixture_problems(os.path.abspath(root))
+    else:
+        problems = _refusals(root)
+
+    if args.json:
+        print(json.dumps({"status": "refuse" if problems else "pass", "root": root,
+                          "problems": problems}, indent=2))
+    else:
+        for p in problems:
+            detail = f" -- {p.get('detail')}" if p.get("detail") else ""
+            print(f"FAIL {p.get('kind')}: {p.get('path')}{detail}")
+        if not problems:
+            print(f"ok   the execution boundary holds at {root} (ceiling {CEILING_SEC}s)")
+
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

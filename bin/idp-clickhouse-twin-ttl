@@ -1,0 +1,174 @@
+#!/usr/bin/env python3
+"""Refuse a ClickHouse system table configured by its base name while its ``_0`` twin is not.
+
+Incident 2026-09-13, and the second time this repository paid for the same class of
+mistake. ``platform/observability/values.yaml`` sets every ClickHouse system-log
+retention by the table's **base** name::
+
+    metric_log/engine: "... TTL event_date + interval 3 day"
+    trace_log/engine:  "... TTL event_date + interval 1 day"
+
+ClickHouse, on a server that has run before, keeps the file it already had open
+under the name it already had -- ``metric_log_0``, ``trace_log_0``,
+``asynchronous_metric_log_0``. A ``_0`` twin is a *different table* to the settings
+map, so the base-name key never reaches it, and it keeps the clickhouse-operator's
+default of **30 days** instead of the 1-3 days the file plainly says.
+
+The result, measured on the live pod:
+
+    system database, active parts
+      metric_log_0                 222 parts   587 MiB
+      metric_log                    97 parts   267 MiB
+      text_log                      49 parts  1733 MiB
+      asynchronous_metric_log_0     44 parts   433 MiB
+
+7.9 GiB across 393 parts in ``system`` -- more than every ``signoz_*`` table
+combined. That part count is the outage. The operator permits 32 concurrent merges
+(``background_pool_size`` 16 x ``background_merges_mutations_concurrency_ratio`` 2);
+27 were running and 12 of them were on ``metric_log_0``, holding 274 MiB.
+``MergesMutationsMemoryTracking`` read 1051 MiB against a ``MemoryTracking`` of 2112
+MiB, so **half of ClickHouse's tracked memory was background merges of its own
+diagnostic logs**, pinned at the ``merges_mutations_memory_usage_to_ram_ratio`` 0.3
+ceiling. MemoryResident 3.53 GiB against a 3.60 GiB server ceiling, a ratio of 1.9
+where upstream's guide calls 1.4 dangerous. The kernel OOM killer targets RSS, so it
+killed the process while ClickHouse's own logs showed nothing wrong: 49 OOMKilled
+restarts, ``exitCode: 137``, one every ~30 minutes for four and a half days.
+
+Shrinking caches could not reach that, because the parts are the cause and the
+caches were only sitting on top of them. The parts have to stop being made.
+
+The rule: a system table this repository configures by base name must also configure
+its ``_0`` twin, with a TTL no longer than the base table's. The twin is real, it is
+longer-lived by default, and nothing else in the tree notices it.
+
+Usage: idp-clickhouse-twin-ttl            scan the repository
+       idp-clickhouse-twin-ttl FILE...    scan the named files
+Exit 0 clean, 1 on any hit.
+"""
+import os
+import re
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from treewalk import walk_tree  # noqa: E402
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# `  metric_log/engine: "... TTL event_date + interval 3 day"` -- the Altinity
+# slash-nested settings form, the only form this estate writes retention in.
+#
+# The class is [a-z0-9_], not [a-z_]: the `_0` twins end in a DIGIT, and a class that
+# omits it matches every base table and silently skips every twin -- which would make
+# this gate report a clean tree on precisely the tree it exists to refuse. Found by
+# running the good fixture through the first draft and watching it fail.
+SETTING = re.compile(r"^\s*([a-z0-9_]+)/engine\s*:\s*[\"']?(.*)$")
+
+# The TTL clause inside the engine string, however it is spelled: `interval 3 day`,
+# `INTERVAL 3 DAY`, `toIntervalDay(3)`. We read the number and the unit.
+TTL = re.compile(r"TTL\s+\S+\s*\+\s*(?:toInterval)?[Ii]nterval\s*\(?\s*(\d+)\s*\)?\s*(day|month|week|year|hour)", re.I)
+UNIT_DAYS = {"hour": 1.0 / 24, "day": 1.0, "week": 7.0, "month": 30.0, "year": 365.0}
+
+
+# The `_0` twins the live server actually has, read from
+# `/var/lib/clickhouse/data/system/*_0` on 2026-09-13. A twin only matters when ClickHouse
+# made one: a table whose base name was configured before the server ever ran has no old
+# file to keep open, so no `_0` exists and there is nothing to be oversized. The
+# operator's 30-day default is what a MISSING key falls back to, so a twin that was never
+# created never took it -- and flagging one would be a guard that refuses correct work.
+# `query_thread_log` and `blob_storage_log` are exactly that case: both are configured
+# here on the base name and neither has a `_0` directory on disk.
+#
+# This list is evidence, not an assumption. When it is wrong the fix is to re-read the
+# server, not to widen it until the gate goes green.
+LIVE_TWINS = frozenset({
+    "asynchronous_insert_log_0", "asynchronous_metric_log_0", "metric_log_0",
+    "part_log_0", "processors_profile_log_0", "query_log_0", "query_views_log_0",
+    "session_log_0", "trace_log_0", "zookeeper_log_0",
+})
+
+
+def ttl_days(engine):
+    """Return the TTL in days, or None when the engine string carries no TTL."""
+    m = TTL.search(engine)
+    if not m:
+        return None
+    return int(m.group(1)) * UNIT_DAYS[m.group(2).lower()]
+
+
+def scan(path):
+    """Yield (line number, base table, base days, twin table, twin days) for a mismatch.
+
+    A ``_0`` key is a twin that IS configured; it is skipped here because the base
+    it belongs to reports the pair. A base with no ``_0`` sibling at all is the hit.
+    """
+    try:
+        lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+    except OSError:
+        return
+    seen = {}
+    for n, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        m = SETTING.match(line)
+        if not m:
+            continue
+        table, engine = m.group(1), m.group(2)
+        days = ttl_days(engine)
+        if days is None:
+            continue
+        seen.setdefault(table, (n, days))
+
+    for table, (n, days) in sorted(seen.items()):
+        if table.endswith("_0"):
+            continue
+        twin = f"{table}_0"
+        if twin not in LIVE_TWINS:
+            continue
+        if twin not in seen:
+            yield n, table, days, twin, None
+        elif seen[twin][1] > days:
+            yield seen[twin][0], table, days, twin, seen[twin][1]
+
+
+def targets(argv):
+    if argv:
+        return argv
+    # tests/fixtures is skipped on a repository walk: the refusing fixture is meant
+    # to contain the break, and the registry grades it by naming it as an argument.
+    skip = os.path.join(ROOT, "tests", "fixtures")
+    found = []
+    for base, dirs, files in walk_tree(ROOT):
+        dirs[:] = [d for d in dirs if d not in (".git", "node_modules", ".venv")]
+        if base.startswith(skip):
+            continue
+        for f in files:
+            if f.endswith((".yaml", ".yml")):
+                found.append(os.path.join(base, f))
+    return found
+
+
+def main(argv):
+    hits = []
+    for path in targets(argv):
+        for n, table, days, twin, twin_days in scan(path):
+            hits.append((os.path.relpath(path, ROOT), n, table, days, twin, twin_days))
+    for path, n, table, days, twin, twin_days in hits:
+        if twin_days is None:
+            detail = (f"`{twin}` is not configured at all, so it keeps the operator's 30-day "
+                      f"default")
+        else:
+            detail = f"`{twin}` is configured longer ({twin_days:g} day(s) against {days:g})"
+        print(f"{path}:{n}: `{table}` carries a TTL but {detail}; "
+              f"set `{twin}/engine` to match `{table}`")
+    if hits:
+        print(f"\n{len(hits)} ClickHouse system table(s) whose `_0` twin is longer-lived than "
+              "the base. ClickHouse keeps the file it already had open under the name it "
+              "already had, so the base-name key never reaches the twin -- and the twin's "
+              "part count is what the merge pool and the OOM are made of. Incident "
+              "2026-09-13, 49 OOMKilled restarts.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

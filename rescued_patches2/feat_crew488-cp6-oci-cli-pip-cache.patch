@@ -1,0 +1,580 @@
+diff --git a/.github/requirements/catalog-render.txt b/.github/requirements/catalog-render.txt
+new file mode 100644
+index 000000000..72fc8d08b
+--- /dev/null
++++ b/.github/requirements/catalog-render.txt
+@@ -0,0 +1,3 @@
++# catalog-render.yml: pyyaml for the render step, sqlite-utils for the state it writes.
++pyyaml
++sqlite-utils
+diff --git a/.github/requirements/conscience.txt b/.github/requirements/conscience.txt
+new file mode 100644
+index 000000000..b42c2d621
+--- /dev/null
++++ b/.github/requirements/conscience.txt
+@@ -0,0 +1,6 @@
++# conscience.yml installs the OCI CLI and the two tools its tenet rows call. Same reason as
++# login-drill.txt: the cache key hashes .github/requirements/*.txt, so a package installed by a
++# bare `pip install` on a run: line is a package the key cannot see.
++-r oci-cli.txt
++pyyaml
++ruff==0.15.18
+diff --git a/.github/requirements/kyverno-secrets-drill.txt b/.github/requirements/kyverno-secrets-drill.txt
+new file mode 100644
+index 000000000..ae49229e4
+--- /dev/null
++++ b/.github/requirements/kyverno-secrets-drill.txt
+@@ -0,0 +1,3 @@
++# kyverno-secrets-drill.yml runs the drill's assertions with pytest.
++pytest
++pyyaml
+diff --git a/.github/requirements/login-drill.txt b/.github/requirements/login-drill.txt
+new file mode 100644
+index 000000000..682cebeb5
+--- /dev/null
++++ b/.github/requirements/login-drill.txt
+@@ -0,0 +1,5 @@
++# login-drill.yml installs playwright alongside the OCI CLI, so it gets its own file rather than
++# a bare package name appended to a -r line -- the cache key hashes .github/requirements/*.txt,
++# and a package that is not in a hashed file is a package the key cannot see.
++-r oci-cli.txt
++playwright
+diff --git a/.github/requirements/matrix-review.txt b/.github/requirements/matrix-review.txt
+new file mode 100644
+index 000000000..917bd36d1
+--- /dev/null
++++ b/.github/requirements/matrix-review.txt
+@@ -0,0 +1,2 @@
++# matrix-review.yml reads the matrix with pyyaml.
++pyyaml
+diff --git a/.github/requirements/oci-cli.txt b/.github/requirements/oci-cli.txt
+new file mode 100644
+index 000000000..cc9249e86
+--- /dev/null
++++ b/.github/requirements/oci-cli.txt
+@@ -0,0 +1,18 @@
++# The OCI CLI, installed by every workflow that reads the estate's vault or its cluster state.
++#
++# It exists as a file so `actions/setup-python` has something to hash for `cache: pip`. Measured
++# 2026-08-29 off /repos/chidionyema/idp/actions/runs/{id}/jobs, never off log prose: 14 install
++# sites across 7 workflows, and no pip cache anywhere in .github/workflows. Runs and the seconds
++# their oci install steps took: 33217075374 oke-check 33/38/38/43/35/33/35/39, 33215196600
++# verify-drill 36, 33215194366 trace-drill 39, 33122872248 vault-seed 39, 33217988021 login-drill
++# 71 (that one also fetches a playwright browser), 33204945289 conscience 4 + 40, 33208893050
++# estate-escrow 46 -- 569 s of runner time per full sweep spent re-downloading the same wheels.
++#
++# An earlier count of 12 sites across 5 workflows was measured in the shared checkout, which was
++# behind origin/main and hid conscience.yml and estate-escrow.yml. Numbers come from a fresh
++# worktree.
++#
++# Unpinned on purpose: pip still resolves against the index on every run, so a new release is
++# picked up the run it lands. What the cache holds is the wheel download, which is the part that
++# costs the 40 seconds.
++oci-cli
+diff --git a/.github/workflows/catalog-render.yml b/.github/workflows/catalog-render.yml
+index 0f00456fa..8926728e9 100644
+--- a/.github/workflows/catalog-render.yml
++++ b/.github/workflows/catalog-render.yml
+@@ -43,10 +43,13 @@ jobs:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with: { repository: chidionyema/crew, path: crew }   # a sibling of idp/, inside the workspace: checkout refuses any path above it
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/catalog-render.txt
+       - name: tools
+         run: |
+-          pip install -q pyyaml
++          pip install -q -r .github/requirements/catalog-render.txt
+           sudo apt-get install -y -qq rclone >/dev/null
+       - uses: fluxcd/flux2/action@ed8c5f2c24d57715d08423d3c1a7b0554ceb030e # v2.9.4 -- idp-catalog-push needs the flux CLI (run 33099170685: "BLIND flux missing")
+       - name: inventory from the bucket (estate#9 writes it; the `at` field is the receipt)
+@@ -99,5 +102,5 @@ jobs:
+           ESTATE_CODE: ${{ github.workspace }}
+         run: |
+           set -euo pipefail
+-          pip install -q sqlite-utils
++          pip install -q -r .github/requirements/catalog-render.txt
+           SU="$(command -v sqlite-utils)" bin/idp-estate-db-push | tee -a "$GITHUB_STEP_SUMMARY"
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d0577211b..41620603d 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -31,7 +31,10 @@ jobs:
+         # workspace, so this is a clone. The repo is public: no credential, no secret.
+         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: sovereign/requirements*.txt
+       - name: tools
+         run: |
+           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
+@@ -133,7 +136,10 @@ jobs:
+         # workspace, so this is a clone. The repo is public: no credential, no secret.
+         run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: sovereign/requirements*.txt
+       - name: tools
+         run: |
+           pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
+diff --git a/.github/workflows/conscience.yml b/.github/workflows/conscience.yml
+index fb302591c..c6ea64bb0 100644
+--- a/.github/workflows/conscience.yml
++++ b/.github/workflows/conscience.yml
+@@ -40,11 +40,17 @@ jobs:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+         with: { repository: chidionyema/crew, path: crew }
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          # Both files, because conscience.txt starts with `-r oci-cli.txt`: a key that hashed only
++          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
++          # while reading exactly like a key that tracked the install (crew#488 CP6).
++          cache-dependency-path: |
++            .github/requirements/conscience.txt
++            .github/requirements/oci-cli.txt
+       - name: tools the tenet rows call
+-        run: pip install -q pyyaml ruff==0.15.18
+-      - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/conscience.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+diff --git a/.github/workflows/estate-escrow.yml b/.github/workflows/estate-escrow.yml
+index fd91f32ea..d2198e73f 100644
+--- a/.github/workflows/estate-escrow.yml
++++ b/.github/workflows/estate-escrow.yml
+@@ -29,10 +29,13 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli and rclone (the same reader the Mac's escrow job and the recover drill use)
+         run: |
+-          pip install -q oci-cli
++          pip install -q -r .github/requirements/oci-cli.txt
+           sudo apt-get install -y -qq rclone >/dev/null
+           rclone version | head -1
+       - name: OCI session token from the GitHub OIDC token
+diff --git a/.github/workflows/kyverno-secrets-drill.yml b/.github/workflows/kyverno-secrets-drill.yml
+index 486e637a9..d312a9c64 100644
+--- a/.github/workflows/kyverno-secrets-drill.yml
++++ b/.github/workflows/kyverno-secrets-drill.yml
+@@ -26,7 +26,10 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/kyverno-secrets-drill.txt
+       - name: install kyverno CLI
+         run: |
+           set -euo pipefail
+@@ -35,6 +38,6 @@ jobs:
+           sudo mv /tmp/kyverno /usr/local/bin/kyverno
+           kyverno version
+       - name: install pytest
+-        run: python3 -m pip install --quiet pytest pyyaml
++        run: python3 -m pip install --quiet -r .github/requirements/kyverno-secrets-drill.txt
+       - name: run the drill (real kyverno apply, 5 fixtures, 2 must-fail + 3 must-pass)
+         run: python3 -m pytest tests/test_incident_crew341_kyverno_secrets_from_env_vars.py -v
+diff --git a/.github/workflows/login-drill.yml b/.github/workflows/login-drill.yml
+index 8730ba1f3..ada8c4887 100644
+--- a/.github/workflows/login-drill.yml
++++ b/.github/workflows/login-drill.yml
+@@ -32,10 +32,18 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          # Both files, because login-drill.txt starts with `-r oci-cli.txt`: a key that hashed only
++          # the referring file would keep restoring a stale cache after oci-cli.txt changed,
++          # while reading exactly like a key that tracked the install (crew#488 CP6).
++          cache-dependency-path: |
++            .github/requirements/login-drill.txt
++            .github/requirements/oci-cli.txt
+       - name: oci cli and a headless browser
+         run: |
+-          pip install -q oci-cli playwright
++          pip install -q -r .github/requirements/login-drill.txt
+           playwright install --with-deps chromium
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+diff --git a/.github/workflows/matrix-review.yml b/.github/workflows/matrix-review.yml
+index 775a76392..ee635d399 100644
+--- a/.github/workflows/matrix-review.yml
++++ b/.github/workflows/matrix-review.yml
+@@ -24,7 +24,9 @@ jobs:
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+         with:
+           python-version: "3.12"
+-      - run: pip install pyyaml
++          cache: pip
++          cache-dependency-path: .github/requirements/matrix-review.txt
++      - run: pip install -r .github/requirements/matrix-review.txt
+       - name: bin/matrix-gate --review --verify-receipts
+         id: review
+         env:
+diff --git a/.github/workflows/oke-check.yml b/.github/workflows/oke-check.yml
+index 1951b01a4..9eb046c10 100644
+--- a/.github/workflows/oke-check.yml
++++ b/.github/workflows/oke-check.yml
+@@ -44,12 +44,15 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+         with: { tofu_version: "1.12.6", tofu_wrapper: false }
+       - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: token exchange receipt (claims of the job token, and the domain's answer; never the tokens)
+         env:
+           OIDC: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+@@ -219,9 +222,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -247,9 +253,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -275,9 +284,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -302,9 +314,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -379,9 +394,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -407,9 +425,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+@@ -435,9 +456,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+diff --git a/.github/workflows/operating-model-gate.yml b/.github/workflows/operating-model-gate.yml
+index 38d748abf..a273d14d6 100644
+--- a/.github/workflows/operating-model-gate.yml
++++ b/.github/workflows/operating-model-gate.yml
+@@ -102,6 +102,12 @@ jobs:
+           PR_REPORT_DIR: ${{ runner.temp }}/pr-report
+           PR_NUMBER: ${{ inputs.pr_number != '' && inputs.pr_number || github.event.pull_request.number }}
+           COMMENT: ${{ inputs.comment && '--comment' || '' }}
++        # No actions/setup-python and no `cache: pip` here, and that is deliberate (crew#488 CP6,
++        # named in tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py): this
++        # workflow checks the CALLER out to `.`, so any cache-dependency-path it names is hashed
++        # inside hermes-v2 or crew, where .github/requirements/ does not exist. A key that matches
++        # no file never hits while reading as though it does, and one pyyaml wheel is cheaper than
++        # the setup-python step that would carry it.
+         run: |
+           pip install -q pyyaml
+           "$IDP_ROOT/bin/pr-report" "$PR_NUMBER" $COMMENT
+diff --git a/.github/workflows/trace-drill.yml b/.github/workflows/trace-drill.yml
+index c93c3cb97..4c8050fee 100644
+--- a/.github/workflows/trace-drill.yml
++++ b/.github/workflows/trace-drill.yml
+@@ -27,9 +27,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+diff --git a/.github/workflows/vault-seed.yml b/.github/workflows/vault-seed.yml
+index b27a3538a..e982306ad 100644
+--- a/.github/workflows/vault-seed.yml
++++ b/.github/workflows/vault-seed.yml
+@@ -30,11 +30,14 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+         with: { tofu_version: "1.12.6", tofu_wrapper: false }
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: OCI session token from the GitHub OIDC token
+         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+         with:
+diff --git a/.github/workflows/verify-drill.yml b/.github/workflows/verify-drill.yml
+index 9a130c612..358f49da4 100644
+--- a/.github/workflows/verify-drill.yml
++++ b/.github/workflows/verify-drill.yml
+@@ -31,9 +31,12 @@ jobs:
+     steps:
+       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+-        with: { python-version: "3.12" }
++        with:
++          python-version: "3.12"
++          cache: pip
++          cache-dependency-path: .github/requirements/oci-cli.txt
+       - name: oci cli
+-        run: pip install -q oci-cli
++        run: pip install -q -r .github/requirements/oci-cli.txt
+       - name: conftest (the no-toil row judges the tree with policy/no-manual-steps.rego, crew#66)
+         run: curl -sSL --retry 5 --retry-all-errors --retry-delay 2 https://github.com/open-policy-agent/conftest/releases/download/v0.62.0/conftest_0.62.0_Linux_x86_64.tar.gz | sudo tar -xz -C /usr/local/bin conftest
+       - name: OCI session token from the GitHub OIDC token
+diff --git a/tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py b/tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py
+new file mode 100644
+index 000000000..7a8595f36
+--- /dev/null
++++ b/tests/test_incident_crew488_cp6_pip_resolves_from_the_index_every_run.py
+@@ -0,0 +1,133 @@
++"""crew#488 CP6: every CI job that pip-installs restores a wheel cache, or is named here with why.
++
++Measured on origin/main b426a4d before this change: 7 workflows installed `oci-cli` at 14 sites and
++not one of them cached a wheel, so every run downloaded the same ~40 MB of wheels again. The eight
++oke-check jobs of run 33217075374 spent 33/38/38/43/35/33/35/39 s on it, verify-drill 33215196600
++36 s, trace-drill 33215194366 39 s, vault-seed 33122872248 39 s, login-drill 33217988021 71 s,
++conscience 33204945289 4 s + 40 s, estate-escrow 33208893050 46 s -- 569 s of runner time per sweep
++spent re-downloading what the previous run already had.
++
++The rule this guards is not "oci-cli is cached". It is the class: a job that runs `pip install` and
++sets python up with actions/setup-python must pass `cache: pip` with a `cache-dependency-path` that
++matches at least one file, because a key that hashes nothing restores nothing and reads green.
++
++Rung 4, incident test.
++"""
++import glob
++import os
++from pathlib import Path
++
++import pytest
++import yaml
++
++ROOT = Path(__file__).resolve().parents[1]
++WORKFLOWS = ROOT / ".github" / "workflows"
++
++# A job may install without setup-python only with a reason, and the reason is graded by a human
++# reading this line, never by the absence of an entry. A new uncached job fails the test.
++NO_SETUP_PYTHON = {
++    "operating-model-gate.yml::operating-model-gate":
++        "A reusable workflow: it checks the CALLER repo out to `.` and idp to `.idp`, so any "
++        "cache-dependency-path it names resolves inside whichever repo called it (hermes-v2, crew, "
++        "idp) and matches no file in two of the three. One `pip install -q pyyaml` on the runner's "
++        "preinstalled python costs less than a setup-python step, and a key that matches nothing "
++        "would be a cache that never hits while reading as though it did.",
++}
++
++
++def _jobs():
++    for path in sorted(WORKFLOWS.glob("*.y*ml")):
++        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
++        if not isinstance(doc, dict):
++            continue
++        for name, job in (doc.get("jobs") or {}).items():
++            steps = [s for s in (job.get("steps") or []) if isinstance(s, dict)]
++            yield path, name, steps
++
++
++def _installs(steps):
++    return [s for s in steps if "pip install" in str(s.get("run") or "")]
++
++
++def _setups(steps):
++    return [s for s in steps if "actions/setup-python@" in str(s.get("uses") or "")]
++
++
++def test_a_job_that_pip_installs_restores_a_wheel_cache():
++    uncached = []
++    for path, name, steps in _jobs():
++        if not _installs(steps):
++            continue
++        setups = _setups(steps)
++        if not setups:
++            key = "%s::%s" % (path.name, name)
++            assert key in NO_SETUP_PYTHON, (
++                "%s runs pip install with no actions/setup-python step, so no wheel cache can be "
++                "restored. Give it one with cache: pip, or name it in NO_SETUP_PYTHON with the "
++                "reason it cannot have one." % key)
++            continue
++        for step in setups:
++            if (step.get("with") or {}).get("cache") != "pip":
++                uncached.append("%s::%s -> %s" % (path.name, name, step.get("name") or step["uses"]))
++    assert uncached == [], (
++        "these setup-python steps precede a pip install and set no wheel cache; every run "
++        "re-downloads what the last one had: %s" % uncached)
++
++
++@pytest.mark.parametrize("path", sorted(WORKFLOWS.glob("*.y*ml")), ids=lambda p: p.name)
++def test_every_cache_key_hashes_at_least_one_file_that_exists(path):
++    """A cache-dependency-path matching nothing is silent green: setup-python warns and moves on,
++    the cache never hits, and the workflow looks cached to anyone reading the yaml."""
++    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
++    if not isinstance(doc, dict):
++        pytest.skip("not a workflow")
++    for name, job in (doc.get("jobs") or {}).items():
++        for step in (job.get("steps") or []):
++            if not isinstance(step, dict) or (step.get("with") or {}).get("cache") != "pip":
++                continue
++            dep = (step.get("with") or {}).get("cache-dependency-path")
++            assert dep, "%s::%s caches pip and names no cache-dependency-path" % (path.name, name)
++            for pattern in str(dep).split():
++                assert glob.glob(os.path.join(str(ROOT), pattern)), (
++                    "%s::%s hashes %r, which matches no file in the repository: the key would be "
++                    "constant and the cache would never hold what the job installs"
++                    % (path.name, name, pattern))
++
++
++def _requires(req: Path):
++    """The other requirements files `req` pulls in with `-r`, resolved as pip resolves them:
++    relative to the file that names them."""
++    out = []
++    for line in req.read_text(encoding="utf-8").splitlines():
++        line = line.split("#", 1)[0].strip()
++        if line.startswith("-r "):
++            out.append((req.parent / line[3:].strip()).resolve())
++    return out
++
++
++def test_a_key_hashes_every_requirements_file_its_install_actually_reads():
++    """The transitive half of the rule above, and it bit this very branch.
++
++    `.github/requirements/conscience.txt` and `login-drill.txt` each begin `-r oci-cli.txt`, so the
++    wheels those jobs install change when oci-cli.txt changes. Both first shipped hashing only
++    their own file: the key would have stayed constant while the install moved, restoring a stale
++    cache and reading exactly like a key that tracked it. That is the same silent-green shape this
++    file exists to refuse, so it is asserted rather than remembered."""
++    missing = []
++    for path, name, steps in _jobs():
++        for step in _setups(steps):
++            with_ = step.get("with") or {}
++            if with_.get("cache") != "pip":
++                continue
++            hashed = {(ROOT / pattern).resolve()
++                      for pattern in str(with_.get("cache-dependency-path") or "").split()}
++            for req in list(hashed):
++                if not req.is_file():
++                    continue
++                for pulled in _requires(req):
++                    if pulled not in hashed:
++                        missing.append("%s::%s hashes %s but not %s, which %s pulls in with -r"
++                                       % (path.name, name, req.name, pulled.name, req.name))
++    assert missing == [], (
++        "these keys hash a requirements file but not everything it reads, so the cache goes stale "
++        "without the key changing: %s" % missing)

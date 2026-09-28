@@ -1,0 +1,8 @@
+{
+  "repo": "chidionyema/idp",
+  "features_dir": "features",
+  "specs_dir": "docs/specs",
+  "bdd_command": "behave --no-capture --no-skipped -f plain --tags={tag}",
+  "bdd_cwd": ".",
+  "default_role": "engineering"
+}

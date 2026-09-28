@@ -1,0 +1,38 @@
+# runsc handler image (goal b9217bea C5). build-multiarch publishes the multiarch
+# manifest list to ghcr.io/chidionyema/runsc:main-<run>-<sha>; the policy picks the
+# highest run and image-automation-controller writes the resulting tag into
+# platform/nodesoftware-operator/deployment.yaml (initContainer
+# runsc-handler-mirror, image: ghcr.io/chidionyema/runsc). The controller's source
+# reads that initContainer's image at startup (cmd/main.go:resolveHandlerImage) and
+# uses it as the InstallImage for the handler pods it schedules. Without this row
+# the controller's --handler-image never tracks a published tag and every handler
+# pod ImagePulls the broken ":IMAGE_TAG" literal it shipped with.
+#
+# One ImageUpdateAutomation (backstage.yaml, path ./platform) writes every
+# ImagePolicy marker the policy tracks. Two automations on one push branch
+# collide ("cannot lock ref", crew#406, 2026-08-27), so there is exactly one.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: runsc
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/runsc
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: runsc
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: runsc
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

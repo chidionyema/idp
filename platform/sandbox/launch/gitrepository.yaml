@@ -1,0 +1,15 @@
+# The launch branch as a Flux source. Same repository and same deploy key as the estate's own
+# source (clusters/oke/flux-system/gotk-sync.yaml); a different branch. One minute, so a press of
+# the button shows on the cluster inside a minute and an expiry lands inside a minute of the sweep.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: sandbox-launch
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: ssh://git@github.com/${ESTATE_GITHUB_REPO}
+  ref:
+    branch: sandbox/launch
+  secretRef:
+    name: flux-system

@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""Refuse a namespace that is born without its fences.
+
+crew#191. The founder's words, 2026-08-24: "Apply a Default Deny All
+NetworkPolicy to every namespace" and "Apply strict ResourceQuota and LimitRange
+rules to data-ops so a runaway pipeline cannot starve the cluster's brain".
+
+Measured on the `estate` cluster before any of this existed: a pod in one
+namespace curled a pod in another by IP, with no credential, HTTP 200 in 4ms.
+That is the lateral backdoor, and it is the default state of every namespace
+anyone creates.
+
+Four things are checked, and every one of them is checked against the object
+itself rather than against a name, a label or a comment:
+
+  1. Every Namespace has a ResourceQuota.
+  2. Every Namespace has a LimitRange -- and this is checked *because of* rule 1,
+     not alongside it. A ResourceQuota counting requests.cpu makes a pod that
+     declares no cpu request UNSCHEDULABLE, refused with "must specify
+     limits.cpu". The LimitRange supplies the numbers first. Quota without
+     LimitRange is a fence that refuses correct work, which is the outage
+     (LAW 38), so a quota with no LimitRange is a defect and not a partial win.
+  3. Every Namespace has a NetworkPolicy that selects ALL pods (`podSelector:
+     {}`) and denies both directions. A policy that selects some pods by label
+     is an allow rule, not a default; the deny has to be the floor.
+  4. A namespace that denies Egress has an explicit DNS exception on port 53.
+     Without it, name resolution fails in every pod, and the symptom is not
+     "blocked" -- it is a five-second timeout on every outbound call, which
+     reads as the application being slow. This is the rule that gets forgotten,
+     so it is the rule with a gate.
+
+Two modes. The default reads manifests, because manifests are what ArgoCD
+applies and what a reviewer sees. `--live` reads the cluster, because a manifest
+that is correct and not applied protects nothing. Neither replaces the other and
+`bin/idp-ci` runs the first; the second runs when a cluster is reachable, and
+says BLIND rather than PASS when it is not (a guard that loses its evidence
+reports BLIND, never a verdict).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("ns-fence-gate needs PyYAML: python3 -m pip install pyyaml")
+
+SYSTEM_NAMESPACES = {"kube-system", "kube-public", "kube-node-lease", "default"}
+
+# There is deliberately no cluster-state input here. This gate reads git, and whether a namespace
+# declared in git exists on the cluster yet is not a question git can answer -- so it used to ask
+# platform/ns-fences/live-namespaces.txt, a file nothing writes. It was committed by hand on
+# 2026-09-05 and frozen there while ten namespaces appeared, and because absence from it read as
+# "not created yet, nothing to fence", the gate skipped eight namespaces that were on the cluster
+# the whole time -- six of them carrying no quota, no LimitRange and no default deny at all, three
+# pods running inside them -- and printed ok. Measured 2026-09-08: every one of the 45 namespaces
+# declared in git exists on the cluster, so the skip was protecting nothing and hiding six defects.
+#
+# The case it was written for (idp#1558: a ResourceQuota addressed to a namespace that does not
+# exist fails the whole Kustomization and takes every other fence with it) is real, and it is the
+# generator's to handle, not this gate's -- bin/idp-ns-fence-gen still holds that line. Here, a
+# namespace declared in git with no fence beside it is a defect whether or not the cluster has
+# caught up: declare the namespace and its fence together, or declare neither.
+
+
+def load_manifests(path: str) -> list[dict]:
+    """Every YAML document under `path`, whether it is a file or a directory."""
+    files: list[str] = []
+    if os.path.isdir(path):
+        for root, _dirs, names in os.walk(path):
+            files += [
+                os.path.join(root, n)
+                for n in sorted(names)
+                if n.endswith((".yaml", ".yml")) and n != "kustomization.yaml"
+            ]
+    else:
+        files = [path]
+
+    docs: list[dict] = []
+    for f in sorted(files):
+        with open(f, encoding="utf-8") as fh:
+            for doc in yaml.safe_load_all(fh):
+                if isinstance(doc, dict) and doc.get("kind"):
+                    doc["__file"] = f
+                    docs.append(doc)
+    return docs
+
+
+def namespace_of(doc: dict) -> str | None:
+    if doc.get("kind") == "Namespace":
+        return doc.get("metadata", {}).get("name")
+    return doc.get("metadata", {}).get("namespace")
+
+
+def denies_everything(np: dict) -> tuple[bool, bool]:
+    """(sets_ingress_floor, sets_egress_floor) for one policy.
+
+    In Kubernetes the floor is set by *selection*, not by emptiness: the moment a
+    policy selects a pod and names a direction in policyTypes, that direction is
+    denied for that pod except for the rules the policy itself lists. So a policy
+    with `podSelector: {}`, `policyTypes: [Egress]` and a single DNS rule is a
+    default egress deny with one hole in it, and reading it as "not a deny"
+    because its egress list is non-empty makes this gate refuse a namespace that
+    is correctly fenced -- a guard that refuses correct work is the outage
+    (LAW 38). I wrote it that way first and the fixture caught it.
+
+    What does disqualify a policy is the selector. `podSelector` matching a label
+    is somebody's allow rule for some pods; every pod without that label is
+    unprotected, so it cannot be the floor however it is named.
+    """
+    spec = np.get("spec") or {}
+    selector = spec.get("podSelector")
+    if selector is None or selector != {}:
+        return (False, False)
+    types = spec.get("policyTypes") or []
+    return ("Ingress" in types, "Egress" in types)
+
+
+def allows_dns(np: dict) -> bool:
+    """True if this policy lets pods reach a DNS server on port 53."""
+    spec = np.get("spec") or {}
+    if "Egress" not in (spec.get("policyTypes") or []):
+        return False
+    for rule in spec.get("egress") or []:
+        for port in rule.get("ports") or []:
+            # A rule with no ports at all opens every port, 53 included.
+            if str(port.get("port")) == "53":
+                return True
+        if not rule.get("ports"):
+            return True
+    return False
+
+
+def check(docs: list[dict], source: str) -> list[str]:
+    """Every defect, as a sentence naming the namespace and what is missing."""
+    namespaces = {
+        d["metadata"]["name"]: d
+        for d in docs
+        if d.get("kind") == "Namespace" and d.get("metadata", {}).get("name")
+    }
+    if not namespaces:
+        return [f"{source}: no Namespace object found -- nothing to check, "
+                "which is not the same as nothing wrong"]
+
+    by_ns: dict[str, list[dict]] = {n: [] for n in namespaces}
+    for d in docs:
+        ns = namespace_of(d)
+        if ns in by_ns and d.get("kind") != "Namespace":
+            by_ns[ns].append(d)
+
+    problems: list[str] = []
+    for ns in sorted(namespaces):
+        if ns in SYSTEM_NAMESPACES:
+            continue
+        kinds = [d.get("kind") for d in by_ns[ns]]
+        nps = [d for d in by_ns[ns] if d.get("kind") == "NetworkPolicy"]
+
+        if "ResourceQuota" not in kinds:
+            problems.append(f"namespace {ns}: no ResourceQuota. A runaway pod here "
+                            "takes the whole node with it.")
+        if "LimitRange" not in kinds:
+            if "ResourceQuota" in kinds:
+                problems.append(
+                    f"namespace {ns}: a ResourceQuota with no LimitRange. Every pod "
+                    "that does not declare cpu and memory will be REFUSED with "
+                    "'must specify limits.cpu' -- this fence refuses correct work.")
+            else:
+                problems.append(f"namespace {ns}: no LimitRange, so no pod gets "
+                                "default requests or a ceiling.")
+
+        deny_i = any(denies_everything(np)[0] for np in nps)
+        deny_e = any(denies_everything(np)[1] for np in nps)
+        if not deny_i:
+            problems.append(f"namespace {ns}: no NetworkPolicy denies Ingress for all "
+                            "pods. Any pod in the cluster reaches these by IP.")
+        if not deny_e:
+            problems.append(f"namespace {ns}: no NetworkPolicy denies Egress for all "
+                            "pods. A compromised pod here reaches every other "
+                            "namespace and the internet.")
+        if deny_e and not any(allows_dns(np) for np in nps):
+            problems.append(f"namespace {ns}: Egress is denied and nothing allows port "
+                            "53. DNS will fail in every pod, and it will look like "
+                            "the application is slow, not like a policy.")
+    return problems
+
+
+# A CNI that enforces NetworkPolicy announces itself as a DaemonSet in kube-system. flannel is the
+# one in this list that does not enforce policy at all: it routes pods and ignores every policy
+# object the API server holds. Measured 2026-09-04: this estate runs kube-flannel-ds and nothing
+# else, so sixteen NetworkPolicies were being reported as protection while denying nothing.
+POLICY_ENFORCING_CNI = ("cilium", "calico", "canal", "antrea", "kube-router", "weave-net")
+
+# The plugins that route pods and ignore every policy object. A cluster running one of these
+# alongside an enforcing CNI is not a fenced cluster: whichever plugin networked a given pod is
+# the one that decides whether policy applies to it, so the answer differs pod by pod.
+NON_ENFORCING_CNI = ("flannel",)
+
+# How to ask a running pod which plugin set it up. A CNI writes its own annotation onto the pod
+# when it wires the sandbox, and that annotation is the only per-pod evidence of who owns the
+# datapath -- a DaemonSet's readiness says a plugin is installed, never which pods it took.
+#
+# Measured 2026-09-07 on `estate`: 69 pods carried cni.projectcalico.org/podIP and 106 did not,
+# split on a clean line at 2026-09-06T20:02Z with no interleaving. Both plugins' DaemonSets were
+# ready 2/2 the whole time, so no DaemonSet reading could have told those two groups apart.
+#
+# Only entries proved against a live cluster belong here. An enforcing CNI that is not in this map
+# cannot be graded per pod, and that is a FAIL rather than a pass: an ungradeable coverage claim
+# is the thing this gate exists to refuse.
+CNI_POD_ANNOTATION = {"calico": "cni.projectcalico.org/podIP"}
+
+
+def enforcing_cni() -> tuple[str | None, list[str]]:
+    """What in kube-system actually enforces NetworkPolicy, and what disqualifies the answer.
+
+    Before 2026-09-07 this matched a DaemonSet NAME and returned it. A name is not a measurement:
+    it answered the same whether the DaemonSet had two ready pods or none, and it could not see a
+    second CNI running beside it. That is how it was found -- `calico-node` was applied into
+    kube-system while `kube-flannel-ds` kept running, and for 23 hours this function reported
+    "calico is on the nodes to enforce the deny" for a cluster in which flannel still networked
+    every pod created before the rollout. Oracle refuses that arrangement outright: "Installing
+    the Calico network policy engine alongside the flannel CNI plugin causes network issues."
+
+    Two things are measured now, and both are disqualifying rather than advisory:
+
+    Ready on every node it is scheduled to. A CNI ready on one of two nodes enforces policy on
+    one of two nodes, and the pods on the other are unprotected -- a per-node answer that a single
+    cluster-wide "ok" line cannot honestly carry.
+
+    Alone. While a non-enforcing plugin is also ready, the datapath is split: the pods it
+    networked ignore policy and the pods the enforcing CNI networked do not. Reporting a pass
+    there is worse than reporting nothing, because the namespaces that ARE fenced look identical
+    to the ones that are not.
+    """
+    raw = subprocess.run(
+        ["kubectl", "get", "daemonset", "-n", "kube-system", "-o", "json"],
+        capture_output=True, text=True, timeout=60, check=True).stdout
+    sets = json.loads(raw)["items"]
+
+    def ready(d):
+        st = d.get("status", {})
+        want = st.get("desiredNumberScheduled", 0)
+        return want > 0 and st.get("numberReady", 0) == want, st.get("numberReady", 0), want
+
+    problems: list[str] = []
+    found = None
+    for d in sets:
+        n = d["metadata"]["name"]
+        if any(c in n for c in POLICY_ENFORCING_CNI):
+            ok, have, want = ready(d)
+            if not ok:
+                problems.append(
+                    f"{n} is the policy-enforcing CNI but is ready on {have} of {want} node(s), "
+                    "so the pods on the rest are not covered by any policy")
+            found = found or n
+    others = [d["metadata"]["name"] for d in sets
+              if any(c in d["metadata"]["name"] for c in NON_ENFORCING_CNI) and ready(d)[1]]
+    if found:
+        problems += uncovered_pods(found, others)
+    return found, problems
+
+
+def uncovered_pods(cni: str, others: list[str]) -> list[str]:
+    """Pods the enforcing CNI did not wire, which are the pods its policy does not reach.
+
+    A first version of this check failed the whole cluster whenever a non-enforcing DaemonSet was
+    ready. That is unmeasurable on a managed cluster and would have made the gate permanently red
+    here: OKE ships flannel as a managed add-on, add-on removal is refused on a basic cluster
+    (`400 InvalidParameter: Addon management is only supported on enhanced type clusters`,
+    2026-09-07), so kube-flannel-ds runs whatever the datapath is actually doing. A gate that can
+    never go green grades nothing, which is the same defect it was written to catch.
+
+    What decides the datapath is not which plugins are installed but which one wrote each pod's
+    config, and the node resolves that by sorting /etc/cni/net.d -- 10-calico.conflist before
+    10-flannel.conflist. So the honest question is per pod, and the pod answers it directly.
+
+    hostNetwork pods are skipped: they share the node's stack, are never wired by a CNI and are
+    outside every NetworkPolicy by construction, so counting them would inflate the gap forever.
+    """
+    key = next((a for c, a in CNI_POD_ANNOTATION.items() if c in cni), None)
+    if key is None:
+        return [f"{cni} enforces NetworkPolicy but this gate has no measured pod annotation for "
+                f"it, so which pods it actually wired cannot be counted. Add a proved entry to "
+                f"CNI_POD_ANNOTATION; an ungraded coverage claim is not a pass"]
+    raw = subprocess.run(
+        ["kubectl", "get", "pods", "--all-namespaces", "-o", "json"],
+        capture_output=True, text=True, timeout=120, check=True).stdout
+    stranded: dict[str, int] = {}
+    covered = 0
+    for pod in json.loads(raw)["items"]:
+        if pod["spec"].get("hostNetwork") or pod.get("status", {}).get("phase") != "Running":
+            continue
+        meta = pod["metadata"]
+        if key in (meta.get("annotations") or {}):
+            covered += 1
+        else:
+            stranded[meta["namespace"]] = stranded.get(meta["namespace"], 0) + 1
+    if not stranded:
+        return []
+    total = sum(stranded.values())
+    worst = sorted(stranded.items(), key=lambda kv: -kv[1])[:5]
+    where = ", ".join(f"{ns} ({n})" for ns, n in worst)
+    beside = f" beside {', '.join(others)}" if others else ""
+    return [f"{total} running pod(s) carry no {key} annotation, so {cni} did not wire them and its "
+            f"policy does not reach them{beside}; {covered} pod(s) are covered. Worst: {where}. "
+            "Restarting a pod moves it onto the enforcing CNI; until every one has moved, whether "
+            "a fence applies depends on when the pod happened to start"]
+
+
+def live_docs() -> list[dict]:
+    """The cluster's own objects, or an exception if it is not reachable."""
+    out: list[dict] = []
+    for kind in ("namespaces", "resourcequotas", "limitranges", "networkpolicies"):
+        raw = subprocess.run(
+            ["kubectl", "get", kind, "--all-namespaces", "-o", "json"],
+            capture_output=True, text=True, timeout=60, check=True).stdout
+        out += json.loads(raw)["items"]
+    return out
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    # platform, not platform/k8s/namespaces: that directory has never existed in this repo, so
+    # every run with no argument died on FileNotFoundError instead of grading anything. The gate
+    # needs both halves in one tree -- the Namespace objects, which live beside each workload in
+    # platform/<ns>/namespace.yaml, and the fences the generator writes into platform/ns-fences --
+    # so the root of platform/ is the only path that can answer the question it asks.
+    ap.add_argument("path", nargs="?", default="platform",
+                    help="manifest file or directory (ignored with --live)")
+    ap.add_argument("--live", action="store_true",
+                    help="read the running cluster instead of the manifests")
+    args = ap.parse_args()
+
+    if args.live:
+        try:
+            docs, source = live_docs(), "the live cluster"
+            cni, cni_problems = enforcing_cni()
+        except Exception as exc:  # noqa: BLE001 -- any failure to reach it is the same answer
+            print(f"BLIND  ns-fence-gate could not read the cluster: {exc}")
+            print("       This is not a pass. Nothing was checked.")
+            return 2
+        if cni is None:
+            policies = sum(1 for d in docs if d.get("kind") == "NetworkPolicy")
+            print("FAIL   ns-fence-gate: no CNI in kube-system enforces NetworkPolicy, so the "
+                  f"{policies} policy object(s) this cluster holds deny nothing.")
+            print("       A quota and a LimitRange still work -- they are admission controllers "
+                  "in the API server -- but no answer about network isolation is available here, "
+                  "and reporting the namespaces as fenced would be a claim the cluster cannot "
+                  "support. Install a policy-enforcing CNI first "
+                  "(platform/ns-fences/network/README.md).")
+            return 1
+        if cni_problems:
+            print("FAIL   ns-fence-gate: a policy-enforcing CNI is present but the cluster's "
+                  "network isolation is not a single answer.")
+            for p in cni_problems:
+                print(f"       - {p}")
+            print("       No namespace is reported as fenced while this holds: a per-pod or "
+                  "per-node answer cannot be carried by one cluster-wide line.")
+            return 1
+    else:
+        docs, source = load_manifests(args.path), args.path
+
+    # Only the estate's own manifest tree is graded against the estate's cluster. A fixture
+    # directory names namespaces no cluster has, and skipping those would stop this gate proving
+    # anything -- the bad fixture would pass by being unknown rather than by being fenced.
+    problems = check(docs, source)
+    if problems:
+        holed = len({p.split(":")[0] for p in problems})
+        print(f"FAIL   ns-fence-gate: {len(problems)} defect(s) across {holed} "
+              f"namespace(s) in {source}")
+        for p in problems:
+            print(f"       - {p}")
+        return 1
+
+    declared = sorted(
+        d["metadata"]["name"] for d in docs
+        if d.get("kind") == "Namespace"
+        and d.get("metadata", {}).get("name") not in SYSTEM_NAMESPACES)
+    fenced = declared
+    if args.live:
+        print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) in {source} carry a quota, a "
+              f"LimitRange, a both-ways default deny and a DNS exception, and {cni} is on the "
+              f"nodes to enforce the deny: {', '.join(fenced)}")
+    else:
+        # Say what was actually graded. These are files: they declare a fence, they do not apply
+        # one, and whether the cluster holds what they declare -- or has anything that would
+        # enforce a policy -- is a question only --live can answer.
+        print(f"ok     ns-fence-gate: {len(fenced)} namespace(s) DECLARE a quota, a LimitRange, a "
+              f"both-ways default deny and a DNS exception in {source}. Whether the cluster holds "
+              f"them, and whether anything on it enforces a policy, is --live's answer, not this "
+              f"one: {', '.join(fenced)}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

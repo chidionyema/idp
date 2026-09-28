@@ -1,0 +1,9 @@
+{
+  "capability": "workload",
+  "component": "nginx-unprivileged",
+  "name": "status-page",
+  "port": 8080,
+  "purpose": "hydrated from the live tree; was edge/status-page",
+  "replicas": 2,
+  "size": "s"
+}

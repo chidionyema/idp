@@ -1,0 +1,31 @@
+# crew#396 step 2: the sovereign worker rolls on every main build, the same way the catalogue
+# does (backstage.yaml, crew#267). build-multiarch pushes
+# ghcr.io/chidionyema/sovereign-worker:main-<run>-<sha>; the policy picks the highest run and
+# the one ImageUpdateAutomation (backstage.yaml, path ./platform) writes it into
+# platform/temporal/kustomization.yaml on flux/image-updates. Two automations on one push branch
+# collide ("cannot lock ref", crew#406, 2026-08-27), so there is exactly one.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: sovereign-worker
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/sovereign-worker
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: sovereign-worker
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: sovereign-worker
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

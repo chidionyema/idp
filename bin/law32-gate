@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""LAW 32 at the pull request: a feature ships with a demo and an onboarding.
+
+Founder, 2026-08-25: "where tf is proof demo, founder onboarding, we breaking rules again"
+and "we need to start enforcing more, at PR". The pre-push hook (law32-default in
+claude-guards) only looked at `feat:` subjects; tonight's five features landed under
+`security:` and `catalog:` and it never fired. This runs in bin/idp-ci on every PR.
+
+Three checks:
+  1. Every executable added under bin/ in this PR names a feature that has
+     docs/tutorials/demo/<n>.md AND docs/how-to/onboarding/<n>.md, where <n> is the file's stem
+     (minus -gate/-report) or a prefix of it before a hyphen (scheduler-up -> scheduler).
+  2. Every page under docs/tutorials/demo and docs/how-to/onboarding carries >= 200 characters of prose
+     once headings and blank lines are stripped (LAW 32's floor).
+  3. (retired 2026-09-22) Every page under docs/tutorials/demo and docs/how-to/onboarding was
+     in the mkdocs nav. The nav is generated now, so this holds by construction. Measured
+     2026-08-25: nine onboarding pages and five demos existed and none was in the nav,
+     so the portal showed the founder no proof at all.
+
+Added files come from `git diff --diff-filter=A --name-only <base>...HEAD -- bin`, base
+being the merge-base with origin/main (or BASE env). `--added f1 f2` overrides the list so
+the gate is proved both ways in CI without a second repository.
+
+Exit 0 ok, 1 FAIL, 2 BLIND (no git history to diff against; the other two checks still run).
+"""
+import os, re, subprocess, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FLOOR = 200
+
+
+def prose_chars(path):
+    n = 0
+    with open(path, encoding="utf-8") as fh:
+        for line in fh:
+            if line.strip() and not line.lstrip().startswith("#"):
+                n += len(line.rstrip("\n"))
+    return n
+
+
+# ADR 0002 Diátaxis sweep (2026-08-28): a demo is a tutorial, an onboarding is a how-to. The
+# first cut of this sweep left these two names bare and the gate scanned nothing and printed
+# "ok 0 page(s)" -- a silent green. PAGE_DIRS is the one place the paths live, and main()
+# refuses a zero page count.
+PAGE_DIRS = ("tutorials/demo", "how-to/onboarding")
+
+
+def feature_names():
+    out = set()
+    for d in PAGE_DIRS:
+        p = os.path.join(ROOT, "docs", d)
+        if os.path.isdir(p):
+            out |= {f[:-3] for f in os.listdir(p) if f.endswith(".md")}
+    return out
+
+
+def has_pair(stem, names):
+    # accept the full stem too: bin/spec-gate is documented as docs/tutorials/demo/spec-gate.md
+    stems = {stem, re.sub(r"-(gate|report)$", "", stem)}
+    cands = [n for n in names if any(s == n or s.startswith(n + "-") for s in stems)]
+    for n in sorted(cands, key=len, reverse=True):
+        if all(os.path.isfile(os.path.join(ROOT, "docs", d, n + ".md")) for d in PAGE_DIRS):
+            return n
+    return None
+
+
+def added_bin_files():
+    base = os.environ.get("BASE")
+    try:
+        if not base:
+            base = subprocess.run(["git", "-C", ROOT, "merge-base", "origin/main", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        r = subprocess.run(["git", "-C", ROOT, "diff", "--diff-filter=A", "--name-only", f"{base}...HEAD", "--", "bin"],
+                           capture_output=True, text=True, check=True)
+        return [l.strip() for l in r.stdout.splitlines() if l.strip()], None
+    except subprocess.CalledProcessError as e:
+        return [], (e.stderr or "").strip().splitlines()[-1:] or ["git failed"]
+
+
+def main(argv):
+    fails, blind = [], None
+    if argv[1:2] == ["--added"]:
+        added = argv[2:]
+    else:
+        added, err = added_bin_files()
+        if err:
+            blind = f"BLIND law32 cannot diff against origin/main ({err[0]}); new-bin check skipped"
+    names = feature_names()
+    for f in added:
+        # Check 1 says "every EXECUTABLE added under bin/", and until crew#583 the code did not
+        # look. bin/lib/receipt_age.py is 0644 and imported by four readers; it is not a command
+        # a founder can run, so a docs/tutorials/demo page for it would be a page about nothing. A file is
+        # exempt only when it is on disk AND not executable -- a name with no file behind it (the
+        # bin/feature-with-no-pages fixture idp-ci proves the gate with) is still graded, and
+        # `chmod +x` on anything under bin/lib puts it straight back under the rule.
+        p = os.path.join(ROOT, f)
+        if os.path.isfile(p) and not os.access(p, os.X_OK):
+            continue
+        stem = os.path.basename(f)
+        if not has_pair(stem, names):
+            fails.append(f"{f}: no docs/tutorials/demo/<n>.md + docs/how-to/onboarding/<n>.md for a feature named <n> where <n> is '{stem}' or a hyphen-prefix of it")
+    # No nav check. MkDocs builds the nav from the docs/ tree (mkdocs.yml, 2026-09-22),
+    # so a page that exists is reachable and this gate has nothing left to police here.
+    # It checked by hand for as long as the nav was written by hand, and that nav broke
+    # seven times. An invariant that holds by construction does not get a gate.
+    pages = 0
+    for d in PAGE_DIRS:
+        p = os.path.join(ROOT, "docs", d)
+        for f in sorted(os.listdir(p)) if os.path.isdir(p) else []:
+            if not f.endswith(".md"):
+                continue
+            pages += 1
+            rel = f"{d}/{f}"
+            c = prose_chars(os.path.join(p, f))
+            if c < FLOOR:
+                fails.append(f"docs/{rel}: {c} characters of prose, the floor is {FLOOR}")
+    if pages == 0:
+        fails.append(f"no pages under docs/{' or docs/'.join(PAGE_DIRS)}: a gate that scans nothing is not green (ADR 0002 sweep)")
+    for m in fails:
+        print(f"FAIL  law32 {m}")
+    if fails:
+        return 1
+    if blind:
+        print(blind)
+        return 2
+    print(f"ok    law32 {len(added)} new bin file(s) carry a demo+onboarding pair; {pages} page(s) above the {FLOOR}-char floor")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

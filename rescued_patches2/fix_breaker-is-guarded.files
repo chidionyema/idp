@@ -1,0 +1,14 @@
+AGENTS.md
+bin/idp-breaker-fingerprint
+bin/idp-circuit-breaker
+docs/gates/breaker-enforcement.md
+docs/gates/defs-load-by-path.md
+docs/gates/index.md
+extensions/breaker/index.ts
+mkdocs.yml
+rules.yaml
+tests/fixtures/breaker-fingerprint/bad/failing-test.txt
+tests/fixtures/breaker-fingerprint/bad/real-cves.txt
+tests/fixtures/breaker-fingerprint/good/noop-repeated.txt
+tests/fixtures/breaker-fingerprint/good/prose.txt
+tests/test_breaker_extension.py

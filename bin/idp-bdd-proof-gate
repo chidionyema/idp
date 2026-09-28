@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""No pull request without BDD proof, across all agent sessions.
+
+The rule: a pull request that a session opens must carry evidence that the behaviour
+it claims was proved by a BDD run, and that run must be on the same head commit as the
+pull request. A PR with no proof block, or whose proof names a different commit, is
+refused -- fail-closed.
+
+This is the "show the green run, do not describe it" rule (LAW 22) given a machine that
+can say no, and it applies to every session, not one agent's workflow.
+
+Input: a pull request as JSON on stdin or as a file path (the shape `gh pr view --json`).
+Exit codes:
+  0  the pull request carries BDD proof on its own head commit
+  1  refused -- missing block, unparseable, or the run is not on this head
+  2  the input could not be read at all (BLIND, never a pass)
+"""
+from __future__ import annotations
+
+import json
+import re
+import sys
+from pathlib import Path
+
+# The block a session must paste, and it must name the commit it proved.
+BEGIN = "BDD-PROOF"
+END = "END-BDD-PROOF"
+
+# A passing BDD line, and the bar is deliberately high: the block must carry a RUNNER'S
+# OWN COUNTS, not a sentence saying the tests passed. "I ran the tests and they passed" is
+# the claim this gate exists to refuse, so a bare `passed` never counts.
+#
+# Accepted shapes, one per family:
+#   cucumber / behave / pytest-bdd : "31 scenarios (31 passed)", "0 failed", "5 features passed"
+#   jest-cucumber / vitest-cucumber: "Tests: 31 passed, 31 total"
+#   go test -run TestBDD           : "--- PASS: TestBDDGateway (0.02s)"
+#   pytest with bdd plugin         : "142 passed in 4.51s"
+PASS_PATTERNS = [
+    # cucumber family summaries
+    re.compile(r"\b\d+\s+scenarios?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
+    re.compile(r"\b\d+\s+features?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
+    re.compile(r"\b\d+\s+failed\b", re.I) if False else re.compile(r"\b0\s+failed\b", re.I),
+    # jest / vitest
+    re.compile(r"Tests:\s*\d+\s+passed", re.I),
+    re.compile(r"\b\d+\s+passed,\s*\d+\s+total\b", re.I),
+    # go
+    re.compile(r"^---\s*PASS:\s*\w", re.M),
+    # pytest
+    re.compile(r"\b\d+\s+passed\s+in\s+[\d.]+s", re.I),
+]
+
+# A block that only asserts in prose, with no runner output at all. Refused separately so
+# the refusal message names the real reason.
+PROSE_ONLY = re.compile(
+    r"^\s*(i\s+(ran|ran\s+the)|tests?\s+(pass|passed|are\s+green)|all\s+green|"
+    r"bdd\s+(pass|passed|is\s+green)|verified\s+manually)\b",
+    re.I | re.M,
+)
+
+
+def extract_block(body: str) -> str | None:
+    """The first BDD-PROOF ... END-BDD-PROOF block, or None."""
+    m = re.search(
+        rf"{BEGIN}(.*?){END}", body, re.S | re.I,
+    )
+    return m.group(1) if m else None
+
+
+def head_from_block(block: str) -> str | None:
+    """The commit the proof block names, e.g. `head: abc1234`."""
+    m = re.search(r"^\s*head\s*[:=]\s*([0-9a-f]{7,40})\s*$", block, re.I | re.M)
+    return m.group(1).lower() if m else None
+
+
+def looks_like_a_pass(block: str) -> bool:
+    """True only when the block carries a runner's own counts, not a prose claim."""
+    if PROSE_ONLY.search(block) and not any(p.search(block) for p in PASS_PATTERNS):
+        return False
+    return any(p.search(block) for p in PASS_PATTERNS)
+
+
+def live_pr() -> dict:
+    """The pull request under test (the CI event's PR), as gh reports it.
+
+    The previous shape `gh pr list --state all --limit 1` returned the newest PR ANY
+    session opened, not the PR being graded -- so a run for branch A refused because branch
+    B's freshly-opened PR carried no BDD-PROOF block. That false-red is what the founder's
+    comment at bin/idp-ci:73-84 was working around with a load-bearing `|| true`. Fix that
+    class by reading the PR number from the GitHub Actions event payload when it is set
+    (pull_request or merge_group event), and fall back to newest only when neither is
+    present (local invocation).
+    """
+    import os
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+
+    # GHA sets GITHUB_EVENT_PATH to a JSON file describing the triggering event. For
+    # pull_request events its .pull_request.number is the PR under test; for merge_group
+    # its .merge_group.head_ref parses to `refs/heads/gh-readonly-queue/<base>/pr-<n>-...`.
+    pr_number = None
+    ev_path = os.environ.get("GITHUB_EVENT_PATH")
+    if ev_path and Path(ev_path).is_file():
+        try:
+            ev = json.loads(Path(ev_path).read_text())
+            pr_number = (ev.get("pull_request") or {}).get("number")
+            if not pr_number:
+                head = ((ev.get("merge_group") or {}).get("head_ref") or "")
+                # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
+                import re
+                m = re.search(r"/pr-(\d+)-", head)
+                if m:
+                    pr_number = int(m.group(1))
+        except Exception:  # noqa: S110 - malformed event JSON falls through to gh list
+            pass
+
+    if pr_number:
+        out = subprocess.run(
+            ["gh", "pr", "view", str(pr_number),
+             "--json", "number,title,body,headRefOid"],
+            cwd=root, capture_output=True, text=True, timeout=120,
+        )
+        if out.returncode != 0:
+            raise RuntimeError(f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}")
+        return json.loads(out.stdout)
+
+    out = subprocess.run(
+        ["gh", "pr", "list", "--state", "all", "--limit", "1",
+         "--json", "number,title,body,headRefOid"],
+        cwd=root, capture_output=True, text=True, timeout=120,
+    )
+    if out.returncode != 0:
+        raise RuntimeError(f"gh could not list pull requests: {out.stderr.strip()[:200]}")
+    rows = json.loads(out.stdout or "[]")
+    if not rows:
+        raise RuntimeError("no pull request exists on this repository to grade")
+    return rows[0]
+
+
+def _self_test() -> int:
+    """Exercise the block extractor + counts predicate on real bytes.
+
+    A gate that has never executed is not a gate (script-compiles rule); this proves the
+    hot path -- extract_block, head_from_block, looks_like_a_pass -- on both the good and
+    the bad shape without hitting the network. Live grading is exercised only when
+    --live is passed with a real GHA event.
+    """
+    good = "BDD-PROOF\nhead: abc1234\n142 passed in 4.51s\nEND-BDD-PROOF"
+    bad_prose = "BDD-PROOF\nhead: abc1234\ni ran the tests and they passed\nEND-BDD-PROOF"
+    bad_none = "no proof block at all here"
+    assert extract_block(good) is not None, "extractor missed a real block"
+    assert extract_block(bad_none) is None, "extractor invented a block"
+    assert head_from_block(extract_block(good)) == "abc1234", "head parser wrong"
+    assert looks_like_a_pass(extract_block(good)) is True, "counts pattern refused a real pass"
+    assert looks_like_a_pass(extract_block(bad_prose)) is False, "prose accepted as pass"
+    print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
+    return 0
+
+
+def main() -> int:
+    if "--self-test" in sys.argv or "-h" in sys.argv or "--help" in sys.argv:
+        return _self_test() if "--self-test" in sys.argv else (print(__doc__ or "bdd-proof-gate") or 0)
+    if "--live" in sys.argv:
+        try:
+            pr = live_pr()
+        except Exception as e:
+            print(f"bdd-proof-gate: BLIND, cannot read a pull request: {e}", file=sys.stderr)
+            return 2
+        body = pr.get("body") or ""
+        if extract_block(body) is None:
+            # Named, not silently green: the last PR carries no proof, and the rule says so.
+            print(f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
+                  file=sys.stderr)
+            return 1
+        print(f"ok: PR #{pr.get('number')} carries a {BEGIN} block")
+        return 0
+
+    src = sys.argv[1] if len(sys.argv) > 1 else "-"
+    try:
+        raw = sys.stdin.read() if src == "-" else Path(src).read_text()
+    except Exception as e:
+        print(f"bdd-proof-gate: cannot read input: {e}", file=sys.stderr)
+        return 2
+
+    try:
+        pr = json.loads(raw)
+    except Exception as e:
+        print(f"bdd-proof-gate: input is not JSON: {e}", file=sys.stderr)
+        return 2
+
+    import os
+
+    body = pr.get("body") or ""
+    head = (pr.get("headRefOid") or pr.get("head_oid") or "").lower()
+    title = pr.get("title") or ""
+
+    # Env overrides let a rule's fixture cases prove the both-ways cases without a live PR:
+    #   BDD_PR_HEAD   -- pretend the pull request's head is this commit
+    #   BDD_RUN_HEAD  -- pretend the proof names this commit
+    # Both default to the input, so an unset environment changes nothing.
+    if os.environ.get("BDD_PR_HEAD"):
+        head = os.environ["BDD_PR_HEAD"].lower()
+    run_head_override = os.environ.get("BDD_RUN_HEAD", "").lower()
+
+    block = extract_block(body)
+    if block is None:
+        print(f"refused: '{title}' carries no {BEGIN} ... {END} block", file=sys.stderr)
+        return 1
+
+    if not looks_like_a_pass(block):
+        print("refused: the proof block carries no passing BDD run", file=sys.stderr)
+        return 1
+
+    proved = run_head_override or head_from_block(block)
+    if proved is None:
+        print("refused: the proof block names no head commit", file=sys.stderr)
+        return 1
+
+    if head and not head.startswith(proved):
+        print(
+            f"refused: the proof names {proved}, but the pull request's head is {head[:12]}",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"ok: bdd proof on head {proved}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

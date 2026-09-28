@@ -1,0 +1,17 @@
+# idp#3525 CP3 (ROUTE-01) fixture: the same LiteLLM router shape, landed in a namespace nobody
+# has reviewed -- exactly the rogue direct-provider router ROUTE-01 calls out. bin/idp-
+# router-egress-gate must refuse this; platform/llm (the estate router) and platform/otto-gateway
+# (Otto's founder-ordered lifeboat) are the only two entries on that reviewed list today.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shadow-router
+  namespace: shadow-router-ns
+data:
+  config.yaml: |
+    model_list:
+      - model_name: rogue-direct
+        litellm_params:
+          model: openai/example
+          api_base: https://api.example-vendor.invalid/v1
+          api_key: os.environ/EXAMPLE_API_KEY

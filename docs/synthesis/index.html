@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Factory Brief — the estate's complete strategy, inventory, and contract</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;0,700;1,400&family=Public+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F5F7F5; --surface:#FFFFFF; --surface-2:#EDF1EE;
+  --ink:#15201B; --ink-soft:#525E58; --ink-faint:#7C8880;
+  --line:#DCE2DD; --line-strong:#C3CDC6;
+  --accent:#17624F; --accent-soft:#DCEDE6;
+  --warn:#9A5713; --warn-soft:#F6E9D8;
+  --stop:#8C2E2E; --stop-soft:#F4DEDE;
+  --shadow:0 1px 2px rgba(21,32,27,.05),0 8px 24px -12px rgba(21,32,27,.18);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+    --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+    --line:#26312B; --line-strong:#374339;
+    --accent:#5CBEA1; --accent-soft:#17302A;
+    --warn:#D3934A; --warn-soft:#33261A;
+    --stop:#D57272; --stop-soft:#331E1E;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0F1512; --surface:#161D19; --surface-2:#1D2622;
+  --ink:#E6EDE8; --ink-soft:#9AA79F; --ink-faint:#77857D;
+  --line:#26312B; --line-strong:#374339;
+  --accent:#5CBEA1; --accent-soft:#17302A;
+  --warn:#D3934A; --warn-soft:#33261A;
+  --stop:#D57272; --stop-soft:#331E1E;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  background:var(--ground); color:var(--ink);
+  font-family:"Public Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+  font-size:17px; line-height:1.62; margin:0; -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1040px;margin:0 auto;padding:0 20px 96px}
+header{padding:56px 0 0;display:flex;flex-direction:column;gap:20px}
+.eyebrow{font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--ink-faint)}
+h1,h2,h3{margin:0;text-wrap:balance;font-family:Spectral,Georgia,"Times New Roman",serif;font-weight:600;letter-spacing:-.01em}
+h1{font-size:clamp(2.1rem,6vw,3.1rem);line-height:1.08;font-weight:700}
+h2{font-size:clamp(1.3rem,3vw,1.6rem);line-height:1.2;padding-top:8px}
+h3{font-size:1.05rem;line-height:1.3}
+p{margin:0;max-width:72ch}
+strong{font-weight:700}
+a{color:var(--accent);text-underline-offset:3px;text-decoration-thickness:1px}
+code{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.86em;
+  background:var(--surface-2);border-radius:4px;padding:.1em .35em}
+.standfirst{font-family:Spectral,Georgia,serif;font-size:clamp(1.05rem,2.4vw,1.28rem);line-height:1.5;color:var(--ink-soft);max-width:64ch}
+.rule{height:1px;background:var(--line-strong);border:0;margin:0}
+
+/* the three-part navigation */
+.toc{background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  padding:20px 22px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:12px;position:sticky;top:12px;z-index:5}
+.toc h4{font-size:.72rem;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin:0}
+.toc ol{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:6px}
+.toc li{cursor:pointer;color:var(--accent)}
+.toc li:hover{text-decoration:underline}
+.toc .meta{font-size:.82rem;color:var(--ink-faint)}
+
+/* the three cards (embedded docs) */
+.card{border:1px solid var(--line);border-radius:14px;background:var(--surface);box-shadow:var(--shadow);overflow:hidden}
+.card-head{padding:18px 22px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px;background:var(--surface)}
+.card-head .num{font-size:.7rem;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700}
+.card-head h2{margin:0;padding:0}
+.card-head .sub{font-size:.9rem;color:var(--ink-soft)}
+.card iframe{display:block;width:100%;height:82vh;border:0;background:var(--surface)}
+
+.cols{display:flex;flex-direction:column;gap:40px}
+.note{background:var(--warn-soft);border:1px solid var(--line);border-left:3px solid var(--warn);
+  border-radius:10px;padding:14px 18px;font-size:.9rem;color:var(--ink-soft)}
+
+footer{border-top:1px solid var(--line);padding-top:22px;color:var(--ink-faint);font-size:.85rem;
+  display:flex;flex-wrap:wrap;gap:8px 20px}
+@media print{
+  :root{--ground:#fff;--surface:#fff;--surface-2:#f4f4f4;--shadow:none}
+  .toc{position:static}
+  .card iframe{height:auto}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="eyebrow">idp · synthesis · 2026-09-23 · the factory brief</div>
+  <h1>The Factory Brief</h1>
+  <p class="standfirst">Four artifacts, one thesis. The estate is a <strong>fractal factory</strong> — one kind
+  of thing (a factory that takes an order and produces a result) recursing at every scale, where the result is
+  itself a factory. The overlap is <em>intentional</em>: a research lab runs the bleeding edge beside the
+  incumbent, and sheds the loser. This brief says <em>what exists</em> (the Inventory), <em>why it must be
+  shaped this way</em> (the Programme), and <em>how to machine-check that shape</em> (the Contract).</p>
+</header>
+
+<hr class="rule" style="margin:32px 0">
+
+<div class="toc">
+  <h4>Contents</h4>
+  <ol>
+    <li onclick="document.getElementById('doc0').scrollIntoView({behavior:'smooth'})">
+      <strong>0 · The Complete Capability List</strong> <span class="meta">— 236 capabilities, one row each, across all repos (the raw data)</span>
+    </li>
+    <li onclick="document.getElementById('doc1').scrollIntoView({behavior:'smooth'})">
+      <strong>1 · The Factory Inventory</strong> <span class="meta">— every repo, every branch, every gap (65 repos, measured)</span>
+    </li>
+    <li onclick="document.getElementById('doc2').scrollIntoView({behavior:'smooth'})">
+      <strong>2 · The Programme</strong> <span class="meta">— the spiral, the factory as its constraint, the moat, the direction</span>
+    </li>
+    <li onclick="document.getElementById('doc3').scrollIntoView({behavior:'smooth'})">
+      <strong>3 · The Factory Contract</strong> <span class="meta">— the schema, the order language, the collector</span>
+    </li>
+    <li onclick="document.getElementById('doc4').scrollIntoView({behavior:'smooth'})">
+      <strong>4 · The Agent's Book</strong> <span class="meta">— how to live and work inside the fractal factory (for agents + the Concierge)</span>
+    </li>
+  </ol>
+</div>
+
+<div class="cols" style="margin-top:36px">
+
+  <section class="card" id="doc0">
+    <div class="card-head">
+      <span class="num">Document 0 — the raw data</span>
+      <h2>The Complete Capability List</h2>
+      <span class="sub">Every capability the estate can grant, one row each — 236 across all repos, with class, source, and state.</span>
+    </div>
+    <iframe src="capability-list.html" title="The Complete Capability List" loading="lazy"></iframe>
+  </section>
+
+  <section class="card" id="doc1">
+    <div class="card-head">
+      <span class="num">Document 1 of 3</span>
+      <h2>The Factory Inventory</h2>
+      <span class="sub">A thorough, measured record of everything the estate has grown so far — for the consultant to shape the product.</span>
+    </div>
+    <iframe src="factory-inventory.html" title="The Factory Inventory" loading="lazy"></iframe>
+  </section>
+
+  <section class="card" id="doc2">
+    <div class="card-head">
+      <span class="num">Document 2 of 3</span>
+      <h2>The Programme</h2>
+      <span class="sub">The spiral, the fractal factory as its constraint, and the direction that gives it lasting shape.</span>
+    </div>
+    <iframe src="programme.html" title="The Programme" loading="lazy"></iframe>
+  </section>
+
+  <section class="card" id="doc3">
+    <div class="card-head">
+      <span class="num">Document 3 of 3</span>
+      <h2>The Factory Contract</h2>
+      <span class="sub">The self-description schema and the order language that make the law machine-checkable.</span>
+    </div>
+    <iframe src="factory-contract.html" title="The Factory Contract" loading="lazy"></iframe>
+  </section>
+
+  <section class="card" id="doc4">
+    <div class="card-head">
+      <span class="num">Document 4 — practice</span>
+      <h2>The Agent's Book</h2>
+      <span class="sub">The operating manual: placing an order, granting a capability, producing · grading · shedding — for every agent and the Concierge.</span>
+    </div>
+    <iframe src="agents-book.html" title="The Agent's Book" loading="lazy"></iframe>
+  </section>
+
+  <div class="note">
+    <strong>Note to the reader:</strong> the three embedded documents are also available as
+    standalone pages — <code>factory-inventory.html</code>, <code>programme.html</code>, and
+    <code>factory-contract.html</code> — in <code>docs/synthesis/</code>. Open any one directly,
+    or read all three here. Every file-figure and repo count was measured this session against
+    the checked-out tree; gaps are stated, not omitted.
+  </div>
+
+</div>
+
+<footer>
+  <span>Source: <code>docs/synthesis/</code></span>
+  <span>Index rendered 2026-09-23</span>
+  <span>One moat, one recursion — produce · grade · shed</span>
+</footer>
+</div>
+</body>
+</html>

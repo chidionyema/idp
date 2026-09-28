@@ -1,0 +1,109 @@
+# The Forge's FREE second road to a GPU (crew#885 + founder 2026-09-09). The Modal path
+# (forge-train.yml) is paid-by-free-credits; this path trains the SAME unchanged forge/train.py on
+# a free Kaggle P100/T4 (30 GPU-hours/week) behind the SAME record loop. Spec:
+# docs/specs/2026-09-09-forge-kaggle-second-launcher.md; docs/specs/
+# 2026-09-06-model-forge-edge-runtime.md line 63-64/256 (LAW 34 second launcher).
+# button: Train a model in the Forge on a free Kaggle GPU.
+# founder: Fires forge/kaggle_app.py which pushes forge/kaggle/notebook.ipynb to Kaggle, polls it
+# to completion, pulls the real eval.json back, and files the run through the UNCHANGED
+# forge/experiment_record.py as an experiment record on a pull request. A run with no record did
+# not happen. Never fabricates eval: only a real kernel output is recorded.
+name: forge-train-kaggle
+on:
+  workflow_dispatch:
+    inputs:
+      task_file:
+        description: task YAML under forge/ (name, base, labels, gates)
+        default: forge/tasks/ci-flake-triage.yaml
+      max_steps:
+        description: cap training steps (-1 = the epochs in the task file)
+        default: "-1"
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  id-token: write   # traded for the OCI session that reads the App key
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.task_file }}
+  cancel-in-progress: true   # a Kaggle dry-run is free; a stale one can be cancelled
+jobs:
+  train-kaggle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+      KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: read the Kaggle root for the launcher (R52)
+        run: |
+          set -euo pipefail
+          test -n "$KAGGLE_USERNAME" && test -n "$KAGGLE_KEY" \
+            || { echo "FAIL    forge-train-kaggle  no Kaggle root: export KAGGLE_USERNAME/KAGGLE_KEY as repo secrets (bin/idp-set-root kaggle)"; exit 1; }
+          python -m pip install --quiet "kaggle==1.6.*" pyyaml==6.0.2
+          echo "ok      kaggle CLI installed"
+      - name: resolve task and data
+        id: task
+        run: |
+          set -euo pipefail
+          TASK=$(python -c 'import sys,yaml;print(yaml.safe_load(open(sys.argv[1]))["task"])' "${{ inputs.task_file }}")
+          DATA="forge/datasets/$TASK.jsonl"
+          { echo "task=$TASK"; echo "data=$DATA"; } >> "$GITHUB_OUTPUT"
+          test -s "$DATA" && echo "ok      $DATA, $(wc -l < "$DATA") rows" \
+            || { echo "warn    no dataset at $DATA"; echo "have_data=false" >> "$GITHUB_OUTPUT"; }
+      - name: run the forge trainer on a free Kaggle GPU (never fabricates eval)
+        if: steps.task.outputs.have_data != 'false'
+        id: train
+        run: |
+          set -euo pipefail
+          # a refusal exits 1 and still writes the forge-run.json record
+          if python forge/kaggle_app.py --task "${{ inputs.task_file }}" \
+               --max-steps "${{ inputs.max_steps }}" --record forge-run.json; then
+            echo "refused=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "refused=true" >> "$GITHUB_OUTPUT"
+          fi
+          test -s forge-run.json || { echo "FAIL    forge-train-kaggle  the launcher left no forge-run.json"; exit 1; }
+      - name: write the experiment record
+        run: |
+          set -euo pipefail
+          python forge/experiment_record.py --task "${{ inputs.task_file }}" --run forge-run.json \
+            --data "${{ steps.task.outputs.data }}" --out forge/experiments
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.0
+        with:
+          name: forge-run-${{ steps.task.outputs.task }}-kaggle-${{ github.run_id }}
+          path: |
+            forge-run.json
+            forge/experiments/*.md
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: open the pull request that files the record
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          BR="forge/experiment-${{ steps.task.outputs.task }}-kaggle-${{ github.run_id }}"
+          git config user.name "estate-agents[bot]"; git config user.email "estate-agents[bot]@users.noreply.github.com"
+          git checkout -b "$BR" 2>/dev/null || git switch -c "$BR"
+          git add forge/experiments/
+          git commit -q -m "forge(kaggle): experiment record for ${{ steps.task.outputs.task }} (run ${{ github.run_id }})" || true
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:$BR"
+          gh pr create --base main --head "$BR" --title "forge(kaggle): experiment ${{ steps.task.outputs.task }}" \
+            --body "Experiment record from a free Kaggle GPU run. Evidence: forge-run.json on the run artifact."
+      - name: verdict
+        run: |
+          python - <<'PY'
+          import json,sys; r=json.load(open("forge-run.json")); e=r.get("eval",{}) or {}
+          print(f"{r['verdict']:8s} {r['task']}  held_out={e.get('held_out')} agreement={e.get('agreement')} abstain={e.get('abstain_rate')} trace={r.get('trace')}")
+          sys.exit(1 if r.get("verdict") in ("refused",) else 0)
+          PY

@@ -1,0 +1,44 @@
+CERTIFICATION SNAPSHOT AUDIT -- 2026-08-24T03:35:03Z
+Repo ~/dev/code/idp at 651747f
+
+== gate sweep, exit codes as run ==
+########## bin/idp-status
+EXIT=0 (idp-status)
+########## bin/idp-verify
+PASS      both renderers agree with the inventory: 204 entities
+EXIT=0 (idp-verify)
+########## bin/placement-audit
+BLIND      35 monitored jobs have no readable check record -- Healthchecks at
+FAIL       jobs are placed on hardware that cannot honour their schedule -- see above
+EXIT=1 (placement-audit)
+########## bin/policy-test
+PASS      every policy allows its good case and refuses its bad ones
+EXIT=0 (policy-test)
+########## bin/langfuse-status
+EXIT=1 (langfuse-status)
+########## bin/langfuse-verify
+FAIL      primary rejected the span: HTTP 000
+FAIL      observability is not proven working
+EXIT=1 (langfuse-verify)
+
+== why the docker-hosted gates fail: the VM, measured ==
+docker ps -a --format ... with timeout 60  -> EXIT=124 (daemon did not answer)
+top -b -n2 (second frame; the FIRST frame's %CPU is a lifetime average, not current):
+  load average: 36.99 38.51 29.99   on 4 CPUs
+  Tasks: 236 total, 14 running, 60 zombie
+  %Cpu(s): 43.2 us, 56.1 sy, 0.0 id, 0.0 wa
+  MiB Mem: 7939.6 total, 234.4 free, 6045.9 buff/cache
+  MiB Swap: 0.0 total          <-- no swap at all
+    66 root  R  94.0%  kswapd0        <-- the kernel reclaim daemon, pinned
+  1194 root  S  71.9%  containerd
+  2021 root  S  34.1%  python (571 MB RES)
+ 40478 root  R  28.1%  runc:[2:INIT]  <-- healthcheck exec churn
+
+MemAvailable said 6062196 kB. That is an ESTIMATE that assumes reclaim is cheap.
+kswapd0 at 94% of a core is the proof that it is not. Earlier claim on crew#85 --
+'Memory is NOT the constraint' -- was read off MemAvailable and is withdrawn.
+
+Ruled out with counters, not opinion:
+  THP compaction storm  -- compact_stall 0, compact_fail 0, AnonHugePages 0, THP=[madvise]
+  proactive compaction  -- kcompactd0 used 0 ticks in a measured 5s window
+  disk wait             -- %Cpu wa = 0.0

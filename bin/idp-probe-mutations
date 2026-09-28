@@ -1,0 +1,56 @@
+#!/usr/bin/env python3
+"""crew#631 CP8: run every probe against every broken door and print the quarantine list; then
+grade each assertion's graduation from the real verdicts in --verdicts DIR (verdict.json files).
+
+  bin/idp-probe-mutations [--verdicts DIR]
+
+exit 0 quarantine empty; 1 a probe passed against a broken door (quarantined); 2 harness error.
+"""
+
+import json
+import os
+import sys
+from pathlib import Path
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, IDP)
+from probes import mutations as M  # noqa: E402
+
+
+def load_verdicts(d):
+    out = []
+    for p in sorted(Path(d).rglob("verdict.json")):
+        try:
+            out.append(json.loads(p.read_text()))
+        except ValueError:
+            print(f"BLIND   mutations  {p}: not json")
+    return out
+
+
+def main(argv):
+    vdir = argv[argv.index("--verdicts") + 1] if "--verdicts" in argv else None
+    rows = M.run_mutations()
+    for probe, name, failed in rows:
+        print(
+            f"{'ok  ' if failed else 'FAIL'}    mutation  {probe:18} {name:16} {'FAILs against the broken door' if failed else 'PASSED a broken door: quarantined'}"
+        )
+    q = M.quarantine(rows)
+    print(
+        f"{'FAIL' if q else 'ok  '}    quarantine  {', '.join(q) if q else 'empty'} ({len(rows)} mutations)"
+    )
+    if vdir:
+        verdicts = load_verdicts(vdir)
+        grad = M.graduation(verdicts)
+        for name, (state, why) in grad.items():
+            print(
+                f"{'ok  ' if state == 'PROVEN' else 'warn'}    graduation  {name:44} {state:9} {why}"
+            )
+        unproven = [n for n, (s, _) in grad.items() if s != "PROVEN"]
+        print(
+            f"info    graduation  {len(grad) - len(unproven)}/{len(grad)} assertions PROVEN from {len(verdicts)} verdicts; UNPROVEN: {', '.join(unproven) or 'none'}"
+        )
+    return 1 if q else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

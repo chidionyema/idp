@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""idp-context-pruner: Teleological context compaction.
+
+Reads a JSONL transcript, applies the 3-Fail Rule to prune consecutive failures,
+preserves successful evidence, and reinjects the goal.
+
+Usage:
+    idp-context-pruner --transcript current.jsonl --goal "Fix the database" > pruned.jsonl
+"""
+
+import json
+import sys
+import argparse
+
+
+def is_failure(obj):
+    """Check if a line represents a failed tool call or error."""
+    if not isinstance(obj, dict):
+        return False
+
+    # Check for exit_code != 0
+    if "exit_code" in obj and obj["exit_code"] != 0:
+        return True
+
+    # Check for status == 'error'
+    if obj.get("status") == "error":
+        return True
+
+    # Check for error in tool_result
+    if obj.get("type") == "tool_result" and "error" in obj:
+        return True
+
+    return False
+
+
+def is_success(obj):
+    """Check if a line represents a successful tool call."""
+    if not isinstance(obj, dict):
+        return False
+
+    # Successful tool call
+    if obj.get("exit_code") == 0:
+        return True
+
+    # Successful tool result (no error)
+    if obj.get("type") == "tool_result" and "error" not in obj:
+        return True
+
+    return False
+
+
+def find_consecutive_failures(lines):
+    """Find indices of consecutive failed attempts (3+ in a row)."""
+    failure_runs = []
+    current_run = []
+
+    for i, line in enumerate(lines):
+        if isinstance(line, dict) and (
+            is_failure(line) or line.get("type") == "tool_use"
+        ):
+            # Tool use or failure
+            if is_failure(line):
+                current_run.append(i)
+            elif line.get("type") == "tool_use" and current_run:
+                # End of an attempt if we had failures
+                pass
+        else:
+            # Non-failure, non-tool-use line
+            if len(current_run) >= 3:
+                failure_runs.append(current_run[:])
+            current_run = []
+
+    if len(current_run) >= 3:
+        failure_runs.append(current_run)
+
+    # Flatten and deduplicate
+    all_failed_indices = set()
+    for run in failure_runs:
+        all_failed_indices.update(run)
+
+    return all_failed_indices
+
+
+def prune_transcript(lines, goal):
+    """Apply pruning rules and return compacted lines."""
+    if not lines:
+        return []
+
+    # Find consecutive failures to drop
+    failed_indices = find_consecutive_failures(lines)
+
+    # Filter: keep lines that are not in the failed set, or are successful evidence
+    kept_lines = []
+    for i, line in enumerate(lines):
+        if i in failed_indices:
+            # Skip failed attempts
+            if not is_success(line):
+                continue
+        kept_lines.append(line)
+
+    # Append goal reminder as final system message
+    goal_reminder = {
+        "role": "system",
+        "content": f"REMINDER: Your primary objective is: {goal}",
+    }
+    kept_lines.append(goal_reminder)
+
+    return kept_lines
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Prune consecutive failures from JSONL transcript while preserving evidence."
+    )
+    parser.add_argument(
+        "--transcript", required=True, help="Path to JSONL transcript file"
+    )
+    parser.add_argument(
+        "--goal", required=True, help="The primary objective to reinject"
+    )
+
+    args = parser.parse_args()
+
+    # Read transcript
+    lines = []
+    try:
+        with open(args.transcript, "r", encoding="utf-8") as f:
+            for line_num, raw_line in enumerate(f, 1):
+                raw_line = raw_line.strip()
+                if not raw_line:
+                    continue
+                try:
+                    obj = json.loads(raw_line)
+                    lines.append(obj)
+                except json.JSONDecodeError as e:
+                    print(
+                        f"[WARNING] Line {line_num} is not valid JSON: {e}",
+                        file=sys.stderr,
+                    )
+                    continue
+    except FileNotFoundError:
+        print(f"[ERROR] Transcript file not found: {args.transcript}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"[ERROR] Failed to read transcript: {e}", file=sys.stderr)
+        return 1
+
+    # Prune
+    pruned = prune_transcript(lines, args.goal)
+
+    # Output to stdout
+    for obj in pruned:
+        print(json.dumps(obj))
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

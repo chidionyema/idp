@@ -1,0 +1,12 @@
+name: spire-proof-run
+description: >
+  Run the SPIRE SVID proof as a one-shot pod and return its logs.
+  This is a long-running intent (up to 5 minutes). Pod is deleted after.
+args:
+  namespace: { type: string, default: "backstage", help: "Namespace to run the proof pod in" }
+  timeout: { type: string, default: "300s", help: "Timeout for SVID fetch" }
+tools: []
+halt_on_failure: false
+steps:
+  - cmd: >
+      bash ~/.estate/libexec/spire-proof-run.sh {{namespace}} {{timeout}}

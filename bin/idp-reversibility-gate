@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""idp-reversibility-gate — a mutation with no inverse is a mutation nobody can take back.
+
+WHY THIS EXISTS. The estate has three things that look like reversibility and none of them is it:
+
+  * `bin/idp-rollback-only-diff` gates a diff that is ALREADY a rollback (a `newTag:` back to a
+    tag main has carried before). It never asks where a forward change's inverse is.
+  * `rewind` is a destructive capability in the sovereignty config -- it needs quorum, but it is
+    a capability an agent may invoke, not an obligation attached to some OTHER mutation.
+  * ADR 0024 ("Otto runs every tool and asks only for the unundoable") routes the un-undoable to
+    a human. That is the ask, not the artefact: nothing today requires the inverse to exist
+    before the forward is admitted.
+
+The gap is one sentence: nothing demands that a mutation carry its inverse. This gate closes it,
+as a field on the envelope the executor already consumes -- not as a second envelope beside it
+(LAW 43, and the ledger door at docs/specs/2026-09-15-typed-multidomain-mutation-ledger-door.md
+already owns propose -> verify -> seal -> admit).
+
+WHAT IT READS. A mutation envelope (JSON) carrying, at minimum, `target`, `forward` and
+`inverse_spec`. `inverse_spec` is one of:
+
+  deterministic_inverse   action + parameters + a non-empty `verification_probe`, where the
+                          inverse action differs from the forward action. The probe is a
+                          deterministic state assertion, not a description of intent.
+  irreversible_exemption  an Aevum-style attestation SIGNED OVER the envelope's `subject` and a
+                          justification. The signature is verified with
+                          `sovereign.verifier.verify_attestation` -- the same ed25519 check
+                          admission runs -- never by a prefix test. A token that merely LOOKS
+                          like a quorum token is refused by a real signature check (idp#3711 is
+                          the incident where a prefix-shaped string was mistaken for proof).
+
+THE THREE STATES, and why BLIND is one of them (LAW 38 -- a guard that refuses correct work is
+an outage; a fence a correct machine cannot satisfy is an outage):
+
+  exit 0  PASS    the envelope carries a verified inverse (or a verified exemption signature)
+  exit 1  REFUSE  the envelope was read and judged, and the inverse is absent or invalid
+  exit 2  BLIND   the gate could not read what it needed (no schema, no verifier, no crypto
+                  library, unreadable file). BLIND never refuses: a machine that cannot judge
+                  has not found a defect.
+
+WHAT IT DOES NOT DO. It cannot know whether a probe is TRUE against live state: it grades the
+envelope's shape and the signature's authenticity only. Running the probe is a SEPARATE step, and
+it is real -- the executor daemon's `verify_inverse` verb (`platform/executor/daemon.py`) reads the
+`verification_probe` out of the admitted envelope and executes it against the machine, returning
+the command's own exit code. The two halves are deliberately split: this gate is pure and runs in
+CI over a fixture, `verify_inverse` touches the world and runs when a rollback actually happens.
+An earlier revision of this docstring CLAIMED the executor ran the probe while no such code
+existed -- a test described in a document and never taken. That claim is now matched by
+`_run_inverse_probe`, and the round trip is proved in tests/test_reversibility_gate.py.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCHEMA_PATH = ROOT / "schema" / "mutation-envelope.schema.json"
+
+# Actions that are their own inverse: scaling back to the previous replica count is the
+# canonical case. These may share a verb with the forward action, but ONLY when the parameters
+# differ -- an identical verb with identical parameters reverses nothing. Anything not listed
+# here must name a genuinely different action, because two different verbs means the inverse was
+# chosen, not echoed.
+SELF_INVERSE_ACTIONS = {"scale_deployment", "set_replicas", "scale_statefulset"}
+
+
+class Blind(Exception):
+    """The gate cannot judge. Exit 2, never a refusal (LAW 38)."""
+
+
+def _load_schema() -> dict:
+    try:
+        return json.loads(SCHEMA_PATH.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise Blind(f"schema unreadable at {SCHEMA_PATH}: {exc}") from exc
+
+
+def _structure_errors(envelope: dict, schema: dict) -> list[str]:
+    """Structural check without a third-party validator.
+
+    `jsonschema` is deliberately not a dependency of this gate: a missing import would make the
+    gate BLIND on every runner that lacks it, and a gate that cannot run has not refused
+    anything. The subset of draft-07 this envelope uses (required, type, oneOf, const, pattern,
+    minLength) is implemented here, so the gate's verdict never depends on an install step.
+    """
+    errs: list[str] = []
+    for key in schema.get("required", []):
+        if key not in envelope:
+            errs.append(f"'{key}' is a required property")
+    if errs:
+        return errs
+
+    props = schema.get("properties", {})
+    for key, rule in props.items():
+        if key not in envelope:
+            continue
+        value = envelope[key]
+        expected = rule.get("type")
+        if expected == "string" and not isinstance(value, str):
+            errs.append(f"'{key}' must be a string")
+        elif expected == "object" and not isinstance(value, dict):
+            errs.append(f"'{key}' must be an object")
+        if isinstance(value, str):
+            pat = rule.get("pattern")
+            if pat:
+                import re
+
+                if not re.search(pat, value):
+                    errs.append(f"'{key}' does not match {pat}")
+            if rule.get("minLength") and len(value) < rule["minLength"]:
+                errs.append(f"'{key}' must be at least {rule['minLength']} characters")
+
+    forward = envelope.get("forward")
+    if isinstance(forward, dict):
+        for key in ("action", "parameters"):
+            if key not in forward:
+                errs.append(f"'forward.{key}' is a required property")
+        if "action" in forward and not isinstance(forward["action"], str):
+            errs.append("'forward.action' must be a string")
+        if "parameters" in forward and not isinstance(forward["parameters"], dict):
+            errs.append("'forward.parameters' must be an object")
+    return errs
+
+
+def _verify_exemption_signature(inverse: dict, envelope: dict) -> tuple[bool, str]:
+    """Verify an irreversible-exemption attestation, or raise Blind if we cannot.
+
+    The subject is bound: a signature over a DIFFERENT envelope must not admit this one, which
+    is the property `verify_attestation` exists to provide. A missing crypto library or an
+    unimportable verifier is BLIND -- the gate has not found a defect, it has found that it
+    cannot judge.
+    """
+    attestation = inverse.get("attestation")
+    if not isinstance(attestation, dict):
+        return False, "exemption carries no attestation object to verify"
+
+    subject = envelope.get("subject") or inverse.get("subject")
+    if not isinstance(subject, str) or not subject:
+        return False, "exemption attestation is not bound to a subject"
+
+    try:
+        sys.path.insert(0, str(ROOT))
+        from sovereign.verifier import verify_attestation  # noqa: PLC0415
+    except Exception as exc:  # noqa: BLE001 -- any import failure is BLIND, not a refusal
+        raise Blind(f"verifier unavailable, cannot judge signature: {exc}") from exc
+
+    try:
+        ok = verify_attestation(attestation, subject)
+    except ModuleNotFoundError as exc:
+        raise Blind(f"crypto library absent, cannot judge signature: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001 -- a verifier crash is not a verdict
+        raise Blind(f"verifier raised while judging signature: {exc}") from exc
+
+    if not ok:
+        return False, "attestation signature did not verify over this envelope's subject"
+    return True, "PASSED: exemption attestation verified over the envelope subject"
+
+
+def evaluate(envelope: dict) -> tuple[int, str]:
+    """Return (exit_code, message). 0 pass, 1 refuse. Blind is raised, not returned."""
+    schema = _load_schema()
+
+    errs = _structure_errors(envelope, schema)
+    if errs:
+        return 1, "SCHEMA_REJECTED: " + "; ".join(errs)
+
+    forward = envelope["forward"]
+    inverse = envelope["inverse_spec"]
+    kind = inverse.get("type")
+
+    if kind == "deterministic_inverse":
+        action = inverse.get("action")
+        params = inverse.get("parameters")
+        probe = (inverse.get("verification_probe") or "").strip()
+
+        if not isinstance(action, str) or not action:
+            return 1, "INVALID_INVERSE: no inverse action named"
+        if not isinstance(params, dict):
+            return 1, "INVALID_INVERSE: inverse parameters must be an object"
+        if not probe:
+            return 1, "INVALID_PROBE: rollback requires a deterministic state probe"
+
+        if action == forward.get("action"):
+            if action not in SELF_INVERSE_ACTIONS:
+                return 1, "INVALID_INVERSE: inverse action cannot match forward action"
+            if params == forward.get("parameters"):
+                return 1, (
+                    "INVALID_INVERSE: a self-inverse action must carry different parameters "
+                    "than the forward call, or it reverses nothing"
+                )
+        return 0, "PASSED: deterministic inverse verified"
+
+    if kind == "irreversible_exemption":
+        justification = (inverse.get("justification") or "").strip()
+        if len(justification) < 20:
+            return 1, "INVALID_JUSTIFICATION: exemption needs a justification of 20+ characters"
+        ok, msg = _verify_exemption_signature(inverse, envelope)
+        return (0 if ok else 1), msg
+
+    return 1, f"UNKNOWN_INVERSE_SPEC: {kind!r} is not a known inverse type"
+
+
+def _iter_paths(args: list[str]) -> list[Path]:
+    if not args:
+        return []
+    out: list[Path] = []
+    for raw in args:
+        p = Path(raw)
+        if p.is_dir():
+            out.extend(sorted(p.rglob("*.json")))
+        else:
+            out.append(p)
+    return out
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Mandatory state reversibility gate")
+    parser.add_argument("paths", nargs="*", help="envelope JSON file(s) or directory(ies)")
+    parser.add_argument("--json", action="store_true", help="emit one JSON verdict per envelope")
+    ns = parser.parse_args(argv)
+
+    paths = _iter_paths(ns.paths)
+    if not paths:
+        print("BLIND: no envelope path given; nothing to judge (exit 2, LAW 38)", file=sys.stderr)
+        return 2
+
+    verdicts = []
+    exit_code = 0
+    for path in paths:
+        try:
+            envelope = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"BLIND: cannot read {path}: {exc} (exit 2, LAW 38)", file=sys.stderr)
+            return 2
+        if not isinstance(envelope, dict):
+            verdicts.append({"path": str(path), "code": 1, "message": "SCHEMA_REJECTED: envelope is not an object"})
+            exit_code = 1
+            continue
+        try:
+            code, msg = evaluate(envelope)
+        except Blind as exc:
+            print(f"BLIND: {exc} (exit 2, LAW 38)", file=sys.stderr)
+            return 2
+        verdicts.append({"path": str(path), "code": code, "message": msg})
+        if code != 0:
+            exit_code = 1
+
+    if ns.json:
+        print(json.dumps(verdicts, indent=2))
+    else:
+        for v in verdicts:
+            print(f"{'PASS  ' if v['code'] == 0 else 'REFUSE'}  {v['path']}: {v['message']}")
+    return exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+    annotations:
+        reloader.stakater.com/auto: "true"
+    name: litellm
+    namespace: llm
+spec:
+    replicas: 1
+    selector:
+        matchLabels:
+            app: litellm
+    template:
+        metadata:
+            labels:
+                app: litellm
+        spec:
+            containers:
+                - envFrom:
+                    - secretRef:
+                        name: litellm-keys
+                  image: ghcr.io/berriai/litellm:main-stable
+                  name: litellm
+
+---
+

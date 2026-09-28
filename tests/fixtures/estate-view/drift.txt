@@ -1,0 +1,2 @@
+ok catalogue-drift 5 missing
+{"missing": ["a", "b", "c", "d", "e"]}

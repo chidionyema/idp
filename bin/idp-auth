@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# bin/idp-auth — produce a signed X-Idp-Auth trailer for a guarded commit.
+#
+# Zero-trust: only the founder's Ed25519 private key (mode 600, at ~/.idp/founder.key by default)
+# can produce a valid signature. No agent-reachable environment variable or flag bypasses this;
+# the corresponding CI check (bin/idp-ci-guarded-paths) refuses any PR that touches a guarded
+# path without a valid signature on HEAD.
+#
+# Usage:
+#   bin/idp-auth "reason" <path> [<path>...]   -> prints the two trailer lines to stdout
+#
+# Founder ceremony to append to a commit:
+#   bin/idp-auth "unblock rotation-canary" platform/edge/otel-endpoint-exception.yaml \
+#     | git interpret-trailers --in-place --if-exists=addIfDifferent HEAD
+#
+# The signature covers: UTC iso timestamp, current HEAD sha (or 'no-head'), the reason, and the
+# newline-joined guarded paths. bin/idp-auth-verify reconstructs and verifies against the
+# founder public key at docs/keys/founder.pub.
+set -euo pipefail
+
+case "${1:-}" in
+  -h|--help)
+    cat <<'HELP'
+bin/idp-auth -- produce a signed X-Idp-Auth trailer for a guarded commit.
+
+Usage:
+  bin/idp-auth "<reason>" <path> [<path>...]
+  bin/idp-auth --self-test
+
+Requires IDP_FOUNDER_KEY (default ~/.idp/founder.key) mode 600.
+HELP
+    exit 0
+    ;;
+  --self-test)
+    tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+    openssl genpkey -algorithm Ed25519 -out "$tmp/key" 2>/dev/null
+    chmod 600 "$tmp/key"
+    IDP_FOUNDER_KEY="$tmp/key" "$0" "self-test reason" README.md > "$tmp/out"
+    grep -q '^X-Idp-Auth: ' "$tmp/out" && grep -q '^X-Idp-Auth-Reason: self-test reason$' "$tmp/out" \
+      && { echo "ok self-test idp-auth"; exit 0; }
+    echo "FAIL self-test idp-auth: unexpected output" >&2; cat "$tmp/out" >&2; exit 1
+    ;;
+esac
+
+KEY="${IDP_FOUNDER_KEY:-$HOME/.idp/founder.key}"
+[ -f "$KEY" ] || { echo "BLIND: founder key not present at $KEY" >&2; exit 3; }
+
+# Mode check works on macOS (stat -f) and Linux (stat -c).
+mode="$(stat -f '%Lp' "$KEY" 2>/dev/null || stat -c '%a' "$KEY" 2>/dev/null || echo unknown)"
+[ "$mode" = "600" ] || { echo "REFUSE: $KEY must be mode 600 (got $mode)" >&2; exit 4; }
+
+reason="${1:?usage: idp-auth '<reason>' <path> [<path>...]}"
+shift
+[ "$#" -ge 1 ] || { echo "REFUSE: at least one guarded path required" >&2; exit 4; }
+
+ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+head_sha="$(git rev-parse HEAD 2>/dev/null || echo no-head)"
+payload="$ts
+$head_sha
+$reason
+$(printf '%s\n' "$@")"
+
+# openssl pkeyutl -rawin on macOS LibreSSL loses the stdin stream when piped further; the
+# tempfile route works portably on macOS and Linux.
+tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+printf '%s' "$payload" > "$tmp/payload"
+openssl pkeyutl -sign -inkey "$KEY" -rawin -in "$tmp/payload" -out "$tmp/sig" 2>/dev/null \
+  || { echo "REFUSE: openssl pkeyutl signing failed" >&2; exit 5; }
+sig="$(base64 -i "$tmp/sig" | tr -d '\n')"
+
+echo "X-Idp-Auth: $sig"
+echo "X-Idp-Auth-Reason: $reason"
+echo "X-Idp-Auth-Timestamp: $ts"
+echo "X-Idp-Auth-Paths: $(IFS=,; echo "$*")"

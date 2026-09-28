@@ -1,0 +1,21 @@
+terminal:
+  id: grammar
+  name: "The Terminal Grammar"
+  input:  { shape: declaration }
+  output: { shape: registry.entry }
+  grade:
+    metric: admission_test
+    polarity: maximize
+    scale: [0,1]
+    gate:
+      terminal: grammar.admission_test
+      sandbox: subprocess
+  composes: [collector, resolver, shed_recorder]
+  state: current
+  since: "2026-09-24"
+  produces_again: true
+  annotations:
+    class: safety
+    mode: function
+    scope: { resources: [filesystem], secrets: {}, tenant_isolated: true }
+    role: seed-expression

@@ -1,0 +1,8 @@
+backstage/Dockerfile
+backstage/Dockerfile.dockerignore
+backstage/app-config.container.yaml
+backstage/package.json
+backstage/yarn.lock
+bin/dockerfiles
+platform/backstage/overlays/oke/kustomization.yaml
+tests/test_incident_backstage_image_critical_cve.py
