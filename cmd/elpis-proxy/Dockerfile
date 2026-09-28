@@ -1,12 +1,11 @@
 # cmd/elpis-proxy/Dockerfile
 # Layer 3: Elpis Cryptographic Signing Sidecar Proxy.
-# Static Go binary on distroless base.
-FROM docker.io/library/golang:1.23-alpine AS builder
+FROM docker.io/library/golang:1.23.5-alpine3.21 AS builder
 RUN apk add --no-cache ca-certificates
 WORKDIR /builder
-COPY cmd/elpis-proxy/go.mod ./
+COPY go.mod ./
 RUN go mod download
-COPY cmd/elpis-proxy/*.go ./
+COPY *.go ./
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags='-w -s' -o /builder/elpis-proxy main.go
 
 FROM gcr.io/distroless/static:nonroot
