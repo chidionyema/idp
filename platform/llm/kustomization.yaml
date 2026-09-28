@@ -36,6 +36,16 @@ configMapGenerator:
     files:
       - request_ceiling.py
       - efficiency_gateway.py
+  # PoBR enforcement callback: pobr_enforce.py + gate modules, mounted at /etc/litellm/callbacks.
+  # PYTHONPATH is patched below to include this path so the router imports pobr_enforce.PoBREnforcer.
+  # Keys are expected at /etc/litellm/keys/agent.pub.pem (mounted separately or baked into the image).
+  - name: litellm-callbacks
+    files:
+      - __init__.py=callbacks/__init__.py
+      - pobr_enforce.py=callbacks/pobr_enforce.py
+      - pobr_gate_wrapper.py=callbacks/pobr_gate_wrapper.py
+      - pobr_schema.py=callbacks/pobr_schema.py
+      - pobr_gate.py=callbacks/pobr_gate.py
 generatorOptions:
   disableNameSuffixHash: false
 # WAVE 1 OF THE ROLL ONTO THE ENFORCING CNI.
@@ -54,6 +64,7 @@ generatorOptions:
 #
 # Bump the value to roll these workloads again.
 patches:
+  # --- litellm-cache CNI annotation (unchanged) ---
   - patch: |
       apiVersion: apps/v1
       kind: Deployment
@@ -65,3 +76,4 @@ patches:
           metadata:
             annotations:
               idp.internal/cni-generation: "2"
+
