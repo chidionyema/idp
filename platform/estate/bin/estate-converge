@@ -1,0 +1,643 @@
+#!/usr/bin/env python3
+"""Deliver origin/main's platform/estate to the laptop plane, root-owned, safe.
+
+docs/tickets/2026-09-27-merged-is-operating.md: merged is not operating. This is the one path from
+main to the laptop, the way Flux is the one path to the cluster. Nobody runs it by hand.
+
+IDP-Estate.pkg installs a copy at /usr/local/estate/sbin/estate-converge and a LaunchDaemon that
+runs it as root every 120 s. The founder enters the admin password once, in the installer. After
+that:
+  - releases live in /usr/local/estate/releases/<sha>, root-owned and read-only, so no agent can
+    edit what runs;
+  - the console user's ~/.estate/{intents,libexec,bin/*} are symlinks into the current release.
+    They are re-checked on every run; anything retargeted or hand-copied is moved aside, repaired,
+    and named in state.json (drift);
+  - a new estate-converge on main replaces the installed copy only after its --self-test passes.
+
+Fleet (fleetview-backend /delivery) reads converge/state.json and converge/ledger.jsonl.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import fcntl
+import hashlib
+import io
+import json
+import os
+import pwd
+import re
+import shutil
+import stat
+import subprocess  # noqa: S404 -- fixed argv, no shell, used only for git
+import sys
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+KEEP_RELEASES = 5
+
+
+def prefix() -> Path:
+    return Path(os.environ.get("ESTATE_PREFIX") or "/usr/local/estate")
+
+
+def src_dir() -> Path:
+    return prefix() / "src" / "idp.git"
+
+
+def releases_dir() -> Path:
+    return prefix() / "releases"
+
+
+def current_link() -> Path:
+    return releases_dir() / "current"
+
+
+def converge_dir() -> Path:
+    return prefix() / "converge"
+
+
+def sbin_dir() -> Path:
+    return prefix() / "sbin"
+
+
+def remote_url() -> str:
+    return os.environ.get("ESTATE_REMOTE", "https://github.com/chidionyema/idp.git")
+
+
+def branch_name() -> str:
+    return os.environ.get("ESTATE_BRANCH", "main")
+
+
+def git_env() -> dict:
+    env = dict(os.environ)
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GIT_ASKPASS"] = "/bin/echo"
+    # launchd starts daemons without HOME; git wants one for its config lookup.
+    env.setdefault("HOME", str(prefix()))
+    return env
+
+
+def run_git(args: list, **kwargs) -> subprocess.CompletedProcess:
+    argv = ["git"] + args  # noqa: S607 -- git resolves from PATH on purpose
+    return subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        argv,
+        env=git_env(),
+        timeout=120,
+        check=True,
+        **kwargs,
+    )
+
+
+def ensure_source() -> None:
+    src = src_dir()
+    if not src.exists():
+        src.parent.mkdir(parents=True, exist_ok=True)
+        run_git(["init", "--bare", "-q", str(src)])
+    # No --filter: fetched by URL there is no promisor remote, so git fetches every blob anyway
+    # (measured 2026-09-27: 219M either way; a promisor remote's lazy fetch took 18 s per archive).
+    run_git(
+        [
+            "-C",
+            str(src),
+            "fetch",
+            "-q",
+            "--depth=200",
+            remote_url(),
+            "+refs/heads/{0}:refs/heads/{0}".format(branch_name()),
+        ]
+    )
+
+
+def rev_parse(src: Path, ref: str) -> str:
+    out = run_git(["-C", str(src), "rev-parse", ref], capture_output=True, text=True)
+    return out.stdout.strip()
+
+
+def read_release_json(release_dir: Path) -> Optional[dict]:
+    meta = release_dir / ".release.json"
+    if not meta.is_file():
+        return None
+    try:
+        return json.loads(meta.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+def resolve_current() -> Optional[dict]:
+    try:
+        target = current_link().resolve(strict=True)
+    except OSError:
+        return None
+    return read_release_json(target)
+
+
+def make_writable(path: Path) -> None:
+    for root, dirs, files in os.walk(path):
+        for name in dirs + files:
+            p = Path(root) / name
+            with contextlib.suppress(OSError):
+                p.chmod(p.stat().st_mode | stat.S_IWUSR)
+    with contextlib.suppress(OSError):
+        path.chmod(path.stat().st_mode | stat.S_IWUSR)
+
+
+def safe_extract(tar_bytes: bytes, dest: Path, prefix_in_tar: str) -> None:
+    dest.mkdir(parents=True, exist_ok=True)
+    dirs_to_mode = []
+    with tarfile.open(fileobj=io.BytesIO(tar_bytes)) as tf:
+        for member in tf.getmembers():
+            name = member.name
+            if not name.startswith(prefix_in_tar):
+                continue
+            rel = name[len(prefix_in_tar) :]
+            if not rel:
+                continue
+            if rel.startswith("/") or ".." in Path(rel).parts:
+                raise ValueError("unsafe archive member: {0}".format(name))
+            target = dest / rel
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                dirs_to_mode.append((target, 0o555))
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if member.isfile():
+                fileobj = tf.extractfile(member)
+                if fileobj is None:
+                    continue
+                with open(target, "wb") as fh:
+                    shutil.copyfileobj(fileobj, fh)
+                mode = 0o555 if (member.mode & 0o111) else 0o444
+                target.chmod(mode)
+    for d, mode in sorted(dirs_to_mode, key=lambda t: len(t[0].parts), reverse=True):
+        d.chmod(mode)
+
+
+def cut_release(src: Path, main_sha: str, tree: str) -> Path:
+    rel = releases_dir()
+    rel.mkdir(parents=True, exist_ok=True)
+    name = main_sha[:12]
+    tmp = rel / (".tmp-" + name)
+    if tmp.exists():
+        make_writable(tmp)
+        shutil.rmtree(tmp)
+
+    archive = run_git(
+        ["-C", str(src), "archive", "--format=tar", main_sha, "platform/estate"],
+        capture_output=True,
+    )
+    safe_extract(archive.stdout, tmp, "platform/estate/")
+
+    meta = {
+        "sha": main_sha,
+        "tree": tree,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    (tmp / ".release.json").write_text(json.dumps(meta))
+    (tmp / ".release.json").chmod(0o444)
+
+    final = rel / name
+    if final.exists():
+        make_writable(final)
+        shutil.rmtree(final)
+    os.rename(tmp, final)
+    # Sealed after the rename: macOS will not rename a directory its owner cannot write.
+    final.chmod(0o555)
+    return final
+
+
+def atomic_symlink(target: str, link: Path) -> None:
+    """Point link at target in one rename, so no reader ever sees it missing."""
+    tmp = link.parent / ".{0}.converge-new".format(link.name)
+    if tmp.exists() or tmp.is_symlink():
+        tmp.unlink()
+    tmp.symlink_to(target)
+    os.replace(str(tmp), str(link))
+
+
+def flip_current(release: Path) -> None:
+    atomic_symlink(release.name, current_link())
+
+
+def link_homes() -> List[Tuple[Path, int, int]]:
+    """Whose ~/.estate the release is linked into.
+
+    As root (the LaunchDaemon) that is the console user; nobody logged in means nobody to link.
+    ESTATE_LINK_HOMES overrides it for tests and the self-test.
+    """
+    override = os.environ.get("ESTATE_LINK_HOMES")
+    if override:
+        return [
+            (Path(h), os.getuid(), os.getgid()) for h in override.split(os.pathsep) if h
+        ]
+    if os.geteuid() != 0:
+        return [(Path.home(), os.getuid(), os.getgid())]
+    try:
+        uid = os.stat("/dev/console").st_uid
+    except OSError:
+        return []
+    if uid == 0:
+        return []
+    pw = pwd.getpwuid(uid)
+    return [(Path(pw.pw_dir), pw.pw_uid, pw.pw_gid)]
+
+
+def _owned(path: Path, uid: int, gid: int) -> None:
+    if os.geteuid() == 0:
+        with contextlib.suppress(OSError):
+            os.lchown(str(path), uid, gid)
+
+
+def ensure_link(target: Path, link: Path, ts: str, uid: int, gid: int) -> bool:
+    """Make link point at target. Returns True if anything had to change (drift)."""
+    if link.is_symlink() and os.readlink(str(link)) == str(target):
+        return False
+    if link.exists() and not link.is_symlink():
+        # Never delete: a hand copy is moved aside and stays readable.
+        link.rename(link.parent / "{0}.pre-converge-{1}".format(link.name, ts))
+    atomic_symlink(str(target), link)
+    _owned(link, uid, gid)
+    return True
+
+
+def update_links(home: Path, uid: int, gid: int, ts: str) -> List[str]:
+    """Link one user's ~/.estate into the current release. Returns what had drifted."""
+    estate = home / ".estate"
+    for d in (estate, estate / "bin"):
+        if not d.is_dir():
+            d.mkdir(parents=True)
+            _owned(d, uid, gid)
+    cur = current_link()
+    drifted = []
+    for name in ("intents", "libexec"):
+        if ensure_link(cur / name, estate / name, ts, uid, gid):
+            drifted.append(name)
+    bin_dir = cur / "bin"
+    shipped = set()
+    if bin_dir.is_dir():
+        for f in sorted(bin_dir.iterdir()):
+            if not f.is_file():
+                continue
+            shipped.add(f.name)
+            if ensure_link(bin_dir / f.name, estate / "bin" / f.name, ts, uid, gid):
+                drifted.append("bin/" + f.name)
+    # A link this converger made for a program main no longer ships would dangle. Remove that
+    # link -- only a symlink into our own releases, never a file.
+    ours = str(bin_dir) + os.sep
+    for link in sorted((estate / "bin").iterdir()):
+        if link.is_symlink() and link.name not in shipped:
+            if os.readlink(str(link)).startswith(ours):
+                link.unlink()
+                drifted.append("bin/" + link.name + " (removed)")
+    return drifted
+
+
+def prs_from_log(src: Path, from_sha: Optional[str], main_sha: str) -> list:
+    pattern = re.compile(r"\(#(\d+)\)")
+    subjects = []
+    if from_sha:
+        try:
+            out = run_git(
+                [
+                    "-C",
+                    str(src),
+                    "log",
+                    "--format=%s",
+                    "{0}..{1}".format(from_sha, main_sha),
+                    "--",
+                    "platform/estate",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            subjects = [line for line in out.stdout.splitlines() if line]
+        except subprocess.CalledProcessError:
+            subjects = []
+    if not subjects:
+        out = run_git(
+            ["-C", str(src), "log", "-1", "--format=%s", main_sha],
+            capture_output=True,
+            text=True,
+        )
+        subjects = [out.stdout.strip()]
+    prs = []
+    for subj in subjects:
+        prs.extend(int(m) for m in pattern.findall(subj))
+    return prs
+
+
+def append_ledger(
+    from_sha: Optional[str], main_sha: str, prs: list, release: str, latency_s: int
+) -> None:
+    conv = converge_dir()
+    conv.mkdir(parents=True, exist_ok=True)
+    entry = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "from_sha": from_sha,
+        "to_sha": main_sha,
+        "prs": prs,
+        "latency_s": latency_s,
+        "release": release,
+    }
+    with open(conv / "ledger.jsonl", "a") as fh:
+        fh.write(json.dumps(entry) + "\n")
+
+
+def compute_latency(src: Path, main_sha: str) -> int:
+    out = run_git(
+        [
+            "-C",
+            str(src),
+            "log",
+            "-1",
+            "--format=%ct",
+            main_sha,
+            "--",
+            "platform/estate",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    committed = out.stdout.strip()
+    if not committed:
+        return 0
+    return max(int(time.time()) - int(committed), 0)
+
+
+def prune_releases() -> None:
+    rel = releases_dir()
+    if not rel.is_dir():
+        return
+    cur_target = None
+    with contextlib.suppress(OSError):
+        cur_target = current_link().resolve(strict=True)
+
+    entries = []
+    for d in rel.iterdir():
+        if d.is_symlink() or not d.is_dir() or d.name.startswith("."):
+            continue
+        meta = read_release_json(d)
+        if meta is None:
+            continue
+        entries.append((meta.get("created_at", ""), d))
+
+    entries.sort(key=lambda t: t[0], reverse=True)
+    keep = set()
+    if cur_target is not None:
+        keep.add(cur_target)
+    for _created, d in entries[:KEEP_RELEASES]:
+        keep.add(d.resolve())
+
+    for _created, d in entries:
+        if d.resolve() in keep:
+            continue
+        make_writable(d)
+        shutil.rmtree(d)
+
+
+def list_releases() -> list:
+    rel = releases_dir()
+    if not rel.is_dir():
+        return []
+    return sorted(
+        d.name
+        for d in rel.iterdir()
+        if d.is_dir() and not d.is_symlink() and not d.name.startswith(".")
+    )
+
+
+def sha256_of(path: Path) -> Optional[str]:
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def self_update() -> dict:
+    """Replace the installed converger with main's, only after main's passes --self-test.
+
+    Only the installed copy (the one the LaunchDaemon runs, in sbin) updates itself. A converger
+    run from anywhere else never touches sbin.
+    """
+    installed = sbin_dir() / "estate-converge"
+    info = {
+        "installed_sha256": sha256_of(installed),
+        "updated": False,
+        "self_test": None,
+    }
+    if Path(__file__).resolve() != installed.resolve():
+        return info
+    candidate = current_link() / "bin" / "estate-converge"
+    new_sum = sha256_of(candidate)
+    if new_sum is None or new_sum == info["installed_sha256"]:
+        return info
+    try:
+        probe = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            [sys.executable, str(candidate), "--self-test"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=git_env(),
+        )
+    except subprocess.TimeoutExpired:
+        info["self_test"] = "timeout"
+        return info
+    info["self_test"] = probe.returncode
+    if probe.returncode != 0:
+        info["self_test_tail"] = (probe.stdout + probe.stderr)[-400:]
+        return info
+    tmp = sbin_dir() / ".estate-converge.new"
+    shutil.copyfile(str(candidate), str(tmp))
+    tmp.chmod(0o755)
+    os.replace(str(tmp), str(installed))
+    info["installed_sha256"] = new_sum
+    info["updated"] = True
+    return info
+
+
+def write_state(state: dict) -> None:
+    conv = converge_dir()
+    conv.mkdir(parents=True, exist_ok=True)
+    tmp = conv / ".state.json.tmp"
+    tmp.write_text(json.dumps(state, indent=2))
+    tmp.chmod(0o644)
+    os.replace(str(tmp), str(conv / "state.json"))
+
+
+def read_state() -> dict:
+    path = converge_dir() / "state.json"
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def acquire_lock():
+    conv = converge_dir()
+    conv.mkdir(parents=True, exist_ok=True)
+    fh = open(conv / "lock", "w")
+    try:
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        fh.close()
+        return None
+    return fh
+
+
+def now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S.", time.gmtime()) + "{0:06d}Z".format(
+        time.time_ns() // 1000 % 1_000_000
+    )
+
+
+def converge() -> int:
+    os.umask(0o022)
+    prefix().mkdir(parents=True, exist_ok=True)
+    prev_state = read_state()
+
+    lock_fh = acquire_lock()
+    if lock_fh is None:
+        print("busy")
+        return 0
+
+    state = {
+        "checked_at": now_iso(),
+        "main_sha": prev_state.get("main_sha"),
+        "current_sha": prev_state.get("current_sha"),
+        "behind": prev_state.get("behind", False),
+        "last_error": None,
+        "drift": [],
+        "homes": [],
+        "releases": prev_state.get("releases", []),
+        "self": prev_state.get("self"),
+    }
+
+    try:
+        src = src_dir()
+        ensure_source()
+        main_sha = rev_parse(src, "refs/heads/" + branch_name())
+        tree = rev_parse(src, main_sha + ":platform/estate")
+        state["main_sha"] = main_sha
+
+        prev_release = resolve_current()
+        prev_sha = prev_release.get("sha") if prev_release else None
+        changed = not prev_release or prev_release.get("tree") != tree
+
+        release_name = None
+        prs = []
+        if changed:
+            release = cut_release(src, main_sha, tree)
+            flip_current(release)
+            release_name = release.name
+            prs = prs_from_log(src, prev_sha, main_sha)
+            append_ledger(
+                prev_sha, main_sha, prs, release.name, compute_latency(src, main_sha)
+            )
+            prune_releases()
+            state["current_sha"] = main_sha
+        else:
+            state["current_sha"] = prev_sha
+        state["behind"] = False
+
+        # Every run, not only on a new release: this is what repairs a retargeted link.
+        ts = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+        for home, uid, gid in link_homes():
+            state["homes"].append(str(home))
+            state["drift"].extend(update_links(home, uid, gid, ts))
+
+        state["releases"] = list_releases()
+        state["self"] = self_update()
+        write_state(state)
+        if changed:
+            print("converged {0} prs={1}".format(release_name, prs))
+        else:
+            print("up to date {0}".format((prev_sha or main_sha)[:12]))
+        return 0
+    except Exception as exc:  # noqa: BLE001 -- top-level run must always record state
+        state["last_error"] = str(exc)
+        state["behind"] = bool(
+            state["main_sha"] and state["main_sha"] != state["current_sha"]
+        )
+        write_state(state)
+        print("error: {0}".format(exc), file=sys.stderr)
+        return 1
+    finally:
+        with contextlib.suppress(OSError):
+            fcntl.flock(lock_fh, fcntl.LOCK_UN)
+        lock_fh.close()
+
+
+def self_test() -> int:
+    """Converge a throwaway repo into a throwaway prefix. Gate for self_update(); no network."""
+    saved = dict(os.environ)
+    ok = False
+    with tempfile.TemporaryDirectory(prefix="estate-converge-selftest-") as tmpd:
+        tmp = Path(tmpd)
+        origin = tmp / "origin"
+        home = tmp / "home"
+        home.mkdir()
+        (origin / "platform" / "estate" / "intents").mkdir(parents=True)
+        (origin / "platform" / "estate" / "bin").mkdir(parents=True)
+        (origin / "platform" / "estate" / "intents" / "probe.yaml").write_text(
+            "name: probe\n"
+        )
+        tool = origin / "platform" / "estate" / "bin" / "probe"
+        tool.write_text("#!/bin/sh\necho probe\n")
+        tool.chmod(0o755)
+        cfg = ["-c", "user.name=selftest", "-c", "user.email=selftest@localhost"]
+        cfg += ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"]
+        try:
+            os.environ.update(
+                {
+                    "ESTATE_PREFIX": str(tmp / "prefix"),
+                    "ESTATE_REMOTE": str(origin),
+                    "ESTATE_BRANCH": "main",
+                    "ESTATE_LINK_HOMES": str(home),
+                    "GIT_CONFIG_GLOBAL": "/dev/null",
+                    "GIT_CONFIG_NOSYSTEM": "1",
+                }
+            )
+            run_git(cfg + ["init", "-q", "-b", "main", str(origin)])
+            run_git(["-C", str(origin)] + cfg + ["add", "-A"])
+            run_git(["-C", str(origin)] + cfg + ["commit", "-q", "-m", "probe (#1)"])
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                rc1 = converge()
+                rc2 = converge()
+            lines = (
+                (tmp / "prefix" / "converge" / "ledger.jsonl").read_text().splitlines()
+            )
+            probe = home / ".estate" / "intents" / "probe.yaml"
+            ok = (
+                rc1 == 0
+                and rc2 == 0
+                and "up to date" in out.getvalue()
+                and probe.read_text() == "name: probe\n"
+                and len(lines) == 1
+                and json.loads(lines[0])["prs"] == [1]
+            )
+        except Exception as exc:  # noqa: BLE001 -- any failure is a failed self-test
+            print("self-test error: {0}".format(exc), file=sys.stderr)
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
+            make_writable(tmp)
+    print("self-test " + ("ok" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
+def main(argv: list) -> int:
+    if argv[1:] == ["--self-test"]:
+        return self_test()
+    if argv[1:]:
+        print("usage: estate-converge [--self-test]", file=sys.stderr)
+        return 2
+    return converge()
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

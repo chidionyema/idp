@@ -27,6 +27,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 # fleetview_backend is installed as a package. All modules use normal imports.
 from fleetview_backend import (
     claude_code_adapter,
+    delivery,
     executor_link,
     metrics,
     nats_adapter,
@@ -385,6 +386,11 @@ def build_app() -> FastAPI:
         if result is None:
             return Response(status_code=204)
         return JSONResponse(content=result)
+
+    @app.get(routes.DELIVERY_PATH)
+    def delivery_get():
+        body, status = delivery.delivery_envelope()
+        return JSONResponse(content=body, status_code=status)
 
     return app
 

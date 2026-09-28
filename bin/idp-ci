@@ -112,10 +112,17 @@ with open('$f','rb') as fh:
       fail=1
     fi
   done
-  # run shellcheck on shell files (if available)
+  # run shellcheck against detected shell files, when it is available
   if command -v shellcheck >/dev/null 2>&1; then
     for f in $(git ls-files | grep -v '^\.git/'); do
-      is_shell_file "$f" && [ -f "$f" ] || continue
+      case "$f" in
+      *.sh|*.bash) is_shell=1 ;;                      # shell extension
+      *.py) is_shell=0 ;;                                # never shell, even under bin/
+      bin/*|.githooks/*) is_shell=0
+        head -1 "$f" 2>/dev/null | grep -qE '^#!.*\b(sh|bash)$' && is_shell=1 ;;  # real shebang
+      *) is_shell=0 ;;                                     # skip non-shell
+      esac
+      [ "$is_shell" = 1 ] && [ -f "$f" ] || continue
       if shellcheck -S warning "$f" >/dev/null 2>&1; then
         : # clean
       else

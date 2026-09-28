@@ -79,7 +79,8 @@ sel=$(
     b=$(basename "$f")
     pats=(-e "$f")
     if [ "$(awk -F/ -v b="$b" '$NF == b' "$tracked" | wc -l | tr -d ' ')" = 1 ]; then pats+=(-e "$b"); fi
-    grep -rlF --include='*.py' "${pats[@]}" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -v '/fixtures/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
+    # tests/browser needs playwright; .github/workflows/vendor-browser.yml runs it, never this selector.
+    grep -rlF --include='*.py' "${pats[@]}" "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null | sed "s#^$IDP/##" | grep -vE '/fixtures/|^tests/browser/' || true   # a fixture under tests/fixtures is proof material, not a test (test_unbound.py fails by design)
   done | sort -u
   # A class fence names a DIRECTORY, never a file: tests/test_incident_a_script_under_bin_pipes_into_grep_q.py
   # rglobs bin/ and refuses `| grep -q` in any script there. Selecting on the changed path or its
@@ -99,7 +100,7 @@ sel=$(
   if [ -n "$dirs" ]; then
     dirs_re=$(printf '%s\n' "$dirs" | sed 's#[].[^$*\\/]#\\&#g' | paste -sd'|' -)
     grep -rlE --include='*.py' '\b(rglob|iterdir|listdir|os\.walk)\b' "$IDP/tests" "$IDP/sovereign/tests" 2>/dev/null \
-      | grep -v '/fixtures/' \
+      | grep -vE '/fixtures/|/tests/browser/' \
       | xargs -r grep -lE "[\"'/](${dirs_re})[\"'/]" 2>/dev/null \
       | sed "s#^$IDP/##" | sort -u || true
   fi

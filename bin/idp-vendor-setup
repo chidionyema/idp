@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+"""
+bin/idp-vendor-setup <vendor> [--preflight] [--headless] [--wait-s N]
+The estate makes its own vendor key (crew#832): the row's setup: in platform/vendors/consoles.yaml is driven in a
+persistent browser profile at ~/.estate/vendor-browser/<vendor>, the captured value is shape-checked, proved with
+the row's verify: (bin/lib/vendor_verify.py), and merged into estate-vault through bin/idp-vault-put --merge.
+A person's only part is sign-in / 2FA / CAPTCHA / terms when the page asks. Nothing but key NAMES is printed.
+Exit: 0 ok, 1 FAIL, 2 BLIND (no driver), 3 assisted (a person makes this key at page:).
+"""
+
+from __future__ import annotations
+
+import argparse
+import importlib.metadata
+import importlib.util
+import os
+import pathlib
+import subprocess
+import sys
+
+IDP = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(IDP / "bin" / "lib"))
+
+from vendor_setup import (  # noqa: E402
+    SetupError,
+    check_shapes,
+    load_row,
+    road,
+    scrub,
+    validate,
+    write_vault,
+)
+from vendor_verify import verify  # noqa: E402
+
+ESTATE_HOME = pathlib.Path(
+    os.environ.get("ESTATE_HOME") or pathlib.Path.home() / ".estate"
+)
+VENV = ESTATE_HOME / "bootstrap-venv"
+
+
+def say(st, who, msg):
+    print(f"{st:<7} {who:<20} {msg}", flush=True)
+
+
+def _driver_ready(py: str) -> bool:
+    return (
+        subprocess.run(  # noqa: S603
+            [py, "-c", "import playwright, yaml"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+
+
+def _ensure_driver(preflight: bool) -> int | None:
+    if importlib.util.find_spec("playwright") is not None:
+        return None
+
+    if os.environ.get("IDP_VENDOR_SETUP_REEXEC") == "1":
+        say("BLIND", "driver", f"playwright is not importable under {sys.executable}")
+        return 2
+
+    vpy = VENV / "bin" / "python"
+    if not (vpy.exists() and _driver_ready(str(vpy))):
+        if preflight:
+            say(
+                "BLIND",
+                "driver",
+                f"no playwright in {VENV}; a run without --preflight installs it (once)",
+            )
+            return 2
+        say("", "driver", f"installing playwright into {VENV} (once)")
+        subprocess.run(  # noqa: S603,S607 -- fixed argv, no user input
+            [sys.executable, "-m", "venv", str(VENV)], check=True
+        )
+        subprocess.run(  # noqa: S603,S607 -- fixed argv, no user input
+            [str(VENV / "bin" / "pip"), "install", "-q", "playwright", "pyyaml"],
+            check=True,
+        )
+        subprocess.run(  # noqa: S603,S607 -- fixed argv, no user input
+            [str(vpy), "-m", "playwright", "install", "chromium"], check=True
+        )
+
+    os.execve(  # noqa: S606 -- re-run under the estate venv that holds playwright (the Cloudflare pattern)
+        str(vpy),
+        [str(vpy), __file__, *sys.argv[1:]],
+        {**os.environ, "IDP_VENDOR_SETUP_REEXEC": "1"},
+    )
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("vendor")
+    parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--wait-s", type=int, default=300)
+    args = parser.parse_args(argv)
+    vendor = args.vendor
+
+    consoles = os.environ.get("IDP_VENDOR_CONSOLES") or str(
+        IDP / "platform/vendors/consoles.yaml"
+    )
+    try:
+        row = load_row(consoles, vendor)
+    except SetupError as e:
+        say("FAIL", vendor, str(e))
+        return 1
+
+    errs = validate(vendor, row)
+    if errs:
+        for e in errs:
+            say("FAIL", vendor, e)
+        return 1
+
+    r = road(row)
+    if r == "oidc":
+        say("ok", vendor, "no key: identity federation")
+        return 0
+    if r == "assisted":
+        say(
+            "",
+            vendor,
+            f"a person makes this key at {row.get('page') or '(no page: in the registry)'}",
+        )
+        return 3
+
+    rc = _ensure_driver(args.preflight)
+    if rc is not None:
+        return rc
+
+    setup = row["setup"]
+    vault_put = os.environ.get("IDP_VAULT_PUT") or str(IDP / "bin" / "idp-vault-put")
+
+    if args.preflight:
+        if not os.access(vault_put, os.X_OK):
+            say("FAIL", "vault", f"{vault_put} is not executable")
+            return 1
+        say("ok", "driver", f"playwright {importlib.metadata.version('playwright')}")
+        say(
+            "ok",
+            "preflight",
+            f"{vendor}: {len(setup['steps'])} step(s) -> {setup['entry']}; nothing written",
+        )
+        return 0
+
+    profile = ESTATE_HOME / "vendor-browser" / vendor
+    say(
+        "",
+        vendor,
+        f"opening the console in the estate browser profile {profile}; sign in if it asks -- that is the only hand",
+    )
+    captured = {}
+    try:
+        from vendor_browser import run_steps
+
+        captured = run_steps(
+            setup["steps"],
+            profile,
+            vendor,
+            headless=args.headless,
+            wait_s=args.wait_s,
+            log=lambda s: print(f"        step    {s}", flush=True),
+        )
+
+        errs = check_shapes(row, captured)
+        for e in errs:
+            say("FAIL", vendor, e)
+        if errs:
+            return 1
+
+        subs = dict(captured)
+        if len(captured) == 1:
+            subs["key"] = next(iter(captured.values()))
+        reason = verify(row, subs, str(IDP))
+        if reason:
+            say(
+                "FAIL",
+                vendor,
+                scrub(
+                    f"the verify probe refused the new key: {reason}", captured.values()
+                ),
+            )
+            return 1
+
+        write_vault(setup["entry"], captured, str(IDP))
+        say("ok", vendor, f"{len(captured)} field(s) -> {setup['entry']}")
+        return 0
+    except SetupError as e:
+        say("FAIL", vendor, scrub(str(e), captured.values()))
+        return 1
+    except Exception as e:  # noqa: BLE001
+        say("FAIL", vendor, scrub(f"{type(e).__name__}: {e}", captured.values())[:300])
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

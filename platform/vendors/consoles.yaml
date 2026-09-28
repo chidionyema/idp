@@ -1,3 +1,17 @@
+# Vendor self-setup (crew#832). A row may carry `setup:`, which says how the estate makes its own key:
+#   setup:
+#     road: browser | oidc | assisted     # absent = assisted (a person makes the key at `page:`)
+#     entry: <estate-vault entry>         # browser only: the vault JSON the captured fields merge into
+#     steps:                              # browser only, run in order, exactly one action per step
+#       - goto: https://...
+#       - wait: {role: button, name: "(?i)create token", wait_s: 300, why: "sign in"}   # or {label: ...}
+#       - click: {role: button, name: "(?i)create token"}
+#       - fill: {label: "(?i)token name", value: "estate-{vendor}-{date}"}   # {vendor} {date} only
+#       - capture: {field: <a target's field>, regex: "..."}                  # matched over the page text
+# A browser row needs store_default: estate-vault (the estate cannot write Bitwarden, decision 0020)
+# and a verify: block; bin/idp-vendor-setup <vendor> drives it and writes through bin/idp-vault-put --merge.
+# oidc means no key exists (identity federation); nothing is made. The driver waits for a person at
+# sign-in, 2FA, CAPTCHA and terms, and never clicks a consent control itself. Schema: bin/lib/vendor_setup.py.
 vendors:
   openrouter:
     kind: secret
