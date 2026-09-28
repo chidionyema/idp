@@ -28,4 +28,4 @@ configMapGenerator:
 # workload in ImagePullBackOff on 2026-09-12.
 images:
   - name: ghcr.io/chidionyema/aevum
-    newTag: main-13156-bf98d8faf6856f6a546b32d533316dd512952224 # {"$imagepolicy": "flux-system:aevum:tag"}
+    newTag: main-13158-17d4c82a7aa14e1eefb658a51bbdb8bc719a8a6c # {"$imagepolicy": "flux-system:aevum:tag"}
