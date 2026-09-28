@@ -110,7 +110,11 @@ print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(so
 
   # A lane whose key is absent can only fail, cool down and retry on every request -- that is
   # flake, not redundancy. Serve only the lanes this process can actually call.
-  RUNCFG="$HERE/config.runtime.yaml"
+  # Runtime state lives apart from the code: the stage may be frozen read-only (root-owned), and
+  # a router that cannot write its rendered config exits on every restart and never comes back.
+  STATE="${ESTATE_ROUTER_STATE:-$HOME/.estate/router-state}"
+  mkdir -p "$STATE"
+  RUNCFG="$STATE/config.runtime.yaml"
   export ESTATE_ROUTER_CONFIG="$RUNCFG"
   "$VENV/bin/python" - "$CFG" "$RUNCFG" <<'PY'
 import os, sys, yaml
