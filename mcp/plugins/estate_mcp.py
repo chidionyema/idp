@@ -201,6 +201,7 @@ TOOL_DEFS = [
     },
 ]
 
+
 def _pobr_submit(args):
     if pobr_grant is None:
         return "ERROR: pobr_grant not available"
@@ -237,10 +238,7 @@ def register_mcp_tools(datasette, mcp):
                 tool_name = td["name"]
 
                 # --- PoBR grant gate ---
-                if (
-                    pobr_grant is not None
-                    and pobr_grant.requires_grant(tool_name)
-                ):
+                if pobr_grant is not None and pobr_grant.requires_grant(tool_name):
                     session_id = kwargs.get("session_id", "")
                     if not session_id:
                         return {

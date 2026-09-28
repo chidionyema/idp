@@ -913,7 +913,7 @@ class Handler(socketserver.StreamRequestHandler):
         try:
             proc = subprocess.run(
                 probe,
-                shell=True,
+                shell=True,  # noqa: S602 — deliberate bounded probe, no user input
                 cwd=cwd or live_worktree(),
                 capture_output=True,
                 text=True,

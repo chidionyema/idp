@@ -110,7 +110,11 @@ def pobr_submit_tool(session_id: str, receipt: dict) -> dict:
     except OSError as exc:
         return {"ok": False, "reason": f"failed to mark grant used: {exc}"}
 
-    return {"ok": True, "reason": "receipt submitted", "receipt_id": grant["receipt_id"]}
+    return {
+        "ok": True,
+        "reason": "receipt submitted",
+        "receipt_id": grant["receipt_id"],
+    }
 
 
 def grant_status(session_id: str) -> dict:
