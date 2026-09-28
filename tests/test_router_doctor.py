@@ -77,3 +77,22 @@ def test_a_changed_model_is_reverted_to_opusplan(tmp_path):
     d.heal_settings()
     assert d.check_settings()[0]
     assert '"model": "opusplan"' in d.SETTINGS.read_text()
+
+
+def test_a_slow_but_listening_router_is_never_restarted(monkeypatch):
+    # 2026-09-28: at load 115-175 liveliness took >3s; the doctor read that as dead and ran
+    # kickstart -k then install -- 29 of 35 restarts that day, each cutting every live session.
+    d = _doctor()
+    monkeypatch.setattr(d, "http", lambda *a, **k: (0, "timed out"))
+    monkeypatch.setattr(d, "listening", lambda: True)
+    ok, detail = d.check_live()
+    assert ok is True
+    assert "slow" in detail
+
+
+def test_a_refused_port_is_still_healed(monkeypatch):
+    d = _doctor()
+    monkeypatch.setattr(d, "http", lambda *a, **k: (0, "[Errno 61] Connection refused"))
+    monkeypatch.setattr(d, "listening", lambda: False)
+    ok, _ = d.check_live()
+    assert ok is False

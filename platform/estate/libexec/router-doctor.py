@@ -20,6 +20,7 @@ import os
 import pathlib
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -180,9 +181,24 @@ def heal_launchd():
     return reinstall()
 
 
+def listening():
+    """True when something accepts TCP on the router port -- alive, however slow it answers."""
+    try:
+        socket.create_connection(("127.0.0.1", PORT), timeout=5).close()
+        return True
+    except OSError:
+        return False
+
+
 def check_live():
     code, body = http("/health/liveliness", timeout=3)
-    return code == 200, "HTTP %s %s" % (code, body[:80] if code != 200 else "")
+    if code == 200:
+        return True, "HTTP 200 "
+    # A slow answer under laptop load is not a dead router: restarting it cuts every live
+    # session (29 of 35 restarts on 2026-09-28 were this). Only a refused port is healed.
+    if code == 0 and listening():
+        return True, "slow (%s) but listening -- not restarted" % body[:40]
+    return False, "HTTP %s %s" % (code, body[:80])
 
 
 def heal_live():
