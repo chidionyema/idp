@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # The shadow proves the head commit itself, so the tree must be the head, not a
           # merge commit GitHub synthesised, and the history must reach the base to diff it.
