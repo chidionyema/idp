@@ -98,6 +98,41 @@ for m in cfg.get("model_list", []):
     else:
         kept.append(m)
 cfg["model_list"] = kept
+# A fallback chain that names a lane this machine does not serve is a silent substitution: the
+# caller asks for deepseek and is answered by another vendor. Keep only chains between served lanes,
+# so a dead lane fails loudly with its own name.
+served = {m["model_name"] for m in kept}
+rs = cfg.setdefault("router_settings", {})
+chains = []
+for entry in rs.get("fallbacks", []):
+    for src, tgts in entry.items():
+        tgts = [t for t in tgts if t in served]
+        if src in served and tgts:
+            chains.append({src: tgts})
+rs["fallbacks"] = chains
+# Cooldown alone is reactive (a user request has to fail first); probe lanes in the background.
+gs = cfg.setdefault("general_settings", {})
+gs.update(background_health_checks=True, enable_health_check_routing=True,
+          health_check_interval=60, health_check_staleness_threshold=120,
+          health_check_ignore_transient_errors=True)
+# The trace exporter retried a collector nobody runs (3,367 ConnectionErrors in one log window).
+# Serve the otel callback only when its endpoint answers, same rule as lanes with no key.
+import socket
+from urllib.parse import urlparse
+ep = urlparse(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"))
+try:
+    socket.create_connection((ep.hostname, ep.port or 4318), timeout=1).close()
+    otel_up = True
+except OSError:
+    otel_up = False
+if not otel_up:
+    cfg.setdefault("litellm_settings", {})["callbacks"] = [
+        c for c in cfg["litellm_settings"].get("callbacks", []) if c != "otel"]
+# The router's own account of what it serves, readable without a log.
+import json, time
+json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
+           "dropped": sorted(set(dropped) - served), "fallbacks": chains, "otel": otel_up},
+          open(os.path.join(os.path.dirname(sys.argv[2]), "lanes.json"), "w"), indent=1)
 # Laptop only: who may call this router (platform/llm/local_caller_auth.py). It runs before every
 # other callback, so a refused request costs nothing.
 cfg.setdefault("general_settings", {})["custom_auth"] = "local_caller_auth.user_api_key_auth"

@@ -32,9 +32,23 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 GUARD_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "config_guard.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "config_guard.py"
 )
-SERVE_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "serve.py"
+SERVE_MODULE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "serve.py"
+)
 
 
 def _load(path: Path, name: str):
