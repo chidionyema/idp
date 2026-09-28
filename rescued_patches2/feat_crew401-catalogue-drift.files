@@ -1,5 +1,0 @@
-.github/workflows/oke-check.yml
-bin/idp-catalogue-drift
-docs/evidence/pr-291/20260827T020417Z-1.png
-platform/state/cluster-state.yaml
-tests/test_incident_crew401_catalogue_drift_row.py

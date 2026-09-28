@@ -1,4 +1,0 @@
-{
-  "_comment": "GitHub tokens workloads read are minted IN the cluster by external-secrets GithubAccessToken generators beside their consumers (platform/hermes-agent/gateway.yaml GITHUB_TOKEN, platform/mcp/external-secret.yaml GITHUB_MCP_TOKEN), narrowed to the application-engineer lane of lanes.json, fresh on every 45m ExternalSecret refresh -- below the token's 1h life. The off-cluster lane died with idp#852 (verify-drill.yml deleted; the hourly bin/idp-github-app refresh rode inside it), so freshness is now a property of the platform layer: this list is empty by design and bin/idp-github-app refresh mints only what is listed here. No PAT is ever pasted (crew#66 root trust, crew#577).",
-  "consumers": []
-}

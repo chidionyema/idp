@@ -1,3 +1,0 @@
-# explanation
-
-Diataxis quadrant. See ADR 0002.

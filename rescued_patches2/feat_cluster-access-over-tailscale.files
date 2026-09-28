@@ -1,6 +1,0 @@
-platform/tailscale/kustomization.yaml
-platform/tailscale/operator.yaml
-platform/tailscale/policy.hujson
-platform/tailscale/rbac.yaml
-tests/test_incident_crew307_every_look_at_the_cluster_needed_a_pull_request.py
-tests/test_incident_crew516_otto_hands_on_the_mac.py

@@ -1,8 +1,0 @@
-# The alerts row's own credential (crew#284, 2026-08-26). It lived in platform/secret-store, whose
-# `wait: true` made one failing ExternalSecret hold llm, identity, alerts and image-automation
-# behind it (llm.<zone> NXDOMAIN 14:59Z-21:50Z). secret-store now carries only the store; each
-# consumer waits for its own secret.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - flux-telegram.yaml

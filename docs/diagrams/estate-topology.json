@@ -1,6 +1,0 @@
-{
-  "nodes": [],
-  "edges": [],
-  "status": "Phase 2: Cilium Hubble integration pending",
-  "note": "Generated when Cilium is deployed with eBPF packet tracking enabled"
-}

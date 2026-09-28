@@ -1,4 +1,0 @@
-.pr-body-catguard.md
-bin/idp-pr-catalogues
-bin/pr-report
-tests/test_incident_idp1014_gate_reads_head_catalogue_always.py

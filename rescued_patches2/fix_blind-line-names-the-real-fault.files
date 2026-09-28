@@ -1,4 +1,0 @@
-bin/idp-cloud
-bin/idp-kube
-bin/idp-vault-put
-tests/test_incident_20260831_blind_line_named_a_remedy_that_could_not_work.py

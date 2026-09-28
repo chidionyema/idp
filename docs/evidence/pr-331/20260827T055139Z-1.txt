@@ -1,4 +1,0 @@
-== pytest
-8 passed in 1.79s
-== compile collect.py
-compiles 13272 bytes

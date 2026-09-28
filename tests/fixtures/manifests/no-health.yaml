@@ -1,4 +1,0 @@
-action: up
-name: no-health
-image: caddy:2.10-alpine
-ports: [{host: 38080, container: 80}]

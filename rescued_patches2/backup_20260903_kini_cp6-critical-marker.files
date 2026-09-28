@@ -1,6 +1,0 @@
-features/sovereign-bus/cp6_self_termination.feature
-sovereign/cli.py
-sovereign/engine/client.py
-sovereign/engine/termination.py
-sovereign/engine/workflow.py
-sovereign/tests/test_incident_cp6_termination.py

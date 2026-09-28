@@ -1,3 +1,0 @@
-.github/workflows/oke-check.yml
-bin/idp-oke-break-glass
-platform/calico/raw/rbac.yaml

@@ -1,9 +1,0 @@
-docs/demo/sb.md
-docs/onboarding/sb.md
-sovereign/cli.py
-sovereign/config.py
-sovereign/engine/fork.py
-sovereign/engine/receipts.py
-sovereign/engine/shadow_root.py
-sovereign/engine/test_fork.py
-sovereign/sidecar/core.py

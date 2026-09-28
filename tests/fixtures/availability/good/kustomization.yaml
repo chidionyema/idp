@@ -1,6 +1,0 @@
-# The shape the standard asks for: two replicas, a budget that still permits a drain, a hard
-# spread, both probes. bin/idp-availability-gate must pass this and refuse ../bad.
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - surface.yaml

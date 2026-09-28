@@ -1,7 +1,0 @@
-platform/estate-db/cluster/databases.yaml
-platform/ns-fences/allowances.yaml
-platform/ns-fences/network/llm.yaml
-platform/ns-fences/network/otto-gateway.yaml
-platform/otto-gateway/deployment.yaml
-platform/otto-gateway/kustomization.yaml
-platform/otto-gateway/memory-store-job.yaml

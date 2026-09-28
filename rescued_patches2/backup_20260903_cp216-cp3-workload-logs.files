@@ -1,6 +1,0 @@
-bin/idp-ci
-bin/mcp-status
-mcp/agentgateway.yml
-mcp/estate-mcp.Dockerfile
-mcp/plugins/workload_logs.py
-tests/test_cp3_workload_logs.py

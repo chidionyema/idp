@@ -1,6 +1,0 @@
-#!/usr/bin/env bash
-# fixture: a shell default hides the zone behind ":-" (crew#796)
-set -euo pipefail
-trap 'echo "verify: failed" >&2' ERR
-DOMAIN="${STORE_DOMAIN:-mumchimp.com}"
-echo "$DOMAIN"

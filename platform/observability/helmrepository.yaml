@@ -1,9 +1,0 @@
-# crew#584: the store's copy of the chart source; the collector row carries its own in
-# observability-agent so either tier installs alone (platform/features/features.yaml traces).
-apiVersion: source.toolkit.fluxcd.io/v1
-kind: HelmRepository
-metadata:
-  name: signoz
-spec:
-  interval: 24h
-  url: https://charts.signoz.io

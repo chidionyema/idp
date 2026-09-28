@@ -1,8 +1,0 @@
-- [Otto's Telegram webhook door](otto-telegram-webhook.md) — how updates arrive, what a deploy looks like, what to read when the bot goes quiet.
-- [Dagster scheduler](dagster.md) — the estate scheduler on the cluster: verifying the rollout, handling Kyverno rejections.
-- [The one-hour buyer sandbox](demo-sandbox.md) — launch a throwaway cluster-in-a-cluster for a buyer's engineer with one command; it expires by itself.
-- [The merge queue](merge-queue.md) — green pull requests land themselves; how to watch it, pause it, and roll it back.
-- [Otto staging, the bot token](otto-golden.md) — the one founder step (BotFather, then the vault) that the new staging pod waits on.
-- [Superset dashboards](superset-dashboards.md) — the boardroom dashboards behind the one login: what watches them, where the release and its database live, the one leftover Metabase volume to delete.
-- [A Flux dry-run fails on an admission webhook](admission-webhook-eof.md) — dozens of objects go not-Ready behind one hung endpoint; the one playbook that cures it, and the far larger one not to reach for.
-- [Rotating a vendor key](rotating-a-vendor-key.md) — change it in Bitwarden and the cluster follows in about two minutes; the one step the platform cannot do for you is when to delete the old key at the vendor.

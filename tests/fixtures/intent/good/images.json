@@ -1,7 +1,0 @@
-{
-  "capability": "storage",
-  "name": "demo-images",
-  "purpose": "fixture: the consultant's own example, a place to store 5GB of image data",
-  "size_gb": 5,
-  "access": "private"
-}

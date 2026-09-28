@@ -1,7 +1,0 @@
-platform/monitoring/rules/api-key-warden.yaml
-platform/monitoring/rules/kustomization.yaml
-platform/warden/Dockerfile
-platform/warden/warden.py
-scheduler/schedule.yml
-sovereign/requirements.txt
-tests/test_warden_job.py

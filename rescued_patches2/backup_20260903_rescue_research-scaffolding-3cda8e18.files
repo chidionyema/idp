@@ -1,9 +1,0 @@
-Makefile
-contract/__init__.py
-db/__init__.py
-engine/__init__.py
-profiles/__init__.py
-requirements-research.txt
-scripts/__init__.py
-tests/research/__init__.py
-tests/research/test_research_smoke.py

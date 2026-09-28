@@ -1,2 +1,0 @@
-risks:
-  - {id: R-1, system: demo, hazard: h, article: a, owner: o, likelihood: low, impact: low, mitigation: m, control: c, status: open, review_due: 2020-01-01}

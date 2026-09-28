@@ -1,5 +1,0 @@
-.github/workflows/oke-check.yml
-bin/litellm-up
-platform/llm/config.yaml
-platform/llm/external-secret.yaml
-platform/vendors/consoles.yaml

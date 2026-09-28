@@ -1,6 +1,0 @@
-.githooks/pre-push
-bin/idp-tests-for
-bin/pr-report
-pyproject.toml
-sovereign/requirements-dev.txt
-tests/test_incident_crew584_tests_for_selects_by_changed_path.py
