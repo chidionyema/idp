@@ -1,0 +1,274 @@
+# Otto (@Ottototbot, platform/hermes-agent) and Otto numun (@numun_bot, platform/otto-golden),
+# and every layer either one thinks, remembers or acts through.
+#
+# c96359f4 (2026-09-26, "~80 flux rows down to 7") deleted this file. The root Kustomization prunes,
+# so both Ottos, the model router they think through (llm), their memory (hindsight), their estate
+# tools (mcp) and the PriorityClass their pods name were removed from the cluster with it. Measured
+# 2026-09-28: estate-state 36466538268 "founder-otto -> hermes-agent: a kustomization the cluster
+# does not hold", router-lanes "0 ok, 32 FAIL", and https://otto.mumchimp.com/readyz -> 404 at the
+# edge, so Telegram had no door to either bot.
+#
+# Every row is idp.estate.io/runtime: always-on, so bin/idp-always-on-guard refuses any push that
+# drops one again. dependsOn names only rows that exist on main or in this file: `scheduling`
+# (Kyverno admission policies, not something either Otto needs) and `edge`'s old priority-classes
+# edge are not restored here.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: priority-classes
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/priority-classes
+  # A PriorityClass a running pod names must never be pruned out from under it: the API server
+  # refuses every new pod that names a missing class.
+  prune: false
+  wait: true
+  timeout: 2m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: github-app-creds
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/github-app-creds
+  prune: true
+  wait: false
+  timeout: 2m
+---
+# The per-application Postgres roles (estate-db-role-litellm, -hindsight) live here. The copy Jobs
+# beside them are guarded by a marker table and exit clean when the old server is gone, so a
+# re-apply does nothing (platform/estate-db/migrate/jobs.yaml header).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: estate-db-migrate
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  dependsOn:
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/estate-db/migrate
+  prune: true
+  wait: false
+  timeout: 20m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: llm
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/llm
+  prune: true
+  dependsOn:
+    - name: estate-db-migrate
+    - name: secret-store
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+  timeout: 2m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: hindsight
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+    - name: llm
+    - name: estate-db-migrate
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/hindsight
+  prune: true
+  timeout: 2m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: hindsight
+      namespace: hindsight
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: mcp
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/mcp
+  prune: true
+  dependsOn:
+    - name: edge
+    - name: secret-store
+    - name: github-app-creds
+    - name: priority-classes
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentgateway
+      namespace: mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: github-mcp
+      namespace: mcp
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: estate-mcp
+      namespace: mcp
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+      - kind: Secret
+        name: github-app
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: hermes-agent
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/hermes-agent
+  prune: true
+  wait: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+      - kind: Secret
+        name: github-app
+  dependsOn:
+    - name: secret-store
+    - name: github-app-creds
+    - name: priority-classes
+    - name: llm
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: hermes-agent-gateway
+      namespace: hermes-agent
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-golden-secret
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-golden-secret
+  prune: true
+  wait: true
+  timeout: 2m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: otto-golden
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/otto-golden
+  prune: true
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
+      - kind: Secret
+        name: otto-webhook
+  dependsOn:
+    - name: secret-store
+    - name: edge
+    - name: otto-golden-secret
+    - name: priority-classes
+    - name: llm
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: otto-golden
+      namespace: otto-golden
+---
+# The tailnet: Otto's mac-run hands reach the founder's Mac over it (platform/hermes-agent/mac-run.tpl).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: tailscale
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/tailscale
+  prune: true
+  dependsOn:
+    - name: secret-store
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: operator
+      namespace: tailscale
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
