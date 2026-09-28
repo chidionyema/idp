@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - oke-unified-memory.yaml
+  - image.yaml
+images:
+  # Set by Flux image automation. Until the first main build exists this names no image, and
+  # nothing pulls it: the Deployment sits at zero until the first request.
+  - name: ghcr.io/chidionyema/unified-memory-server
+    newTag: main-13064-04c99a57124e951c5dd4b2be5d24ea29151d9462 # {"$imagepolicy": "flux-system:unified-memory-server:tag"}

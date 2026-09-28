@@ -1,0 +1,60 @@
+#!/bin/bash
+# Watch the data volume every 5 minutes and say so before it is full, not after.
+#
+# WHY. 2026-09-27 the laptop reached 0.6 GB free mid-session with nothing warning: bin/idp-disk-guard
+# reports only when someone runs it, and ai.estate.disk-clean pointed at a script that no longer
+# existed and was not loaded. The founder: "dont wait for it to run out ... we must never be in trouble".
+#
+# Runs from ~/.estate/bin, never ~/Documents: launchd cannot start /bin/sh on a file under
+# ~/Documents (TCC, exit 126). Installed by copying this file there (see the plist template).
+#
+#   free < ACT_GB (20)       act early, at most every 30 min: the cache allow-list AND settled agent
+#                            worktrees (clean, every commit on a ref, unlocked, idle 6h, no process
+#                            inside; `git worktree remove` without --force). 2026-09-27 the volume hit
+#                            160M free while ~9G sat in agent worktrees and 0M of caches was left:
+#                            acting only at 3G, on caches only, freed nothing. Nothing is signalled or
+#                            stopped; a removed worktree comes back with `git worktree add`.
+#   free < MIN_FREE_GB (10)  a macOS notification, at most once an hour
+#   free < CRIT_GB (3)       the same cleanup on every run, then a notification
+# Every run appends one measured line to ~/.estate/disk-watch.log.
+set -uo pipefail
+MIN_FREE_GB="${MIN_FREE_GB:-10}"
+CRIT_GB="${CRIT_GB:-3}"
+ACT_GB="${ACT_GB:-20}"
+ACTED="$HOME/.estate/disk-watch.last-clean"
+LOG="$HOME/.estate/disk-watch.log"
+STAMP="$HOME/.estate/disk-watch.last-alert"
+CLEANUP="$HOME/.estate/libexec/disk-cleanup.sh"
+
+free_kb=$(df -k /System/Volumes/Data 2>/dev/null | awk 'NR==2 {print $4}')
+if [ -z "$free_kb" ]; then
+	echo "$(date -u +%FT%TZ) BLIND cannot read /System/Volumes/Data" >>"$LOG"
+	exit 0
+fi
+free_gb=$((free_kb / 1048576))
+echo "$(date -u +%FT%TZ) free=${free_gb}G" >>"$LOG"
+tail -n 5000 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+
+notify() {
+	/usr/bin/osascript -e "display notification \"$1\" with title \"Estate disk\" sound name \"Basso\"" >/dev/null 2>&1
+}
+
+clean() { [ -f "$CLEANUP" ] && bash "$CLEANUP" true false 0 true >>"$LOG" 2>&1; date +%s >"$ACTED"; }
+
+if [ "$free_gb" -lt "$ACT_GB" ] && [ "$free_gb" -ge "$CRIT_GB" ]; then
+	lastc=$(cat "$ACTED" 2>/dev/null || echo 0)
+	[ $(($(date +%s) - lastc)) -ge 1800 ] && clean
+fi
+if [ "$free_gb" -lt "$CRIT_GB" ]; then
+	clean
+	after=$(($(df -k /System/Volumes/Data | awk 'NR==2 {print $4}') / 1048576))
+	notify "CRITICAL: ${free_gb} GB free, ${after} GB after clearing caches and settled worktrees. Run bin/idp-disk-guard."
+	date +%s >"$STAMP"
+elif [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
+	last=$(cat "$STAMP" 2>/dev/null || echo 0)
+	if [ $(($(date +%s) - last)) -ge 3600 ]; then
+		notify "${free_gb} GB free (floor ${MIN_FREE_GB} GB). Run bin/idp-disk-guard."
+		date +%s >"$STAMP"
+	fi
+fi
+exit 0

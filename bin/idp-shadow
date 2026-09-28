@@ -40,8 +40,10 @@ absent from the inventory and fails; a workload that never became Ready fails; s
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -266,9 +268,25 @@ ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 """
 
 
+# The branch the served tree names its head commit on. Measured 2026-09-27 (runs 36311081058 and
+# every other PR that touched platform/): actions/checkout of a SHA leaves HEAD detached and no
+# refs/heads at all, and Flux's commit-only clone fetches refs/heads/* -- so the commit under test
+# was never fetched, and source-controller answered "unable to clone ...: object not found" after
+# the 300s reconcile timeout. Not one of the check's greens had ever reconciled anything; every
+# one was the "no platform directory changed" skip. Naming the head on a branch, and cloning that
+# branch pinned to the commit, is the fix (reproduced with go-git against this exact server).
+SHADOW_BRANCH = "shadow-verify"
+
+
+def name_head(head):
+    """Put `head` on refs/heads/SHADOW_BRANCH in the served tree, so a clone can reach it."""
+    sh(["git", "-C", REPO, "update-ref", f"refs/heads/{SHADOW_BRANCH}", head])
+
+
 def flux_source(head):
     # http:// -- the ONE scheme Flux admits among the three it allows (see serve_tree's note).
     url = f"http://{GIT_HOST}:{GIT_PORT}/{os.path.basename(REPO)}"
+    name_head(head)
     src = {
         "apiVersion": "source.toolkit.fluxcd.io/v1",
         "kind": "GitRepository",
@@ -277,7 +295,7 @@ def flux_source(head):
         "spec": {
             "interval": "1m",
             "url": url,
-            "ref": {"commit": head},
+            "ref": {"branch": SHADOW_BRANCH, "commit": head},
             "ignore": ".git/\n",
         },
     }
@@ -297,7 +315,7 @@ def flux_source(head):
     )
 
 
-def flux_kustomization(name, path):
+def flux_kustomization(name, path, source="shadow", substitute=False):
     ks = {
         "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
         "kind": "Kustomization",
@@ -306,7 +324,7 @@ def flux_kustomization(name, path):
             "interval": "5m",
             "path": path,
             "prune": True,
-            "sourceRef": {"kind": "GitRepository", "name": "shadow"},
+            "sourceRef": {"kind": "GitRepository", "name": source},
             # wait: true is the environment doing the verifying. Flux blocks until every
             # applied object reports healthy, or it fails the Kustomization itself.
             "wait": True,
@@ -314,12 +332,232 @@ def flux_kustomization(name, path):
             "force": True,
         },
     }
+    if substitute:
+        # What every production row that publishes a hostname carries (clusters/oke/*.yaml).
+        ks["spec"]["postBuild"] = {
+            "substituteFrom": [{"kind": "ConfigMap", "name": "estate-config"}]
+        }
     subprocess.run(
         ["kubectl", "apply", "-f", "-"],
         input=json.dumps(ks),
         capture_output=True,
         text=True,
     )
+
+
+# THE ESTATE FLOOR. Production never reconciles a platform path on a bare cluster: the
+# external-secrets row installs the ExternalSecret CRDs and the priority-classes row the
+# PriorityClasses before any workload row. MEASURED 2026-09-27, once the shadow could clone its
+# head (idp#4488): every PR touching platform/llm, temporal, epistemic-fabric,
+# unified-memory-server or voice-router failed on `no matches for kind "ExternalSecret"`, and
+# event-bus's nats on `no PriorityClass with name platform-batch` -- gaps in the shadow, not in
+# the change. Flux lays the floor too; this process still applies nothing it proves.
+ESO_ROW = os.path.join(REPO, "platform", "secrets", "external-secrets.yaml")
+ESO_GIT = "https://github.com/external-secrets/external-secrets"
+# MEASURED 2026-09-27 once the vault stand-in landed (idp#4510): platform/llm then failed on
+# `no matches for kind "HTTPRoute"` and unified-memory-server on `no matches for kind
+# "HTTPScaledObject"`. Production has both: clusters/oke/ingress.yaml lays the Gateway API CRDs,
+# platform/keda/keda.yaml installs the KEDA http add-on. The shadow takes their CRDs, at the
+# versions production pins, and nothing else of either.
+GATEWAY_ROW = os.path.join(REPO, "clusters", "oke", "ingress.yaml")
+KEDA_ROW = os.path.join(REPO, "platform", "keda", "keda.yaml")
+# MEASURED 2026-09-27: platform/llm (idp#4516) failed on `no matches for kind "Middleware" in
+# version "traefik.io/v1alpha1"` and platform/calico/raw (idp#4375) on `no matches for kind
+# "GlobalNetworkPolicy" in version "crd.projectcalico.org/v1"`. Production has both: the edge row's
+# traefik chart installs its CRDs, and calico-node runs the version the raw manifest pins.
+TRAEFIK_ROW = os.path.join(REPO, "platform", "edge", "traefik.yaml")
+CALICO_ROW = os.path.join(REPO, "platform", "calico", "raw-migration", "calico.yaml")
+
+
+# MEASURED 2026-09-27 (idp#4582): platform/llm failed on `spec.hostnames[0]: Invalid value:
+# "llm.${ESTATE_ZONE}"`. Production substitutes every hostname in Flux postBuild from the
+# estate-config ConfigMap (clusters/oke/estate-config.yaml); the shadow had neither the ConfigMap
+# nor the postBuild, so every path that publishes a hostname was refused for a gap in the shadow.
+# The ConfigMap is the head's own copy: configuration, like the vault stand-in, not the change.
+ESTATE_CONFIG = os.path.join(REPO, "clusters", "oke", "estate-config.yaml")
+
+
+def estate_config():
+    """Lay the head's estate-config ConfigMap. Returns the failure, or None."""
+    p = subprocess.run(
+        ["kubectl", "apply", "-f", ESTATE_CONFIG], capture_output=True, text=True
+    )
+    if p.returncode != 0:
+        return f"could not lay estate-config: {(p.stderr or '').strip()[-400:]}"
+    print(
+        "ok      shadow  estate-config laid from the head (clusters/oke/estate-config.yaml)"
+    )
+    return None
+
+
+def pinned(row, pattern, what):
+    with open(row) as f:
+        m = re.search(pattern, f.read())
+    if not m:
+        raise RuntimeError(f"no {what} version in {row}")
+    return m.group(1)
+
+
+def eso_version():
+    """The ESO chart version production pins, so the shadow's CRDs are production's CRDs."""
+    return pinned(
+        ESO_ROW,
+        r"chart: external-secrets\s+version: *([0-9][^\s]*)",
+        "external-secrets chart",
+    )
+
+
+def floor_sources():
+    """(GitRepository name, url, tag, CRD path) for every CRD family production lays first."""
+    return [
+        ("shadow-floor-eso", ESO_GIT, "v" + eso_version(), "./deploy/crds"),
+        (
+            "shadow-floor-gateway-api",
+            "https://github.com/kubernetes-sigs/gateway-api",
+            pinned(
+                GATEWAY_ROW,
+                r"gateway-api\s+ref:\s+tag: *(v[0-9][^\s]*)",
+                "gateway-api tag",
+            ),
+            "./config/crd/experimental",
+        ),
+        (
+            "shadow-floor-keda-http",
+            "https://github.com/kedacore/http-add-on",
+            "v"
+            + pinned(
+                KEDA_ROW,
+                r"chart: keda-add-ons-http\s+version: *([0-9][^\s]*)",
+                "keda-add-ons-http chart",
+            ),
+            "./config/crd",
+        ),
+        (
+            "shadow-floor-traefik",
+            "https://github.com/traefik/traefik-helm-chart",
+            "v"
+            + pinned(
+                TRAEFIK_ROW,
+                r"chart: traefik\s+version: *([0-9][^\s]*)",
+                "traefik chart",
+            ),
+            "./traefik/crds",
+        ),
+        (
+            "shadow-floor-calico",
+            "https://github.com/projectcalico/calico",
+            pinned(CALICO_ROW, r"calico/node:(v[0-9][^\s\"]*)", "calico/node image"),
+            "./libcalico-go/config/crd",
+        ),
+    ]
+
+
+def flux_floor(deadline):
+    """Have Flux lay what production has under every platform row. Returns the failures."""
+    floor = []
+    for src_name, url, tag, path in floor_sources():
+        src = {
+            "apiVersion": "source.toolkit.fluxcd.io/v1",
+            "kind": "GitRepository",
+            "metadata": {"name": src_name, "namespace": "flux-system"},
+            "spec": {
+                "interval": "1h",
+                "url": url,
+                "ref": {"tag": tag},
+                # the two levels production re-includes: /deploy/crds/, /config/crd/
+                "ignore": "/*\n!/" + "/".join(path[2:].split("/")[:2]) + "/\n",
+            },
+        }
+        subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=json.dumps(src),
+            capture_output=True,
+            text=True,
+        )
+        floor.append((src_name + "-crds", path, src_name))
+    floor.append(
+        ("shadow-floor-priority-classes", "./platform/priority-classes", "shadow")
+    )
+    for name, path, source in floor:
+        flux_kustomization(name, path, source)
+    failed = []
+    for name, path, _ in floor:
+        ready, msg, _inv = wait_ks(name, deadline)
+        if ready:
+            print(f"ok      shadow  floor {name} laid by flux")
+        else:
+            failed.append(f"the shadow floor {name} did not converge -- {msg}")
+    return failed
+
+
+# The vault is the one thing a shadow can never have: ESO's CRDs are on the floor, but no
+# controller and no estate-vault store, so no ExternalSecret ever writes its Secret and every
+# workload that mounts one waits in ContainerCreating until the health check times out (P1's
+# epistemic-ingest, 2026-09-27: `secret "epistemic-fabric-github-api" not found`). The shadow
+# stands in for the vault, not for the change: for each ExternalSecret Flux applies, it creates
+# the target Secret ESO would have written, with the keys ESO would have written and a
+# placeholder value. A workload that needs the real credential to go Ready still fails.
+VAULT_PLACEHOLDER = "shadow-vault-stand-in"
+
+
+def vault_stand_ins(external_secrets):
+    """The Secrets ESO would write for these ExternalSecrets, holding placeholders."""
+    out = []
+    for es in external_secrets:
+        meta, spec = es.get("metadata") or {}, es.get("spec") or {}
+        target = spec.get("target") or {}
+        keys = [d["secretKey"] for d in spec.get("data") or [] if d.get("secretKey")]
+        keys += list(((target.get("template") or {}).get("data") or {}).keys())
+        for src in spec.get("dataFrom") or []:
+            for rw in src.get("rewrite") or []:
+                # a literal transform template renames the generated key to itself
+                tpl = (rw.get("transform") or {}).get("template") or ""
+                if tpl and "{{" not in tpl:
+                    keys.append(tpl)
+        out.append(
+            {
+                "apiVersion": "v1",
+                "kind": "Secret",
+                "metadata": {
+                    "name": target.get("name") or meta.get("name"),
+                    "namespace": meta.get("namespace") or "default",
+                    "labels": {"idp.shadow/vault-stand-in": "true"},
+                },
+                "stringData": {k: VAULT_PLACEHOLDER for k in dict.fromkeys(keys)},
+            }
+        )
+    return out
+
+
+def stand_in_vault(stop, every=5.0):
+    """Until stop is set, give every ExternalSecret in the shadow its Secret, once."""
+    made = set()
+    while True:
+        p = kube(
+            ["get", "externalsecrets.external-secrets.io", "-A", "-o", "json"],
+            check=False,
+        )
+        items = (
+            json.loads(p.stdout or "{}").get("items", []) if p.returncode == 0 else []
+        )
+        for sec in vault_stand_ins(items):
+            key = (sec["metadata"]["namespace"], sec["metadata"]["name"])
+            if key in made:
+                continue
+            r = subprocess.run(
+                ["kubectl", "create", "-f", "-"],
+                input=json.dumps(sec),
+                capture_output=True,
+                text=True,
+            )
+            if r.returncode == 0 or "AlreadyExists" in (r.stderr or ""):
+                made.add(key)
+                print(
+                    f"ok      shadow  vault stand-in {key[0]}/{key[1]} "
+                    f"({len(sec['stringData'])} placeholder key(s))"
+                )
+        if stop.wait(every):
+            return
 
 
 def ks_status(name):
@@ -348,9 +586,13 @@ def wait_ks(name, deadline):
                         "entries"
                     ) or []
                     return True, last, inv
+                # ArtifactFailed is kustomize-controller retrying while its GitRepository still
+                # clones (2026-09-27: the ESO floor, Applied 18s later). A source that never
+                # arrives still fails, at the deadline, with this message.
                 if ready.get("status") == "False" and ready.get("reason") not in (
                     "Progressing",
                     "ReconciliationSucceeded",
+                    "ArtifactFailed",
                 ):
                     inv = (obj.get("status", {}).get("inventory") or {}).get(
                         "entries"
@@ -470,12 +712,20 @@ def verify(head, paths):
         return 2, ["no path under test; nothing to reconcile"]
 
     daemon = serve_tree()
+    vault_stop = threading.Event()
     try:
         flux_source(head)
+        floor_failed = flux_floor(time.time() + 300)
+        if floor_failed:
+            return 1, floor_failed
+        config_failed = estate_config()
+        if config_failed:
+            return 1, [config_failed]
+        threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
-            flux_kustomization(name, path)
+            flux_kustomization(name, path, substitute=True)
             names.append((name, path))
 
         deadline = time.time() + int(os.environ.get("IDP_SHADOW_TIMEOUT", "600"))
@@ -514,6 +764,7 @@ def verify(head, paths):
         )
         return 0, []
     finally:
+        vault_stop.set()
         daemon.terminate()
         try:
             daemon.wait(timeout=10)

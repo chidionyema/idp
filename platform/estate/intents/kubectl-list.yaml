@@ -1,0 +1,18 @@
+name: kubectl-list
+description: Thin kubectl get wrapper for listing resources. kubectl errors reach stderr.
+args:
+  resource:  {type: string}
+  namespace: {type: string, default: ""}
+  all_ns:    {type: bool, default: false}
+  label:     {type: string, default: ""}
+  field:     {type: string, default: ""}
+  output:    {type: string, default: "wide"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: list
+    # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26)
+    cmd: >
+      ns={{namespace}}; a={{all_ns}}; l={{label}}; f={{field}}; kc={{kubeconfig}};
+      case "$a" in True|true) scope=-A;; *) scope=${ns:+-n=$ns};; esac;
+      ${kc:+env KUBECONFIG="$kc"} kubectl --request-timeout=30s get {{resource}} $scope
+      ${l:+-l "$l"} ${f:+--field-selector "$f"} -o {{output}}

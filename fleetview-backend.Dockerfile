@@ -47,4 +47,11 @@ EXPOSE 8091
 # platform/tailscale/policy.hujson's deny-by-default ACL. A local `docker run` of this image
 # (no FLEETVIEW_EXECUTOR_MODE set) still answers /mutations by calling mutations.py directly --
 # opening this port costs nothing when nothing dials it.
-ENTRYPOINT ["python3", "/app/backstage/plugins/fleetview-backend/src/serve.py", "18790", "/app/backstage/plugins/fleetview-backend/src/routes.py", "8091"]
+#
+# serve.py and routes.py moved into the fleetview_backend package (src/fleetview_backend/), whose
+# modules import each other as `fleetview_backend.*`, so it runs as a module, as bin/serve-fleetview
+# does. The path this used to name no longer exists: from 2026-09-27 every catalogue Pod rolled
+# with this image crash-looped on "can't open file .../src/serve.py" and the catalogue never went
+# Ready. serve.py takes `<port> [executor-port]`; the routes path argument is gone.
+ENV PYTHONPATH=/app/backstage/plugins/fleetview-backend/src
+ENTRYPOINT ["python3", "-m", "fleetview_backend.serve", "18790", "8091"]

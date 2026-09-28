@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- /fleet's voice (:8091). Every setting it runs with is here, not in a shell someone typed
+     (2026-09-27: a nohup /tmp binary with VOICE_ENDPOINT_SILENCE=0.3 split "how many..." after "how").
+     bin/voice-router-launchd (staged in ~/.estate/bin with bin/fleetview-launchd, so no checkout's branch
+     decides what runs) loads the router key from the vault by name; the binary is built by
+     bin/idp-install-all into ~/.estate/voice-router (launchd cannot exec under ~/Documents, TCC). -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.voice-router</string>
+  <key>ProcessType</key><string>Interactive</string>
+  <key>ProgramArguments</key><array>
+    <string>${PYTHON_BIN}</string>
+    <string>${HOME}/.estate/bin/voice-router-launchd</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>VOICE_ADDR</key><string>127.0.0.1:8091</string>
+    <key>VOICE_MODELS</key><string>${HOME}/.cache/estate-tools/sherpa-models</string>
+    <key>LLM_BASE_URL</key><string>http://127.0.0.1:4000/v1</string>
+    <key>LLM_MODEL</key><string>voice</string>
+    <!-- 0.5 s: at 0.3 the ASR endpoints mid-question and the brain answers "how". -->
+    <key>VOICE_ENDPOINT_SILENCE</key><string>0.5</string>
+    <!-- An utterance naming a committed arg-free intent runs it (fleetview POST /voice/intent). -->
+    <key>VOICE_INTENT_URL</key><string>http://127.0.0.1:18790/voice/intent</string>
+  </dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>StandardOutPath</key><string>${HOME}/Library/Logs/voice-router.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/voice-router.err.log</string>
+</dict></plist>

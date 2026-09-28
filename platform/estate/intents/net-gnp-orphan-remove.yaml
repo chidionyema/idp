@@ -1,0 +1,21 @@
+name: net-gnp-orphan-remove
+description: >-
+  MUTATING (cluster network policy). Deletes a Calico GlobalNetworkPolicy that is a Flux orphan
+  and whose only rule denies GlobalNetworkSets holding no nets. Such a policy enforces nothing
+  except its side effect: any policy selecting a pod for egress makes the tier's default action
+  Deny, so every selected pod without its own allow loses all egress. 2026-09-26:
+  deny-direct-ai-vendor-egress (created by Flux Kustomization calico on 2026-09-23, which no
+  longer exists; namespaceSelector with embedded newlines, its exemptions never applied)
+  default-denied egress of every pod including kube-system: cross-node pod TCP and SPIRE dead.
+  Preconditions (refuses otherwise): no live Flux owner; the Deny sets hold no nets; exactly one
+  rule. Snapshots before deleting; rollback: net-gnp-restore snapshot=<path>.
+  Verify with: net-forensics probe=probe.
+class: mutate
+args:
+  name:     {type: string, default: "deny-direct-ai-vendor-egress"}
+  setlabel: {type: string, default: "estate.internal/role=ai-vendor-endpoint"}
+halt_on_failure: true
+steps:
+  - name: gnp-orphan-remove
+    cmd: >
+      bash ~/.estate/libexec/net-gnp-orphan-remove.sh {{name}} {{setlabel}}

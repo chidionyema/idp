@@ -11,19 +11,30 @@ CONFIG (LAW 46): NATS_URL env, default nats://nats.event-bus.svc:4222.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
+import logging
 import os
-from typing import TYPE_CHECKING, AsyncGenerator
+from typing import TYPE_CHECKING, Any, AsyncGenerator, AsyncIterable, AsyncIterator
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_NATS_URL = "nats://nats.event-bus.svc:4222"
 
 # The stream the board reads. One stream, one subject family, one schema (the contract).
 STREAM_NAME = "ESTATE_AGENT"
 STREAM_SUBJECTS = ["estate.agent.>"]
+# Core NATS, ephemeral; published by voice-router in VOICE_MODE=director.
+CUE_SUBJECT = "estate.cinema.cue"
+
+# The director's news stream. Subjects estate.news.story.<channel>; the stream (ESTATE_NEWS,
+# 24h max_age) is created by the director, not here -- subscribe_stories only ever reads it.
+STORY_SUBJECTS = "estate.news.story.>"
+STORY_REPLAY_S = 3600
 # The 15-minute TTL in nanoseconds, matching outbox.py's TTL_S. The drain side expires a row
 # after TTL_S seconds; the stream's max_age is the same span in nanos so the two ends of the
 # pipeline agree on what is stale.
@@ -148,3 +159,147 @@ async def subscribe_stream(nats_url: str) -> AsyncGenerator[dict, None]:
                 continue
     finally:
         await nc.drain()
+
+
+async def decode_cues(messages: AsyncIterable) -> AsyncGenerator[dict, None]:
+    """Decode raw cue messages into validated cue dicts, skipping anything malformed."""
+    async for msg in messages:
+        try:
+            obj = json.loads(msg.data)
+        except (ValueError, UnicodeDecodeError, TypeError):
+            continue
+        if (
+            isinstance(obj, dict)
+            and isinstance(obj.get("target_id"), str)
+            and obj["target_id"]
+            and isinstance(obj.get("shot_type"), str)
+        ):
+            yield obj
+        else:
+            continue
+
+
+async def subscribe_cues(nats_url: str) -> AsyncGenerator[dict, None]:
+    """Subscribe to `estate.cinema.cue` (core NATS, ephemeral) and yield validated cue dicts.
+
+    Raises RuntimeError("nats-py not installed") when nats-py is absent.
+    """
+    _require_nats()
+    import nats
+
+    nc = await nats.connect(_nats_url(nats_url))
+    try:
+        sub = await nc.subscribe(CUE_SUBJECT)
+        async for cue in decode_cues(sub.messages):
+            yield cue
+    finally:
+        await nc.drain()
+
+
+async def decode_stories(
+    messages: AsyncIterable,
+) -> AsyncGenerator[tuple[str, dict], None]:
+    """Decode raw story messages into (on, story) pairs, skipping anything malformed.
+
+    `on` is the last token of the message subject (`estate.news.story.<channel>` -> `<channel>`),
+    the channel the story actually arrived on -- distinct from the `channel` field inside the
+    story payload itself (the director also republishes high-score/breaking stories to `news`).
+    """
+    async for msg in messages:
+        try:
+            obj = json.loads(msg.data)
+        except (ValueError, UnicodeDecodeError, TypeError):
+            continue
+        if (
+            isinstance(obj, dict)
+            and isinstance(obj.get("id"), str)
+            and obj["id"]
+            and isinstance(obj.get("headline"), str)
+            and obj["headline"]
+            and isinstance(obj.get("channel"), str)
+            and obj["channel"]
+            and obj.get("severity") in ("info", "warn", "danger")
+        ):
+            on = msg.subject.rsplit(".", 1)[-1]
+            yield (on, obj)
+        else:
+            continue
+
+
+async def subscribe_stories(
+    nats_url: str, replay_s: int = STORY_REPLAY_S
+) -> AsyncGenerator[tuple[str, dict], None]:
+    """Subscribe to `estate.news.story.>` and yield decoded (on, story) pairs.
+
+    An ordered push consumer starting from `now - replay_s` -- the "while you were away"
+    rundown on connect. Never creates the ESTATE_NEWS stream; raises when it is absent (the
+    caller's isolated() wrapper turns that into a logged, isolated end, not a dead /stream).
+    Raises RuntimeError("nats-py not installed") when nats-py is absent.
+    """
+    _require_nats()
+    import nats
+    from nats.js import api as js_api
+
+    nc = await nats.connect(_nats_url(nats_url))
+    try:
+        js = nc.jetstream()
+        start_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=replay_s)
+        config = js_api.ConsumerConfig(
+            deliver_policy=js_api.DeliverPolicy.BY_START_TIME,
+            opt_start_time=start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        sub = await js.subscribe(STORY_SUBJECTS, ordered_consumer=True, config=config)
+        async for on_story in decode_stories(sub.messages):
+            yield on_story
+    finally:
+        await nc.drain()
+
+
+async def isolated(name: str, gen: AsyncIterator) -> AsyncGenerator[Any, None]:
+    """Iterate `gen`, yielding its items; on any Exception, log one line and return.
+
+    Never raises. This is what lets each /stream source (events, cues, stories) fail on its
+    own -- one source's stream not existing must not take the others down with it.
+    """
+    try:
+        async for item in gen:
+            yield item
+    except Exception as exc:  # noqa: BLE001 -- isolate this source, never the merged stream
+        logger.info("fleetview.stream_source_down source=%s err=%s", name, exc)
+        return
+
+
+async def merge(*gens: AsyncIterator) -> AsyncGenerator[Any, None]:
+    """Merge multiple async generators into one, interleaving items as they arrive.
+
+    An exception raised by any source generator cancels the rest and re-raises.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _drain(gen: AsyncIterator) -> None:
+        exc: Exception | None = None
+        try:
+            async for item in gen:
+                await queue.put((False, item))
+        except Exception as e:  # noqa: BLE001 — forwarded to the consumer, not swallowed
+            exc = e
+        finally:
+            await queue.put((True, exc))
+
+    tasks = [asyncio.create_task(_drain(gen)) for gen in gens]
+    finished = 0
+    try:
+        while finished < len(tasks):
+            is_done, payload = await queue.get()
+            if is_done:
+                finished += 1
+                if payload is not None:
+                    for t in tasks:
+                        t.cancel()
+                    raise payload
+                continue
+            yield payload
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()

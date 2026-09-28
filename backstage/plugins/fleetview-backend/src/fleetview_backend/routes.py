@@ -164,6 +164,16 @@ def stream_frames(records: list[dict[str, Any]]) -> list[str]:
     return [f"data: {json.dumps(sessions.stream_event_for(r))}\n\n" for r in records]
 
 
+def cue_frame(cue: dict[str, Any]) -> str:
+    """One SSE frame for a cinema cue; the page routes type == 'cue' to its CineCam."""
+    return f"data: {json.dumps({**cue, 'type': 'cue'})}\n\n"
+
+
+def story_frame(on: str, story: dict[str, Any]) -> str:
+    """One SSE frame for a news story; `on` is the channel the story was published on."""
+    return f"data: {json.dumps({'type': 'story', 'on': on, 'story': story})}\n\n"
+
+
 def notes_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     return {"notes": notes.notes_for(session_id)}, 200
 
@@ -315,3 +325,19 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
             "records": [],
         }, 503
     return {"available": True, "error": None, **result}, 200
+
+
+# ── agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR ──
+AGENT_JOBS_PATH = "/agent-jobs"
+
+
+def agent_jobs_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import agent_jobs
+
+    return agent_jobs.list_jobs()
+
+
+def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
+    from fleetview_backend import agent_jobs
+
+    return agent_jobs.handle_post(body)

@@ -1,0 +1,17 @@
+name: kubectl
+description: Thin read-only kubectl get wrapper. resource required; name/namespace/extra optional.
+args:
+  resource:   {type: string}
+  name:       {type: string, default: ""}
+  namespace:  {type: string, default: ""}
+  output:     {type: string, default: "json"}
+  extra:      {type: string, default: ""}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: run
+    # empty optionals are dropped, not passed as '' (get X '' / -n '' were kubectl errors, and
+    # 2>/dev/null hid them: every call without a name or namespace exited 1 silently, 2026-09-26)
+    cmd: >
+      n={{name}}; ns={{namespace}}; kc={{kubeconfig}}; x={{extra}};
+      ${kc:+env KUBECONFIG="$kc"} kubectl --request-timeout=30s
+      get {{resource}} ${n:+"$n"} ${ns:+-n "$ns"} -o {{output}} $x

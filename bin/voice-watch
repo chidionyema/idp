@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Probe /fleet's voice every two minutes; restart it when it is gone, say so when it cannot answer.
+
+WHY. 2026-09-27 14:02-15:54: a router reinstall dropped the `voice` lane and every /fleet voice turn
+failed while voice-router's /healthz said ok. Nobody knew until the founder spoke to it. /readyz asks
+the brain lane for one token, so it fails for exactly that; this runs it without anyone asking.
+
+  unreachable   launchctl kickstart ai.estate.voice-router (bootstrap it if launchd lost it), then alert
+  503           alert: the router is up but its lane does not answer -- nothing here can fix a lane
+  200           ok; the first ok after a failure is recorded as a recovery
+
+An alert is a macOS notification plus a line in ~/.estate/alerts/inbox.jsonl (the estate's alert
+inbox), at most once per ALERT_EVERY_S while the same failure persists. Every run appends one
+measured line to ~/.estate/voice-watch.log and writes the verdict to ~/.estate/voice-watch.json.
+"""
+
+import json
+import os
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+URL = os.environ.get("VOICE_READYZ", "http://127.0.0.1:8091/readyz")
+LABEL = "ai.estate.voice-router"
+ALERT_EVERY_S = int(os.environ.get("VOICE_WATCH_ALERT_EVERY_S", "900"))
+STATE = Path.home() / ".estate"
+LOG, VERDICT, INBOX = (
+    STATE / "voice-watch.log",
+    STATE / "voice-watch.json",
+    STATE / "alerts/inbox.jsonl",
+)
+
+
+def probe() -> tuple[str, str]:
+    """('ok'|'not_ready'|'unreachable', detail)."""
+    try:
+        with urllib.request.urlopen(URL, timeout=25) as r:
+            return "ok", r.read(300).decode(errors="replace").strip()
+    except urllib.error.HTTPError as e:
+        return "not_ready", f"{e.code}: {e.read(300).decode(errors='replace').strip()}"
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        return "unreachable", str(getattr(e, "reason", e))
+
+
+def restart() -> str:
+    """kickstart the job; if launchd no longer has it (booted out), load its plist again."""
+    domain = f"gui/{os.getuid()}"
+    r = subprocess.run(
+        ["/bin/launchctl", "kickstart", "-k", f"{domain}/{LABEL}"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if r.returncode == 0:
+        return "kickstarted"
+    plist = Path.home() / f"Library/LaunchAgents/{LABEL}.plist"
+    b = subprocess.run(
+        ["/bin/launchctl", "bootstrap", domain, str(plist)],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    return f"kickstart exit {r.returncode}; bootstrap exit {b.returncode} {b.stderr.strip()[:160]}".strip()
+
+
+def alert(text: str) -> None:
+    INBOX.parent.mkdir(parents=True, exist_ok=True)
+    with INBOX.open("a") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "source": "voice-watch",
+                    "key": "voice-not-answering",
+                    "text": text,
+                }
+            )
+            + "\n"
+        )
+    msg = text.replace("\\", "").replace('"', "'")[:200]
+    subprocess.run(
+        [
+            "/usr/bin/osascript",
+            "-e",
+            f'display notification "{msg}" with title "Estate voice" sound name "Basso"',
+        ],
+        capture_output=True,
+        timeout=10,
+    )
+
+
+def main() -> int:
+    STATE.mkdir(exist_ok=True)
+    prev = {}
+    if VERDICT.exists():
+        try:
+            prev = json.loads(VERDICT.read_text())
+        except ValueError:
+            prev = {}
+    state, detail = probe()
+    action = ""
+    if state == "unreachable":
+        action = restart()
+    now = time.time()
+    failing_since = prev.get("failing_since") if state != "ok" else None
+    failing_since = failing_since or (now if state != "ok" else None)
+    last_alert = prev.get("last_alert", 0) if state != "ok" else 0
+    if state != "ok" and now - last_alert >= ALERT_EVERY_S:
+        mins = int((now - failing_since) / 60)
+        alert(
+            f"/fleet voice {state} for {mins} min: {detail[:160]}"
+            + (f" -- {action}" if action else "")
+        )
+        last_alert = now
+    elif state == "ok" and prev.get("state") not in (None, "ok"):
+        alert(
+            f"/fleet voice recovered after {int((now - prev.get('failing_since', now)) / 60)} min"
+        )
+    verdict = {
+        "ts": now,
+        "state": state,
+        "detail": detail[:300],
+        "action": action,
+        "failing_since": failing_since,
+        "last_alert": last_alert,
+    }
+    VERDICT.write_text(json.dumps(verdict))
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now))
+    with LOG.open("a") as f:
+        f.write(f"{stamp} {state} {detail[:160]}{' ' + action if action else ''}\n")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

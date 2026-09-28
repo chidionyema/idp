@@ -544,6 +544,8 @@ def test_the_ablation_ranks_the_mechanisms_by_what_removing_them_costs(
         capture_output=True,
         text=True,
         cwd=ROOT,
+        # the experiment drives the real gateway, which appends to the ledger: never the live one
+        env={**os.environ, "ESTATE_EFFICIENCY_LEDGER": str(tmp_path / "ledger.jsonl")},
         timeout=180,
         check=False,
     )

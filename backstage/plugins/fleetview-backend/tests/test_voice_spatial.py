@@ -19,7 +19,15 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-VOICE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "voice.py"
+VOICE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "voice.py"
+)
 RECORDER = REPO / "bin" / "estate-deploy-recorder"
 
 
@@ -182,3 +190,12 @@ def test_fast_path_does_not_call_router(voice, monkeypatch):
     body, status = voice.spatial_fast_path("the one on the left")
     assert status == 200
     assert body["sha"] == "1" * 40
+
+
+def test_spatial_detector_ignores_bare_direction_words(voice):
+    for q in (
+        "how many agents are running right now",
+        "is everything all right",
+        "what is on top of the queue",
+    ):
+        assert voice._is_spatial_intent(q) is False, q

@@ -1,0 +1,1036 @@
+#!/usr/bin/env python3
+"""estate-snapshot: the estate's size and scale in one read, every number measured this run.
+
+WHY. 2026-09-27 the founder: "if i wanted to show someone the size and scale and ambition of our
+operations ... raw facts and numbers, no hallucinations ... saved as intent". So nothing here is
+typed in: each number is counted from the repos, GitHub, the live cluster or this laptop at run
+time, and each section records the source it came from. A source that cannot be read is written
+BLIND with the reason, never zero -- an absent measurement is not a small one.
+
+Built and running are different facts and are kept apart: `code` and `platform` count what exists
+in git; `cluster` and `laptop` count what is running right now.
+
+Output: markdown to stdout, JSON to ~/.estate/snapshots/<utc>.json (and latest.json).
+"""
+
+from __future__ import annotations
+
+import collections
+import datetime as dt
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+CODE = Path(os.environ.get("ESTATE_CODE", HOME / "Documents/code"))
+IDP = Path(__file__).resolve().parents[1]
+OWNER = os.environ.get("ESTATE_GH_OWNER", "chidionyema")
+OUT = HOME / ".estate/snapshots"
+# Whose commits are the estate's own: the founder's identities and the estate's agents. A repo is
+# counted as ours when at least half its commits are; the rest are clones of someone else's work
+# (2026-09-27: hermes-agent alone is 2.4M lines and 24,400 commits, nearly all upstream authors).
+AUTHORS = re.compile(
+    os.environ.get(
+        "ESTATE_AUTHORS",
+        r"chidi|onyema|estate-agents|mumchimp|anthropic|claude|wave \(operator\)",
+    ),
+    re.I,
+)
+
+# A commit is agent-signed when its author or a Co-authored-by trailer is an agent or bot. Commits
+# with no such mark are counted as human, which undercounts agents: many agent commits carry none.
+AGENTS = re.compile(
+    os.environ.get(
+        "ESTATE_AGENTS",
+        r"claude|anthropic|estate-agents|estate-bot|\[bot\]|codex|openai|gpt|opencode|"
+        r"wave \(operator\)|image-update|catalog-render",
+    ),
+    re.I,
+)
+TEST_FN = re.compile(
+    r"(?m)^\s*(?:async\s+)?def test_|^func Test|^\s*(?:it|test)\(|^\s*\[(?:Fact|Test|Theory)\b|^\s*#\[test\]"
+)
+TEST_FILE = re.compile(
+    r"(^|/)(test_[^/]*\.py|[^/]*_test\.(go|py)|[^/]*\.(test|spec)\.[jt]sx?|[^/]*Tests?\.cs|tests/[^/]*\.rs)$"
+)
+
+LANG = {
+    ".py": "Python",
+    ".go": "Go",
+    ".ts": "TypeScript",
+    ".tsx": "TypeScript",
+    ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".rs": "Rust",
+    ".cs": "C#",
+    ".java": "Java",
+    ".kt": "Kotlin",
+    ".swift": "Swift",
+    ".rb": "Ruby",
+    ".sh": "Shell",
+    ".bash": "Shell",
+    ".yaml": "YAML",
+    ".yml": "YAML",
+    ".json": "JSON",
+    ".md": "Markdown",
+    ".sql": "SQL",
+    ".tf": "Terraform",
+    ".rego": "Rego",
+    ".proto": "Protobuf",
+    ".css": "CSS",
+    ".scss": "CSS",
+    ".html": "HTML",
+    ".vue": "Vue",
+    ".svelte": "Svelte",
+    ".toml": "TOML",
+    ".c": "C",
+    ".h": "C",
+    ".cpp": "C++",
+    ".hpp": "C++",
+    ".lua": "Lua",
+    ".cue": "CUE",
+    ".dockerfile": "Dockerfile",
+}
+SKIP_PARTS = {
+    "node_modules",
+    "vendor",
+    "dist",
+    "build",
+    ".next",
+    "target",
+    "__pycache__",
+    ".venv",
+}
+SKIP_NAMES = re.compile(r"(\.lock|lock\.json|lock\.yaml|\.min\.js|\.map|\.snap)$")
+CODE_LANGS = {
+    "Python",
+    "Go",
+    "TypeScript",
+    "JavaScript",
+    "Rust",
+    "C#",
+    "Java",
+    "Kotlin",
+    "Swift",
+    "Ruby",
+    "Shell",
+    "SQL",
+    "Terraform",
+    "Rego",
+    "Protobuf",
+    "Vue",
+    "Svelte",
+    "C",
+    "C++",
+    "Lua",
+    "CUE",
+    "Dockerfile",
+    "CSS",
+    "HTML",
+}
+
+
+def run(cmd: list[str], cwd: Path | None = None, timeout: int = 60) -> str:
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError(
+            (r.stderr or r.stdout).strip().splitlines()[-1:] or [f"exit {r.returncode}"]
+        )
+    return r.stdout
+
+
+def section(fn):
+    """A section that cannot read its source is BLIND with the reason, never a zero."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001 - every failure is reported as BLIND, by name
+        return {"BLIND": f"{type(exc).__name__}: {exc}"[:300]}
+
+
+def lang_of(p: str) -> str | None:
+    name = p.rsplit("/", 1)[-1]
+    if name == "Dockerfile" or name.startswith("Dockerfile."):
+        return "Dockerfile"
+    return LANG.get(os.path.splitext(name)[1].lower())
+
+
+def repo_stats(repo: Path) -> dict:
+    files = run(["git", "ls-files", "-z"], repo, 120).split("\0")
+    lines = collections.Counter()
+    nfiles = collections.Counter()
+    test_files = test_cases = 0
+    for f in filter(None, files):
+        parts = f.split("/")
+        if SKIP_PARTS.intersection(parts) or SKIP_NAMES.search(f):
+            continue
+        lang = lang_of(f)
+        if not lang:
+            continue
+        path = repo / f
+        try:
+            if path.stat().st_size > 1_000_000:
+                continue
+            with open(path, "rb") as fh:
+                body = fh.read()
+            lines[lang] += body.count(b"\n")
+            nfiles[lang] += 1
+            if TEST_FILE.search(f):
+                test_files += 1
+                test_cases += len(TEST_FN.findall(body.decode(errors="replace")))
+        except OSError:
+            continue
+    commits = int(run(["git", "rev-list", "--count", "HEAD"], repo).strip() or 0)
+    first = run(
+        ["git", "log", "--reverse", "--format=%as", "--max-parents=0", "HEAD"], repo
+    ).split()[:1]
+    last = run(["git", "log", "-1", "--format=%as"], repo).strip()
+    since = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    c30 = int(
+        run(["git", "rev-list", "--count", f"--since={since}", "HEAD"], repo).strip()
+        or 0
+    )
+    ours = 0
+    for line in run(["git", "shortlog", "-sne", "HEAD"], repo, 120).splitlines():
+        n, _, who = line.strip().partition("\t")
+        if AUTHORS.search(who):
+            ours += int(n)
+    fmt_ = "--format=%x1e%an <%ae>%x1f%(trailers:key=Co-authored-by,valueonly,separator=%x1d)"
+    by_month = collections.Counter(
+        d[:7] for d in run(["git", "log", "--format=%as", "HEAD"], repo, 120).split()
+    )
+    agent = sum(
+        1
+        for rec in run(["git", "log", fmt_, "HEAD"], repo, 120).split("\x1e")[1:]
+        if AGENTS.search(rec)
+    )
+    added = deleted = 0
+    days = set()
+    for line in run(
+        [
+            "git",
+            "log",
+            f"--since={since}",
+            "--no-merges",
+            "--format=@%as",
+            "--numstat",
+            "HEAD",
+        ],
+        repo,
+        120,
+    ).splitlines():
+        if line.startswith("@"):
+            days.add(line[1:])
+            continue
+        a, _, rest = line.partition("\t")
+        d, _, name = rest.partition("\t")
+        # Code files only: idp alone "wrote" 3.6M lines in 30 days counting rendered catalogues and
+        # generated JSON (2026-09-27), which is the renderer's output, not work.
+        if (
+            a.isdigit()
+            and d.isdigit()
+            and not SKIP_NAMES.search(name)
+            and not SKIP_PARTS.intersection(name.split("/"))
+            and lang_of(name) in CODE_LANGS
+        ):
+            added, deleted = added + int(a), deleted + int(d)
+    return {
+        "ours": commits > 0 and ours * 2 >= commits,
+        "own_commits": ours,
+        "tracked_files": sum(1 for f in files if f),
+        "commits": commits,
+        "commits_30d": c30,
+        "agent_signed_commits": agent,
+        "commits_by_month": dict(sorted(by_month.items())),
+        "lines_added_30d": added,
+        "lines_deleted_30d": deleted,
+        "active_days_30d": len(days),
+        "test_files": test_files,
+        "test_cases": test_cases,
+        "first_commit": first[0] if first else None,
+        "last_commit": last,
+        "lines_by_lang": dict(lines.most_common()),
+        "files_by_lang": dict(nfiles.most_common()),
+        "code_lines": sum(v for k, v in lines.items() if k in CODE_LANGS),
+        "all_text_lines": sum(lines.values()),
+    }
+
+
+def code() -> dict:
+    repos, worktrees = {}, []
+    for d in sorted(CODE.iterdir()):
+        g = d / ".git"
+        if g.is_file():  # a worktree of another repo: counted once, under its repo
+            worktrees.append(d.name)
+        elif g.is_dir():
+            repos[d.name] = section(lambda d=d: repo_stats(d))
+    ok = {k: v for k, v in repos.items() if "BLIND" not in v}
+    own = {k: v for k, v in ok.items() if v["ours"]}
+    total, months = collections.Counter(), collections.Counter()
+    for v in own.values():
+        total.update(v["lines_by_lang"])
+        months.update(v.get("commits_by_month") or {})
+    return {
+        "source": f"git ls-files + line count under {CODE} (vendored, generated, lock and >1MB files skipped); "
+        "totals are the estate's own repos only (>= half the commits by the founder or the estate's agents)",
+        "repos_on_disk": len(repos),
+        "repos_own": len(own),
+        "repos_cloned": sorted(k for k, v in ok.items() if not v["ours"]),
+        "cloned_code_lines_excluded": sum(
+            v["code_lines"] for k, v in ok.items() if not v["ours"]
+        ),
+        "worktrees": len(worktrees),
+        "commits": sum(v["commits"] for v in own.values()),
+        "own_commits": sum(v["own_commits"] for v in own.values()),
+        "commits_30d": sum(v["commits_30d"] for v in own.values()),
+        "agent_signed_commits": sum(v["agent_signed_commits"] for v in own.values()),
+        "commits_by_month": dict(sorted(months.items())),
+        "code_lines_added_30d": sum(v["lines_added_30d"] for v in own.values()),
+        "code_lines_deleted_30d": sum(v["lines_deleted_30d"] for v in own.values()),
+        "test_files": sum(v["test_files"] for v in own.values()),
+        "test_cases": sum(v["test_cases"] for v in own.values()),
+        "first_commit": min(
+            (v["first_commit"] for v in own.values() if v["first_commit"]), default=None
+        ),
+        "tracked_files": sum(v["tracked_files"] for v in own.values()),
+        "code_lines": sum(v["code_lines"] for v in own.values()),
+        "all_text_lines": sum(v["all_text_lines"] for v in own.values()),
+        "lines_by_lang": dict(total.most_common()),
+        "per_repo": repos,
+    }
+
+
+def gh_json(path: str):
+    return json.loads(run(["gh", "api", path], timeout=60))
+
+
+def github() -> dict:
+    out: dict = {"source": f"GitHub API (gh) for {OWNER}"}
+    repos = json.loads(
+        run(
+            [
+                "gh",
+                "repo",
+                "list",
+                OWNER,
+                "--limit",
+                "1000",
+                "--json",
+                "name,isPrivate,isArchived,primaryLanguage,pushedAt,diskUsage",
+            ],
+            timeout=120,
+        )
+    )
+    since = (dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=30)).isoformat()
+    out["repos"] = len(repos)
+    out["private"] = sum(r["isPrivate"] for r in repos)
+    out["archived"] = sum(r["isArchived"] for r in repos)
+    out["pushed_30d"] = sum(1 for r in repos if (r.get("pushedAt") or "") >= since)
+    out["disk_mb"] = round(sum(r.get("diskUsage") or 0 for r in repos) / 1024)
+    langs = collections.Counter(
+        (r.get("primaryLanguage") or {}).get("name") or "none" for r in repos
+    )
+    out["primary_languages"] = dict(langs.most_common())
+    day30 = (dt.date.today() - dt.timedelta(days=30)).isoformat()
+    for key, q in {
+        "idp_prs_total": f"repo:{OWNER}/idp is:pr",
+        "idp_prs_merged": f"repo:{OWNER}/idp is:pr is:merged",
+        "idp_prs_merged_30d": f"repo:{OWNER}/idp is:pr is:merged merged:>={day30}",
+        "idp_prs_open": f"repo:{OWNER}/idp is:pr is:open",
+        "idp_issues_open": f"repo:{OWNER}/idp is:issue is:open",
+        "crew_issues_total": f"repo:{OWNER}/crew is:issue",
+        "prs_all_repos": f"user:{OWNER} is:pr",
+        "prs_merged_all_repos": f"user:{OWNER} is:pr is:merged",
+        "issues_all_repos": f"user:{OWNER} is:issue",
+        "issues_closed_all_repos": f"user:{OWNER} is:issue is:closed",
+        "issues_opened_30d_all_repos": f"user:{OWNER} is:issue created:>={day30}",
+        "prs_merged_30d_all_repos": f"user:{OWNER} is:pr is:merged merged:>={day30}",
+    }.items():
+        out[key] = section(
+            lambda q=q: gh_json(f"search/issues?q={q.replace(' ', '+')}&per_page=1")[
+                "total_count"
+            ]
+        )
+    out["idp_actions_runs_30d"] = section(_runs_30d)
+    out["idp_workflows_registered"] = section(
+        lambda: gh_json(f"repos/{OWNER}/idp/actions/workflows?per_page=1")[
+            "total_count"
+        ]
+    )
+    return out
+
+
+def _runs_30d():
+    """The runs API caps total_count at 2,500 per query, and CI storms go past it even in six
+    hours (measured 2026-09-27: 16 of 120 six-hour windows were at the cap). So each window at
+    the cap is halved until it is under; one still capped at 5 minutes makes the total a floor."""
+    capped = 0
+
+    def count(lo: dt.datetime, hi: dt.datetime) -> int:
+        nonlocal capped
+        q = f"{lo:%Y-%m-%dT%H:%M:%SZ}..{hi - dt.timedelta(seconds=1):%Y-%m-%dT%H:%M:%SZ}"
+        n = gh_json(f"repos/{OWNER}/idp/actions/runs?created={q}&per_page=1")[
+            "total_count"
+        ]
+        if n < 2500:
+            return n
+        if hi - lo <= dt.timedelta(minutes=5):
+            capped += 1
+            return n
+        mid = lo + (hi - lo) / 2
+        return count(lo, mid) + count(mid, hi)
+
+    end = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+    total = sum(
+        count(end - dt.timedelta(hours=6 * (i + 1)), end - dt.timedelta(hours=6 * i))
+        for i in range(120)
+    )
+    return (
+        total
+        if not capped
+        else f">= {total} ({capped} five-minute windows at the API cap)"
+    )
+
+
+def yaml_kinds(root: Path) -> collections.Counter:
+    kinds = collections.Counter()
+    for p in root.rglob("*.y*ml"):
+        if SKIP_PARTS.intersection(p.parts):
+            continue
+        try:
+            for m in re.finditer(
+                r"(?m)^kind:\s*([A-Za-z]+)\s*$", p.read_text(errors="replace")
+            ):
+                kinds[m.group(1)] += 1
+        except OSError:
+            continue
+    return kinds
+
+
+def platform() -> dict:
+    tracked = run(["git", "ls-files"], IDP).splitlines()
+
+    def n(pred) -> int:
+        return sum(1 for f in tracked if pred(f))
+
+    kinds = yaml_kinds(IDP / "clusters") + yaml_kinds(IDP / "platform")
+    tests = [
+        f
+        for f in tracked
+        if re.search(
+            r"(^|/)(test_[^/]*\.py|[^/]*_test\.(go|py)|[^/]*\.test\.tsx?|[^/]*\.spec\.tsx?)$",
+            f,
+        )
+    ]
+    test_fns = 0
+    for f in tests:
+        try:
+            test_fns += len(
+                re.findall(
+                    r"(?m)^\s*(?:async\s+)?def test_|^func Test|^\s*(?:it|test)\(",
+                    (IDP / f).read_text(errors="replace"),
+                )
+            )
+        except OSError:
+            pass
+    installed = HOME / ".estate/intents"
+    lanes = section(lambda: _lanes())
+    return {
+        "source": f"git ls-files and manifests in {IDP} (what exists in git, not what runs)",
+        "platform_components": sum(
+            1 for d in (IDP / "platform").iterdir() if d.is_dir()
+        ),
+        "ci_workflows": n(
+            lambda f: (
+                f.startswith(".github/workflows/") and f.endswith((".yml", ".yaml"))
+            )
+        ),
+        "bin_tools": n(lambda f: f.startswith("bin/") and f.count("/") == 1),
+        "intents_in_git": n(
+            lambda f: f.startswith("platform/estate/intents/") and f.endswith(".yaml")
+        ),
+        "intents_installed": len(list(installed.glob("*.yaml")))
+        if installed.is_dir()
+        else "BLIND: no ~/.estate/intents",
+        "adrs": n(lambda f: re.search(r"(^|/)adr/[^/]+\.md$", f) is not None),
+        "specs": n(lambda f: f.startswith("docs/specs/") and f.endswith(".md")),
+        "docs_markdown": n(lambda f: f.startswith("docs/") and f.endswith(".md")),
+        "dockerfiles": n(lambda f: re.search(r"(^|/)Dockerfile[^/]*$", f) is not None),
+        "go_modules": n(lambda f: f.endswith("/go.mod") or f == "go.mod"),
+        "python_packages": n(lambda f: f.endswith("pyproject.toml")),
+        "helm_charts": n(lambda f: f.endswith("/Chart.yaml")),
+        "launchd_templates": n(
+            lambda f: f.startswith("launchd/") and f.endswith(".plist.tmpl")
+        ),
+        "test_files": len(tests),
+        "test_cases": test_fns,
+        "manifest_kinds": dict(kinds.most_common(40)),
+        "manifest_objects": sum(kinds.values()),
+        "llm_router": lanes,
+    }
+
+
+def _lanes() -> dict:
+    text = (IDP / "platform/llm/config.yaml").read_text()
+    names = re.findall(r"(?m)^\s*-\s*model_name:\s*(\S+)", text)
+    upstream = re.findall(r"(?m)^\s*model:\s*(\S+)", text)
+    providers = collections.Counter(u.split("/")[0] for u in upstream)
+    return {
+        "lanes": len(set(names)),
+        "deployments": len(names),
+        "upstream_models": len(set(upstream)),
+        "provider_prefixes": dict(providers.most_common()),
+    }
+
+
+def kjson(*args: str) -> dict:
+    return json.loads(run(["kubectl", *args, "-o", "json"], timeout=90))
+
+
+def cluster() -> dict:
+    ctx = run(["kubectl", "config", "current-context"]).strip()
+    out: dict = {"source": f"kubectl get (read-only) on context {ctx}, live"}
+    nodes = kjson("get", "nodes")["items"]
+    out["nodes"] = len(nodes)
+    out["nodes_ready"] = sum(
+        any(
+            c["type"] == "Ready" and c["status"] == "True"
+            for c in nd["status"]["conditions"]
+        )
+        for nd in nodes
+    )
+    cpu = mem = 0.0
+    for nd in nodes:
+        a = nd["status"]["allocatable"]
+        cpu += (
+            float(a["cpu"][:-1]) / 1000 if a["cpu"].endswith("m") else float(a["cpu"])
+        )
+        mem += (
+            int(re.sub(r"Ki$", "", a["memory"])) / 1048576
+            if a["memory"].endswith("Ki")
+            else 0
+        )
+    out["cpu_allocatable"] = round(cpu, 2)
+    out["memory_allocatable_gib"] = round(mem, 1)
+    out["arch"] = dict(
+        collections.Counter(nd["status"]["nodeInfo"]["architecture"] for nd in nodes)
+    )
+    out["namespaces"] = len(kjson("get", "ns")["items"])
+    pods = kjson("get", "pods", "-A")["items"]
+    out["pods"] = len(pods)
+    out["pods_by_phase"] = dict(
+        collections.Counter(p["status"].get("phase") for p in pods)
+    )
+    out["containers_running"] = sum(
+        1
+        for p in pods
+        for c in p["status"].get("containerStatuses") or []
+        if "running" in c.get("state", {})
+    )
+    out["restarts_total"] = sum(
+        c.get("restartCount", 0)
+        for p in pods
+        for c in p["status"].get("containerStatuses") or []
+    )
+    for kind in (
+        "deployments",
+        "statefulsets",
+        "daemonsets",
+        "cronjobs",
+        "services",
+        "persistentvolumeclaims",
+        "ingresses",
+        "secrets",
+        "configmaps",
+    ):
+        out[kind] = section(lambda kind=kind: len(kjson("get", kind, "-A")["items"]))
+    deps = section(lambda: kjson("get", "deployments", "-A")["items"])
+    if isinstance(deps, list):
+        # Of the deployments meant to run: a scaled-to-zero one has 0 >= 0 available and would
+        # count as healthy while running nothing.
+        out["deployments_available"] = sum(
+            1
+            for d in deps
+            if (d["spec"].get("replicas") or 0) > 0
+            and (d["status"].get("availableReplicas") or 0)
+            >= (d["spec"].get("replicas") or 0)
+        )
+        out["deployments_scaled_to_zero"] = sum(
+            1 for d in deps if (d["spec"].get("replicas") or 0) == 0
+        )
+    out["crds"] = section(lambda: len(kjson("get", "crd")["items"]))
+    for kind, key in (
+        ("kustomizations.kustomize.toolkit.fluxcd.io", "flux_kustomizations"),
+        ("helmreleases.helm.toolkit.fluxcd.io", "flux_helmreleases"),
+    ):
+
+        def ready(kind=kind):
+            items = kjson("get", kind, "-A")["items"]
+            # With the reason: a reconcile wave (Progressing, DependencyNotReady behind it) is
+            # not a failure, and read without it 2026-09-27 a wave looked like 4/10 down.
+            bad = [
+                f"{i['metadata']['namespace']}/{i['metadata']['name']} ({r.get('reason', '?')})"
+                for i in items
+                for r in [
+                    next(
+                        (
+                            c
+                            for c in i.get("status", {}).get("conditions", [])
+                            if c["type"] == "Ready"
+                        ),
+                        {},
+                    )
+                ]
+                if r.get("status") != "True"
+            ]
+            return {
+                "total": len(items),
+                "ready": len(items) - len(bad),
+                "not_ready": bad,
+            }
+
+        out[key] = section(ready)
+    out["images_distinct"] = len(
+        {c["image"] for p in pods for c in p["spec"]["containers"]}
+    )
+    return out
+
+
+def laptop() -> dict:
+    out: dict = {"source": "this machine, live"}
+    uid = os.getuid()
+    rows = [l.split("\t") for l in run(["launchctl", "list"]).splitlines()[1:]]
+    estate = [
+        r
+        for r in rows
+        if len(r) == 3
+        and re.match(r"(ai\.estate|com\.estate|com\.founder|com\.chidionyema)\.", r[2])
+    ]
+    out["launch_agents_loaded"] = len(estate)
+    out["launch_agents_running"] = sum(1 for r in estate if r[0] != "-")
+    out["launch_agents_last_exit_nonzero"] = sorted(
+        r[2] for r in estate if r[0] == "-" and r[1] not in ("0", "-")
+    )
+    installed = list((HOME / "Library/LaunchAgents").glob("*.plist"))
+    out["launch_agents_installed"] = len(installed)
+    # 2026-09-27 ai.estate.nats had a template in git and was never installed: the bus was down,
+    # every voice turn waited on it, and nothing said so.
+    out["launchd_templates_not_installed"] = sorted(
+        {
+            t.name.removesuffix(".plist.tmpl")
+            for t in (IDP / "launchd").glob("*.plist.tmpl")
+        }
+        - {p.stem for p in installed}
+    )
+    out["launch_agents_installed_not_loaded"] = sorted(
+        {p.stem for p in installed} - {r[2] for r in rows}
+    )
+    ports = run(["lsof", "-nP", "-iTCP", "-sTCP:LISTEN"], timeout=30).splitlines()[1:]
+    out["listening_tcp_ports"] = len(
+        {l.split()[8] for l in ports if len(l.split()) > 8}
+    )
+    du = shutil.disk_usage(
+        "/System/Volumes/Data" if Path("/System/Volumes/Data").exists() else "/"
+    )
+    out["disk_total_gb"], out["disk_free_gb"] = (
+        round(du.total / 1e9, 1),
+        round(du.free / 1e9, 1),
+    )
+    out["disk_used_pct"] = round(100 * (du.total - du.free) / du.total, 1)
+    out["cpus"] = os.cpu_count()
+    out["load1"] = round(os.getloadavg()[0], 1)
+    del uid
+    return out
+
+
+def memory() -> dict:
+    out: dict = {"source": "growmos status (knowledge graphs)"}
+    for name, root in (("idp", IDP), ("estate-graph", CODE / "estate-graph")):
+
+        def read(root=root):
+            s = run(["growmos", "--root", str(root), "status"], timeout=60)
+            m = re.search(r"nodes (\d+) · edges (\d+)", s)
+            src = re.search(r"sources (\d+)", s)
+            return {
+                "nodes": int(m.group(1)),
+                "edges": int(m.group(2)),
+                "sources": int(src.group(1)) if src else None,
+            }
+
+        out[name] = section(read)
+    return out
+
+
+def agents() -> dict:
+    """What the agents did, from the traces they leave on this machine. Claude Code prunes old
+    transcripts, so its counts cover only the window still on disk, and that window is reported."""
+    out: dict = {
+        "source": "Claude Code transcripts, pi sessions, estate executor db, on this machine"
+    }
+
+    def claude():
+        n = {
+            "sessions": 0,
+            "model_responses": 0,
+            "output_tokens": 0,
+            "input_tokens": 0,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+        }
+        first = last = None
+        for f in (HOME / ".claude/projects").glob("*/*.jsonl"):
+            n["sessions"] += 1
+            for line in f.open(errors="ignore"):
+                if '"usage"' not in line:
+                    continue
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                u = (
+                    (d.get("message") or {}).get("usage")
+                    if isinstance(d, dict)
+                    else None
+                )
+                if not isinstance(u, dict):
+                    continue
+                n["model_responses"] += 1
+                n["output_tokens"] += u.get("output_tokens") or 0
+                n["input_tokens"] += u.get("input_tokens") or 0
+                n["cache_read_tokens"] += u.get("cache_read_input_tokens") or 0
+                n["cache_write_tokens"] += u.get("cache_creation_input_tokens") or 0
+                t = d.get("timestamp")
+                if t:
+                    first, last = min(first or t, t), max(last or t, t)
+        n["window"] = f"{first} .. {last}"
+        n["window_days"] = (
+            round(
+                (
+                    dt.datetime.fromisoformat(last[:19])
+                    - dt.datetime.fromisoformat(first[:19])
+                ).total_seconds()
+                / 86400,
+                1,
+            )
+            if first
+            else 0
+        )
+        return n
+
+    out["claude_code"] = section(claude)
+    out["pi_sessions"] = section(
+        lambda: sum(1 for _ in (HOME / ".pi/agent/sessions").rglob("*.jsonl"))
+    )
+
+    def executor():
+        db = HOME / ".estate/estate.db"
+        q = "select (select count(*) from intent_tickets), (select count(*) from step_runs), (select count(*) from step_runs where exit_code != 0)"
+        t, s, f = run(["sqlite3", str(db), q]).strip().split("|")
+        return {
+            "intent_tickets": int(t),
+            "steps_run": int(s),
+            "steps_failed": int(f),
+            "intents_installed": len(list((HOME / ".estate/intents").glob("*.yaml"))),
+        }
+
+    out["executor"] = section(executor)
+    return out
+
+
+def fmt(n) -> str:
+    return f"{n:,}" if isinstance(n, int) else str(n)
+
+
+def _num(d, *keys):
+    """A nested number, or None when any part is BLIND or missing: the story skips a sentence
+    rather than tell it with a number it does not have."""
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return None
+        d = d[k]
+    return d if isinstance(d, (int, float)) and not isinstance(d, bool) else None
+
+
+def story(s: dict) -> list[str]:
+    """The numbers as a story. Every figure is one measured above or plain arithmetic on them;
+    a sentence whose inputs are BLIND is left out, not guessed."""
+    c, g, p, k, l, a = (
+        s.get(n, {})
+        for n in ("code", "github", "platform", "cluster", "laptop", "agents")
+    )
+    out, founder = [], []
+
+    def say(lst, text, *need):
+        if all(v is not None for v in need):
+            lst.append(f"- {text}")
+
+    c30, commits = _num(c, "commits_30d"), _num(c, "own_commits")
+    months = (c.get("commits_by_month") or {}) if isinstance(c, dict) else {}
+    # The last six calendar months, a month with no commits shown as 0 rather than skipped.
+    y, m = dt.date.today().year, dt.date.today().month
+    last6 = [f"{y - (m - i <= 0)}-{(m - i - 1) % 12 + 1:02d}" for i in range(5, -1, -1)]
+    recent = [(k2, months.get(k2, 0)) for k2 in last6] if months else []
+    before = sum(n for k2, n in months.items() if k2 < last6[0])
+    say(
+        out,
+        f"**Pace.** {fmt(c30)} commits in the last 30 days across our repos: {round((c30 or 0) / 30)} a day, "
+        f"one every {round(43200 / c30) if c30 else '?'} minutes, around the clock. "
+        f"That is {round(100 * (c30 or 0) / (commits or 1))}% of all {fmt(commits)} commits ever made.",
+        c30,
+        commits,
+    )
+    if recent:
+        out.append(
+            "- **The curve.** Commits a month: "
+            + ", ".join(f"{m} {fmt(n)}" for m, n in recent)
+            + f"; {fmt(before)} in all the months before {recent[0][0]} together."
+        )
+    add, dele = _num(c, "code_lines_added_30d"), _num(c, "code_lines_deleted_30d")
+    say(
+        out,
+        f"**Churn.** {fmt(add)} lines of code written and {fmt(dele)} deleted in 30 days "
+        f"({fmt(round((add or 0) / 30))} written a day; generated and data files not counted).",
+        add,
+        dele,
+    )
+    ag = _num(c, "agent_signed_commits")
+    say(
+        out,
+        f"**Who writes it.** {fmt(ag)} of {fmt(_num(c, 'commits'))} commits "
+        f"({round(100 * (ag or 0) / (_num(c, 'commits') or 1))}%) are signed by an AI agent or bot as author or co-author "
+        f"-- a floor, since many agent commits carry no mark.",
+        ag,
+        _num(c, "commits"),
+    )
+    m30, mall = _num(g, "idp_prs_merged_30d"), _num(g, "idp_prs_merged")
+    say(
+        out,
+        f"**The platform is young and fast.** {fmt(m30)} of idp's {fmt(mall)} merged PRs "
+        f"({round(100 * (m30 or 0) / (mall or 1))}%) landed in the last 30 days: {round((m30 or 0) / 30)} merged a day. "
+        f"Across every repo: {fmt(_num(g, 'prs_merged_all_repos'))} PRs merged, {fmt(_num(g, 'issues_all_repos'))} issues filed.",
+        m30,
+        mall,
+    )
+    runs = _num(g, "idp_actions_runs_30d")
+    say(
+        out,
+        f"**Verification at machine scale.** {fmt(runs)} CI runs on idp in 30 days: {round((runs or 0) / 43200, 1)} a minute, "
+        f"{round((runs or 0) / (m30 or 1))} per merged PR. {fmt(_num(c, 'test_cases'))} test cases across our repos "
+        f"({fmt(_num(p, 'test_cases'))} in idp alone).",
+        runs,
+        m30,
+    )
+    say(
+        out,
+        f"**What the platform is.** {p.get('platform_components')} components, {p.get('bin_tools')} command-line tools, "
+        f"{p.get('ci_workflows')} CI workflows, {p.get('intents_in_git')} agent intents, "
+        f"{fmt(_num(p, 'manifest_objects'))} Kubernetes objects declared, {_num(p, 'llm_router', 'lanes')} model lanes across "
+        f"{len((p.get('llm_router') or {}).get('provider_prefixes') or {})} provider routes behind one router.",
+        _num(p, "platform_components"),
+        _num(p, "manifest_objects"),
+    )
+    say(
+        out,
+        f"**Running now.** {k.get('pods')} pods in {k.get('namespaces')} namespaces on {k.get('nodes')} nodes "
+        f"({k.get('cpu_allocatable')} CPU, {k.get('memory_allocatable_gib')} GiB), {k.get('images_distinct')} distinct images, "
+        f"{k.get('crds')} custom resource types.",
+        _num(k, "pods"),
+        _num(k, "nodes"),
+    )
+    out_tok, days = (
+        _num(a, "claude_code", "output_tokens"),
+        _num(a, "claude_code", "window_days"),
+    )
+    say(
+        out,
+        f"**Thinking volume.** In the last {days} days of Claude Code transcripts on this laptop alone: "
+        f"{fmt(_num(a, 'claude_code', 'model_responses'))} model responses, {fmt(out_tok)} tokens generated, "
+        f"{fmt(_num(a, 'claude_code', 'cache_read_tokens'))} tokens of context read. "
+        f"{fmt(_num(a, 'pi_sessions'))} pi agent sessions and {fmt(_num(a, 'executor', 'steps_run'))} executor steps on top.",
+        out_tok,
+        days,
+    )
+    say(
+        out,
+        f"**Memory.** A knowledge graph of {fmt(_num(s, 'memory', 'estate-graph', 'nodes'))} entities and "
+        f"{fmt(_num(s, 'memory', 'estate-graph', 'edges'))} relations shared by every agent, plus "
+        f"{fmt(_num(s, 'memory', 'idp', 'nodes'))} entities for idp itself.",
+        _num(s, "memory", "estate-graph", "nodes"),
+    )
+
+    fl = k.get("flux_kustomizations") if isinstance(k, dict) else None
+    if isinstance(fl, dict) and fl.get("not_ready"):
+        founder.append(
+            f"- **Flux** {fl['ready']}/{fl['total']} ready; not ready: {', '.join(fl['not_ready'])}."
+        )
+    deps, avail, zero = (
+        _num(k, "deployments"),
+        _num(k, "deployments_available"),
+        _num(k, "deployments_scaled_to_zero"),
+    )
+    say(
+        founder,
+        f"**Deployments** {fmt(zero)} of {fmt(deps)} are scaled to zero (built, not operating); "
+        f"of the {fmt((deps or 0) - (zero or 0))} meant to run, {fmt(avail)} are fully available.",
+        deps,
+        avail,
+        zero,
+    )
+    phases = {
+        ph: n for ph, n in (k.get("pods_by_phase") or {}).items() if ph != "Running"
+    }
+    say(
+        founder,
+        f"**Pods** {k.get('pods_by_phase', {}).get('Running', 0)} running; "
+        + ", ".join(f"{n} {ph}" for ph, n in sorted(phases.items()))
+        + f". Container restarts: {fmt(_num(k, 'restarts_total'))}.",
+        _num(k, "pods"),
+    )
+    say(
+        founder,
+        f"**Laptop agents** {l.get('launch_agents_running')}/{l.get('launch_agents_loaded')} running; "
+        f"{len(l.get('launch_agents_last_exit_nonzero') or [])} last exited non-zero; "
+        f"{len(l.get('launch_agents_installed_not_loaded') or [])} installed but not loaded; "
+        f"in git but never installed: {', '.join(l.get('launchd_templates_not_installed') or []) or 'none'}.",
+        _num(l, "launch_agents_loaded"),
+    )
+    say(
+        founder,
+        f"**Disk** {l.get('disk_free_gb')} GB free ({l.get('disk_used_pct')}% used); the floor is 10 GB.",
+        _num(l, "disk_free_gb"),
+    )
+    say(
+        founder,
+        f"**Queue** idp: {fmt(_num(g, 'idp_prs_open'))} open PRs, {fmt(_num(g, 'idp_issues_open'))} open issues; "
+        f"{fmt(_num(g, 'issues_opened_30d_all_repos'))} issues opened in 30 days across repos.",
+        _num(g, "idp_prs_open"),
+    )
+    say(
+        founder,
+        f"**Executor** {fmt(_num(a, 'executor', 'steps_failed'))} of {fmt(_num(a, 'executor', 'steps_run'))} intent steps exited non-zero.",
+        _num(a, "executor", "steps_run"),
+    )
+    blind = [
+        n
+        for n in ("code", "github", "platform", "cluster", "laptop", "memory", "agents")
+        if isinstance(s.get(n), dict) and "BLIND" in s[n]
+    ]
+    blind += [
+        f"code/{r}"
+        for r, v in ((c.get("per_repo") or {}).items() if isinstance(c, dict) else [])
+        if "BLIND" in v
+    ]
+    if blind:
+        founder.append(f"- **BLIND** (not measured this run): {', '.join(blind)}.")
+    return (
+        ["## The story", "", "*For anyone: what the numbers say.*", ""]
+        + out
+        + ["", "## For the founder: what is not operating", ""]
+        + (founder or ["- nothing measured as down."])
+        + [""]
+    )
+
+
+def markdown(s: dict) -> str:
+    c, g, p, k, l = s["code"], s["github"], s["platform"], s["cluster"], s["laptop"]
+    L = [
+        f"# Estate snapshot — {s['taken_at']}",
+        "",
+        "Every number below was measured by `bin/estate-snapshot` at that time. BLIND = source unreadable, not zero.",
+        "",
+    ]
+
+    def get(d, key):
+        return d.get(key, d.get("BLIND", "BLIND")) if isinstance(d, dict) else d
+
+    L += story(s)
+    L += ["## Headline", ""]
+    if "BLIND" not in c:
+        L.append(
+            f"- **{fmt(c['code_lines'])} lines of code** we wrote, across **{c['repos_own']} of our own repositories** ({fmt(c['all_text_lines'])} lines incl. config and docs); **{fmt(c['own_commits'])} commits by us and our agents**, {fmt(c['commits_30d'])} commits in the last 30 days. Excluded as cloned: {len(c['repos_cloned'])} repos, {fmt(c['cloned_code_lines_excluded'])} lines."
+        )
+    if "BLIND" not in g:
+        L.append(
+            f"- **{g['repos']} GitHub repositories** ({g['private']} private); idp: **{fmt(get(g, 'idp_prs_merged'))} merged PRs**, {fmt(get(g, 'idp_prs_merged_30d'))} in 30 days; **{fmt(get(g, 'idp_actions_runs_30d'))} CI runs** in 30 days."
+        )
+    if "BLIND" not in p:
+        L.append(
+            f"- Platform (idp): **{p['platform_components']} components**, **{p['ci_workflows']} CI workflows**, **{p['bin_tools']} tools**, **{p['intents_in_git']} intents**, **{fmt(p['test_cases'])} test cases** in {fmt(p['test_files'])} files, **{fmt(p['manifest_objects'])} Kubernetes objects** declared."
+        )
+    if "BLIND" not in k:
+        L.append(
+            f"- Live cluster: **{k['nodes']} nodes** ({k['nodes_ready']} ready, {k['cpu_allocatable']} CPU, {k['memory_allocatable_gib']} GiB), **{k['namespaces']} namespaces**, **{k['pods']} pods**, {fmt(get(k, 'deployments'))} deployments, Flux {_num(k, 'flux_kustomizations', 'ready')}/{_num(k, 'flux_kustomizations', 'total')} ready."
+        )
+    else:
+        L.append(f"- Live cluster: BLIND — {k['BLIND']}")
+    if "BLIND" not in l:
+        L.append(
+            f"- Laptop: {l['launch_agents_running']}/{l['launch_agents_loaded']} estate agents running, {l['listening_tcp_ports']} listening ports, disk {l['disk_used_pct']}% used ({l['disk_free_gb']} GB free)."
+        )
+    L.append("")
+    for name in ("code", "github", "platform", "cluster", "laptop", "memory", "agents"):
+        d = dict(s[name])
+        if name == "code":
+            d.pop("per_repo", None)
+        L += [f"## {name}", "", "```json", json.dumps(d, indent=1), "```", ""]
+    if "per_repo" in c:
+        L += [
+            "## Repositories (by code lines)",
+            "",
+            "| repo | ours | code lines | commits | 30d | first | last | top language |",
+            "|---|---|---:|---:|---:|---|---|---|",
+        ]
+        rows = sorted(
+            ((k2, v) for k2, v in c["per_repo"].items() if "BLIND" not in v),
+            key=lambda kv: -kv[1]["code_lines"],
+        )
+        for name, v in rows:
+            top = next(iter(v["lines_by_lang"]), "-")
+            L.append(
+                f"| {name} | {'yes' if v['ours'] else 'cloned'} | {fmt(v['code_lines'])} | {fmt(v['commits'])} | {v['commits_30d']} | {v['first_commit']} | {v['last_commit']} | {top} |"
+            )
+        L += [
+            f"| {k2} | | BLIND | | | | | {v['BLIND'][:60]} |"
+            for k2, v in c["per_repo"].items()
+            if "BLIND" in v
+        ]
+    return "\n".join(L) + "\n"
+
+
+def main() -> int:
+    t0 = dt.datetime.now(dt.timezone.utc)
+    snap = {"taken_at": t0.strftime("%Y-%m-%dT%H:%M:%SZ")}
+    for name, fn in (
+        ("code", code),
+        ("github", github),
+        ("platform", platform),
+        ("cluster", cluster),
+        ("laptop", laptop),
+        ("memory", memory),
+        ("agents", agents),
+    ):
+        print(f"estate-snapshot: measuring {name} ...", file=sys.stderr)
+        snap[name] = section(fn)
+    snap["seconds"] = round((dt.datetime.now(dt.timezone.utc) - t0).total_seconds(), 1)
+    OUT.mkdir(parents=True, exist_ok=True)
+    path = OUT / f"{snap['taken_at'].replace(':', '')}.json"
+    path.write_text(json.dumps(snap, indent=1))
+    (OUT / "latest.json").write_text(json.dumps(snap, indent=1))
+    md = markdown(snap)
+    (OUT / "latest.md").write_text(md)
+    print(md)
+    print(f"estate-snapshot: {path} ({snap['seconds']}s)", file=sys.stderr)
+    blind = [
+        n
+        for n in ("code", "github", "platform", "cluster", "laptop", "memory", "agents")
+        if "BLIND" in snap[n]
+    ]
+    return 3 if blind else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

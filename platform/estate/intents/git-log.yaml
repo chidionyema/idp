@@ -1,0 +1,13 @@
+name: git-log
+description: Recent commits on a branch or range, optionally since a date and under a path.
+args:
+  branch:  {type: string, default: "HEAD"}
+  count:   {type: int, default: 10}
+  since:   {type: string, default: ""}
+  path:    {type: string, default: ""}
+steps:
+  - name: log
+    # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26)
+    cmd: >
+      s={{since}}; p={{path}};
+      git --no-pager log --oneline --decorate ${s:+--since="$s"} -n {{count}} {{branch}} ${p:+-- "$p"}

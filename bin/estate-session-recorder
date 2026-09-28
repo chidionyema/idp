@@ -533,7 +533,7 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--quiet", action="store_true")
     ap.add_argument("--install", action="store_true", help="a 60s LaunchAgent")
-    ap.add_argument("--sources", default=os.environ.get("RECORDER_SOURCES") or "pi,estate")
+    ap.add_argument("--sources", default=os.environ.get("RECORDER_SOURCES") or "pi,claude-code,estate")
     a = ap.parse_args()
 
     if a.install:

@@ -48,6 +48,23 @@ async def lifespan(app: FastAPI):
     yield
 
 
+async def _bus_reachable(nats_url: str) -> dict:
+    """A TCP connect to the bus, bounded at 0.5s: reachable or not, and why."""
+    if not nats_url:
+        return {"reachable": False, "reason": "NATS_URL is unset"}
+    from urllib.parse import urlparse  # noqa: PLC0415
+
+    u = urlparse(nats_url)
+    try:
+        _r, w = await asyncio.wait_for(
+            asyncio.open_connection(u.hostname, u.port or 4222), timeout=0.5
+        )
+        w.close()
+        return {"reachable": True, "url": nats_url}
+    except Exception as exc:  # noqa: BLE001 - the reason is the answer
+        return {"reachable": False, "url": nats_url, "reason": type(exc).__name__}
+
+
 def build_app() -> FastAPI:
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
@@ -64,20 +81,35 @@ def build_app() -> FastAPI:
             body, _status = routes.sessions_envelope()
             for record in body.get("sessions") or []:
                 yield routes.stream_frames([record])[0]
-            try:
-                last_hb = asyncio.get_event_loop().time()
-                async for event in nats_adapter.subscribe_stream(nats_url):
-                    import json as _json
+            import json as _json
 
+            async def _events():
+                async for event in nats_adapter.subscribe_stream(nats_url):
                     yield f"data: {_json.dumps(event)}\n\n"
-                    now = asyncio.get_event_loop().time()
-                    if now - last_hb >= 30:
-                        yield ": heartbeat\n\n"
-                        last_hb = now
-            except Exception:  # noqa: BLE001
-                while True:
-                    await asyncio.sleep(30)
+
+            async def _cues():
+                async for cue in nats_adapter.subscribe_cues(nats_url):
+                    yield routes.cue_frame(cue)
+
+            async def _stories():
+                async for on, story in nats_adapter.subscribe_stories(nats_url):
+                    yield routes.story_frame(on, story)
+
+            last_hb = asyncio.get_event_loop().time()
+            merged = nats_adapter.merge(
+                nats_adapter.isolated("events", _events()),
+                nats_adapter.isolated("cues", _cues()),
+                nats_adapter.isolated("stories", _stories()),
+            )
+            async for frame in merged:
+                yield frame
+                now = asyncio.get_event_loop().time()
+                if now - last_hb >= 30:
                     yield ": heartbeat\n\n"
+                    last_hb = now
+            while True:
+                await asyncio.sleep(30)
+                yield ": heartbeat\n\n"
 
         async def gen():
             body, _status = routes.sessions_envelope()
@@ -157,8 +189,11 @@ def build_app() -> FastAPI:
         return JSONResponse(content=result, status_code=status)
 
     @app.get("/healthz")
-    def healthz():
-        return {"ok": True}
+    async def healthz():
+        # `ok` is liveness and stays true; `bus` says whether the estate bus answers. 2026-09-27
+        # the laptop's NATS was never installed, this answered {"ok": true} throughout, and every
+        # voice turn and the board's live stream went without it with nobody told.
+        return {"ok": True, "bus": await _bus_reachable(os.environ.get("NATS_URL", ""))}
 
     @app.get("/metrics")
     def metrics_handler():
@@ -216,8 +251,19 @@ def build_app() -> FastAPI:
         sessions = sessions_body.get("sessions") or []
 
         async def gen():
+            # stream_ask is a plain (sync) generator: it makes blocking urllib calls to the
+            # router. Iterating it directly on the event loop -- `async for` doesn't even work,
+            # since it has no __aiter__ -- would also stall every other request (the board's SSE
+            # included) for the length of the router call. Each `next()` runs in a thread instead,
+            # same reasoning `hear()` uses for the CPU-bound transcribe call.
+            loop = asyncio.get_running_loop()
+            it = iter(voice_module.stream_ask(question, sessions, history))
+            _DONE = object()
             try:
-                async for frame in voice_module.stream_ask(question, sessions, history):
+                while True:
+                    frame = await loop.run_in_executor(None, lambda: next(it, _DONE))
+                    if frame is _DONE:
+                        break
                     yield frame
             except Exception as exc:  # noqa: BLE001
                 yield f"event: error\ndata: {{'error': '{exc}'}}\n\n"
@@ -287,6 +333,43 @@ def build_app() -> FastAPI:
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_get():
+        # GitHub calls, up to a 10s timeout each: off the event loop, like /voice/intent.
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.agent_jobs_envelope)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.AGENT_JOBS_PATH)
+    async def agent_jobs_post(request: Request):
+        try:
+            body = await request.json()
+        except ValueError:
+            body = None
+        loop = asyncio.get_running_loop()
+        result, status = await loop.run_in_executor(None, routes.submit_agent_job, body)
+        return JSONResponse(content=result, status_code=status)
+
+    @app.post("/voice/intent")
+    async def voice_intent(request: Request):
+        """Utterance -> committed estate intent. 204 when it names none: the brain answers."""
+        from fleetview_backend import voice_intents as vi
+
+        try:
+            body = await request.json()
+        except ValueError:
+            body = {}
+        if not isinstance(body, dict):
+            body = {}
+        text = str(body.get("text") or "")
+        session_id = str(body.get("session_id") or "")
+        # handle() may run a subprocess for up to 120s: off the event loop, like /voice/stream.
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, vi.handle, text, session_id)
+        if result is None:
+            return Response(status_code=204)
+        return JSONResponse(content=result)
+
     return app
 
 
@@ -340,16 +423,22 @@ def main():
         main_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
         executor_config = uvicorn.Config(
             executor_app,
-            host="0.0.0.0",
+            host="0.0.0.0",  # noqa: S104 -- pre-existing on main; executor relay is key-checked (_check_key)
             port=executor_port,
             log_level="info",
         )
-        server = uvicorn.Server(configs=[main_config, executor_config])
-    else:
-        server = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
-        server = uvicorn.Server(server)
+        # uvicorn.Server takes one Config; there is no `configs=` (the src-layout move, 2e364b4b,
+        # wrote one, and every two-port start raised TypeError). Two servers on one loop.
+        main_server = uvicorn.Server(main_config)
+        executor_server = uvicorn.Server(executor_config)
 
-    server.run()
+        async def _serve_both():
+            await asyncio.gather(main_server.serve(), executor_server.serve())
+
+        asyncio.run(_serve_both())
+        return
+
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="info")
 
 
 if __name__ == "__main__":

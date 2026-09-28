@@ -57,7 +57,7 @@ def _db_path() -> Path:
     from_env = os.environ.get("ESTATE_DB")
     if from_env:
         return Path(from_env)
-    return Path(__file__).resolve().parents[4] / "catalog" / "estate.db"
+    return Path(__file__).resolve().parents[5] / "catalog" / "estate.db"
 
 
 def _connect() -> sqlite3.Connection:

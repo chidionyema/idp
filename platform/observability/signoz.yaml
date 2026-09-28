@@ -10,6 +10,9 @@ kind: HelmRelease
 metadata:
   name: signoz
 spec:
+  # Suspended 2026-09-26: ClickHouse alone used 2.0 cores, the whole Always Free A1 allowance
+  # (2 OCPU / 12 GB). Off until traces move off-cluster. StatefulSets scaled to 0 live.
+  suspend: true
   # Bounded per HGC (docs/reference/policy/enterprise-operating-model.md, standard 6): Helm
   # keeps one Secret per revision and this estate declared the field on no release, which is
   # how the cluster reached its 2,000-secret ceiling and stalled 18 Flux objects. 3

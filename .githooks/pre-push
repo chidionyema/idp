@@ -1,4 +1,35 @@
 #!/usr/bin/env bash
+# Layer 0: STRUCTURAL — model-agnostic enforcement (AGENTS.md R6)
+# Refuses any push that introduces or retains .claude/ or claude-code paths.
+# The estate is model-agnostic. One execution boundary: ~/.estate/.
+# A second boundary (.claude/) is stitching and gets deleted.
+# This layer runs before everything else and cannot be bypassed by the agent it guards.
+# Protocol: git pre-push stdin = "<local ref> <local sha> <remote ref> <remote sha>" per ref.
+
+_no_claude_guard() {
+  blocked=0
+  while IFS= read -r local_ref local_sha remote_ref remote_sha; do
+    [ -z "$local_ref" ] && continue
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    changed=$(git diff-tree --name-only -r "$remote_sha" "$local_sha" 2>/dev/null) || continue
+    if echo "$changed" | grep -qE '(\.claude/|/\.claude/|claude-code/)'; then
+      blocked=1
+    fi
+  done
+  if [ "$blocked" = 1 ]; then
+    echo "FAIL [.githooks/pre-push] push contains .claude/ or claude-code paths" >&2
+    echo "The estate is model-agnostic. Canonical home: ~/.estate/" >&2
+    echo "Migrate hooks to ~/.estate/hooks/ and rewrite bootstrap for ~/.estate/" >&2
+    return 1
+  fi
+  echo "ok    Layer 0 (no-claude): clean"
+}
+
+# Run Layer 0 inline — exit 1 here exits the whole hook, not a subshell
+if ! _no_claude_guard; then
+  exit 1
+fi
+
 # Idempotent protection against fast-gate / python-strict failures reaching the OKE CI.
 # Refuses the push if `bin/idp-ci` (fast mode) reports red. This is the 29% class: ruff
 # E9/F/B/S, hardcode scan, shellcheck. They have hit the remote CI 33 times in the last

@@ -39,7 +39,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-12613-32f41fd517fa0522b38bfbc2c9a861447b30160d # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-13091-4b28267d3fc1247de0f4df127fb35cc2cb69e50d # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
   # arrives qualified from the base, so this entry no longer renames anything; it is kept
@@ -53,7 +53,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-12613-32f41fd517fa0522b38bfbc2c9a861447b30160d # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-13091-4b28267d3fc1247de0f4df127fb35cc2cb69e50d # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's PodDisruptionBudget lives in ../../base/catalogue.yaml. This overlay used to
   # declare a second one as a resource, which made kustomize refuse the entire render; it is an
@@ -118,9 +118,16 @@ patches:
       # rules", and every Flux row behind backstage waited on it. maxUnavailable 1 / maxSurge 0:
       # a rollout replaces one replica in place, the other keeps serving, the PDB
       # (availability.yaml, maxUnavailable 1) already permits exactly that.
+      #
+      # 2026-09-27: ONE replica. ADR 0034 puts the estate on one schedulable node, and with the
+      # required anti-affinity below a second replica can only sit Pending, which holds the
+      # backstage Flux row at "stalled" for ever (seen live: catalogue-5b4984d45d Pending 14m
+      # beside the Ready one). maxSurge 0 still rolls without a spare node: the old pod goes
+      # first, then the new one takes its place. The cost is a gap during each rollout, which one
+      # node cannot avoid; raise this when a second node is schedulable.
       - op: replace
         path: /spec/replicas
-        value: 2
+        value: 1
       # crew#684 CP5: the Healthchecks read-only key as a file for the /healthchecks proxy endpoint.
       - op: add
         path: /spec/template/spec/volumes/-
@@ -378,10 +385,16 @@ patches:
             # publish reports `{"published": false, "reason": "NATS_URL is unset"}` truthfully and
             # forever.
             - {name: NATS_URL, value: "nats://nats.event-bus.svc:4222"}
+            # Fleet's agent-jobs panel (agent_jobs.py) dispatches agent-sandbox.yml and follows its
+            # runs with the portal's own App token -- the backstage-github volume the backstage
+            # container already mounts, not a second credential. A file, re-read on every call:
+            # the token is re-minted every 45 minutes and the kubelet swaps the file in place.
+            - {name: FLEETVIEW_GITHUB_TOKEN_FILE, value: /run/secrets/backstage-github/GITHUB_TOKEN}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
+            - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3

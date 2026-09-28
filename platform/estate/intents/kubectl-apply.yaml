@@ -1,0 +1,20 @@
+name: kubectl-apply
+description: >
+  DRY RUN ONLY: validates a manifest against the cluster (server) or locally (client). There is
+  no apply mode -- hand `kubectl apply` is forbidden (AGENTS.md section 2); merge to git and let
+  Flux converge. Pass a file path, or '-' for stdin.
+args:
+  manifest:  {type: string, description: "File path or '-' for stdin"}
+  namespace: {type: string, default: ""}
+  server:    {type: bool, default: true}
+  validate:  {type: bool, default: true}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: dry-run
+    # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26)
+    cmd: >
+      ns={{namespace}}; kc={{kubeconfig}}; sv={{server}}; v={{validate}};
+      case "$sv" in True|true) mode=server;; *) mode=client;; esac;
+      case "$v" in True|true) val=true;; *) val=false;; esac;
+      ${kc:+env KUBECONFIG="$kc"} kubectl --request-timeout=30s ${ns:+-n "$ns"}
+      apply -f {{manifest}} --dry-run="$mode" --validate="$val" 2>&1

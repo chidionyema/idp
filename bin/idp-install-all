@@ -42,16 +42,33 @@ if ! command -v port >/dev/null 2>&1; then
 fi
 export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
 
-# ── Python 3.12 ───────────────────────────────────────────────────────────────
-info "installing Python 3.12 via MacPorts..."
-if ! python3.12 -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" 2>/dev/null; then
-  sudo port install python312 +pip +optimizations +uuid_framework 2>&1 | tail -3 || die "python312 install failed"
+# ── /etc/hosts: host.docker.internal ──────────────────────────────────────────
+# llm/config.base.yaml's ollama lanes target http://host.docker.internal:11434, a
+# Docker-only hostname. litellm-local runs natively (no Docker), so without this line
+# every ollama lane fails "nodename nor servname provided, or not known" (measured
+# 2026-09-26) and never resolves on its own outside Docker Desktop's embedded DNS.
+info "checking /etc/hosts for host.docker.internal..."
+if grep -q "host.docker.internal" /etc/hosts 2>/dev/null; then
+  ok "host.docker.internal already in /etc/hosts"
+else
+  echo "127.0.0.1 host.docker.internal" | sudo tee -a /etc/hosts >/dev/null
+  ok "host.docker.internal -> 127.0.0.1 added to /etc/hosts"
 fi
-PYTHON="/opt/local/bin/python3.12"
-PIP="/opt/local/bin/pip3.12"
+
+# ── Python 3.12 ───────────────────────────────────────────────────────────────
+info "checking for Python 3.12..."
+if command -v python3.12 >/dev/null 2>&1 && python3.12 -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" 2>/dev/null; then
+  PYTHON="$(command -v python3.12)"
+else
+  info "installing Python 3.12 via MacPorts..."
+  sudo port install python312 +pip +optimizations +uuid_framework 2>&1 | tail -3 || die "python312 install failed"
+  PYTHON="/opt/local/bin/python3.12"
+fi
 [ -x "$PYTHON" ] || die "python3.12 not installed"
-[ -x "$PIP" ]   || die "pip3.12 not installed"
-ok "Python $($PYTHON -V 2>&1 | cut -d' ' -f2) ready"
+PIP="$("$PYTHON" -c 'import sys; print(sys.prefix)')/bin/pip3.12"
+[ -x "$PIP" ] || PIP="$(dirname "$PYTHON")/pip3.12"
+[ -x "$PIP" ] || die "pip3.12 not installed"
+ok "Python $($PYTHON -V 2>&1 | cut -d' ' -f2) ready ($PYTHON)"
 
 # ── gettext (envsubst) ────────────────────────────────────────────────────────
 info "ensuring envsubst..."
@@ -61,12 +78,28 @@ if ! command -v envsubst >/dev/null 2>&1; then
 fi
 if command -v envsubst >/dev/null 2>&1; then ok "envsubst ready"; fi
 
+# ── jq (idp-status, idp-up tailscale publish) ─────────────────────────────────
+info "ensuring jq..."
+if ! command -v jq >/dev/null 2>&1; then
+  sudo port install jq 2>&1 | tail -3 || warn "jq install failed"
+  export PATH="/opt/local/bin:/opt/local/sbin:$PATH"
+fi
+if command -v jq >/dev/null 2>&1; then ok "jq ready"; fi
+
 # ── pip upgrade + core deps ───────────────────────────────────────────────────
 info "installing Python packages..."
 "$PIP" install --upgrade pip -q 2>&1 | tail -1
 for pkg in fastapi uvicorn[standard] httpx pydantic asyncio-nats-client; do
   "$PIP" install "$pkg" -q 2>&1 | tail -1 && ok "$pkg"
 done
+
+# ── idp-verify's schema checker (its own venv, per bin/idp-verify's $IDP/.venv path) ──
+info "ensuring $IDP/.venv (check-jsonschema for idp-verify)..."
+if [ ! -x "$IDP/.venv/bin/check-jsonschema" ]; then
+  "$PYTHON" -m venv "$IDP/.venv" 2>&1 | tail -3 || warn ".venv creation failed"
+  "$IDP/.venv/bin/pip" install -q check-jsonschema 2>&1 | tail -1 || warn "check-jsonschema install failed"
+fi
+if [ -x "$IDP/.venv/bin/check-jsonschema" ]; then ok "check-jsonschema ready"; fi
 
 # ── pip editable packages ─────────────────────────────────────────────────────
 install_editable() {
@@ -95,11 +128,57 @@ else
   warn "ruff not found"
 fi
 
+# ── litellm-local (the laptop router) ─────────────────────────────────────────
+# Founder, 2026-09-26: "if cluster breaks we are all disabled" -- Claude Code's and
+# voice's router calls must not depend on llm.mumchimp.com being up. bin/litellm-local
+# runs the same llm/config.yaml natively, no Docker/Postgres VM required.
+info "installing litellm-local..."
+LITELLM_VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
+if [ ! -x "$LITELLM_VENV/bin/litellm" ]; then
+  if ! command -v uv >/dev/null 2>&1; then
+    info "  installing uv..."
+    curl -fsSL https://astral.sh/uv/install.sh | sh 2>&1 | tail -3
+    export PATH="$HOME/.local/bin:$PATH"
+  fi
+  uv venv --python 3.12 "$LITELLM_VENV" 2>&1 | tail -3
+  VIRTUAL_ENV="$LITELLM_VENV" uv pip install 'litellm[proxy]==1.98.0' opentelemetry-sdk opentelemetry-exporter-otlp 2>&1 | tail -3
+  ok "litellm-local venv built at $LITELLM_VENV"
+else
+  ok "litellm-local venv already present"
+fi
+if ! command -v sops >/dev/null 2>&1 && [ ! -x "$HOME/.cache/estate-tools/sops" ]; then
+  info "  installing sops (decrypts the router's vendor keys from estate-secrets)..."
+  mkdir -p "$HOME/.cache/estate-tools"
+  curl -fsSL -o "$HOME/.cache/estate-tools/sops" \
+    "https://github.com/getsops/sops/releases/download/v3.10.2/sops-v3.10.2.darwin.$([ "$(uname -m)" = arm64 ] && echo arm64 || echo amd64)" \
+    && chmod +x "$HOME/.cache/estate-tools/sops" || warn "sops download failed -- router will serve keyless lanes only"
+fi
+bash "$IDP/bin/litellm-local" install || warn "litellm-local install had issues"
+
 # ── estate state dirs ─────────────────────────────────────────────────────────
 info "creating estate state dirs..."
 mkdir -p "$STATE/bin" "$STATE/intents" "$STATE/libexec" "$STATE/logs"
 chmod 755 "$STATE" 2>/dev/null || true
 ok "estate state at $STATE"
+
+# ── voice-router binary ──────────────────────────────────────────────────────
+# ai.estate.voice-router execs ~/.estate/voice-router/voice-router (launchd cannot exec under
+# ~/Documents, TCC). Built here from this checkout so /fleet voice never runs a hand-copied binary.
+GO_BIN="$(command -v go || echo "$HOME/.cache/estate-tools/go/bin/go")"
+if [ -x "$GO_BIN" ]; then
+  mkdir -p "$STATE/voice-router"
+  if (cd "$IDP/platform/voice-router" && CGO_ENABLED=1 "$GO_BIN" build -trimpath -o "$STATE/voice-router/voice-router.new" ./cmd/voice-router); then
+    mv "$STATE/voice-router/voice-router.new" "$STATE/voice-router/voice-router"
+    ok "voice-router built"
+  else
+    warn "voice-router build failed; the previous binary stays"
+  fi
+else
+  warn "no go toolchain: voice-router not built"
+fi
+# Its launcher and watch run from ~/.estate/bin, not this checkout: /fleet voice must not change when
+# someone switches the checkout's branch (2026-09-27: a branch reinstall silenced it for two hours).
+install -m 755 "$IDP/bin/fleetview-launchd" "$IDP/bin/voice-router-launchd" "$IDP/bin/voice-watch" "$STATE/bin/"
 
 # ── launchd agents ───────────────────────────────────────────────────────────
 info "installing launchd agents..."
@@ -109,9 +188,10 @@ install_launchd() {
   local name; name="$(basename "$tmpl" .tmpl)"
   local dest="$HOME/Library/LaunchAgents/$name"
   local TEMPORAL_BIN="$(command -v temporal || true)"
-  local PYTHON_BIN="/opt/local/bin/python3.12"
-  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" \
-    envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN}' \
+  local PYTHON_BIN="$PYTHON"
+  local ESTATE_ZONE; ESTATE_ZONE="$(awk '/^[[:space:]]*ESTATE_ZONE:/ {print $2; exit}' "$IDP/clusters/oke/estate-config.yaml")"
+  IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" ESTATE_ZONE="$ESTATE_ZONE" \
+    envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN} ${ESTATE_ZONE}' \
     < "$tmpl" > "$dest" || { warn "$name envsubst failed"; return; }
   plutil -lint "$dest" >/dev/null || { warn "$name plist lint failed"; return; }
   launchctl bootout "gui/$(id -u)/$name" 2>/dev/null || true
@@ -123,6 +203,23 @@ for t in "$IDP"/launchd/*.plist.tmpl; do
   install_launchd "$t"
 done
 
+# ── Fleet page (the Backstage catalogue) ──────────────────────────────────────
+# ai.estate.idp is RunAtLoad=false with an hourly StartInterval (deliberately, so a
+# healthy portal is never restarted just because launchd booted). On a fresh install
+# that means Backstage would not come up for up to an hour -- a first run has to kick
+# it once. bin/idp-up also needs an inventory.json to run catalog-gen; a fresh machine
+# has none, so seed the fast local plane (no cloud creds needed) before invoking it.
+# Founder, 2026-09-26: "not gaps allowed" -- the Fleet page is part of the one shot.
+info "seeding inventory (mac plane) for the catalogue..."
+mkdir -p "$STATE/state"
+if [ ! -f "$STATE/state/inventory.json" ]; then
+  "$PYTHON" "$IDP/bin/idp-inventory" --planes mac --out "$STATE/state" 2>&1 | tail -3 || warn "inventory seed had issues"
+else
+  ok "inventory already present"
+fi
+info "starting the Fleet page (bin/idp-up)..."
+bash "$IDP/bin/idp-up" 2>&1 | tail -20 || warn "idp-up had issues -- see $IDP/logs/launchd.log"
+
 # ── git hooks ─────────────────────────────────────────────────────────────────
 info "installing git hooks..."
 if [ -f "$IDP/bin/idp-install-hooks" ]; then
@@ -133,7 +230,8 @@ fi
 info "self-test..."
 sleep 3
 for url_name in "http://127.0.0.1:18790/healthz:fleetview-backend" \
-                "http://127.0.0.1:3000/:headlamp"; do
+                "http://127.0.0.1:3000/:headlamp" \
+                "http://127.0.0.1:4000/health/liveliness:litellm-local"; do
   url="${url_name%%:*}"; name="${url_name##*:}"
   if curl -sf --max-time 5 "$url" >/dev/null 2>&1; then ok "$name responding"
   else warn "$name not responding (normal if not started)"; fi
@@ -150,6 +248,7 @@ echo "  idp:     $IDP"
 echo "  python:  $($PYTHON -V 2>&1)"
 echo ""
 echo "  fleetview-backend:  http://127.0.0.1:18790"
+echo "  litellm-local:      http://127.0.0.1:4000"
 echo "  executor:           $STATE/executor.sock"
 echo ""
 echo "  more:   bash $IDP/bin/idp-install-deps"

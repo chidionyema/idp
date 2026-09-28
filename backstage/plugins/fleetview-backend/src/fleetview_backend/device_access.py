@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 # <repo>/backstage/plugins/fleetview-backend/src/device_access.py -> <repo>
-_ROOT = Path(__file__).resolve().parents[4]
+_ROOT = Path(__file__).resolve().parents[5]
 _JIT = _ROOT / "bin" / "idp-jit"
 
 # A status read is one local subprocess and must not be able to hang a page refresh. Ten

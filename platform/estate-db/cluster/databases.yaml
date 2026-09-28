@@ -226,3 +226,22 @@ spec:
   name: aevum_evidence
   owner: aevum_evidence
   ensure: present
+---
+# The estate's memory layer (platform/unified-memory-server). New, like via-negativa: nothing to
+# copy. vector for the same reason as via-negativa: pgvector is not a trusted extension, so the
+# operator creates it and the server's own CREATE EXTENSION IF NOT EXISTS finds it present.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: memory
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: memory
+  owner: memory
+  ensure: present
+  extensions:
+    - name: vector
+      ensure: present
+      schema: public

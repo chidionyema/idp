@@ -14,7 +14,7 @@ here grants access. API keys and the private key live in the sops vault
 | Object storage namespace | `lr7j97fk6nor` |
 | Audit retention | 365 days |
 | Root compartment | `chidionyema (root)` |
-| Plan | Free Tier; Always Free resources only (ruling R23) |
+| Plan | Pay As You Go ("Universal Credits") since 2026-08-24, Suspended; cannot return to Free Tier. The free ceiling is an Oracle quota, [ADR 0034](../decisions/0034-workloads-are-placed-by-the-free-tier-not-by-the-cluster.md) |
 | Always Free A1 allowance | 2 OCPU / 12 GB since 2026-06-15 (was 4 / 24); not restored after a teardown |
 
 ## What is true now (measured 2026-08-25, commands in `crew/STATE.md`)

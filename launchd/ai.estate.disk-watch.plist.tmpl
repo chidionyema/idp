@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- bin/idp-disk-watch, copied to ~/.estate/bin: launchd cannot run /bin/sh under ~/Documents (TCC). -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.disk-watch</string>
+  <key>ProgramArguments</key><array>
+    <string>${HOME}/.estate/bin/idp-disk-watch</string>
+  </array>
+  <key>StartInterval</key><integer>300</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/disk-watch.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/disk-watch.err.log</string>
+</dict></plist>

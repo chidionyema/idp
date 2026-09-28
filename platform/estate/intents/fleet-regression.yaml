@@ -1,0 +1,26 @@
+name: fleet-regression
+description: Drive /fleet in real Chrome against the running local stack; fails if live sessions do not load, a reload does not recover, a fleetview read stays refused, the page throws, or a spoken question is not heard whole and answered aloud by voice-router.
+args:
+  repo: {type: string, default: "~/Documents/code/idp"}
+  url: {type: string, default: "http://localhost:3100"}
+halt_on_failure: true
+steps:
+  - name: stack-up
+    # voice-router's /readyz asks its brain lane for one token. /healthz only says the process is
+    # up: 2026-09-27 the router lost the `voice` lane at 14:02 and /healthz stayed 200 while
+    # every spoken turn failed until 15:54.
+    cmd: |
+      for u in <<url>>/ http://127.0.0.1:7107/.backstage/health/v1/liveness http://127.0.0.1:18790/sessions http://127.0.0.1:8091/readyz; do
+        c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$u"); echo "$u $c"; [ "$c" = 200 ] || exit 1
+      done
+  - name: e2e
+    timeout: 240
+    cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
+  - name: voice-controls
+    # The voice list and the mic on one agent: both were cut out on 2026-09-27 and nothing noticed.
+    timeout: 300
+    cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice-controls.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
+  - name: voice
+    # A real recording as Chrome's microphone, the real mic button, the router's own turn record.
+    timeout: 420
+    cmd: cd <<repo>>/backstage && CI=1 PLAYWRIGHT_URL={{url}} yarn playwright test packages/app/e2e-tests/fleet-voice.test.ts --retries 0 --reporter line --output /tmp/fleet-e2e
