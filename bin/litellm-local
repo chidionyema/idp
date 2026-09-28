@@ -32,7 +32,7 @@ VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT=4000
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
 
@@ -105,6 +105,9 @@ ls = cfg.setdefault("litellm_settings", {})
 ls["callbacks"] = ["local_caller_auth.proxy_handler_instance"] + [
     c for c in ls.get("callbacks", []) if c != "local_caller_auth.proxy_handler_instance"
 ]
+# Laptop only: every exchange spooled for the estate graph (platform/llm/graph_capture.py).
+if "graph_capture.proxy_handler_instance" not in ls["callbacks"]:
+    ls["callbacks"].append("graph_capture.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 print(f"lanes  dropped {len(dropped)} with no key on this machine")

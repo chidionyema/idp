@@ -1,0 +1,46 @@
+#!/bin/bash
+# Turn the router's spool (platform/llm/graph_capture.py) into estate-graph entities. No agent runs this.
+#
+# Every 10 minutes (launchd/ai.estate.graph-drain.plist.tmpl, from ~/.estate/bin -- launchd cannot
+# run anything under ~/Documents, TCC): each ~/.estate/graph-spool/<session>.md idle for IDLE_MIN
+# is moved into the graph's sessions/ dir, registered with `growmos add`, and `growmos ingest`
+# extracts it through the laptop router on the keyless local lane (ollama-llama: no key, no cost).
+# graph_capture skips those calls (Python-urllib), so extraction is never itself captured.
+#
+# The graph is ESTATE_GRAPH_ROOT (default ~/.estate/graph/estate-graph, a clone of
+# chidionyema/estate-graph that ~/Documents/code/estate-graph points at). The result is committed
+# and pushed there. One line per run in ~/.estate/graph-drain.log.
+set -uo pipefail
+export PATH="$HOME/Library/Python/3.9/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+ROOT="${ESTATE_GRAPH_ROOT:-$HOME/.estate/graph/estate-graph}"
+SPOOL="${ESTATE_GRAPH_SPOOL:-$HOME/.estate/graph-spool}"
+IDLE_MIN="${ESTATE_GRAPH_IDLE_MIN:-10}"
+LIMIT="${ESTATE_GRAPH_INGEST_LIMIT:-40}"
+MODEL="${ESTATE_GRAPH_MODEL:-ollama-llama}"
+LOG="$HOME/.estate/graph-drain.log"
+say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
+
+[ -d "$ROOT/.growmos" ] || { say "BLIND no graph at $ROOT"; exit 1; }
+mkdir -p "$SPOOL" "$ROOT/sessions"
+
+moved=0
+while IFS= read -r f; do
+	[ -n "$f" ] || continue
+	dst="$ROOT/sessions/$(date -u +%Y%m%dT%H%M%SZ)-$(basename "$f")"
+	mv "$f" "$dst" && growmos --root "$ROOT" add "$dst" >/dev/null 2>&1 && moved=$((moved + 1))
+done <<EOF
+$(find "$SPOOL" -maxdepth 1 -name '*.md' -mmin +"$IDLE_MIN" 2>/dev/null)
+EOF
+
+out="$(cd "$ROOT" && GROWMOS_PROVIDER=openai GROWMOS_BASE_URL=http://127.0.0.1:4000/v1 \
+	GROWMOS_API_KEY=local GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
+	growmos --root "$ROOT" ingest --limit "$LIMIT" 2>&1)"
+rc=$?
+entities=$(wc -l <"$ROOT/.growmos/entities.jsonl" | tr -d ' ')
+
+if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+	git -C "$ROOT" add -A &&
+		git -C "$ROOT" commit -q -m "graph-drain: $moved session(s) spooled by the router" &&
+		{ git -C "$ROOT" push -q origin HEAD 2>/dev/null || say "push failed (kept locally)"; }
+fi
+say "moved=$moved entities=$entities ingest_rc=$rc $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-300)"
