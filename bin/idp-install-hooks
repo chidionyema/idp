@@ -177,15 +177,5 @@ for secret_path in "$(git rev-parse --path-format=absolute --git-path idp-hook-s
   fi
 done
 
-# Claude Code session hooks. The git hooks above refuse a bad push; these refuse a bad
-# turn. Without them a Claude Code session on this clone runs with no token-optimisation
-# enforcement at all -- measured on 2026-09-21, settings.json carried zero references to
-# bin/idp-exec while idp/AGENTS.md had mandated it on every command since 2026-09-15.
-# Idempotent, merges into the user's existing hooks, and refuses an unparseable
-# settings.json rather than overwriting it.
-"$IDP/.claude/hooks/install_session_hooks.py" || {
-  echo "WARN  claude  session hooks not wired (see above); git hooks are installed"
-}
-
 echo "        every BLIND row above is a rung that will pass through at push time with a warning;"
 echo "        every OK row is a rung that will run and can refuse the push."
