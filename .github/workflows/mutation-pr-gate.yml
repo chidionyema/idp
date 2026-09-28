@@ -1,0 +1,98 @@
+# .github/workflows/mutation-pr-gate.yml
+# PR merge gate: blocks PR merge if mutation score < MIN_SCORE.
+name: mutation-pr-gate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.py'
+      - '**.rs'
+      - '**.ts'
+      - '**.tsx'
+      - '**.go'
+      - '**.cs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  mutation-pr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: pip install mutmut
+
+      - name: Install orchestrator
+        run: |
+          mkdir -p "$HOME/.estate/bin"
+          cp bin/mutation-orchestrator "$HOME/.estate/bin/mutation-orchestrator"
+          chmod +x "$HOME/.estate/bin/mutation-orchestrator"
+
+      - name: Get changed files
+        id: get-changed
+        run: |
+          BASE="${GITHUB_BASE_REF:-main}"
+          CHANGED=$(git diff --name-only "origin/$BASE...HEAD" \
+            | grep -E '\.(py|rs|ts|tsx|go|cs)$' || true)
+          if [ -z "$CHANGED" ]; then
+            echo "file_count=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "file_count=$(echo "$CHANGED" | wc -l | tr -d ' ')" >> "$GITHUB_OUTPUT"
+            echo "$CHANGED" > /tmp/changed-files.txt
+          fi
+
+      - name: Run mutation testing
+        id: run-mutation
+        if: steps.get-changed.outputs.file_count != '0'
+        run: |
+          python3 "$HOME/.estate/bin/mutation-orchestrator" \
+            --tier=pr --stdin --cwd="$PWD" \
+            < /tmp/changed-files.txt \
+            > /tmp/mutation-output.txt 2>&1
+          echo "done=true" >> "$GITHUB_OUTPUT"
+
+      - name: Extract score
+        id: extract-score
+        if: steps.get-changed.outputs.file_count != '0'
+        run: |
+          python3 -c "
+import json, os
+gh_output = os.environ.get('GITHUB_OUTPUT', '')
+score = 0
+for line in open('/tmp/mutation-output.txt'):
+    line = line.strip()
+    if line.startswith('{'):
+        try:
+            d = json.loads(line)
+            score = d.get('score') or 0
+            break
+        except:
+            pass
+with open(gh_output, 'a') as f:
+    f.write('score=' + str(score) + '\n')
+print('score=' + str(score))
+"
+
+      - name: Gate decision
+        if: steps.get-changed.outputs.file_count != '0'
+        run: |
+          source "$GITHUB_OUTPUT" 2>/dev/null || true
+          S="${score:-0}"
+          echo "Mutation score: ${S}% (minimum: 80%)"
+          if [ "$S" -lt 80 ]; then
+            echo "FAIL: score $S% < 80% — blocking merge"
+            exit 1
+          fi
+          echo "PASS: score $S% >= 80%"
