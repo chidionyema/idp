@@ -34,14 +34,11 @@ jobs:
         run: |
           pip install mutmut
           cargo install cargo-mutants --locked 2>/dev/null || true
-          # mewt: skip if not available (no Go module cache in runner)
-          curl -sSL https://raw.githubusercontent.com/trailofbits/mewt/master/mewt.sh \
-            | sh -s -- --install-dir "$HOME/bin" 2>/dev/null || true
 
       - name: Install orchestrator
         run: |
           mkdir -p "$HOME/.estate/bin"
-          cp .estate/bin/mutation-orchestrator "$HOME/.estate/bin/"
+          cp bin/mutation-orchestrator "$HOME/.estate/bin/mutation-orchestrator"
           chmod +x "$HOME/.estate/bin/mutation-orchestrator"
 
       - name: Run shard
@@ -81,11 +78,10 @@ jobs:
         run: |
           echo "## Mutation Testing Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          # Parse results from ledger if present
           LEDGER="$HOME/.estate/mutation-ledger.jsonl"
           if [ -f "$LEDGER" ]; then
             python3 << 'EOF'
-import json, sys
+import json
 scores = []
 for line in open("$LEDGER"):
     d = json.loads(line)
