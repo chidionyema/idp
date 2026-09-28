@@ -14,17 +14,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import base64
 import json
 import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 # Import from sibling schema module
 import importlib.util
+
 schema_path = Path(__file__).parent / "pobr_schema.py"
 spec = importlib.util.spec_from_file_location("pobr_schema", schema_path)
 pobr_schema = importlib.util.module_from_spec(spec)
@@ -55,13 +55,16 @@ class GateResult:
     receipt_root: str = ""
 
     def to_json(self) -> str:
-        return json.dumps({
-            "decision": self.decision.value,
-            "reason": self.reason,
-            "detail": self.detail,
-            "remediation": self.remediation,
-            "receipt_root": self.receipt_root,
-        }, indent=2)
+        return json.dumps(
+            {
+                "decision": self.decision.value,
+                "reason": self.reason,
+                "detail": self.detail,
+                "remediation": self.remediation,
+                "receipt_root": self.receipt_root,
+            },
+            indent=2,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +82,7 @@ THRESHOLDS = {
 # ---------------------------------------------------------------------------
 # Gate checks (each returns None on pass, GateResult on fail)
 # ---------------------------------------------------------------------------
+
 
 def check_structure(receipt: PoBRReceipt) -> Optional[GateResult]:
     try:
@@ -105,7 +109,9 @@ def check_merkle_root(receipt: PoBRReceipt) -> Optional[GateResult]:
     return None
 
 
-def check_signature(receipt: PoBRReceipt, public_key_pem: bytes) -> Optional[GateResult]:
+def check_signature(
+    receipt: PoBRReceipt, public_key_pem: bytes
+) -> Optional[GateResult]:
     if not verify_signature(receipt, public_key_pem):
         return GateResult(
             decision=Admission.REJECTED,
@@ -116,7 +122,9 @@ def check_signature(receipt: PoBRReceipt, public_key_pem: bytes) -> Optional[Gat
     return None
 
 
-def check_anchor(receipt: PoBRReceipt, anchor_dir: Optional[Path]) -> Optional[GateResult]:
+def check_anchor(
+    receipt: PoBRReceipt, anchor_dir: Optional[Path]
+) -> Optional[GateResult]:
     if not receipt.external_anchor:
         return GateResult(
             decision=Admission.REJECTED,
@@ -265,6 +273,7 @@ def check_completeness(receipt: PoBRReceipt) -> Optional[GateResult]:
 # Main gate
 # ---------------------------------------------------------------------------
 
+
 def gate(
     receipt: PoBRReceipt,
     public_key_pem: bytes,
@@ -282,7 +291,7 @@ def gate(
         ("faithfulness", lambda: check_faithfulness(receipt)),
         ("counterfactual", lambda: check_counterfactual(receipt)),
     ]
-    for name, fn in checks:
+    for _name, fn in checks:
         result = fn()
         if result is not None:
             result.receipt_root = receipt.merkle_root
@@ -297,6 +306,7 @@ def gate(
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def receipt_from_dict(d: dict) -> PoBRReceipt:
     """Deserialize a receipt dict back into a PoBRReceipt."""

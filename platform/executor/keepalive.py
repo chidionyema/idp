@@ -15,6 +15,7 @@ Usage:
 
 Install as launchd or run manually. PID written to ~/.estate/keepalive.pid.
 """
+
 from __future__ import annotations
 
 import json
@@ -42,17 +43,28 @@ elif (HOME / ".estate" / "bin" / "daemon.py").exists():
     DAEMON_PY = HOME / ".estate" / "bin" / "daemon.py"
 else:
     # Installed to ~/.estate/bin/; find daemon.py via repo convention
-    DAEMON_PY = _KEEPALIVE_DIR / ".." / ".." / ".." / "Documents" / "code" / "idp" / "platform" / "executor" / "daemon.py"
+    DAEMON_PY = (
+        _KEEPALIVE_DIR
+        / ".."
+        / ".."
+        / ".."
+        / "Documents"
+        / "code"
+        / "idp"
+        / "platform"
+        / "executor"
+        / "daemon.py"
+    )
     if not DAEMON_PY.exists():
         # Last resort: absolute path used during development
-        DAEMON_PY = HOME / "Documents" / "code" / "idp" / "platform" / "executor" / "daemon.py"
-SOCKET_PATH = os.environ.get(
-    "IDP_EXECUTOR_SOCKET", str(ESTATE / "executor.sock")
-)
+        DAEMON_PY = (
+            HOME / "Documents" / "code" / "idp" / "platform" / "executor" / "daemon.py"
+        )
+SOCKET_PATH = os.environ.get("IDP_EXECUTOR_SOCKET", str(ESTATE / "executor.sock"))
 KEEPALIVE_PIDFILE = ESTATE / "keepalive.pid"
 LOG = ESTATE / "logs" / "keepalive.log"
 CHECK_INTERVAL = 15  # seconds between health checks
-MAX_RESTARTS = 5     # max restarts per rolling window
+MAX_RESTARTS = 5  # max restarts per rolling window
 RESTART_WINDOW = 300  # seconds (5 min rolling window)
 
 LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +83,7 @@ def _daemon_pid() -> int | None:
         return None
     try:
         r = subprocess.run(
-            ["lsof", SOCKET_PATH, "-F", "p"],
-            capture_output=True, text=True, timeout=5
+            ["lsof", SOCKET_PATH, "-F", "p"], capture_output=True, text=True, timeout=5
         )
         pids = [int(l[1:]) for l in r.stdout.splitlines() if l.startswith("p")]
         return pids[0] if pids else None
@@ -97,11 +108,17 @@ def _daemon_check() -> dict | None:
     """Run daemon.py --check directly (no socket needed)."""
     try:
         plugin_dir = DAEMON_PY.parent.parent / "mcp" / "plugins"
-        env = {**os.environ, "EXECUTOR_SOCKET": SOCKET_PATH,
-               "PYTHONPATH": str(plugin_dir)}
+        env = {
+            **os.environ,
+            "EXECUTOR_SOCKET": SOCKET_PATH,
+            "PYTHONPATH": str(plugin_dir),
+        }
         r = subprocess.run(
             [sys.executable, str(DAEMON_PY), "--check"],
-            capture_output=True, text=True, timeout=10, env=env
+            capture_output=True,
+            text=True,
+            timeout=10,
+            env=env,
         )
         if r.returncode == 0:
             return json.loads(r.stdout)
@@ -188,6 +205,7 @@ def _watch() -> None:
         nonlocal running
         _log("Received SIGTERM, shutting down keepalive")
         running = False
+
     signal.signal(signal.SIGTERM, sigterm_handler)
 
     # Write PID
@@ -242,8 +260,11 @@ def cmd_check() -> int:
         # Fallback: try socket directly
         health = _health_check()
         if health:
-            print(json.dumps({"socket": SOCKET_PATH, "answering": True,
-                               "method": "socket"}))
+            print(
+                json.dumps(
+                    {"socket": SOCKET_PATH, "answering": True, "method": "socket"}
+                )
+            )
             return 0
         print(json.dumps({"socket": SOCKET_PATH, "answering": False}), file=sys.stderr)
         return 1

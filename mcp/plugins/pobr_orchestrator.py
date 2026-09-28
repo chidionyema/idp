@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any
 
 import importlib.util
+
 schema_path = Path(__file__).parent / "pobr_schema.py"
 spec = importlib.util.spec_from_file_location("pobr_schema", schema_path)
 pobr_schema = importlib.util.module_from_spec(spec)
@@ -55,6 +56,7 @@ brier_score = pobr_schema.brier_score
 # Reasoning trace capture
 # ---------------------------------------------------------------------------
 
+
 def capture_reasoning_step(
     description: str,
     input_data: str,
@@ -75,6 +77,7 @@ def capture_reasoning_step(
 # Faithfulness: run inference N times, measure variance
 # ---------------------------------------------------------------------------
 
+
 def run_faithfulness(
     hypotheses: list[Hypothesis],
     likelihoods: list[Likelihood],
@@ -86,12 +89,15 @@ def run_faithfulness(
     inference. Checks whether rankings stay stable across passes.
     """
     posteriors: list[dict[str, float]] = []
-    for _ in range(passes):
+    for _pass in range(passes):  # noqa: S311 -- Bayesian jitter modelling, not crypto
         jittered = [
             Likelihood(
                 data_point_id=lk.data_point_id,
                 hypothesis_id=lk.hypothesis_id,
-                probability=max(0.0, min(1.0, lk.probability + random.uniform(-jitter, jitter))),
+                probability=max(
+                    0.0,
+                    min(1.0, lk.probability + random.uniform(-jitter, jitter)),  # noqa: S311
+                ),
                 justification=lk.justification,
             )
             for lk in likelihoods
@@ -122,6 +128,7 @@ def run_faithfulness(
 # Calibration: evaluate posteriors against ground truth on a held-out set
 # ---------------------------------------------------------------------------
 
+
 def compute_calibration(
     hypothesis_ids: list[str],
     predictions: list[dict[str, float]],
@@ -140,7 +147,7 @@ def compute_calibration(
 
     confidences = [max(p.values()) for p in predictions]
     top_picks = [max(p, key=p.get) for p in predictions]
-    correct = [tp == outcome for tp, outcome in zip(top_picks, outcomes)]
+    correct = [tp == outcome for tp, outcome in zip(top_picks, outcomes, strict=True)]
 
     ece = expected_calibration_error(confidences, correct)
     brier = brier_score(confidences, correct)
@@ -156,6 +163,7 @@ def compute_calibration(
 # External anchoring (Aevum PACR placeholder)
 # ---------------------------------------------------------------------------
 
+
 def anchor_via_aevum(root: str, agent_id: str, anchor_dir: Path) -> str:
     """
     Anchor the Merkle root externally. In production this calls Aevum's
@@ -166,19 +174,25 @@ def anchor_via_aevum(root: str, agent_id: str, anchor_dir: Path) -> str:
     """
     anchor_dir.mkdir(parents=True, exist_ok=True)
     anchor_file = anchor_dir / f"{root}.json"
-    anchor_file.write_text(json.dumps({
-        "root": root,
-        "agent_id": agent_id,
-        "anchored_at": time.time(),
-        "method": "aevum-pacr-local",
-        "external_witness": "oci-objectstorage://pobr-anchors/",
-    }, indent=2))
+    anchor_file.write_text(
+        json.dumps(
+            {
+                "root": root,
+                "agent_id": agent_id,
+                "anchored_at": time.time(),
+                "method": "aevum-pacr-local",
+                "external_witness": "oci-objectstorage://pobr-anchors/",
+            },
+            indent=2,
+        )
+    )
     return f"aevum://{anchor_file}"
 
 
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
+
 
 def orchestrate(
     agent_id: str,
@@ -262,6 +276,7 @@ def orchestrate(
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def _load_json(path: str) -> Any:
     return json.loads(Path(path).read_text())
 
@@ -273,11 +288,19 @@ def main() -> int:
     ap.add_argument("--task", required=True)
     ap.add_argument("--data-file", required=True, help="JSON: list of data points")
     ap.add_argument("--hypotheses-file", required=True, help="JSON: list of hypotheses")
-    ap.add_argument("--likelihoods-file", required=True, help="JSON: list of likelihoods")
+    ap.add_argument(
+        "--likelihoods-file", required=True, help="JSON: list of likelihoods"
+    )
     ap.add_argument("--steps-file", required=True, help="JSON: list of reasoning steps")
-    ap.add_argument("--counterfactual-file", required=True, help="JSON: counterfactual commitment")
-    ap.add_argument("--exhaustiveness", required=True, help="exhaustiveness claim string")
-    ap.add_argument("--calibration-file", required=True, help="JSON: {predictions, outcomes}")
+    ap.add_argument(
+        "--counterfactual-file", required=True, help="JSON: counterfactual commitment"
+    )
+    ap.add_argument(
+        "--exhaustiveness", required=True, help="exhaustiveness claim string"
+    )
+    ap.add_argument(
+        "--calibration-file", required=True, help="JSON: {predictions, outcomes}"
+    )
     ap.add_argument("--anchor-dir", default=os.path.expanduser("~/.estate/anchors"))
     ap.add_argument("--out", default="-", help="output receipt path, - for stdout")
     args = ap.parse_args()

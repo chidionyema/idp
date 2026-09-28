@@ -23,6 +23,7 @@ from typing import Any, Optional
 # Canonicalization (RFC 8785 JCS-compatible for our subset)
 # ---------------------------------------------------------------------------
 
+
 def canonical_json(obj: Any) -> str:
     """Canonical JSON: sorted keys, no whitespace, UTF-8."""
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
@@ -38,9 +39,11 @@ def sha256_hex(data: str | bytes) -> str:
 # Merkle tree over reasoning steps
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ReasoningStep:
     """One inference step in the reasoning trace."""
+
     step_id: str
     description: str
     input_hash: str
@@ -49,14 +52,16 @@ class ReasoningStep:
     confidence: float  # 0..1
 
     def leaf_hash(self) -> str:
-        payload = canonical_json({
-            "step_id": self.step_id,
-            "description": self.description,
-            "input_hash": self.input_hash,
-            "output_hash": self.output_hash,
-            "timestamp": self.timestamp,
-            "confidence": self.confidence,
-        })
+        payload = canonical_json(
+            {
+                "step_id": self.step_id,
+                "description": self.description,
+                "input_hash": self.input_hash,
+                "output_hash": self.output_hash,
+                "timestamp": self.timestamp,
+                "confidence": self.confidence,
+            }
+        )
         return sha256_hex(payload)
 
 
@@ -75,6 +80,7 @@ def merkle_root(leaves: list[str]) -> str:
 # ---------------------------------------------------------------------------
 # Bayesian primitives
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Hypothesis:
@@ -126,6 +132,7 @@ class DataPoint:
 # Bayesian update (discrete hypotheses)
 # ---------------------------------------------------------------------------
 
+
 def bayesian_update(
     hypotheses: list[Hypothesis],
     likelihoods: list[Likelihood],
@@ -161,6 +168,7 @@ def bayesian_update(
 # Calibration metrics
 # ---------------------------------------------------------------------------
 
+
 def expected_calibration_error(
     predictions: list[float],
     outcomes: list[bool],
@@ -173,7 +181,7 @@ def expected_calibration_error(
     if n == 0:
         return 0.0
     bins: list[list[tuple[float, bool]]] = [[] for _ in range(n_bins)]
-    for p, y in zip(predictions, outcomes):
+    for p, y in zip(predictions, outcomes, strict=True):
         idx = min(int(p * n_bins), n_bins - 1)
         bins[idx].append((p, y))
     ece = 0.0
@@ -192,20 +200,24 @@ def brier_score(predictions: list[float], outcomes: list[bool]) -> float:
         raise ValueError("predictions and outcomes must match length")
     if not predictions:
         return 0.0
-    return sum((p - (1.0 if y else 0.0)) ** 2 for p, y in zip(predictions, outcomes)) / len(predictions)
+    return sum(
+        (p - (1.0 if y else 0.0)) ** 2
+        for p, y in zip(predictions, outcomes, strict=True)
+    ) / len(predictions)
 
 
 def credible_interval(
     mean: float, variance: float, z: float = 1.96
 ) -> tuple[float, float]:
     """95% credible interval from mean and variance."""
-    sd = variance ** 0.5
+    sd = variance**0.5
     return (max(0.0, mean - z * sd), min(1.0, mean + z * sd))
 
 
 # ---------------------------------------------------------------------------
 # Prior sensitivity sweep
 # ---------------------------------------------------------------------------
+
 
 def prior_sweep(
     hypotheses: list[Hypothesis],
@@ -247,6 +259,7 @@ def rank_stable_across_sweep(sweep: dict[str, dict[str, float]]) -> bool:
 # Counterfactual commitment
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class CounterfactualCommitment:
     hypothesis_id: str
@@ -264,6 +277,7 @@ class CounterfactualCommitment:
 # ---------------------------------------------------------------------------
 # Faithfulness (stochastic variance across inference passes)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class Faithfulness:
@@ -285,6 +299,7 @@ class Faithfulness:
 # ---------------------------------------------------------------------------
 # The receipt
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class PoBRReceipt:
@@ -334,7 +349,9 @@ class PoBRReceipt:
             "calibration": self.calibration,
             "prior_sweep": self.prior_sweep,
             "rank_stable": self.rank_stable,
-            "counterfactual": asdict(self.counterfactual) if self.counterfactual else None,
+            "counterfactual": asdict(self.counterfactual)
+            if self.counterfactual
+            else None,
             "faithfulness": asdict(self.faithfulness) if self.faithfulness else None,
             "reasoning_steps": [asdict(s) for s in self.reasoning_steps],
         }
@@ -353,6 +370,7 @@ class PoBRReceipt:
 # Validation
 # ---------------------------------------------------------------------------
 
+
 class PoBRValidationError(Exception):
     pass
 
@@ -367,7 +385,9 @@ def validate_receipt(r: PoBRReceipt) -> None:
         raise PoBRValidationError("task required")
 
     if not (2 <= len(r.hypotheses) <= 8):
-        raise PoBRValidationError(f"hypotheses count must be 2..8, got {len(r.hypotheses)}")
+        raise PoBRValidationError(
+            f"hypotheses count must be 2..8, got {len(r.hypotheses)}"
+        )
 
     ids = [h.id for h in r.hypotheses]
     if len(ids) != len(set(ids)):
@@ -383,7 +403,9 @@ def validate_receipt(r: PoBRReceipt) -> None:
     for lk in r.likelihoods:
         lk.validate()
         if lk.hypothesis_id not in ids:
-            raise PoBRValidationError(f"likelihood references unknown hypothesis {lk.hypothesis_id}")
+            raise PoBRValidationError(
+                f"likelihood references unknown hypothesis {lk.hypothesis_id}"
+            )
 
     for d in r.data_points_consulted + r.data_points_excluded:
         d.validate()
@@ -408,6 +430,7 @@ def validate_receipt(r: PoBRReceipt) -> None:
 # ---------------------------------------------------------------------------
 # Builder (fluent API used by the orchestrator)
 # ---------------------------------------------------------------------------
+
 
 class ReceiptBuilder:
     def __init__(self, agent_id: str, task: str):
@@ -473,6 +496,7 @@ class ReceiptBuilder:
 # ---------------------------------------------------------------------------
 # Signing
 # ---------------------------------------------------------------------------
+
 
 def sign_receipt(receipt: PoBRReceipt, private_key_pem: bytes) -> str:
     """Sign the merkle root with Ed25519. Returns base64 signature."""
