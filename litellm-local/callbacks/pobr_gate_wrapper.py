@@ -5,6 +5,7 @@ The pobr_gate module lives in this directory alongside this file.
 We use exec_module and manually register the module in sys.modules so that
 cls.__module__ lookups (used by dataclass decorators) resolve correctly.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -37,7 +38,8 @@ def _load_gate():
 
     # Load schema first (gate imports from it)
     schema_spec = importlib.util.spec_from_file_location("pobr_schema", schema_path)
-    assert schema_spec is not None and schema_spec.loader is not None
+    if schema_spec is None or schema_spec.loader is None:
+        raise ImportError(f"Could not load schema from {schema_path}")
     schema_module = importlib.util.module_from_spec(schema_spec)
     # Register BEFORE exec so cls.__module__ lookups inside dataclass decorators resolve
     sys.modules["pobr_schema"] = schema_module
@@ -45,7 +47,8 @@ def _load_gate():
 
     # Load gate (it imports from pobr_schema)
     gate_spec = importlib.util.spec_from_file_location("pobr_gate", gate_path)
-    assert gate_spec is not None and gate_spec.loader is not None
+    if gate_spec is None or gate_spec.loader is None:
+        raise ImportError(f"Could not load gate from {gate_path}")
     gate_module = importlib.util.module_from_spec(gate_spec)
     sys.modules["pobr_gate"] = gate_module
     gate_spec.loader.exec_module(gate_module)
