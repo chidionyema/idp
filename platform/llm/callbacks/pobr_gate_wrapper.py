@@ -5,7 +5,6 @@ The pobr_gate module lives in this directory alongside this file.
 We use exec_module and manually register the module in sys.modules so that
 cls.__module__ lookups (used by dataclass decorators) resolve correctly.
 """
-
 from __future__ import annotations
 
 import importlib.util
