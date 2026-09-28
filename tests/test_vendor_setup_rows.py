@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -164,6 +165,23 @@ def test_write_vault_keeps_values_off_argv_and_removes_the_file(tmp_path, monkey
         "sys.exit(0)\n"
     )
     script.chmod(0o755)
+
+    # vs.write_vault's only observable effect is what this fixture writes when the OS actually
+    # execs it -- prove the subprocess boundary is real, independent of the vs.write_vault
+    # wrapper, before trusting what it reports below.
+    probe_env = tmp_path / "probe.env"
+    probe_env.write_text("PROBE_KEY=probe\n")
+    probe_record = tmp_path / "probe.json"
+    subprocess.run(
+        [str(script)],
+        env={
+            **os.environ,
+            "ESTATE_ENV_FILE": str(probe_env),
+            "FAKE_VAULT_RECORD": str(probe_record),
+        },
+        check=True,
+    )
+    assert json.loads(probe_record.read_text())["keys"] == ["PROBE_KEY"]
 
     record_path = tmp_path / "record.json"
     monkeypatch.setenv("IDP_VAULT_PUT", str(script))
