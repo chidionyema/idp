@@ -1,0 +1,8 @@
+id: executor
+subject: estate.channel.executor
+how_it_works: 'The executor daemon: the process that runs commands, so the agent''s process tree does
+  not.'
+provenance: docstring:daemon.py
+visual:
+  scene: code-stream
+  palette: glacier

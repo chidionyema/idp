@@ -1,0 +1,7 @@
+id: warden
+subject: estate.channel.warden
+how_it_works: 'The API key warden: proving, storing and watching vendor credentials (decision 0020).'
+provenance: docstring:__init__.py
+visual:
+  scene: code-stream
+  palette: sol

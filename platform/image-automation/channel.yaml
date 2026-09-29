@@ -1,0 +1,11 @@
+id: image-automation
+subject: estate.channel.image-automation
+how_it_works: 'The ACG gateway image rolls on every main build of chidionyema/acg, same mechanism as fleetview-backend.yaml
+  in this directory: image-reflector lists tags, the policy picks the highest run number, and the one
+  ImageUpdateAutomation named "backstage" (path: ./, whole checkout) rewrites any $imagepolicy marker
+  it finds -- this needs no second automation, only a second ImageRepository/ImagePolicy pair. The marker
+  lives in platform/acg/workload.yaml on the gateway container''s image.'
+provenance: comment:acg.yaml
+visual:
+  scene: vault
+  palette: ember

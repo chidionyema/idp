@@ -1,0 +1,12 @@
+id: crossplane
+subject: estate.channel.crossplane
+how_it_works: 'Crossplane core: the day-2 control loop of decision 0026. OpenTofu owns the ground the
+  cluster stands on and keeps owning it; Crossplane owns what the cluster asks for afterwards, and the
+  difference between them is drift correction. A bucket OpenTofu created is correct until someone changes
+  it in the console, and nobody finds out until the next plan; a bucket Crossplane owns is put back at
+  the reconcile interval. bin/idp-split-brain is the guard that keeps exactly one of them owning any given
+  object, and it shipped before this did, on purpose.'
+provenance: comment:helm.yaml
+visual:
+  scene: pod-orbit
+  palette: aurora

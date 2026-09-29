@@ -1,0 +1,7 @@
+id: estate
+subject: estate.channel.estate
+how_it_works: ci-status — structured CI status for a PR or SHA.
+provenance: docstring:libexec/ci-status.py
+visual:
+  scene: code-stream
+  palette: tide

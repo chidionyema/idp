@@ -369,6 +369,11 @@ def build_app() -> FastAPI:
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.CHANNELS_PATH)
+    def channels_get():
+        body, status = routes.channels_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.AGENT_JOBS_PATH)
     async def agent_jobs_get():
         # GitHub calls, up to a 10s timeout each: off the event loop, like /voice/intent.

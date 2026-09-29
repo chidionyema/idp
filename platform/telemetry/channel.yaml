@@ -1,0 +1,7 @@
+id: telemetry
+subject: estate.channel.telemetry
+how_it_works: 'Telemetry subsystem: real-time observability, circuit breaking, fault detection.'
+provenance: docstring:__init__.py
+visual:
+  scene: code-stream
+  palette: sol

@@ -1,0 +1,9 @@
+id: k3d
+subject: estate.channel.k3d
+how_it_works: A single-node Kubernetes cluster on this laptop, for £0. It exists so that the manifests,
+  admission policies and restore drills that will one day run on a managed cluster can be proved before
+  anyone pays for one.
+provenance: readme
+visual:
+  scene: vault
+  palette: neon

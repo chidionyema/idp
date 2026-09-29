@@ -1,0 +1,9 @@
+id: sandbox
+subject: estate.channel.sandbox
+how_it_works: Declares Job/arm-voice-bench, GitRepository/sandbox-launch, HTTPRoute/demo-shop, Kustomization/?,
+  Kustomization/sandbox-live, Namespace/demo-sandbox, ServiceAccount/shadow-runner, Role/shadow-runner
+  and more. No prose description exists yet; this one is derived from the manifests.
+provenance: kinds
+visual:
+  scene: clockwork
+  palette: dusk

@@ -1,0 +1,8 @@
+id: calico
+subject: estate.channel.calico
+how_it_works: 'This directory is merged and suspended. Nothing here reaches the cluster until the Flux
+  row in `clusters/oke/platform.yaml` reads `suspend: false`, and that is one line.'
+provenance: readme
+visual:
+  scene: clockwork
+  palette: ember

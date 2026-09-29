@@ -1,0 +1,9 @@
+id: commerce
+subject: estate.channel.commerce
+how_it_works: Declares Kustomization/?, HelmRepository/lago, HelmRelease/lago, PodDisruptionBudget/commerce-redis,
+  ExternalSecret/lago-credentials, ExternalSecret/lago-encryption, ExternalSecret/commerce-payment-provider,
+  Kustomization/? and more. No prose description exists yet; this one is derived from the manifests.
+provenance: kinds
+visual:
+  scene: pod-orbit
+  palette: glacier

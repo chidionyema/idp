@@ -1,0 +1,9 @@
+id: robusta
+subject: estate.channel.robusta
+how_it_works: 'The Telegram bot and home channel Robusta posts to: the same vault entry the Flux alerts
+  Provider reads (`flux-telegram`, keys token and channel), through the one ClusterSecretStore. No literal
+  names a bot or a chat (LAW 46); the runner reads both as env vars.'
+provenance: comment:external-secret.yaml
+visual:
+  scene: vault
+  palette: sol

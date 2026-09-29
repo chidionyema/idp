@@ -1,0 +1,9 @@
+id: messaging
+subject: estate.channel.messaging
+how_it_works: 'Package cloudevent is decision D2 of ADR 0012: CloudEvents 1.0 in binary mode, the attributes
+  travel as NATS headers (ce-*), the payload is the body. Binary mode is what lets the broker, the relay
+  and the DLQ processor route and trace a message without decoding its payload.'
+provenance: godoc:cloudevent/cloudevent.go
+visual:
+  scene: code-stream
+  palette: glacier

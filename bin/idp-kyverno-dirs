@@ -47,6 +47,20 @@ changed=$(git diff --name-only "$base...HEAD" 2>/dev/null) || {
 	printf '%s\n' "$all"
 	exit 0
 }
+# A YAML file with no `kind:` that no kustomization.yaml names never reaches the cluster (a
+# platform/*/channel.yaml, docs metadata), so changing it asks the environment to accept nothing.
+# Deleted files and everything else still count: this only drops what the build cannot read.
+changed=$(printf '%s\n' "$changed" | while IFS= read -r f; do
+	case "$f" in
+	*.yaml | *.yml)
+		if [ -f "$f" ] && ! grep -qE '^kind:' "$f" &&
+			! grep -rqsF --include=kustomization.yaml "$(basename "$f")" "$(dirname "$f")"; then
+			continue
+		fi
+		;;
+	esac
+	printf '%s\n' "$f"
+done)
 # The verdict is the VALUE of the pipeline, never its exit status: this script sets `pipefail`,
 # and `if cmd | grep -q ...` reports the left-hand command's failure as the answer to the
 # question (bin/idp-ci rung 1c, the 2026-08-25 port-gate incident).

@@ -1,0 +1,10 @@
+id: otto-gateway
+subject: estate.channel.otto-gateway
+how_it_works: 'The Universal Event Gateway. Same image as platform/hermes-agent and platform/otto-golden
+  -- one build, several commands -- and the tag below carries the same $imagepolicy marker, so the estate''s
+  one ImageUpdateAutomation bumps all three together on every build. No new automation object: two automations
+  on one push branch collide (crew#406).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: clockwork
+  palette: neon

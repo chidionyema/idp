@@ -1,0 +1,7 @@
+id: priority-classes
+subject: estate.channel.priority-classes
+how_it_works: The PriorityClasses on their own, before anything that names one (crew#488 CP5).
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: dusk

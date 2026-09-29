@@ -1,0 +1,8 @@
+id: inventory
+subject: estate.channel.inventory
+how_it_works: Component platform/inventory. No prose description exists yet; this one is derived from
+  its file layout.
+provenance: layout
+visual:
+  scene: vault
+  palette: ember

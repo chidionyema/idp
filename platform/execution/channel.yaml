@@ -1,0 +1,7 @@
+id: execution
+subject: estate.channel.execution
+how_it_works: 'Final integration test: 9-layer stack + 8 mechanisms + N=10 scale + verification gates.'
+provenance: docstring:final_integration_test.py
+visual:
+  scene: code-stream
+  palette: sol

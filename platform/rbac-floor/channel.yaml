@@ -1,0 +1,7 @@
+id: rbac-floor
+subject: estate.channel.rbac-floor
+how_it_works: The floor, on its own, and that separation is the whole point of this directory.
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: glacier

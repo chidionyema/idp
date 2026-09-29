@@ -1,0 +1,7 @@
+id: dagster
+subject: estate.channel.dagster
+how_it_works: 'THE ESTATE SCHEDULER (crew#716): Dagster on the cluster instead of the Mac.'
+provenance: comment:dagster.yaml
+visual:
+  scene: vault
+  palette: dusk

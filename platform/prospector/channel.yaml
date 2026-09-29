@@ -1,0 +1,9 @@
+id: prospector
+subject: estate.channel.prospector
+how_it_works: 'What the platform hands prospector before its own manifests apply: the namespace, the registry
+  pull secret, and the API''s secret files. The product repo holds no credential and no reference to where
+  one lives (LAW 21, LAW 46).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: clockwork
+  palette: glacier

@@ -1,0 +1,7 @@
+id: metrics-server
+subject: estate.channel.metrics-server
+how_it_works: 'The metrics-server row: one file, one chart, values inline (the reloader shape).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: ember

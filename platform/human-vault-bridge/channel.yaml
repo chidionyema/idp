@@ -1,0 +1,9 @@
+id: human-vault-bridge
+subject: estate.channel.human-vault-bridge
+how_it_works: One HelmRelease, and the chart it names renders the bridge from platform/vendors/consoles.yaml
+  inside the cluster. The two generated manifests that used to sit here are deleted; see helmrelease.yaml
+  for why a committed render was the defect rather than the mechanism.
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: ember

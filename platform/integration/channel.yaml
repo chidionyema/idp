@@ -1,0 +1,7 @@
+id: integration
+subject: estate.channel.integration
+how_it_works: Claude Code integration layer for idp verification stack.
+provenance: docstring:__init__.py
+visual:
+  scene: code-stream
+  palette: dusk

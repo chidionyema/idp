@@ -129,6 +129,9 @@ unsettled() {
   # A checkout whose HEAD is already in origin/main holds nothing that is not on main: it needs no
   # idle wait (the wait only guards work in progress, and there is none to lose).
   git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null && return
+  # A checkout whose HEAD is already in origin/main is clean (above) and holds nothing that is not
+  # merged, so the idle wait, which only guards work in progress, has nothing left to guard.
+  if git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null; then return; fi
   if [ "$WT_IDLE_MIN" -gt 0 ] && [ -n "$(find "$gd/index" "$gd/HEAD" "$gd/logs/HEAD" -mmin -"$WT_IDLE_MIN" 2>/dev/null | head -1)" ]; then
     echo "used in the last ${WT_IDLE_MIN}m"; return; fi
 }

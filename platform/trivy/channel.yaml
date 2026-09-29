@@ -1,0 +1,10 @@
+id: trivy
+subject: estate.channel.trivy
+how_it_works: 'crew#846: the fourth question estate-security-scan asks. `git grep -il trivy origin/main
+  -- ''platform/**'' ''clusters/**''` returned nothing before this row, so no container image or cluster
+  vulnerability was ever scanned anywhere in the estate -- every VulnerabilityReport row bin/estate-security-scan
+  now reads (LAW 40, aquasecurity/trivy-operator, Apache-2.0) starts here.'
+provenance: comment:trivy.yaml
+visual:
+  scene: vault
+  palette: sol

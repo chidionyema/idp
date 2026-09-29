@@ -1,0 +1,7 @@
+id: observability
+subject: estate.channel.observability
+how_it_works: Aevum — the estate's evidence layer.
+provenance: comment:aevum.yaml
+visual:
+  scene: clockwork
+  palette: dusk

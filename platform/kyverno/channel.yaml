@@ -1,0 +1,9 @@
+id: kyverno
+subject: estate.channel.kyverno
+how_it_works: 'Kyverno is the policy engine prospector/deploy/k8s/policies targets (ClusterPolicy). Only
+  the admission controller runs: reports, background and cleanup controllers are off because nothing reads
+  them yet (LAW 28) and the node has 1.8 cores.'
+provenance: comment:kyverno.yaml
+visual:
+  scene: vault
+  palette: verdigris

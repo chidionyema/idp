@@ -1,0 +1,8 @@
+id: healing
+subject: estate.channel.healing
+how_it_works: 'crew#539 CP6: the eviction loop, and nothing else. Flux row `healing` in clusters/oke/platform.yaml,
+  after `scheduling` alone -- the PriorityClass the evictor reads.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: ember

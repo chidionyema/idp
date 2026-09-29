@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Channel gate: every component has a Fleet channel that explains it and carries its live activity.
+
+A component is a top-level directory under platform/. Each holds a channel.yaml:
+
+    id:            the directory name
+    subject:       estate.channel.<id>   (the JetStream subject its live activity is published on)
+    how_it_works:  what it does and how, in prose a person can follow
+    visual:        {scene: <name>, palette: <name>}   the Fleet scene generated for the channel
+
+A component added in the last WINDOW_DAYS with no valid channel.yaml is refused. Older components are
+listed by `--missing` and filled by bin/channel-backfill; once that lands, run with --strict to
+refuse every component, which is the state CI ends in.
+
+  bin/channel-gate [--strict] [--missing]      exit 1 on a refusal
+"""
+
+from __future__ import annotations
+
+import argparse
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import yaml
+
+IDP = Path(__file__).resolve().parent.parent
+WINDOW_DAYS = 28
+REQUIRED = ("id", "subject", "how_it_works", "visual")
+
+
+def components() -> list[Path]:
+    return sorted(
+        p
+        for p in (IDP / "platform").iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+
+
+def added_at(path: Path) -> float:
+    out = subprocess.run(
+        [
+            "git",
+            "log",
+            "--diff-filter=A",
+            "--format=%at",
+            "--",
+            str(path.relative_to(IDP)),
+        ],
+        cwd=IDP,
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return float(out[-1]) if out else time.time()  # untracked = added now
+
+
+def problem(comp: Path) -> str | None:
+    f = comp / "channel.yaml"
+    if not f.is_file():
+        return "no channel.yaml"
+    try:
+        d = yaml.safe_load(f.read_text()) or {}
+    except yaml.YAMLError as exc:
+        return f"unparseable: {exc}"
+    gone = [k for k in REQUIRED if not d.get(k)]
+    if gone:
+        return "missing " + ", ".join(gone)
+    if d["id"] != comp.name or d["subject"] != f"estate.channel.{comp.name}":
+        return "id/subject do not match the directory"
+    if not isinstance(d["visual"], dict) or not d["visual"].get("scene"):
+        return "visual.scene missing"
+    return None
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--missing", action="store_true")
+    a = ap.parse_args()
+    cutoff = time.time() - WINDOW_DAYS * 86400
+    bad = []
+    for c in components():
+        why = problem(c)
+        if why and (a.strict or a.missing or added_at(c) >= cutoff):
+            bad.append((c.name, why))
+    for name, why in bad:
+        print(f"FAIL  channel  platform/{name}: {why}")
+    if not bad:
+        print(
+            f"ok    channel  every {'component' if a.strict else 'component added in the last %dd' % WINDOW_DAYS} has a valid channel"
+        )
+    return 1 if bad and not a.missing else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
