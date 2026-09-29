@@ -24,7 +24,7 @@ spec:
     spec:
       containers:
         - name: factory
-          image: ghcr.io/chidionyema/idp:latest
+          image: ghcr.io/chidionyema/factory:latest
           ports: [{ containerPort: 8080 }]
           envFrom:
             - configMapRef: { name: factory-config }
@@ -67,7 +67,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: collect
-              image: ghcr.io/chidionyema/idp:latest
+              image: ghcr.io/chidionyema/factory:latest
               command: ["python", "-m", "factory.main", "collect"]
               envFrom:
                 - configMapRef: { name: factory-config }
