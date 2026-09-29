@@ -1,6 +1,6 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# Oracle's flannel add-on, adopted without --ip-masq (see daemonset.yaml header). Oracle re-creates
-# it WITH --ip-masq on node work requests; this row re-asserts the flag-free spec every reconcile.
+# Oracle's kube-flannel-ds is no longer declared here: Oracle's add-on manager owns it and
+# re-applies --ip-masq regardless. The row is prune: false, so dropping it deletes nothing.
 resources:
-  - daemonset.yaml
+  - pod-no-masq.yaml
