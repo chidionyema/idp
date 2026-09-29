@@ -49,6 +49,8 @@ from typing import Any
 # Sibling modules in the same package. Direct imports replace the old importlib.util _load() hacks.
 from fleetview_backend import (
     blast,
+    device_access,
+    handoff,
     evals,
     graph,
     greenlane,
@@ -75,6 +77,10 @@ __all__ = [
     "MUTATIONS_REJECT_PATH",
     "TRACE_PATH",
     "LEDGER_PATH",
+    "DEVICE_STATUS_PATH",
+    "device_status_envelope",
+    "DEVICE_AUTHORIZE_PATH",
+    "device_authorize_envelope",
     "sessions_envelope",
     "stream_frames",
     "notes_envelope",
@@ -112,6 +118,8 @@ MUTATIONS_APPROVE_PATH = "/mutations/approve"
 MUTATIONS_REJECT_PATH = "/mutations/reject"
 TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
+DEVICE_STATUS_PATH = "/device-status"
+DEVICE_AUTHORIZE_PATH = "/device-authorize"
 
 
 def _now() -> str:
@@ -358,3 +366,26 @@ def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
     from fleetview_backend import agent_jobs
 
     return agent_jobs.handle_post(body)
+
+
+def device_status_envelope() -> tuple[dict[str, Any], int]:
+    """`GET /device-status`: this device's read-only identity, for the Fleet device tile."""
+    return device_access.device_status_envelope()
+
+
+def device_authorize_envelope() -> tuple[dict[str, Any], int]:
+    """`POST /device-authorize`: mint a single-use challenge and return the LOCAL handoff URL.
+
+    Key delivery stays out of the portal (founder, 2026-09-18): the browser opens
+    `idp-device://`, the device's own helper delivers, and only the nonce crosses between them.
+    """
+    challenge = handoff.new_challenge()
+    try:
+        body = handoff.handoff_payload(challenge, state="awaiting_helper")
+        body["url"] = handoff.handoff_url(challenge)
+        body["scheme"] = "idp-device"
+        # Re-checked with the two fields added, so the URL itself is proven clean.
+        handoff.assert_no_secret(body, where="device-authorize")
+    except handoff.SecretLeak as exc:
+        return {"state": "error", "error": f"refusing to emit: {exc}"}, 500
+    return body, 200

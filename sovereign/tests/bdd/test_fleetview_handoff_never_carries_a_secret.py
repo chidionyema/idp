@@ -28,7 +28,7 @@ import subprocess
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-SRC = REPO / "backstage" / "plugins" / "fleetview-backend" / "src"
+SRC = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "fleetview_backend"
 HANDOFF_MODULE = SRC / "handoff.py"
 ROUTES_MODULE = SRC / "routes.py"
 
