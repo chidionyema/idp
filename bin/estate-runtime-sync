@@ -17,6 +17,9 @@ EACH RUN
      deleted -- an extra is reported), and the launchers voice needs into ~/.estate/bin
   3. voice-router changed -> rebuild ~/.estate/voice-router/voice-router and restart it; wait for /readyz
   4. the fleetview backend's code changed -> restart it; wait for /healthz
+  4b. the laptop router's modules (bin/litellm-local's MODULES, from platform/llm/) differ from the
+     ones it runs -> copy them in, restart it, wait for /health/liveliness; if it does not come back,
+     put the previous bytes back and restart again. Its launcher, config and keys are never touched.
   5. a restarted service that does not come back -> check out the previous commit, restart again,
      and alert (~/.estate/alerts/inbox.jsonl + a notification). Main never takes /fleet down; that
      commit is remembered in ~/.estate/runtime-sync.bad and not tried again until main moves on.
@@ -64,10 +67,14 @@ def launchers() -> list[str]:
     for t in (TREE / "launchd").glob("*.tmpl"):
         names.update(re.findall(r"\$\{HOME\}/\.estate/bin/([\w.-]+)", t.read_text()))
     return sorted(names)
+
+
 # /fleet's frontend: its own sparse clone (backstage/ only) with node_modules, served by
 # ai.estate.fleetview-frontend. The dev server hot-reloads what this checks out.
 FRONTEND = Path(os.environ.get("ESTATE_FRONTEND_TREE") or STATE / "frontend/idp")
-FRONTEND_PROBE = "http://127.0.0.1:3100/"
+# `localhost`, not 127.0.0.1: the dev server binds ::1 only (app.baseUrl says localhost), so the v4
+# literal was refused on every tick and every frontend deploy was rolled back (2026-09-28).
+FRONTEND_PROBE = "http://localhost:3100/"
 BACKEND_PROBE = "http://127.0.0.1:7107/.backstage/health/v1/liveness"
 # fleetview_backend reaches the repo root for these (parents[5]); a change here is a backend change.
 BACKEND_PATHS = (
@@ -185,6 +192,51 @@ def answers(url: str, within_s: int) -> bool:
     return False
 
 
+# The laptop router (com.estate.litellm-local). Only its modules follow main: the live launcher is the
+# one that loads vendor keys from Bitwarden, and its config is the laptop's own, so both stay as
+# installed. Before this, every router fix merged and then waited on a hand-copied file (2026-09-29:
+# the holdout trial merged in #4909 while the router still ran the commit before it).
+ROUTER = Path(os.environ.get("ESTATE_ROUTER_DIR") or STATE / "litellm-local")
+ROUTER_LABEL = "com.estate.litellm-local"
+ROUTER_PROBE = "http://127.0.0.1:4000/health/liveliness"
+
+
+def router_modules() -> list[str]:
+    m = re.search(r'^MODULES="([^"]*)"', (TREE / "bin/litellm-local").read_text(), re.M)
+    return m.group(1).split() if m else []
+
+
+def sync_router(within_s: int = 120) -> list[str]:
+    if not (ROUTER / "modules").is_dir():
+        return []
+    previous: dict[str, bytes | None] = {}
+    for name in router_modules():
+        src, dst = TREE / "platform/llm" / name, ROUTER / "modules" / name
+        if not src.is_file() or (dst.exists() and filecmp.cmp(src, dst, False)):
+            continue
+        previous[name] = dst.read_bytes() if dst.exists() else None
+        shutil.copy2(src, dst)
+    if not previous:
+        return []
+    kickstart(ROUTER_LABEL)
+    if answers(ROUTER_PROBE, within_s):
+        return [
+            f"router modules {', '.join(sorted(previous))}; restarted {ROUTER_LABEL}"
+        ]
+    for name, old in previous.items():
+        dst = ROUTER / "modules" / name
+        if old is None:
+            dst.unlink(missing_ok=True)
+        else:
+            dst.write_bytes(old)
+    kickstart(ROUTER_LABEL)
+    answers(ROUTER_PROBE, within_s)
+    alert(
+        f"router modules {', '.join(sorted(previous))} from main did not start; previous kept"
+    )
+    return [f"ROUTER KEPT previous modules ({', '.join(sorted(previous))})"]
+
+
 def build_voice_router() -> bool:
     out = STATE / "voice-router/voice-router"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -288,8 +340,18 @@ def sync_frontend(sha: str) -> list[str]:
         )
         if r.returncode:
             git("checkout", "-q", "--detach", was, tree=FRONTEND)
-            alert(f"/fleet frontend: yarn install for {sha[:8]} failed; kept {was[:8]}")
+            # The reason travels with the alert: a bare "install failed" hid the cause for hours.
+            why = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+            alert(
+                f"/fleet frontend: yarn install for {sha[:8]} failed (exit {r.returncode}: "
+                f"{' | '.join(why)[:300]}); kept {was[:8]}"
+            )
             return [f"frontend held at {was[:8]} (install failed)"]
+    # A backend that is not answering is a service that died, not a bad frontend: restart it once
+    # before judging the checkout (2026-09-28: its Node child died and nothing restarted it, so
+    # every deploy after was rolled back for 16 hours).
+    if not answers(BACKEND_PROBE, 5):
+        kickstart("ai.estate.backstage-backend")
     if answers(FRONTEND_PROBE, 180) and answers(BACKEND_PROBE, 180):
         return [f"frontend {was[:8]}->{sha[:8]}"]
     git("checkout", "-q", "--detach", was, tree=FRONTEND)
@@ -340,6 +402,10 @@ def main() -> int:
         notes.append(f"ROLLED BACK to {before[:8]}")
     elif broke:
         alert(f"runtime sync: {', '.join(broke)} did not come back")
+    try:
+        notes += sync_router()
+    except (OSError, subprocess.SubprocessError) as exc:
+        notes.append(f"router sync failed: {exc}")
     try:
         notes += sync_frontend(git("rev-parse", "HEAD"))
     except (

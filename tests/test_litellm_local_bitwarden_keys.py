@@ -96,3 +96,57 @@ def test_loader_leaves_no_helper_variables(tmp_path):
     )
     assert r.returncode == 0, r.stderr
     assert r.stdout.splitlines()[-1] == "unset|unset"
+
+
+RENDER = SCRIPT[SCRIPT.index("<<'PY'\n") + len("<<'PY'\n") : SCRIPT.index("\nPY\n")]
+
+
+def _render(tmp_path: Path, env: dict) -> tuple[dict, dict]:
+    if subprocess.run([PY, "-c", "import litellm"], capture_output=True).returncode:
+        pytest.skip("litellm not importable by " + PY)
+    (tmp_path / "render.py").write_text(RENDER)
+    out = tmp_path / "run.yaml"
+    r = subprocess.run(
+        [PY, str(tmp_path / "render.py"), str(ROOT / "llm" / "config.yaml"), str(out)],
+        env={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin", **env},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stderr
+    import yaml
+
+    return yaml.safe_load(out.read_text()), json.loads(
+        (tmp_path / "lanes.json").read_text()
+    )
+
+
+def test_every_known_provider_key_becomes_a_wildcard_lane(tmp_path):
+    cfg, lanes = _render(
+        tmp_path,
+        {
+            "DEEPSEEK_API_KEY": "f",
+            "GROQ_API_KEY": "f",
+            "GROQ_API_KEY_2": "f",
+            "NVIDIA_API_KEY": "f",
+            "ANTHROPIC_API_KEY": "f",
+            "MADEUP_API_KEY": "f",
+            "EMPTY_API_KEY": "",
+        },
+    )
+    wild = sorted(
+        (m["model_name"], m["litellm_params"]["api_key"])
+        for m in cfg["model_list"]
+        if m["model_name"].endswith("/*")
+    )
+    assert wild == [
+        ("deepseek/*", "os.environ/DEEPSEEK_API_KEY"),
+        ("groq/*", "os.environ/GROQ_API_KEY"),
+        ("groq/*", "os.environ/GROQ_API_KEY_2"),
+        ("nvidia_nim/*", "os.environ/NVIDIA_API_KEY"),
+    ]
+    assert lanes["providers"] == {
+        "deepseek": ["DEEPSEEK_API_KEY"],
+        "groq": ["GROQ_API_KEY", "GROQ_API_KEY_2"],
+        "nvidia_nim": ["NVIDIA_API_KEY"],
+    }

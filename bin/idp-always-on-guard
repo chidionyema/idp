@@ -22,6 +22,13 @@ REPO_ROOT = Path(
     ).stdout.strip()
 )
 CLUSTER_DIR = "clusters/oke"
+# Compare against where this branch left main, not main's tip: a branch cut before a row was
+# ADDED to main would otherwise "drop" it (2026-09-28: every branch behind the platform.yaml
+# restore was refused for dropping estate-db-migrate, hindsight, ... it never had).
+_mb = subprocess.run(
+    ["git", "merge-base", BASE_REF, "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True
+).stdout.strip()
+BASE_REF = _mb or BASE_REF
 
 # No DOTALL: "." must not swallow newlines here, or the lazy repetition below skips past the
 # real metadata.name and matches the LAST "name:" line in the doc instead of the first (found

@@ -77,20 +77,59 @@ def parse_since(text: str) -> dt.datetime:
     )
 
 
+# Out-of-order appends (two router workers writing at once) are seconds apart, not minutes; a
+# tail read stops once it is this far past the window rather than at the first older row.
+TAIL_SLACK = dt.timedelta(minutes=10)
+TAIL_CHUNK = 1 << 20
+
+
+def _lines_from_end(path: Path):
+    """Yield the file's lines last-first without reading the whole file (the ledger is 30 MB+ and
+    append-only; /fleet asks for the last hour every 5 s, and a full parse took 8-14 s per ask)."""
+    with path.open("rb") as fh:
+        fh.seek(0, os.SEEK_END)
+        pos = fh.tell()
+        rest = b""
+        while pos > 0:
+            step = min(TAIL_CHUNK, pos)
+            pos -= step
+            fh.seek(pos)
+            chunk = fh.read(step) + rest
+            parts = chunk.split(b"\n")
+            rest = parts[0]
+            for part in reversed(parts[1:]):
+                if part:
+                    yield part.decode("utf-8", errors="replace")
+        if rest:
+            yield rest.decode("utf-8", errors="replace")
+
+
 def load(path: Path, since: dt.datetime | None) -> list[dict]:
     if not path.exists():
         return []
+    if since is None:
+        rows = []
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
+        return rows
     rows = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in _lines_from_end(path):
         try:
             r = json.loads(line)
         except ValueError:
             continue
-        if since is not None:
-            at = parse_at(r)
-            if at is None or at < since:
-                continue
+        at = parse_at(r)
+        if at is None:
+            continue
+        if at < since:
+            if at < since - TAIL_SLACK:
+                break
+            continue
         rows.append(r)
+    rows.reverse()
     return rows
 
 
@@ -107,9 +146,19 @@ class Totals:
         self.u: dict = defaultdict(float)
         self.outcomes = self.failures = 0
         self.by_model: dict = defaultdict(lambda: defaultdict(float))
+        self.epochs_snapped = self.calls_under_lock = 0
+        self.folds_ok = self.folds_failed = 0
+        self.last_fold_error = None
 
     def add(self, r: dict) -> None:
         kind = r.get("kind")
+        if kind == "shadow":  # a background fold of the state document (idp#4893)
+            if r.get("ok"):
+                self.folds_ok += 1
+            else:
+                self.folds_failed += 1
+                self.last_fold_error = r.get("error")
+            return
         if (
             r.get("v") is None
         ):  # legacy row: per-call byte totals are sound, counters are not
@@ -122,7 +171,9 @@ class Totals:
             self.bytes_before += r.get("bytes_before", 0)
             self.bytes_after += r.get("bytes_after", 0)
             steps = r.get("steps") or {}
-            if r.get("mode") == "anthropic":
+            if all(
+                isinstance(s, dict) for s in steps.values()
+            ):  # the one chain (idp#4893)
                 for key, s in steps.items():
                     if not isinstance(s, dict):
                         continue
@@ -136,6 +187,9 @@ class Totals:
                     self.prefix_checked += 1
                     self.prefix_broken += bool(m1.get("prefix_broken"))
                 self.orphans += (steps.get("m9") or {}).get("orphans", 0)
+                m7 = (steps.get("m7") or {}).get("action")
+                self.epochs_snapped += m7 == "snapped"
+                self.calls_under_lock += m7 == "locked"
             else:  # openai lane: steps are per-call counter deltas
                 for key in ("m2", "m3", "m5", "m6", "m7", "m8", "m9"):
                     b = steps.get(f"{key}_bytes_saved", 0)
@@ -182,6 +236,11 @@ class Totals:
             "prefix_checked": self.prefix_checked,
             "prefix_broken": self.prefix_broken,
             "orphans": self.orphans,
+            "epochs_snapped": self.epochs_snapped,
+            "calls_under_lock": self.calls_under_lock,
+            "folds_ok": self.folds_ok,
+            "folds_failed": self.folds_failed,
+            "last_fold_error": self.last_fold_error,
             "steps": {
                 k: {"calls": self.step_calls[k], "bytes": self.step_bytes[k]}
                 for k, _n, _w in STEPS
