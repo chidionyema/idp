@@ -1,0 +1,12 @@
+name: policy-status
+description: >
+  What the environment's policy gate decided on real intent runs in the last 24 hours
+  (ML dept loop A). Voice: "policy status". Reads ~/.estate/estate.db policy_decisions only.
+tools: [python3]
+models: []
+halt_on_failure: true
+max_turns: 1
+steps:
+  - cmd: >
+      python3 ~/.estate/libexec/policy-status.py
+    on_fail: halt
