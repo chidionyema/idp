@@ -2216,7 +2216,8 @@
    "a PR GitHub refuses names the refusing check",
    "an old red PR is commented on, never drafted or closed",
    "a green PR is armed as a squash, the only merge main's linear history accepts",
-   "no workflow closes a pull request"
+   "no workflow closes a pull request",
+   "a green PR whose checks have already settled is merged, not left unarmed"
   ],
   "bound_by": [
    "sovereign/tests/bdd/test_pr_flow_never_closes.py"
