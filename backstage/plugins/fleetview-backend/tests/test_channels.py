@@ -21,6 +21,6 @@ def test_real_repo_serves_a_channel_for_every_component(monkeypatch):
     dirs = [
         p
         for p in channels._platform_dir().iterdir()
-        if p.is_dir() and not p.name.startswith(".")
+        if p.is_dir() and not p.name.startswith((".", "_"))
     ]
     assert body["count"] == len(dirs)
