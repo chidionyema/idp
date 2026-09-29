@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- router-doctor: the laptop router's checks every two minutes; heals what it can, alerts the rest. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.router-doctor</string>
+  <key>ProgramArguments</key><array>
+    <string>${PYTHON_BIN}</string>
+    <string>${HOME}/.estate/libexec/router-doctor.py</string>
+    <string>watch</string>
+  </array>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>${PATH}</string>
+  </dict>
+  <key>StartInterval</key><integer>120</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardOutPath</key><string>${HOME}/.estate/router-doctor.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/router-doctor.err.log</string>
+</dict></plist>
