@@ -1,0 +1,399 @@
+#!/usr/bin/env python3
+"""What the efficiency chain saved, in tokens and dollars, per lane and per step -- with its evidence.
+
+WHY. `estate-efficiency-report` sums what the chain cut and what the vendor billed after the cut.
+Neither is a saving: with a prompt cache a cut token was mostly a cache read (Opus 5.5: $0.20/M
+against $4/M uncached), and a compaction snap re-writes the whole prefix at the cache-write rate.
+So this reports two things and never mixes them:
+
+  TRIAL (proof)     the randomised holdout the gateway runs (ESTATE_HOLDOUT_PCT of conversations
+                    with every step off). Per lane: mean billed $ per call in each arm, and the
+                    difference with a 95% confidence interval from a bootstrap over conversations
+                    (the unit that was randomised). Causal, cache effects included.
+  ESTIMATE (model)  every call the ledger holds. Tokens cut per step = bytes cut x the lane's own
+                    measured tokens-per-byte (billed prompt tokens / bytes sent); dollars = tokens
+                    x the lane's average billed price of a prompt token; each snap is charged the
+                    prefix re-write it forces. An attribution, labelled as one.
+
+Dollars are LiteLLM's: `cost_usd` on each outcome row when the gateway recorded it, otherwise the
+usage priced with LiteLLM's model_prices map -- never a price sheet of our own.
+
+USAGE
+    bin/estate-token-proof                 # both sections, text
+    bin/estate-token-proof --json          # for /fleet and the proof page
+    bin/estate-token-proof --since 24h
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import os
+import random
+import subprocess
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Any, Optional
+
+LEDGER = Path(
+    os.path.expanduser(
+        os.environ.get("ESTATE_EFFICIENCY_LEDGER")
+        or "~/.estate/efficiency-ledger.jsonl"
+    )
+)
+LITELLM_PY = os.path.expanduser(
+    os.environ.get(
+        "ESTATE_LITELLM_PYTHON", "~/.cache/estate-tools/litellm-venv/bin/python"
+    )
+)
+TRIAL_DAYS = float(os.environ.get("ESTATE_TRIAL_DAYS", "3"))
+BOOT = 2000
+SEED = 1337
+STEPS = {
+    "m2": "collapse repeated lines in tool results",
+    "m5": "pointer for a repeated tool result",
+    "m7": "epoch compaction (old turns -> saved state)",
+    "m8": "strip reasoning inside the locked range",
+}
+PRICE_KEYS = (
+    "input_cost_per_token",
+    "output_cost_per_token",
+    "cache_read_input_token_cost",
+    "cache_creation_input_token_cost",
+    "cache_creation_input_token_cost_above_1hr",
+)
+
+
+def parse_since(s: Optional[str]) -> Optional[str]:
+    if not s:
+        return None
+    n, unit = float(s[:-1]), s[-1]
+    secs = {"m": 60, "h": 3600, "d": 86400}[unit] * n
+    t = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=secs)
+    return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def load(since: Optional[str]) -> list[dict]:
+    rows = []
+    if not LEDGER.exists():
+        return rows
+    with LEDGER.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                r = json.loads(line)
+            except ValueError:
+                continue
+            if since and r.get("at", "") < since:
+                continue
+            rows.append(r)
+    return rows
+
+
+def prices(models: set[str]) -> dict[str, dict]:
+    """LiteLLM's own price map, in-process when litellm imports, else via the router's venv."""
+    code = (
+        "import json,sys,litellm;mc=litellm.model_cost;"
+        f"print(json.dumps({{m:{{k:(mc.get(m) or {{}}).get(k) for k in {list(PRICE_KEYS)!r}}}"
+        " for m in json.loads(sys.argv[1]) if m in mc}))"
+    )
+    for py in (sys.executable, LITELLM_PY):
+        try:
+            out = subprocess.run(
+                [py, "-c", code, json.dumps(sorted(models))],
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=True,
+            ).stdout
+            return json.loads(out.strip().splitlines()[-1])
+        except Exception:  # noqa: BLE001, S112 - try the next interpreter
+            continue
+    return {}
+
+
+def usd(u: dict, p: Optional[dict]) -> Optional[float]:
+    if not p or not u:
+        return None
+    inp = p.get("input_cost_per_token") or 0.0
+    return (
+        (u.get("uncached_input") or 0) * inp
+        + (u.get("cache_read") or 0) * (p.get("cache_read_input_token_cost") or inp)
+        + (u.get("cache_write_5m") or 0)
+        * (p.get("cache_creation_input_token_cost") or inp)
+        + (u.get("cache_write_1h") or 0)
+        * (
+            p.get("cache_creation_input_token_cost_above_1hr")
+            or p.get("cache_creation_input_token_cost")
+            or inp
+        )
+        + (u.get("output_tokens") or 0) * (p.get("output_cost_per_token") or 0.0)
+    )
+
+
+def pair(rows: list[dict]) -> list[dict]:
+    """One record per call: the pre row (what the chain did) + the outcome row (what was billed)."""
+    pre = {r["call_id"]: r for r in rows if r.get("kind") == "pre" and r.get("call_id")}
+    calls = []
+    for o in rows:
+        if o.get("kind") != "outcome" or not o.get("ok") or not o.get("usage"):
+            continue
+        p = pre.get(o.get("call_id"))
+        if p is None:
+            continue
+        calls.append({"pre": p, "out": o, "lane": p.get("model") or "?"})
+    return calls
+
+
+def cost(c: dict, price: dict) -> Optional[float]:
+    v = c["out"].get("cost_usd")
+    return v if v is not None else usd(c["out"]["usage"], price.get(c["lane"]))
+
+
+# ------------------------------------------------------------------------------ estimate
+
+
+def estimate(calls: list[dict], price: dict) -> dict:
+    lanes: dict[str, Any] = defaultdict(
+        lambda: {"calls": 0, "bytes": 0, "prompt_tokens": 0, "usd": 0.0, "priced": True}
+    )
+    for c in calls:
+        L = lanes[c["lane"]]
+        u = c["out"]["usage"]
+        L["calls"] += 1
+        L["bytes"] += c["pre"].get("bytes_after") or 0
+        L["prompt_tokens"] += u.get("prompt_tokens") or 0
+        d = cost(c, price)
+        if d is None:
+            L["priced"] = False
+        else:
+            L["usd"] += d - (u.get("output_tokens") or 0) * (
+                (price.get(c["lane"]) or {}).get("output_cost_per_token") or 0.0
+            )
+    steps: dict[str, Any] = defaultdict(
+        lambda: {"calls": 0, "bytes": 0, "tokens": 0.0, "usd": 0.0}
+    )
+    per_lane: dict[str, Any] = defaultdict(lambda: {"tokens": 0.0, "usd": 0.0})
+    for c in calls:
+        L = lanes[c["lane"]]
+        if not L["bytes"] or not L["prompt_tokens"]:
+            continue
+        tpb = L["prompt_tokens"] / L["bytes"]  # measured, per lane: no bytes/4
+        usd_per_tok = L["usd"] / L["prompt_tokens"] if L["priced"] else 0.0
+        p = price.get(c["lane"]) or {}
+        for s, v in (c["pre"].get("steps") or {}).items():
+            b = v.get("bytes") if isinstance(v, dict) else 0
+            if not b or s not in STEPS:
+                continue
+            tok = b * tpb
+            S = steps[s]
+            S["calls"] += 1
+            S["bytes"] += b
+            S["tokens"] += tok
+            S["usd"] += tok * usd_per_tok
+            per_lane[c["lane"]]["tokens"] += tok
+            per_lane[c["lane"]]["usd"] += tok * usd_per_tok
+        m7 = (c["pre"].get("steps") or {}).get("m7") or {}
+        if m7.get("action") == "snapped" and p:
+            # the snap's price: the new prefix is written once instead of read
+            tok = (c["pre"].get("bytes_after") or 0) * tpb
+            w = (
+                p.get("cache_creation_input_token_cost_above_1hr")
+                or p.get("cache_creation_input_token_cost")
+                or 0.0
+            )
+            r = p.get("cache_read_input_token_cost") or 0.0
+            steps["m7"]["snap_cost_usd"] = steps["m7"].get(
+                "snap_cost_usd", 0.0
+            ) + tok * (w - r)
+            steps["m7"]["snaps"] = steps["m7"].get("snaps", 0) + 1
+    total_usd = sum(L["usd"] for L in lanes.values())
+    for S in steps.values():
+        S["net_usd"] = S["usd"] - S.get("snap_cost_usd", 0.0)
+    return {
+        "lanes": {
+            k: {
+                **v,
+                "tokens_per_byte": (v["prompt_tokens"] / v["bytes"])
+                if v["bytes"]
+                else None,
+                "cut_tokens": per_lane[k]["tokens"],
+                "cut_usd": per_lane[k]["usd"],
+            }
+            for k, v in lanes.items()
+        },
+        "steps": {k: {**v, "what": STEPS[k]} for k, v in sorted(steps.items())},
+        "input_usd_billed": total_usd,
+        "net_saved_usd": sum(S["net_usd"] for S in steps.values()),
+    }
+
+
+# ------------------------------------------------------------------------------ trial
+
+
+def _boot_ci(
+    groups: dict[str, list[tuple[float, int]]],
+) -> Optional[tuple[float, float, float]]:
+    """% change in $/call treat vs control, and a 95% CI resampling conversations in each arm."""
+    t, c = groups.get("treat") or [], groups.get("control") or []
+    if len(t) < 2 or len(c) < 2:
+        return None
+
+    def rate(g):
+        n = sum(x[1] for x in g)
+        return sum(x[0] for x in g) / n if n else 0.0
+
+    base = rate(c)
+    if base <= 0:
+        return None
+    point = 100 * (rate(t) / base - 1)
+    rng = random.Random(SEED)  # noqa: S311 - a seeded bootstrap is reproducible by design
+    draws = []
+    for _ in range(BOOT):
+        rt = rate([t[rng.randrange(len(t))] for _ in t])
+        rc = rate([c[rng.randrange(len(c))] for _ in c])
+        if rc > 0:
+            draws.append(100 * (rt / rc - 1))
+    draws.sort()
+    return point, draws[int(0.025 * len(draws))], draws[int(0.975 * len(draws)) - 1]
+
+
+def trial(calls: list[dict], price: dict) -> dict:
+    armed = [c for c in calls if c["out"].get("arm")]
+    starts = [c["pre"]["at"] for c in armed]
+    started = min(starts) if starts else None
+    ends = None
+    if started:
+        s = dt.datetime.strptime(started, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=dt.timezone.utc
+        )
+        ends = (s + dt.timedelta(days=TRIAL_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    conv: dict[tuple, list[float]] = defaultdict(lambda: [0.0, 0, 0.0, "", ""])
+    for c in armed:
+        d = cost(c, price)
+        if d is None:
+            continue
+        key = (
+            c["lane"],
+            c["out"]["arm"],
+            c["out"].get("conv") or c["out"].get("session"),
+        )
+        v = conv[key]
+        v[0] += d
+        v[1] += 1
+        v[2] += c["out"]["usage"].get("prompt_tokens") or 0
+    lanes: dict[str, Any] = defaultdict(lambda: {"treat": [], "control": [], "tok": {}})
+    for (lane, arm, _), v in conv.items():
+        lanes[lane][arm].append((v[0], v[1]))
+        t = lanes[lane]["tok"].setdefault(arm, [0.0, 0])
+        t[0] += v[2]
+        t[1] += v[1]
+    out = {}
+    for lane, g in lanes.items():
+        ci = _boot_ci(g)
+        arms = {}
+        for arm in ("treat", "control"):
+            n = sum(x[1] for x in g[arm])
+            arms[arm] = {
+                "conversations": len(g[arm]),
+                "calls": n,
+                "usd": sum(x[0] for x in g[arm]),
+                "usd_per_call": (sum(x[0] for x in g[arm]) / n) if n else None,
+                "prompt_tokens_per_call": (g["tok"].get(arm, [0, 0])[0] / n)
+                if n
+                else None,
+            }
+        verdict = "collecting"
+        if ci:
+            verdict = (
+                "saves"
+                if ci[2] < 0
+                else "costs more"
+                if ci[1] > 0
+                else "no detectable difference yet"
+            )
+        out[lane] = {
+            **arms,
+            "pct_change_usd_per_call": ci[0] if ci else None,
+            "ci95": [ci[1], ci[2]] if ci else None,
+            "verdict": verdict,
+        }
+    return {"started": started, "ends": ends, "days": TRIAL_DAYS, "lanes": out}
+
+
+# ------------------------------------------------------------------------------ main
+
+
+def report(since: Optional[str]) -> dict:
+    rows = load(parse_since(since))
+    calls = pair(rows)
+    price = prices({c["lane"] for c in calls})
+    return {
+        "generated": dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "since": since or "all",
+        "calls_paired": len(calls),
+        "priced_lanes": sorted(price),
+        "trial": trial(calls, price),
+        "estimate": estimate(calls, price),
+    }
+
+
+def _text(r: dict) -> str:
+    t, e = r["trial"], r["estimate"]
+    out = [
+        f"estate-token-proof  {r['generated']}  since={r['since']}  calls={r['calls_paired']}"
+    ]
+    out.append(
+        f"\nTRIAL (randomised holdout)  started={t['started']}  ends={t['ends']}"
+    )
+    for lane, v in sorted(t["lanes"].items()):
+        tr, co = v["treat"], v["control"]
+        ci = v["ci95"]
+        out.append(
+            f"  {lane:22} treat {tr['conversations']:4} conv {tr['calls']:6} calls"
+            f" ${(tr['usd_per_call'] or 0):.4f}/call | control {co['conversations']:4} conv"
+            f" {co['calls']:6} calls ${(co['usd_per_call'] or 0):.4f}/call | "
+            + (
+                f"{v['pct_change_usd_per_call']:+.1f}% [{ci[0]:+.1f}, {ci[1]:+.1f}] {v['verdict']}"
+                if ci
+                else v["verdict"]
+            )
+        )
+    out.append(
+        f"\nESTIMATE (attribution model)  input billed ${e['input_usd_billed']:.2f}"
+        f"  net saved ${e['net_saved_usd']:.2f}"
+    )
+    for s, v in e["steps"].items():
+        out.append(
+            f"  {s} {v['what']:44} {v['calls']:5} calls {v['tokens'] / 1e6:8.2f}M tok"
+            f"  ${v['usd']:8.2f}"
+            + (
+                f"  snaps {v['snaps']} cost ${v['snap_cost_usd']:.2f}"
+                if v.get("snaps")
+                else ""
+            )
+            + f"  net ${v['net_usd']:.2f}"
+        )
+    for lane, v in sorted(e["lanes"].items(), key=lambda x: -x[1]["usd"]):
+        out.append(
+            f"  {lane:24} {v['calls']:6} calls  input ${v['usd']:9.2f}"
+            f"  cut {v['cut_tokens'] / 1e6:6.2f}M tok ${v['cut_usd']:.2f}"
+            + (f"  {v['tokens_per_byte']:.3f} tok/B" if v["tokens_per_byte"] else "")
+            + ("" if v["priced"] else "  (not in LiteLLM price map)")
+        )
+    return "\n".join(out)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--since", help="e.g. 1h, 24h, 7d (default: everything)")
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args()
+    r = report(a.since)
+    print(json.dumps(r, indent=2) if a.json else _text(r))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
