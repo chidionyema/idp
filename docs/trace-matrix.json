@@ -2209,6 +2209,24 @@
   "ticket": "crew#269"
  },
  {
+  "feature": "features/pr_flow_never_closes.feature",
+  "title": "a pull request is never closed to make room; it lands on GitHub's own verdict",
+  "scenarios": [
+   "a PR whose only failing check is advisory is armed to merge",
+   "a PR GitHub refuses names the refusing check",
+   "an old red PR is commented on, never drafted or closed",
+   "a green PR is armed as a squash, the only merge main's linear history accepts",
+   "no workflow closes a pull request"
+  ],
+  "bound_by": [
+   "sovereign/tests/bdd/test_pr_flow_never_closes.py"
+  ],
+  "status": "BOUND",
+  "added_in": "e55fce6c",
+  "pr": 4946,
+  "ticket": null
+ },
+ {
   "feature": "features/self-aware-platform/cp1_inventory_tool.feature",
   "title": "Inventory tool \u2014 one call answers what the estate is",
   "scenarios": [
@@ -2552,23 +2570,6 @@
   "added_in": "fa6feec2",
   "pr": 158,
   "ticket": "crew#284"
- },
- {
-  "feature": "features/stale_pr.feature",
-  "title": "a pull request with no live owner does not sit in the queue",
-  "scenarios": [
-   "a pull request idle for a day is closed",
-   "the close message names both ways back",
-   "activity or keep-open cancels the clock",
-   "issues are never touched"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_stale_pr.py"
-  ],
-  "status": "BOUND",
-  "added_in": "370bdb2d",
-  "pr": 194,
-  "ticket": "crew#299"
  },
  {
   "feature": "features/twin/estate-twin.feature",
