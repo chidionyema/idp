@@ -29,13 +29,15 @@ spec:
           args:
             - |
               R="-s 10.244.0.0/16 -d 10.244.0.0/16 -m mark ! --mark 0x4000/0x4000 -m comment --comment estate-pod-no-masq -j RETURN"
-              ours() { iptables-nft -t nat -S POSTROUTING | grep -n 'estate-pod-no-masq' | head -1 | cut -d: -f1; }
-              theirs() { iptables-nft -t nat -S POSTROUTING | grep -n 'FLANNEL-POSTRTG' | head -1 | cut -d: -f1; }
+              # calico/node ships no head/cut, so rule numbers are counted with shell builtins.
+              # POSTROUTING -S prints "-P POSTROUTING ACCEPT" first, so rule n is line n+1.
+              pos() { n=-1; iptables-nft -t nat -S POSTROUTING 2>/dev/null | while read -r l; do n=$((n+1)); case "$l" in *"$1"*) echo "$n"; break;; esac; done; }
               while true; do
-                o=$(ours); f=$(theirs)
+                o=$(pos estate-pod-no-masq); f=$(pos FLANNEL-POSTRTG)
                 if [ -z "$o" ] || { [ -n "$f" ] && [ "$f" -lt "$o" ]; }; then
-                  while iptables-nft -t nat -D POSTROUTING $R 2>/dev/null; do :; done
+                  # Insert before deleting, so pod->pod traffic is never exposed to flannel's SNAT.
                   iptables-nft -t nat -I POSTROUTING 1 $R && echo "$(date -u +%FT%TZ) pod-no-masq placed ahead of flannel"
+                  [ -n "$o" ] && iptables-nft -t nat -D POSTROUTING $((o+1))
                 fi
                 sleep 5
               done
