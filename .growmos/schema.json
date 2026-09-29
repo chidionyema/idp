@@ -16,7 +16,8 @@
     "SPEC",
     "DEFECT",
     "SYSTEM",
-    "GOTCHA"
+    "GOTCHA",
+    "DOCUMENT"
   ],
   "history": [
     {
@@ -43,6 +44,11 @@
       "note": "added type GOTCHA via remember",
       "ts": "2026-09-26T18:26:40Z",
       "version": 5
+    },
+    {
+      "note": "added type DOCUMENT via remember",
+      "ts": "2026-09-29T21:26:46Z",
+      "version": 6
     }
   ],
   "predicate_hints": [
@@ -60,5 +66,5 @@
     "introduced in",
     "fixes"
   ],
-  "version": 5
+  "version": 6
 }

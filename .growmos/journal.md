@@ -4876,3 +4876,7 @@ Continue the conversation from where it left off without asking the user any fur
 ### 2026-09-26T22:59:47Z · agent
 
 net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nodes (~600k MASQUERADE hits each) but verify showed cross-node pod TCP still fails both ways, listener saw nothing. flannel-masq was real, not sufficient. Leading unmeasured suspects: (1) Calico cali-INPUT drops VXLAN 4789 from non-allowed hosts (295/315 hits in capture) -> peer missing from the allowed-VXLAN-hosts ipset; (2) GNP deny-direct-ai-vendor-egress all()/Egress hitting the tier-default drop on the client's cali-fw chain. Discriminator: counter delta on both chains around one probe, plus bridge fdb + ipset dump. net-forensics captures neither yet. No reboot.
+
+### 2026-09-29T21:26:47Z · agent
+
+2026-09-29: decision 0035 All ways, no single point of failure: every capability has many homes (OKE, Anthropic cloud, both MacBooks). AGENTS.md is the sole instructions file (CLAUDE.md removed; growmos block moved). Fixed idp-ci-growmos-writeback, which diffed against a literal HEAD_REV and so passed every change unchecked.

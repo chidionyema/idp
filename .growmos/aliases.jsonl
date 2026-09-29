@@ -67,6 +67,7 @@
 {"alias": "voice-speculate-endpoint", "entity": "concept/voice-speculate-endpoint", "type": "CONCEPT"}
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
 {"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
+{"alias": "All ways (no single point of failure)", "entity": "decision/all-ways-no-single-point-of-failure", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
 {"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}
