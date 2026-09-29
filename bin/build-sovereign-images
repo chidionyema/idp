@@ -1,0 +1,27 @@
+#!/bin/bash
+# bin/build-sovereign-images
+# Builds all Docker images for the Quad-Layer Sovereign Identity Substrate.
+set -euo pipefail
+
+TAG="${IMAGE_TAG:-latest}"
+REGISTRY="ghcr.io/chidionyema/idp"
+PLATFORMS="linux/amd64,linux/arm64"
+
+echo "=== Building identity-bootstrapper ==="
+docker buildx build --platform "$PLATFORMS" \
+    -t "$REGISTRY/identity-bootstrapper:$TAG" --push \
+    -f cmd/identity-bootstrapper/Dockerfile .
+
+echo "=== Building elpis-proxy ==="
+docker buildx build --platform "$PLATFORMS" \
+    -t "$REGISTRY/elpis-proxy:$TAG" --push \
+    -f cmd/elpis-proxy/Dockerfile .
+
+echo "=== Building dros-daemon ==="
+docker buildx build --platform "$PLATFORMS" \
+    -t "$REGISTRY/dros-daemon:$TAG" --push \
+    -f cmd/dros-daemon/Dockerfile .
+
+echo ""
+echo "Images:"
+docker images "$REGISTRY"/identity-bootstrapper "$REGISTRY"/elpis-proxy "$REGISTRY"/dros-daemon
