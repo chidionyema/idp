@@ -101,13 +101,16 @@ echo "allow-list total: ${total}M"
 #     the checkout leaves the branch and all its commits in the repository);
 #   - not locked; no process has its working directory inside it (a live session or server);
 #   - its index, HEAD and reflog untouched for WT_IDLE_MIN minutes (default 6h).
-# Removal is `git worktree remove` WITHOUT --force, so git re-checks cleanliness itself. No
+# Removal is `git worktree remove` WITHOUT --force, so git re-checks cleanliness itself, except when
+# the only changes are rebuildable output (then --force, once; a lock still refuses). No
 # process is signalled and nothing outside the worktree directory is touched.
 REBUILDABLE='(^|/)(node_modules|target|dist|dist-types|build|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|\.venv|venv|\.tox|coverage|\.coverage|\.turbo|\.next|\.cache|htmlcov)(/|$)|\.pyc$|\.tsbuildinfo$'
 unsettled() {
   local repo=$1 wt=$2 out gd
   out=$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null) || { echo "git status failed"; return; }
-  if printf '%s\n' "$out" | grep -v '^!! ' | grep -q .; then echo "uncommitted or untracked files"; return; fi
+  # A change confined to rebuildable output (a branch cut before target/ was untracked, then
+  # cargo-cleaned: 1669 " D .../target/..." lines) is build output, not work.
+  if printf '%s\n' "$out" | grep -v '^!! ' | cut -c4- | grep -Ev "$REBUILDABLE" | grep -q .; then echo "uncommitted or untracked files"; return; fi
   if printf '%s\n' "$out" | sed -n 's/^!! //p' | grep -Ev "$REBUILDABLE" | grep -q .; then
     echo "ignored files that are not build output"; return; fi
   # Every commit must stay reachable from a ref once the checkout is gone. A branch keeps its own
@@ -123,12 +126,14 @@ unsettled() {
        'index($0, w"/")==1 || $0==w || index($0, r"/")==1 || $0==r {f=1} END{exit !f}'; then
     echo "a process is working inside it"; return; fi
   gd=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || { echo "no git dir"; return; }
+  # A checkout whose HEAD is already in origin/main holds nothing that is not on main: it needs no
+  # idle wait (the wait only guards work in progress, and there is none to lose).
+  git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null && return
   if [ "$WT_IDLE_MIN" -gt 0 ] && [ -n "$(find "$gd/index" "$gd/HEAD" "$gd/logs/HEAD" -mmin -"$WT_IDLE_MIN" 2>/dev/null | head -1)" ]; then
     echo "used in the last ${WT_IDLE_MIN}m"; return; fi
 }
 if [ "$WORKTREES" = 1 ]; then
   CWDS=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
-  wt_total=0
   for repo in $WT_REPOS; do
     [ -d "$repo" ] || continue
     main=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || continue
@@ -141,7 +146,10 @@ if [ "$WORKTREES" = 1 ]; then
       if [ -n "$why" ]; then echo "  keep   worktree  ${m}M  $wt  ($why)"; continue; fi
       b=$(git -C "$wt" branch --show-current); b=${b:-detached $(git -C "$wt" rev-parse --short HEAD)}
       if [ "$APPLY" = 0 ]; then echo "  would  worktree  ${m}M  $wt  ($b; restore: git worktree add $wt ${b#detached })"; continue; fi
-      if git -C "$repo" worktree remove "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
+      # --force only when unsettled() found nothing but rebuildable output; git still refuses a
+      # locked worktree (that needs --force twice).
+      force=; git -C "$wt" status --porcelain 2>/dev/null | grep -q . && force=--force
+      if git -C "$repo" worktree remove $force "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
         echo "  freed  worktree  ${m}M  $wt  (restore: git worktree add $wt ${b#detached })"
       else
         echo "  !! worktree $wt: git refused to remove it"; fi

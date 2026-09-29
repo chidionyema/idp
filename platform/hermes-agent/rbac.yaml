@@ -35,3 +35,38 @@ subjects:
   - kind: ServiceAccount
     name: hermes-agent
     namespace: hermes-agent
+---
+# The tailscale sidecar's node state (gateway.yaml TS_KUBE_SECRET). Declared here, empty, because
+# a Role cannot scope `create` to one name; Flux owns no data field, so containerboot's writes are
+# kept across reconciles and the pod rejoins the tailnet as the same node after every restart.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hermes-agent-tailscale-state
+  namespace: hermes-agent
+type: Opaque
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: hermes-agent-tailscale-state
+  namespace: hermes-agent
+rules:
+  - apiGroups: [""]
+    resources: [secrets]
+    resourceNames: [hermes-agent-tailscale-state]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: hermes-agent-tailscale-state
+  namespace: hermes-agent
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: hermes-agent-tailscale-state
+subjects:
+  - kind: ServiceAccount
+    name: hermes-agent
+    namespace: hermes-agent
