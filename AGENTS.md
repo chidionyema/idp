@@ -57,10 +57,15 @@ arm64, Trivy, cosign → tag `ghcr.io/chidionyema/<name>:main-<run>-<sha>` → F
 polls → `image-automation` writes `flux/image-updates` → `deploy-when-green` merges on green.
 `bin/build-image` enforces R24. Do not bypass it.
 
-**An agent never hand-walks the commit → push → PR → re-run-CI loop.** That whole path is the
-Greenlane's job (`merge-when-green`, `deploy-when-green`, Flux image automation), and it converges
-on its own. Open the PR, then STOP. CI runs, `merge-when-green` lands it, Flux deploys it — a real
-production log line is the only "done." If the local `gh` CLI (HTTPS) stalls or the pre-push gate
+**An agent never raises a pull request and never pushes main** (founder 2026-09-29: "a PR that
+can fail should never be allowed to be raised", "main must never go red, never"). Work reaches
+main through the Greenlane only: push the branch to `lane/<name>` (`estate-execute lane-submit`),
+then STOP. The lane (`greenlane/engine.py`, `.github/workflows/greenlane.yml`) proves it green on
+top of the current main, raises the pull request itself and fast-forwards main to the tested
+commit; a red or conflicting lane keeps its branch and carries the reason on its head's
+`greenlane` commit status. A hand-raised pull request is closed and relaned; a push to main is
+refused by the ruleset. Flux deploys what lands — a real production log line is the only "done."
+Runbook: `docs/runbooks/greenlane.md`. If the local `gh` CLI (HTTPS) stalls or the pre-push gate
 hangs, that is a flaky network path to report and a missing door to add — not a reason to drag the
 founder through manual re-runs. `git` over SSH and `curl` to the GitHub API keep working; use those,
 or add a governed capability, but never convert a pipeline the estate already runs into a
