@@ -1,0 +1,252 @@
+# deploy/production-agent-pod.yaml
+# Layer 5: Quad-Layer Sovereign Identity & Execution Substrate — OKE Deployment
+# Deploys an attested, signing, hardware-isolated agent pod.
+#
+# Prerequisites:
+#   1. SPIRE server running with csi.spiffe.io driver (platform/spire/)
+#   2. OCI Workload Identity federation configured for SPIFFE trust domain
+#   3. OCI Vault with DROS key compartment and policy
+#   4. ATP Autonomous DB with schema/identity0_registry.sql deployed
+#   5. OKE nodes with CONFIG_BPF_LSM=y
+#
+# Usage:
+#   kubectl apply -f deploy/production-agent-pod.yaml
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-workloads
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: research-agent-sa
+  namespace: agent-workloads
+  labels:
+    agent-workloads: "true"
+  annotations:
+    spiffe.io/spiffe-id: "true"
+---
+# OCI IAM configuration (mounted as environment variables from Secrets).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-iam-config
+  namespace: agent-workloads
+type: Opaque
+stringData:
+  token-endpoint: "https://identity.us-ashburn-1.oci.oraclecloud.com/oauth2/v1/token"
+  vault-ocid: "ocid1.vault.oc1.iad.<REDACTED>"
+  compartment-ocid: "ocid1.compartment.oc1..<REDACTED>"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: research-agent
+  namespace: agent-workloads
+  labels:
+    app.kubernetes.io/component: "agent"
+    agent.enterprise/sovereign-id: "research-agent"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: "agent"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: "agent"
+        agent-workloads: "true"
+    spec:
+      serviceAccountName: research-agent-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      # ------------------------------------------------------------------
+      # Volumes: isolated memory (tmpfs) for Ed25519 key, SPIRE socket
+      # ------------------------------------------------------------------
+      volumes:
+        - name: identity-tmpfs
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: Directory
+        - name: dros-bpf
+          emptyDir: {}
+        - name: dros-control-socket
+          emptyDir: {}
+
+      # ------------------------------------------------------------------
+      # Init Container: Layer 1 — Cryptographic Bootstrapper
+      # Runs once, fetches Ed25519 key from OCI Vault, writes to tmpfs, exits.
+      # ------------------------------------------------------------------
+      initContainers:
+        - name: identity-bootstrapper
+          image: ghcr.io/chidionyema/idp/identity-bootstrapper:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SPIRE_AGENT_SOCKET
+              value: "unix:///run/spire/sockets/agent.sock"
+            - name: OCI_IAM_TOKEN_ENDPOINT
+              valueFrom:
+                secretKeyRef:
+                  name: oci-iam-config
+                  key: token-endpoint
+            - name: OCI_IAM_SCOPE
+              value: "urn:oracle:identity:domain:root"
+            - name: OCI_VAULT_OCID
+              valueFrom:
+                secretKeyRef:
+                  name: oci-iam-config
+                  key: vault-ocid
+            - name: OCI_COMPARTMENT_OCID
+              valueFrom:
+                secretKeyRef:
+                  name: oci-iam-config
+                  key: compartment-ocid
+            - name: AGENT_URN
+              value: "urn:aid:oke:research-agent"
+          volumeMounts:
+            - name: identity-tmpfs
+              mountPath: /run/secrets/agent-identity
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+              readOnly: true
+          resources:
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+      containers:
+        # ----------------------------------------------------------------
+        # Container 1: DROS Daemon — Layer 4 (BPF LSM enforcement)
+        # Privileged: needs CAP_BPF + CAP_SYS_ADMIN.
+        # ----------------------------------------------------------------
+        - name: dros-daemon
+          image: ghcr.io/chidionyema/idp/dros-daemon:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DROS_BPF_OBJECT
+              value: "/opt/dros/dros_enforce.bpf.o"
+          volumeMounts:
+            - name: dros-bpf
+              mountPath: /opt/dros
+            - name: dros-control-socket
+              mountPath: /var/run/dros
+          securityContext:
+            privileged: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+              add: ["BPF", "SYS_ADMIN"]
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+          readinessProbe:
+            httpGet:
+              socketPath: /var/run/dros/control.sock
+              path: /status
+            initialDelaySeconds: 2
+            periodSeconds: 5
+
+        # ----------------------------------------------------------------
+        # Container 2: Elpis Signing Sidecar — Layer 3
+        # Holds Ed25519 key (read-only tmpfs), intercepts all HTTP egress.
+        # Agent sets HTTP_PROXY=http://127.0.0.1:8080.
+        # ----------------------------------------------------------------
+        - name: elpis-signing-proxy
+          image: ghcr.io/chidionyema/idp/elpis-proxy:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: AGENT_URN
+              value: "urn:aid:oke:research-agent"
+            - name: SESSION_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: UPSTREAM_URL
+              value: "http://litellm-gateway.oke.svc.cluster.local:4000"
+            - name: PROXY_PORT
+              value: "8080"
+            - name: AGENT_KEY_PATH
+              value: "/run/secrets/agent-identity/ed25519.key"
+          volumeMounts:
+            - name: identity-tmpfs
+              mountPath: /run/secrets/agent-identity
+              readOnly: true
+          ports:
+            - containerPort: 8080
+              name: proxy-http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 1
+            periodSeconds: 3
+
+        # ----------------------------------------------------------------
+        # Container 3: Agent Core — Untrusted Cognitive Execution Engine
+        # Claude Code / Pi / Cline — NO direct network access.
+        # All egress forced through elpis-proxy at 127.0.0.1:8080.
+        # ----------------------------------------------------------------
+        - name: agent-core
+          image: ghcr.io/chidionyema/idp/agent-runner:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HTTP_PROXY
+              value: "http://127.0.0.1:8080"
+            - name: HTTPS_PROXY
+              value: "http://127.0.0.1:8080"
+            - name: NO_PROXY
+              value: "localhost,127.0.0.1,.svc.cluster.local"
+            - name: AGENT_URN
+              value: "urn:aid:oke:research-agent"
+          resources:
+            limits:
+              cpu: "1500m"
+              memory: "4Gi"
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
