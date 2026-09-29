@@ -13,6 +13,7 @@ resources:
   - rbac.yaml
   - mcp-key.yaml
   - langfuse-key.yaml
+  - pull-secret.yaml   # ghcr-pull for the fetch-estate-state init container (crew#736 CP2)
 # crew#561: mac-run is mounted with `subPath`, and Kubernetes never updates a subPath mount in
 # place, so editing a hand-written ConfigMap changed nothing in the running pod. idp#955 hung a
 # Reloader annotation off the Deployment, which cannot work either: the script had already changed
@@ -28,4 +29,4 @@ configMapGenerator:
       - cursor-agent=cursor-agent.tpl
 images:
   - name: ghcr.io/chidionyema/hermes-agent
-    newTag: main-99-f10110c53e187590ecf6ac650cfd55a7b08ff47b # {"$imagepolicy": "flux-system:hermes-agent:tag"}
+    newTag: main-101-deb02bfa4ab800acb204bbc2a6d6f1ab8cb46c45 # {"$imagepolicy": "flux-system:hermes-agent:tag"}
