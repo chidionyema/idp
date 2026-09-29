@@ -122,7 +122,7 @@ class Totals:
             self.bytes_before += r.get("bytes_before", 0)
             self.bytes_after += r.get("bytes_after", 0)
             steps = r.get("steps") or {}
-            if r.get("mode") == "anthropic":
+            if all(isinstance(s, dict) for s in steps.values()):  # the one chain (idp#4893)
                 for key, s in steps.items():
                     if not isinstance(s, dict):
                         continue

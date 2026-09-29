@@ -156,8 +156,9 @@ def test_nothing_the_model_wrote_is_touched_and_nothing_is_dropped(
     )
     steps = _rows(tmp_path, "pre")[-1]["steps"]
     assert steps["m9"]["orphans"] == 0 and steps["m9"]["first_role"] == "user"
-    for k in ("m3", "m7", "m8"):
-        assert steps[k]["action"] == "skipped" and steps[k]["why"]
+    assert steps["m3"]["action"] == "skipped" and steps["m3"]["why"]
+    for k in ("m7", "m8"):  # below the epoch threshold nothing is compacted or stripped
+        assert steps[k]["action"] == "none" and steps[k]["why"]
 
 
 def test_repeated_reads_point_at_the_first_and_logs_collapse(monkeypatch, tmp_path):
