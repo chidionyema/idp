@@ -364,8 +364,10 @@ spec:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 5
             failureThreshold: 30
+          # /healthz, not /readyz: the running image (main-99) has no /readyz route, so the pod
+          # answered 404 forever and the rollout stalled (oke-check break-glass 36514295848).
           readinessProbe:
-            httpGet: { path: /readyz, port: http }
+            httpGet: { path: /healthz, port: http }
             periodSeconds: 10
             failureThreshold: 3
           livenessProbe:
