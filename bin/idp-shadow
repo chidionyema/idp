@@ -651,7 +651,9 @@ def observe(kind, ns, name):
     # Tests: a workload declares its own by annotation; absent means none, which grade() accepts
     # only as an explicit empty set.
     ann = (obj.get("metadata") or {}).get("annotations") or {}
-    obs["tests"] = {} if "shadow.estate/tests" not in ann else {"declared": False}
+    obs["tests"] = (
+        [] if "shadow.estate/tests" not in ann else [{"name": ann["shadow.estate/tests"], "passed": False}]
+    )
     return obs
 
 
@@ -682,7 +684,12 @@ def grade_all(observations):
     sys.path.insert(0, HERE)
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("shadow_verify", VERIFY)
+    import importlib.machinery
+
+    # VERIFY has no .py suffix, so spec_from_file_location cannot infer a loader and returns None.
+    spec = importlib.util.spec_from_file_location(
+        "shadow_verify", VERIFY, loader=importlib.machinery.SourceFileLoader("shadow_verify", VERIFY)
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 

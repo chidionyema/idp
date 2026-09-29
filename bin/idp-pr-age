@@ -17,8 +17,17 @@ With `--act` (crew#607 CP2/CP3) the table is acted on, never only printed: a `gr
 `bin/idp-pr-arm` so it merges the moment nothing holds it where the repository allows auto-merge,
 and reads `waiting-on-founder` where it does not (idp#1046). A row over the bound gets one
 `PR AGE:` comment on its own thread naming the reason (never repeated while the reason is unchanged).
-A red or conflicting row is made a draft at the bound and closed at six bounds (CP4, the red clock)
--- except a PR from the deploy branch, which is never drafted or closed at any age (idp#1046).
+
+Nothing is ever drafted or closed (founder, 2026-09-29: "autuo closing prs is void, pr just disapears
+andwork foesmissing"). The red clock that drafted a red row at the bound and closed it at six bounds is
+gone: of 99 PRs closed unmerged in the fortnight before, 10 took commits main never received. A PR
+stays in view until it lands, however long that takes.
+
+Red means GitHub refuses the merge, not that some check somewhere failed. A failing check that is not
+required (shadow-verify, 2026-09-29, red on every platform/llm PR while the shadow cluster could not
+start litellm) leaves the PR UNSTABLE -- mergeable -- and the old any-failure rule called all of them
+red, so none was armed and the pile grew behind one advisory check. GitHub's mergeStateStatus is the
+verdict; the rollup only names the check when that verdict is a refusal.
 
 Usage: bin/idp-pr-age [--repos idp,crew,claude-guards] [--act] [--json FILE ...]   (--json: test injection)
 """
@@ -54,9 +63,16 @@ def fetch(repo: str) -> list[dict]:
     return [dict(pr, repo=repo) for pr in json.loads(p.stdout)]
 
 
+# GitHub will merge these: every required check passed (UNSTABLE: only advisory checks failed).
+MERGEABLE = {"CLEAN", "UNSTABLE", "HAS_HOOKS"}
+
+
 def reason(pr: dict) -> str:
     if pr.get("mergeable") == "CONFLICTING":
         return "conflict"
+    if pr.get("mergeStateStatus") in MERGEABLE:
+        m = STACKED.search(pr.get("body") or "")
+        return f"stacked-on:{m.group(1) or pr['repo']}#{m.group(2)}" if m else "green"
     for c in pr.get("statusCheckRollup") or []:
         if (c.get("conclusion") or "").upper() == "FAILURE":
             return f"red:{c.get('name') or c.get('context')}"
@@ -86,8 +102,10 @@ def gh(*args: str) -> subprocess.CompletedProcess:
 
 def arm(slug: str, n: int) -> subprocess.CompletedProcess:
     """idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not."""
+    # --squash: main requires linear history, so a merge commit is refused ("Merge commits are not
+    # allowed on this repository", pr-age run 36529931271) and nothing was ever armed.
     tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-pr-arm")
-    return subprocess.run([tool, str(n), "--merge"], capture_output=True, text=True,
+    return subprocess.run([tool, str(n), "--squash"], capture_output=True, text=True,
                           timeout=60, env={**os.environ, "GH_REPO": slug})
 
 
@@ -106,15 +124,6 @@ def act(repo: str, n: int, age_h: float, why: str, max_h: float, head: str = "")
         return "auto-merge" if p.stdout.startswith("ok") else "waiting-on-founder"
     if age_h <= max_h:
         return "-"
-    if why.startswith("red:") or why == "conflict":
-        # CP4, the red clock: a red PR is a draft at the bound and closed at six bounds (24h on the
-        # founder's 4). The branch stays; reopening is one click once it is green.
-        if age_h > 6 * max_h:
-            p = gh("pr", "close", str(n), "-R", slug, "--comment",
-                   f"PR AGE: closed at {age_h:.1f}h, still {why} (red clock: draft at {max_h:g}h, closed at "
-                   f"{6 * max_h:g}h; crew#607 CP4). Reopen when it is green.")
-            return "closed" if p.returncode == 0 else f"close-refused:{(p.stderr or p.stdout).strip()[:80]}"
-        gh("pr", "ready", str(n), "-R", slug, "--undo")
     line = f"PR AGE: {age_h:.1f}h open, reason: {why} (bound {max_h:g}h, founder 2026-08-28: 4 maximum; crew#607)"
     p = gh("pr", "view", str(n), "-R", slug, "--json", "comments", "-q", "[.comments[].body]|last // \"\"")
     if p.returncode == 0 and p.stdout.strip().startswith("PR AGE:") and f"reason: {why} " in p.stdout:

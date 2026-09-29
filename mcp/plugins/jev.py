@@ -31,8 +31,6 @@ FALLBACK: When Jev is unavailable, each tool returns {escalated: true, _fallback
   The estate MCP door (BLIND mode) also routes here when MCP_GATEWAY_KEY is unset.
 """
 
-from __future__ import annotations
-
 import json
 import os
 import time
