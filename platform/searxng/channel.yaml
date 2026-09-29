@@ -1,0 +1,7 @@
+id: searxng
+subject: estate.channel.searxng
+how_it_works: 'SearXNG: the estate''s own search backend, and the only one that answers.'
+provenance: comment:searxng.yaml
+visual:
+  scene: pod-orbit
+  palette: tide

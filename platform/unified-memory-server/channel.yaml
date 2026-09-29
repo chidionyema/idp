@@ -1,0 +1,9 @@
+id: unified-memory-server
+subject: estate.channel.unified-memory-server
+how_it_works: The server's image. build-multiarch discovers ./Dockerfile (bin/dockerfiles names it unified-memory-server)
+  and pushes main-<run>-<sha>; this policy is what moves the tag in kustomization.yaml onto each new one,
+  through the one ImageUpdateAutomation that walks the repo.
+provenance: comment:image.yaml
+visual:
+  scene: pod-orbit
+  palette: dusk

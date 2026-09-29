@@ -1,0 +1,9 @@
+id: rbac
+subject: estate.channel.rbac
+how_it_works: The break-glass bridge, and only it. agent-reader moved to platform/rbac-floor because this
+  Kustomization cannot apply at all until terraform publishes the bridge instance's OCID, and the floor
+  every agent stands on must not wait on a machine it never touches.
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: glacier

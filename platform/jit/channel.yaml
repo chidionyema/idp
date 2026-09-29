@@ -1,0 +1,8 @@
+id: jit
+subject: estate.channel.jit
+how_it_works: 'The namespace the broker lives in, fenced the way crew#191 requires every namespace to
+  be: a both-ways default-deny NetworkPolicy, a ResourceQuota, a LimitRange and a DNS exception.'
+provenance: comment:fence.yaml
+visual:
+  scene: pod-orbit
+  palette: dusk

@@ -1,0 +1,7 @@
+id: config
+subject: estate.channel.config
+how_it_works: 'Control-loop registry: loads config-driven loops, no imports in orchestrator.'
+provenance: docstring:control_loop_registry.py
+visual:
+  scene: code-stream
+  palette: aurora

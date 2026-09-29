@@ -1,0 +1,8 @@
+id: nodesoftware-operator
+subject: estate.channel.nodesoftware-operator
+how_it_works: 'Kustomization for the NodeSoftwareOperator row: the CRD (must land first, before any controller
+  can reconcile), the RBAC the controller runs as, and the controller Deployment itself.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: pod-orbit
+  palette: glacier

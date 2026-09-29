@@ -1,0 +1,8 @@
+id: lifeboat
+subject: estate.channel.lifeboat
+how_it_works: Component platform/lifeboat. No prose description exists yet; this one is derived from its
+  file layout.
+provenance: layout
+visual:
+  scene: vault
+  palette: aurora

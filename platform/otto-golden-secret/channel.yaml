@@ -1,0 +1,12 @@
+id: otto-golden-secret
+subject: estate.channel.otto-golden-secret
+how_it_works: 'The webhook door''s secret, rendered where Flux can substitute it (same shape as platform/alerts-secret/flux-telegram.yaml):
+  OTTO_WEBHOOK_SECRET (vault entry otto-staging-telegram, property webhook_secret) for the HTTPRoute''s
+  exact header match (platform/otto-golden/httproute.yaml), and OTTO_OPERATOR_CHAT_ID (vault entry notify-apprise-founder-telegram,
+  property chat -- the same entry the alert channel reads) for the boot config''s chat allowlist (platform/otto-golden/config.yaml).
+  No manifest carries either value (LAW 46); a missing vault property fails this row by name, never fail-open
+  -- the '
+provenance: comment:webhook-substitution.yaml
+visual:
+  scene: vault
+  palette: dusk

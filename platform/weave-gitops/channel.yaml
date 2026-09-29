@@ -1,0 +1,7 @@
+id: weave-gitops
+subject: estate.channel.weave-gitops
+how_it_works: 'crew#539: a founder-facing surface survives losing one node. Graded by bin/idp-availability-gate.'
+provenance: comment:availability.yaml
+visual:
+  scene: vault
+  palette: verdigris

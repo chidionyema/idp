@@ -1,0 +1,7 @@
+id: concierge
+subject: estate.channel.concierge
+how_it_works: 'The concierge namespace, with its fence in the same apply. One object runs here: nothing.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: dusk

@@ -341,3 +341,13 @@ def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
     from fleetview_backend import agent_jobs
 
     return agent_jobs.handle_post(body)
+
+
+# ── channels (channels.py): one Fleet channel per platform component, explained and live ──
+CHANNELS_PATH = "/channels"
+
+
+def channels_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import channels
+
+    return channels.list_channels()

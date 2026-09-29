@@ -1,0 +1,9 @@
+id: science
+subject: estate.channel.science
+how_it_works: 'crew#516 CP5 (science writer on the cluster), slice 1: the science lane''s facts are counted
+  where they land, the estate collector''s backend, by a job inside the cluster. Nothing here reads a
+  Mac path. Lives in the observability namespace because that is where the ClickHouse credential is.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: clockwork
+  palette: verdigris

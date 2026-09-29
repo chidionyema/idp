@@ -1,0 +1,9 @@
+id: estate-db
+subject: estate.channel.estate-db
+how_it_works: Declares Cluster/estate, Database/backstage, Database/hc, Database/hindsight, Database/superset,
+  Database/litellm, Database/temporal, Database/temporal-visibility and more. No prose description exists
+  yet; this one is derived from the manifests.
+provenance: kinds
+visual:
+  scene: clockwork
+  palette: aurora

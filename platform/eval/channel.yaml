@@ -1,0 +1,7 @@
+id: eval
+subject: estate.channel.eval
+how_it_works: 'ComparisonPolicy: configuration for partial evaluation decisions.'
+provenance: docstring:comparison_policy.py
+visual:
+  scene: code-stream
+  palette: ember

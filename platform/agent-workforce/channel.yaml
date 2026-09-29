@@ -1,0 +1,10 @@
+id: agent-workforce
+subject: estate.channel.agent-workforce
+how_it_works: The agent workforce on the cluster (crew#729 step 3). One CronJob, no RBAC, secrets as files,
+  the law files fetched at each start. The image tag is `:main`, published by the chidionyema/agent-workforce
+  image workflow on every main commit; there is no image-automation marker here because the tag does not
+  change, the digest behind it does.
+provenance: comment:kustomization.yaml
+visual:
+  scene: clockwork
+  palette: sol

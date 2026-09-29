@@ -1,0 +1,11 @@
+id: acg
+subject: estate.channel.acg
+how_it_works: 'The acg namespace is the ACG inference gateway''s home. It is welded to its fence in the
+  same apply: bin/ns-fence-gate refuses a namespace declared in git without a ResourceQuota, a LimitRange,
+  a both-ways default deny and a DNS exception, and bin/idp-ns-fence-gen only fences a namespace that
+  is already on the cluster -- so a namespace that arrives with its own fences is the only shape that
+  is never briefly open (the same reason platform/concierge ships namespace.yaml and ns-fence.yaml together).'
+provenance: comment:namespace.yaml
+visual:
+  scene: pod-orbit
+  palette: aurora

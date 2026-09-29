@@ -1,0 +1,7 @@
+id: reloader
+subject: estate.channel.reloader
+how_it_works: 'The Reloader install row: one file, one chart, no values file to drift (values are inline).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: dusk

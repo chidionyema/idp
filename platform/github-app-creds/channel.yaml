@@ -1,0 +1,12 @@
+id: github-app-creds
+subject: estate.channel.github-app-creds
+how_it_works: The github-app Secret, split out of platform/alerts-github so that any row that needs the
+  Secret (otto-gateway postBuild substitution, the GithubAccessToken generators) can declare a tight dependency
+  on just this resource rather than on alerts-github's health check, which watches the backstage catalogue
+  Deployment. That health check caused alerts-github to be NOT READY whenever backstage degraded, blocking
+  otto-gateway and every other row that substitutes ${githubAppIDQuoted} -- even though the Secret itself
+  was in the cluster and ready to be read.
+provenance: comment:github-app.yaml
+visual:
+  scene: vault
+  palette: neon

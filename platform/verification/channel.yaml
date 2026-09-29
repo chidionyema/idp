@@ -1,0 +1,8 @@
+id: verification
+subject: estate.channel.verification
+how_it_works: 'Verification wall (crew#631 CP2): objects that prove a refusal. Nothing in this directory
+  is meant to become Ready; the Flux row that applies it never waits (clusters/oke/verification.yaml).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: neon

@@ -1,0 +1,9 @@
+id: human-vault
+subject: estate.channel.human-vault
+how_it_works: 'The human door (decision 0017): the one place a person''s secret enters the estate. A phone
+  browser writes the value into Bitwarden Secrets Manager; the operator pulls it into the cluster. No
+  terminal, no file on disk, no chat message ever carries the value.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: tide

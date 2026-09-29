@@ -1,0 +1,10 @@
+id: via-negativa
+subject: estate.channel.via-negativa
+how_it_works: 'The via-negativa engine: Primitive A/C''s proxy, Primitive D''s RCA worker, and their own
+  dedicated Redis and Postgres row -- plain Kustomize, the same shape every other first-party service
+  in platform/ uses (platform/llm, platform/epistemic-fabric, platform/router-events). No Helm chart:
+  this repo has none for first-party code (HelmRelease is reserved for third-party infra, e.g. cert-manager).'
+provenance: comment:kustomization.yaml
+visual:
+  scene: pod-orbit
+  palette: glacier

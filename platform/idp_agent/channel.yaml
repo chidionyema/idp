@@ -1,0 +1,9 @@
+id: idp_agent
+subject: estate.channel.idp_agent
+how_it_works: The idp_agent platform (docs/specs/orbstack-event-driven-agents.md). One image per workload,
+  pinned here; Flux image automation would move the tag the same way hermes-agent's does, once this platform
+  has a real image built and pushed (not yet -- see the spec's "what is not yet built" section).
+provenance: comment:kustomization.yaml
+visual:
+  scene: pod-orbit
+  palette: tide

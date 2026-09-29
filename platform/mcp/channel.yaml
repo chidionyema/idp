@@ -1,0 +1,9 @@
+id: mcp
+subject: estate.channel.mcp
+how_it_works: agentgateway config, mounted from the mcp-config ConfigMap. The /estate/mcp route is back
+  now that estate.db has a cluster producer (bin/idp-estate-db-push in the cloud catalog-render, crew#458
+  row 3). Traces go to the estate collector (LAW 50).
+provenance: comment:agentgateway.yaml
+visual:
+  scene: pod-orbit
+  palette: verdigris

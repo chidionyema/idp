@@ -1,0 +1,12 @@
+id: edge
+subject: estate.channel.edge
+how_it_works: 'The cluster autoscaler takes the node pool it is allowed to resize as a command-line argument,
+  `--nodes=1:2:$(NODEPOOL_ID)`, and Kubernetes expands `$(VAR)` inside args from the container''s env
+  and from nowhere else. There is no file form: upstream''s flag parser reads the string from argv (kubernetes/autoscaler,
+  cluster-autoscaler-1.34.0, config/flags/flags.go), and the OCI provider reads OCI_REGION and OCI_COMPARTMENT_ID
+  from the environment. So the four values that reach this pod from the vault-fed `oke-autoscaler` Secret
+  cannot become a mounted volume without a wrapper script, and a wrapper'
+provenance: comment:autoscaler-exception.yaml
+visual:
+  scene: pod-orbit
+  palette: dusk

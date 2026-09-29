@@ -253,6 +253,11 @@ MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
 # wrong pull request, which no change to this file can fix.
 python3 "$IDP/bin/idp-bdd-proof-gate" --live || true
 
+# 1c.5 channels: every platform/ component has a Fleet channel that explains it and carries its live
+#      activity (channel.yaml). bin/channel-backfill writes a missing one; nothing else fills it in.
+python3 "$IDP/bin/channel-gate" --strict | sed 's/^/  /' | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
+[ "${PIPESTATUS[0]}" -eq 0 ] || fail=1
+
 # 1d. ruff, the same rule set (pyproject [tool.ruff.lint]) the bdd job runs after the suites.
 #     In the fast gate it runs first, so an undefined name is red in under a minute.
 if [ "$FAST" = 1 ]; then

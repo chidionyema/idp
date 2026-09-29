@@ -1,0 +1,8 @@
+id: queue
+subject: estate.channel.queue
+how_it_works: Component platform/queue. No prose description exists yet; this one is derived from its
+  file layout.
+provenance: layout
+visual:
+  scene: code-stream
+  palette: glacier

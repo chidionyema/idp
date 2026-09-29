@@ -1,0 +1,11 @@
+id: alerts-github
+subject: estate.channel.alerts-github
+how_it_works: 'Reconcile ledger (crew#325): a Kustomization or HelmRelease event becomes a repository_dispatch
+  on idp, and .github/workflows/flux-events.yml turns it into a P0 issue and closes it again (provider-github.yaml).
+  It used to carry EVERY event; see the exclusionList below for why and for what it costs -- "applied
+  revision X" is no longer on this ledger, and `flux get kustomizations` or the estate MCP server is where
+  a session reads it now.'
+provenance: comment:alert.yaml
+visual:
+  scene: vault
+  palette: sol

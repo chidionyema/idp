@@ -1,0 +1,9 @@
+id: flannel
+subject: estate.channel.flannel
+how_it_works: 'Oracle installs this DaemonSet with the cluster (the Flannel add-on, ACTIVE, unmanageable
+  on a basic cluster: README step 2). It is adopted here, byte-for-byte as Oracle shipped it, with one
+  argument removed: --ip-masq.'
+provenance: comment:daemonset.yaml
+visual:
+  scene: pod-orbit
+  palette: verdigris
