@@ -32,3 +32,8 @@ Feature: a pull request is never closed to make room; it lands on GitHub's own v
     Given every workflow under .github/workflows
     When each is read
     Then none runs "gh pr close", closes a pull request through the API, or runs actions/stale
+
+  Scenario: a green PR whose checks have already settled is merged, not left unarmed
+    Given GitHub refuses to arm auto-merge because the PR is in unstable status
+    When bin/idp-pr-arm runs on it
+    Then it merges the PR as a squash and says so
