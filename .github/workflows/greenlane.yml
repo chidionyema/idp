@@ -1,0 +1,71 @@
+# button: The lane
+# founder: The one thing that moves main. Proves a lane green on top of main, then raises and lands it in one move.
+#
+# WHY THIS EXISTS. Founder, 2026-09-29: "I need mathematical guarantees PRs can't fail on this
+# platform", "main must never go red, never", "a PR that can fail should never be allowed to be
+# raised", "one agent can take down a whole fleet and platform by one PR", "no going back to
+# this mess". The lane it replaces (merge-when-green, pr-age, pr-cap, pr-consolidate,
+# agent-trunk-batch, deploy-when-green, image-update-pr) graded pull requests after they were
+# raised, on a merge commit GitHub made against a main that had since moved, and then closed,
+# drafted or consolidated what went red. Every one of those was a hand on a symptom.
+#
+# HOW IT HOLDS. greenlane/engine.py (proven under 500 chaos lanes: features/gates/greenlane.feature)
+# stacks lanes into one candidate on top of the current main, pushes it to queue/<batch>, waits
+# for the required checks on that exact sha, and on green raises one pull request per lane and
+# fast-forwards main to the tested commit -- the same bytes. Red bisects. Rulesets: only the
+# estate App may update main (platform/github/ruleset.idp.main-writer.json) and the tip it
+# pushes must carry the required checks (ruleset.idp.required-checks.json). GitHub's native
+# merge queue would do the same and is refused on a user-owned repository (422 'merge_queue');
+# the day the repository is organisation-owned this workflow can be retired for it.
+name: greenlane
+on:
+  push:
+    branches: [lane/**, flux/image-updates]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review]
+  workflow_run:
+    workflows: [ci, guarded-paths, factory-ci]
+    types: [completed]
+  schedule:
+    - cron: '*/5 * * * *'   # backstop: GitHub drops scheduled runs under load; nothing depends on it
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  statuses: write
+  checks: read
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: greenlane     # exactly one writer of main; a queued tick is never lost because a tick is idempotent
+  cancel-in-progress: false
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
+      - name: one tick of the lane
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          GH_REPO: ${{ github.repository }}
+          GREENLANE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GIT_AUTHOR_NAME: estate-agents[bot]
+          GIT_AUTHOR_EMAIL: estate-agents[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: estate-agents[bot]
+          GIT_COMMITTER_EMAIL: estate-agents[bot]@users.noreply.github.com
+        run: |
+          set -euo pipefail
+          # pushes must carry the App's token so they start workflows on the refs they write
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          python3 bin/idp-greenlane tick

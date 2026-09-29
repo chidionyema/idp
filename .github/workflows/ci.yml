@@ -5,10 +5,10 @@ on:
   # required checks against that exact merged state before anything lands.
   merge_group:
   push:
-    # flux/image-updates is the branch image-automation-controller pushes a new catalogue tag to
-    # (crew#267). The required checks run on that push, so the pull request that
-    # image-update-pr.yml opens with GITHUB_TOKEN (which fires no pull_request run) is still graded.
-    branches: [main, flux/image-updates]
+    # queue/**: the Greenlane's candidate (greenlane/engine.py), graded at its exact sha before
+    # main fast-forwards to it. Lanes themselves (lane/**, flux/image-updates) are never graded
+    # on their own: only the candidate built from them on top of main is.
+    branches: [main, queue/**]
 # A newer run on the same ref supersedes the older one: on 2026-08-27 20:23Z idp had 9 running and
 # 20 queued runs, 12 of them stale duplicates, and a one-line oke-check waited 19 min (crew#516).
 concurrency:
@@ -431,7 +431,7 @@ jobs:
   # (feat/crew584-feature-register); until that merges this step says so and exits clean
   # rather than failing every unrelated pull request on a script that is not there yet.
   feature-request-plan:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/queue/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -475,7 +475,7 @@ jobs:
           [ "$rc" -eq 0 ] || echo "note: bin/idp-features plan exited $rc; see the check summary"
 
   executes-gate:
-    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
