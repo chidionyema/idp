@@ -267,6 +267,12 @@ spec:
               value: /run/secrets/hermes-agent-env
             - name: HOME
               value: /data
+            # gh's config off the PVC: a 1h installation token once saved to
+            # /data/.config/gh/hosts.yml outlived every restart, and gh reported it invalid
+            # (otto-parity git-in-pod, run 36513330017). On the /tmp emptyDir nothing outlives
+            # the pod, so gh answers from the GITHUB_TOKEN the generator re-mints every 45m.
+            - name: GH_CONFIG_DIR
+              value: /tmp/gh
             # crew#524 CP1: the self-hosted Hindsight row (platform/hindsight). A URL alone makes the
             # hermes hindsight plugin available (`has_key or has_url`); no key on a self-host.
             - name: HERMES_ESTATE_YAML   # crew#524 CP2: the estate from git (estate.yaml ConfigMap)
