@@ -173,16 +173,24 @@ check its claims has failed at the job, whatever it shipped.
 ## 12. All ways: no single point of failure, every capability has many homes
 
 The estate aims for **all ways**, and the platform demonstrates it (founder, 2026-09-29: "We don't
-allow for single points of failure"; "the same way Otto has many homes the crew need many homes").
-Every capability the founder depends on -- crew sessions (Claude Code), the LLM router, voice,
-/fleet, the event bus -- runs in, or fails over between, several homes: OKE, Anthropic cloud
-sessions, this MacBook, and the second, better-resourced MacBook. No home is the one home:
+allow for single points of failure"; "the same way Otto has many homes the crew need many homes";
+"we are model agnostic and not anthropic"). A home is any place a capability can run *and* anything
+it runs on:
+
+- **Hosts:** OKE, the cloud session runners, this MacBook, the second (better-resourced) MacBook.
+- **Model vendors:** Anthropic, DeepSeek, MiniMax, Gemini, Groq and the rest of the router's lanes.
+- **Agent runtimes:** Claude Code, Codex, Gemini CLI, Otto (hermes-agent).
+
+Every capability the founder depends on (crew sessions, the LLM router, voice, /fleet, the event
+bus) runs in, or fails over between, several homes on each of those axes. None is the one home:
 
 - **Moving to the cloud adds a home; it never removes the laptop's ability.** The laptops keep
   running every capability; the cloud stops them being load-bearing. A cluster outage must not
   disable the estate either (founder, 2026-09-26: "if cluster breaks we are all disabled").
+- **No vendor and no runtime is load-bearing.** A capability that works only with one model vendor
+  or one agent runtime is single-homed, whatever host it runs on.
 - **Nothing we operate sits alone in a session's critical path.** A router, relay or proxy in front
-  of a session fails open (to another home, or straight to the vendor) inside the same request.
+  of a session fails open (to another home or another vendor) inside the same request.
 - **Never disrupt running work to move it.** Build the new home beside the old, prove it in
   parallel (a failure test: kill or freeze the home under live traffic, and sessions see zero
   errors), then send only *new* work to it. Rollback is pointing new work back.
