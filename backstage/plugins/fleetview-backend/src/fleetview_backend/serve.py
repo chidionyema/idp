@@ -174,6 +174,11 @@ def build_app() -> FastAPI:
         body, status = routes.memory_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.GREENLANE_PATH)
+    def greenlane():
+        body, status = routes.greenlane_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.post(routes.CHECK_RECEIPTS_PATH)
     async def check_receipts_post(request: Request):
         body = await request.json()

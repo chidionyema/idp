@@ -51,6 +51,7 @@ from fleetview_backend import (
     blast,
     evals,
     graph,
+    greenlane,
     ledger_tail,
     memory,
     notes,
@@ -83,6 +84,7 @@ __all__ = [
     "blast_radius_envelope",
     "graph_envelope",
     "memory_envelope",
+    "greenlane_envelope",
     "check_receipts_envelope",
     "mutations_envelope",
     "approve_mutation",
@@ -103,6 +105,7 @@ SIGNALS_PATH = "/signals"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
+GREENLANE_PATH = "/greenlane"
 CHECK_RECEIPTS_PATH = "/check-receipts"
 MUTATIONS_PATH = "/mutations"
 MUTATIONS_APPROVE_PATH = "/mutations/approve"
@@ -238,6 +241,11 @@ def graph_envelope() -> tuple[dict[str, Any], int]:
 def memory_envelope() -> tuple[dict[str, Any], int]:
     # Each part carries its own available/error; one unreadable part never hides the others.
     return memory.memory_status(), 200
+
+
+def greenlane_envelope() -> tuple[dict[str, Any], int]:
+    # The lane's invariants as measured now; unreadable is unavailable with a reason, never green.
+    return greenlane.greenlane_status(), 200
 
 
 def check_receipts_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:

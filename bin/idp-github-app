@@ -122,6 +122,13 @@ seed)
   gh workflow run vault-seed.yml --repo "$repo" -f entry=github-app >/dev/null
   echo "ok      github-app SEED_GITHUB_APP_* on $repo; vault-seed.yml entry=github-app dispatched"
   ;;
+app-id)
+  # The App's numeric id, an identifier not a secret (docs/reference/policy/credential-lifecycle.md):
+  # bin/repo-rulesets substitutes it for ${GITHUB_APP_ID} in the main-writer ruleset's bypass actor.
+  export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+  bundle=$("$IDP/bin/idp-cloud" secret get "$SECRET" 2>/dev/null) || { echo "BLIND   github-app bundle unreadable"; exit 2; }
+  jq -r .app_id <<<"$bundle"
+  ;;
 token)
   TMPDIR_ERR=$(mktemp); trap 'rm -f "$TMPDIR_ERR"' EXIT
   lane=${1:?lane name from platform/github-app/lanes.json}

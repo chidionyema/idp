@@ -1,0 +1,33 @@
+name: lane-submit
+description: >
+  Hand the current branch to the Greenlane and wait for its verdict. This is how work reaches
+  main on this estate: never `gh pr create`, never a push to main. The lane proves the branch
+  green on top of the current main, raises the pull request itself and lands it in the same
+  move; a red or conflicting lane keeps its branch and carries the reason here.
+args:
+  lane:    {type: string, default: "", description: "lane name; default lane/<current branch>"}
+  wait:    {type: int, default: 1800, description: "seconds to wait for a verdict before giving up"}
+  cwd:     {type: string, default: "."}
+halt_on_failure: true
+steps:
+  - name: push the lane
+    cmd: |
+      cd {{cwd}} || exit 2
+      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
+      git push -q origin "HEAD:refs/heads/$lane" && echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
+  - name: wait for the verdict
+    cmd: |
+      cd {{cwd}} || exit 2
+      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
+      sha=$(git rev-parse HEAD); repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
+      end=$(( $(date +%s) + {{wait}} )); s=""
+      # the verdict is the `greenlane` commit status on this sha, written by the engine
+      while [ "$(date +%s)" -lt "$end" ]; do
+        s=$(gh api "repos/$repo/commits/$sha/status" --jq '.statuses[] | select(.context=="greenlane") | .state + " " + .description' 2>/dev/null | head -1)
+        case "$s" in
+          success*) echo "ok      lane-submit  landed: $s"; exit 0 ;;
+          failure*) echo "RED     lane-submit  $s"; exit 1 ;;
+        esac
+        sleep 30
+      done
+      echo "BLIND   lane-submit  no verdict for $lane in {{wait}}s (last: ${s:-none}); the lane keeps the branch"; exit 2
