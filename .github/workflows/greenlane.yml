@@ -54,7 +54,7 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-          oci_compartment: ${{ secrets.OCI_COMPARTMENT_OCID }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
       - name: one tick of the lane
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
