@@ -102,8 +102,10 @@ def gh(*args: str) -> subprocess.CompletedProcess:
 
 def arm(slug: str, n: int) -> subprocess.CompletedProcess:
     """idp#1046: auto-merge is off on this repository (allow_auto_merge=false, set beside the founder-only-releases ruleset on 2026-08-30), so `gh pr merge --auto` answers `enablePullRequestAutoMerge` and exits 1. bin/idp-pr-arm arms it where the repository allows it and names the founder's merge where it does not."""
+    # --squash: main requires linear history, so a merge commit is refused ("Merge commits are not
+    # allowed on this repository", pr-age run 36529931271) and nothing was ever armed.
     tool = os.path.join(os.path.dirname(os.path.abspath(__file__)), "idp-pr-arm")
-    return subprocess.run([tool, str(n), "--merge"], capture_output=True, text=True,
+    return subprocess.run([tool, str(n), "--squash"], capture_output=True, text=True,
                           timeout=60, env={**os.environ, "GH_REPO": slug})
 
 
