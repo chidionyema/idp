@@ -1,0 +1,16 @@
+name: router-doctor
+description: >
+  Laptop router (bin/litellm-local, 127.0.0.1:4000) in about a second: launchd agent, liveliness,
+  staged Max OAuth forwarding patch, claude-* lane + efficiency gateway, ~/.claude/settings.json
+  pointing at the router with no pinned token, no token file or side forwarder, a live Max login,
+  and one real Claude call through the router. Each failure gets one heal and a re-check; what
+  cannot heal prints FIX: with the exact command. heal=false diagnoses without changing anything.
+  launchd ai.estate.router-doctor runs the same checks every 120s (watch mode).
+args:
+  heal: {type: bool, default: true, help: "false = diagnose only, change nothing"}
+halt_on_failure: true
+steps:
+  - name: doctor
+    timeout: 240
+    cmd: >
+      python3 ~/.estate/libexec/router-doctor.py $( [ "{{heal}}" = "false" ] && echo diagnose || echo heal )
