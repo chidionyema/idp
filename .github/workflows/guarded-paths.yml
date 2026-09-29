@@ -10,6 +10,8 @@ name: guarded-paths
 on:
   pull_request:
   merge_group:
+  push:
+    branches: [queue/**]   # the Greenlane candidate, graded against origin/main before it becomes main
 permissions:
   contents: read
 concurrency:

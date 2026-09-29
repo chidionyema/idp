@@ -3,7 +3,7 @@
 name: factory-ci
 
 on:
-  push: { branches: [main] }
+  push: { branches: [main, "queue/**"] }   # queue/**: the Greenlane candidate, graded before it becomes main
   pull_request: { branches: [main] }
   schedule: [{ cron: "17 * * * *" }]
   workflow_dispatch:
