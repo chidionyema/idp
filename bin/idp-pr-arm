@@ -46,7 +46,20 @@ esac
 allowed=$(gh api "repos/$repo" --jq '.allow_auto_merge' 2>/dev/null || echo unknown)
 
 if [ "$allowed" = true ]; then
-	gh pr merge "$n" --auto "$how" -R "$repo"
+	# GitHub refuses to ARM a pull request whose checks have already settled with an optional one
+	# red ("Pull request is in unstable status", pr-age run 36574258582 on #4822): there is nothing
+	# left to wait for, so it has to be merged now. The ruleset still enforces the required checks.
+	if ! out=$(gh pr merge "$n" --auto "$how" -R "$repo" 2>&1); then
+		case "$out" in
+		*"unstable status"* | *"clean status"*) gh pr merge "$n" "$how" -R "$repo" ;;
+		*)
+			echo "$out" >&2
+			exit 1
+			;;
+		esac
+		echo "ok      pr-arm  #$n merged ($how), its checks had already settled"
+		exit 0
+	fi
 	echo "ok      pr-arm  #$n auto-merge armed ($how)"
 	exit 0
 fi
