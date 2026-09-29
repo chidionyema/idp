@@ -12,8 +12,8 @@ Every 30 minutes (the caller workflow) this reads the repo's closed, unmerged PR
 `Blocked-by:` key, and for a PR whose every key is resolved: PUT update-branch (GitHub merges the
 base into the branch; no checkout, no force push), reopen, comment with what resolved it. A branch
 GitHub cannot update cleanly is still reopened, labelled `needs-rebase`, and the comment says so.
-Nothing reopens while the repo has PR_CAP (10) or more open pull requests: the pr-cap-guard rule
-(claude-guards#155) holds here too, and the sleeping PR is listed instead.
+There is no open-PR cap: a PR whose blockers have landed reopens however many are open (founder,
+2026-09-29: "autuo closing prs is void"; the estate runs up to 20 agents at once).
 
     idp-wake-blocked                          act on $GH_REPO
     idp-wake-blocked --dry-run                print the plan, change nothing
@@ -29,7 +29,6 @@ import re
 import subprocess
 import sys
 
-PR_CAP = int(os.environ.get("PR_CAP", "10"))
 OWNER = os.environ.get("ESTATE_GH_OWNER", "chidionyema")
 BLOCKED_RE = re.compile(r"(?im)^\s*Blocked-by:\s*(.+?)\s*$")
 REF_RE = re.compile(r"^(?:([\w.-]+)/)?([\w.-]+)#(\d+)$")
@@ -67,7 +66,7 @@ def plan(closed_prs: list[dict], landed, open_count: int, resolved: set[str]) ->
 
     `landed(key)` answers True/False/None like ref_landed. Both ways live here: a body with no
     Blocked-by line never wakes; one key still open keeps the PR asleep; every key landed wakes
-    it unless the repo is at the cap."""
+    it."""
     out = []
     for pr in closed_prs:
         keys = keys_of(pr.get("body") or "")
@@ -80,8 +79,6 @@ def plan(closed_prs: list[dict], landed, open_count: int, resolved: set[str]) ->
         waiting = sorted(k for k, ok in state.items() if not ok)
         if waiting:
             out.append({"number": pr["number"], "action": "sleep", "waiting": waiting})
-        elif open_count >= PR_CAP:
-            out.append({"number": pr["number"], "action": "capped", "landed": keys, "open": open_count})
         else:
             out.append({"number": pr["number"], "action": "wake", "landed": keys})
             open_count += 1
@@ -136,8 +133,7 @@ def main() -> int:
         print(json.dumps(act))
     woke = sum(1 for x in actions if x["action"] == "wake")
     print(f"wake-blocked: {len(actions)} sleeping, {woke} woke, "
-          f"{sum(1 for x in actions if x['action'] == 'capped')} capped, "
-          f"{sum(1 for x in actions if x['action'] == 'error')} errors, open={open_count} cap={PR_CAP}")
+          f"{sum(1 for x in actions if x['action'] == 'error')} errors, open={open_count}")
     return 0
 
 
