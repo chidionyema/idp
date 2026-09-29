@@ -41,7 +41,9 @@ jobs:
       - name: Build
         run: |
           cd backstage
-          yarn build
+          # the app's own build: the repo root has no `build` script (it is build:all / build:backend),
+          # and the package step below ships packages/app/dist
+          yarn workspace app build
 
       # Package as a macOS .app bundle
       - name: Package as .app

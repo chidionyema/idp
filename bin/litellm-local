@@ -31,8 +31,8 @@ LOG="$HOME/Library/Logs/litellm-local.log"
 VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
-PORT=4000
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py"
+PORT="${LITELLM_LOCAL_PORT:-4000}"   # override only for a canary beside the live router
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py router_catalog.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
 
@@ -74,6 +74,31 @@ run() {
     done
     unset v
   fi
+  # Vendor keys from Bitwarden: ESO syncs every human-* entry into the llm namespace through the
+  # human-vault ClusterSecretStore. Read into this process only, so a key added in Bitwarden is a
+  # lane here on the next start -- nothing to seed, stage or paste.
+  export PATH="$HOME/.rd/bin:$HOME/.local/bin:$HOME/bin:$PATH"
+  # The loader is a variable, not inline in $(...): macOS /bin/bash 3.2 mis-parses a quoted
+  # multi-line program inside a command substitution and runs it as shell.
+  local bw_py bw_env
+  bw_py='
+import base64, json, re, shlex, sys
+try: items = json.load(sys.stdin)["items"]
+except Exception: items = []
+names = []
+for s in items:
+    if not s["metadata"]["name"].startswith("human-"): continue
+    for k, v in (s.get("data") or {}).items():
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", k):
+            print("export %s=%s" % (k, shlex.quote(base64.b64decode(v).decode()))); names.append(k)
+print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(sorted(names)))))
+'
+  if command -v kubectl >/dev/null; then
+    bw_env="$(kubectl -n llm get secrets -o json --request-timeout=20s 2>/dev/null | "$VENV/bin/python" -c "$bw_py")" || bw_env=""
+    eval "$bw_env"
+  fi
+  unset bw_py bw_env
+  [ -n "${DEEPSEEK_API_KEY:-}" ] || echo "warn  bitwarden keys unreadable (kubectl -n llm get secrets): vendor lanes will be dropped"
   # The laptop router key, the one key the estate's local services present (voice-router already
   # does). local_caller_auth requires it on every lane that spends a key this process holds.
   # Undecryptable means those lanes refuse everyone: fail closed, and say so.
@@ -85,7 +110,11 @@ run() {
 
   # A lane whose key is absent can only fail, cool down and retry on every request -- that is
   # flake, not redundancy. Serve only the lanes this process can actually call.
-  RUNCFG="$HERE/config.runtime.yaml"
+  # Runtime state lives apart from the code: the stage may be frozen read-only (root-owned), and
+  # a router that cannot write its rendered config exits on every restart and never comes back.
+  STATE="${ESTATE_ROUTER_STATE:-$HOME/.estate/router-state}"
+  mkdir -p "$STATE"
+  RUNCFG="$STATE/config.runtime.yaml"
   export ESTATE_ROUTER_CONFIG="$RUNCFG"
   "$VENV/bin/python" - "$CFG" "$RUNCFG" <<'PY'
 import os, sys, yaml
@@ -97,7 +126,58 @@ for m in cfg.get("model_list", []):
         dropped.append(m["model_name"])
     else:
         kept.append(m)
+# Providers are derived, never declared: every <PROVIDER>_API_KEY[_N] this process holds whose
+# provider LiteLLM knows becomes the lane "<provider>/*", so every model that provider serves is
+# callable by its own name (deepseek/deepseek-chat, openrouter/qwen/qwen3-coder:free, ...).
+# Several keys for one provider are several deployments of one lane. A new provider is a new
+# Bitwarden entry; nothing here or in any harness changes.
+import re
+import litellm
+known = {getattr(p, "value", p) for p in litellm.provider_list}
+alias = {"nvidia": "nvidia_nim"}          # key names that differ from LiteLLM's provider name
+never = {"anthropic"}                     # claude-* relays the caller's own Max token
+providers = {}
+for var in sorted(os.environ):
+    mt = re.fullmatch(r"([A-Z][A-Z0-9]*)_API_KEY(?:_\d+)?", var)
+    if not mt or not os.environ[var]:
+        continue
+    p = alias.get(mt.group(1).lower(), mt.group(1).lower())
+    if p in known and p not in never:
+        providers.setdefault(p, []).append(var)
+        kept.append({"model_name": f"{p}/*",
+                     "litellm_params": {"model": f"{p}/*", "api_key": f"os.environ/{var}"}})
 cfg["model_list"] = kept
+# A fallback chain that names a lane this machine does not serve is a silent substitution: the
+# caller asks for deepseek and is answered by another vendor. Keep only chains between served lanes,
+# so a dead lane fails loudly with its own name.
+served = {m["model_name"] for m in kept}
+rs = cfg.setdefault("router_settings", {})
+chains = []
+for entry in rs.get("fallbacks", []):
+    for src, tgts in entry.items():
+        tgts = [t for t in tgts if t in served]
+        if src in served and tgts:
+            chains.append({src: tgts})
+rs["fallbacks"] = chains
+# The trace exporter retried a collector nobody runs (3,367 ConnectionErrors in one log window).
+# Serve the otel callback only when its endpoint answers, same rule as lanes with no key.
+import socket
+from urllib.parse import urlparse
+ep = urlparse(os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:4318"))
+try:
+    socket.create_connection((ep.hostname, ep.port or 4318), timeout=1).close()
+    otel_up = True
+except OSError:
+    otel_up = False
+if not otel_up:
+    cfg.setdefault("litellm_settings", {})["callbacks"] = [
+        c for c in cfg["litellm_settings"].get("callbacks", []) if c != "otel"]
+# The router's own account of what it serves, readable without a log.
+import json, time
+json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
+           "dropped": sorted(set(dropped) - served),
+           "providers": dict(sorted(providers.items())), "fallbacks": chains, "otel": otel_up},
+          open(os.path.join(os.path.dirname(sys.argv[2]), "lanes.json"), "w"), indent=1)
 # Laptop only: who may call this router (platform/llm/local_caller_auth.py). It runs before every
 # other callback, so a refused request costs nothing.
 cfg.setdefault("general_settings", {})["custom_auth"] = "local_caller_auth.user_api_key_auth"
@@ -105,10 +185,18 @@ ls = cfg.setdefault("litellm_settings", {})
 ls["callbacks"] = ["local_caller_auth.proxy_handler_instance"] + [
     c for c in ls.get("callbacks", []) if c != "local_caller_auth.proxy_handler_instance"
 ]
+# Laptop only: every exchange spooled for the estate graph (platform/llm/graph_capture.py).
+if "graph_capture.proxy_handler_instance" not in ls["callbacks"]:
+    ls["callbacks"].append("graph_capture.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 print(f"lanes  dropped {len(dropped)} with no key on this machine")
 PY
+
+  # Every model the providers serve, written into every installed harness (router_catalog.py).
+  # Background: the router never waits on a provider's model listing.
+  ( "$VENV/bin/python" "$MODDIR/router_catalog.py" "$(dirname "$RUNCFG")/lanes.json" \
+      >"$(dirname "$RUNCFG")/catalog.log" 2>&1 & )
 
   exec "$VENV/bin/litellm" --config "$RUNCFG" --host 127.0.0.1 --port "$PORT"
 }

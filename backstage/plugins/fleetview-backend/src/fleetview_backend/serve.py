@@ -45,6 +45,9 @@ async def lifespan(app: FastAPI):
             )
         except Exception:  # noqa: BLE001, S110 -- adapter startup failure must not break the app
             pass
+        from fleetview_backend import efficiency_feed
+
+        asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
     yield
 
 
@@ -163,6 +166,11 @@ def build_app() -> FastAPI:
     @app.get(routes.GRAPH_PATH)
     def graph():
         body, status = routes.graph_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.MEMORY_PATH)
+    def memory():
+        body, status = routes.memory_envelope()
         return JSONResponse(content=body, status_code=status)
 
     @app.post(routes.CHECK_RECEIPTS_PATH)
@@ -301,6 +309,28 @@ def build_app() -> FastAPI:
         from fleetview_backend import voice_media as vm
 
         return JSONResponse(content=vm.log(limit=limit))
+
+    @app.get("/efficiency")
+    async def efficiency(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(efficiency_feed.summary, since)
+        )
+
+    @app.get("/efficiency/proof")
+    async def efficiency_proof():
+        from fleetview_backend import efficiency_feed
+
+        return JSONResponse(content=await asyncio.to_thread(efficiency_feed.proof))
+
+    @app.get("/efficiency/stream")
+    async def efficiency_stream(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return StreamingResponse(
+            efficiency_feed.stream(since), media_type="text/event-stream"
+        )
 
     @app.get("/voice/log/summary")
     async def voice_log_summary(limit: int = 200):
