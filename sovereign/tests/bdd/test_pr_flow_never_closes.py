@@ -97,6 +97,25 @@ def _no_close(state: dict) -> None:
     assert state["action"] in {"commented", "quiet"}, state["action"]
 
 
+@when("bin/idp-pr-age arms it")
+def _arm(state: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd: list[str], **_: object) -> object:
+        calls.append(cmd)
+        return pr_age.subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(pr_age.subprocess, "run", fake_run)
+    pr_age.arm("chidionyema/idp", 1)
+    state["arm_calls"] = calls
+
+
+@then("bin/idp-pr-arm is asked for a squash merge")
+def _squash(state: dict) -> None:
+    [cmd] = state["arm_calls"]
+    assert cmd[0].endswith("idp-pr-arm") and cmd[1:] == ["1", "--squash"], cmd
+
+
 @given("every workflow under .github/workflows")
 def _workflows(state: dict) -> None:
     state["files"] = sorted((IDP / ".github/workflows").glob("*.y*ml"))

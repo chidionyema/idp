@@ -23,6 +23,11 @@ Feature: a pull request is never closed to make room; it lands on GitHub's own v
     When bin/idp-pr-age acts on it
     Then no close and no draft is sent to GitHub
 
+  Scenario: a green PR is armed as a squash, the only merge main's linear history accepts
+    Given an open PR whose required checks pass and whose shadow-verify check failed
+    When bin/idp-pr-age arms it
+    Then bin/idp-pr-arm is asked for a squash merge
+
   Scenario: no workflow closes a pull request
     Given every workflow under .github/workflows
     When each is read
