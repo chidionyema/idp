@@ -1,0 +1,14 @@
+name: token-proof
+description: >-
+  Prove what the router's efficiency chain saves, per lane and per step, in tokens and dollars:
+  the randomised holdout trial (causal, with a 95% CI) and the per-step attribution estimate,
+  priced from LiteLLM's own price map.
+tools: [python3]
+models: []
+halt_on_failure: true
+max_turns: 3
+steps:
+  - cmd: bin/estate-token-proof --since "${SINCE:-7d}"
+    on_fail: halt
+  - cmd: bin/estate-token-proof --since "${SINCE:-7d}" --json > "${OUT:-/tmp/token-proof.json}"
+    on_fail: halt
