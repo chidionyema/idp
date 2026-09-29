@@ -99,7 +99,16 @@ def _no_files(state: dict) -> None:
 )
 def _nobody_names_it(state: dict) -> None:
     hits = subprocess.run(
-        ["git", "grep", "-l", *sum((["-e", n] for n in RETIRED), []), "--", "."],
+        [
+            "git",
+            "grep",
+            "-l",
+            *sum((["-e", n] for n in RETIRED), []),
+            "--",
+            ".",
+            # rescued_patches2/ is archived branch diffs (#3914), data rather than code.
+            ":!rescued_patches2",
+        ],
         cwd=IDP,
         capture_output=True,
         text=True,

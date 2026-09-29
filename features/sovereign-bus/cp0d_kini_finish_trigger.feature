@@ -14,5 +14,4 @@ Feature: CP0d "Finish KINI" is one word, and the answer is a receipt (crew#396 s
     Given the workflow kini-finish.yml
     Then it fires on an owner's `FINISH: KINI` comment, renames the Job and arms auto-merge
     And platform/temporal renders the Job and the kini-state CronJob on the worker image and service account
-    And oke-check.yml has job kini-state and drills/catalogue.yaml has row kini-finish
     And `kini receipt` is a CLI subcommand

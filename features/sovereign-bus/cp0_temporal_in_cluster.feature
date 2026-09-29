@@ -3,8 +3,8 @@
 Feature: The workflow engine runs in the cluster, not on the Mac
   # Bound by sovereign/tests/bdd/test_cp0_temporal_in_cluster.py
 
-  Scenario: The Temporal row renders and is pinned to the official chart
-    Given the Flux row temporal in clusters/oke/platform.yaml
+  # c96359f4 (2026-09-26) removed the temporal Flux row: the engine is not deployed (crew#396).
+  Scenario: The Temporal manifests render and are pinned to the official chart
     When platform/temporal is built with kustomize
     Then the HelmRelease uses chart temporal from https://go.temporal.io/helm-charts at a pinned version
     And Helm hooks are off so Flux owns the schema and namespace jobs
