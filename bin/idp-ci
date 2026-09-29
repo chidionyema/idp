@@ -296,6 +296,14 @@ if [ "$FAST" = 1 ]; then
   PYTHON_STRICT_RANGE="${base_local}...HEAD" "$IDP/bin/idp-python-strict" \
     && say "ok    py-strict  diff base..HEAD" \
     || { say "FAIL  py-strict  diff base..HEAD; ruff check --select E9,F,B,S --fix; ruff format"; fail=1; }
+  # 1d.5: crew#654, founder 2026-09-29 ("no theories without bayesian reasoning and evidence
+  # gathering", "we don't do guesswork", "why is this not enforced"). A change that touches the
+  # router (llm/config.yaml, platform/llm/config.yaml, platform/llm/*.py, bin/litellm-local) must
+  # reference a `Diagnosis: docs/diagnoses/<file>.yaml` record on this commit range whose winning
+  # hypothesis clears posterior >= 0.95 when bin/estate-diagnose RECOMPUTES it -- never trusts a
+  # stored number. Docs/tests-only changes are exempt. See docs/runbooks/diagnosis.md.
+  if out=$("$MPY" "$IDP/bin/diagnosis-gate" --base "$base_local" 2>&1); then say "$out"
+  else say "$out"; fail=1; fi
   timing_summary
   # 1e. crew#679 CP5: the incident register is generated from tests/test_incident_*.py; a new
   # incident test without its committed row is refused here, so the chaos drills never drift.
