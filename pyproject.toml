@@ -29,4 +29,5 @@ typeCheckingMode = "basic"
 # 160 s -> 17.34 s on the same 17 files). Selection is NOT testmon: it tracks Python coverage only, and
 # after a YAML-only edit to oke-check.yml it answered "no tests ran" -- a false green, measured the same
 # day. bin/idp-tests-for names the tests that read a changed file; CI runs everything on a fresh checkout.
-addopts = "-n auto"
+# tests/browser needs playwright + chromium; it runs in .github/workflows/vendor-browser.yml, never in the blanket.
+addopts = "-n auto --ignore=tests/browser"
