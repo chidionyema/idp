@@ -253,6 +253,31 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
+      # crew#736 CP2 (otto-parity estate-state-read-at-start, FAIL since 2026-08-31): the estate's
+      # state document, pulled once before the gateway boots, the same way platform/mcp/estate-mcp.yaml
+      # pulls estate.db. The pull never blocks Otto: a failure leaves the directory empty and the
+      # entrypoint logs `estate-state: BLIND`; the estate MCP's get_estate_state stays the live read.
+      initContainers:
+        - name: fetch-estate-state
+          image: ghcr.io/fluxcd/flux-cli:v2.9.4
+          command: ["sh", "-c"]
+          args:
+            - flux pull artifact oci://ghcr.io/chidionyema/idp/estate-state:latest --output /run/estate-state || echo "estate-state pull failed; the boot will log BLIND"
+          env:
+            - { name: DOCKER_CONFIG, value: /creds }   # flux reads the registry login from $DOCKER_CONFIG/config.json
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }   # LAW 50
+          volumeMounts:
+            - { name: estate-state, mountPath: /run/estate-state }
+            - { name: ghcr-creds, mountPath: /creds, readOnly: true }
+          resources:
+            requests: { cpu: 20m, memory: 32Mi }
+            limits: { cpu: 200m, memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: { drop: [ALL] }
+            seccompProfile: { type: RuntimeDefault }
       containers:
         - name: gateway
           image: ghcr.io/chidionyema/hermes-agent
@@ -277,6 +302,8 @@ spec:
             # hermes hindsight plugin available (`has_key or has_url`); no key on a self-host.
             - name: HERMES_ESTATE_YAML   # crew#524 CP2: the estate from git (estate.yaml ConfigMap)
               value: /etc/hermes/estate.yaml
+            - name: HERMES_ESTATE_STATE   # crew#736 CP2: the boot reads it and logs estate-state: READ|BLIND
+              value: /run/estate-state/estate-state.json
             - name: HINDSIGHT_API_URL
               value: http://hindsight-api.hindsight.svc:8888
             # crew#717 wave 1: where the observability plugin sends Otto's traces (LAW 50). The keys
@@ -363,6 +390,9 @@ spec:
               readOnly: true
             - name: estate
               mountPath: /etc/hermes
+              readOnly: true
+            - name: estate-state
+              mountPath: /run/estate-state
               readOnly: true
             # crew#516 CP5: the founder's mac-run script, executable, never baked into the image.
             - name: mac-run
@@ -465,6 +495,10 @@ spec:
               - secret: { name: hermes-agent-langfuse, optional: true }   # crew#717 wave 1: LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (langfuse-key.yaml)
         - name: estate
           configMap: { name: hermes-agent-estate }
+        - name: estate-state
+          emptyDir: { sizeLimit: 16Mi }
+        - name: ghcr-creds
+          secret: { secretName: ghcr-pull, optional: true, items: [ { key: .dockerconfigjson, path: config.json } ] }
         - name: mac-run
           configMap: { name: hermes-agent-mac-run, defaultMode: 0755 }
         - name: mac-run-key

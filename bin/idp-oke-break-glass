@@ -585,7 +585,9 @@ sys.exit(0 if d and all(r >= w for _, r, w in d) else 1)'"
   step webhook-ottototbot $K exec deploy/otto-gateway -n otto-gateway -c gateway -- python3 -c "$(otto_webhook_py /run/secrets/otto-gateway-channels/OTTO_TELEGRAM_BOT_TOKEN)"
   step webhook-numun $K exec deploy/otto-golden -n otto-golden -c otto-boot -- python3 -c "$(otto_webhook_py /run/secrets/otto-staging-telegram/OTTO_TELEGRAM_BOT_TOKEN)"
   # The in-cluster probe that sends a real completion through the door's own router key, every 15m.
-  step answer-probe-recent sh -c "l=\$($K get jobs -n otto-gateway --sort-by=.metadata.creationTimestamp --no-headers 2>/dev/null | grep '^otto-answer-probe' | tail -1); echo \"\${l:-no otto-answer-probe job has run}\"; echo \"\$l\" | awk '{exit !(\$2==\"1/1\")}'"
+  # Read .status.succeeded, not a table column: kubectl 1.32 added STATUS before COMPLETIONS, and
+  # run 36519544907 graded "otto-answer-probe-29844285 Complete 1/1" FAIL because $2 was "Complete".
+  step answer-probe-recent sh -c "l=\$($K get jobs -n otto-gateway --sort-by=.metadata.creationTimestamp -o jsonpath='{range .items[*]}{.metadata.name}{\" succeeded=\"}{.status.succeeded}{\"\n\"}{end}' 2>/dev/null | grep '^otto-answer-probe' | tail -1); echo \"\${l:-no otto-answer-probe job has run}\"; case \"\$l\" in *' succeeded=1') exit 0;; *) exit 1;; esac"
 }
 
 # Telegram's own answer on where it delivers and whether delivery is failing (Bot API
