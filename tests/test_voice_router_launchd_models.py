@@ -74,3 +74,12 @@ def test_a_download_that_is_not_the_pinned_bytes_is_refused(tmp_path, monkeypatc
     with pytest.raises(RuntimeError, match="not the pinned"):
         mod["ensure_models"](tmp_path, [(REL, "0" * 64)])
     assert not (tmp_path / NAME).exists()
+
+
+def test_a_download_killed_midway_is_cleared(tmp_path, monkeypatch):
+    mod = _mod()
+    (tmp_path / NAME).mkdir()
+    (tmp_path / "tmp4doqtx77").mkdir()
+    _serve(mod, monkeypatch, b"")
+    mod["ensure_models"](tmp_path, [(REL, "0" * 64)])
+    assert not (tmp_path / "tmp4doqtx77").exists() and (tmp_path / NAME).is_dir()
