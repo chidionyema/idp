@@ -42,6 +42,7 @@ import { useApi } from '@backstage/core-plugin-api';
 // The colour was always honest; the motion was a uniform bob, which the design calls the single
 // worst mistake -- an agent stuck in a retry loop looked exactly like one thinking.
 import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burnBar } from './reactor';
+import Delivery from './Delivery';
 // The estate's own voice engine -- whisper for hearing, Kokoro for speaking. Mounted as a hook so
 // every surface uses the same models rather than the browser's network recogniser and formant TTS.
 import { useEstateVoice } from '../../home/useEstateVoice';
@@ -2702,6 +2703,8 @@ export default function FleetReactorApp() {
         </div>
       </div>
 
+      {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
+      <Delivery />
       {/* The transcript, for as long as it is being spoken. It is a caption, not a control: it sits
           above the mic, fades on its own, and is the ONLY text this page needs for voice. */}
       {voiceText && voice.state !== 'off' ? (

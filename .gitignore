@@ -136,6 +136,9 @@ catalog/*.db-shm
 # 2026-09-13 after a `git add -A` swept them in. They are not repository content.
 .agent/
 
+# Built by installer/build.sh, never committed: a committed pkg is a stale copy of the converger.
+installer/IDP-Estate.pkg
+
 # Cargo build output: never tracked. Tracked target/ made every cleaned worktree look dirty,
 # so disk-cleanup could never retire it (2026-09-28, 1669 files).
 target/

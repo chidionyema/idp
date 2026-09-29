@@ -1,23 +1,21 @@
 # IDP Estate Installer
 
-This package installs the IDP Estate bootstrap tools and services.
+This package installs the estate converger. You enter your password once, here; after that
+nothing on this Mac needs a Terminal command to stay current.
 
 ## What's installed
 
-- **idp-install-all** — One-shot estate bootstrap script at `/usr/local/bin/`
-- **ai.estate.fleetview-backend** — Launchd agent for the FleetView voice backend
+- `/usr/local/estate/sbin/estate-converge`: the converger, owned by root
+- `/Library/LaunchDaemons/ai.estate.converge.plist`: runs it every 2 minutes
 
-## After installation
+## What it does
 
-Run the full bootstrap from Terminal:
+Every 2 minutes it fetches main from github.com/chidionyema/idp and cuts a read-only release
+of the estate intents and tools into `/usr/local/estate/releases`. It then points your
+`~/.estate` at that release. An intent that is not on main does not run as though it were.
 
-    /usr/local/bin/idp-install-all
-
-This installs Python 3.12 (via MacPorts), all Python packages, and
-configures the launchd agents.
-
-FleetView backend runs at: http://127.0.0.1:18790
+You can watch it live in the Delivery panel on /fleet.
 
 ## More information
 
-See: https://github.com/chidionyema/idp
+See: https://github.com/chidionyema/idp/blob/main/docs/tickets/2026-09-27-merged-is-operating.md

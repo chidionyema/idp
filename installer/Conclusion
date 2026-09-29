@@ -1,21 +1,12 @@
 # Installation Complete
 
-The IDP Estate has been installed on this Mac.
+The estate converger passed its self-test and is running. There is nothing to run by hand.
 
-## Next steps
+Within 2 minutes your `~/.estate` runs from a release of main. The Delivery panel on /fleet
+shows each converge, the pull requests it delivered, and how long each took from merge to
+operating.
 
-Open Terminal and run the full bootstrap:
+## Uninstalling
 
-    /usr/local/bin/idp-install-all
-
-This installs Python 3.12 and configures all services.
-
-## Services
-
-- FleetView backend:  http://127.0.0.1:18790
-- Executor daemon:     ~/.estate/executor.sock
-
-## Uninstall
-
-    sudo rm -rf /usr/local/idp /usr/local/bin/idp-install-all
-    launchctl bootout gui/$(id -u)/ai.estate.fleetview-backend
+The converger is the label `ai.estate.converge` in the system domain. Its files are
+`/usr/local/estate` and `/Library/LaunchDaemons/ai.estate.converge.plist`.
