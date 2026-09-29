@@ -682,7 +682,12 @@ def grade_all(observations):
     sys.path.insert(0, HERE)
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("shadow_verify", VERIFY)
+    import importlib.machinery
+
+    # VERIFY has no .py suffix, so spec_from_file_location cannot infer a loader and returns None.
+    spec = importlib.util.spec_from_file_location(
+        "shadow_verify", VERIFY, loader=importlib.machinery.SourceFileLoader("shadow_verify", VERIFY)
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
