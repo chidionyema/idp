@@ -327,6 +327,16 @@ def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     return {"available": True, "error": None, **result}, 200
 
 
+# ── efficiency (efficiency.py): what the router cut and what the cache saved, live ──
+EFFICIENCY_PATH = "/efficiency"
+
+
+def efficiency_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import efficiency
+
+    return efficiency.efficiency_status(), 200
+
+
 # ── agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR ──
 AGENT_JOBS_PATH = "/agent-jobs"
 

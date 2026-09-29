@@ -333,6 +333,13 @@ def build_app() -> FastAPI:
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
 
+    @app.get(routes.EFFICIENCY_PATH)
+    async def efficiency():
+        # reads up to 32 MB of ledger: off the event loop
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.efficiency_envelope)
+        return JSONResponse(body, status_code=status)
+
     @app.get(routes.AGENT_JOBS_PATH)
     async def agent_jobs_get():
         # GitHub calls, up to a 10s timeout each: off the event loop, like /voice/intent.
