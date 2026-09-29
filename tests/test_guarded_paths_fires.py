@@ -11,6 +11,7 @@ key, makes one commit on top of `main`, and runs the guard the way the guarded-p
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -86,3 +87,69 @@ def test_a_base_that_does_not_resolve_refuses(tmp_path):
     )
     assert r.returncode == 1, r.stdout + r.stderr
     assert "does not resolve" in r.stdout
+
+
+def _keypair(tmp_path: Path, name: str) -> tuple[Path, Path]:
+    key, pub = tmp_path / f"{name}.key", tmp_path / f"{name}.pub"
+    subprocess.run(
+        ["openssl", "genpkey", "-algorithm", "Ed25519", "-out", str(key)], check=True
+    )
+    key.chmod(0o600)
+    subprocess.run(
+        ["openssl", "pkey", "-in", str(key), "-pubout", "-out", str(pub)], check=True
+    )
+    return key, pub
+
+
+def _signed_pr(tmp_path: Path, trusted_pub: Path, signing_key: Path, pr_pub: Path):
+    """Base trusts `trusted_pub`. The PR edits a guarded file, puts `pr_pub` in
+    docs/keys/founder.pub, and signs with `signing_key` the way bin/idp-auth's ceremony does."""
+    repo = _repo(tmp_path)
+    shutil.copy2(ROOT / "bin/idp-auth", repo / "bin/idp-auth")
+    shutil.copy2(trusted_pub, repo / "docs/keys/founder.pub")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "base trusts this key")
+    _git(repo, "checkout", "-q", "-b", "pr")
+    shutil.copy2(pr_pub, repo / "docs/keys/founder.pub")
+    with (repo / "bin/idp-guarded-paths").open("a") as f:
+        f.write("# an agent's edit\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "edit\n\nX-Idp-Signed: stamped-by-hook")
+    paths = ["bin/idp-guarded-paths", "docs/keys/founder.pub"]
+    trailers = subprocess.run(
+        ["bash", "bin/idp-auth", "self-approved", *paths],
+        cwd=repo,
+        env={**os.environ, "IDP_FOUNDER_KEY": str(signing_key)},
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        f"auth\n\n{trailers}X-Idp-Signed: x",
+    )
+    return subprocess.run(
+        ["bash", "bin/idp-ci-guarded-paths", "main"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_a_pr_that_swaps_in_its_own_key_and_signs_with_it_is_refused(tmp_path):
+    _, founder_pub = _keypair(tmp_path, "founder")
+    agent_key, agent_pub = _keypair(tmp_path, "agent")
+    r = _signed_pr(tmp_path, founder_pub, agent_key, agent_pub)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "WITHOUT valid X-Idp-Auth" in r.stdout
+
+
+def test_a_pr_signed_with_the_key_main_trusts_passes(tmp_path):
+    founder_key, founder_pub = _keypair(tmp_path, "founder")
+    r = _signed_pr(tmp_path, founder_pub, founder_key, founder_pub)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "founder signature valid" in r.stdout

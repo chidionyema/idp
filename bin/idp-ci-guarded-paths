@@ -78,7 +78,12 @@ done < <("$IDP/bin/idp-guarded-paths")
 guard_hit="${guard_hit# }"
 
 if [ -n "$guard_hit" ]; then
-  if "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
+  # The key that judges a PR comes from the BASE, never from the PR. idp-auth-verify defaults to
+  # docs/keys/founder.pub in the checkout, which is the PR's own tree: until 2026-09-29 a PR could
+  # replace that file with its own public key, sign with the matching private key, and pass.
+  base_pub="$(mktemp)"
+  git show "$BASE:docs/keys/founder.pub" > "$base_pub"
+  if IDP_FOUNDER_PUBKEY="$base_pub" "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
     echo "ok    guarded-paths  founder signature valid; touched: $guard_hit"
   else
     echo "FAIL  guarded-paths  guarded paths touched WITHOUT valid X-Idp-Auth trailer:"
