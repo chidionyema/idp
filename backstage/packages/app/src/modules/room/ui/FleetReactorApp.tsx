@@ -1915,13 +1915,19 @@ export default function FleetReactorApp() {
         />
       </div>
 
+      {/* THE RIGHT-HAND LIVE COLUMN. One owner per corner: the channel strip owns the bottom-right
+          footer row and the voice picker owns the top right, so the two live panels (token
+          efficiency, safeguards) share one column between them, bottom-anchored just above the
+          strip. Before this they were placed independently and landed on top of the strip and the
+          sonar (founder 2026-09-29: "the clean layout is getting bastardised"). */}
+      <div className="absolute right-6 top-36 bottom-24 z-30 w-[280px] flex flex-col justify-end gap-2 pointer-events-none">
       <EfficiencyHud />
 
-      {/* SAFEGUARDS, bottom right: every gate decision on a real turn, newest first, as it lands on
+      {/* SAFEGUARDS: every gate decision on a real turn, newest first, as it lands on
           the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}
       <div
         data-testid="safeguards"
-        className="absolute bottom-6 right-6 z-30 w-[280px] rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
+        className="w-full rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
       >
         <div className="flex items-baseline gap-2 px-1 pb-1">
           <span className="text-[9px] font-mono uppercase tracking-widest text-white/60 flex-1">safeguards · live</span>
@@ -1951,6 +1957,7 @@ export default function FleetReactorApp() {
         )) : (
           <div className="px-1 py-1 text-[9px] font-mono text-white/30">no gate decision on the bus yet</div>
         )}
+      </div>
       </div>
 
       {/* THE VOICE PICKER, top right under the burn bar (founder 2026-09-26: "move it to top right",
@@ -2607,7 +2614,10 @@ export default function FleetReactorApp() {
             * WORDS   what was heard and what was said, so a voice that is misunderstood is visible
                       rather than mysterious.
       */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 w-full max-w-[560px] px-4">
+      {/* bottom-20, not bottom-6: the mic is the one thing on this page a person reaches for, and at
+          bottom-6 it sat in the same row as the channel strip, touching it. Lifted clear of the
+          footer row it stands alone at the centre. */}
+      <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-40 pointer-events-auto flex flex-col items-center gap-2 w-full max-w-[560px] px-4">
         {/* 1. THE TARGET. Always visible when the engine is on, because "who am I talking to" is the
             one question a voice interface must answer before it is asked. */}
         {voice.state !== 'off' ? (
