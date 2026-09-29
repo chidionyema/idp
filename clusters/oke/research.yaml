@@ -1,0 +1,73 @@
+# The research lane, lost in c96359f4 (2026-09-26 10:32) when platform.yaml went. Measured
+# 2026-09-29: research-engine's last request row is 10:23 that day, nine minutes before the
+# commit; 0 jobs in `research` since; agent-workforce fires every 15 min and every Job sits
+# Pending because its PVC was pruned with the row; searxng runs as an orphan Deployment no row
+# owns. prune: false on every row so adopting the orphans deletes nothing. wait: false because
+# research-engine is a CronJob (no readiness to wait on) and agent-workforce's ExternalSecret
+# can hold a waiting row red for a secret that is not this row's to fix.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: searxng
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/searxng
+  prune: false
+  timeout: 2m
+  healthChecks:
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: searxng
+      namespace: searxng
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: scheduled
+  name: research-engine
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+    - name: llm
+    - name: searxng
+    - name: estate-db
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/research-engine
+  prune: false
+  wait: false
+  timeout: 2m
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: scheduled
+  name: agent-workforce
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+    - name: llm
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/agent-workforce
+  prune: false
+  wait: false
+  timeout: 2m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
