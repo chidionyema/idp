@@ -17,9 +17,10 @@ EACH RUN
      deleted -- an extra is reported), and the launchers voice needs into ~/.estate/bin
   3. voice-router changed -> rebuild ~/.estate/voice-router/voice-router and restart it; wait for /readyz
   4. the fleetview backend's code changed -> restart it; wait for /healthz
-  4b. the laptop router's modules (bin/litellm-local's MODULES, from platform/llm/) differ from the
-     ones it runs -> copy them in, restart it, wait for /health/liveliness; if it does not come back,
-     put the previous bytes back and restart again. Its launcher, config and keys are never touched.
+  4b. the laptop router's config (llm/config.yaml) or modules (bin/litellm-local's MODULES) differ
+     from what it runs -> copy them in, restart it, and keep them only if the router comes back AND
+     voice's /readyz is at least as ready as before; otherwise put the previous bytes back. Its
+     launcher and keys are never touched.
   5. a restarted service that does not come back -> check out the previous commit, restart again,
      and alert (~/.estate/alerts/inbox.jsonl + a notification). Main never takes /fleet down; that
      commit is remembered in ~/.estate/runtime-sync.bad and not tried again until main moves on.
@@ -201,40 +202,59 @@ ROUTER_LABEL = "com.estate.litellm-local"
 ROUTER_PROBE = "http://127.0.0.1:4000/health/liveliness"
 
 
-def router_modules() -> list[str]:
+def router_files() -> list[tuple[Path, str]]:
+    # (source in main, name under ROUTER). The config is carried too: 2026-09-29 #4962 added the
+    # `voice` lane to llm/config.yaml, only the modules followed main, and every spoken turn failed
+    # for a day with "no healthy deployments for model_group=voice".
     m = re.search(r'^MODULES="([^"]*)"', (TREE / "bin/litellm-local").read_text(), re.M)
-    return m.group(1).split() if m else []
+    mods = m.group(1).split() if m else []
+    return [(TREE / "llm/config.yaml", "config.yaml")] + [
+        (TREE / "platform/llm" / n, f"modules/{n}") for n in mods
+    ]
+
+
+VOICE_PROBE = "http://127.0.0.1:8091/readyz"
+
+
+def router_accepted(voice_was_ready: bool, within_s: int) -> bool:
+    # Acceptance, not liveness: the router answering /health/liveliness proved nothing while voice
+    # was dead. A change is kept only if the router is up and voice, which asks the router for its
+    # `voice` brain on /readyz, is at least as ready as before it.
+    if not answers(ROUTER_PROBE, within_s):
+        return False
+    return answers(VOICE_PROBE, within_s) or not voice_was_ready
 
 
 def sync_router(within_s: int = 120) -> list[str]:
     if not (ROUTER / "modules").is_dir():
         return []
+    voice_was_ready = answers(VOICE_PROBE, 5)
     previous: dict[str, bytes | None] = {}
-    for name in router_modules():
-        src, dst = TREE / "platform/llm" / name, ROUTER / "modules" / name
+    for src, name in router_files():
+        dst = ROUTER / name
         if not src.is_file() or (dst.exists() and filecmp.cmp(src, dst, False)):
             continue
         previous[name] = dst.read_bytes() if dst.exists() else None
         shutil.copy2(src, dst)
     if not previous:
         return []
+    names = ", ".join(sorted(previous))
     kickstart(ROUTER_LABEL)
-    if answers(ROUTER_PROBE, within_s):
-        return [
-            f"router modules {', '.join(sorted(previous))}; restarted {ROUTER_LABEL}"
-        ]
+    if router_accepted(voice_was_ready, within_s):
+        voice = "voice ready" if answers(VOICE_PROBE, 5) else "voice STILL NOT READY"
+        if voice != "voice ready":
+            alert(f"router took {names} from main but voice is still not ready")
+        return [f"router {names}; restarted {ROUTER_LABEL}; {voice}"]
     for name, old in previous.items():
-        dst = ROUTER / "modules" / name
+        dst = ROUTER / name
         if old is None:
             dst.unlink(missing_ok=True)
         else:
             dst.write_bytes(old)
     kickstart(ROUTER_LABEL)
     answers(ROUTER_PROBE, within_s)
-    alert(
-        f"router modules {', '.join(sorted(previous))} from main did not start; previous kept"
-    )
-    return [f"ROUTER KEPT previous modules ({', '.join(sorted(previous))})"]
+    alert(f"router {names} from main broke the router or voice; previous kept")
+    return [f"ROUTER KEPT previous ({names})"]
 
 
 def build_voice_router() -> bool:

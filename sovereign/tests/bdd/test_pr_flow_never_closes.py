@@ -137,3 +137,50 @@ def _read(state: dict) -> None:
 )
 def _none_close(state: dict) -> None:
     assert state["hits"] == [], state["hits"]
+
+
+@given(
+    "GitHub refuses to arm auto-merge because the PR is in unstable status",
+    target_fixture="fake_gh",
+)
+def _gh_refuses_unstable(tmp_path):
+    log = tmp_path / "calls"
+    gh = tmp_path / "gh"
+    gh.write_text(
+        "#!/bin/sh\n"
+        f'echo "$*" >> {log}\n'
+        'case "$*" in\n'
+        '  "api repos/"*) echo true ;;\n'
+        '  *--auto*) echo "GraphQL: Pull request Pull request is in unstable status'
+        ' (enablePullRequestAutoMerge)" >&2; exit 1 ;;\n'
+        "esac\n"
+    )
+    gh.chmod(0o755)
+    return {"dir": tmp_path, "log": log}
+
+
+@when("bin/idp-pr-arm runs on it", target_fixture="arm_run")
+def _run_pr_arm(fake_gh):
+    import os
+    import subprocess
+
+    env = {
+        **os.environ,
+        "PATH": f"{fake_gh['dir']}:{os.environ['PATH']}",
+        "GH_REPO": "o/r",
+    }
+    return subprocess.run(
+        [str(IDP / "bin/idp-pr-arm"), "7", "--squash"],
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
+    )
+
+
+@then("it merges the PR as a squash and says so")
+def _merged_now(arm_run, fake_gh):
+    calls = fake_gh["log"].read_text().splitlines()
+    assert arm_run.returncode == 0, arm_run.stdout + arm_run.stderr
+    assert "pr merge 7 --squash -R o/r" in calls, calls
+    assert arm_run.stdout.startswith("ok"), arm_run.stdout
