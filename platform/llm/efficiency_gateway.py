@@ -240,11 +240,11 @@ SHADOW_FROM_TOKENS = int(os.environ.get("ESTATE_SHADOW_FROM_TOKENS", "40000"))
 SHADOW_EVERY_TOKENS = int(os.environ.get("ESTATE_SHADOW_EVERY_TOKENS", "8000"))
 SHADOW_CHUNK_CHARS = int(os.environ.get("ESTATE_SHADOW_CHUNK_CHARS", "24000"))
 SHADOW_MSG_CHARS = 1500
-SHADOW_MODEL = os.environ.get("ESTATE_SHADOW_MODEL", "groq")
+# Fold chunks run ~9-14k tokens: groq's free tier caps at 8k TPM, cerebras wants payment and
+# sambanova's key is rejected, so the fold goes to lanes proven to take a full chunk.
+SHADOW_MODEL = os.environ.get("ESTATE_SHADOW_MODEL", "deepseek")
 SHADOW_FALLBACKS = [
-    x
-    for x in os.environ.get("ESTATE_SHADOW_FALLBACKS", "cerebras,sambanova").split(",")
-    if x
+    x for x in os.environ.get("ESTATE_SHADOW_FALLBACKS", "minimax,fast").split(",") if x
 ]
 SHADOW_URL = os.environ.get(
     "ESTATE_SHADOW_URL", "http://127.0.0.1:4000/v1/chat/completions"
