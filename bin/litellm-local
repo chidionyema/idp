@@ -212,6 +212,8 @@ install() {
   cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
   cp "$idp/llm/config.yaml" "$STAGE/config.yaml"
   for m in $MODULES; do cp "$idp/platform/llm/$m" "$STAGE/modules/$m"; done
+  # The guardian (launchd/ai.estate.litellm-watchdog.plist.tmpl) runs from the stage too.
+  cp "$idp/platform/llm/watchdog.py" "$STAGE/watchdog.py"
   # Vendor keys, ciphertext only: launchd cannot read ~/Documents, so the SOPS files and the
   # sops binary are staged; run() decrypts them into this process's environment and nowhere else.
   rm -rf "$STAGE/secrets"; mkdir -p "$STAGE/secrets"
