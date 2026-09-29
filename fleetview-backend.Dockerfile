@@ -31,9 +31,19 @@ FROM docker.io/library/python:3.13-alpine
 # container has 250m CPU / 256Mi with a read-only root filesystem -- it could not load them if it
 # tried. What crosses to the cluster is the MEANING of an utterance (a kind=steer row), never its
 # audio, which is the whole shape of the 2026-09-22 transport change.
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 nats-py==2.16.0
+#
+# jsonschema, pyyaml and certifi are imported at module top by voice_media.py, voice_intents.py and
+# voice.py, and httpx inside voice_media.py's cloud-voice synthesis. None was installed here, so
+# on OKE every /voice/* route answered 500
+# (ModuleNotFoundError) and the /fleet voice picker opened empty. estate_spatial.py and
+# deploy_journeys.py are voice.py's two repo imports (stdlib only). This pip line and these COPYs
+# are read by backstage/plugins/fleetview-backend/tests/test_image_imports.py, which imports every
+# module against exactly them and fails the PR if one would not load in this image.
+RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 nats-py==2.16.0 jsonschema==4.23.0 pyyaml==6.0.2 certifi==2025.8.3 httpx==0.28.1
 COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-backend/src
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
+COPY lib/estate_spatial.py /app/lib/estate_spatial.py
+COPY mcp/plugins/deploy_journeys.py /app/mcp/plugins/deploy_journeys.py
 USER 10001
 EXPOSE 18790
 EXPOSE 8091

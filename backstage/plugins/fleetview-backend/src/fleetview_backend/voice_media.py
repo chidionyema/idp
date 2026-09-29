@@ -957,9 +957,18 @@ async def voices() -> dict[str, Any]:
     laptop at 1.5s for 81 voices -- because the catalogue is built from `say -v ?` and the voice
     archive's member list, neither of which needs the model loaded.)
     """
-    _engine, _turnlog, catalogue = _voice_package()
-    loop = asyncio.get_running_loop()
-    cat = await loop.run_in_executor(None, catalogue.catalogue)
+    try:
+        _engine, _turnlog, catalogue = _voice_package()
+    except ImportError:
+        # The OKE image carries no `sovereign.voice` (fleetview-backend.Dockerfile says why), and
+        # this route answered 500 there, so the /fleet picker opened empty. The cloud voices need
+        # no local engine, so on that host they are the whole list.
+        catalogue = None
+    if catalogue is None:
+        cat: dict[str, Any] = {"say": [], "kokoro": [], "piper": []}
+    else:
+        loop = asyncio.get_running_loop()
+        cat = await loop.run_in_executor(None, catalogue.catalogue)
     # What is live is what was CHOSEN (`_choice`), not the engine whose model happens to be on disk.
     cat["cloud"] = CLOUD_VOICES
     cat["engine"] = _choice["engine"]
