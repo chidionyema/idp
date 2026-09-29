@@ -19,10 +19,22 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[3]
 SIGNALS_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "signals.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "signals.py"
 )
 ROUTES_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
 )
 
 

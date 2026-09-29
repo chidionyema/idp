@@ -28,6 +28,7 @@ from .engine import CONFLICT, LANDED, RED, TESTING
 BOT_LANE = "flux/image-updates"
 STATE_REF = "refs/greenlane/state"
 MARKER = "Greenlane-Batch:"
+ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
 GREEN_CONCLUSIONS = {"success", "skipped", "neutral"}
 RED_CONCLUSIONS = {
     "failure",
@@ -106,6 +107,19 @@ class GitHubBackend:
     def lanes(self) -> dict[str, str]:
         out: dict[str, str] = {}
         main = self.main()
+        # An adopted pull request keeps moving: the agent pushes fixes to its branch, and the
+        # lane ref follows the PR head, so a red verdict is answered by a push, not a new PR.
+        for pr in self.adopted_prs():
+            lane, head = pr["lane"], pr["head"]
+            if self._ref(lane) != head:
+                self.git(
+                    "push",
+                    "-q",
+                    "-f",
+                    "origin",
+                    f"{head}:refs/heads/{lane}",
+                    check=False,
+                )
         for line in self.git(
             "ls-remote",
             "--heads",
@@ -225,9 +239,24 @@ class GitHubBackend:
         return "green", ""
 
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
+        adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         for lane, head, rebased in members:
             self.git("push", "-q", "-f", "origin", f"{rebased}:refs/heads/{lane}")
-            self._ensure_pr(lane, head, rebased, tip)
+            pr = adopted.get(lane)
+            if pr and pr["branch"] != lane:
+                # the PR's own branch takes the landed sha, so GitHub marks the PR merged
+                # when main fast-forwards over it; the branch's old commits stay reachable
+                # through the Greenlane-Head trailer on the squash
+                self.git(
+                    "push",
+                    "-q",
+                    "-f",
+                    "origin",
+                    f"{rebased}:refs/heads/{pr['branch']}",
+                    check=False,
+                )
+            if not pr:
+                self._ensure_pr(lane, head, rebased, tip)
         self.git(
             "push", "-q", "origin", f"{tip}:refs/heads/main"
         )  # fast-forward, or refused
@@ -273,13 +302,44 @@ class GitHubBackend:
         except RuntimeError:
             pass  # a status is a courtesy to the lane's agent; the verdict lives in the state
 
+    def adopted_prs(self) -> list[dict]:
+        """Open pull requests the engine adopted: (number, branch, lane, head)."""
+        out = []
+        for pr in self.gh("pulls?state=open&per_page=100") or []:
+            body = pr.get("body") or ""
+            if ADOPTED not in body:
+                continue
+            lane = body.split(ADOPTED, 1)[1].split()[0]
+            out.append(
+                {
+                    "number": pr["number"],
+                    "branch": pr["head"]["ref"],
+                    "lane": lane,
+                    "head": pr["head"]["sha"],
+                }
+            )
+        return out
+
+    def _ref(self, name: str) -> str:
+        line = self.git(
+            "ls-remote", "--heads", "origin", f"refs/heads/{name}", check=False
+        )
+        return line.split()[0] if line.strip() else ""
+
     def foreign_prs(self) -> list[dict]:
         prs = self.gh("pulls?state=open&per_page=100") or []
         out = []
+        owner = self.repo.split("/")[0]
         for pr in prs:
-            if pr.get("user", {}).get("login") == self.app_login and MARKER in (
-                pr.get("body") or ""
-            ):
+            body = pr.get("body") or ""
+            if pr.get("user", {}).get("login") == self.app_login and MARKER in body:
+                continue
+            if ADOPTED in body:
+                continue  # already a lane; lanes() follows its head
+            # The repository owner's own pull request is the founder's landing vehicle for
+            # the enforcement paths agents may not touch (workflows, rulesets, this engine:
+            # crew#985). It is never closed or relaned; the founder merges it by hand.
+            if pr.get("user", {}).get("login") == owner:
                 continue
             out.append(
                 {
@@ -292,6 +352,9 @@ class GitHubBackend:
         return out
 
     def relane(self, pr: dict) -> None:
+        """Adopt a hand-raised pull request: its branch becomes the lane, the PR stays open and
+        carries the lane's verdict, and it is marked merged when the lane lands. Nothing is
+        closed and nobody has to chase it (founder 2026-09-29: "I don't just discard stuff")."""
         branch, sha, n = pr["lane"], pr["head"], pr["number"]
         lane = (
             branch
@@ -299,17 +362,25 @@ class GitHubBackend:
             else f"lane/{branch}"
         )
         if lane != branch:
-            self.git("push", "-q", "origin", f"{sha}:refs/heads/{lane}", check=False)
+            self.git(
+                "push", "-q", "-f", "origin", f"{sha}:refs/heads/{lane}", check=False
+            )
+        body = (self.gh(f"pulls/{n}") or {}).get("body") or ""
+        self.gh(
+            f"pulls/{n}",
+            "PATCH",
+            {"body": f"{ADOPTED} {lane}\n\n{body}"},
+        )
         self.gh(
             f"issues/{n}/comments",
             "POST",
             {
                 "body": (
-                    f"Refused by the Greenlane: pull requests are not raised by hand on this repository. "
-                    f"Your branch is untouched and is now the lane `{lane}`; the lane proves it on top of "
-                    f"main and raises the pull request itself when it is green. Read the verdict with "
-                    f"`gh api repos/{self.repo}/commits/{sha}/status` (context `greenlane`)."
+                    f"Adopted by the Greenlane as lane `{lane}`. This pull request stays open: the lane "
+                    f"proves your branch on top of main, and this PR is marked merged the moment it lands. "
+                    f"A red or conflicting verdict appears as the `greenlane` status on your head commit "
+                    f"with its reason; push the fix to `{branch}` and the lane follows. Nothing here is "
+                    f"closed or discarded."
                 )
             },
         )
-        self.gh(f"pulls/{n}", "PATCH", {"state": "closed"})

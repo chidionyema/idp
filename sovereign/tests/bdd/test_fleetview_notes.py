@@ -18,9 +18,23 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-NOTES_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "notes.py"
+NOTES_MODULE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "notes.py"
+)
 ROUTES_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
 )
 
 
