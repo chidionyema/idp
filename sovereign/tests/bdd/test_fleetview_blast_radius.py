@@ -17,7 +17,15 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-BLAST_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "blast.py"
+BLAST_MODULE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "blast.py"
+)
 
 
 def _load(path: Path, name: str):

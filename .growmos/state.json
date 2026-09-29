@@ -2,12 +2,12 @@
   "counters": {
     "extractions": 13,
     "profiles": 0,
-    "queries": 9,
+    "queries": 12,
     "resolutions": 0
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-26T22:17:33Z",
+  "last_run": "2026-09-28T19:02:06Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -326,6 +326,31 @@
       "kind": "link",
       "relation": "r_69d48e838a49",
       "ts": "2026-09-26T22:17:33Z"
+    },
+    {
+      "entity": "gotcha/groq-model-prefix-doubling-bug",
+      "kind": "remember",
+      "ts": "2026-09-28T18:48:52Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_b3fd3cbe25f1",
+      "ts": "2026-09-28T18:48:53Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_affc5bbb0045",
+      "ts": "2026-09-28T18:48:53Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_30c017002cd5",
+      "ts": "2026-09-28T18:48:53Z"
+    },
+    {
+      "entity": "gotcha/pr-cap-gate-set-e-abort-bug",
+      "kind": "remember",
+      "ts": "2026-09-28T19:02:06Z"
     }
   ]
 }

@@ -33,6 +33,7 @@ import importlib.util
 schema_path = Path(__file__).parent / "pobr_schema.py"
 spec = importlib.util.spec_from_file_location("pobr_schema", schema_path)
 pobr_schema = importlib.util.module_from_spec(spec)
+sys.modules["pobr_schema"] = pobr_schema
 spec.loader.exec_module(pobr_schema)
 
 PoBRReceipt = pobr_schema.PoBRReceipt

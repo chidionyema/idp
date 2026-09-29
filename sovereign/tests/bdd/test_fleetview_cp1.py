@@ -42,7 +42,15 @@ REPO = Path(__file__).resolve().parents[3]
 SCHEMA = (
     REPO / "backstage" / "plugins" / "fleetview-backend" / "schema" / "session.json"
 )
-PLUGIN = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "sessions.py"
+PLUGIN = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "sessions.py"
+)
 
 
 @pytest.fixture()
@@ -231,7 +239,15 @@ def stream_delivers(context, n):
 # it. These steps drive `src/routes.py`, which is what the portal mounts at /api/fleetview.
 # ---------------------------------------------------------------------------------------------
 
-ROUTES = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+ROUTES = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
+)
 
 
 @pytest.fixture()

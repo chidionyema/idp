@@ -25,6 +25,14 @@ jsonschema==4.26.0
 # ModuleNotFoundError before pytest can grade any orchestrator-routing scenario.
 langchain-core>=0.2
 
+# 2e364b4b9 (2026-09-25) restructured fleetview-backend as a pip-installable src/ layout and
+# rewrote routes.py/serve.py to `from fleetview_backend import ...` -- real package imports,
+# replacing the old load-by-path importlib hacks. Nothing installed the package afterward, so
+# every bdd test that imports routes.py or serve.py (test_fleetview_cp1/cp2,
+# test_fleetview_device_access, test_fleetview_config_guard_...) broke with
+# ModuleNotFoundError: no module named 'fleetview_backend', red on main since that commit.
+-e backstage/plugins/fleetview-backend
+
 
 # tests/test_unified_memory_server.py runs platform/unified-memory-server against a real
 # PostgreSQL 16 + pgvector. pgserver ships both as a wheel (manylinux x86_64, macOS), so the

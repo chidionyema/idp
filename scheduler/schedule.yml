@@ -58,6 +58,10 @@ jobs:
     # bin/idp-disk-guard's 10G floor, acted on: regenerable caches + Cargo target/ dirs, and only
     # while under the floor, so a healthy disk is never touched. Measured 2026-09-27: a one-off
     # cleanup freed 469M and was eaten within hours (yarn cache back to 1560M, 3967M of target/).
+    # 2026-09-28: hourly was too slow -- the volume went from healthy to 402Mi free (98-100% of
+    # the container) between ticks, and this row never passed worktrees=true, so the ~2.4G sitting
+    # in settled agent worktrees was never in reach either (same gap ai.estate.disk-watch had,
+    # fixed there the same day). Every 10 minutes, with worktrees=true, closes both.
     runs_on: mac
     runs_on_ref: crew#516
     command:
@@ -65,7 +69,8 @@ jobs:
     - disk-cleanup
     - apply=true
     - only_below_mb=10240
-    cron: 41 * * * *
+    - worktrees=true
+    cron: '*/10 * * * *'
     skip_on_battery: false
     timeout_s: 900
   ai.estate.drills:
