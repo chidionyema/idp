@@ -17,7 +17,15 @@ from types import SimpleNamespace
 import pytest
 
 REPO = Path(__file__).resolve().parents[3]
-EVALS_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "evals.py"
+EVALS_MODULE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "evals.py"
+)
 
 
 def _load(path: Path, name: str):

@@ -139,13 +139,36 @@ def status() -> int:
     out["main"]["green"] = all(
         v in ("success", "skipped", "neutral") for v in out["main"]["required"].values()
     )
+    # Work lost = a pull request closed without merging whose commits are in no branch, no
+    # lane and not in main. The engine closes hand-raised pull requests and relanes them, so a
+    # closed PR is normal; a closed PR whose work is nowhere is the one hole the founder must
+    # never have to look for ("I don't want to ever be concerned about PRs and work getting
+    # into main", 2026-09-29). Measured, not assumed: every closed-unmerged PR is checked.
+    heads = {
+        r["ref"].removeprefix("refs/heads/")
+        for r in (gh("git/matching-refs/heads/") or [])
+    }
+    lost = []
+    for p in gh("pulls?state=closed&per_page=100") or []:
+        if p.get("merged_at"):
+            continue
+        br, sha = p["head"]["ref"], p["head"]["sha"]
+        if br in heads or f"lane/{br}" in heads:
+            continue
+        cmp = gh(f"compare/main...{sha}")
+        if cmp and cmp.get("status") in ("behind", "identical"):
+            continue  # every commit already in main
+        lost.append({"number": p["number"], "branch": br, "head": sha[:12]})
+    out["work_lost"] = lost
     out["invariants"] = {
         "main_green": out["main"]["green"],
         "open_prs_not_raised_by_engine": sum(
             1 for p in prs if p["user"]["login"] != "estate-agents[bot]"
         ),
         "red_open_prs": 0 if not prs else None,
+        "work_lost": len(lost),
     }
+    out["alarm"] = (not out["main"]["green"]) or bool(lost)
     print(json.dumps(out, indent=1, sort_keys=True))
     return 0
 

@@ -28,7 +28,7 @@ def run(**kw):
     return _CACHE[key]
 
 
-scenarios("features/gates/greenlane.feature")
+scenarios(str(ROOT / "features/gates/greenlane.feature"))
 
 SEEDS = (0, 1, 2)
 LANES = 500
@@ -153,7 +153,8 @@ def _bounded(world):
 
 @then("the outcome is identical to the uninterrupted run")
 def _identical(world):
-    for a, b in zip(world["reports"], world["reloaded"], strict=True):
+    assert len(world["reports"]) == len(world["reloaded"])
+    for a, b in zip(world["reports"], world["reloaded"]):  # noqa: B905 -- 3.9 on the laptop
         da, db = dataclasses.asdict(a), dataclasses.asdict(b)
         da.pop("log_tail"), db.pop("log_tail")
         assert da == db

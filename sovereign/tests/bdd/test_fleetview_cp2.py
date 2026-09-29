@@ -28,7 +28,15 @@ from pytest_bdd import given, parsers, scenarios, then, when
 scenarios("features/fleetview/cp2_board.feature")
 
 REPO = Path(__file__).resolve().parents[3]
-ROUTES = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+ROUTES = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
+)
 SCHEMA = (
     REPO / "backstage" / "plugins" / "fleetview-backend" / "schema" / "session.json"
 )
