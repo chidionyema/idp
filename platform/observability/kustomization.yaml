@@ -65,4 +65,4 @@ patches:
 # workload in ImagePullBackOff on 2026-09-12.
 images:
   - name: ghcr.io/chidionyema/aevum
-    newTag: main-13664-9aa4d190eed41c31c50eafea31c8672595747c0a # {"$imagepolicy": "flux-system:aevum:tag"}
+    newTag: main-13666-bcaed4b60ba47a9cfc1f0267f8678aa2100638be # {"$imagepolicy": "flux-system:aevum:tag"}
