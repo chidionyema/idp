@@ -29,8 +29,10 @@ metadata:
   namespace: llm
   labels: { app.kubernetes.io/name: ollama, app.kubernetes.io/part-of: idp }
 spec:
-  replicas: 1   # local free floor, not a load-bearing tier -- a fallback chain behind it
-                # already exists in llm/config.yaml if this pod is down
+  # 0 since 2026-09-29: its volume never bound ("binding volumes: context deadline exceeded")
+  # and a Pending fallback must not hold the router's rollout.
+  # It is a local free floor, not a load-bearing tier: llm/config.yaml already chains past it.
+  replicas: 0
   strategy: { type: Recreate }   # the PVC is ReadWriteOnce; a rolling second pod can't mount it
   selector:
     matchLabels: { app.kubernetes.io/name: ollama }
