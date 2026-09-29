@@ -23,10 +23,21 @@ IDP="$(cd "$(dirname "$0")/.." && pwd)"
 BASE="${1:-origin/main}"
 git fetch origin "${BASE#origin/}" 2>/dev/null || true
 HEAD_REV="$(git rev-parse HEAD)"
+# A base that does not resolve is not a bootstrap: until 2026-09-29 any git failure here (a typo'd
+# or unfetched base) took the exemption below and passed the PR unchecked.
+if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
+  echo "FAIL  guarded-paths  base $BASE does not resolve to a commit; refusing rather than guessing"
+  exit 1
+fi
 # Bug fixed here: this was the bare word HEAD_REV, not $HEAD_REV, so git resolved an unknown ref,
 # the range always errored, and `2>/dev/null || true` swallowed it -- `changed` was always empty
 # and check 1 below had never actually matched anything since it was written.
-changed="$(git diff --name-only "$BASE"..."$HEAD_REV" 2>/dev/null || true)"
+# And a diff that cannot be computed refuses the PR (2026-09-29, #5069): `|| true` here turned a
+# failed diff into "nothing changed", which is the same fail-open the typo produced.
+if ! changed="$(git diff --name-only "$BASE"..."$HEAD_REV")"; then
+  echo "FAIL  guarded-paths  cannot diff $BASE...$HEAD_REV, so cannot tell what this PR touches"
+  exit 1
+fi
 
 rc=0
 
