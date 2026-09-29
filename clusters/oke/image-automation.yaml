@@ -1,0 +1,31 @@
+# Restored 2026-09-29: c96359f4b (2026-09-26, "~80 flux rows down to 7") deleted this row. The policies
+# already in the cluster kept running as orphans, but every one added since (voice-router among
+# them) never reached the cluster, so voice in OKE stayed on a crashing 3-day-old image.
+# tests/test_image_automation_is_applied.py now fails if this row goes missing again.
+# crew#267: catalogue image automation. Flux's git writer is the deploy key in flux-writer.yaml; the GitHub App ExternalSecret (github-app) lives in platform/alerts-github with its only consumer, the githubdispatch Provider, so llm, identity and the Telegram alerts never wait on it (crew#284, crew#406). After backstage-namespace, which is the namespace its RBAC lands in and not the portal row (crew#539).
+# (the Deployment it rolls). The two image controllers come from flux-system/gotk-components.yaml
+# (flux install --components-extra=image-reflector-controller,image-automation-controller).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: image-automation
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+    # crew#539: the namespace, not the portal. Role/RoleBinding/ServiceAccount ghcr-pull-reader
+    # land in namespace backstage and need it to exist; this row must never wait on
+    # Deployment/catalogue being healthy (crew#488).
+    - name: backstage-namespace
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/image-automation
+  prune: true
+  timeout: 2m
+  healthChecks:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: backstage
+      namespace: flux-system
