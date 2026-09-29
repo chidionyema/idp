@@ -68,3 +68,34 @@ def test_the_ipv4_literal_cannot_reach_it_which_is_why_the_old_probe_always_fail
 ):
     mod = _load()
     assert not mod.answers(f"http://127.0.0.1:{v6_only_server}/", 3)
+
+
+def test_a_failed_yarn_install_puts_the_reason_in_the_alert(tmp_path, monkeypatch):
+    import subprocess
+
+    mod = _load()
+    tree = tmp_path / "frontend"
+    (tree / ".git").mkdir(parents=True)
+    (tree / "backstage/.yarn/releases").mkdir(parents=True)
+    (tree / "backstage/.yarn/releases/yarn-4.13.0.cjs").write_text("")
+    monkeypatch.setattr(mod, "FRONTEND", tree)
+
+    def fake_git(*args, **kw):
+        # rev-parse HEAD -> the old sha; the lockfile diff -> "changed"; everything else quiet
+        return "aaaaaaaa" if args[0] == "rev-parse" else "backstage/yarn.lock"
+
+    monkeypatch.setattr(mod, "git", fake_git)
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(
+            a, 1, stdout="", stderr="YN0001: ENOSPC: no space left on device"
+        ),
+    )
+    alerts: list[str] = []
+    monkeypatch.setattr(mod, "alert", alerts.append)
+
+    notes = mod.sync_frontend("bbbbbbbb")
+
+    assert notes == ["frontend held at aaaaaaaa (install failed)"]
+    assert "ENOSPC: no space left on device" in alerts[0], alerts
