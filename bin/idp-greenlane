@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""idp-greenlane tick | status
+
+`tick` is one step of the gated trunk (greenlane/engine.py) against GitHub: it loads the engine's
+state from refs/greenlane/state, observes the lanes, judges the candidate under test, lands or
+bisects, starts the next candidate, and saves the state. Run by .github/workflows/greenlane.yml
+on every lane push, every ci completion, every hand-raised pull request and a five-minute
+backstop, under one concurrency group, so there is exactly one writer of main.
+
+`status` prints the JSON the Fleet page shows: the invariants as measured now (main green?
+open pull requests? lanes, candidate, last landings), read with whatever token `gh` holds.
+
+Required checks come from platform/github/ruleset.idp.required-checks.json, never a list typed
+here: crew typed one once, the founder deleted the workflow behind a name, and the bot refused
+every pull request for ten days (merge-when-green.yml, 2026-09).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from greenlane.engine import Engine, State  # noqa: E402
+from greenlane.github import STATE_REF, GitHubBackend  # noqa: E402
+
+RULESET = ROOT / "platform/github/ruleset.idp.required-checks.json"
+
+
+def required_contexts() -> list[str]:
+    spec = json.loads(RULESET.read_text())
+    for rule in spec["rules"]:
+        if rule["type"] == "required_status_checks":
+            return [c["context"] for c in rule["parameters"]["required_status_checks"]]
+    raise SystemExit(f"BLIND   greenlane  {RULESET} declares no required_status_checks")
+
+
+def repo() -> str:
+    return (
+        os.environ.get("GH_REPO")
+        or os.environ.get("GITHUB_REPOSITORY")
+        or subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    )
+
+
+def tick() -> int:
+    b = GitHubBackend(
+        repo(),
+        required_contexts(),
+        run_url=os.environ.get("GREENLANE_RUN_URL", ""),
+        image_only_diff=ROOT / "bin/idp-image-only-diff",
+    )
+    b.fetch()
+    st = State.loads(b.load_state_text())
+    eng = Engine(b, st)
+    try:
+        eng.tick()
+    finally:
+        b.save_state_text(st.dumps())
+    for line in eng.log:
+        print(f"ok      greenlane  {line}")
+    batch = st.batch
+    print(
+        f"ok      greenlane  main={b.main()[:12]} lanes={len(st.lanes)} "
+        f"candidate={(batch.tip[:12] + ' (' + batch.id + ')') if batch else 'none'} landed_total={st.landed}"
+    )
+    for name, why in b.refused.items():
+        print(f"REFUSED greenlane  {name}: {why}")
+    return 0
+
+
+def status() -> int:
+    r = repo()
+
+    def gh(path: str):
+        p = subprocess.run(
+            ["gh", "api", f"repos/{r}/{path}"], capture_output=True, text=True
+        )
+        return json.loads(p.stdout) if p.returncode == 0 and p.stdout else None
+
+    out: dict = {"repo": r}
+    ref = gh(f"git/ref/{STATE_REF[5:]}")
+    st = State()
+    if ref:
+        commit = gh(f"git/commits/{ref['object']['sha']}")
+        tree = gh(f"git/trees/{commit['tree']['sha']}") if commit else None
+        blob_sha = next(
+            (
+                e["sha"]
+                for e in (tree or {}).get("tree", [])
+                if e["path"] == "state.json"
+            ),
+            None,
+        )
+        blob = gh(f"git/blobs/{blob_sha}") if blob_sha else None
+        if blob:
+            import base64
+
+            st = State.loads(base64.b64decode(blob["content"]).decode())
+    out["state"] = {
+        "available": ref is not None,
+        "landed_total": st.landed,
+        "candidates_total": st.candidates,
+        "batch": (st.batch.__dict__ if st.batch else None),
+        "lanes": {
+            k: {"status": v.status, "reason": v.reason, "head": v.head[:12]}
+            for k, v in st.lanes.items()
+        },
+    }
+    prs = gh("pulls?state=open&per_page=100") or []
+    out["open_prs"] = [
+        {"number": p["number"], "user": p["user"]["login"], "head": p["head"]["ref"]}
+        for p in prs
+    ]
+    main = gh("commits/main/check-runs?per_page=100&filter=latest") or {}
+    required = required_contexts()
+    latest = {c["name"]: c for c in main.get("check_runs", [])}
+    out["main"] = {
+        "sha": (gh("commits/main") or {}).get("sha", "")[:12],
+        "required": {
+            c: (latest.get(c) or {}).get("conclusion")
+            or (latest.get(c) or {}).get("status")
+            or "absent"
+            for c in required
+        },
+    }
+    out["main"]["green"] = all(
+        v in ("success", "skipped", "neutral") for v in out["main"]["required"].values()
+    )
+    out["invariants"] = {
+        "main_green": out["main"]["green"],
+        "open_prs_not_raised_by_engine": sum(
+            1 for p in prs if p["user"]["login"] != "estate-agents[bot]"
+        ),
+        "red_open_prs": 0 if not prs else None,
+    }
+    print(json.dumps(out, indent=1, sort_keys=True))
+    return 0
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else "status"
+    sys.exit({"tick": tick, "status": status}.get(cmd, lambda: (print(__doc__), 2))())
