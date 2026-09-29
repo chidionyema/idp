@@ -28,6 +28,10 @@ export function EfficiencyPanel() {
       try {
         const base = await discoveryApi.getBaseUrl('proxy');
         if (cancelled) return;
+        if (typeof EventSource === 'undefined') {
+          setError('this browser has no EventSource');
+          return;
+        }
         source = new EventSource(`${base}/fleetview/efficiency/stream?since=1h`);
         source.addEventListener('efficiency', event => {
           setError(null);
