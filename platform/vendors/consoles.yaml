@@ -727,7 +727,7 @@ vendors:
         \ whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,\n# where\
         \ the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept\
         \ its terms once\n# (console.groq.com playground); until then voice-tts answers\
-        \ 400 and the backend speaks locally.\n- model_name: voice-asr\n  litellm_params:\n\
+        \ 400 and the backend speaks locally.\n# voice: the brain the Fleet voice-router thinks with (LLM_MODEL=voice). Groq first for first-token speed; the `voice` fallback below carries it on to the fast pool.\n- model_name: voice\n  litellm_params:\n    model: openai/openai/gpt-oss-120b\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n    timeout: 20\n    max_tokens: 512\n  model_info:\n    max_input_tokens: 131072\n- model_name: voice-asr\n  litellm_params:\n\
         \    model: groq/whisper-large-v3-turbo\n    api_key: os.environ/GROQ_API_KEY\n\
         \    timeout: 20\n  model_info:\n    mode: audio_transcription\n- model_name:\
         \ voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n\
@@ -744,6 +744,11 @@ vendors:
         # The meters differ (Groq requests/day, Cerebras tokens/day, NVIDIA per model), so they
         # do not empty together; each hop is a three-key pool that cools a dead key for 60s.
         - groq: [cerebras, sambanova, nvidia, openrouter]
+        # `voice` is the ROLE the Fleet voice-router asks for (launchd/ai.estate.voice-router
+        # LLM_MODEL=voice). It never had a deployment, so every spoken turn since 2026-09-28
+        # died with "no healthy deployments for model_group=voice" and /readyz sat at 503. A
+        # role, not a vendor: it rides the `fast` pool and then the floor above.
+        - voice: [fast, groq]
   cerebras:
     kind: secret
     secret: SEED_CEREBRAS_API_KEY

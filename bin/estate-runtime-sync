@@ -1,0 +1,448 @@
+#!/usr/bin/env python3
+"""Keep the laptop estate running `main`: one tree, converged every five minutes, rolled back if it breaks.
+
+WHY. 2026-09-27 /fleet ran whatever branch ~/Documents/code/idp happened to be on. A reinstall from
+that branch dropped the `voice` lane (voice dead 14:02-15:54), the backend lacked main's /voice/intent
+(404, voice->intent off), and ~/.estate/intents was missing 16 of main's intents while three were stale,
+so the few intents voice could name failed to run. Every one of those was the runtime following a
+working checkout instead of main.
+
+THE TREE. ~/.estate/runtime/idp: its own partial clone of origin (not a worktree -- a worktree's
+objects live under ~/Documents, which launchd cannot read, TCC), sparse without packages/ and
+rescued_patches2/, detached at origin/main. Nobody works in it; this job is its only writer.
+
+EACH RUN
+  1. fetch origin main; if it moved, check it out and note which paths changed
+  2. stage from the tree: platform/estate/intents and libexec into ~/.estate (added or updated, never
+     deleted -- an extra is reported), and the launchers voice needs into ~/.estate/bin
+  3. voice-router changed -> rebuild ~/.estate/voice-router/voice-router and restart it; wait for /readyz
+  4. the fleetview backend's code changed -> restart it; wait for /healthz
+  4b. the laptop router's config (llm/config.yaml) or modules (bin/litellm-local's MODULES) differ
+     from what it runs -> copy them in, restart it, and keep them only if the router comes back AND
+     voice's /readyz is at least as ready as before; otherwise put the previous bytes back. Its
+     launcher and keys are never touched.
+  5. a restarted service that does not come back -> check out the previous commit, restart again,
+     and alert (~/.estate/alerts/inbox.jsonl + a notification). Main never takes /fleet down; that
+     commit is remembered in ~/.estate/runtime-sync.bad and not tried again until main moves on.
+One line per run in ~/.estate/runtime-sync.log.
+"""
+
+import filecmp
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+HOME = Path.home()
+STATE = HOME / ".estate"
+TREE = Path(os.environ.get("ESTATE_RUNTIME_TREE") or STATE / "runtime/idp")
+REMOTE = os.environ.get("ESTATE_RUNTIME_REMOTE", "git@github.com:chidionyema/idp.git")
+# The live board's data; the tree links to it, never copies it.
+DATA = HOME / "Documents/code/idp/catalog"
+LOG, INBOX = STATE / "runtime-sync.log", STATE / "alerts/inbox.jsonl"
+# A main commit that broke a service; not retried until main moves on.
+BAD = STATE / "runtime-sync.bad"
+GO = shutil.which("go") or str(HOME / ".cache/estate-tools/go/bin/go")
+UID = os.getuid()
+SPARSE = ["/*", "!/packages/", "!/rescued_patches2/"]
+LAUNCHERS = [
+    "fleetview-launchd",
+    "voice-router-launchd",
+    "voice-watch",
+    "estate-runtime-sync",
+    "fleetview-frontend-launchd",
+]
+
+
+def launchers() -> list[str]:
+    # Plus every bin/ file a launchd template runs from ~/.estate/bin. The hand list alone left
+    # idp-disk-watch installed a day stale (2026-09-28: its 20G early cleanup merged, never ran,
+    # disk hit 265M free).
+    names = set(LAUNCHERS)
+    for t in (TREE / "launchd").glob("*.tmpl"):
+        names.update(re.findall(r"\$\{HOME\}/\.estate/bin/([\w.-]+)", t.read_text()))
+    return sorted(names)
+
+
+# /fleet's frontend: its own sparse clone (backstage/ only) with node_modules, served by
+# ai.estate.fleetview-frontend. The dev server hot-reloads what this checks out.
+FRONTEND = Path(os.environ.get("ESTATE_FRONTEND_TREE") or STATE / "frontend/idp")
+# `localhost`, not 127.0.0.1: the dev server binds ::1 only (app.baseUrl says localhost), so the v4
+# literal was refused on every tick and every frontend deploy was rolled back (2026-09-28).
+FRONTEND_PROBE = "http://localhost:3100/"
+BACKEND_PROBE = "http://127.0.0.1:7107/.backstage/health/v1/liveness"
+# fleetview_backend reaches the repo root for these (parents[5]); a change here is a backend change.
+BACKEND_PATHS = (
+    "backstage/plugins/fleetview-backend/",
+    "lib/",
+    "mcp/plugins/",
+    "platform/estate/intents/",
+)
+
+
+def git(*args: str, check: bool = True, tree: Path = TREE) -> str:
+    env = dict(
+        os.environ,
+        GIT_TERMINAL_PROMPT="0",
+        GIT_SSH_COMMAND="ssh -o BatchMode=yes -o ConnectTimeout=20",
+    )
+    r = subprocess.run(
+        ["git", "-C", str(tree), *args],
+        capture_output=True,
+        text=True,
+        timeout=300,
+        env=env,
+    )
+    if check and r.returncode:
+        raise RuntimeError(f"git {' '.join(args)}: {r.stderr.strip()[-300:]}")
+    return r.stdout.strip()
+
+
+def ensure_tree() -> None:
+    if (TREE / ".git").exists():
+        return
+    TREE.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "-q",
+            "--filter=blob:none",
+            "--no-checkout",
+            REMOTE,
+            str(TREE),
+        ],
+        check=True,
+        timeout=600,
+        env=dict(os.environ, GIT_SSH_COMMAND="ssh -o BatchMode=yes"),
+    )
+    git("sparse-checkout", "set", "--no-cone", *SPARSE)
+    git("checkout", "-q", "--detach", "origin/main")
+
+
+def link_data() -> None:
+    for name in ("estate.db", "catalog-info.yaml"):
+        dst, src = TREE / "catalog" / name, DATA / name
+        if src.exists() and not dst.is_symlink():
+            dst.unlink(missing_ok=True)
+            dst.symlink_to(src)
+
+
+def stage() -> list[str]:
+    # Once the root converger (#4555, /usr/local/estate) is installed it owns ~/.estate's intents,
+    # libexec and bin as symlinks into its release, and moves copies aside as drift: one deliverer.
+    if (Path("/usr/local/estate/releases/current")).exists():
+        return ["staging left to estate-converge"]
+    notes = []
+    for sub in ("intents", "libexec"):
+        src, dst = TREE / "platform/estate" / sub, STATE / sub
+        dst.mkdir(parents=True, exist_ok=True)
+        changed = []
+        for f in sorted(src.iterdir()):
+            if not f.is_file():
+                continue
+            if not (dst / f.name).exists() or not filecmp.cmp(f, dst / f.name, False):
+                shutil.copy2(f, dst / f.name)
+                changed.append(f.name)
+        if changed:
+            notes.append(
+                f"{sub} +{len(changed)} ({', '.join(changed[:6])}{'...' if len(changed) > 6 else ''})"
+            )
+        if sub == "intents":
+            extra = {p.name for p in dst.glob("*.yaml")} - {
+                p.name for p in src.glob("*.yaml")
+            }
+            if extra:
+                notes.append(f"intents not on main: {len(extra)}")
+    for name in launchers():
+        f = TREE / "bin" / name
+        if f.exists() and not (
+            (STATE / "bin" / name).exists()
+            and filecmp.cmp(f, STATE / "bin" / name, False)
+        ):
+            shutil.copy2(f, STATE / "bin" / name)
+            (STATE / "bin" / name).chmod(0o755)
+            notes.append(f"bin/{name}")
+    return notes
+
+
+def kickstart(label: str) -> None:
+    subprocess.run(
+        ["/bin/launchctl", "kickstart", "-k", f"gui/{UID}/{label}"],
+        capture_output=True,
+        timeout=30,
+    )
+
+
+def answers(url: str, within_s: int) -> bool:
+    end = time.time() + within_s
+    while time.time() < end:
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                if r.status == 200:
+                    return True
+        except (urllib.error.URLError, TimeoutError, OSError):
+            pass
+        time.sleep(2)
+    return False
+
+
+# The laptop router (com.estate.litellm-local). Only its modules follow main: the live launcher is the
+# one that loads vendor keys from Bitwarden, and its config is the laptop's own, so both stay as
+# installed. Before this, every router fix merged and then waited on a hand-copied file (2026-09-29:
+# the holdout trial merged in #4909 while the router still ran the commit before it).
+ROUTER = Path(os.environ.get("ESTATE_ROUTER_DIR") or STATE / "litellm-local")
+ROUTER_LABEL = "com.estate.litellm-local"
+ROUTER_PROBE = "http://127.0.0.1:4000/health/liveliness"
+
+
+def router_files() -> list[tuple[Path, str]]:
+    # (source in main, name under ROUTER). The config is carried too: 2026-09-29 #4962 added the
+    # `voice` lane to llm/config.yaml, only the modules followed main, and every spoken turn failed
+    # for a day with "no healthy deployments for model_group=voice".
+    m = re.search(r'^MODULES="([^"]*)"', (TREE / "bin/litellm-local").read_text(), re.M)
+    mods = m.group(1).split() if m else []
+    return [(TREE / "llm/config.yaml", "config.yaml")] + [
+        (TREE / "platform/llm" / n, f"modules/{n}") for n in mods
+    ]
+
+
+VOICE_PROBE = "http://127.0.0.1:8091/readyz"
+
+
+def router_accepted(voice_was_ready: bool, within_s: int) -> bool:
+    # Acceptance, not liveness: the router answering /health/liveliness proved nothing while voice
+    # was dead. A change is kept only if the router is up and voice, which asks the router for its
+    # `voice` brain on /readyz, is at least as ready as before it.
+    if not answers(ROUTER_PROBE, within_s):
+        return False
+    return answers(VOICE_PROBE, within_s) or not voice_was_ready
+
+
+def sync_router(within_s: int = 120) -> list[str]:
+    if not (ROUTER / "modules").is_dir():
+        return []
+    voice_was_ready = answers(VOICE_PROBE, 5)
+    previous: dict[str, bytes | None] = {}
+    for src, name in router_files():
+        dst = ROUTER / name
+        if not src.is_file() or (dst.exists() and filecmp.cmp(src, dst, False)):
+            continue
+        previous[name] = dst.read_bytes() if dst.exists() else None
+        shutil.copy2(src, dst)
+    if not previous:
+        return []
+    names = ", ".join(sorted(previous))
+    kickstart(ROUTER_LABEL)
+    if router_accepted(voice_was_ready, within_s):
+        voice = "voice ready" if answers(VOICE_PROBE, 5) else "voice STILL NOT READY"
+        if voice != "voice ready":
+            alert(f"router took {names} from main but voice is still not ready")
+        return [f"router {names}; restarted {ROUTER_LABEL}; {voice}"]
+    for name, old in previous.items():
+        dst = ROUTER / name
+        if old is None:
+            dst.unlink(missing_ok=True)
+        else:
+            dst.write_bytes(old)
+    kickstart(ROUTER_LABEL)
+    answers(ROUTER_PROBE, within_s)
+    alert(f"router {names} from main broke the router or voice; previous kept")
+    return [f"ROUTER KEPT previous ({names})"]
+
+
+def build_voice_router() -> bool:
+    out = STATE / "voice-router/voice-router"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    r = subprocess.run(
+        [GO, "build", "-trimpath", "-o", f"{out}.new", "./cmd/voice-router"],
+        cwd=TREE / "platform/voice-router",
+        capture_output=True,
+        text=True,
+        timeout=900,
+        env=dict(os.environ, CGO_ENABLED="1"),
+    )
+    if r.returncode:
+        return False
+    os.replace(f"{out}.new", out)
+    return True
+
+
+def alert(text: str) -> None:
+    INBOX.parent.mkdir(parents=True, exist_ok=True)
+    with INBOX.open("a") as f:
+        f.write(
+            json.dumps(
+                {
+                    "ts": time.time(),
+                    "source": "estate-runtime-sync",
+                    "key": "runtime-sync",
+                    "text": text,
+                }
+            )
+            + "\n"
+        )
+    msg = text.replace("\\", "").replace('"', "'")[:200]
+    subprocess.run(
+        [
+            "/usr/bin/osascript",
+            "-e",
+            f'display notification "{msg}" with title "Estate runtime" sound name "Basso"',
+        ],
+        capture_output=True,
+        timeout=10,
+    )
+
+
+SERVICES = [
+    # (label, what changes it, probe, seconds to come back)
+    (
+        "ai.estate.voice-router",
+        ("platform/voice-router/",),
+        "http://127.0.0.1:8091/readyz",
+        90,
+    ),
+    (
+        "ai.estate.fleetview-backend",
+        BACKEND_PATHS,
+        "http://127.0.0.1:18790/healthz",
+        90,
+    ),
+]
+
+
+def sync_frontend(sha: str) -> list[str]:
+    """Move the frontend tree to sha; a lockfile change reinstalls; a dead /fleet rolls it back."""
+    fresh = not (FRONTEND / ".git").exists()
+    if fresh:
+        FRONTEND.parent.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [
+                "git",
+                "clone",
+                "-q",
+                "--filter=blob:none",
+                "--no-checkout",
+                REMOTE,
+                str(FRONTEND),
+            ],
+            check=True,
+            timeout=900,
+        )
+        git("sparse-checkout", "set", "--no-cone", "/backstage/", tree=FRONTEND)
+        git("checkout", "-q", "--detach", sha, tree=FRONTEND)
+    was = git("rev-parse", "HEAD", tree=FRONTEND)
+    if was == sha and not fresh:
+        return []
+    git("fetch", "-q", "origin", "main", tree=FRONTEND)
+    lock_changed = fresh or bool(
+        git("diff", "--name-only", was, sha, "--", "backstage/yarn.lock", tree=FRONTEND)
+    )
+    # A deploy tree, never a work tree: force, so a stray edit cannot pin it off main.
+    git("checkout", "-q", "-f", "--detach", sha, tree=FRONTEND)
+    if lock_changed:
+        yarn = next((FRONTEND / "backstage/.yarn/releases").glob("yarn-*.cjs"))
+        node = shutil.which("node") or str(
+            sorted((HOME / ".nvm/versions/node").glob("v22.*/bin/node"))[-1]
+        )
+        r = subprocess.run(
+            [node, str(yarn), "install", "--immutable"],
+            cwd=FRONTEND / "backstage",
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        if r.returncode:
+            git("checkout", "-q", "--detach", was, tree=FRONTEND)
+            # The reason travels with the alert: a bare "install failed" hid the cause for hours.
+            why = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+            alert(
+                f"/fleet frontend: yarn install for {sha[:8]} failed (exit {r.returncode}: "
+                f"{' | '.join(why)[:300]}); kept {was[:8]}"
+            )
+            return [f"frontend held at {was[:8]} (install failed)"]
+    # A backend that is not answering is a service that died, not a bad frontend: restart it once
+    # before judging the checkout (2026-09-28: its Node child died and nothing restarted it, so
+    # every deploy after was rolled back for 16 hours).
+    if not answers(BACKEND_PROBE, 5):
+        kickstart("ai.estate.backstage-backend")
+    if answers(FRONTEND_PROBE, 180) and answers(BACKEND_PROBE, 180):
+        return [f"frontend {was[:8]}->{sha[:8]}"]
+    git("checkout", "-q", "--detach", was, tree=FRONTEND)
+    alert(f"/fleet frontend stopped answering on {sha[:8]}; rolled back to {was[:8]}")
+    return [f"frontend ROLLED BACK to {was[:8]}"]
+
+
+def main() -> int:
+    ensure_tree()
+    before = git("rev-parse", "HEAD")
+    git("fetch", "-q", "origin", "main")
+    after = git("rev-parse", "origin/main")
+    if BAD.exists() and BAD.read_text().strip() == after:
+        after = before
+    changed = (
+        git("diff", "--name-only", before, after).splitlines()
+        if after != before
+        else []
+    )
+    if after != before:
+        git("checkout", "-q", "--detach", after)
+    link_data()
+    notes = stage()
+    force = sys.argv[1:] == ["--restart"]
+    broke = []
+    for label, paths, probe, wait in SERVICES:
+        if not (force or any(p.startswith(paths) for p in changed)):
+            continue
+        if label == "ai.estate.voice-router" and not build_voice_router():
+            broke.append(f"{label}: build failed, previous binary kept")
+            continue
+        kickstart(label)
+        if answers(probe, wait):
+            notes.append(f"restarted {label}")
+        else:
+            broke.append(label)
+    if broke and after != before:
+        git("checkout", "-q", "--detach", before)
+        stage()
+        for label, _, probe, wait in SERVICES:
+            if label in broke:
+                if label == "ai.estate.voice-router":
+                    build_voice_router()
+                kickstart(label)
+                answers(probe, wait)
+        BAD.write_text(after)
+        alert(f"main {after[:8]} broke {', '.join(broke)}; rolled back to {before[:8]}")
+        notes.append(f"ROLLED BACK to {before[:8]}")
+    elif broke:
+        alert(f"runtime sync: {', '.join(broke)} did not come back")
+    try:
+        notes += sync_router()
+    except (OSError, subprocess.SubprocessError) as exc:
+        notes.append(f"router sync failed: {exc}")
+    try:
+        notes += sync_frontend(git("rev-parse", "HEAD"))
+    except (
+        RuntimeError,
+        OSError,
+        subprocess.SubprocessError,
+        StopIteration,
+        IndexError,
+    ) as exc:
+        notes.append(f"frontend sync failed: {exc}")
+    stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    line = f"{stamp} {before[:8]}->{after[:8]} changed={len(changed)} {'; '.join(notes) or 'nothing to do'}"
+    with LOG.open("a") as f:
+        f.write(line + ("; BROKE " + ", ".join(broke) if broke else "") + "\n")
+    print(line)
+    return 1 if broke else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
