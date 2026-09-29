@@ -50,6 +50,7 @@ import { cueToReactor, type IntentResult } from '../../home/intentCue';
 // --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
 import NewsDesk from './NewsDesk';
 import AgentJobs from './AgentJobs';
+import EfficiencyHud from './EfficiencyHud';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
@@ -1913,6 +1914,8 @@ export default function FleetReactorApp() {
           }}
         />
       </div>
+
+      <EfficiencyHud />
 
       {/* SAFEGUARDS, bottom right: every gate decision on a real turn, newest first, as it lands on
           the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}
