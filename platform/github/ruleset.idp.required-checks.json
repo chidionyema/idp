@@ -1,7 +1,8 @@
 {
-  "name": "idp-required-checks",
+  "name": "required-checks-main",
   "target": "branch",
   "enforcement": "active",
+  "bypass_actors": [],
   "conditions": {
     "ref_name": {
       "include": [
@@ -17,19 +18,28 @@
         "strict_required_status_checks_policy": false,
         "required_status_checks": [
           {
-            "context": "offline-gate"
+            "context": "fast-gate / fast-gate",
+            "integration_id": 15368
           },
           {
-            "context": "bdd"
+            "context": "bdd",
+            "integration_id": 15368
           },
           {
-            "context": "security-scan"
+            "context": "guarded-paths",
+            "integration_id": 15368
           },
           {
-            "context": "shadow-verify"
+            "context": "test",
+            "integration_id": 15368
           },
           {
-            "context": "portal-app"
+            "context": "executes-gate",
+            "integration_id": 15368
+          },
+          {
+            "context": "feature-request-plan",
+            "integration_id": 15368
           }
         ]
       }
