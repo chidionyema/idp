@@ -1,0 +1,52 @@
+# A pod's environment holds what its manifest declares, not one variable per Service in its namespace.
+#
+# With enableServiceLinks left at its default (true) the kubelet writes <NAME>_PORT, <NAME>_SERVICE_HOST
+# and friends into every container for every Service in the namespace. An app that reads its own
+# <NAME>_PORT then parses "tcp://10.96.x.y:port" as a number and dies at import: zeroedge crashlooped
+# 351 times on exactly that (ValueError at zeroedge/service.py:173, break-glass run 36518037996),
+# because its Service is also named zeroedge. The collision is a property of naming, so fixing one
+# app leaves the next one to hit it; the default is changed for every pod instead.
+#
+# Measured before this landed: nothing in the repo reads a *_SERVICE_HOST, *_SERVICE_PORT or
+# *_PORT_<n>_TCP variable. The API server's own KUBERNETES_SERVICE_HOST/PORT are set regardless of
+# this field, so in-cluster clients keep working.
+#
+# The way out, for a pod that does rely on the legacy variables: annotate it
+# `estate.io/needs-service-links: "true"`. The mutation is add-if-absent, so a pod that declares
+# enableServiceLinks itself keeps its own value. It reaches a pod when it is next created.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: no-service-links
+  annotations:
+    policies.kyverno.io/title: Service links off by default
+    policies.kyverno.io/category: Reliability
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Sets enableServiceLinks to false on any pod that does not set it, so a Service's name can
+      never overwrite an environment variable the app reads for itself.
+spec:
+  background: false
+  rules:
+    - name: service-links-off
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-public
+                - kube-node-lease
+                - flux-system
+                - kyverno
+          - resources:
+              annotations:
+                estate.io/needs-service-links: "true"
+      mutate:
+        patchStrategicMerge:
+          spec:
+            +(enableServiceLinks): false
