@@ -304,7 +304,8 @@ SERVICES = [
     # (label, what changes it, probe, seconds to come back)
     (
         "ai.estate.voice-router",
-        ("platform/voice-router/",),
+        # its launcher too: it is what fetches missing speech models, and only runs on a restart
+        ("platform/voice-router/", "bin/voice-router-launchd"),
         "http://127.0.0.1:8091/readyz",
         90,
     ),

@@ -1,0 +1,18 @@
+name: voice-doctor
+description: >
+  Is voice working end to end, and if not, which link broke? Walks the chain a spoken turn
+  meets -- machine load, speech models, router up, router `voice` lane, voice-router /readyz,
+  speech synthesis errors, a real spoken turn through cmd/talk -- then OKE's image policy and
+  voice-router deployments, and names the first broken link with the action that fixes it.
+  Use this first whenever voice is not answering.
+args:
+  scope: {type: string, default: "all"}
+steps:
+  - name: diagnose
+    timeout: 900
+    cmd: |
+      case "{{scope}}" in
+        laptop) python3 ~/.estate/libexec/voice-doctor.py --laptop-only ;;
+        oke) python3 ~/.estate/libexec/voice-doctor.py --oke-only ;;
+        *) python3 ~/.estate/libexec/voice-doctor.py ;;
+      esac
