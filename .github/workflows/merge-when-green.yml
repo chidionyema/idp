@@ -109,6 +109,14 @@ jobs:
           #
           # A call that fails sets 0, which makes the verdict fall back to BEHIND alone: a
           # refusal to guess, not a pass. It is a read, so it cannot change anything.
+          #
+          # Bot image-update commits do not count as behind. Measured 2026-09-28: main gained one
+          # `platform: image update` commit every ~6 minutes while portal-app takes ~10, so every
+          # run finished already "behind", was refreshed, and restarted -- a PR whose checks were
+          # all green could never land (PR 4848 sat in that loop for hours). Those commits only
+          # bump a tag in platform/*.yaml, so a branch missing them is not stale. The compare is
+          # head...base, whose commits are exactly what main has that the branch lacks; a
+          # truncated list (over 250) falls back to the plain behind_by.
           python3 - <<'PY'
           import json, subprocess
           prs = json.load(open("open.json"))
@@ -117,7 +125,9 @@ jobs:
               try:
                   out = subprocess.run(
                       ["gh", "api", f"repos/{__import__('os').environ['GH_REPO']}/compare/"
-                       f"{base}...{pr['headRefName']}", "--jq", ".behind_by"],
+                       f"{pr['headRefName']}...{base}", "--jq",
+                       '.total_commits as $t | if $t > (.commits|length) then .ahead_by '
+                       'else ([.commits[]|select(.commit.message|startswith("platform: image update")|not)]|length) end'],
                       capture_output=True, text=True, timeout=15)
                   pr["behind_by"] = int(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip().isdigit() else 0
               except Exception:

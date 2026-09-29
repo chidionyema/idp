@@ -14,7 +14,7 @@
       "description": "which channel this story belongs to"
     },
     "source": {
-      "enum": ["flux", "k8s", "cicd", "incidents", "agent"],
+      "enum": ["flux", "k8s", "cicd", "incidents", "agent", "router"],
       "description": "which system generated this story"
     },
     "severity": {

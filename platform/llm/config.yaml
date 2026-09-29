@@ -346,20 +346,6 @@ model_list:
     model_info:
       max_input_tokens: 131072
 
-  # --- voice: the lane /fleet's voice-router asks (LLM_MODEL=voice) ------------------
-  # A spoken turn waits on the first words, so this lane is picked for time to the first spoken word: content, not reasoning.
-  # Measured 2026-09-27 from the laptop, streaming the gate's question, 5 turns each: this model with
-  # reasoning off 0.09-0.13s; `fast` (minimax/deepseek) 0.57-1.13s; gpt-oss-20b at
-  # effort low 0.82-1.26s and one empty reply, because it reasons before it speaks.
-  # `openai/` is LiteLLM's provider prefix; Groq's own id follows.
-  - model_name: voice
-    litellm_params:
-      model: openai/qwen/qwen3.8-27b
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY
-      reasoning_effort: none
-      timeout: 20
-      max_tokens: 400
   # --- voice: the Fleet page's ears and mouth, behind the router so no service holds a vendor key.
   # Measured 2026-09-26 with this key: whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,
   # where the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept its terms once

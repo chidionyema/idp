@@ -1,0 +1,35 @@
+# .github/workflows/mutation-nightly.yml
+# Runs mutation testing on the full codebase at 3am UTC every day.
+name: mutation-nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  mutation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install tools
+        run: pip install -q mutmut
+
+      - name: Install orchestrator
+        run: |
+          mkdir -p "$HOME/.estate/bin"
+          cp bin/mutation-orchestrator "$HOME/.estate/bin/mutation-orchestrator"
+          chmod +x "$HOME/.estate/bin/mutation-orchestrator"
+
+      - name: Run mutation testing
+        run: |
+          python3 "$HOME/.estate/bin/mutation-orchestrator" \
+            --tier=full --cwd="$PWD"

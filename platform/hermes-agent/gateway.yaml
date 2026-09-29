@@ -267,6 +267,12 @@ spec:
               value: /run/secrets/hermes-agent-env
             - name: HOME
               value: /data
+            # gh's config off the PVC: a 1h installation token once saved to
+            # /data/.config/gh/hosts.yml outlived every restart, and gh reported it invalid
+            # (otto-parity git-in-pod, run 36513330017). On the /tmp emptyDir nothing outlives
+            # the pod, so gh answers from the GITHUB_TOKEN the generator re-mints every 45m.
+            - name: GH_CONFIG_DIR
+              value: /tmp/gh
             # crew#524 CP1: the self-hosted Hindsight row (platform/hindsight). A URL alone makes the
             # hermes hindsight plugin available (`has_key or has_url`); no key on a self-host.
             - name: HERMES_ESTATE_YAML   # crew#524 CP2: the estate from git (estate.yaml ConfigMap)
@@ -377,8 +383,10 @@ spec:
         # this pod, so the gateway container's mac-run reaches the Mac through the SOCKS5 proxy
         # below instead of a sidecar-free "figure out the network" ask nobody made of Otto.
         # TS_USERSPACE=true: no tun device, no NET_ADMIN, unchanged securityContext (LAW 21).
-        # TS_KUBE_SECRET="": state lives on the existing PVC, not a second Kubernetes Secret this
-        # pod would need RBAC to write. TS_AUTHKEY is a file (Kyverno secrets-not-from-env-vars,
+        # TS_KUBE_SECRET names one Secret (rbac.yaml grants this pod get/update/patch on it alone).
+        # It was "" with state on the PVC, but the pod mounts a ServiceAccount token, so containerboot
+        # runs in Kubernetes mode regardless and refused to boot without Secret permissions: diagnose
+        # 36504003812, "missing get permission on secret", x139 BackOff. TS_AUTHKEY is a file (Kyverno secrets-not-from-env-vars,
         # crew#341; verified against containerboot's own source,
         # github.com/tailscale/tailscale/blob/main/cmd/containerboot/main.go: "If the value begins
         # with file:, it is treated as a path to a file containing the key").
@@ -394,7 +402,7 @@ spec:
             - name: TS_STATE_DIR
               value: /data/tailscale
             - name: TS_KUBE_SECRET
-              value: ""
+              value: hermes-agent-tailscale-state
             - name: TS_SOCKET
               value: /tmp/tailscaled.sock
             - name: TS_SOCKS5_SERVER

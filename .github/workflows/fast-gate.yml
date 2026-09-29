@@ -35,7 +35,7 @@ jobs:
         if: steps.actor.outputs.bot != '1'
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
       - if: steps.actor.outputs.bot != '1'
-        run: pip install -q ruff==0.15.18 pyyaml   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest
+        run: pip install -q ruff==0.15.18 pyyaml yamllint   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written
       - if: steps.actor.outputs.bot != '1'
         run: IDP_CI_FAST=1 bin/idp-ci
       - name: python-strict (estate standard, one copy)

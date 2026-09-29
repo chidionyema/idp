@@ -46,6 +46,11 @@ spec:
       imagePullSecrets:
         - name: ghcr-pull
       automountServiceAccountToken: false
+      # The Service is also named zeroedge, so the kubelet's service links set
+      # ZEROEDGE_PORT=tcp://<ip>:8757 and the app died parsing it as its port (ValueError at
+      # zeroedge/service.py:173, break-glass run 36518037996). platform/edge/no-service-links.yaml
+      # turns links off estate-wide; this line keeps zeroedge safe on its own.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001        # the uid deploy/gateway/Dockerfile creates and runs as

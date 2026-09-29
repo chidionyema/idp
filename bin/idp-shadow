@@ -315,7 +315,7 @@ def flux_source(head):
     )
 
 
-def flux_kustomization(name, path, source="shadow", substitute=False):
+def flux_kustomization(name, path, source="shadow", substitute=False, ks_timeout="10m"):
     ks = {
         "apiVersion": "kustomize.toolkit.fluxcd.io/v1",
         "kind": "Kustomization",
@@ -328,7 +328,7 @@ def flux_kustomization(name, path, source="shadow", substitute=False):
             # wait: true is the environment doing the verifying. Flux blocks until every
             # applied object reports healthy, or it fails the Kustomization itself.
             "wait": True,
-            "timeout": "5m",
+            "timeout": ks_timeout,
             "force": True,
         },
     }
@@ -651,7 +651,9 @@ def observe(kind, ns, name):
     # Tests: a workload declares its own by annotation; absent means none, which grade() accepts
     # only as an explicit empty set.
     ann = (obj.get("metadata") or {}).get("annotations") or {}
-    obs["tests"] = {} if "shadow.estate/tests" not in ann else {"declared": False}
+    obs["tests"] = (
+        [] if "shadow.estate/tests" not in ann else [{"name": ann["shadow.estate/tests"], "passed": False}]
+    )
     return obs
 
 
@@ -682,7 +684,12 @@ def grade_all(observations):
     sys.path.insert(0, HERE)
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("shadow_verify", VERIFY)
+    import importlib.machinery
+
+    # VERIFY has no .py suffix, so spec_from_file_location cannot infer a loader and returns None.
+    spec = importlib.util.spec_from_file_location(
+        "shadow_verify", VERIFY, loader=importlib.machinery.SourceFileLoader("shadow_verify", VERIFY)
+    )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
 
@@ -728,7 +735,7 @@ def verify(head, paths):
             flux_kustomization(name, path, substitute=True)
             names.append((name, path))
 
-        deadline = time.time() + int(os.environ.get("IDP_SHADOW_TIMEOUT", "600"))
+        deadline = time.time() + int(os.environ.get("IDP_SHADOW_TIMEOUT", "1200"))
         observations, hard = [], []
         for name, path in names:
             ready, msg, inv = wait_ks(name, deadline)

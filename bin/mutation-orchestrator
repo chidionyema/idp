@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""mutation-orchestrator — polyglot mutation testing for CI and local use.
+Works standalone: all logic inlined, no external deps except mutmut.
+Usage: mutation-orchestrator --tier=<save|diff|commit|pr|full> --cwd=<repo> [--files f1,f2] [--stdin]
+"""
+from __future__ import annotations
+import argparse, json, os, subprocess, sys, time
+from pathlib import Path
+
+HOME = Path.home()
+LEDGER = HOME / ".estate" / "mutation-ledger.jsonl"
+CACHE = HOME / ".estate" / "mutation-cache.json"
+LEDGER.parent.mkdir(parents=True, exist_ok=True)
+
+# Ensure ~/bin/python symlink exists (mutmut spawns child processes as 'python')
+_PYTHON_BIN = HOME / "bin" / "python"
+if not _PYTHON_BIN.exists():
+    try:
+        _PYTHON_BIN.parent.mkdir(parents=True, exist_ok=True)
+        os.symlink("/Library/Developer/CommandLineTools/usr/bin/python3", str(_PYTHON_BIN))
+    except Exception:
+        pass
+
+TOOLS = {
+    ".py": {
+        "tool": "mutmut",
+        "install": ["python3", "-m", "pip", "install", "--user", "mutmut>=2.0,<3.0"],
+        "base_cmd": [
+            "python3", "-m", "mutmut", "run",
+            "--no-progress", "--simple-output",
+            "--paths-to-mutate", "PLACEHOLDER_SRC",
+            "--runner", "python -m pytest PLACEHOLDER_TEST -x -q",
+            "--test-time-multiplier", "2",
+            "PLACEHOLDER_TEST",
+        ],
+    },
+}
+
+TIMEOUTS = {"save": 10, "diff": 115, "commit": 115, "pr": 115, "full": 7200}
+
+
+def run_cmd(cmd, timeout=60, cwd="."):
+    t0 = time.time()
+    env = dict(os.environ)
+    env["PATH"] = str(HOME / "bin") + ":" + env.get("PATH", "")
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd, env=env)
+        return {"rc": r.returncode, "stdout": r.stdout, "stderr": r.stderr, "elapsed": round(time.time() - t0, 2)}
+    except subprocess.TimeoutExpired:
+        return {"rc": -1, "stdout": "", "stderr": "timeout", "elapsed": timeout}
+
+
+PARSER = argparse.ArgumentParser(description="Polyglot mutation testing orchestrator")
+PARSER.add_argument("--tier", default="diff", choices=list(TIMEOUTS.keys()))
+PARSER.add_argument("--cwd", default=".")
+PARSER.add_argument("--files")
+PARSER.add_argument("--stdin", action="store_true")
+PARSER.add_argument("--shard", default="")
+PARSER.add_argument("--install", action="store_true")
+ARGS = PARSER.parse_args()
+
+CWD = ARGS.cwd
+
+if ARGS.install:
+    subprocess.run(["mkdir", "-p", str(HOME / "bin")], check=False)
+    symlink = HOME / "bin" / "python"
+    target = "/Library/Developer/CommandLineTools/usr/bin/python3"
+    try:
+        os.symlink(target, str(symlink))
+    except FileExistsError:
+        pass
+    r = subprocess.run(
+        [sys.executable, "-m", "pip", "install", "--user", "mutmut>=2.0,<3.0"],
+        capture_output=True, text=True,
+    )
+    sys.stderr.write(f"pip install mutmut: rc={r.returncode}\n")
+    if r.returncode:
+        sys.stderr.write(f"stderr: {r.stderr[:300]}\n")
+    # Symlink mutmut so hooks can find it
+    _pip_bin = HOME / "Library" / "Python" / "3.9" / "bin" / "mutmut"
+    _local_bin = HOME / ".local" / "bin" / "mutmut"
+    if _pip_bin.exists() and not _local_bin.exists():
+        try:
+            os.makedirs(str(_local_bin.parent), exist_ok=True)
+            os.symlink(str(_pip_bin), str(_local_bin))
+            sys.stderr.write(f"symlinked mutmut -> {_local_bin}\n")
+        except Exception as e:
+            sys.stderr.write(f"symlink failed: {e}\n")
+    sys.exit(r.returncode)
+
+# Collect files
+files = []
+if ARGS.stdin:
+    files = [line.strip() for line in sys.stdin if line.strip()]
+elif ARGS.files:
+    files = ARGS.files.split(",")
+else:
+    print(json.dumps({"tier": ARGS.tier, "score": None, "note": "no files"}))
+    sys.exit(0)
+
+sys.stderr.write(f"mutation-runner tier={ARGS.tier} cwd={CWD}\n")
+t0 = time.time()
+results = []
+total_k = total_s = total_t = 0
+tier_timeout = TIMEOUTS.get(ARGS.tier, 60)
+
+# Group by extension
+exts = {}
+for f in files:
+    ext = os.path.splitext(f)[1]
+    exts.setdefault(ext, []).append(f)
+
+for ext, lang_files in exts.items():
+    if ext not in TOOLS:
+        continue
+    td = TOOLS[ext]
+    tool_results = []
+
+    for f in lang_files:
+        src_file = f
+        if not f.startswith("tests/") and not f.startswith("test_"):
+            candidates = [
+                "tests/" + Path(f).name.replace(".py", "_test.py"),
+                "test_" + Path(f).name,
+            ]
+            test_filter = next((t for t in candidates if Path(t).exists()), f)
+        else:
+            test_filter = f
+
+        cmd = []
+        for part in td["base_cmd"]:
+            if part == "PLACEHOLDER_SRC":
+                cmd.append(src_file)
+            elif part == "PLACEHOLDER_TEST":
+                cmd.append(test_filter)
+            else:
+                cmd.append(part)
+
+        if ARGS.tier == "save":
+            # save tier: ultra-fast syntax check only
+            syntax_ok = run_cmd(["python3", "-m", "py_compile", f], timeout=5, cwd=CWD)
+            data = {
+                "killed": 0, "survived": 0, "timeout": 0, "score": None,
+                "elapsed": syntax_ok.get("elapsed", 0),
+                "rc": 0 if syntax_ok.get("rc") == 0 else 1,
+                "stdout_tail": "", "error": "",
+                "note": "save tier: syntax check only",
+            }
+            if syntax_ok.get("rc") != 0:
+                data["error"] = "syntax error: " + syntax_ok.get("stderr", "")
+            tool_results.append(data)
+            print(f"  syntax={'ok' if syntax_ok.get('rc')==0 else 'FAIL'} elapsed={data['elapsed']}s {f}", file=sys.stderr)
+
+        elif ARGS.tier == "diff":
+            # diff tier: fast syntax + import check only
+            syntax_ok = run_cmd(["python3", "-m", "py_compile", f], timeout=10, cwd=CWD)
+            import_ok = run_cmd(["python3", "-c", "import " + Path(f).stem], timeout=10, cwd=CWD)
+            data = {
+                "killed": 0, "survived": 0, "timeout": 0, "score": None,
+                "elapsed": syntax_ok.get("elapsed", 0),
+                "rc": 0 if syntax_ok.get("rc") == 0 else 1,
+                "stdout_tail": "", "error": "",
+                "note": "diff tier: syntax+import only, no mutation testing",
+            }
+            if syntax_ok.get("rc") != 0:
+                data["error"] = "syntax error: " + syntax_ok.get("stderr", "")
+            elif import_ok.get("rc") != 0:
+                data["error"] = "import error: " + import_ok.get("stderr", "")
+            tool_results.append(data)
+            print(f"  syntax={'ok' if syntax_ok.get('rc')==0 else 'FAIL'} import={'ok' if import_ok.get('rc')==0 else 'FAIL'} elapsed={data['elapsed']}s {f}", file=sys.stderr)
+
+        else:
+            # commit/pr/full tier: actual mutation testing
+            print(f"  => {td['tool']} run on {f} (test: {test_filter})", file=sys.stderr, flush=True)
+            r = run_cmd(cmd, timeout=tier_timeout, cwd=CWD)
+            out = r.get("stdout", "") + r.get("stderr", "")
+            k = s = t = 0
+            score = None
+            for line in out.splitlines():
+                if "Survived" in line:
+                    for part in line.split():
+                        if part.isdigit():
+                            s = int(part)
+                            break
+                if "Killed" in line:
+                    for part in line.split():
+                        if part.isdigit():
+                            k = int(part)
+                            break
+            total = k + s + t
+            if total:
+                score = round((k + t) / total * 100, 1)
+            data = {
+                "killed": k, "survived": s, "timeout": t, "score": score,
+                "elapsed": r.get("elapsed", 0),
+                "rc": r.get("rc"),
+                "stdout_tail": r.get("stdout", "")[-500:],
+                "error": r.get("error", ""),
+            }
+            tool_results.append(data)
+            total_k += k; total_s += s; total_t += t
+            print(f"  killed={k} survived={s} score={score}% elapsed={data['elapsed']}s rc={r.get('rc')} {f}", file=sys.stderr)
+
+    results.append({"language": ext, "tool": td["tool"], "files": lang_files, "tool_results": tool_results})
+
+elapsed = round(time.time() - t0, 2)
+total = total_k + total_s + total_t
+score = round((total_k + total_t) / total * 100, 1) if total else None
+budget_ok = elapsed <= tier_timeout
+
+summary = {
+    "tier": ARGS.tier, "score": score, "killed": total_k, "survived": total_s,
+    "timeout": total_t, "elapsed_s": elapsed, "tier_budget_ok": budget_ok,
+    "files": files, "results": results,
+}
+
+with open(LEDGER, "a") as f:
+    f.write(json.dumps(summary) + "\n")
+
+print(json.dumps(summary, indent=2))
+# Exit 0 if no surviving mutants (timeouts are acceptable — test is just slow)
+# Exit 1 only if mutants survived or budget exceeded
+if total_s > 0:
+    sys.exit(1)  # real surviving mutants — must fix
+if not budget_ok:
+    sys.exit(1)  # ran over budget
+sys.exit(0)

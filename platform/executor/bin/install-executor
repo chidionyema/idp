@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Install the estate executor system.
+# Run this once after cloning or updating the repo.
+# Idempotent: safe to re-run.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+EXECUTOR_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ESTATE_BIN="${HOME}/.estate/bin"
+ESTATE_LOGS="${HOME}/.estate/logs"
+
+echo "Installing estate executor..."
+
+# Create ~/.estate/bin if missing
+mkdir -p "$ESTATE_BIN"
+mkdir -p "$ESTATE_LOGS"
+
+# Copy keepalive to ~/.estate/bin/
+cp "$EXECUTOR_DIR/keepalive.py" "$ESTATE_BIN/estate-executor-keepalive"
+chmod +x "$ESTATE_BIN/estate-executor-keepalive"
+
+# Copy daemon if missing from ~/.estate/bin/ (backup)
+if [ ! -f "$ESTATE_BIN/estate-execute" ]; then
+    cp "$EXECUTOR_DIR/daemon.py" "$ESTATE_BIN/estate-execute"
+    chmod +x "$ESTATE_BIN/estate-execute"
+fi
+
+echo "Installed: $ESTATE_BIN/estate-executor-keepalive"
+
+# Start the keepalive if not already running
+if ! "$ESTATE_BIN/estate-executor-keepalive" --check 2>/dev/null; then
+    echo "Starting keepalive..."
+    "$ESTATE_BIN/estate-executor-keepalive"
+    sleep 5
+    if "$ESTATE_BIN/estate-executor-keepalive" --check 2>/dev/null; then
+        echo "Executor daemon: UP"
+    else
+        echo "WARNING: daemon may not be healthy yet. Check:"
+        echo "  $ESTATE_BIN/estate-executor-keepalive --check"
+        echo "  tail -f $ESTATE_LOGS/daemon.log"
+    fi
+else
+    echo "Executor daemon: already healthy"
+fi
+
+echo "Done."
+echo ""
+echo "To install as a launchd service (auto-start on boot):"
+echo "  launchctl bootstrap gui/\$(id -u) $EXECUTOR_DIR/../launchd/ai.estate.executor.plist"

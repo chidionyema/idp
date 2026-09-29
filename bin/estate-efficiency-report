@@ -107,10 +107,19 @@ class Totals:
         self.u: dict = defaultdict(float)
         self.outcomes = self.failures = 0
         self.by_model: dict = defaultdict(lambda: defaultdict(float))
-        self.by_tool: dict = defaultdict(int)  # pre rows per calling tool; rows before 2026-09-27 have none
+        self.epochs_snapped = self.calls_under_lock = 0
+        self.folds_ok = self.folds_failed = 0
+        self.last_fold_error = None
 
     def add(self, r: dict) -> None:
         kind = r.get("kind")
+        if kind == "shadow":  # a background fold of the state document (idp#4893)
+            if r.get("ok"):
+                self.folds_ok += 1
+            else:
+                self.folds_failed += 1
+                self.last_fold_error = r.get("error")
+            return
         if (
             r.get("v") is None
         ):  # legacy row: per-call byte totals are sound, counters are not
@@ -120,11 +129,10 @@ class Totals:
             return
         if kind == "pre":
             self.pre += 1
-            self.by_tool[r.get("tool") or "(not recorded)"] += 1
             self.bytes_before += r.get("bytes_before", 0)
             self.bytes_after += r.get("bytes_after", 0)
             steps = r.get("steps") or {}
-            if r.get("mode") == "anthropic":
+            if all(isinstance(s, dict) for s in steps.values()):  # the one chain (idp#4893)
                 for key, s in steps.items():
                     if not isinstance(s, dict):
                         continue
@@ -138,6 +146,9 @@ class Totals:
                     self.prefix_checked += 1
                     self.prefix_broken += bool(m1.get("prefix_broken"))
                 self.orphans += (steps.get("m9") or {}).get("orphans", 0)
+                m7 = (steps.get("m7") or {}).get("action")
+                self.epochs_snapped += m7 == "snapped"
+                self.calls_under_lock += m7 == "locked"
             else:  # openai lane: steps are per-call counter deltas
                 for key in ("m2", "m3", "m5", "m6", "m7", "m8", "m9"):
                     b = steps.get(f"{key}_bytes_saved", 0)
@@ -184,7 +195,11 @@ class Totals:
             "prefix_checked": self.prefix_checked,
             "prefix_broken": self.prefix_broken,
             "orphans": self.orphans,
-            "by_tool": dict(self.by_tool),
+            "epochs_snapped": self.epochs_snapped,
+            "calls_under_lock": self.calls_under_lock,
+            "folds_ok": self.folds_ok,
+            "folds_failed": self.folds_failed,
+            "last_fold_error": self.last_fold_error,
             "steps": {
                 k: {"calls": self.step_calls[k], "bytes": self.step_bytes[k]}
                 for k, _n, _w in STEPS
@@ -251,10 +266,6 @@ def print_summary(t: Totals) -> None:
             print(
                 f"    {m:<28} calls {int(v['calls']):>6,}  input-equiv billed {n(v['billed']):>12}  output {n(v['output']):>10}"
             )
-    if t.by_tool:
-        print("\n  BY TOOL (calls that reached the router, from each request's User-Agent)")
-        for tool, c in sorted(t.by_tool.items(), key=lambda x: -x[1]):
-            print(f"    {tool:<28} calls {c:>6,}")
     if s["legacy_rows"]:
         print(
             f"\n  ({s['legacy_rows']:,} legacy rows: byte totals counted, their cumulative counters ignored)"

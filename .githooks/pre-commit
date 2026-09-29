@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
-# One hook, three guards. Each refuses a class of failure that has reached CI in
-# this repo and burned cycles: ruff-formatted .py, ruff-checked .py, tsc-clean .ts/.tsx.
+# One hook, five guards. Each refuses a class of failure that has reached CI in
+# this repo and burned cycles: ruff-formatted .py, ruff-checked .py, tsc-clean .ts/.tsx,
+# a shell file shellcheck rejects, a YAML file yamllint rejects.
 # Class-level refusal — once a guard exists, the failure is impossible to commit.
+#
+# Guards 4-5 (shellcheck, yamllint) were already enforced, but only at push time
+# (.githooks/pre-push -> IDP_CI_FAST=1 bin/idp-ci) and in CI (fast-gate.yml). Founder,
+# 2026-09-28: wants tests/lint/shellcheck to run automatically "on save, on commit, etc."
+# so the agent never has to remember -- this shifts that existing check left to commit
+# time instead of building a second one. Detection logic mirrors bin/idp-ci --check
+# exactly (shell = *.sh/*.bash extension or bin/*, .githooks/* path; YAML = *.yaml/*.yml)
+# so this hook and the CI gate can never disagree about what counts as a shell or YAML file.
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
@@ -12,6 +21,32 @@ staged_py=$(git diff --cached --name-only --diff-filter=ACM -- '*.py' || true)
 # is the SyntaxError test case for bin/catalog-projection). Exclude it from formatting.
 staged_py=$(echo "$staged_py" | grep -v 'tests/fixtures/projection/broken.py' || true)
 staged_ts=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx' || true)
+staged_all=$(git diff --cached --name-only --diff-filter=ACM || true)
+# bin/idp-always-on-guard etc: extensionless files under bin/ or .githooks/ are not all shell
+# (a Python script with no .py extension matched here and was shellchecked as bash -- SC1071).
+# .sh/.bash are trivially shell; anything under bin/ or .githooks/ with a real extension other
+# than .sh/.bash is trivially not; an extensionless file goes by its actual shebang.
+staged_sh=""
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+  *.sh | *.bash) staged_sh="$staged_sh
+$f" ;;
+  bin/* | .githooks/*)
+    base=$(basename "$f")
+    case "$base" in
+    *.*) continue ;; # has a non-sh/bash extension already ruled in above -- skip
+    esac
+    [ -f "$f" ] || continue
+    if head -1 "$f" | grep -qE '^#!.*\b(bash|sh|dash|ksh)\b'; then
+      staged_sh="$staged_sh
+$f"
+    fi
+    ;;
+  esac
+done <<<"$staged_all"
+staged_sh=$(printf '%s\n' "$staged_sh" | grep -v '^$' || true)
+staged_yaml=$(printf '%s\n' "$staged_all" | grep -E '\.(yaml|yml)$' || true)
 
 # 1. ruff format --check on staged .py
 if [ -n "$staged_py" ]; then
@@ -48,6 +83,53 @@ if [ -n "$staged_ts" ]; then
     echo "pre-commit: tsc red or blind (project-wide). fix the types, or yarn install in backstage/" >&2
     exit 1
   }
+fi
+
+# 4. shellcheck on staged shell files (same detection as bin/idp-ci --check: *.sh/*.bash
+#    extension, or the bin/ / .githooks/ shebang convention).
+if [ -n "$staged_sh" ]; then
+  if command -v shellcheck >/dev/null 2>&1; then
+    sh_fail=0
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      [ -f "$f" ] || continue
+      # bin/ holds python too: only a *.sh/*.bash name or a shell shebang is a shell file.
+      case "$f" in *.sh | *.bash) ;; *) head -1 "$f" | grep -qE '^#!.*[/ ](ba|z|da)?sh( |$)' || continue ;; esac
+      if ! shellcheck -S warning "$f" >/dev/null 2>&1; then
+        echo "  FAIL shellcheck $f"
+        sh_fail=1
+      fi
+    done <<<"$staged_sh"
+    if [ "$sh_fail" = 1 ]; then
+      echo "pre-commit: shellcheck failed. fix: shellcheck -S warning <file>" >&2
+      exit 1
+    fi
+    echo "  shellcheck: $(printf '%s\n' "$staged_sh" | tr '\n' ' ')"
+  else
+    echo "pre-commit: shellcheck unavailable, skipping (CI enforces via fast-gate.yml)" >&2
+  fi
+fi
+
+# 5. yamllint on staged YAML files (same detection as bin/idp-ci --check: *.yaml/*.yml).
+if [ -n "$staged_yaml" ]; then
+  if command -v yamllint >/dev/null 2>&1; then
+    yaml_fail=0
+    while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      [ -f "$f" ] || continue
+      if ! yamllint -d relaxed "$f" >/dev/null 2>&1; then
+        echo "  FAIL yamllint $f"
+        yaml_fail=1
+      fi
+    done <<<"$staged_yaml"
+    if [ "$yaml_fail" = 1 ]; then
+      echo "pre-commit: yamllint failed. fix: yamllint -d relaxed <file>" >&2
+      exit 1
+    fi
+    echo "  yamllint: $(printf '%s\n' "$staged_yaml" | tr '\n' ' ')"
+  else
+    echo "pre-commit: yamllint unavailable, skipping (CI enforces via fast-gate.yml)" >&2
+  fi
 fi
 
 exit 0

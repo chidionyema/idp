@@ -1,57 +1,16 @@
-"""The laptop router refuses browsers, and keyed lanes refuse callers without the laptop key.
-
-CI does not install LiteLLM 1.98, so a plain import would skip here and run nothing. The module
-is loaded from its file with the three LiteLLM/FastAPI names it uses stood in when absent: the
-refusal logic under test is ours, and it runs in every environment.
-"""
+"""The laptop router refuses browsers, and keyed lanes refuse callers without the laptop key."""
 
 import asyncio
-import importlib.util
 import sys
-import types
 from pathlib import Path
 
 import pytest
 
-MODULE = (
-    Path(__file__).resolve().parents[1] / "platform" / "llm" / "local_caller_auth.py"
-)
+pytest.importorskip("litellm")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "platform" / "llm"))
 
-
-class _HTTPException(Exception):
-    def __init__(self, status_code, detail=None):
-        super().__init__(detail)
-        self.status_code = status_code
-        self.detail = detail
-
-
-_ABSENT = {
-    top for top in ("fastapi", "litellm") if importlib.util.find_spec(top) is None
-}
-
-
-def _stand_in(name, **attrs):
-    if name.split(".")[0] in _ABSENT:
-        mod = sys.modules.setdefault(name, types.ModuleType(name))
-        for k, v in attrs.items():
-            setattr(mod, k, v)
-
-
-_stand_in("fastapi", HTTPException=_HTTPException, Request=object)
-_stand_in("litellm")
-_stand_in("litellm.integrations")
-_stand_in("litellm.integrations.custom_logger", CustomLogger=object)
-_stand_in("litellm.proxy")
-_stand_in(
-    "litellm.proxy._types",
-    LitellmUserRoles=types.SimpleNamespace(INTERNAL_USER="internal_user"),
-    UserAPIKeyAuth=lambda **kw: types.SimpleNamespace(**kw),
-)
-
-_spec = importlib.util.spec_from_file_location("local_caller_auth", MODULE)
-lca = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(lca)
-HTTPException = lca.HTTPException
+import local_caller_auth as lca  # noqa: E402
+from fastapi import HTTPException  # noqa: E402
 
 CONFIG = """
 model_list:

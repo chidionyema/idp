@@ -32,6 +32,7 @@ failure path returns a payload with an `error` field, the same shape as estate_m
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import json
 import os
@@ -339,20 +340,30 @@ async def do_voice_clarify(
 
 @hookimpl
 def register_mcp_tools(datasette, mcp):
+    # An MCP tool returns one value: FastMCP cannot build a schema for an async generator, and
+    # the failure is raised at registration, which crashlooped estate-mcp (and took remember and
+    # recall down with it). So the tool listens for a bounded window and returns what arrived.
     @mcp.tool()
-    async def voice_intent_stream() -> AsyncGenerator[dict, None]:
-        """Subscribe to voice intents from estate.agent.sovereign.*.steer.
+    async def voice_intent_stream(limit: int = 10, wait_s: float = 10.0) -> list[dict]:
+        """Listen on estate.agent.sovereign.*.steer and return the voice intents that arrive.
 
-        Yields intents with: text, author, session_id, timestamp, confidence.
-        Any MCP client can subscribe with:
-
-            async for intent in voice_intent_stream():
-                handle(intent)
-
-        Returns an error dict if the bus is unavailable.
+        Returns up to `limit` intents (text, author, session_id, timestamp, confidence), or
+        whatever arrived within `wait_s` seconds, whichever comes first. An empty list means
+        nobody spoke. Returns a one-element error list if the bus is unavailable.
         """
-        async for intent in do_voice_intent_stream():
-            yield intent
+        intents: list[dict] = []
+
+        async def collect() -> None:
+            async for intent in do_voice_intent_stream():
+                intents.append(intent)
+                if "error" in intent or len(intents) >= limit:
+                    return
+
+        try:
+            await asyncio.wait_for(collect(), timeout=max(0.1, min(wait_s, 60.0)))
+        except asyncio.TimeoutError:
+            pass
+        return intents
 
     @mcp.tool()
     async def voice_speak(
