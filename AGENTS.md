@@ -129,6 +129,12 @@ To invoke: `estate_invoke { intent: <name> }` via MCP, or `estate-execute <name>
 
 Design spec: `docs/specs/2026-09-24-estate-agent-enforcement-platform.md`
 
+**Lost work: `estate-execute work-audit` (days=28).** Before saying work is done, missing or
+"never landed", run it. For every closed-unmerged PR, stash, local-only branch and uncommitted
+worktree it measures how many added lines are on origin/main now, or were and got deleted:
+LOST / PARTIAL / REMOVED / LANDED, plus unticked checkpoints in open issues. Full result:
+`~/.estate/work-audit/latest.json`. Source: `platform/estate/libexec/work-audit.py`.
+
 ## 8. Placement — the free tier decides, not the cluster
 
 Nothing goes on the cluster by default. Place every workload by the ladder in
