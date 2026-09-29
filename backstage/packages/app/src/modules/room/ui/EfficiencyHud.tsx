@@ -9,7 +9,7 @@ export default function EfficiencyHud() {
   return (
     <div
       data-testid="efficiency-hud"
-      className="absolute top-[132px] right-6 z-30 w-[280px] rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
+      className="w-full rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
     >
       <div className="flex items-baseline gap-2 px-1 pb-1">
         <span className="text-[9px] font-mono uppercase tracking-widest text-white/60 flex-1">token efficiency · live</span>
