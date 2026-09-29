@@ -1,8 +1,8 @@
 // Live token efficiency on /fleet: what the LiteLLM efficiency lane did, as calls happen.
-// Source is the backend's `GET /fleetview/efficiency/stream` (SSE, one frame per 2s), which reads
+// Source is the backend's `GET /fleetview/efficiency` (polled every 5s), which reads
 // the gateway's own ledger. Nothing here is computed client-side except a rate.
 import { useEffect, useState } from 'react';
-import { discoveryApiRef, useApi } from '@backstage/frontend-plugin-api';
+import { fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Chip, Summary } from '../shell';
 
 type Frame = {
@@ -13,7 +13,6 @@ type Frame = {
   router_bytes_saved: number;
   prefix_checked: number;
   prefix_broken: number;
-  new_calls: number;
   // the epoch chain (idp#4893); absent from a backend that predates it
   epochs_snapped?: number;
   calls_under_lock?: number;
@@ -25,36 +24,35 @@ type Frame = {
 export type { Frame as EfficiencyFrame };
 
 export function useEfficiencyFrame() {
-  const discoveryApi = useApi(discoveryApiRef);
+  const fetchApi = useApi(fetchApiRef);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let source: EventSource | undefined;
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Polled through fetchApi, not EventSource: EventSource bypasses fetchApi's bearer token, so the
+    // Backstage proxy answers the stream 401 and the panel would never leave "unreachable".
+    const poll = async () => {
       try {
-        const base = await discoveryApi.getBaseUrl('proxy');
-        if (cancelled) return;
-        if (typeof EventSource === 'undefined') {
-          setError('this browser has no EventSource');
-          return;
-        }
-        source = new EventSource(`${base}/fleetview/efficiency/stream?since=1h`);
-        source.addEventListener('efficiency', event => {
+        const res = await fetchApi.fetch('plugin://proxy/fleetview/efficiency?since=1h');
+        if (!res.ok) throw new Error(`efficiency ${res.status}`);
+        const next = (await res.json()) as Frame;
+        if (!cancelled) {
           setError(null);
-          setFrame(JSON.parse((event as MessageEvent).data) as Frame);
-        });
-        source.onerror = () => setError('efficiency stream unreachable');
+          setFrame(next);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       }
-    })();
+      if (!cancelled) timer = setTimeout(poll, 5000);
+    };
+    void poll();
     return () => {
       cancelled = true;
-      source?.close();
+      if (timer) clearTimeout(timer);
     };
-  }, [discoveryApi]);
+  }, [fetchApi]);
   return { frame, error };
 }
 
@@ -75,7 +73,6 @@ export function EfficiencyPanel() {
       <Chip>
         prefix broken {brokenPct}% ({frame.prefix_broken}/{frame.prefix_checked})
       </Chip>{' '}
-      <Chip>{frame.new_calls} new calls</Chip>{' '}
       <Chip>
         epochs {frame.epochs_snapped ?? 0} snapped · {frame.calls_under_lock ?? 0} calls
         under lock
@@ -134,7 +131,7 @@ function countdown(ends: string | null, now: number): string {
 }
 
 function TokenProof() {
-  const discoveryApi = useApi(discoveryApiRef);
+  const fetchApi = useApi(fetchApiRef);
   const [proof, setProof] = useState<Proof | null>(null);
   const [now, setNow] = useState(Date.now());
 
@@ -142,9 +139,11 @@ function TokenProof() {
     let cancelled = false;
     const read = async () => {
       try {
-        const base = await discoveryApi.getBaseUrl('proxy');
-        const res = await fetch(`${base}/fleetview/efficiency/proof`);
-        if (!cancelled && res.ok) setProof((await res.json()) as Proof);
+        // through fetchApi, which carries the bearer the Backstage proxy requires (#4937)
+        const res = await fetchApi.fetch('plugin://proxy/fleetview/efficiency/proof');
+        const body = res.ok ? ((await res.json()) as Partial<Proof>) : null;
+        // only a whole proof renders; anything else leaves the last one standing
+        if (!cancelled && body?.trial?.lanes && body.estimate?.steps) setProof(body as Proof);
       } catch {
         // the live panel above still stands; the proof arrives on the next read
       }
@@ -157,7 +156,7 @@ function TokenProof() {
       window.clearInterval(poll);
       window.clearInterval(tick);
     };
-  }, [discoveryApi]);
+  }, [fetchApi]);
 
   if (!proof) return <Summary>proof: computing from the whole ledger…</Summary>;
   const lanes = Object.entries(proof.trial.lanes);

@@ -78,8 +78,10 @@ data:
   # secret below.
   # Filled 2026-08-28 by measurement on the founder's Mac (`whoami`, `tailscale ip -4`), not by a
   # hand (founder: "seamless security, no founder friction"). This file is the one place they may be.
-  FOUNDER_MAC_USER: "chidionyema"
-  FOUNDER_MAC_TS_IP: "100.93.240.113"
+  # Re-measured 2026-09-29: the Mac above (chidis-macbook-pro-1, 100.93.240.113) has been offline
+  # 12 days; the live Mac is roses-macbook-pro, tagged tag:founder-mac, `whoami` roseonyema.
+  FOUNDER_MAC_USER: "roseonyema"
+  FOUNDER_MAC_TS_IP: "100.98.58.115"
   # crew#66 phase 1: the Tailscale federated identity (tailscale.com/kb/1581) that lets a GitHub
   # Actions run on this repo's main mint the operator OAuth client with no secret held anywhere.
   # A client id is public. Empty = not registered yet; bin/idp-bootstrap-tailscale then reads the
