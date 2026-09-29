@@ -1,0 +1,47 @@
+# Keeps cross-node Calico pod traffic un-NATed, whatever Oracle's flannel add-on does.
+# Oracle re-applies kube-flannel-ds with --ip-masq within minutes of any change (measured
+# 2026-09-29), and its FLANNEL-POSTRTG chain SNATs pod->pod packets that the default-deny
+# NetworkPolicies then drop (outages 2026-09-08, 09-26, 09-28). This rule sits at the top of
+# nat POSTROUTING, ahead of flannel's jump, so pod->pod traffic RETURNs before flannel sees it.
+# Packets kube-proxy marked for masquerade (0x4000) still fall through. Every 5s it re-asserts
+# position, so a flannel restart cannot win.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: pod-no-masq
+  namespace: kube-system
+  labels: {app: pod-no-masq}
+spec:
+  selector:
+    matchLabels: {app: pod-no-masq}
+  template:
+    metadata:
+      labels: {app: pod-no-masq}
+    spec:
+      hostNetwork: true
+      priorityClassName: system-node-critical
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: pod-no-masq
+          image: quay.io/calico/node:v3.32.2
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              R="-s 10.244.0.0/16 -d 10.244.0.0/16 -m mark ! --mark 0x4000/0x4000 -m comment --comment estate-pod-no-masq -j RETURN"
+              ours() { iptables-nft -t nat -S POSTROUTING | grep -n 'estate-pod-no-masq' | head -1 | cut -d: -f1; }
+              theirs() { iptables-nft -t nat -S POSTROUTING | grep -n 'FLANNEL-POSTRTG' | head -1 | cut -d: -f1; }
+              while true; do
+                o=$(ours); f=$(theirs)
+                if [ -z "$o" ] || { [ -n "$f" ] && [ "$f" -lt "$o" ]; }; then
+                  while iptables-nft -t nat -D POSTROUTING $R 2>/dev/null; do :; done
+                  iptables-nft -t nat -I POSTROUTING 1 $R && echo "$(date -u +%FT%TZ) pod-no-masq placed ahead of flannel"
+                fi
+                sleep 5
+              done
+          securityContext:
+            capabilities:
+              add: [NET_ADMIN, NET_RAW]
+          resources:
+            requests: {cpu: 5m, memory: 16Mi}
+            limits: {memory: 64Mi}
