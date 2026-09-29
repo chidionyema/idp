@@ -45,6 +45,9 @@ async def lifespan(app: FastAPI):
             )
         except Exception:  # noqa: BLE001, S110 -- adapter startup failure must not break the app
             pass
+        from fleetview_backend import efficiency_feed
+
+        asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
     yield
 
 
