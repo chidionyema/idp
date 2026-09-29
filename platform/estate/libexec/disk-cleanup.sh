@@ -126,6 +126,9 @@ unsettled() {
        'index($0, w"/")==1 || $0==w || index($0, r"/")==1 || $0==r {f=1} END{exit !f}'; then
     echo "a process is working inside it"; return; fi
   gd=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || { echo "no git dir"; return; }
+  # A checkout whose HEAD is already in origin/main holds nothing that is not on main: it needs no
+  # idle wait (the wait only guards work in progress, and there is none to lose).
+  git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null && return
   if [ "$WT_IDLE_MIN" -gt 0 ] && [ -n "$(find "$gd/index" "$gd/HEAD" "$gd/logs/HEAD" -mmin -"$WT_IDLE_MIN" 2>/dev/null | head -1)" ]; then
     echo "used in the last ${WT_IDLE_MIN}m"; return; fi
 }
