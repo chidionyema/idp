@@ -11,9 +11,16 @@ estate-secrets/scripts/secret-load, into this process's environment only, never 
 the router still starts and /readyz answers 503 naming the 401, which bin/voice-watch reports.
 """
 
+from __future__ import annotations
+
+import hashlib
 import os
+import re
 import runpy
 import sys
+import tarfile
+import subprocess
+import tempfile
 from pathlib import Path
 
 # One key loader, not two: bin/fleetview-launchd's, run as a module (its main() is not called).
@@ -27,7 +34,90 @@ BINARY = Path(
 )
 
 
+MODELS = Path(
+    os.environ.get("VOICE_MODELS") or Path.home() / ".cache/estate-tools/sherpa-models"
+)
+RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download"
+# The image's pins: the same tarballs, checked by the same sha256, so laptop and OKE speak alike.
+# Installed, this file runs from ~/.estate/bin, so the Dockerfile is read from the tree
+# estate-runtime-sync keeps on main; from a checkout, from beside it.
+DOCKERFILES = [
+    Path(os.environ.get("ESTATE_RUNTIME_TREE") or Path.home() / ".estate/runtime/idp")
+    / "platform/voice-router/Dockerfile",
+    Path(__file__).resolve().parent.parent / "platform/voice-router/Dockerfile",
+]
+
+
+def pinned_models(dockerfile: Path | None = None) -> list[tuple[str, str]]:
+    dockerfile = dockerfile or next(
+        (d for d in DOCKERFILES if d.is_file()), DOCKERFILES[0]
+    )
+    return re.findall(
+        r"fetch ((?:asr|tts)-models/\S+\.tar\.bz2) ([0-9a-f]{64})",
+        dockerfile.read_text(),
+    )
+
+
+def ensure_models(
+    models: Path = MODELS, pins: list[tuple[str, str]] | None = None
+) -> list[str]:
+    """Fetch any pinned model whose directory is missing. 2026-09-29: the models directory vanished
+    under a running voice-router; every reply then failed at speech ("Failed to convert ... to token
+    IDs") and a restart would not have started at all. Nothing installed them; now the launcher does."""
+    fetched = []
+    for rel, sha in pins if pins is not None else pinned_models():
+        name = Path(rel).name.removesuffix(".tar.bz2")
+        if (models / name).is_dir():
+            continue
+        models.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=models) as tmp:
+            tar = Path(tmp) / "m.tar.bz2"
+            # the system curl, as the image does: launchd's python.org Python ships no CA store,
+            # so urllib fails every https handshake on this laptop
+            subprocess.run(  # noqa: S603 -- fixed curl argv, pinned URL, no shell
+                [
+                    "/usr/bin/curl",
+                    "-fsSL",
+                    "--max-time",
+                    "600",
+                    "-o",
+                    str(tar),
+                    f"{RELEASES}/{rel}",
+                ],
+                check=True,
+            )
+            got = hashlib.sha256(tar.read_bytes()).hexdigest()
+            if got != sha:
+                raise RuntimeError(f"{name}: sha256 {got} is not the pinned {sha}")
+            with tarfile.open(tar) as t:
+                # the "data" filter refuses links and paths outside tmp; Pythons before it lack the arg
+                if hasattr(tarfile, "data_filter"):
+                    t.extractall(tmp, filter="data")
+                else:
+                    t.extractall(tmp)  # noqa: S202 -- bytes already matched the pinned sha256
+            os.replace(Path(tmp) / name, models / name)
+        fetched.append(name)
+    return fetched
+
+
 def main() -> None:
+    try:
+        got = ensure_models()
+        if got:
+            print(
+                f"voice-router-launchd: fetched models {', '.join(got)}",
+                file=sys.stderr,
+            )
+    except (
+        OSError,
+        RuntimeError,
+        tarfile.TarError,
+        subprocess.CalledProcessError,
+    ) as exc:
+        print(
+            f"voice-router-launchd: models NOT fetched ({exc}); speech will fail",
+            file=sys.stderr,
+        )
     key = load_key()
     if key:
         os.environ["LLM_API_KEY"] = key
@@ -35,7 +125,7 @@ def main() -> None:
         f"voice-router-launchd: router key {'loaded' if key else 'MISSING -- /readyz will answer 503'}",
         file=sys.stderr,
     )
-    os.execv(str(BINARY), [str(BINARY)])
+    os.execv(str(BINARY), [str(BINARY)])  # noqa: S606 -- becomes the router binary
 
 
 if __name__ == "__main__":
