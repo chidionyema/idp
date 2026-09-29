@@ -651,7 +651,9 @@ def observe(kind, ns, name):
     # Tests: a workload declares its own by annotation; absent means none, which grade() accepts
     # only as an explicit empty set.
     ann = (obj.get("metadata") or {}).get("annotations") or {}
-    obs["tests"] = {} if "shadow.estate/tests" not in ann else {"declared": False}
+    obs["tests"] = (
+        [] if "shadow.estate/tests" not in ann else [{"name": ann["shadow.estate/tests"], "passed": False}]
+    )
     return obs
 
 
