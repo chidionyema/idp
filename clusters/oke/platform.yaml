@@ -329,3 +329,24 @@ spec:
       kind: Deployment
       name: otto-gateway
       namespace: otto-gateway
+---
+# Oracle re-installs its flannel add-on with --ip-masq on node work requests, and the
+# FLANNEL-POSTRTG chain SNATs every cross-node Calico pod packet (outages 2026-09-08, 09-26, 09-28).
+# This row re-asserts the flag-free DaemonSet every reconcile. prune: false -- dropping this row
+# must never delete the node network. Stopgap until Calico goes policy-only on flannel IPAM.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: flannel
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/flannel
+  prune: false
+  wait: true
+  timeout: 5m
