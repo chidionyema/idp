@@ -40,6 +40,7 @@ def _gw(monkeypatch, tmp_path, fold=None):
         "ESTATE_SHADOW_FROM_TOKENS": "2000",
         "ESTATE_SHADOW_EVERY_TOKENS": "500",
         "ESTATE_SHADOW_CHUNK_CHARS": "4000",
+        "ESTATE_HOLDOUT_PCT": "0",  # the holdout has its own test
     }.items():
         monkeypatch.setenv(k, v)
     spec = importlib.util.spec_from_loader(

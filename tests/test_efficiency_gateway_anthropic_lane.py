@@ -31,6 +31,7 @@ SESSION = json.dumps({"device_id": "d", "session_id": "s-1"})
 
 def _gw(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_EFFICIENCY_LEDGER", str(tmp_path / "ledger.jsonl"))
+    monkeypatch.setenv("ESTATE_HOLDOUT_PCT", "0")  # the holdout has its own test
     spec = importlib.util.spec_from_loader(
         "gw_anthropic_under_test",
         importlib.machinery.SourceFileLoader("gw_anthropic_under_test", MODULE_PATH),

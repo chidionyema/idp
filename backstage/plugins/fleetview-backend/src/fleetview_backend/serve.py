@@ -310,6 +310,12 @@ def build_app() -> FastAPI:
             content=await asyncio.to_thread(efficiency_feed.summary, since)
         )
 
+    @app.get("/efficiency/proof")
+    async def efficiency_proof():
+        from fleetview_backend import efficiency_feed
+
+        return JSONResponse(content=await asyncio.to_thread(efficiency_feed.proof))
+
     @app.get("/efficiency/stream")
     async def efficiency_stream(since: str = "1h"):
         from fleetview_backend import efficiency_feed

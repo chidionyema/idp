@@ -144,6 +144,31 @@ def _session_id(data: dict) -> str:
     return str(data.get("litellm_session_id") or "-")
 
 
+# --------------------------------------------------------------------------- holdout
+#
+# WHY (2026-09-29). The ledger shows what the chain cut and what the vendor billed AFTER the
+# cut, never what the same conversation would have been billed without it -- and with a prompt
+# cache in play the difference is not the tokens cut: a cut token was mostly a cache read at a
+# tenth of the price, and a snap re-writes the prefix at 1.25-2x. The only measurement that
+# settles it is a randomised control: a fixed share of conversations runs with every step off,
+# and the report compares what the vendor billed per call in each arm. Assignment hashes the
+# conversation, never the call, so a conversation stays in one arm for its whole life.
+HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "25"))
+HOLDOUT_SALT = os.environ.get("ESTATE_HOLDOUT_SALT", "trial-2026-09-29")
+
+
+def _conversation_key(data: dict, session: str) -> str:
+    """Claude Code sends a session id; pi/opencode do not, so their first message stands in."""
+    if session and session != "-":
+        return session
+    return _h((data.get("messages") or [])[:2])
+
+
+def _arm(key: str) -> str:
+    h = int(hashlib.sha256(f"{HOLDOUT_SALT}:{key}".encode()).hexdigest()[:8], 16)
+    return "control" if (h % 10000) < HOLDOUT_PCT * 100 else "treat"
+
+
 def _strip_cache_control(obj: Any) -> Any:
     # Claude Code moves its cache_control breakpoints every turn; they are not content.
     if isinstance(obj, dict):
@@ -769,6 +794,24 @@ class _AnthropicSteps:
         return steps
 
 
+def _cost_usd(kwargs: dict) -> Optional[float]:
+    """The dollars LiteLLM billed this call at from its maintained price map, cache rates included.
+
+    Never a price sheet of our own: a reader can check the figure against LiteLLM's
+    model_prices_and_context_window.json for the same model and usage.
+    """
+    for c in (
+        kwargs.get("response_cost"),
+        (kwargs.get("standard_logging_object") or {}).get("response_cost"),
+    ):
+        try:
+            if c is not None:
+                return round(float(c), 8)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 def _usage_numbers(response_obj: Any, kwargs: dict) -> Optional[dict]:
     """What Anthropic billed for the call, from the response usage LiteLLM hands the callback."""
     u = None
@@ -874,15 +917,22 @@ class EstateEfficiencyGateway(CustomLogger):
         session = _session_id(data)
         msgs = data.get("messages") or []
         before = _json_bytes(msgs)
-        epoch = self._run_epochs(data, session)
-        steps = self._anthropic.run(data, session)
-        steps.update(epoch)
+        conv = _conversation_key(data, session)
+        arm = _arm(conv)
+        if arm == "control":
+            steps: dict = {}  # the holdout: the vendor gets exactly what the caller sent
+        else:
+            epoch = self._run_epochs(data, session)
+            steps = self._anthropic.run(data, session)
+            steps.update(epoch)
         after = _json_bytes(data.get("messages") or [])
         self._calls += 1
-        self._cumulative_tokens += steps["m7"]["est_tokens"]
+        self._cumulative_tokens += (steps.get("m7") or {}).get("est_tokens", 0)
         row = {
             "v": 2,
             "kind": "pre",
+            "arm": arm,
+            "conv": conv[:16],
             "mode": "anthropic" if _is_anthropic(data, call_type) else "openai",
             "call_id": data.get("litellm_call_id"),
             "session": session,
@@ -902,6 +952,8 @@ class EstateEfficiencyGateway(CustomLogger):
             self._pending[row["call_id"]] = row
             while len(self._pending) > 512:
                 self._pending.pop(next(iter(self._pending)))
+        if arm == "control":
+            return data
         m1 = steps["m1"]
         log.info(
             "[EfficiencyGateway] anthropic %s msgs=%d saved=%dB (m2 %dB, m5 %dB) prefix %d/%d%s",
@@ -958,13 +1010,19 @@ class EstateEfficiencyGateway(CustomLogger):
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "latency_ms": ms,
                 "ok": error is None,
+                "arm": pre.get("arm", "treat"),
+                "conv": pre.get("conv"),
+                "messages": pre.get("messages"),
+                "bytes_before": pre.get("bytes_before"),
+                "bytes_after": pre.get("bytes_after"),
                 "est_tokens_cut": pre.get("est_tokens_cut", 0),
-                "prefix_broken": pre["steps"]["m1"]["prefix_broken"],
+                "prefix_broken": (pre["steps"].get("m1") or {}).get("prefix_broken"),
             }
             if error is not None:
                 row["error"] = str(error)[:300]
             else:
                 row["usage"] = _usage_numbers(response_obj, kwargs)
+                row["cost_usd"] = _cost_usd(kwargs)
             _ledger_write(row)
         except Exception as exc:  # noqa: BLE001 - the ledger may never fail the request
             log.warning("[ledger] outcome not written: %s", exc)

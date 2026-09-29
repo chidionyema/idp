@@ -51,3 +51,28 @@ async def stream(since: str = "1h", every_s: float = 2.0):
         body = await asyncio.to_thread(summary, since)
         yield f"event: efficiency\ndata: {json.dumps({**body, 'new_calls': calls})}\n\n"
         await asyncio.sleep(every_s)
+
+
+# The proof (bin/estate-token-proof): the holdout trial and the per-step dollar estimate. It reads
+# the whole ledger and prices it with LiteLLM's map (~40 s), so /fleet gets it from a 5-minute cache.
+_PROOF = Path(
+    os.environ.get("ESTATE_TOKEN_PROOF")
+    or Path(__file__).resolve().parents[5] / "bin" / "estate-token-proof"
+)
+_PROOF_TTL_S = 300
+_proof_cache: dict = {}
+
+
+def proof() -> dict:
+    import time
+
+    hit = _proof_cache.get("r")
+    if hit and time.time() - hit[0] < _PROOF_TTL_S:
+        return hit[1]
+    loader = importlib.machinery.SourceFileLoader("estate_token_proof", str(_PROOF))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    body = mod.report(None)
+    _proof_cache["r"] = (time.time(), body)
+    return body
