@@ -268,6 +268,21 @@ def test_worktrees_used_recently_are_kept(tmp_path):
     assert "used in the last 360m" in r.stdout
 
 
+def test_a_worktree_already_merged_to_main_is_removed_without_the_idle_wait(tmp_path):
+    home, repo, wts = _worktrees(tmp_path)
+    _git("update-ref", "refs/remotes/origin/main", "main", cwd=repo)
+    r = _run_wt(home, repo, "true", "false", "0", "true", idle="360")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not wts["settled"].exists(), (
+        r.stdout
+    )  # HEAD is in origin/main: nothing to lose
+    # work that is not on main keeps its idle wait: "built" holds a commit only its branch has
+    assert wts["built"].exists(), r.stdout
+    assert wts["dirty"].exists(), (
+        r.stdout
+    )  # merged or not, uncommitted work is never removed
+
+
 def test_worktrees_are_off_by_default(tmp_path):
     home, repo, wts = _worktrees(tmp_path)
     r = _run_wt(home, repo, "true", "false")

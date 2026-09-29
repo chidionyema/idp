@@ -302,6 +302,22 @@ def build_app() -> FastAPI:
 
         return JSONResponse(content=vm.log(limit=limit))
 
+    @app.get("/efficiency")
+    async def efficiency(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(efficiency_feed.summary, since)
+        )
+
+    @app.get("/efficiency/stream")
+    async def efficiency_stream(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return StreamingResponse(
+            efficiency_feed.stream(since), media_type="text/event-stream"
+        )
+
     @app.get("/voice/log/summary")
     async def voice_log_summary(limit: int = 200):
         """Friction stats: empty rate, median latencies, per-voice speed."""
@@ -332,13 +348,6 @@ def build_app() -> FastAPI:
         }
         result, status = await vm.steer(body, trace_context or None)
         return JSONResponse(content=result, status_code=status)
-
-    @app.get(routes.EFFICIENCY_PATH)
-    async def efficiency():
-        # reads up to 32 MB of ledger: off the event loop
-        loop = asyncio.get_running_loop()
-        body, status = await loop.run_in_executor(None, routes.efficiency_envelope)
-        return JSONResponse(body, status_code=status)
 
     @app.get(routes.AGENT_JOBS_PATH)
     async def agent_jobs_get():

@@ -34,8 +34,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
+import { EfficiencyPanel } from './EfficiencyPanel';
 import { EstateMap } from './EstateMap';
-import { EstateEfficiency } from './EstateEfficiency';
 import {
   attentionReason,
   capabilityLabel,
@@ -457,8 +457,8 @@ export function Fleet() {
       <Section title="Estate map">
         <EstateMap />
       </Section>
-      <Section title="Router efficiency">
-        <EstateEfficiency />
+      <Section title="Token efficiency (live)">
+        <EfficiencyPanel />
       </Section>
       <Section title="Sessions">
         <Summary>{board.summary}</Summary>

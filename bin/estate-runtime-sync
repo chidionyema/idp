@@ -67,7 +67,9 @@ def launchers() -> list[str]:
 # /fleet's frontend: its own sparse clone (backstage/ only) with node_modules, served by
 # ai.estate.fleetview-frontend. The dev server hot-reloads what this checks out.
 FRONTEND = Path(os.environ.get("ESTATE_FRONTEND_TREE") or STATE / "frontend/idp")
-FRONTEND_PROBE = "http://127.0.0.1:3100/"
+# `localhost`, not 127.0.0.1: the dev server binds ::1 only (app.baseUrl says localhost), so the v4
+# literal was refused on every tick and every frontend deploy was rolled back (2026-09-28).
+FRONTEND_PROBE = "http://localhost:3100/"
 BACKEND_PROBE = "http://127.0.0.1:7107/.backstage/health/v1/liveness"
 # fleetview_backend reaches the repo root for these (parents[5]); a change here is a backend change.
 BACKEND_PATHS = (
@@ -288,8 +290,18 @@ def sync_frontend(sha: str) -> list[str]:
         )
         if r.returncode:
             git("checkout", "-q", "--detach", was, tree=FRONTEND)
-            alert(f"/fleet frontend: yarn install for {sha[:8]} failed; kept {was[:8]}")
+            # The reason travels with the alert: a bare "install failed" hid the cause for hours.
+            why = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+            alert(
+                f"/fleet frontend: yarn install for {sha[:8]} failed (exit {r.returncode}: "
+                f"{' | '.join(why)[:300]}); kept {was[:8]}"
+            )
             return [f"frontend held at {was[:8]} (install failed)"]
+    # A backend that is not answering is a service that died, not a bad frontend: restart it once
+    # before judging the checkout (2026-09-28: its Node child died and nothing restarted it, so
+    # every deploy after was rolled back for 16 hours).
+    if not answers(BACKEND_PROBE, 5):
+        kickstart("ai.estate.backstage-backend")
     if answers(FRONTEND_PROBE, 180) and answers(BACKEND_PROBE, 180):
         return [f"frontend {was[:8]}->{sha[:8]}"]
     git("checkout", "-q", "--detach", was, tree=FRONTEND)
