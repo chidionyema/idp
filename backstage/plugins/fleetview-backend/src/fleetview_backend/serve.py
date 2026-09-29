@@ -302,6 +302,22 @@ def build_app() -> FastAPI:
 
         return JSONResponse(content=vm.log(limit=limit))
 
+    @app.get("/efficiency")
+    async def efficiency(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return JSONResponse(
+            content=await asyncio.to_thread(efficiency_feed.summary, since)
+        )
+
+    @app.get("/efficiency/stream")
+    async def efficiency_stream(since: str = "1h"):
+        from fleetview_backend import efficiency_feed
+
+        return StreamingResponse(
+            efficiency_feed.stream(since), media_type="text/event-stream"
+        )
+
     @app.get("/voice/log/summary")
     async def voice_log_summary(limit: int = 200):
         """Friction stats: empty rate, median latencies, per-voice speed."""
