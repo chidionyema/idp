@@ -13,7 +13,6 @@ type Frame = {
   router_bytes_saved: number;
   prefix_checked: number;
   prefix_broken: number;
-  new_calls?: number;
 };
 
 export type { Frame as EfficiencyFrame };
@@ -68,7 +67,6 @@ export function EfficiencyPanel() {
       <Chip>
         prefix broken {brokenPct}% ({frame.prefix_broken}/{frame.prefix_checked})
       </Chip>{' '}
-      <Chip>{frame.new_calls} new calls</Chip>
       {error && <Chip>{error}</Chip>}
     </div>
   );
