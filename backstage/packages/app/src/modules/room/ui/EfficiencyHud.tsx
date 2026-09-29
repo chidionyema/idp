@@ -1,6 +1,6 @@
 // TOKEN EFFICIENCY, LIVE, on the Reactor (/fleet renders FleetReactorApp, not home/Fleet.tsx).
-// Every number is a frame from the backend's ledger stream; before the first frame, or when the
-// stream is down, the HUD says so instead of showing a figure it did not receive.
+// Every number is a poll of the backend's ledger; before the first response, or when the
+// endpoint is down, the HUD says so instead of showing a figure it did not receive.
 import { useEfficiencyFrame } from '../../home/EfficiencyPanel';
 
 export default function EfficiencyHud() {
@@ -19,7 +19,6 @@ export default function EfficiencyHud() {
         <div className="px-1 flex flex-col gap-0.5 text-[10px] font-mono text-white/70">
           <div>{frame.calls_billed} calls · <span className="text-emerald-300/90">{frame.cache_hit_pct.toFixed(1)}% cache hit</span></div>
           <div>router cut {frame.router_bytes_saved} B · prefix broken {broken}% ({frame.prefix_broken}/{frame.prefix_checked})</div>
-          <div className="text-white/40">{frame.new_calls} new calls</div>
         </div>
       ) : (
         <div className="px-1 py-1 text-[9px] font-mono text-white/30">{error ?? 'waiting for the first ledger frame…'}</div>
