@@ -407,7 +407,9 @@ def _fold_remote(state: str, events: str) -> str:
     headers = {"Content-Type": "application/json", "X-Estate-Internal": INTERNAL}
     if key:
         headers["Authorization"] = f"Bearer {key}"
-    req = urllib.request.Request(
+    if not SHADOW_URL.startswith(("http://", "https://")):
+        raise ValueError(f"ESTATE_SHADOW_URL must be http(s): {SHADOW_URL!r}")
+    req = urllib.request.Request(  # noqa: S310 - scheme checked above
         SHADOW_URL, data=json.dumps(body).encode(), headers=headers
     )
     with urllib.request.urlopen(req, timeout=120) as r:  # noqa: S310 - fixed local router URL
