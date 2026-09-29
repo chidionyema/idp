@@ -1,0 +1,8 @@
+id: oci
+subject: estate.channel.oci
+how_it_works: 'ADR 0004 step 2: one OKE Basic cluster and one Always Free A1 worker, built by Oracle''s
+  own [terraform-oci-oke](https://github.com/oracle-terraform-modules/terraform-oci-oke) module.'
+provenance: readme
+visual:
+  scene: pod-orbit
+  palette: verdigris

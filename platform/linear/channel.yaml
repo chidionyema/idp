@@ -1,0 +1,7 @@
+id: linear
+subject: estate.channel.linear
+how_it_works: 'Configure the Linear workspace so it is a board, not a dump (crew#: founder 2026-09-06).'
+provenance: docstring:setup.py
+visual:
+  scene: code-stream
+  palette: verdigris

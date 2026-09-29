@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Backfill: write platform/<component>/channel.yaml for every component that lacks one.
+
+Deterministic, no model call. The explanation is taken from what the component already says about
+itself, first hit wins: README first paragraph, the leading comment block of its kustomization or
+manifest, a Python module docstring, a Go package doc comment. Failing all four it is described from
+the Kubernetes objects it declares. `provenance` records which, so a weak one is findable and is
+enriched in place; the gate only checks that the channel exists and is well formed.
+
+  bin/channel-backfill [--write]     dry run by default; prints what it would write
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import hashlib
+import re
+import sys
+from pathlib import Path
+
+import yaml
+
+IDP = Path(__file__).resolve().parent.parent
+PALETTES = ("aurora", "ember", "tide", "verdigris", "dusk", "neon", "sol", "glacier")
+
+
+def para(text: str) -> str:
+    out = []
+    for line in text.strip().splitlines():
+        if not line.strip():
+            if out:
+                break
+            continue
+        if line.lstrip().startswith(("#", "```", "|", "---")) and not out:
+            continue
+        out.append(line.strip())
+    return " ".join(out)[:600]
+
+
+def from_readme(c: Path):
+    for f in sorted(c.glob("[Rr][Ee][Aa][Dd][Mm][Ee]*")):
+        t = para(f.read_text(errors="ignore"))
+        if len(t) > 30:
+            return t, "readme"
+
+
+def from_comments(c: Path):
+    for name in ("kustomization.yaml", *sorted(p.name for p in c.glob("*.yaml"))):
+        f = c / name
+        if not f.is_file():
+            continue
+        lines = []
+        for line in f.read_text(errors="ignore").splitlines():
+            if line.startswith("#"):
+                lines.append(line.lstrip("# ").rstrip())
+            elif line.strip() == "---" and not lines:
+                continue
+            else:
+                break
+        t = para("\n".join(lines))
+        if len(t) > 30:
+            return t, f"comment:{name}"
+
+
+def from_python(c: Path):
+    for f in sorted(c.rglob("*.py"))[:20]:
+        try:
+            d = ast.get_docstring(ast.parse(f.read_text(errors="ignore")))
+        except (SyntaxError, ValueError):
+            continue
+        if d and len(para(d)) > 30:
+            return para(d), f"docstring:{f.relative_to(c)}"
+
+
+def from_go(c: Path):
+    for f in sorted(c.rglob("*.go"))[:20]:
+        m = re.search(r"((?://[^\n]*\n)+)package ", f.read_text(errors="ignore"))
+        if m:
+            t = para("\n".join(x.lstrip("/ ").rstrip() for x in m.group(1).splitlines()))
+            if len(t) > 30:
+                return t, f"godoc:{f.relative_to(c)}"
+
+
+def kinds(c: Path) -> list[str]:
+    seen = []
+    for f in sorted(c.rglob("*.y*ml")):
+        try:
+            for d in yaml.safe_load_all(f.read_text(errors="ignore")):
+                if isinstance(d, dict) and d.get("kind"):
+                    seen.append(f"{d['kind']}/{(d.get('metadata') or {}).get('name', '?')}")
+        except yaml.YAMLError:
+            pass
+    return seen
+
+
+def from_kinds(c: Path):
+    k = kinds(c)
+    if k:
+        return f"Declares {', '.join(k[:8])}{' and more' if len(k) > 8 else ''}. No prose description exists yet; this one is derived from the manifests.", "kinds"
+    return f"Component platform/{c.name}. No prose description exists yet; this one is derived from its file layout.", "layout"
+
+
+def scene_for(c: Path) -> str:
+    k = " ".join(kinds(c))
+    if "CronJob" in k or "Job/" in k:
+        return "clockwork"
+    if "Deployment" in k or "StatefulSet" in k or "DaemonSet" in k:
+        return "pod-orbit"
+    if list(c.rglob("*.py")) or list(c.rglob("*.go")):
+        return "code-stream"
+    return "vault"
+
+
+def build(c: Path) -> dict:
+    how, prov = next((r for r in (f(c) for f in (from_readme, from_comments, from_python, from_go)) if r), None) or from_kinds(c)
+    return {
+        "id": c.name,
+        "subject": f"estate.channel.{c.name}",
+        "how_it_works": how,
+        "provenance": prov,
+        "visual": {"scene": scene_for(c), "palette": PALETTES[int(hashlib.sha256(c.name.encode()).hexdigest(), 16) % len(PALETTES)]},
+    }
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--write", action="store_true")
+    a = ap.parse_args()
+    n = 0
+    for c in sorted(p for p in (IDP / "platform").iterdir() if p.is_dir() and not p.name.startswith(".")):
+        f = c / "channel.yaml"
+        if f.exists():
+            continue
+        d = build(c)
+        n += 1
+        print(f"{'write' if a.write else 'would'}  platform/{c.name}/channel.yaml  [{d['provenance']}]")
+        if a.write:
+            f.write_text(yaml.safe_dump(d, sort_keys=False, width=100, allow_unicode=True))
+    print(f"{n} channel(s) {'written' if a.write else 'to write'}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

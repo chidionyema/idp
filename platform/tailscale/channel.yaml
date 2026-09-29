@@ -1,0 +1,9 @@
+id: tailscale
+subject: estate.channel.tailscale
+how_it_works: crew#516 CP5, founder's locked spec (crew#66 5451926212, Phase 1). policy.hujson is not
+  a Kubernetes manifest -- Tailscale has no CRD for it -- so it is not a kustomize resource; it is applied
+  out-of-band by bin/idp-tailscale-policy (oke-check's apply job), read straight from this directory.
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: sol

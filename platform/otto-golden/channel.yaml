@@ -1,0 +1,11 @@
+id: otto-golden
+subject: estate.channel.otto-golden
+how_it_works: 'Otto (golden), founder order 2026-09-01. Same image as platform/hermes-agent -- one build,
+  two commands. The tag below is rewritten by image-automation-controller from ImagePolicy flux-system/hermes-agent
+  (the marker is how it finds the line), so every main build of hermes-agent rolls this pod too. It was
+  a hand-bumped tag before 2026-09-03, which is why merged work sat unreleased: the hand never bumped
+  it.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: pod-orbit
+  palette: neon

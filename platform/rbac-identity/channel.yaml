@@ -1,0 +1,8 @@
+id: rbac-identity
+subject: estate.channel.rbac-identity
+how_it_works: 'crew#841: the bridge''s identity, carried from the vault into flux-system so Flux can substitute
+  it into the ClusterRoleBinding that trusts it (platform/rbac/bridge.yaml).'
+provenance: comment:external-secret.yaml
+visual:
+  scene: vault
+  palette: verdigris

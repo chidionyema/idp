@@ -1,0 +1,8 @@
+id: orchestration
+subject: estate.channel.orchestration
+how_it_works: Component platform/orchestration. No prose description exists yet; this one is derived from
+  its file layout.
+provenance: layout
+visual:
+  scene: code-stream
+  palette: neon

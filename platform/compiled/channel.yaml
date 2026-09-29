@@ -1,0 +1,8 @@
+id: compiled
+subject: estate.channel.compiled
+how_it_works: Declares ExternalSecret/agent-foundry-hf, Kustomization/?. No prose description exists yet;
+  this one is derived from the manifests.
+provenance: kinds
+visual:
+  scene: vault
+  palette: verdigris

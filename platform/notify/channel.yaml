@@ -1,0 +1,10 @@
+id: notify
+subject: estate.channel.notify
+how_it_works: 'Apprise API: publish once, deliver everywhere (R75). Named channels are stored in the vault
+  as Apprise URLs. A POST to /notify/<channel>?title=X&body=Y fires to every backend the channel owns.
+  No backend URL, key or shape leaks to the caller. The server emits traces to the central collector (LAW
+  50).'
+provenance: comment:apprise-api.yaml
+visual:
+  scene: pod-orbit
+  palette: verdigris

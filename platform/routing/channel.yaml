@@ -1,0 +1,9 @@
+id: routing
+subject: estate.channel.routing
+how_it_works: 'The routing package holds the estate router: policy_router.py applies the routing policy
+  and intelligent_router.py picks a model lane per call, so every harness reaches models through one
+  router instead of per-tool configuration.'
+provenance: comment:policy_router.py
+visual:
+  scene: pod-orbit
+  palette: aurora

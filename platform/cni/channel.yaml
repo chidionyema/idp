@@ -1,0 +1,12 @@
+id: cni
+subject: estate.channel.cni
+how_it_works: 'crew#539 CP12 correction (founder, 2026-08-28, twice: "are we getting hubble or not" ->
+  yes). idp#505 chained Cilium after OKE''s flannel (generic-veth); idp#514 reverted it — the chain took
+  coredns down and Flux could not even fetch the revert (the CNI is the cluster''s own choice, never a
+  Flux row). The supported shape, from Oracle''s own tutorial, is Cilium REPLACING flannel: https://docs.oracle.com/en/learn/oke-flannel-to-cilium-cni-plugin/index.html
+  (flannel''s DaemonSet removed, Cilium becomes the CNI). OKE''s Terraform provider has no cni_type=CILIUM
+  enum (6.29: OCI_VCN_IP_NATIVE, FLANNEL_OV'
+provenance: comment:cilium-values.yaml
+visual:
+  scene: vault
+  palette: dusk

@@ -1,0 +1,9 @@
+id: voice-router
+subject: estate.channel.voice-router
+how_it_works: 'Command bench measures the voice-router engine candidates on this machine: streaming ASR
+  real-time factor and finalisation latency, and TTS time-to-first-audio. Numbers only count for the hardware
+  they ran on.'
+provenance: godoc:cmd/bench/main.go
+visual:
+  scene: pod-orbit
+  palette: aurora

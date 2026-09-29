@@ -1,0 +1,8 @@
+id: customer-identity
+subject: estate.channel.customer-identity
+how_it_works: Component platform/customer-identity. No prose description exists yet; this one is derived
+  from its file layout.
+provenance: layout
+visual:
+  scene: vault
+  palette: neon

@@ -1,0 +1,9 @@
+id: flux-webhook
+subject: estate.channel.flux-webhook
+how_it_works: Flux webhook receiver. GitHub POSTs to this path with the push payload; the notification-controller
+  verifies the HMAC-SHA256 signature against the token in flux-webhook-token and, if valid, notifies the
+  GitRepository watcher. Every Kustomization watching that source then reconciles immediately.
+provenance: comment:httproute.yaml
+visual:
+  scene: vault
+  palette: glacier

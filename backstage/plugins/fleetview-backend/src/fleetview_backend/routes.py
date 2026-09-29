@@ -52,7 +52,6 @@ from fleetview_backend import (
     evals,
     graph,
     ledger_tail,
-    memory,
     notes,
     sessions,
     signals,
@@ -67,7 +66,6 @@ __all__ = [
     "SIGNALS_PATH",
     "BLAST_RADIUS_PATH",
     "GRAPH_PATH",
-    "MEMORY_PATH",
     "CHECK_RECEIPTS_PATH",
     "MUTATIONS_PATH",
     "MUTATIONS_APPROVE_PATH",
@@ -82,7 +80,6 @@ __all__ = [
     "signals_envelope",
     "blast_radius_envelope",
     "graph_envelope",
-    "memory_envelope",
     "check_receipts_envelope",
     "mutations_envelope",
     "approve_mutation",
@@ -102,7 +99,6 @@ NUDGE_PATH = "/nudge"
 SIGNALS_PATH = "/signals"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
-MEMORY_PATH = "/memory"
 CHECK_RECEIPTS_PATH = "/check-receipts"
 MUTATIONS_PATH = "/mutations"
 MUTATIONS_APPROVE_PATH = "/mutations/approve"
@@ -234,11 +230,6 @@ def graph_envelope() -> tuple[dict[str, Any], int]:
     return result, 200
 
 
-def memory_envelope() -> tuple[dict[str, Any], int]:
-    # Each part carries its own available/error; one unreadable part never hides the others.
-    return memory.memory_status(), 200
-
-
 def check_receipts_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
     try:
         results = evals.check_receipts_batch(body.get("session_ids", []))
@@ -350,3 +341,13 @@ def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
     from fleetview_backend import agent_jobs
 
     return agent_jobs.handle_post(body)
+
+
+# ── channels (channels.py): one Fleet channel per platform component, explained and live ──
+CHANNELS_PATH = "/channels"
+
+
+def channels_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import channels
+
+    return channels.list_channels()

@@ -1,0 +1,8 @@
+id: ironcage
+subject: estate.channel.ironcage
+how_it_works: Declares Deployment/ironcage-api. No prose description exists yet; this one is derived from
+  the manifests.
+provenance: kinds
+visual:
+  scene: pod-orbit
+  palette: aurora

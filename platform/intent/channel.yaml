@@ -1,0 +1,7 @@
+id: intent
+subject: estate.channel.intent
+how_it_works: 'Contract execution: a PENDING action contract is handed to the estate''s ONE executor.'
+provenance: docstring:contract_exec.py
+visual:
+  scene: code-stream
+  palette: tide

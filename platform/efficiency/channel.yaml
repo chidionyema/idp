@@ -1,0 +1,7 @@
+id: efficiency
+subject: estate.channel.efficiency
+how_it_works: Token efficiency mechanisms for pi agents.
+provenance: docstring:__init__.py
+visual:
+  scene: code-stream
+  palette: sol

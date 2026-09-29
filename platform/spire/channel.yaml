@@ -1,0 +1,8 @@
+id: spire
+subject: estate.channel.spire
+how_it_works: The SPIRE install row. values.yaml is the only place a SPIRE value lives; the generator
+  turns it into the ConfigMap the HelmRelease reads (valuesFrom), so the file and the cluster cannot drift.
+provenance: comment:kustomization.yaml
+visual:
+  scene: clockwork
+  palette: dusk

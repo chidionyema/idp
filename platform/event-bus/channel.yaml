@@ -1,0 +1,9 @@
+id: event-bus
+subject: estate.channel.event-bus
+how_it_works: 'The estate''s internal event bus (founder 2026-08-29: "The Primitive fires a generic cloud-agnostic
+  event onto an internal bus"). One namespace, restricted profile, no edge-attach label: nothing on this
+  bus is reachable from the internet, by construction.'
+provenance: comment:namespace.yaml
+visual:
+  scene: vault
+  palette: aurora

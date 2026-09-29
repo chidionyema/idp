@@ -1,0 +1,10 @@
+id: hindsight
+subject: estate.channel.hindsight
+how_it_works: 'The one Secret every Hindsight pod reads (chart `existingSecret`: every key becomes an
+  env var), from the estate vault entry `hindsight` written by .github/workflows/vault-seed.yml -f entry=hindsight.
+  Keys: postgres-password (the chart''s required key; the StatefulSet beside it reads the same key as
+  a file), HINDSIGHT_API_LLM_API_KEY (a router key, never a vendor key), HINDSIGHT_API_LLM_BASE_URL.'
+provenance: comment:external-secret.yaml
+visual:
+  scene: vault
+  palette: ember

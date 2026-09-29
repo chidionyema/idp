@@ -1,0 +1,7 @@
+id: coroot
+subject: estate.channel.coroot
+how_it_works: 'Layer 1 of the asymmetric collection pattern: the service map.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: aurora

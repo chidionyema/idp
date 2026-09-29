@@ -1,0 +1,9 @@
+id: backstage
+subject: estate.channel.backstage
+how_it_works: Declares Service/catalogue, Deployment/catalogue, PodDisruptionBudget/catalogue, Kustomization/?,
+  ServiceAccount/catalogue, ClusterRole/catalogue-kubernetes-read, ClusterRoleBinding/catalogue-kubernetes-read,
+  Kustomization/? and more. No prose description exists yet; this one is derived from the manifests.
+provenance: kinds
+visual:
+  scene: pod-orbit
+  palette: aurora

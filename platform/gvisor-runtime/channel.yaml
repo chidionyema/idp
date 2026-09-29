@@ -1,0 +1,9 @@
+id: gvisor-runtime
+subject: estate.channel.gvisor-runtime
+how_it_works: kustomization for the gvisor-runtime row. Single CR (the suspended RuntimeInstall); no namespace,
+  no deployment. The CR lives in nodesoftware-operator because that's the only namespace the CRD admits
+  requests into.
+provenance: comment:kustomization.yaml
+visual:
+  scene: vault
+  palette: dusk

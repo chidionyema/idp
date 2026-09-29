@@ -1,0 +1,9 @@
+id: temporal
+subject: estate.channel.temporal
+how_it_works: The one Postgres password, from the estate vault entry `temporal-db` (written by .github/workflows/vault-seed.yml
+  -f entry=temporal-db from SEED_TEMPORAL_DB_PASSWORD). Postgres reads it as a file; the chart reads the
+  same Secret through existingSecret.
+provenance: comment:external-secret.yaml
+visual:
+  scene: clockwork
+  palette: ember

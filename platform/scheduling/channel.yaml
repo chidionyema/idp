@@ -1,0 +1,10 @@
+id: scheduling
+subject: estate.channel.scheduling
+how_it_works: 'crew#539: scheduling immunity. The Kyverno policies that keep the radio-room set honest,
+  plus the balloon Deployment in its own namespace. The PriorityClasses themselves moved out to platform/priority-classes
+  in crew#488 CP5 -- this layer waits on edge, and edge names one of them, so a class created here could
+  never exist in time on a cluster with no history.'
+provenance: comment:kustomization.yaml
+visual:
+  scene: pod-orbit
+  palette: sol
