@@ -16,7 +16,9 @@ type Frame = {
   new_calls: number;
 };
 
-export function EfficiencyPanel() {
+export type { Frame as EfficiencyFrame };
+
+export function useEfficiencyFrame() {
   const discoveryApi = useApi(discoveryApiRef);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +49,11 @@ export function EfficiencyPanel() {
       source?.close();
     };
   }, [discoveryApi]);
+  return { frame, error };
+}
 
+export function EfficiencyPanel() {
+  const { frame, error } = useEfficiencyFrame();
   if (error && !frame) return <Summary>{error}</Summary>;
   if (!frame) return <Summary>waiting for the first ledger frame…</Summary>;
 
