@@ -290,7 +290,12 @@ def sync_frontend(sha: str) -> list[str]:
         )
         if r.returncode:
             git("checkout", "-q", "--detach", was, tree=FRONTEND)
-            alert(f"/fleet frontend: yarn install for {sha[:8]} failed; kept {was[:8]}")
+            # The reason travels with the alert: a bare "install failed" hid the cause for hours.
+            why = (r.stderr or r.stdout or "").strip().splitlines()[-3:]
+            alert(
+                f"/fleet frontend: yarn install for {sha[:8]} failed (exit {r.returncode}: "
+                f"{' | '.join(why)[:300]}); kept {was[:8]}"
+            )
             return [f"frontend held at {was[:8]} (install failed)"]
     # A backend that is not answering is a service that died, not a bad frontend: restart it once
     # before judging the checkout (2026-09-28: its Node child died and nothing restarted it, so
