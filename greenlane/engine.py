@@ -168,7 +168,8 @@ class Engine:
 
     def _judge_batch(self) -> None:
         b = self.s.batch
-        assert b is not None
+        if b is None:
+            return
         live = [
             m
             for m in b.members

@@ -40,7 +40,7 @@ RED_CONCLUSIONS = {
 
 
 def _run(*args: str, check: bool = True, input: Optional[str] = None) -> str:
-    p = subprocess.run(args, capture_output=True, text=True, input=input)
+    p = subprocess.run(args, capture_output=True, text=True, input=input)  # noqa: S603, S607 -- git/gh with fixed argv, no shell
     if check and p.returncode != 0:
         raise RuntimeError(
             f"{' '.join(args[:3])}: rc={p.returncode} {p.stderr.strip()[:400]}"
@@ -116,8 +116,8 @@ class GitHubBackend:
             sha, ref = line.split()
             name = ref[len("refs/heads/") :]
             if (
-                subprocess.run(
-                    ["git", "merge-base", "--is-ancestor", sha, main],
+                subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                    ["git", "merge-base", "--is-ancestor", sha, main],  # noqa: S607
                     capture_output=True,
                 ).returncode
                 == 0
@@ -144,7 +144,7 @@ class GitHubBackend:
             f.write(self.git("diff", f"{main}...{sha}"))
         try:
             return (
-                subprocess.run([str(self.image_only_diff), "--diff", f.name]).returncode
+                subprocess.run([str(self.image_only_diff), "--diff", f.name]).returncode  # noqa: S603, S607 -- git/gh with fixed argv, no shell
                 == 0
             )
         finally:
@@ -156,8 +156,8 @@ class GitHubBackend:
         wt = tempfile.mkdtemp(prefix="greenlane-")
         try:
             self.git("worktree", "add", "-q", "--detach", wt, onto)
-            pick = subprocess.run(
-                [
+            pick = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                [  # noqa: S607
                     "git",
                     "-C",
                     wt,
@@ -177,7 +177,7 @@ class GitHubBackend:
             author = self.git("log", "-1", "--format=%an <%ae>", head)
             body = self.git("log", "--reverse", "--format=%h %s", f"{mb}..{head}")
             msg = f"{subject}\n\nGreenlane-Head: {head}\n\n{body}\n"
-            _run(
+            _run(  # noqa: S603, S607 -- git/gh with fixed argv, no shell
                 "git",
                 "-C",
                 wt,
@@ -191,8 +191,9 @@ class GitHubBackend:
             )
             return _run("git", "-C", wt, "rev-parse", "HEAD")
         finally:
-            subprocess.run(
-                ["git", "worktree", "remove", "--force", wt], capture_output=True
+            subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", "worktree", "remove", "--force", wt],  # noqa: S607
+                capture_output=True,
             )
             shutil.rmtree(wt, ignore_errors=True)
 

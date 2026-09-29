@@ -33,8 +33,8 @@ def greenlane_status(now: float | None = None) -> dict[str, Any]:
         body = {"available": False, "error": f"no {tool}"}
     else:
         try:
-            p = subprocess.run(
-                ["python3", str(tool), "status"],
+            p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["python3", str(tool), "status"],  # noqa: S607
                 capture_output=True,
                 text=True,
                 timeout=25,

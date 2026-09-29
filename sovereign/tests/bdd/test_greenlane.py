@@ -153,7 +153,7 @@ def _bounded(world):
 
 @then("the outcome is identical to the uninterrupted run")
 def _identical(world):
-    for a, b in zip(world["reports"], world["reloaded"]):
+    for a, b in zip(world["reports"], world["reloaded"], strict=True):
         da, db = dataclasses.asdict(a), dataclasses.asdict(b)
         da.pop("log_tail"), db.pop("log_tail")
         assert da == db

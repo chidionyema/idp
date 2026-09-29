@@ -28,7 +28,7 @@ from .engine import CONFLICT, LANDED, RED, Engine, State
 
 
 def _sha(*parts: str) -> str:
-    return hashlib.sha1("|".join(parts).encode()).hexdigest()
+    return hashlib.sha256("|".join(parts).encode()).hexdigest()[:40]
 
 
 @dataclass
@@ -169,11 +169,11 @@ class ChaosBackend:
         # the tested sha becomes main by fast-forward; a PR per lane is raised on the rebased
         # head and is merged by that same move (its head is an ancestor of main).
         verdict = self.verdicts.get((self.candidates[tip][0], tip))
-        assert verdict and verdict[0] == "green", "land() without a green verdict"
-        assert self.commits[tip] and self._is_ancestor(self._main, tip), (
-            "land() not a fast-forward"
-        )
-        for name, head, rebased in members:
+        if not verdict or verdict[0] != "green":
+            raise RuntimeError("land() without a green verdict")
+        if not self._is_ancestor(self._main, tip):
+            raise RuntimeError("land() not a fast-forward")
+        for name, _head, rebased in members:
             self.prs.append(
                 {
                     "lane": name,
@@ -246,12 +246,11 @@ def run(
     bot_lane_every: int = 4,
     reload_state: bool = False,
 ) -> Report:
-    rng = random.Random(seed)
+    rng = random.Random(seed)  # noqa: S311 -- a simulation, not a secret
     b = ChaosBackend(rng, p_flaky, ci_ticks)
     st = State()
     eng = Engine(b, st, batch_size=batch_size, timeout=ci_ticks * 40)
     files = [f"f{i}" for i in range(200)]
-    n_files = len(files)
     created = 0
     arrived = 0
     names_created: set = set()
@@ -349,7 +348,7 @@ def run(
     main_ever_red = sum(1 for s in b.main_history if not b.truly_green(s))
     # work lost: a lane head that was neither landed nor kept as a branch with a reason
     work_lost = 0
-    for name, head in list(b.lane_heads.items()):
+    for name in list(b.lane_heads):
         # a lane the platform judged must carry its reason; a lane it has not judged yet is
         # pending or testing, never silent
         st_ = b.statuses.get(name)
@@ -366,7 +365,7 @@ def run(
     for cid, ch in b.changes.items():
         if ch.broken and cid in b.tree(b.main()):
             broken_landed += 1
-    for name, (head, status, reason) in b.statuses.items():
+    for name, (head, status, _reason) in b.statuses.items():
         if (
             status == RED
             and name in b.lane_heads
