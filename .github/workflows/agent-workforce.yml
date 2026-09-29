@@ -1,0 +1,127 @@
+# The agent workforce (crew#729) runs here, not on the cluster. It is a 15-minute batch that
+# takes one queued board ticket to a plan comment and a pull request, then exits: ADR 0034
+# rung 2, "runs on a schedule -> GitHub Actions". On the node it held a job slot and a 5 Gi
+# claim Oracle refused to provision (block-storage limit, 2026-09-29), so every run sat Pending.
+#
+# No stored key: the job trades its GitHub OIDC token for an OCI session (as vault-seed does)
+# and reads the crew's own router and Langfuse keys from the estate vault at run time. Its
+# GitHub hand is an estate-agents App token narrowed to the same four permissions the cluster
+# minted (platform/agent-workforce/external-secret.yaml). crewAI memory persists in the
+# Actions cache instead of a volume.
+name: agent-workforce
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: agent-workforce     # one ticket claimed at a time, as the CronJob's Forbid did
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write            # the OIDC token this job trades for OCI access
+  packages: read             # pull ghcr.io/chidionyema/agent-workforce
+
+jobs:
+  crew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50      # the CronJob's activeDeadlineSeconds: one ticket, then read the red
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: The crew's keys, read from the estate vault
+        env:
+          OCI_CI: "1"
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/secrets"; mkdir -p "$d"; umask 077
+          bin/idp-cloud secret get agent-workforce | jq -r .LITELLM_API_KEY > "$d/LITELLM_API_KEY"
+          bin/idp-cloud secret get langfuse-init-public-key > "$d/LANGFUSE_PUBLIC_KEY"
+          bin/idp-cloud secret get langfuse-init-secret-key > "$d/LANGFUSE_SECRET_KEY"
+          for f in "$d"/*; do [ -s "$f" ] || { echo "FAIL  $(basename "$f") is empty in the vault"; exit 1; }; echo "::add-mask::$(cat "$f")"; done
+          echo "ok    3 keys read by name from the estate vault"
+      - name: The App key, decoded from the seed
+        id: pem
+        env: { PEM_B64: "${{ secrets.SEED_GITHUB_APP_PEM_B64 }}" }
+        run: |
+          set -euo pipefail
+          pem=$(printf '%s' "$PEM_B64" | base64 -d)
+          while IFS= read -r l; do [ -n "$l" ] && echo "::add-mask::$l"; done <<<"$pem"
+          { echo 'pem<<PEM_EOF'; printf '%s\n' "$pem"; echo 'PEM_EOF'; } >> "$GITHUB_OUTPUT"
+      - name: GitHub App token, the crew's four permissions only
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.SEED_GITHUB_APP_ID }}
+          private-key: ${{ steps.pem.outputs.pem }}
+          owner: ${{ github.repository_owner }}
+          repositories: crew,idp
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+          permission-actions: read
+          permission-checks: read
+      - name: The laws, fetched at each start
+        env: { OWNER: "${{ github.repository_owner }}" }
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/laws"
+          fetch() { curl -fsS -m 30 "https://raw.githubusercontent.com/$OWNER/$2/main/$3" -o "$RUNNER_TEMP/laws/$1" && echo "ok   laws $1"; }
+          fetch AGENTS.md claude-guards laws/AGENTS.md
+          fetch AGENTS-FULL.md claude-guards laws/AGENTS-FULL.md
+          fetch STANDARDS.md crew docs/STANDARDS.md
+          fetch definition-of-done.md idp docs/reference/policy/definition-of-done.md
+      - name: crewAI memory from the last run
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/storage
+          key: agent-workforce-storage-${{ github.run_id }}
+          restore-keys: agent-workforce-storage-
+      - name: Run the crew
+        env:
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/storage"
+          printf '%s' "$APP_TOKEN" > "$RUNNER_TEMP/secrets/AGENT_WORKFORCE_GITHUB_TOKEN"
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$RUNNER_TEMP/laws:/laws:ro" \
+            -v "$RUNNER_TEMP/storage:/var/lib/agent-workforce" \
+            -v "$RUNNER_TEMP/secrets:/run/secrets/agent-workforce:ro" \
+            -e LITELLM_BASE_URL=https://llm.mumchimp.com \
+            -e AGENT_WORKFORCE_MODEL=default \
+            -e AGENT_WORKFORCE_VERIFIER_MODEL=fast \
+            -e AGENT_WORKFORCE_EMBED_MODEL=embed \
+            -e LANGFUSE_BASE_URL=https://langfuse.mumchimp.com \
+            -e AGENT_WORKFORCE_REPO_OWNER="$OWNER" \
+            -e AGENT_WORKFORCE_BOARD_REPO=crew \
+            -e AGENT_WORKFORCE_PLATFORM_REPO=idp \
+            -e AGENT_WORKFORCE_LAWS_DIR=/laws \
+            -e AGENT_WORKFORCE_STORAGE_DIR=/var/lib/agent-workforce \
+            -e CREWAI_STORAGE_DIR=/var/lib/agent-workforce \
+            -e CREWAI_DISABLE_TELEMETRY=true \
+            -e HOME=/tmp \
+            -e AGENT_WORKFORCE_GITHUB_TOKEN_FILE=/run/secrets/agent-workforce/AGENT_WORKFORCE_GITHUB_TOKEN \
+            -e LITELLM_API_KEY_FILE=/run/secrets/agent-workforce/LITELLM_API_KEY \
+            -e LANGFUSE_PUBLIC_KEY_FILE=/run/secrets/agent-workforce/LANGFUSE_PUBLIC_KEY \
+            -e LANGFUSE_SECRET_KEY_FILE=/run/secrets/agent-workforce/LANGFUSE_SECRET_KEY \
+            ghcr.io/chidionyema/agent-workforce:main
+      - name: Drop the keys
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/secrets"

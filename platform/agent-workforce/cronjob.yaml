@@ -39,6 +39,9 @@ metadata:
     backstage.io/kubernetes-id: agent-workforce
 spec:
   schedule: "*/15 * * * *"
+  # 2026-09-29: the crew runs in .github/workflows/agent-workforce.yml (ADR 0034 rung 2). Suspended,
+  # not deleted, until that workflow's first real run opens a plan comment; then this row goes.
+  suspend: true
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 1
   failedJobsHistoryLimit: 2
