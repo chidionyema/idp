@@ -1,0 +1,18 @@
+name: work-audit
+description: >-
+  Find work done in the last N days that never reached main. For every closed-unmerged PR, every
+  worktree's uncommitted/untracked changes, every local branch commit on no remote and every stash
+  in the window, it measures how many of the lines that work added are in the same file on
+  origin/main now: LOST (<30%), PARTIAL (<90%), LANDED (hidden unless all=true). Also lists
+  unticked "- [ ]" checkpoints in open issues updated in the window. Scans every repo under
+  ~/Documents/code and the GitHub repos named in `github`. Read-only apart from `git fetch` and
+  refs/work-audit/pr/* refs; full result in ~/.estate/work-audit/latest.json.
+class: read
+args:
+  days: {type: int, default: 28}
+  github: {type: string, default: "chidionyema/idp,chidionyema/crew"}
+  all: {type: bool, default: false}
+steps:
+  - name: work-audit
+    cmd: >
+      python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}
