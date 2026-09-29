@@ -31,6 +31,7 @@ SESSION = json.dumps({"device_id": "d", "session_id": "s-1"})
 
 def _gw(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_EFFICIENCY_LEDGER", str(tmp_path / "ledger.jsonl"))
+    monkeypatch.setenv("ESTATE_HOLDOUT_PCT", "0")  # the holdout has its own test
     spec = importlib.util.spec_from_loader(
         "gw_anthropic_under_test",
         importlib.machinery.SourceFileLoader("gw_anthropic_under_test", MODULE_PATH),
@@ -156,8 +157,9 @@ def test_nothing_the_model_wrote_is_touched_and_nothing_is_dropped(
     )
     steps = _rows(tmp_path, "pre")[-1]["steps"]
     assert steps["m9"]["orphans"] == 0 and steps["m9"]["first_role"] == "user"
-    for k in ("m3", "m7", "m8"):
-        assert steps[k]["action"] == "skipped" and steps[k]["why"]
+    assert steps["m3"]["action"] == "skipped" and steps["m3"]["why"]
+    for k in ("m7", "m8"):  # below the epoch threshold nothing is compacted or stripped
+        assert steps[k]["action"] == "none" and steps[k]["why"]
 
 
 def test_repeated_reads_point_at_the_first_and_logs_collapse(monkeypatch, tmp_path):

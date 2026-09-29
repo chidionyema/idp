@@ -201,3 +201,69 @@ class TestItStillRefusesUnsafeWork:
 
     def test_no_checks_is_unproven_not_green(self, landable):
         assert landable.verdict(pr("CLEAN", []), REQUIRED)[0] == "SKIP"
+
+
+def _behind_jq() -> str:
+    """The jq program merge-when-green feeds `gh api compare/<head>...<base> --jq`."""
+    import ast
+    import re
+    import textwrap
+
+    text = (ROOT / ".github/workflows/merge-when-green.yml").read_text()
+    heredoc = re.search(r"python3 - <<'PY'\n(.*?)\n\s*PY\n", text, re.S).group(1)
+    tree = ast.parse(textwrap.dedent(heredoc))
+    for call in ast.walk(tree):
+        if isinstance(call, ast.Call) and getattr(call.func, "attr", "") == "run":
+            return call.args[0].elts[-1].value
+    raise AssertionError("no subprocess.run(gh api compare) found in merge-when-green")
+
+
+def _behind(compare: dict) -> int:
+    import json
+    import subprocess
+
+    out = subprocess.run(
+        ["jq", "-c", _behind_jq()],
+        input=json.dumps(compare),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return int(out.stdout)
+
+
+def _c(msg: str) -> dict:
+    return {"commit": {"message": msg}}
+
+
+def test_bot_image_updates_do_not_make_a_branch_behind():
+    """Main gains an image-update commit every ~6 min; counting them refreshed every PR forever."""
+    compare = {
+        "ahead_by": 4,
+        "total_commits": 4,
+        "commits": [_c("platform: image update lago -> main-1 (#1)")] * 3
+        + [_c("fix(router): a real change (#2)")],
+    }
+    assert (
+        _behind(compare) == 1
+    )  # only the real commit; the three bot bumps are ignored
+
+
+def test_a_branch_missing_only_image_updates_is_not_behind():
+    compare = {
+        "ahead_by": 2,
+        "total_commits": 2,
+        "commits": [_c("platform: image update x (#1)")] * 2,
+    }
+    assert _behind(compare) == 0
+
+
+def test_a_truncated_compare_falls_back_to_the_plain_count():
+    compare = {
+        "ahead_by": 300,
+        "total_commits": 300,
+        "commits": [_c("platform: image update x (#1)")] * 250,
+    }
+    assert (
+        _behind(compare) == 300
+    )  # cannot see all commits, so it refuses to discount any

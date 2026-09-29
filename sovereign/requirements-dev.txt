@@ -38,6 +38,6 @@ langchain-core>=0.2
 # PostgreSQL 16 + pgvector. pgserver ships both as a wheel (manylinux x86_64, macOS), so the
 # suite needs no Docker and no cluster; without these three it would skip, and a skipped
 # suite proves nothing.
-pgserver==0.1.4
+pgserver==0.1.4; platform_machine == "x86_64" or sys_platform == "darwin"
 psycopg[binary]>=3.2
 psycopg-pool>=3.2

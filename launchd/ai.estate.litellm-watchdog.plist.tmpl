@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- platform/llm/watchdog.py, staged to ~/.estate/litellm-local by `bin/litellm-local install`:
+     launchd cannot run a script under ~/Documents (TCC). Founder 2026-09-29: the router is frozen
+     and guarded; this is the guardian, every 15 s, debounced (3 failures) and cooled down (90 s). -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.litellm-watchdog</string>
+  <key>ProgramArguments</key><array>
+    <string>/usr/bin/python3</string>
+    <string>${HOME}/.estate/litellm-local/watchdog.py</string>
+  </array>
+  <key>StartInterval</key><integer>15</integer>
+  <key>RunAtLoad</key><true/>
+  <key>StandardErrorPath</key><string>${HOME}/Library/Logs/litellm-watchdog.log</string>
+</dict></plist>

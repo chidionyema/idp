@@ -11,8 +11,6 @@ Usage:
     python3 pobr-gate.py receipt.json --pubkey agent.pub.pem --anchor-dir ~/.estate/anchors
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

@@ -142,9 +142,11 @@ spec:
               port: http
             periodSeconds: 10
             failureThreshold: 30
+          # /healthz, the contract's health route (header): the running image (main-99) has no
+          # /readyz route, so the pod answered 404 forever (oke-check break-glass 36514295848).
           readinessProbe:
             httpGet:
-              path: /readyz
+              path: /healthz
               port: http
             periodSeconds: 30
             timeoutSeconds: 5

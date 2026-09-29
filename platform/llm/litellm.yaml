@@ -223,7 +223,9 @@ spec:
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
         - name: pobr-agent-key
-          secret: { secretName: litellm-pobr-agent-key }
+          # optional: PoBR is off in config.yaml until its receipt signer exists; a missing key held
+          # the router at ContainerCreating (otto-parity 36505775873, progress deadline exceeded).
+          secret: { secretName: litellm-pobr-agent-key, optional: true }
 ---
 apiVersion: v1
 kind: Service

@@ -9,8 +9,6 @@ Dependencies:
     pip install cryptography   # Ed25519 signatures
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import math

@@ -90,6 +90,32 @@ _utils.AnthropicMessagesRequestUtils.get_requested_anthropic_messages_optional_p
 )
 
 
+# THE MAX TOKEN ITSELF, the third drop (measured 2026-09-28). `clean_headers` forwards an
+# `Authorization: Bearer sk-ant-oat…` header only when it believes some OTHER header
+# authenticated the proxy call, and it believes `authorization` did whenever no
+# `x-litellm-api-key` is present. Claude Code on Max sends only `authorization`, so the token was
+# stripped and Anthropic answered every claude-* request "401 x-api-key header is required"
+# (req_011CfW4DVkYrrdX9uicQ4dGG); the same call with `x-litellm-api-key` added returned 200. This
+# router holds no master key (bin/litellm-local), so `authorization` never authenticates anything
+# here: the caller's own Max token is always forwarded, and no client needs a header to get it.
+from litellm.llms.anthropic.common_utils import is_anthropic_oauth_key
+from litellm.proxy import litellm_pre_call_utils as _pre
+
+_original_clean = getattr(_pre.clean_headers, "__wrapped__", _pre.clean_headers)
+
+
+def clean_headers(headers, *a, **kw):
+    out = _original_clean(headers, *a, **kw)
+    for k, v in headers.items():
+        if k.lower() == "authorization" and is_anthropic_oauth_key(v):
+            out[k] = v
+    return out
+
+
+clean_headers.__wrapped__ = _original_clean
+_pre.clean_headers = clean_headers
+
+
 class AnthropicBetaPassthrough(CustomLogger):
     """No hooks: the import above is the whole effect. A class only so LiteLLM can load it."""
 

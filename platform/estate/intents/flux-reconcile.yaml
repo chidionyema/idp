@@ -5,6 +5,7 @@ args:
   name:     {type: string}
   namespace: {type: string, default: "flux-system"}
   with_source: {type: bool, default: false}
+  force: {type: bool, default: false, description: "helmrelease only: one-off Helm upgrade even when git is unchanged; Helm's 3-way merge restores live drift"}
   kubeconfig: {type: string, default: ""}
 halt_on_failure: false
 steps:
@@ -12,6 +13,7 @@ steps:
     # plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} (2026-09-26).
     # $k unquoted on purpose: "source git" is two words to flux.
     cmd: >
-      kc={{kubeconfig}}; w={{with_source}}; k={{kind}};
+      kc={{kubeconfig}}; w={{with_source}}; f={{force}}; k={{kind}};
       ${kc:+env KUBECONFIG="$kc"} flux --timeout=2m reconcile $k {{name}} -n {{namespace}}
-      $([ "$w" = True ] || [ "$w" = true ] && echo --with-source) 2>&1
+      $([ "$w" = True ] || [ "$w" = true ] && echo --with-source)
+      $([ "$f" = True ] || [ "$f" = true ] && echo --force) 2>&1
