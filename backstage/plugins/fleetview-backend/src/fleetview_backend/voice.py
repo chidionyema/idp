@@ -166,7 +166,11 @@ SYSTEM = (
     "\n"
     'If there is a RECENT CONVERSATION, it is what you were just asked: use it to resolve "it", '
     '"that one" and "the stuck one", and answer the follow-up without making the person repeat '
-    "which agent they meant."
+    "which agent they meant.\n"
+    "\n"
+    "If asked what can be asked, checked, run or done, or how to do something, answer from WHAT "
+    "CAN BE RUN: say the spoken name to say and what it does, at most three, closest first. Never "
+    "invent a name that is not in that list."
 )
 
 
@@ -217,6 +221,28 @@ def router_model() -> str:
 
 def _timeout() -> float:
     return float(os.environ.get("VOICE_TIMEOUT_S", "20"))
+
+
+def catalog_block(limit: int = 80) -> str:
+    """WHAT CAN BE RUN: the committed intent catalogue, one spoken name and its description per
+    line. This is the discovery process (founder 2026-09-29): a capability the voice operator
+    cannot name when asked is in the void, whatever it does. Every intent that
+    voice_intents.load_catalog accepts appears here automatically; its `description` is the
+    sentence the operator speaks. Nothing here needs remembering."""
+    from fleetview_backend import voice_intents as vi
+
+    lines = []
+    for name in vi.load_catalog()[:limit]:
+        desc = vi.description(name)
+        spoken = name.replace("-", " ").replace(".", " ").replace("_", " ")
+        lines.append(f"- say '{spoken}': {desc}" if desc else f"- say '{spoken}'")
+    if not lines:
+        return ""
+    return (
+        "WHAT CAN BE RUN (the person says the name aloud; it runs on the laptop)\n"
+        + "\n".join(lines)
+        + "\n\n"
+    )
 
 
 def fleet_summary(sessions: list[dict[str, Any]], limit: int = 24) -> str:
@@ -361,6 +387,7 @@ def ask(
                 "role": "user",
                 "content": (
                     f"LIVE AGENTS (right now)\n{fleet_summary(sessions)}\n\n"
+                    f"{catalog_block()}"
                     f"{history_block(history)}"
                     f"QUESTION\n{question}"
                 ),
@@ -496,6 +523,7 @@ def stream_ask(
                 "role": "user",
                 "content": (
                     f"LIVE AGENTS (right now)\n{fleet_summary(sessions)}\n\n"
+                    f"{catalog_block()}"
                     f"{history_block(history)}"
                     f"QUESTION\n{question}"
                 ),
