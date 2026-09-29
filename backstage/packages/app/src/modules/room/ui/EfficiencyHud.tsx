@@ -1,6 +1,6 @@
 // TOKEN EFFICIENCY, LIVE, on the Reactor (/fleet renders FleetReactorApp, not home/Fleet.tsx).
-// Every number is a frame from the backend's ledger stream; before the first frame, or when the
-// stream is down, the HUD says so instead of showing a figure it did not receive.
+// Every number is a poll of the backend's ledger; before the first response, or when the
+// endpoint is down, the HUD says so instead of showing a figure it did not receive.
 import { useEfficiencyFrame } from '../../home/EfficiencyPanel';
 
 export default function EfficiencyHud() {

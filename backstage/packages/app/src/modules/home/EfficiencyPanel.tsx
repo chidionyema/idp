@@ -1,8 +1,8 @@
 // Live token efficiency on /fleet: what the LiteLLM efficiency lane did, as calls happen.
-// Source is the backend's `GET /fleetview/efficiency/stream` (SSE, one frame per 2s), which reads
+// Source is the backend's `GET /fleetview/efficiency` (polled every 5s), which reads
 // the gateway's own ledger. Nothing here is computed client-side except a rate.
 import { useEffect, useState } from 'react';
-import { discoveryApiRef, useApi } from '@backstage/frontend-plugin-api';
+import { fetchApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Chip, Summary } from '../shell';
 
 type Frame = {
@@ -13,42 +13,41 @@ type Frame = {
   router_bytes_saved: number;
   prefix_checked: number;
   prefix_broken: number;
-  new_calls: number;
+  new_calls?: number;
 };
 
 export type { Frame as EfficiencyFrame };
 
 export function useEfficiencyFrame() {
-  const discoveryApi = useApi(discoveryApiRef);
+  const fetchApi = useApi(fetchApiRef);
   const [frame, setFrame] = useState<Frame | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let source: EventSource | undefined;
     let cancelled = false;
-    void (async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // Polled through fetchApi, not EventSource: EventSource bypasses fetchApi's bearer token, so the
+    // Backstage proxy answers the stream 401 and the panel would never leave "unreachable".
+    const poll = async () => {
       try {
-        const base = await discoveryApi.getBaseUrl('proxy');
-        if (cancelled) return;
-        if (typeof EventSource === 'undefined') {
-          setError('this browser has no EventSource');
-          return;
-        }
-        source = new EventSource(`${base}/fleetview/efficiency/stream?since=1h`);
-        source.addEventListener('efficiency', event => {
+        const res = await fetchApi.fetch('plugin://proxy/fleetview/efficiency?since=1h');
+        if (!res.ok) throw new Error(`efficiency ${res.status}`);
+        const next = (await res.json()) as Frame;
+        if (!cancelled) {
           setError(null);
-          setFrame(JSON.parse((event as MessageEvent).data) as Frame);
-        });
-        source.onerror = () => setError('efficiency stream unreachable');
+          setFrame(next);
+        }
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       }
-    })();
+      if (!cancelled) timer = setTimeout(poll, 5000);
+    };
+    void poll();
     return () => {
       cancelled = true;
-      source?.close();
+      if (timer) clearTimeout(timer);
     };
-  }, [discoveryApi]);
+  }, [fetchApi]);
   return { frame, error };
 }
 
