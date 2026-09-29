@@ -47,6 +47,12 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          # The runner token must not stay in git config: with it persisted, git sends it as
+          # the Authorization header on every push and the App token in the remote URL is
+          # ignored, so queue/* candidates were pushed as GITHUB_TOKEN and no workflow ever
+          # graded them (queue/b2, 2026-09-29 17:22Z: zero runs). Pushes as GITHUB_TOKEN
+          # never trigger workflows; pushes as the App do.
+          persist-credentials: false
       - id: app
         uses: ./.github/actions/github-app-token
         with:
