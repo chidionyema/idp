@@ -2296,7 +2296,7 @@
   "feature": "features/sovereign-bus/cp0_temporal_in_cluster.feature",
   "title": "The workflow engine runs in the cluster, not on the Mac",
   "scenarios": [
-   "The Temporal manifests render and are pinned to the official chart",
+   "The Temporal row renders and is pinned to the official chart",
    "The Mac no longer owns the engine",
    "Every object the chart renders passes the pinned policy set"
   ],
@@ -2338,21 +2338,6 @@
   "status": "BOUND",
   "added_in": "41324566d",
   "pr": 277,
-  "ticket": "crew#396"
- },
- {
-  "feature": "features/sovereign-bus/cp0d_kini_finish_trigger.feature",
-  "title": "CP0d \"Finish KINI\" is one word, and the answer is a receipt (crew#396 step 4)",
-  "scenarios": [
-   "the receipt head is total and the reader grades every branch both ways",
-   "the trigger is wired end to end in git"
-  ],
-  "bound_by": [
-   "sovereign/tests/bdd/test_cp0d_kini_finish_trigger.py"
-  ],
-  "status": "BOUND",
-  "added_in": "164f0b75c",
-  "pr": 280,
   "ticket": "crew#396"
  },
  {
