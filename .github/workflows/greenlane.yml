@@ -47,6 +47,11 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          # Never keep the runner token in git config: git sends it as the Authorization
+          # header in preference to the App token in the remote URL, and a push made as
+          # GITHUB_TOKEN triggers no workflow -- queue/b2 sat with zero check runs
+          # (2026-09-29 17:22Z). Candidates must be pushed as the App so CI grades them.
+          persist-credentials: false
       - id: app
         uses: ./.github/actions/github-app-token
         with:

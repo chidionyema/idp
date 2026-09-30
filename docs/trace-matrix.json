@@ -530,6 +530,23 @@
   "ticket": "crew#269"
  },
  {
+  "feature": "features/gates/greenlane.feature",
+  "title": "The Greenlane: main never goes red, and no pull request that can fail is ever raised",
+  "scenarios": [
+   "Main never goes red",
+   "Nothing but the engine can move main",
+   "A pull request that can fail is never raised",
+   "No work is lost and every lane ends with a verdict",
+   "A lane that is green on its own always lands",
+   "The engine survives being restarted between every tick"
+  ],
+  "bound_by": [],
+  "status": "UNBOUND",
+  "added_in": "77c459c1",
+  "pr": 5055,
+  "ticket": null
+ },
+ {
   "feature": "features/gates/placement-published.feature",
   "title": "placement is measured, published and read on the portal",
   "scenarios": [
