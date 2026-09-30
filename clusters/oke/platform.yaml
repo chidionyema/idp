@@ -350,3 +350,30 @@ spec:
   prune: false
   wait: true
   timeout: 5m
+---
+# The workflow engine (crew#396). sovereign/engine runs on it: sessions, shadow branches, undo and
+# checkpoints, interventions, budget tiers, the consensus vote. Restored 2026-09-29 (founder: "we
+# need temporal obviously") after c96359f4 dropped the row; KINI's jobs are removed (founder: "we
+# dont need kini"). Requests: frontend/history/matching/worker 20m each, worker pod 50m.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: temporal
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    - name: edge
+    - name: secret-store
+    - name: estate-db-migrate
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/temporal
+  prune: true
+  timeout: 20m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: temporal
+      namespace: temporal
