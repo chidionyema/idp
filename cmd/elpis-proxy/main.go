@@ -98,21 +98,10 @@ func (p *SigningProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
-	// Canonical String to Sign (permissive delimiter: 
-):
-	// Method
-URI
-Timestamp
-BodyHash
-AgentURN
-SessionID
+	// Canonical String to Sign, fields joined by a newline:
+	// Method, URI, Timestamp, BodyHash, AgentURN, SessionID.
 	// All fields are newline-delimited to prevent injection.
-	canonicalString := fmt.Sprintf("%s
-%s
-%s
-%s
-%s
-%s",
+	canonicalString := fmt.Sprintf("%s\n%s\n%s\n%s\n%s\n%s",
 		r.Method,
 		r.URL.RequestURI(),
 		timestamp,
@@ -150,15 +139,13 @@ func main() {
 	}
 
 	if agentURN == "" || sessionID == "" || upstreamURL == "" {
-		fmt.Fprintf(os.Stderr, "FATAL: AGENT_URN, SESSION_ID, and UPSTREAM_URL must be set
-")
+		fmt.Fprintf(os.Stderr, "FATAL: AGENT_URN, SESSION_ID, and UPSTREAM_URL must be set\n")
 		os.Exit(1)
 	}
 
 	proxy, err := NewSigningProxy(keyPath, agentURN, sessionID, upstreamURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Failed initializing signing proxy: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Failed initializing signing proxy: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -169,11 +156,9 @@ func main() {
 		WriteTimeout: 120 * time.Second,
 	}
 
-	fmt.Printf("ELPIS_PROXY_ONLINE: Intercepting on :%s, agent=%s
-", listenPort, agentURN)
+	fmt.Printf("ELPIS_PROXY_ONLINE: Intercepting on :%s, agent=%s\n", listenPort, agentURN)
 	if err := server.ListenAndServe(); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Server exited: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Server exited: %v\n", err)
 		os.Exit(1)
 	}
 }
