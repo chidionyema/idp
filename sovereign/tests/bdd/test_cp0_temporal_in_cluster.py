@@ -18,6 +18,23 @@ def state() -> dict:
     return {}
 
 
+@given("the Flux row temporal in clusters/oke/platform.yaml")
+def _row(state: dict) -> None:
+    docs = [
+        d
+        for d in yaml.safe_load_all((IDP / "clusters/oke/platform.yaml").read_text())
+        if d
+    ]
+    row = next(
+        d
+        for d in docs
+        if d["kind"] == "Kustomization" and d["metadata"]["name"] == "temporal"
+    )
+    assert (
+        row["spec"]["path"] == "./platform/temporal" and row["spec"]["prune"] is True
+    ), row
+
+
 @when("platform/temporal is built with kustomize")
 def _build(state: dict) -> None:
     r = subprocess.run(

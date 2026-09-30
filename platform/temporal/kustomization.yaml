@@ -7,8 +7,6 @@ resources:
   - temporal.yaml
   - pull-secret.yaml
   - worker.yaml
-  - kini-finish.yaml
-  - kini-state.yaml
   - tailscale-service.yaml
 images:
   # build-multiarch pushes ghcr.io/chidionyema/sovereign-worker:main-<run>-<sha> (crew#396 step 2).
