@@ -5,6 +5,9 @@ name: factory-ci
 on:
   push: { branches: [main, "queue/**"] }   # queue/**: the Greenlane candidate, graded before it becomes main
   pull_request: { branches: [main] }
+  # crew#987 CP2: `test` is a required status check (ruleset 24071703), so a native merge queue
+  # needs this workflow to run on the queue's checks_requested snapshot, not only on the PR itself.
+  merge_group: { types: [checks_requested] }
   schedule: [{ cron: "17 * * * *" }]
   workflow_dispatch:
 

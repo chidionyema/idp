@@ -66,12 +66,23 @@ jobs:
       # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
       # public, so the default token reads it and no secret is involved. The script is BLIND
       # (never a pass) without this checkout.
-      - name: estate ClusterPolicies (outside the workspace on purpose)
+      - name: estate ClusterPolicies (outside the workspace on purpose, pinned by sha)
         # multiarch-gate and the other repo-root sweeps walk the filesystem, not git, so a tree
         # parked under $GITHUB_WORKSPACE makes idp CI grade prospector's shell scripts, and
         # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
         # workspace, so this is a clone. The repo is public: no credential, no secret.
-        run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
+        # crew#987 CP2: pinned to a fixed commit, not a moving `HEAD` -- a merge queue re-grades a
+        # `checks_requested` snapshot, and an unpinned clone made this gate's verdict depend on
+        # whatever prospector's default branch held at run time rather than on the PR diff. Bump
+        # with `git ls-remote https://github.com/chidionyema/prospector HEAD`.
+        env:
+          PROSPECTOR_SHA: 7453d76375fb7976b0a59474069e306659b3d4e1
+        run: |
+          mkdir -p "$RUNNER_TEMP/kyverno-policies"
+          git -C "$RUNNER_TEMP/kyverno-policies" init -q
+          git -C "$RUNNER_TEMP/kyverno-policies" remote add origin https://github.com/chidionyema/prospector
+          git -C "$RUNNER_TEMP/kyverno-policies" fetch --depth 1 origin "$PROSPECTOR_SHA"
+          git -C "$RUNNER_TEMP/kyverno-policies" checkout -q FETCH_HEAD
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
@@ -147,12 +158,23 @@ jobs:
       # same Deployment, the release went Failed, and monitoring stayed down 8h. The repo is
       # public, so the default token reads it and no secret is involved. The script is BLIND
       # (never a pass) without this checkout.
-      - name: estate ClusterPolicies (outside the workspace on purpose)
+      - name: estate ClusterPolicies (outside the workspace on purpose, pinned by sha)
         # multiarch-gate and the other repo-root sweeps walk the filesystem, not git, so a tree
         # parked under $GITHUB_WORKSPACE makes idp CI grade prospector's shell scripts, and
         # .gitignore does not help a gate that globs. actions/checkout refuses a path outside the
         # workspace, so this is a clone. The repo is public: no credential, no secret.
-        run: git clone --depth 1 https://github.com/chidionyema/prospector "$RUNNER_TEMP/kyverno-policies"
+        # crew#987 CP2: pinned to a fixed commit, not a moving `HEAD` -- a merge queue re-grades a
+        # `checks_requested` snapshot, and an unpinned clone made this gate's verdict depend on
+        # whatever prospector's default branch held at run time rather than on the PR diff. Bump
+        # with `git ls-remote https://github.com/chidionyema/prospector HEAD`.
+        env:
+          PROSPECTOR_SHA: 7453d76375fb7976b0a59474069e306659b3d4e1
+        run: |
+          mkdir -p "$RUNNER_TEMP/kyverno-policies"
+          git -C "$RUNNER_TEMP/kyverno-policies" init -q
+          git -C "$RUNNER_TEMP/kyverno-policies" remote add origin https://github.com/chidionyema/prospector
+          git -C "$RUNNER_TEMP/kyverno-policies" fetch --depth 1 origin "$PROSPECTOR_SHA"
+          git -C "$RUNNER_TEMP/kyverno-policies" checkout -q FETCH_HEAD
       # crew#639, 2026-08-31: the embedded Postgres binaries are downloaded the first time the
       # demo runs. That download was the only one in this workflow with no retry and no cache,
       # and it took main red on `no version found matching 16.9.0` while that artefact answered
@@ -481,6 +503,38 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
       - run: bin/test-executes-gate "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
+
+  # crew#987 CP2: one aggregate check a native GitHub merge queue can gate on, instead of the six
+  # separate required contexts ruleset 24071703 lists today. `needs:` can only reach a job in THIS
+  # file, so this job covers the four required checks ci.yml itself produces (fast-gate,
+  # bdd, executes-gate, feature-request-plan). The other two required checks --
+  # `guarded-paths` (guarded-paths.yml) and `test` (factory-ci.yml) -- live in separate workflow
+  # files that a `needs:` here cannot reference; they stay their own required checks on the
+  # ruleset until those checks move into this file or GitHub adds cross-workflow `needs:`.
+  #
+  # `if: always()` so a failed dependency still runs this job instead of leaving it (and the
+  # merge queue) waiting on a context that will never report -- the same failure mode the `bdd`
+  # job's own comment above documents for the repository ruleset.
+  ci-success:
+    if: always()
+    needs: [fast-gate, bdd, executes-gate, feature-request-plan]
+    runs-on: ubuntu-latest
+    steps:
+      - name: every required job in this workflow is success or skipped
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS_JSON" | jq .
+          fail=0
+          for job in fast-gate bdd executes-gate feature-request-plan; do
+            result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
+            case "$result" in
+              success|skipped) echo "$job: pass ($result)" ;;
+              *) echo "$job: FAIL ($result)"; fail=1 ;;
+            esac
+          done
+          exit "$fail"
 
   # Notify estate-graph repo to sync after every merge to main.
   # Model-agnostic: estate-graph/bin/sync-all uses GROWMOS_BASE_URL (LiteLLM proxy),
