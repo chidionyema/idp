@@ -48,6 +48,21 @@ func FromEnv() *Client {
 	return c
 }
 
+// NarrateFromEnv is the client for narration nobody is waiting on: director cues and
+// newsroom stories. It reads LLM_NARRATE_MODEL (default the router's `narrate` lane) and
+// otherwise shares FromEnv's endpoint and key. Measured 2026-09-30 (catalog/estate.db
+// voice_turns, 331 turns): with narration on the same Groq gpt-oss-120b quota as the founder's
+// turns (`fast` and `voice` are the same model on the same key), 78% of voice calls were refused
+// with 429 and first token was 7.6 s p50; on its own lane the background spend cannot cool the
+// interactive one down.
+func NarrateFromEnv() *Client {
+	c := FromEnv()
+	c.Model = env("LLM_NARRATE_MODEL", "narrate")
+	// One spoken sentence; the lane's own max_tokens (48) is the hard cap.
+	c.MaxTokens = 256
+	return c
+}
+
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
 		return v

@@ -51,7 +51,8 @@ func runDirector(log *slog.Logger) int {
 
 	go runNewsroom(ctx, log, nc, js)
 
-	b := brain.FromEnv()
+	// Cues are background narration: the narrate lane, never the founder's voice lane.
+	b := brain.NarrateFromEnv()
 	narrator := &director.Narrator{Brain: b, Limiter: director.NewLimiter(), Now: time.Now}
 
 	mux := http.NewServeMux()
