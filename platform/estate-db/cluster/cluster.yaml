@@ -134,6 +134,13 @@ spec:
         login: true
         passwordSecret:
           name: estate-db-role-aevum
+      # quad_ledger: layer 4 of the Quad (platform/quad/ledger). Owns one database, the
+      # agent_actions chain; its own migrate revokes update/delete from itself.
+      - name: quad_ledger
+        ensure: present
+        login: true
+        passwordSecret:
+          name: estate-db-role-quad-ledger
       # temporal: the same username, and the same password, as the server it is replacing
       # (vault entry temporal-db.password).
       - name: temporal

@@ -7,11 +7,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -21,6 +23,9 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // SigningProxy intercepts outbound HTTP requests, signs them with the agent's
@@ -31,6 +36,23 @@ type SigningProxy struct {
 	agentURN   string
 	sessionID  string
 	reverse    *httputil.ReverseProxy
+	// Layer 4: every signed request is also a record on the bus. nil when QUAD_NATS_URL is unset,
+	// and then the proxy refuses to start unless QUAD_LEDGER_OPTIONAL=1: a signature nobody
+	// recorded is not history.
+	ledger jetstream.JetStream
+}
+
+// actionRecord is the row the quad-ledger consumer chains. Field names match cmd/quad-ledger.
+type actionRecord struct {
+	ActionID       string `json:"action_id"`
+	ParentActionID string `json:"parent_action_id,omitempty"`
+	AgentURN       string `json:"agent_urn"`
+	SessionID      string `json:"session_id"`
+	Method         string `json:"method"`
+	URI            string `json:"uri"`
+	Timestamp      string `json:"timestamp"`
+	BodyHash       string `json:"body_hash"`
+	Signature      string `json:"signature"`
 }
 
 // NewSigningProxy creates a new signing proxy.
@@ -120,6 +142,29 @@ func (p *SigningProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.Header.Set("X-Agent-Payload-Digest", bodyDigest)
 	r.Header.Set("X-Agent-Signature", signatureB64)
 
+	// Layer 4: the action id is the hash of the signed string, so the caller and the ledger
+	// derive the same id without coordination. The agent core may name its cause with
+	// X-Agent-Parent-Action (delegation chains back to a human-authorised origin); it never
+	// names the id, which is computed here.
+	idHash := sha256.Sum256([]byte(canonicalString + "\n" + signatureB64))
+	actionID := hex.EncodeToString(idHash[:])
+	parent := r.Header.Get("X-Agent-Parent-Action")
+	r.Header.Del("X-Agent-Parent-Action")
+	r.Header.Set("X-Agent-Action-Id", actionID)
+	w.Header().Set("X-Agent-Action-Id", actionID)
+	if p.ledger != nil {
+		rec, _ := json.Marshal(actionRecord{ActionID: actionID, ParentActionID: parent, AgentURN: p.agentURN, SessionID: p.sessionID,
+			Method: r.Method, URI: r.URL.RequestURI(), Timestamp: timestamp, BodyHash: bodyDigest, Signature: signatureB64})
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		_, perr := p.ledger.Publish(ctx, "estate.quad.actions."+p.agentURN, rec)
+		cancel()
+		if perr != nil {
+			// Unrecorded is unattributable: refuse the request rather than forward it silently.
+			http.Error(w, `{"error":"LEDGER_UNAVAILABLE"}`, http.StatusServiceUnavailable)
+			return
+		}
+	}
+
 	// Forward through reverse proxy
 	p.reverse.ServeHTTP(w, r)
 }
@@ -146,6 +191,22 @@ func main() {
 	proxy, err := NewSigningProxy(keyPath, agentURN, sessionID, upstreamURL)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: Failed initializing signing proxy: %v\n", err)
+		os.Exit(1)
+	}
+
+	if natsURL := os.Getenv("QUAD_NATS_URL"); natsURL != "" {
+		nc, err := nats.Connect(natsURL, nats.Name("elpis-"+agentURN))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: ledger bus unreachable: %v\n", err)
+			os.Exit(1)
+		}
+		proxy.ledger, err = jetstream.New(nc)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "FATAL: jetstream: %v\n", err)
+			os.Exit(1)
+		}
+	} else if os.Getenv("QUAD_LEDGER_OPTIONAL") != "1" {
+		fmt.Fprintf(os.Stderr, "FATAL: QUAD_NATS_URL must be set (layer 4); set QUAD_LEDGER_OPTIONAL=1 only for local tests\n")
 		os.Exit(1)
 	}
 

@@ -1,0 +1,15 @@
+name: quad.ledger-verify
+description: >
+  Run the Quad layer-4 verification now: recompute the whole agent_actions hash chain in estate-db
+  and compare its head with the latest anchor in OCI Object Storage. Exit non-zero = LEDGER RED.
+  This is the check that must go red on a planted fault (edit or delete one agent_actions row).
+args:
+  timeout: {type: string, default: "120s", help: "How long to wait for the verify Job."}
+halt_on_failure: true
+steps:
+  - name: run
+    cmd: >
+      j=quad-verify-$(date +%s);
+      kubectl -n quad create job --from=cronjob/quad-ledger-verify "$j" >/dev/null &&
+      kubectl -n quad wait --for=condition=complete --timeout={{timeout}} job/"$j" >/dev/null 2>&1;
+      rc=$?; kubectl -n quad logs job/"$j" 2>/dev/null | tail -3; exit $rc
