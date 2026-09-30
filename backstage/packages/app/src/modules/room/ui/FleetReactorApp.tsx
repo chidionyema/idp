@@ -50,6 +50,7 @@ import { cueToReactor, type IntentResult } from '../../home/intentCue';
 // --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
 import NewsDesk from './NewsDesk';
 import AgentJobs from './AgentJobs';
+import HarvPanel from './HarvPanel';
 import EfficiencyHud from './EfficiencyHud';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
@@ -2728,6 +2729,15 @@ export default function FleetReactorApp() {
           const base = baseUrlRef.current;
           if (!base) return Promise.reject(new Error('discovery not ready'));
           return api.fetch(`${base}/fleetview/agent-jobs`, init);
+        }}
+      />
+
+      {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
+      <HarvPanel
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/harv`, init);
         }}
       />
 
