@@ -9,7 +9,7 @@ args:
   target:     {type: string, default: "src",  help: "Directory of the front end's source."}
   dist:       {type: string, default: "dist", help: "Built output, for the weight budget. Skipped if absent."}
   js_budget:  {type: int,    default: 150000, help: "Max total JS bytes in dist (uncompressed here; CI measures gzip)."}
-  page_budget:{type: int,    default: 600000, help: "Max bytes for the largest HTML page + its referenced assets."}
+  page_budget: {type: int,   default: 600000, help: "Max bytes for the largest HTML page + its referenced assets."}
 halt_on_failure: true
 steps:
   - name: contrast
