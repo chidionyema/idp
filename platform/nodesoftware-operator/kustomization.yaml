@@ -31,4 +31,4 @@ images:
   - name: ghcr.io/chidionyema/controller
     newTag: main-13750-5803df0207e8d06b240497ad7b2b31991d858be9 # {"$imagepolicy": "flux-system:controller:tag"}
   - name: ghcr.io/chidionyema/runsc
-    newTag: main-13023-7d86661394cb92a841644df0119d4b612250f2e7 # {"$imagepolicy": "flux-system:runsc:tag"}
+    newTag: main-13750-5803df0207e8d06b240497ad7b2b31991d858be9 # {"$imagepolicy": "flux-system:runsc:tag"}
