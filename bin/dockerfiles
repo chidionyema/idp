@@ -31,6 +31,21 @@ if [ -n "$since" ]; then
   if git rev-parse -q --verify "$since^{commit}" >/dev/null 2>&1; then
     changed=$(git diff --name-only "$since...HEAD" 2>/dev/null || git diff --name-only "$since" HEAD)
     case "$changed" in *bin/dockerfiles*|*.github/workflows/build-multiarch.yml*) changed= ; since= ;; esac
+    # A Flux image-update commit edits only `newTag:` lines carrying a `$imagepolicy` marker. It
+    # reaches no image, yet an image whose context holds that kustomization (aevum's is
+    # platform/observability; sovereign-worker's is `.`) was rebuilt from it, which minted a
+    # new tag, which image-automation wrote back to main, which built again: 37 such commits
+    # in 8h on 2026-09-29, main moving every ~5 min, and the Greenlane voided every candidate
+    # ("main moved under it") -- 0 of 24 landed. A file whose every changed line is a marker
+    # line is not a change to any image.
+    changed=$(while IFS= read -r f; do
+      [ -z "$f" ] && continue
+      if git diff -U0 "$since...HEAD" -- "$f" 2>/dev/null | grep -E '^[-+][^-+]' | grep -qv '\$imagepolicy'; then
+        printf '%s\n' "$f"
+      elif ! git diff -U0 "$since...HEAD" -- "$f" 2>/dev/null | grep -qE '^[-+][^-+]'; then
+        printf '%s\n' "$f"   # added, deleted or binary: keep, it may reach an image
+      fi
+    done <<< "$changed")
   else
     since=
   fi

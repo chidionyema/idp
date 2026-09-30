@@ -9,7 +9,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -51,8 +50,7 @@ func main() {
 	outputKeyPath := "/run/secrets/agent-identity/ed25519.key"
 
 	if ociTokenURL == "" || vaultOCID == "" || agentURN == "" {
-		fmt.Fprintf(os.Stderr, "FATAL: OCI_IAM_TOKEN_ENDPOINT, OCI_VAULT_OCID, and AGENT_URN must be defined
-")
+		fmt.Fprintf(os.Stderr, "FATAL: OCI_IAM_TOKEN_ENDPOINT, OCI_VAULT_OCID, and AGENT_URN must be defined\n")
 		os.Exit(1)
 	}
 
@@ -60,8 +58,7 @@ func main() {
 	fmt.Println("INFO: Fetching JWT-SVID from SPIRE...")
 	svidJSON, err := fetchJWTSVID(ctx, spireSocketPath, ociTokenURL)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Failed to fetch JWT-SVID: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Failed to fetch JWT-SVID: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("INFO: JWT-SVID acquired")
@@ -70,8 +67,7 @@ func main() {
 	fmt.Println("INFO: Exchanging JWT-SVID for OCI IAM access token (RFC 8693)...")
 	accessToken, err := tokenExchange(ctx, ociTokenURL, svidJSON, ociScope)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: OCI IAM token exchange failed: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: OCI IAM token exchange failed: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("INFO: OCI IAM access token acquired")
@@ -82,8 +78,7 @@ func main() {
 	h.Write([]byte(agentURN))
 	secretName := fmt.Sprintf("aid-key-%s", hex.EncodeToString(h.Sum(nil))[:32])
 
-	fmt.Printf("INFO: Looking for existing key '%s' in vault...
-", secretName)
+	fmt.Printf("INFO: Looking for existing key '%s' in vault...\n", secretName)
 	keyPEM, err := getVaultSecret(ctx, vaultOCID, secretName, accessToken)
 	if err == nil {
 		fmt.Println("INFO: Existing key retrieved from OCI Vault")
@@ -92,16 +87,14 @@ func main() {
 		fmt.Println("INFO: No existing key found. Generating new Ed25519 keypair (genesis)...")
 		pubKey, privKey, err := ed25519.GenerateKey(rand.Reader)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "FATAL: Keypair generation failed: %v
-", err)
+			fmt.Fprintf(os.Stderr, "FATAL: Keypair generation failed: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Serialize to PKCS8 PEM.
 		pkcs8Bytes, err := x509.MarshalPKCS8PrivateKey(privKey)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "FATAL: PKCS8 marshaling failed: %v
-", err)
+			fmt.Fprintf(os.Stderr, "FATAL: PKCS8 marshaling failed: %v\n", err)
 			os.Exit(1)
 		}
 		pemBlock := &pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8Bytes}
@@ -110,8 +103,7 @@ func main() {
 
 		fmt.Println("INFO: Storing new key in OCI Vault...")
 		if err := createVaultSecret(ctx, vaultOCID, compartmentOCID, secretName, keyPEM, accessToken); err != nil {
-			fmt.Fprintf(os.Stderr, "FATAL: Failed to store key in OCI Vault: %v
-", err)
+			fmt.Fprintf(os.Stderr, "FATAL: Failed to store key in OCI Vault: %v\n", err)
 			os.Exit(1)
 		}
 		fmt.Println("INFO: Genesis complete — Ed25519 keypair stored in OCI Vault")
@@ -119,18 +111,15 @@ func main() {
 
 	// --- Step 4: Write key to tmpfs with strict permissions (mode 0400) ---
 	if err := os.MkdirAll(filepath.Dir(outputKeyPath), 0700); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Creating secrets directory: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Creating secrets directory: %v\n", err)
 		os.Exit(1)
 	}
 	if err := os.WriteFile(outputKeyPath, keyPEM, 0400); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Writing key to tmpfs: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Writing key to tmpfs: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("BOOTSTRAP_COMPLETE: Identity %s authenticated and hydrated into %s
-", agentURN, outputKeyPath)
+	fmt.Printf("BOOTSTRAP_COMPLETE: Identity %s authenticated and hydrated into %s\n", agentURN, outputKeyPath)
 }
 
 // fetchJWTSVID calls `spire-agent api fetch jwt` via the Workload API socket.
