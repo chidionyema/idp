@@ -99,7 +99,7 @@ kind: Service
 metadata:
   name: zeroedge
   namespace: llm
-  labels: { app.kubernetes.io/name: zeroedge }
+  labels: { app.kubernetes.io/name: zeroedge, backstage.io/kubernetes-id: founder-model-router }
 spec:
   selector: { app.kubernetes.io/name: zeroedge }
   ports:
