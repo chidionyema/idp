@@ -3,7 +3,7 @@ module quad-ledger
 go 1.25.0
 
 require (
-	github.com/jackc/pgx/v5 v5.7.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/nats-io/nats.go v1.37.0
 )
 
