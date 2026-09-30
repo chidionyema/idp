@@ -1,0 +1,25 @@
+# Lands as ~/.estate/intents/ui.review.yaml (via idp) once the kit is in idp/packages/estate-ui-kit.
+name: ui.review
+description: >
+  Grade a front end against the estate design kit. Every step is a measurement that can fail:
+  token purity (no colour or size literal outside tokens.json), token contrast (WCAG 1.4.3 / 1.4.11),
+  and, when a built dist/ exists, page weight and JS budget. Exit non-zero on any failure.
+  This is the gate crew#694 CP4 names: a front end that does not pass ui.review is refused.
+args:
+  target:     {type: string, default: "src",  help: "Directory of the front end's source."}
+  dist:       {type: string, default: "dist", help: "Built output, for the weight budget. Skipped if absent."}
+  js_budget:  {type: int,    default: 150000, help: "Max total JS bytes in dist (uncompressed here; CI measures gzip)."}
+  page_budget:{type: int,    default: 600000, help: "Max bytes for the largest HTML page + its referenced assets."}
+halt_on_failure: true
+steps:
+  - name: contrast
+    cmd: node ~/.estate/runtime/idp/packages/estate-ui-kit/guards/contrast.mjs
+  - name: purity
+    cmd: node ~/.estate/runtime/idp/packages/estate-ui-kit/guards/purity.mjs {{target}}
+  - name: weight
+    cmd: >
+      test -d {{dist}} || { echo "weight: no {{dist}}, skipped"; exit 0; };
+      js=$(find {{dist}} -name '*.js' -print0 | xargs -0 cat 2>/dev/null | wc -c | tr -d ' ');
+      total=$(du -sk {{dist}} | cut -f1);
+      echo "weight: js=${js}B dist=${total}KB";
+      test "$js" -le {{js_budget}} || { echo "weight: JS ${js}B over budget {{js_budget}}B"; exit 1; }
