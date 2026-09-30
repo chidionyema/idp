@@ -18,6 +18,9 @@
     <key>VOICE_MODELS</key><string>${HOME}/.cache/estate-tools/sherpa-models</string>
     <key>LLM_BASE_URL</key><string>http://127.0.0.1:4000/v1</string>
     <key>LLM_MODEL</key><string>voice</string>
+    <!-- Director cues and newsroom stories: their own router lane, so background narration never
+         cools the founder's voice lane down (2026-09-30: 78% of voice turns 429 while sharing one). -->
+    <key>LLM_NARRATE_MODEL</key><string>narrate</string>
     <!-- 0.5 s: at 0.3 the ASR endpoints mid-question and the brain answers "how". -->
     <key>VOICE_ENDPOINT_SILENCE</key><string>0.5</string>
     <!-- An utterance naming a committed arg-free intent runs it (fleetview POST /voice/intent). -->
