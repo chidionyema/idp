@@ -1,0 +1,18 @@
+# Layer 4 of the Quad: the action ledger. Always-on: a gap in the chain is a gap in history.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: quad-ledger
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef: { kind: GitRepository, name: flux-system }
+  path: ./platform/quad/ledger
+  prune: true
+  wait: true
+  timeout: 5m
+  dependsOn:
+    - { name: estate-db }
+    - { name: secrets }

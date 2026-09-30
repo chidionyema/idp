@@ -245,3 +245,16 @@ spec:
     - name: vector
       ensure: present
       schema: public
+---
+# Layer 4 of the Quad: the agent action ledger (cmd/quad-ledger). New; schema by its migrate.
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: quad-ledger
+  namespace: estate-db
+spec:
+  cluster:
+    name: estate
+  name: quad_ledger
+  owner: quad_ledger
+  ensure: present

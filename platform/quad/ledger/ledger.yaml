@@ -1,0 +1,134 @@
+# Layer 4 of the Quad (docs/tickets/2026-09-28-sovereign-identity-substrate-dros.md): the action
+# ledger. Always-on because the chain must not miss a record; sized at the floor (ADR 0034 says
+# what a row on the node costs: 3 × 20m CPU here).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: quad
+  labels: { pod-security.kubernetes.io/enforce: restricted }
+---
+# DATABASE_URL and the anchor PAR as files. quad_ledger's password is the same vault field the
+# estate-db role reads (platform/estate-db/cluster/secrets.yaml), so one rotation moves both.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: quad-ledger-env
+  namespace: quad
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: quad-ledger-env
+    creationPolicy: Owner
+    template:
+      data:
+        DATABASE_URL: "postgres://quad_ledger:{{ .password }}@estate-rw.estate-db.svc:5432/quad_ledger?sslmode=require"
+        QUAD_ANCHOR_PAR_URL: "{{ .par }}"
+  data:
+    - secretKey: password
+      remoteRef: { key: quad-ledger, property: postgres-password }
+    - secretKey: par
+      remoteRef: { key: quad-ledger, property: anchor-par-url }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: quad-ledger
+  namespace: quad
+  labels: { app.kubernetes.io/name: quad-ledger, app.kubernetes.io/part-of: quad }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }   # single writer: never two consumers on the chain
+  selector: { matchLabels: { app.kubernetes.io/name: quad-ledger } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: quad-ledger, app.kubernetes.io/part-of: quad }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      initContainers:
+        - name: migrate
+          image: ghcr.io/chidionyema/quad-ledger:main   # {"$imagepolicy": "flux-system:quad-ledger"}
+          args: ["migrate"]
+          env: [{ name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL }]
+          volumeMounts: [{ name: env, mountPath: /run/secrets/quad-ledger, readOnly: true }]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 64Mi } }
+      containers:
+        - name: consume
+          image: ghcr.io/chidionyema/quad-ledger:main   # {"$imagepolicy": "flux-system:quad-ledger"}
+          args: ["consume"]
+          env:
+            - { name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL }
+            - { name: NATS_URL, value: nats://nats.event-bus.svc:4222 }
+          volumeMounts: [{ name: env, mountPath: /run/secrets/quad-ledger, readOnly: true }]
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 96Mi } }
+      volumes:
+        - name: env
+          secret: { secretName: quad-ledger-env }
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quad-ledger-anchor
+  namespace: quad
+spec:
+  schedule: "*/15 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        metadata: { labels: { app.kubernetes.io/name: quad-ledger-anchor, app.kubernetes.io/part-of: quad } }
+        spec:
+          restartPolicy: Never
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: anchor
+              image: ghcr.io/chidionyema/quad-ledger:main   # {"$imagepolicy": "flux-system:quad-ledger"}
+              args: ["anchor"]
+              env:
+                - { name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL }
+                - { name: QUAD_ANCHOR_PAR_URL_FILE, value: /run/secrets/quad-ledger/QUAD_ANCHOR_PAR_URL }
+              volumeMounts: [{ name: env, mountPath: /run/secrets/quad-ledger, readOnly: true }]
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+              resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 64Mi } }
+          volumes:
+            - name: env
+              secret: { secretName: quad-ledger-env }
+---
+# verify runs seven minutes after each anchor and publishes estate.quad.ledger.state; a red run
+# is a failed Job, which the fleet reads as a refusal (THE PLAN rule 2).
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: quad-ledger-verify
+  namespace: quad
+spec:
+  schedule: "7,22,37,52 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata: { labels: { app.kubernetes.io/name: quad-ledger-verify, app.kubernetes.io/part-of: quad } }
+        spec:
+          restartPolicy: Never
+          securityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: verify
+              image: ghcr.io/chidionyema/quad-ledger:main   # {"$imagepolicy": "flux-system:quad-ledger"}
+              args: ["verify"]
+              env:
+                - { name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL }
+                - { name: NATS_URL, value: nats://nats.event-bus.svc:4222 }
+              volumeMounts: [{ name: env, mountPath: /run/secrets/quad-ledger, readOnly: true }]
+              securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+              resources: { requests: { cpu: 20m, memory: 32Mi }, limits: { memory: 96Mi } }
+          volumes:
+            - name: env
+              secret: { secretName: quad-ledger-env }
