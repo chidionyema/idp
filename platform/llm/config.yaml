@@ -350,14 +350,76 @@ model_list:
   # Measured 2026-09-26 with this key: whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,
   # where the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept its terms once
   # (console.groq.com playground); until then voice-tts answers 400 and the backend speaks locally.
-  # voice: the brain the Fleet voice-router thinks with (LLM_MODEL=voice). Groq first for first-token speed; the `voice` fallback below carries it on to the fast pool.
+  # voice: the brain the founder's spoken turn thinks with (fleetview VOICE_ROUTER_MODEL=voice). Measured
+  # 2026-09-30 over 331 turns: first token p50 7.6s -- this single Groq deployment also carried the film
+  # director and the newsroom anchor (~800 calls/hour at 01:00 with nobody watching), 78% of voice calls
+  # (2406/3150) came back 429, and the founder's one-word answer waited in the cooldown. When Groq
+  # accepts, first token is 0.34s. So `voice` is a pool of three free vendors reserved for INTERACTIVE
+  # turns, and narration rides `narrate` on separate per-model quotas (Groq meters per model, so the
+  # 8B narration row can run dry without the founder's row noticing). Both pools are declared here, in
+  # one place, so the priority classes read as one unit; the keys are the same vendors' second and
+  # third accounts, so a 429 on one class never cools the other. Answers are one or two sentences by
+  # the operator's own brief: max_tokens is small and the timeout is a turn, not a job. rpm sits under
+  # every vendor's free ceiling so the router refuses locally before the vendor does.
   - model_name: voice
     litellm_params:
       model: openai/openai/gpt-oss-120b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
-      timeout: 20
-      max_tokens: 512
+      timeout: 8
+      max_tokens: 96
+      rpm: 20
+    model_info:
+      max_input_tokens: 131072
+  - model_name: voice
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY_2
+      timeout: 8
+      max_tokens: 96
+      rpm: 20
+    model_info:
+      max_input_tokens: 65536
+  - model_name: voice
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY_2
+      timeout: 8
+      max_tokens: 96
+      rpm: 20
+    model_info:
+      max_input_tokens: 131072
+  # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate).
+  - model_name: narrate
+    litellm_params:
+      model: openai/llama-3.1-8b-instant
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
+      timeout: 4
+      max_tokens: 48
+      rpm: 12
+    model_info:
+      max_input_tokens: 131072
+  - model_name: narrate
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
+      api_key: os.environ/CEREBRAS_API_KEY_3
+      timeout: 4
+      max_tokens: 48
+      rpm: 12
+    model_info:
+      max_input_tokens: 65536
+  - model_name: narrate
+    litellm_params:
+      model: openai/gpt-oss-120b
+      api_base: https://api.sambanova.ai/v1
+      api_key: os.environ/SAMBANOVA_API_KEY_3
+      timeout: 4
+      max_tokens: 48
+      rpm: 12
     model_info:
       max_input_tokens: 131072
   - model_name: voice-asr
@@ -698,7 +760,9 @@ router_settings:
     # LLM_MODEL=voice). It never had a deployment, so every spoken turn since 2026-09-28
     # died with "no healthy deployments for model_group=voice" and /readyz sat at 503. A
     # role, not a vendor: it rides the `fast` pool and then the floor above.
-    - voice: [fast, groq]
+    - voice: [narrate, fast, groq]
+    # narrate has its own templates in voice-router; a hop to the floor is all it gets, never a paid lane.
+    - narrate: [groq]
 
     # Same floor, entered at Cerebras: never back to groq, so the graph has no cycle.
     - cerebras: [sambanova, nvidia, openrouter]
