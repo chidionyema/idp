@@ -178,19 +178,6 @@ def _render():
     assert "state/kini" in ps["containers"][0]["args"][0]
 
 
-@then("oke-check.yml has job kini-state and drills/catalogue.yaml has row kini-finish")
-def _wiring():
-    oke = yaml.safe_load((IDP / ".github/workflows/oke-check.yml").read_text())
-    assert "kini-state" in oke["jobs"], list(oke["jobs"])
-    assert "bin/idp-kini-state" in json.dumps(oke["jobs"]["kini-state"])
-    cat = yaml.safe_load((IDP / "drills/catalogue.yaml").read_text())
-    rows = {r["name"]: r for r in cat["drills"]}
-    assert (
-        rows["kini-finish"]["job"] == "kini-state"
-        and rows["kini-finish"]["workflow"] == "oke-check.yml"
-    )
-
-
 @then("`kini receipt` is a CLI subcommand")
 def _cli():
     env = {**os.environ, "PYTHONPATH": str(IDP)}

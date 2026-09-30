@@ -991,7 +991,8 @@ def test_rule_4_has_two_enforcement_points() -> None:
     # read. The second half only ever reads text files in `platform/`, which is where the Kyverno
     # policy and the executor live and where a third enforcement point would be added.
     tracked = subprocess.run(
-        ["git", "grep", "-l", "UNATTESTED"],
+        # rescued_patches2/ is archived branch diffs (#3914), data rather than an enforcement point.
+        ["git", "grep", "-l", "UNATTESTED", "--", ".", ":!rescued_patches2"],
         cwd=repo_root,
         capture_output=True,
         text=True,

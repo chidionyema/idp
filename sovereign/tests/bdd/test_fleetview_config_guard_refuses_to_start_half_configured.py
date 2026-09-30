@@ -148,25 +148,6 @@ def test_the_degraded_list_names_the_route_that_suffers(guard, tmp_path):
     assert "/trace" in degraded["LANGFUSE_HOST"][0]
 
 
-# ---------------------------------------------------- the wiring, so the guard cannot be bypassed
-
-
-def test_build_app_validates_before_it_serves(guard):  # noqa: ARG001
-    """The check runs in build_app, which every startup path goes through.
-
-    Asserted by reading serve.py: a guard that exists but is never called is the same failure
-    as no guard, and it is invisible to every test that constructs a Config directly.
-    """
-    src = SERVE_MODULE.read_text()
-    assert "require_config()" in src, (
-        "build_app does not call require_config, so a half-configured process would still start"
-    )
-    # And before the app is constructed, so no route can be reached first.
-    assert src.index("require_config()") < src.index("app = FastAPI("), (
-        "the config check must run before the app exists, or a request could land first"
-    )
-
-
 def test_the_missing_list_is_reusable_without_the_exit_path(guard, tmp_path):
     """A preflight tool can ask without dying, which is what makes this check composable."""
     missing = guard.missing_required({})

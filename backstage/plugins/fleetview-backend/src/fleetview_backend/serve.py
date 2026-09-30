@@ -153,6 +153,17 @@ def build_app() -> FastAPI:
         body, status = routes.trace_envelope(session_id)
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.DEVICE_STATUS_PATH)
+    def device_status():
+        body, status = routes.device_status_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.DEVICE_AUTHORIZE_PATH)
+    def device_authorize_post():
+        # POST: this mints a single-use challenge, and a GET that changed state would be prefetchable.
+        body, status = routes.device_authorize_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.LEDGER_PATH)
     def ledger_get(session_id: str):
         body, status = routes.ledger_tail_envelope(session_id)
