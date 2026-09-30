@@ -28,7 +28,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      ARTIFACT: oci://ghcr.io/chidionyema/idp/estate-state:latest
+      ARTIFACT: oci://ghcr.io/${{ github.repository }}/estate-state:latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -109,16 +109,16 @@ jobs:
           set -uo pipefail
           gh api repos/chidionyema/claude-guards/contents/rulings.json --jq .content | base64 -d > "$RUNNER_TEMP/rulings.json" || : > "$RUNNER_TEMP/rulings.json"
           : > "$RUNNER_TEMP/issues.ndjson"
-          for repo in chidionyema/idp chidionyema/crew; do
+          for repo in ${{ github.repository }} chidionyema/crew; do
             gh issue list -R "$repo" --state open -L 200 --json number,title,labels,createdAt,url \
-              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,number,title,labels:[.labels[].name],created_at:.createdAt,url}' >> "$RUNNER_TEMP/issues.ndjson" || echo "BLIND issues of $repo not read"
+              | jq -c --arg repo "${repo#*/}" '.[]|{repo:$repo,number,title,labels:[.labels[].name],created_at:.createdAt,url}' >> "$RUNNER_TEMP/issues.ndjson" || echo "BLIND issues of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/issues.ndjson" > "$RUNNER_TEMP/issues.json"
           since=$(date -u -d '6 hours ago' +%Y-%m-%dT%H:%M:%SZ)
           : > "$RUNNER_TEMP/runs.ndjson"
-          for repo in chidionyema/idp chidionyema/crew chidionyema/prospector; do
+          for repo in ${{ github.repository }} chidionyema/crew chidionyema/prospector; do
             gh run list -R "$repo" -L 200 --created ">=$since" --json workflowName,conclusion,createdAt \
-              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
+              | jq -c --arg repo "${repo#*/}" '.[]|{repo:$repo,workflow:.workflowName,conclusion,created_at:.createdAt}' >> "$RUNNER_TEMP/runs.ndjson" || echo "BLIND runs of $repo not read"
           done
           jq -s . "$RUNNER_TEMP/runs.ndjson" > "$RUNNER_TEMP/runs.json"
           # The login drill is deleted (founder 2026-09-21). An empty drill.at / drill.log keeps
@@ -135,18 +135,18 @@ jobs:
         run: |
           set -uo pipefail
           since=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
-          gh secret list -R chidionyema/idp --json name,updatedAt > "$RUNNER_TEMP/secrets.json" 2>/dev/null \
+          gh secret list -R ${{ github.repository }} --json name,updatedAt > "$RUNNER_TEMP/secrets.json" 2>/dev/null \
             || { echo "BLIND secret last-set times not readable with this token"; : > "$RUNNER_TEMP/secrets.json"; }
           : > "$RUNNER_TEMP/prs.ndjson"; : > "$RUNNER_TEMP/changes.ndjson"; : > "$RUNNER_TEMP/decisions.ndjson"
-          for repo in chidionyema/idp chidionyema/crew chidionyema/prospector chidionyema/hermes-v2 chidionyema/claude-guards; do
+          for repo in ${{ github.repository }} chidionyema/crew chidionyema/prospector chidionyema/hermes-v2 chidionyema/claude-guards; do
             gh pr list -R "$repo" --state open -L 50 --json number,title,headRefName,updatedAt,mergeStateStatus,isDraft,url,statusCheckRollup \
-              | jq -c --arg repo "${repo#chidionyema/}" '.[]|. + {repo:$repo}' >> "$RUNNER_TEMP/prs.ndjson" || echo "BLIND pull requests of $repo not read"
+              | jq -c --arg repo "${repo#*/}" '.[]|. + {repo:$repo}' >> "$RUNNER_TEMP/prs.ndjson" || echo "BLIND pull requests of $repo not read"
             gh api "repos/$repo/commits?sha=main&since=$since&per_page=100" \
-              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/changes.ndjson" || echo "BLIND merges of $repo not read"
+              | jq -c --arg repo "${repo#*/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/changes.ndjson" || echo "BLIND merges of $repo not read"
           done
-          for repo in chidionyema/idp chidionyema/crew; do for path in docs/decisions docs/founder; do
+          for repo in ${{ github.repository }} chidionyema/crew; do for path in docs/decisions docs/founder; do
             gh api "repos/$repo/commits?sha=main&path=$path&since=$since&per_page=50" \
-              | jq -c --arg repo "${repo#chidionyema/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/decisions.ndjson" || echo "BLIND decision records of $repo/$path not read"
+              | jq -c --arg repo "${repo#*/}" '.[]|{repo:$repo,sha:.sha,title:(.commit.message|split("\n")[0]),at:.commit.committer.date}' >> "$RUNNER_TEMP/decisions.ndjson" || echo "BLIND decision records of $repo/$path not read"
           done; done
           jq -s . "$RUNNER_TEMP/prs.ndjson" > "$RUNNER_TEMP/prs.json"
           jq -s 'unique_by(.repo,.sha)' "$RUNNER_TEMP/changes.ndjson" > "$RUNNER_TEMP/changes.json"
@@ -155,13 +155,13 @@ jobs:
             || { echo "BLIND incident ledger not read"; : > "$RUNNER_TEMP/incidents.json"; }
           # the newest oke-check run that ran the vendor seeder (mode apply; inputs are not in the runs API)
           apply=""
-          for id in $(gh run list -R chidionyema/idp -w oke-check.yml -e workflow_dispatch --status completed -L 40 --json databaseId --jq '.[].databaseId'); do
-            n=$(gh run view "$id" -R chidionyema/idp --json jobs --jq '[.jobs[].steps[]|select(.name|startswith("bin/idp-bootstrap-vendors"))|select(.conclusion!="skipped")]|length' 2>/dev/null || echo 0)
+          for id in $(gh run list -R ${{ github.repository }} -w oke-check.yml -e workflow_dispatch --status completed -L 40 --json databaseId --jq '.[].databaseId'); do
+            n=$(gh run view "$id" -R ${{ github.repository }} --json jobs --jq '[.jobs[].steps[]|select(.name|startswith("bin/idp-bootstrap-vendors"))|select(.conclusion!="skipped")]|length' 2>/dev/null || echo 0)
             if [ "$n" != "0" ]; then apply=$id; break; fi
           done
           if [ -n "$apply" ]; then
-            gh run view "$apply" -R chidionyema/idp --json databaseId,url,status,conclusion,createdAt,jobs > "$RUNNER_TEMP/apply-run.json"
-            gh run view "$apply" -R chidionyema/idp --log 2>/dev/null | sed -E $'s/^[^\t]*\t([^\t]*)\t[^ ]+ /\\1: /' \
+            gh run view "$apply" -R ${{ github.repository }} --json databaseId,url,status,conclusion,createdAt,jobs > "$RUNNER_TEMP/apply-run.json"
+            gh run view "$apply" -R ${{ github.repository }} --log 2>/dev/null | sed -E $'s/^[^\t]*\t([^\t]*)\t[^ ]+ /\\1: /' \
               | grep -E '^[^:]+: (ok|FAIL|BLIND|skip) ' > "$RUNNER_TEMP/apply.log" || echo "BLIND apply log of run $apply has no verdict lines"
             echo "last apply run $apply, $(wc -l < "$RUNNER_TEMP/apply.log") verdict lines"
           else
@@ -203,9 +203,9 @@ jobs:
           T: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          printf '%s' "$T" | flux push artifact "$ARTIFACT" --path="$RUNNER_TEMP/out" \
-            --source="https://github.com/chidionyema/idp" --revision="$GITHUB_SHA" --creds "chidionyema:$(cat)" >/dev/null
-          echo "ok      estate-state pushed $ARTIFACT revision $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf '%s' "$T" | flux push artifact "${ARTIFACT,,}" --path="$RUNNER_TEMP/out" \
+            --source="https://github.com/${{ github.repository }}" --revision="$GITHUB_SHA" --creds "chidionyema:$(cat)" >/dev/null
+          echo "ok      estate-state pushed ${ARTIFACT,,} revision $GITHUB_SHA" | tee -a "$GITHUB_STEP_SUMMARY"
       # Same proof build-multiarch.yml already carries for container images (crew, 2026-09-15
       # maturity pass): a tag in GHCR says only that someone with push rights put it there. Sign
       # by digest -- :latest is a moving pointer -- and verify in this run, not just sign and hope.
@@ -223,12 +223,12 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          ref="${ARTIFACT#oci://}"
+          ref="${ARTIFACT,,}"; ref="${ref#oci://}"
           digest=$(crane digest "$ref")
           cosign sign --yes --new-bundle-format=false --use-signing-config=false "${ref%:*}@$digest"
           cosign verify "${ref%:*}@$digest" \
             --new-bundle-format=false \
-            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-identity-regexp "^https://github.com/(${{ github.repository_owner }}|${{ vars.ESTATE_PREVIOUS_OWNER || github.repository_owner }})/${{ github.event.repository.name }}/" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
           echo "ok      estate-state signed and verified ${ref%:*}@$digest" | tee -a "$GITHUB_STEP_SUMMARY"

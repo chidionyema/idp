@@ -9,8 +9,9 @@ runs:
   steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with: { fetch-depth: 0 }
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      with: { repository: chidionyema/idp, path: .estate-idp }
+    - name: "the idp tree this action ships in (no owner name; the runner already downloaded it)"
+      shell: bash
+      run: ln -sfn "$(cd "$GITHUB_ACTION_PATH/../../.." && pwd)" .estate-idp
     - name: spec-gate
       shell: bash
       env:

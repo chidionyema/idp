@@ -109,7 +109,8 @@ jobs:
           arch=${{ matrix.platform }}; arch=${arch#linux/}
           {
             echo "context=${{ matrix.dockerfile.context }}"
-            echo "image=${{ env.REGISTRY }}/${{ github.repository_owner }}/$n"
+            owner='${{ github.repository_owner }}'
+            echo "image=${{ env.REGISTRY }}/${owner,,}/$n"   # registry paths are lowercase; the owner may not be (Mumchimp)
             echo "arch=$arch"
             echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')"
           } >> "$GITHUB_OUTPUT"

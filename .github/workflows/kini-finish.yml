@@ -23,7 +23,7 @@ jobs:
   request:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (startsWith(github.event.comment.body, 'FINISH: KINI') && github.event.comment.user.login == github.repository_owner)
+      (startsWith(github.event.comment.body, 'FINISH: KINI') && github.event.comment.user.login == (vars.FOUNDER_LOGIN || 'chidionyema'))
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

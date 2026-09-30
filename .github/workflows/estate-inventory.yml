@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      ARTIFACT: oci://ghcr.io/chidionyema/idp/estate-inventory:latest
+      ARTIFACT: oci://ghcr.io/${{ github.repository }}/estate-inventory:latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -155,10 +155,10 @@ jobs:
           # search; neither is published anywhere.
           mkdir -p "$RUNNER_TEMP/publish"
           cp "$RUNNER_TEMP/inventory/inventory.md" "$RUNNER_TEMP/inventory/inventory.json" "$RUNNER_TEMP/publish/"
-          echo "$GITHUB_TOKEN" | flux push artifact "$ARTIFACT" \
+          echo "$GITHUB_TOKEN" | flux push artifact "${ARTIFACT,,}" \
             --path="$RUNNER_TEMP/publish" --source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --revision="$GITHUB_REF_NAME@sha1:$GITHUB_SHA" --creds "$GITHUB_ACTOR:$GITHUB_TOKEN" >/dev/null
-          echo "ok      inventory  published $ARTIFACT"
+          echo "ok      inventory  published ${ARTIFACT,,}"
       # Same proof build-multiarch.yml already carries for container images (crew, 2026-09-15
       # maturity pass): a tag in GHCR says only that someone with push rights put it there. Sign
       # by digest -- :latest is a moving pointer -- and verify in this run, not just sign and hope.
@@ -176,12 +176,12 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           set -euo pipefail
-          ref="${ARTIFACT#oci://}"
+          ref="${ARTIFACT,,}"; ref="${ref#oci://}"
           digest=$(crane digest "$ref")
           cosign sign --yes --new-bundle-format=false --use-signing-config=false "${ref%:*}@$digest"
           cosign verify "${ref%:*}@$digest" \
             --new-bundle-format=false \
-            --certificate-identity-regexp "^https://github.com/${{ github.repository }}/" \
+            --certificate-identity-regexp "^https://github.com/(${{ github.repository_owner }}|${{ vars.ESTATE_PREVIOUS_OWNER || github.repository_owner }})/${{ github.event.repository.name }}/" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
           echo "ok      inventory  signed and verified ${ref%:*}@$digest"
