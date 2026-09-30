@@ -8,7 +8,7 @@
 # Runs from ~/.estate/bin, never ~/Documents: launchd cannot start /bin/sh on a file under
 # ~/Documents (TCC, exit 126). Installed by copying this file there (see the plist template).
 #
-#   free < ACT_GB (20)       act early, at most every 30 min: the cache allow-list AND settled agent
+#   free < ACT_GB (20)       act early, on every run: the cache allow-list, Docker, AND settled agent
 #                            worktrees (clean, every commit on a ref, unlocked, idle 6h, no process
 #                            inside; `git worktree remove` without --force). 2026-09-27 the volume hit
 #                            160M free while ~9G sat in agent worktrees and 0M of caches was left:
@@ -42,8 +42,9 @@ notify() {
 clean() { [ -f "$CLEANUP" ] && bash "$CLEANUP" true false 0 true >>"$LOG" 2>&1; date +%s >"$ACTED"; }
 
 if [ "$free_gb" -lt "$ACT_GB" ] && [ "$free_gb" -ge "$CRIT_GB" ]; then
-	lastc=$(cat "$ACTED" 2>/dev/null || echo 0)
-	[ $(($(date +%s) - lastc)) -ge 1800 ] && clean
+	# Every run, not every 30 min (founder 2026-09-30: "it needs to run every 5 minutes so we never
+	# have to worry about this again"). A run with nothing to free costs seconds.
+	clean
 fi
 if [ "$free_gb" -lt "$CRIT_GB" ]; then
 	clean

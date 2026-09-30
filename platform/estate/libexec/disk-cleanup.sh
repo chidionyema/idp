@@ -7,7 +7,7 @@
 # space before/after is measured, not estimated.
 #
 # Allow-list (all rebuilt on the next install/build, at the cost of a download):
-#   yarn berry cache, go build cache, pip cache, Homebrew download cache, npm cache + npx,
+#   yarn berry cache, go build cache, pip cache, Homebrew download cache, npm cache + npx, uv cache,
 #   and every Cargo target/ dir in the idp main checkout (a target/ beside a Cargo.toml that cargo
 #   stamped with CACHEDIR.TAG or .rustc_info.json -- `cargo clean`, nothing else). Measured
 #   2026-09-27: 3967M of target/ against 1.1G free, the one grower the caches above did not cover.
@@ -45,7 +45,8 @@ go-build|$HOME/Library/Caches/go-build|go (build|test|install|run|vet)
 pip-cache|$HOME/Library/Caches/pip|pip3? (install|download|wheel)|-m pip 
 homebrew-cache|$HOME/Library/Caches/Homebrew|Homebrew/brew\.rb|bin/brew( |$)
 npm-cache|$HOME/.npm/_cacache|npm-cli\.js|bin/npm( |$)
-npx-cache|$HOME/.npm/_npx|npx-cli\.js|bin/npx( |$)"
+npx-cache|$HOME/.npm/_npx|npx-cli\.js|bin/npx( |$)
+uv-cache|$HOME/.cache/uv|(^|/)uv( |$)"
 # Cargo target/ dirs: found, not listed, because every checkout and worktree grows its own.
 # -prune keeps find out of target/, node_modules, .git and agent worktrees; the Cargo.toml + cargo's own stamp
 # is what separates a build dir from any other directory that happens to be called target.
@@ -90,6 +91,26 @@ $TARGETS
 EOF
 
 echo "allow-list total: ${total}M"
+
+# Docker (Rancher Desktop). Measured 2026-09-30: the VM disk file held 7.9G on the host while
+# `docker system df` showed 1.85G of unused images and 2.39G of build cache; pruning alone freed
+# nothing on the host, because the VM's ext4 keeps the blocks until they are trimmed. Prune, then
+# fstrim /mnt/data: the file dropped to 2.4G and the host gained 5.0G. Images still used by a
+# container, and anything from the last 24h, are kept; a running `docker build` skips it.
+DOCKER="$HOME/.rd/bin/docker"; RDCTL="$HOME/.rd/bin/rdctl"
+if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
+  if [ "$APPLY" = 0 ]; then
+    echo "  would  docker  $("$DOCKER" --context rancher-desktop system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null | tr '\n' ';')  then fstrim"
+  elif pgrep -f 'docker(-buildx)? (buildx )?build' >/dev/null 2>&1; then
+    echo "  SKIP   docker  a docker build is running"
+  else
+    d0=$(free_k)
+    "$DOCKER" --context rancher-desktop image prune -af --filter until=24h >/dev/null 2>&1
+    "$DOCKER" --context rancher-desktop builder prune -af --filter until=24h >/dev/null 2>&1
+    "$RDCTL" shell sudo fstrim /mnt/data >/dev/null 2>&1
+    echo "  freed  docker  $((($(free_k) - d0) / 1024))M on the host (prune + fstrim, measured)"
+  fi
+fi
 
 # Settled worktrees (worktrees=true). Measured 2026-09-27: 0M of caches left to free while ~9G sat
 # in agent worktrees, each new one 260-560M, and the volume hit 160M free. A worktree is only a
