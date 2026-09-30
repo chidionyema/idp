@@ -1,15 +1,6 @@
 {
- "receipts": [
-  {
-   "merged_at": "2026-09-29T00:52:28Z",
-   "number": 4902,
-   "repo": "chidionyema/idp",
-   "title": "fix(hermes-agent): tailscale sidecar gets its state Secret, stops crashlooping Otto",
-   "url": "https://github.com/chidionyema/idp/pull/4902",
-   "use": "rspace mode, file-sourced key and optional key mount were already in place."
-  }
- ],
- "taken": "2026-09-29T23:29Z",
+ "receipts": [],
+ "taken": "2026-09-30T08:06Z",
  "waiting": [
   {
    "cp": "CP3",
