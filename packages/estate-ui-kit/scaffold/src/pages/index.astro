@@ -1,0 +1,16 @@
+---
+import '../styles/global.css';
+import Home from '../components/Home';
+import { site } from '../site.config';
+---
+<!doctype html>
+<html lang="en-GB">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>{site.name}</title>
+  </head>
+  <body>
+    <Home client:idle />
+  </body>
+</html>

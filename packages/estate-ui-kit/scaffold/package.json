@@ -1,0 +1,28 @@
+{
+  "name": "__NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "guard": "node node_modules/@estate/ui-kit/guards/purity.mjs src && node node_modules/@estate/ui-kit/guards/contrast.mjs",
+    "test": "npm run -s guard && astro check"
+  },
+  "dependencies": {
+    "@astrojs/cloudflare": "14.3.3",
+    "@astrojs/react": "7.0.0",
+    "@estate/ui-kit": "file:__KIT__",
+    "astro": "7.3.5",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5.9.0"
+  }
+}

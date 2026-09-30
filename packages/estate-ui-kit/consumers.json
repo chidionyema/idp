@@ -1,0 +1,5 @@
+[
+  { "root": "backstage/packages/app", "css": "src/styles.css", "migrate_by": "2026-10-31", "note": "portal and /fleet; its tokens.ts seeded the kit and is replaced by it" },
+  { "root": "~/Documents/code/prospector/store_platform/src/Store.Web", "css": "src/styles/tokens.css", "migrate_by": "2026-10-31", "note": "mumchimp.com; crew#700 CP1 rebuilds home and pack page on the kit" },
+  { "root": "~/Documents/code/bytesync-web", "css": "src/app/globals.css", "migrate_by": "2026-10-15", "note": "company site; crew#690" }
+]

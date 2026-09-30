@@ -20,7 +20,7 @@ const collect = (p) => {
 };
 for (const a of process.argv.slice(2)) collect(a);
 
-const COLOR = /(#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\()/;
+const COLOR = /((?<![\w#])#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\()/;
 const FONTSIZE = /font-size\s*:\s*(\d*\.?\d+)(px|rem|em|pt)/;
 const INLINE = /style\s*=\s*["'{][^"'}]*(color|font-size)\s*:/;
 const hits = [];

@@ -28,3 +28,23 @@ crew#235 holds the earlier decision; crew#691 (company name) is open.
 
 **Design sources today:** two (portal `tokens.ts`, Store.Web `tokens.css`) plus one stray `:root` in
 `mumchimp.css`. The kit in `packages/estate-ui-kit/` (crew#694 CP2) replaces all three with one file.
+
+## Addendum 2026-10-01 (second sweep, read-only)
+
+Rows the 2026-09-30 table missed or got wrong, from a full `find` over `~/Documents/code`:
+
+| Front end | Path | Framework | Design source | Served |
+|---|---|---|---|---|
+| bytesync-web (company site, crew#690) | `~/Documents/code/bytesync-web` (local only; **no GitHub remote**) | Next 16.3 App Router, static export, React 19, Tailwind v4, Vitest, Playwright, Lighthouse | its own `:root` in `src/app/globals.css` (oklch, a **fourth** token system) | `deploy.yml` to Cloudflare Pages exists; real domain unset; not verified live |
+| Store.Web, correction | as above | as above | as above | Served by **Fly** (`store_platform/deploy/fly/web.fly.toml`, `fly certs add mumchimp.com`) and a k8s manifest in prospector, not by an idp Flux row |
+| hermes-agent desktop | `hermes-agent/apps/desktop` | Electron, Vite, React 19, Tailwind v4 | `DESIGN.md` (rules, no token file) | desktop app |
+| ironcage UI | `ironcage/ui/index.html` | one HTML page embedded by `include_str!` in the Rust API | none | with the API image |
+| survival-stack lighthouse | `survival-stack/lighthouse/index.html` | one static page + a Worker | none | not yet (`REPLACE_WITH_KV_ID`) |
+| hermes-config mini-app | `hermes-config/mini-app/index.html` | one HTML file | none | unknown |
+| nextjs-lucia-auth template | `~/Documents/code/nextjs-lucia-auth-email-password-reset-drizzle` | Next 14, Tailwind 3, shadcn | template | No |
+
+Not found anywhere: `pixer-react`, `ecommerce-frontend`, any web UI in hermes-v2 (Python; chat surface adapters only).
+
+**Duplicates:** the Backstage app is checked out three times (`idp`, `idp-memory-bdd`, `agent-workspaces/task-e2etest2`, the last a broken worktree link); precedent and precedenty are one template twice; the mumchimp-medusa storefront duplicates Store.Web's role and is not deployed.
+
+**Design sources today: four** (portal `tokens.ts`, Store.Web `tokens.css` + `mumchimp.css`, bytesync-web `globals.css`, and the kit's `tokens.json`). The kit now holds components, eight templates, a gallery, a scaffold and the kit-import guard (`packages/estate-ui-kit/consumers.json` names the three legacy consumers and their migration dates).
