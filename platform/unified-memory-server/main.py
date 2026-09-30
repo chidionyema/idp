@@ -446,7 +446,7 @@ async def memory_list_current(
     async with conn.cursor() as cur:
         await cur.execute(
             """
-            SELECT key, content, trust_tier, version, valid_from, updated_at
+            SELECT key, content, trust_tier, version, valid_from, updated_at, provenance
             FROM memories
             WHERE namespace = %s AND is_quarantined = FALSE
             ORDER BY key;
@@ -464,6 +464,9 @@ async def memory_list_current(
                 "version": r["version"],
                 "valid_from": r["valid_from"].isoformat(),
                 "recorded_at": r["updated_at"].isoformat(),
+                # What the writer said about the fact (subject, kind, tags, source): the fields a
+                # reader filters on, returned so it never has to guess them from the key.
+                "provenance": r["provenance"],
             }
             for r in rows
         ],
