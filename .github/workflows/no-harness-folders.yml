@@ -1,0 +1,21 @@
+# Founder 2026-09-30, non-negotiable: no harness folder (.claude) ever enters the estate. The
+# estate is model-agnostic; knowledge hidden in a harness folder is invisible to every other
+# model. The branch ruleset requires this check with no bypass, so GitHub refuses the merge.
+name: no-harness-folders
+on:
+  pull_request:
+  push:
+jobs:
+  no-harness-folders:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: refuse any .claude path
+        run: |
+          found=$(git ls-files | grep -E '(^|/)\.claude(/|$)' || true)
+          if [ -n "$found" ]; then
+            echo "::error::harness folder in the tree (founder 2026-09-30: no .claude anywhere):"
+            echo "$found"
+            exit 1
+          fi
+          echo "no .claude path in $(git ls-files | wc -l) tracked files"
