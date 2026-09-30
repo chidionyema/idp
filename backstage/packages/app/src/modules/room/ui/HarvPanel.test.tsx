@@ -41,6 +41,9 @@ describe('harv panel', () => {
     fireEvent.click(screen.getByText('harv · 1,377 shelved'));
     expect(screen.getByTestId('harv-tiers').textContent).toContain('t1 · 1,244');
     expect(screen.getByTestId('harv-age').textContent).toContain('2,957 evidence');
+    // The two numbers come from different scopes and must never read as one count.
+    expect(screen.getByText('shelf, all runs')).toBeTruthy();
+    expect(screen.getByText('funnel, last run only')).toBeTruthy();
   });
 
   it('flags a funnel whose last run is old instead of calling it healthy', async () => {

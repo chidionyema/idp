@@ -137,7 +137,10 @@ export default function HarvPanel({
                   ? ` · ${harv.evidence.toLocaleString()} evidence entries`
                   : ''}
               </p>
-              <div className="flex gap-1 mt-2" data-testid="harv-tiers">
+              <div className="mt-2 text-[9px] uppercase tracking-wider text-white/40">
+                shelf, all runs
+              </div>
+              <div className="flex gap-1 mt-1" data-testid="harv-tiers">
                 {Object.entries(harv.shelf || {}).map(([t, n]) => (
                   <span
                     key={t}
@@ -146,6 +149,9 @@ export default function HarvPanel({
                     {t} · {n.toLocaleString()}
                   </span>
                 ))}
+              </div>
+              <div className="mt-3 text-[9px] uppercase tracking-wider text-white/40">
+                funnel, last run only
               </div>
               {groups(harv.stages || []).map(g => (
                 <div key={g.name} className="mt-3" data-group={g.name}>
