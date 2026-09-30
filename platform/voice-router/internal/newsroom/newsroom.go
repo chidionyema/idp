@@ -115,10 +115,10 @@ func higherSeverity(a, b string) string {
 }
 
 func isHealthyKind(kind string) bool {
-	return kind == "flux.deployed" || kind == "cicd.passed" || kind == "incident.closed"
+	return kind == "flux.deployed" || kind == "flux.fresh" || kind == "cicd.passed" || kind == "incident.closed"
 }
 func isFailureKind(kind string) bool {
-	return kind == "flux.failed" || kind == "cicd.failed" || kind == "k8s.crashloop" || kind == "incident.open"
+	return kind == "flux.failed" || kind == "flux.stale" || kind == "cicd.failed" || kind == "k8s.crashloop" || kind == "incident.open"
 }
 
 type Editor struct {
@@ -318,6 +318,12 @@ func render(s *Story) {
 			s.Headline = fmt.Sprintf("FAILED: %s, %s in %dm", n, ord(s.Count), m)
 		}
 		s.Anchor = n + " is not reconciling (" + rs + "), so its changes are not reaching the cluster, according to Flux."
+	case "flux.pushed":
+		s.Headline = "DEPLOY BRANCH: " + n + " pushed " + rs
+		s.Anchor = "Flux rebuilt flux/deploy from main with the latest images, so the cluster rolls " + rs + " next, according to Flux."
+	case "flux.stale":
+		s.Headline = "DEPLOY STALLED: main not on flux/deploy after " + rs
+		s.Anchor = "Main's newest commit has not reached flux/deploy in " + rs + ", so main is not deploying, according to Flux."
 	case "k8s.crashloop":
 		s.Headline = "CRASHLOOP: " + n + " in " + ns
 		s.Anchor = n + " keeps restarting, so what it serves is down or degraded, according to Kubernetes."

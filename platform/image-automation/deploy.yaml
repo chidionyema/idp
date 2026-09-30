@@ -1,0 +1,60 @@
+# crew#987 CP6: image bumps leave the code path.
+#
+# Measured 2026-09-30: 342 of the 406 commits on main in 48 hours were image bumps, each one
+# carried from flux/image-updates to main through the code queue and graded by the full suite.
+# A bump changes one tag and no code; it has nothing for the suite to prove.
+#
+# This automation writes the same bumps to flux/deploy instead. It checks out main, applies
+# every $imagepolicy marker, and force-pushes the result (image-automation-controller v1.2.4
+# default; this cluster does not pass --feature-gates=GitForcePushBranch=false). So flux/deploy
+# is always current main plus current tags, rebuilt from main each run, never a fork that drifts.
+# Flux reads flux/deploy (phase 2); main no longer receives bumps; ci.yml never sees one.
+#
+# Phase 1 (this file): runs beside the `backstage` automation, which keeps landing bumps on
+# main through flux/image-updates. Nothing reads flux/deploy except the idp-deploy source below,
+# which exists to prove the branch is fetchable and current. Compare the two paths, then migrate.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: idp-deploy
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: ssh://git@github.com/chidionyema/idp
+  # The bootstrap source's read-only deploy key: Flux only ever reads this branch.
+  secretRef:
+    name: flux-system
+  ref:
+    branch: flux/deploy
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageUpdateAutomation
+metadata:
+  name: deploy
+  namespace: flux-system
+spec:
+  # A backstop only. The Receiver in platform/flux-webhook reconciles this automation on every
+  # GitHub push, so a main commit reaches flux/deploy in seconds, not on this interval. The
+  # 15m that keeps the `backstage` automation off main's commit rate does not apply here: a
+  # commit on flux/deploy moves no code queue.
+  interval: 5m
+  sourceRef:
+    kind: GitRepository
+    name: idp-writer
+  git:
+    checkout:
+      ref:
+        branch: main
+    commit:
+      author:
+        name: estate-agents
+        email: estate-agents[bot]@users.noreply.github.com
+      messageTemplate: |
+        deploy: image update {{ range $resource, $changes := .Changed.Objects }}{{ range $_, $change := $changes }}{{ $resource.Name }} -> {{ $change.NewValue }} {{ end }}{{ end }}(crew#987)
+
+        Written by image-automation-controller onto flux/deploy: current main plus current tags.
+    push:
+      branch: flux/deploy
+  update:
+    path: ./
+    strategy: Setters

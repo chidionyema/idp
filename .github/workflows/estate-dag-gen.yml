@@ -5,6 +5,8 @@ name: Generate Estate Topology DAG
 
 on:
   push:
+    # crew#987: flux/deploy is main plus image tags, force-pushed by Flux; nothing runs there.
+    branches-ignore: ['flux/**']
     paths:
       - 'platform/oci/**'
       - '.github/workflows/estate-dag-gen.yml'

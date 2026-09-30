@@ -73,6 +73,18 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 		log.Warn("newsroom.kube_absent", "err", err)
 	} else {
 		go kube.Run(ctx, raws)
+		// crew#987 CP6: flux/deploy's pushes and its freshness SLO (internal/newsroom/deploybranch.go).
+		staleAfter, err := time.ParseDuration(env("DEPLOY_STALE_AFTER", "10m"))
+		if err != nil {
+			staleAfter = 10 * time.Minute
+		}
+		deploy := &newsroom.DeployBranch{
+			Automation: env("DEPLOY_AUTOMATION", "deploy"),
+			Source:     env("DEPLOY_MAIN_SOURCE", "idp-writer"),
+			Namespace:  "flux-system",
+			StaleAfter: staleAfter,
+		}
+		go deploy.Run(ctx, kube, time.Hour, 30*time.Second, raws)
 	}
 
 	for _, subj := range epistemicSubjects {

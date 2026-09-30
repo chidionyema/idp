@@ -1,4 +1,4 @@
-# read-only, three kinds, nothing else.
+# read-only, five kinds, nothing else.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -18,6 +18,13 @@ rules:
     verbs: [get, list, watch]
   - apiGroups: [helm.toolkit.fluxcd.io]
     resources: [helmreleases]
+    verbs: [get, list, watch]
+  # crew#987 CP6: flux/deploy's pushes and freshness SLO (internal/newsroom/deploybranch.go).
+  - apiGroups: [image.toolkit.fluxcd.io]
+    resources: [imageupdateautomations]
+    verbs: [get, list, watch]
+  - apiGroups: [source.toolkit.fluxcd.io]
+    resources: [gitrepositories]
     verbs: [get, list, watch]
 ---
 apiVersion: rbac.authorization.k8s.io/v1

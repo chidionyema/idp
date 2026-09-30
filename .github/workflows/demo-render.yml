@@ -4,6 +4,8 @@
 name: demo-render
 on:
   push:
+    # crew#987: flux/deploy is main plus image tags, force-pushed by Flux; nothing runs there.
+    branches-ignore: ['flux/**']
     paths:
       - 'demos/**'
       - 'bin/intent-compile'
