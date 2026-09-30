@@ -35,6 +35,28 @@ case "$WT_IDLE_MIN" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_WT_IDLE_MIN=$WT_I
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
 
 free_k() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print $4}'; }
+# A bounded call: after $1 seconds its whole process group is killed (exit 142). The group, not
+# the pid: a child left alive keeps the $(...) pipe open and the caller waits anyway (the test with
+# a hung `image prune` proved it). /usr/bin/perl ships with macOS; `timeout` and `flock` do not,
+# and a launchd job's PATH cannot be assumed to find coreutils.
+tmo() {
+  /usr/bin/perl -e '
+    my $t = shift; my $pid = fork; exit 127 unless defined $pid;
+    if ($pid == 0) { setpgrp(0, 0); exec @ARGV or exit 127 }
+    $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; waitpid($pid, 0); exit 142 };
+    alarm $t; waitpid($pid, 0); exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"
+}
+# One run at a time: a slow Docker prune must not stack a second run on the next 5-minute tick.
+LOCK="${DISK_CLEANUP_LOCK:-$HOME/.estate/disk-cleanup.lock}"
+mkdir -p "$(dirname "$LOCK")"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  holder=$(cat "$LOCK/pid" 2>/dev/null || echo)
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "ok      another disk-cleanup (pid $holder) is running: nothing done"; exit 0; fi
+  rm -rf "$LOCK"; mkdir "$LOCK" 2>/dev/null || { echo "ok      lost the lock race: nothing done"; exit 0; }
+fi
+echo $$ >"$LOCK/pid"
+trap 'rm -rf "$LOCK"' EXIT
 size_m() { [ -e "$1" ] && du -sk "$1" 2>/dev/null | awk '{printf "%d", $1/1024}' || echo 0; }
 
 # name | path | process that must not be mid-write into it
@@ -95,21 +117,33 @@ echo "allow-list total: ${total}M"
 # Docker (Rancher Desktop). Measured 2026-09-30: the VM disk file held 7.9G on the host while
 # `docker system df` showed 1.85G of unused images and 2.39G of build cache; pruning alone freed
 # nothing on the host, because the VM's ext4 keeps the blocks until they are trimmed. Prune, then
-# fstrim /mnt/data: the file dropped to 2.4G and the host gained 5.0G. Images still used by a
-# container, and anything from the last 24h, are kept; a running `docker build` skips it.
+# fstrim /mnt/data: the file dropped to 2.4G and the host gained 5.0G.
+# Images: dangling only (`image prune -f`). `--filter until=` compares an image's CREATION time,
+# so an old base image pulled a minute ago for a queued build would be deleted under it (review,
+# idp-57, 2026-09-30). Build cache: unused for 24h. A running build of any kind skips the block.
+# Every call is bounded (a wedged VM must not hang disk-watch) and a failed call counts in `fails`.
 DOCKER="$HOME/.rd/bin/docker"; RDCTL="$HOME/.rd/bin/rdctl"
-if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
+T_INFO="${DISK_CLEANUP_DOCKER_INFO_TIMEOUT:-20}"; T_STEP="${DISK_CLEANUP_DOCKER_TIMEOUT:-300}"
+BUILDING="${DISK_CLEANUP_BUILDING:-docker(-buildx)? (buildx )?(build|bake)|docker[ -]compose( .*)? (build|up .*--build)}"
+if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context rancher-desktop info >/dev/null 2>&1; then
   if [ "$APPLY" = 0 ]; then
-    echo "  would  docker  $("$DOCKER" --context rancher-desktop system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null | tr '\n' ';')  then fstrim"
-  elif pgrep -f 'docker(-buildx)? (buildx )?build' >/dev/null 2>&1; then
+    echo "  would  docker  $(tmo 30 "$DOCKER" --context rancher-desktop system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null | tr '\n' ';')  then fstrim"
+  elif pgrep -f "$BUILDING" >/dev/null 2>&1; then
     echo "  SKIP   docker  a docker build is running"
   else
     d0=$(free_k)
-    "$DOCKER" --context rancher-desktop image prune -af --filter until=24h >/dev/null 2>&1
-    "$DOCKER" --context rancher-desktop builder prune -af --filter until=24h >/dev/null 2>&1
-    "$RDCTL" shell sudo fstrim /mnt/data >/dev/null 2>&1
+    for step in "image prune -f" "builder prune -af --filter until=24h"; do
+      # $step is one of the two fixed argument lists above; it is split on purpose.
+      # shellcheck disable=SC2086
+      if ! out=$(tmo "$T_STEP" "$DOCKER" --context rancher-desktop $step 2>&1); then
+        echo "  !! docker $step failed or timed out: ${out:0:200}"; fails=$((fails + 1)); fi
+    done
+    if ! out=$(tmo "$T_STEP" "$RDCTL" shell sudo fstrim /mnt/data 2>&1); then
+      echo "  !! docker fstrim failed or timed out: ${out:0:200}"; fails=$((fails + 1)); fi
     echo "  freed  docker  $((($(free_k) - d0) / 1024))M on the host (prune + fstrim, measured)"
   fi
+elif [ -x "$DOCKER" ]; then
+  echo "  -      docker  engine not answering within ${T_INFO}s: skipped"
 fi
 
 # Settled worktrees (worktrees=true). Measured 2026-09-27: 0M of caches left to free while ~9G sat

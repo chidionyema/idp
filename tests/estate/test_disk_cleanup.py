@@ -8,7 +8,10 @@ live tooling / user data beside them survives both.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
+
+import pytest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[2] / "platform/estate/libexec/disk-cleanup.sh"
@@ -287,3 +290,138 @@ def test_worktrees_are_off_by_default(tmp_path):
     home, repo, wts = _worktrees(tmp_path)
     r = _run_wt(home, repo, "true", "false")
     assert r.returncode == 0 and all(w.exists() for w in wts.values()), r.stdout
+
+
+# --- Docker, the lock and the time limits (review by idp-57, 2026-09-30) ---
+
+
+def _fake_docker(home: Path, prune_sleep: int = 0) -> Path:
+    """A docker and rdctl that record their argv; `image prune` can be made to hang."""
+    log = home / "docker.log"
+    bin_ = home / ".rd/bin"
+    bin_.mkdir(parents=True, exist_ok=True)
+    (bin_ / "docker").write_text(
+        "#!/bin/bash\n"
+        f'echo "docker $*" >> "{log}"\n'
+        f'case "$*" in *"image prune"*) sleep {prune_sleep};; esac\n'
+        "exit 0\n"
+    )
+    (bin_ / "rdctl").write_text(f'#!/bin/bash\necho "rdctl $*" >> "{log}"\nexit 0\n')
+    for f in ("docker", "rdctl"):
+        (bin_ / f).chmod(0o755)
+    return log
+
+
+# The build check reads every process on the host, by design: a test that starts a fake build
+# (below) is visible to every test running beside it under `-n auto`. Tests that need the prune
+# to run pass a pattern nothing on the host can match.
+NO_BUILD = {"DISK_CLEANUP_BUILDING": "^never-a-build-9f3c$"}
+
+
+def _run_env(home: Path, extra: dict, *args: str) -> subprocess.CompletedProcess:
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
+        **extra,
+    }
+    return subprocess.run(
+        ["bash", str(SCRIPT), *args],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def test_docker_prunes_dangling_images_only_never_by_creation_age(tmp_path):
+    # `image prune -a --filter until=24h` compares CREATION time: an old base image pulled a
+    # minute ago for a queued build would be deleted under it.
+    home = _home(tmp_path)
+    log = _fake_docker(home)
+    p = _run_env(home, NO_BUILD, "true")
+    calls = log.read_text()
+    assert "image prune -f" in calls and "image prune -af" not in calls, calls
+    assert "builder prune -af --filter until=24h" in calls
+    assert "rdctl shell sudo fstrim /mnt/data" in calls
+    assert "freed  docker" in p.stdout
+
+
+def test_a_wedged_docker_is_cut_off_and_counted_as_a_failure(tmp_path):
+    home = _home(tmp_path)
+    _fake_docker(home, prune_sleep=60)
+    import time
+
+    t0 = time.monotonic()
+    p = _run_env(home, {**NO_BUILD, "DISK_CLEANUP_DOCKER_TIMEOUT": "2"}, "true")
+    assert time.monotonic() - t0 < 30, "a hung docker call held the run"
+    assert "!! docker image prune -f failed or timed out" in p.stdout
+    assert p.returncode == 3
+
+
+def test_a_second_run_waits_for_the_first(tmp_path):
+    home = _home(tmp_path)
+    holder = subprocess.Popen(["sleep", "30"])
+    try:
+        lock = home / ".estate/disk-cleanup.lock"
+        lock.mkdir(parents=True)
+        (lock / "pid").write_text(str(holder.pid))
+        p = _run(home, "true")
+        assert f"another disk-cleanup (pid {holder.pid}) is running" in p.stdout
+        assert all((home / c / "blob").exists() for c in CACHES), (
+            "a second run deleted anyway"
+        )
+    finally:
+        holder.kill()
+
+
+def test_a_stale_lock_from_a_dead_run_is_taken_over(tmp_path):
+    home = _home(tmp_path)
+    dead = subprocess.Popen(["true"])
+    dead.wait()
+    lock = home / ".estate/disk-cleanup.lock"
+    lock.mkdir(parents=True)
+    (lock / "pid").write_text(str(dead.pid))
+    p = _run(home, "true")
+    assert "another disk-cleanup" not in p.stdout
+    # go-build, not the whole list: a real yarn on the host (the Fleet dev server) rightly
+    # protects the yarn cache, and that guard is tested elsewhere.
+    assert not (home / "Library/Caches/go-build").exists()
+    assert not lock.exists(), "the lock outlived the run"
+
+
+def test_a_running_compose_build_skips_docker(tmp_path):
+    home = _home(tmp_path)
+    log = _fake_docker(home)
+    builder = subprocess.Popen(
+        ["bash", "-c", 'exec -a "docker compose build web" sleep 30']
+    )
+    try:
+        import time
+
+        time.sleep(0.5)
+        p = _run(home, "true")
+        assert "SKIP   docker  a docker build is running" in p.stdout
+        assert "prune" not in log.read_text()
+    finally:
+        builder.kill()
+
+
+@pytest.mark.parametrize(
+    "cmd,building",
+    [
+        ("docker build -t x .", True),
+        ("docker buildx build --push .", True),
+        ("docker buildx bake", True),
+        ("docker compose build web", True),
+        ("docker-compose build", True),
+        ("docker compose -f a.yml up -d --build", True),
+        ("docker ps", False),
+        ("docker compose logs", False),
+    ],
+)
+def test_the_default_build_pattern_names_every_kind_of_build(cmd, building):
+    src = SCRIPT.read_text()
+    default = re.search(r'DISK_CLEANUP_BUILDING:-(.*?)\}"', src).group(1)
+    assert bool(re.search(default, cmd)) is building, cmd
