@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+import inspect
 import logging
 import re
 import subprocess
 import sys
+import typing
 import yaml
 from pathlib import Path
 
@@ -281,8 +283,57 @@ def register_mcp_tools(datasette, mcp):
             return wrapper
 
         mcp.add_tool(
-            make_wrapper(fn),
+            _as_mcp_tool(make_wrapper(fn), td),
             name=td["name"],
             description=td["description"],
-            inputSchema=td["inputSchema"],
         )
+
+
+_JSON_TYPES = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "object": dict,
+    "array": list,
+}
+
+
+def _as_mcp_tool(wrapper, td):
+    """The MCP SDK 2.x `add_tool` takes no `inputSchema`: it reads the schema off the function's
+    signature. estate-mcp crash-looped on `unexpected keyword argument 'inputSchema'` from
+    2026-09-28 (datasette-mcp pulls `mcp>=2.0.0` unpinned). Build that signature from the tool's
+    own inputSchema, so the declared schema stays the one source, and turn an error result into
+    an exception, which the SDK reports as isError."""
+    schema = td["inputSchema"]
+    required = set(schema.get("required", []))
+    params, annotations = [], {}
+    for name, spec in schema.get("properties", {}).items():
+        typ = _JSON_TYPES.get(spec.get("type"), object)
+        if name in required:
+            param = inspect.Parameter(
+                name, inspect.Parameter.KEYWORD_ONLY, annotation=typ
+            )
+        else:
+            typ = typing.Optional[typ]
+            param = inspect.Parameter(
+                name,
+                inspect.Parameter.KEYWORD_ONLY,
+                default=spec.get("default"),
+                annotation=typ,
+            )
+        params.append(param)
+        annotations[name] = typ
+
+    def tool(**kwargs):
+        out = wrapper({k: v for k, v in kwargs.items() if v is not None})
+        text = out["content"][0]["text"]
+        if out.get("isError"):
+            raise RuntimeError(text)
+        return text
+
+    tool.__name__ = td["name"]
+    tool.__doc__ = td["description"]
+    tool.__signature__ = inspect.Signature(params, return_annotation=str)
+    tool.__annotations__ = {**annotations, "return": str}
+    return tool

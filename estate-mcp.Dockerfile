@@ -36,7 +36,7 @@ ARG TARGETARCH
 # Fetched the same way platform/oci/cloud-init/bridge.yaml fetches it for the estate's own
 # hosts (dl.k8s.io/release/stable.txt, then that version's linux/amd64 binary), so there is
 # one kubectl installer idiom in this repository rather than two.
-RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyaml==6.0.3" \
+RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "mcp==2.2.0" "pyyaml==6.0.3" \
  && apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/* \
@@ -69,5 +69,15 @@ COPY mcp/plugins /app/plugins
 COPY bin /app/bin
 COPY policy/fixtures /app/policy/fixtures
 COPY tests/fixtures /app/tests/fixtures
+# The build fails if the estate tools cannot register on the MCP SDK installed above. From 2026-09-28
+# the pod crash-looped on `add_tool() got an unexpected keyword argument 'inputSchema'` (crew#990),
+# found only at start-up; this runs the same registration at build time, with each tool's schema.
+RUN cd /tmp && python -c "import importlib.util,sys,asyncio; from mcp.server.mcpserver import MCPServer; \
+spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); \
+sys.modules['estate_mcp']=m; spec.loader.exec_module(m); s=MCPServer('build-check'); m.register_mcp_tools(datasette=None, mcp=s); \
+got={t.name: t.input_schema for t in asyncio.run(s.list_tools())}; \
+assert set(got)=={d['name'] for d in m.TOOL_DEFS}, got; \
+assert all(set(got[d['name']].get('required',[]))==set(d['inputSchema'].get('required',[])) for d in m.TOOL_DEFS); \
+print('estate-mcp tools register:', sorted(got))"
 USER datasette
 EXPOSE 8001
