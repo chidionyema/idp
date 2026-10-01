@@ -88,6 +88,20 @@ const FLEETVIEW = 'plugin://proxy/fleetview';
 const TTS_RATE = 24000;
 
 /**
+ * Where a spoken clause goes when a face is on screen. The estate face (faceEngine.ts) plays the
+ * clause itself so its lips move to the exact audio; without one, `play()` below schedules it on
+ * the voice's own context as before. One sink at a time: the face that mounted last owns it.
+ */
+export interface ClauseSink {
+  speak(pcm: ArrayBuffer, text: string): void;
+  stop(): void;
+}
+let clauseSink: ClauseSink | null = null;
+export function setClauseSink(sink: ClauseSink | null): void {
+  clauseSink = sink;
+}
+
+/**
  * Who is speaking. The event contract's `steer` object REQUIRES an author, because "the estate
  * never runs a steer with no attributed author" -- and `/voice/hear` refuses a request without
  * one rather than inventing a default. The same name Fleet.tsx sends with a nudge or a stop.
@@ -236,6 +250,7 @@ export function useEstateVoice(): EstateVoice {
     });
     c.playing = [];
     c.nextStart = 0;
+    clauseSink?.stop();
   }, []);
 
   /**
@@ -491,6 +506,7 @@ export function useEstateVoice(): EstateVoice {
               // order it was written. Synthesis is the slow half; a clause whose audio fails is
               // still on screen, which is why a missing clause degrades to silence, not to a
               // broken turn.
+              const clauseText: string = payload.text;
               const ttsStarted = performance.now();
               const audio = fetchApi
                 .fetch(`${FLEETVIEW}/voice/say`, {
@@ -506,7 +522,8 @@ export function useEstateVoice(): EstateVoice {
                 ttsSeconds += (performance.now() - ttsStarted) / 1000;
                 if (buf && !turn.signal.aborted) {
                   if (clauses === 1 || c.playing.length === 0) setState('speaking');
-                  play(buf);
+                  if (clauseSink) clauseSink.speak(buf, clauseText);
+                  else play(buf);
                 }
               });
             }

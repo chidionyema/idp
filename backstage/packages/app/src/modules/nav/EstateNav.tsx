@@ -120,6 +120,7 @@ export const NAV = [
   { title: 'Pair', to: '/pair', icon: PairIcon },
   { title: 'Tools', to: '/tools', icon: BuildIcon },
   { title: 'Fleet', to: '/fleet', icon: FleetIcon },
+  { title: 'Face', to: '/face', icon: FleetIcon },
   { title: 'Create', to: '/create', icon: AddCircleOutlineIcon },
   { title: 'Map', to: MAP_TO, icon: AccountTreeIcon },
   { title: 'Kubernetes', to: '/catalog?filters%5Bkind%5D=Component', icon: DnsIcon },

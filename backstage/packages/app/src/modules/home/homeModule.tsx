@@ -117,6 +117,17 @@ const fleetPage = PageBlueprint.make({
   },
 });
 
+// /face: the estate's talking face (crew#988 CP2), full screen and phone first. One face for Fleet,
+// Otto and Concierge; it rides the existing voice (useEstateVoice) and adds lip-sync, nothing else.
+const facePage = PageBlueprint.make({
+  name: 'face',
+  params: {
+    path: '/face',
+    noHeader: true,
+    loader: () => import('./FacePage').then(m => <m.FacePage />),
+  },
+});
+
 // TEMPORARY: the Fleet picture as the founder first saw it (git e61e43d0), beside /fleet for a
 // side-by-side after the 2026-09-20 rewrite made it look worse. Delete with FleetReactorOriginal.tsx.
 const fleetOriginalPage = PageBlueprint.make({
@@ -149,6 +160,7 @@ export const homeModule = createFrontendModule({
     investigatePage,
     showcasePage,
     fleetPage,
+    facePage,
     fleetOriginalPage,
     boardPage,
   ],
