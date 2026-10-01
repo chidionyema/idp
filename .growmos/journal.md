@@ -4884,3 +4884,11 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:24:32Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit landed on main as 1893237b4 via PR #5219 (greenlane batch b200). Candidate CI: ui-kit, bdd, portal-app, offline-gate, executes-gate, ci-success green; migrate-domain and security-scan red on the baseline too (pre-existing, not in ci-success needs).
+
+### 2026-10-01T00:28:51Z · agent
+
+2026-10-01 crew#694 proof: ui.scaffold smoke run (dest=scratch) built an Astro app on the kit; ui.review status=ok on it (contrast 48/0, purity 3 files/0, JS 73,454 B gz). Fixed: ui.scaffold cwd/dest join, scaffold's Cloudflare adapter removed (static needs none), ui.review JS budget now gzip and kit resolved from the target's checkout. Lane: lane/front-end-kit-intents. Gotcha: ~/.estate/intents is overwritten from main every 5 min by estate-runtime-sync.
+
+### 2026-10-01T00:37:28Z · agent
+
+2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
