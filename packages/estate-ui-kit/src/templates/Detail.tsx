@@ -8,8 +8,10 @@ export type DetailProps = {
   title: string;
   lede?: string;
   price: { amount: string; note?: string };
-  /** One check list, one count: the strip shows the same checks the panel states (audit F7). */
-  checks: { label: string; state: State }[];
+  /** Per-check verdicts, when the product has them. The strip and the panel count agree by construction (audit F7). */
+  checks?: { label: string; state: State }[];
+  /** When only a count is known ("7/8 checks cleared"), say that and show no per-check pill: an unverifiable pill is a claim. */
+  checksSummary?: { cleared: number; total: number };
   /** Three short facts beside the price, at body size (audit F12, F15): guarantee, payment, operator. */
   facts: string[];
   /** A link, or the product's own buy control (a button wired to its checkout). */
@@ -25,16 +27,20 @@ const isLink = (c: DetailProps['cta']): c is { label: string; href: string } => 
 
 /** The money page: one purchase action, the checks that passed, the sources you can open. */
 export function Detail(p: DetailProps) {
-  const passed = p.checks.filter((c) => c.state === 'good').length;
+  const checks = p.checks ?? [];
+  const passed = p.checksSummary?.cleared ?? checks.filter((c) => c.state === 'good').length;
+  const total = p.checksSummary?.total ?? checks.length;
   return (
     <div className="grid gap-8 desktop:grid-cols-[1fr_minmax(0,20rem)] desktop:items-start">
       <article className="flex flex-col gap-6 min-w-0">
         {p.eyebrow && <Eyebrow>{p.eyebrow}</Eyebrow>}
         <Display>{p.title}</Display>
         {p.lede && <Lede>{p.lede}</Lede>}
-        <ul className="flex flex-wrap gap-2" aria-label={`${passed} of ${p.checks.length} checks passed`}>
-          {p.checks.map((c) => <li key={c.label}><StatePill state={c.state} word={c.label} /></li>)}
-        </ul>
+        {checks.length > 0 && (
+          <ul className="flex flex-wrap gap-2" aria-label={`${passed} of ${total} checks passed`}>
+            {checks.map((c) => <li key={c.label}><StatePill state={c.state} word={c.label} /></li>)}
+          </ul>
+        )}
         <Prose>{p.body}</Prose>
         {p.sources && (
           <section className="flex flex-col gap-2">
@@ -47,7 +53,7 @@ export function Detail(p: DetailProps) {
       </article>
       <aside className="rounded-md border border-border bg-surface-1 p-6 flex flex-col gap-4 desktop:sticky desktop:top-4">
         <Price amount={p.price.amount} note={p.price.note} className="text-xl" />
-        <p className="text-sm text-text-2">{passed} of {p.checks.length} checks passed</p>
+        {total > 0 && <p className="text-sm text-text-2">{passed} of {total} checks cleared</p>}
         {isLink(p.cta) ? <Button asChild size="lg" className="w-full"><a href={p.cta.href}>{p.cta.label}</a></Button> : p.cta}
         {p.panelExtra}
         {p.sample && <Button asChild variant="link"><a href={p.sample.href}>{p.sample.label}</a></Button>}
