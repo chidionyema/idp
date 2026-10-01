@@ -9,7 +9,7 @@ import { STATES } from '../dist/tokens';
 // SAMPLE DATA. Every string below is labelled sample and none is a claim about the estate.
 const nav = <SiteNav brand="Sample Co" links={[{ label: 'Catalogue', href: '#', current: true }, { label: 'How we check', href: '#' }, { label: 'Free sample', href: '#' }]} action={<Button asChild variant="ghost"><a href="#">Account</a></Button>} />;
 const footer = <SiteFooter legal="Sample Ltd · sample address · sample@example.com">Sample footer links</SiteFooter>;
-const shelf = Array.from({ length: 6 }, (_, i) => ({ title: `Sample pack ${i + 1}`, text: 'Sample one-line blurb about who buys it and why, cut at a word boundary.', meta: ['29 sources', '£29.99'], href: `#pack-${i}` }));
+const featured = Array.from({ length: 6 }, (_, i) => ({ title: `Sample pack ${i + 1}`, text: 'Sample one-line blurb about who buys it and why, cut at a word boundary.', meta: ['29 sources', '£29.99'], href: `#pack-${i}` }));
 
 const sections = ['Tokens', 'Type', 'Buttons', 'States', 'Cards', 'Forms', 'Nav', 'Feed', 'Overlay', 'Voice', 'T · Landing', 'T · Catalogue', 'T · Detail', 'T · Checkout', 'T · Account', 'T · Docs', 'T · Error', 'T · Empty'] as const;
 type Section = (typeof sections)[number];
@@ -149,9 +149,9 @@ function TemplateView({ section }: { section: Section }) {
   const inner = (() => {
     switch (section) {
       case 'T · Landing':
-        return <Landing eyebrow="Sample" headline="Business ideas that survived the checks. With the sources." lede="1,444 researched. 77 for sale. Every claim linked to public data. (sample copy)" proof={['29 sources', 'buyer named', 'price tested']} cta={{ label: 'See the 77', href: '#' }} secondary={{ label: 'Free sample, no email', href: '#' }} voice feed={{ rows: [{ at: '14:02', text: 'sample event', state: 'good' }], title: 'Today' }} shelf={{ title: 'Newest packs', items: shelf }} />;
+        return <Landing eyebrow="Sample" headline="Business ideas that survived the checks. With the sources." lede="1,444 researched. 77 for sale. Every claim linked to public data. (sample copy)" proof={['29 sources', 'buyer named', 'price tested']} cta={{ label: 'See the 77', href: '#' }} secondary={{ label: 'Free sample, no email', href: '#' }} voice feed={{ rows: [{ at: '14:02', text: 'sample event', state: 'good' }], title: 'Today' }} featured={{ title: 'Newest packs', items: featured }} />;
       case 'T · Catalogue':
-        return <Catalogue title="Catalogue" count={77} facets={[{ name: 'Sector', options: [{ label: 'All', href: '#', active: true, count: 77 }, { label: 'Food', href: '#', count: 12 }, { label: 'Health', href: '#', count: 9 }] }]} sort={[{ label: 'Newest', href: '#', active: true }, { label: 'Price', href: '#' }]} items={shelf.map((s) => ({ ...s, price: '£29.99', meta: ['29 sources', 'pays back in 8 months'] }))} more={{ label: 'Next 12', href: '#' }} />;
+        return <Catalogue title="Catalogue" count={77} facets={[{ name: 'Sector', options: [{ label: 'All', href: '#', active: true, count: 77 }, { label: 'Food', href: '#', count: 12 }, { label: 'Health', href: '#', count: 9 }] }]} sort={[{ label: 'Newest', href: '#', active: true }, { label: 'Price', href: '#' }]} items={featured.map((s) => ({ ...s, price: '£29.99', meta: ['29 sources', 'pays back in 8 months'] }))} more={{ label: 'Next 12', href: '#' }} />;
       case 'T · Detail':
         return <Detail eyebrow="Sample · Food" title="Cold chain audit software for poultry processors" lede="Sample lede: who buys it, what they pay today, and why now." price={{ amount: '£29.99', note: 'one-time' }} checks={[{ label: 'Pain', state: 'good' }, { label: 'Buyer', state: 'good' }, { label: 'Price', state: 'good' }, { label: 'Reach', state: 'needs' }, { label: 'Legal', state: 'good' }, { label: 'Timing', state: 'blind' }]} facts={['14-day money back', 'One payment, guest checkout', 'Operated by Sample Ltd, London']} cta={{ label: 'Buy this pack', href: '#' }} sample={{ label: 'Read a free sample first', href: '#' }} body={body} sources={[{ label: 'sample.gov/report-2026', href: '#' }, { label: 'sample.org/data', href: '#' }]} />;
       case 'T · Checkout':
