@@ -4876,3 +4876,11 @@ Continue the conversation from where it left off without asking the user any fur
 ### 2026-09-26T22:59:47Z · agent
 
 net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nodes (~600k MASQUERADE hits each) but verify showed cross-node pod TCP still fails both ways, listener saw nothing. flannel-masq was real, not sufficient. Leading unmeasured suspects: (1) Calico cali-INPUT drops VXLAN 4789 from non-allowed hosts (295/315 hits in capture) -> peer missing from the allowed-VXLAN-hosts ipset; (2) GNP deny-direct-ai-vendor-egress all()/Egress hitting the tier-default drop on the client's cali-fw chain. Discriminator: counter delta on both chains around one probe, plus bridge fdb + ipset dump. net-forensics captures neither yet. No reboot.
+
+### 2026-09-30T23:45:26Z · agent
+
+2026-10-01 crew#694: kit CP1 (matrix row front-end-kit, shadcn+Radix 480/385/360, proposed) + CP2 (components, 8 templates, voice primitive, gallery, Astro scaffold + ui.scaffold intent) + CP4 (kit-import guard, ci.yml job ui-kit in ci-success) committed 81d4b48b4 and handed to lane/front-end-kit. Probe over CDP: 0 overflow at 390, CTA white on ink after moving base.css into @layer base (unlayered CSS beats Tailwind utilities: a gotcha for every consumer). bytesync-web found local-only with no remote and a fourth token system. Next: crew#700 CP1 mumchimp home+pack on Landing/Detail; crew#690 bytesync-web onto the kit; founder receipt on crew#694 turns the matrix row to decided.
+
+### 2026-10-01T00:24:32Z · agent
+
+2026-10-01 crew#694: lane/front-end-kit landed on main as 1893237b4 via PR #5219 (greenlane batch b200). Candidate CI: ui-kit, bdd, portal-app, offline-gate, executes-gate, ci-success green; migrate-domain and security-scan red on the baseline too (pre-existing, not in ci-success needs).

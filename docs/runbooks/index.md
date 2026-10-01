@@ -6,3 +6,4 @@
 - [Superset dashboards](superset-dashboards.md) — the boardroom dashboards behind the one login: what watches them, where the release and its database live, the one leftover Metabase volume to delete.
 - [A Flux dry-run fails on an admission webhook](admission-webhook-eof.md) — dozens of objects go not-Ready behind one hung endpoint; the one playbook that cures it, and the far larger one not to reach for.
 - [Rotating a vendor key](rotating-a-vendor-key.md) — change it in Bitwarden and the cluster follows in about two minutes; the one step the platform cannot do for you is when to delete the old key at the vendor.
+- [Writing a diagnosis record](diagnosis.md) — the Bayesian record a router config/code change must carry; how `bin/estate-diagnose` computes it and `bin/diagnosis-gate` enforces it.

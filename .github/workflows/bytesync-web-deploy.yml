@@ -1,0 +1,160 @@
+# The Bytesync company site's road to Cloudflare Pages (crew#690; placement ADR 0034 rung 4).
+#
+# WHY THIS IS HERE AND NOT IN chidionyema/bytesync-web. The site repository is public and holds no
+# secret. The Cloudflare root (SEED_CLOUDFLARE_ROOT_TOKEN, R52: one token with "User API Tokens:
+# Edit", set once) is a repository secret on THIS repository, and GitHub secrets are write-only, so
+# the run happens where the root is -- the same reason concierge-deploy.yml lives here. Nothing is
+# carried between surfaces: this run mints a Pages token that expires in two hours, uses it, and
+# deletes it before it ends, whatever happened in between.
+#
+# WHAT IT DOES, in order: checks out the site's `main`; builds the static export; makes sure the
+# Pages project exists (created by API on first run); skips if the production deployment already
+# carries this commit; deploys `out/` with wrangler; then PROVES it by fetching every page on the
+# project's own hostname and writing the status codes to the run summary. A green job that
+# deployed nothing says so (skipped), it never says "deployed".
+#
+# The schedule is the ladder's rung 2: the site changes by pull request and a six-hourly check that
+# deploys only on a new commit costs nothing when nothing changed.
+#
+# button: Deploy the Bytesync company site
+# founder: Builds chidionyema/bytesync-web main, deploys it to Cloudflare Pages with a token minted from the estate's root for this run only, and proves every page answers.
+name: bytesync-web-deploy
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Deploy even when production already carries this commit
+        type: boolean
+        default: false
+      reason:
+        description: Why (one line, kept in the run record)
+        required: false
+        default: site changed
+  schedule:
+    - cron: "17 */6 * * *"
+permissions:
+  contents: read
+concurrency: bytesync-web-deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SITE_REPO: chidionyema/bytesync-web
+      PROJECT: ${{ vars.BYTESYNC_PAGES_PROJECT || 'bytesync' }}
+      API: https://api.cloudflare.com/client/v4
+    steps:
+      - name: The root, or BLIND
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          [ -n "$ROOT" ] || { echo "BLIND   cloudflare  no SEED_CLOUDFLARE_ROOT_TOKEN repository secret (R52)"; exit 2; }
+          [ -n "$ACCOUNT" ] || { echo "BLIND   cloudflare  no SEED_R2_ACCOUNT_ID repository secret (the account id)"; exit 2; }
+          curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/verify" | jq -e '.success and .result.status=="active"' >/dev/null \
+            || { echo "FAIL    cloudflare  the root token does not verify; rotate it (R52)"; exit 1; }
+          echo "ok      cloudflare  root verifies"
+
+      - name: Mint a Pages token for this run only
+        id: mint
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          groups=$(curl -sS -H "Authorization: Bearer $ROOT" "$API/user/tokens/permission_groups")
+          gid() { jq -r --arg n "$1" '.result[] | select(.name==$n and (.scopes|index("com.cloudflare.api.account"))) | .id' <<<"$groups" | head -1; }
+          PAGES=$(gid "Pages Write"); SETTINGS=$(gid "Account Settings Read")
+          [ -n "$PAGES" ] || { echo "FAIL    cloudflare  no account permission group named 'Pages Write'; groups with Pages in the name:"; jq -r '.result[] | select(.name|test("Pages")) | "        " + .name + "  " + (.scopes|join(","))' <<<"$groups"; exit 1; }
+          expires=$(date -u -d '+2 hours' +%FT%TZ)
+          body=$(jq -nc --arg n "bytesync-web-deploy $GITHUB_RUN_ID" --arg a "$ACCOUNT" --arg p "$PAGES" --arg s "$SETTINGS" --arg e "$expires" \
+            '{name:$n, expires_on:$e, policies:[{effect:"allow", resources:{("com.cloudflare.api.account."+$a):"*"},
+              permission_groups:([{id:$p}] + (if $s=="" then [] else [{id:$s}] end))}]}')
+          out=$(curl -sS -X POST -H "Authorization: Bearer $ROOT" -H 'Content-Type: application/json' -d "$body" "$API/user/tokens")
+          jq -e '.success' <<<"$out" >/dev/null || { echo "FAIL    cloudflare  token mint refused:"; jq -c '.errors' <<<"$out"; exit 1; }
+          id=$(jq -r .result.id <<<"$out"); value=$(jq -r .result.value <<<"$out")
+          echo "::add-mask::$value"
+          { echo "id=$id"; echo "token=$value"; } >> "$GITHUB_OUTPUT"
+          echo "ok      cloudflare  Pages token minted, expires $expires"
+
+      - name: The site, at its main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: chidionyema/bytesync-web
+          ref: main
+          path: site
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: The project, created on first run
+        id: project
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.mint.outputs.token }}
+          ACCOUNT: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          cf() { curl -sS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H 'Content-Type: application/json' "$@"; }
+          p=$(cf "$API/accounts/$ACCOUNT/pages/projects/$PROJECT")
+          if ! jq -e '.success' <<<"$p" >/dev/null; then
+            p=$(cf -X POST -d "$(jq -nc --arg n "$PROJECT" '{name:$n, production_branch:"main"}')" "$API/accounts/$ACCOUNT/pages/projects")
+            jq -e '.success' <<<"$p" >/dev/null || { echo "FAIL    pages  project create refused:"; jq -c '.errors' <<<"$p"; exit 1; }
+            echo "ok      pages  project $PROJECT created"
+          else
+            echo "ok      pages  project $PROJECT exists"
+          fi
+          sub=$(jq -r '.result.subdomain' <<<"$p")
+          live=$(jq -r '.result.canonical_deployment.deployment_trigger.metadata.commit_hash // ""' <<<"$p")
+          sha=$(git -C site rev-parse HEAD)
+          { echo "url=https://$sub"; echo "sha=$sha"; echo "live=$live"; } >> "$GITHUB_OUTPUT"
+          if [ "$live" = "$sha" ] && [ "${{ inputs.force }}" != "true" ]; then
+            echo "skip    pages  production already carries $sha"; echo "deploy=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "deploy=yes" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        if: steps.project.outputs.deploy == 'yes'
+        working-directory: site
+        env:
+          NEXT_PUBLIC_SITE_URL: ${{ vars.BYTESYNC_SITE_URL || steps.project.outputs.url }}
+          NEXT_PUBLIC_CONTACT_EMAIL: ${{ vars.BYTESYNC_CONTACT_EMAIL }}
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          test -f out/index.html || { echo "FAIL    build  no out/index.html"; exit 1; }
+
+      - name: Deploy
+        if: steps.project.outputs.deploy == 'yes'
+        working-directory: site
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.mint.outputs.token }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.SEED_R2_ACCOUNT_ID }}
+        run: |
+          npx --yes wrangler@4 pages deploy out --project-name "$PROJECT" --branch main \
+            --commit-hash "${{ steps.project.outputs.sha }}" --commit-message "bytesync-web ${{ steps.project.outputs.sha }}" --commit-dirty=true
+
+      - name: Prove every page answers
+        if: always() && steps.project.outputs.url != ''
+        env:
+          URL: ${{ vars.BYTESYNC_SITE_URL || steps.project.outputs.url }}
+        run: |
+          rc=0; sleep 20
+          { echo "## bytesync-web"; echo; echo "| page | status |"; echo "|---|---|"; } >> "$GITHUB_STEP_SUMMARY"
+          for p in / /research/ /companies/ /companies/hermes/ /about/ /contact/ /privacy/ /terms/; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$URL$p" || echo 000)
+            echo "| $URL$p | $code |" >> "$GITHUB_STEP_SUMMARY"
+            [ "$code" = 200 ] && echo "ok      $code  $URL$p" || { echo "FAIL    $code  $URL$p"; rc=1; }
+          done
+          echo "deployed=${{ steps.project.outputs.deploy }} sha=${{ steps.project.outputs.sha }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $rc
+
+      - name: Delete the run's token, whatever happened
+        if: always() && steps.mint.outputs.id != ''
+        env:
+          ROOT: ${{ secrets.SEED_CLOUDFLARE_ROOT_TOKEN }}
+        run: |
+          curl -sS -X DELETE -H "Authorization: Bearer $ROOT" "$API/user/tokens/${{ steps.mint.outputs.id }}" | jq -e '.success' >/dev/null \
+            && echo "ok      cloudflare  run token deleted" || echo "WARN    cloudflare  run token not deleted; it expires on its own within two hours"

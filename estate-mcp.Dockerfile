@@ -36,7 +36,7 @@ ARG TARGETARCH
 # Fetched the same way platform/oci/cloud-init/bridge.yaml fetches it for the estate's own
 # hosts (dl.k8s.io/release/stable.txt, then that version's linux/amd64 binary), so there is
 # one kubectl installer idiom in this repository rather than two.
-RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "pyyaml==6.0.3" \
+RUN pip install --no-cache-dir "datasette==1.0a38" "datasette-mcp==0.1a0" "mcp==2.2.0" "pyyaml==6.0.3" \
  && apt-get update \
  && apt-get install -y --no-install-recommends curl \
  && rm -rf /var/lib/apt/lists/* \
@@ -69,5 +69,27 @@ COPY mcp/plugins /app/plugins
 COPY bin /app/bin
 COPY policy/fixtures /app/policy/fixtures
 COPY tests/fixtures /app/tests/fixtures
+# The intent library, so estate_list and its plain-words search answer in production. Until
+# 2026-10-01 the image carried none: the live pod answered "# 0 intents available" and
+# estate_invoke said "unknown intent" for every name, so the one door agents keep once bash is
+# gone was empty wherever it was served.
+COPY platform/estate/intents /app/intents
+ENV ESTATE_INTENTS_DIR=/app/intents
+# The build fails if the estate tools cannot register on the MCP SDK installed above. From 2026-09-28
+# the pod crash-looped on `add_tool() got an unexpected keyword argument 'inputSchema'` (crew#990),
+# found only at start-up; this runs the same registration at build time, with each tool's schema.
+RUN cd /tmp && python -c "import importlib.util,sys,asyncio; from mcp.server.mcpserver import MCPServer; \
+spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); \
+sys.modules['estate_mcp']=m; spec.loader.exec_module(m); s=MCPServer('build-check'); m.register_mcp_tools(datasette=None, mcp=s); \
+got={t.name: t.input_schema for t in asyncio.run(s.list_tools())}; \
+assert set(got)=={d['name'] for d in m.TOOL_DEFS}, got; \
+assert all(set(got[d['name']].get('required',[]))==set(d['inputSchema'].get('required',[])) for d in m.TOOL_DEFS); \
+print('estate-mcp tools register:', sorted(got))"
+# The build fails if the library did not arrive or the search cannot find a known intent in it.
+RUN cd /tmp && python -c "import importlib.util; \
+spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); \
+n=len(m._load_intents()); assert n >= 50, 'only %d intents in /app/intents' % n; \
+hit=m._estate_list({'query': 'ci status'}); assert '## intent ci-status' in hit, hit[:300]; \
+print('estate-mcp intent library:', n, 'intents, search finds ci-status')"
 USER datasette
 EXPOSE 8001

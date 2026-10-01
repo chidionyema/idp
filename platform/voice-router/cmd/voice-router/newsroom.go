@@ -93,7 +93,7 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 	// Without a router key the router refuses the call, so the anchor desk stays on templates.
 	var anchor *newsroom.Anchor
 	if os.Getenv("LLM_API_KEY") != "" {
-		anchor = &newsroom.Anchor{Brain: brain.FromEnv()}
+		anchor = &newsroom.Anchor{Brain: brain.NarrateFromEnv()}
 	} else {
 		log.Info("newsroom.anchor_template_only", "reason", "LLM_API_KEY unset")
 	}

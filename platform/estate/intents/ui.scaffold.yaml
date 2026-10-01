@@ -1,0 +1,31 @@
+name: ui.scaffold
+description: >
+  A product's front end in one command, on the estate UI kit (crew#694 CP2). Copies
+  packages/estate-ui-kit/scaffold into apps/<name>, points it at the kit by a relative file:
+  dependency, installs, builds and runs the guards. The result is a running Astro app whose only
+  stylesheet imports the kit; ui.review grades it from then on. Never a blank page.
+args:
+  name: {type: string, help: "Product name, kebab-case; becomes apps/<name> and the brand default."}
+  dest: {type: string, default: "apps", help: "Parent directory inside the idp checkout."}
+  cwd:  {type: string, default: "."}
+halt_on_failure: true
+steps:
+  - name: copy the scaffold
+    cmd: |
+      cd {{cwd}} || exit 2
+      test -d packages/estate-ui-kit/scaffold || { echo "no scaffold in this checkout"; exit 2; }
+      (cd packages/estate-ui-kit && npm install --no-audit --no-fund >/dev/null && node build.mjs) || exit 1
+      test ! -e {{dest}}/{{name}} || { echo "{{dest}}/{{name}} exists; refusing to overwrite"; exit 1; }
+      mkdir -p {{dest}} && cp -R packages/estate-ui-kit/scaffold {{dest}}/{{name}}
+      kit=$(python3 -c "import os;print(os.path.relpath('packages/estate-ui-kit','{{dest}}/{{name}}'))")
+      find {{dest}}/{{name}} -type f \( -name '*.json' -o -name '*.jsonc' -o -name '*.mjs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.astro' -o -name '*.md' \) -print0 \
+        | xargs -0 sed -i '' -e "s#__NAME__#{{name}}#g" -e "s#__KIT__#$kit#g"
+      echo "ok      ui.scaffold  {{dest}}/{{name}} on @estate/ui-kit ($kit)"
+  - name: install and build
+    cmd: |
+      cd {{cwd}} && cd {{dest}}/{{name}} || exit 2
+      npm install --no-audit --no-fund && npm run build
+  - name: guards
+    cmd: |
+      cd {{cwd}} && cd {{dest}}/{{name}} || exit 2
+      npm run -s guard && echo "ok      ui.scaffold  guards green; next: estate-execute ui.review --target {{dest}}/{{name}}/src --dist {{dest}}/{{name}}/dist"

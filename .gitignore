@@ -142,3 +142,7 @@ catalog/*.db-shm
 # Cargo build output: never tracked. Tracked target/ made every cleaned worktree look dirty,
 # so disk-cleanup could never retire it (2026-09-28, 1669 files).
 target/
+
+# estate-ui-kit build outputs (node build.mjs / vite build); tokens.json is the source
+packages/estate-ui-kit/dist/
+packages/estate-ui-kit/dist-gallery/

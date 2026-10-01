@@ -1,3 +1,54 @@
-{ "name": "@estate/ui-kit", "version": "0.1.0", "private": true, "type": "module",
-  "scripts": { "build": "node build.mjs", "guard:contrast": "node guards/contrast.mjs", "guard:purity": "node guards/purity.mjs", "guard": "npm run -s guard:contrast && npm run -s guard:purity -- src dist" },
-  "exports": { "./tokens.css": "./dist/tokens.css", "./tailwind.theme.css": "./dist/tailwind.theme.css", "./tokens": "./dist/tokens.ts" } }
+{
+  "name": "@estate/ui-kit",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "The estate's one front-end kit (crew#694): tokens, components on Radix, page templates, voice primitive, guards.",
+  "scripts": {
+    "prepare": "node build.mjs",
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "gallery": "vite --config gallery/vite.config.ts",
+    "gallery:build": "node build.mjs && vite build --config gallery/vite.config.ts",
+    "guard:contrast": "node guards/contrast.mjs",
+    "guard:purity": "node guards/purity.mjs src gallery scaffold",
+    "guard:import": "node guards/kit-import.mjs",
+    "guard": "npm run -s build && npm run -s guard:contrast && npm run -s guard:purity && npm run -s guard:import"
+  },
+  "exports": {
+    "./tokens.css": "./dist/tokens.css",
+    "./tailwind.theme.css": "./dist/tailwind.theme.css",
+    "./base.css": "./src/styles/base.css",
+    "./tokens": "./dist/tokens.ts",
+    ".": "./src/index.ts",
+    "./templates": "./src/templates/index.ts",
+    "./voice": "./src/voice/useEstateVoice.ts",
+    "./brands/*": "./dist/brands/*"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@radix-ui/react-checkbox": "1.3.11",
+    "@radix-ui/react-dialog": "1.1.23",
+    "@radix-ui/react-label": "2.1.15",
+    "@radix-ui/react-slot": "1.3.3",
+    "@radix-ui/react-tabs": "1.1.21",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.3",
+    "@types/node": "^22.20.4",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5.9.0",
+    "vite": "8.3.1",
+    "vite-plugin-singlefile": "2.3.3"
+  }
+}

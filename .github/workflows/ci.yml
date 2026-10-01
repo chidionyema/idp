@@ -415,6 +415,54 @@ jobs:
         working-directory: backstage
         run: yarn test --ci --watchAll=false
 
+  # crew#694 CP4: the front-end kit is the one design source. This job builds it from tokens.json,
+  # runs the contrast guard (every text × surface pair, both themes), the purity guard (no colour
+  # or size literal outside tokens.json in the kit, its gallery or its scaffold), the kit-import
+  # guard (a front end whose stylesheet does not import @estate/ui-kit is refused once its
+  # migrate_by date in consumers.json has passed), type-checks, and builds the gallery.
+  ui-kit:
+    needs: [fast-gate]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: did this change touch a front end
+        id: touched
+        run: |
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$base" in ''|0000000000000000000000000000000000000000) echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0;; esac
+          if git diff --name-only "$base"...HEAD -- packages/estate-ui-kit/ apps/ backstage/packages/app/src/styles.css | grep -q .; then
+            echo "yes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "yes=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.touched.outputs.yes == 'true'
+        with: { node-version: "22" }
+      - name: install exactly what package-lock holds
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: packages/estate-ui-kit
+        run: npm ci --no-audit --no-fund
+      - name: guards (contrast, purity, kit-import)
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: packages/estate-ui-kit
+        run: npm run guard
+      - name: type-check
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: packages/estate-ui-kit
+        run: npm run typecheck
+      - name: gallery builds as one file under the page budget
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: packages/estate-ui-kit
+        run: |
+          npm run gallery:build
+          bytes=$(wc -c < dist-gallery/index.html | tr -d ' ')
+          echo "gallery: ${bytes} bytes"
+          test "$bytes" -le 600000 || { echo "gallery over the 600 KB page budget"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: steps.touched.outputs.yes == 'true'
+        with: { name: ui-kit-gallery, path: packages/estate-ui-kit/dist-gallery/index.html, retention-days: 14 }
+
   bdd:
     needs: bdd-suites
     if: always()   # a red leg must report a red `bdd`, not a skipped one the rule would wait on forever
@@ -517,7 +565,7 @@ jobs:
   # job's own comment above documents for the repository ruleset.
   ci-success:
     if: always()
-    needs: [fast-gate, bdd, executes-gate, feature-request-plan]
+    needs: [fast-gate, bdd, executes-gate, feature-request-plan, ui-kit]
     runs-on: ubuntu-latest
     steps:
       - name: every required job in this workflow is success or skipped
@@ -527,7 +575,7 @@ jobs:
           set -euo pipefail
           echo "$NEEDS_JSON" | jq .
           fail=0
-          for job in fast-gate bdd executes-gate feature-request-plan; do
+          for job in fast-gate bdd executes-gate feature-request-plan ui-kit; do
             result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
             case "$result" in
               success|skipped) echo "$job: pass ($result)" ;;

@@ -546,6 +546,50 @@ decisions:
           portability:         {score: 4, evidence: "https://github.com/bors-ng/bors-ng/blob/master/LICENSE"}                       # Apache-2.0, self-hosted anywhere
           operability:         {score: 3, evidence: "https://github.com/bors-ng/bors-ng#how-to-set-up-your-own-real-instance"}      # one more standing service to watch and patch
           cost:                {score: 4, evidence: "https://github.com/bors-ng/bors-ng"}                                           # free software, but paid for in hosting and care
+  - slug: front-end-kit
+    requirement: "every product's front end starts from one world-class design system and page kit in idp, never from scratch: components, tokens, templates, a scaffold, and a guard that refuses a front end off the kit (founder 2026-08-30, crew#694 CP1)"
+    date: 2026-10-01
+    status: proposed
+    next_review: 2026-10-15
+    decision: shadcn-radix   # 480 vs radix-themes 385 vs park-ui 360 (cmd: bin/matrix-gate); outside tie_band 25. Components are copied-in source restyled only through packages/estate-ui-kit/tokens.json; Radix primitives pinned. The founder's word on crew#694 is the receipt; the same page is the consultants' brief.
+    reviews: []
+    candidates:
+      shadcn-radix:
+        note: "shadcn/ui pattern (copy-in React components, cva variants, Tailwind v4) on pinned Radix primitives, restyled through the kit's tokens only; the widest ecosystem of ready components and the one every buyer's engineer already knows"
+        scores:
+          first_time_user:     {score: 5, evidence: "packages/estate-ui-kit/scaffold/README.md"}                    # ui.scaffold: one command, a running app on the kit
+          founder_experience:  {score: 5, evidence: "packages/estate-ui-kit/gallery/App.tsx"}                       # every component and template in one gallery, both themes
+          feature_parity:      {score: 5, evidence: "https://ui.shadcn.com/docs/components"}                         # 50+ components, forms, dialogs, tables, charts
+          ecosystem_fit:       {score: 5, evidence: "https://www.radix-ui.com/primitives/docs/overview/introduction"} # React 19, Next and Astro islands, Tailwind v4 already in Store.Web and bytesync-web
+          maturity:            {score: 5, evidence: "https://github.com/shadcn-ui/ui"}                               # the most-adopted React kit; Radix primitives since 2020
+          security_by_default: {score: 4, evidence: "packages/estate-ui-kit/package.json"}                           # six pinned primitives, no runtime network, no telemetry; copy-in means we patch
+          portability:         {score: 5, evidence: "packages/estate-ui-kit/src/components/Button.tsx"}              # source lives in idp; nothing to leave
+          operability:         {score: 4, evidence: "packages/estate-ui-kit/guards/kit-import.mjs"}                  # guards run in CI; tokens.json is the one source
+          cost:                {score: 5, evidence: "https://github.com/shadcn-ui/ui/blob/main/LICENSE.md"}           # MIT, no service
+      radix-themes:
+        note: "Radix Themes: the same primitives shipped as a finished, opinionated component library with its own theme panel and CSS"
+        scores:
+          first_time_user:     {score: 4, evidence: "https://www.radix-ui.com/themes/docs/overview/getting-started"}  # install and wrap in <Theme>
+          founder_experience:  {score: 4, evidence: "https://www.radix-ui.com/themes/playground"}                     # a playground exists; ours would be a second one
+          feature_parity:      {score: 4, evidence: "https://www.radix-ui.com/themes/docs/components/button"}         # broad, but fewer composed patterns than shadcn
+          ecosystem_fit:       {score: 3, evidence: "https://www.radix-ui.com/themes/docs/overview/styling"}          # its own CSS and token names beside our tokens.json and Tailwind
+          maturity:            {score: 4, evidence: "https://github.com/radix-ui/themes"}                             # WorkOS-maintained, 3.x
+          security_by_default: {score: 4, evidence: "https://github.com/radix-ui/themes"}                             # a dependency, not copied source
+          portability:         {score: 3, evidence: "https://www.radix-ui.com/themes/docs/overview/styling"}          # theme tokens are theirs; leaving means restyling
+          operability:         {score: 4, evidence: "https://www.radix-ui.com/themes/docs/overview/getting-started"}  # one package to bump
+          cost:                {score: 5, evidence: "https://github.com/radix-ui/themes/blob/main/LICENSE"}           # MIT
+      park-ui:
+        note: "Park UI: Ark UI headless components with Panda CSS or Tailwind presets; framework-agnostic (React, Vue, Solid)"
+        scores:
+          first_time_user:     {score: 3, evidence: "https://park-ui.com/docs/overview/getting-started"}              # Panda CSS toolchain or preset setup first
+          founder_experience:  {score: 4, evidence: "https://park-ui.com/docs/overview/getting-started"}              # same copy-in gallery once running
+          feature_parity:      {score: 4, evidence: "https://ark-ui.com/docs/overview/introduction"}                  # Ark covers most primitives; fewer composed blocks
+          ecosystem_fit:       {score: 3, evidence: "https://park-ui.com/docs/overview/getting-started"}              # Panda-first; Tailwind path is second-class
+          maturity:            {score: 3, evidence: "https://github.com/cschroeter/park-ui"}                          # smaller community; one maintainer
+          security_by_default: {score: 4, evidence: "https://github.com/chakra-ui/ark"}                               # headless, no network
+          portability:         {score: 4, evidence: "https://ark-ui.com/docs/overview/introduction"}                  # multi-framework is real
+          operability:         {score: 3, evidence: "https://park-ui.com/docs/overview/getting-started"}              # a second styling engine to run beside Tailwind
+          cost:                {score: 5, evidence: "https://github.com/cschroeter/park-ui/blob/main/LICENSE"}        # MIT
   - slug: dashboards-take-the-gateways-word
     requirement: "the founder's dashboards sit behind the one login (ADR 0007): the dashboard layer must trust the gateway's identity header instead of growing a second password store (decision 0018; founder 2026-09-02: Metabase out by the roots)"
     date: 2026-09-02
