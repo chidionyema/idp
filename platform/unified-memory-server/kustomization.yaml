@@ -7,4 +7,4 @@ images:
   # Set by Flux image automation. Until the first main build exists this names no image, and
   # nothing pulls it: the Deployment sits at zero until the first request.
   - name: ghcr.io/chidionyema/unified-memory-server
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:unified-memory-server:tag"}
+    newTag: main-13834-f11d5c3e0d0e066da41e37d0f6b181b40eb68c0f # {"$imagepolicy": "flux-system:unified-memory-server:tag"}

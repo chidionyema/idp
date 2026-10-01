@@ -21,8 +21,8 @@ images:
   # main-<run>-<sha> the first time CI pushes each image, the same way it already does for
   # router-events and epistemic-ingest.
   - name: ghcr.io/chidionyema/negative-constraints-proxy
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
+    newTag: main-13834-f11d5c3e0d0e066da41e37d0f6b181b40eb68c0f # {"$imagepolicy": "flux-system:negative-constraints-proxy:tag"}
   - name: ghcr.io/chidionyema/rca_worker
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
+    newTag: main-13834-f11d5c3e0d0e066da41e37d0f6b181b40eb68c0f # {"$imagepolicy": "flux-system:via-negativa-rca:tag"}
   - name: ghcr.io/chidionyema/redteam_promoter
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:redteam-promoter:tag"}
+    newTag: main-13834-f11d5c3e0d0e066da41e37d0f6b181b40eb68c0f # {"$imagepolicy": "flux-system:redteam-promoter:tag"}
