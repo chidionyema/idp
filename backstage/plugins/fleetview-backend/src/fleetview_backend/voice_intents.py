@@ -53,6 +53,61 @@ _AGENT_JOB_PHRASE = re.compile(
 )
 
 
+# "Concierge, <task>" / "ask the concierge to <task>" -> concierge_tasks.start, after a spoken
+# read-back and a yes. It opens the founder's Chrome and spends router calls, so never on the first
+# utterance. A purchase stops at the pay step and says so; nothing here can pay.
+CONCIERGE = "concierge-task"
+_CONCIERGE_PHRASE = re.compile(
+    r"^\s*(?:(?:hey|ok(?:ay)?)[\s,.!]+)?(?:please[\s,]+)?"
+    r"(?:(?:ask|tell|get)\s+(?:the\s+)?concierge\s+to|have\s+(?:the\s+)?concierge|concierge)"
+    r"\b[\s:,.\-]*(?P<task>.*)$",
+    re.I | re.S,
+)
+
+
+def concierge_task(text: str) -> str | None:
+    """The task in a concierge utterance ("" when the word came alone), None when it is not one."""
+    m = _CONCIERGE_PHRASE.match(text or "")
+    if not m:
+        return None
+    return m.group("task").strip().rstrip(".").strip()
+
+
+def _concierge(session_id: str, text: str, task: str, now: float) -> dict:
+    from fleetview_backend import concierge_tasks
+
+    if not task:
+        _audit(session_id, text, CONCIERGE, "error", None, 0)
+        return result(CONCIERGE, "error", "Say the task too: concierge, then what to do.")
+    try:
+        task = concierge_tasks.validate(task)
+    except concierge_tasks.TaskRefused as exc:
+        _audit(session_id, text, CONCIERGE, "error", None, 0)
+        return result(CONCIERGE, "error", str(exc)[:160])
+    with _LOCK:
+        _PENDING[session_id] = (CONCIERGE, now)
+        _PENDING_TASK[session_id] = task
+    _audit(session_id, text, CONCIERGE, "pending_confirmation", None, 0)
+    return result(CONCIERGE, "pending_confirmation", f"Ask the concierge to: {task}? Say yes to confirm.")
+
+
+def _send_concierge(session_id: str, text: str, task: str) -> dict:
+    from fleetview_backend import concierge_tasks
+
+    t0 = time.monotonic()
+    try:
+        started = concierge_tasks.start(task, by=f"voice:{session_id}")
+    except concierge_tasks.TaskRefused as exc:
+        _audit(session_id, text, CONCIERGE, "error", exc.status, int((time.monotonic() - t0) * 1000))
+        return result(CONCIERGE, "error", str(exc)[:160])
+    _audit(session_id, text, CONCIERGE, "ok", 0, int((time.monotonic() - t0) * 1000))
+    return result(
+        CONCIERGE,
+        "ok",
+        f"The concierge is on it, task {started['task_id']}. Watch it on Fleet; it stops before paying.",
+    )
+
+
 def agent_job_task(text: str) -> str | None:
     """The task in an agent-job utterance ("" when the phrase came alone), None when it is not one."""
     m = _AGENT_JOB_PHRASE.match(text or "")
@@ -295,6 +350,8 @@ def handle(text: str, session_id: str) -> dict | None:
         name = pend[0]
         if name == AGENT_JOB and norm in YES:
             return _send_agent_job(session_id, text, pend_task)
+        if name == CONCIERGE and norm in YES:
+            return _send_concierge(session_id, text, pend_task)
         if norm in YES:
             status, msg, rc, dur = execute(name)
             _audit(session_id, text, name, status, rc, dur)
@@ -306,6 +363,9 @@ def handle(text: str, session_id: str) -> dict | None:
     task = agent_job_task(text)
     if task is not None:
         return _agent_job(session_id, text, task, now)
+    task = concierge_task(text)
+    if task is not None:
+        return _concierge(session_id, text, task, now)
 
     name = match(text, load_catalog())
     if name is None:

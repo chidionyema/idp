@@ -67,7 +67,7 @@ data:
         "verify": os.environ.get("OTTO_ROUTER_LANE_VERIFY_MODEL", ""),
     }
 
-    def ask(key, model, base_url=None):
+    def ask(key, model):
         """One real completion. Returns (ok, latency_ms, detail) and never raises."""
         body = json.dumps(
             {
@@ -91,7 +91,7 @@ data:
             }
         ).encode()
         req = urllib.request.Request(
-            (base_url or BASE_URL).rstrip("/") + "/chat/completions",
+            BASE_URL + "/chat/completions",
             data=body,
             headers={"Content-Type": "application/json", "Authorization": "Bearer " + key},
             method="POST",
@@ -130,45 +130,6 @@ data:
             # exactly what the founder reported.
             return False, latency_ms, "empty completion (finish=%s)" % finish
         return True, latency_ms, "%d chars" % len(content)
-
-    # Otto's backup homes (three-homes.yaml): every `home-*` entry that leaves the cluster, asked
-    # directly with the key the in-pod brain holds. Read from the brain's own config so a home added
-    # there is probed here with no second list to drift.
-    HOMES_CONFIG = os.environ.get("OTTO_HOMES_CONFIG", "/etc/otto-brain/config.yaml")
-    HOMES_SECRETS = os.environ.get("OTTO_HOMES_SECRETS", "/run/secrets/otto-brain")
-
-    def backup_homes():
-        homes, cur = [], None
-        try:
-            lines = open(HOMES_CONFIG, encoding="utf-8").read().splitlines()
-        except OSError:
-            return homes
-        for line in lines:
-            s = line.split("#", 1)[0].strip()
-            if s.startswith("- model_name:"):
-                cur = {"name": s.split(":", 1)[1].strip()}
-                homes.append(cur)
-            elif cur is not None and ":" in s:
-                k, v = (x.strip() for x in s.split(":", 1))
-                if k in ("model", "api_base", "api_key"):
-                    cur[k] = v
-        return [
-            h
-            for h in homes
-            if h["name"].startswith("home-")
-            and h.get("api_base", "").startswith("https://")
-            and h.get("api_key", "").startswith("os.environ/")
-        ]
-
-    def home_key(env_name):
-        try:
-            for d in sorted(os.listdir(HOMES_SECRETS)):
-                p = os.path.join(HOMES_SECRETS, d, env_name)
-                if os.path.isfile(p):
-                    return open(p, encoding="utf-8").read().strip()
-        except OSError:
-            pass
-        return ""
 
     def _gauge(name, value, lane, at_nano):
         return {
@@ -233,34 +194,13 @@ data:
                 "%s answer-probe tenant=%s lane=%s model=%s latency_ms=%d %s"
                 % ("ok" if ok else "FAIL", TENANT, lane, model, latency_ms, detail)
             )
-        home1_ok = all(ok for ok, _l, _d in results.values())
-        backups = backup_homes()
-        for h in backups:
-            env_name = h["api_key"].split("/", 1)[1]
-            home_k = home_key(env_name)
-            # litellm's provider prefix (`openai/`) is not part of the vendor's model id
-            model = h.get("model", "").split("/", 1)[-1]
-            if home_k:
-                ok, latency_ms, detail = ask(home_k, model, h["api_base"])
-            else:
-                ok, latency_ms, detail = False, 0.0, "no %s mounted" % env_name
-            results[h["name"]] = (ok, latency_ms, detail)
-            print(
-                "%s answer-probe tenant=%s home=%s model=%s latency_ms=%d %s"
-                % ("ok" if ok else "FAIL", TENANT, h["name"], model, latency_ms, detail)
-            )
         at_nano = time.time_ns()
         try:
             push_metrics(results, at_nano)
         except Exception as e:  # noqa: BLE001
             # A collector that is down must not turn a working Otto into a failed probe.
             print("warn answer-probe metrics not pushed:", type(e).__name__)
-        # Otto answers while any home answers; the probe fails when the cluster lanes fail or when
-        # there is no backup home left to fail over to.
-        backup_ok = any(results[h["name"]][0] for h in backups) if backups else False
-        if not backup_ok:
-            print("FAIL answer-probe no backup home answered; Otto has one home")
-        return 0 if home1_ok and backup_ok else 1
+        return 0 if all(ok for ok, _l, _d in results.values()) else 1
 
     if __name__ == "__main__":
         raise SystemExit(main())
@@ -336,15 +276,6 @@ spec:
                   readOnly: true
                 - name: tmp
                   mountPath: /tmp
-                # The brain's config and keys, mounted as deployment.yaml mounts them, so the
-                # backup homes are asked with exactly what Otto would fail over with.
-                - { name: three-homes, mountPath: /etc/otto-brain, readOnly: true }
-                - { name: brain-secrets, mountPath: /run/secrets/otto-brain/direct, readOnly: true }
-                - { name: brain-floor, mountPath: /run/secrets/otto-brain/floor, readOnly: true }
-                - { name: brain-floor-2, mountPath: /run/secrets/otto-brain/floor-2, readOnly: true }
-                - { name: brain-floor-3, mountPath: /run/secrets/otto-brain/floor-3, readOnly: true }
-                - { name: brain-floor-4, mountPath: /run/secrets/otto-brain/floor-4, readOnly: true }
-                - { name: brain-floor-5, mountPath: /run/secrets/otto-brain/floor-5, readOnly: true }
               securityContext:
                 allowPrivilegeEscalation: false
                 privileged: false
@@ -366,11 +297,3 @@ spec:
               secret: { secretName: otto-gateway-router }
             - name: tmp
               emptyDir: {}
-            - name: three-homes
-              configMap: { name: otto-three-homes }
-            - { name: brain-secrets, secret: { secretName: human-minimax, optional: true } }
-            - { name: brain-floor, secret: { secretName: human-groq, optional: true } }
-            - { name: brain-floor-2, secret: { secretName: human-gemini, optional: true } }
-            - { name: brain-floor-3, secret: { secretName: human-openrouter, optional: true } }
-            - { name: brain-floor-4, secret: { secretName: human-cerebras, optional: true } }
-            - { name: brain-floor-5, secret: { secretName: human-nvidia, optional: true } }

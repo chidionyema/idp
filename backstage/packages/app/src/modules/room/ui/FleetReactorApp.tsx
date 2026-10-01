@@ -51,6 +51,7 @@ import { cueToReactor, type IntentResult } from '../../home/intentCue';
 import NewsDesk from './NewsDesk';
 import AgentJobs from './AgentJobs';
 import HarvPanel from './HarvPanel';
+import ConciergeTasks from './ConciergeTasks';
 import EfficiencyHud from './EfficiencyHud';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
@@ -2738,6 +2739,16 @@ export default function FleetReactorApp() {
           const base = baseUrlRef.current;
           if (!base) return Promise.reject(new Error('discovery not ready'));
           return api.fetch(`${base}/fleetview/harv`, init);
+        }}
+      />
+
+      {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
+          (fleetview_backend/concierge_tasks.py). */}
+      <ConciergeTasks
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/concierge-tasks`, init);
         }}
       />
 
