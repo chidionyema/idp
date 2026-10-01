@@ -1,26 +1,60 @@
-# @estate/ui-kit — the one design source (crew#694)
+# @estate/ui-kit — the one front end (crew#694)
 
-One file, `tokens.json`, is the standard. `node build.mjs` turns it into the three things a front
-end imports; nothing else in the estate may carry a colour, size, space, radius or easing literal.
+One file, `tokens.json`, is the standard. Everything else in this package is built from it or
+graded against it. No product in the estate carries a colour, size, space, radius or easing
+literal of its own; a front end that does is refused by the guards below.
 
 ```
-tokens.json            ← edit this, nothing else
-build.mjs              → dist/tokens.css (CSS variables, light + dark), dist/tailwind.theme.css (Tailwind v4 @theme), dist/tokens.ts
-guards/contrast.mjs    every text × surface pair, both themes, WCAG 4.5:1 / 3:1 — exits 1 on failure
-guards/purity.mjs DIR  refuses #hex, rgb(), hsl(), px font-size, inline colour styles in .css/.tsx/.astro/… — exits 1 with file:line
-ui.review.yaml         the intent that runs all of it; a front end that fails it is refused
+tokens.json                 edit this, nothing else (W3C design-tokens format)
+build.mjs                   → dist/tokens.css (CSS variables, light + dark), dist/tailwind.theme.css (Tailwind v4 @theme), dist/tokens.ts
+src/styles/base.css         element defaults on the tokens: body, headings, focus ring, reduced motion
+src/components/             Button, Card, Text (Eyebrow/Display/Heading/Lede/Prose/Price), StatePill, Field (Label/Input/Field/Checkbox), Nav (SiteNav/SiteFooter/SiteShell), Feed (LedgerFeed), Dialog, Tabs
+src/voice/useEstateVoice.ts the voice primitive: press to talk, Web Speech now, Whisper/Kokoro through `engine` later; VoiceButton
+src/templates/              Landing, Catalogue, Detail, Checkout, Account, Docs, ErrorPage, Empty — every page in the estate is one of these
+gallery/                    every component in every state, every template with sample data, both themes; `npm run gallery:build` → dist-gallery/index.html (one file)
+scaffold/                   the Astro app `ui.scaffold` copies: static output for Cloudflare's free tier, one stylesheet that imports the kit
+guards/contrast.mjs         every text × surface pair, both themes, WCAG 4.5:1 / 3:1 — exits 1 on failure
+guards/purity.mjs DIR…      refuses #hex, rgb(), hsl(), oklch(), px/rem font-size, inline colour styles in .css/.tsx/.astro/… — exits 1 with file:line
+guards/kit-import.mjs       refuses a consumer whose stylesheet does not import @estate/ui-kit (consumers.json; legacy rows carry a migrate_by date)
+consumers.json              the front ends the kit-import guard grades
 ```
+
+Components follow the shadcn/ui pattern on pinned Radix primitives (decision-matrix row
+`front-end-kit`): the source lives here, is restyled only through the tokens, and is copied into
+nothing. A state is always a dot, a word and a tint; colour never carries a meaning alone.
+Every control clears the 44px tap minimum; an arrow never wraps away from its label; small text is
+never under 4.5:1. Each of those was a measured flaw on mumchimp.com on 2026-09-30.
 
 ## Use it
 
 ```css
-/* Astro / plain */   @import "@estate/ui-kit/tokens.css";
-/* Tailwind v4 */     @import "tailwindcss"; @import "@estate/ui-kit/tailwind.theme.css";
-/* React island */    import { color, type, space } from "@estate/ui-kit/tokens";
+/* the product's only stylesheet */
+@import "tailwindcss";
+@import "@estate/ui-kit/tailwind.theme.css";
+@import "@estate/ui-kit/base.css";
+@source "../../node_modules/@estate/ui-kit/src";
 ```
 
-Then `color: var(--color-text-2)`, `font-size: var(--type-lg)`, `gap: var(--space-4)`. State is always a
-dot + a word + a tint (`--color-state-good-ink` / `-bg`); colour never carries a meaning alone.
+```tsx
+import { SiteShell, SiteNav, SiteFooter, Landing } from '@estate/ui-kit';
+```
+
+A new product: `estate-execute ui.scaffold --name <product>` → `apps/<product>` running on the kit.
+Grade any front end: `estate-execute ui.review --target <src> --dist <dist>`.
+
+## Develop
+
+```bash
+npm ci                # also builds dist/ (prepare)
+npm run guard         # build + contrast + purity + kit-import
+npm run typecheck
+npm run gallery       # live gallery on Vite
+npm run gallery:build # one-file gallery → dist-gallery/index.html
+```
+
+CI (`.github/workflows/ci.yml` job `ui-kit`, required by `ci-success`) runs the guards, the
+type-check and the gallery build with a 600 KB page budget whenever `packages/estate-ui-kit/`,
+`apps/` or the portal stylesheet changes.
 
 ## Where the values came from
 
@@ -29,20 +63,15 @@ instrument") and Store.Web Brand v3. Two values were changed because the contras
 originals: `border-strong` light `#d0d5dd` → `#8791a3` (1.47:1 → 3.18:1 on white) and dark `#3b4048` →
 `#5f6774` (1.88:1 → 3.43:1); `text-muted` raised in both themes to clear 4.5:1 on `surface-3`.
 
-## Measured on 2026-09-30
+## Measured
 
-- `guards/contrast.mjs`: 48 pairs, 0 fail (after the two fixes above; 2 failed before them).
-- `guards/purity.mjs` on Store.Web `src/`: **215 violations** in 136 files (41 colour literals, 174 off-scale sizes).
-- `guards/purity.mjs` on the portal `modules/home`: **23 violations** (17 colour literals, 6 inline styles).
-- `guards/purity.mjs` on bytesync-web `src/`: see that project's REPORT.md.
+- 2026-09-30, `guards/contrast.mjs`: 48 pairs, 0 fail.
+- 2026-09-30, `guards/purity.mjs` on Store.Web `src/`: 215 violations in 136 files; on the portal `modules/home`: 23.
+- 2026-10-01, `guards/purity.mjs` on this package (src, gallery, scaffold): 24 files, 0 violations.
+- 2026-10-01, gallery: one HTML file, 336 KB (102 KB gzip), under the 600 KB page budget.
 
-## What is deliberately not here yet
+## Not here yet
 
-Components (shadcn/ui + Radix, restyled through these variables), the seven page templates, Storybook,
-`ui.scaffold`. They come after crew#694 CP1 (the founder's word on the component library). The tokens
-and guards come first because they are what every later piece is graded against.
-
-## Landing
-
-Lands in `idp/packages/estate-ui-kit/`; `ui.review.yaml` lands in `~/.estate/intents/` via idp. Under the
-crew#987 freeze this directory is handed to the merge queue as a diff, not pushed.
+Storybook proper (the gallery is the equivalent CP2 names, published as one file); the first
+consumers (crew#700 CP1 mumchimp home and pack page; crew#690 the company site) — `consumers.json`
+carries their migration dates and the guard turns from a warning into a refusal on those days.

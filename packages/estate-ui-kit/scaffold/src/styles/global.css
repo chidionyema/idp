@@ -1,0 +1,6 @@
+/* The only stylesheet a product owns. It imports the kit; it never declares a token. */
+@import "tailwindcss";
+@import "@estate/ui-kit/tailwind.theme.css";
+@import "@estate/ui-kit/base.css";
+@source "../../node_modules/@estate/ui-kit/src";
+@custom-variant dark (&:where([data-theme=dark], [data-theme=dark] *));
