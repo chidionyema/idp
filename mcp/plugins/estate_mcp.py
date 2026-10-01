@@ -2,7 +2,10 @@
 from __future__ import annotations
 import inspect
 import logging
+import math
+import os
 import re
+import sqlite3
 import subprocess
 import sys
 import typing
@@ -17,6 +20,11 @@ except ImportError:
 
 HOME = Path.home()
 INTENTS = HOME / ".estate" / "intents"
+# The executor's own ledger: how often each intent has run, so the search ranks the intents
+# agents actually reuse above the one-offs (1822 runs, 387 of 537 intents run exactly once,
+# measured 2026-09-30).
+ESTATE_DB = HOME / ".estate" / "estate.db"
+MAX_MATCHES = 12
 log = logging.getLogger(__name__)
 _ALLOWED = re.compile(r"^[a-z][a-z0-9.-]*$")
 
@@ -56,7 +64,151 @@ def _load_intent(name):
         return yaml.safe_load(fh)
 
 
+_FILLER = frozenset(
+    "a an the for to of in on and or with from by is it its my this that".split()
+)
+
+
+def _words(text):
+    return [
+        w for w in re.split(r"[^a-z0-9]+", str(text).lower()) if w and w not in _FILLER
+    ]
+
+
+def _same(q, t):
+    """One word matches another exactly or on a shared stem of five letters or more:
+    "encode" finds "encoding", "compare" finds "comparator", "parse" finds "parser", and
+    "compare" does not find "comp"."""
+    return q == t or len(os.path.commonprefix([q, t])) >= 5
+
+
+def _covered(query_words, text_words):
+    """The query words the text covers."""
+    return {q for q in query_words if any(_same(q, t) for t in text_words)}
+
+
+def _run_counts():
+    try:
+        con = sqlite3.connect("file:{}?mode=ro".format(ESTATE_DB), uri=True)
+        try:
+            return dict(
+                con.execute("SELECT intent, count(*) FROM intent_tickets GROUP BY 1")
+            )
+        finally:
+            con.close()
+    except sqlite3.Error:
+        return {}
+
+
+def _harv_parts():
+    """The harv shelf: sealed, tested functions from open-source libraries. Read straight from
+    the registry index, newest version of each name."""
+    home = Path(os.environ.get("HARV_HOME") or HOME / ".estate" / "harv")
+    db = home / "registry" / "index.db"
+    if not db.exists():
+        return [], "no harv shelf at {}".format(db)
+    try:
+        con = sqlite3.connect("file:{}?mode=ro".format(db), uri=True)
+        try:
+            rows = con.execute(
+                "SELECT name, version, tier FROM artifacts ORDER BY created"
+            ).fetchall()
+        finally:
+            con.close()
+    except sqlite3.Error as exc:
+        return [], "harv shelf at {} unreadable: {}".format(db, exc)
+    latest = {}
+    for name, version, tier in rows:
+        latest[name] = (version, tier)
+    return [{"name": n, "version": v, "tier": t} for n, (v, t) in latest.items()], None
+
+
+def _find(query):
+    """Everything the estate already has that matches `query`: intents and harv parts, ranked
+    by how many query words they cover, then by how often the intent has been reused."""
+    q = _words(query)
+    if not q:
+        return (
+            '# nothing in the estate matches "{}"\n'
+            'Only filler words were given: say what you need, e.g. "base64 encode".'
+        ).format(query)
+    runs = _run_counts()
+    parts, shelf_error = _harv_parts()
+    cands = []
+    for i in _load_intents():
+        in_name = _covered(q, _words(i["name"]))
+        cands.append(
+            (in_name | _covered(q, _words(i["description"])), in_name, "intent", i)
+        )
+    for p in parts:
+        cover = _covered(q, _words(p["name"]))
+        cands.append((cover, cover, "part", p))
+    # A word that matches almost everything ("numbers", "status") says little; a rare one
+    # ("levenshtein", "base64") says a lot. Each covered word counts by its rarity (IDF).
+    n = len(cands) or 1
+    weight = {
+        w: math.log((n + 1) / (1 + sum(1 for c in cands if w in c[0]))) for w in q
+    }
+    found = []
+    for cover, in_name, kind, x in cands:
+        if cover:
+            used = runs.get(x["name"], 0) if kind == "intent" else 0
+            score = sum(weight[w] for w in cover)
+            found.append((len(cover), round(score, 6), len(in_name), used, kind, x))
+    # A shelf that could not be read is said, never shown as "no parts match".
+    note = [
+        "NOTE: {}; harv parts are missing from these results.".format(shelf_error),
+        "",
+    ]
+    note = note if shelf_error else []
+    if not found:
+        return "\n".join(
+            ['# nothing in the estate matches "{}"'.format(query)]
+            + note
+            + [
+                "No intent and no harv part covers it. Check the words, then build it once "
+                "as an intent so the next agent finds it here."
+            ]
+        )
+    # Most of the request covered first; among those, the rarer words; then covered by the
+    # name; then the most reused.
+    found.sort(key=lambda f: (-f[0], -f[1], -f[2], -f[3], f[5]["name"]))
+    lines = [
+        '# {} match(es) for "{}" (best first)'.format(len(found), query),
+        "",
+    ] + note
+    for _n, _score, _in_name, used, kind, x in found[:MAX_MATCHES]:
+        if kind == "intent":
+            lines.append("## intent {} (run {} time(s))".format(x["name"], used))
+            lines.append(x["description"][:160])
+            argl = ", ".join('"{}": ...'.format(a) for a in x["args"])
+            lines.append(
+                'call: estate_invoke {{"intent": "{}", "args": {{{}}}}}'.format(
+                    x["name"], argl
+                )
+            )
+        else:
+            lines.append(
+                "## harv part {} {} ({}: tested, sealed, no network/files/clock)".format(
+                    x["name"], x["version"], x["tier"]
+                )
+            )
+            lines.append(
+                'call: estate_invoke {{"intent": "harv", "args": {{"verb": "run", '
+                '"name": "{}", "text": "<input>"}}}}'.format(x["name"])
+            )
+        lines.append("")
+    if len(found) > MAX_MATCHES:
+        lines.append(
+            "{} more; add words to narrow it.".format(len(found) - MAX_MATCHES)
+        )
+    return "\n".join(lines)
+
+
 def _estate_list(args):
+    query = (args or {}).get("query", "")
+    if query:
+        return _find(query)
     intents = _load_intents()
     lines = ["# {} intents available:".format(len(intents))]
     for i in intents:
@@ -138,8 +290,21 @@ except ImportError:
 TOOL_DEFS = [
     {
         "name": "estate_list",
-        "description": "List all available estate intents.",
-        "inputSchema": {"type": "object", "properties": {}},
+        "description": (
+            "Find what the estate already has before building anything. Pass `query` in plain "
+            'words ("base64 encode", "ci status for a pr") to get the matching intents and '
+            "harv parts (tested, sealed functions from open-source libraries), best first, "
+            "each with the exact estate_invoke call. Without `query`: every intent."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "What you need, in plain words",
+                },
+            },
+        },
     },
     {
         "name": "estate_show",
