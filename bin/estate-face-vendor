@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Vendor the estate face (TalkingHead + three.js) into backstage/packages/app/public/face/.
+
+The face must load from the estate's own origin, like /voice/ does: a phone on a slow link, or a
+network that blocks jsdelivr, gets no face otherwise (founder, 2026-09-30: outside demos "too slow
+to load"). Pinned versions, fetched once, bare `three` imports rewritten to relative paths so the
+files run as plain ES modules with no import map and no bundler. Re-run to upgrade; commit the output.
+"""
+import re
+import sys
+import urllib.request
+from pathlib import Path
+
+TH = "1.7.0"      # @met4citizen/talkinghead
+THREE = "0.180.0"  # the version TalkingHead's README pins
+CDN = "https://cdn.jsdelivr.net/npm"
+OUT = Path(__file__).resolve().parents[1] / "backstage/packages/app/public/face"
+AVATAR = "https://github.com/met4citizen/TalkingHead/raw/v{v}/avatars/brunette.glb"
+IMPORT_RE = re.compile(r"""(\bfrom\s*|\bimport\s*\(?\s*)(['"])([^'"]+)\2""")
+
+
+def get(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return r.read()
+
+
+def rel(frm: Path, to: Path) -> str:
+    import os
+    r = os.path.relpath(to, frm.parent).replace(os.sep, "/")
+    return r if r.startswith(".") else "./" + r
+
+
+def vendor_three(path: str, seen: set) -> None:
+    """Fetch one three.js file (path relative to the package root) and every relative import it has."""
+    if path in seen:
+        return
+    seen.add(path)
+    dst = OUT / "three" / path
+    src = get(f"{CDN}/three@{THREE}/{path}").decode()
+
+    def fix(m):
+        spec = m.group(3)
+        if spec == "three":
+            return f"{m.group(1)}{m.group(2)}{rel(dst, OUT / 'three/build/three.module.js')}{m.group(2)}"
+        if spec.startswith("."):
+            vendor_three(str((Path(path).parent / spec).as_posix()).replace("/./", "/"), seen)
+        return m.group(0)
+
+    src = IMPORT_RE.sub(fix, src)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(src)
+
+
+def norm(p: str) -> str:
+    parts = []
+    for s in p.split("/"):
+        if s == "..":
+            parts.pop()
+        elif s not in ("", "."):
+            parts.append(s)
+    return "/".join(parts)
+
+
+def main() -> int:
+    seen: set = set()
+    global vendor_three
+    inner = vendor_three
+    vendor_three = lambda p, s: inner(norm(p), s)  # noqa: E731 -- normalise ../ before fetching
+    vendor_three("build/three.module.js", seen)
+    th_imports = {
+        "three": "build/three.module.js",
+        "three/addons/controls/OrbitControls.js": "examples/jsm/controls/OrbitControls.js",
+        "three/addons/loaders/GLTFLoader.js": "examples/jsm/loaders/GLTFLoader.js",
+        "three/addons/loaders/DRACOLoader.js": "examples/jsm/loaders/DRACOLoader.js",
+        "three/addons/loaders/FBXLoader.js": "examples/jsm/loaders/FBXLoader.js",
+        "three/addons/environments/RoomEnvironment.js": "examples/jsm/environments/RoomEnvironment.js",
+        "three/addons/libs/stats.module.js": "examples/jsm/libs/stats.module.js",
+    }
+    for p in th_imports.values():
+        vendor_three(p, seen)
+    for name in ("talkinghead.mjs", "dynamicbones.mjs", "lipsync-en.mjs", "playback-worklet.js"):
+        src = get(f"{CDN}/@met4citizen/talkinghead@{TH}/modules/{name}").decode()
+        for bare, path in th_imports.items():
+            src = src.replace(f"'{bare}'", f"'./three/{path}'").replace(f'"{bare}"', f'"./three/{path}"')
+        (OUT / name).write_text(src)
+    (OUT / "brunette.glb").write_bytes(get(AVATAR.format(v=TH)))
+    (OUT / "VERSIONS").write_text(
+        f"talkinghead {TH} (MIT)\nthree {THREE} (MIT)\n"
+        "brunette.glb: Ready Player Me avatar from the TalkingHead repo, CC BY-NC 4.0 "
+        "(non-commercial; replace with an estate-owned avatar before any commercial use)\n"
+    )
+    print(f"vendored {len(seen)} three files + TalkingHead {TH} + avatar into {OUT}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
