@@ -65,6 +65,7 @@
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
+{"alias": "ui.review", "entity": "concept/ui-review", "type": "CONCEPT"}
 {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
 {"alias": "voice-clarify-handshake", "entity": "concept/voice-clarify-handshake", "type": "CONCEPT"}
 {"alias": "voice-speculate-endpoint", "entity": "concept/voice-speculate-endpoint", "type": "CONCEPT"}
@@ -107,6 +108,7 @@
 {"alias": "Traefik", "entity": "service/traefik", "type": "SERVICE"}
 {"alias": "Circuit Breaker", "entity": "spec/circuit-breaker", "type": "SPEC"}
 {"alias": "voice_2100_architecture", "entity": "spec/voice-2100-architecture", "type": "SPEC"}
+{"alias": "estate-runtime-sync", "entity": "system/estate-runtime-sync", "type": "SYSTEM"}
 {"alias": "Fleet page", "entity": "system/fleet-page", "type": "SYSTEM"}
 {"alias": "FleetView", "entity": "system/fleetview", "type": "SYSTEM"}
 {"alias": "OKE node capacity 2026-09-26", "entity": "system/oke-node-capacity-2026-09-26", "type": "SYSTEM"}

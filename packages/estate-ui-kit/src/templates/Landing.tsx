@@ -15,12 +15,12 @@ export type LandingProps = {
   secondary?: { label: string; href: string };
   /** The live ledger. Empty rows render "quiet since", never a placeholder. */
   feed?: { rows: FeedRow[]; quietSince?: string; title?: string };
-  /** Up to six items on the shelf; the catalogue is one route behind it (audit F4). */
-  shelf?: { title: string; items: { title: string; text: string; meta: string[]; href: string }[] };
+  /** Up to six items on the featured; the catalogue is one route behind it (audit F4). */
+  featured?: { title: string; items: { title: string; text: string; meta: string[]; href: string }[] };
   voice?: boolean | { onFinal: (t: string) => void };
 };
 
-/** One proposition, one proof line, one shelf, one CTA. Everything else lives on its own page. */
+/** One proposition, one proof line, one featured, one CTA. Everything else lives on its own page. */
 export function Landing(p: LandingProps) {
   return (
     <>
@@ -40,11 +40,11 @@ export function Landing(p: LandingProps) {
         </div>
       </section>
       {p.feed && <LedgerFeed rows={p.feed.rows} quietSince={p.feed.quietSince} title={p.feed.title} />}
-      {p.shelf && (
+      {p.featured && (
         <section className="flex flex-col gap-4">
-          <h2 className="font-display text-xl font-bold">{p.shelf.title}</h2>
+          <h2 className="font-display text-xl font-bold">{p.featured.title}</h2>
           <ul className="grid gap-4 sm:grid-cols-2 desktop:grid-cols-3">
-            {p.shelf.items.slice(0, 6).map((it) => (
+            {p.featured.items.slice(0, 6).map((it) => (
               <li key={it.href}>
                 <Card interactive className="relative h-full">
                   <CardTitle><a href={it.href} className="after:absolute after:inset-0">{it.title}</a></CardTitle>
