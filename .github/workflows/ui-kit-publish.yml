@@ -1,0 +1,38 @@
+name: ui-kit-publish
+# The estate UI kit (packages/estate-ui-kit, crew#694) is consumed by front ends in other repos
+# (Store.Web in prospector, bytesync-web) as an npm git dependency: "@estate/ui-kit":
+# "github:chidionyema/idp#ui-kit". npm fetches a public branch with no token, and the kit's
+# `prepare` script builds dist/ on install. This workflow keeps that branch equal to the kit on
+# main: a subtree split of packages/estate-ui-kit, force-pushed (the split is deterministic; the
+# force only matters when history is rewritten). No cluster, no secret, no registry (ADR 0034).
+on:
+  push:
+    branches: [main]
+    paths: [packages/estate-ui-kit/**, .github/workflows/ui-kit-publish.yml]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: ui-kit-publish
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - name: split the kit out of main and publish it as the ui-kit branch
+        run: |
+          set -euo pipefail
+          git config user.name "estate-ui-kit-publish"
+          git config user.email "noreply@github.com"
+          sha=$(git subtree split --prefix=packages/estate-ui-kit main)
+          echo "ui-kit = $sha (from main $(git rev-parse --short main))"
+          git push --force origin "$sha:refs/heads/ui-kit"
+      - name: prove a consumer can install it with no token
+        run: |
+          set -euo pipefail
+          d=$(mktemp -d); cd "$d"
+          printf '{"name":"probe","private":true}' > package.json
+          npm install --no-audit --no-fund "github:chidionyema/idp#ui-kit"
+          test -f node_modules/@estate/ui-kit/dist/tokens.css && echo "ok  dist/tokens.css built on install"
