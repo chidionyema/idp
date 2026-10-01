@@ -12,11 +12,16 @@ export type DetailProps = {
   checks: { label: string; state: State }[];
   /** Three short facts beside the price, at body size (audit F12, F15): guarantee, payment, operator. */
   facts: string[];
-  cta: { label: string; href: string };
+  /** A link, or the product's own buy control (a button wired to its checkout). */
+  cta: { label: string; href: string } | React.ReactNode;
   sample?: { label: string; href: string };
+  /** Rendered under the price inside the panel: a currency note, an error, a cart link. */
+  panelExtra?: React.ReactNode;
   body: React.ReactNode;
   sources?: { label: string; href: string }[];
 };
+
+const isLink = (c: DetailProps['cta']): c is { label: string; href: string } => !!c && typeof c === 'object' && 'href' in (c as object);
 
 /** The money page: one purchase action, the checks that passed, the sources you can open. */
 export function Detail(p: DetailProps) {
@@ -43,7 +48,8 @@ export function Detail(p: DetailProps) {
       <aside className="rounded-md border border-border bg-surface-1 p-6 flex flex-col gap-4 desktop:sticky desktop:top-4">
         <Price amount={p.price.amount} note={p.price.note} className="text-xl" />
         <p className="text-sm text-text-2">{passed} of {p.checks.length} checks passed</p>
-        <Button asChild size="lg" className="w-full"><a href={p.cta.href}>{p.cta.label}</a></Button>
+        {isLink(p.cta) ? <Button asChild size="lg" className="w-full"><a href={p.cta.href}>{p.cta.label}</a></Button> : p.cta}
+        {p.panelExtra}
         {p.sample && <Button asChild variant="link"><a href={p.sample.href}>{p.sample.label}</a></Button>}
         <ul className="flex flex-col gap-2 text-sm text-text-2 border-t border-border pt-4">
           {p.facts.slice(0, 3).map((f) => <li key={f}>{f}</li>)}
