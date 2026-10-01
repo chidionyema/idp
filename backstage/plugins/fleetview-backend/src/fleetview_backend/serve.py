@@ -48,7 +48,18 @@ async def lifespan(app: FastAPI):
         from fleetview_backend import efficiency_feed
 
         asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
+        # The outbox (steer intents from the browser, signed actions from the router's
+        # action_ledger) only reaches the bus if this worker runs. Nothing started it before
+        # 2026-09-29: ~/.estate/outbox.db stayed 0 bytes and every row that would have carried
+        # an event to the Fleet director never left this process (crew#983).
+        from fleetview_backend import outbox
+
+        await outbox.start_worker(nats_url)
     yield
+    if nats_url:
+        from fleetview_backend import outbox
+
+        await outbox.stop_worker()
 
 
 async def _bus_reachable(nats_url: str) -> dict:
