@@ -442,10 +442,69 @@ def ask(
                 :300
             ],
         }, 502
-    answer = ((choices[0].get("message") or {}).get("content") or "").strip()
+    answer = strip_reasoning((choices[0].get("message") or {}).get("content") or "")
     if not answer:
         return {"error": "the router returned an empty answer"}, 502
     return {"answer": answer, "model": router_model()}, 200
+
+
+_THINK = re.compile(r"<think>.*?(</think>|$)", re.S)
+
+
+def strip_reasoning(text: str) -> str:
+    """The answer without the model's private reasoning.
+
+    The `voice` lane falls back to `fast`, whose first deployment is MiniMax-M3, and MiniMax writes
+    its chain of thought INTO `content` as `<think>...</think>`. Unfiltered, the Fleet page spoke
+    that aloud: "Wait, check constraints... Never say the word summary..." in place of an answer.
+    A reply whose opening tag the template already consumed still ends in `</think>`, so anything
+    before a bare closing tag is reasoning too.
+    """
+    if "</think>" in text and "<think>" not in text.split("</think>")[0]:
+        text = text.split("</think>", 1)[1]
+    return _THINK.sub("", text).strip()
+
+
+class ThinkFilter:
+    """`strip_reasoning` for a stream: feed deltas, get back only what may be spoken.
+
+    A tag can arrive split across chunks ("<thi" then "nk>"), so a tail that could still become a
+    tag is held back until the next delta decides it.
+    """
+
+    OPEN, CLOSE = "<think>", "</think>"
+
+    def __init__(self) -> None:
+        self.pending = ""
+        self.inside = False
+
+    def feed(self, text: str) -> str:
+        self.pending += text
+        out: list[str] = []
+        while True:
+            tag = self.CLOSE if self.inside else self.OPEN
+            i = self.pending.find(tag)
+            if i >= 0:
+                if not self.inside:
+                    out.append(self.pending[:i])
+                self.pending = self.pending[i + len(tag) :]
+                self.inside = not self.inside
+                continue
+            keep = 0
+            for k in range(min(len(tag) - 1, len(self.pending)), 0, -1):
+                if tag.startswith(self.pending[-k:]):
+                    keep = k
+                    break
+            cut = len(self.pending) - keep
+            if not self.inside:
+                out.append(self.pending[:cut])
+            self.pending = self.pending[cut:]
+            return "".join(out)
+
+    def flush(self) -> str:
+        rest = "" if self.inside else self.pending
+        self.pending = ""
+        return rest
 
 
 def split_clauses(buffer: str) -> tuple[list[str], str]:
@@ -571,6 +630,7 @@ def stream_ask(
         return
 
     buffer = ""
+    thinking = ThinkFilter()
     try:
         for raw in resp:
             line = raw.decode("utf-8", "replace").strip()
@@ -599,14 +659,14 @@ def stream_ask(
                 # estate keeps insisting on.
                 _last_choice["usd"] = (pt / 1_000_000) * 0.27 + (ct / 1_000_000) * 1.10
                 _last_choice["tokens"] = pt + ct
-            delta = (choices[0].get("delta") or {}).get("content") or ""
+            delta = thinking.feed((choices[0].get("delta") or {}).get("content") or "")
             if not delta:
                 continue
             buffer += delta
             clauses, buffer = split_clauses(buffer)
             for clause in clauses:
                 yield _sse("delta", {"text": clause})
-        tail = buffer.strip()
+        tail = (buffer + thinking.flush()).strip()
         if tail:
             yield _sse("delta", {"text": tail})
         # PROVENANCE ON `done`. The model, the region, what this answer cost, and one sentence of
