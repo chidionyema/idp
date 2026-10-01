@@ -142,6 +142,8 @@ spec:
             # vault yet; a missing one fails that Secret alone and the Cohere hop alone.
             - { name: human-cohere, mountPath: /run/secrets/human/cohere, readOnly: true }
             - { name: human-kimi, mountPath: /run/secrets/human/kimi, readOnly: true }
+            # 2026-10-01: the GLM Coding Plan key (ZAI_API_KEY), coding-only lane `glm`.
+            - { name: human-zai, mountPath: /run/secrets/human/zai, readOnly: true }
             # 2026-09-10: both keys were in Secrets Manager and both bridge Secrets existed in
             # this namespace, and neither was mounted -- so the estate router could not reach
             # Cerebras or NVIDIA at all, and any agent that wanted them had to go direct and
@@ -212,6 +214,8 @@ spec:
           secret: { secretName: human-cohere, optional: true }
         - name: human-kimi
           secret: { secretName: human-kimi, optional: true }
+        - name: human-zai
+          secret: { secretName: human-zai, optional: true }
         - name: human-cerebras
           secret: { secretName: human-cerebras, optional: true }
         - name: human-nvidia

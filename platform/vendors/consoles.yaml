@@ -311,6 +311,44 @@ vendors:
       field: MOONSHOT_API_KEY
       bw: MOONSHOT_API_KEY
       entry: dagster-env
+  # GLM Coding Plan (Z.ai), a flat-rate monthly subscription, added 2026-10-01. The founder set
+  # the key in Secrets Manager under the name `zZ_AI_KEY`, and `bw` names it exactly as set; the
+  # field is renamed so bin/litellm-local's loader ([A-Z][A-Z0-9_]*) exports it. The plan has its
+  # own host path -- /api/coding/paas/v4, not the pay-as-you-go /api/paas/v4 (docs.z.ai
+  # devpack/latest-model, read 2026-10-01). Z.ai authenticates before it routes (an invalid
+  # bearer answers 401 "token expired or incorrect" on any path under the host, measured the
+  # same day), so the check refuses only on that body and a missing /models is not a dead key.
+  zai:
+    kind: secret
+    secret: SEED_ZAI_API_KEY
+    page: https://z.ai/manage-apikey/apikey-list
+    shape: '[A-Za-z0-9_.-]{20,}'
+    bases:
+    - https://api.z.ai/api/coding/paas/v4
+    verify:
+      method: GET
+      url: '{base}/models'
+      headers:
+        Authorization: Bearer {key}
+      refuse_when: '"code"\s*:\s*"?40[13]'
+    rotation: assisted
+    store_default: human-vault
+    targets:
+    - entry: litellm-upstream
+      ns: llm
+      field: ZAI_API_KEY
+      bw: zZ_AI_KEY
+    router:
+      lanes: "# Coding only. The plan's usage policy (docs.z.ai devpack/usage-policy, read\n\
+        # 2026-10-01): \"GLM Coding Plan may only be used within officially supported tools\n\
+        # and products\". So this lane sits in no pool and no fallback chain: nothing reaches\n\
+        # it unless a coding harness picks `glm` by name, and the router's own background work\n\
+        # (shadow folds, voice, bulk) can never land on it.\n#\n# Flat rate: the plan bills\
+        \ by the month, so the marginal token is $0 until the plan's\n# concurrency limit\
+        \ (Lite: one project at a time). Priced at zero on purpose.\n- model_name: glm\n\
+        \  litellm_params:\n    model: openai/glm-5.3\n    api_base: https://api.z.ai/api/coding/paas/v4\n\
+        \    api_key: os.environ/ZAI_API_KEY\n    timeout: 300\n    input_cost_per_token:\
+        \ 0\n    output_cost_per_token: 0\n"
   gemini:
     kind: secret
     secret: SEED_GEMINI_API_KEY
