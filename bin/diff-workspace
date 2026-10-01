@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Give an agent a throwaway checkout of idp main and start it locked to that checkout.
+# The agent has no shell, no push and no write access outside the checkout; its only output
+# is the diff bin/diff-intake takes from it.
+set -euo pipefail
+name="${1:?usage: diff-workspace <name>}"
+[[ "$name" =~ ^[a-z0-9-]+$ ]] || { echo "name: lowercase letters, digits, dashes"; exit 2; }
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ws="$HOME/agent-diffs/$name"
+if [ ! -e "$ws" ]; then
+  git -C "$IDP" fetch --quiet origin main
+  git -C "$IDP" worktree add --quiet --detach "$ws" origin/main
+fi
+cd "$ws"
+exec claude --settings "$IDP/policy/agent-diff-claude-settings.json"

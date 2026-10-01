@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "deny": [
+      "Bash",
+      "mcp__estate",
+      "Edit(~/Documents/**)",
+      "Edit(~/.claude/**)",
+      "Edit(~/.estate/**)",
+      "Edit(~/.config/**)",
+      "Edit(~/.ssh/**)",
+      "Edit(~/.kube/**)",
+      "Edit(~/.idp/**)",
+      "Edit(//tmp/**)",
+      "Edit(//private/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.kube/**)",
+      "Read(~/.oci/**)",
+      "Read(~/.idp/**)",
+      "Read(~/Documents/code/estate-secrets/**)",
+      "Read(**/.env)"
+    ]
+  }
+}
