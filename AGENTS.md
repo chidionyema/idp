@@ -208,11 +208,45 @@ check its claims has failed at the job, whatever it shipped.
 
 - Only make the change that was asked for. No unsolicited refactoring.
 - Do not guess. Search.
+- **Diagnose with evidence, not theories** (founder, 2026-09-29: "no theories without bayesian
+  reasoning and evidence gathering"). Gather evidence read-only first; state competing hypotheses
+  with priors and what each predicts; compute the update from counted evidence; pick the next probe
+  that best separates the leaders. Do not announce, or act on, a cause the evidence has not
+  singled out.
 - Do not report a number you did not measure this turn.
 - Do not grade a proxy — grade the thing itself.
 - **Never use `grep -r`. Use `rg -l "pattern" path`** — `rg -l` finishes in <1s where
   `grep -r` times out at the 60s ceiling. A broad `grep -r` that hits the ceiling is a defect
   in the search, not evidence the thing is absent.
+
+## 12. All ways: no single point of failure, every capability has many homes
+
+The estate aims for **all ways**, and the platform demonstrates it (founder, 2026-09-29: "We don't
+allow for single points of failure"; "the same way Otto has many homes the crew need many homes";
+"we are model agnostic and not anthropic"). A home is any place a capability can run *and* anything
+it runs on:
+
+- **Hosts:** OKE, the cloud session runners, this MacBook, the second (better-resourced) MacBook.
+- **Model vendors:** Anthropic, DeepSeek, MiniMax, Gemini, Groq and the rest of the router's lanes.
+- **Agent runtimes:** Claude Code, Codex, Gemini CLI, Otto (hermes-agent).
+
+Every capability the founder depends on (crew sessions, the LLM router, voice, /fleet, the event
+bus) runs in, or fails over between, several homes on each of those axes. None is the one home:
+
+- **Moving to the cloud adds a home; it never removes the laptop's ability.** The laptops keep
+  running every capability; the cloud stops them being load-bearing. A cluster outage must not
+  disable the estate either (founder, 2026-09-26: "if cluster breaks we are all disabled").
+- **No vendor and no runtime is load-bearing.** A capability that works only with one model vendor
+  or one agent runtime is single-homed, whatever host it runs on.
+- **Nothing we operate sits alone in a session's critical path.** A router, relay or proxy in front
+  of a session fails open (to another home or another vendor) inside the same request.
+- **Never disrupt running work to move it.** Build the new home beside the old, prove it in
+  parallel (a failure test: kill or freeze the home under live traffic, and sessions see zero
+  errors), then send only *new* work to it. Rollback is pointing new work back.
+- **A capability with one home is unfinished**, whatever it ships. Its README names its homes, how
+  work fails over between them, and the test that proves the failover.
+
+Decision: `docs/decisions/0035-all-ways-no-single-point-of-failure-many-homes.md`.
 
 ## 11. Living policy (crew#219 R38): the block below is code, not prose
 
@@ -298,3 +332,32 @@ escalate_on_timeout = true
 model = "jev-1.13.0"
 force_on_decisions = true   # when true, the Stop-hook blocks turns that skip Jev for bounded decisions
 ```
+
+<!-- growmos:start — managed by `growmos integrate`; edits inside this block will be overwritten -->
+## growmos — living knowledge graph (shared memory for humans + agents)
+
+This repository keeps a knowledge graph in `.growmos/` (entities, typed relations, provenance,
+profiles, a journal). It is the shared world model that survives context windows. Treat it as
+memory you read at the start of work and write to as you develop. Zero-config commands:
+
+1. **Session start** — run `growmos context` (a compact brief: hubs, health, pending work, latest journal).
+2. **Before cross-cutting questions** ("what depends on X?", "why was Y decided?") — run
+   `growmos query "<question>"`; answer from the returned subgraph and cite edge ids.
+3. **When you learn or decide something durable** (new component, architectural decision, ownership,
+   dependency, gotcha) — write it back immediately:
+   - `growmos remember "<Name>" --type <TYPE> --desc "<one grounded sentence>"`
+   - `growmos link "<A>" "<predicate>" "<B>"`   (short verb phrase predicates: "depends on", "replaces")
+   - `growmos journal "<what changed and why>"`
+4. **Extract on explicit request** — run `growmos next`. It hands you a *task packet* (extraction / resolution /
+   profile / gold set / review) with the exact prompt, the JSON shape, and the `growmos apply …` command.
+   Do the judgment work yourself, write the JSON, apply it. If it reports the daily extraction cap,
+   run `growmos next --force` (the cap only guards unattended runs).
+   Never invent facts not in the source; every relation must connect two extracted entities.
+5. **Before claiming facts about the repo in a summary/report** — `growmos check "<claim text>"` grounds
+   your claims against edges with provenance (evaluator–optimizer loop).
+6. **Session end** — `growmos journal "<summary of the session>"` so the next session picks up here.
+
+Store files are plain JSONL under `.growmos/` — commit them with your code. Do not hand-edit
+`entities.jsonl`/`relations.jsonl` (use the CLI); prompts in `.growmos/prompts/` are yours to tune.
+More: `growmos --help`, docs at https://github.com/codician-team/growmos.
+<!-- growmos:end -->

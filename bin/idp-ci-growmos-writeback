@@ -17,7 +17,7 @@ BASE="${1:-origin/main}"
 git fetch origin "${BASE#origin/}" 2>/dev/null || true
 HEAD_REV="$(git rev-parse HEAD)"
 
-changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+changed="$(git diff --name-only "$BASE"..."$HEAD_REV" 2>/dev/null || true)"
 
 # LAW 55 (pipe-verdict): capture grep output, then test, rather than pipe-into-if.
 doc_hits="$(printf '%s\n' "$changed" | grep -E '^docs/(synthesis|tickets|decisions)/' || true)"
@@ -39,5 +39,5 @@ echo "FAIL  growmos-writeback  docs/synthesis, docs/tickets or docs/decisions to
 printf '                    %s\n' $doc_hits
 echo "                    Run growmos remember/link for the durable facts this doc introduces, then"
 echo "                    growmos journal a summary, and include the resulting .growmos/*.jsonl diff"
-echo "                    in this PR. See CLAUDE.md 'growmos — living knowledge graph'."
+echo "                    in this PR. See AGENTS.md 'growmos — living knowledge graph'."
 exit 1
