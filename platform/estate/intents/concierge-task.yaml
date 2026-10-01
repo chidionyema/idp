@@ -1,0 +1,17 @@
+name: concierge-task
+description: >
+  Do a browser task for the founder with the concierge's operator (mums-concierge
+  bin/concierge-task): a real Chrome window on this Mac, the estate's router for
+  planning, a hold at any payment page or pay button, never a card typed. Read-only
+  tasks finish on their own; a purchase stops at the hold and says so.
+args:
+  goal: { type: string, help: "What to do, in a sentence" }
+  url:  { type: string, default: "https://www.google.com", help: "Where to start" }
+  max_steps: { type: int, default: 20 }
+tools: []
+halt_on_failure: true
+steps:
+  - name: run
+    cmd: |
+      export PATH="$HOME/.cache/estate-tools:$PATH" SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
+      "$HOME/Documents/code/mums-concierge/bin/concierge-task" {{goal}} --url {{url}} --max-steps {{max_steps}} --never-pay --json
