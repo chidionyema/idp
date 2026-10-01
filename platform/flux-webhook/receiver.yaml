@@ -12,3 +12,10 @@ spec:
       kind: GitRepository
       name: flux-system
       namespace: flux-system
+    # crew#987 CP6: every push rebuilds flux/deploy (main plus current tags) at once. A push
+    # to flux/deploy itself reconciles it too; with no new tag and no new main commit there is
+    # nothing to write, so it cannot loop.
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageUpdateAutomation
+      name: deploy
+      namespace: flux-system

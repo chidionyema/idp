@@ -1,0 +1,28 @@
+# crew#267 image automation, restored by crew#987 CP6.
+#
+# c96359f4b (2026-09-26, "~80 flux rows down to 7") dropped this row. The objects it had applied
+# kept running as orphans, but nothing added under platform/image-automation after that day ever
+# reached the cluster: measured 2026-09-30, ImagePolicy voice-router (on main) did not exist in
+# flux-system, so voice-router-director stayed on main-13023 and crashlooped on "nats: no stream
+# matches subject", a start-up path main's code no longer has. CP6's ImageUpdateAutomation
+# `deploy` lives in the same directory and needs this row to exist at all.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: image-automation
+  namespace: flux-system
+spec:
+  interval: 10m
+  dependsOn:
+    # flux-writer.yaml renders the estate-agents App key through an ExternalSecret.
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/image-automation
+  # Adopting the orphans starts from an empty inventory, so the first apply prunes nothing.
+  prune: true
+  wait: false
+  timeout: 2m

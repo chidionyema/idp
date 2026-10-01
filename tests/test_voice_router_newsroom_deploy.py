@@ -60,7 +60,7 @@ def test_the_director_is_the_newsroom():
     assert container["image"].startswith("ghcr.io/chidionyema/voice-router:main-")
 
 
-def test_the_director_may_only_read_three_kinds():
+def test_the_director_may_only_read_five_kinds():
     objs = _render("platform/voice-router/deploy")
 
     roles = [
@@ -78,6 +78,9 @@ def test_the_director_may_only_read_three_kinds():
         ("", "events", ("get", "list", "watch")),
         ("kustomize.toolkit.fluxcd.io", "kustomizations", ("get", "list", "watch")),
         ("helm.toolkit.fluxcd.io", "helmreleases", ("get", "list", "watch")),
+        # crew#987 CP6: flux/deploy's pushes and freshness SLO (internal/newsroom/deploybranch.go).
+        ("image.toolkit.fluxcd.io", "imageupdateautomations", ("get", "list", "watch")),
+        ("source.toolkit.fluxcd.io", "gitrepositories", ("get", "list", "watch")),
     }
 
     bindings = [
