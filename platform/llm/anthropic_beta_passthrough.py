@@ -76,15 +76,9 @@ def get_requested_anthropic_messages_optional_param(params, **kw):
     if kw.get("custom_llm_provider") != "anthropic":
         return out
     body = ((params or {}).get("proxy_server_request") or {}).get("body") or {}
-    # A pre-call hook that deliberately drops a field names it here; without this the fallback
-    # below re-adds the client's value (measured 2026-09-28: output_config.effort came back and
-    # the routed-down Sonnet call failed 400).
-    dropped = set((params or {}).get("litellm_estate_dropped") or ())
     for k, v in body.items():
         # litellm_* are the proxy's own keys, written into the same dict (measured 2026-09-26)
         if k in out or k in _HANDLED_ELSEWHERE or k.startswith("litellm_") or v is None:
-            continue
-        if k in dropped:
             continue
         # the value after pre-call hooks if one rewrote it, else what the client sent
         out[k] = params.get(k, v)

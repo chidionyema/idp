@@ -376,6 +376,22 @@ def submit_agent_job(body: Any) -> tuple[dict[str, Any], int]:
     return agent_jobs.handle_post(body)
 
 
+# ── concierge tasks (concierge_tasks.py): a browser task for the founder, watched as it happens ──
+CONCIERGE_TASKS_PATH = "/concierge-tasks"
+
+
+def concierge_tasks_envelope() -> tuple[dict[str, Any], int]:
+    from fleetview_backend import concierge_tasks
+
+    return concierge_tasks.list_tasks()
+
+
+def submit_concierge_task(body: Any) -> tuple[dict[str, Any], int]:
+    from fleetview_backend import concierge_tasks
+
+    return concierge_tasks.handle_post(body)
+
+
 def device_status_envelope() -> tuple[dict[str, Any], int]:
     """`GET /device-status`: this device's read-only identity, for the Fleet device tile."""
     return device_access.device_status_envelope()

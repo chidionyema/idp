@@ -117,54 +117,6 @@ CACHE_WRITE_5M_RATE = 1.25
 CACHE_WRITE_1H_RATE = 2.0
 
 
-# Founder 2026-09-28: Opus plans, Sonnet executes, and that "should be impossible to circumvent".
-# A harness setting (opusplan) is overridden by any /model switch -- measured that day, 35 pinned
-# sessions produced 88% of all turns -- so the router decides. PLAN_MARKER is the text Claude Code
-# 2.1.283 injects into the user turn in plan mode (read from its binary). A context too large for
-# the executor keeps its model rather than failing the call.
-PLAN_MARKER = "Plan mode is active."
-EXECUTOR_MODEL = os.environ.get("ESTATE_EXECUTOR_MODEL", "claude-sonnet-5")
-EXECUTOR_MAX_BYTES = int(os.environ.get("ESTATE_EXECUTOR_MAX_BYTES", str(600_000)))
-
-
-def _newest_user_text(data: dict) -> str:
-    for m in reversed(data.get("messages") or []):
-        if isinstance(m, dict) and m.get("role") == "user":
-            c = m.get("content")
-            if isinstance(c, str):
-                return c
-            return " ".join(
-                b.get("text", "")
-                for b in c or []
-                if isinstance(b, dict) and b.get("type") == "text"
-            )
-    return ""
-
-
-def _fit_executor(data: dict) -> None:
-    """Drop what the executor rejects (measured 400s on 2026-09-28, Claude Code 2.1.283):
-    `output_config.effort` -- "requires a model that supports per-turn effort" -- and deferred
-    tools -- "tool_addition/tool_removal is not supported on this model"."""
-    if data.pop("output_config", None) is not None:
-        # anthropic_beta_passthrough re-adds any client field a hook removed, unless named here.
-        data["litellm_estate_dropped"] = ["output_config"]
-    for t in data.get("tools") or []:
-        if isinstance(t, dict):
-            t.pop("defer_loading", None)
-
-
-def _route_model(data: dict) -> str:
-    model = str(data.get("model") or "")
-    if "opus" not in model.lower() or PLAN_MARKER in _newest_user_text(data):
-        return model
-    size = _json_bytes(data.get("messages") or []) + _json_bytes(
-        data.get("system") or []
-    )
-    if size > EXECUTOR_MAX_BYTES:
-        return model
-    return EXECUTOR_MODEL
-
-
 def _is_anthropic(data: dict, call_type: Any) -> bool:
     if "anthropic_messages" in str(call_type):
         return True
@@ -963,10 +915,6 @@ class EstateEfficiencyGateway(CustomLogger):
 
     def _anthropic_call(self, data: dict, call_type: Any, started: float) -> dict:
         session = _session_id(data)
-        requested = data.get("model") or ""
-        data["model"] = _route_model(data)
-        if data["model"] != requested:
-            _fit_executor(data)
         msgs = data.get("messages") or []
         before = _json_bytes(msgs)
         conv = _conversation_key(data, session)
@@ -991,7 +939,6 @@ class EstateEfficiencyGateway(CustomLogger):
             "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
             "call_type": str(call_type),
             "model": data.get("model") or "",
-            "model_requested": requested,
             "ms": round((time.time() - started) * 1000, 2),
             "messages": len(msgs),
             "bytes_before": before,
