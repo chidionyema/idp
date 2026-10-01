@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""diagnosis-gate -- a router config/code change must carry a Bayesian diagnosis record.
+
+Founder, 2026-09-29: "no theories without bayesian reasoning and evidence gathering", "we don't
+do guesswork", "why is this not enforced". This is the enforcement: a change that touches
+llm/config.yaml, platform/llm/config.yaml, platform/llm/*.py or bin/litellm-local must reference,
+in a commit message on the range, a line `Diagnosis: docs/diagnoses/<file>.yaml` naming a record
+whose winning hypothesis reaches posterior >= 0.95 when bin/estate-diagnose RECOMPUTES it from
+the record's stated priors and likelihoods. The gate never trusts a number sitting in the file;
+every run re-derives it, so a stale or hand-edited posterior cannot pass.
+
+Docs-only and tests-only changes (every touched path starts with docs/ or tests/) are exempt --
+they cannot touch the router at all, by construction of the trigger path list below.
+
+Called from bin/idp-ci's fast gate (IDP_CI_FAST=1), which already exports IDP_CI_BASE.
+
+Usage:
+    bin/diagnosis-gate [--base SHA] [--repo-root DIR]
+"""
+
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+MIN_POSTERIOR = 0.95
+
+ROUTER_PATTERNS = (
+    re.compile(r"^llm/config\.yaml$"),
+    re.compile(r"^platform/llm/config\.yaml$"),
+    re.compile(r"^platform/llm/.*\.py$"),
+    re.compile(r"^bin/litellm-local$"),
+)
+EXEMPT_PREFIXES = ("docs/", "tests/")
+DIAGNOSIS_RE = re.compile(
+    r"^Diagnosis:\s*(docs/diagnoses/\S+\.ya?ml)\s*$", re.MULTILINE
+)
+
+
+def touches_router(changed_files: list[str]) -> bool:
+    return any(p.match(f) for f in changed_files for p in ROUTER_PATTERNS)
+
+
+def is_docs_tests_only(changed_files: list[str]) -> bool:
+    return bool(changed_files) and all(
+        f.startswith(EXEMPT_PREFIXES) for f in changed_files
+    )
+
+
+def find_diagnosis_ref(commit_messages: list[str]) -> str | None:
+    for msg in commit_messages:
+        m = DIAGNOSIS_RE.search(msg)
+        if m:
+            return m.group(1)
+    return None
+
+
+def _default_run_diagnose(record_path: Path) -> tuple[int, str]:
+    script = Path(__file__).resolve().parent / "estate-diagnose"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            str(record_path),
+            "--min-posterior",
+            str(MIN_POSTERIOR),
+            "--no-write",
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return proc.returncode, (proc.stdout + proc.stderr)
+
+
+def evaluate(
+    changed_files: list[str],
+    commit_messages: list[str],
+    repo_root: Path,
+    run_diagnose=_default_run_diagnose,
+) -> tuple[int, str]:
+    """Pure decision logic -- no git, no subprocess by default injection point, so tests can
+    exercise every branch without a real repository or a real diagnosis record."""
+    if not touches_router(changed_files):
+        return 0, "skip  diagnosis-gate  no router config/code touched"
+    if is_docs_tests_only(changed_files):
+        return 0, "skip  diagnosis-gate  docs/tests-only change"
+
+    ref = find_diagnosis_ref(commit_messages)
+    if ref is None:
+        return 1, (
+            "FAIL  diagnosis-gate  router change with no `Diagnosis: docs/diagnoses/<file>.yaml` "
+            "commit-message line; write a record (docs/runbooks/diagnosis.md) and reference it"
+        )
+
+    record_path = repo_root / ref
+    if not record_path.is_file():
+        return 1, f"FAIL  diagnosis-gate  {ref} is referenced but does not exist"
+
+    rc, out = run_diagnose(record_path)
+    if rc != 0:
+        return 1, (
+            f"FAIL  diagnosis-gate  {ref} did not clear posterior >= {MIN_POSTERIOR} on recompute:\n"
+            f"{out}"
+        )
+    return (
+        0,
+        f"ok    diagnosis-gate  {ref} winning hypothesis clears posterior >= {MIN_POSTERIOR}",
+    )
+
+
+def _git(repo_root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(repo_root), *args], capture_output=True, text=True, check=True
+    ).stdout
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="diagnosis-gate", description=__doc__.splitlines()[0]
+    )
+    ap.add_argument(
+        "--base", default=None, help="range start; default merge-base origin/main HEAD"
+    )
+    ap.add_argument("--repo-root", default=".")
+    args = ap.parse_args(argv)
+
+    repo_root = Path(args.repo_root).resolve()
+    base = args.base or _git(repo_root, "merge-base", "origin/main", "HEAD").strip()
+    changed = [
+        line
+        for line in _git(
+            repo_root, "diff", "--name-only", f"{base}...HEAD"
+        ).splitlines()
+        if line
+    ]
+    raw = _git(repo_root, "log", "--format=%B%x00", f"{base}..HEAD")
+    commit_messages = [m for m in raw.split("\x00") if m.strip()]
+
+    rc, msg = evaluate(changed, commit_messages, repo_root)
+    print(msg)
+    return rc
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
