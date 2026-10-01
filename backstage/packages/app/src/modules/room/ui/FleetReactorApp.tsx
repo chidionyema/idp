@@ -52,6 +52,7 @@ import NewsDesk from './NewsDesk';
 import AgentJobs from './AgentJobs';
 import HarvPanel from './HarvPanel';
 import ConciergeTasks from './ConciergeTasks';
+import KeySync from './KeySync';
 import EfficiencyHud from './EfficiencyHud';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
@@ -2749,6 +2750,16 @@ export default function FleetReactorApp() {
           const base = baseUrlRef.current;
           if (!base) return Promise.reject(new Error('discovery not ready'));
           return api.fetch(`${base}/fleetview/concierge-tasks`, init);
+        }}
+      />
+
+      {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
+          Names and states only; a missing key shows the exact name to create. */}
+      <KeySync
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/key-sync`, init);
         }}
       />
 
