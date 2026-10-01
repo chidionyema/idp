@@ -19,6 +19,7 @@
 {"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
 {"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
 {"alias": "Budget Orchestrator", "entity": "component/budget-orchestrator", "type": "COMPONENT"}
+{"alias": "bytesync-web", "entity": "component/bytesync-web", "type": "COMPONENT"}
 {"alias": "Cache Guardian", "entity": "component/cache-guardian", "type": "COMPONENT"}
 {"alias": "Cilium Alerts", "entity": "component/cilium-alerts", "type": "COMPONENT"}
 {"alias": "Cilium Drift Alerts", "entity": "component/cilium-drift-alerts", "type": "COMPONENT"}
@@ -26,6 +27,7 @@
 {"alias": "custom-entity-extensions", "entity": "component/custom-entity-extensions", "type": "COMPONENT"}
 {"alias": "Dynamic Context Pruning", "entity": "component/dynamic-context-pruning", "type": "COMPONENT"}
 {"alias": "ESTATE_AGENT JetStream stream", "entity": "component/estate-agent-jetstream-stream", "type": "COMPONENT"}
+{"alias": "estate-ui-kit", "entity": "component/estate-ui-kit", "type": "COMPONENT"}
 {"alias": "Executor", "entity": "component/executor", "type": "COMPONENT"}
 {"alias": "Flux Drift Gate", "entity": "component/flux-drift-gate", "type": "COMPONENT"}
 {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
@@ -50,6 +52,7 @@
 {"alias": "SoL-Pi", "entity": "component/sol-pi", "type": "COMPONENT"}
 {"alias": "sovereign-topology", "entity": "component/sovereign-topology", "type": "COMPONENT"}
 {"alias": "Span Retention", "entity": "component/span-retention", "type": "COMPONENT"}
+{"alias": "Store.Web", "entity": "component/store-web", "type": "COMPONENT"}
 {"alias": "Token Efficiency Layer", "entity": "component/token-efficiency-layer", "type": "COMPONENT"}
 {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
@@ -69,6 +72,7 @@
 {"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
+{"alias": "front-end-kit decision", "entity": "decision/front-end-kit-decision", "type": "DECISION"}
 {"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}
 {"alias": "no-agent-works-in-the-main-checkout", "entity": "decision/no-agent-works-in-the-main-checkout", "type": "DECISION"}
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}

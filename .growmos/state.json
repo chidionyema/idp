@@ -7,7 +7,7 @@
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-09-26T22:17:33Z",
+  "last_run": "2026-09-30T23:45:25Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -326,6 +326,51 @@
       "kind": "link",
       "relation": "r_69d48e838a49",
       "ts": "2026-09-26T22:17:33Z"
+    },
+    {
+      "entity": "component/estate-ui-kit",
+      "kind": "remember",
+      "ts": "2026-09-30T23:45:23Z"
+    },
+    {
+      "entity": "decision/front-end-kit-decision",
+      "kind": "remember",
+      "ts": "2026-09-30T23:45:23Z"
+    },
+    {
+      "entity": "component/store-web",
+      "kind": "remember",
+      "ts": "2026-09-30T23:45:23Z"
+    },
+    {
+      "entity": "component/bytesync-web",
+      "kind": "remember",
+      "ts": "2026-09-30T23:45:23Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_9d04ed6f63d0",
+      "ts": "2026-09-30T23:45:24Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_dcb8b30f6d82",
+      "ts": "2026-09-30T23:45:24Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_8b0bc9a1ad31",
+      "ts": "2026-09-30T23:45:24Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_b59a700e152a",
+      "ts": "2026-09-30T23:45:25Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_d7c4851904cf",
+      "ts": "2026-09-30T23:45:25Z"
     }
   ]
 }

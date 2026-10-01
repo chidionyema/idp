@@ -23,9 +23,9 @@ steps:
       echo "ok      ui.scaffold  {{dest}}/{{name}} on @estate/ui-kit ($kit)"
   - name: install and build
     cmd: |
-      cd {{cwd}}/{{dest}}/{{name}} || exit 2
+      cd {{cwd}} && cd {{dest}}/{{name}} || exit 2
       npm install --no-audit --no-fund && npm run build
   - name: guards
     cmd: |
-      cd {{cwd}}/{{dest}}/{{name}} || exit 2
+      cd {{cwd}} && cd {{dest}}/{{name}} || exit 2
       npm run -s guard && echo "ok      ui.scaffold  guards green; next: estate-execute ui.review --target {{dest}}/{{name}}/src --dist {{dest}}/{{name}}/dist"

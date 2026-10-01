@@ -11,7 +11,6 @@
     "test": "npm run -s guard && astro check"
   },
   "dependencies": {
-    "@astrojs/cloudflare": "14.3.3",
     "@astrojs/react": "7.0.0",
     "@estate/ui-kit": "file:__KIT__",
     "astro": "7.3.5",
