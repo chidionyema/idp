@@ -29,6 +29,6 @@ resources:
   - deployment.yaml
 images:
   - name: ghcr.io/chidionyema/controller
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:controller:tag"}
+    newTag: main-13827-cd52d4a2179ff7c15ce0fc20b0df3161b569b85b # {"$imagepolicy": "flux-system:controller:tag"}
   - name: ghcr.io/chidionyema/runsc
-    newTag: main-13775-ecc0ee8b44c4987c8a88203936d7926acdafc910 # {"$imagepolicy": "flux-system:runsc:tag"}
+    newTag: main-13827-cd52d4a2179ff7c15ce0fc20b0df3161b569b85b # {"$imagepolicy": "flux-system:runsc:tag"}
