@@ -4,6 +4,7 @@
  * (AGENTS.md section 6). Tap to talk; the estate hears, answers and speaks through the face.
  */
 import EstateFace from './EstateFace';
+import FleetBackdrop from './FleetBackdrop';
 import { useEstateVoice } from './useEstateVoice';
 
 const LABEL: Record<string, string> = {
@@ -26,10 +27,23 @@ export function FacePage() {
         background: 'radial-gradient(ellipse at 50% 30%, #1d2533 0%, #0b0e14 70%)',
         color: '#e8edf5',
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+        position: 'relative',
+        overflow: 'hidden',
       }}
     >
-      <EstateFace height="100%" />
-      <div style={{ display: 'grid', gap: 12, padding: '12px 16px 20px', textAlign: 'center' }}>
+      <FleetBackdrop />
+      <div style={{ position: 'relative', minHeight: 0 }}>
+        <EstateFace height="100%" />
+      </div>
+      <div
+        style={{
+          position: 'relative',
+          display: 'grid',
+          gap: 12,
+          padding: '12px 16px 20px',
+          textAlign: 'center',
+        }}
+      >
         {voice.heard && <div style={{ opacity: 0.6, fontSize: 14 }}>You: {voice.heard}</div>}
         {voice.reply && <div style={{ fontSize: 17, lineHeight: 1.45 }}>{voice.reply}</div>}
         {voice.detail && <div style={{ opacity: 0.5, fontSize: 12 }}>{voice.detail}</div>}
