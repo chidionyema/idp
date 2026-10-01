@@ -19,7 +19,10 @@ except ImportError:
     pobr_grant = None  # type: ignore
 
 HOME = Path.home()
-INTENTS = HOME / ".estate" / "intents"
+# The laptop installs the library at ~/.estate/intents. The estate-mcp image has no ~/.estate
+# and carries the committed library at /app/intents instead (estate-mcp.Dockerfile); before that,
+# production estate_list answered "# 0 intents available" (measured 2026-10-01 in the pod).
+INTENTS = Path(os.environ.get("ESTATE_INTENTS_DIR") or HOME / ".estate" / "intents")
 # The executor's own ledger: how often each intent has run, so the search ranks the intents
 # agents actually reuse above the one-offs (1822 runs, 387 of 537 intents run exactly once,
 # measured 2026-09-30).

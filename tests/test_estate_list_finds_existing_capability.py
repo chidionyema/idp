@@ -132,3 +132,23 @@ def test_the_tool_tells_agents_to_search_before_building(em):
     (tool,) = [t for t in em.TOOL_DEFS if t["name"] == "estate_list"]
     assert "query" in tool["inputSchema"]["properties"]
     assert "before building" in tool["description"]
+
+
+def test_the_library_path_comes_from_the_environment(tmp_path, monkeypatch):
+    """The estate-mcp image has no ~/.estate; it sets ESTATE_INTENTS_DIR=/app/intents."""
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "only-one.yaml").write_text("description: The one intent.\n")
+    monkeypatch.setenv("ESTATE_INTENTS_DIR", str(lib))
+    spec = importlib.util.spec_from_file_location("estate_mcp_env", PLUGIN)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.INTENTS == lib
+    assert mod._estate_list({}).startswith("# 1 intents available:")
+
+
+def test_the_image_ships_the_library_and_refuses_an_empty_one():
+    dockerfile = (PLUGIN.parents[2] / "estate-mcp.Dockerfile").read_text()
+    assert "COPY platform/estate/intents /app/intents" in dockerfile
+    assert "ENV ESTATE_INTENTS_DIR=/app/intents" in dockerfile
+    assert "assert n >= 50" in dockerfile
