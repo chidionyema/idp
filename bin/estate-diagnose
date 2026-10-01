@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+"""estate-diagnose -- Bayesian hypothesis testing for a diagnosis record.
+
+WHY THIS EXISTS. Founder, 2026-09-29, after a router-config change went in on a theory nobody
+checked against the log: "no theories without bayesian reasoning and evidence gathering", "we
+don't do guesswork", "why is this not enforced". A diagnosis record is a claim written down
+BEFORE the arithmetic runs: which hypotheses were even considered, what each one predicted for
+every category of evidence (fixed before seeing the data -- no likelihood may be reverse-engineered
+from the observed counts to make a preferred hypothesis win), and what was actually observed. This
+tool is the only thing allowed to turn that record into a posterior; nobody hand-computes one and
+writes it in a commit message. bin/diagnosis-gate calls this tool to grade a router change.
+
+RECORD SHAPE (YAML):
+
+    hypotheses:
+      - name: H1
+        prior: 0.5          # every prior; must sum to 1 (tolerance 1e-6)
+      - name: H2
+        prior: 0.5
+    n_eff_divisor: 10        # optional, default 1: downweights correlated records (e.g. log
+                              # lines from one incident are not independent draws)
+    evidence:
+      - name: "some observed signal"
+        observed: {a: 10, b: 3}              # category -> count
+        likelihoods:                          # EVERY hypothesis, EVERY observed category
+          H1: {a: 0.8, b: 0.2}
+          H2: {a: 0.3, b: 0.7}
+
+MATH. For hypothesis H, log-unnormalized-posterior(H) = log(prior[H]) + sum over evidence items of
+sum over categories c of (observed[c] / n_eff_divisor) * log(likelihood[H][c]). This is the
+multinomial log-likelihood with the count-independent multinomial coefficient dropped -- it is the
+same additive constant for every hypothesis on a given evidence item, so it cancels exactly when
+the unnormalized posteriors are renormalized (log-sum-exp) to sum to 1. Computed in log-space so a
+long log (n_eff_divisor down-weighted or not) never underflows a plain float product to 0.
+
+REFUSALS (exit 2). A record is refused, not silently graded, when:
+  - a hypothesis's prior is missing, or the priors do not sum to 1 within 1e-6
+  - any evidence item is missing a likelihood distribution for any declared hypothesis
+  - any evidence item's likelihood distribution for a hypothesis is missing any observed category
+
+Usage:
+    bin/estate-diagnose RECORD.yaml [--min-posterior F] [--json] [--no-write]
+
+Exit codes: 0 valid (and, with --min-posterior, the winner cleared it); 2 the record is refused;
+3 the record is valid but the winning hypothesis's posterior fell below --min-posterior.
+"""
+
+from __future__ import annotations
+
+import argparse
+import math
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+TOLERANCE = 1e-6
+
+
+class Refused(Exception):
+    """The record is malformed in a way this tool must not paper over."""
+
+
+def _validate(
+    record: dict[str, Any],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], float]:
+    hyps = record.get("hypotheses")
+    if not isinstance(hyps, list) or not hyps:
+        raise Refused("no 'hypotheses' list")
+    for h in hyps:
+        if "name" not in h:
+            raise Refused(f"a hypothesis has no 'name': {h!r}")
+        if "prior" not in h:
+            raise Refused(f"hypothesis {h.get('name')!r} has no 'prior'")
+    prior_sum = sum(float(h["prior"]) for h in hyps)
+    if abs(prior_sum - 1.0) > TOLERANCE:
+        raise Refused(f"priors sum to {prior_sum!r}, not 1 (tolerance {TOLERANCE})")
+
+    evidence = record.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise Refused("no 'evidence' list")
+    names = [h["name"] for h in hyps]
+    for ev in evidence:
+        if (
+            "observed" not in ev
+            or not isinstance(ev["observed"], dict)
+            or not ev["observed"]
+        ):
+            raise Refused(
+                f"evidence {ev.get('name')!r} has no 'observed' category counts"
+            )
+        categories = list(ev["observed"].keys())
+        likelihoods = ev.get("likelihoods")
+        if not isinstance(likelihoods, dict):
+            raise Refused(f"evidence {ev.get('name')!r} has no 'likelihoods'")
+        for hname in names:
+            dist = likelihoods.get(hname)
+            if not isinstance(dist, dict):
+                raise Refused(
+                    f"evidence {ev.get('name')!r} carries no likelihood distribution for "
+                    f"hypothesis {hname!r}"
+                )
+            for cat in categories:
+                if cat not in dist:
+                    raise Refused(
+                        f"evidence {ev.get('name')!r} likelihood for hypothesis {hname!r} is "
+                        f"missing category {cat!r}"
+                    )
+                if float(dist[cat]) <= 0:
+                    raise Refused(
+                        f"evidence {ev.get('name')!r} likelihood for hypothesis {hname!r}, "
+                        f"category {cat!r} is not positive: {dist[cat]!r}"
+                    )
+
+    n_eff_divisor = float(record.get("n_eff_divisor", 1) or 1)
+    if n_eff_divisor <= 0:
+        raise Refused(f"n_eff_divisor must be positive, got {n_eff_divisor!r}")
+    return hyps, evidence, n_eff_divisor
+
+
+def compute_posteriors(record: dict[str, Any]) -> dict[str, float]:
+    """Log-space Bayes over a multinomial likelihood. Raises Refused on a malformed record."""
+    hyps, evidence, n_eff_divisor = _validate(record)
+
+    log_unnorm: dict[str, float] = {}
+    for h in hyps:
+        name = h["name"]
+        total = math.log(float(h["prior"]))
+        for ev in evidence:
+            dist_by_h = ev["likelihoods"][name]
+            for cat, count in ev["observed"].items():
+                weight = float(count) / n_eff_divisor
+                if weight == 0:
+                    continue
+                total += weight * math.log(float(dist_by_h[cat]))
+        log_unnorm[name] = total
+
+    # log-sum-exp, shifted by the max so nothing overflows or underflows.
+    peak = max(log_unnorm.values())
+    denom = math.log(sum(math.exp(v - peak) for v in log_unnorm.values())) + peak
+    return {name: math.exp(v - denom) for name, v in log_unnorm.items()}
+
+
+def _print_table(record: dict[str, Any], posteriors: dict[str, float]) -> None:
+    winner = max(posteriors, key=posteriors.get)
+    priors = {h["name"]: float(h["prior"]) for h in record["hypotheses"]}
+    print(f"{'hypothesis':<24}{'prior':>10}{'posterior':>12}")
+    for name in priors:
+        marker = "  <-- winner" if name == winner else ""
+        print(f"{name:<24}{priors[name]:>10.4f}{posteriors[name]:>12.6f}{marker}")
+
+
+def _write_back(
+    path: Path, record: dict[str, Any], posteriors: dict[str, float]
+) -> None:
+    winner = max(posteriors, key=posteriors.get)
+    record = dict(record)
+    record["posteriors"] = {name: round(p, 10) for name, p in posteriors.items()}
+    record["winner"] = winner
+    record["computed_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    path.write_text(yaml.safe_dump(record, sort_keys=False, default_flow_style=False))
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(
+        prog="estate-diagnose", description=__doc__.splitlines()[0]
+    )
+    ap.add_argument("record", help="path to a diagnosis record YAML file")
+    ap.add_argument(
+        "--min-posterior",
+        type=float,
+        default=None,
+        help="exit 3 when the winning hypothesis's posterior is below this",
+    )
+    ap.add_argument(
+        "--json",
+        action="store_true",
+        help="emit machine-readable JSON instead of a table",
+    )
+    ap.add_argument(
+        "--no-write",
+        action="store_true",
+        help="do not write posteriors back into the record",
+    )
+    args = ap.parse_args(argv)
+
+    path = Path(args.record)
+    try:
+        record = yaml.safe_load(path.read_text())
+    except OSError as exc:
+        print(f"FAIL  estate-diagnose  cannot read {path}: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(record, dict):
+        print(f"FAIL  estate-diagnose  {path} is not a YAML mapping", file=sys.stderr)
+        return 2
+
+    try:
+        posteriors = compute_posteriors(record)
+    except Refused as exc:
+        print(f"FAIL  estate-diagnose  {path} refused: {exc}", file=sys.stderr)
+        return 2
+
+    winner = max(posteriors, key=posteriors.get)
+
+    if args.json:
+        import json
+
+        print(
+            json.dumps(
+                {
+                    "record": str(path),
+                    "posteriors": posteriors,
+                    "winner": winner,
+                    "winner_posterior": posteriors[winner],
+                }
+            )
+        )
+    else:
+        _print_table(record, posteriors)
+
+    if not args.no_write:
+        _write_back(path, record, posteriors)
+
+    if args.min_posterior is not None and posteriors[winner] < args.min_posterior:
+        print(
+            f"FAIL  estate-diagnose  winning hypothesis {winner!r} posterior "
+            f"{posteriors[winner]:.6f} < required {args.min_posterior}",
+            file=sys.stderr,
+        )
+        return 3
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
