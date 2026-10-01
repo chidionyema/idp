@@ -515,9 +515,31 @@ jobs:
   # `if: always()` so a failed dependency still runs this job instead of leaving it (and the
   # merge queue) waiting on a context that will never report -- the same failure mode the `bdd`
   # job's own comment above documents for the repository ruleset.
+  # AGENTS.md §5: a change lands only on a live claim (founder, 2026-09-30: "we can't afford all
+  # this chaos"; "not seeing any enforcement"). Needed by ci-success, so the merge queue refuses an
+  # undeclared or colliding change; bin/claim-gate says which rule it broke.
+  claim-gate:
+    # queue/ too: the Greenlane lands work by pushing queue/<batch>, the same trigger executes-gate uses
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
+    runs-on: ubuntu-latest
+    permissions: { contents: read, issues: read }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha || github.sha }}
+        run: |
+          # a queue/ push carries no base: judge it against where it leaves main
+          base="${BASE:-$(git merge-base origin/main "$HEAD")}"
+          bin/claim-gate "$base" "$HEAD"
+
   ci-success:
     if: always()
-    needs: [fast-gate, bdd, executes-gate, feature-request-plan]
+    needs: [fast-gate, bdd, executes-gate, feature-request-plan, claim-gate]
     runs-on: ubuntu-latest
     steps:
       - name: every required job in this workflow is success or skipped
@@ -527,7 +549,7 @@ jobs:
           set -euo pipefail
           echo "$NEEDS_JSON" | jq .
           fail=0
-          for job in fast-gate bdd executes-gate feature-request-plan; do
+          for job in fast-gate bdd executes-gate feature-request-plan claim-gate; do
             result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
             case "$result" in
               success|skipped) echo "$job: pass ($result)" ;;

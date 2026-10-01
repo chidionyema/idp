@@ -1,5 +1,8 @@
 # Cursor Rules for idp
 
+**AGENTS.md is the estate's one instructions file: read it first and follow it. Every rule there,
+including how work is claimed (AGENTS.md §5), binds Cursor sessions too.**
+
 ## Memory (shared across all agents)
 
 This repo has persistent memory via MCP. Use it to remember decisions, learn context, and avoid re-asking.
