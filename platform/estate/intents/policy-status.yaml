@@ -1,0 +1,12 @@
+name: policy-status
+description: >
+  What the environment's policy gate held, refused or allowed on real intent runs in the last
+  24 hours, and which intents it names as broken.
+tools: [python3]
+models: []
+halt_on_failure: true
+max_turns: 1
+steps:
+  - cmd: >
+      python3 ~/.estate/libexec/policy-status.py
+    on_fail: halt

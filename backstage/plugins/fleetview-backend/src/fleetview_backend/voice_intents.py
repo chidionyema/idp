@@ -169,6 +169,21 @@ def load_catalog(directory: str | Path | None = None) -> list[str]:
     return sorted(names)
 
 
+def description(name: str, directory: str | Path | None = None) -> str:
+    """The intent's own `description`, one line, for the voice operator to speak."""
+    directory = Path(directory) if directory is not None else default_dir()
+    for stem in (name, name.replace(".", "-")):
+        path = directory / f"{stem}.yaml"
+        if path.is_file():
+            try:
+                doc = yaml.safe_load(path.read_text())
+            except (OSError, yaml.YAMLError):
+                return ""
+            desc = doc.get("description") if isinstance(doc, dict) else None
+            return " ".join(str(desc).split())[:200] if desc else ""
+    return ""
+
+
 def match(text: str, catalog: list[str]) -> str | None:
     words = set(normalise(text).split())
     best = None
