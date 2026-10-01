@@ -1,0 +1,62 @@
+description: 'Last 60k lines of ~/Library/Logs/litellm-local.log, grouped by the model
+  group the failing call was routed to (fast / deepseek / minimax), for two distinct
+  auth-error message shapes. Question: is the fault inside the fast pool specifically,
+  a global/caller-side key problem that should hit every pool in proportion to its
+  traffic share, or specific to the minimax lane''s own key.
+
+  '
+hypotheses:
+- name: H1
+  description: fault inside the fast pool
+  prior: 0.3333333333
+- name: H2
+  description: global or caller-supplied-key fault (hits every pool ~ its traffic
+    share)
+  prior: 0.3333333333
+- name: H3
+  description: minimax lane's own key is bad
+  prior: 0.3333333333
+n_eff_divisor: 10
+evidence:
+- name: sk-4bd auth errors (Incorrect API key sk-4bd..8ed3)
+  observed:
+    fast: 153
+    deepseek: 50
+    minimax: 0
+  likelihoods:
+    H1:
+      fast: 0.7
+      deepseek: 0.2
+      minimax: 0.1
+    H2:
+      fast: 0.3636363636
+      deepseek: 0.4141414141
+      minimax: 0.2222222222
+    H3:
+      fast: 0.1
+      deepseek: 0.2
+      minimax: 0.7
+- name: 'login-fail auth errors (login fail: Please carry the API secret key)'
+  observed:
+    fast: 546
+    deepseek: 78
+    minimax: 1
+  likelihoods:
+    H1:
+      fast: 0.7
+      deepseek: 0.2
+      minimax: 0.1
+    H2:
+      fast: 0.3636363636
+      deepseek: 0.4141414141
+      minimax: 0.2222222222
+    H3:
+      fast: 0.1
+      deepseek: 0.2
+      minimax: 0.7
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-09-29T20:14:03Z'
