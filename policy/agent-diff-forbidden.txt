@@ -1,0 +1,42 @@
+# Paths an agent diff may never touch: infra, the build pipeline and critical services.
+# bin/diff-intake reads this file from origin/main, never from the agent's workspace.
+# One prefix or glob per line; a line matches any path that starts with it.
+.github/
+.githooks/
+greenlane/
+bin/
+hooks/
+policy/
+clusters/
+platform/
+infra/
+deploy/
+installer/
+launchd/
+scheduler/
+substrate/
+observability/
+db/
+migration.sql
+llm/
+litellm-local/
+intents/
+mcp/
+sovereign/
+backstage/
+packages/voice/
+packages/sdk-py/fleetview_voice/
+packages/chrome-extension/
+factory/surfaces/voice.py
+docs/keys/
+*Dockerfile*
+docker-compose.yml
+Makefile
+pyproject.toml
+settings.json
+.mcp.json
+CODEOWNERS
+AGENTS.md
+CLAUDE.md
+capability.yaml
+estate-defaults.yaml

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Take an agent's work from its workspace as a diff and refuse it if it touches anything in
+# policy/agent-diff-forbidden.txt. With --land, apply it on a fresh checkout and push it to
+# lane/diff/<name> for greenlane. The agent itself never commits or pushes.
+set -euo pipefail
+name="${1:?usage: diff-intake <name> [--land]}"; land="${2:-}"
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+ws="$HOME/agent-diffs/$name"
+[ -d "$ws" ] || { echo "no workspace $ws"; exit 2; }
+out="$HOME/agent-diffs/$name.patch"
+
+git -C "$ws" add -A
+git -C "$ws" diff --cached --binary HEAD > "$out"
+paths="$(git -C "$ws" diff --cached --name-only --no-renames HEAD)"
+git -C "$ws" reset --quiet
+[ -s "$out" ] || { echo "no changes in $ws"; exit 1; }
+
+# Read from main, never from the workspace the agent edited.
+ref="${DIFF_POLICY_REF:-origin/main}"
+forbidden="$(git -C "$IDP" show "$ref:policy/agent-diff-forbidden.txt" | sed -e 's/#.*//' -e '/^[[:space:]]*$/d')" \
+  || { echo "REFUSED  no forbidden list on $ref"; exit 1; }
+bad=0
+while IFS= read -r path; do
+  while IFS= read -r p; do
+    # shellcheck disable=SC2254 # $p is a glob on purpose
+    case "$path" in $p*) echo "REFUSED  $path  (forbidden: $p)"; bad=1 ;; esac
+  done <<< "$forbidden"
+done <<< "$paths"
+git apply --stat "$out"
+[ "$bad" = 0 ] || { echo "nothing applied; diff kept at $out"; exit 1; }
+[ "$land" = "--land" ] || { echo "OK  $out  (diff-intake $name --land to put it on lane/diff/$name)"; exit 0; }
+
+wt="$(mktemp -d)/$name"
+git -C "$IDP" worktree add --quiet --detach "$wt" "$(git -C "$ws" rev-parse HEAD)"
+trap 'git -C "$IDP" worktree remove --force "$wt"' EXIT
+git -C "$wt" apply --index "$out"
+git -C "$wt" commit --quiet -m "agent diff: $name"
+git -C "$wt" push --quiet origin "HEAD:refs/heads/lane/diff/$name"
+echo "LANDED  lane/diff/$name"
