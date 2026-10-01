@@ -45,12 +45,14 @@ what the last agent learned; (c) decisions made by a frontier model that a 1-ms 
 | Layer | Estate component | State |
 |---|---|---|
 | Execution boundary, every action typed | `~/.estate/bin/estate-execute` + 455 intent YAMLs (73 committed to `platform/estate/intents`) | operating |
-| Action audit (the (s, a, r) log) | `~/.estate/estate.db` `intent_tickets`, `step_runs` (1753 tickets, exit codes, durations) | operating |
+| Action audit (the (s, a, r) log) | `~/.estate/estate.db` `intent_tickets`, `step_runs` (1753 tickets, exit codes, durations). **No session/agent id, no args, `cost_usd` always 0**; the only session↔intent join is `~/.estate/logs/mcp.jsonl` by time | operating, under-keyed |
 | Per-call LLM ledger with randomised control arm | `efficiency_gateway.py` `_arm()` hashes the conversation into `control`/`treat`; `efficiency-ledger.jsonl` | operating |
 | Refusing router hook | `request_ceiling.py` — refuses over-sized calls at the router, not after | operating |
-| Bus | NATS JetStream `event-bus/nats-0`, `ESTATE_AGENT` stream `estate.agent.>` | operating |
+| Bus | NATS JetStream: `event-bus/nats-0` (cluster) and `ai.estate.nats` :4222 (laptop). Contract `platform/event-bus/contract/estate.agent.event.json`. **On the laptop only `ESTATE_NEWS` and `ESTATE_AGENT_TEST` streams exist; `ESTATE_AGENT` has never been created and `~/.estate/outbox.db` is empty** | contract only |
+| Confidence-and-decision service | JevLayer (ADR 0030): `mcp__jev__{choice,score,noul}`, `jev_decisions` table — **0 rows ever** | built, unused |
+| CI/PR state | none — `epistemic-ingest cicd` polls the run list on the cluster; laptop has `~/.claude/state/ci-reach.jsonl` (last 5 conclusions) | no store |
+| Per-tool-call telemetry for Claude Code sessions | none since 2026-09-21 (hooks gutted; `~/.claude/state/ledger.jsonl` stale) | gone — the intent boundary is the only action log |
 | Scale-to-zero substrate | KEDA + HTTPScaledObject (unified-memory proves the pattern) | operating |
-| Confidence-and-decision service | JevLayer (ADR 0030): `mcp__jev__{choice,score,noul}`, `jev_decisions` table | built, use unproven |
 | Bayesian hypothesis racing | `hypotheses.race` intent, `libexec/hypotheses-race.py` | operating (net-triage) |
 | Offline training with pre-registered gates | `forge/` — Modal + Kaggle launchers, `experiment_record.py`, `cost_gate` | trained once, never exported |
 | Memory (cluster) | `platform/unified-memory-server` (Postgres, MAPLE guard, curation worker) | deployed, asleep |
@@ -108,8 +110,9 @@ Agents cannot get better without remembering. Today both memory surfaces are dea
 - Give `unified-memory-server` its first caller: `estate-execute` posts each ticket's outcome line to it; the Stop hook path reads back "what happened last time this intent failed".
 - Done = KEDA scales it 0→1 on a real call, `memories` row count > 0, and Fleet shows the recall.
 
-### W1 — The dataset exists by construction (1 PR)
-- `bin/estate-policy-dataset`: joins `intent_tickets` × `step_runs` × ledger × PR outcome into one JSONL row per action: features + label (`ok` / `halted` / `broken` / `timeout`; for PRs: `merged` / `closed`).
+### W1 — The dataset exists by construction (2 PRs)
+- First, key the audit: `estate-execute` writes `session_id` (from the MCP/harness caller, the same id `mcp.jsonl` already carries), the intent's arg *shape* (names and lengths, never values) and the ledger `conv` onto `intent_tickets`; and it publishes each ticket's open/close as an `estate.agent.<runtime>.<session>.tool` event, which creates the `ESTATE_AGENT` stream on first publish. Without this there is no (s, a, r) row and nothing for Fleet to show.
+- Then `bin/estate-policy-dataset`: joins `intent_tickets` × `step_runs` × ledger × PR outcome into one JSONL row per action: features + label (`ok` / `halted` / `broken` / `timeout`; for PRs: `merged` / `closed`). PR outcomes come from the same GitHub search the baseline used, on the scheduler, into a table — the estate has no PR-state store today.
 - Runs as a scheduler job every hour; rolling 30-day window (self-bounding, memory: self-sustaining-not-capped).
 - Done = row count on Fleet, matches ticket count.
 
@@ -148,6 +151,24 @@ Agents cannot get better without remembering. Today both memory surfaces are dea
 Training: GitHub Actions (trees) / Kaggle (LoRA). Dataset job: scheduler on laptop. Inference:
 in-process ONNX inside `estate-execute` (laptop) and the router; the cluster copy runs inside
 `unified-memory-server`'s pod (already scale-to-zero) — no new always-on pod.
+
+## 6a. Shipped with this spec (loop A, first operating piece)
+
+`estate-execute` now runs `policy_decide()` on every intent, direct and harness: Beta(1+not_ok,
+1+ok) over the intent's own 30-day tickets, `allow` / `hold` (p ≥ 0.5) / `refuse` (p ≥ 0.8),
+only once n ≥ 5, recorded in `policy_decisions` with its latency, and queued as one
+`estate.agent.*.gate` event on the outbox fleetview-backend drains to NATS. `ESTATE_POLICY`
+= `shadow` (default, never blocks) / `enforce` (exit 3, hold sleeps ≤ 10 s) / `off`. Voice:
+"policy status" → `platform/estate/intents/policy-status.yaml` speaks the last 24 h.
+Tests: `tests/estate/test_policy_gate_decides_from_recorded_outcomes.py` (6, red↔green).
+
+Replayed over the real ledger on 2026-09-29 (30 d, 531 intents, 1751 runs, 349 not ok): the
+rule holds or refuses 12 intents / 129 runs, of which 100 were not ok — 29% of all failed runs
+caught for 29 ok runs held. `gh-api` 18/18 failed, `flux-kustomizations` 6/6, `pobr-commit`
+6/6, `rsa-build` 19/22: broken intents the gate now names. First label defect, found by the
+shadow replay: `fleet-regression` (13/22) and `hypotheses.race` (7/9) exit non-zero when their
+probe *finds* something, so "not ok" conflates "the environment failed" with "the check found a
+fault". W2's dataset must carry a per-intent `exit_is_finding` flag before enforce is flipped.
 
 ## 7. Done
 The dept is operational when /fleet shows, live, a policy decision refusing or holding a real

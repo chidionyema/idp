@@ -62,8 +62,123 @@ def init_db():
             ran_at      TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS policy_decisions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            ticket_id   TEXT NOT NULL REFERENCES intent_tickets(id),
+            intent      TEXT NOT NULL,
+            session_id  TEXT,
+            n           INTEGER NOT NULL,
+            not_ok      INTEGER NOT NULL,
+            p_fail      REAL    NOT NULL,
+            decision    TEXT    NOT NULL,
+            mode        TEXT    NOT NULL,
+            latency_us  INTEGER NOT NULL,
+            at          TEXT    NOT NULL
+        )
+    """)
     conn.commit()
     return conn
+
+# ---- Policy gate (ML dept loop A, docs/specs/2026-09-29-machine-learning-dept.md) ----
+# The environment decides before the step runs, from what it has recorded: the intent's own
+# outcomes over the last 30 days. Beta(1+not_ok, 1+ok) posterior mean; a decision only once
+# it has seen POLICY_MIN_N runs. ESTATE_POLICY=shadow (default) records what it would do and
+# never blocks; =enforce refuses (exit 3) or holds (sleep); =off skips the read entirely.
+POLICY_MIN_N     = 5
+POLICY_REFUSE_P  = 0.80
+POLICY_HOLD_P    = 0.50
+POLICY_HOLD_MAX_S = 10
+
+def policy_decide(conn, ticket_id, intent_name, session_id=""):
+    mode = os.environ.get("ESTATE_POLICY", "shadow")
+    if mode == "off":
+        return "allow", None
+    import time as _t
+    t0 = _t.perf_counter()
+    n, not_ok = conn.execute(
+        "SELECT COUNT(*), SUM(status != 'ok') FROM intent_tickets "
+        "WHERE intent=? AND status != 'running' AND id != ? "
+        "AND started_at >= datetime('now','-30 day')",
+        (intent_name, ticket_id),
+    ).fetchone()
+    n = n or 0
+    not_ok = not_ok or 0
+    p_fail = (1 + not_ok) / (2 + n)
+    decision = "allow"
+    if n >= POLICY_MIN_N and p_fail >= POLICY_REFUSE_P:
+        decision = "refuse"
+    elif n >= POLICY_MIN_N and p_fail >= POLICY_HOLD_P:
+        decision = "hold"
+    latency_us = int((_t.perf_counter() - t0) * 1e6)
+    now = datetime.now(timezone.utc).isoformat()
+    conn.execute(
+        "INSERT INTO policy_decisions "
+        "(ticket_id,intent,session_id,n,not_ok,p_fail,decision,mode,latency_us,at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (ticket_id, intent_name, session_id, n, not_ok, p_fail, decision, mode, latency_us, now),
+    )
+    conn.commit()
+    reason = f"{not_ok}/{n} runs not ok in 30d, p_fail={p_fail:.2f}, {latency_us}us"
+    _policy_event(session_id, decision, mode, intent_name, reason, now)
+    if decision != "allow":
+        log(f"[estate] policy {mode}: would {decision} {intent_name} -- {reason}")
+    if mode != "enforce":
+        return decision, reason
+    if decision == "refuse":
+        close_ticket(conn, ticket_id, "halted", f"policy refused: {reason}")
+        log(f"[estate] policy refused {intent_name}: {reason}")
+        sys.exit(3)
+    if decision == "hold":
+        _t.sleep(min(POLICY_HOLD_MAX_S, POLICY_HOLD_MAX_S * p_fail))
+    return decision, reason
+
+def _policy_event(session_id, decision, mode, intent_name, reason, now):
+    # One estate.agent gate event per decision, through the same outbox fleetview-backend
+    # drains to NATS (outbox.py schema), so /fleet shows the gate deciding on real actions.
+    verdict = "pass" if decision == "allow" else "refuse"
+    payload = {
+        "session_id": session_id or "direct",
+        "runtime": "claude-code",
+        "kind": "gate",
+        "at": now,
+        "phase": "executing",
+        "tool": {"name": "estate-execute", "target": intent_name},
+        "gate": {
+            "name": f"estate-policy:{mode}",
+            "verdict": verdict,
+            "reason": f"{decision}: {reason}",
+        },
+    }
+    try:
+        ob = sqlite3.connect(str(HOME / ".estate" / "outbox.db"), timeout=1)
+        ob.execute("""
+            CREATE TABLE IF NOT EXISTS outbox (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at REAL NOT NULL,
+                session_id TEXT NOT NULL,
+                runtime TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                retries INTEGER NOT NULL DEFAULT 0,
+                last_attempt_at REAL,
+                next_attempt_at REAL,
+                error TEXT
+            )
+        """)
+        import time as _t
+        ob.execute(
+            "INSERT INTO outbox (created_at,session_id,runtime,kind,phase,payload,next_attempt_at) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (_t.time(), payload["session_id"], "claude-code", "gate", "executing",
+             json.dumps(payload), _t.time()),
+        )
+        ob.commit()
+        ob.close()
+    except sqlite3.Error as exc:  # the gate never fails an intent because the bus is busy
+        log(f"[estate] policy event not queued: {exc}")
 
 # ---- Ticket ops ----------------------------------------------------------
 def open_ticket(conn, intent_name, harness, goal=""):
@@ -350,6 +465,7 @@ def cmd_run(intent_name, raw_args):
     args = resolve_args(intent, raw_args)
     ticket_id = open_ticket(conn, intent_name, "direct")
     log(f"[estate] intent={intent_name}  ticket={ticket_id}")
+    policy_decide(conn, ticket_id, intent_name, os.environ.get("ESTATE_SESSION_ID", ""))
 
     STEP_OUTPUTS.clear()
     status = run_steps(conn, ticket_id, intent, args)
@@ -373,6 +489,7 @@ def cmd_harness(harness_name, intent_name, goal, raw_args):
     args = resolve_args(intent, raw_args)
     ticket_id = open_ticket(conn, intent_name, harness_name, goal)
     log(f"[estate] intent={intent_name}  ticket={ticket_id}  harness={harness_name}")
+    policy_decide(conn, ticket_id, intent_name, os.environ.get("ESTATE_SESSION_ID", ""))
 
     # --- Build session HOME with allowlisted tools + runtime deps -------
     tools = intent.get("tools", [])
