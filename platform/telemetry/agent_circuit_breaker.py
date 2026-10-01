@@ -8,6 +8,8 @@ and trips early on loop patterns detected in 5-turn windows.
 
 import hashlib
 import logging
+import re
+import time
 from collections import deque, defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +18,43 @@ from typing import Optional, Literal
 from platform.eval.protocol import ControlLoop, GateDecision, LoopHealth
 
 logger = logging.getLogger(__name__)
+
+# Billing and quota exhaustion only. A bare "402" matches request ids and token counts, and
+# RESOURCE_EXHAUSTED is Gemini's ordinary 429, so neither is here; 402 counts only as a status.
+BILLING_ERROR = re.compile(
+    r"insufficient_quota|billing_not_active|exceeded_current_quota|quota_exceeded"
+    r"|payment[_ ]required|credit_balance_exhausted|credit balance is too low"
+    r"|\b(?:status|http|code)[^0-9]{0,4}402\b",
+    re.IGNORECASE,
+)
+QUARANTINE_TTL_S = 15 * 60
+
+
+class QuarantineSet:
+    """A set whose members lapse after ttl_s, so a quarantined provider comes back on its own."""
+
+    def __init__(self, ttl_s: float, clock=time.monotonic):
+        self.ttl_s, self._clock, self._until = ttl_s, clock, {}
+
+    def add(self, member: str) -> None:
+        self._until[member] = self._clock() + self.ttl_s
+
+    def discard(self, member: str) -> None:
+        self._until.pop(member, None)
+
+    def _live(self) -> list[str]:
+        now = self._clock()
+        self._until = {m: t for m, t in self._until.items() if t > now}
+        return list(self._until)
+
+    def __contains__(self, member: object) -> bool:
+        return member in self._live()
+
+    def __iter__(self):
+        return iter(self._live())
+
+    def __len__(self) -> int:
+        return len(self._live())
 
 
 class CircuitBreakerTripped(Exception):
@@ -113,6 +152,27 @@ class AgentCircuitBreaker(ControlLoop):
         self.state_node_history = deque(maxlen=window_size)
         self.goal_changes = 0
         self.last_goal = None
+        # A provider out of credit is skipped by the routers until its quarantine lapses; the
+        # agent itself keeps running on the next provider, so this never trips the circuit.
+        self.quarantined_providers = QuarantineSet(ttl_s=QUARANTINE_TTL_S)
+
+    def _detect_billing_error(self, span: dict) -> None:
+        """Quarantine the provider behind a billing or quota error, for QUARANTINE_TTL_S."""
+        error_msg = span.get("error") or span.get("error_message") or ""
+        if not error_msg or not BILLING_ERROR.search(error_msg):
+            return
+        provider = (
+            span.get("provider")
+            or span.get("tool_name")
+            or span.get("model", "unknown_provider")
+        )
+        self.quarantined_providers.add(provider)
+        logger.error(
+            "billing/quota exhaustion, quarantining %r for %ss: %s",
+            provider,
+            QUARANTINE_TTL_S,
+            error_msg,
+        )
 
     def on_span(self, span: dict) -> None:
         """
@@ -168,6 +228,7 @@ class AgentCircuitBreaker(ControlLoop):
         self._detect_context_exhaustion(span)
         self._detect_rate_limit_backoff()
         self._detect_dead_end_paths(span)
+        self._detect_billing_error(span)
 
         # Mark fault flags on span
         if self.faults_detected:
