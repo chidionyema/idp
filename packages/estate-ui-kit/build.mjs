@@ -99,4 +99,25 @@ export const STATE_WORD: Record<State, string> = { red: 'Red', needs: 'Needs you
 `;
 writeFileSync(join(here, 'dist/tokens.ts'), ts);
 
+
+// ---- brands ------------------------------------------------------------------------------
+// brands/<name>.json overrides colours only, per theme, for one product. Emitted as
+// dist/brands/<name>.css to import after tokens.css. guards/contrast.mjs grades each brand too.
+import { readdirSync, existsSync } from "node:fs";
+const brandsDir = join(here, 'brands');
+if (existsSync(brandsDir)) {
+  mkdirSync(join(here, 'dist/brands'), { recursive: true });
+  for (const f of readdirSync(brandsDir).filter((x) => x.endsWith('.json'))) {
+    const name = f.replace(/\.json$/, '');
+    const b = JSON.parse(readFileSync(join(brandsDir, f), 'utf8'));
+    const known = new Set(walk(tokens.color.light).map(([p]) => p.at(-1)));
+    for (const theme of ['light', 'dark']) for (const k of Object.keys(b[theme] ?? {})) if (!known.has(k)) { console.error(`brand ${name}: unknown colour "${k}"`); process.exit(1); }
+    const decl = (o) => Object.entries(o).map(([k, v]) => `  --color-${k}: ${v};`).join('\n');
+    const css = `/* Generated from brands/${name}.json by build.mjs. Import after tokens.css. */\n:root {\n${decl(b.light ?? {})}\n}\n` +
+      (Object.keys(b.dark ?? {}).length ? `@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {\n${decl(b.dark)}\n  }\n}\n:root[data-theme="dark"] {\n${decl(b.dark)}\n}\n` : '');
+    writeFileSync(join(here, 'dist/brands', `${name}.css`), css);
+    console.log(`brand ${name}: ${Object.keys(b.light ?? {}).length} light, ${Object.keys(b.dark ?? {}).length} dark overrides → dist/brands/${name}.css`);
+  }
+}
+
 console.log(`built: ${names.length} colours × 2 themes, ${walk(tokens.type).length} type steps, ${walk(tokens.space).length} space steps → dist/`);

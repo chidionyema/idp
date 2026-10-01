@@ -1,0 +1,17 @@
+{
+  "$description": "mumchimp.com brand on the estate kit (crew#700 CP1). Only colours may be overridden here; type, space, radius and motion are the kit's. Values are the designer's Brand v3 paper/ink (docs/design/mumchimp-build-bundle) and the Store.Web tokens.css they were shipped as; the contrast guard grades every pair in both themes.",
+  "light": {
+    "canvas":        "#fafaf7",
+    "surface-1":     "#f3f2ee",
+    "surface-2":     "#ffffff",
+    "surface-3":     "#edece6",
+    "border-subtle": "#eeede8",
+    "border":        "#e7e7e1",
+    "text":          "#17191c",
+    "text-2":        "#565b62",
+    "accent":        "#2447c9",
+    "accent-pressed":"#1b3aa8",
+    "accent-soft":   "#eaeefb"
+  },
+  "dark": {}
+}

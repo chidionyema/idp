@@ -22,7 +22,8 @@
     "./tokens": "./dist/tokens.ts",
     ".": "./src/index.ts",
     "./templates": "./src/templates/index.ts",
-    "./voice": "./src/voice/useEstateVoice.ts"
+    "./voice": "./src/voice/useEstateVoice.ts",
+    "./brands/*": "./dist/brands/*"
   },
   "peerDependencies": {
     "react": "^19.0.0",
