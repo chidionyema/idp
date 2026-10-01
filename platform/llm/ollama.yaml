@@ -19,6 +19,8 @@ metadata:
   name: ollama-models
   namespace: llm
 spec:
+  # Node-local (platform/local-path): a 5 Gi model cache is not worth a 50 GB OCI block volume.
+  storageClassName: local-path
   accessModes: [ReadWriteOnce]
   resources: {requests: {storage: 5Gi}}
 ---
