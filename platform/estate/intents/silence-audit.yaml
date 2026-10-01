@@ -1,0 +1,15 @@
+name: silence-audit
+description: >-
+  Founder law 2026-09-30: nothing runs without monitoring and alerts, nothing fails silently.
+  Grades the alert pipeline (Prometheus, Alertmanager, kube-state-metrics, operator), then every
+  Deployment/StatefulSet/DaemonSet/CronJob outside kube-system: state (ok/zero/pending/crashloop/
+  never-ran/stale-cron), Flux owner or ORPHAN, and whether any PrometheusRule names it. Verdict
+  per workload HEARD / SILENT / DEAD; Flux rows not Ready; platform/ dirs with no row. Exit 1 on
+  any SILENT or a dead pipeline. json=true for the collector.
+halt_on_failure: false
+args:
+  json: {type: bool, default: false}
+  repo: {type: string, default: "~/Documents/code/idp"}
+steps:
+  - name: audit
+    cmd: python3 ~/.estate/libexec/silence-audit.py --repo {{repo}} --json-flag {{json}}
