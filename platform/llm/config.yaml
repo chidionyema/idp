@@ -125,6 +125,23 @@ model_list:
       # oversized turn is refused by the estate rather than by the vendor mid-failover.
       max_input_tokens: 204800
 
+  # Coding only. The plan's usage policy (docs.z.ai devpack/usage-policy, read
+  # 2026-10-01): "GLM Coding Plan may only be used within officially supported tools
+  # and products". So this lane sits in no pool and no fallback chain: nothing reaches
+  # it unless a coding harness picks `glm` by name, and the router's own background work
+  # (shadow folds, voice, bulk) can never land on it.
+  #
+  # Flat rate: the plan bills by the month, so the marginal token is $0 until the plan's
+  # concurrency limit (Lite: one project at a time). Priced at zero on purpose.
+  - model_name: glm
+    litellm_params:
+      model: openai/glm-5.3
+      api_base: https://api.z.ai/api/coding/paas/v4
+      api_key: os.environ/ZAI_API_KEY
+      timeout: 300
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
   # The ceiling is Google's, measured, not chosen here. On 2026-09-08 the router pod's
   # 429 bodies carried quotaId `GenerateContentPaidTierInputTokensPerModelPerMinute`,
   # quotaValue "1000000", quotaDimensions {model: gemini-2.5-flash, location: global}, and
