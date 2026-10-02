@@ -15,6 +15,7 @@ resources:
   - ns-fences.yaml
   - backstage.yaml
   - voice-router.yaml
+  - jit.yaml
   - epistemic-fabric.yaml
   - unified-memory.yaml
   - research.yaml
