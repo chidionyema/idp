@@ -34,6 +34,13 @@ CUE_SUBJECT = "estate.cinema.cue"
 # The director's news stream. Subjects estate.news.story.<channel>; the stream (ESTATE_NEWS,
 # 24h max_age) is created by the director, not here -- subscribe_stories only ever reads it.
 STORY_SUBJECTS = "estate.news.story.>"
+
+# Estate streams — created on first use so they survive the bus restarting without hand-apply.
+# crew#1013: Agents, News and Approvals streams must exist for FleetView's channels to replay.
+ESTATE_NEWS_NAME = "ESTATE_NEWS"
+ESTATE_NEWS_SUBJECTS = ["estate.news.story.>"]
+ESTATE_APPROVALS_NAME = "ESTATE_APPROVALS"
+ESTATE_APPROVALS_SUBJECTS = ["estate.approvals.>"]
 STORY_REPLAY_S = 3600
 # The 15-minute TTL in nanoseconds, matching outbox.py's TTL_S. The drain side expires a row
 # after TTL_S seconds; the stream's max_age is the same span in nanos so the two ends of the
@@ -50,32 +57,51 @@ CONNECT_TIMEOUT = 2.0
 
 
 async def _ensure_stream(js) -> None:
-    """Create the estate-agent stream on first use. Idempotent: a stream that already exists
-    raises the server's own 'stream name already in use' (error 10058); that exact refusal is
-    swallowed, anything else re-raises. Without this, the first publish to an uncovered subject
-    is a 503 NoStreamResponseError and the board's /stream has no durable replay -- the defect
-    this function exists to remove.
+    """Create the ESTATE_AGENT stream on first use. Idempotent."""
+    await _ensure_stream_by_name(js, STREAM_NAME, STREAM_SUBJECTS)
 
-    Uses the same nats-py JetStream API the outbox drains through, so the stream is provisioned
-    by whichever caller publishes first, never a hand-created object that lives in nobody's
-    checkout (AGENTS.md: never hand-apply).
+
+async def _ensure_stream_by_name(js, name: str, subjects: list[str]) -> None:
+    """Create a named JetStream stream on first use. Idempotent: a stream that already exists
+    raises the server's own 'stream name already in use' (error 10058); that exact refusal is
+    swallowed, anything else re-raises.
+
+    crew#1013: every estate stream is created here, never by hand-apply, so it survives the
+    bus restarting without anyone touching a kubectl command.
     """
     try:
-        await js.add_stream(
-            name=STREAM_NAME,
-            subjects=STREAM_SUBJECTS,
-            # nats-py's StreamConfig.max_age is a float in SECONDS on the client, but the
-            # server and outbox.py agree on NANOSECONDS. Pass the nano value raw so the
-            # recorder's add_stream sees the same number the drain side emits.
-            max_age=STREAM_MAX_AGE_NS,
-        )
+        await js.add_stream(name=name, subjects=subjects, max_age=STREAM_MAX_AGE_NS)
     except Exception as exc:  # noqa: BLE001 — only the 'already exists' refusal is harmless
-        # nats-py raises ApiError for a 10058; match on its description rather than the class,
-        # because the message text ('stream name already in use') is the stable signal.
         text = str(exc)
         if "already in use" in text or "stream name already in use" in text:
             return
         raise
+
+
+async def ensure_estate_streams(nats_url: str) -> None:
+    """Ensure all three estate streams exist. Idempotent; safe to call on every startup.
+
+    crew#1013: agents (ESTATE_AGENT), news (ESTATE_NEWS) and approvals (ESTATE_APPROVALS)
+    streams must exist for FleetView's channels to replay events that arrived while it was closed.
+    """
+    _require_nats()
+    import nats
+
+    nc = await nats.connect(
+        _nats_url(nats_url),
+        max_reconnect_attempts=CONNECT_MAX_RECONNECT_ATTEMPTS,
+        reconnect_time_wait=CONNECT_RECONNECT_TIME_WAIT,
+        connect_timeout=CONNECT_TIMEOUT,
+    )
+    try:
+        js = nc.jetstream()
+        await _ensure_stream_by_name(js, STREAM_NAME, STREAM_SUBJECTS)
+        await _ensure_stream_by_name(js, ESTATE_NEWS_NAME, ESTATE_NEWS_SUBJECTS)
+        await _ensure_stream_by_name(
+            js, ESTATE_APPROVALS_NAME, ESTATE_APPROVALS_SUBJECTS
+        )
+    finally:
+        await nc.drain()
 
 
 def _nats_url(nats_url: str | None = None) -> str:
@@ -251,6 +277,45 @@ async def subscribe_stories(
         sub = await js.subscribe(STORY_SUBJECTS, ordered_consumer=True, config=config)
         async for on_story in decode_stories(sub.messages):
             yield on_story
+    finally:
+        await nc.drain()
+
+
+async def subscribe_approvals(
+    nats_url: str, replay_s: int = 3600
+) -> AsyncGenerator[dict, None]:
+    """Subscribe to `estate.approvals.>` and yield decoded approval/rejection dicts.
+
+    An ordered push consumer starting from `now - replay_s` -- the "while you were away"
+    rundown on connect, so an approval that arrived while FleetView was closed appears
+    when it opens (crew#1013).
+    Raises when the stream is absent (the caller's isolated() wrapper turns that into a
+    logged, isolated end, not a dead /stream).
+    Raises RuntimeError("nats-py not installed") when nats-py is absent.
+    """
+    _require_nats()
+    import nats
+    from nats.js import api as js_api
+
+    nc = await nats.connect(_nats_url(nats_url))
+    try:
+        js = nc.jetstream()
+        start_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=replay_s)
+        config = js_api.ConsumerConfig(
+            deliver_policy=js_api.DeliverPolicy.BY_START_TIME,
+            opt_start_time=start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+        sub = await js.subscribe(
+            "estate.approvals.>", ordered_consumer=True, config=config
+        )
+        async for msg in sub.messages:
+            await msg.ack()
+            try:
+                obj = json.loads(msg.data)
+            except (ValueError, UnicodeDecodeError):
+                continue
+            if isinstance(obj, dict) and obj.get("ledger_id"):
+                yield obj
     finally:
         await nc.drain()
 

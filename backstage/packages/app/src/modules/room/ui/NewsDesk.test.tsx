@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import NewsDesk from './NewsDesk.tsx';
 import { emptyRundown } from './newsRundown';
 import type { Rundown, Story } from './newsRundown';
@@ -35,15 +35,28 @@ function rundownWith(stories: Story[]): Rundown {
 }
 
 describe('NewsDesk', () => {
-  it('renders the on-screen story headline, anchor, and meta', () => {
+  it('is dark until summoned: nothing is rendered over the void', () => {
+    const story = makeStory({});
+    const { container } = render(
+      <NewsDesk rundown={rundownWith([story])} channel={0} breaking={null} nowMs={NOW} />,
+    );
+
+    // THE ZERO-CHROME CONTRACT: with nothing summoned and nothing breaking, the desk renders no
+    // visible node at all -- no persistent bar, ribbon or badge over the void.
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('news-bug')).toBeNull();
+    expect(screen.queryByTestId('news-lower-third')).toBeNull();
+  });
+
+  it('renders the on-screen story headline, anchor, and meta when summoned', () => {
     const story = makeStory({ count: 6 });
     render(
       <NewsDesk
         rundown={rundownWith([story])}
         channel={0}
-        onChannel={() => {}}
         breaking={null}
         nowMs={NOW}
+        summoned
       />,
     );
 
@@ -62,9 +75,9 @@ describe('NewsDesk', () => {
       <NewsDesk
         rundown={rundownWith([confirmed])}
         channel={0}
-        onChannel={() => {}}
         breaking={null}
         nowMs={NOW}
+        summoned
       />,
     );
     expect(screen.getByTestId('news-bug')).toHaveTextContent('LIVE');
@@ -74,9 +87,9 @@ describe('NewsDesk', () => {
       <NewsDesk
         rundown={rundownWith([reported])}
         channel={0}
-        onChannel={() => {}}
         breaking={null}
         nowMs={NOW}
+        summoned
       />,
     );
     expect(screen.getByTestId('news-bug')).not.toHaveTextContent('LIVE');
@@ -89,7 +102,6 @@ describe('NewsDesk', () => {
       <NewsDesk
         rundown={rundownWith([story])}
         channel={0}
-        onChannel={() => {}}
         breaking={story}
         nowMs={NOW}
       />,
@@ -98,62 +110,37 @@ describe('NewsDesk', () => {
     expect(screen.getByTestId('news-breaking')).toHaveTextContent(story.headline);
 
     rerender(
-      <NewsDesk
-        rundown={rundownWith([story])}
-        channel={0}
-        onChannel={() => {}}
-        breaking={null}
-        nowMs={NOW}
-      />,
+      <NewsDesk rundown={rundownWith([story])} channel={0} breaking={null} nowMs={NOW} />,
     );
     expect(screen.queryByTestId('news-breaking')).toBeNull();
   });
 
-  it('hides the lower third and crawl on channel 6 (MOVIE)', () => {
+  it('renders nothing on channel 6 (MOVIE) even when summoned', () => {
     const story = makeStory({});
-    render(
+    const { container } = render(
       <NewsDesk
         rundown={rundownWith([story])}
         channel={6}
-        onChannel={() => {}}
         breaking={null}
         nowMs={NOW}
+        summoned
       />,
     );
-    expect(screen.getByTestId('news-bug')).toBeInTheDocument();
-    expect(screen.getByTestId('news-channels')).toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('news-bug')).toBeNull();
     expect(screen.queryByTestId('news-lower-third')).toBeNull();
-    expect(screen.queryByTestId('news-crawl')).toBeNull();
   });
 
-  it('calls onChannel(3) when the chip for channel 3 is clicked', () => {
-    let clicked: number | null = null;
+  it('shows the empty-channel message when the summoned channel has no stories', () => {
     render(
       <NewsDesk
         rundown={emptyRundown()}
         channel={0}
-        onChannel={n => {
-          clicked = n;
-        }}
         breaking={null}
         nowMs={NOW}
-      />,
-    );
-    fireEvent.click(screen.getByTestId('news-chip-3'));
-    expect(clicked).toBe(3);
-  });
-
-  it('shows the empty-channel message when the channel has no stories', () => {
-    render(
-      <NewsDesk
-        rundown={emptyRundown()}
-        channel={0}
-        onChannel={() => {}}
-        breaking={null}
-        nowMs={NOW}
+        summoned
       />,
     );
     expect(screen.getByTestId('news-lower-third')).toHaveTextContent('NO STORIES · NEWS');
-    expect(screen.getByTestId('news-crawl')).toHaveTextContent('quiet on this channel');
   });
 });

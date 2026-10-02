@@ -26,6 +26,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 # fleetview_backend is installed as a package. All modules use normal imports.
 from fleetview_backend import (
+    approvals_adapter,
     claude_code_adapter,
     executor_link,
     metrics,
@@ -38,6 +39,12 @@ from fleetview_backend import (
 async def lifespan(app: FastAPI):
     nats_url = os.environ.get("NATS_URL", "")
     if nats_url:
+        # crew#1013: ensure all three estate streams exist before any adapter starts publishing.
+        # Idempotent — safe to call every startup; the bus already knows streams that exist.
+        try:
+            await nats_adapter.ensure_estate_streams(nats_url)
+        except Exception:  # noqa: BLE001, S110 -- bus may be down; adapters retry on publish
+            pass
         ledger_prefix = os.environ.get("ESTATE_STATE_PATH_PREFIX") or None
         try:
             asyncio.create_task(
@@ -45,6 +52,7 @@ async def lifespan(app: FastAPI):
             )
         except Exception:  # noqa: BLE001, S110 -- adapter startup failure must not break the app
             pass
+        asyncio.create_task(approvals_adapter.run_approvals_adapter(nats_url))
         from fleetview_backend import efficiency_feed
 
         asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
@@ -101,11 +109,16 @@ def build_app() -> FastAPI:
                 async for on, story in nats_adapter.subscribe_stories(nats_url):
                     yield routes.story_frame(on, story)
 
+            async def _approvals():
+                async for approval in nats_adapter.subscribe_approvals(nats_url):
+                    yield f"data: {__import__('json').json.dumps({'type': 'approval', **approval})}\n\n"
+
             last_hb = asyncio.get_event_loop().time()
             merged = nats_adapter.merge(
                 nats_adapter.isolated("events", _events()),
                 nats_adapter.isolated("cues", _cues()),
                 nats_adapter.isolated("stories", _stories()),
+                nats_adapter.isolated("approvals", _approvals()),
             )
             async for frame in merged:
                 yield frame

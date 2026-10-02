@@ -461,6 +461,8 @@ def strip_reasoning(text: str) -> str:
     before a bare closing tag is reasoning too.
     """
     if "</think>" in text and "<think>" not in text.split("</think>")[0]:
+        # An opener the template already consumed means everything before the bare closer is
+        # reasoning too.  Strip it, keeping only what comes after.
         text = text.split("</think>", 1)[1]
     return _THINK.sub("", text).strip()
 
