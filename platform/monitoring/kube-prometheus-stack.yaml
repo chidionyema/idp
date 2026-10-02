@@ -52,6 +52,24 @@ spec:
                 labels:
                   backstage.io/kubernetes-id: founder-alerts
   interval: 10m
+  # Founder law 2026-09-30: nothing runs without monitoring and alerts, and the alert pipeline
+  # itself can never be silent. Measured 2026-09-30: this release read Ready ("Helm upgrade
+  # succeeded", 2026-09-26T10:01Z) while prometheus-kps, alertmanager-kps, kps-operator and
+  # kube-state-metrics all sat at spec.replicas 0, scaled by hand after the upgrade; 126 alert
+  # rules were defined and none evaluated for four days, and nobody was told. helm-controller
+  # only renders on a spec change, so nothing put them back. driftDetection re-applies the chart
+  # every interval, so a hand scale of the pipeline lasts at most 10m. The operator writes the
+  # admission webhooks' caBundle and the CRD conversion at runtime; those are ignored so the
+  # correction never undoes them.
+  driftDetection:
+    mode: enabled
+    ignore:
+      - paths: ["/webhooks"]
+        target: { kind: ValidatingWebhookConfiguration }
+      - paths: ["/webhooks"]
+        target: { kind: MutatingWebhookConfiguration }
+      - paths: ["/spec/conversion"]
+        target: { kind: CustomResourceDefinition }
   timeout: 15m
   chart:
     spec:
