@@ -1877,10 +1877,14 @@ export default function FleetReactorApp() {
            <button 
              onClick={toggleBlast}
              disabled={!uiState.selectedNodeId}
-             className={`px-6 py-3 rounded-lg border backdrop-blur-md text-xs font-bold uppercase tracking-widest transition-all duration-300 
+             /* crew#1017: the disabled state was text-white/10 on bg-transparent WITH a
+                backdrop-blur -- a near-invisible label over a dark smear ("unreadable, black
+                blob", 2026-10-02). Disabled is now legible glass like the rest of the HUD,
+                and the blur moves to the active states only, where it has something to blur. */
+             className={`px-6 py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all duration-300 
                ${uiState.blastMode 
-                 ? 'bg-red-500/20 border-red-500 text-red-400 shadow-[0_0_20px_rgba(255,0,0,0.4)]' 
-                 : (uiState.selectedNodeId ? 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-cyan-500/50 hover:text-cyan-400 hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-transparent border-white/5 text-white/10 cursor-not-allowed')
+                 ? 'bg-red-500/20 border-red-500 text-red-400 backdrop-blur-md shadow-[0_0_20px_rgba(255,0,0,0.4)]' 
+                 : (uiState.selectedNodeId ? 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-cyan-500/50 hover:text-cyan-400 backdrop-blur-md hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-black/40 border-white/15 text-white/35 cursor-not-allowed')
                }`}
            >
              {uiState.blastMode ? '[ Cancel Sonar ]' : '[ Blast Radius Sonar ]'}
@@ -2374,18 +2378,25 @@ export default function FleetReactorApp() {
             data-testid="panel-open"
             onClick={() => setPanelOpen(true)}
             title="open the fleet panel"
+            aria-label={`fleet panel: ${rows.filter((r) => r.activity === 'stuck').length} stuck, ${rows.filter((r) => r.activity === 'thinking').length} thinking, ${rows.filter((r) => r.activity === 'waiting').length} waiting`}
             className="absolute top-36 left-4 z-30 flex items-center gap-2 px-2 py-1.5 rounded-md bg-black/40 border border-white/10 backdrop-blur-sm cursor-pointer hover:border-cyan-500/40"
           >
             <span className="text-[10px] font-mono text-white/45">▤</span>
-            <span className="flex items-baseline gap-2">
-              {(['stuck', 'thinking', 'waiting'] as const).map((a) => {
-                const n = rows.filter((r) => r.activity === a).length;
-                return (
-                  <span key={a} className="text-[10px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.2)' }}>
-                    {n}
-                  </span>
-                );
-              })}
+            {/* THE NUMBERS WERE LABELLED BY COLOUR ALONE (founder 2026-10-02: "a small chip
+                floats with no label"). Colour is not a label -- the three numbers now say what
+                they are, at 8px, once, under the counts they belong to. */}
+            <span className="flex flex-col items-start gap-0.5">
+              <span className="flex items-baseline gap-2">
+                {(['stuck', 'thinking', 'waiting'] as const).map((a) => {
+                  const n = rows.filter((r) => r.activity === a).length;
+                  return (
+                    <span key={a} className="text-[10px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.2)' }}>
+                      {n}
+                    </span>
+                  );
+                })}
+              </span>
+              <span className="text-[8px] font-mono text-white/35 tracking-wider">stuck · think · wait</span>
             </span>
           </button>
         ) : (
@@ -2683,8 +2694,10 @@ export default function FleetReactorApp() {
           </div>
         ) : null}
       
-        {/* 3. THE CONTROLS: mic, voice picker. */}
-        <div className="flex items-center gap-3">
+        {/* 3. THE CONTROLS: mic, voice picker. One glass pill behind the pair (crew#1017:
+            bare controls floated over passing nodes and read as an accident, not an
+            instrument); same idiom as every other surface on this page. */}
+        <div className="flex items-center gap-3 px-2 py-1.5 rounded-full bg-black/45 border border-white/10 backdrop-blur-md">
           <button
             data-testid="fleet-mic"
             onClick={openVoice}
