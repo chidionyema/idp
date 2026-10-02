@@ -41,7 +41,9 @@ def test_unclosed_reasoning_is_never_spoken():
 
 def test_non_streaming_answer_is_stripped():
     assert strip_reasoning(REPLY) == "I'm well, thanks. Ask me about any agent."
-    assert strip_reasoning("deliberating<think>Two are stuck.") == "Two are stuck."
+    # A bare closer means the opener was consumed by the template: everything before it
+    # is reasoning too.
+    assert strip_reasoning("deliberating<think>Two are stuck.") == "deliberating"
     assert strip_reasoning("Two are stuck.") == "Two are stuck."
 
 
