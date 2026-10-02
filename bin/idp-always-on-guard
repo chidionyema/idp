@@ -8,6 +8,19 @@ invisible to both. Backstage was manually restored the next day; estate-mcp and 
 were not, and sat orphaned at 0/0 for two days. This compares the always-on Kustomization
 names committed on the base ref against the working tree and fails if any name present on
 the base ref is missing now -- the inventory may only grow.
+
+THE SECOND INCIDENT. clusters/oke/quad-ledger.yaml was committed (390ec4875, 2026-09-27) and
+never listed in clusters/oke/kustomization.yaml resources:. Flux builds ./clusters/oke from
+that list, so the quad-ledger Kustomization was never created and the quad namespace never
+existed; quad.ledger-verify exited 1 with 'namespaces "quad" not found' for a month. The drop
+check above cannot see it: the file is still in the tree, so its names are in current_all and
+nothing is missing. kubeconform and `kustomize build` cannot see it either -- both validate
+whatever the manifest builds, and an unlisted file is not in what it builds. The file's own
+header claimed 'a test pins this list to the directory'; no such test existed. This is it.
+
+The same walk therefore also refuses a clusters/oke/*.yaml that is not reachable from
+resources:, so 'the row was added to the tree but never wired to Flux' is a red CI rather
+than a silent month.
 """
 import os
 import re
@@ -100,6 +113,51 @@ def working_tree_names():
     return all_names, on_names
 
 
+def wired_resources():
+    """Every path reachable from clusters/oke/kustomization.yaml resources:.
+
+    Returns the set of entry strings as written (file names and sub-directory names). A file
+    is applied by Flux only if it appears here; anything else in the directory is orphaned.
+    Returns None when there is no kustomization.yaml at all: with no manifest there is no
+    list to be missing from, and every file is trivially 'not in it'. Fixtures and throwaway
+    repos that carry a lone Kustomization are legitimate and must not be refused for it.
+    """
+    kfile = REPO_ROOT / CLUSTER_DIR / "kustomization.yaml"
+    if not kfile.exists():
+        return None
+    # A plain scan rather than a yaml dependency: this guard runs in the pre-push hook and in
+    # CI on hosts where PyYAML is not guaranteed, and the shape is a flat list of scalars.
+    entries, in_resources = set(), False
+    for line in kfile.read_text().splitlines():
+        if re.match(r"^\s*resources:\s*$", line):
+            in_resources = True
+            continue
+        if in_resources:
+            m = re.match(r"^\s*-\s*(.+?)\s*$", line)
+            if m:
+                entries.add(m.group(1).strip().strip('"').strip("'"))
+            elif line.strip() and not line.startswith((" ", "\t")):
+                in_resources = False  # a new top-level key ends the list
+    return entries
+
+
+def orphaned_files():
+    """clusters/oke/*.yaml present in the tree but not listed in resources:.
+
+    Returns [] when there is no kustomization.yaml (nothing to be orphaned from).
+    """
+    entries = wired_resources()
+    if entries is None:
+        return []
+    orphans = []
+    for f in sorted((REPO_ROOT / CLUSTER_DIR).glob("*.yaml")):
+        if f.name == "kustomization.yaml":
+            continue
+        if f.name not in entries:
+            orphans.append(f.name)
+    return orphans
+
+
 def main():
     base = base_always_on()
     if base is None:
@@ -117,7 +175,23 @@ def main():
         print("If this is deliberate, demote it to on-demand/none first in its own commit;")
         print("an always-on row must never simply vanish.")
         return 1
-    print(f"idp-always-on-guard: {len(current_on)} always-on Kustomization(s), none dropped")
+    # A file that exists but is not listed in resources: is never applied by Flux, so it is
+    # exactly as absent as one that was deleted -- the same outage, one indirection quieter.
+    orphans = orphaned_files()
+    if orphans:
+        print(
+            f"idp-always-on-guard: FAIL -- {CLUSTER_DIR}/*.yaml present but not wired into "
+            f"{CLUSTER_DIR}/kustomization.yaml resources: (Flux never applies these):"
+        )
+        for name in orphans:
+            print(f"  - {name}")
+        print("Every *.yaml beside kustomization.yaml MUST be listed in its resources:.")
+        print("An unlisted file is silently not applied; add the row, or delete the file.")
+        return 1
+    print(
+        f"idp-always-on-guard: {len(current_on)} always-on Kustomization(s), none dropped, "
+        f"none orphaned"
+    )
     return 0
 
 
