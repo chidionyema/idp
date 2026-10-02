@@ -22,6 +22,12 @@ HEAD_REV="$(git rev-parse HEAD)"
 # before it exists. Bootstrap passes; every subsequent commit is fully enforced because main now
 # carries the pub key. This is the ONLY commit that ever gets this exemption; it is detected by
 # checking the base tree, not by a flag anyone can pass in.
+# A base that does not resolve is not a bootstrap: until 2026-09-29 any git failure here (a typo'd
+# or unfetched base) took the exemption below and passed the PR unchecked.
+if ! git rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
+  echo "FAIL  guarded-paths  base $BASE does not resolve to a commit; refusing rather than guessing"
+  exit 1
+fi
 if ! git show "$BASE:docs/keys/founder.pub" >/dev/null 2>&1; then
   echo "bootstrap  guarded-paths  base $BASE has no docs/keys/founder.pub; this PR introduces the contract"
   echo "           enforcement begins on every commit after this one lands"
@@ -31,7 +37,14 @@ fi
 rc=0
 
 # 1) Guarded-path signature check.
-changed="$(git diff --name-only "$BASE"...HEAD_REV 2>/dev/null || true)"
+# Until 2026-09-29 this read `"$BASE"...HEAD_REV` -- the literal word, not the variable. git
+# refused the revision, `|| true` swallowed the refusal, `changed` was empty, and every PR that
+# touched a guarded path was waved through. A diff that cannot be computed now refuses the PR:
+# a guard that cannot see what changed has to fail closed.
+if ! changed="$(git diff --name-only "$BASE"..."$HEAD_REV")"; then
+  echo "FAIL  guarded-paths  cannot diff $BASE...$HEAD_REV, so cannot tell what this PR touches"
+  exit 1
+fi
 guard_hit=""
 while IFS= read -r g; do
   [ -z "$g" ] && continue
