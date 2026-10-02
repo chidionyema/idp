@@ -344,7 +344,9 @@ SERVICES = [
         # its launcher too: it is what fetches missing speech models, and only runs on a restart
         ("platform/voice-router/", "bin/voice-router-launchd"),
         "http://127.0.0.1:8091/readyz",
-        90,
+        # a start may first fetch 210 MB of speech models (bin/voice-router-launchd): at 90 s the
+        # first such start was judged broken and rolled back while the download was still running
+        600,
     ),
     (
         "ai.estate.fleetview-backend",
