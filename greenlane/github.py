@@ -257,9 +257,20 @@ class GitHubBackend:
                 )
             if not pr:
                 self._ensure_pr(lane, head, rebased, tip)
-        self.git(
-            "push", "-q", "origin", f"{tip}:refs/heads/main"
-        )  # fast-forward, or refused
+        # GitHub's ruleset evaluation lags behind the check-run API: a required check may
+        # show as 'completed' in the API but still be 'queued' in the rules engine for up to
+        # ~30 s.  Retry on that specific error; other failures are fatal.
+        for attempt in range(1, 6):
+            try:
+                self.git("push", "-q", "origin", f"{tip}:refs/heads/main")
+                break
+            except RuntimeError as exc:
+                if attempt < 5 and "is queued" in str(exc):
+                    import time as _time
+
+                    _time.sleep(10 * attempt)
+                    continue
+                raise
         for lane, _, _ in members:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
 
