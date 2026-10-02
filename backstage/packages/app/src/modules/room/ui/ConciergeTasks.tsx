@@ -176,7 +176,11 @@ export default function ConciergeTasks({
   const newest = tasks && tasks.length ? tasks[0] : null;
 
   return (
-    <div className="absolute top-36 right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+    // crew#1017: "'concierge' pill misalignment". This was `top-36` (144px) while the Harv
+    // chip above starts at 8.5rem (136px) and is ~30px tall -- the two pills OVERLAPPED by 22px
+    // and the right rail read as debris, not a stack. The rail is one coordinate system now:
+    // AgentJobs 96px, Harv 136px, concierge 176px, KeySync 216px -- an even 40px pitch.
+    <div className="absolute top-[11rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}

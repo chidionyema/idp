@@ -130,12 +130,16 @@ export default function FleetBackdrop() {
         <div
           style={{
             position: 'absolute',
-            top: 'calc(env(safe-area-inset-top, 0px) + 14px)',
+            top: 'calc(env(safe-area-inset-top, 0px) + 44px)',
             width: '100%',
             textAlign: 'center',
-            fontSize: 12,
+            // crew#1017: "status line tiny/low-contrast". It was 12px at opacity 0.55 --
+            // ambience nobody could read. 13px, near-full ink, and a shadow so it holds over
+            // the moving nodes behind it. It is the estate's pulse line; it deserves to be read.
+            fontSize: 13,
             letterSpacing: 1,
-            opacity: 0.55,
+            color: 'rgba(232,237,245,0.9)',
+            textShadow: '0 1px 8px rgba(11,14,20,0.8)',
           }}
         >
           {line}
