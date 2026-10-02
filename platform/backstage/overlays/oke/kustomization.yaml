@@ -53,7 +53,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-13834-f11d5c3e0d0e066da41e37d0f6b181b40eb68c0f # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-13840-4131f968226c258db700b331be962b580af8c4a3 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's PodDisruptionBudget lives in ../../base/catalogue.yaml. This overlay used to
   # declare a second one as a resource, which made kustomize refuse the entire render; it is an
