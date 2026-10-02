@@ -550,6 +550,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
+      # Both ways or it is decoration: the fixture pair under tests/fixtures/executes/ must
+      # produce a refusal and two passes. A gate that cannot fail is not a gate (LAW 45), and
+      # one that cannot pass correct work is a guard refusing it (LAW 38).
+      - run: bin/test-executes-gate --self-test
+        env:
+          PYTHONPATH: ${{ github.workspace }}
       - run: bin/test-executes-gate "${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}"
 
   # crew#987 CP2: one aggregate check a native GitHub merge queue can gate on, instead of the six
