@@ -1,0 +1,50 @@
+# Layer 4 cannot satisfy require-pod-probes, and the reason is the runtime, not a missing field.
+# Kyverno honours exceptions from namespace kyverno only (crew#325) -- the same placement
+# platform/healing/analyzer/exception.yaml and platform/edge/tailscale-operator-exception.yaml use.
+#
+# Measured 2026-10-03, after the ledger finally reached admission (it had never been built: from
+# 390ec4875 to 3bbd3b2d the row was absent from clusters/oke/kustomization.yaml resources:, and
+# then held Failed on `dependency flux-system/secrets not found`):
+#
+#   Deployment/quad/quad-ledger was blocked due to the following policies
+#   require-pod-probes:
+#     autogen-validate-probes: 'validation failure: Liveness, readiness, or startup probes are
+#     required for all containers.'
+#
+# Every probe shape that policy accepts is unavailable to this container:
+#   * httpGet / tcpSocket: `consume` (cmd/quad-ledger/main.go) calls js.CreateOrUpdateStream and
+#     stream.CreateOrUpdateConsumer and listens on NO port -- ledger.yaml declares no
+#     ports:/containerPort anywhere. There is no address to probe.
+#   * exec (ps, test, sh): the image is gcr.io/distroless/static:nonroot (cmd/quad-ledger/Dockerfile
+#     line 13) and contains no shell and no coreutils. An exec probe would fail permanently and
+#     crash-loop a healthy consumer.
+#   * exec (/quad-ledger verify): the binary's only subcommands are migrate|consume|anchor|verify
+#     (main.go:79-92). `verify` walks the entire hash chain and reads merkle_anchors -- a full DB
+#     scan on a probe period, and it is already the quad-ledger-verify CronJob's job every 15 min.
+#     Running the estate's integrity verification on a liveness timer is both a load problem and a
+#     conflation of "is it alive" with "is the chain correct".
+#
+# So this waives the one rule for the one workload, and NOTHING wider: namespace quad, the
+# quad-ledger Deployment and its pods only. The two CronJobs are not listed -- they are not what
+# admission refused, and a wider match would hide a future real violation.
+#
+# The honest fix is the one this exception stands in for: `consume` should expose liveness it can
+# actually be asked about (a heartbeat row or a unix socket), and then the probe is real rather
+# than waived. That is a change to cmd/quad-ledger/main.go and its own PR, tracked as
+# docs/tickets/2026-10-03-quad-ledger-consume-liveness.md. Until it lands, this exception is a
+# visible debt with a date on it, not a silent carve-out.
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: quad-ledger-no-probes
+  namespace: kyverno
+spec:
+  exceptions:
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+  match:
+    any:
+      - resources:
+          kinds: [Deployment, Pod, ReplicaSet]
+          namespaces: [quad]
+          names: [quad-ledger]
