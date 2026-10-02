@@ -1,0 +1,90 @@
+description: 'Founder 2026-09-28: "Opus plans, Sonnet executes, and that should be
+  impossible to circumvent." Measured that day over the router ledger: opusplan sessions
+  ran Sonnet only (71 sessions), yet 35 interactive sessions pinned Opus with /model
+  and produced 88% of all turns. Question: is Opus running because the router has
+  no enforcement of the plan/execute split at all (the harness setting is the only
+  control), because an enforcement path exists but keys on a plan-mode marker the
+  installed Claude Code does not emit, or because Opus requests are enforced but fail
+  rather than reroute.
+
+  '
+hypotheses:
+- name: H1
+  description: no router-side enforcement exists -- the harness /model setting is
+    the only control, so any session can pin Opus
+  prior: 0.3333333333
+- name: H2
+  description: enforcement exists but keys on a plan-mode marker string the installed
+    Claude Code build does not emit, so no turn is ever classified as a plan turn
+  prior: 0.3333333333
+- name: H3
+  description: enforcement exists and fires, but routed-down Opus calls error instead
+    of completing on the executor, and the error is masked
+  prior: 0.3333333333
+evidence:
+- name: share of turns produced by the 35 pinned interactive sessions vs the 71 opusplan
+    sessions (measured 2026-09-28)
+  observed:
+    pinned-heavy: 1
+    split-even: 0
+  likelihoods:
+    H1:
+      pinned-heavy: 0.9
+      split-even: 0.1
+    H2:
+      pinned-heavy: 0.5
+      split-even: 0.5
+    H3:
+      pinned-heavy: 0.5
+      split-even: 0.5
+- name: non-plan Opus calls in the ledger that returned 4xx from the upstream model
+    (measured 2026-09-28)
+  observed:
+    none: 1
+    some: 0
+  likelihoods:
+    H1:
+      none: 0.6
+      some: 0.4
+    H2:
+      none: 0.6
+      some: 0.4
+    H3:
+      none: 0.05
+      some: 0.95
+- name: presence of a router config/code path that inspects the request model against
+    the plan-mode turn (router config on main at the time of measurement)
+  observed:
+    absent: 1
+    present: 0
+  likelihoods:
+    H1:
+      absent: 0.95
+      present: 0.05
+    H2:
+      present: 0.95
+      absent: 0.05
+    H3:
+      present: 0.95
+      absent: 0.05
+- name: plan-mode marker text injected by the installed Claude Code 2.1.283 binary
+    (read from the binary)
+  observed:
+    stable-marker: 1
+    no-marker: 0
+  likelihoods:
+    H1:
+      stable-marker: 0.6
+      no-marker: 0.4
+    H2:
+      no-marker: 0.95
+      stable-marker: 0.05
+    H3:
+      stable-marker: 0.6
+      no-marker: 0.4
+posteriors:
+  H1: 0.9951503395
+  H2: 0.0024248303
+  H3: 0.0024248303
+winner: H1
+computed_at: '2026-10-02T18:19:05Z'
