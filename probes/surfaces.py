@@ -65,7 +65,9 @@ def enumerate_inventory() -> dict[str, list[str]]:
         src = _read(f)
         # ONLY frontend-module route mounts are app pages; bare path= strings are proxy
         # prefixes, links and config literals and must not leak into the page inventory
-        for m in re.finditer(r'mountRoute\s*\(\s*[^,]+,\s*["\'](/[A-Za-z0-9_\-]+)["\']', src):
+        for m in re.finditer(
+            r'mountRoute\s*\(\s*[^,]+,\s*["\'](/[A-Za-z0-9_\-]+)["\']', src
+        ):
             pages.add(m.group(1))
     inv["pages"] = sorted(pages)
     inv["public_pages"] = sorted(pages & public_seed)
@@ -73,14 +75,18 @@ def enumerate_inventory() -> dict[str, list[str]]:
     # face assets: every file under public/face is load-bearing for the avatar
     inv["face_assets"] = sorted(
         "/face/" + line.split("/")[-1]
-        for line in _git("ls-tree", "-r", "HEAD", "--name-only", _ASSET_DIR).splitlines()
+        for line in _git(
+            "ls-tree", "-r", "HEAD", "--name-only", _ASSET_DIR
+        ).splitlines()
         if line.endswith((".mjs", ".js", ".glb"))
     )
 
     # fleet panels: every component under room/ui (logic modules get behaviour probes in CP2)
     inv["panels"] = sorted(
         line.split("/")[-1].removesuffix(".tsx")
-        for line in _git("ls-tree", "-r", "HEAD", "--name-only", _PANEL_DIR).splitlines()
+        for line in _git(
+            "ls-tree", "-r", "HEAD", "--name-only", _PANEL_DIR
+        ).splitlines()
         if line.endswith(".tsx") and not line.endswith(".test.tsx")
     )
 
@@ -94,7 +100,9 @@ def enumerate_inventory() -> dict[str, list[str]]:
     )
 
     # backend surface: every mounted endpoint
-    endpoints = set(re.findall(r'@app\.(?:get|post|delete|put)\("([^"]+)"', _read(_SERVE)))
+    endpoints = set(
+        re.findall(r'@app\.(?:get|post|delete|put)\("([^"]+)"', _read(_SERVE))
+    )
     endpoints.update(
         re.findall(r'^\s*[A-Z_]*PATH\s*=\s*"([^"]+)"', _read(_ROUTES), re.M)
     )
@@ -109,7 +117,7 @@ _STATE_RE = re.compile(r"EstateVoiceState = ([^;]+);")
 COVERS = {
     "pages": ["l1.pages"],
     "face_assets": ["l1.face_assets"],
-    "panels": ["enumerate.panels"],      # CP2 adds l3.panels.* behaviour probes
+    "panels": ["enumerate.panels"],  # CP2 adds l3.panels.* behaviour probes
     "voice_states": ["enumerate.voice"],  # CP3 adds l4.voice.* conversation probes
     "backend": ["l2.backend.negative"],
 }
@@ -119,9 +127,15 @@ def coverage_gate(inv: dict[str, list[str]]) -> list:
     out = []
     for klass, items in inv.items():
         if not items:
-            out.append(assertion(f"coverage.{klass}", "non-empty enumeration", "EMPTY", False))
+            out.append(
+                assertion(f"coverage.{klass}", "non-empty enumeration", "EMPTY", False)
+            )
             continue
-        out.append(assertion(f"coverage.{klass}", f"{len(items)} features", f"{len(items)}", True))
+        out.append(
+            assertion(
+                f"coverage.{klass}", f"{len(items)} features", f"{len(items)}", True
+            )
+        )
     return out
 
 
@@ -134,7 +148,9 @@ def _looks_like_login(body: str) -> bool:
     return any(m in head for m in LOGIN_MARKERS)
 
 
-def l1_gate_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int = 15) -> list:
+def l1_gate_battery(
+    host: str, inv: dict[str, list[str]], get=http, timeout: int = 15
+) -> list:
     """This is the probe that was missing on 2026-10-02: it fetches /face/brunette.glb
     through catalogue.mumchimp.com and refuses to accept a login redirect (followed
     redirects surface as 200 + HTML sign-in page, so the BODY is graded, not just status)."""
@@ -144,7 +160,9 @@ def l1_gate_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int
     targets += [(a, 1_000, "public") for a in inv["face_assets"]]
     # gated pages signed out: the gate answering with the login page is the CORRECT behaviour;
     # a 200-without-gate would be a security hole and fails here too
-    targets += [(p, None, "gated") for p in inv["pages"] if p not in inv.get("public_pages", [])]
+    targets += [
+        (p, None, "gated") for p in inv["pages"] if p not in inv.get("public_pages", [])
+    ]
     for path, floor, kind in targets:
         status, body = get(f"{host}{path}", timeout=timeout)
         size = len(body or "")
@@ -156,7 +174,9 @@ def l1_gate_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int
         else:
             ok = (bool(login) and status == 200) or status in (401, 403)
             why = "gate present (login page or 401/403) signed-out"
-            got = f"{status}, {size}B" + (", NO GATE" if not login and status not in (401, 403) else "")
+            got = f"{status}, {size}B" + (
+                ", NO GATE" if not login and status not in (401, 403) else ""
+            )
         out.append(assertion(f"l1.gate{path}", why, got, ok))
     return out
 
@@ -167,7 +187,9 @@ def l2_auth_negative(host: str, inv: dict[str, list[str]], get=http) -> list:
     for ep in inv["backend"][:6]:  # sample per run; full sweep in CI (vault identity)
         status, _ = get(f"{host}{ep}", bearer="definitely-not-a-token", timeout=15)
         ok = status in (401, 403)
-        out.append(assertion(f"l2.backend.negative{ep}", "refused (401/403)", f"{status}", ok))
+        out.append(
+            assertion(f"l2.backend.negative{ep}", "refused (401/403)", f"{status}", ok)
+        )
     return out
 
 
@@ -184,11 +206,17 @@ if __name__ == "__main__":
     host = sys.argv[1] if len(sys.argv) > 1 else "https://catalogue.mumchimp.com"
     inv = enumerate_inventory()
     fails = 0
-    lines = coverage_gate(inv) + l1_gate_battery(host, inv) + l2_auth_negative(host, inv)
+    lines = (
+        coverage_gate(inv) + l1_gate_battery(host, inv) + l2_auth_negative(host, inv)
+    )
     for a in lines:
         verdict = "PASS" if a["ok"] else "FAIL"
         fails += 0 if a["ok"] else 1
-        print(f"{verdict}  surfaces.{a['name']}  expected={a['expected']} got={a['actual']}")
-    print(f"--- inventory: {sum(len(v) for v in inv.values())} features "
-          f"({', '.join(f'{k}={len(v)}' for k, v in inv.items())})")
+        print(
+            f"{verdict}  surfaces.{a['name']}  expected={a['expected']} got={a['actual']}"
+        )
+    print(
+        f"--- inventory: {sum(len(v) for v in inv.values())} features "
+        f"({', '.join(f'{k}={len(v)}' for k, v in inv.items())})"
+    )
     sys.exit(1 if fails else 0)

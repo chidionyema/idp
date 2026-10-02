@@ -138,9 +138,111 @@ SOCKET_PATH = os.environ.get(
     "IDP_EXECUTOR_SOCKET", os.path.expanduser("~/.estate/executor.sock")
 )
 
-# The ceiling is enforced with the platform's own bound, not by asking politely. `timeout` is the
-# mature tool for this and it is already on PATH (measured: /usr/local/bin/timeout).
+# The ceiling is enforced by `run.py` itself, which supervises the job as its own parent and
+# writes the exit file on every path -- including the timed-out and signalled ones. It is NOT
+# enforced by an external `timeout` any more (2026-10-02).
+#
+# `/usr/local/bin/timeout` on this machine is a 306-byte bash shim that strips `--signal=` and
+# `--kill-after=` and `exec`s `perl -e 'alarm shift; exec @ARGV'`: the ceiling's signal is perl's
+# SIGALRM (14), it survives the exec, and the job dies by it before its shell can write the exit
+# code. That is the `Alarm clock: 14` in the job logs and the `142` (128+14) the old comment here
+# already recorded. The shim is left on disk untouched -- other tools may use it -- but nothing in
+# the executor calls it.
 TIMEOUT_BIN = os.environ.get("IDP_TIMEOUT_BIN", "/usr/local/bin/timeout")
+
+# The ceiling self-test: a command that must be killed, and the exit code the supervisor must
+# record when it is. 124 is `timeout`'s own convention for "timed out", kept so a reader who knows
+# the old system reads the same number. A ceiling mechanism that cannot produce this on a job that
+# never returns is not a ceiling -- this is what `health` executes to prove the mechanism, rather
+# than merely checking that a binary exists.
+_CEILING_PROBE_CMD = "while :; do sleep 1; done"
+_CEILING_PROBE_SEC = 2
+_CEILING_PROBE_EXPECT = 124
+
+
+def _ceiling_selftest() -> dict:
+    """PROVE the ceiling by running a job that never returns and reading its exit file.
+
+    `timeout_present: os.path.exists(TIMEOUT_BIN)` could only ever fail if the file was deleted;
+    it was true for the whole of 2026-10-02 while every job died by SIGALRM. A probe that cannot
+    fail is not a probe. This one runs the real supervisor against a command that cannot finish,
+    at a 2s ceiling, and checks that the exit file says 124.
+
+    Runs in a temp runs dir so it never collides with a real job. Bounded by construction: the
+    probe command is killed by the very mechanism under test, and a wall-clock guard turns a
+    supervisor that fails to bound it into a reported failure rather than a hung health call.
+    """
+    import tempfile
+    import subprocess  # local: kept out of the pure import path used by the tests
+
+    runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
+    with tempfile.TemporaryDirectory(prefix="ceiling-probe-") as tmp:
+        env = {**os.environ, "ESTATE_RUNS": tmp}
+        name = "ceiling-selftest"
+        argv = [
+            sys.executable,
+            runner,
+            "--ceiling",
+            str(_CEILING_PROBE_SEC),
+            name,
+            "bash",
+            "-c",
+            _CEILING_PROBE_CMD,
+        ]
+        started = time.monotonic()
+        try:
+            proc = subprocess.run(
+                argv,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=_CEILING_PROBE_SEC + 30,
+            )
+        except subprocess.TimeoutExpired:
+            return {
+                "ok": False,
+                "error": (
+                    "the ceiling probe launcher did not return; the runner is not starting jobs "
+                    "detached as it must"
+                ),
+            }
+        # `start()` returns IMMEDIATELY -- that is its whole point -- so the exit file appears a
+        # few seconds later, after the supervisor has killed the job. The probe waits for the
+        # file, not for the launcher: reading it right after the launch is what the first version
+        # of this probe did, and it reported a false failure on a mechanism that worked.
+        exitf = os.path.join(tmp, f"{name}.exit")
+        deadline = time.monotonic() + _CEILING_PROBE_SEC + 20
+        while not os.path.exists(exitf) and time.monotonic() < deadline:
+            time.sleep(0.2)
+        if not os.path.exists(exitf):
+            return {
+                "ok": False,
+                "error": (
+                    "the ceiling probe left no exit file: a job that is killed writes no exit code, "
+                    "which is the defect this probe exists to catch"
+                ),
+                "stdout": proc.stdout[-2000:],
+                "stderr": proc.stderr[-2000:],
+            }
+        try:
+            got = int(open(exitf).read().strip() or "0")
+        except ValueError:
+            return {
+                "ok": False,
+                "error": f"the ceiling probe wrote a non-integer exit: {exitf}",
+            }
+        elapsed = round(time.monotonic() - started, 2)
+        if got != _CEILING_PROBE_EXPECT:
+            return {
+                "ok": False,
+                "error": (
+                    f"the ceiling probe exited {got}, expected {_CEILING_PROBE_EXPECT}: the job that "
+                    f"should have been killed at {_CEILING_PROBE_SEC}s was not"
+                ),
+                "elapsed_sec": elapsed,
+            }
+        return {"ok": True, "exit": got, "elapsed_sec": elapsed}
+
 
 # An inverse verification probe is a state assertion, not a workload: it is a `kubectl get` or an
 # `ls`, and a probe that has not answered in this many seconds is a probe nobody can trust (the
@@ -167,10 +269,16 @@ def _runner_argv(
     run_argv = [sys.executable, runner]
     # `bash -c`, not `bash -lc`: the login environment is captured once by `_login_env()` and
     # handed to the job, so the job does not re-read the profile. See `_login_env` for why.
-    inner = [TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", "bash", "-c", command]
-    argv = [*run_argv, job_id, *inner]
+    #
+    # NO `TIMEOUT_BIN` HERE ANY MORE (2026-10-02). The ceiling is passed to `run.py`, which
+    # supervises the job as its own parent and writes the exit file on every path. The old
+    # `[TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", ...]` prefix is gone: `/usr/local/bin/timeout`
+    # on this machine is a bash shim that discards `--signal` and kills with perl's `alarm()`
+    # (SIGALRM, 14), taking the exit-file writer down with the job. See `run.py`'s ceiling note.
+    inner = ["bash", "-c", command]
+    argv = [*run_argv, "--ceiling", str(ceiling_sec), job_id, *inner]
     if cwd:
-        argv = [*run_argv, "--cwd", cwd, job_id, *inner]
+        argv = [*run_argv, "--cwd", cwd, "--ceiling", str(ceiling_sec), job_id, *inner]
     return argv
 
 
@@ -451,13 +559,17 @@ class Handler(socketserver.StreamRequestHandler):
         elif verb == "verify_inverse":
             self._reply(self._verify_inverse(request))
         elif verb == "health":
+            # THE CEILING IS PROVEN, NOT ASSERTED. The old reply carried
+            # `timeout_present: os.path.exists(TIMEOUT_BIN)`, which was true for the whole of
+            # 2026-10-02 while every job died by SIGALRM and left no exit file -- a health signal
+            # that could not fail. This runs the real supervisor against a job that never returns
+            # and reports whether it was actually killed and recorded (`_ceiling_selftest`).
             self._reply(
                 {
                     "ok": True,
                     "ceiling_sec": CEILING_SEC,
                     "pid": os.getpid(),
-                    "timeout_bin": TIMEOUT_BIN,
-                    "timeout_present": os.path.exists(TIMEOUT_BIN),
+                    "ceiling_selftest": _ceiling_selftest(),
                     # Admission control's own state, so `bin/idp-executor-status` and the jobs
                     # page can see whether anything is waiting on a verdict. Reported from the
                     # BACKING STORE, not from a counter this handler keeps: a second count is a
@@ -1403,8 +1515,6 @@ def _answers(path: str, timeout: float = 1.0) -> bool:
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "--check":
         # A cheap, honest answer a person or a script can read.
-        import shutil
-
         print(
             json.dumps(
                 {
@@ -1414,10 +1524,10 @@ def main() -> int:
                     if os.path.exists(SOCKET_PATH)
                     else False,
                     "ceiling_sec": CEILING_SEC,
-                    "timeout_bin": TIMEOUT_BIN,
-                    "timeout_present": bool(
-                        shutil.which(TIMEOUT_BIN) or os.path.exists(TIMEOUT_BIN)
-                    ),
+                    # Not `timeout_present` any more: the presence of a binary is not the presence
+                    # of a bound. This runs the ceiling and reports whether it actually killed a
+                    # job that never returns.
+                    "ceiling_selftest": _ceiling_selftest(),
                 },
                 indent=2,
             )
