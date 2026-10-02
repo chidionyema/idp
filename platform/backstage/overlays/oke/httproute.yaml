@@ -116,6 +116,30 @@ spec:
       backendRefs:
         - name: catalogue
           port: 3100
+    # crew#1017 lane A: the face's static shell is public. The avatar runs on phones and demo
+    # screens that are never signed in, and a JS module that receives the login page's HTML
+    # instead of its own code breaks loading entirely (measured 2026-10-02: /face/talkinghead.mjs,
+    # /face/brunette.glb, /voice/ort.min.js all 302 to the sign-in page when not signed in).
+    # Static assets only: /api/ rules above keep their gates, and the page's data calls still
+    # carry the login. No forward-auth middleware on this rule; friendly-errors and edge-headers
+    # stay so errors and zone headers behave like every other rule.
+    - matches:
+        - path: { type: PathPrefix, value: /face }
+        - path: { type: PathPrefix, value: /voice }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: catalogue
+          port: 3100
     - filters:
         - type: ExtensionRef
           extensionRef:
