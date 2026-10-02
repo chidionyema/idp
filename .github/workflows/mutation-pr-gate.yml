@@ -53,18 +53,17 @@ jobs:
             echo "$CHANGED" > /tmp/changed-files.txt
           fi
 
+      # No continue-on-error: bin/mutation-orchestrator's own exit code IS the gate (exits 1
+      # on a real surviving mutant or a budget overrun, 0 otherwise -- see mutation-orchestrator
+      # lines 220-226). This step previously set continue-on-error: true, so a non-zero exit
+      # here never failed the job, and the separate "Gate decision" step that followed never
+      # read the result either (it set an unused SCORE=0 and always printed success text) --
+      # this gate has never actually failed a PR regardless of mutation score since it was
+      # written. Removed the dead "Gate decision" step entirely: the orchestrator already prints
+      # its full JSON summary (score, killed, survived) to this job's own log.
       - name: Run mutation testing
         if: steps.get-changed.outputs.skip == 'no'
         run: |
           python3 "$HOME/.estate/bin/mutation-orchestrator" \
             --tier=pr --stdin --cwd="$PWD" \
             < /tmp/changed-files.txt
-        continue-on-error: true
-
-      - name: Gate decision
-        if: steps.get-changed.outputs.skip == 'no'
-        run: |
-          SCORE=0
-          echo "Mutation testing complete."
-          echo "If this step passed, score >= 80%. If it failed, surviving mutants were found."
-          echo "Review the mutation-orchestrator output above for details."
