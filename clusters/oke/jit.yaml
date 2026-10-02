@@ -18,6 +18,18 @@ spec:
     kind: GitRepository
     name: flux-system
   path: ./platform/jit
+  # platform/jit/public-door.yaml publishes otto.${ESTATE_ZONE} and deployment.yaml sets
+  # JIT_AGE_RECIPIENT from ${ESTATE_AGE_RECIPIENT}. Both live in the estate-config ConfigMap, so
+  # without this block they reach the API server unsubstituted: measured 2026-10-02, the
+  # Kustomization went False on `HTTPRoute/jit/jit-broker dry-run failed (Invalid):
+  # spec.hostnames[0] "otto.${ESTATE_ZONE}"` -- the hostname schema rejects a literal `${...}`.
+  # Every other row that renders ${ESTATE_ZONE} carries this same substitution (clusters/oke/
+  # platform.yaml:92), which is why the broker's own deployment here carries replicas: 1 but the
+  # door in front of it could never admit anyone.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   prune: true
   wait: true
   timeout: 5m
