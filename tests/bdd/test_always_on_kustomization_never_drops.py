@@ -20,6 +20,17 @@ present on the base ref is missing now. These tests build a throwaway git
 repo with one always-on Kustomization, commit it, then delete it exactly as
 c96359f4 did, and prove the guard refuses that tree and passes the
 unmodified one.
+
+THE SECOND INCIDENT. clusters/oke/quad-ledger.yaml was committed on
+2026-09-27 and never added to clusters/oke/kustomization.yaml resources:.
+Flux builds ./clusters/oke from that list, so the file was never applied: the
+quad namespace did not exist and quad.ledger-verify exited 1 with
+'namespaces "quad" not found' for a month. kubeconform and `kustomize build`
+cannot see it (an unlisted file is not in what the manifest builds), and the
+drop check above cannot see it (the file is still in the tree, so nothing is
+missing). The file's own header claimed a test pinned the list to the
+directory; no such test existed. The tests below are that test: they prove
+the guard refuses an orphaned *.yaml and passes a fully wired one.
 """
 
 from __future__ import annotations
@@ -123,6 +134,67 @@ def test_demoting_the_row_first_is_not_a_drop(tmp_path: Path) -> None:
     assert r.returncode == 0, (
         f"a row deliberately demoted off always-on must not be treated as dropped:\n{r.stdout}"
     )
+
+
+KUSTOMIZATION_YAML = """\
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - backstage.yaml
+"""
+
+WIRED_ROW = """\
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: quad-ledger
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/quad/ledger
+"""
+
+
+def _repo_with_a_wired_row(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    (repo / "clusters" / "oke").mkdir(parents=True)
+    (repo / "clusters" / "oke" / "backstage.yaml").write_text(KUSTOMIZATION)
+    (repo / "clusters" / "oke" / "quad-ledger.yaml").write_text(WIRED_ROW)
+    (repo / "clusters" / "oke" / "kustomization.yaml").write_text(
+        KUSTOMIZATION_YAML + "  - quad-ledger.yaml\n"
+    )
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    r = _git(repo, "commit", "-q", "-m", "add an always-on row, wired")
+    assert r.returncode == 0, r.stderr
+    return repo
+
+
+def test_a_file_present_but_not_listed_in_resources_is_refused(tmp_path: Path) -> None:
+    """The quad-ledger defect: present in the tree, absent from resources:, never applied."""
+    repo = _repo_with_a_wired_row(tmp_path)
+    # Exactly 390ec4875: the file is committed, the resources: row never was.
+    (repo / "clusters" / "oke" / "kustomization.yaml").write_text(KUSTOMIZATION_YAML)
+
+    r = _run_guard(repo, "HEAD")
+    assert r.returncode == 1, (
+        f"an orphaned *.yaml must be refused; the guard answered {r.returncode}:\n{r.stdout}"
+    )
+    assert "quad-ledger.yaml" in r.stdout, r.stdout
+
+
+def test_a_fully_wired_tree_passes(tmp_path: Path) -> None:
+    """Every *.yaml listed in resources:, as the fix wired it."""
+    repo = _repo_with_a_wired_row(tmp_path)
+
+    r = _run_guard(repo, "HEAD")
+    assert r.returncode == 0, f"a fully wired tree must pass:\n{r.stdout}\n{r.stderr}"
+    assert "none orphaned" in r.stdout, r.stdout
 
 
 def test_an_unreachable_base_ref_skips_rather_than_blinds_a_false_pass(
