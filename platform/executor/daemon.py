@@ -35,6 +35,8 @@ import socket
 import socketserver
 import stat
 import sys
+import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -163,11 +165,82 @@ def _runner_argv(
     """
     runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
     run_argv = [sys.executable, runner]
-    inner = [TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", "bash", "-lc", command]
+    # `bash -c`, not `bash -lc`: the login environment is captured once by `_login_env()` and
+    # handed to the job, so the job does not re-read the profile. See `_login_env` for why.
+    inner = [TIMEOUT_BIN, "--signal=TERM", f"{ceiling_sec}s", "bash", "-c", command]
     argv = [*run_argv, job_id, *inner]
     if cwd:
         argv = [*run_argv, "--cwd", cwd, job_id, *inner]
     return argv
+
+
+# THE LOGIN ENVIRONMENT, CAPTURED ONCE (2026-10-02).
+#
+# Every job used to run as `bash -lc <command>`, so every job re-read ~/.bash_profile: ~/.bashrc,
+# nvm.sh, two `env` files, and a macOS keychain lookup (`security find-generic-password`). That is
+# 1,627 traced shell lines before the command's first byte. MEASURED on this laptop with the CPU
+# saturated (32 busy loops on 4 cores): `bash -lc true` at the daemon's old nice 5 took 15.5 s;
+# `bash -c true` took 0.08 s. Under the real load of 2026-10-02 (load average 50-120) the profile
+# alone outlived the 60 s ceiling, and `echo hello` came back "did not finish within the ceiling"
+# for every agent on the box: the exit file read 142 (SIGALRM) with an empty log.
+#
+# So the profile is read here, once, and its environment reused. It is re-read in the background
+# when it is older than `_LOGIN_ENV_TTL_SEC`, so a PATH edit still reaches jobs within minutes,
+# and a job never waits for the read. If the profile cannot be read, the daemon's own environment
+# is used and a job runs with a narrower PATH -- a loud command-not-found, never a silent hang.
+_LOGIN_ENV_TTL_SEC = int(os.environ.get("IDP_EXECUTOR_LOGIN_ENV_TTL_SEC", "300"))
+_LOGIN_ENV_READ_SEC = 120
+_login_env_cache: dict = {"env": None, "at": 0.0, "refreshing": False}
+_login_env_lock = threading.Lock()
+
+
+def _read_login_env() -> dict | None:
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["/bin/bash", "-lc", "env -0"],
+            capture_output=True,
+            timeout=_LOGIN_ENV_READ_SEC,
+            stdin=subprocess.DEVNULL,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if out.returncode != 0:
+        return None
+    out = out.stdout
+    env = dict(
+        kv.split("=", 1) for kv in out.decode(errors="replace").split("\0") if "=" in kv
+    )
+    return env if env.get("PATH") else None
+
+
+def _refresh_login_env() -> None:
+    env = _read_login_env()
+    with _login_env_lock:
+        if env:
+            _login_env_cache["env"] = env
+            _login_env_cache["at"] = time.time()
+        _login_env_cache["refreshing"] = False
+
+
+def _login_env() -> dict:
+    """The login shell's environment, never older than the TTL plus one background read."""
+    with _login_env_lock:
+        env, at = _login_env_cache["env"], _login_env_cache["at"]
+        stale = time.time() - at > _LOGIN_ENV_TTL_SEC
+        start = stale and not _login_env_cache["refreshing"]
+        if start:
+            _login_env_cache["refreshing"] = True
+    if start:
+        try:
+            threading.Thread(target=_refresh_login_env, daemon=True).start()
+        except RuntimeError:
+            # An overloaded box can refuse a thread. The job still runs on the cached env, and
+            # the flag is cleared so the next job tries again instead of never refreshing.
+            with _login_env_lock:
+                _login_env_cache["refreshing"] = False
+    return dict(env) if env else dict(os.environ)
 
 
 def _pending_ledgers() -> int:
@@ -440,6 +513,7 @@ class Handler(socketserver.StreamRequestHandler):
         try:
             subprocess.Popen(
                 argv,
+                env=_login_env(),
                 start_new_session=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -1288,6 +1362,11 @@ class Server(socketserver.ThreadingUnixStreamServer):
 
 def serve() -> None:  # pragma: no cover - the daemon loop
     os.makedirs(os.path.dirname(SOCKET_PATH), mode=0o700, exist_ok=True)
+    # Read the login environment BEFORE the socket exists, so the first job does not run with the
+    # daemon's narrow launchd PATH, and no client (and no second daemon's 1 s `_answers` probe)
+    # meets a bound socket that does not reply. Bounded by _LOGIN_ENV_READ_SEC; on failure jobs
+    # still run, on the daemon's own environment.
+    _refresh_login_env()
     if os.path.exists(SOCKET_PATH):
         # A socket that answers is a second daemon; one that does not is a leftover. Distinguish
         # rather than delete blindly, because deleting a live socket is an outage (R38).

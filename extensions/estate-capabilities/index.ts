@@ -46,9 +46,9 @@ const RUNS = process.env.ESTATE_RUNS ?? path.join(HOME, ".estate", "runs");
 import { createConnection } from "node:net";
 
 /**
- * Single-quote a value for the daemon's `bash -lc <command>`.
+ * Single-quote a value for the daemon's `bash -c <command>`.
  *
- * The daemon runs every command through `bash -lc` (platform/executor/daemon.py), so any value we
+ * The daemon runs every command through `bash -c` (platform/executor/daemon.py), so any value we
  * interpolate into a command string MUST be shell-quoted here, in the process that builds the
  * string, or it is a shell-injection hole -- the same rule every other row obeys by only ever
  * interpolating validated tokens (test ids pass a whitelist regex; script names are literals).
@@ -547,7 +547,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
           details: { ok: false },
         };
       }
-      // Command is BUILT here from validated parts, but the daemon runs it via `bash -lc`, so
+      // Command is BUILT here from validated parts, but the daemon runs it via `bash -c`, so
       // every free-form value (task/repo/runner) is single-quoted with quoteSh before it meets
       // the shell. `task` and `repo` are data, not shell; budget is a validated integer and
       // critical a no-value flag, so neither can carry syntax.
