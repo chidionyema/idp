@@ -20,6 +20,7 @@ resources:
   - unified-memory.yaml
   - research.yaml
   - platform.yaml
+  - quad-ledger.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
