@@ -25,12 +25,12 @@ Every command these rows build goes through `runThroughDoor` → the executor da
 
 ## Injection is closed, and proven
 
-The daemon runs every command via `bash -lc` (`platform/executor/daemon.py`), so any free-form value
+The daemon runs every command via `bash -c` in the captured login environment (`platform/executor/daemon.py`), so any free-form value
 interpolated into a command string is single-quoted by `quoteSh` before it meets the shell. Rows
 that take a free-form `task`/`repo`/`runner` (only `estate_session_start`) route them through it;
 rows that don't need it only ever interpolate validated tokens (test ids pass a regex, script names
 are literals). Proven by running a hostile `task` (`...; rm -rf ~; $(touch /tmp/x); 'quote'`)
-through the real `bash -lc` path: nothing executed.
+through the real `bash -c` path: nothing executed.
 
 ## Placement, for whoever installs this
 

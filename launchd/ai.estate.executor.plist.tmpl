@@ -50,10 +50,9 @@
 	</dict>
 	<key>Label</key>
 	<string>ai.estate.executor</string>
-	<key>LowPriorityIO</key>
-	<true/>
-	<key>Nice</key>
-	<integer>5</integer>
+	<!-- No LowPriorityIO, no Nice (removed 2026-10-02). Every agent command waits on this daemon,
+	     so it is interactive work, not background work. At nice 5 on a saturated laptop, a job's
+	     startup measured 15.5 s against 3.1 s at nice 0, and `echo hello` hit the 60 s ceiling. -->
 	<!-- /usr/local/bin/python3, NOT bin/exec-daemon. See the TCC note above: naming the bash
 	     wrapper here is exit 126 on macOS 13. -->
 	<key>ProgramArguments</key>
