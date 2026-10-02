@@ -48,6 +48,9 @@ async def lifespan(app: FastAPI):
         from fleetview_backend import efficiency_feed
 
         asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
+        from fleetview_backend import key_sync
+
+        asyncio.create_task(key_sync.publish_alerts(nats_url))
     yield
 
 
@@ -414,8 +417,16 @@ def build_app() -> FastAPI:
         except ValueError:
             body = None
         loop = asyncio.get_running_loop()
-        result, status = await loop.run_in_executor(None, routes.submit_concierge_task, body)
+        result, status = await loop.run_in_executor(
+            None, routes.submit_concierge_task, body
+        )
         return JSONResponse(content=result, status_code=status)
+
+    @app.get(routes.KEY_SYNC_PATH)
+    async def key_sync_get():
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.key_sync_envelope)
+        return JSONResponse(content=body, status_code=status)
 
     @app.post("/voice/intent")
     async def voice_intent(request: Request):

@@ -392,6 +392,17 @@ def submit_concierge_task(body: Any) -> tuple[dict[str, Any], int]:
     return concierge_tasks.handle_post(body)
 
 
+# ── key sync (key_sync.py): is every key the estate expects arriving from Bitwarden ──
+KEY_SYNC_PATH = "/key-sync"
+
+
+def key_sync_envelope() -> tuple[dict[str, Any], int]:
+    # Names and states only, never a value; unreadable is unavailable with a reason, never empty.
+    from fleetview_backend import key_sync
+
+    return key_sync.key_sync_status(), 200
+
+
 def device_status_envelope() -> tuple[dict[str, Any], int]:
     """`GET /device-status`: this device's read-only identity, for the Fleet device tile."""
     return device_access.device_status_envelope()
