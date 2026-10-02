@@ -425,10 +425,14 @@ def cmd_list():
     import yaml
     log("Available intents:")
     for f in sorted(INTENTS.glob("*.yaml")):
-        with open(f) as fh:
-            d = yaml.safe_load(fh)
         name = f.stem
-        desc = d.get("description", "")[:60]
+        try:
+            with open(f) as fh:
+                d = yaml.safe_load(fh) or {}
+        except yaml.YAMLError as e:
+            log(f"  {name}\n    INVALID YAML (skipped): {str(e).splitlines()[0]}")
+            continue
+        desc = str(d.get("description", ""))[:60]
         log(f"  {name}")
         if desc:
             log(f"    {desc}")
