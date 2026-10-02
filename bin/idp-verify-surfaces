@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""The surfaces verification battery — one command, every level, no gaps.
+
+Pre-deploy (in the lane, before merge — the greenlane proof job):
+    bin/idp-verify-surfaces --pre
+    L1/L2 against APP_URL (the freshly built app served locally in CI),
+    L3 the generated per-panel Playwright spec (system Chrome),
+    L5 the bus stream against BACKEND_URL,
+    plus the coverage gate (inventory ∩ probe plan == inventory).
+    L4 runs post-deploy only: real voice needs the live estate router and vendors.
+
+Post-deploy (after Flux converges; hourly by verdict-surfaces.yml):
+    bin/idp-verify-surfaces --post
+    Same battery through the public gate, plus L4 real voice conversations
+    (fixture WAVs -> /voice/hear -> /voice/stream -> /voice/say -> /voice/hear).
+
+Output: one grading line per assertion on stderr/stdout (PASS|FAIL surfaces.<x>),
+and on stdout a verdict JSON bound to what is running:
+    {"state": "PASS|FAIL", "levels": {"L1": true, ...}, "git": "<sha>", "digest": "<img>"}
+Exit 0 only on a full PASS. A red battery is the rollback trigger, not a report.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+
+
+def _run(label: str, cmd: list[str], env: dict[str, str] | None = None) -> bool:
+    print(f"--- {label}: {' '.join(cmd)}", flush=True)
+    p = subprocess.run(
+        cmd, cwd=ROOT, env={**os.environ, **(env or {})}, timeout=50 * 60
+    )
+    ok = p.returncode == 0
+    print(f"{'PASS' if ok else 'FAIL'}  surfaces.battery.{label}", flush=True)
+    return ok
+
+
+def battery(mode: str) -> tuple[dict, int]:
+    app = os.environ.get("APP_URL", "http://127.0.0.1:3000")
+    backend = os.environ.get("BACKEND_URL", "http://127.0.0.1:18790")
+    levels: dict[str, bool] = {}
+    skipped: dict[str, str] = {}
+
+    # L1/L2 + coverage gate: pages and assets through the door we're grading.
+    levels["L1L2"] = _run("surfaces", [sys.executable, "-m", "probes.surfaces", app])
+
+    # L3: regenerate the spec from the mount graph (a wiring gap fails generation
+    # itself), then run it in a real browser against the app being verified.
+    if mode == "--pre":
+        spec_dir = os.path.join(ROOT, "backstage/packages/app/e2e-tests")
+        gen = subprocess.run(
+            [sys.executable, "-m", "probes.gen_panels_spec"],
+            cwd=ROOT, capture_output=True, text=True,
+        )
+        if gen.returncode != 0:
+            print(gen.stderr, file=sys.stderr)
+            print("FAIL  surfaces.L3.generation  spec generation refused", flush=True)
+            levels["L3"] = False
+        else:
+            os.makedirs(spec_dir, exist_ok=True)
+            with open(os.path.join(spec_dir, "panels.spec.ts"), "w") as f:
+                f.write(gen.stdout)
+            levels["L3"] = _run(
+                "L3",
+                ["npx", "playwright", "test", "e2e-tests/panels.spec.ts", "--reporter=line"],
+                env={"BASE_URL": app},
+            )
+
+    if mode == "--post":
+        # L4: real voice conversations through the same door the browser uses.
+        levels["L4"] = _run(
+            "L4-voice", [sys.executable, "-m", "probes.voice", "--all", backend]
+        )
+
+    # L5: the stream the board shows is live. In CI (no estate bus reachable) the level
+    # SKIPS with a printed reason — named, never silent — and the post-deploy battery,
+    # which runs through the public gate to the real bus, always grades it.
+    if os.environ.get("SURFACES_SKIP_L5"):
+        print(f"SKIP  surfaces.L5  {os.environ['SURFACES_SKIP_L5']}", flush=True)
+        levels["L5"] = True
+        skipped["L5"] = os.environ["SURFACES_SKIP_L5"]
+    else:
+        levels["L5"] = _run("L5-realtime", [sys.executable, "-m", "probes.realtime", backend])
+
+    state = all(levels.values())
+    verdict = {
+        "state": "PASS" if state else "FAIL",
+        "levels": levels,
+        "skipped": skipped,
+        "mode": mode,
+        "git": subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT,
+            capture_output=True, text=True,
+        ).stdout.strip(),
+        "digest": os.environ.get("RUNNING_DIGEST", ""),
+        "ts": int(time.time()),
+    }
+    return verdict, 0 if state else 1
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pre", action="store_const", const="--pre", dest="mode")
+    ap.add_argument("--post", action="store_const", const="--post", dest="mode")
+    args = ap.parse_args()
+    if not args.mode:
+        ap.error("choose --pre (lane) or --post (deployed)")
+    verdict, rc = battery(args.mode)
+    print(json.dumps(verdict))
+    return rc
+
+
+if __name__ == "__main__":
+    sys.exit(main())
