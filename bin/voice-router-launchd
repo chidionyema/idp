@@ -19,6 +19,7 @@ import re
 import runpy
 import sys
 import tarfile
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -65,6 +66,10 @@ def ensure_models(
     under a running voice-router; every reply then failed at speech ("Failed to convert ... to token
     IDs") and a restart would not have started at all. Nothing installed them; now the launcher does."""
     fetched = []
+    # A start killed mid-download (launchd restart, rollback) leaves its temporary directory behind.
+    for stale in models.glob("tmp*"):
+        if stale.is_dir():
+            shutil.rmtree(stale, ignore_errors=True)
     for rel, sha in pins if pins is not None else pinned_models():
         name = Path(rel).name.removesuffix(".tar.bz2")
         if (models / name).is_dir():
