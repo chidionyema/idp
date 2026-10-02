@@ -125,3 +125,21 @@ def test_the_live_router_config_is_mains_config():
     assert re.search(
         r"^  - model_name: voice$", (root / "llm/config.yaml").read_text(), re.M
     )
+
+
+def test_a_changed_watchdog_reaches_the_stage_without_restarting_the_router(
+    tmp_path, monkeypatch
+):
+    # 2026-10-02: the guardian's fix sat on main while the staged copy restarted a slow router 12
+    # times; only `litellm-local install` ever copied it.
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "tree/platform/llm/watchdog.py").write_text("fixed")
+    (tmp_path / "router/watchdog.py").write_text("restarts a slow router")
+    mod = _load(tmp_path, monkeypatch)
+    calls = _stub(mod, monkeypatch, comes_back=True)
+
+    out = mod.sync_router(within_s=1)
+
+    assert (tmp_path / "router/watchdog.py").read_text() == "fixed"
+    assert calls["kick"] == 0
+    assert out == ["router watchdog.py staged"]

@@ -225,9 +225,22 @@ def router_accepted(voice_was_ready: bool, within_s: int) -> bool:
     return answers(VOICE_PROBE, within_s) or not voice_was_ready
 
 
+def sync_watchdog() -> list[str]:
+    # The router's guardian runs from the stage (launchd/ai.estate.litellm-watchdog.plist.tmpl),
+    # but only `bin/litellm-local install` copied it, so a fix on main never reached the laptop:
+    # 2026-10-02 the staged copy kept restarting a slow-but-listening router 12 times while the
+    # fix sat in source. launchd runs it fresh every 15 s, so staging it needs no restart.
+    src, dst = TREE / "platform/llm/watchdog.py", ROUTER / "watchdog.py"
+    if not src.is_file() or (dst.exists() and filecmp.cmp(src, dst, False)):
+        return []
+    shutil.copy2(src, dst)
+    return ["router watchdog.py staged"]
+
+
 def sync_router(within_s: int = 120) -> list[str]:
     if not (ROUTER / "modules").is_dir():
         return []
+    staged = sync_watchdog()
     voice_was_ready = answers(VOICE_PROBE, 5)
     previous: dict[str, bytes | None] = {}
     for src, name in router_files():
@@ -237,14 +250,14 @@ def sync_router(within_s: int = 120) -> list[str]:
         previous[name] = dst.read_bytes() if dst.exists() else None
         shutil.copy2(src, dst)
     if not previous:
-        return []
+        return staged
     names = ", ".join(sorted(previous))
     kickstart(ROUTER_LABEL)
     if router_accepted(voice_was_ready, within_s):
         voice = "voice ready" if answers(VOICE_PROBE, 5) else "voice STILL NOT READY"
         if voice != "voice ready":
             alert(f"router took {names} from main but voice is still not ready")
-        return [f"router {names}; restarted {ROUTER_LABEL}; {voice}"]
+        return staged + [f"router {names}; restarted {ROUTER_LABEL}; {voice}"]
     for name, old in previous.items():
         dst = ROUTER / name
         if old is None:
@@ -254,7 +267,7 @@ def sync_router(within_s: int = 120) -> list[str]:
     kickstart(ROUTER_LABEL)
     answers(ROUTER_PROBE, within_s)
     alert(f"router {names} from main broke the router or voice; previous kept")
-    return [f"ROUTER KEPT previous ({names})"]
+    return staged + [f"ROUTER KEPT previous ({names})"]
 
 
 def build_voice_router() -> bool:

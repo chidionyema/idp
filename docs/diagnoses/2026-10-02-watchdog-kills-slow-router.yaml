@@ -1,0 +1,87 @@
+description: 'Agents on the laptop lost every session repeatedly on 2026-10-02 ("Connection
+  error", "Connection refused (ECONNREFUSED)") while the laptop (8 GB RAM, 5 GB swap
+  used, load average 50-300) was swapping. Question: is the outage the router dying,
+  the vendor lanes failing, or the watchdog (com.estate.watchdog, 3 s curl, 3 strikes,
+  90 s cooldown) kickstarting a router that was listening but slow. Watchdog log:
+  16 kickstarts on 2026-10-02.'
+hypotheses:
+- name: H1
+  description: the watchdog restarts a slow-but-listening router; each kickstart is
+    the outage
+  prior: 0.3333333334
+- name: H2
+  description: the router process dies on its own (crash, OOM) and the watchdog only
+    notices
+  prior: 0.3333333333
+- name: H3
+  description: vendor lanes (DeepSeek/GLM) fail upstream; the router is fine and relays
+    errors
+  prior: 0.3333333333
+evidence:
+- name: how each of the router's last 13 lifetimes ended (litellm-local.log)
+  observed:
+    graceful_shutdown_signal: 11
+    abrupt_no_shutdown_line: 1
+    crash_traceback: 0
+  likelihoods:
+    H1:
+      graceful_shutdown_signal: 0.8
+      abrupt_no_shutdown_line: 0.15
+      crash_traceback: 0.05
+    H2:
+      graceful_shutdown_signal: 0.1
+      abrupt_no_shutdown_line: 0.5
+      crash_traceback: 0.4
+    H3:
+      graceful_shutdown_signal: 0.4
+      abrupt_no_shutdown_line: 0.3
+      crash_traceback: 0.3
+- name: 25 liveness probes, 1 s apart, load average 6-50 (14:37 BST)
+  observed:
+    answered: 25
+    refused: 0
+  likelihoods:
+    H1:
+      answered: 0.9
+      refused: 0.1
+    H2:
+      answered: 0.6
+      refused: 0.4
+    H3:
+      answered: 0.9
+      refused: 0.1
+- name: fixed watchdog verdicts under load (curl exit code recorded)
+  observed:
+    timeout_listening: 4
+    refused: 0
+  likelihoods:
+    H1:
+      timeout_listening: 0.85
+      refused: 0.15
+    H2:
+      timeout_listening: 0.3
+      refused: 0.7
+    H3:
+      timeout_listening: 0.3
+      refused: 0.7
+- name: client-side error class reported by agents
+  observed:
+    econnrefused_or_connection_lost: 2
+    vendor_error_relayed: 0
+  likelihoods:
+    H1:
+      econnrefused_or_connection_lost: 0.9
+      vendor_error_relayed: 0.1
+    H2:
+      econnrefused_or_connection_lost: 0.9
+      vendor_error_relayed: 0.1
+    H3:
+      econnrefused_or_connection_lost: 0.1
+      vendor_error_relayed: 0.9
+n_eff_divisor: 2
+posteriors:
+  H1: 0.9995676456
+  H2: 1.54e-08
+  H3: 0.0004323389
+winner: H1
+computed_at: '2026-10-02T14:31:46Z'
