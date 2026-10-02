@@ -107,6 +107,20 @@ def main() -> int:
         print(f"// GENERATION FAILED — panels without a verifiable signature: {gaps}", file=sys.stderr)
         return 1
 
+    # /fleet-original keeps its own route with its own presence assertion — the "before"
+    # picture beside the rewrite must stay green too, graded on the route that mounts it.
+    orig_path = f"{_UI}/FleetReactorOriginal.tsx"
+    orig_src = _git("show", f"HEAD:{orig_path}")
+    mo = re.search(r'data-testid="([a-z0-9-]+)"', orig_src)
+    if "FleetReactorOriginal" in unreachable or not mo:
+        print(
+            "// GENERATION FAILED — FleetReactorOriginal must be reachable at /fleet-original "
+            "with a data-testid",
+            file=sys.stderr,
+        )
+        return 1
+    orig_testid = mo.group(1)
+
     cases = "\n".join(
         f"  {{ name: '{n}', sel: `{s}`, kind: '{k}' }}," for n, s, k in entries
     )
@@ -184,6 +198,18 @@ test.describe('/fleet panels: every component in room/ui renders on the real pag
     expect(unreachable, 'room/ui components unreachable from any route').toEqual([]);
   }});
 {triggered}}});
+
+test.describe('/fleet-original: the before picture beside the rewrite', () => {{
+  test('FleetReactorOriginal renders on /fleet-original', async ({{ page }}) => {{
+    test.setTimeout(120_000);
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.goto('/fleet-original', {{ waitUntil: 'commit' }});
+    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    await page.locator('[data-testid="{orig_testid}"]').first().waitFor({{ timeout: 60_000 }});
+    expect(errors, 'uncaught page errors on /fleet-original').toEqual([]);
+  }});
+}});
 """)
     print(f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}", file=sys.stderr)
     return 0
