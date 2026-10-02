@@ -53,6 +53,17 @@ def get(url: str, timeout: float = 20) -> tuple[int, str]:
         return 0, str(e)
 
 
+def since_start(log: Path, marker: str) -> list[str]:
+    """The log's lines since the running process started (its last `marker` line). Errors from
+    before a restart are history, not the state: on 2026-09-29 the doctor failed a voice that had
+    just spoken a 6 s reply, counting token errors from before the models came back."""
+    if not log.exists():
+        return []
+    lines = log.read_text(errors="replace")[-2_000_000:].splitlines()
+    starts = [i for i, line in enumerate(lines) if marker in line]
+    return lines[starts[-1] + 1 :] if starts else lines[-400:]
+
+
 def models_dir() -> Path:
     m = (
         re.search(
@@ -134,18 +145,18 @@ def laptop() -> None:
         "read the detail: it names the router call that failed",
     )
 
-    tail = "".join(
-        p.read_text(errors="replace")[-200_000:]
-        for p in (VOICE_LOG, VOICE_ERR)
-        if p.exists()
+    tts_err = sum(
+        "voice.tts" in line and "ERROR" in line
+        for line in since_start(VOICE_LOG, '"voice.ready"')
     )
-    recent = tail.splitlines()[-400:]
-    tts_err = sum("voice.tts" in l and "ERROR" in l for l in recent)
-    token_err = sum("Failed to convert" in l for l in recent)
+    token_err = sum(
+        "Failed to convert" in line
+        for line in since_start(VOICE_ERR, "voice-router-launchd:")
+    )
     check(
         "speech synthesis",
         tts_err == 0 and token_err == 0,
-        f"{tts_err} tts errors, {token_err} token errors in the last 400 log lines",
+        f"{tts_err} tts errors, {token_err} token errors since voice-router last started",
         "models missing under a running router: restart it so the launcher fetches them",
     )
 
