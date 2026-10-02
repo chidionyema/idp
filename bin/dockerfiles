@@ -83,7 +83,10 @@ touched() {  # touched <dockerfile> <context>: does the diff reach this image?
 }
 # Excluded, with the reason. Anything Dockerfile-shaped not listed here and not
 # produced below is a gate finding.
-EXCLUDE='backstage/packages/backend/Dockerfile backstage/Dockerfile.dockerignore'   # upstream scaffold: needs a host yarn build and the repo root as context; the .dockerignore is backstage/Dockerfile's build context filter, not an image
+# Dockerfile (repo root, the factory server): no Flux row or live Deployment runs ghcr.io/chidionyema/idp,
+# its context is the whole repo so every push rebuilt it, and GHCR refused the push (write_package) --
+# ~330 failure emails to the founder in 36 h for an image nothing deploys (2026-09-29).
+EXCLUDE='Dockerfile backstage/packages/backend/Dockerfile backstage/Dockerfile.dockerignore'   # upstream scaffold: needs a host yarn build and the repo root as context; the .dockerignore is backstage/Dockerfile's build context filter, not an image
 # A nested checkout of this repository under its own root (idp/, wt-*/, scratchpad/) holds its
 # own Dockerfiles, and reading them graded a copy of this repo against this branch (incident
 # 2026-09-10: this list carried 187 of 199 rows from nested checkouts, and bdd cp0b's image-list
