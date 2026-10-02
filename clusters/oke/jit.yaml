@@ -1,0 +1,23 @@
+# The JIT broker: the founder's approval door (crew#1011 CP1). An agent asks, the founder approves
+# (FleetView by voice + Face ID, or Otto), and the broker performs the act or returns a key that
+# dies on its own. c96359f4b ("~80 flux rows down to 7") left platform/jit with no row, so nothing
+# reconciled it: measured 2026-10-01, deployment jit/jit-broker at 0/0 while deployment.yaml says
+# replicas: 1. A door nobody reconciles is a door that is quietly shut.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: jit
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/jit
+  prune: true
+  wait: true
+  timeout: 5m
