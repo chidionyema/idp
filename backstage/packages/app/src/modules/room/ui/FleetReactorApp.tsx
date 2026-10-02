@@ -758,6 +758,20 @@ export default function FleetReactorApp() {
   // --- ADDED: voice -> intent. The result's cue becomes a ring (and, for burn/fire, a burst) from the fleet's centre, and its text holds the ticker for 4s. ---
   const [intentLine, setIntentLine] = useState('');
   const intentTimer = useRef<any>(null);
+  // THE SUMMONED RUNDOWN (Zero-Chrome). The desk has no dock, no crawl and no persistent badge;
+  // it is dark until asked for, then dissolves on its own. Every interaction with it -- a number
+  // key, the 's' status key, a voice "status" -- re-arms the dissolve, so a person reading it
+  // keeps it alive by looking (touching), and it evaporates ~4s after they stop. Declared above
+  // onIntentResult because a spoken intent summons it.
+  const [newsSummoned, setNewsSummoned] = useState(false);
+  const newsDissolveTimer = useRef<any>(null);
+  const summonNews = useCallback(() => {
+    setNewsSummoned(true);
+    clearTimeout(newsDissolveTimer.current);
+    newsDissolveTimer.current = setTimeout(() => setNewsSummoned(false), 4000);
+  }, []);
+  useEffect(() => () => clearTimeout(newsDissolveTimer.current), []);
+
   const onIntentResult = useCallback((r: IntentResult) => {
     const c = cueToReactor(r);
     engineState.current.intentCue = { t: 0, kind: c.kind, color: c.color };
@@ -765,10 +779,14 @@ export default function FleetReactorApp() {
     if (c.kind === 'burn' || c.kind === 'fire') {
       fire(engineState.current.intentJets, 0, 0, `intent:${r.intent}`, c.kind === 'burn' ? 8 : 4, c.kind === 'burn' ? 'stuck' : 'thinking');
     }
+    // A spoken intent that reports estate state ('status', 'ci-status', 'router-status') summons
+    // the rundown, the same way the number keys do. This is the voice door the Zero-Chrome shell
+    // needs: the dock is gone, so asking by voice is how the telemetry is called up.
+    summonNews();
     setIntentLine(r.text);
     clearTimeout(intentTimer.current);
     intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
-  }, []);
+  }, [summonNews]);
   useEffect(() => () => clearTimeout(intentTimer.current), []);
   onIntentRef.current = onIntentResult;
 
@@ -786,18 +804,26 @@ export default function FleetReactorApp() {
   const seenBreakingRef = useRef<Set<string>>(new Set());
   const lastStoryShotMsRef = useRef(0);
   useEffect(() => () => clearTimeout(breakingTimer.current), []);
+
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
         return;
       }
+      // 's' (status) summons the rundown the same way a number key selects a channel: the dock
+      // that used to hold these choices is gone, so the keyboard and voice are the ways in.
+      if (e.key === 's' || e.key === 'S') {
+        summonNews();
+        return;
+      }
       if (!/^[0-6]$/.test(e.key)) return;
       setNewsChannel(Number(e.key));
+      summonNews();
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [summonNews]);
 
   // THE ROWS THE LEFT PANEL RENDERS.
   //
@@ -2719,9 +2745,9 @@ export default function FleetReactorApp() {
       <NewsDesk
         rundown={rundown}
         channel={newsChannel}
-        onChannel={setNewsChannel}
         breaking={breakingStory}
         nowMs={Date.now()}
+        summoned={newsSummoned}
       />
 
       {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through

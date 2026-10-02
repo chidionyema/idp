@@ -5,7 +5,6 @@ import type { Rundown, Story } from './newsRundown';
 
 const ROTATE_MS = 8000;
 const SLIDE_MS = 450;
-const MARQUEE_PX_PER_S = 70;
 
 const STYLE_BLOCK = `
 @keyframes newsdesk-live-pulse {
@@ -233,129 +232,6 @@ function LowerThird({ channelDef, story, nowMs, progress }: LowerThirdProps): JS
   );
 }
 
-interface CrawlProps {
-  channelDef: { label: string };
-  stories: Story[];
-}
-
-function Crawl({ channelDef, stories }: CrawlProps): JSX.Element {
-  if (stories.length === 0) {
-    return (
-      <div
-        data-testid="news-crawl"
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: 34,
-          display: 'flex',
-          alignItems: 'center',
-          background: 'rgba(6, 8, 14, 0.88)',
-          pointerEvents: 'none',
-        }}
-      >
-        <div
-          style={{
-            padding: '0 16px',
-            height: '100%',
-            display: 'flex',
-            alignItems: 'center',
-            background: '#c00020',
-            color: '#fff',
-            fontWeight: 800,
-            fontSize: 13,
-            letterSpacing: 1,
-          }}
-        >
-          ESTATE NEWS
-        </div>
-        <div
-          style={{
-            marginLeft: 16,
-            fontSize: 13,
-            color: 'rgba(255,255,255,0.45)',
-            letterSpacing: 0.5,
-          }}
-        >
-          quiet on this channel
-        </div>
-      </div>
-    );
-  }
-
-  const items = stories.map((s, i) => (
-    <span key={`${s.id}-${i}`} style={{ display: 'inline-flex', alignItems: 'center' }}>
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: '50%',
-          background: SEVERITY_COLOR[s.severity],
-          display: 'inline-block',
-          marginRight: 10,
-        }}
-      />
-      <span style={{ marginRight: 40 }}>{s.headline}</span>
-    </span>
-  ));
-
-  const widthPx = Math.max(2000, stories.length * 400);
-  const durationS = widthPx / MARQUEE_PX_PER_S;
-
-  return (
-    <div
-      data-testid="news-crawl"
-      style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 34,
-        display: 'flex',
-        alignItems: 'center',
-        background: 'rgba(6, 8, 14, 0.88)',
-        overflow: 'hidden',
-        pointerEvents: 'none',
-      }}
-    >
-      <div
-        style={{
-          padding: '0 16px',
-          height: '100%',
-          display: 'flex',
-          alignItems: 'center',
-          background: '#c00020',
-          color: '#fff',
-          fontWeight: 800,
-          fontSize: 13,
-          letterSpacing: 1,
-          zIndex: 1,
-          flexShrink: 0,
-        }}
-      >
-        {channelDef.label}
-      </div>
-      <div style={{ overflow: 'hidden', flex: 1, whiteSpace: 'nowrap' }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            whiteSpace: 'nowrap',
-            fontSize: 13,
-            color: 'rgba(255,255,255,0.9)',
-            animation: `newsdesk-marquee ${durationS}s linear infinite`,
-          }}
-        >
-          <span style={{ display: 'inline-flex', paddingLeft: 24 }}>{items}</span>
-          <span style={{ display: 'inline-flex', paddingLeft: 24 }} aria-hidden="true">
-            {items}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 interface BreakingBandProps {
   story: Story;
 }
@@ -430,66 +306,26 @@ function BreakingBand({ story }: BreakingBandProps): JSX.Element {
   );
 }
 
-interface ChannelStripProps {
-  active: number;
-  onChannel: (n: number) => void;
-}
-
-function ChannelStrip({ active, onChannel }: ChannelStripProps): JSX.Element {
-  return (
-    <div
-      data-testid="news-channels"
-      style={{
-        position: 'absolute',
-        bottom: 42,
-        right: 24,
-        display: 'flex',
-        gap: 6,
-        pointerEvents: 'auto',
-      }}
-    >
-      {CHANNELS.map(c => {
-        const isActive = c.n === active;
-        return (
-          <button
-            key={c.n}
-            type="button"
-            data-testid={`news-chip-${c.n}`}
-            onClick={() => onChannel(c.n)}
-            style={{
-              cursor: 'pointer',
-              border: isActive ? '1px solid rgba(255,255,255,0.8)' : '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 4,
-              padding: '4px 8px',
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: 0.5,
-              color: isActive ? '#fff' : 'rgba(255,255,255,0.5)',
-              background: isActive ? 'rgba(255,255,255,0.15)' : 'rgba(10,12,20,0.6)',
-            }}
-          >
-            {c.n} {c.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export interface NewsDeskProps {
   rundown: Rundown;
   channel: number;
-  onChannel: (n: number) => void;
   breaking: Story | null;
   nowMs: number;
+  /**
+   * Whether the rundown has been summoned. The Zero-Chrome shell has no persistent news bar:
+   * the desk is dark until the founder asks for it -- by voice ("status") or a key -- and it
+   * dissolves again on its own. Only a breaking story renders unasked, because an interrupt is
+   * an event, not chrome.
+   */
+  summoned?: boolean;
 }
 
 export default function NewsDesk({
   rundown,
   channel,
-  onChannel,
   breaking,
   nowMs,
+  summoned = false,
 }: NewsDeskProps): JSX.Element {
   const channelDef = CHANNELS.find(c => c.n === channel) ?? CHANNELS[0];
   const isMovie = channelDef.key === 'movie';
@@ -531,21 +367,31 @@ export default function NewsDesk({
     channelStories.length > 0 ? channelStories[rotationIndex % channelStories.length] : null;
   const progress = channelStories.length > 1 ? elapsedMs / ROTATE_MS : 0;
 
+  // THE ZERO-CHROME RULE. Nothing here is permanent. The bug and the lower third are part of the
+  // summoned rundown and vanish when it does; a breaking story is the one thing that may appear
+  // unasked, because it interrupts rather than waits. The desk is dark (no DOM at all) when it has
+  // nothing to say -- the number keys and voice select the channel in FleetReactorApp, so removing
+  // the dock removed a redundant surface, not a capability.
+  const showRundown = summoned && !isMovie;
+  if (!showRundown && !breaking) {
+    return <></>;
+  }
+
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
       <style>{STYLE_BLOCK}</style>
-      <NewsBug channelDef={channelDef} story={onScreenStory} />
-      {!isMovie && (
-        <LowerThird
-          channelDef={channelDef}
-          story={onScreenStory}
-          nowMs={nowMs}
-          progress={progress}
-        />
-      )}
-      {!isMovie && <Crawl channelDef={channelDef} stories={channelStories} />}
       {breaking && <BreakingBand story={breaking} />}
-      <ChannelStrip active={channel} onChannel={onChannel} />
+      {showRundown ? (
+        <>
+          <NewsBug channelDef={channelDef} story={onScreenStory} />
+          <LowerThird
+            channelDef={channelDef}
+            story={onScreenStory}
+            nowMs={nowMs}
+            progress={progress}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
