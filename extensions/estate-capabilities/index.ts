@@ -121,6 +121,7 @@ async function runThroughDoor(
   const jobId: string = submit.job_id;
   const exitPath = path.join(RUNS, `${jobId}.exit`);
   const logPath = path.join(RUNS, `${jobId}.log`);
+  const pidPath = path.join(RUNS, `${jobId}.pid`);
   const deadline = Date.now() + (opts.ceiling ?? 60) * 1000 + 5000;
   while (Date.now() < deadline) {
     if (existsSync(exitPath)) {
@@ -130,13 +131,58 @@ async function runThroughDoor(
     }
     await new Promise((r) => setTimeout(r, 250));
   }
-  return {
-    ok: false,
-    exit: null,
-    log: "",
-    jobId,
-    error: `the job ${jobId} did not finish within the ceiling; it was NOT reported as done`,
-  };
+  // PAST THE DEADLINE, AND THE OLD CODE SAID NOTHING. It returned `log: ""` and one flat
+  // sentence -- "did not finish within the ceiling; it was NOT reported as done". Measured
+  // 2026-10-02: an agent whose `git commit` hung on the pre-push gate was left with a killed
+  // process, no exit code, no output and no reason, and burned its whole context guessing at a
+  // failure that had no message. The job's own records were on disk the entire time. This reads
+  // them: three distinguishable states, each with the fix that actually applies.
+  const lateExit = existsSync(exitPath);
+  const exitCode = lateExit
+    ? parseInt(readFileSync(exitPath, "utf8").trim() || "0", 10)
+    : null;
+  // `timeout --signal=TERM` lets the child run its own cleanup. A job that finished during
+  // that grace window IS finished, and reporting it as a timeout is the same lie as a bare
+  // '124' -- a verdict printed about a different outcome than the one that happened.
+  if (lateExit) {
+    const log = existsSync(logPath) ? readFileSync(logPath, "utf8") : "";
+    return {
+      ok: exitCode === 0,
+      exit: exitCode,
+      log,
+      jobId,
+      error:
+        `the job ${jobId} finished at the ceiling deadline with exit ${exitCode}. ` +
+        `It completed; the answer is below, not a timeout.`,
+    };
+  }
+  // A pid is only evidence if it is a real pid. `process.kill(NaN, 0)` does NOT throw on every
+  // platform (it can address the caller's process group), and pids are recycled, so a stale pid
+  // file can name a live process that has nothing to do with this job -- reporting that as
+  // "STILL RUNNING" would be a number a reader trusts, printed about something else. A pid we
+  // cannot parse is treated as no evidence, never as a live job.
+  let pidAlive = false;
+  if (existsSync(pidPath)) {
+    const pid = parseInt(readFileSync(pidPath, "utf8").trim(), 10);
+    if (Number.isInteger(pid) && pid > 1) {
+      try {
+        process.kill(pid, 0);
+        pidAlive = true;
+      } catch {
+        pidAlive = false;
+      }
+    }
+  }
+  const logTail = existsSync(logPath)
+    ? readFileSync(logPath, "utf8").split("\n").slice(-40).join("\n")
+    : "";
+  const error = pidAlive
+    ? `the job ${jobId} exceeded the ceiling and is STILL RUNNING on the host ` +
+      `(pid from ${pidPath}). Nothing was killed. Inspect the log tail below before retrying -- ` +
+      `a retry of a still-running job runs it twice.`
+    : `the job ${jobId} exceeded the ceiling and was killed: no exit file, no live pid. ` +
+      `The output it did produce is below; the last line is where it got to.`;
+  return { ok: false, exit: null, log: logTail, jobId, error };
 }
 
 /** A capability result, rendered the same way every time. */
