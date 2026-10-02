@@ -1,0 +1,69 @@
+description: 'After the watchdog fix (14:31 UTC) agents still saw bursts of "Error:
+  Connection error." / "Retry failed after 3 attempts" on 2026-10-02 (17:03-17:05
+  and 17:12-17:14 UTC). Founder: "i dont want to see any more failures". Question:
+  is each burst the deploy itself (`litellm-local install` / runtime-sync stopping
+  the one router on :4000 and waiting ~90 s for LiteLLM to boot), the router crashing,
+  or the laptop/network failing the client.'
+hypotheses:
+- name: H1
+  description: every router deploy stops the only router on :4000; the ~90 s boot
+    is the outage
+  prior: 0.3333333334
+- name: H2
+  description: the router crashes on its own (traceback, OOM) and deploys only coincide
+  prior: 0.3333333333
+- name: H3
+  description: laptop load or the client's network fails the connection; the router
+    is fine
+  prior: 0.3333333333
+evidence:
+- name: refusal episodes after 14:31 vs router deploy events (watchdog log, stage
+    mtime 17:04, runtime-sync 17:14 "restarted com.estate.litellm-local")
+  observed:
+    coincides_with_deploy: 2
+    no_deploy: 0
+  likelihoods:
+    H1:
+      coincides_with_deploy: 0.9
+      no_deploy: 0.1
+    H2:
+      coincides_with_deploy: 0.2
+      no_deploy: 0.8
+    H3:
+      coincides_with_deploy: 0.1
+      no_deploy: 0.9
+- name: how the router's last 3 lifetimes ended (litellm-local.log)
+  observed:
+    graceful_shutdown_signal: 3
+    crash_traceback: 0
+  likelihoods:
+    H1:
+      graceful_shutdown_signal: 0.9
+      crash_traceback: 0.1
+    H2:
+      graceful_shutdown_signal: 0.1
+      crash_traceback: 0.9
+    H3:
+      graceful_shutdown_signal: 0.5
+      crash_traceback: 0.5
+- name: watchdog verdict during each burst (curl exit code)
+  observed:
+    refused_port: 2
+    slow_listening: 0
+  likelihoods:
+    H1:
+      refused_port: 0.9
+      slow_listening: 0.1
+    H2:
+      refused_port: 0.8
+      slow_listening: 0.2
+    H3:
+      refused_port: 0.1
+      slow_listening: 0.9
+n_eff_divisor: 2
+posteriors:
+  H1: 0.9877244236
+  H2: 0.0072261503
+  H3: 0.005049426
+winner: H1
+computed_at: '2026-10-02T17:25:43Z'

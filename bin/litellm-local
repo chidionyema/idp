@@ -1,10 +1,21 @@
 #!/usr/bin/env bash
 # litellm-local -- the laptop router, natively on macOS, no VM and no cluster.
 #
-#   bin/litellm-local install     stage + (re)start under launchd, wait for /health/liveliness
-#   bin/litellm-local uninstall   stop and remove the launchd agent (clients fall back to direct)
-#   bin/litellm-local status      liveliness + launchd state
-#   bin/litellm-local run         run in the foreground (what launchd calls)
+#   bin/litellm-local install     stage, then deploy with `swap` (no gap for any caller)
+#   bin/litellm-local swap        boot the staged router in the idle slot, switch the front to it
+#                                 once it answers, then stop the old slot gracefully
+#   bin/litellm-local uninstall   stop and remove the launchd agents (clients fall back to direct)
+#   bin/litellm-local status      front + active slot liveliness, launchd state
+#   bin/litellm-local run         run a router in the foreground (what a slot's launchd agent calls)
+#   bin/litellm-local front       run the front on :4000 (what the front's launchd agent calls)
+#
+# ZERO-GAP DEPLOYS (2026-10-02). Callers reach 127.0.0.1:4000, which is platform/llm/front.py, a
+# byte forwarder that never changes. The router itself runs in slot 4001 or 4002. A deploy boots
+# the new router in the idle slot beside the live one (LiteLLM takes ~90 s), and only when it
+# answers does the front send new connections to it; requests in flight finish on the old slot,
+# which launchd stops gracefully (ExitTimeOut 600). A new router that never answers is stopped
+# and the old one keeps serving. Before this, every deploy stopped the only router and every
+# agent saw "Connection error" for ~90 s (17:03 and 17:12 UTC that day).
 #
 # Same LiteLLM version as llm/litellm.yml (1.98.0) and the same rendered llm/config.yaml, run
 # without Docker or Postgres: on this 8 GiB Mac the compose stack needs a 4 GiB VM (litellm-up's
@@ -25,16 +36,54 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 STAGE="$HOME/.estate/litellm-local"
-LABEL="com.estate.litellm-local"
-PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+LEGACY_LABEL="com.estate.litellm-local"   # the single router on :4000, before slots
+FRONT_LABEL="com.estate.litellm-front"
+AGENTS="$HOME/Library/LaunchAgents"
+ROUTER_STATE="${ESTATE_ROUTER_STATE:-$HOME/.estate/router-state}"
+ACTIVE="$ROUTER_STATE/active"              # the slot the front forwards to (front.py reads it)
+FRONT_PORT=4000
 LOG="$HOME/Library/Logs/litellm-local.log"
 VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
-PORT="${LITELLM_LOCAL_PORT:-4000}"   # override only for a canary beside the live router
+PORT="${LITELLM_LOCAL_PORT:-4001}"   # a slot's agent sets 4001 or 4002; a canary sets its own
 MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py router_catalog.py lane_registry.py route_table.py"
 
-live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
+live() { curl -sf -m 5 "http://127.0.0.1:${1:-$FRONT_PORT}/health/liveliness" >/dev/null; }
+slot_label() { echo "com.estate.litellm-local-$1"; }
+loaded() { launchctl print "gui/$(id -u)/$1" >/dev/null 2>&1; }
+# bootout returns before the agent is gone; bootstrapping into that window fails with
+# "Bootstrap failed: 5: Input/output error" (measured 2026-09-26), so wait for the unload.
+unload() {
+  launchctl bootout "gui/$(id -u)/$1" 2>/dev/null || true
+  for _ in $(seq 1 20); do loaded "$1" || break; sleep 0.5; done
+}
+
+# plist LABEL ARG [PORT]: the launchd agent running `litellm-local ARG` from the stage. A slot
+# gets 600 s to finish its in-flight streams after SIGTERM before launchd kills it.
+plist() {
+  local env="" exit_timeout=""
+  [ -n "${3:-}" ] && env="<key>LITELLM_LOCAL_PORT</key><string>$3</string>" \
+    && exit_timeout="<key>ExitTimeOut</key><integer>600</integer>"
+  cat > "$AGENTS/$1.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$1</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/bash</string><string>$STAGE/litellm-local</string><string>$2</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  $exit_timeout
+  <key>StandardOutPath</key><string>$LOG</string>
+  <key>StandardErrorPath</key><string>$LOG</string>
+  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string>$env</dict>
+</dict>
+</plist>
+EOF
+}
 
 run() {
   if [ -f "$HERE/config.yaml" ]; then
@@ -61,7 +110,7 @@ run() {
   export PYTHONPATH="$MODDIR"
   # local_caller_auth admits only its own Host; a canary on another port must admit that port,
   # or every keyed lane refuses it (measured 2026-09-29 on :4001).
-  export ESTATE_ROUTER_HOSTS="${ESTATE_ROUTER_HOSTS:-127.0.0.1:$PORT,localhost:$PORT}"
+  export ESTATE_ROUTER_HOSTS="${ESTATE_ROUTER_HOSTS:-127.0.0.1:$FRONT_PORT,localhost:$FRONT_PORT,127.0.0.1:$PORT,localhost:$PORT}"
   # Claude Code compacts at CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000; the ceiling's 128k default
   # would refuse a long session before its own compaction ever fires.
   export ESTATE_MAX_INPUT_TOKENS="${ESTATE_MAX_INPUT_TOKENS:-200000}"
@@ -211,7 +260,7 @@ install() {
     echo "      uv venv --python 3.12 $VENV && VIRTUAL_ENV=$VENV uv pip install 'litellm[proxy]==1.98.0' opentelemetry-sdk opentelemetry-exporter-otlp"
     exit 2
   }
-  mkdir -p "$STAGE/modules" "$(dirname "$PLIST")" "$(dirname "$LOG")"
+  mkdir -p "$STAGE/modules" "$AGENTS" "$(dirname "$LOG")"
   cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
   cp "$idp/llm/config.yaml" "$STAGE/config.yaml"
   for m in $MODULES; do cp "$idp/platform/llm/$m" "$STAGE/modules/$m"; done
@@ -225,47 +274,71 @@ install() {
   cp "$ESTATE_SECRETS"/secrets/dev/LITELLM_LAPTOP_KEY.yaml "$STAGE/caller/" 2>/dev/null || true
   local sops; sops="$(command -v sops || echo "$HOME/.cache/estate-tools/sops")"
   [ -x "$sops" ] && cp "$sops" "$STAGE/sops"
-  cat > "$PLIST" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key>
-  <array><string>/bin/bash</string><string>$STAGE/litellm-local</string><string>run</string></array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>$LOG</string>
-  <key>StandardErrorPath</key><string>$LOG</string>
-  <key>EnvironmentVariables</key><dict><key>PATH</key><string>/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
-</dict>
-</plist>
-EOF
-  # bootout returns before the agent is gone; bootstrapping into that window fails with
-  # "Bootstrap failed: 5: Input/output error" (measured 2026-09-26), so wait for the unload.
-  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-  for _ in $(seq 1 20); do launchctl print "gui/$(id -u)/$LABEL" >/dev/null 2>&1 || break; sleep 0.5; done
-  launchctl bootstrap "gui/$(id -u)" "$PLIST"
-  for _ in $(seq 1 45); do live && { echo "ok    litellm-local live on 127.0.0.1:$PORT (staged at $STAGE)"; return 0; }; sleep 2; done
-  echo "FAIL  not live after 90s; last log lines:"; tail -20 "$LOG"; exit 1
+  cp "$idp/platform/llm/front.py" "$STAGE/front.py"
+  mkdir -p "$ROUTER_STATE"
+  plist "$FRONT_LABEL" front
+  if loaded "$LEGACY_LABEL"; then
+    # One-time move off the single router on :4000: boot a slot first, then hand :4000 to the
+    # front. The gap is the moment between the old router releasing the port and the front
+    # binding it (front.py retries the bind), not a 90 s boot.
+    swap || exit 1
+    unload "$LEGACY_LABEL"; rm -f "$AGENTS/$LEGACY_LABEL.plist"
+    launchctl bootstrap "gui/$(id -u)" "$AGENTS/$FRONT_LABEL.plist"
+  else
+    loaded "$FRONT_LABEL" || launchctl bootstrap "gui/$(id -u)" "$AGENTS/$FRONT_LABEL.plist"
+    swap || exit 1
+  fi
+  for _ in $(seq 1 30); do live && { echo "ok    litellm-local live on 127.0.0.1:$FRONT_PORT -> slot $(cat "$ACTIVE") (staged at $STAGE)"; return 0; }; sleep 1; done
+  echo "FAIL  front not answering on :$FRONT_PORT; last log lines:"; tail -20 "$LOG"; exit 1
 }
 
+swap() {
+  local cur next
+  cur="$(cat "$ACTIVE" 2>/dev/null || true)"
+  if [ "$cur" = 4001 ]; then next=4002; else next=4001; fi
+  unload "$(slot_label "$next")"
+  plist "$(slot_label "$next")" run "$next"
+  launchctl bootstrap "gui/$(id -u)" "$AGENTS/$(slot_label "$next").plist"
+  for _ in $(seq 1 90); do live "$next" && break; sleep 2; done
+  if ! live "$next"; then
+    unload "$(slot_label "$next")"
+    echo "FAIL  slot $next not live after 180s; slot ${cur:-none} keeps serving; last log lines:"
+    tail -20 "$LOG"; return 1
+  fi
+  printf '%s\n' "$next" > "$ACTIVE.tmp" && mv "$ACTIVE.tmp" "$ACTIVE"
+  echo "ok    slot $next active; new connections go to it"
+  # In the background: launchd gives the old slot up to 600 s to finish its streams. Its plist
+  # goes too, or the next login would boot both slots.
+  if [ -n "$cur" ]; then
+    (launchctl bootout "gui/$(id -u)/$(slot_label "$cur")" >/dev/null 2>&1; rm -f "$AGENTS/$(slot_label "$cur").plist") &
+  fi
+}
+
+front() { exec "$VENV/bin/python" "$HERE/front.py"; }
+
 uninstall() {
-  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
-  rm -f "$PLIST"
+  for l in "$FRONT_LABEL" "$(slot_label 4001)" "$(slot_label 4002)" "$LEGACY_LABEL"; do
+    unload "$l"; rm -f "$AGENTS/$l.plist"
+  done
+  rm -f "$ACTIVE"
   echo "ok    litellm-local stopped; new shells go direct to Anthropic"
 }
 
 status() {
-  if live; then echo "live  127.0.0.1:$PORT"; else echo "DOWN  127.0.0.1:$PORT (new shells go direct)"; fi
-  launchctl print "gui/$(id -u)/$LABEL" 2>/dev/null | grep -E '^\s*(state|pid) =' || echo "      launchd agent not loaded"
+  if live; then echo "live  127.0.0.1:$FRONT_PORT"; else echo "DOWN  127.0.0.1:$FRONT_PORT (new shells go direct)"; fi
+  local a; a="$(cat "$ACTIVE" 2>/dev/null || true)"; echo "slot  ${a:-none} active"
+  for l in "$FRONT_LABEL" "$(slot_label 4001)" "$(slot_label 4002)" "$LEGACY_LABEL"; do
+    loaded "$l" && echo "      $l: $(launchctl print "gui/$(id -u)/$l" | grep -E '^\s*state =' | xargs)"
+  done
+  return 0
 }
 
 case "${1:-run}" in
   run) run ;;
   install) install ;;
+  swap) swap ;;
+  front) front ;;
   uninstall) uninstall ;;
   status) status ;;
-  *) echo "usage: $0 [run|install|uninstall|status]"; exit 2 ;;
+  *) echo "usage: $0 [run|install|swap|front|uninstall|status]"; exit 2 ;;
 esac

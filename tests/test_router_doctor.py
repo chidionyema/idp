@@ -96,3 +96,16 @@ def test_a_refused_port_is_still_healed(monkeypatch):
     monkeypatch.setattr(d, "listening", lambda: False)
     ok, _ = d.check_live()
     assert ok is False
+
+
+def test_with_slots_the_doctor_guards_the_front_and_the_active_slot(tmp_path):
+    # 2026-10-02: :4000 became the front and the router a slot. A doctor that still looked for
+    # the single router's agent would find it gone and reinstall on every 120s tick.
+    d = _doctor()
+    d.ACTIVE = tmp_path / "active"
+    assert d.router_labels() == ["com.estate.litellm-local"]
+    d.ACTIVE.write_text("4002\n")
+    assert d.router_labels() == [
+        "com.estate.litellm-front",
+        "com.estate.litellm-local-4002",
+    ]

@@ -28,11 +28,15 @@ class FakeRun:
     def __init__(self, curl_answers):
         self.curl_answers = list(curl_answers)
         self.kickstarts = 0
+        self.labels = []
+        self.urls = []
 
     def __call__(self, argv, **_):
         if argv[0] == "launchctl":
             self.kickstarts += 1
+            self.labels.append(argv[-1].rsplit("/", 1)[-1])
             return subprocess.CompletedProcess(argv, 0, "", "")
+        self.urls.append(argv[-1])
         code, out = self.curl_answers.pop(0)
         return subprocess.CompletedProcess(argv, code, out, "")
 
@@ -44,13 +48,16 @@ def wd(tmp_path, monkeypatch):
     spec.loader.exec_module(mod)
     monkeypatch.setattr(mod, "STATE", tmp_path / "watchdog.json")
     monkeypatch.setattr(mod, "LOG", tmp_path / "watchdog.log")
+    monkeypatch.setattr(
+        mod, "ACTIVE", tmp_path / "active"
+    )  # no slots: the single router
     return mod
 
 
-def ticks(wd, monkeypatch, answers, start=1_000_000.0, step=15.0):
+def ticks(wd, monkeypatch, answers, start=1_000_000.0, step=15.0, probes_per_tick=1):
     fake = FakeRun(answers)
     monkeypatch.setattr(wd.subprocess, "run", fake)
-    for i in range(len(answers)):
+    for i in range(len(answers) // probes_per_tick):
         monkeypatch.setattr(wd.time, "time", lambda t=start + i * step: t)
         wd.main()
     return fake
@@ -85,3 +92,29 @@ def test_a_router_still_starting_is_not_killed_inside_the_cooldown(wd, monkeypat
     # restart at tick 3, then refused for the ~100 s a loaded laptop takes to start it
     fake = ticks(wd, monkeypatch, [REFUSED] * 3 + [REFUSED] * 8)
     assert fake.kickstarts == 1
+
+
+# --- slots: front on :4000, router in slot 4001 or 4002 (platform/llm/front.py) ---------------
+
+
+def test_without_slots_the_single_router_on_4000_is_guarded(wd, monkeypatch):
+    fake = ticks(wd, monkeypatch, [REFUSED] * 3)
+    assert fake.urls == ["http://127.0.0.1:4000/health/liveliness"] * 3
+    assert fake.labels == ["com.estate.litellm-local"]
+
+
+def test_the_active_slot_is_probed_on_its_own_port_and_its_agent_restarted(
+    wd, monkeypatch
+):
+    # Through the front a dead router is an empty reply (curl 52), which counts as slow; only
+    # the slot's own port can say "refused". Each tick probes the front, then the slot.
+    wd.ACTIVE.write_text("4002\n")
+    fake = ticks(wd, monkeypatch, [OK, REFUSED] * 3, probes_per_tick=2)
+    assert fake.urls[1] == "http://127.0.0.1:4002/health/liveliness"
+    assert fake.labels == ["com.estate.litellm-local-4002"]
+
+
+def test_a_refused_front_is_restarted_at_once(wd, monkeypatch):
+    wd.ACTIVE.write_text("4001")
+    fake = ticks(wd, monkeypatch, [REFUSED, OK], probes_per_tick=2)
+    assert fake.labels == ["com.estate.litellm-front"]

@@ -38,12 +38,16 @@ def _estate(tmp: Path, live: str, main: str, live_cfg: str = "c", main_cfg: str 
     (tmp / "router/modules/efficiency_gateway.py").write_text(live)
 
 
-def _stub(mod, monkeypatch, comes_back: bool, voice=lambda cfg: True):
+def _stub(mod, monkeypatch, comes_back: bool, voice=lambda cfg: True, swap_ok=True):
     # voice(cfg) says whether voice-router's /readyz answers with the router running `cfg`.
+    # swap_ok=False is a new router that never answered in its slot: the live one kept serving.
     calls = {"kick": 0, "alerts": []}
-    monkeypatch.setattr(
-        mod, "kickstart", lambda label: calls.__setitem__("kick", calls["kick"] + 1)
-    )
+
+    def restart_router():
+        calls["kick"] += 1
+        return swap_ok
+
+    monkeypatch.setattr(mod, "restart_router", restart_router)
 
     def answers(url, s):
         if url == mod.VOICE_PROBE:
@@ -62,7 +66,7 @@ def test_a_changed_module_reaches_the_router_and_restarts_it(tmp_path, monkeypat
     notes = mod.sync_router()
     assert (tmp_path / "router/modules/efficiency_gateway.py").read_text() == "new"
     assert calls["kick"] == 1 and not calls["alerts"]
-    assert "restarted com.estate.litellm-local" in notes[0]
+    assert "deployed com.estate.litellm-local" in notes[0]
 
 
 def test_an_unchanged_router_is_left_running(tmp_path, monkeypatch):
@@ -143,3 +147,38 @@ def test_a_changed_watchdog_reaches_the_stage_without_restarting_the_router(
     assert (tmp_path / "router/watchdog.py").read_text() == "fixed"
     assert calls["kick"] == 0
     assert out == ["router watchdog.py staged"]
+
+
+def test_a_router_that_never_answers_in_its_slot_is_never_put_into_service(
+    tmp_path, monkeypatch
+):
+    # 2026-10-02: deploys boot the new router beside the live one (bin/litellm-local swap). One
+    # that never answers is stopped by swap and the live one keeps serving -- so the front still
+    # answering must not be read as acceptance, and there is nothing to restart back.
+    _estate(tmp_path, live="old", main="broken")
+    mod = _load(tmp_path, monkeypatch)
+    calls = _stub(mod, monkeypatch, comes_back=True, swap_ok=False)
+    notes = mod.sync_router()
+    assert (tmp_path / "router/modules/efficiency_gateway.py").read_text() == "old"
+    assert calls["kick"] == 1 and calls["alerts"]
+    assert notes[0].startswith("ROUTER KEPT")
+
+
+def test_a_slotted_stage_is_deployed_by_swap_not_by_kickstart(tmp_path, monkeypatch):
+    _estate(tmp_path, live="same", main="same")
+    (tmp_path / "router/litellm-local").write_text("case x in\n  swap) swap ;;\nesac\n")
+    mod = _load(tmp_path, monkeypatch)
+    ran = []
+    monkeypatch.setattr(
+        mod, "kickstart", lambda label: ran.append(("kickstart", label))
+    )
+    monkeypatch.setattr(
+        mod.subprocess,
+        "run",
+        lambda argv, **_: (
+            ran.append(tuple(argv[-1:]))
+            or mod.subprocess.CompletedProcess(argv, 0, "", "")
+        ),
+    )
+    assert mod.restart_router() is True
+    assert ran == [("swap",)]

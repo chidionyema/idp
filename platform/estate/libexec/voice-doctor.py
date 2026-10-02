@@ -104,7 +104,7 @@ def laptop() -> None:
         "router up",
         code == 200,
         f"/health/liveliness {code or 'unreachable'}",
-        "launchctl kickstart -k gui/$(id -u)/com.estate.litellm-local",
+        "bash ~/.estate/litellm-local/litellm-local swap   # boots the router beside the live one",
     )
 
     served = json.loads(LANES.read_text()).get("served", []) if LANES.exists() else []

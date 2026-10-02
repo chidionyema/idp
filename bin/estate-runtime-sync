@@ -237,6 +237,29 @@ def sync_watchdog() -> list[str]:
     return ["router watchdog.py staged"]
 
 
+def restart_router() -> bool:
+    """Put the staged router into service. False only when it never answered.
+
+    With slots (bin/litellm-local `swap`, 2026-10-02) the new router boots beside the live one
+    and takes over only once it answers, so no caller is ever refused; one that never answers
+    is stopped and the live one keeps serving. A stage still on the single router is kickstarted
+    as before, which refuses every caller for the ~90 s LiteLLM takes to start.
+    """
+    launcher = ROUTER / "litellm-local"
+    if launcher.is_file() and "\n  swap) swap ;;" in launcher.read_text():
+        r = subprocess.run(
+            ["/bin/bash", str(launcher), "swap"],
+            capture_output=True,
+            text=True,
+            timeout=400,
+        )
+        if r.returncode != 0:
+            print(r.stdout[-1500:], r.stderr[-1500:], file=sys.stderr)
+        return r.returncode == 0
+    kickstart(ROUTER_LABEL)
+    return True
+
+
 def sync_router(within_s: int = 120) -> list[str]:
     if not (ROUTER / "modules").is_dir():
         return []
@@ -252,20 +275,21 @@ def sync_router(within_s: int = 120) -> list[str]:
     if not previous:
         return staged
     names = ", ".join(sorted(previous))
-    kickstart(ROUTER_LABEL)
-    if router_accepted(voice_was_ready, within_s):
+    deployed = restart_router()
+    if deployed and router_accepted(voice_was_ready, within_s):
         voice = "voice ready" if answers(VOICE_PROBE, 5) else "voice STILL NOT READY"
         if voice != "voice ready":
             alert(f"router took {names} from main but voice is still not ready")
-        return staged + [f"router {names}; restarted {ROUTER_LABEL}; {voice}"]
+        return staged + [f"router {names}; deployed {ROUTER_LABEL}; {voice}"]
     for name, old in previous.items():
         dst = ROUTER / name
         if old is None:
             dst.unlink(missing_ok=True)
         else:
             dst.write_bytes(old)
-    kickstart(ROUTER_LABEL)
-    answers(ROUTER_PROBE, within_s)
+    if deployed:  # it took over and broke voice: put the previous bytes back into service
+        restart_router()
+        answers(ROUTER_PROBE, within_s)
     alert(f"router {names} from main broke the router or voice; previous kept")
     return staged + [f"ROUTER KEPT previous ({names})"]
 

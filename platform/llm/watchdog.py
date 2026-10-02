@@ -19,6 +19,13 @@ listening and slow, not dead. Each kickstart cut every live session (the agents 
 HTTP error from a listening process is logged and never counted; only curl's "could not connect"
 (exit 7) counts toward a restart. The cooldown is 240 s because a start under that load took
 over 90 s, and the old 90 s cooldown let the guardian kill a router that was still starting.
+
+SLOTS (2026-10-02). Callers reach the front on :4000 (platform/llm/front.py), which forwards to
+the active router slot named in ~/.estate/router-state/active. Through the front a dead router is
+an empty reply, not a refused port, so the router is probed on its slot's own port and its slot's
+launchd agent is the one restarted. A refused front is restarted at once: it is a byte forwarder
+that binds in under a second, so there is no slow start to mistake for death. With no active
+file the laptop still runs the single router on :4000, and that is what is guarded.
 """
 
 import datetime
@@ -32,8 +39,9 @@ import time
 HOME = pathlib.Path.home()
 STATE = HOME / ".estate/state/watchdog.json"
 LOG = HOME / "Library/Logs/litellm-watchdog.log"
-URL = "http://127.0.0.1:4000/health/liveliness"
-LABEL = f"gui/{os.getuid()}/com.estate.litellm-local"
+ACTIVE = HOME / ".estate/router-state/active"
+FRONT_URL = "http://127.0.0.1:4000/health/liveliness"
+FRONT_LABEL = "com.estate.litellm-front"
 
 FAIL_THRESHOLD = 3
 COOLDOWN_SECS = 240
@@ -61,7 +69,16 @@ def save_state(s):
     STATE.write_text(json.dumps(s))
 
 
-def probe():
+def target():
+    """(port, launchd label) of the router to guard: the active slot, else the single router."""
+    try:
+        port = int(ACTIVE.read_text().strip())
+        return port, f"com.estate.litellm-local-{port}"
+    except (OSError, ValueError):
+        return 4000, "com.estate.litellm-local"
+
+
+def probe(url):
     """'ok', 'refused' (nothing listening: the only verdict that counts), or 'slow:<why>'."""
     r = subprocess.run(
         [
@@ -73,7 +90,7 @@ def probe():
             "/dev/null",
             "-w",
             "%{http_code}",
-            URL,
+            url,
         ],
         capture_output=True,
         text=True,
@@ -85,16 +102,24 @@ def probe():
     return f"slow:curl={r.returncode} http={r.stdout.strip() or '-'}"
 
 
-def restart():
-    log("restart: kickstart com.estate.litellm-local")
-    subprocess.run(["launchctl", "kickstart", "-k", LABEL], capture_output=True)
+def restart(label):
+    log(f"restart: kickstart {label}")
+    subprocess.run(
+        ["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{label}"],
+        capture_output=True,
+    )
 
 
 def main():
     now = time.time()
     s = load_state()
 
-    verdict = probe()
+    port, label = target()
+    if port != 4000 and probe(FRONT_URL) == "refused":
+        log("front refused")
+        restart(FRONT_LABEL)
+
+    verdict = probe(f"http://127.0.0.1:{port}/health/liveliness")
     if verdict.startswith("slow"):
         # Listening but not answering in time: not dead, so neither counted nor restarted.
         log(f"probe {verdict} -- listening, not restarted")
@@ -107,7 +132,7 @@ def main():
         return
 
     s["failures"] += 1
-    log(f"probe refused ({s['failures']}/{FAIL_THRESHOLD})")
+    log(f"probe refused :{port} ({s['failures']}/{FAIL_THRESHOLD})")
 
     if s["failures"] < FAIL_THRESHOLD:
         save_state(s)
@@ -119,7 +144,7 @@ def main():
         save_state(s)
         return
 
-    restart()
+    restart(label)
     s["last_restart_at"] = now
     s["failures"] = 0
     save_state(s)

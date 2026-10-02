@@ -31,8 +31,11 @@ HOME = pathlib.Path.home()
 PORT = 4000
 BASE = "http://127.0.0.1:%d" % PORT
 LABEL = "com.estate.litellm-local"
+FRONT_LABEL = "com.estate.litellm-front"
+# Since 2026-10-02 :4000 is the front (platform/llm/front.py) and the router runs in slot 4001
+# or 4002, named here; deploys switch slots with no gap. No file: the single router on :4000.
+ACTIVE = HOME / ".estate/router-state/active"
 STAGE = HOME / ".estate/litellm-local"
-PLIST = HOME / ("Library/LaunchAgents/%s.plist" % LABEL)
 LOG = HOME / "Library/Logs/litellm-local.log"
 SETTINGS = HOME / ".claude/settings.json"
 ALERTS = HOME / ".estate/alerts/inbox.jsonl"
@@ -165,16 +168,28 @@ def keychain_token():
 # ---- checks: each returns (ok, detail); heal_<name> returns what it did ------------------------
 
 
+def router_labels():
+    """The launchd agents that serve :4000: front + active slot, or the single router."""
+    try:
+        return [FRONT_LABEL, "%s-%d" % (LABEL, int(ACTIVE.read_text().strip()))]
+    except (OSError, ValueError):
+        return [LABEL]
+
+
 def check_launchd():
-    if not PLIST.exists():
-        return False, "no plist at %s" % PLIST
-    rc, out = sh(["launchctl", "print", "gui/%d/%s" % (uid(), LABEL)], timeout=10)
-    if rc != 0:
-        return False, "agent not loaded"
-    state = re.search(r"\bstate = (\S+)", out)
-    return (state and state.group(1) == "running"), "state=%s" % (
-        state.group(1) if state else "?"
-    )
+    states = []
+    for label in router_labels():
+        plist = HOME / ("Library/LaunchAgents/%s.plist" % label)
+        if not plist.exists():
+            return False, "no plist at %s" % plist
+        rc, out = sh(["launchctl", "print", "gui/%d/%s" % (uid(), label)], timeout=10)
+        if rc != 0:
+            return False, "%s not loaded" % label
+        state = re.search(r"\bstate = (\S+)", out)
+        if not (state and state.group(1) == "running"):
+            return False, "%s state=%s" % (label, state.group(1) if state else "?")
+        states.append(label)
+    return True, "running: %s" % ", ".join(states)
 
 
 def heal_launchd():
@@ -202,7 +217,10 @@ def check_live():
 
 
 def heal_live():
-    sh(["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), LABEL)], timeout=15)
+    sh(
+        ["launchctl", "kickstart", "-k", "gui/%d/%s" % (uid(), router_labels()[-1])],
+        timeout=15,
+    )
     if wait_live():
         return "kickstarted"
     return reinstall()
