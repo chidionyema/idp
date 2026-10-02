@@ -312,7 +312,7 @@ vendors:
       bw: MOONSHOT_API_KEY
       entry: dagster-env
   # GLM Coding Plan (Z.ai), a flat-rate monthly subscription, added 2026-10-01. The founder set
-  # the key in Secrets Manager under the name `zZ_AI_KEY`, and `bw` names it exactly as set; the
+  # the key in Secrets Manager under the name `Z_AI_KEY`, and `bw` names it exactly as set; the
   # field is renamed so bin/litellm-local's loader ([A-Z][A-Z0-9_]*) exports it. The plan has its
   # own host path -- /api/coding/paas/v4, not the pay-as-you-go /api/paas/v4 (docs.z.ai
   # devpack/latest-model, read 2026-10-01). Z.ai authenticates before it routes (an invalid
@@ -337,7 +337,7 @@ vendors:
     - entry: litellm-upstream
       ns: llm
       field: ZAI_API_KEY
-      bw: zZ_AI_KEY
+      bw: Z_AI_KEY
     router:
       lanes: "# Coding only. The plan's usage policy (docs.z.ai devpack/usage-policy, read\n\
         # 2026-10-01): \"GLM Coding Plan may only be used within officially supported tools\n\
