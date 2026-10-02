@@ -32,7 +32,7 @@ VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT="${LITELLM_LOCAL_PORT:-4000}"   # override only for a canary beside the live router
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py router_catalog.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py router_catalog.py lane_registry.py route_table.py"
 
 live() { curl -sf -m 2 "http://127.0.0.1:$PORT/health/liveliness" >/dev/null; }
 

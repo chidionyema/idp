@@ -1,0 +1,82 @@
+description: 'Lane registry on the :4010 canary (bin/litellm-local, worktree lane/anticipatory-router)
+  marked lanes degraded when callers asked for model names that do not exist. Question:
+  was the lane actually unhealthy, were the health probes condemning it, or were caller-side
+  errors being misclassified as lane failures.
+
+  Context: CP1/CP2 of docs/specs/2026-10-01-anticipatory-router.md; registry fed by
+  LiteLLM async_log_failure_event. '
+hypotheses:
+- name: H1
+  description: caller-error misclassification -- the registry treats caller-side model-not-found
+    errors as lane failures (classify_failure had no caller-error class, and routing
+    failures arrive with an empty response_obj so their 404 never reached the classifier)
+  prior: 0.5
+- name: H2
+  description: the vendor lane was genuinely degraded during the probe window
+  prior: 0.25
+- name: H3
+  description: the registry probe condemned the lane (keyless probe failing auth)
+  prior: 0.25
+evidence:
+- name: journal status field for wrong-model failures (two probes, pre-fix)
+  observed:
+    status_null_transition: 2
+    status_4xx_transition: 0
+  likelihoods:
+    H1:
+      status_null_transition: 0.7
+      status_4xx_transition: 0.3
+    H2:
+      status_null_transition: 0.5
+      status_4xx_transition: 0.5
+    H3:
+      status_null_transition: 0.5
+      status_4xx_transition: 0.5
+- name: instrumented failure hook capture of the wrong-model payload
+  observed:
+    response_obj_empty: 1
+    vendor_error_text_present: 0
+  likelihoods:
+    H1:
+      response_obj_empty: 0.8
+      vendor_error_text_present: 0.2
+    H2:
+      response_obj_empty: 0.3
+      vendor_error_text_present: 0.7
+    H3:
+      response_obj_empty: 0.5
+      vendor_error_text_present: 0.5
+- name: real chat call through the same lane in the same window
+  observed:
+    answered: 1
+    failed: 0
+  likelihoods:
+    H1:
+      answered: 0.9
+      failed: 0.1
+    H2:
+      answered: 0.2
+      failed: 0.8
+    H3:
+      answered: 0.6
+      failed: 0.4
+- name: repeat of both wrong-model probes after the kwargs-exception fix
+  observed:
+    caller_error_row: 2
+    lane_transition_row: 0
+  likelihoods:
+    H1:
+      caller_error_row: 0.9
+      lane_transition_row: 0.1
+    H2:
+      caller_error_row: 0.5
+      lane_transition_row: 0.5
+    H3:
+      caller_error_row: 0.5
+      lane_transition_row: 0.5
+posteriors:
+  H1: 0.9621235077
+  H2: 0.0063127487
+  H3: 0.0315637436
+winner: H1
+computed_at: '2026-10-02T11:15:10Z'

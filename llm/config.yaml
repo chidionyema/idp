@@ -764,7 +764,7 @@ litellm_settings:
   # efficiency_gateway runs first so the ceiling measures the request it actually sends. On the
   # claude-* lane it is append-stable (prompt cache intact) and records per call what each step
   # did and what Anthropic billed: `bin/estate-efficiency-report --follow`.
-  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "anthropic_beta_passthrough.proxy_handler_instance", "lane_registry.proxy_handler_instance", "route_table.proxy_handler_instance"]
   drop_params: true
   # Never log the prompt or the completion body. Spans carry model, latency, tokens and
   # cost — which is what an audit trail needs — and not the content of a customer's
