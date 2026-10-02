@@ -125,3 +125,31 @@ Registry, route table, per-session pressure and forecast, and every transition (
 2. **Route table:** a request to a dead group is served elsewhere, `x-estate-served-by` set, ledger row.
 3. **Classification:** every ledger `pre` row carries a class; voice sessions route latency-first.
 4. **Compaction:** a real session passes the setpoint, compacts, and the ceiling's firing count stays 0.
+
+---
+
+## 5. Measured on the live router after CP1/CP2 landed (2026-10-02) — the fix lane
+
+CP1+CP2 are operational on the laptop router (merged idp#5274; real agent traffic 200 OK;
+substitutions and lane state persisting). Three defects measured on that build, fixed on
+`lane/anticipatory-router`:
+
+1. **Non-chat probe death.** A completion-shaped probe on an `audio_speech` lane is a 400
+   about the caller, never about the lane — so the probe can never heal it. The measured kill:
+   orpheus TTS took ONE 429 with no reset header → `exhausted, reset_at=None` → not servable →
+   no real traffic ever arrives to correct it → `voice-tts: []` permanently, every TTS request
+   rescued to a CHAT lane (4 rows measured in substitutions.jsonl). **Fix:** probes skip
+   non-chat modes entirely (those lanes are real-traffic-only), and boot reconcile hands a
+   non-chat lane stuck `dead` or `exhausted` back to `ready` — the next real call re-condemns
+   it in one observation if it is truly out (vendor rate windows are minutes).
+2. **Ghost records.** A failure that never resolved to a deployment (model-group miss) was
+   attributed to the requested NAME (`"gemini"`, `"cheap"`, `"groq"` as aliases): dead:auth
+   records with no params to probe and no healing path — noise the /fleet surface would show
+   as lane outages that are nothing of the kind. **Fix:** no attribution without a resolved
+   deployment (a bare model name counts only if it names a real deployment in the staged
+   model_list); boot reconcile drops records the staged config does not know.
+3. **Cross-mode rescue.** The dead-group re-route chose candidates by class only, ignoring
+   `model_info.mode` — a speech request rewritten to a chat lane is garbled audio, not a
+   rescue. **Fix:** candidates filter by mode; when no lane of the requested mode is
+   servable, the request passes through untouched — the outage is loud, LiteLLM's own
+   fallbacks own it, and nothing is journalled.

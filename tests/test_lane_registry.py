@@ -32,6 +32,32 @@ MODULE = (
     / "lane_registry.py"
 )
 
+# Hermetic model_list: the deployments the tests observe, plus one non-chat lane
+# (the reconcile tests square loaded state against THIS, never the laptop's real config).
+CONFIG_YAML = """
+model_list:
+  - model_name: moonshot
+    litellm_params:
+      model: moonshot/kimi-k3
+      api_key: os.environ/NO_SUCH_KEY
+  - model_name: groq
+    litellm_params:
+      model: groq/llama-3.3-70b-versatile
+      api_key: os.environ/NO_SUCH_KEY
+  - model_name: tts
+    litellm_params:
+      model: groq/canopylabs/orpheus-v1-english
+      api_key: os.environ/NO_SUCH_KEY
+    model_info:
+      mode: audio_speech
+  - model_name: voice-asr
+    litellm_params:
+      model: groq/whisper-large-v3-turbo
+      api_key: os.environ/NO_SUCH_KEY
+    model_info:
+      mode: audio_transcription
+"""
+
 
 def _load():
     spec = importlib.util.spec_from_file_location("lane_registry", MODULE)
@@ -45,6 +71,9 @@ def _load():
 def mod(tmp_path, monkeypatch):
     monkeypatch.setenv("ESTATE_ROUTER_STATE_DIR", str(tmp_path / "router"))
     monkeypatch.setenv("ESTATE_ROUTER_PROBES", "0")
+    cfg = tmp_path / "config.yaml"
+    cfg.write_text(CONFIG_YAML)
+    monkeypatch.setenv("ESTATE_ROUTER_CONFIG", str(cfg))
     return _load()
 
 
@@ -225,3 +254,99 @@ def test_snapshot_persists_and_reloads(mod):
     assert fresh.state("moonshot/kimi-k3") == "dead"
     snap = fresh.snapshot()
     assert any(l["deployment"] == "moonshot/kimi-k3" for l in snap["lanes"])
+
+
+# ------------------------------------- measured live defects, 2026-10-02 (fix lane)
+
+
+def test_unresolved_failure_is_never_attributed(mod):
+    """A model-group miss carries no deployment metadata: the requested name is not a
+    lane, and must not grow a ghost record (measured on the live router: 'gemini' and
+    'cheap' sat dead:auth with no params and no healing path, pure noise)."""
+    reg = _registry(mod)
+    kwargs = {"model": "brand-new-alias", "litellm_params": {}}
+    asyncio.run(
+        reg.async_log_failure_event(kwargs, None, dt.datetime.now(), dt.datetime.now())
+    )
+    assert "brand-new-alias" not in reg._lanes
+
+
+def test_alias_named_failure_is_not_a_lane_fact(mod):
+    """The same failure whose bare model IS an alias ('groq'): aliases are not
+    deployments; only a name present in the staged model_list counts."""
+    reg = _registry(mod)
+    kwargs = {"model": "groq", "litellm_params": {}}
+    asyncio.run(
+        reg.async_log_failure_event(
+            kwargs,
+            _Resp(status=401, message="bad key"),
+            dt.datetime.now(),
+            dt.datetime.now(),
+        )
+    )
+    assert "groq" not in reg._lanes
+
+
+def test_probe_params_skip_non_chat_modes(mod):
+    """A completion-shaped probe cannot grade audio_speech: the TTS lane is
+    real-traffic-only (the chat-probe era is what killed voice-tts for good)."""
+    params = _registry(mod)._deployment_params()
+    assert "groq/canopylabs/orpheus-v1-english" not in params
+    assert params["moonshot/kimi-k3"]["model"] == "moonshot/kimi-k3"
+
+
+def test_load_reconciles_ghost_and_probe_era_deaths(mod, tmp_path):
+    """Boot-window state squares with the config actually staged: ghosts drop, a
+    non-chat lane stuck dead OR exhausted-no-reset heals (real traffic re-condemns in
+    one observation if it is truly out — the measured orpheus shape), a chat lane's
+    death is real evidence."""
+    d = tmp_path / "router"
+    d.mkdir(parents=True)
+    (d / "lanes.json").write_text(
+        json.dumps(
+            {
+                "lanes": [
+                    {
+                        "deployment": "gemini",
+                        "state": "dead",
+                        "reason": "auth",
+                        "since": 1,
+                        "last_observation": 1,
+                        "last_probe": 0,
+                    },
+                    {
+                        "deployment": "groq/canopylabs/orpheus-v1-english",
+                        "state": "exhausted",
+                        "reason": "rate",
+                        "reset_at": None,
+                        "since": 1,
+                        "last_observation": 1,
+                        "last_probe": 0,
+                    },
+                    {
+                        "deployment": "groq/whisper-large-v3-turbo",
+                        "state": "dead",
+                        "reason": "credit",
+                        "since": 1,
+                        "last_observation": 1,
+                        "last_probe": 0,
+                    },
+                    {
+                        "deployment": "moonshot/kimi-k3",
+                        "state": "dead",
+                        "reason": "credit",
+                        "since": 1,
+                        "last_observation": 1,
+                        "last_probe": 0,
+                    },
+                ]
+            }
+        )
+    )
+    reg = _registry(mod)
+    assert "gemini" not in reg._lanes  # ghost: dropped
+    # the measured orpheus shape (exhausted, rate, no reset) and a dead non-chat lane
+    # both heal: real traffic is their only observer now
+    assert reg.state("groq/canopylabs/orpheus-v1-english") == "ready"
+    assert reg.state("groq/whisper-large-v3-turbo") == "ready"
+    assert reg.state("moonshot/kimi-k3") == "dead"  # chat death is evidence, kept

@@ -1,0 +1,90 @@
+description: "The voice-tts model group served zero lanes from ~13:25 to 17:00 on\
+  \ 2026-10-02 while its only deployment (orpheus TTS) sat `exhausted, reason=rate,\
+  \ reset_at=null` in lanes.json. Every TTS request was rewritten to the default (chat)\
+  \ group instead (4,126 rows in substitutions.jsonl). Question: why did a transient\
+  \ vendor rate limit become a PERMANENT dead group. H1: the registry's probes are\
+  \ completion-shaped and cannot grade a non-chat lane, so a transient condemnation\
+  \ has no healing path (no correct probe, and `exhausted` blocks the real traffic\
+  \ that would re-observe it). H2: the vendor lane was genuinely unhealthy all along\
+  \ (credit/auth dead or a hard multi-hour rate limit). H3: misattribution \u2014\
+  \ the condemned record belongs to no real deployment (alias/ghost key), the group\
+  \ itself is fine.\n"
+hypotheses:
+- name: H1
+  description: chat-shaped probes cannot grade non-chat lanes; a transient condemnation
+    (429 without a reset header) is permanent
+  prior: 0.5
+- name: H2
+  description: vendor lane genuinely unhealthy for the whole window (credit/auth dead
+    or a hard multi-hour rate limit)
+  prior: 0.3
+- name: H3
+  description: "misattribution \u2014 the condemned record names no real deployment\
+    \ (ghost key), the group itself is servable"
+  prior: 0.2
+n_eff_divisor: 60
+evidence:
+- name: "probe verdicts on the orpheus deployment (lanes.jsonl, whole window): the\
+    \ probe fails with \"The model `canopylabs/orpheus-v1-english` does not support\
+    \ chat completions\" \u2014 a 400 about the CALLER, not the lane"
+  observed:
+    chat_shape_400_fail: 403
+  likelihoods:
+    H1:
+      chat_shape_400_fail: 0.85
+      auth_fail: 0.02
+      credit_fail: 0.03
+      no_probe_rows: 0.1
+    H2:
+      chat_shape_400_fail: 0.1
+      auth_fail: 0.35
+      credit_fail: 0.35
+      no_probe_rows: 0.2
+    H3:
+      chat_shape_400_fail: 0.1
+      auth_fail: 0.1
+      credit_fail: 0.1
+      no_probe_rows: 0.7
+- name: 'the lane record shape (lanes.json, read 2026-10-02 17:0x): exhausted / rate
+    / reset_at=null with real prior traffic (latency p50 1195ms recorded)'
+  observed:
+    exhausted_no_reset: 1
+  likelihoods:
+    H1:
+      exhausted_no_reset: 0.75
+      dead_auth: 0.05
+      dead_credit: 0.05
+      healthy: 0.15
+    H2:
+      exhausted_no_reset: 0.15
+      dead_auth: 0.3
+      dead_credit: 0.3
+      healthy: 0.25
+    H3:
+      exhausted_no_reset: 0.05
+      dead_auth: 0.05
+      dead_credit: 0.05
+      healthy: 0.85
+- name: "voice-tts requests in substitutions.jsonl rewritten to the default (chat)\
+    \ group \u2014 cross-mode rescue rows"
+  observed:
+    cross_mode_rescue: 4126
+  likelihoods:
+    H1:
+      cross_mode_rescue: 0.7
+      same_mode_rescue: 0.05
+      no_rescue: 0.25
+    H2:
+      cross_mode_rescue: 0.6
+      same_mode_rescue: 0.05
+      no_rescue: 0.35
+    H3:
+      cross_mode_rescue: 0.1
+      same_mode_rescue: 0.1
+      no_rescue: 0.8
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-10-02T16:29:45Z'

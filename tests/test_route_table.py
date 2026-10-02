@@ -38,6 +38,12 @@ model_list:
     litellm_params:
       model: gemini/gemini-2.5-flash
       api_key: os.environ/NO_SUCH_KEY
+  - model_name: voice-tts
+    litellm_params:
+      model: groq/canopylabs/orpheus-v1-english
+      api_key: os.environ/NO_SUCH_KEY
+    model_info:
+      mode: audio_speech
 """
 
 
@@ -149,6 +155,21 @@ def test_unknown_alias_is_untouched(mods):
     lr, rt = mods
     data = _pre_call(rt, "brand-new-alias")
     assert data["model"] == "brand-new-alias"
+
+
+def test_dead_non_chat_group_is_not_rescued_to_chat(mods, tmp_path):
+    """voice-tts dead: a chat lane would be garbled audio, not a rescue — the mode is
+    part of the contract. Untouched, nothing journalled, LiteLLM's own fallbacks own
+    it: the outage is loud, never silent. (Measured live 2026-10-02: every TTS call
+    was rewritten to default.)"""
+    lr, rt = mods
+    lr.proxy_handler_instance.observe_failure(
+        "groq/canopylabs/orpheus-v1-english", 402, "insufficient balance"
+    )
+    data = _pre_call(rt, "voice-tts")
+    assert data["model"] == "voice-tts"
+    assert "estate_served_by" not in data["metadata"]
+    assert not (tmp_path / "router" / "substitutions.jsonl").exists()
 
 
 # ------------------------------------------------------------------ never silent

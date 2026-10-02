@@ -12,7 +12,8 @@ Two mechanisms, both fed by the registry:
     The pick happens over survivors only: no user request reaches a condemned lane.
   * dead-group re-route (`async_pre_call_hook`) — when NO deployment of the requested
     group is servable, the request is rewritten to a servable lane of the same class
-    (text / embed / vision / image), the substitution is recorded, and the RESPONSE
+    AND mode (a chat lane never rescues a speech lane — garbled, not served), the
+    substitution is recorded, and the RESPONSE
     carries `x-estate-served-by: <lane>` via _hidden_params.additional_headers (merged
     into the client response by litellm/proxy/proxy_server.py). Never silent.
 
@@ -88,6 +89,10 @@ _TABLE_DEFAULT = "~/.estate/router/table.json"
 _seen_classes: dict[str, str] = {}
 _compiled: dict[str, list[str]] = {}  # alias -> ordered deployment ids (servable)
 _compiled_at: float = 0.0
+_alias_modes: dict[str, str] = {}  # alias -> model_info.mode ("" = chat): a rescue
+# never crosses modes — a chat lane serving a voice-tts request is garbled audio, not a
+# rescue (measured 2026-10-02 on the live router: dead voice-tts -> every TTS call
+# rewritten to default).
 
 
 def class_of(alias: str) -> str:
@@ -97,6 +102,10 @@ def class_of(alias: str) -> str:
     if alias.startswith("embed"):
         return "embed"
     return "text"
+
+
+def _mode_of(alias: str) -> str:
+    return _alias_modes.get(alias, "")
 
 
 def _registry() -> Any:
@@ -114,15 +123,18 @@ def compile_table(registry: Any = None) -> dict[str, list[str]]:
     Deployment membership comes from the staged config's model_list (the same source the
     probe loop reads), so the table knows a group's lanes even before the first call.
     """
-    global _compiled, _compiled_at
+    global _compiled, _compiled_at, _alias_modes
     registry = registry or _registry()
     now = time.time()
     groups: dict[str, list[str]] = {}
+    modes: dict[str, str] = {}
     for m in _model_list():
         alias = str(m.get("model_name") or "")
         dep = str((m.get("litellm_params") or {}).get("model") or alias)
         if alias and dep:
             groups.setdefault(alias, []).append(dep)
+            modes[alias] = str(((m.get("model_info") or {}).get("mode")) or "").lower()
+    _alias_modes = modes
     out: dict[str, list[str]] = {}
     for alias, deps in groups.items():
         ok = [d for d in deps if registry.servable(d)]
@@ -239,7 +251,11 @@ class EstateRouteTable(CustomLogger):
                 return None  # the group has a lane: normal routing
             cls = _seen_classes.setdefault(alias, class_of(alias))
             order = _CLASS_ORDER.get(cls, [alias])
+            want = _mode_of(alias)
             for candidate in [a for a in order if a != alias]:
+                if _mode_of(candidate) != want:
+                    continue  # rescue stays inside the requested mode: a chat lane
+                    # must never serve an audio_speech request (garbled, not served)
                 lanes = table.get(candidate) or []
                 if not lanes:
                     continue

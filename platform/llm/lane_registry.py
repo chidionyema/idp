@@ -94,6 +94,13 @@ _PROBE_TIMEOUT_S = 10
 _PROBE_CONCURRENCY = 4
 _FRESH_S = 60  # a lane with a real call this recent needs no probe
 
+# Modes a completion-shaped probe can actually grade. Other modes (audio_speech,
+# audio_transcription, embeddings, image...) are real-traffic-only: a chat probe on them
+# is a 400 about the CALLER, never about the lane. Measured on the live router 2026-10-02:
+# orpheus TTS probed with chat -> voice-tts dead with no healing path, every TTS call
+# rescued to a chat lane (garbled audio, not a rescue).
+_CHAT_MODES = ("", "chat", "completion")
+
 _RESET_HDRS = (
     "x-ratelimit-requests-reset",
     "x-ratelimit-reset-requests",
@@ -118,6 +125,26 @@ def _state_dir() -> str:
 
 def _config_path() -> str:
     return os.path.expanduser(os.environ.get(_CONFIG_ENV) or _CONFIG_DEFAULT)
+
+
+def _modes() -> dict[str, str]:
+    """deployment -> model_info.mode from the staged config ("" when unstated = chat)."""
+    out: dict[str, str] = {}
+    try:
+        import yaml
+
+        doc = yaml.safe_load(open(_config_path(), encoding="utf-8")) or {}
+        for m in doc.get("model_list") or []:
+            if not isinstance(m, dict):
+                continue
+            key = str((m.get("litellm_params") or {}).get("model") or "")
+            if not key:
+                key = str(m.get("model_name") or "")
+            if key:
+                out[key] = str(((m.get("model_info") or {}).get("mode")) or "").lower()
+    except Exception as exc:  # noqa: BLE001 - LAW 38
+        log.warning("[lane-registry] modes not readable: %s", exc)
+    return out
 
 
 # --------------------------------------------------------------------- classification
@@ -259,6 +286,47 @@ class LaneRegistry(CustomLogger):
             pass
         except Exception as exc:  # noqa: BLE001 - LAW 38: never fail the request path
             log.warning("[lane-registry] lanes.json not loaded: %s", exc)
+        self._reconcile_loaded()
+
+    def _reconcile_loaded(self) -> None:
+        """Loaded state must square with the config actually staged.
+
+        Two measured defects of the boot-window state (2026-10-02, live router):
+          * ghost records — a failure attributed before it resolved to a deployment
+            ("gemini", "cheap": dead:auth with no params, unhealable noise);
+          * non-chat lanes dead from a completion-shaped probe era — real traffic is
+            their only observer now, so a dead non-chat lane could never heal.
+        """
+        try:
+            known = _modes()
+            if not known:
+                return  # config unreadable: fail open, judge nothing
+            ghosts = [k for k in self._lanes if k not in known]
+            for k in ghosts:
+                del self._lanes[k]
+            if ghosts:
+                self._persist("load-purge", "ghosts", {"dropped": ghosts})
+            for key, mode in known.items():
+                if mode in _CHAT_MODES:
+                    continue
+                lane = self._lanes.get(key)
+                if lane and lane.get("state") in (DEAD, EXHAUSTED):
+                    # measured 2026-10-02 on the live router: a TTS lane took ONE 429
+                    # with no reset header -> exhausted with reset_at=None -> not
+                    # servable -> no real traffic -> chat-shaped probes 400 as caller
+                    # errors -> permanent. Real traffic is the only observer for
+                    # non-chat lanes: hand back, the next real call re-condemns in ONE
+                    # observation if the lane is truly out (rate windows are minutes).
+                    old = lane["state"]
+                    lane["state"] = READY
+                    lane["reason"] = ""
+                    lane["since"] = time.time()
+                    lane["reset_at"] = None
+                    self._persist(
+                        "load-heal", key, {"from": old, "to": READY, "why": "non-chat"}
+                    )
+        except Exception as exc:  # noqa: BLE001 - LAW 38
+            log.warning("[lane-registry] loaded state not reconciled: %s", exc)
 
     def _persist(
         self, event: str, deployment: str, extra: Optional[dict] = None
@@ -491,10 +559,10 @@ class LaneRegistry(CustomLogger):
         while True:
             try:
                 await asyncio.sleep(_SWEEP_S)
-                due = [d for d in self._lanes if self.probe_due(d)]
+                params = self._deployment_params()
+                due = [d for d in params if d in self._lanes and self.probe_due(d)]
                 if not due:
                     continue
-                params = self._deployment_params()
                 sem = asyncio.Semaphore(_PROBE_CONCURRENCY)
 
                 async def guarded(
@@ -521,6 +589,9 @@ class LaneRegistry(CustomLogger):
                     continue
                 lp = dict(m.get("litellm_params") or {})
                 key = lp.get("model", m.get("model_name", ""))
+                mode = str(((m.get("model_info") or {}).get("mode")) or "").lower()
+                if mode not in _CHAT_MODES:
+                    continue  # a completion probe cannot grade this mode (see _CHAT_MODES)
                 for f in ("api_key", "api_base"):
                     v = lp.get(f)
                     if isinstance(v, str) and v.startswith("os.environ/"):
@@ -547,7 +618,7 @@ class LaneRegistry(CustomLogger):
     # -------------------------------------------------------- LiteLLM hooks (proxy)
 
     @staticmethod
-    def _deployment_of(kwargs: dict[str, Any]) -> str:
+    def _deployment_of(kwargs: dict[str, Any]) -> Optional[str]:
         md = (kwargs.get("litellm_params") or {}).get("metadata") or {}
         for k in ("deployment", "deployment_name", "model_id"):
             if md.get(k):
@@ -555,7 +626,18 @@ class LaneRegistry(CustomLogger):
         mi = kwargs.get("model_info") or {}
         if mi.get("id"):
             return str(mi["id"])
-        return str(kwargs.get("model", "unknown"))
+        m = kwargs.get("model")
+        if m:
+            # a resolved failure can carry the bare model name: count it only if it names
+            # a REAL deployment in the staged config. Otherwise it is a requested alias
+            # (or garbage) and is never a lane-health fact — the ghost-record defect
+            # (measured 2026-10-02 on the live router: "gemini", "cheap" dead:auth forever)
+            try:
+                if str(m) in _modes():
+                    return str(m)
+            except Exception as exc:  # noqa: BLE001 - attribution must never raise
+                log.debug("[lane-registry] model-name attribution skipped: %s", exc)
+        return None
 
     async def async_log_success_event(self, kwargs, response_obj, start_time, end_time):
         try:
@@ -565,9 +647,9 @@ class LaneRegistry(CustomLogger):
                 ms = (end_time - start_time).total_seconds() * 1000.0
             except Exception as exc:  # noqa: BLE001 - telemetry must never break a call
                 log.debug("[lane-registry] timing unavailable: %s", exc)
-            self.observe_success(
-                self._deployment_of(kwargs), ms, _hdrs_of(response_obj)
-            )
+            dep = self._deployment_of(kwargs)
+            if dep:
+                self.observe_success(dep, ms, _hdrs_of(response_obj))
         except Exception as exc:  # noqa: BLE001 - LAW 38
             log.warning("[lane-registry] success hook: %s", exc)
 
@@ -585,12 +667,14 @@ class LaneRegistry(CustomLogger):
                 if exc is not None:
                     status = getattr(exc, "status_code", None)
                     text = str(getattr(exc, "message", "") or exc)
-            self.observe_failure(
-                self._deployment_of(kwargs),
-                status if isinstance(status, int) else None,
-                text,
-                _hdrs_of(response_obj),
-            )
+            dep = self._deployment_of(kwargs)
+            if dep:
+                self.observe_failure(
+                    dep,
+                    status if isinstance(status, int) else None,
+                    text,
+                    _hdrs_of(response_obj),
+                )
         except Exception as exc:  # noqa: BLE001 - LAW 38
             log.warning("[lane-registry] failure hook: %s", exc)
 
