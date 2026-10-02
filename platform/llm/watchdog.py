@@ -8,8 +8,17 @@ source; this file is that script, staged by `bin/litellm-local install` next to 
 guards, and run every 15 s by launchd/ai.estate.litellm-watchdog.plist.tmpl.
 
 Reads/writes ~/.estate/state/watchdog.json. Restarts the router only after 3 consecutive health
-failures, and never sooner than 90 s after a previous restart, so a slow start is never
+failures, and never sooner than 240 s after a previous restart, so a slow start is never
 mistaken for a dead router and a crash loop cannot be amplified by its own guardian.
+
+ONLY A REFUSED PORT IS A FAILURE. On 2026-10-02 this restarted the router 12 times: every one
+followed a 3 s curl timeout while the laptop's load average sat at 50-90, i.e. a router that was
+listening and slow, not dead. Each kickstart cut every live session (the agents saw
+"Connection error") and the ~50 s restart added load. router-doctor learned the same rule on
+2026-09-28 ("29 of 35 restarts were this. Only a refused port is healed."). So a timeout or an
+HTTP error from a listening process is logged and never counted; only curl's "could not connect"
+(exit 7) counts toward a restart. The cooldown is 240 s because a start under that load took
+over 90 s, and the old 90 s cooldown let the guardian kill a router that was still starting.
 """
 
 import datetime
@@ -27,7 +36,9 @@ URL = "http://127.0.0.1:4000/health/liveliness"
 LABEL = f"gui/{os.getuid()}/com.estate.litellm-local"
 
 FAIL_THRESHOLD = 3
-COOLDOWN_SECS = 90
+COOLDOWN_SECS = 240
+PROBE_TIMEOUT_SECS = 10
+CURL_COULD_NOT_CONNECT = 7
 
 
 def log(msg):
@@ -51,12 +62,27 @@ def save_state(s):
 
 
 def probe():
+    """'ok', 'refused' (nothing listening: the only verdict that counts), or 'slow:<why>'."""
     r = subprocess.run(
-        ["curl", "-sf", "-m", "3", "-o", "/dev/null", "-w", "%{http_code}", URL],
+        [
+            "curl",
+            "-s",
+            "-m",
+            str(PROBE_TIMEOUT_SECS),
+            "-o",
+            "/dev/null",
+            "-w",
+            "%{http_code}",
+            URL,
+        ],
         capture_output=True,
         text=True,
     )
-    return r.stdout.strip() == "200"
+    if r.returncode == 0 and r.stdout.strip() == "200":
+        return "ok"
+    if r.returncode == CURL_COULD_NOT_CONNECT:
+        return "refused"
+    return f"slow:curl={r.returncode} http={r.stdout.strip() or '-'}"
 
 
 def restart():
@@ -68,7 +94,12 @@ def main():
     now = time.time()
     s = load_state()
 
-    if probe():
+    verdict = probe()
+    if verdict.startswith("slow"):
+        # Listening but not answering in time: not dead, so neither counted nor restarted.
+        log(f"probe {verdict} -- listening, not restarted")
+        return
+    if verdict == "ok":
         if s["failures"]:
             log(f"recovered after {s['failures']} failure(s)")
         s["failures"] = 0
@@ -76,7 +107,7 @@ def main():
         return
 
     s["failures"] += 1
-    log(f"probe failed ({s['failures']}/{FAIL_THRESHOLD})")
+    log(f"probe refused ({s['failures']}/{FAIL_THRESHOLD})")
 
     if s["failures"] < FAIL_THRESHOLD:
         save_state(s)
