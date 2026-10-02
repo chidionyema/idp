@@ -29,6 +29,7 @@
 {"alias": "ESTATE_AGENT JetStream stream", "entity": "component/estate-agent-jetstream-stream", "type": "COMPONENT"}
 {"alias": "estate-ui-kit", "entity": "component/estate-ui-kit", "type": "COMPONENT"}
 {"alias": "Executor", "entity": "component/executor", "type": "COMPONENT"}
+{"alias": "fleet key-sync board", "entity": "component/fleet-key-sync-board", "type": "COMPONENT"}
 {"alias": "Flux Drift Gate", "entity": "component/flux-drift-gate", "type": "COMPONENT"}
 {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
 {"alias": "Governor", "entity": "component/governor", "type": "COMPONENT"}
