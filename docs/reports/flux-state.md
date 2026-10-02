@@ -1,8 +1,8 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-10-01T23:15:14Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-10-02T02:15:12Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**65 objects: 43 ready, 20 not ready, 0 unknown, 2 suspended.**
+**65 objects: 44 ready, 19 not ready, 0 unknown, 2 suspended.**
 
 ## Not ready right now
 
@@ -10,22 +10,21 @@ Read from the cluster receipt taken at 2026-10-01T23:15:14Z. Every Kustomization
 - **HelmRelease coroot/coroot** since 2026-09-29T06:30:04Z: Helm upgrade failed for release coroot/coroot with chart coroot@0.22.0: failed early due to stalled resources: [Deployment/coroot/coroot-prometheus-server status: 'Failed']
 - **HelmRelease crossplane-system/crossplane** since 2026-09-29T07:14:14Z: Helm rollback to previous release crossplane-system/crossplane.v28 with chart crossplane@2.4.0 succeeded
 - **HelmRelease dagster/dagster** since 2026-09-29T06:21:51Z: Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded
-- **HelmRelease flux-system/vendor-bridge** since 2026-10-01T23:14:47Z: Running 'upgrade' action with timeout of 5m0s
+- **HelmRelease flux-system/vendor-bridge** since 2026-10-02T02:11:28Z: Running 'upgrade' action with timeout of 5m0s
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
 - **HelmRelease spire-mgmt/spire** since 2026-09-26T20:11:52Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deployment/spire-mgmt/spire-spiffe-oidc-discovery-provider status: 'InProgress']
-- **Kustomization flux-system/agent-workforce** since 2026-10-01T23:07:02Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/backstage-namespace** since 2026-10-01T23:14:46Z: Reconciliation in progress
-- **Kustomization flux-system/estate-db-migrate** since 2026-10-01T23:07:18Z: Job/dagster/estate-db-copy-dagster-r3 dry-run failed (Invalid): Job.batch "estate-db-copy-dagster-r3" is invalid: spec.template: Invalid value: {"labels":{"app.kubernetes.io/name":"estate-db-copy-dagster-r3","app.kubernetes.io/part-of":"idp","batch.kubernetes.io/controller-uid":"60a5ac96-98e9-437f-9c41-4ebb30025a6b","batch.kubernetes.io/job-name":"estate-db-copy-dagster-r3","controller-uid":"60a5ac96-98e9-437f-9c41-4ebb30025a6b","job-name":"estate-db-copy-dagster-r3"},"Spec":{"Volumes":[{"Name":"old","HostPath":null,"EmptyDir":null,"GCEPersistentDisk":null,"AWSElasticBlockStore":null,"GitRepo" ... Seconds":null,"DNSPolicy":"ClusterFirst","NodeSelector":null,"ServiceAccountName":"","AutomountServiceAccountToken":false,"NodeName":"","SecurityContext":{"HostNetwork":false,"HostPID":false,"HostIPC":false,"ShareProcessNamespace":null,"HostUsers":null,"SELinuxOptions":null,"WindowsOptions":null,"RunAsUser":26,"RunAsGroup":26,"RunAsNonRoot":true,"SupplementalGroups":null,"SupplementalGroupsPolicy":null,"FSGroup":26,"FSGroupChangePolicy":null,"Sysctls":null,"SeccompProfile":{"Type":"RuntimeDefault","LocalhostProfile":null},"AppArmorProfile":null,"SELinuxChangePolicy":null},"ImagePullSecrets":null,"Hostname":"","Subdomain":"","SetHostnameAsFQDN":null,"Affinity":{"NodeAffinity":{"RequiredDuringSchedulingIgnoredDuringExecution":null,"PreferredDuringSchedulingIgnoredDuringExecution":[{"Weight":50,"Preference":{"MatchExpressions":[{"Key":"estate.io/capacity","Operator":"In","Values":["preemptible"]}],"MatchFields":null}}]},"PodAffinity":null,"PodAntiAffinity":null},"SchedulerName":"default-scheduler","Tolerations":null,"HostAliases":null,"PriorityClassName":"platform-batch","Priority":null,"PreemptionPolicy":null,"DNSConfig":null,"ReadinessGates":null,"RuntimeClassName":null,"Overhead":null,"EnableServiceLinks":null,"TopologySpreadConstraints":null,"OS":null,"SchedulingGates":null,"ResourceClaims":null,"Resources":null,"HostnameOverride":null,"WorkloadRef":null}}: field is immutable 
-- **Kustomization flux-system/external-secrets** since 2026-10-01T23:15:04Z: Reconciliation in progress
-- **Kustomization flux-system/flux-system** since 2026-10-01T23:14:51Z: Reconciliation in progress
-- **Kustomization flux-system/hermes-agent** since 2026-10-01T23:07:01Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/hindsight** since 2026-10-01T23:07:02Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/agent-workforce** since 2026-10-02T02:14:56Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/estate-db-migrate** since 2026-10-02T02:05:48Z: Job/dagster/estate-db-copy-dagster-r3 dry-run failed (Invalid): Job.batch "estate-db-copy-dagster-r3" is invalid: spec.template: Invalid value: {"labels":{"app.kubernetes.io/name":"estate-db-copy-dagster-r3","app.kubernetes.io/part-of":"idp","batch.kubernetes.io/controller-uid":"60a5ac96-98e9-437f-9c41-4ebb30025a6b","batch.kubernetes.io/job-name":"estate-db-copy-dagster-r3","controller-uid":"60a5ac96-98e9-437f-9c41-4ebb30025a6b","job-name":"estate-db-copy-dagster-r3"},"Spec":{"Volumes":[{"Name":"old","HostPath":null,"EmptyDir":null,"GCEPersistentDisk":null,"AWSElasticBlockStore":null,"GitRepo" ... Seconds":null,"DNSPolicy":"ClusterFirst","NodeSelector":null,"ServiceAccountName":"","AutomountServiceAccountToken":false,"NodeName":"","SecurityContext":{"HostNetwork":false,"HostPID":false,"HostIPC":false,"ShareProcessNamespace":null,"HostUsers":null,"SELinuxOptions":null,"WindowsOptions":null,"RunAsUser":26,"RunAsGroup":26,"RunAsNonRoot":true,"SupplementalGroups":null,"SupplementalGroupsPolicy":null,"FSGroup":26,"FSGroupChangePolicy":null,"Sysctls":null,"SeccompProfile":{"Type":"RuntimeDefault","LocalhostProfile":null},"AppArmorProfile":null,"SELinuxChangePolicy":null},"ImagePullSecrets":null,"Hostname":"","Subdomain":"","SetHostnameAsFQDN":null,"Affinity":{"NodeAffinity":{"RequiredDuringSchedulingIgnoredDuringExecution":null,"PreferredDuringSchedulingIgnoredDuringExecution":[{"Weight":50,"Preference":{"MatchExpressions":[{"Key":"estate.io/capacity","Operator":"In","Values":["preemptible"]}],"MatchFields":null}}]},"PodAffinity":null,"PodAntiAffinity":null},"SchedulerName":"default-scheduler","Tolerations":null,"HostAliases":null,"PriorityClassName":"platform-batch","Priority":null,"PreemptionPolicy":null,"DNSConfig":null,"ReadinessGates":null,"RuntimeClassName":null,"Overhead":null,"EnableServiceLinks":null,"TopologySpreadConstraints":null,"OS":null,"SchedulingGates":null,"ResourceClaims":null,"Resources":null,"HostnameOverride":null,"WorkloadRef":null}}: field is immutable 
+- **Kustomization flux-system/github-app-creds** since 2026-10-02T02:15:04Z: Reconciliation in progress
+- **Kustomization flux-system/hermes-agent** since 2026-10-02T02:15:04Z: dependency 'flux-system/github-app-creds' is not ready
+- **Kustomization flux-system/hindsight** since 2026-10-02T02:14:56Z: dependency 'flux-system/llm' is not ready
 - **Kustomization flux-system/llm** since 2026-10-01T20:38:26Z: dependency 'flux-system/estate-db-migrate' is not ready
-- **Kustomization flux-system/ns-fences** since 2026-10-01T23:15:06Z: Reconciliation in progress
-- **Kustomization flux-system/otto-golden** since 2026-10-01T23:07:02Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/research-engine** since 2026-10-01T23:07:02Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/temporal** since 2026-10-01T23:07:01Z: dependency 'flux-system/estate-db-migrate' is not ready
-- **Kustomization flux-system/voice-router** since 2026-10-01T23:10:52Z: health check failed after 5m0.024519493s: timeout waiting for: [ExternalSecret/voice-router/newsroom-llm status: 'InProgress', Deployment/voice-router/voice-router-director status: 'InProgress']
+- **Kustomization flux-system/otto-golden** since 2026-10-02T02:14:35Z: dependency 'flux-system/otto-golden-secret' is not ready
+- **Kustomization flux-system/otto-golden-secret** since 2026-10-02T02:14:57Z: Reconciliation in progress
+- **Kustomization flux-system/research-engine** since 2026-10-02T02:14:56Z: dependency 'flux-system/llm' is not ready
+- **Kustomization flux-system/tailscale** since 2026-10-02T02:14:55Z: Reconciliation in progress
+- **Kustomization flux-system/temporal** since 2026-10-02T02:15:04Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/voice-router** since 2026-10-02T02:14:02Z: health check failed after 5m0.030753252s: timeout waiting for: [Deployment/voice-router/voice-router-director status: 'InProgress', ExternalSecret/voice-router/newsroom-llm status: 'InProgress']
 
 ## Every row
 
@@ -35,22 +34,21 @@ Read from the cluster receipt taken at 2026-10-01T23:15:14Z. Every Kustomization
 | HelmRelease | coroot | coroot | Not ready | 0.22.0 | 2026-09-29T06:30:04Z | Helm upgrade failed for release coroot/coroot with chart coroot@0.22.0: failed early due to stalled resources: [Deployment/coroot/coroot-prometheus-server statu |
 | HelmRelease | crossplane-system | crossplane | Not ready | 1.15.1 | 2026-09-29T07:14:14Z | Helm rollback to previous release crossplane-system/crossplane.v28 with chart crossplane@2.4.0 succeeded |
 | HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-29T06:21:51Z | Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded |
-| HelmRelease | flux-system | vendor-bridge | Not ready | 0.1.0+b8daac09b6f7 | 2026-10-01T23:14:47Z | Running 'upgrade' action with timeout of 5m0s |
+| HelmRelease | flux-system | vendor-bridge | Not ready | 0.1.0+916463ad650e | 2026-10-02T02:11:28Z | Running 'upgrade' action with timeout of 5m0s |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
 | HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T20:11:52Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deploymen |
-| Kustomization | flux-system | agent-workforce | Not ready |  | 2026-10-01T23:07:02Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | backstage-namespace | Not ready | main@5864372 | 2026-10-01T23:14:46Z | Reconciliation in progress |
-| Kustomization | flux-system | estate-db-migrate | Not ready | main@ff6235c | 2026-10-01T23:07:18Z | Job/dagster/estate-db-copy-dagster-r3 dry-run failed (Invalid): Job.batch "estate-db-copy-dagster-r3" is invalid: spec.template: Invalid value: {"labels":{"app. |
-| Kustomization | flux-system | external-secrets | Not ready | main@5864372 | 2026-10-01T23:15:04Z | Reconciliation in progress |
-| Kustomization | flux-system | flux-system | Not ready | main@5864372 | 2026-10-01T23:14:51Z | Reconciliation in progress |
-| Kustomization | flux-system | hermes-agent | Not ready | main@ff6235c | 2026-10-01T23:07:01Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | hindsight | Not ready | main@ff6235c | 2026-10-01T23:07:02Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | agent-workforce | Not ready |  | 2026-10-02T02:14:56Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | estate-db-migrate | Not ready | main@ff6235c | 2026-10-02T02:05:48Z | Job/dagster/estate-db-copy-dagster-r3 dry-run failed (Invalid): Job.batch "estate-db-copy-dagster-r3" is invalid: spec.template: Invalid value: {"labels":{"app. |
+| Kustomization | flux-system | github-app-creds | Not ready | main@916463a | 2026-10-02T02:15:04Z | Reconciliation in progress |
+| Kustomization | flux-system | hermes-agent | Not ready | main@ff6235c | 2026-10-02T02:15:04Z | dependency 'flux-system/github-app-creds' is not ready |
+| Kustomization | flux-system | hindsight | Not ready | main@ff6235c | 2026-10-02T02:14:56Z | dependency 'flux-system/llm' is not ready |
 | Kustomization | flux-system | llm | Not ready | main@ff6235c | 2026-10-01T20:38:26Z | dependency 'flux-system/estate-db-migrate' is not ready |
-| Kustomization | flux-system | ns-fences | Not ready | main@5864372 | 2026-10-01T23:15:06Z | Reconciliation in progress |
-| Kustomization | flux-system | otto-golden | Not ready | main@ff6235c | 2026-10-01T23:07:02Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | research-engine | Not ready |  | 2026-10-01T23:07:02Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | temporal | Not ready |  | 2026-10-01T23:07:01Z | dependency 'flux-system/estate-db-migrate' is not ready |
-| Kustomization | flux-system | voice-router | Not ready | main@5864372 | 2026-10-01T23:10:52Z | health check failed after 5m0.024519493s: timeout waiting for: [ExternalSecret/voice-router/newsroom-llm status: 'InProgress', Deployment/voice-router/voice-rou |
+| Kustomization | flux-system | otto-golden | Not ready | main@ff6235c | 2026-10-02T02:14:35Z | dependency 'flux-system/otto-golden-secret' is not ready |
+| Kustomization | flux-system | otto-golden-secret | Not ready | main@916463a | 2026-10-02T02:14:57Z | Reconciliation in progress |
+| Kustomization | flux-system | research-engine | Not ready |  | 2026-10-02T02:14:56Z | dependency 'flux-system/llm' is not ready |
+| Kustomization | flux-system | tailscale | Not ready | main@916463a | 2026-10-02T02:14:55Z | Reconciliation in progress |
+| Kustomization | flux-system | temporal | Not ready |  | 2026-10-02T02:15:04Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | voice-router | Not ready | main@916463a | 2026-10-02T02:14:02Z | health check failed after 5m0.030753252s: timeout waiting for: [Deployment/voice-router/voice-router-director status: 'InProgress', ExternalSecret/voice-router/ |
 | HelmRelease | observability | signoz | Suspended | 0.138.0 | 2026-09-26T16:24:12Z |  |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
 | HelmRelease | cert-manager | cert-manager | Ready | v1.21.1 | 2026-09-30T23:26:48Z |  |
@@ -75,24 +73,25 @@ Read from the cluster receipt taken at 2026-10-01T23:15:14Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-26T10:39:02Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-26T18:25:31Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-26T09:48:27Z |  |
-| Kustomization | flux-system | backstage | Ready | main@5864372 | 2026-10-01T23:06:59Z |  |
-| Kustomization | flux-system | dns | Ready | main@b8daac0 | 2026-10-01T23:14:22Z |  |
-| Kustomization | flux-system | edge | Ready | main@b8daac0 | 2026-10-01T23:14:25Z |  |
-| Kustomization | flux-system | epistemic-fabric | Ready | main@5864372 | 2026-10-01T23:06:44Z |  |
-| Kustomization | flux-system | estate-db | Ready | main@5864372 | 2026-10-01T23:06:55Z |  |
-| Kustomization | flux-system | estate-db-operator | Ready | main@b8daac0 | 2026-10-01T23:14:51Z |  |
-| Kustomization | flux-system | event-bus | Ready | main@b8daac0 | 2026-10-01T23:15:05Z |  |
-| Kustomization | flux-system | flannel | Ready | main@b8daac0 | 2026-10-01T23:14:46Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-01T23:09:58Z |  |
-| Kustomization | flux-system | github-app-creds | Ready | main@5864372 | 2026-10-01T23:06:41Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@b8daac0 | 2026-10-01T23:14:39Z |  |
-| Kustomization | flux-system | mcp | Ready | main@5864372 | 2026-10-01T23:07:10Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@b8daac0 | 2026-10-01T23:15:04Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@b8daac0 | 2026-10-01T23:14:42Z |  |
-| Kustomization | flux-system | otto-gateway | Ready | main@5864372 | 2026-10-01T23:07:13Z |  |
-| Kustomization | flux-system | otto-golden-secret | Ready | main@5864372 | 2026-10-01T23:07:01Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@b8daac0 | 2026-10-01T23:14:23Z |  |
-| Kustomization | flux-system | searxng | Ready | main@b8daac0 | 2026-10-01T23:14:21Z |  |
-| Kustomization | flux-system | secret-store | Ready | main@5864372 | 2026-10-01T23:06:15Z |  |
-| Kustomization | flux-system | tailscale | Ready | main@5864372 | 2026-10-01T23:06:41Z |  |
-| Kustomization | flux-system | unified-memory | Ready | main@5864372 | 2026-10-01T23:07:20Z |  |
+| Kustomization | flux-system | backstage | Ready | main@916463a | 2026-10-02T02:05:54Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@916463a | 2026-10-02T02:13:02Z |  |
+| Kustomization | flux-system | dns | Ready | main@916463a | 2026-10-02T02:14:28Z |  |
+| Kustomization | flux-system | edge | Ready | main@916463a | 2026-10-02T02:12:41Z |  |
+| Kustomization | flux-system | epistemic-fabric | Ready | main@916463a | 2026-10-02T02:06:12Z |  |
+| Kustomization | flux-system | estate-db | Ready | main@916463a | 2026-10-02T02:05:50Z |  |
+| Kustomization | flux-system | estate-db-operator | Ready | main@916463a | 2026-10-02T02:13:36Z |  |
+| Kustomization | flux-system | event-bus | Ready | main@916463a | 2026-10-02T02:14:14Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@916463a | 2026-10-02T02:14:06Z |  |
+| Kustomization | flux-system | flannel | Ready | main@916463a | 2026-10-02T02:14:34Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@916463a | 2026-10-02T02:12:34Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-02T02:10:50Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@916463a | 2026-10-02T02:13:09Z |  |
+| Kustomization | flux-system | mcp | Ready | main@916463a | 2026-10-02T02:06:01Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@916463a | 2026-10-02T02:15:00Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@916463a | 2026-10-02T02:14:44Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@916463a | 2026-10-02T02:14:59Z |  |
+| Kustomization | flux-system | otto-gateway | Ready | main@916463a | 2026-10-02T02:06:12Z |  |
+| Kustomization | flux-system | priority-classes | Ready | main@916463a | 2026-10-02T02:12:01Z |  |
+| Kustomization | flux-system | searxng | Ready | main@916463a | 2026-10-02T02:13:12Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@916463a | 2026-10-02T02:14:35Z |  |
+| Kustomization | flux-system | unified-memory | Ready | main@916463a | 2026-10-02T02:05:40Z |  |
