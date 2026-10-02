@@ -40,6 +40,15 @@ MAX_PARALLEL = 3  # the estate's agent spawn budget
 
 PLAN_SHAPE = """{
   "branch": "delegate/<slug>",
+  "prior_art": {
+    "searches": [
+      {"kind": "prs", "query": "the exact command run", "found": ["#NNNN state title", "..."]},
+      {"kind": "tickets", "query": "the exact command run", "found": ["docs/tickets/...", "..."]},
+      {"kind": "code", "query": "the exact command run", "found": ["path -> the PR that added it"]}
+    ],
+    "verdict": "new | extend | exists",
+    "reuse": ["what existing code/PR/ticket this plan builds on (required unless verdict is new)"]
+  },
   "steps": [
     {
       "id": "s1",
@@ -56,6 +65,14 @@ PLAN_SHAPE = """{
 PLANNER_PROMPT = """You are the planner. A cheaper model will build this, one step at a time, and it
 must not explore the repository or make design decisions. Read the code you need now, then write
 the plan.
+
+FIRST, before any design: find what the estate already has. Run and record in "prior_art":
+- prs: `gh pr list --state all -L 50 --search "<the capability's names>"` (merged and closed too);
+- tickets: `rg -l -i "<names>" docs/tickets docs/specs docs/decisions`, and read the hits;
+- code: `rg -l` for the capability, then trace each hit to the PR that added it
+  (`git log --diff-filter=A --format=%s -- <path>`) and read that PR's ticket.
+Files found on main are not the answer; their PR and ticket hold the scope and what is still open.
+verdict "exists" means do not plan a build; "extend" means name what is reused in "reuse".
 
 Rules for the plan:
 - Every step names the exact files it creates or edits ("files") and the few files it may read
@@ -134,8 +151,38 @@ def claude(prompt, model, cwd, max_turns, tools):
     }
 
 
+PRIOR_ART_KINDS = ("prs", "tickets", "code")
+PRIOR_ART_VERDICTS = ("new", "extend", "exists")
+
+
+def validate_prior_art(pa):
+    """A plan that did not look for what the estate already has is refused (AGENTS.md section 6)."""
+    if not isinstance(pa, dict):
+        return ["prior_art: missing -- search PRs, tickets and code before planning"]
+    errors = []
+    searches = pa.get("searches") or []
+    kinds = {x.get("kind") for x in searches if isinstance(x, dict) and x.get("query")}
+    for k in PRIOR_ART_KINDS:
+        if k not in kinds:
+            errors.append(f"prior_art: no {k} search recorded")
+    verdict = pa.get("verdict")
+    if verdict not in PRIOR_ART_VERDICTS:
+        errors.append(
+            f"prior_art: verdict must be one of {PRIOR_ART_VERDICTS}, got {verdict!r}"
+        )
+    if verdict in ("extend", "exists") and not pa.get("reuse"):
+        errors.append(
+            "prior_art: verdict says the capability exists but reuse names nothing"
+        )
+    if verdict == "exists":
+        errors.append(
+            "prior_art: verdict 'exists' -- nothing to build; use what is there"
+        )
+    return errors
+
+
 def validate(plan):
-    errors, ids = [], set()
+    errors, ids = validate_prior_art(plan.get("prior_art")), set()
     steps = plan.get("steps") or []
     if not steps:
         errors.append("no steps")
@@ -173,6 +220,12 @@ def waves(steps):
     return out
 
 
+PLANNER_TOOLS = (
+    "Read,Grep,Glob,Bash(rg:*),Bash(git log:*),Bash(git show:*),Bash(ls:*),"
+    "Bash(gh pr list:*),Bash(gh pr view:*)"
+)
+
+
 def cmd_plan(a):
     slug, repo = a["slug"], os.path.expanduser(a.get("repo", "~/Documents/code/idp"))
     spec = Path(os.path.expanduser(a["spec"])).read_text()
@@ -183,7 +236,7 @@ def cmd_plan(a):
         a.get("planner", "claude-opus-5-5"),
         repo,
         int(a.get("max_turns", 60)),
-        "Read,Grep,Glob,Bash(rg:*),Bash(git log:*),Bash(git show:*),Bash(ls:*)",
+        PLANNER_TOOLS,
     )
     m = re.search(r"\{.*\}", text, re.S)
     if not m:

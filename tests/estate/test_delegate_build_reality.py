@@ -102,6 +102,15 @@ def _setup(tmp_path: Path, mode: str):
     (root / "t").mkdir(parents=True)
     plan = {
         "branch": "delegate/t",
+        # validate() refuses a plan with no prior-art search (test_delegate_build_prior_art.py).
+        "prior_art": {
+            "searches": [
+                {"kind": k, "query": f"search {k}", "found": []}
+                for k in ("prs", "tickets", "code")
+            ],
+            "verdict": "new",
+            "reuse": [],
+        },
         "steps": [
             {
                 "id": "s1",
