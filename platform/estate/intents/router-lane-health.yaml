@@ -1,0 +1,9 @@
+name: router-lane-health
+description: How each laptop router lane did in the last hour from the router's own ledger -- calls, share refused, p50 and p95 latency, and the error the vendors gave most (say a lane name, like voice, to see just that one).
+args:
+  minutes: {type: int, default: 60}
+  lane: {type: string, default: ""}
+halt_on_failure: true
+steps:
+  - name: lanes
+    cmd: python3 ~/.estate/libexec/router-lane-health.py --minutes {{minutes}} --lane "{{lane}}"
