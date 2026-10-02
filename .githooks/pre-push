@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# Layer 0: STRUCTURAL — model-agnostic enforcement (AGENTS.md R6)
-# Refuses any push that introduces or retains .claude/ or claude-code paths.
-# The estate is model-agnostic. One execution boundary: ~/.estate/.
-# A second boundary (.claude/) is stitching and gets deleted.
+# Layer 0: STRUCTURAL — model- and harness-agnostic enforcement (AGENTS.md R6)
+# Refuses any push that introduces or retains a .claude/, claude-code/ or .pi/ path.
+# The estate is model- and harness-agnostic. One execution boundary: ~/.estate/.
+# A second boundary (a harness's own per-project folder) is stitching and gets deleted.
 # This layer runs before everything else and cannot be bypassed by the agent it guards.
 # Protocol: git pre-push stdin = "<local ref> <local sha> <remote ref> <remote sha>" per ref.
+#
+# This is a client-side backstop only. bin/idp-ci-guarded-paths enforces the same ban server-side
+# on the required `guarded-paths` CI check, which a bot commit, a hookless machine or a GitHub-UI
+# merge cannot skip the way they skip this hook.
 
 _no_claude_guard() {
   blocked=0
@@ -12,13 +16,13 @@ _no_claude_guard() {
     [ -z "$local_ref" ] && continue
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
     changed=$(git diff-tree --name-only -r "$remote_sha" "$local_sha" 2>/dev/null) || continue
-    if echo "$changed" | grep -qE '(\.claude/|/\.claude/|claude-code/)'; then
+    if echo "$changed" | grep -qE '(\.claude/|/\.claude/|claude-code/|\.pi/|/\.pi/)'; then
       blocked=1
     fi
   done
   if [ "$blocked" = 1 ]; then
-    echo "FAIL [.githooks/pre-push] push contains .claude/ or claude-code paths" >&2
-    echo "The estate is model-agnostic. Canonical home: ~/.estate/" >&2
+    echo "FAIL [.githooks/pre-push] push contains a .claude/, claude-code/ or .pi/ path" >&2
+    echo "The estate is model- and harness-agnostic. Canonical home: ~/.estate/" >&2
     echo "Migrate hooks to ~/.estate/hooks/ and rewrite bootstrap for ~/.estate/" >&2
     return 1
   fi
