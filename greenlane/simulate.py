@@ -165,6 +165,9 @@ class ChaosBackend:
         self.verdicts[(bid, tip)] = v
         return v
 
+    def main_red(self, sha: str) -> bool:
+        return not self.truly_green(sha)
+
     def land(self, members, tip: str) -> None:
         # the tested sha becomes main by fast-forward; a PR per lane is raised on the rebased
         # head and is merged by that same move (its head is an ancestor of main).
