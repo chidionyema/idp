@@ -35,6 +35,7 @@ that shell exits, which is immediately. A new session is what makes it outlive t
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -43,24 +44,147 @@ from pathlib import Path
 RUNS = Path(os.environ.get("ESTATE_RUNS") or os.path.expanduser("~/.estate/runs"))
 
 USAGE = (
-    "run <name> <command...> | run --status [name] | run --log <name> | "
+    "run [--ceiling <secs>] <name> <command...> | run --status [name] | run --log <name> | "
     "run --wait <name> [secs] | run --cwd <dir> <name> <command...>"
 )
 
-# The watcher RECORDS THE CHILD'S REAL EXIT CODE, and the only way to do that is to BE ITS PARENT.
+# THE CEILING ENFORCER, AND WHY IT IS HERE (2026-10-02).
 #
-# Measured 2026-09-13, and it cost a wrong answer in the log before it was found: a detached watcher
-# that merely polls `kill -0 $pid` and then calls `wait $pid` records 127, not the command's code.
-# `wait` in /bin/sh only waits on children OF THAT SHELL, and the watcher is not the child's parent,
-# so `wait` fails -- and `$?` then captures the failure of `wait` itself. Every successful job would
-# have been reported as "exited 127". That is the same class of lie as the bare '124' this file
-# already carries a note about: a number a reader trusts, printed about something else entirely.
+# The ceiling used to be `/usr/local/bin/timeout --signal=TERM <n>s ...`. Measured this turn,
+# that file is not GNU `timeout`:
 #
-# So the shell does not watch the command, it RUNS it: `/bin/sh -c '<cmd>' sh <name> <args...>`,
-# with the exit file handed over in the environment. The pid recorded below is the SHELL's, which is
-# the handle that matters -- killing it is what stops the job. `exec` is deliberately not used: it
-# would replace the shell and take the exit code with it.
-_WRAPPER = 'a="$1"; shift; "$a" "$@"; rc=$?; echo $rc > "$EXIT_FILE"; exit $rc'
+#     -rwxr-xr-x  306  /usr/local/bin/timeout   -> a BASH SHIM
+#     #!/bin/bash
+#     while [[ "$1" == --signal=* || "$1" == --kill-after=* ]]; do shift; done
+#     secs="$1"; shift
+#     exec perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"
+#
+# Three defects in seven lines, each measured:
+#   * `--signal=TERM` and `--kill-after` are consumed by the `while` loop and DISCARDED. The shim
+#     accepts flags it does not implement, so a caller that sets a signal changes nothing.
+#   * The real signal is `alarm()` in perl -- SIGALRM, 14 -- not SIGTERM. That is the
+#     `Alarm clock: 14` in ~/.estate/runs/<job>.log and the `142` (128+14) exit code the daemon's
+#     own comment already recorded, while naming profile slowness as the cause.
+#   * `exec` replaces perl with the command, and the armed alarm survives the exec. The command
+#     dies by SIGALRM, so the `_WRAPPER` below never reaches `echo $rc > "$EXIT_FILE"` -- no exit
+#     file is written, and every downstream reader sees "no exit" as "killed" or "still running".
+#
+# The bound belongs where the pid and the exit file already live: here. This is the only process
+# that is the command's parent, so it is the only one that can `waitpid` and record the REAL
+# termination -- exit code, or 128+signal when a signal killed it. `timeout` is not used again;
+# a bound enforced by a binary that lies about its signal is not a bound.
+SUPERVISOR_FLAG = "--supervise"
+
+
+def _exit_for(returncode: int) -> int:
+    """A negative `Popen.returncode` is `-signum`; the shell convention is 128+signum."""
+    return 128 + (-returncode) if returncode < 0 else returncode
+
+
+def supervise(name: str, ceiling: int, argv: list[str], cwd: str | None) -> int:
+    """Run the command in its own process group, bound it, and ALWAYS write the exit file.
+
+    Called as `run.py --supervise <name> <ceiling> -- <command...>` in a session of its own. The
+    command runs in a FURTHER process group so the whole tree (`bash -c` and everything it forks)
+    can be signalled at once -- killing only the direct child leaves its children running, which is
+    how a "bounded" job keeps burning the box.
+
+    The timeout path sends SIGTERM, waits a short grace period, then SIGKILL. Both are REAL
+    signals; neither is SIGALRM. The exit file is written on every path, including the signalled
+    one, so "no exit file" stops meaning "killed" and starts meaning what it says.
+    """
+    if not argv:
+        return 2
+    log, pidf, exitf = _paths(name)
+    RUNS.mkdir(parents=True, exist_ok=True)
+    exitf.unlink(missing_ok=True)
+
+    def _record(code: int) -> None:
+        # The ONE place the exit file is written, so no return path can skip it.
+        exitf.write_text(str(code))
+
+    try:
+        with log.open("ab") as sink:
+            child = subprocess.Popen(  # noqa: S603 -- argv is a LIST, never a shell string
+                argv,
+                stdout=sink,
+                stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL,
+                cwd=cwd,
+                start_new_session=True,
+            )
+    except OSError as exc:
+        print(f"run: could not start the command: {exc}", file=sys.stderr)
+        _record(127)
+        return 127
+
+    # The pid file names the COMMAND, not this supervisor: that is the handle a person kills, and
+    # the handle `--status` checks for liveness.
+    pidf.write_text(str(child.pid))
+    try:
+        code = _exit_for(child.wait(timeout=ceiling))
+    except subprocess.TimeoutExpired:
+        # Bound the WHOLE group, in two stages. SIGTERM first so the job runs its own cleanup;
+        # SIGKILL after the grace window so a job that ignores SIGTERM still dies at the ceiling.
+        #
+        # A job WE killed records 124, whoever killed it and whatever code it died with. Recording
+        # the raw 143 (128+SIGTERM) would make "the ceiling killed my job" and "my program exited
+        # 143 itself" the same number -- and the first thing a caller does with a timed-out job is
+        # ask which of those happened. 124 is `timeout`'s own convention for exactly this, so a
+        # reader who knows the old system reads the same number; what changes is that it is now
+        # honest and always written.
+        _signal_group(child.pid, signal.SIGTERM)
+        try:
+            child.wait(timeout=_KILL_GRACE_SEC)
+            print(
+                f"run: {name} exceeded the {ceiling}s ceiling and was SIGTERMed",
+                file=sys.stderr,
+            )
+        except subprocess.TimeoutExpired:
+            _signal_group(child.pid, signal.SIGKILL)
+            child.wait()
+            print(
+                f"run: {name} exceeded the {ceiling}s ceiling and was SIGKILLed",
+                file=sys.stderr,
+            )
+        code = CEILING_EXIT
+    _record(code)
+    return 0
+
+
+def _signal_group(pid: int, sig: int) -> None:
+    """Signal the process GROUP led by `pid`, because `start_new_session` made it a leader.
+
+    A signal to the pid alone leaves the command's own children alive. `killpg` reaches them all;
+    when the group is already gone (the common race) that is not an error worth reporting.
+    """
+    try:
+        os.killpg(os.getpgid(pid), sig)
+    except (ProcessLookupError, PermissionError):
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            pass
+
+
+# How long a job gets to honour SIGTERM before SIGKILL. Long enough for a shell to run a trap,
+# short enough that the ceiling is not quietly doubled by a job that ignores it.
+_KILL_GRACE_SEC = int(os.environ.get("IDP_KILL_GRACE_SEC", "5"))
+
+# The exit code a job gets when WE killed it at the ceiling. `timeout`'s convention. Distinct from
+# any code a job returns on its own unless the job itself chooses 124, and the log line says which.
+CEILING_EXIT = 124
+
+# The wrapper that used to write the exit code is GONE (2026-10-02), and it is worth saying why,
+# because it was the reason a killed job left no trace. It was:
+#
+#     _WRAPPER = 'a="$1"; shift; "$a" "$@"; rc=$?; echo $rc > "$EXIT_FILE"; exit $rc'
+#
+# The `echo $rc > "$EXIT_FILE"` needs the shell to SURVIVE the command. Under the perl-`alarm`
+# shim, a job killed at the ceiling died by SIGALRM and took the shell with it, so that line never
+# ran and `echo $rc > "$EXIT_FILE"` -- the only exit-file writer -- never executed. The exit file
+# is now written by `supervise()` on every path, including the signalled one. Nothing here needs a
+# shell to survive anything.
 
 
 def _paths(name: str) -> tuple[Path, Path, Path]:
@@ -133,7 +257,7 @@ def wait(name: str, secs: int) -> int:
     return 124
 
 
-def start(name: str, argv: list[str], cwd: str | None) -> int:
+def start(name: str, argv: list[str], cwd: str | None, ceiling: int) -> int:
     """Start argv detached and return at once. The pid is recorded so it can be found again."""
     if not argv:
         print(f"run {name}: no command given", file=sys.stderr)
@@ -145,21 +269,34 @@ def start(name: str, argv: list[str], cwd: str | None) -> int:
     RUNS.mkdir(parents=True, exist_ok=True)
     log, pidf, exitf = _paths(name)
     exitf.unlink(missing_ok=True)
-    wrapped = ["/bin/sh", "-c", _WRAPPER, "sh", *argv]
-    env = {**os.environ, "EXIT_FILE": str(exitf)}
+    # The supervisor IS the detached process; it owns the ceiling and the exit file. Launching it
+    # with `start_new_session` is what makes it, and the command it leads, outlive this call.
+    # `cwd` is passed through the environment rather than `Popen(cwd=)`: the supervisor must not
+    # itself run in the target directory (its log/pid/exit paths are absolute anyway), and the
+    # COMMAND is the thing that must run there. One field, one owner.
+    sup = [
+        sys.executable,
+        os.path.abspath(__file__),
+        SUPERVISOR_FLAG,
+        name,
+        str(ceiling),
+        "--",
+        *argv,
+    ]
+    env = {**os.environ, "RUN_CWD": cwd or ""}
     with log.open("wb") as sink:
         child = subprocess.Popen(  # noqa: S603 -- argv is a LIST, never a shell string
-            wrapped,
+            sup,
             stdout=sink,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
-            cwd=cwd,
             env=env,
             start_new_session=True,
         )
     pidf.write_text(str(child.pid))
     print(
         f"started {name}\n  pid {child.pid}\n  log {log}\n"
+        f"  ceiling {ceiling}s\n"
         f"  read it with:  run --log {name}\n  or wait:       run --wait {name}"
     )
     return 0
@@ -169,6 +306,27 @@ def main(argv: list[str]) -> int:
     if not argv:
         print(USAGE, file=sys.stderr)
         return 2
+
+    # The supervisor entry point, reached only from `start()`'s own argv: `--supervise <name>
+    # <ceiling> -- <command...>`. It is checked first because a job's command may itself begin
+    # with a word that looks like a verb (`run --status ...`), and argv order must not be able to
+    # send a supervised job down the status path.
+    if argv[0] == SUPERVISOR_FLAG:
+        if len(argv) < 5 or "--" not in argv:
+            print("run --supervise <name> <ceiling> -- <command...>", file=sys.stderr)
+            return 2
+        name = argv[1]
+        try:
+            ceiling = int(argv[2])
+        except ValueError:
+            print(
+                f"run --supervise: ceiling must be an integer: {argv[2]!r}",
+                file=sys.stderr,
+            )
+            return 2
+        sep = argv.index("--")
+        cwd = os.environ.get("RUN_CWD") or None
+        return supervise(name, ceiling, argv[sep + 1 :], cwd)
     verb = argv[0]
     if verb == "--status":
         return status(argv[1] if len(argv) > 1 else None)
@@ -190,7 +348,33 @@ def main(argv: list[str]) -> int:
             return 2
         cwd, argv = argv[1], argv[2:]
         verb = argv[0]
-    return start(verb, argv[1:], cwd)
+    ceiling = (
+        0  # 0 = unbounded, the pre-existing behaviour when no ceiling is asked for
+    )
+    while verb == "--ceiling":
+        if len(argv) < 3:
+            print("run --ceiling <secs> <name> <command...>", file=sys.stderr)
+            return 2
+        try:
+            ceiling = int(argv[1])
+        except ValueError:
+            print(f"run --ceiling: not an integer: {argv[1]!r}", file=sys.stderr)
+            return 2
+        argv = argv[2:]
+        verb = argv[0]
+
+    # A leading `--`-prefixed word that matched none of the verbs above is a usage error, not a
+    # command name. Without this guard `run -- foo` resolved `--` as an executable and reported
+    # `No such file or directory: '--'`, which reads like a missing binary rather than a bad flag.
+    # A real job name never starts with `--` (the daemon mints `exec-<ts>-<n>`), so refusing here
+    # cannot reject a legitimate job; `--` before a command is only meaningful after
+    # `--supervise` and `--cwd`, both handled above.
+    if verb.startswith("--"):
+        print(f"run: unknown option {verb!r}", file=sys.stderr)
+        print(USAGE, file=sys.stderr)
+        return 2
+
+    return start(verb, argv[1:], cwd, ceiling)
 
 
 if __name__ == "__main__":
