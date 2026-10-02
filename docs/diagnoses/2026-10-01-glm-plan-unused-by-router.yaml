@@ -1,5 +1,5 @@
 description: 'The founder pays for a GLM (Z.ai) monthly Coding Plan and set its key
-  in Bitwarden Secrets Manager as `zZ_AI_KEY`, yet no estate traffic reaches GLM.
+  in Bitwarden Secrets Manager as `Z_AI_KEY`, yet no estate traffic reaches GLM.
   Question: is the key simply never read (no vendor entry, so no bridge and no lane),
   is it read and served but the key is bad, or is it served but no harness offers
   the lane. Measured 2026-10-01 against the cluster (kubectl, 165 ExternalSecrets)
@@ -8,7 +8,7 @@ description: 'The founder pays for a GLM (Z.ai) monthly Coding Plan and set its 
   '
 hypotheses:
 - name: H1
-  description: no vendor entry -- nothing bridges zZ_AI_KEY and no router lane names
+  description: no vendor entry -- nothing bridges Z_AI_KEY and no router lane names
     it
   prior: 0.3333333333
 - name: H2
@@ -18,7 +18,7 @@ hypotheses:
   description: entry, bridge and lane exist, but no harness picker offers the lane
   prior: 0.3333333333
 evidence:
-- name: ExternalSecrets in the cluster whose remoteRef is zZ_AI_KEY (of 165)
+- name: ExternalSecrets in the cluster whose remoteRef is Z_AI_KEY (of 165)
   observed:
     absent: 1
   likelihoods:
