@@ -238,6 +238,9 @@ class GitHubBackend:
             return "pending", "waiting on " + ", ".join(pending)
         return "green", ""
 
+    def main_red(self, sha: str) -> bool:
+        return self.checks(sha)[0] == "red"
+
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         for lane, head, rebased in members:
