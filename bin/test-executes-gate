@@ -1,104 +1,302 @@
-#!/usr/bin/env bash
-# A test that executes nothing is not a test.
-#
-# On 2026-09-04 the founder had 322 files deleted from tests/ in one commit (519d59e8): every
-# one of them opened this repository's own YAML, JSON or shell and asserted what it said. The
-# file it read and the expectation it held were the same statement written twice, so none of
-# them could catch a defect -- what they caught was a deliberate decision, at the cost of a red
-# run and a wait every time one was made. 169 were named test_incident_*: an incident answered
-# with a pin on the symptom instead of a fix for the cause.
-#
-# Within the hour a session opened a new one. Deleting the class once does not stop the next
-# session writing it, so this refuses a NEW test file that runs nothing (LAW 45). It grades
-# behaviour, not wording: does this file start a process, open a socket or make a request. A
-# file that already exists is never graded -- only what a change adds.
-#
-# It also refuses the NAME. A file called test_incident_<date-or-ticket> is a note about one
-# instance, and the naming convention is what reproduces the practice: a session reads the
-# directory, sees the pattern, and writes the next one. A new test names the rule it holds.
-#
-# LAW 46: the checkout is computed from this script, never named."
-set -uo pipefail
-IDP="$(cd "$(dirname "$0")/.." && pwd)"
-BASE="${1:-origin/main}"
+#!/usr/bin/env python3
+"""A test that executes nothing is not a test.
 
-# The ways a python test reaches outside its own process. A file with none of these can only be
-# reading the repository and asserting what it read.
-# `docker` is anchored as an attribute access: the bare word matches the path "Dockerfile",
-# which a reads-only test opens, and hermes-v2's test_incident_crew751 passed this gate as
-# "runs something" on exactly that. `importlib` and `spec_from_file` load a module of this
-# repository and call it, which is running something.
-# `http.server` and `http.client` are here because a test that stands up a real HTTP door on
-# loopback and posts to it is the strongest kind of behavioural test in this repository, and
-# the list did not name it: tests/test_the_jit_ledger_leaves_the_node_it_was_written_on.py
-# drives a real OTLP collector through four failure modes and was refused as reading files.
-#
-# `exec(` and `compile(` are here for the third shape, found on chidionyema/idp#3315: a test
-# that lifts a program out of a manifest (a ConfigMap's `apply.py`, a Job's inline script),
-# compiles it and CALLS it. That is the strongest test of a manifest whose code lives in a
-# string -- it grades the exact bytes the cluster will run, not a copy of them -- and it was
-# refused because the test's own file calls `exec` with a variable rather than importing a
-# module by name. A gate that cannot see this shape pushes such a test back to asserting the
-# manifest's TEXT, which is the thing this gate exists to refuse.
-#
-# `from tests\.verification` is the fourth shape, found on chidionyema/idp#3564: a test that
-# imports a real function from this repository's own tests/verification/ support library
-# (extraction, comparison and DSL helpers with no test of their own -- see the __init__.py /
-# support-module skip above) and calls it against a built fixture, asserting on the function's
-# REAL computed return value rather than a copy of the fixture's own text. That is an ordinary
-# unit test of first-party logic, not a file reading itself back -- the fixture and the
-# expectation are independent, and the helper's own bugs (a wrong extraction, a wrong
-# threshold) are exactly what such a test can catch. It is scoped to this one first-party
-# namespace, not import in general, because importing something is not calling it.
-#
-# `ast.parse` IS DELIBERATELY NOT HERE. A test can parse a file and assert its SHAPE without
-# running anything, and that would slip past this gate while still measuring nothing. Measured
-# on the same change: a test whose only work is to parse bin/catalog-render and check a
-# function name passes `ast.parse` and passes bin/test-prose-gate too, so the two gates
-# together would have called it behavioural. `exec(` is the line -- if the string does not run,
-# this pattern does not match.
-EXECUTES='subprocess|requests\.|httpx|socket\.|urllib\.request|http\.server|http\.client|os\.system|pexpect|docker\.|kubernetes\.client|importlib|spec_from_file|exec\(|compile\(|from tests\.verification'
+On 2026-09-04 the founder had 322 files deleted from tests/ in one commit (519d59e8): every
+one of them opened this repository's own YAML, JSON or shell and asserted what it said. The
+file it read and the expectation it held were the same statement written twice, so none of
+them could catch a defect -- what they caught was a deliberate decision, at the cost of a red
+run and a wait every time one was made. 169 were named test_incident_*: an incident answered
+with a pin on the symptom instead of a fix for the cause.
 
-# tests/fixtures/ is excluded because a file there is a fixture, not a test. The pairs this
-# repository grades gates with include python files, and one of them is a test that reads a
-# path and nothing else ON PURPOSE -- that is the input the gate under test is supposed to
-# judge. Judging it here refuses the fixture for being the thing it exists to be, which is a
-# guard refusing correct work (LAW 38). Found on chidionyema/idp#2559, where the regression
-# pair for bin/idp-rule-coverage could not be added at all.
-added=$(cd "$IDP" && git diff --name-only --diff-filter=A "$BASE...HEAD" -- 'tests/*.py' ':(exclude)tests/fixtures/*' 2>/dev/null)
-[ -n "$added" ] || { echo "ok    executes  no new test file in this change"; exit 0; }
+Within the hour a session opened a new one. Deleting the class once does not stop the next
+session writing it, so this refuses a NEW test file that runs nothing (LAW 45). It grades
+behaviour, not wording: does this file start a process, open a socket or make a request. A
+file that already exists is never graded -- only what a change adds.
 
-bad=0
-while IFS= read -r f; do
-  [ -n "$f" ] || continue
-  # pytest itself only ever collects test_*.py / *_test.py as test modules (its own
-  # discovery rule, unconfigured here) -- an __init__.py or a plain support module
-  # (helpers, a DSL, a harness) that tests import is never a test, so grading it as one
-  # asserts a premise that does not hold, the same reasoning tests/fixtures/ is excluded
-  # on above. Found on chidionyema/idp#3564: tests/verification/honesty_helpers.py holds
-  # no test itself but is imported by three real tests in tests/honesty/.
-  base="$(basename "$f")"
-  case "$base" in
-    __init__.py) echo "ok    executes  $f is a package marker, not a test"; continue ;;
-    test_*.py|*_test.py) ;;
-    *) echo "ok    executes  $f is a support module, not a test pytest collects"; continue ;;
-  esac
-  if grep -qE "$EXECUTES" "$IDP/$f"; then
-    case "$(basename "$f")" in
-      test_incident_*)
-        echo "FAIL  executes  $f is named for the day something broke, not for the rule it holds."
-        echo "                A file named test_incident_* is a note about one instance; the next"
-        echo "                session reads the name and writes the next one. Name the invariant."
-        bad=1
-        ;;
-      *) echo "ok    executes  $f runs something" ;;
-    esac
-  else
-    echo "FAIL  executes  $f asserts this repository's own files back at it and runs nothing."
-    echo "                Grade what the value causes -- a render admission accepts, a request the"
-    echo "                service answers, a workload that starts -- or delete the file. 322 of"
-    echo "                these were deleted on 2026-09-04 (519d59e8); do not write the 323rd."
-    bad=1
-  fi
-done <<< "$added"
-exit "$bad"
+It also refuses the NAME. A file called test_incident_<date-or-ticket> is a note about one
+instance, and the naming convention is what reproduces the practice: a session reads the
+directory, sees the pattern, and writes the next one. A new test names the rule it holds.
+
+WHY THIS IS AN AST AND NOT A REGEX (2026-10-02). This gate shipped as a grep for a list of
+words (`subprocess|socket\.|requests\.|...`). A word list cannot see the strongest test shape
+in this repository -- a file that imports a first-party module and CALLS it, asserting on the
+computed return value. `tests/test_fleetview_approvals_transitions.py` (crew#1013) imports
+`fleetview_backend.approvals_adapter` and calls `aa._transitions(...)` seven ways; it starts no
+process and opens no socket, so the regex called it "asserts this repository's own files back
+at it and runs nothing" and refused it. Measured 2026-10-02: that one refusal red-lit the
+lane, and 6 of the 10 red lanes in refs/greenlane/state failed on this gate alone. The gate was
+grading words and refusing correct work (LAW 38).
+
+The word list also had false NEGATIVES the comments below already record one at a time
+(`docker.` vs the path "Dockerfile"; `exec(` vs importing a name; `from tests.verification`
+for the fourth shape). Each was patched by adding another word. That is a list that grows
+forever and is still wrong. An AST reads the shape: a test executes something when it
+(a) starts a process or opens a socket, or (b) imports a first-party module and calls it.
+
+`bin/test-prose-gate` solved the same class of problem with `ast` and a must-fail/must-pass
+fixture pair driven on every run. This now does the same, and the fixtures below prove it
+both ways so a future edit cannot quietly reopen the false positive or the false negative.
+
+LAW 46: the checkout is computed from this script, never named."""
+
+from __future__ import annotations
+
+import ast
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+IDP = Path(__file__).resolve().parent.parent
+BASE = sys.argv[1] if len(sys.argv) > 1 else "origin/main"
+
+# A process, a socket, a request: the test leaves its own process. Read from the CALL, not the
+# text, so `open("Dockerfile")` is not mistaken for the `docker.` client.
+_EXECUTING_CALLS = {
+    "subprocess",
+    "os.system",
+    "pexpect",
+    "socket",
+    "requests",
+    "httpx",
+    "urllib.request",
+    "http.server",
+    "http.client",
+    "kubernetes.client",
+    "docker",
+    "importlib",
+    "SourceFileLoader",
+    "spec_from_file_location",
+}
+# exec(...)/compile(...) called as a bare builtin counts: a test that lifts a program out of a
+# manifest and calls it grades the exact bytes the cluster runs (idp#3315).
+_BUILTIN_EXECUTORS = {"exec", "compile"}
+# Stdlib modules that are never "this repository being exercised". A call through one of these
+# is not evidence the test runs anything of ours.
+_STDLIB = {
+    "os", "sys", "json", "re", "pathlib", "io", "datetime", "time", "math", "textwrap",
+    "collections", "itertools", "functools", "typing", "dataclasses", "enum", "logging",
+    "tempfile", "shutil", "csv", "hashlib", "base64", "uuid", "random", "string",
+    "contextlib", "copy", "subprocess", "socket", "urllib", "http", "importlib",
+    "unittest", "pytest", "asyncio", "threading", "concurrent", "traceback", "warnings",
+}
+
+
+def _dotted(node: ast.AST) -> str:
+    """`kubernetes.client` for an Attribute chain, `subprocess` for a Name, else ''."""
+    parts: list[str] = []
+    cur = node
+    while isinstance(cur, ast.Attribute):
+        parts.append(cur.attr)
+        cur = cur.value
+    if isinstance(cur, ast.Name):
+        parts.append(cur.id)
+        return ".".join(reversed(parts))
+    return ""
+
+
+def _imports_a_repo_module(tree: ast.Module) -> set[str]:
+    """Top-level names bound by importing something that lives in this checkout.
+
+    Deliberately not "import anything": `import json` binds a name but calling json.dumps is
+    not this repository being exercised. First-party means a module that is NOT stdlib, not a
+    third-party package in the lockfile, and not the test framework -- it resolves to code
+    under the repository root, or to the `tests/` support namespace.
+    """
+    third_party = _third_party_names()
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                root = a.name.split(".")[0]
+                if root in _STDLIB or root in third_party:
+                    continue
+                bound.add(a.asname or root)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                # relative import: unambiguously in this checkout
+                for a in node.names:
+                    bound.add(a.asname or a.name)
+                continue
+            root = (node.module or "").split(".")[0]
+            # `from tests.verification.dsl import evaluate` is first-party even though the root
+            # name is `tests` -- it is this repo's own support namespace (idp#3564).
+            if root in _STDLIB or (root in third_party and root != "tests"):
+                continue
+            # `from X import Y` binds Y; the call may go through either Y or the alias.
+            bound.update(a.asname or a.name for a in node.names)
+            bound.add(root)
+    return bound
+
+
+_THIRD_PARTY: set[str] | None = None
+
+
+def _third_party_names() -> set[str]:
+    """Top-level names installed in site-packages: importing one is not exercising this repo."""
+    global _THIRD_PARTY
+    if _THIRD_PARTY is None:
+        import sysconfig
+        names: set[str] = set()
+        for key in ("purelib", "platlib"):
+            d = Path(sysconfig.get_paths()[key])
+            if d.is_dir():
+                for p in d.iterdir():
+                    if p.name.endswith((".dist-info", ".egg-info")):
+                        names.add(p.name.split("-")[0].lower().replace("_", "-"))
+                    elif p.is_dir() and not p.name.startswith("_"):
+                        names.add(p.name)
+        _THIRD_PARTY = names
+    return _THIRD_PARTY
+
+
+def _called_roots(tree: ast.Module) -> set[str]:
+    """Every name invoked anywhere in the file: `aa` for `aa._transitions(...)`."""
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name):
+                roots.add(f.id)
+            elif isinstance(f, ast.Attribute):
+                dotted = _dotted(f)
+                if dotted:
+                    roots.add(dotted.split(".")[0])
+                    roots.add(dotted)
+    return roots
+
+
+def executes_something(path: Path) -> tuple[bool, str]:
+    """True when this file starts a process, opens a socket, or calls first-party code."""
+    try:
+        tree = ast.parse(path.read_text())
+    except SyntaxError as e:
+        return False, f"does not parse: {e}"
+
+    called = _called_roots(tree)
+    for call in called:
+        if call in _BUILTIN_EXECUTORS:
+            return True, f"calls {call}()"
+        for prefix in _EXECUTING_CALLS:
+            if call == prefix or call.startswith(prefix + "."):
+                return True, f"uses {prefix}"
+
+    # first-party import AND a call through it: the crew#1013 shape
+    imported = _imports_a_repo_module(tree)
+    for name in sorted(imported & called):
+        return True, f"imports and calls first-party `{name}`"
+
+    # A fixture that imports a repo module and returns it, then a test calls a method on the
+    # returned object: `import engine as eng` inside a fixture, `engine_module.run_task(...)`
+    # in the test. The import is not at module scope, but the file still executes first-party
+    # code. Any attribute call whose root is a local name bound in this file counts.
+    if _calls_a_method_on_a_name_bound_here(tree):
+        return True, "calls a method on an object it built from first-party code"
+    return False, ""
+
+
+def _calls_a_method_on_a_name_bound_here(tree: ast.Module) -> bool:
+    local: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for a in node.names:
+                local.add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            for arg in (*node.args.args, *node.args.kwonlyargs):
+                local.add(arg.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            local.add(node.id)
+    # A call like `engine_module.run_task_through_harness(...)`: the root is a name this file
+    # bound (a fixture return value), not a stdlib or third-party import.
+    third_party = _third_party_names()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            root = _dotted(node.func).split(".")[0]
+            if root in local and root not in _STDLIB and root not in third_party:
+                return True
+    return False
+
+
+def _added_test_files() -> list[str]:
+    out = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=A", f"{BASE}...HEAD",
+         "--", "tests/*.py", ":(exclude)tests/fixtures/*"],
+        cwd=IDP, capture_output=True, text=True,
+    )
+    return [f for f in out.stdout.splitlines() if f.strip()]
+
+
+FIXTURES = IDP / "tests" / "fixtures" / "executes"
+
+# Both ways, or the gate is decoration. `reads-only.py` must be refused; the other two must
+# pass. The third is the crew#1013 shape that the old regex wrongly refused: it imports a
+# first-party module and calls it, starting no process and opening no socket.
+_MUST_REFUSE = ["reads-only.py"]
+_MUST_PASS = ["imports-and-calls.py", "runs-a-process.py"]
+
+
+def self_test() -> int:
+    """Prove the classifier both ways against the fixture pair. A gate that cannot fail is
+    not a gate, and one that cannot pass correct work is a guard refusing it (LAW 38)."""
+    bad = 0
+    for name in _MUST_REFUSE:
+        ok, why = executes_something(FIXTURES / name)
+        if ok:
+            print(f"FAIL  executes  self-test: {name} should be REFUSED but passed ({why})")
+            bad = 1
+        else:
+            print(f"ok    executes  self-test: {name} refused as it must be")
+    for name in _MUST_PASS:
+        ok, why = executes_something(FIXTURES / name)
+        if not ok:
+            print(f"FAIL  executes  self-test: {name} should PASS but was refused")
+            bad = 1
+        else:
+            print(f"ok    executes  self-test: {name} passes ({why})")
+    if bad:
+        return 1
+    print("ok    executes  self-test: both directions hold")
+    return 0
+
+
+def main() -> int:
+    if "--self-test" in sys.argv:
+        return self_test()
+    added = _added_test_files()
+    if not added:
+        print("ok    executes  no new test file in this change")
+        return 0
+
+    bad = 0
+    for f in added:
+        base = os.path.basename(f)
+        if base == "__init__.py":
+            print(f"ok    executes  {f} is a package marker, not a test")
+            continue
+        if not (base.startswith("test_") or base.endswith("_test.py")):
+            print(f"ok    executes  {f} is a support module, not a test pytest collects")
+            continue
+
+        ok, why = executes_something(IDP / f)
+        if not ok:
+            print(f"FAIL  executes  {f} asserts this repository's own files back at it and runs nothing.")
+            print("                Grade what the value causes -- a render admission accepts, a request the")
+            print("                service answers, a workload that starts -- or delete the file. 322 of")
+            print("                these were deleted on 2026-09-04 (519d59e8); do not write the 323rd.")
+            bad = 1
+            continue
+
+        if base.startswith("test_incident_"):
+            print(f"FAIL  executes  {f} is named for the day something broke, not for the rule it holds.")
+            print("                A file named test_incident_* is a note about one instance; the next")
+            print("                session reads the name and writes the next one. Name the invariant.")
+            bad = 1
+            continue
+
+        print(f"ok    executes  {f} runs something ({why})")
+
+    return bad
+
+
+if __name__ == "__main__":
+    sys.exit(main())
