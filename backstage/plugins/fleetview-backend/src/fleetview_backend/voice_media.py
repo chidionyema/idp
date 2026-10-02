@@ -868,10 +868,26 @@ async def say(text: str) -> tuple[bytes | None, str | None]:
         # on the page. The engine's absence is a FACT ABOUT THE HOST -- true of any checkout
         # without the ~1GB of ASR/TTS weights -- and the caller can only act on it if it is told,
         # so it comes back as a sentence a person can read.
-        return None, f"{_ENGINE_ABSENT}: {type(exc).__name__}: {exc}"
-    if not pcm:
-        return None, "synthesis produced no audio on this host"
-    return pcm, None
+        pcm, local_err = None, f"{_ENGINE_ABSENT}: {type(exc).__name__}: {exc}"
+    else:
+        local_err = "synthesis produced no audio on this host"
+    if pcm:
+        return pcm, None
+    # A chosen local engine that is absent must not leave the founder in silence: on 2026-09-30
+    # the saved choice was kokoro, this host had no Kokoro voices, and every /voice/say answered
+    # 502 while the router's voice and macOS `say` both worked. Fall through to them.
+    if chosen not in ("cloud", "say"):
+        pcm = await _router_synthesise(text, engine.TTS_SAMPLE_RATE, None)
+        if pcm:
+            _log_engine("say", "router:voice-tts:default", started)
+            return pcm, None
+        pcm = await loop.run_in_executor(
+            None, _macos_say, text, engine.TTS_SAMPLE_RATE, None
+        )
+        if pcm:
+            _log_engine("say", "macos-say:default", started)
+            return pcm, None
+    return None, local_err
 
 
 async def answered(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
