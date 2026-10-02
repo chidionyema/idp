@@ -199,7 +199,7 @@ def _read_login_env() -> dict | None:
 
     try:
         out = subprocess.run(
-            ["bash", "-lc", "env -0"],
+            ["/bin/bash", "-lc", "env -0"],
             capture_output=True,
             timeout=_LOGIN_ENV_READ_SEC,
             stdin=subprocess.DEVNULL,

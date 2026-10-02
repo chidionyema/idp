@@ -20,8 +20,8 @@ daemon = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(daemon)
 
 
-def test_a_job_does_not_start_a_login_shell():
-    argv = daemon._runner_argv("exec-1-1", "echo hello", "/tmp", 60)
+def test_a_job_does_not_start_a_login_shell(tmp_path):
+    argv = daemon._runner_argv("exec-1-1", "echo hello", str(tmp_path), 60)
     assert argv[-3:] == ["bash", "-c", "echo hello"]
     assert "-lc" not in argv
 
