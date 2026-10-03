@@ -152,6 +152,42 @@ spec:
         - name: fleetview-voice
           namespace: backstage
           port: 18790
+    # 2026-10-03 (the face renders the WALL, not the avatar): /api/auth/guest/refresh is the
+    # one door that exists FOR a visitor who is not signed in, and the catch-all below was
+    # demanding login-forward-auth-api on it -- so the guest door could not be walked. Measured
+    # inside the pod, no edge: POST /api/auth/guest/refresh -> 200 with a real Backstage token,
+    # while the same call through the edge -> 401. Backstage was never the refusal; the edge was.
+    #
+    # The consequence was every symptom on the surface: the SPA takes 401 on its auth refresh,
+    # so it renders the sign-in wall and NEVER MOUNTS THE FACE (measured in a real browser:
+    # canvases: 0, and zero requests for /face/talkinghead.mjs or /face/brunette.glb at all --
+    # the "black and white face" is an empty container, not an unlit or untextured avatar).
+    # The same 401 path is what returns the oauth2Proxy 500 as a non-JSON body, which the voice
+    # client reports as: Unexpected token 'I', "Internal S"... is not valid JSON.
+    #
+    # Carved out exactly like the voice rule above: an auth endpoint must be reachable to
+    # establish a session, and the session it hands out is the guest identity, which is what
+    # app-config.container.yaml already registers (dangerouslyAllowOutsideDevelopment) and what
+    # Backstage answers 200 for. The estate's rule that "nobody enters without the domain"
+    # (app-config.production.yaml) is unchanged for /api/catalog/ and every other data path --
+    # the Bearer rule and the catch-all below still govern those, and Backstage still grades
+    # every read itself. This route decides who ASKS, never who ENTERS.
+    - matches:
+        - path: { type: PathPrefix, value: /api/auth/guest/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: catalogue
+          port: 3100
     # Bearer header still wins above; the catch-all below keeps the browser login for pages.
     - matches:
         - path: { type: PathPrefix, value: /api/ }
