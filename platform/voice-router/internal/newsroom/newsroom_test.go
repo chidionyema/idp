@@ -56,6 +56,53 @@ func TestEditorDedupesWithinTheWindow(t *testing.T) {
 	}
 }
 
+// A repeat updates the story but must announce nothing. One warning re-emitted in a burst
+// became a published story and a log line per repeat, and the director was OOMKilled at its
+// 128Mi limit (exit=137, measured on OKE 2026-10-03). The map was always deduped; the
+// announcement was not, which is the whole bug.
+func TestEditorMarksARepeatSoItIsNotAnnouncedAgain(t *testing.T) {
+	e := NewEditor()
+	s1, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0}, t0)
+	if !ok || s1.Repeat {
+		t.Fatalf("first sighting: ok=%v Repeat=%v, want true/false", ok, s1.Repeat)
+	}
+
+	s2, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0.Add(time.Second)}, t0.Add(time.Second))
+	if !ok {
+		t.Fatal("a repeat must still return the story")
+	}
+	if !s2.Repeat {
+		t.Fatal("a repeat inside the window must be marked Repeat, or it publishes a second time")
+	}
+	if s2.ID != s1.ID || s2.Count != 2 {
+		t.Fatalf("a repeat must fold into the story: id=%q count=%d want %q/2", s2.ID, s2.Count, s1.ID)
+	}
+
+	// Past the window it is news again, not a repeat.
+	s3, _ := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "e1", Name: "n1", At: t0.Add(45 * time.Minute)}, t0.Add(45*time.Minute))
+	if s3.Repeat {
+		t.Fatal("a story past the dedupe window is a new sighting and must be announced")
+	}
+}
+
+// The flood itself, as it was seen in production: the same warning many times in the same
+// instant. Every repeat must be muted, so the count of announcements stays 1 no matter how
+// many raw events arrive. This is the assertion that would have failed before the fix.
+func TestABurstOfTheSameWarningIsAnnouncedOnce(t *testing.T) {
+	e := NewEditor()
+	announced := 0
+	for i := 0; i < 500; i++ {
+		at := t0.Add(time.Duration(i) * time.Microsecond)
+		s, ok := e.Ingest(Raw{Source: "k8s", Kind: "k8s.warning", Entity: "Pod/default/probe-bad", Name: "probe-bad", At: at}, at)
+		if ok && !s.Repeat {
+			announced++
+		}
+	}
+	if announced != 1 {
+		t.Fatalf("500 repeats announced %d times, want 1 -- the flood is back", announced)
+	}
+}
+
 func TestEditorFoldsTheSchedulerRetryCadence(t *testing.T) {
 	e := NewEditor()
 	var first Story

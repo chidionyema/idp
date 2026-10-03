@@ -530,7 +530,13 @@ metadata:
     backstage.io/source-location: "url:https://github.com/chidionyema/idp/tree/main/platform/hermes-agent/"
     idp/updated-by: "Flux from platform/hermes-agent on every main merge; image automation moves the tag"
     estate/flux-kustomization: "hermes-agent"
-    backstage.io/kubernetes-label-selector: "kustomize.toolkit.fluxcd.io/name=hermes-agent"
+    # ONE kubernetes-label-selector, and it is the app-name form: the pod is labelled
+    # app.kubernetes.io/name=hermes-agent-gateway (measured 2026-10-03) and carries no
+    # kustomize.toolkit.fluxcd.io/name label, because here the Kustomization is named
+    # `hermes-agent` while the workload is `hermes-agent-gateway`. A second selector line
+    # duplicated this same key, which is illegal YAML -- the whole file failed to parse and
+    # every entity in it vanished from the catalogue (Backstage: "Map keys must be unique
+    # at line 533").
   # Telegram (founder-telegram) and Traces (founder-traces) are not repeated as links here: the
   # crew#401 catalogue gate refuses a duplicate link URL anywhere in this file, and both surfaces
   # already carry their own canonical link -- described in prose above instead (LAW 43: reuse the

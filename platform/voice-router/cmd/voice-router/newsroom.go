@@ -99,6 +99,12 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 	}
 
 	ed := newsroom.NewEditor()
+	// A story that folds into one already inside the dedupe window is counted, not announced.
+	// It used to be both: one Kyverno warning re-emitted in a burst became a published story and
+	// a log line per repeat, and the director was OOMKilled (128Mi, exit=137, OKE 2026-10-03).
+	// Bounding the announcement is the fix that holds whether or not the anchor is degraded --
+	// a fallback template must never be able to kill the process.
+	const repeatLogEvery = 100 // a long-running repeat still shows it is counting, quietly
 	for {
 		select {
 		case <-ctx.Done():
@@ -106,6 +112,12 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 		case r := <-raws:
 			s, ok := ed.Ingest(r, time.Now())
 			if !ok {
+				continue
+			}
+			if s.Repeat {
+				if s.Count%repeatLogEvery == 0 {
+					log.Info("news.story_repeat", "id", s.ID, "count", s.Count, "headline", s.Headline)
+				}
 				continue
 			}
 			s, byLLM := anchor.Voice(ctx, s, time.Now())

@@ -53,6 +53,17 @@ type Story struct {
 	FirstAt    time.Time `json:"first_at"`
 	At         time.Time `json:"at"`
 
+	// Repeat is true when this Ingest folded into a story that already exists inside the
+	// dedupe window, rather than opening a new one. It is the answer to "has the estate heard
+	// this already?", which Count alone cannot give: a repeat still carries the updated Count
+	// and evidence, and the caller must still keep it, but it must not be announced again.
+	//
+	// This exists because a repeat was being published and logged like a first sighting. One
+	// Kyverno warning re-emitted 24 times in 7ms became 24 published stories and 24 log lines,
+	// and the director was OOMKilled at its 128Mi limit (measured on OKE, 2026-10-03,
+	// exit=137 reason=OOMKilled). Deduping the map is not deduping the announcement.
+	Repeat bool `json:"-"`
+
 	raw Raw
 }
 
@@ -214,7 +225,9 @@ func (e *Editor) Ingest(r Raw, now time.Time) (Story, bool) {
 		prev.Link = r.Link
 		finalize(prev, now)
 		e.prune(now)
-		return copyStory(prev), true
+		out := copyStory(prev)
+		out.Repeat = true
+		return out, true
 	}
 
 	id := e.nextID(r.Entity, t)
