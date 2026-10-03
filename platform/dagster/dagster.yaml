@@ -219,6 +219,16 @@ spec:
             limits:
               cpu: 250m
               memory: 1Gi
+          # crew#820 / class defect 2026-10-02: an immutable copy-job failure (the EstateDB
+          # K8sRunLauncher runs `estate-db-copy-dagster-r3` as a one-shot Job) was wedged
+          # in the namespace until a hand delete. Every spawned Job inherits this template,
+          # so ttlSecondsAfterFinished: 60 makes a Failed or Complete Job garbage-collect
+          # itself a minute after it lands; an immutable failure cannot block Flux and
+          # cannot block the next run. The Job runs again on its schedule; the next
+          # schedule starts clean. 60 is below the runCoordinator's queuedRunCooldownSeconds
+          # (chart default 120) so a tight retry does not collide with the GC.
+          jobSpec:
+            ttlSecondsAfterFinished: 60
           runK8sConfig:
             podSpecConfig:
               securityContext:
