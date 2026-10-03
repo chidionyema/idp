@@ -84,11 +84,56 @@ class GitHubBackend:
         self.git(
             "fetch", "-q", "--prune", "origin", "+refs/heads/*:refs/remotes/origin/*"
         )
-        self.git("fetch", "-q", "origin", f"+{STATE_REF}:{STATE_REF}", check=False)
+        # A failed state fetch used to be swallowed (check=False), which left refs/greenlane/state
+        # at whatever the checkout already had. load_state_text() then read a *stale* ref and
+        # returned it as current: on 2026-10-03 that made a landed batch look like it had never
+        # been saved, and sent a diagnosis chasing a save_state_text() bug that did not exist.
+        #
+        # Only one failure is benign: the ref does not exist yet, which is the engine's very
+        # first tick. Every other failure (unreachable origin, corrupt remote) must be fatal --
+        # a state ref that cannot be refreshed is not a state ref, and must never be reported as
+        # current. So the absence is probed for explicitly rather than inferred from an empty
+        # stdout, which is also what a failed fetch returns.
+        if not self._remote_state():
+            # Origin has no state ref. That is the engine's first tick -- but it is only a fresh
+            # start if the local checkout agrees. A checkout that carries a local ref origin does
+            # not have (a re-pointed remote, a rolled-back state ref) would otherwise keep serving
+            # that ref as current, which is the same stale-read defect one layer down. Drop it.
+            self.git("update-ref", "-d", STATE_REF, check=False)
+            return
+        self.git("fetch", "-q", "origin", f"+{STATE_REF}:{STATE_REF}")
 
     # -- state ---------------------------------------------------------------------------------
+    def _remote_state(self) -> str:
+        """The sha origin has at refs/greenlane/state, or "" when the ref does not exist yet.
+
+        ls-remote with check=False cannot tell "the remote ref is absent" from "origin is not
+        there". Distinguish them by exit status: a reached remote with no matching ref exits 0
+        and prints nothing, while an unreachable/failing remote exits non-zero. Conflating the
+        two is the whole defect this method guards, on a smaller scale.
+        """
+        p = subprocess.run(  # noqa: S603, S607 -- git with fixed argv, no shell
+            ["git", "ls-remote", "--refs", "origin", STATE_REF],
+            capture_output=True,
+            text=True,
+        )
+        if p.returncode != 0:
+            raise RuntimeError(
+                f"git ls-remote {STATE_REF}: rc={p.returncode} {p.stderr.strip()[:400]}"
+            )
+        return p.stdout.split()[0] if p.stdout.strip() else ""
+
     def load_state_text(self) -> str:
-        return self.git("show", f"{STATE_REF}:state.json", check=False)
+        # No state ref at all is a real, expected case (the very first tick): the engine starts
+        # from State(). Anything else -- a missing state.json inside an existing ref -- is
+        # corruption, and returning "" would silently start the engine from scratch on top of a
+        # live trunk. Distinguish the two.
+        if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
+            return ""
+        text = self.git("show", f"{STATE_REF}:state.json", check=False)
+        if not text:
+            raise RuntimeError(f"{STATE_REF} exists but carries no state.json")
+        return text
 
     def save_state_text(self, text: str) -> None:
         blob = _run("git", "hash-object", "-w", "--stdin", input=text)

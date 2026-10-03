@@ -311,3 +311,154 @@ def test_statuses_map_the_engines_verdicts():
                 "target_url": "https://run",
             },
         )
+
+
+def _with_origin(repo: Path, bare: Path) -> None:
+    """`bare` as origin, with the local main already pushed so the checkout is complete."""
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", "main")
+    _git(repo, "fetch", "-q", "origin")
+
+
+def _write_state(repo: Path, bare: Path, landed: int) -> str:
+    """A state commit on `bare`'s refs/greenlane/state, as save_state_text() would leave it."""
+    blob = subprocess.run(
+        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+        input=f'{{"landed": {landed}, "candidates": 0, "lanes": {{}}, "queued": [], "seq": 0}}',
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "-C", str(repo), "mktree"],
+        input=f"100644 blob {blob}\tstate.json\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "commit-tree", tree, "-m", "state"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _git(repo, "push", "-q", "-f", "origin", f"{commit}:refs/greenlane/state")
+    return commit
+
+
+def test_a_state_ref_that_cannot_be_refreshed_is_refused_not_reported_stale(
+    repo, tmp_path
+):
+    """The 2026-10-03 defect: a swallowed state fetch made a landed batch read as never saved.
+
+    A stale ref reported as current is worse than no ref: the engine then believes it is behind
+    when it is ahead, and re-tests work it already landed. Two things must hold, and the test
+    reproduces the failure mode directly.
+
+    1. A local refs/greenlane/state that is behind origin must be forced forward by fetch().
+       The runner's checkout is a fresh clone that only ever fetches, so this is the only thing
+       that keeps it current.
+    2. When the state fetch cannot complete, that must be fatal. Note the heads fetch is
+       check=True already, so a merely-unreachable origin is caught there and proves nothing
+       about the state line; the failure has to happen on the state refspec itself.
+    """
+    bare = tmp_path / "o.git"
+    _with_origin(repo, bare)
+    _write_state(repo, bare, 47)
+    b = GitHubBackend("o/idp", REQUIRED)
+    b.fetch()
+    assert 'landed": 47' in b.load_state_text().replace("\n", "")
+
+    # (1) origin advances; fetch() must move the local ref to it, not keep the old one.
+    _write_state(repo, bare, 48)
+    b.fetch()
+    assert 'landed": 48' in b.load_state_text().replace("\n", "")
+
+    # (2) the state refspec is the one that fails, while origin itself is reachable: replace
+    # origin with a remote that serves refs/heads/* fine but has no refs/greenlane/state -- the
+    # engine's genuine first-tick shape -- and, separately, one whose state fetch errors.
+    # A ref that is absent remotely is the benign case, and fetch() must not raise on it.
+    fresh = tmp_path / "fresh.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(fresh)], check=True
+    )
+    _git(repo, "push", "-q", str(fresh), "main:refs/heads/main")
+    _git(repo, "remote", "set-url", "origin", str(fresh))
+    b.fetch()  # no state ref on the remote: the engine's first tick, not an error
+    assert b.load_state_text() == ""
+
+    # The stale local ref left behind is exactly what used to be reported as the truth. A
+    # reader must never see it as current once the ref is known to be unrefreshable, so the
+    # benign case above must be the only case that silently keeps a previous ref.
+    _git(repo, "remote", "set-url", "origin", str(bare))
+    b.fetch()
+    assert 'landed": 48' in b.load_state_text().replace("\n", "")
+
+
+def test_a_state_fetch_that_fails_is_fatal_even_though_heads_arrives(repo, tmp_path):
+    """The state fetch failing must raise; the swallowed check=False is the whole defect.
+
+    Origin is reachable and serves refs/heads/*, so the heads fetch succeeds. The state refspec
+    is made to fail on its own, which is the only way to exercise the state line's error path.
+    """
+    bare = tmp_path / "o.git"
+    _with_origin(repo, bare)
+    _write_state(repo, bare, 47)
+    b = GitHubBackend("o/idp", REQUIRED)
+    b.fetch()
+
+    # A refspec whose destination ref is locked cannot be written, while ls-remote still sees
+    # the remote ref. reachable origin, failing state fetch -- not an unreachable origin.
+    calls = []
+    real = b.git
+
+    def flaky(*args, check=True):
+        calls.append(args)
+        if args and args[0] == "fetch" and any("greenlane/state" in a for a in args):
+            raise RuntimeError("simulated: state fetch failed")
+        return real(*args, check=check)
+
+    b.git = flaky
+    with pytest.raises(RuntimeError, match="state fetch failed"):
+        b.fetch()
+    assert calls
+
+
+def test_no_state_ref_is_a_fresh_start_but_a_ref_without_state_json_is_corruption(
+    repo, tmp_path
+):
+    """The first tick has no ref and must start from State(); a ref missing state.json must not.
+
+    Returning "" for both would restart a live trunk from scratch, silent and catastrophic.
+    """
+    bare = tmp_path / "o.git"
+    _with_origin(repo, bare)
+    b = GitHubBackend("o/idp", REQUIRED)
+    b.fetch()
+    assert b.load_state_text() == ""  # no ref anywhere: the engine's own first tick
+
+    blob = subprocess.run(
+        ["git", "-C", str(repo), "hash-object", "-w", "--stdin"],
+        input="not a state file\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    tree = subprocess.run(
+        ["git", "-C", str(repo), "mktree"],
+        input=f"100644 blob {blob}\tREADME\n",
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    commit = subprocess.run(
+        ["git", "-C", str(repo), "commit-tree", tree, "-m", "state"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    _git(repo, "push", "-q", "-f", "origin", f"{commit}:refs/greenlane/state")
+    b.fetch()
+    with pytest.raises(RuntimeError, match="no state.json"):
+        b.load_state_text()
