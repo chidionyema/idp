@@ -1,0 +1,116 @@
+# Cortex in the estate (decision 0036).
+#
+# READ THIS BEFORE EDITING. Cortex has two shapes in the estate, and they are not
+# interchangeable:
+#
+#   1. THE CLUSTER -- Cortex is the retrieval ENGINE, not a store. It runs as a library inside
+#      the unified memory server (platform/unified-memory-server), behind the existing
+#      `remember`/`recall` door. Its job is hybrid search, the 5-signal trust, `valid_at`
+#      temporal filtering, per-kind schema validation and decay. It does NOT bring a database:
+#      redb beside the one estate Postgres would be a second store of record, which is the
+#      AGENTS.md 6 duplication and against "one Postgres is LAW". Nothing in this file runs in
+#      the cluster in that shape.
+#
+#   2. THE LAPTOP -- Cortex is a full store, and this StatefulSet is it. redb is a single file,
+#      so a Deployment rescheduling onto another node without a volume would lose the memory.
+#      This shape exists for laptop-local and offline use (§8 placement ladder, rung "laptop
+#      just in time"), where there is no estate Postgres to be the one store.
+#
+# If you are here to wire Cortex into the cluster's memory path, the file you want is
+# platform/unified-memory-server, not this one. This file is the laptop store.
+#
+# Placement (AGENTS.md 8): rung "laptop just in time" for shape 2; shape 1 adds no workload at
+# all. Requests 250m/512Mi; the node's total stays under 1.8 CPU.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cortex-local
+  namespace: cortex
+  labels:
+    app: cortex-local
+    app.kubernetes.io/part-of: estate
+    idp.estate.io/runtime: laptop-just-in-time
+  annotations:
+    idp.estate.io/shape: "laptop store; the cluster uses the engine inside unified-memory-server"
+spec:
+  serviceName: cortex-local
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cortex-local
+  template:
+    metadata:
+      labels:
+        app: cortex-local
+      annotations:
+        # The image is built by bin/build-image (R24), scanned by Trivy, cosigned, and
+        # advanced by Flux image automation. Never applied by hand.
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: "/stats"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: cortex
+          image: ghcr.io/chidionyema/cortex:main
+          imagePullPolicy: IfNotPresent
+          args: ["serve", "--config", "/etc/cortex/cortex.toml"]
+          ports:
+            - { name: grpc, containerPort: 9090 }
+            - { name: http, containerPort: 9091 }
+          env:
+            # The model is BAKED INTO THE IMAGE, never fetched at pod start. The estate has
+            # already been burned by a runtime fetch: the embed lane timing out is exactly what
+            # kept the memory store failing eight times. Offline is asserted, not hoped for.
+            - { name: HF_HUB_OFFLINE, value: "1" }
+            - { name: TRANSFORMERS_OFFLINE, value: "1" }
+            - { name: CORTEX_MODEL_DIR, value: "/opt/cortex/model" }
+            - { name: CORTEX_DATA_DIR, value: "/data" }
+            - { name: RUST_LOG, value: "info" }
+            # Secrets by file, never by value in a manifest or env literal (AGENTS.md 4).
+            - name: CORTEX_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef: { name: cortex-secrets, key: encryption_key }
+            - name: CORTEX_TOKEN
+              valueFrom:
+                secretKeyRef: { name: cortex-secrets, key: token }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: config, mountPath: /etc/cortex }
+          # Generous, because the first boot builds the HNSW index from disk.
+          startupProbe:
+            httpGet: { path: /health, port: http }
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: config
+          configMap:
+            name: cortex-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi

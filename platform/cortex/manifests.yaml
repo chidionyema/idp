@@ -1,0 +1,113 @@
+# Cortex in the estate (decision 0036). See statefulset.yaml for the two shapes.
+#
+# These objects serve SHAPE 2 (the laptop/local store). The cluster's memory path is the
+# unified memory server with Cortex as its engine -- no Service, ConfigMap or alert here is on
+# the cluster path, and the PrometheusRule is the one exception: it is the alarm for the
+# estate's real memory plane and belongs with it wherever it runs.
+#
+# Ports are ClusterIP only. Cortex's own docs say its ports are unauthenticated by default, so
+# it never faces a network the estate does not own (AGENTS.md 23: the boundary is enforced by
+# infrastructure, not the application).
+apiVersion: v1
+kind: Service
+metadata:
+  name: cortex-local
+  namespace: cortex
+  labels:
+    app: cortex-local
+    idp.estate.io/runtime: laptop-just-in-time
+spec:
+  type: ClusterIP
+  selector:
+    app: cortex-local
+  ports:
+    - { name: grpc, port: 9090, targetPort: grpc }
+    - { name: http, port: 9091, targetPort: http }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cortex-config
+  namespace: cortex
+data:
+  # Rendered from platform/cortex/cortex.toml so the file this repo reviews and the file the
+  # pod runs are the same bytes.
+  cortex.toml: |
+    # placeholder -- rendered from platform/cortex/cortex.toml at deploy time
+---
+# Secrets by name, from the vault (AGENTS.md 4). The encryption key never appears in this
+# repo: losing it means losing the memory, and a key in git is a key that is already lost.
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: cortex-secrets
+  namespace: cortex
+spec:
+  refreshInterval: 1h
+  secretStoreRef:
+    name: estate-vault
+    kind: ClusterSecretStore
+  target:
+    name: cortex-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: encryption_key
+      remoteRef: { key: cortex, property: encryption_key }
+    - secretKey: token
+      remoteRef: { key: cortex, property: token }
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cortex-local
+  namespace: cortex
+  labels:
+    app: cortex-local
+spec:
+  selector:
+    matchLabels:
+      app: cortex-local
+  endpoints:
+    - port: http
+      path: /stats
+      interval: 30s
+---
+# The alarm that makes this different from every memory system the estate has built before.
+# It fires when memory STOPS BEING USED, not merely when the process dies: a healthy pod
+# serving nobody is exactly what Hindsight was for 24 hours (0 requests), and what
+# unified-memory-server looked like at 0 replicas. "Up" is not "in use".
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: memory-in-use
+  namespace: cortex
+  labels:
+    app.kubernetes.io/part-of: estate
+spec:
+  groups:
+    - name: memory.plane
+      rules:
+        - alert: MemoryDown
+          expr: up{job=~"cortex-local|unified-memory-server"} == 0
+          for: 5m
+          labels: { severity: critical }
+          annotations:
+            summary: "Memory plane is down -- agents are running blind"
+            runbook: "docs/specs/2026-10-02-memory-plane-cortex-adoption.md"
+
+        # The 2026-10-02 lesson as an alarm: the process is fine and nobody is using it.
+        - alert: MemoryNotInUse
+          expr: increase(cortex_nodes_total[6h]) == 0 and cortex_nodes_total > 0
+          for: 30m
+          labels: { severity: warning }
+          annotations:
+            summary: "No new memory in 6h -- recall may be silently failing"
+            description: "The estate shipped write-only memory once (otto, 2026-10-02). A store nobody writes to is the same failure again."
+
+        # Recall returning nothing while the store is up is the exact incident signature.
+        - alert: MemoryRecallEmpty
+          expr: rate(cortex_briefings_served_total[1h]) == 0 and cortex_nodes_total > 0
+          for: 1h
+          labels: { severity: warning }
+          annotations:
+            summary: "Store holds facts but no briefings are being served"
