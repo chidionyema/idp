@@ -130,7 +130,7 @@ def main() -> int:
   test('RadialMenu: right-click an agent opens the radial menu; Escape closes it', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click({ button: 'right' });
     await expect(page.locator('[data-testid="radial-scrim"]')).toBeVisible({ timeout: 30_000 });
@@ -143,7 +143,7 @@ def main() -> int:
   test('Spotlight: click an agent, it detaches and speaks; Escape releases', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click();
     await expect(page.locator('[role="dialog"][aria-label*="Agent"]')).toBeVisible({ timeout: 30_000 });
@@ -156,6 +156,11 @@ def main() -> int:
 import {{ test, expect }} from '@playwright/test';
 
 test.use({{ channel: 'chrome' }});
+// Live runs carry the prover's machine identity through the public gate (the same door
+// probes/backstage.py uses): the proxy forwards the Bearer, the app grades it. Local runs
+// (built app, no gate) use the app's own Enter door instead.
+const BEARER = process.env.SURFACES_BEARER || '';
+if (BEARER) test.use({{ extraHTTPHeaders: {{ authorization: `Bearer ${{BEARER}}` }} }});
 
 const PANELS = [
 {cases}
@@ -170,7 +175,7 @@ test.describe('/fleet panels: every component in room/ui renders on the real pag
       r => new URL(r.url()).pathname === '/api/proxy/fleetview/sessions' && r.status() === 200,
     );
     await page.goto('/fleet', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await live;
     await page.waitForTimeout(5_000); // panels stream in after sessions land
 
@@ -205,7 +210,7 @@ test.describe('/fleet-original: the before picture beside the rewrite', () => {{
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('/fleet-original', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await page.locator('[data-testid="{orig_testid}"]').first().waitFor({{ timeout: 60_000 }});
     expect(errors, 'uncaught page errors on /fleet-original').toEqual([]);
   }});
