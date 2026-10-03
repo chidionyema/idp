@@ -1,0 +1,143 @@
+what: 'The embed lane resolved to a paid vendor at every hop, so no fact in either
+  memory store could acquire a vector. 59 of 59 otto_facts and all 47 rows of memory.memories
+  held a NULL embedding, and the chain had a free hop the estate already owned --
+  nvidia/nemotron-3-embed-1b -- that was never in the chain and whose Secret was never
+  mounted. The question this record grades is not "is it broken" (it measurably was)
+  but WHICH fault produced the dry chain, since the four candidate causes demand different
+  fixes and only one of them is "add the free lane".
+
+  '
+hypotheses:
+- name: H1
+  description: 'every paid hop was independently out of money/credit at the vendor
+    -- the chain was correct in route and wrong only in that its hops cannot pay,
+    so the fix is a free hop
+
+    '
+  prior: 0.4
+- name: H2
+  description: 'the chain was fine and the keys/money were fine; the CALLER was refused
+    by a virtual-key allowlist that did not include the embedding models, so every
+    hop 401/403''d regardless
+
+    '
+  prior: 0.2
+- name: H3
+  description: 'the model names were wrong or the lane was misnamed (`embed` did not
+    resolve to the model the store''s column was built for), so the router errored
+    before reaching any vendor
+
+    '
+  prior: 0.2
+- name: H4
+  description: 'the free hop (nvidia) was already in the chain but failing for a second
+    reason (width mismatch or auth), so the chain was not dry-for-lack-of-a-free-hop
+
+    '
+  prior: 0.2
+n_eff_divisor: 1
+evidence:
+- name: 'HTTP status of each hop called directly at the vendor with the router''s
+    master key (so no virtual-key allowlist is in the path -- this is what makes an
+    allowlist 403 distinguishable from a vendor 402)
+
+    '
+  observed:
+    paid_402_no_funds: 3
+    auth_401_403: 0
+    model_not_found_400: 0
+    ok_200: 0
+  likelihoods:
+    H1:
+      paid_402_no_funds: 0.9
+      auth_401_403: 0.03
+      model_not_found_400: 0.03
+      ok_200: 0.04
+    H2:
+      paid_402_no_funds: 0.1
+      auth_401_403: 0.8
+      model_not_found_400: 0.05
+      ok_200: 0.05
+    H3:
+      paid_402_no_funds: 0.1
+      auth_401_403: 0.1
+      model_not_found_400: 0.75
+      ok_200: 0.05
+    H4:
+      paid_402_no_funds: 0.7
+      auth_401_403: 0.15
+      model_not_found_400: 0.05
+      ok_200: 0.1
+- name: 'calls to nvidia/nemotron-3-embed-1b made through the estate router once its
+    Secret (human-nvidia) was mounted into namespace llm -- the free hop''s own outcome
+
+    '
+  observed:
+    ok_200: 1
+    refused_or_unreachable: 0
+  likelihoods:
+    H1:
+      ok_200: 0.85
+      refused_or_unreachable: 0.15
+    H2:
+      ok_200: 0.5
+      refused_or_unreachable: 0.5
+    H3:
+      ok_200: 0.3
+      refused_or_unreachable: 0.7
+    H4:
+      ok_200: 0.2
+      refused_or_unreachable: 0.8
+- name: 'the width the free hop answers with versus the width the existing columns
+    declared, asked with an explicit `dimensions` parameter to see whether the number
+    was negotiable
+
+    '
+  observed:
+    fixed_2048_refuses_parameter: 1
+    accepts_1536: 0
+    accepts_any_width: 0
+  likelihoods:
+    H1:
+      fixed_2048_refuses_parameter: 0.8
+      accepts_1536: 0.1
+      accepts_any_width: 0.1
+    H2:
+      fixed_2048_refuses_parameter: 0.33
+      accepts_1536: 0.33
+      accepts_any_width: 0.34
+    H3:
+      fixed_2048_refuses_parameter: 0.3
+      accepts_1536: 0.3
+      accepts_any_width: 0.4
+    H4:
+      fixed_2048_refuses_parameter: 0.75
+      accepts_1536: 0.15
+      accepts_any_width: 0.1
+- name: 'count of rows carrying a vector at the moment of measurement, across both
+    stores
+
+    '
+  observed:
+    null_embedding: 106
+    populated_embedding: 0
+  likelihoods:
+    H1:
+      null_embedding: 0.95
+      populated_embedding: 0.05
+    H2:
+      null_embedding: 0.85
+      populated_embedding: 0.15
+    H3:
+      null_embedding: 0.8
+      populated_embedding: 0.2
+    H4:
+      null_embedding: 0.9
+      populated_embedding: 0.1
+posteriors:
+  H1: 0.9998317121
+  H2: 1.3e-09
+  H3: 0.0
+  H4: 0.0001682867
+winner: H1
+computed_at: '2026-10-03T09:48:57Z'

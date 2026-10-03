@@ -105,6 +105,12 @@ def test_every_hop_of_the_embed_chain_declares_the_column_width(rendered):
         assert lanes, f"the {group!r} chain names {hop!r} and no lane serves it"
         for lane in lanes:
             declared = lane["litellm_params"].get("dimensions")
+            # A lane may fix its own width and refuse the parameter. embedding-free-fixed-width
+            # is how the registry marks one, because such a lane cannot be asked for the column
+            # width and cannot lie about it either: it emits what it emits. omitting the number
+            # is the honest encoding, and this is where it is checked against the store.
+            if lane.get("model_info", {}).get("embedding-free-fixed-width") == width:
+                continue
             if declared != width:
                 wrong.append((hop, lane["litellm_params"].get("model"), declared))
 
@@ -113,6 +119,37 @@ def test_every_hop_of_the_embed_chain_declares_the_column_width(rendered):
         f"another width, or leave it to the model's default, and the store would accept the "
         f"row and never match it again: {wrong}"
     )
+
+
+def test_the_free_lane_is_asked_first_so_a_dry_vendor_cannot_darken_memory(rendered):
+    """The estate owns a free embedding hop; it must be the one asked before any paid one.
+
+    2026-10-02, measured with the router's master key (no virtual-key allowlist, so the
+    vendor is the only thing being asked): openrouter/text-embedding-3-small answered 402
+    with its credits at zero, gemini/gemini-embedding-001 answered 402 with prepayment
+    depleted, cohere answered with a trial key. All three paid hops dry at once is how 59
+    otto_facts and all 47 rows of memory.memories came to sit with no vector. nvidia's
+    nemotron-3-embed-1b answers 200 on a 10,000-requests/day/model free meter, so the
+    estate does not have to be dark when a vendor is. This test is what keeps that lane in
+    front instead of merely present: config.yaml once recorded the same key `existing in
+    namespace llm and nothing mounting it`, and a lane that is not in the chain is that
+    same defect one layer up.
+    """
+    cfg, env = rendered, _gateway_env()
+    group = env["OTTO_MEMORY_EMBEDDING_MODEL"]
+    hops = _chain(cfg, group)
+    assert "embed-free" in hops, (
+        f"the {group!r} chain is {hops} and names no free hop, so every request depends on a "
+        f"vendor account that can run dry -- which is exactly what happened"
+    )
+    first = hops[0]
+    for lane in _lanes(cfg, first):
+        cost = (lane.get("model_info") or {}).get("input_cost_per_token")
+        assert not cost, (
+            f"the {group!r} chain is led by {first!r}, which is a paid lane ({cost} per "
+            f"input token): a dry account there is a dark memory, and the free hop behind "
+            f"it is only reached after the walk fails"
+        )
 
 
 def test_the_embedding_write_outlives_a_walk_down_the_whole_chain(rendered):

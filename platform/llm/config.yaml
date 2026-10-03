@@ -378,34 +378,23 @@ model_list:
   # third accounts, so a 429 on one class never cools the other. Answers are one or two sentences by
   # the operator's own brief: max_tokens is small and the timeout is a turn, not a job. rpm sits under
   # every vendor's free ceiling so the router refuses locally before the vendor does.
+  # Measured 2026-10-02 from the founder's felt latency ("takes forever or router times out, totally unusable"):
+  # the brain leg took 15.9s of a 16.6s turn. All three free rungs were gpt-oss-120b, a REASONING model on
+  # every vendor -- it thinks before it speaks, so the first spoken token waits for the hidden chain; the
+  # groq and cerebras keys 403'd from this network and sambanova's gpt-oss streamed first content ~14s in.
+  # MiniMax-M3, same prompt, same night, through this same router: first content 1.32-1.96s. The lane that
+  # answers is the interactive lane; the free rungs stay one hop away in the chain below
+  # (voice: [narrate, fast, groq]), so a MiniMax outage degrades to free lanes, never to silence. Cost at
+  # the 4k-token voice prompt is ~$0.001 a call, inside the $3/day litellm budget.
   - model_name: voice
     litellm_params:
-      model: openai/openai/gpt-oss-120b
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
       timeout: 8
       max_tokens: 96
-      rpm: 20
-    model_info:
-      max_input_tokens: 131072
-  - model_name: voice
-    litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: https://api.cerebras.ai/v1
-      api_key: os.environ/CEREBRAS_API_KEY_2
-      timeout: 8
-      max_tokens: 96
-      rpm: 20
-    model_info:
-      max_input_tokens: 65536
-  - model_name: voice
-    litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: https://api.sambanova.ai/v1
-      api_key: os.environ/SAMBANOVA_API_KEY_2
-      timeout: 8
-      max_tokens: 96
-      rpm: 20
+      rpm: 30
+      input_cost_per_token: 0.0000003
     model_info:
       max_input_tokens: 131072
   # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). An 8B
@@ -537,6 +526,27 @@ model_list:
       max_tokens: 8192
     model_info:
       max_input_tokens: 131072
+  #
+  # THE FREE EMBEDDING HOP, 2026-10-02, and the reason the estate's memory can be dark no longer. Measured on this key with the router's master key in hand, so no virtual-key allowlist stood between the probe and the vendor:
+  #   embed          openrouter/text-embedding-3-small   402, credits ZERO
+  #   embed-fallback gemini/gemini-embedding-001         402, "prepayment credits are depleted"
+  #   embed-cohere   cohere/embed-v4.0                   vendor trial key
+  # Three paid hops dry on the same afternoon is how 59 otto_facts and all 47 rows of memory.memories came to hold no vector at all: the write path stored the fact, the embedding failed, and nothing said so. This lane is $0 on the 10,000 requests/day/model meter above, so a vendor account running dry can no longer darken semantic memory.
+  #
+  # 2048 floats and no width parameter: the model rejects one outright -- measured,
+  #   {"message":"dimensions must be one of 2048"}
+  # so `dimensions:` is deliberately absent (declaring 1536 here would be a lie the lane refuses). The stores move to the lane's width instead of the other way round, which is the founder's call of 2026-10-02: use the free hop we own rather than fund a vendor.
+  #
+  # embedding-free-fixed-width: 2048 is read by tests/test_the_embed_chain_agrees_on_one_width.py. Without it the width check would read the missing `dimensions` as "left to the model's default" and refuse the chain -- the right instinct for a hop whose width nobody chose, the wrong verdict for one the vendor fixed.
+  - model_name: embed-free
+    litellm_params:
+      model: openai/nvidia/nemotron-3-embed-1b
+      api_base: https://integrate.api.nvidia.com/v1
+      api_key: os.environ/NVIDIA_API_KEY
+      timeout: 120
+    model_info:
+      mode: embedding
+      embedding-free-fixed-width: 2048
 
   - model_name: sambanova
     litellm_params:
@@ -809,7 +819,10 @@ router_settings:
     # tests/test_the_embed_chain_agrees_on_one_width.py refuses a chain whose hops disagree:
     # a hop of another width does not degrade recall, it writes a vector the store cannot
     # compare to anything it already holds, and it does that silently.
-    - embed: [embed-fallback, embed-cohere]
+    # 2026-10-02 -- the width moved to 2048 and the chain was reduced to the one free hop. # The estate's three paid hops are dry at the vendor together (openrouter 402 zero # credit, gemini 402 prepaid depleted, cohere trial -- measured), and nvidia's # nemotron-3-embed-1b answers free on a 10,000-requests/day/model meter. The founder's # call that day was to follow the free lane rather than fund a vendor. The stores move # to 2048 (platform/unified-memory-server/migrations/2026-10-02-vector-1536-to-2048.sql) # because a 1536 vector is not a shorter 2048 one, it is a different embedding space, # so the three paid lanes below may NOT rejoin the chain until their widths change # with it. They stay named rather than deleted so that is a one-line edit, and # tests/test_the_embed_chain_agrees_on_one_width.py is what refuses the join until it is.
+    # The paid hops, out of the chain while the stores are 2048:
+    #   embed-fallback (gemini/gemini-embedding-001, dimensions: 1536)  --  embed-cohere   (cohere/embed-v4.0, dimensions: 1536)  --  embed          (openrouter/text-embedding-3-small, dimensions: 1536)
+    - embed: [embed-free]
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
   # encrypted in litellm-db under the vendor's own name, `moonshot/kimi-k3`. Rendering a

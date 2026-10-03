@@ -174,8 +174,14 @@ spec:
             # read path cannot compare. An embedding failure is logged and the memory is
             # still copied, so a router outage costs vector quality, never the fact.
             - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
-            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
-            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            # embed-free since 2026-10-02: nvidia/nemotron-3-embed-1b, the router's free hop.
+            # Every paid hop is dry at the vendor together (openrouter 402 zero credit, gemini
+            # 402 prepaid depleted, cohere trial -- measured). The lane emits 2048 and refuses
+            # a width parameter, so the store moves to 2048 and the 1152 existing 1536 vectors
+            # are re-embedded by this job, not reshaped: a 1536 vector is not a shorter 2048
+            # one, it is a different embedding space.
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed-free" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "2048" }
             # Longer than the gateway's 1.5s: nothing is waiting on this run, and a
             # batch job that gives up early leaves rows without vectors.
             - { name: OTTO_MEMORY_EMBEDDING_TIMEOUT_S, value: "30" }

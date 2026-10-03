@@ -38,7 +38,8 @@ CREATE TABLE IF NOT EXISTS memories (
     key TEXT NOT NULL,
     content TEXT NOT NULL,
     content_hash TEXT NOT NULL, -- BLAKE3 or SHA-256 formatted hex
-    embedding vector(1536), -- Tuned for text-embedding-3-small or equivalent
+    embedding vector(2048), -- 2048 since 2026-10-02, the width of the free nvidia/nemotron-3-embed-1b lane
+                            -- (was 1536: every paid hop of the then-chain is dry at the vendor).
     version BIGINT NOT NULL DEFAULT 1,
     trust_tier trust_tier_enum NOT NULL DEFAULT 'raw_source',
     provenance JSONB NOT NULL DEFAULT '{}'::jsonb, -- Includes source metadata, TrustProof

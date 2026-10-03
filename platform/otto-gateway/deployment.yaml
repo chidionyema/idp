@@ -277,14 +277,22 @@ spec:
             # The vector half of the L2 read. Without these the lane still answers --
             # Postgres full-text search over the same rows is the lexical arm of the
             # hybrid and is a tested mode, not a failure -- but only half the recall
-            # quality. `embed` is a lane on the estate router, never a vendor model id
-            # (LAW 34); platform/llm/config.yaml resolves it to a 1536-wide model, which is
-            # the width otto_facts.embedding is created at, so the column and the model
-            # cannot drift apart. Every hop of the chain declares that same width, and
-            # tests/test_the_embed_chain_agrees_on_one_width.py grades it against this value.
+            # quality. `embed-free` is a lane on the estate router, never a vendor model id
+            # (LAW 34); platform/llm/config.yaml resolves it to nvidia/nemotron-3-embed-1b,
+            # whose width is 2048 and is not adjustable -- the model rejects a width
+            # parameter outright. So this value follows the lane rather than the column's
+            # history, and the column follows this: otto_facts.embedding moves to 2048 in
+            # platform/unified-memory-server/migrations/2026-10-02-vector-1536-to-2048.sql,
+            # and the 1152 existing 1536 vectors are re-embedded rather than reshaped,
+            # because a 1536 vector is not a shorter 2048 one, it is a different space.
+            # Measured 2026-10-02: all three paid hops refuse together (openrouter 402 zero
+            # credit, gemini 402 prepaid depleted, cohere trial), which is how 59 facts here
+            # and all 47 rows of memory.memories came to hold no vector. embed-free costs $0
+            # on nvidia's 10,000-requests/day/model meter. tests/test_the_embed_chain_agrees_
+            # on_one_width.py grades this value against every hop of the chain.
             - { name: OTTO_MEMORY_EMBEDDING_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
-            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed" }
-            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "1536" }
+            - { name: OTTO_MEMORY_EMBEDDING_MODEL, value: "embed-free" }
+            - { name: OTTO_MEMORY_EMBEDDING_DIM, value: "2048" }
             # Was 1.5 until 2026-09-10, on the argument that "an embedding that overruns costs
             # no one their answer: retrieval falls back to the lexical arm". True of RECALL,
             # and false of the WRITE, which is the half that was actually timing out:
