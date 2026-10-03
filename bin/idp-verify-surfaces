@@ -92,7 +92,12 @@ def _l3_live(app: str) -> bool:
     ok = _run(
         "L3",
         [os.path.join(work, "node_modules", ".bin", "playwright"), "test", "panels.spec.ts"],
-        env={"BASE_URL": app, "SURFACES_BEARER": os.environ.get("PROVER_TOKEN", "")},
+        env={
+            "BASE_URL": app,
+            "SURFACES_BEARER": os.environ.get("PROVER_TOKEN", ""),
+            # The /face real-speech test feeds this WAV through the fake microphone.
+            "SURFACES_VOICE_WAV": os.path.join(ROOT, "probes/fixtures/fleet-status.wav"),
+        },
     )
     shutil.rmtree(work, ignore_errors=True)
     return ok
