@@ -377,3 +377,38 @@ spec:
       kind: HelmRelease
       name: temporal
       namespace: temporal
+---
+# image-reflector + image-automation: every ImageRepository/ImagePolicy in
+# platform/image-automation, and the one ImageUpdateAutomation ("backstage", path: ./) that walks
+# the whole checkout for $imagepolicy markers. c96359f4 (2026-09-26) deleted this row; the objects
+# it owns survived with a stale kustomize.toolkit.fluxcd.io/name=image-automation label, so nothing
+# applied the new pairs added since -- including voice-router, which is why
+# ghcr.io/chidionyema/voice-router sat on its 2026-09-27 build while the director's
+# subscribeRetry/ensureNewsStream fix (86461f31b, 2026-09-30) stayed unbuilt in the cluster
+# (voice-router-director CrashLoopBackOff: nats: no stream matches subject estate.agent.>).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: image-automation
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  dependsOn:
+    - name: secret-store
+    # crew#539: the namespace, not the portal. Role/RoleBinding/ServiceAccount ghcr-pull-reader
+    # land in namespace backstage and need it to exist; this row must never wait on
+    # Deployment/catalogue being healthy (crew#488).
+    - name: backstage-namespace
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/image-automation
+  prune: true
+  timeout: 2m
+  healthChecks:
+    - apiVersion: image.toolkit.fluxcd.io/v1
+      kind: ImageRepository
+      name: backstage
+      namespace: flux-system
