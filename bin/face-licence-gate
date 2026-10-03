@@ -1,0 +1,191 @@
+#!/usr/bin/env bash
+# No non-commercial asset may reach the estate face. Commercial or this fails.
+#
+# The incident this exists for: the face shipped with brunette.glb, a Ready Player Me avatar out
+# of the TalkingHead repo under CC BY-NC 4.0 -- non-commercial. The licence record under
+# backstage/packages/app/public/face/VERSIONS has said so since the asset landed ("replace with an
+# estate-owned avatar before any commercial use"), and the message was a comment in a text file:
+# nothing read it, nothing refused, and the estate shipped a non-commercial avatar into a product
+# it is trying to sell. docs/specs/2026-10-03-face-experience-10x.md §6 asks for this gate by name.
+#
+# A note is not a gate. This reads the same VERSIONS record an engineer reads and refuses a
+# non-commercial asset, so the blocker is a red build rather than a sentence in a spec.
+#
+# It grades the thing itself, not a proxy: the assets the face actually loads, and the licence each
+# one carries.
+#
+# The existing blocker is carried as dated debt (bin/face-licence-known-blockers) rather than
+# failing main the day this lands -- main must never go red. The debt is printed on every run, the
+# list may only shrink, a new non-commercial asset is refused outright, and the verdict line never
+# claims clearance while debt is carried.
+#
+# A gate that cannot fail is not a gate. Proven able to fail 2026-10-03, all five directions, each
+# reproduced before this file was committed and again through bin/idp-ci:
+#   - real tree (brunette.glb, CC BY-NC, recorded): PASS-WITH-DEBT, exit 0, debt printed
+#   - a new non-commercial asset: exit 1, refused, never grandfathered
+#   - an entry naming an asset that is gone: exit 1, the debt must be closed
+#   - an asset with no licence record: exit 1, absence is not permission
+#   - every asset commercial and no debt: "ok", exit 0
+#
+#   bin/face-licence-gate            check the tree; non-zero if a new non-commercial asset ships
+#   bin/face-licence-gate --list     print every face asset and its recorded licence, exit 0
+set -uo pipefail
+
+LIST=0
+case "${1:-}" in
+  -h|--help)
+    echo "bin/face-licence-gate [--list]"
+    echo "  (no flag)  fail if any face asset carries a new non-commercial licence."
+    echo "  --list     print every face asset and its recorded licence. Exit 0."
+    echo ""
+    echo "  The face is backstage/packages/app/public/face/. VERSIONS is the licence record;"
+    echo "  the gate reads it and refuses a non-commercial or unrecorded asset."
+    echo "  bin/face-licence-known-blockers carries the pre-existing, dated debt."
+    exit 0
+    ;;
+  --list) LIST=1 ;;
+  "") ;;
+  *) echo "face-licence-gate: unknown argument ${1}" >&2; exit 2 ;;
+esac
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+FACE="$IDP/backstage/packages/app/public/face"
+VERSIONS="$FACE/VERSIONS"
+# The known-blockers file is the ratchet. An asset listed here is a recorded, dated debt that the
+# gate prints on every run and refuses to let grow: it may not be added to, and the day the asset
+# stops being shipped the entry must go (a stale entry is itself a FAIL, so the list cannot rot
+# into a permanent exemption). Without this, landing the gate reddens main on day one -- and main
+# must never go red -- so the debt is tracked loudly instead of being invisible, which is how the
+# CC BY-NC avatar got two weeks into a product.
+KNOWN="$IDP/bin/face-licence-known-blockers"
+
+# Licences that permit shipping in a commercial product. A recognised open-source licence that
+# allows commercial use, or an explicit estate-owned marker. Anything else -- CC BY-NC, an
+# unrecorded asset, a research-only licence -- fails.
+COMMERCIAL_OK_RE='(^|[^A-Za-z])(MIT|Apache[- ]2\.0|BSD(-[0-9]Clause)?|CC0|CC BY 4\.0|Public Domain|estate-owned|proprietary|commissioned)([^A-Za-z]|$)'
+
+fail=0
+known_hits=""
+say() { printf '%s\n' "$*"; }
+
+if [ ! -f "$VERSIONS" ]; then
+  say "FAIL  face-licence-gate  no licence record at backstage/packages/app/public/face/VERSIONS"
+  say "      Every face asset needs a recorded licence; without the record there is no verdict."
+  exit 1
+fi
+
+# Every asset the face dir carries that a browser would fetch: the GLB avatars.
+assets=""
+for f in "$FACE"/*.glb; do
+  [ -e "$f" ] || continue
+  assets="$assets $(basename "$f")"
+done
+
+if [ -z "${assets// /}" ]; then
+  say "FAIL  face-licence-gate  no avatar (.glb) under backstage/packages/app/public/face/"
+  say "      The face cannot mount without one; an empty face dir is not a pass."
+  exit 1
+fi
+
+for asset in $assets; do
+  # The licence line for this asset: the VERSIONS line that names it.
+  line="$(grep -E "^${asset}([[:space:]]|:|\.glb)" "$VERSIONS" 2>/dev/null | head -1 || true)"
+  if [ -z "$line" ]; then
+    line="$(grep -F "$asset" "$VERSIONS" 2>/dev/null | head -1 || true)"
+  fi
+
+  if [ "$LIST" = 1 ]; then
+    if [ -z "$line" ]; then
+      say "  ${asset}: (no record)"
+    else
+      say "  ${line}"
+    fi
+    continue
+  fi
+
+  if [ -z "$line" ]; then
+    say "FAIL  face-licence-gate  ${asset} has no licence record in VERSIONS"
+    say "      An unrecorded asset is not a cleared asset. Record its licence before shipping it."
+    fail=1
+    continue
+  fi
+
+  # The ratchet: a known, dated blocker is carried and printed, never silent. It is keyed on the
+  # asset name and its recorded licence line, so editing either one drops it out of the allowlist
+  # and it must be re-argued in review.
+  known_line=""
+  if [ -f "$KNOWN" ]; then
+    known_line="$(grep -vE '^[[:space:]]*(#|$)' "$KNOWN" 2>/dev/null | grep -F "${asset}: " | head -1 || true)"
+  fi
+
+  # A non-commercial mark fails even if the line also names something permissive; the honest
+  # record of the CC BY-NC avatar names both the source and the restriction.
+  if printf '%s' "$line" | grep -qiE 'non-commercial|noncommercial|BY-NC|NC 4\.0|CC BY-NC|research only|not for commercial'; then
+    if [ -n "$known_line" ] && [ "$known_line" = "$line" ]; then
+      say "KNOWN face-licence-debt  ${asset} is non-commercial and still shipped"
+      say "      ${line}"
+      known_hits="$known_hits${asset}\n"
+      continue
+    fi
+    say "FAIL  face-licence-gate  ${asset} is non-commercial"
+    say "      ${line}"
+    say "      docs/specs/2026-10-03-face-experience-10x.md §1/§6: replace it with an estate-owned"
+    say "      avatar (ARKit-52 blendshapes, commercially licensed or commissioned) and record that"
+    say "      licence in VERSIONS. A commercial product cannot ship this asset."
+    say "      (A new non-commercial asset is never grandfathered: bin/face-licence-known-blockers"
+    say "      may not be added to. Only the pre-existing, dated entry is carried.)"
+    fail=1
+    continue
+  fi
+
+  if ! printf '%s' "$line" | grep -qE "$COMMERCIAL_OK_RE"; then
+    say "FAIL  face-licence-gate  ${asset} carries no recognised commercial licence"
+    say "      ${line}"
+    fail=1
+    continue
+  fi
+
+  [ "$LIST" = 0 ] && say "ok    ${asset}: commercial licence recorded"
+done
+
+if [ "$LIST" = 1 ]; then
+  exit 0
+fi
+
+# The ratchet's other half: an entry that no longer matches a shipped asset is stale, and a stale
+# exemption is how an allowlist becomes a permanent hole. Fail so the debt is closed in the same
+# commit that closes the blocker.
+if [ -f "$KNOWN" ]; then
+  while IFS= read -r entry; do
+    case "$entry" in ''|'#'*) continue ;; esac
+    name="${entry%%:*}"
+    if [ ! -f "$FACE/$name" ]; then
+      say "FAIL  face-licence-gate  known-blocker entry names an asset that is gone: ${name}"
+      say "      Remove its line from bin/face-licence-known-blockers: the debt is closed."
+      fail=1
+    fi
+  done < "$KNOWN"
+fi
+
+if [ -n "$known_hits" ]; then
+  say ""
+  say "face-licence-gate: $(printf '%b' "$known_hits" | grep -c . ) known non-commercial asset(s) still ship."
+  say "This is tracked debt, not clearance: the face cannot go commercial until they are replaced."
+fi
+
+if [ "$fail" -ne 0 ]; then
+  say ""
+  say "face-licence-gate: the face cannot ship to production with the assets above."
+  exit 1
+fi
+
+# Never claim clearance while debt is carried. The verdict line is the one a reader believes, so
+# it says exactly what is true: pass, or pass with tracked non-commercial debt.
+if [ -n "$known_hits" ]; then
+  say "PASS-WITH-DEBT  face-licence-gate: no new non-commercial asset; $(printf '%b' "$known_hits" | grep -c . ) known blocker(s) still ship."
+  say "                 This is NOT commercial clearance. Replace the asset(s) above."
+  exit 0
+fi
+
+say "ok    face-licence-gate: every face asset carries a commercial licence"
+exit 0
