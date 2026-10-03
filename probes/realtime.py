@@ -42,7 +42,9 @@ def _bearer_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def _sessions(base: str) -> set[str]:
-    req = urllib.request.Request(f"{base.rstrip('/')}/sessions", headers=_bearer_headers())
+    req = urllib.request.Request(
+        f"{base.rstrip('/')}/sessions", headers=_bearer_headers()
+    )
     with urllib.request.urlopen(req, timeout=10) as r:
         doc = json.load(r)
     rows = doc if isinstance(doc, list) else doc.get("sessions", doc.get("items", []))
@@ -64,7 +66,9 @@ def probe(base: str) -> tuple[bool, str]:
         url = f"{base}{path}"
         t0 = time.time()
         try:
-            req = urllib.request.Request(url, headers=_bearer_headers({"Accept": "text/event-stream"}))
+            req = urllib.request.Request(
+                url, headers=_bearer_headers({"Accept": "text/event-stream"})
+            )
             with urllib.request.urlopen(req, timeout=FRAME_TIMEOUT_S) as r:
                 # Read until one data frame or the timeout kills the read.
                 buf = b""
@@ -100,7 +104,10 @@ def probe(base: str) -> tuple[bool, str]:
         except Exception as e:  # noqa: BLE001 — every failure mode is data
             print(f"  stream {path}: {type(e).__name__}: {e}", file=sys.stderr)
             continue
-    return False, f"no session frame on any of {candidates} within {FRAME_TIMEOUT_S:.0f}s"
+    return (
+        False,
+        f"no session frame on any of {candidates} within {FRAME_TIMEOUT_S:.0f}s",
+    )
 
 
 def _ids_in(frame: object) -> set[str]:

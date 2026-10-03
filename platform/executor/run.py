@@ -45,7 +45,7 @@ RUNS = Path(os.environ.get("ESTATE_RUNS") or os.path.expanduser("~/.estate/runs"
 
 USAGE = (
     "run [--ceiling <secs>] <name> <command...> | run --status [name] | run --log <name> | "
-    "run --wait <name> [secs] | run --cwd <dir> <name> <command...>"
+    "run --wait <name> [secs] | run --cwd <dir> <name> <command...> | run --prune [keep_secs]"
 )
 
 # THE CEILING ENFORCER, AND WHY IT IS HERE (2026-10-02).
@@ -207,6 +207,60 @@ def _tail_text(path: Path, n: int) -> str:
     return "\n".join(path.read_text(errors="replace").splitlines()[-n:])
 
 
+# HOW OLD A FINISHED JOB'S RECORDS MAY GET BEFORE THEY ARE REAPED, in seconds. A finished job's
+# log is worth keeping for a while -- an agent reads it to find out why something failed -- so the
+# default is a week, and `ESTATE_RUNS_KEEP_SECS` moves it. `0` keeps everything (never prune).
+_KEEP_SECS = int(os.environ.get("ESTATE_RUNS_KEEP_SECS") or 7 * 86400)
+
+
+def _finished(name: str) -> bool:
+    """Is this run over?
+
+    THE EXIT FILE IS THE ONLY HONEST SIGNAL, and it is the whole rule. The pid file is NOT one:
+    measured 2026-10-02, `~/.estate/runs/` held 4,853 pid files of which 4,851 were finished, and
+    `run --status` called days-old jobs RUNNING because `kill -0 <pid>` succeeds on whatever now
+    holds a recycled pid. A job whose exit file exists has written its real exit code and cannot
+    run again -- `start()` unlinks the exit file before every launch -- so its records are safe to
+    reap. A job with no exit file is left alone: it may be mid-flight, and a prune that deletes a
+    running job's log deletes the only record of what it was doing.
+    """
+    return _paths(name)[2].exists()
+
+
+def prune(keep_secs: int = _KEEP_SECS) -> int:
+    """Reap the records of finished jobs older than `keep_secs`. Returns how many were reaped.
+
+    Built because nothing else did: with no pruning the directory grows without bound (4,853
+    entries when this was written), and the cost is not disk -- it is that `run --status` and any
+    `ls` over the directory report thousands of phantom RUNNING jobs, which is a fact a reader
+    trusts printed about something that ended days ago.
+
+    Only the three files of ONE finished run are removed, and only together. It never touches the
+    runs directory itself, never follows the glob outside it, and never removes a file belonging
+    to a job that has not recorded an exit.
+    """
+    if keep_secs <= 0 or not RUNS.exists():
+        return 0
+    cutoff = time.time() - keep_secs
+    reaped = 0
+    for exitf in sorted(RUNS.glob("*.exit")):
+        name = exitf.stem
+        try:
+            if exitf.stat().st_mtime > cutoff:
+                continue
+        except OSError:
+            continue
+        # Re-checked here rather than trusted from the glob: a job that started between the glob
+        # and this line has unlinked its exit file, and its records are now live again.
+        if not _finished(name):
+            continue
+        log, pidf, _ = _paths(name)
+        for path in (log, pidf, exitf):
+            path.unlink(missing_ok=True)
+        reaped += 1
+    return reaped
+
+
 def status(one: str | None) -> int:
     if one:
         log, pidf, _ = _paths(one)
@@ -220,10 +274,14 @@ def status(one: str | None) -> int:
     for pidf in sorted(RUNS.glob("*.pid")):
         name = pidf.stem
         log, _, exitf = _paths(name)
-        if _alive(int(pidf.read_text().strip() or 0)):
-            state = "RUNNING"
-        elif exitf.exists():
+        # THE EXIT FILE DECIDES FIRST. `kill -0` on a recycled pid reports a stranger's process as
+        # OUR running job -- measured 2026-10-02, `run --status` called 4,851 finished jobs RUNNING
+        # for exactly this reason. A recorded exit means the job is over, whatever the pid now
+        # names, so that is checked before the pid is consulted at all.
+        if exitf.exists():
             state = f"exited {exitf.read_text().strip()}"
+        elif _alive(int(pidf.read_text().strip() or 0)):
+            state = "RUNNING"
         else:
             state = "gone"
         lines = len(log.read_text(errors="replace").splitlines()) if log.exists() else 0
@@ -267,6 +325,16 @@ def start(name: str, argv: list[str], cwd: str | None, ceiling: int) -> int:
         print(f"run --cwd: no such directory: {cwd}", file=sys.stderr)
         return 2
     RUNS.mkdir(parents=True, exist_ok=True)
+    # AUTOMATIC, not a chore somebody has to remember. Every start is a chance to reap, so the
+    # directory cannot grow without bound even though nothing calls the prune verb. It touches
+    # only jobs that already recorded an exit and are past the keep window, so the job about to
+    # start -- and every job still running -- is never a candidate. Its cost is bounded by the
+    # glob, and it must never be able to stop a job from starting: a failure here is a reap that
+    # did not happen, never a launch that did not.
+    try:
+        prune()
+    except OSError:
+        pass
     log, pidf, exitf = _paths(name)
     exitf.unlink(missing_ok=True)
     # The supervisor IS the detached process; it owns the ceiling and the exit file. Launching it
@@ -328,6 +396,10 @@ def main(argv: list[str]) -> int:
         cwd = os.environ.get("RUN_CWD") or None
         return supervise(name, ceiling, argv[sep + 1 :], cwd)
     verb = argv[0]
+    if verb == "--prune":
+        n = prune(int(argv[1]) if len(argv) > 1 else _KEEP_SECS)
+        print(f"pruned {n} finished run(s); keeping the last {_KEEP_SECS}s")
+        return 0
     if verb == "--status":
         return status(argv[1] if len(argv) > 1 else None)
     if verb == "--log":
