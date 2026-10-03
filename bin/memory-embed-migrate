@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+# The swap half of the 1536 -> 2048 vector move, and it refuses while the backfill is incomplete.
+#
+# WHY THIS IS A SEPARATE STEP: migrations/2026-10-02-vector-1536-to-2048.sql adds a nullable
+# `embedding_2048` column and stops there. The swap -- indexes, rename of embedding_2048 into
+# `embedding`, drop of the old column -- must run ONLY once every row has a 2048 vector, because
+# a single ALTER ... TYPE vector(2048) against 1152 existing 1536 vectors either errors outright
+# or silently mis-shapes them, and a mis-shaped vector is a row that matches nothing forever
+# without saying so. That is the same class of silent write-only failure the estate already paid
+# for once (otto/memory stored facts nobody could recall).
+#
+# So the ordering is enforced by arithmetic, not by a sentence in a comment: this script counts
+# `embedding_2048 IS NOT NULL` against `count(*)` and exits 1 while done < total. It cannot be
+# run early by accident. `--check` performs the same count and reports without changing anything,
+# so a caller can see HOW FAR the backfill has got rather than just that it is not done.
+#
+# Re-embedding is the backfill's job, not this script's. A 1536 vector is not a prefix of its
+# 2048 counterpart -- it is a different embedding space -- so there is nothing here to convert.
+#
+#   bin/memory-embed-migrate --check     live: report progress, change nothing
+#   bin/memory-embed-migrate             live: swap, refusing while any row is unvectorised
+#   bin/memory-embed-migrate --offline   no cluster: verify this script and the migration agree
+set -uo pipefail
+
+MODE=swap
+case "${1:-}" in
+  -h|--help)
+    echo "bin/memory-embed-migrate [--check|--offline]"
+    echo "  --check    report backfill progress (done/total per table); change nothing."
+    echo "  --offline  no cluster: the migration and this script must name the same columns"
+    echo "             and the same tables. Runs inside bin/idp-ci."
+    echo "  (no flag)  swap: 2048 column into place, drop the 1536 one. Refuses half-done."
+    exit 0
+    ;;
+  --check)   MODE=check ;;
+  --offline) MODE=offline ;;
+esac
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+DB_NS="${ESTATE_DB_NAMESPACE:-estate-db}"
+DB_POD="${ESTATE_DB_POD:-estate-1}"
+PGUSER="${ESTATE_DB_USER:-postgres}"
+MIGRATION="$IDP/platform/unified-memory-server/migrations/2026-10-02-vector-1536-to-2048.sql"
+fail=0
+ok()  { printf 'ok    memory-embed-migrate: %s\n' "$1"; }
+bad() { printf 'FAIL  memory-embed-migrate: %s\n' "$1"; fail=1; }
+
+# table:database pairs. otto_facts lives in otto_gateway, memories in memory -- two stores, one
+# width, because an embedding is only comparable inside the space it was produced in.
+PAIRS=("otto_facts:otto_gateway" "memories:memory")
+
+if [ "$MODE" = offline ]; then
+  # The migration must exist and must be the additive half only: if it ever grows an
+  # ALTER ... TYPE or a DROP, the two-step contract is broken and this fails.
+  if [ ! -f "$MIGRATION" ]; then
+    bad "migrations/2026-10-02-vector-1536-to-2048.sql is missing -- the swap has no migration"
+  else
+    if grep -qiE 'ALTER[[:space:]]+TABLE.*ALTER[[:space:]]+COLUMN.*TYPE|DROP[[:space:]]+COLUMN' "$MIGRATION"; then
+      bad "the migration must stay ADDITIVE; the type change and the drop belong to this script"
+    fi
+    # Every table this script swaps must be a table the migration knows about, or the two
+    # halves are working on different stores and nothing would say so.
+    for pair in "${PAIRS[@]}"; do
+      t="${pair%%:*}"
+      grep -q "ALTER TABLE $t" "$MIGRATION" \
+        || bad "the migration never adds a column to $t, but this script would swap it"
+    done
+    grep -q 'embedding_2048' "$MIGRATION" || bad "the migration does not name embedding_2048"
+    ok "the migration is additive and names the tables this script swaps"
+  fi
+
+  # The width in the store's schema is the width the free lane emits. If these ever disagree,
+  # the door would accept a row the index could never match.
+  SCHEMA="$IDP/platform/unified-memory-server/schema.sql"
+  if [ -f "$SCHEMA" ]; then
+    grep -q 'embedding vector(2048)' "$SCHEMA" \
+      || bad "schema.sql must declare embedding vector(2048), the free lane's width"
+  else
+    bad "schema.sql is missing -- the delivered column has no declared width"
+  fi
+  [ "$fail" = 0 ] && ok "offline checks pass (additive migration, tables agree, width 2048)"
+  exit "$fail"
+fi
+
+psql_db() {  # psql_db <database> <sql>
+  kubectl -n "$DB_NS" exec -i "$DB_POD" -c postgres -- \
+    psql -U "$PGUSER" -d "$1" -v ON_ERROR_STOP=1 -tA -c "$2"
+}
+
+# ------------------------------------------------------------------ progress, per table
+declare -a EMBEDDED ROWCOUNT
+for i in "${!PAIRS[@]}"; do
+  pair="${PAIRS[$i]}"; t="${pair%%:*}"; db="${pair##*:}"
+  row="$(psql_db "$db" "
+    SELECT COALESCE(count(*) FILTER (WHERE embedding_2048 IS NOT NULL), 0) || ':' || count(*)
+    FROM $t;" 2>/dev/null | tail -1)"
+  if [ -z "$row" ]; then
+    # A table with no embedding_2048 column means the migration has not run here. That is not
+    # "zero vectorised", it is "no new column", and saying so is the difference between a
+    # backfill that has not started and a migration that never applied.
+    bad "$db.$t has no embedding_2048 column -- run the migration first"
+    EMBEDDED[$i]=0; ROWCOUNT[$i]=0
+    continue
+  fi
+  EMBEDDED[$i]="${row%%:*}"; ROWCOUNT[$i]="${row##*:}"
+  printf '      %-24s %s/%s re-embedded\n' "$db.$t" "${EMBEDDED[$i]}" "${ROWCOUNT[$i]}"
+done
+
+if [ "$MODE" = check ]; then
+  [ "$fail" = 0 ] && ok "reported progress only; nothing changed"
+  exit "$fail"
+fi
+
+# ------------------------------------------------------------------ refuse while incomplete
+for i in "${!PAIRS[@]}"; do
+  pair="${PAIRS[$i]}"
+  if [ "${ROWCOUNT[$i]}" -gt 0 ] && [ "${EMBEDDED[$i]}" -lt "${ROWCOUNT[$i]}" ]; then
+    # The refusal is the whole point of this script's existence.
+    bad "${pair%%:*}: ${EMBEDDED[$i]}/${ROWCOUNT[$i]} re-embedded; swapping now would strand $((ROWCOUNT[i]-EMBEDDED[i])) rows in a space nothing searches"
+  fi
+done
+if [ "$fail" != 0 ]; then
+  echo "      run the backfill to completion, then re-run this. See" >&2
+  echo "      platform/otto-gateway/memory-store-job.yaml and /embeddings/status on the store." >&2
+  exit 1
+fi
+
+# ------------------------------------------------------------------ the swap, in one transaction
+for pair in "${PAIRS[@]}"; do
+  t="${pair%%:*}"; db="${pair##*:}"
+  # One transaction per store so a failure leaves that store exactly as it was. The old column
+  # is dropped in the same transaction that renames the new one: there is no window in which a
+  # writer could see both and choose.
+  psql_db "$db" "
+    BEGIN;
+    DROP INDEX IF EXISTS idx_${t}_embedding_hnsw;
+    ALTER TABLE $t DROP COLUMN IF EXISTS embedding;
+    ALTER TABLE $t RENAME COLUMN embedding_2048 TO embedding;
+    CREATE INDEX IF NOT EXISTS idx_${t}_embedding_hnsw
+      ON $t USING hnsw (embedding vector_cosine_ops);
+    COMMIT;" >/dev/null 2>&1 \
+    && ok "$db.$t swapped to embedding vector(2048) with an hnsw index" \
+    || bad "$db.$t swap failed; the old column is untouched"
+done
+exit "$fail"

@@ -62,8 +62,12 @@ MAX_VALID_FROM_SKEW = timedelta(seconds=60)
 # the bug. It goes through the estate router's existing `embed` lane -- one model, one
 # dimension (1536, matching schema.sql's vector(1536) and the HNSW index on it).
 EMBED_URL = _secret("MEMORY_EMBED_URL")
-EMBED_MODEL = os.environ.get("MEMORY_EMBED_MODEL", "embed")
-EMBED_DIM = int(os.environ.get("MEMORY_EMBED_DIM", "1536"))
+EMBED_MODEL = os.environ.get("MEMORY_EMBED_MODEL", "embed-free")
+# 2048, the width the free lane emits -- and it is not negotiable, because
+# nvidia/nemotron-3-embed-1b refuses a `dimensions` parameter outright. This default is
+# also a decision written down: a default nobody chose is an accident, and the accident
+# here was a service whose column was 2048 while this number said 1536.
+EMBED_DIM = int(os.environ.get("MEMORY_EMBED_DIM", "2048"))
 # Bounded well inside the request path: a store that hangs on its own embedding call is worse
 # than one that stores the fact unembedded, because the caller cannot even write the fact.
 EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
@@ -655,6 +659,10 @@ async def embeddings_status(
     # searchable' can never again be invisible. unvectorised > 0 with the lane configured is
     # the exact signature of the write-path regression this change fixes.
     async with conn.cursor() as cur:
+        # `embedding` is the live column in both phases of the migration: schema.sql creates it
+        # at 2048, and the swap renames embedding_2048 into it once the backfill has filled
+        # every row. So this query needs no branch -- it counts the column a recall actually
+        # searches, which is the number that must not lie.
         await cur.execute(
             """
             SELECT count(*) AS facts,
