@@ -29,8 +29,21 @@ FRAME_TIMEOUT_S = 20.0
 _STREAM_CANDIDATES = ["/events", "/stream", "/sse"]
 
 
+def _bearer_headers(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """The prover's door through the public gate: PROVER_TOKEN rides as a Bearer on every
+    call, the same machine door probes/backstage.py uses (httproute Bearer rule +
+    backend.auth.externalAccess grading). No token -> no header -> the gate answers, which
+    is itself the correct negative signal."""
+    h = dict(extra or {})
+    tok = os.environ.get("PROVER_TOKEN")
+    if tok:
+        h["Authorization"] = f"Bearer {tok}"
+    return h
+
+
 def _sessions(base: str) -> set[str]:
-    with urllib.request.urlopen(f"{base.rstrip('/')}/sessions", timeout=10) as r:
+    req = urllib.request.Request(f"{base.rstrip('/')}/sessions", headers=_bearer_headers())
+    with urllib.request.urlopen(req, timeout=10) as r:
         doc = json.load(r)
     rows = doc if isinstance(doc, list) else doc.get("sessions", doc.get("items", []))
     ids = set()
@@ -51,7 +64,7 @@ def probe(base: str) -> tuple[bool, str]:
         url = f"{base}{path}"
         t0 = time.time()
         try:
-            req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+            req = urllib.request.Request(url, headers=_bearer_headers({"Accept": "text/event-stream"}))
             with urllib.request.urlopen(req, timeout=FRAME_TIMEOUT_S) as r:
                 # Read until one data frame or the timeout kills the read.
                 buf = b""

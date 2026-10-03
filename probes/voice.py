@@ -18,6 +18,7 @@ Exit 0 only when every leg of every conversation PASSES.
 from __future__ import annotations
 
 import json
+import os
 import re
 import struct
 import sys
@@ -56,13 +57,21 @@ def _resample(pcm: bytes, src: int, dst: int) -> bytes:
 
 
 def _post(url: str, data: bytes, ctype: str = "application/octet-stream", timeout: int = 45):
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": ctype}, method="POST")
+    headers = {"Content-Type": ctype}
+    tok = os.environ.get("PROVER_TOKEN")
+    if tok:
+        headers["Authorization"] = f"Bearer {tok}"
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read()
 
 
 def _get(url: str, timeout: int = 45):
-    with urllib.request.urlopen(url, timeout=timeout) as r:
+    req = urllib.request.Request(url)
+    tok = os.environ.get("PROVER_TOKEN")
+    if tok:
+        req.add_header("Authorization", f"Bearer {tok}")
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.read()
 
 
