@@ -42,7 +42,10 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
               for exactly this fallthrough (packages/backend/src/index.ts) and the voice
               door itself is anonymous and rate-limited at the edge
               (platform/backstage/overlays/oke/httproute.yaml). */}
-          <SignInPage providers={['guest']} />
+          <SignInPage
+            providers={['guest']}
+            onSignInSuccess={() => window.location.reload()}
+          />
           {error && (
             <Text variant="body-x-small" color="secondary">
               {error.message}

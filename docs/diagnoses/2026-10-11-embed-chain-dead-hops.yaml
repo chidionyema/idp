@@ -1,0 +1,105 @@
+description: 'The embed chain on the estate router, 2026-10-11. Question: why did
+  every embedding call through the estate router fail or time out (Otto storing facts
+  with no vector, the memory backfill dying at read=1 written=0, hindsight-api restarting
+  168 times in 18h)? Three competing explanations were fixed before the evidence was
+  read: the chain asks a dead vendor lane first (retired model id or zero credit),
+  the caller''s payload shape does not fit the provider''s embedding API, or the router
+  itself is misconfigured (no lane serves embed / key not mounted).'
+hypotheses:
+- name: H1
+  description: the chain asks a dead vendor lane first -- retired model id or zero
+    credit -- so every call walks a refusal (about six seconds) before it reaches,
+    or times out before, a live hop
+  prior: 0.4
+- name: H2
+  description: the caller''s payload shape does not fit the provider''s embedding
+    API, so calls fail fast with invalid-params regardless of vendor health
+  prior: 0.35
+- name: H3
+  description: the router itself is misconfigured -- no lane serves embed, or the
+    key is not mounted -- failing independently of any vendor''s health
+  prior: 0.25
+evidence:
+- name: dead-hop probes (live probes from inside the litellm pod, one per candidate
+    hop id, 2026-10-11)
+  observed:
+    payment_refused: 2
+    retired: 2
+    ok: 0
+    invalid_params: 0
+  likelihoods:
+    H1:
+      payment_refused: 0.55
+      retired: 0.35
+      ok: 0.05
+      invalid_params: 0.05
+    H2:
+      payment_refused: 0.05
+      retired: 0.05
+      ok: 0.1
+      invalid_params: 0.8
+    H3:
+      payment_refused: 0.15
+      retired: 0.15
+      ok: 0.2
+      invalid_params: 0.5
+- name: minimax embedding door (both payload shapes tried from inside the pod)
+  observed:
+    invalid_params: 2
+    ok: 0
+    payment_refused: 0
+  likelihoods:
+    H1:
+      invalid_params: 0.1
+      ok: 0.7
+      payment_refused: 0.2
+    H2:
+      invalid_params: 0.75
+      ok: 0.05
+      payment_refused: 0.2
+    H3:
+      invalid_params: 0.35
+      ok: 0.35
+      payment_refused: 0.3
+- name: cohere lane through the router (one live call on the standing config)
+  observed:
+    answers_limited: 1
+    ok: 0
+    refuses: 0
+  likelihoods:
+    H1:
+      answers_limited: 0.15
+      ok: 0.35
+      refuses: 0.5
+    H2:
+      answers_limited: 0.05
+      ok: 0.3
+      refuses: 0.65
+    H3:
+      answers_limited: 0.1
+      ok: 0.4
+      refuses: 0.5
+- name: downstream casualties while the dead chain stood (observed on the cluster)
+  observed:
+    chain_walk_timeout: 2
+    immediate_refusal: 0
+    ok: 0
+  likelihoods:
+    H1:
+      chain_walk_timeout: 0.6
+      immediate_refusal: 0.25
+      ok: 0.15
+    H2:
+      chain_walk_timeout: 0.1
+      immediate_refusal: 0.7
+      ok: 0.2
+    H3:
+      chain_walk_timeout: 0.25
+      immediate_refusal: 0.5
+      ok: 0.25
+posteriors:
+  H1: 0.9879636281
+  H2: 7.59393e-05
+  H3: 0.0119604326
+winner: H1
+computed_at: '2026-10-03T11:18:38Z'
