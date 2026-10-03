@@ -26,6 +26,11 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY sovereign/requirements.txt sovereign/requirements-dev.txt /app/sovereign/
+# 2026-10-03: requirements-dev.txt pins `-e backstage/plugins/fleetview-backend` (sovereign BDD
+# imports fleetview_backend inside this image), but nothing copied backstage/ before this layer, so
+# any cold-cache runner failed pip with `not a valid editable requirement` (run 13892, both arches;
+# warm runners hid it). The editable source must exist at pip time.
+COPY backstage/plugins/fleetview-backend /app/backstage/plugins/fleetview-backend
 RUN pip install --no-cache-dir -r /app/sovereign/requirements-dev.txt \
  && useradd --system --uid 10001 --create-home sovereign
 COPY sovereign /app/sovereign
