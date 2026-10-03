@@ -22,14 +22,29 @@ spec:
   template:
     metadata: { labels: { app: factory } }
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
       containers:
         - name: factory
           image: ghcr.io/chidionyema/factory:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
           ports: [{ containerPort: 8080 }]
           envFrom:
             - configMapRef: { name: factory-config }
           volumeMounts:
             - { name: data, mountPath: /var/factory }
+            # FACTORY_ROOT=/workspace and the factory writes its order files under it
+            # (factory/exec.py: af_run writes repos_root/agent-foundry/.<order_id>.json). It was
+            # never mounted, so those writes landed on the container's writable layer -- which is
+            # also why readOnlyRootFilesystem could not be set. An emptyDir gives the path the
+            # scratch space it has always used, on a real mount, and lets the root stay read-only.
+            - { name: workspace, mountPath: /workspace }
           readinessProbe:
             httpGet: { path: /health, port: 8080 }
             initialDelaySeconds: 5
@@ -40,6 +55,8 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim: { claimName: factory-data }
+        - name: workspace
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -65,14 +82,26 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
           containers:
             - name: collect
               image: ghcr.io/chidionyema/factory:latest
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
               command: ["python", "-m", "factory.main", "collect"]
               envFrom:
                 - configMapRef: { name: factory-config }
               volumeMounts:
                 - { name: data, mountPath: /var/factory }
+                - { name: workspace, mountPath: /workspace }
           volumes:
             - name: data
               persistentVolumeClaim: { claimName: factory-data }
+            - name: workspace
+              emptyDir: {}
