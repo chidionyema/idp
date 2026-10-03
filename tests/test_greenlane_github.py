@@ -263,7 +263,12 @@ def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):
     _git(repo, "add", "b.txt")
     _git(repo, "commit", "-q", "-m", "add b")
     (repo / "b.txt").write_text("bb\n")
-    _git(repo, "commit", "-q", "-am", "grow b")
+    # The commit-msg hook stamps this on every real commit; bin/idp-ci-guarded-paths refuses a
+    # candidate whose HEAD has no X-Idp-Signed trailer. The engine re-commits the lane, so the
+    # trailer has to survive the squash or every non-founder lane fails a check it earned.
+    _git(
+        repo, "commit", "-q", "-am", "grow b", "-m", "", "-m", "X-Idp-Signed: deadbeef"
+    )
     head = _git(repo, "rev-parse", "HEAD")
     _git(repo, "checkout", "-q", "main")
     (repo / "a.txt").write_text("two\n")
@@ -274,6 +279,11 @@ def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):
     assert new and _git(repo, "rev-parse", f"{new}^") == onto
     assert _git(repo, "log", "-1", "--format=%s", new) == "grow b"
     assert f"Greenlane-Head: {head}" in _git(repo, "log", "-1", "--format=%B", new)
+    # The lane's signature is carried onto the candidate, and git reads it as a real trailer.
+    assert (
+        _git(repo, "log", "-1", "--format=%(trailers:key=X-Idp-Signed)", new).strip()
+        == "X-Idp-Signed: deadbeef"
+    )
     assert (
         _git(repo, "show", f"{new}:b.txt") == "bb"
         and _git(repo, "show", f"{new}:a.txt") == "two"
