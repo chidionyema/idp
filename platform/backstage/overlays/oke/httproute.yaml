@@ -123,9 +123,23 @@ spec:
     # Static assets only: /api/ rules above keep their gates, and the page's data calls still
     # carry the login. No forward-auth middleware on this rule; friendly-errors and edge-headers
     # stay so errors and zone headers behave like every other rule.
+    # 2026-10-03 (browse-live probe): the shell at /face/ is the SPA's index.html, and every one
+    # of its 38 bundle references (/static/main.*.js, module-*.js, vendor.css, runtime.js) plus
+    # /manifest.json and the 6 root icons 302'd to the SSO authorize endpoint signed-out -- a
+    # public shell that can never execute is not public. The bundle is immutable build output
+    # (hashes in the names); the data plane keeps its gates: /api/* still takes
+    # login-forward-auth-api, and the app answers 401 to an unauthenticated XHR, never a redirect.
     - matches:
         - path: { type: PathPrefix, value: /face }
         - path: { type: PathPrefix, value: /voice }
+        - path: { type: PathPrefix, value: /static }
+        - path: { type: Exact, value: /manifest.json }
+        - path: { type: Exact, value: /favicon.ico }
+        - path: { type: Exact, value: /favicon-16x16.png }
+        - path: { type: Exact, value: /favicon-32x32.png }
+        - path: { type: Exact, value: /apple-touch-icon.png }
+        - path: { type: Exact, value: /safari-pinned-tab.svg }
+        - path: { type: Exact, value: /icon.svg }
       filters:
         - type: ExtensionRef
           extensionRef:
