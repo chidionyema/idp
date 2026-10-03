@@ -190,7 +190,18 @@ class GitHubBackend:
             subject = self.git("log", "-1", "--format=%s", head)
             author = self.git("log", "-1", "--format=%an <%ae>", head)
             body = self.git("log", "--reverse", "--format=%h %s", f"{mb}..{head}")
+            # Carry the lane head's trailers onto the candidate. bin/idp-ci-guarded-paths refuses a
+            # candidate whose HEAD carries no X-Idp-Signed trailer, and that trailer is put there
+            # by .githooks/commit-msg -- which never runs here, because this commit is made by the
+            # engine. Dropping it made every lane authored by anything other than the founder or
+            # the estate bot fail guarded-paths on a signature the lane had actually earned: the
+            # lane's own hook stamped X-Idp-Signed, and the squash threw it away. %(trailers) is
+            # git's own trailer block, so a commit with none contributes nothing and the message
+            # is unchanged for it.
+            trailers = self.git("log", "-1", "--format=%(trailers)", head).strip()
             msg = f"{subject}\n\nGreenlane-Head: {head}\n\n{body}\n"
+            if trailers:
+                msg = f"{msg}\n{trailers}\n"
             _run(  # noqa: S603, S607 -- git/gh with fixed argv, no shell
                 "git",
                 "-C",

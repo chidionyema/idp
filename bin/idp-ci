@@ -368,23 +368,54 @@ fi
 # cluster would. Even when individual YAMLs are syntactically valid and pass schema
 # validation, a --- document boundary can produce an empty resource, or a patch can
 # target a missing base. flux build kustomization --dry-run catches both.
-# NOTE: skipped in fast gate (IDP_CI_FAST=1) because it needs the flux binary and
-# network for Helm repos referenced by the tree.
+#
+# Fixed 2026-10-03. This block used to iterate directory basenames
+# (`for _km in flux-system clusters/oke clusters/oke/secret-store`) and ask
+# `flux build kustomization "$(basename "$_km")"` for them. `flux build kustomization <name>`
+# resolves <name> as a Kustomization OBJECT in the cluster, so it was asking for objects called
+# `oke`, `clusters` and `secret-store` -- none of which exist -- with --path pointing at the
+# PARENT directory. Every iteration printed "dry-run mode requires a kustomization file", set
+# fail=1, and then the gate exited 0 anyway. It could never pass and never actually refused:
+# a check that cannot fail is not a gate (LAW 45).
+#
+# It now builds the tree offline from the real Flux Kustomization object that reconciles this
+# cluster -- clusters/oke/flux-system/gotk-sync.yaml, name `flux-system`, path `./clusters/oke`
+# -- via --kustomization-file, so no cluster and no network are needed.
+# NOTE: skipped in fast gate (IDP_CI_FAST=1) because it needs the flux binary.
 if [ "$FAST" != 1 ] && command -v flux >/dev/null 2>&1; then
-  # Test both the top-level cluster kustomization and the secret-store one
-  for _km in flux-system clusters/oke clusters/oke/secret-store; do
-    if [ -d "$IDP/$_km" ] || [ -f "$IDP/$_km" ]; then
-      flux build kustomization "$(basename "$_km")" \
-        --path "$IDP/$(dirname "$_km")" \
-        --dry-run 2>&1 | head -5
-      if [ "${PIPESTATUS[0]}" -eq 0 ]; then
-        say "ok    flux build $_km (dry-run)"
+  # The one Flux Kustomization that reconciles this cluster, and the path it points at.
+  _ks_file="$IDP/clusters/oke/flux-system/gotk-sync.yaml"
+  if [ -f "$_ks_file" ]; then
+    # Proved both ways in the same run, the way bin/catalog-refcheck is: a guard is only evidence
+    # while it can still refuse. The must-fail fixture is a patch targeting a base that does not
+    # exist. If that comes back clean the check has stopped working -- a wrong --path, a kustomize
+    # that stopped erroring -- and it reports BLIND rather than printing ok over an unbuilt tree.
+    _fb_probe_dir=$(mktemp -d)
+    trap 'rm -rf "$_fb_probe_dir"' EXIT
+    mkdir -p "$_fb_probe_dir/probe"
+    printf '%s\n' 'resources: ["absent-base.yaml"]' > "$_fb_probe_dir/probe/kustomization.yaml"
+    if flux build kustomization flux-system \
+         --path "$_fb_probe_dir/probe" \
+         --kustomization-file "$_ks_file" \
+         --dry-run >/dev/null 2>&1; then
+      say "BLIND flux build the must-fail fixture built clean; nothing was measured"
+      fail=1
+    else
+      flux build kustomization flux-system \
+        --path "$IDP/clusters/oke" \
+        --kustomization-file "$_ks_file" \
+        --dry-run >/dev/null 2>"$_fb_probe_dir/err"
+      if [ $? -eq 0 ]; then
+        say "ok    flux build clusters/oke (dry-run, offline)"
       else
-        say "FAIL  flux build $_km (dry-run)"
+        say "FAIL  flux build clusters/oke (dry-run, offline)"
+        sed 's/^/      /' "$_fb_probe_dir/err" | head -5
         fail=1
       fi
     fi
-  done
+  else
+    say "skip  flux build no Flux Kustomization at clusters/oke/flux-system/gotk-sync.yaml"
+  fi
 fi
 
 # 2. Compose files are valid. Values are placeholders; compose only checks shape.
