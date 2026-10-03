@@ -63,6 +63,6 @@ metadata:
   namespace: backstage
 spec:
   rateLimit:
-    avg: 30
+    average: 30
     period: 1m
     burst: 60
