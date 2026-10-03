@@ -1,6 +1,10 @@
 import os
+import json
 import hashlib
 import time
+import urllib.request
+import urllib.error
+import urllib.parse
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
@@ -46,6 +50,78 @@ SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "schema.s
 # clock: one surface with a fast clock would otherwise pin a key's current value until its
 # clock is reached, and every honest write in between would be filed as history.
 MAX_VALID_FROM_SKEW = timedelta(seconds=60)
+
+# ---------------------------------------------------------------------
+# Embeddings: the vector is written by the server, never by the client.
+# ---------------------------------------------------------------------
+# Until 2026-10-02 this store ranked by `embedding <=> %s::vector` while no code anywhere
+# wrote that column: every row landed with embedding NULL, so recall found nothing and facts
+# were write-only (47 rows, 0 vectors, measured). The vector is computed HERE, in the one
+# place every caller passes through, rather than in each client (`do_remember` and
+# `otto/memory` and every future caller) where the next client to forget would reintroduce
+# the bug. It goes through the estate router's existing `embed` lane -- one model, one
+# dimension (1536, matching schema.sql's vector(1536) and the HNSW index on it).
+EMBED_URL = _secret("MEMORY_EMBED_URL")
+EMBED_MODEL = os.environ.get("MEMORY_EMBED_MODEL", "embed")
+EMBED_DIM = int(os.environ.get("MEMORY_EMBED_DIM", "1536"))
+# Bounded well inside the request path: a store that hangs on its own embedding call is worse
+# than one that stores the fact unembedded, because the caller cannot even write the fact.
+EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
+
+
+def _embed(text: str) -> Optional[List[float]]:
+    """The EMBED_DIM-wide vector for `text`, or None if the lane is unreachable.
+
+    None is not an error the caller raises: a fact whose vector could not be computed is
+    still a fact worth keeping (the write must not fail because a model was briefly down),
+    but it must be VISIBLE as unvectorised rather than silent -- `vector_status` reports it,
+    the backfill re-embeds it, and /embeddings/status counts it. The old failure was not that
+    vectors were missing; it was that nothing could tell.
+    """
+    if not EMBED_URL:
+        return None
+    url = EMBED_URL.rstrip("/") + "/embeddings"
+    # S310: urlopen accepts file:// and other schemes, so a MEMORY_EMBED_URL that arrived
+    # from a misconfigured Secret would be read as a local file rather than a request -- and
+    # ``file:`` on the embedding path means a stray filesystem read dressed up as a model
+    # call. The lane is the estate router and nothing else; http(s) is the whole of what this
+    # may be, and the refusal is explicit rather than implied by a comment (AGENTS.md 23,
+    # boundary enforced by infrastructure, not the application -- here the application is all
+    # that stands between the Secret and the read).
+    scheme = urllib.parse.urlsplit(url).scheme
+    if scheme not in ("http", "https"):
+        # Silent like every other refusal in this function: the caller sees None, the fact is
+        # still stored, and `vector_status` counts it. A refused scheme is therefore visible
+        # as unvectorised rather than as a warning nobody reads.
+        return None
+    body = json.dumps({"model": EMBED_MODEL, "input": text}).encode("utf-8")
+    # The scheme is validated above, so this is the one shape urlopen is allowed to see.
+    req = urllib.request.Request(  # noqa: S310
+        url,
+        data=body,
+        headers={
+            "authorization": "Bearer " + (_secret("MEMORY_EMBED_API_KEY") or ""),
+            "content-type": "application/json",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=EMBED_TIMEOUT_S) as resp:  # noqa: S310
+            vec = json.loads(resp.read())["data"][0]["embedding"]
+    except (urllib.error.URLError, KeyError, IndexError, ValueError, OSError):
+        return None
+    if len(vec) != EMBED_DIM:
+        # A dimension mismatch is not a vector for this column: it would be silently
+        # truncated or rejected by pgvector, and either way the row is a lie.
+        return None
+    return vec
+
+
+def _vector_literal(vec: Optional[List[float]]) -> Optional[str]:
+    """pgvector's text input form, or None to store SQL NULL when no vector was computed."""
+    if vec is None:
+        return None
+    return "[" + ",".join(map(str, vec)) + "]"
+
 
 # ---------------------------------------------------------------------
 # Lifespan: Bounded AsyncConnectionPool with Connection Checks & Locks
@@ -240,6 +316,11 @@ async def memory_save(
 
     async with conn.transaction():
         async with conn.cursor() as cur:
+            # Computed once, outside the row-state branch, because all three write paths (fresh
+            # insert, update, late-write history) carry the same content and therefore the same
+            # vector. One HTTP call per write, not zero (the old bug) and not three.
+            vec = _vector_literal(_embed(payload.content))
+
             # Check existing record state
             await cur.execute(
                 """
@@ -312,7 +393,8 @@ async def memory_save(
                         content_hash = %s,
                         trust_tier = %s,
                         provenance = %s,
-                        valid_from = %s
+                        valid_from = %s,
+                        embedding = %s
                     WHERE id = %s
                     RETURNING id, version;
                     """,
@@ -322,6 +404,7 @@ async def memory_save(
                         payload.trust_tier,
                         Jsonb(payload.provenance),
                         valid_from,
+                        vec,
                         existing["id"],
                     ),
                 )
@@ -330,6 +413,7 @@ async def memory_save(
                     "status": "UPDATED",
                     "id": str(updated["id"]),
                     "version": updated["version"],
+                    "search_by_meaning": vec is not None,
                 }
 
             else:
@@ -338,8 +422,8 @@ async def memory_save(
                     """
                     INSERT INTO memories (
                         tenant_id, namespace, key, content, content_hash, trust_tier, provenance,
-                        valid_from
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        valid_from, embedding
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING id, version;
                     """,
                     (
@@ -351,6 +435,7 @@ async def memory_save(
                         payload.trust_tier,
                         Jsonb(payload.provenance),
                         valid_from,
+                        vec,
                     ),
                 )
                 inserted = await cur.fetchone()
@@ -358,6 +443,7 @@ async def memory_save(
                     "status": "CREATED",
                     "id": str(inserted["id"]),
                     "version": inserted["version"],
+                    "search_by_meaning": vec is not None,
                 }
 
 
@@ -369,10 +455,10 @@ async def memory_search(
     auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
     conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
 ):
-    if len(query_vector) != 1536:
+    if len(query_vector) != EMBED_DIM:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dimension mismatch: vector must be 1536d",
+            detail=f"Dimension mismatch: vector must be {EMBED_DIM}d",
         )
 
     async with conn.cursor() as cur:
@@ -555,6 +641,36 @@ async def memory_history(
             }
             for r in rows
         ],
+    }
+
+
+@app.get("/embeddings/status", status_code=status.HTTP_200_OK)
+async def embeddings_status(
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
+):
+    # The number that was missing on 2026-10-02. The store held 47 facts and 0 vectors and
+    # every probe still said healthy, because nothing counted the gap between the two. This
+    # endpoint makes the gap a number any caller, gate or alert can read, so 'stored but not
+    # searchable' can never again be invisible. unvectorised > 0 with the lane configured is
+    # the exact signature of the write-path regression this change fixes.
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT count(*) AS facts,
+                   count(embedding) AS vectorised,
+                   count(*) - count(embedding) AS unvectorised
+            FROM memories;
+            """
+        )
+        row = await cur.fetchone()
+    return {
+        "facts": row["facts"],
+        "vectorised": row["vectorised"],
+        "unvectorised": row["unvectorised"],
+        "embed_lane_configured": bool(EMBED_URL),
+        "embed_model": EMBED_MODEL,
+        "embed_dim": EMBED_DIM,
     }
 
 

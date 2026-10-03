@@ -3,8 +3,10 @@
 # replaces ran its own pgvector with a 50Gi volume, a second copy of the data layer.
 #
 # Free tier (ADR 0034, rung 6): scale-to-zero behind the KEDA HTTP add-on. Idle it requests
-# nothing; awake it requests 50m CPU and 128Mi. It calls no model and no vendor, so it spends
-# nothing: search by meaning stays off until embeddings can go through LiteLLM.
+# nothing; awake it requests 50m CPU and 128Mi. It calls no vendor directly: search by meaning
+# goes through the estate router (llm/, lane `embed`), which is the one door to a model and the
+# one place the key lives. Until 2026-10-02 this line read 'search by meaning stays off until
+# embeddings can go through LiteLLM' -- they now do, and the server computes the vector itself.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -28,11 +30,20 @@ spec:
       data:
         DATABASE_URL: "postgresql://memory:{{ .password }}@estate-rw.estate-db.svc.cluster.local:5432/memory?sslmode=require"
         MEMORY_SURFACE_TOKEN: "{{ .token }}"
+        # The router key, from the SAME vault entry otto-gateway reads (otto-golden), read by
+        # name and never copied -- one credential for one router, not a second door to a vendor.
+        # It is the RAW master key and not the `sk-<sha256>` form otto derives, because the
+        # estate router authenticates the raw one: measured 2026-09-10 in a live otto-gateway
+        # pod, raw answered (429 upstream = accepted) while the derived form was refused 401
+        # "Invalid proxy server token passed".
+        MEMORY_EMBED_API_KEY: "{{ .litellm_api_key }}"
   data:
     - secretKey: password
       remoteRef: { key: estate-db, property: memory-password }
     - secretKey: token
       remoteRef: { key: unified-memory, property: surface-token }
+    - secretKey: litellm_api_key
+      remoteRef: { key: otto-golden, property: LITELLM_API_KEY }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,6 +80,16 @@ spec:
             # secrets-not-from-env-vars (kyverno): files from the mounted Secret, read by main.py.
             - { name: DATABASE_URL_FILE, value: /var/run/memory/DATABASE_URL }
             - { name: MEMORY_SURFACE_TOKEN_FILE, value: /var/run/memory/MEMORY_SURFACE_TOKEN }
+            # The embed lane (llm/). Without these the server still stores facts, but every
+            # row keeps a NULL vector and recall finds nothing -- the state measured on
+            # 2026-10-02: 47 rows, 0 vectors. The key is a file, never an env var (kyverno).
+            - { name: MEMORY_EMBED_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: MEMORY_EMBED_MODEL, value: "embed" }
+            - { name: MEMORY_EMBED_DIM, value: "2048" }
+            # The lane is the router's free hop, not the first paid one: every paid hop of the
+            # embed chain is dry at the vendor together (measured 2026-10-02).
+            - { name: MEMORY_EMBED_MODEL, value: "embed-free" }
+            - { name: MEMORY_EMBED_API_KEY_FILE, value: /var/run/memory/MEMORY_EMBED_API_KEY }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
           # Ready means the schema ran and the pool is open: the lifespan does both before the
           # app serves anything, /docs included.
