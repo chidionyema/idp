@@ -217,6 +217,23 @@ fi
     fi
   fi
 
+  # memory plane: the door, the store, the write schema and the spec invariants are present.
+  # The live proof (a fact written with `remember` and read back with `recall`) needs the
+  # cluster, so it runs on the schedule; this rung catches the offline half -- someone moving
+  # the door or dropping the spec, which is how memory silently goes back to being write-only
+  # (otto/memory, 2026-10-02: `configured()==False`, every recall 0).
+  if [ -x "$IDP/bin/memory-gate" ]; then
+    if touched mcp/plugins/estate_memory.py || touched platform/unified-memory-server/ \
+       || touched docs/specs/2026-10-02-memory-plane-cortex-adoption.md \
+       || touched docs/decisions/0036-one-memory-plane-and-it-is-cortex.md; then
+      echo "  memory plane (door, store, schema, spec)..."
+      (cd "$IDP" && bin/memory-gate --check) || fail=1
+    fi
+  else
+    say "FAIL  memory-gate  bin/memory-gate is missing -- the memory plane is unguarded"
+    fail=1
+  fi
+
 
 
 need python3

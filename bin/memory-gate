@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Memory is operating, or this fails.
+#
+# The incident this exists for: 2026-10-02, `otto/memory` was found write-only --
+# `fast_recall.configured() == False` and `recall()` returned 0 in the live gateway, while
+# facts were successfully stored. It had been that way unnoticed, because nothing measured
+# recall. A memory layer nobody reads is a log file with extra steps, and the estate shipped
+# one for weeks without noticing.
+#
+# So this gate asks the only question that matters, through the real door: write a fact with
+# `remember`, read it back with `recall`, and see it there. If any step is silent, this exits
+# non-zero.
+#
+# It grades the thing itself, not a proxy -- the earlier draft probed Cortex's own /health
+# and would have passed while the estate's actual door was shut. This one drives
+# mcp/plugins/estate_memory.py, which is the code an agent really calls.
+#
+# A gate that cannot fail is not a gate. This one is proven able to fail: it exits 1 with
+# "RECALL MISS" when a written fact does not come back, and 1 when the door is unconfigured.
+# Both were reproduced 2026-10-02.
+#
+#   bin/memory-gate            live: remember + recall through the estate-mcp pod
+#   bin/memory-gate --check    offline: config, manifests, MCP wiring, spec invariants
+set -uo pipefail
+
+CHECK=0
+case "${1:-}" in
+  -h|--help)
+    echo "bin/memory-gate [--check]"
+    echo "  (no flag)  live proof: remember a fact, recall it through the real MCP door."
+    echo "  --check    offline: manifests, MCP wiring, spec invariants, config presence."
+    echo "             No cluster. Runs inside bin/idp-ci."
+    exit 0
+    ;;
+  --check) CHECK=1 ;;
+esac
+
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+NS="${ESTATE_MCP_NAMESPACE:-mcp}"
+fail=0
+ok()  { printf 'ok    memory-gate: %s\n' "$1"; }
+bad() { printf 'FAIL  memory-gate: %s\n' "$1"; fail=1; }
+
+if [ "$CHECK" = 1 ]; then
+  # ---------------------------------------------------------------- offline rungs
+  # 1. The one door exposes memory. If these tools are gone, agents need bespoke code --
+  #    which is the friction this whole design exists to remove.
+  EM="$IDP/mcp/plugins/estate_memory.py"
+  if [ -f "$EM" ]; then
+    for tool in 'async def remember' 'async def recall'; do
+      grep -q "$tool" "$EM" || bad "estate_memory.py does not define $tool"
+    done
+    # The store URL must be config, never a literal (LAW 46).
+    grep -q 'ESTATE_MEMORY_URL' "$EM" || bad "estate_memory.py does not read ESTATE_MEMORY_URL"
+    # Recalled text is data, never instruction -- a memory store is an injection vector.
+    grep -qi 'never instruction\|not instruction' "$EM" \
+      || bad "estate_memory.py must state that recalled text is data, never instruction"
+    # A memory store that is down must not take the agent's answer with it.
+    grep -qi 'never raises\|DEGRADES' "$EM" || bad "estate_memory.py must degrade, not raise"
+  else
+    bad "mcp/plugins/estate_memory.py is missing -- the memory door is gone"
+  fi
+
+  # 2. The store the door calls still exists and is declared on-demand, not deleted.
+  [ -d "$IDP/platform/unified-memory-server" ] \
+    || bad "platform/unified-memory-server is missing -- the door would have nothing behind it"
+  [ -f "$IDP/clusters/oke/unified-memory.yaml" ] \
+    || bad "clusters/oke/unified-memory.yaml is missing -- the store would never be scheduled"
+
+  # 3. The write path is schema-validated. The server's own payload model is the contract the
+  #    door must satisfy, and the 2026-10-02 misread was a body-shape disagreement --
+  #    so the shape is asserted here rather than discovered in production.
+  SC="$IDP/platform/unified-memory-server/security_core.py"
+  if [ -f "$SC" ]; then
+    grep -q 'namespace' "$SC" || bad "MemoryWritePayload lost its namespace field"
+    grep -q 'key' "$SC" || bad "MemoryWritePayload lost its key field"
+  else
+    bad "platform/unified-memory-server/security_core.py is missing"
+  fi
+
+  # 4. The spec carries the anti-friction invariants. These are the design; losing them
+  #    silently is how memory goes back to being write-only.
+  SPEC="$IDP/docs/specs/2026-10-02-memory-plane-cortex-adoption.md"
+  [ -f "$SPEC" ] || bad "the memory plane spec is missing"
+  if [ -f "$SPEC" ]; then
+    grep -q 'Fail open, loudly' "$SPEC" || bad "spec lost the fail-open-loudly rule"
+    grep -qi 'briefing-on-wake\|Briefing on wake' "$SPEC" || bad "spec lost the briefing-on-wake rule"
+  fi
+
+  # 5. The decision is recorded, so the next agent finds it instead of re-deciding -- and
+  #    re-measuring what was already measured.
+  [ -f "$IDP/docs/decisions/0036-one-memory-plane-and-it-is-cortex.md" ] \
+    || bad "decision 0036 is missing"
+
+  [ "$fail" = 0 ] && ok "offline checks pass (door, store, schema, spec, decision)"
+  exit "$fail"
+fi
+
+# -------------------------------------------------------------------- live rungs
+need() { command -v "$1" >/dev/null || { bad "$1 is not installed"; exit 2; }; }
+need kubectl
+
+POD="$(kubectl -n "$NS" get pods -l app.kubernetes.io/name=estate-mcp \
+        -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)"
+[ -n "$POD" ] || { bad "no estate-mcp pod in namespace $NS -- the memory door is not open"; exit 1; }
+ok "door is open: $POD"
+
+# Rung 1 -- the door is configured. An unconfigured door is the otto/memory failure exactly:
+# `configured() == False` and every call a silent no-op.
+CFG="$(kubectl -n "$NS" exec "$POD" -c estate-mcp -- sh -c \
+  'env | grep -c "^ESTATE_MEMORY_URL=."' 2>/dev/null)"
+[ "${CFG:-0}" -ge 1 ] || { bad "ESTATE_MEMORY_URL unset -- remember/recall would degrade to a no-op"; exit 1; }
+ok "door is configured"
+
+# Rung 2 -- write, then read back, through the real plugin. This is the rung that matters:
+# it is the difference between a store and a memory.
+PROBE="memory-gate probe $(date +%s) $$"
+OUT="$(kubectl -n "$NS" exec "$POD" -c estate-mcp -- python -c "
+import importlib.util
+spec=importlib.util.spec_from_file_location('em','/app/plugins/estate_memory.py')
+m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+w=m.do_remember('''$PROBE''','memory-gate','measurement',['gate'],'memory-gate')
+print('WRITTEN', w.get('written'), w.get('error',''))
+r=m.do_recall('memory-gate','memory-gate','',[],20)
+texts=' '.join(x['text'] for x in r.get('memories',[]))
+print('RECALLED', '''$PROBE''' in texts)
+" 2>/dev/null)"
+case "$OUT" in
+  *"WRITTEN True"*) ok "fact written through remember" ;;
+  *) bad "WRITE FAILED -- $OUT"; exit 1 ;;
+esac
+case "$OUT" in
+  *"RECALLED True"*) ok "fact read back through recall" ;;
+  *) bad "RECALL MISS -- written but recall did not return it"; exit 1 ;;
+esac
+
+ok "memory is operating: written and recalled through the one door"
+exit 0

@@ -1,0 +1,115 @@
+# The estate's memory plane. Owned here, not per-product.
+#
+# Every value below is a decision, written down. A default nobody chose is an accident, and
+# the estate has been burned by exactly that: otto/memory ran with an unconfigured DSN and
+# nobody knew, because the default was silence.
+#
+# TRUST IS A SIGNAL, NOT AUTHORITY. Cortex computes trust from graph topology
+# (corroboration, contradiction, source, access, freshness) and briefings rank by it. It does
+# NOT grant authority. Provenance and taint marking (AGENTS.md 0 gate 7) stay in force: a
+# low-trust fact does not become true by being corroborated, and a high-trust fact does not
+# shed its taint mark by being popular. Ranking only.
+
+[server]
+data_dir = "/data"
+grpc_port = 9090
+http_port = 9091
+
+[security]
+# AES-256-GCM at rest. Key arrives by name from the vault (AGENTS.md 4): CORTEX_ENCRYPTION_KEY.
+encryption = true
+
+[retention]
+enabled = true
+max_age_days = 365
+max_nodes = 1000000
+
+# 5-signal trust. Defaults stated explicitly so a change here is a reviewed change.
+[trust]
+corroboration_saturation = 3
+corroboration_min_weight = 0.6
+contradiction_weight = 0.3
+access_saturation = 20
+freshness_halflife = 90
+
+[trust.weights]
+corroboration = 0.30
+contradiction = 0.25
+source        = 0.20
+access        = 0.15
+freshness     = 0.10
+
+# Node kinds -> briefing roles. This is what an agent wakes up holding.
+[briefing]
+token_budget = 4000
+
+[briefing.roles]
+identity    = ["agent"]
+persistent  = ["preference", "constraint"]
+trackable   = ["goal", "task"]
+temporal    = ["event", "deployment", "incident"]
+reviewable  = ["pattern", "anti-pattern"]
+superseding = ["fact", "decision"]
+
+# The auto-linker is background: an agent never has to declare a relation for the graph to
+# have one. 60s cycle, matching the estate's event cadence.
+[auto_linker]
+interval_seconds = 60
+entity_promote_every_n_cycles = 60
+entity_promote_min_agents = 2
+
+# Structural rules the estate cares about, so decisions connect to what they caused.
+[[auto_linker.rules]]
+name = "decision-led-to-event"
+from_kind = "decision"
+to_kind = "event"
+relation = "led_to"
+weight = 0.8
+condition = { type = "temporal_proximity", window_minutes = 60 }
+
+[[auto_linker.rules]]
+name = "incident-contradicts-fact"
+from_kind = "incident"
+to_kind = "fact"
+relation = "contradicts"
+weight = 0.9
+condition = { type = "shared_entity" }
+
+# Write gate: bad facts are refused at the door, and the refusal is a 422 to the writer. It
+# never blocks the agent's task -- memory quality must not cost task availability.
+[write_gate]
+enabled = true
+min_body_chars = 3
+reject_empty_title = true
+
+# Per-kind schema validation. A decision without a rationale is refused; the estate's ADRs
+# already require one, so this makes the rule mechanical instead of a convention.
+[schemas.decision]
+required_fields = ["rationale"]
+
+[schemas.decision.fields.rationale]
+type = "string"
+
+[schemas.decision.fields.priority]
+type = "number"
+min = 1.0
+max = 5.0
+
+[schemas.decision.fields.status]
+type = "string"
+allowed_values = ["proposed", "accepted", "rejected", "superseded"]
+
+[schemas.fact]
+required_fields = ["source"]
+
+[schemas.fact.fields.source]
+type = "string"
+
+# Every event the estate already publishes on JetStream becomes memory with no agent action.
+[ingest.nats]
+enabled = true
+servers = ["nats://nats.estate.svc.cluster.local:4222"]
+subject = "estate.>"
+stream = "ESTATE"
+durable = "cortex-ingest"
+queue_group = "cortex"
