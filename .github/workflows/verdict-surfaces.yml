@@ -1,0 +1,156 @@
+# button: Verify every surface after deploy and revert on red
+# founder: "i need complete verification automated, real voice conversations on fleet and face that
+#   is verified and all other features automated verification... every single feature on both must
+#   be extensively verified before and after deployment. i dont want HINT OF A Gapp" — plus
+#   "no gaps", 2026-10-02.
+# docs/research/2026-10-02-complete-automated-verification.md §6: post-deploy verdict + rollback.
+#
+# This is the CP4 loop, and the rollback is what makes it a gate rather than a report:
+#   hourly        the battery runs through the public gate regardless of any deploy;
+#   on dispatch   deploy-when-green fires `surfaces-deployed` the moment an image-update PR lands;
+#   on FAIL       a fresh deploy (dispatch) rolls the image tag back through a revert PR on the
+#                 flux image-updates branch (raised by this workflow, landed by merge-when-green —
+#                 never hand-applied); an hourly (non-dispatch) FAIL pages crew#1019 instead,
+#                 because a standing red is a defect to fix, not a tag to churn.
+# Pre-deploy (L1/L2/L3/L5 against the lane's own build) runs in the greenlane proof job, not here.
+name: verdict-surfaces
+on:
+  schedule:
+    - cron: "43 * * * *"   # hourly; verdict TTL 1h, same cycle as the other verdicts
+  workflow_dispatch:
+    inputs:
+      digest:
+        description: "image digest this verdict is bound to (deploy-when-green passes it)"
+        required: false
+        default: ""
+  repository_dispatch:
+    types: [surfaces-deployed]
+permissions:
+  contents: write   # the rollback job pushes a revert lane branch
+  checks: write
+  issues: write
+concurrency:
+  group: verdict-surfaces
+  cancel-in-progress: false
+jobs:
+  battery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    outputs:
+      outcome: ${{ steps.verdict.outputs.outcome }}
+      digest: ${{ steps.verdict.outputs.digest }}
+      dispatched: ${{ steps.verdict.outputs.dispatched }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      # The prover's machine identity (same exchange oke-check.yml uses): without it the
+      # vault read below is BLIND and the battery 401s at the gate pretending to be verified.
+      - name: OCI session token from the GitHub OIDC token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+      - name: run the battery through the public gate
+        id: verdict
+        env:
+          APP_URL: https://catalogue.mumchimp.com
+          BACKEND_URL: https://catalogue.mumchimp.com/api/proxy/fleetview
+          RUNNING_DIGEST: ${{ inputs.digest || github.event.client_payload.digest }}
+          DISPATCHED: ${{ github.event_name == 'repository_dispatch' }}
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
+          OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
+        run: |
+          set -o pipefail
+          # The prover token arrives by name from the vault (never a secret in the workflow
+          # file or the log): the same backstage-env.PROVER_TOKEN idp-prove reads, so L4/L5
+          # take the same machine door backstage.py takes.
+          env_json=$(bin/idp-cloud secret get backstage-env) \
+            && PROVER_TOKEN=$(printf '%s' "$env_json" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("PROVER_TOKEN",""))') \
+            || PROVER_TOKEN=""
+          if [ -z "$PROVER_TOKEN" ]; then
+            echo "BLOCKED surfaces  vault read of backstage-env.PROVER_TOKEN failed; L4/L5 would 401 at the gate"
+            echo "outcome=FAIL" >> "$GITHUB_OUTPUT"
+            echo "digest=$RUNNING_DIGEST" >> "$GITHUB_OUTPUT"
+            echo "dispatched=$DISPATCHED" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          export PROVER_TOKEN
+          rc=0
+          bin/idp-verify-surfaces --post 2>&1 | tee verify.out || rc=$?
+          line=$(grep -E '^PASS|^FAIL' verify.out | tail -1 || true)
+          echo "outcome=$( [ $rc -eq 0 ] && echo PASS || echo FAIL )" >> "$GITHUB_OUTPUT"
+          echo "digest=$RUNNING_DIGEST" >> "$GITHUB_OUTPUT"
+          echo "dispatched=$DISPATCHED" >> "$GITHUB_OUTPUT"
+          exit 0   # the job's colour comes from the final gate step, not this one
+      - name: the verdict file is the run's artifact
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verdict-surfaces
+          path: |
+            verify.out
+          if-no-files-found: warn
+          retention-days: 30
+      - name: check-run verify/surfaces, conclusion = outcome
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          line=$(grep -E '^(PASS|FAIL) +surfaces' verify.out | tail -1 || true)
+          line=${line:-"FAIL   surfaces  the battery died before printing a verdict line"}
+          outcome=${line%% *}; case "$outcome" in PASS) c=success;; *) c=failure;; esac
+          summary=$(printf '```\n%s\n```\n' "$(grep -E '^(PASS|FAIL) +surfaces' verify.out || true)")
+          gh api "repos/${{ github.repository }}/check-runs" -f name=verify/surfaces -f head_sha="$GITHUB_SHA" \
+            -f status=completed -f conclusion="$c" -f details_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            -f "output[title]=$line" -f "output[summary]=$summary" >/dev/null
+          printf '### verdict-surfaces\n```\n%s\n```\n' "$line" >> "$GITHUB_STEP_SUMMARY"
+      - name: a standing red pages crew#1019 (dispatched red rolls back instead, next job)
+        if: failure() && steps.verdict.outputs.dispatched != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          body="$ts **verdict/surfaces** (hourly): FAIL — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) — the surfaces battery is red on the standing deployment; see the check-run for the failing level."
+          gh issue comment 1019 --repo chidionyema/crew --body "$body" || true
+      - name: the job is red when the battery is not PASS
+        if: always()
+        run: grep -qE '^PASS +surfaces' verify.out || { grep -E '^(PASS|FAIL) +surfaces' verify.out | tail -3; exit 1; }
+  rollback:
+    needs: battery
+    if: failure() && needs.battery.outputs.dispatched == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: revert the image tag through a lane PR (never hand-applied)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FLUX_REPO: chidionyema/flux
+          FLUX_BRANCH: image-updates
+          DIGEST: ${{ needs.battery.outputs.digest }}
+        run: |
+          set -eu
+          git clone --depth 20 --branch "$FLUX_BRANCH" "https://x-access-token:${GH_TOKEN}@github.com/${FLUX_REPO}.git" flux
+          cd flux
+          # the update to revert: the newest commit that changed an image tag, i.e. what
+          # deploy-when-green landed to ship the digest this verdict is bound to.
+          target=$(git log -20 --format='%H' -- . | head -20 | while read -r sha; do
+            if git show -s --format='%s' "$sha" | grep -qiE 'image|tag|update'; then echo "$sha"; break; fi
+          done)
+          if [ -z "$target" ]; then
+            echo "NO REVERT TARGET — the last image-updates commits touch no tag. Filing red instead of guessing."
+            gh api "repos/chidionyema/crew/issues/1019/comments" -f body="**verdict/surfaces rollback**: fresh deploy graded FAIL but no image-tag commit to revert (digest $DIGEST). A human-visible defect, not a silent pass." || true
+            exit 1
+          fi
+          lane="lane/revert-surfaces-$(date -u +%Y%m%d%H%M%S)"
+          git config user.name "verdict-surfaces"
+          git config user.email "verdict-surfaces@users.noreply.github.com"
+          git revert --no-edit "$target"
+          git push origin "HEAD:$lane"
+          gh pr create --repo "$FLUX_REPO" --base "$FLUX_BRANCH" --head "$lane" \
+            --title "revert $target: verdict-surfaces graded the fresh deploy FAIL" \
+            --body "Automatic revert raised by verdict-surfaces (idp actions run ${{ github.run_id }}). The surfaces battery graded the deployment this tag shipped as FAIL; merge-when-green lands this, Flux converges, and the next hourly verdict must return to PASS. Digest under test: $DIGEST."
