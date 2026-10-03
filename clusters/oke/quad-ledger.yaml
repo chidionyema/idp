@@ -16,3 +16,7 @@ spec:
   dependsOn:
     - { name: estate-db }
     - { name: external-secrets }
+    # The exception that waives require-pod-probes must already be on the cluster when this
+    # Kustomization dry-runs the Deployment, or Kyverno refuses the Deployment before the
+    # exception exists (both would otherwise be admitted in one batch).
+    - { name: quad-ledger-exception }

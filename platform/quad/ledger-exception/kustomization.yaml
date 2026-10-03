@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The exception lives in its own Kustomization because Flux admits every resource in a
+# Kustomization in one dry-run batch. Kyverno evaluates the Deployment against
+# require-pod-probes during that batch; if the PolicyException is rendered in the same batch,
+# it does not exist yet and the admit fails. Splitting it out and making quad-ledger depend on
+# this Kustomization guarantees the exception is on the cluster first (the cert-manager pattern:
+# the exception lands before the workload it waives).
+# no `namespace:` transformer: it would rewrite the exception into quad, where Kyverno never
+# reads it (crew#325 -- exceptions are honoured from namespace kyverno only).
+resources: [exception.yaml]
