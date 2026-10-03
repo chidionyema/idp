@@ -1,0 +1,39 @@
+# Stakater Reloader install (decision 0018 / CP4 closure). The controller boots from
+# ./platform/reloader (HelmRepository + HelmRelease already declared there; this row is the
+# wire that brings the cluster to it). It is always-on because every Secret-rotating
+# workload depends on it: an admission-time annotation at
+# platform/edge/require-auto-reload.yaml puts `reloader.stakater.com/auto: "true"` on every
+# pod the cluster admits, and the controller is what bounces that pod when ESO refreshes its
+# Secret. Without this row the annotation is a comment and the crew#506 CP4 incident
+# (2026-08-27, GROQ_API_KEY written 14:35Z, litellm answering "Invalid API Key" until the
+# pod was hand-restarted because the controller was never installed) recurs on every key.
+#
+# No upstream dependencies: the chart has no CRDs, the chart's own ClusterRole + token watch
+# is what it needs, and PriorityClass is the only other cluster-foundation row. Reloader does
+# not need PriorityClass and never does, so this row sits next to it and has no dependsOn.
+#
+# Scope is set in platform/reloader/reloader.yaml: `watchGlobally: true`, `namespaces: []`,
+# `autoReloadAll: false`. Cluster-watching with empty names deletes the hand-kept namespace
+# list (crew#684), and autoReloadAll=false keeps the opt-in: only annotated pods are rolled.
+# Rolling every annotated workload is one ReloadEvent, not a runbook step.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: reloader
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/reloader
+  prune: true
+  wait: true
+  timeout: 2m
+  healthChecks:
+    - apiVersion: helm.toolkit.fluxcd.io/v2
+      kind: HelmRelease
+      name: reloader
+      namespace: reloader
