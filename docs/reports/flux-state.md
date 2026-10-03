@@ -1,8 +1,8 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-10-03T14:30:12Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-10-03T18:15:12Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**70 objects: 55 ready, 12 not ready, 0 unknown, 3 suspended.**
+**71 objects: 55 ready, 13 not ready, 0 unknown, 3 suspended.**
 
 ## Not ready right now
 
@@ -12,12 +12,13 @@ Read from the cluster receipt taken at 2026-10-03T14:30:12Z. Every Kustomization
 - **HelmRelease dagster/dagster** since 2026-09-29T06:21:51Z: Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
 - **HelmRelease spire-mgmt/spire** since 2026-09-26T20:11:52Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deployment/spire-mgmt/spire-spiffe-oidc-discovery-provider status: 'InProgress']
-- **Kustomization flux-system/agent-workforce** since 2026-10-03T14:26:49Z: post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable not set (strict mode): "githubAppIDQuoted"
-- **Kustomization flux-system/backstage** since 2026-10-03T14:25:13Z: Service/backstage/fleetview-voice dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/backstage/fleetview-voice was blocked due to the following policies   require-catalogue-entity:   service-names-its-entity: 'validation error: Service backstage/fleetview-voice serves a port but names no catalogue entity. Add the label backstage.io/kubernetes-id with the entity name from backstage/**/catalog-info.yaml, and a founder surface if a person opens it (docs/policy/every-interface-is-a-door.md). rule service-names-its-entity failed at path /metadata/labels/backstage.io/kubernetes-id/'  
-- **Kustomization flux-system/jit** since 2026-10-03T14:24:55Z: health check failed after 706.36068ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed']
-- **Kustomization flux-system/quad-ledger** since 2026-10-03T14:25:11Z: health check failed after 166.188049ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed']
-- **Kustomization flux-system/temporal** since 2026-10-03T14:25:58Z: Service/temporal/temporal-frontend-mesh dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/temporal/temporal-frontend-mesh was blocked due to the following policies   require-catalogue-entity:   service-names-its-entity: 'validation error: Service temporal/temporal-frontend-mesh serves a port but names no catalogue entity. Add the label backstage.io/kubernetes-id with the entity name from backstage/**/catalog-info.yaml, and a founder surface if a person opens it (docs/policy/every-interface-is-a-door.md). rule service-names-its-entity failed at path /metadata/labels/backstage.io/kubernetes-id/'  
-- **Kustomization flux-system/voice-router** since 2026-10-03T14:29:10Z: health check failed after 5m0.036850412s: timeout waiting for: [Deployment/voice-router/voice-router-director status: 'InProgress', ExternalSecret/voice-router/newsroom-llm status: 'InProgress']
+- **Kustomization flux-system/agent-workforce** since 2026-10-03T18:11:28Z: post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable not set (strict mode): "githubAppIDQuoted"
+- **Kustomization flux-system/flux-system** since 2026-10-03T18:07:24Z: kustomize build failed: accumulating resources: accumulation err='merging resources from 'platform.yaml': may not add resource with an already registered id: Kustomization.v1.kustomize.toolkit.fluxcd.io/image-automation.flux-system': must build at directory: '/tmp/kustomization-3568594791/clusters/oke/platform.yaml': file is not directory
+- **Kustomization flux-system/hermes-agent** since 2026-10-03T18:13:26Z: health check failed after 2m0.108578458s: timeout waiting for: [Deployment/hermes-agent/hermes-agent-gateway status: 'InProgress']
+- **Kustomization flux-system/jit** since 2026-10-03T18:09:34Z: health check failed after 639.691454ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed']
+- **Kustomization flux-system/quad-ledger** since 2026-10-03T18:10:59Z: health check failed after 43.813233ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed']
+- **Kustomization flux-system/temporal** since 2026-10-03T18:10:59Z: Service/temporal/temporal-frontend-mesh dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/temporal/temporal-frontend-mesh was blocked due to the following policies   require-catalogue-entity:   service-names-its-entity: 'validation error: Service temporal/temporal-frontend-mesh serves a port but names no catalogue entity. Add the label backstage.io/kubernetes-id with the entity name from backstage/**/catalog-info.yaml, and a founder surface if a person opens it (docs/policy/every-interface-is-a-door.md). rule service-names-its-entity failed at path /metadata/labels/backstage.io/kubernetes-id/'  
+- **Kustomization flux-system/voice-router** since 2026-10-03T18:11:48Z: Reconciliation in progress
 
 ## Every row
 
@@ -29,12 +30,13 @@ Read from the cluster receipt taken at 2026-10-03T14:30:12Z. Every Kustomization
 | HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-29T06:21:51Z | Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
 | HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T20:11:52Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deploymen |
-| Kustomization | flux-system | agent-workforce | Not ready | main@f3da07c | 2026-10-03T14:26:49Z | post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable |
-| Kustomization | flux-system | backstage | Not ready | main@34f3720 | 2026-10-03T14:25:13Z | Service/backstage/fleetview-voice dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/backstage/fleetview-voice |
-| Kustomization | flux-system | jit | Not ready | main@f3da07c | 2026-10-03T14:24:55Z | health check failed after 706.36068ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed'] |
-| Kustomization | flux-system | quad-ledger | Not ready | main@f3da07c | 2026-10-03T14:25:11Z | health check failed after 166.188049ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed'] |
-| Kustomization | flux-system | temporal | Not ready | main@f3da07c | 2026-10-03T14:25:58Z | Service/temporal/temporal-frontend-mesh dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/temporal/temporal-f |
-| Kustomization | flux-system | voice-router | Not ready | main@f3da07c | 2026-10-03T14:29:10Z | health check failed after 5m0.036850412s: timeout waiting for: [Deployment/voice-router/voice-router-director status: 'InProgress', ExternalSecret/voice-router/ |
+| Kustomization | flux-system | agent-workforce | Not ready | main@46f64b4 | 2026-10-03T18:11:28Z | post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable |
+| Kustomization | flux-system | flux-system | Not ready | main@26c1b8e | 2026-10-03T18:07:24Z | kustomize build failed: accumulating resources: accumulation err='merging resources from 'platform.yaml': may not add resource with an already registered id: Ku |
+| Kustomization | flux-system | hermes-agent | Not ready | main@46f64b4 | 2026-10-03T18:13:26Z | health check failed after 2m0.108578458s: timeout waiting for: [Deployment/hermes-agent/hermes-agent-gateway status: 'InProgress'] |
+| Kustomization | flux-system | jit | Not ready | main@46f64b4 | 2026-10-03T18:09:34Z | health check failed after 639.691454ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed'] |
+| Kustomization | flux-system | quad-ledger | Not ready | main@46f64b4 | 2026-10-03T18:10:59Z | health check failed after 43.813233ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed'] |
+| Kustomization | flux-system | temporal | Not ready | main@46f64b4 | 2026-10-03T18:10:59Z | Service/temporal/temporal-frontend-mesh dry-run failed: admission webhook "validate.kyverno.svc-fail" denied the request:   resource Service/temporal/temporal-f |
+| Kustomization | flux-system | voice-router | Not ready | main@46f64b4 | 2026-10-03T18:11:48Z | Reconciliation in progress |
 | HelmRelease | flux-system | vendor-bridge | Suspended | 0.1.0+991920d87ecd | 2026-10-03T13:56:39Z |  |
 | HelmRelease | observability | signoz | Suspended | 0.138.0 | 2026-09-26T16:24:12Z |  |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
@@ -61,35 +63,35 @@ Read from the cluster receipt taken at 2026-10-03T14:30:12Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-26T10:39:02Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-26T18:25:31Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-26T09:48:27Z |  |
-| Kustomization | flux-system | backstage-namespace | Ready | main@f3da07c | 2026-10-03T14:22:21Z |  |
-| Kustomization | flux-system | dns | Ready | main@f3da07c | 2026-10-03T14:23:31Z |  |
-| Kustomization | flux-system | edge | Ready | main@f3da07c | 2026-10-03T14:22:21Z |  |
-| Kustomization | flux-system | epistemic-fabric | Ready | main@f3da07c | 2026-10-03T14:24:54Z |  |
-| Kustomization | flux-system | estate-db | Ready | main@f3da07c | 2026-10-03T14:24:44Z |  |
-| Kustomization | flux-system | estate-db-migrate | Ready | main@f3da07c | 2026-10-03T14:25:28Z |  |
-| Kustomization | flux-system | estate-db-operator | Ready | main@f3da07c | 2026-10-03T14:22:21Z |  |
-| Kustomization | flux-system | event-bus | Ready | main@f3da07c | 2026-10-03T14:24:10Z |  |
-| Kustomization | flux-system | external-secrets | Ready | main@f3da07c | 2026-10-03T14:23:30Z |  |
-| Kustomization | flux-system | flannel | Ready | main@f3da07c | 2026-10-03T14:22:58Z |  |
-| Kustomization | flux-system | flux-system | Ready | main@f3da07c | 2026-10-03T14:23:33Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-03T14:27:09Z |  |
-| Kustomization | flux-system | github-app-creds | Ready | main@f3da07c | 2026-10-03T14:24:28Z |  |
-| Kustomization | flux-system | hermes-agent | Ready | main@f3da07c | 2026-10-03T14:26:51Z |  |
-| Kustomization | flux-system | hindsight | Ready | main@f3da07c | 2026-10-03T14:26:41Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@f3da07c | 2026-10-03T14:23:30Z |  |
-| Kustomization | flux-system | llm | Ready | main@f3da07c | 2026-10-03T14:25:59Z |  |
-| Kustomization | flux-system | mcp | Ready | main@f3da07c | 2026-10-03T14:25:33Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@f3da07c | 2026-10-03T14:23:51Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@f3da07c | 2026-10-03T14:22:21Z |  |
-| Kustomization | flux-system | ns-fences | Ready | main@f3da07c | 2026-10-03T14:24:13Z |  |
-| Kustomization | flux-system | otto-gateway | Ready | main@f3da07c | 2026-10-03T14:25:21Z |  |
-| Kustomization | flux-system | otto-golden | Ready | main@f3da07c | 2026-10-03T14:26:41Z |  |
-| Kustomization | flux-system | otto-golden-secret | Ready | main@f3da07c | 2026-10-03T14:24:37Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@f3da07c | 2026-10-03T14:22:58Z |  |
-| Kustomization | flux-system | quad-ledger-exception | Ready | main@f3da07c | 2026-10-03T14:22:58Z |  |
-| Kustomization | flux-system | reloader | Ready | main@f3da07c | 2026-10-03T14:24:35Z |  |
-| Kustomization | flux-system | research-engine | Ready | main@f3da07c | 2026-10-03T14:26:42Z |  |
-| Kustomization | flux-system | searxng | Ready | main@f3da07c | 2026-10-03T14:22:58Z |  |
-| Kustomization | flux-system | secret-store | Ready | main@f3da07c | 2026-10-03T14:24:10Z |  |
-| Kustomization | flux-system | tailscale | Ready | main@f3da07c | 2026-10-03T14:24:32Z |  |
-| Kustomization | flux-system | unified-memory | Ready | main@f3da07c | 2026-10-03T14:25:00Z |  |
+| Kustomization | flux-system | backstage | Ready | main@46f64b4 | 2026-10-03T18:10:20Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@46f64b4 | 2026-10-03T18:06:42Z |  |
+| Kustomization | flux-system | dns | Ready | main@46f64b4 | 2026-10-03T18:05:17Z |  |
+| Kustomization | flux-system | edge | Ready | main@46f64b4 | 2026-10-03T18:07:32Z |  |
+| Kustomization | flux-system | epistemic-fabric | Ready | main@46f64b4 | 2026-10-03T18:09:25Z |  |
+| Kustomization | flux-system | estate-db | Ready | main@46f64b4 | 2026-10-03T18:10:05Z |  |
+| Kustomization | flux-system | estate-db-migrate | Ready | main@46f64b4 | 2026-10-03T18:10:20Z |  |
+| Kustomization | flux-system | estate-db-operator | Ready | main@46f64b4 | 2026-10-03T18:05:23Z |  |
+| Kustomization | flux-system | event-bus | Ready | main@46f64b4 | 2026-10-03T18:06:59Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@46f64b4 | 2026-10-03T18:07:36Z |  |
+| Kustomization | flux-system | flannel | Ready | main@46f64b4 | 2026-10-03T18:07:25Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-03T18:06:58Z |  |
+| Kustomization | flux-system | github-app-creds | Ready | main@46f64b4 | 2026-10-03T18:09:37Z |  |
+| Kustomization | flux-system | hindsight | Ready | main@46f64b4 | 2026-10-03T18:11:58Z |  |
+| Kustomization | flux-system | image-automation | Ready | main@46f64b4 | 2026-10-03T18:09:25Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@46f64b4 | 2026-10-03T18:07:29Z |  |
+| Kustomization | flux-system | llm | Ready | main@46f64b4 | 2026-10-03T18:10:43Z |  |
+| Kustomization | flux-system | mcp | Ready | main@46f64b4 | 2026-10-03T18:09:56Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@46f64b4 | 2026-10-03T18:06:42Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@46f64b4 | 2026-10-03T18:06:47Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@46f64b4 | 2026-10-03T18:06:03Z |  |
+| Kustomization | flux-system | otto-gateway | Ready | main@46f64b4 | 2026-10-03T18:10:43Z |  |
+| Kustomization | flux-system | otto-golden | Ready | main@46f64b4 | 2026-10-03T18:11:02Z |  |
+| Kustomization | flux-system | otto-golden-secret | Ready | main@46f64b4 | 2026-10-03T18:09:04Z |  |
+| Kustomization | flux-system | priority-classes | Ready | main@46f64b4 | 2026-10-03T18:05:48Z |  |
+| Kustomization | flux-system | quad-ledger-exception | Ready | main@46f64b4 | 2026-10-03T18:06:53Z |  |
+| Kustomization | flux-system | reloader | Ready | main@46f64b4 | 2026-10-03T18:06:14Z |  |
+| Kustomization | flux-system | research-engine | Ready | main@46f64b4 | 2026-10-03T18:11:27Z |  |
+| Kustomization | flux-system | searxng | Ready | main@46f64b4 | 2026-10-03T18:05:49Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@46f64b4 | 2026-10-03T18:08:28Z |  |
+| Kustomization | flux-system | tailscale | Ready | main@46f64b4 | 2026-10-03T18:09:31Z |  |
+| Kustomization | flux-system | unified-memory | Ready | main@46f64b4 | 2026-10-03T18:10:59Z |  |
