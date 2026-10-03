@@ -90,6 +90,29 @@ spec:
       backendRefs:
         - name: catalogue
           port: 3100
+    # 2026-10-03 (CP4 post battery): the prover's voice legs run through the public gate too
+    # (probes/voice.py: /voice/hear -> /voice/stream -> /voice/say -> /voice/hear, real WAVs,
+    # real vendors, after every deploy). Same doctrine as /api/catalog/ above: the header match
+    # means a browser never takes this rule, and Backstage grades the token itself
+    # (backend.auth.externalAccess) -- the route only decides who ASKS, never who ENTERS.
+    - matches:
+        - path: { type: PathPrefix, value: /api/proxy/fleetview/ }
+          headers:
+            - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: catalogue
+          port: 3100
     # 2026-09-03: API calls take the auth-only door (Middleware above). Signed in: 202 plus the
     # identity headers, same as before. Session expired: a plain 401 the Backstage frontend
     # understands, instead of a login redirect no XHR can complete -- the redirect chain is what
