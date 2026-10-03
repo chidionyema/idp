@@ -161,7 +161,9 @@ def l1_gate_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int
     return out
 
 
-def l1_subresources_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int = 15) -> list:
+def l1_subresources_battery(
+    host: str, inv: dict[str, list[str]], get=http, timeout: int = 15
+) -> list:
     """2026-10-03 defect class: a public shell whose every script 302s to SSO serves a page
     that can never execute -- l1.gate above passes (200, no login page) while the browser gets
     40 console errors and a blank canvas. The dependency closure comes from the SERVED HTML,
@@ -178,7 +180,14 @@ def l1_subresources_battery(host: str, inv: dict[str, list[str]], get=http, time
             }
         )
         if not refs:
-            out.append(assertion(f"l1.exec{page}", "shell references subresources", "none found", False))
+            out.append(
+                assertion(
+                    f"l1.exec{page}",
+                    "shell references subresources",
+                    "none found",
+                    False,
+                )
+            )
             continue
         bad = []
         for r in refs:
@@ -186,9 +195,13 @@ def l1_subresources_battery(host: str, inv: dict[str, list[str]], get=http, time
             if s2 != 200 or _looks_like_login(b2 or ""):
                 bad.append(f"{r}={s2}")
         out.append(
-            assertion(f"l1.exec{page}", f"all {len(refs)} referenced subresources 200, no login page",
-                      f"{len(refs) - len(bad)}/{len(refs)} ok" + (f"; RED: {', '.join(bad[:4])}" if bad else ""),
-                      not bad)
+            assertion(
+                f"l1.exec{page}",
+                f"all {len(refs)} referenced subresources 200, no login page",
+                f"{len(refs) - len(bad)}/{len(refs)} ok"
+                + (f"; RED: {', '.join(bad[:4])}" if bad else ""),
+                not bad,
+            )
         )
     return out
 
