@@ -1,0 +1,19 @@
+# The dated PolicyException that waives require-pod-probes for quad-ledger, applied ahead of the
+# Deployment it waives. Flux admits a Kustomization's resources in one dry-run batch, so the
+# exception cannot travel with the Deployment: Kyverno would evaluate the Deployment before the
+# exception existed. This Kustomization exists only to establish that ordering (quad-ledger
+# dependsOn it), the same way cert-manager's exception lands before helm-controller installs it.
+# Definition of done: this object is deleted when cmd/quad-ledger grows a real heartbeat --
+# docs/tickets/2026-10-03-quad-ledger-consume-liveness.md.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: quad-ledger-exception
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef: { kind: GitRepository, name: flux-system }
+  path: ./platform/quad/ledger-exception
+  prune: true
+  wait: true
+  timeout: 2m
