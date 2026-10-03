@@ -161,6 +161,38 @@ def l1_gate_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int
     return out
 
 
+def l1_subresources_battery(host: str, inv: dict[str, list[str]], get=http, timeout: int = 15) -> list:
+    """2026-10-03 defect class: a public shell whose every script 302s to SSO serves a page
+    that can never execute -- l1.gate above passes (200, no login page) while the browser gets
+    40 console errors and a blank canvas. The dependency closure comes from the SERVED HTML,
+    not a hand list: every src=/href= the shell itself references must answer 200 without a
+    login page. A followed 302 into SSO surfaces as 200 + sign-in body and fails here."""
+    out = []
+    for page in inv.get("public_pages", []):
+        status, body = get(f"{host}{page}", timeout=timeout)
+        refs = sorted(
+            {
+                m.group(1).split("?")[0]
+                for m in re.finditer(r'(?:src|href)="(/[^"#]+)"', body or "")
+                if not m.group(1).startswith("//")
+            }
+        )
+        if not refs:
+            out.append(assertion(f"l1.exec{page}", "shell references subresources", "none found", False))
+            continue
+        bad = []
+        for r in refs:
+            s2, b2 = get(f"{host}{r}", timeout=timeout)
+            if s2 != 200 or _looks_like_login(b2 or ""):
+                bad.append(f"{r}={s2}")
+        out.append(
+            assertion(f"l1.exec{page}", f"all {len(refs)} referenced subresources 200, no login page",
+                      f"{len(refs) - len(bad)}/{len(refs)} ok" + (f"; RED: {', '.join(bad[:4])}" if bad else ""),
+                      not bad)
+        )
+    return out
+
+
 # --- L2: negative controls ----------------------------------------------------
 def l2_auth_negative(host: str, inv: dict[str, list[str]], get=http) -> list:
     out = []
@@ -176,6 +208,7 @@ def probe(host: str, token: str | None = None, get=http) -> list:
     return (
         coverage_gate(inv)
         + l1_gate_battery(host, inv, get=get)
+        + l1_subresources_battery(host, inv, get=get)
         + l2_auth_negative(host, inv, get=get)
     )
 
