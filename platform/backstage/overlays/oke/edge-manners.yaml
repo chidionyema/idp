@@ -40,3 +40,29 @@ spec:
     customResponseHeaders:
       Server: ""
       X-Powered-By: ""
+---
+# The anonymous voice door's manners (RC-1b, founder 2026-10-03: "open the anonymous
+# lane"). voice-strip turns /api/proxy/fleetview/voice/say into the /voice/say that
+# serve.py serves -- the same rewrite app-config.yaml's proxy applies for signed-in
+# browsers. voice-rate keeps the door from being an open LLM meter: 30 turns a minute
+# per visitor is a conversation, not a scrape.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: voice-strip
+  namespace: backstage
+spec:
+  stripPrefix:
+    prefixes:
+      - /api/proxy/fleetview
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: voice-rate
+  namespace: backstage
+spec:
+  rateLimit:
+    avg: 30
+    period: 1m
+    burst: 60

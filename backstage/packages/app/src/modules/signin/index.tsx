@@ -37,6 +37,12 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
           <Button variant="primary" onPress={() => window.location.reload()}>
             Try again
           </Button>
+          {/* RC-1b (founder, 2026-10-03: "open the anonymous lane"): the door exchange
+              failed, but the estate still speaks. Guest is registered in production
+              for exactly this fallthrough (packages/backend/src/index.ts) and the voice
+              door itself is anonymous and rate-limited at the edge
+              (platform/backstage/overlays/oke/httproute.yaml). */}
+          <SignInPage providers={['guest']} />
           {error && (
             <Text variant="body-x-small" color="secondary">
               {error.message}

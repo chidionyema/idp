@@ -117,6 +117,41 @@ spec:
     # identity headers, same as before. Session expired: a plain 401 the Backstage frontend
     # understands, instead of a login redirect no XHR can complete -- the redirect chain is what
     # broke the founder's interactive sign-in. Gateway API precedence: /api/catalog/ with a
+    # 2026-10-03 (RC-1b, founder: "open the anonymous lane"): the anonymous voice door.
+    # A phone visitor with no sign-in opens /face; the SPA's voice calls carry no Bearer,
+    # so they miss the rule above and would die on the login rule below. This rule sends
+    # ONLY the voice endpoints to serve.py directly (Service fleetview-voice, port 18790)
+    # -- stripped (voice-strip applies the same rewrite app-config.yaml's proxy applies
+    # for signed-in browsers) and rate-limited (voice-rate: 30 turns/min, burst 60) --
+    # with no login filter. The door decides who may SPEAK, never who may read the API:
+    # every other /api/ path still demands the door's sign-in or a Bearer.
+    - matches:
+        - path: { type: PathPrefix, value: /api/proxy/fleetview/voice/ }
+      filters:
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: voice-strip
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: voice-rate
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: friendly-errors
+        - type: ExtensionRef
+          extensionRef:
+            group: traefik.io
+            kind: Middleware
+            name: edge-headers
+      backendRefs:
+        - name: fleetview-voice
+          namespace: backstage
+          port: 18790
     # Bearer header still wins above; the catch-all below keeps the browser login for pages.
     - matches:
         - path: { type: PathPrefix, value: /api/ }

@@ -511,7 +511,11 @@ def main():
     if len(sys.argv) == 3:
         executor_port = int(sys.argv[2])
         executor_app = build_executor_app()
-        main_config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+        # 0.0.0.0 (RC-1b 2026-10-03): the anonymous voice door's Service
+        # (overlays/oke/fleetview-voice-service.yaml) must reach this port from the edge
+        # (Traefik, ns edge); reachability is governed by that Service + its port-scoped
+        # NetworkPolicy, exactly like the 8091 relay below.
+        main_config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info")  # noqa: S104
         executor_config = uvicorn.Config(
             executor_app,
             host="0.0.0.0",  # noqa: S104 -- pre-existing on main; executor relay is key-checked (_check_key)

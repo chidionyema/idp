@@ -21,6 +21,9 @@ resources:
   # executor_link.py's 0.0.0.0:8091 (see fleetview-backend.Dockerfile's ENTRYPOINT and the
   # fleetview-backend container patch below).
   - fleetview-executor-service.yaml
+  # RC-1b: the anonymous voice door -- Service + port-scoped NetworkPolicy for
+  # serve.py's 18790 (voice routes), reached only from the edge (Traefik), rate-limited.
+  - fleetview-voice-service.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder

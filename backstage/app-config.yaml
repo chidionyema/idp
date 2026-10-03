@@ -246,11 +246,15 @@ auth:
     # Local dev only: the proxied provider needs the front door's headers, so run
     # behind it or set them by hand. Production config is app-config.production.yaml.
     oauth2Proxy: {}
-    # Official guest provider for `yarn start` (NODE_ENV=development). The
-    # production image does not register the guest module. Do not set
-    # dangerouslyAllowOutsideDevelopment: that flag is what would weaken live.
+    # Guest provider. Until 2026-10-03 it was `yarn start` only (production did not
+    # register the module). RC-1b (founder, 2026-10-03: "open the anonymous lane"):
+    # a visitor whose front-door exchange failed can still speak to /face -- the
+    # sign-in error screen now offers the guest provider as a fallthrough. The voice
+    # door itself is anonymous and rate-limited at the edge
+    # (overlays/oke/httproute.yaml); this session only mounts the SPA.
     guest:
       userEntityRef: user:default/guest
+      dangerouslyAllowOutsideDevelopment: true
   # see https://backstage.io/docs/ai/mcp-actions#client-id-metadata-documents
   # to learn more about client id metadata documents
   clientIdMetadataDocuments:

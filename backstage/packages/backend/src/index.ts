@@ -34,12 +34,14 @@ backend.add(import('@backstage/plugin-techdocs-backend'));
 backend.add(import('@backstage/plugin-auth-backend'));
 // The estate front door signs people in; Backstage trusts its headers (src/auth).
 backend.add(import('./auth'));
-// Official guest provider for `yarn start` only. The production image sets
-// NODE_ENV=production and does not register this module, so the live catalogue
-// stays on the front door. Do not set dangerouslyAllowOutsideDevelopment here.
-if (process.env.NODE_ENV !== 'production') {
-  backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
-}
+// Guest provider. Until 2026-10-03 it was `yarn start` only (production did not
+// register this module). RC-1b (founder, 2026-10-03: "open the anonymous lane"):
+// a visitor whose front-door exchange failed can still speak to /face -- the
+// sign-in error screen offers the guest provider as a fallthrough, and the voice
+// door itself is anonymous and rate-limited at the edge (overlays/oke/httproute.yaml).
+// This session only mounts the SPA; it grants no API authority beyond what the
+// route already lets any Bearer-less visitor do.
+backend.add(import('@backstage/plugin-auth-backend-module-guest-provider'));
 
 // catalog plugin
 backend.add(import('@backstage/plugin-catalog-backend'));
