@@ -115,9 +115,15 @@ jobs:
             bin/idp-router-key holmes minimax
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = newsroom ]; then
-            # The newsroom anchor's own virtual key (platform/voice-router/deploy/external-secret.yaml, crew#974 P3):
-            # it rewrites BREAKING anchor lines only, on the cheap `fast` lane, so that is the only lane on the key.
-            bin/idp-router-key newsroom fast
+            # The newsroom anchor's own virtual key (platform/voice-router/deploy/external-secret.yaml, crew#974 P3).
+            # The lane is `narrate`, NOT `fast`: the key's second argument is the models allow-list, the
+            # director's brain asks the router for model `narrate` (internal/brain/narrate.go,
+            # LLM_NARRATE_MODEL=narrate, llm/config.yaml `model_name: narrate`), and a key scoped to any
+            # other lane is refused at the router -- "key not allowed to access model. This key can only
+            # access models=['fast']. Tried to access narrate" -- so every anchor rewrite fell back to
+            # anchor_by=template and the flood never folded. `narrate` is the free lane (Groq 8B, Cerebras,
+            # SambaNova per llm/config.yaml), so this grants the anchor no paid lane.
+            bin/idp-router-key newsroom narrate
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key
