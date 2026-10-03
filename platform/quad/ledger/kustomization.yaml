@@ -3,4 +3,4 @@ kind: Kustomization
 # no `namespace:` transformer here: it would rewrite exception.yaml into quad, where Kyverno never
 # reads it (crew#325 -- exceptions are honoured from namespace kyverno only). Same reason
 # platform/healing/analyzer/kustomization.yaml carries this note.
-resources: [ledger.yaml, exception.yaml]
+resources: [ledger.yaml]
