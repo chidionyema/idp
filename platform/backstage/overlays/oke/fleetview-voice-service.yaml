@@ -15,6 +15,11 @@ metadata:
   labels:
     app.kubernetes.io/name: catalogue
     app.kubernetes.io/part-of: idp
+    # Kyverno require-catalogue-entity: the door IS a part of the catalogue entity, so
+    # the same label the catalogue HTTPRoute + Service carry names it. Without this label
+    # Flux's backstage dry-run fails ("service-names-its-entity") and the anonymous lane
+    # stays unwired even though every other surface for the catalogue is live.
+    backstage.io/kubernetes-id: founder-catalogue
 spec:
   selector:
     app.kubernetes.io/name: catalogue
