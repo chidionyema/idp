@@ -378,34 +378,23 @@ model_list:
   # third accounts, so a 429 on one class never cools the other. Answers are one or two sentences by
   # the operator's own brief: max_tokens is small and the timeout is a turn, not a job. rpm sits under
   # every vendor's free ceiling so the router refuses locally before the vendor does.
+  # Measured 2026-10-02 from the founder's felt latency ("takes forever or router times out, totally unusable"):
+  # the brain leg took 15.9s of a 16.6s turn. All three free rungs were gpt-oss-120b, a REASONING model on
+  # every vendor -- it thinks before it speaks, so the first spoken token waits for the hidden chain; the
+  # groq and cerebras keys 403'd from this network and sambanova's gpt-oss streamed first content ~14s in.
+  # MiniMax-M3, same prompt, same night, through this same router: first content 1.32-1.96s. The lane that
+  # answers is the interactive lane; the free rungs stay one hop away in the chain below
+  # (voice: [narrate, fast, groq]), so a MiniMax outage degrades to free lanes, never to silence. Cost at
+  # the 4k-token voice prompt is ~$0.001 a call, inside the $3/day litellm budget.
   - model_name: voice
     litellm_params:
-      model: openai/openai/gpt-oss-120b
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY
+      model: openai/MiniMax-M3
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/MINIMAX_API_KEY
       timeout: 8
       max_tokens: 96
-      rpm: 20
-    model_info:
-      max_input_tokens: 131072
-  - model_name: voice
-    litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: https://api.cerebras.ai/v1
-      api_key: os.environ/CEREBRAS_API_KEY_2
-      timeout: 8
-      max_tokens: 96
-      rpm: 20
-    model_info:
-      max_input_tokens: 65536
-  - model_name: voice
-    litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: https://api.sambanova.ai/v1
-      api_key: os.environ/SAMBANOVA_API_KEY_2
-      timeout: 8
-      max_tokens: 96
-      rpm: 20
+      rpm: 30
+      input_cost_per_token: 0.0000003
     model_info:
       max_input_tokens: 131072
   # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). An 8B

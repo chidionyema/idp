@@ -1,0 +1,123 @@
+description: 'The founder''s spoken turn waited 15.9s for its first spoken clause
+  (16.6s turn, reported as "takes forever or router times out, totally unusable")
+  on the voice alias, which was three gpt-oss-120b rungs. Question: is the 15.9s the
+  reasoning model''s hidden chain blocking the first content token, the dead-rung
+  fallback chain adding retry delay (groq and cerebras 403''d from this network tonight),
+  or backend/client slowness (fleetview prompt assembly, /sessions)? Fixed before
+  reading tonight''s measurements.'
+hypotheses:
+- name: H1
+  description: the alias serves a REASONING model on every rung, so the first spoken
+    token waits for the hidden chain-of-thought to finish; swap the rung to a non-reasoning
+    model and first content drops under ~2s with every other layer identical
+  prior: 0.5
+- name: H2
+  description: the fallback chain\'s dead rungs (auth 403s) add retry delay before
+    the live rung is reached; the model itself is fast and the delay is additive failover
+    time
+  prior: 0.3
+- name: H3
+  description: the backend/client is slow (fleetview fleet_summary/catalog prompt
+    build, /sessions, SSE assembly); no model or chain change would fix it
+  prior: 0.2
+evidence:
+- name: direct single-rung calls, same 4k-token voice prompt, no chain, no failover,
+    no backend (streamed straight at the router)
+  observed:
+    nonreasoning_under_2_1s: 2
+    reasoning_over_10s: 1
+  likelihoods:
+    H1:
+      nonreasoning_under_2_1s: 0.85
+      reasoning_over_10s: 0.85
+    H2:
+      nonreasoning_under_2_1s: 0.7
+      reasoning_over_10s: 0.3
+    H3:
+      nonreasoning_under_2_1s: 0.7
+      reasoning_over_10s: 0.3
+- name: production voice alias through the full chain, before vs after the swap (3x
+    gpt-oss rungs vs 1x MiniMax-M3 rung), same live prompt
+  observed:
+    chain_reasoning_over_10s: 1
+    chain_nonreasoning_under_2_1s: 3
+  likelihoods:
+    H1:
+      chain_reasoning_over_10s: 0.85
+      chain_nonreasoning_under_2_1s: 0.85
+    H2:
+      chain_reasoning_over_10s: 0.6
+      chain_nonreasoning_under_2_1s: 0.4
+    H3:
+      chain_reasoning_over_10s: 0.5
+      chain_nonreasoning_under_2_1s: 0.5
+- name: rung health probed directly tonight (voice-reachable rungs)
+  observed:
+    fast_200: 1
+    slow_200: 1
+    auth_403: 2
+  likelihoods:
+    H1:
+      fast_200: 0.25
+      slow_200: 0.45
+      auth_403: 0.3
+    H2:
+      fast_200: 0.1
+      slow_200: 0.2
+      auth_403: 0.7
+    H3:
+      fast_200: 0.7
+      slow_200: 0.2
+      auth_403: 0.1
+- name: backend legs measured while the symptom was present and after (/sessions,
+    /healthz on fleetview :18790)
+  observed:
+    backend_leg_under_half_second: 2
+    backend_leg_over_2s: 0
+  likelihoods:
+    H1:
+      backend_leg_under_half_second: 0.8
+      backend_leg_over_2s: 0.2
+    H2:
+      backend_leg_under_half_second: 0.7
+      backend_leg_over_2s: 0.3
+    H3:
+      backend_leg_under_half_second: 0.2
+      backend_leg_over_2s: 0.8
+- name: the direct gpt-oss sambanova stream showed token activity before the first
+    CONTENT token (reasoning channel emitting), vs silence-then-content (retry signature)
+  observed:
+    tokens_before_content: 1
+    silence_then_content: 0
+  likelihoods:
+    H1:
+      tokens_before_content: 0.9
+      silence_then_content: 0.1
+    H2:
+      tokens_before_content: 0.2
+      silence_then_content: 0.8
+    H3:
+      tokens_before_content: 0.3
+      silence_then_content: 0.7
+- name: elapsed time to each dead rung's 403 verdict in the direct probes (H2 needs
+    slow retries to account for ~14 additive seconds)
+  observed:
+    immediate_under_2s: 2
+    delayed_over_5s: 0
+  likelihoods:
+    H1:
+      immediate_under_2s: 0.7
+      delayed_over_5s: 0.3
+    H2:
+      immediate_under_2s: 0.2
+      delayed_over_5s: 0.8
+    H3:
+      immediate_under_2s: 0.5
+      delayed_over_5s: 0.5
+n_eff_divisor: 2
+posteriors:
+  H1: 0.9883110066
+  H2: 0.009123305
+  H3: 0.0025656884
+winner: H1
+computed_at: '2026-10-03T00:49:57Z'
