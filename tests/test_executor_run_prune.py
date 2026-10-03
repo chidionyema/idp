@@ -146,3 +146,86 @@ def test_status_reports_exit_not_recycled_pid(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "exited 0" in out
     assert "RUNNING" not in out
+
+
+def test_status_single_record_answers_with_a_verdict(tmp_path, monkeypatch, capsys):
+    """`run --status <name>` must state the job's condition, not dump internals.
+
+    Measured 2026-10-03: for a job dead 27 hours with no exit file it printed the bare
+    `pidfile 62142  log /path` line and returned 0 -- a reader cannot tell finished from
+    running from vanished. The single-record path did not consult the exit file or the pid
+    at all; only the list path did, so the two could disagree about the same record.
+    """
+    run = _load_run_module(tmp_path, monkeypatch)
+    (tmp_path / "finished.pid").write_text(
+        "1"
+    )  # alive pid: the old ordering would say RUNNING
+    (tmp_path / "finished.log").write_text("done\n")
+    (tmp_path / "finished.exit").write_text("0")
+
+    assert run.status("finished") == 0
+    out = capsys.readouterr().out
+    assert out.startswith("exited 0"), f"a verdict must come first, got: {out!r}"
+    assert "RUNNING" not in out, "a recorded exit outranks a live pid"
+
+
+def test_status_single_record_vanished_job_is_gone(tmp_path, monkeypatch, capsys):
+    """No exit file and a pid that is not alive: the job vanished. Say so, do not crash."""
+    run = _load_run_module(tmp_path, monkeypatch)
+    (tmp_path / "vanished.pid").write_text("999999")  # beyond any real pid
+    (tmp_path / "vanished.log").write_text("partial\n")
+
+    assert run.status("vanished") == 0
+    out = capsys.readouterr().out
+    assert out.startswith("gone"), f"expected a gone verdict, got: {out!r}"
+
+
+def test_status_single_record_unknown_name_does_not_crash(
+    tmp_path, monkeypatch, capsys
+):
+    """An unknown name is answered, not raised: no record may produce a traceback.
+
+    `_state` reads the pid file, so an unguarded read turned `--status typo` into
+    FileNotFoundError and exit 1. It must read as a verdict with nothing known.
+    """
+    run = _load_run_module(tmp_path, monkeypatch)
+
+    assert run.status("no-such-job") == 0
+    out = capsys.readouterr().out
+    assert out.startswith("gone"), f"expected a gone verdict, got: {out!r}"
+    assert "pid -" in out
+
+
+def test_pid_of_refuses_junk(tmp_path, monkeypatch):
+    """A pid is evidence only when it parses as an integer above 1.
+
+    An unparseable pid file is no evidence, never a live job -- the whole failure mode here is
+    an unreadable number reading as RUNNING.
+    """
+    run = _load_run_module(tmp_path, monkeypatch)
+    for junk in ("", "   ", "not-a-number", "0", "1", "-5"):
+        (tmp_path / "junk.pid").write_text(junk)
+        assert run._pid_of(tmp_path / "junk.pid") == 0, f"{junk!r} must be no evidence"
+    (tmp_path / "real.pid").write_text("4242")
+    assert run._pid_of(tmp_path / "real.pid") == 4242
+    assert run._pid_of(tmp_path / "absent.pid") == 0, "a missing file is no evidence"
+
+
+def test_list_and_single_paths_agree(tmp_path, monkeypatch, capsys):
+    """Both paths must reach the same verdict for the same record -- one fact, one answer.
+
+    The defect was one fact computed twice: the list path consulted the exit file first and
+    the single path did not. They now share `_state`, and this pins that.
+    """
+    run = _load_run_module(tmp_path, monkeypatch)
+    (tmp_path / "shared.pid").write_text("1")
+    (tmp_path / "shared.log").write_text("done\n")
+    (tmp_path / "shared.exit").write_text("0")
+
+    assert run.status(None) == 0
+    listed = capsys.readouterr().out
+    assert run.status("shared") == 0
+    single = capsys.readouterr().out
+    assert "exited 0" in listed and "exited 0" in single, (
+        f"list and single must agree: {listed!r} vs {single!r}"
+    )

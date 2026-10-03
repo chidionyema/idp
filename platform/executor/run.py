@@ -261,12 +261,48 @@ def prune(keep_secs: int = _KEEP_SECS) -> int:
     return reaped
 
 
+def _pid_of(pidf: Path) -> int:
+    """The pid this record names, or 0 when it names none.
+
+    A pid is only evidence if it parses as a real integer above 1. An unreadable or
+    unparseable pid file is treated as NO evidence -- never as a live job, which is the
+    failure `run --status` made on 2026-10-02 when a recycled pid read as RUNNING.
+    """
+    try:
+        pid = int(pidf.read_text().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+    return pid if pid > 1 else 0
+
+
+def _state(exitf: Path, pidf: Path) -> str:
+    """The one verdict for a run record, in the one order that is honest.
+
+    THE EXIT FILE DECIDES FIRST, always. `kill -0` on a recycled pid reports a stranger's
+    process as OUR running job -- measured 2026-10-02, `run --status` called 4,851 finished
+    jobs RUNNING for exactly this reason. A recorded exit means the job is over, whatever the
+    pid now names, so that is checked before the pid is consulted at all.
+    """
+    if exitf.exists():
+        return f"exited {exitf.read_text().strip()}"
+    if _alive(_pid_of(pidf)):
+        return "RUNNING"
+    return "gone"
+
+
 def status(one: str | None) -> int:
     if one:
-        log, pidf, _ = _paths(one)
-        pid = pidf.read_text().strip() if pidf.exists() else "-"
-        print(f"pidfile {pid}  log {log}")
-        print(_tail_text(log, 5))
+        log, pidf, exitf = _paths(one)
+        # One record gets the same verdict as the list, and it must not read as a crash dump:
+        # `run --status <name>` is how a person asks whether THEIR job finished, so it answers
+        # with a state first (measured 2026-10-03: it printed the bare `pidfile N log /path`
+        # line for a job dead 27 hours with no exit file -- no verdict at all).
+        state = _state(exitf, pidf)
+        pid = _pid_of(pidf) or "-"
+        lines = len(log.read_text(errors="replace").splitlines()) if log.exists() else 0
+        print(f"{state}  pid {pid}  {lines} log lines")
+        if lines:
+            print(_tail_text(log, 5))
         return 0
     if not RUNS.exists():
         print("nothing has been run")
@@ -274,16 +310,7 @@ def status(one: str | None) -> int:
     for pidf in sorted(RUNS.glob("*.pid")):
         name = pidf.stem
         log, _, exitf = _paths(name)
-        # THE EXIT FILE DECIDES FIRST. `kill -0` on a recycled pid reports a stranger's process as
-        # OUR running job -- measured 2026-10-02, `run --status` called 4,851 finished jobs RUNNING
-        # for exactly this reason. A recorded exit means the job is over, whatever the pid now
-        # names, so that is checked before the pid is consulted at all.
-        if exitf.exists():
-            state = f"exited {exitf.read_text().strip()}"
-        elif _alive(int(pidf.read_text().strip() or 0)):
-            state = "RUNNING"
-        else:
-            state = "gone"
+        state = _state(exitf, pidf)
         lines = len(log.read_text(errors="replace").splitlines()) if log.exists() else 0
         print(f"  {name:<24} {state:<12} {lines} log lines")
     return 0
