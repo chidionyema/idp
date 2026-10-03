@@ -100,24 +100,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: revert the image tag through a lane PR (never hand-applied)
+      - name: revert the image tag through a lane (never a hand-raised PR)
         env:
           GH_TOKEN: ${{ github.token }}
-          FLUX_REPO: chidionyema/flux
-          FLUX_BRANCH: image-updates
           DIGEST: ${{ needs.battery.outputs.digest }}
         run: |
           set -eu
-          git clone --depth 20 --branch "$FLUX_BRANCH" "https://x-access-token:${GH_TOKEN}@github.com/${FLUX_REPO}.git" flux
-          cd flux
-          # the update to revert: the newest commit that changed an image tag, i.e. what
-          # deploy-when-green landed to ship the digest this verdict is bound to.
-          target=$(git log -20 --format='%H' -- . | head -20 | while read -r sha; do
-            if git show -s --format='%s' "$sha" | grep -qiE 'image|tag|update'; then echo "$sha"; break; fi
-          done)
+          # Measured 2026-10-03: chidionyema/flux does not exist and flux/image-updates is
+          # auto-deleted after each merge -- the image-update commits live on THIS repo's main
+          # (e.g. "platform: image update -> main-13890-..."). Clone main, find the newest one,
+          # revert it onto a lane, and let the Greenlane raise the PR and land it (a hand-raised
+          # PR is refused and relaned; the engine is the only PR author).
+          git clone --depth 50 "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+          cd repo
+          target=$(git log -50 --format='%H %s' | grep -iE 'image update' | head -1 | cut -d' ' -f1 || true)
           if [ -z "$target" ]; then
-            echo "NO REVERT TARGET — the last image-updates commits touch no tag. Filing red instead of guessing."
-            gh api "repos/chidionyema/crew/issues/1019/comments" -f body="**verdict/surfaces rollback**: fresh deploy graded FAIL but no image-tag commit to revert (digest $DIGEST). A human-visible defect, not a silent pass." || true
+            echo "NO REVERT TARGET -- no image-update commit in the last 50 on main. Filing red instead of guessing."
+            gh api "repos/chidionyema/crew/issues/1019/comments" -f body="**verdict/surfaces rollback**: fresh deploy graded FAIL but no image-update commit to revert (digest $DIGEST). A human-visible defect, not a silent pass." || true
             exit 1
           fi
           lane="lane/revert-surfaces-$(date -u +%Y%m%d%H%M%S)"
@@ -125,6 +124,4 @@ jobs:
           git config user.email "verdict-surfaces@users.noreply.github.com"
           git revert --no-edit "$target"
           git push origin "HEAD:$lane"
-          gh pr create --repo "$FLUX_REPO" --base "$FLUX_BRANCH" --head "$lane" \
-            --title "revert $target: verdict-surfaces graded the fresh deploy FAIL" \
-            --body "Automatic revert raised by verdict-surfaces (idp actions run ${{ github.run_id }}). The surfaces battery graded the deployment this tag shipped as FAIL; merge-when-green lands this, Flux converges, and the next hourly verdict must return to PASS. Digest under test: $DIGEST."
+          gh api "repos/chidionyema/crew/issues/1019/comments" -f body="**verdict/surfaces rollback**: fresh deploy graded FAIL; revert lane \`$lane\` pushed (reverts $target, digest $DIGEST). The Greenlane proves it green on main and lands it; the next dispatched verdict must return to PASS." || true
