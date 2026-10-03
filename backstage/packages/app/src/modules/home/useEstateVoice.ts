@@ -88,6 +88,57 @@ const FLEETVIEW = 'plugin://proxy/fleetview';
 const TTS_RATE = 24000;
 
 /**
+ * WHY THE MICROPHONE'S REFUSAL MUST BE NAMED, NOT SUMMARIZED (2026-10-03).
+ *
+ * The founder spent eight hours with voice dead on catalogue.mumchimp.com while the surface
+ * said only "microphone blocked — allow it for this site". That sentence guesses ONE cause
+ * (the site setting) and is wrong for the two that actually hold a Mac hostage:
+ *
+ *   Chrome has the SITE on Block   -> the browser NEVER re-prompts; retrying does nothing,
+ *                                     and the fix is the padlock icon left of the URL.
+ *   macOS has CHROME on Block      -> getUserMedia rejects before any prompt, the site setting
+ *                                     reads "prompt" and looks innocent; the fix is System
+ *                                     Settings → Privacy & Security → Microphone.
+ *
+ * Both throw the same NotAllowedError, so the message cannot be chosen from the exception — it
+ * is chosen from the browser's own permission state, which is what this helper reads. The
+ * secure-context check comes first because on an insecure origin the permission state lies
+ * (mediaDevices does not even exist) and the only fix is the URL.
+ *
+ * Returns null when nothing is wrong; the caller proceeds with the mic.
+ */
+async function micBlocker(): Promise<string | null> {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    return 'microphone unavailable: this page is not on https — open it over https://catalogue.mumchimp.com, never an http:// or raw-IP address';
+  }
+  try {
+    const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+    if (p.state === 'denied') {
+      return 'microphone blocked by this site’s setting — click the padlock/tune icon LEFT OF THE ADDRESS BAR → Microphone → Allow → reload (chrome://settings/content/microphone to check the Not-allowed list)';
+    }
+    if (p.state === 'granted') return null;
+    // "prompt" + a refusal moments later means the refusal happened OUTSIDE the browser’s
+    // per-site memory: on macOS that is the OS refusing Chrome the microphone.
+    return null;
+  } catch {
+    // Safari and Firefox do not implement the microphone permission query; the caller falls
+    // back to the refusal-time message below.
+    return null;
+  }
+}
+
+/**
+ * The refusal-time companion to `micBlocker`: the mic WAS just refused, so if the per-site
+ * state still says "prompt" the block is not the site’s — it is the OS refusing the browser
+ * itself, and no amount of site-allowing will clear it.
+ */
+async function micRefusalDetail(): Promise<string> {
+  const blocked = await micBlocker();
+  if (blocked) return blocked;
+  return 'microphone blocked by macOS, not the site — System Settings → Privacy & Security → Microphone → turn Chrome ON, then restart Chrome and reload this page';
+}
+
+/**
  * Where a spoken clause goes when a face is on screen. The estate face (faceEngine.ts) plays the
  * clause itself so its lips move to the exact audio; without one, `play()` below schedules it on
  * the voice's own context as before. One sink at a time: the face that mounted last owns it.
@@ -588,6 +639,14 @@ export function useEstateVoice(): EstateVoice {
   );
 
   const start = useCallback(async () => {
+    // PRE-FLIGHT: the two causes a retried click can never clear, named BEFORE the voice
+    // libraries load, so the founder reads the fix in milliseconds instead of after a download.
+    const preBlocked = await micBlocker();
+    if (preBlocked) {
+      setState('error');
+      setDetail(preBlocked);
+      return;
+    }
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
     if (!libs.ok) {
@@ -662,12 +721,16 @@ export function useEstateVoice(): EstateVoice {
     } catch (e: any) {
       setState('error');
       const msg = String(e?.message || e);
-      // NAME THE REAL CAUSE. A microphone the browser declined is the common one here and is
-      // fixed by granting permission, not by reloading or by editing code.
+      // NAME THE REAL CAUSE, IN THE FOUNDER’S WORDS. A refusal is one of three different
+      // blockers (site setting, macOS refusing the browser, insecure origin) and each has a
+      // different 30-second fix. Measured 2026-10-03: eight hours were lost to a message that
+      // named only one of the three.
       setDetail(
         /permission|denied|notallowed/i.test(msg)
-          ? 'microphone blocked — allow it for this site, then try again'
-          : `microphone failed: ${msg}`,
+          ? await micRefusalDetail()
+          : /notfound|device/i.test(msg)
+            ? 'no microphone found — connect one, or check macOS → System Settings → Sound → Input'
+            : `microphone failed: ${msg}`,
       );
     }
   }, [runTurn, silence]);
