@@ -25,20 +25,28 @@ TEXT_HOOKS = {
     "SpatialCanvas": "canvas",
 }
 # Containers of other panels, not themselves mounted panels on /fleet.
-SKIP = {"FleetReactorOriginal"}  # mounted on /fleet-original, verified by its own testid there
+SKIP = {
+    "FleetReactorOriginal"
+}  # mounted on /fleet-original, verified by its own testid there
 # Interaction-triggered panels: NOT present on load; their generated test drives the real
 # interaction (click an agent -> dialog -> Escape releases it).
-TRIGGERED = {"Spotlight", "RadialMenu"}  # RadialMenu: scrim only exists while the menu is open; opened by right-click
+TRIGGERED = {
+    "Spotlight",
+    "RadialMenu",
+}  # RadialMenu: scrim only exists while the menu is open; opened by right-click
 
 
 def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=True
+    ).stdout
 
 
 def _imports(src: str, base: str) -> set[str]:
     """Resolve relative imports in a source file to repo paths (best effort)."""
     out = set()
     import posixpath
+
     d = base.rsplit("/", 1)[0]
     for m in re.finditer(r"from '(\.[^']+)'|import\('(\.[^']+)'", src):
         rel = m.group(1) or m.group(2)
@@ -68,7 +76,8 @@ def _reachable_from(entry: str) -> set[str]:
 
 def main() -> int:
     files = [
-        f for f in _git("ls-tree", "-r", "HEAD", "--name-only", _UI).splitlines()
+        f
+        for f in _git("ls-tree", "-r", "HEAD", "--name-only", _UI).splitlines()
         if f.endswith(".tsx") and not f.endswith(".test.tsx")
     ]
     entries = []
@@ -99,12 +108,21 @@ def main() -> int:
             entries.append((name, f'[aria-label="{m.group(1)}"]', "testid"))
             continue
         if name in TEXT_HOOKS:
-            entries.append((name, TEXT_HOOKS[name], "text" if "canvas" not in TEXT_HOOKS[name] else "tag"))
+            entries.append(
+                (
+                    name,
+                    TEXT_HOOKS[name],
+                    "text" if "canvas" not in TEXT_HOOKS[name] else "tag",
+                )
+            )
             continue
         gaps.append(name)
 
     if gaps:
-        print(f"// GENERATION FAILED — panels without a verifiable signature: {gaps}", file=sys.stderr)
+        print(
+            f"// GENERATION FAILED — panels without a verifiable signature: {gaps}",
+            file=sys.stderr,
+        )
         return 1
 
     # /fleet-original keeps its own route with its own presence assertion — the "before"
@@ -211,7 +229,10 @@ test.describe('/fleet-original: the before picture beside the rewrite', () => {{
   }});
 }});
 """)
-    print(f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}", file=sys.stderr)
+    print(
+        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}",
+        file=sys.stderr,
+    )
     return 0
 
 
