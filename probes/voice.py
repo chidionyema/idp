@@ -31,7 +31,11 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCRIPTS = [  # (fixture, expected transcript, must-appear facts in the answer)
     ("fleet-status.wav", "what is the fleet doing right now", ("agent",)),
     ("stuck-agents.wav", "which agents are stuck", ("stuck", "idle")),
-    ("spend-today.wav", "how much did the fleet spend today", ("spend", "cost", "lifetime", "not today")),
+    (
+        "spend-today.wav",
+        "how much did the fleet spend today",
+        ("spend", "cost", "lifetime", "not today"),
+    ),
 ]
 
 
@@ -56,7 +60,9 @@ def _resample(pcm: bytes, src: int, dst: int) -> bytes:
     return struct.pack(f"<{m}f", *out)
 
 
-def _post(url: str, data: bytes, ctype: str = "application/octet-stream", timeout: int = 45):
+def _post(
+    url: str, data: bytes, ctype: str = "application/octet-stream", timeout: int = 45
+):
     headers = {"Content-Type": ctype}
     tok = os.environ.get("PROVER_TOKEN")
     if tok:
@@ -75,19 +81,30 @@ def _get(url: str, timeout: int = 45):
         return r.status, r.read()
 
 
-def conversation(base: str, wav: Path, expect_stt: str, must_appear: tuple[str, ...]) -> list[dict]:
+def conversation(
+    base: str, wav: Path, expect_stt: str, must_appear: tuple[str, ...]
+) -> list[dict]:
     lines: list[dict] = []
 
     def grade(name, expected, got, ok):
-        lines.append({"name": f"voice4.{name}", "expected": expected, "actual": got, "ok": ok})
+        lines.append(
+            {"name": f"voice4.{name}", "expected": expected, "actual": got, "ok": ok}
+        )
 
     # --- hear: real speech in, transcript out ---
     try:
-        st, body = _post(f"{base}/voice/hear?author=surfaces-verify&session_id=verify-surfaces", _f32(wav))
+        st, body = _post(
+            f"{base}/voice/hear?author=surfaces-verify&session_id=verify-surfaces",
+            _f32(wav),
+        )
         j = json.loads(body)
         text = (j.get("text") or "").strip().lower()
-        grade("stt", f"transcript contains '{expect_stt}'", f"'{text}' in {j.get('asr_seconds')}s ({j.get('asr_engine')})",
-              st == 200 and expect_stt in text)
+        grade(
+            "stt",
+            f"transcript contains '{expect_stt}'",
+            f"'{text}' in {j.get('asr_seconds')}s ({j.get('asr_engine')})",
+            st == 200 and expect_stt in text,
+        )
     except Exception as e:  # noqa: BLE001
         grade("stt", "200 + transcript", f"unreachable: {type(e).__name__}", False)
 
@@ -100,10 +117,13 @@ def conversation(base: str, wav: Path, expect_stt: str, must_appear: tuple[str, 
     for _attempt in (1, 2):
         clauses, why, diag, st = [], "", "", 0
         try:
-            st, body = _post(f"{base}/voice/stream", json.dumps({"question": expect_stt, "history": []}).encode(),
-                             "application/json")
+            st, body = _post(
+                f"{base}/voice/stream",
+                json.dumps({"question": expect_stt, "history": []}).encode(),
+                "application/json",
+            )
             raw = body.decode("utf-8", "replace").replace("\r", "")
-            for m in re.finditer(r'^data: (\{.*\})$', raw, re.M):
+            for m in re.finditer(r"^data: (\{.*\})$", raw, re.M):
                 try:
                     d = json.loads(m.group(1))
                 except json.JSONDecodeError:
@@ -120,32 +140,53 @@ def conversation(base: str, wav: Path, expect_stt: str, must_appear: tuple[str, 
             diag = f"unreachable: {type(e).__name__}"
             time.sleep(2)
     answer = " ".join(clauses).lower()
-    hit = any(w in answer for w in must_appear)  # any fact word; the brain may answer honestly
-    grade("brain", f"SSE answer contains any {must_appear}", f"{len(clauses)} clauses; {answer[:140] or diag}",
-          st == 200 and len(clauses) >= 2 and hit)
-    grade("brain.routing", "why line names model+region", why[:120] or diag, bool(why) and len(why) > 5)
+    hit = any(
+        w in answer for w in must_appear
+    )  # any fact word; the brain may answer honestly
+    grade(
+        "brain",
+        f"SSE answer contains any {must_appear}",
+        f"{len(clauses)} clauses; {answer[:140] or diag}",
+        st == 200 and len(clauses) >= 2 and hit,
+    )
+    grade(
+        "brain.routing",
+        "why line names model+region",
+        why[:120] or diag,
+        bool(why) and len(why) > 5,
+    )
 
     # --- say + hear-back: the estate speaks, then understands itself ---
     said = clauses[0] if clauses else "The fleet is running."
     try:
-        st, pcm = _post(f"{base}/voice/say", json.dumps({"text": said}).encode(), "application/json")
-        real_audio = st == 200 and len(pcm) > 20_000  # ~1s of 16k f32; shorter is not speech
+        st, pcm = _post(
+            f"{base}/voice/say", json.dumps({"text": said}).encode(), "application/json"
+        )
+        real_audio = (
+            st == 200 and len(pcm) > 20_000
+        )  # ~1s of 16k f32; shorter is not speech
         grade("tts", "real PCM > 20KB for one clause", f"{len(pcm)}B", real_audio)
         if real_audio:
             back = None
             for src in (24_000, 16_000):  # try Cartesia rate then ASR rate
                 try:
-                    st2, body2 = _post(f"{base}/voice/hear?author=surfaces-verify&session_id=verify-back",
-                                       _resample(pcm, src, 16_000))
+                    st2, body2 = _post(
+                        f"{base}/voice/hear?author=surfaces-verify&session_id=verify-back",
+                        _resample(pcm, src, 16_000),
+                    )
                     back = (json.loads(body2).get("text") or "").strip().lower()
                     if back:
                         break
                 except Exception:  # noqa: BLE001
                     continue
             words = [w for w in re.findall(r"[a-z']+", said.lower()) if len(w) > 3][:4]
-            words += re.findall(r"\d+", said)  # TTS speaks 427 as words; STT may return digits
+            words += re.findall(
+                r"\d+", said
+            )  # TTS speaks 427 as words; STT may return digits
             ok_back = bool(back) and sum(w in back for w in words) >= 2
-            grade("hearback", f"STT of own TTS recognises {words}", f"'{back}'", ok_back)
+            grade(
+                "hearback", f"STT of own TTS recognises {words}", f"'{back}'", ok_back
+            )
     except Exception as e:  # noqa: BLE001
         grade("tts", "PCM", f"unreachable: {type(e).__name__}", False)
     return lines
@@ -160,7 +201,11 @@ def main(argv: list[str]) -> int:
         _get(f"{base}/healthz", timeout=10)
     except Exception:  # noqa: BLE001
         alive = False
-    print(("PASS" if alive else "FAIL") + "  voice4.liveness  expected=healthz 200 got=" + ("ok" if alive else "unreachable"))
+    print(
+        ("PASS" if alive else "FAIL")
+        + "  voice4.liveness  expected=healthz 200 got="
+        + ("ok" if alive else "unreachable")
+    )
     if not alive:
         return 1
 
@@ -176,11 +221,17 @@ def main(argv: list[str]) -> int:
     fails = 0
     t0 = time.time()
     for i, (fx, stt, words) in enumerate(scripts, 1):
-        for line in conversation(base, FIXTURES / fx if (FIXTURES / fx).exists() else wav, stt, words):
+        for line in conversation(
+            base, FIXTURES / fx if (FIXTURES / fx).exists() else wav, stt, words
+        ):
             verdict = "PASS" if line["ok"] else "FAIL"
             fails += 0 if line["ok"] else 1
-            print(f"{verdict}  {line['name']}[{i}]  expected={line['expected']} got={line['actual']}")
-    print(f"conversations={len(scripts)} legs_graded={fails and '' or ''}{len(scripts) * 5 - fails if alive else 0}/{len(scripts) * 5} pass  wall={time.time() - t0:.0f}s")
+            print(
+                f"{verdict}  {line['name']}[{i}]  expected={line['expected']} got={line['actual']}"
+            )
+    print(
+        f"conversations={len(scripts)} legs_graded={fails and '' or ''}{len(scripts) * 5 - fails if alive else 0}/{len(scripts) * 5} pass  wall={time.time() - t0:.0f}s"
+    )
     return 1 if fails else 0
 
 
