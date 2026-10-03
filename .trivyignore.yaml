@@ -49,6 +49,62 @@ misconfigurations:
     statement: >-
       As KSV-0009 above: the hostPath mounts are how calico-node writes the CNI binary and config
       onto the node.
+
+  # -------------------------------------------------- the Flannel->Calico migration kit (dated)
+  # platform/calico/raw-migration/ is not a second copy of raw/: it is upstream calico.yaml with
+  # four migration edits -- calico_backend vxlan instead of bird, a nodeSelector on
+  # projectcalico.org/node-network-during-migration, and bird-live/bird-ready dropped from the
+  # probes -- plus the migration controller RBAC and the flannel-migration-config ConfigMap that
+  # holds flannel's subnet.env. Measured 2026-10-03: flannel is still the live CNI (kube-flannel-ds
+  # Running on both nodes, 4d4h) and the migration has not started (no node carries the label; the
+  # ConfigMap does not exist). The kit is prepared work for work still to come, so it is kept.
+  # The waiver dies when the migration runs or is abandoned: running it moves these findings onto
+  # the raw/ entries above, abandoning it deletes the directory. Either way it goes red again.
+  - id: KSV-0009   # host network
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      A CNI cannot program the node's network from inside a pod sandbox; hostNetwork is part of
+      what calico-node is. As the structural raw/ entry above, and dated for the reason given.
+    expired_at: 2027-03-31
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      As KSV-0009 above, upstream Calico bytes carrying the four migration edits.
+    expired_at: 2027-03-31
+  - id: KSV-0017   # privileged
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      As KSV-0009 above: calico-node from the upstream manifest.
+    expired_at: 2027-03-31
+  - id: KSV-0046   # manage all resources
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      The flannel migration controller watches, lists, gets, patches and updates Nodes -- it
+      rewrites each node's podCIDR and the flannel subnet.env as that node moves onto Calico. The
+      broad verbs are the migration, and the file is inert until an operator applies it.
+    expired_at: 2027-03-31
+  - id: KSV-0046   # manage all resources
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      The calico-kube-controllers ClusterRole in the same migration copy, carried verbatim from
+      upstream. As the structural raw/ KSV-0046 entry, and dated for the reason given above.
+    expired_at: 2027-03-31
+
+  # ------------------------------------------- a BPF LSM daemon cannot be unprivileged (structural)
+  - id: KSV-0005   # SYS_ADMIN capability added
+    paths: ["deploy/production-agent-pod.yaml"]
+    statement: >-
+      The dros-daemon container loads a BPF LSM program
+      (DROS_BPF_OBJECT=/opt/dros/dros_enforce.bpf.o); loading BPF and attaching it to an LSM hook
+      requires CAP_BPF + CAP_SYS_ADMIN, which the kernel grants only to a privileged container.
+      The rest of the pod already runs restricted -- the Namespace enforces
+      pod-security.kubernetes.io/enforce: restricted, and the pod drops ALL, sets
+      allowPrivilegeEscalation: false and readOnlyRootFilesystem. Only the daemon that does the
+      enforcement is privileged, which is that enforcement.
+  - id: KSV-0017   # privileged
+    paths: ["deploy/production-agent-pod.yaml"]
+    statement: >-
+      As KSV-0005 above: the same BPF LSM daemon.
   - id: KSV-0056   # manage kubernetes networking
     paths: ["platform/calico/raw/rbac.yaml"]
     statement: >-
