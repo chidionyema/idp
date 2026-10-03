@@ -25,20 +25,28 @@ TEXT_HOOKS = {
     "SpatialCanvas": "canvas",
 }
 # Containers of other panels, not themselves mounted panels on /fleet.
-SKIP = {"FleetReactorOriginal"}  # mounted on /fleet-original, verified by its own testid there
+SKIP = {
+    "FleetReactorOriginal"
+}  # mounted on /fleet-original, verified by its own testid there
 # Interaction-triggered panels: NOT present on load; their generated test drives the real
 # interaction (click an agent -> dialog -> Escape releases it).
-TRIGGERED = {"Spotlight", "RadialMenu"}  # RadialMenu: scrim only exists while the menu is open; opened by right-click
+TRIGGERED = {
+    "Spotlight",
+    "RadialMenu",
+}  # RadialMenu: scrim only exists while the menu is open; opened by right-click
 
 
 def _git(*args: str) -> str:
-    return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+    return subprocess.run(
+        ["git", *args], capture_output=True, text=True, check=True
+    ).stdout
 
 
 def _imports(src: str, base: str) -> set[str]:
     """Resolve relative imports in a source file to repo paths (best effort)."""
     out = set()
     import posixpath
+
     d = base.rsplit("/", 1)[0]
     for m in re.finditer(r"from '(\.[^']+)'|import\('(\.[^']+)'", src):
         rel = m.group(1) or m.group(2)
@@ -68,7 +76,8 @@ def _reachable_from(entry: str) -> set[str]:
 
 def main() -> int:
     files = [
-        f for f in _git("ls-tree", "-r", "HEAD", "--name-only", _UI).splitlines()
+        f
+        for f in _git("ls-tree", "-r", "HEAD", "--name-only", _UI).splitlines()
         if f.endswith(".tsx") and not f.endswith(".test.tsx")
     ]
     entries = []
@@ -99,12 +108,21 @@ def main() -> int:
             entries.append((name, f'[aria-label="{m.group(1)}"]', "testid"))
             continue
         if name in TEXT_HOOKS:
-            entries.append((name, TEXT_HOOKS[name], "text" if "canvas" not in TEXT_HOOKS[name] else "tag"))
+            entries.append(
+                (
+                    name,
+                    TEXT_HOOKS[name],
+                    "text" if "canvas" not in TEXT_HOOKS[name] else "tag",
+                )
+            )
             continue
         gaps.append(name)
 
     if gaps:
-        print(f"// GENERATION FAILED — panels without a verifiable signature: {gaps}", file=sys.stderr)
+        print(
+            f"// GENERATION FAILED — panels without a verifiable signature: {gaps}",
+            file=sys.stderr,
+        )
         return 1
 
     # /fleet-original keeps its own route with its own presence assertion — the "before"
@@ -130,7 +148,7 @@ def main() -> int:
   test('RadialMenu: right-click an agent opens the radial menu; Escape closes it', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click({ button: 'right' });
     await expect(page.locator('[data-testid="radial-scrim"]')).toBeVisible({ timeout: 30_000 });
@@ -143,7 +161,7 @@ def main() -> int:
   test('Spotlight: click an agent, it detaches and speaks; Escape releases', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click();
     await expect(page.locator('[role="dialog"][aria-label*="Agent"]')).toBeVisible({ timeout: 30_000 });
@@ -156,6 +174,11 @@ def main() -> int:
 import {{ test, expect }} from '@playwright/test';
 
 test.use({{ channel: 'chrome' }});
+// Live runs carry the prover's machine identity through the public gate (the same door
+// probes/backstage.py uses): the proxy forwards the Bearer, the app grades it. Local runs
+// (built app, no gate) use the app's own Enter door instead.
+const BEARER = process.env.SURFACES_BEARER || '';
+if (BEARER) test.use({{ extraHTTPHeaders: {{ authorization: `Bearer ${{BEARER}}` }} }});
 
 const PANELS = [
 {cases}
@@ -170,7 +193,7 @@ test.describe('/fleet panels: every component in room/ui renders on the real pag
       r => new URL(r.url()).pathname === '/api/proxy/fleetview/sessions' && r.status() === 200,
     );
     await page.goto('/fleet', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await live;
     await page.waitForTimeout(5_000); // panels stream in after sessions land
 
@@ -205,13 +228,16 @@ test.describe('/fleet-original: the before picture beside the rewrite', () => {{
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('/fleet-original', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await page.locator('[data-testid="{orig_testid}"]').first().waitFor({{ timeout: 60_000 }});
     expect(errors, 'uncaught page errors on /fleet-original').toEqual([]);
   }});
 }});
 """)
-    print(f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}", file=sys.stderr)
+    print(
+        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}",
+        file=sys.stderr,
+    )
     return 0
 
 
