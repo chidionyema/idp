@@ -90,18 +90,24 @@ describe('estate.glb (the shipped face avatar)', () => {
 
   it('matches the generator that claims to have authored it', () => {
     // The licence record says "authored by bin/estate-face-avatar". This is what makes that
-    // claim checkable: re-derive the GLB and compare. Skipped when python3 is unavailable so
-    // the test grades the asset rather than the machine.
+    // claim checkable: re-derive the GLB and compare. If the generator or python3 is missing we
+    // fail loudly rather than skipping -- a silently skipped check is not a check, and this was
+    // exactly the bug that put a green bdd over a red portal-app on 2026-10-04 (the skip turned
+    // a real CI failure into an empty string).
     // From src/modules/home: app -> packages -> backstage -> idp (six levels).
     const repoRoot = join(__dirname, '..', '..', '..', '..', '..', '..');
     const gen = join(repoRoot, 'bin', 'estate-face-avatar');
-    if (!existsSync(gen)) return;
+    expect(existsSync(gen)).toBe(true);
     let out = '';
+    let err = '';
     try {
       out = execFileSync('python3', [gen, '--check'], { encoding: 'utf8', timeout: 60_000 });
     } catch (e) {
-      out = String((e as { stdout?: string }).stdout ?? e);
+      const x = e as { stdout?: string; stderr?: string; message?: string };
+      out = String(x.stdout ?? '');
+      err = String(x.stderr || x.message || e);
     }
-    expect(out).toMatch(/matches the generator/);
+    // Surface the generator's own words, so a failure says why instead of showing "".
+    expect(`${out}${err}`).toMatch(/matches the generator/);
   });
 });

@@ -503,7 +503,7 @@ def build() -> bytes:
         "buffers": [{"byteLength": len(blob)}],
     }
 
-    json_b = _pad4(json.dumps(gltf, separators=(",", ":")).encode(), b" ")
+    json_b = _pad4(json.dumps(_quantise(gltf), separators=(",", ":")).encode(), b" ")
     bin_b = _pad4(bytes(blob))
     total = 12 + 8 + len(json_b) + 8 + len(bin_b)
     out = bytearray()
@@ -513,9 +513,42 @@ def build() -> bytes:
     return bytes(out)
 
 
+def _quantise(obj: object, places: int = 6) -> object:
+    """Round every float in a JSON-shaped tree, so the serialised bytes are deterministic.
+
+    Why this exists (2026-10-04): `--check` byte-compares the committed GLB against what this
+    script derives. Floats here are computed, not written down: bone positions are accumulated by
+    float addition down the hierarchy (0.45999999999999996, 0.7000000000000001) and the accessor
+    bounding boxes are min/max over float32 vertex data (-0.0949999988079071). 106 such values
+    reach the JSON. `json.dumps` writes them through `repr()`, and the shortest-round-trip repr of
+    a float is NOT guaranteed identical across CPython builds and platforms -- so the same script
+    produced different bytes in the CI container than on the laptop running 3.9.6, `--check`
+    failed, and portal-app went red with an empty error string.
+
+    Six decimal places is 1e-6 model units: far finer than any vertex or rig this generator makes,
+    and coarse enough to erase the accumulation noise (0.45999999999999996 -> 0.46). Determinism
+    by construction, not by hoping two interpreters agree on a repr.
+    """
+    if isinstance(obj, float):
+        # +0.0 collapses -0.0, which reprs differently and is a second source of drift.
+        return round(obj, places) + 0.0
+    if isinstance(obj, dict):
+        return {k: _quantise(v, places) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_quantise(v, places) for v in obj]
+    return obj
+
+
 def main(argv: list[str]) -> int:
     data = build()
     if "--check" in argv:
+        # Determinism is part of the contract, not an assumption: the same source must serialise to
+        # the same bytes on any interpreter, or --check is a coin flip across machines (which is
+        # exactly how portal-app went red on 2026-10-04). Rebuild and compare before trusting the
+        # comparison against the committed file.
+        if build() != data:
+            print("FAIL  estate-face-avatar  build() is not deterministic; the output depends on run state")
+            return 1
         if not OUT.is_file():
             print(f"FAIL  estate-face-avatar  {OUT} is missing; run bin/estate-face-avatar")
             return 1
