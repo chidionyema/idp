@@ -414,6 +414,26 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         run: yarn lint
+      # faceEngine.test.ts re-derives public/face/estate.glb with `bin/estate-face-avatar --check`
+      # to prove the shipped avatar is the one its generator authors. That generator imports numpy
+      # (bin/estate-face-avatar line 54), and this job -- node only -- had no Python at all, so the
+      # test died on `ModuleNotFoundError: No module named 'numpy'` and reported the traceback text
+      # where it wanted "matches the generator". Measured 2026-10-04: `portal-app` was the only red
+      # on the greenlane candidate queue/b638 (main 45d25b26900f + 11 lines that touch no portal
+      # file), 1 failed / 552 passed, and a required check that cannot go green refuses every land
+      # (GH013 on the main fast-forward). numpy is already declared at sovereign/requirements.txt:56
+      # and installed this way by the `verifier` job that runs bin/idp-ci; this is the same door, not
+      # a second one. The test itself is deliberately not made skippable -- a silently skipped check
+      # is not a check, which is the remark at faceEngine.test.ts:94.
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.touched.outputs.yes == 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sovereign/requirements*.txt
+      - name: the generator's Python (numpy), or the avatar check is a traceback
+        if: steps.touched.outputs.yes == 'true'
+        run: pip install -q -r sovereign/requirements.txt
       - name: the app's tests, including the contrast guard
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
