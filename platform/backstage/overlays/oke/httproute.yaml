@@ -232,8 +232,19 @@ spec:
     # public shell that can never execute is not public. The bundle is immutable build output
     # (hashes in the names); the data plane keeps its gates: /api/* still takes
     # login-forward-auth-api, and the app answers 401 to an unauthenticated XHR, never a redirect.
+    # 2026-04-10 (browse-live probe, real Chrome at catalogue.mumchimp.com/fleet): /fleet was
+    # NOT in this list, so it fell through to the `/` catch-all and took `login-forward-auth`.
+    # A signed-out browser did not get an error -- it got a 302 to the Oracle OCI IAM wall
+    # (idcs-...identity.oraclecloud.com/ui/v1/signin), the SPA never mounted, and therefore
+    # getUserMedia was NEVER CALLED (measured: micCalls: []). The founder read that as
+    # "microphone blocked on fleet"; the microphone was never reached. /face was exempted for
+    # exactly this reason; /fleet is the same SPA behind the same document gate and belongs in
+    # the same rule. The DATA plane is unchanged: /api/proxy/fleetview/ still answers 401 to an
+    # unauthenticated XHR, so the board stays behind the login -- only its shell is public, the
+    # way /face's is.
     - matches:
         - path: { type: PathPrefix, value: /face }
+        - path: { type: PathPrefix, value: /fleet }
         - path: { type: PathPrefix, value: /voice }
         - path: { type: PathPrefix, value: /static }
         - path: { type: Exact, value: /manifest.json }
