@@ -36,13 +36,32 @@ case "$body" in
     ;;
 esac
 m=UNKNOWN
-for _ in 1 2 3 4 5 6; do
+behind=false
+for _ in 1 2 3 4 5 6 7 8 9 10; do
   m=$(gh pr view "$n" --json mergeable -q .mergeable)
   [ "$m" != UNKNOWN ] && break
   sleep "${MERGEABLE_WAIT:-10}"
 done
+# crew#267 / 2026-10-04: the branch forks from the main it was first cut from and the controller
+# only ever ADDS tag commits on top, so its tree keeps whatever main looked like back then. Every
+# gate that lives in the tree -- bin/idp-ci-guarded-paths runs against the PR head's own copy -- is
+# therefore graded as it was on the fork point, not as it is on main today. On 2026-10-04 573024e85
+# rewrote the guarded-paths exemption, main stopped accepting image tags, and this branch could
+# never pass again because its copy of the guard predated the fix: the deploy was red on a gate
+# that main had already repaired. A branch that is BEHIND main is refreshed for the same reason a
+# CONFLICTING one is -- so the deploy is graded by the gates that are actually on main.
+behind=$(gh pr view "$n" --json mergeStateStatus -q .mergeStateStatus)
 case "$m" in
-  MERGEABLE) ;;
+  MERGEABLE)
+    # "BEHIND" is GitHub's own word for "mergeable, but the head does not contain the base".
+    if [ "$behind" = BEHIND ]; then
+      git fetch origin main
+      git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \
+        merge origin/main --no-edit -X ours -m "$branch: merge main, keep the controller's newTag lines (crew#267)"
+      git push "${PUSH_URL:-origin}" "HEAD:$branch"
+      echo "refresh image-update-pr #$n was BEHIND main, merged main as $(git rev-parse --short HEAD), pushed with the writer key"
+    fi
+    ;;
   CONFLICTING)
     git fetch origin main
     git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \
