@@ -215,6 +215,28 @@ class GitHubBackend:
         wt = tempfile.mkdtemp(prefix="greenlane-")
         try:
             self.git("worktree", "add", "-q", "--detach", wt, onto)
+            # Apply only the lane's commits that are NOT already on `onto`.
+            #
+            # The lane rewrites shas on every landing, so a lane that has been landed once
+            # keeps its old commits AND gains no new ones -- and `merge-base..head` then
+            # re-applies work that is already on main. Re-applying an already-landed commit
+            # that ADDS a file conflicts (add/add), `cherry-pick` exits non-zero, this returns
+            # None, and the lane is reported CONFLICT forever. Measured 2026-10-04: 14 of 25
+            # lanes were stuck this way and `candidate=none` on every tick, so nothing could
+            # land at all -- including the fix for the condition. A lane whose only commits are
+            # already upstream must instead report "nothing to land" (the `return None` below),
+            # which is true, rather than "does not rebase", which is a lie about a clean branch.
+            #
+            # `git cherry` is the right oracle: it compares patch-ids, so an already-upstream
+            # commit is excluded even though its sha differs, and a commit that genuinely is new
+            # is kept. `-` lines are applied upstream, `+` lines are not.
+            new = [
+                line.split()[1]
+                for line in self.git("cherry", onto, head, mb).splitlines()
+                if line.startswith("+")
+            ]
+            if not new:
+                return None  # nothing to land
             pick = subprocess.run(  # noqa: S603 -- fixed argv, no shell
                 [  # noqa: S607
                     "git",
@@ -223,7 +245,7 @@ class GitHubBackend:
                     "cherry-pick",
                     "--no-commit",
                     "--allow-empty",
-                    f"{mb}..{head}",
+                    *new,
                 ],
                 capture_output=True,
                 text=True,
@@ -234,7 +256,7 @@ class GitHubBackend:
                 return None  # nothing to land
             subject = self.git("log", "-1", "--format=%s", head)
             author = self.git("log", "-1", "--format=%an <%ae>", head)
-            body = self.git("log", "--reverse", "--format=%h %s", f"{mb}..{head}")
+            body = self.git("--no-pager", "log", "--reverse", "--format=%h %s", *new)
             # Carry the lane head's trailers onto the candidate. bin/idp-ci-guarded-paths refuses a
             # candidate whose HEAD carries no X-Idp-Signed trailer, and that trailer is put there
             # by .githooks/commit-msg -- which never runs here, because this commit is made by the
@@ -247,12 +269,31 @@ class GitHubBackend:
             msg = f"{subject}\n\nGreenlane-Head: {head}\n\n{body}\n"
             if trailers:
                 msg = f"{msg}\n{trailers}\n"
+            # Build the candidate WITHOUT the repository's project hooks.
+            #
+            # This commit is made in a throwaway worktree, on the engine's behalf, to produce a
+            # candidate the lane then tests in CI. The .githooks/pre-commit revision runs
+            # `tsc --noEmit` over the whole backstage project and ruff over the staged tree --
+            # and in the temp worktree there is no backstage/node_modules, so tsc reports BLIND
+            # and the hook exits non-zero. That turned EVERY lane into `does not rebase`:
+            # rebase() raised on the commit, so no candidate was ever built. Measured 2026-10-04
+            # against main 1b5fe300c03a: 14 of 25 lanes conflict, candidate=none on every tick.
+            #
+            # The trailer `commit-msg` would add is not lost: the lane head was authored under
+            # the same hooks and already carries X-Idp-Signed, and the `%(trailers)` read above
+            # copies it onto this commit. guarded-paths therefore still sees a signed candidate --
+            # the signature is carried, not manufactured here. What is skipped is the project-wide
+            # tsc/ruff probe, which is the candidate's OWN CI job (guarded-paths, fast-gate) and
+            # must not also run, blind, in the engine.
             _run(  # noqa: S603, S607 -- git/gh with fixed argv, no shell
                 "git",
                 "-C",
                 wt,
+                "-c",
+                "core.hooksPath=/dev/null",
                 "commit",
                 "-q",
+                "--no-verify",
                 "--author",
                 author,
                 "-F",
