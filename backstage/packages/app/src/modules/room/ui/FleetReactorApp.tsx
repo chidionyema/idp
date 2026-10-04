@@ -132,17 +132,38 @@ const generateTopology = () => {
  *   2. `serve.py` binds 127.0.0.1 and its CORS list names only loopback origins, so a correct URL
  *      alone would still be blocked.
  *
- * ONE constant, read from the build environment, so the same bundle works on a laptop and in a
- * cluster without an edit. `FLEETVIEW_URL` is inlined by the bundler at build time.
+ * ONE place, RESOLVED AT RUNTIME FROM DISCOVERY, so the same bundle works on a laptop and in the
+ * cluster without a rebuild and without dialling a loopback address that only exists on a pod.
  *
- * WHY NOT THE BACKSTAGE PROXY, WHICH EXISTS FOR EXACTLY THIS. `/fleetview` -> 127.0.0.1:18790 is
- * configured in app-config.yaml and is the right answer for HTTP -- but the PROXY CANNOT CARRY A
- * WEBSOCKET or an SSE upgrade (measured 2026-09-20: proxy-backend 0.6.16 forwards requests, not
- * upgrades), so the event stream must dial the service directly wherever it lives. Since one of
- * the seven cannot use the proxy, all seven use the same origin: a page where half the data comes
- * from one place and half from another is a page whose failures are impossible to reason about.
+ * WHY NOT `process.env.FLEETVIEW_URL`, WHICH IS WHAT THIS USED TO BE. It looked right and never
+ * worked, in either direction. Measured on the deployed image 2026-10-04 by reading the shipped
+ * bytes of https://catalogue.mumchimp.com/static/9804.*.chunk.js:
+ *
+ *     en = ee.env.FLEETVIEW_URL ?? "http://127.0.0.1:18790"
+ *
+ * Backstage's bundler does not inline `process.env`; it substitutes a SHIM OBJECT whose `.env` is
+ * empty. So the ?? fallback always won, on every device, and the page dialled loopback: on the
+ * founder's phone that is the phone, and the browser refused it with
+ * "blocked by CORS policy: Permission was denied for this request to access the `loopback` address
+ * space". A Dockerfile ARG/ENV cannot reach it -- that was tried (backstage/Dockerfile) and the
+ * bytes above are what shipped anyway.
+ *
+ * WHAT EVERY OTHER FLEETVIEW CALL IN THIS FILE ALREADY DOES, and what this now does too: resolve
+ * `${await discovery.getBaseUrl('proxy')}` and fetch `${base}/fleetview/<route>` through
+ * `api.fetch`, which is `fetchApi` -- it attaches the guest Authorization header that a bare
+ * `fetch` does not, and a bare fetch to the proxy is a 401 here (both traps are written down in
+ * Fleet.tsx and useEstateVoice.ts, which hit them first).
+ *
+ * THE STREAM CANNOT USE `api.fetch`. `EventSource` bypasses fetchApi entirely, so it would arrive
+ * with no credentials and 401; it must therefore be handed the CONCRETE url built from discovery.
+ * That is exactly what Fleet.tsx does for the board's own stream (`discoveryApi.getBaseUrl('proxy')`
+ * -> `${streamBase}/fleetview/stream`), and the board's stream works -- measured live 2026-10-04.
+ * The old comment here claimed the proxy cannot carry SSE; that was wrong, and the board proves it.
+ *
+ * The base and the authenticated client are already in scope in this component (`api`,
+ * `baseUrlRef`) and are populated from discovery; the seven sites below use them rather than
+ * carrying a second origin of their own.
  */
-const FLEETVIEW_ORIGIN = process.env.FLEETVIEW_URL ?? 'http://127.0.0.1:18790';
 
 /**
  * The board's shared key, for the one route the browser calls that needs it: `/kill`.
@@ -931,7 +952,11 @@ export default function FleetReactorApp() {
     if (!row) return;
     setEndStatus(mode === 'stop' ? 'asking it to stop…' : 'sending SIGTERM…');
     try {
-      const res = await fetch(`${FLEETVIEW_ORIGIN}/${mode}`, {
+      // Discovery resolves asynchronously; a click before it lands must say so, not fire a request
+      // at a relative path that would land on this SPA's own history fallback and return a 200.
+      const base = baseUrlRef.current;
+      if (!base) return setEndStatus('refused: discovery not ready');
+      const res = await api.fetch(`${base}/fleetview/${mode}`, {
         method: 'POST',
         // STOP IS A WRITE BUT NOT A SIGNAL, so it needs no key; KILL is the destructive one and
         // the backend refuses it without one once FLEETVIEW_BOARD_KEY is configured. The key is
@@ -960,7 +985,10 @@ export default function FleetReactorApp() {
     if (!row) return;
     setSteerStatus('sending…');
     try {
-      const res = await fetch(`${FLEETVIEW_ORIGIN}/nudge`, {
+      // Same guard as endSession: the base is resolved by discovery, not compiled in.
+      const base = baseUrlRef.current;
+      if (!base) return setSteerStatus('refused: discovery not ready');
+      const res = await api.fetch(`${base}/fleetview/nudge`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1359,7 +1387,7 @@ export default function FleetReactorApp() {
         // session's first prompt. A failure here leaves the rows without a branch rather than
         // emptying the board: work detail is an enrichment, not the data the page exists for.
         try {
-          const wres = await fetch(`${FLEETVIEW_ORIGIN}/work`);
+          const wres = await api.fetch(`${base}/fleetview/work`);
           if (wres.ok) {
             const wbody = await wres.json();
             const work = wbody.work || {};
@@ -1398,8 +1426,8 @@ export default function FleetReactorApp() {
           // serve.
           if (panelTabRef.current === 'harness' && selectedSessionRef.current) {
             try {
-              const lres = await fetch(
-                `${FLEETVIEW_ORIGIN}/ledger?session_id=${encodeURIComponent(selectedSessionRef.current)}`,
+              const lres = await api.fetch(
+                `${base}/fleetview/ledger?session_id=${encodeURIComponent(selectedSessionRef.current)}`,
               );
               if (lres.ok) {
                 const lbody = await lres.json();
@@ -1410,7 +1438,7 @@ export default function FleetReactorApp() {
             setLedgerRows([]);
           }
 
-          const rres = await fetch(`${FLEETVIEW_ORIGIN}/replies?limit=40`);
+          const rres = await api.fetch(`${base}/fleetview/replies?limit=40`);
           if (rres.ok) {
             const rbody = await rres.json();
             if (!cancelled) setReplies(rbody.replies || []);
@@ -1427,8 +1455,8 @@ export default function FleetReactorApp() {
         const selectedSessionId = selectedSessionRef.current;
         if (selectedSessionId) {
           try {
-            const sres = await fetch(
-              `${FLEETVIEW_ORIGIN}/signals?session_id=${encodeURIComponent(selectedSessionId)}`,
+            const sres = await api.fetch(
+              `${base}/fleetview/signals?session_id=${encodeURIComponent(selectedSessionId)}`,
             );
             if (sres.ok) {
               const sbody = await sres.json();
@@ -1474,7 +1502,18 @@ export default function FleetReactorApp() {
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
       const connect = () => {
         try {
-          es = new EventSource(`${FLEETVIEW_ORIGIN}/stream`);
+          // THE BASE MAY NOT HAVE RESOLVED YET. Discovery is async and this effect starts the
+          // stream immediately, so `baseUrlRef.current` is null for the first ticks. Opening an
+          // EventSource at `null/fleetview/stream` would dial a relative path that lands on this
+          // SPA's own history fallback and gets index.html with a 200 -- a stream that looks like
+          // it connected and never delivers a frame. Wait on the same backoff instead.
+          const base = baseUrlRef.current;
+          if (!base) {
+            retryTimer = setTimeout(connect, retryMs);
+            retryMs = Math.min(30000, retryMs * 2);
+            return;
+          }
+          es = new EventSource(`${base}/fleetview/stream`);
           es.onopen = () => { retryMs = 2000; };   // a good connection resets the backoff
           es.onmessage = (ev) => {
             try {
