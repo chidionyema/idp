@@ -91,3 +91,75 @@ def test_the_stamp_is_not_applied_twice_on_amend(tmp_path):
     trailers = _run(tmp_path, f"fix(x): a thing\n\nBody line.\n\n{already}\n")
     stamps = [t for t in trailers if t.startswith("X-Idp-Signed")]
     assert len(stamps) == 1, f"stamped twice: {trailers!r}"
+
+
+# ---------------------------------------------------------------------------------------------
+# The agent harness credits itself as a co-author. The estate does not accept that credit.
+#
+# A coding harness appends `Co-Authored-By: Claude <noreply@anthropic.com>` to every commit it
+# makes unless configured not to. It is stripped by the hook rather than suppressed in a harness
+# config, because the estate is model- and harness-agnostic: a setting in one vendor's file stops
+# working the moment a different harness writes the commit, whereas the hook is the one point
+# every commit already passes through.
+#
+# Measured 2026-10-04: 7 of the 25 lanes in the greenlane queue carried the trailer, under two
+# model spellings ("Claude Opus 5.5", "Claude Fable 5.1"). It credits a model as a co-author of
+# the founder's estate, which is not true, and it is the only string on those commits that names
+# a vendor.
+
+
+def test_the_harness_does_not_co_author_the_estate(tmp_path):
+    """The two real spellings the harness emits both come out of the message."""
+    for trailer in (
+        "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>",
+        "Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>",
+    ):
+        trailers = _run(tmp_path, f"fix(x): a thing\n\nBody line.\n\n{trailer}\n")
+        assert "X-Idp-Signed" in _keys(trailers), f"stamp missing; got {trailers!r}"
+        assert not any("Claude" in t or "Anthropic" in t for t in trailers), (
+            f"the harness still co-authors the commit; got {trailers!r}"
+        )
+
+
+def test_a_human_co_author_is_still_credited(tmp_path):
+    """Only the harness's self-attribution goes. A person's does not."""
+    trailers = _run(
+        tmp_path,
+        "feat(y): thing\n\nCo-Authored-By: Jane Doe <jane@example.com>\n",
+    )
+    assert any("Jane Doe" in t for t in trailers), (
+        f"a human co-author was dropped along with the harness; got {trailers!r}"
+    )
+    assert "X-Idp-Signed" in _keys(trailers), f"stamp missing; got {trailers!r}"
+
+
+def test_the_harness_is_stripped_and_a_human_is_kept_together(tmp_path):
+    """The case that actually occurs: both trailers on one commit."""
+    trailers = _run(
+        tmp_path,
+        "feat(z): thing\n\n"
+        "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n"
+        "Co-Authored-By: Jane Doe <jane@example.com>\n",
+    )
+    assert not any("Claude" in t for t in trailers), (
+        f"harness trailer survived: {trailers!r}"
+    )
+    assert any("Jane Doe" in t for t in trailers), f"human trailer lost: {trailers!r}"
+    assert "X-Idp-Signed" in _keys(trailers), f"stamp missing; got {trailers!r}"
+
+
+def test_removing_the_harness_trailer_leaves_one_clean_block(tmp_path):
+    """Stripping must not leave the blank paragraph that would split the trailer block.
+
+    The hook already regressed once on exactly this: an unconditional blank line split a trailer
+    block and git, which reads only the last block, stopped parsing the co-authorship. Removing a
+    line has the same shape of hazard, so git -- not this test -- is asked whether the block is
+    still one block.
+    """
+    trailers = _run(
+        tmp_path,
+        "fix(x): a thing\n\nBody line.\n\n"
+        "Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>\n",
+    )
+    keys = _keys(trailers)
+    assert keys == {"X-Idp-Signed"}, f"expected exactly the stamp; got {trailers!r}"

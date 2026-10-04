@@ -22,6 +22,27 @@ if grep -qE '^X-Idp-Signed: ' "$msg_file"; then
   exit 0
 fi
 
+# Strip the agent harness's self-attribution. A coding harness appends
+# `Co-Authored-By: Claude <noreply@anthropic.com>` to every commit it makes unless told not to.
+# That trailer credits a model as a co-author of the founder's estate, which is not true and not
+# wanted, and it is the only thing on these commits that names a vendor. It also crowded the
+# trailer block the stamp has to share: the estate's one attribution is X-Idp-Signed.
+#
+# Stripped here rather than in a harness config on purpose. The estate is model- and
+# harness-agnostic; a setting that lives in one vendor's settings file suppresses it for that
+# vendor and silently stops working the day a different harness writes the commit. This hook is
+# the single point every commit already passes through, so the rule holds for all of them.
+if grep -qE '^Co-Authored-By: .*(Claude|Anthropic)' "$msg_file"; then
+  tmp_stripped="$(mktemp)"
+  grep -vE '^Co-Authored-By: .*(Claude|Anthropic)' "$msg_file" > "$tmp_stripped" || true
+  # Re-normalise: removing the last trailer can leave a blank paragraph before the stamp.
+  # Blank lines at the end would push the stamp into its own block, which git reads fine, but a
+  # trailing blank line before it is noise in every `git log` from here on.
+  awk 'BEGIN{b=0} /^[[:space:]]*$/{b++; next} {while(b>0){print ""; b=0} print}' \
+    "$tmp_stripped" > "$msg_file"
+  rm -f "$tmp_stripped"
+fi
+
 body="$(cat "$msg_file")"
 # $NF, not $2. `openssl dgst` prints "HMAC-SHA256(stdin)= <hex>" on some builds and the bare hex
 # on others -- LibreSSL 3.3.x, which is what macOS ships, prints one field. $2 was then empty,
