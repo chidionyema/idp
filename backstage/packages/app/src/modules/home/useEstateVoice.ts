@@ -119,23 +119,25 @@ export function micPlatform(): MicPlatform {
 function siteSettingFix(): string {
   switch (micPlatform()) {
     case 'ios':
-      return 'microphone blocked by this site’s setting — on iOS open Settings → Safari → Microphone and choose Ask or Allow, then reload this page';
-    case 'android':
-      return 'microphone blocked by this site’s setting — tap the lock icon in the address bar → Permissions → Microphone → Allow, then reload this page';
+      return 'microphone is off for this page — tap the mic again to be asked';
     default:
-      return 'microphone blocked by this site’s setting — click the padlock/tune icon LEFT OF THE ADDRESS BAR → Microphone → Allow → reload (chrome://settings/content/microphone to check the Not-allowed list)';
+      return 'microphone is off for this site — tap the mic again to be asked';
   }
 }
 
-/** The OS-level instruction, for the case where the site is innocent and the platform refused. */
+/**
+ * The refusal that reached the person, said once and in their device's words. Deliberately NOT a
+ * settings walkthrough: the next tap re-asks, and a user who has decided to refuse is not helped by
+ * being sent into a menu. Short enough to read on a phone at a glance.
+ */
 function osRefusalFix(): string {
   switch (micPlatform()) {
     case 'ios':
-      return 'microphone blocked by iOS, not the site — open Settings → Safari → Microphone and choose Ask or Allow, then reload. (If that is already Allow, the block is the OS microphone privacy switch: Settings → Privacy & Security → Microphone.)';
+      return 'iOS is not letting this page use the microphone — tap the mic again to be asked';
     case 'android':
-      return 'microphone blocked by Android, not the site — open Settings → Apps → Chrome → Permissions → Microphone → Allow, then reload';
+      return 'Android is not letting this page use the microphone — tap the mic again to be asked';
     default:
-      return 'microphone blocked by macOS, not the site — System Settings → Privacy & Security → Microphone → turn Chrome ON, then restart Chrome and reload this page';
+      return 'this computer is not letting the browser use the microphone — tap the mic again to be asked';
   }
 }
 
@@ -174,12 +176,13 @@ async function micBlocker(): Promise<string | null> {
   // So: an insecure origin names the URL. A SECURE origin with no getUserMedia names the DEVICE,
   // and asks the platform helper for the path that device can actually follow.
   if (!window.isSecureContext) {
-    return 'microphone unavailable: this page is not on https — open it over https://catalogue.mumchimp.com, never an http:// or raw-IP address';
+    return 'microphone needs a secure page — open it over https://catalogue.mumchimp.com';
   }
+  // NO DEVICE NAMED, NO SETTINGS SENT: the caller now simply calls getUserMedia, which IS the
+  // request. If the browser will not even expose the API there is nothing a user can reach from a
+  // menu that would change it, and the honest answer is that this browser cannot.
   if (!navigator.mediaDevices?.getUserMedia) {
-    return micPlatform() === 'desktop'
-      ? 'microphone unavailable: this browser exposes no microphone API — update the browser, or open this page in Chrome, Safari or Firefox on this device'
-      : `microphone unavailable: ${micPlatform() === 'ios' ? 'Safari on this iPhone/iPad' : 'this Android browser'} will not give the page a microphone — open Settings ${micPlatform() === 'ios' ? '→ Safari → Microphone and choose Ask or Allow' : '→ Apps → Chrome → Permissions → Microphone → Allow'}, then reload this page`;
+    return 'this browser cannot reach the microphone — open the page in Safari or Chrome';
   }
   try {
     const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
@@ -709,14 +712,13 @@ export function useEstateVoice(): EstateVoice {
   );
 
   const start = useCallback(async () => {
-    // PRE-FLIGHT: the two causes a retried click can never clear, named BEFORE the voice
-    // libraries load, so the founder reads the fix in milliseconds instead of after a download.
-    const preBlocked = await micBlocker();
-    if (preBlocked) {
-      setState('error');
-      setDetail(preBlocked);
-      return;
-    }
+    // NO PRE-FLIGHT GATE. Measured 2026-10-04, and the founder's own words: "there is absolutely no
+    // difference... we are not going to be telling users to set anything on safari". This function
+    // used to call `micBlocker()` here and RETURN before opening the device whenever it had an
+    // opinion -- which is what put a settings instruction on screen instead of a working mic. A
+    // voice product asks for the microphone by USING it: the getUserMedia call made by the VAD
+    // below IS the permission prompt, and on iOS and Android the next tap re-prompts once the
+    // person allows it. Nothing on this path requires a user to open Settings.
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
     if (!libs.ok) {
@@ -791,17 +793,17 @@ export function useEstateVoice(): EstateVoice {
     } catch (e: any) {
       setState('error');
       const msg = String(e?.message || e);
-      // NAME THE REAL CAUSE, IN THE FOUNDER’S WORDS. A refusal is one of three different
-      // blockers (site setting, macOS refusing the browser, insecure origin) and each has a
-      // different 30-second fix. Measured 2026-10-03: eight hours were lost to a message that
-      // named only one of the three.
+      // WHAT HAPPENED, IN ONE LINE, AND NOTHING TO GO CHANGE. A refusal used to end in a settings
+      // walkthrough chosen from the user-agent; the founder read that and refused it ("we are not
+      // going to be telling users to set anything on safari"). The page now says what happened and
+      // invites the retry that actually re-prompts, which is the only fix a person can act on from
+      // the page itself. The cause is still named, because a blank refusal is the defect this file
+      // was written to end.
       setDetail(
         /permission|denied|notallowed/i.test(msg)
           ? await micRefusalDetail()
           : /notfound|device/i.test(msg)
-            ? micPlatform() === 'desktop'
-              ? 'no microphone found — connect one, or check macOS → System Settings → Sound → Input'
-              : 'no microphone found — check this device has one and that no other app is holding it, then reload'
+            ? 'no microphone found — check this device has one and that no other app is holding it, then tap again'
             : `microphone failed: ${msg}`,
       );
     }
