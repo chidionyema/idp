@@ -24,13 +24,18 @@ import { test, expect } from '@playwright/test';
 
 // The app serves its shell on /face and /fleet to a signed-out browser. Anything that redirects to
 // an identity provider is the wall, named so a failure is readable.
-const LOGIN_WALL = /oraclecloud\.com|idcs-|identity\.oraclecloud|\/oauth2\/|\/login/i;
+const LOGIN_WALL =
+  /oraclecloud\.com|idcs-|identity\.oraclecloud|\/oauth2\/|\/login/i;
 
 test.describe('mobile shell', () => {
   for (const path of ['/fleet', '/face']) {
-    test(`a phone is served ${path}, not a login redirect`, async ({ page }) => {
+    test(`a phone is served ${path}, not a login redirect`, async ({
+      page,
+    }) => {
       const res = await page.goto(path, { waitUntil: 'domcontentloaded' });
-      expect(page.url(), `${path} redirected to ${page.url()}`).not.toMatch(LOGIN_WALL);
+      expect(page.url(), `${path} redirected to ${page.url()}`).not.toMatch(
+        LOGIN_WALL,
+      );
       expect(res?.status(), `${path} status`).toBeLessThan(400);
       // The document is the app, not an identity provider's page.
       const html = await page.content();
@@ -42,16 +47,26 @@ test.describe('mobile shell', () => {
 });
 
 test.describe('mobile microphone reachability', () => {
-  test('the fleet page reaches getUserMedia, or names the refusal', async ({ page, context }) => {
+  test('the fleet page reaches getUserMedia, or names the refusal', async ({
+    page,
+    context,
+  }) => {
     // The one permission an automated run CAN grant. On a phone this prompt is the user's; here it
     // stands in for a granted prompt so the code path past the permission is exercised.
     await context.grantPermissions(['microphone'], {
-      origin: new URL(process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com').origin,
+      origin: new URL(
+        process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com',
+      ).origin,
     });
 
     await page.addInitScript(() => {
       const w = window as any;
-      w.__mic = { hasMediaDevices: false, hasGetUserMedia: false, secure: false, calls: [] };
+      w.__mic = {
+        hasMediaDevices: false,
+        hasGetUserMedia: false,
+        secure: false,
+        calls: [],
+      };
       const md = navigator.mediaDevices;
       w.__mic.hasMediaDevices = !!md;
       w.__mic.hasGetUserMedia = !!(md && md.getUserMedia);
@@ -59,7 +74,12 @@ test.describe('mobile microphone reachability', () => {
       if (md && md.getUserMedia) {
         const orig = md.getUserMedia.bind(md);
         md.getUserMedia = async (c: MediaStreamConstraints) => {
-          const rec: any = { audio: !!(c && c.audio), ok: null, errName: null, err: null };
+          const rec: any = {
+            audio: !!(c && c.audio),
+            ok: null,
+            errName: null,
+            err: null,
+          };
           w.__mic.calls.push(rec);
           try {
             const s = await orig(c);
@@ -80,46 +100,116 @@ test.describe('mobile microphone reachability', () => {
     });
 
     await page.goto('/fleet', { waitUntil: 'domcontentloaded' });
-    expect(page.url(), `fleet redirected to ${page.url()}`).not.toMatch(LOGIN_WALL);
+    expect(page.url(), `fleet redirected to ${page.url()}`).not.toMatch(
+      LOGIN_WALL,
+    );
+
+    // The mic lives inside the FleetReactor canvas, which mounts after the bundle boots -- so wait
+    // for the control itself, not for the document. Measured 2026-10-04 in CI: with only
+    // domcontentloaded the run reached the tap with the app still booting, found nothing, reported
+    // tapped=false calls=0 and PASSED on the weaker assertion. That is the assertion-instead-of-
+    // proof defect: the test was green while the thing it names had not happened. The control is
+    // now waited for and asserted, so a fleet page that never renders its mic is RED, not quiet.
+    const micButton = page.getByTestId('fleet-mic');
+    await expect(
+      micButton,
+      'the fleet page never rendered its mic control (testid fleet-mic); a phone cannot ask for the microphone on a page that has no control to tap',
+    ).toBeVisible({ timeout: 30_000 });
 
     // Ask the page for the mic the way a person does: a tap. Mobile engines require a user
     // gesture, so this is the only shape that can work on a phone.
-    const candidates = [
-      page.getByTestId('fleet-mic'),
-      page.getByRole('button', { name: /talk|mic|speak|tap/i }),
-    ];
-    let tapped = false;
-    for (const c of candidates) {
-      try {
-        await c.first().click({ timeout: 5_000 });
-        tapped = true;
-        break;
-      } catch {
-        /* try the next shape */
-      }
-    }
+    await micButton.first().click({ timeout: 15_000 });
+    const tapped = true;
 
-    // Give the page a moment to reach the device; a click that never wires up is the defect.
-    await page.waitForTimeout(3_000);
-    const mic = await page.evaluate(() => (window as any).__mic);
+    // Give the page time to reach a decided state. Not a bare sleep: `start()` pre-flights the
+    // permission, then DOWNLOADS the voice libraries (VOICE_ASSETS) before opening the device, so a
+    // tap on a cold page legitimately needs more than a moment. We poll for the page's own words.
+    // `window.__mic.calls` is the instrumented getUserMedia; `voiceDetail` is what the UI says.
+    let mic: any = null;
+    let detail = '';
+    for (let i = 0; i < 30; i++) {
+      mic = await page.evaluate(() => (window as any).__mic);
+      detail = await page.evaluate(() => {
+        const el = document.querySelector(
+          '[data-testid="fleet-mic"]',
+        ) as HTMLElement | null;
+        return (
+          (el?.getAttribute('title') ?? '') +
+          ' ' +
+          (document.body.innerText || '')
+        );
+      });
+      if (
+        mic.calls.length > 0 ||
+        /microphone|mic|blocked|denied|not-allowed|https/i.test(detail)
+      ) {
+        break;
+      }
+      await page.waitForTimeout(1_000);
+    }
 
     // What must be true on every engine: the API exists and the origin is a secure context. Without
     // these the page could never ask for a phone microphone at all.
     expect(mic.hasMediaDevices, 'navigator.mediaDevices is missing').toBe(true);
-    expect(mic.hasGetUserMedia, 'navigator.mediaDevices.getUserMedia is missing').toBe(true);
-    expect(mic.secure, 'not a secure context -- a phone refuses the mic outright').toBe(true);
+    expect(
+      mic.hasGetUserMedia,
+      'navigator.mediaDevices.getUserMedia is missing',
+    ).toBe(true);
+    expect(
+      mic.secure,
+      'not a secure context -- a phone refuses the mic outright',
+    ).toBe(true);
 
     // If the page asked, the refusal (if any) must be named, never blank.
     for (const call of mic.calls) {
       if (!call.ok) {
-        expect(call.errName, 'a refused mic must carry its error name').toBeTruthy();
+        expect(
+          call.errName,
+          'a refused mic must carry its error name',
+        ).toBeTruthy();
+      }
+    }
+
+    // THE DECISIVE ASSERTION. A person tapped the mic, so the page must arrive at ONE of exactly
+    // two decided states, and this is the whole contract:
+    //   (a) it called getUserMedia -- and then it must have a live track or a NAMED error, or
+    //   (b) it refused BEFORE calling, which is only correct when it names the fix on screen.
+    // Silence is never acceptable: `tapped=false calls=0` with nothing said is the exact defect the
+    // founder reported, and the earlier version of this test PASSED on it (measured in CI
+    // 2026-10-04). Reachability alone was not the claim; a decided outcome is.
+    const namedFix =
+      /microphone (blocked|unavailable)|not on https|padlock|denied|not-allowed/i.test(
+        detail,
+      );
+    if (mic.calls.length === 0) {
+      expect(
+        namedFix,
+        `tapped the mic, the page never called getUserMedia, and it named no reason ` +
+          `(tapped=${tapped}); a tap that reaches no device and says nothing is the defect. ` +
+          `page said: ${detail.slice(0, 300)}`,
+      ).toBe(true);
+    } else {
+      // (a) The refusal must be named, and a grant must carry a live track -- "asked" and "got it"
+      // are different facts.
+      const call = mic.calls[mic.calls.length - 1];
+      if (call.ok) {
+        expect(
+          (call.tracks ?? []).length,
+          'getUserMedia resolved but returned no audio track',
+        ).toBeGreaterThan(0);
+      } else {
+        expect(
+          call.errName,
+          'a refused mic must carry its error name',
+        ).toBeTruthy();
       }
     }
 
     // The decisive line, printed so a run's log says what happened rather than only pass/fail.
     console.log(
       `mobile mic: tapped=${tapped} calls=${mic.calls.length} ` +
-        mic.calls.map((c: any) => (c.ok ? 'granted' : `${c.errName}`)).join(',') || 'none',
+        (mic.calls.map((c: any) => (c.ok ? 'granted' : c.errName)).join(',') ||
+          'none'),
     );
   });
 });
