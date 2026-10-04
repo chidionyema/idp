@@ -1,0 +1,534 @@
+#!/usr/bin/env python3
+"""Author the estate's own face avatar -- a GLB the TalkingHead runtime can drive.
+
+WHY THIS FILE EXISTS
+--------------------
+The face shipped `brunette.glb`: a Ready Player Me avatar out of the TalkingHead repo, licensed
+CC BY-NC 4.0 -- non-commercial. A product cannot ship it (bin/face-licence-gate, spec
+docs/specs/2026-10-03-face-experience-10x.md section 6). The other vendored files are fine
+(talkinghead.mjs and three.js are MIT); only the avatar carries the restriction, because an
+avatar is artwork and artwork carries a licence.
+
+So the estate authors its own. This script writes the GLB from geometry it computes here -- no
+download, no third-party asset, no licence to track. The output is generated, so it is
+reproducible and reviewable (run it, diff the bytes) instead of a 4.7 MB blob of unknown
+provenance.
+
+WHAT A TALKINGHEAD AVATAR MUST CARRY -- MEASURED, NOT GUESSED
+-------------------------------------------------------------
+The first version of this script emitted a morph-target head only. Driving the REAL runtime
+against it (node + DOM/WebAudio/WebGL stubs) failed with a named error:
+
+    Error: Avatar object Armature not found      (talkinghead.mjs:1213)
+
+so the contract was read out of the runtime rather than assumed:
+
+  1. `showAvatar()` requires a node named `Armature` (opt.modelRoot, talkinghead.mjs:138) --
+     talkinghead.mjs:1209-1213 checks it unconditionally, avatarOnly mode included.
+  2. It then resolves every pose property to a named bone under that Armature. The names are
+     fixed by the RPM skeleton and are collected here from the runtime's own pose tables:
+     Hips, Spine, Spine1, Spine2, Neck, Head; Left/Right Shoulder, Arm, ForeArm, Hand; the five
+     finger chains (Index/Middle/Ring/Pinky x 1..3) and Thumb 1..3 on each hand; Left/Right
+     UpLeg, Leg, Foot, ToeBase. A missing bone is a TypeError at line 1320, not a soft skip.
+  3. The mesh must expose the ARKit blendshape names as morph targets; ~53 are addressed by name.
+     The runtime synthesizes mouthOpen, mouthSmile, eyesClosed, eyesLookUp and eyesLookDown from
+     those (mtExtras, line 734), so carrying the 53 is sufficient -- extras arrive for free.
+  4. Inverse kinematics needs nothing from the GLB: the runtime builds its own IK skeleton
+     (ikMesh, line 874) from an internal `ikSetup`.
+
+Hence this generator emits a skinned head-and-torso mesh whose skin is bound to the RPM bone
+names above, plus the 53 ARKit morph targets. Bone rest positions are ours (a compact, stylised
+figure), the names are the runtime's contract, and every byte is computed here.
+
+Deterministic: same input -> same bytes (no timestamps, no randomness). `--check` re-derives the
+GLB and compares, so CI proves the committed asset still matches this generator.
+"""
+
+from __future__ import annotations
+
+import json
+import struct
+import sys
+from pathlib import Path
+
+import numpy as np
+
+OUT = (
+    Path(__file__).resolve().parents[1]
+    / "backstage/packages/app/public/face/estate.glb"
+)
+
+# --- The 53 ARKit blendshapes the runtime addresses by name -------------------------------
+# Read out of backstage/packages/app/public/face/talkinghead.mjs by extracting every
+# brow*/eye*/cheek*/jaw*/mouth*/nose*/tongue* identifier it drives. Grouped by the region each
+# one moves, which is what decides where its displacement is centred below.
+BROW = ["browDownLeft", "browDownRight", "browInnerUp", "browOuterUpLeft", "browOuterUpRight"]
+CHEEK = ["cheekPuff", "cheekSquintLeft", "cheekSquintRight"]
+EYE = [
+    "eyeBlinkLeft", "eyeBlinkRight", "eyeContact",
+    "eyeLookDownLeft", "eyeLookDownRight", "eyeLookInLeft", "eyeLookInRight",
+    "eyeLookOutLeft", "eyeLookOutRight", "eyeLookUpLeft", "eyeLookUpRight",
+    "eyeSquintLeft", "eyeSquintRight", "eyeWideLeft", "eyeWideRight",
+]
+JAW = ["jawForward", "jawOpen"]
+MOUTH = [
+    "mouthClose", "mouthDimpleLeft", "mouthDimpleRight", "mouthFrownLeft", "mouthFrownRight",
+    "mouthFunnel", "mouthLeft", "mouthLowerDownLeft", "mouthLowerDownRight", "mouthOpen",
+    "mouthPressLeft", "mouthPressRight", "mouthPucker", "mouthRight", "mouthRollLower",
+    "mouthRollUpper", "mouthShrugLower", "mouthShrugUpper", "mouthSmile", "mouthSmileLeft",
+    "mouthSmileRight", "mouthStretchLeft", "mouthStretchRight", "mouthUpperUpLeft",
+    "mouthUpperUpRight",
+]
+NOSE = ["noseSneerLeft", "noseSneerRight"]
+TONGUE = ["tongueOut"]
+
+ARKIT = BROW + CHEEK + EYE + JAW + MOUTH + NOSE + TONGUE
+assert len(ARKIT) == 53, f"expected 53 ARKit targets, built {len(ARKIT)}"
+assert len(set(ARKIT)) == 53, "duplicate ARKit target name in the list"
+
+# --- The bone contract --------------------------------------------------------------------
+# Every name the runtime resolves under `Armature`. Collected from talkinghead.mjs's pose
+# templates and poseDelta tables; a name missing here throws at runtime, so this list is the
+# spec. `parent` lays out the hierarchy; `pos` is the rest position in metres (a ~1.7 m figure,
+# head at the top since our mesh is a head-and-shoulders bust).
+FINGERS = ["Index", "Middle", "Ring", "Pinky"]
+_BONES: list[tuple[str, str | None, tuple[float, float, float]]] = [
+    ("Hips", None, (0.0, 0.0, 0.0)),
+    ("Spine", "Hips", (0.0, 0.12, 0.0)),
+    ("Spine1", "Spine", (0.0, 0.12, 0.0)),
+    ("Spine2", "Spine1", (0.0, 0.12, 0.0)),
+    ("Neck", "Spine2", (0.0, 0.10, 0.0)),
+    ("Head", "Neck", (0.0, 0.08, 0.0)),
+]
+for side, sx in (("Left", 1.0), ("Right", -1.0)):
+    _BONES += [
+        (f"{side}Shoulder", "Spine2", (sx * 0.06, 0.08, 0.0)),
+        (f"{side}Arm", f"{side}Shoulder", (sx * 0.12, 0.0, 0.0)),
+        (f"{side}ForeArm", f"{side}Arm", (sx * 0.24, 0.0, 0.0)),
+        (f"{side}Hand", f"{side}ForeArm", (sx * 0.22, 0.0, 0.0)),
+    ]
+    for f in FINGERS:
+        prev = f"{side}Hand"
+        for i in (1, 2, 3):
+            _BONES.append((f"{side}Hand{f}{i}", prev, (sx * 0.03, -0.01, 0.0)))
+            prev = f"{side}Hand{f}{i}"
+    prev = f"{side}Hand"
+    for i in (1, 2, 3):
+        _BONES.append((f"{side}HandThumb{i}", prev, (sx * 0.02, -0.015, 0.01)))
+        prev = f"{side}HandThumb{i}"
+    _BONES += [
+        (f"{side}UpLeg", "Hips", (sx * 0.10, -0.06, 0.0)),
+        (f"{side}Leg", f"{side}UpLeg", (0.0, -0.42, 0.0)),
+        (f"{side}Foot", f"{side}Leg", (0.0, -0.40, 0.0)),
+        (f"{side}ToeBase", f"{side}Foot", (0.0, -0.06, 0.08)),
+    ]
+
+# The runtime also resolves six named objects off the Armature (talkinghead.mjs:1374-1379):
+# LeftToeBase and RightToeBase (already bones above) plus LeftEye and RightEye, which are read for
+# gaze. They are not pose bones, but a missing one is a hard TypeError, so they are nodes too.
+EYES: list[tuple[str, str, tuple[float, float, float]]] = [
+    ("LeftEye", "Head", (0.030, 0.020, 0.075)),
+    ("RightEye", "Head", (-0.030, 0.020, 0.075)),
+]
+
+BONES = _BONES
+BONE_NAMES = [b[0] for b in BONES]
+assert len(BONE_NAMES) == len(set(BONE_NAMES)), "duplicate bone name"
+EYE_NAMES = [e[0] for e in EYES]
+
+
+# =========================== geometry ======================================================
+
+def _bust(rings: int = 40, sectors: int = 56) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """A head-and-shoulders bust: the head shape the runtime's `upper` camera frames.
+
+    Radii are head proportions (taller than wide, shallower than deep); the chin tapers to a
+    point, the face is flatter than the cranium, and below the neck the mesh flares into
+    shoulders so the silhouette is a person at the chest-up framing the face uses.
+    """
+    rx, ry, rz = 0.085, 0.115, 0.095
+    theta = np.linspace(0.0, np.pi, rings + 1)        # polar, top -> bottom
+    phi = np.linspace(0.0, 2.0 * np.pi, sectors + 1)  # azimuth
+    T, P = np.meshgrid(theta, phi, indexing="ij")
+
+    x = rx * np.sin(T) * np.cos(P)
+    y = ry * np.cos(T)
+    z = rz * np.sin(T) * np.sin(P)
+
+    lower = np.clip(-y / ry, 0.0, 1.0)          # 0 at the equator, 1 at the bottom pole
+    taper = 1.0 - 0.55 * lower**1.6             # chin comes to a point
+    x *= taper
+    z *= taper
+    front = np.clip(z / rz, 0.0, 1.0)
+    z -= 0.22 * rz * front * lower              # flatter face plane
+    y += 0.10 * ry * np.clip(z / rz, -1.0, 0.0)  # fuller cranium at the back
+
+    # Neck and shoulders: below the head, pinch to a neck then flare out to shoulders, so the
+    # bust reads as a torso rather than a floating ball.
+    head_bottom = -0.80 * ry
+    below = y < head_bottom
+    t = np.clip((head_bottom - y) / (ry * 2.2), 0.0, 1.0)  # 0 at the head base, 1 at the bottom
+    neck = 1.0 - 0.55 * np.clip(t / 0.28, 0.0, 1.0)        # pinch in
+    shoulder = np.clip((t - 0.28) / 0.72, 0.0, 1.0) ** 0.7  # flare out
+    width = 0.30 + 2.6 * shoulder                           # half-width at the widest
+    x = np.where(below, np.sign(x) * width * np.abs(np.sin(T)) * 0.9 + x * neck * 0.12, x)
+    z = np.where(below, z * neck * 0.85, z)
+    y = np.where(below, y, y)
+
+    pos = np.stack([x, y, z], axis=-1).reshape(-1, 3)
+    n = np.stack([x / rx**2, y / ry**2, z / rz**2], axis=-1)
+    n /= np.linalg.norm(n, axis=-1, keepdims=True) + 1e-12
+    nrm = n.reshape(-1, 3)
+    uv = np.stack([P / (2 * np.pi), 1.0 - T / np.pi], axis=-1).reshape(-1, 2)
+
+    idx = []
+    for i in range(rings):
+        for j in range(sectors):
+            a = i * (sectors + 1) + j
+            b = a + sectors + 1
+            idx += [a, b, a + 1, a + 1, b, b + 1]
+    return pos, nrm, uv, np.asarray(idx, dtype=np.uint32)
+
+
+def _region_weights(pos: np.ndarray) -> dict[str, np.ndarray]:
+    """A soft falloff per facial region over the vertices, in [0,1].
+
+    Each morph target displaces by `falloff * direction`: the falloff is a Gaussian centred where
+    that region sits on the head (mouth below the equator and forward, brow above it, eyes at the
+    sockets), front-weighted so the back of the head stays still.
+    """
+    x, y, z = pos[:, 0], pos[:, 1], pos[:, 2]
+    ny, nz, nx = y / 0.115, z / 0.095, x / 0.085
+    front = np.clip(nz, 0.0, 1.0) ** 2.0
+
+    def blob(cy: float, cx: float = 0.0, sy: float = 0.28, sx: float = 0.45) -> np.ndarray:
+        return np.exp(-(((ny - cy) / sy) ** 2 + ((nx - cx) / sx) ** 2)) * front
+
+    return {
+        "brow": blob(0.34, sy=0.20, sx=0.80),
+        "browL": blob(0.34, cx=0.35, sy=0.20, sx=0.35),
+        "browR": blob(0.34, cx=-0.35, sy=0.20, sx=0.35),
+        "cheek": blob(-0.02, sy=0.26, sx=0.85),
+        "cheekL": blob(-0.02, cx=0.45, sy=0.26, sx=0.34),
+        "cheekR": blob(-0.02, cx=-0.45, sy=0.26, sx=0.34),
+        "eye": blob(0.18, sy=0.14, sx=0.85),
+        "eyeL": blob(0.18, cx=0.34, sy=0.14, sx=0.30),
+        "eyeR": blob(0.18, cx=-0.34, sy=0.14, sx=0.30),
+        "jaw": np.clip(-ny + 0.1, 0.0, 1.0) ** 1.4 * front,
+        "mouth": blob(-0.34, sy=0.16, sx=0.62),
+        "mouthL": blob(-0.34, cx=0.30, sy=0.16, sx=0.26),
+        "mouthR": blob(-0.34, cx=-0.30, sy=0.16, sx=0.26),
+        "mouthLo": blob(-0.46, sy=0.10, sx=0.55),
+        "mouthUp": blob(-0.24, sy=0.10, sx=0.55),
+        "nose": blob(-0.06, sy=0.12, sx=0.30),
+        "noseL": blob(-0.06, cx=0.18, sy=0.12, sx=0.18),
+        "noseR": blob(-0.06, cx=-0.18, sy=0.12, sx=0.18),
+        "tongue": blob(-0.40, sy=0.09, sx=0.30),
+    }
+
+
+def _direction_for(name: str) -> tuple[str, np.ndarray]:
+    """The region a target moves, and the displacement it applies (metres)."""
+    L, R = "mouthL", "mouthR"
+    table: dict[str, tuple[str, tuple[float, float, float]]] = {
+        "browDownLeft": ("browL", (0.0, -0.010, 0.004)),
+        "browDownRight": ("browR", (0.0, -0.010, 0.004)),
+        "browInnerUp": ("brow", (0.0, 0.008, 0.006)),
+        "browOuterUpLeft": ("browL", (0.0, 0.010, 0.002)),
+        "browOuterUpRight": ("browR", (0.0, 0.010, 0.002)),
+        "cheekPuff": ("cheek", (0.0, 0.0, 0.012)),
+        "cheekSquintLeft": ("cheekL", (0.0, 0.008, 0.008)),
+        "cheekSquintRight": ("cheekR", (0.0, 0.008, 0.008)),
+        "jawForward": ("jaw", (0.0, 0.0, 0.014)),
+        "jawOpen": ("jaw", (0.0, -0.020, 0.004)),
+        "noseSneerLeft": ("noseL", (0.0, 0.007, 0.004)),
+        "noseSneerRight": ("noseR", (0.0, 0.007, 0.004)),
+        "tongueOut": ("tongue", (0.0, -0.004, 0.014)),
+        "eyeContact": ("eye", (0.0, 0.003, 0.003)),
+        "mouthSmile": ("mouth", (0.0, 0.008, 0.002)),
+        "mouthClose": ("mouth", (0.0, 0.006, -0.004)),
+        "mouthOpen": ("mouth", (0.0, -0.016, 0.004)),
+        "mouthFunnel": ("mouth", (0.0, -0.006, 0.012)),
+        "mouthPucker": ("mouth", (0.0, -0.002, 0.014)),
+        "mouthLeft": ("mouth", (0.010, 0.0, 0.0)),
+        "mouthRight": ("mouth", (-0.010, 0.0, 0.0)),
+        "mouthRollLower": ("mouthLo", (0.0, 0.004, -0.006)),
+        "mouthRollUpper": ("mouthUp", (0.0, -0.004, -0.006)),
+        "mouthShrugLower": ("mouthLo", (0.0, -0.005, 0.006)),
+        "mouthShrugUpper": ("mouthUp", (0.0, 0.005, 0.006)),
+    }
+    for side in ("Left", "Right"):
+        sn = "L" if side == "Left" else "R"
+        s = L if side == "Left" else R
+        dx = 0.004 if side == "Left" else -0.004
+        table |= {
+            f"mouthSmile{side}": (s, (0.0, 0.008, 0.002)),
+            f"mouthFrown{side}": (s, (0.0, -0.008, 0.002)),
+            f"mouthDimple{side}": (s, (0.0, 0.004, -0.004)),
+            f"mouthPress{side}": (s, (dx, 0.0, -0.003)),
+            f"mouthStretch{side}": (s, (dx * 2.5, 0.0, 0.0)),
+            f"eyeBlink{side}": (f"eye{sn}", (0.0, -0.008, 0.004)),
+            f"eyeWide{side}": (f"eye{sn}", (0.0, 0.009, 0.002)),
+            f"eyeSquint{side}": (f"eye{sn}", (0.0, -0.005, 0.005)),
+            f"eyeLookUp{side}": (f"eye{sn}", (0.0, 0.007, 0.002)),
+            f"eyeLookDown{side}": (f"eye{sn}", (0.0, -0.007, 0.002)),
+            f"eyeLookIn{side}": (f"eye{sn}", (-dx, 0.0, 0.006)),
+            f"eyeLookOut{side}": (f"eye{sn}", (dx, 0.0, 0.006)),
+            f"mouthLowerDown{side}": ("mouthLo", (0.0, -0.010, 0.003)),
+            f"mouthUpperUp{side}": ("mouthUp", (0.0, 0.010, 0.003)),
+        }
+    if name not in table:
+        raise KeyError(f"no displacement authored for ARKit target {name!r}")
+    region, (dx, dy, dz) = table[name]
+    return region, np.asarray([dx, dy, dz], dtype=np.float64)
+
+
+def _morphs(pos: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    w = _region_weights(pos)
+    return [
+        (name, (w[_direction_for(name)[0]][:, None] * _direction_for(name)[1]).astype(np.float32))
+        for name in ARKIT
+    ]
+
+
+# =========================== skinning ======================================================
+
+def _bone_world_positions() -> dict[str, np.ndarray]:
+    """Rest position of each bone in model space, accumulated down the hierarchy."""
+    world: dict[str, np.ndarray] = {}
+    for name, parent, pos in list(BONES) + [(n, p, t) for n, p, t in EYES]:
+        base = world[parent] if parent else np.zeros(3)
+        world[name] = base + np.asarray(pos, dtype=np.float64)
+    return world
+
+
+def _skin_weights(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """JOINTS_0 / WEIGHTS_0 for the bust, 4 influences per vertex.
+
+    The head is bound to Head/Neck, the pinched neck to Neck/Spine2, and the shoulders across
+    the arm and spine bones, so a head turn or a shoulder shrug deforms the mesh plausibly. A
+    smooth blend by height and lateral distance keeps the joints from tearing.
+    """
+    world = _bone_world_positions()
+    idx_of = {n: i for i, n in enumerate(BONE_NAMES)}
+
+    x = pos[:, 0]
+    y = pos[:, 1]
+    head_y = world["Head"][1] - 0.06
+    neck_y = world["Neck"][1]
+    spine_y = world["Spine2"][1]
+
+    # Head weight: 1 above the jaw, fading to 0 by the neck.
+    w_head = np.clip((y - neck_y) / max(head_y - neck_y, 1e-6), 0.0, 1.0)
+    w_head = w_head**0.8
+    # Neck bridges head and chest.
+    w_neck = np.clip(1.0 - np.abs(y - neck_y) / 0.09, 0.0, 1.0) * (1.0 - w_head)
+    # Everything below the neck spreads over spine and shoulders by lateral distance.
+    w_spine = np.clip((spine_y - y) / 0.30 + 0.5, 0.0, 1.0)
+    laterality = np.clip(np.abs(x) / 0.18, 0.0, 1.0)
+    w_shoulder = w_spine * laterality
+
+    contrib = np.zeros((len(pos), 4), dtype=np.float64)
+    names = np.empty((len(pos), 4), dtype=object)
+    for i in range(len(pos)):
+        cand: list[tuple[float, str]] = [
+            (w_head[i], "Head"),
+            (w_neck[i], "Neck"),
+            (w_spine[i] * (1.0 - laterality[i]) * 0.9, "Spine1"),
+            (w_spine[i] * (1.0 - laterality[i]) * 0.6, "Spine2"),
+        ]
+        if x[i] >= 0:
+            cand += [(w_shoulder[i], "LeftShoulder"), (w_shoulder[i] * 0.5, "LeftArm")]
+        else:
+            cand += [(w_shoulder[i], "RightShoulder"), (w_shoulder[i] * 0.5, "RightArm")]
+        cand.sort(reverse=True)
+        top = cand[:4]
+        total = sum(c[0] for c in top) or 1.0
+        for k, (wv, bn) in enumerate(top):
+            contrib[i, k] = wv / total
+            names[i, k] = bn
+
+    joints = np.zeros((len(pos), 4), dtype=np.uint16)
+    for i in range(len(pos)):
+        for k in range(4):
+            joints[i, k] = idx_of[names[i, k]]
+    return joints, contrib.astype(np.float32)
+
+
+def _inverse_bind_matrices(joints: np.ndarray) -> np.ndarray:
+    """An identity inverse-bind per joint: the rest pose is the bind pose, so IBM = identity.
+
+    The runtime poses the armature itself (talkinghead.mjs poseFactory) rather than replaying
+    baked clips, so an identity bind is exactly right here, and it is honest: we bind at rest.
+    Eye nodes carry one too -- they are joints in the skin's joint list.
+    """
+    return np.tile(np.eye(4, dtype=np.float32), (len(BONE_NAMES) + len(EYE_NAMES), 1, 1))
+
+
+# =========================== GLB writing ===================================================
+
+def _pad4(b: bytes, fill: bytes = b"\x00") -> bytes:
+    return b + fill * ((4 - len(b) % 4) % 4)
+
+
+def build() -> bytes:
+    pos, nrm, uv, idx = _bust()
+    morphs = _morphs(pos)
+    joints, weights = _skin_weights(pos)
+    ibm = _inverse_bind_matrices(joints)
+
+    views: list[dict] = []
+    blob = bytearray()
+
+    def add(arr: np.ndarray, target: int | None = None) -> int:
+        start = len(blob)
+        blob.extend(np.ascontiguousarray(arr).tobytes())
+        while len(blob) % 4:
+            blob.append(0)
+        view: dict = {"buffer": 0, "byteOffset": start, "byteLength": arr.nbytes}
+        if target is not None:
+            view["target"] = target
+        views.append(view)
+        return len(views) - 1
+
+    pos = pos.astype(np.float32)
+    nrm = nrm.astype(np.float32)
+    uv = uv.astype(np.float32)
+
+    v_pos = add(pos, target=34962)
+    v_nrm = add(nrm, target=34962)
+    v_uv = add(uv, target=34962)
+    v_idx = add(idx, target=34963)
+    v_jnt = add(joints, target=34962)
+    v_wgt = add(weights, target=34962)
+
+    morph_views = [add(delta, target=34962) for _n, delta in morphs]
+
+    acc: list[dict] = []
+
+    def acc_of(view: int, count: int, comps: int, ctype: int, arr: np.ndarray | None = None) -> int:
+        entry: dict = {
+            "bufferView": view,
+            "componentType": ctype,
+            "count": count,
+            "type": {1: "SCALAR", 2: "VEC2", 3: "VEC3", 4: "VEC4", 16: "MAT4"}[comps],
+        }
+        if arr is not None and ctype == 5126 and comps == 3:
+            entry["min"] = [float(v) for v in arr.min(axis=0)]
+            entry["max"] = [float(v) for v in arr.max(axis=0)]
+        acc.append(entry)
+        return len(acc) - 1
+
+    a_pos = acc_of(v_pos, len(pos), 3, 5126, pos)
+    a_nrm = acc_of(v_nrm, len(nrm), 3, 5126)
+    a_uv = acc_of(v_uv, len(uv), 2, 5126)
+    a_idx = acc_of(v_idx, len(idx), 1, 5125)
+    a_jnt = acc_of(v_jnt, len(joints), 4, 5123)
+    a_wgt = acc_of(v_wgt, len(weights), 4, 5126)
+    a_ibm = acc_of(add(ibm), len(ibm), 16, 5126)
+
+    targets = []
+    for i, (name, delta) in enumerate(morphs):
+        targets.append({"POSITION": acc_of(morph_views[i], len(pos), 3, 5126, delta)})
+        acc[-1]["name"] = name
+        acc[-1]["extras"] = {"targetNames": [name]}
+
+    # --- nodes: Armature -> Hips -> ... plus the skinned mesh under Armature ----------------
+    # The runtime calls getObjectByName('Armature') and then resolves bones by name beneath it,
+    # so every bone is a real node in that subtree.
+    world = _bone_world_positions()
+    nodes: list[dict] = []
+    node_index: dict[str, int] = {}
+
+    # node 0: Armature (the model root the runtime looks up)
+    nodes.append({"name": "Armature", "children": []})
+    node_index["Armature"] = 0
+
+    for name, parent, _pos in BONES:
+        node_index[name] = len(nodes)
+        nodes.append({"name": name, "translation": [float(v) for v in _pos]})
+        host = node_index[parent] if parent else 0
+        nodes[host].setdefault("children", []).append(node_index[name])
+
+    # Eye nodes live under Head; the runtime reads their world position for gaze.
+    for name, parent, t in EYES:
+        node_index[name] = len(nodes)
+        nodes.append({"name": name, "translation": [float(v) for v in t]})
+        nodes[node_index[parent]].setdefault("children", []).append(node_index[name])
+
+    bone_node_ids = [node_index[n] for n in BONE_NAMES + EYE_NAMES]
+    skin_idx = 0
+    mesh_node = len(nodes)
+    nodes.append({"name": "EstateBody", "mesh": 0, "skin": skin_idx})
+    nodes[0].setdefault("children", []).append(mesh_node)
+
+    gltf = {
+        "asset": {"version": "2.0", "generator": "estate-face-avatar (bin/estate-face-avatar)"},
+        "scene": 0,
+        "scenes": [{"nodes": [0]}],
+        "nodes": nodes,
+        "skins": [{"name": "EstateRig", "joints": bone_node_ids, "skeleton": bone_node_ids[0],
+                   "inverseBindMatrices": a_ibm}],
+        "meshes": [
+            {
+                "name": "EstateBody",
+                "primitives": [
+                    {
+                        "attributes": {
+                            "POSITION": a_pos, "NORMAL": a_nrm, "TEXCOORD_0": a_uv,
+                            "JOINTS_0": a_jnt, "WEIGHTS_0": a_wgt,
+                        },
+                        "indices": a_idx,
+                        "material": 0,
+                        "targets": targets,
+                    }
+                ],
+                "weights": [0.0] * len(targets),
+                "extras": {"targetNames": [n for n, _ in morphs]},
+            }
+        ],
+        "materials": [
+            {
+                "name": "EstateSkin",
+                "pbrMetallicRoughness": {
+                    "baseColorFactor": [0.86, 0.68, 0.58, 1.0],
+                    "metallicFactor": 0.0,
+                    "roughnessFactor": 0.62,
+                },
+                "doubleSided": False,
+            }
+        ],
+        "accessors": acc,
+        "bufferViews": views,
+        "buffers": [{"byteLength": len(blob)}],
+    }
+
+    json_b = _pad4(json.dumps(gltf, separators=(",", ":")).encode(), b" ")
+    bin_b = _pad4(bytes(blob))
+    total = 12 + 8 + len(json_b) + 8 + len(bin_b)
+    out = bytearray()
+    out += struct.pack("<III", 0x46546C67, 2, total)
+    out += struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
+    out += struct.pack("<II", len(bin_b), 0x004E4942) + bin_b
+    return bytes(out)
+
+
+def main(argv: list[str]) -> int:
+    data = build()
+    if "--check" in argv:
+        if not OUT.is_file():
+            print(f"FAIL  estate-face-avatar  {OUT} is missing; run bin/estate-face-avatar")
+            return 1
+        if OUT.read_bytes() != data:
+            print(f"FAIL  estate-face-avatar  {OUT} does not match this generator; regenerate and commit")
+            return 1
+        print(f"ok    estate-face-avatar  {OUT.name} matches the generator ({len(data)} bytes)")
+        return 0
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    OUT.write_bytes(data)
+    print(f"wrote {OUT} ({len(data)} bytes, {len(ARKIT)} morph targets, {len(BONES)} bones)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

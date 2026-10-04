@@ -1,19 +1,17 @@
 # Known non-commercial face assets -- tracked debt, not clearance.
 #
-# An asset listed here ships today and may not be shipped by a commercial product. It is carried
-# loudly -- bin/face-licence-gate prints every line on every run -- and the list only ever shrinks:
-# a new non-commercial asset is refused outright, never added here.
-#
-# The entry must match the asset's licence line in
-# backstage/packages/app/public/face/VERSIONS exactly. Edit the asset or its record and the entry
-# stops matching, so the debt has to be re-argued in review rather than inherited silently.
-#
-# When the asset is replaced, delete its line here in the same commit. A line naming an asset that
-# is gone is itself a FAIL, so this file cannot rot into a permanent exemption.
+# EMPTY as of 2026-10-04. The debt this file was opened for is CLOSED.
 #
 #   recorded 2026-10-03 by the face lane (docs/specs/2026-10-03-face-experience-10x.md §1/§6)
-#   blocker  the face shipped a CC BY-NC avatar into a product; the spec asks for an estate-owned
-#            avatar (ARKit-52 blendshapes, commercially licensed or commissioned). Until one
-#            exists, /face is not commercially shippable and this file says so on every gate run.
+#   blocker  the face shipped brunette.glb, a Ready Player Me avatar out of the TalkingHead repo
+#            under CC BY-NC 4.0 (non-commercial), into a product the estate is trying to sell.
+#   closed   2026-10-04 by the same lane. brunette.glb is gone. Its replacement, estate.glb, is
+#            authored by bin/estate-face-avatar from geometry that script computes -- a generated
+#            estate-owned asset with no third-party provenance and no licence to track. The
+#            TalkingHead runtime and three.js (both MIT) are unchanged and still vendored by
+#            bin/estate-face-vendor.
 #
-brunette.glb: Ready Player Me avatar from the TalkingHead repo, CC BY-NC 4.0 (non-commercial; replace with an estate-owned avatar before any commercial use)
+# This file stays as the ratchet's anchor, and the rule is unchanged: a new non-commercial asset
+# is refused outright and may never be added here. An entry that no longer matches a shipped
+# asset is itself a FAIL (bin/face-licence-gate), so the file cannot rot into a standing
+# exemption. It is empty because nothing is carried, which is the only state that means clean.

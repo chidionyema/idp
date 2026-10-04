@@ -238,13 +238,27 @@ fi
   # shipped face. The face shipped brunette.glb, a CC BY-NC avatar, into a product the estate is
   # trying to sell; VERSIONS said so in a sentence nothing read. This rung turns that sentence into
   # a red build. It grades the assets the face loads and the licence each carries, not a proxy.
-  # Proven able to fail 2026-10-03 (a new non-commercial asset -> exit 1) and to pass with the
-  # pre-existing blocker carried as dated, printed debt so main does not go red. Gate: bin/face-licence-gate.
+  # Proven able to fail 2026-10-03 (a new non-commercial asset -> exit 1); as of 2026-10-04 the
+  # blocker is CLOSED -- brunette.glb is gone and estate.glb is estate-owned, so the rung passes
+  # clean with no carried debt, and still refuses any new non-commercial or unrecorded asset.
+  # Gate: bin/face-licence-gate.
   if [ -x "$IDP/bin/face-licence-gate" ]; then
     if touched backstage/packages/app/public/face/ || touched bin/estate-face-vendor \
+       || touched bin/estate-face-avatar \
        || touched bin/face-licence-gate || touched bin/face-licence-known-blockers; then
       echo "  face licence (no non-commercial asset ships)..."
       (cd "$IDP" && bin/face-licence-gate) || fail=1
+
+      # The avatar is generated, so the committed GLB must equal what the generator produces.
+      # Without this the script and the shipped asset drift silently, and the licence record
+      # ("authored by bin/estate-face-avatar") becomes a claim nothing checks. Re-derive and compare.
+      if [ -x "$IDP/bin/estate-face-avatar" ]; then
+        echo "  face avatar (committed GLB matches its generator)..."
+        (cd "$IDP" && python3 bin/estate-face-avatar --check) || fail=1
+      else
+        say "FAIL  estate-face-avatar  bin/estate-face-avatar is missing -- the avatar is unattributable"
+        fail=1
+      fi
     fi
   else
     say "FAIL  face-licence-gate  bin/face-licence-gate is missing -- the face is unlicensed"
