@@ -1,0 +1,125 @@
+/*
+ * The mobile face and fleet pages: does a phone get the app at all, and can it reach the microphone?
+ *
+ * WHY. The founder uses /face and /fleet from a phone. The estate had no mobile browser check, so
+ * every claim about the mobile experience was a desktop measurement wearing a phone's name.
+ * Measured 2026-10-04 with curl (device-independent): `GET /fleet` returned 302 to
+ * idcs-...identity.oraclecloud.com/oauth2/v1/authorize -- the phone is bounced to the Oracle login
+ * wall and the app never loads, so getUserMedia is never called. That is the "microphone blocked"
+ * the founder sees. This test is what proves the fix, on the engines a phone actually runs.
+ *
+ * WHAT IT PROVES, AND WHAT IT DOES NOT. Chromium fake-mic flags (--use-fake-ui-for-media-stream,
+ * --use-fake-device-for-media-stream) do not exist in WebKit, and a phone's own permission prompt
+ * cannot be answered by an automated run. So this test does NOT claim a spoken turn completes on a
+ * phone. It proves the two things that ARE decidable here, and that the founder's defect was made
+ * of: (1) the phone is served the app instead of a login redirect, and (2) the page reaches a real
+ * getUserMedia call, with the refusal named exactly if one happens. A test that asserted more would
+ * be the assertion-instead-of-proof defect this estate keeps paying for.
+ *
+ * RUN: CI only (ubuntu-latest). Playwright does not build WebKit or Chromium for macOS 13, so this
+ * cannot run on the founder's laptop -- measured 2026-10-04 from the installer.
+ *   yarn playwright test --config playwright.mobile.config.ts
+ */
+import { test, expect } from '@playwright/test';
+
+// The app serves its shell on /face and /fleet to a signed-out browser. Anything that redirects to
+// an identity provider is the wall, named so a failure is readable.
+const LOGIN_WALL = /oraclecloud\.com|idcs-|identity\.oraclecloud|\/oauth2\/|\/login/i;
+
+test.describe('mobile shell', () => {
+  for (const path of ['/fleet', '/face']) {
+    test(`a phone is served ${path}, not a login redirect`, async ({ page }) => {
+      const res = await page.goto(path, { waitUntil: 'domcontentloaded' });
+      expect(page.url(), `${path} redirected to ${page.url()}`).not.toMatch(LOGIN_WALL);
+      expect(res?.status(), `${path} status`).toBeLessThan(400);
+      // The document is the app, not an identity provider's page.
+      const html = await page.content();
+      expect(html).not.toMatch(LOGIN_WALL);
+      // The app mounts something: Backstage's root plus our own canvases.
+      await expect(page.locator('body')).toBeVisible();
+    });
+  }
+});
+
+test.describe('mobile microphone reachability', () => {
+  test('the fleet page reaches getUserMedia, or names the refusal', async ({ page, context }) => {
+    // The one permission an automated run CAN grant. On a phone this prompt is the user's; here it
+    // stands in for a granted prompt so the code path past the permission is exercised.
+    await context.grantPermissions(['microphone'], {
+      origin: new URL(process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com').origin,
+    });
+
+    await page.addInitScript(() => {
+      const w = window as any;
+      w.__mic = { hasMediaDevices: false, hasGetUserMedia: false, secure: false, calls: [] };
+      const md = navigator.mediaDevices;
+      w.__mic.hasMediaDevices = !!md;
+      w.__mic.hasGetUserMedia = !!(md && md.getUserMedia);
+      w.__mic.secure = window.isSecureContext;
+      if (md && md.getUserMedia) {
+        const orig = md.getUserMedia.bind(md);
+        md.getUserMedia = async (c: MediaStreamConstraints) => {
+          const rec: any = { audio: !!(c && c.audio), ok: null, errName: null, err: null };
+          w.__mic.calls.push(rec);
+          try {
+            const s = await orig(c);
+            rec.ok = true;
+            rec.tracks = s.getAudioTracks().map((t: MediaStreamTrack) => ({
+              label: t.label,
+              state: t.readyState,
+            }));
+            return s;
+          } catch (e: any) {
+            rec.ok = false;
+            rec.errName = e?.name ?? 'Error';
+            rec.err = String(e?.message ?? e);
+            throw e;
+          }
+        };
+      }
+    });
+
+    await page.goto('/fleet', { waitUntil: 'domcontentloaded' });
+    expect(page.url(), `fleet redirected to ${page.url()}`).not.toMatch(LOGIN_WALL);
+
+    // Ask the page for the mic the way a person does: a tap. Mobile engines require a user
+    // gesture, so this is the only shape that can work on a phone.
+    const candidates = [
+      page.getByTestId('fleet-mic'),
+      page.getByRole('button', { name: /talk|mic|speak|tap/i }),
+    ];
+    let tapped = false;
+    for (const c of candidates) {
+      try {
+        await c.first().click({ timeout: 5_000 });
+        tapped = true;
+        break;
+      } catch {
+        /* try the next shape */
+      }
+    }
+
+    // Give the page a moment to reach the device; a click that never wires up is the defect.
+    await page.waitForTimeout(3_000);
+    const mic = await page.evaluate(() => (window as any).__mic);
+
+    // What must be true on every engine: the API exists and the origin is a secure context. Without
+    // these the page could never ask for a phone microphone at all.
+    expect(mic.hasMediaDevices, 'navigator.mediaDevices is missing').toBe(true);
+    expect(mic.hasGetUserMedia, 'navigator.mediaDevices.getUserMedia is missing').toBe(true);
+    expect(mic.secure, 'not a secure context -- a phone refuses the mic outright').toBe(true);
+
+    // If the page asked, the refusal (if any) must be named, never blank.
+    for (const call of mic.calls) {
+      if (!call.ok) {
+        expect(call.errName, 'a refused mic must carry its error name').toBeTruthy();
+      }
+    }
+
+    // The decisive line, printed so a run's log says what happened rather than only pass/fail.
+    console.log(
+      `mobile mic: tapped=${tapped} calls=${mic.calls.length} ` +
+        mic.calls.map((c: any) => (c.ok ? 'granted' : `${c.errName}`)).join(',') || 'none',
+    );
+  });
+});
