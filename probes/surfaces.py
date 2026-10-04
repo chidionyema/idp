@@ -151,9 +151,10 @@ def _looks_like_login(body: str) -> bool:
 def l1_gate_battery(
     host: str, inv: dict[str, list[str]], get=http, timeout: int = 15
 ) -> list:
-    """This is the probe that was missing on 2026-10-02: it fetches /face/brunette.glb
-    through catalogue.mumchimp.com and refuses to accept a login redirect (followed
-    redirects surface as 200 + HTML sign-in page, so the BODY is graded, not just status)."""
+    """This is the probe that was missing on 2026-10-02: it fetches the face assets
+    (public/face/*.glb, discovered from the tree) through catalogue.mumchimp.com and refuses to
+    accept a login redirect (followed redirects surface as 200 + HTML sign-in page, so the BODY
+    is graded, not just status)."""
     out = []
     # public shells: the gate must NOT answer for these (today's live defect is exactly here)
     targets = [(p, 2_000, "public") for p in inv.get("public_pages", [])]
