@@ -160,8 +160,26 @@ function osRefusalFix(): string {
  * Returns null when nothing is wrong; the caller proceeds with the mic.
  */
 async function micBlocker(): Promise<string | null> {
-  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+  // TWO DIFFERENT BLOCKERS, TWO DIFFERENT FIXES -- do not collapse them into one message.
+  //
+  // Measured on LIVE production 2026-10-04 with an iPhone and a Pixel user-agent: this function
+  // returned "this page is not on https" while the page WAS on https (the address bar was
+  // https://catalogue.mumchimp.com). The cause was `||` here: `!isSecureContext` and
+  // `!mediaDevices.getUserMedia` are not the same fault, and only the first is about the URL. On a
+  // phone the second is what fires -- Safari on iOS exposes `navigator.mediaDevices` as undefined
+  // to a page it is not prepared to grant, which says nothing about https. The page then sent the
+  // founder to fix a URL that was already correct, which is the same defect as the macOS message on
+  // a phone: a fix that cannot be followed, asserting a cause that is not the cause.
+  //
+  // So: an insecure origin names the URL. A SECURE origin with no getUserMedia names the DEVICE,
+  // and asks the platform helper for the path that device can actually follow.
+  if (!window.isSecureContext) {
     return 'microphone unavailable: this page is not on https — open it over https://catalogue.mumchimp.com, never an http:// or raw-IP address';
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return micPlatform() === 'desktop'
+      ? 'microphone unavailable: this browser exposes no microphone API — update the browser, or open this page in Chrome, Safari or Firefox on this device'
+      : `microphone unavailable: ${micPlatform() === 'ios' ? 'Safari on this iPhone/iPad' : 'this Android browser'} will not give the page a microphone — open Settings ${micPlatform() === 'ios' ? '→ Safari → Microphone and choose Ask or Allow' : '→ Apps → Chrome → Permissions → Microphone → Allow'}, then reload this page`;
   }
   try {
     const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
