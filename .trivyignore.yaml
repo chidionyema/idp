@@ -89,6 +89,75 @@ misconfigurations:
       The calico-kube-controllers ClusterRole in the same migration copy, carried verbatim from
       upstream. As the structural raw/ KSV-0046 entry, and dated for the reason given above.
     expired_at: 2027-03-31
+  # Measured 2026-10-04: security-scan's check 5 went red on twelve HIGH findings in the same
+  # migration copy and its two neighbours. The matrix below is what those findings are; each is
+  # the same CNI property as the raw/ entries above, on a path the register had not yet named.
+  - id: KSV-0056   # manage kubernetes networking
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      The same property as the KSV-0056 raw/rbac.yaml entry above: a Calico ClusterRole that can
+      manage NetworkPolicy objects, which is Calico's entire job and this estate's policy
+      enforcement. Carried verbatim from upstream with the four migration edits.
+    expired_at: 2027-03-31
+  - id: KSV-0121   # disallowed volumes
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      As the KSV-0121 raw/*.yaml entry above: the hostPath mounts are how calico-node writes the
+      CNI binary and config onto the node. Migration copy, same bytes.
+    expired_at: 2027-03-31
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      As KSV-0009 above, upstream Calico bytes: the migration Job runs calico-node's own image
+      with the upstream security context. Dated with the migration it belongs to.
+    expired_at: 2027-03-31
+  - id: KSV-0053   # exec into pods
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      The migration controller's Role carries pods/exec because moving a node onto Calico means
+      running the calicoctl commands (i.e. `exec`) the upstream migration procedure prescribes.
+      The file is inert until an operator applies it, and the waiver dies with the migration.
+    expired_at: 2027-03-31
+  - id: KSV-0118   # default security context configured
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      As KSV-0014 above: upstream Calico's own pod template sets a pod-level context and leaves
+      the container at the default; the bytes are the migration copy's and change only with it.
+    expired_at: 2027-03-31
+
+  # ------------------------------------------ a no-masq rule must program the node's iptables (structural)
+  # platform/flannel/pod-no-masq.yaml is a kube-system DaemonSet whose one job is to hold a rule
+  # at the top of nat POSTROUTING so flannel's --ip-masq cannot SNAT pod->pod traffic that the
+  # default-deny NetworkPolicies then drop (the outages its header comment records: 2026-09-08,
+  # 09-26, 09-28). Programming a node's iptables is not something a pod sandbox can do, so this
+  # is a structural host-network finding, the same shape as calico-node above.
+  - id: KSV-0009   # host network
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      A rule that edits the node's nat POSTROUTING chain cannot run inside a pod sandbox;
+      hostNetwork is what the workload is. As the structural calico-node entry above.
+  - id: KSV-0119   # NET_RAW capability added
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      Inserting and re-asserting an iptables rule in nat/POSTROUTING needs NET_RAW on the node's
+      network namespace -- the capability is the mechanism of the rule, not an extra grant.
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      As KSV-0009 above: the container is a shell running calico-node's image to apply and
+      re-assert one iptables rule; it is a host-network DaemonSet with no writable state of its
+      own, and the migration it guards is the same dated work as the entries above.
+  - id: KSV-0118   # default security context configured
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      As KSV-0014 above: the upstream calico/node image's pod template, carried to run one
+      iptables command on the node's network namespace.
+
+  # ---------------------------------------------------------- edge inference writes scratch (dated)
+  # platform/edge-runtime/deploy/resident-brain.yaml had KSV-0014 (root filesystem not read-only),
+  # which is genuinely fixable and was fixed on 2026-10-04: the container now sets
+  # readOnlyRootFilesystem: true with an explicit writable /tmp emptyDir for llama.cpp's scratch.
+  # No waiver is kept for it; the entry lives in the manifests, not here.
 
   # ------------------------------------------- a BPF LSM daemon cannot be unprivileged (structural)
   - id: KSV-0005   # SYS_ADMIN capability added

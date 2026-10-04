@@ -73,10 +73,17 @@ spec:
             runAsNonRoot: true
             runAsUser: 65532
             runAsGroup: 65532
+            # KSV-0014 (trivy config): the root filesystem is read-only. llama.cpp's server
+            # writes scratch under /tmp while it loads the GGUF, so /tmp is an explicit
+            # writable emptyDir -- the same pairing the estate's other hardened pods use.
+            readOnlyRootFilesystem: true
             capabilities: { drop: ["ALL"] }
           volumeMounts:
             - { name: models, mountPath: /models, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: models
           # The artifact volume. It must hold
           # DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf -- a download, not a purchase. Until it exists
