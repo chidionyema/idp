@@ -4,6 +4,12 @@
 # this branch; a pull request opened with GITHUB_TOKEN fires no pull_request run, and does not
 # need to, because the ruleset grades check runs on the head commit.
 # crew#439: a CONFLICTING pull request is refreshed by bin/idp-image-update-pr, never reported ok.
+# crew#267 (2026-10-04): so is one that is BEHIND main. The branch forks from the main it was cut
+# from and the controller only adds tag commits on top, so its tree keeps that old main -- and
+# guarded-paths grades the PR head's OWN copy of bin/idp-ci-guarded-paths. When 573024e85 rewrote
+# the guard and main repaired it, this branch could never pass again: the deploy was red on a gate
+# main had already fixed. The refresh pulls the current main in, so the deploy is graded by the
+# gates that are actually on main.
 name: image-update-pr
 on:
   push:
