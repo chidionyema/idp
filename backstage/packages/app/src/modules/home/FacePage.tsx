@@ -43,7 +43,8 @@ export function FacePage() {
         position: 'fixed',
         inset: 0,
         zIndex: 2000,
-        background: 'radial-gradient(ellipse at 50% 30%, #1d2533 0%, #0b0e14 70%)',
+        background:
+          'radial-gradient(ellipse at 50% 30%, #1d2533 0%, #0b0e14 70%)',
         color: '#e8edf5',
         overflow: 'hidden',
       }}
@@ -93,11 +94,18 @@ export function FacePage() {
           pointerEvents: 'none',
         }}
       >
-        {voice.heard && <div style={{ opacity: 0.65, fontSize: 14 }}>You: {voice.heard}</div>}
-        {voice.reply && <div style={{ fontSize: 17, lineHeight: 1.45 }}>{voice.reply}</div>}
-        {voice.detail && <div style={{ opacity: 0.55, fontSize: 12 }}>{voice.detail}</div>}
+        {voice.heard && (
+          <div style={{ opacity: 0.65, fontSize: 14 }}>You: {voice.heard}</div>
+        )}
+        {voice.reply && (
+          <div style={{ fontSize: 17, lineHeight: 1.45 }}>{voice.reply}</div>
+        )}
+        {voice.detail && (
+          <div style={{ opacity: 0.55, fontSize: 12 }}>{voice.detail}</div>
+        )}
         <button
           type="button"
+          data-testid="face-mic"
           onClick={() => (on ? voice.stop() : voice.start())}
           disabled={!voice.available}
           style={{
@@ -115,7 +123,11 @@ export function FacePage() {
             boxShadow: '0 4px 24px rgba(0,0,0,0.35)',
           }}
         >
-          {voice.available ? (on ? `${LABEL[voice.state]} · tap to stop` : LABEL[voice.state]) : 'Voice is not available here'}
+          {voice.available
+            ? on
+              ? `${LABEL[voice.state]} · tap to stop`
+              : LABEL[voice.state]
+            : 'Voice is not available here'}
         </button>
       </div>
     </div>
