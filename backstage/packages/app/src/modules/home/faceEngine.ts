@@ -60,7 +60,12 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
     cameraView: 'upper',
     avatarMood: 'neutral',
   });
-  await head.showAvatar({ url: `${FACE_ASSETS}brunette.glb`, body: 'F', lipsyncLang: 'en' });
+  // estate.glb is authored by bin/estate-face-avatar: an estate-owned, commercially licensed
+  // avatar (RPM bone names + 53 ARKit blendshapes) generated from geometry we compute. It
+  // replaces brunette.glb, a Ready Player Me model under CC BY-NC 4.0 -- non-commercial, which
+  // a commercial product cannot ship (bin/face-licence-gate; spec
+  // docs/specs/2026-10-03-face-experience-10x.md section 6).
+  await head.showAvatar({ url: `${FACE_ASSETS}estate.glb`, body: 'F', lipsyncLang: 'en' });
   return {
     speak(pcm: ArrayBuffer, text: string) {
       const f32 = new Float32Array(pcm);
