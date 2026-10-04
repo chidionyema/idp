@@ -15,7 +15,6 @@ TH = "1.7.0"      # @met4citizen/talkinghead
 THREE = "0.180.0"  # the version TalkingHead's README pins
 CDN = "https://cdn.jsdelivr.net/npm"
 OUT = Path(__file__).resolve().parents[1] / "backstage/packages/app/public/face"
-AVATAR = "https://github.com/met4citizen/TalkingHead/raw/v{v}/avatars/brunette.glb"
 IMPORT_RE = re.compile(r"""(\bfrom\s*|\bimport\s*\(?\s*)(['"])([^'"]+)\2""")
 
 
@@ -83,13 +82,19 @@ def main() -> int:
         for bare, path in th_imports.items():
             src = src.replace(f"'{bare}'", f"'./three/{path}'").replace(f'"{bare}"', f'"./three/{path}"')
         (OUT / name).write_text(src)
-    (OUT / "brunette.glb").write_bytes(get(AVATAR.format(v=TH)))
+    # No avatar is fetched here. The only avatar in the TalkingHead repo is a Ready Player Me
+    # model under CC BY-NC 4.0 -- non-commercial, and this product is commercial (spec
+    # docs/specs/2026-10-03-face-experience-10x.md section 6; bin/face-licence-gate refuses it).
+    # The estate authors its own avatar instead: bin/estate-face-avatar writes
+    # public/face/estate.glb from geometry it computes, with no third-party asset and no licence
+    # to track. The code vendored above (talkinghead.mjs, three.js) is MIT and stays.
     (OUT / "VERSIONS").write_text(
         f"talkinghead {TH} (MIT)\nthree {THREE} (MIT)\n"
-        "brunette.glb: Ready Player Me avatar from the TalkingHead repo, CC BY-NC 4.0 "
-        "(non-commercial; replace with an estate-owned avatar before any commercial use)\n"
+        "estate.glb: estate-owned avatar, authored by bin/estate-face-avatar (commercial; "
+        "generated geometry, no third-party asset, no licence to track)\n"
     )
-    print(f"vendored {len(seen)} three files + TalkingHead {TH} + avatar into {OUT}")
+    print(f"vendored {len(seen)} three files + TalkingHead {TH} into {OUT}")
+    print("avatar: not vendored -- the estate authors its own (bin/estate-face-avatar)")
     return 0
 
 
