@@ -439,6 +439,25 @@ jobs:
         working-directory: backstage
         run: yarn test --ci --watchAll=false
 
+      # The founder tests /face and /fleet from a phone, and the estate had no mobile browser check,
+      # so every mobile claim was a desktop measurement wearing a phone's name (measured
+      # 2026-10-04: `GET /fleet` 302s to the Oracle login wall, so the app never loads and the mic
+      # is never requested -- read for a day as a macOS microphone refusal, which a phone cannot
+      # have). ubuntu-latest is the one place this can run: Playwright ships no WebKit or Chromium
+      # for macOS 13 (`ERROR: Playwright does not support webkit on mac13`, from the installer, on
+      # the founder's laptop). WebKit is the founder's iPhone engine; Chromium stands in for
+      # Android. The step is not skippable -- a silently skipped mobile check is not a check.
+      - name: the browsers a phone runs (WebKit for iPhone, Chromium for Android)
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: backstage
+        run: yarn playwright install --with-deps webkit chromium
+      - name: a phone is served the app, and reaches the microphone or names the refusal
+        if: steps.touched.outputs.yes == 'true'
+        working-directory: backstage
+        env:
+          PLAYWRIGHT_URL: https://catalogue.mumchimp.com
+        run: yarn playwright test --config playwright.mobile.config.ts
+
   # crew#694 CP4: the front-end kit is the one design source. This job builds it from tokens.json,
   # runs the contrast guard (every text × surface pair, both themes), the purity guard (no colour
   # or size literal outside tokens.json in the kit, its gallery or its scaffold), the kit-import
