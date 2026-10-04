@@ -82,7 +82,14 @@ def test_author_email_is_not_read_at_all() -> None:
 
 
 def test_the_committer_is_what_is_trusted_for_server_commits() -> None:
-    """The one email-shaped exemption reads %ce and requires GitHub's own committer."""
+    """The exemption reads %ce, not %ae, and never trusts the author field.
+
+    WHICH committers qualify is decided by behavior, not by this string match: see
+    `test_a_github_server_commit_is_still_exempt` (noreply@github.com) and
+    `test_the_flux_bot_committer_is_exempt` (the App's `*[bot]@users.noreply.github.com`). This
+    test only pins the mechanism -- committer, not author -- because a shell `case` pattern
+    cannot be matched literally without over-constraining the quoting.
+    """
     code = "\n".join(_code_lines())
     assert "%ce" in code, (
         "server-written commits are identified by committer, not author"
@@ -226,11 +233,51 @@ def test_a_github_server_commit_is_still_exempt(tmp_path: Path) -> None:
 
 
 def test_setting_the_committer_email_does_not_help_an_attacker(tmp_path: Path) -> None:
-    """Only GitHub's exact committer address is exempt -- not any committer at all."""
+    """Only GitHub's own committer addresses are exempt -- not any committer at all."""
     repo = _fresh_repo(tmp_path)
     _commit_as(repo, author="attacker@example.com", committer="attacker@example.com")
     rc, out = _checker_verdict(repo)
     assert rc != 0, f"an arbitrary committer was exempted; checker said:\n{out}"
+
+
+def test_the_flux_bot_committer_is_exempt(tmp_path: Path) -> None:
+    """THE REGRESSION (2026-10-04): image-automation-controller's committer must be exempt.
+
+    Flux pushes with the estate-agents App installation token, so the committer is
+    `estate-agents[bot]@users.noreply.github.com`, never `noreply@github.com`. The guard exempted
+    only the latter, so every image-update PR failed and main stopped taking new image tags --
+    the face avatar was merged and never deployed.
+    """
+    repo = _fresh_repo(tmp_path)
+    _commit_as(
+        repo,
+        author="estate-agents[bot]@users.noreply.github.com",
+        committer="estate-agents[bot]@users.noreply.github.com",
+    )
+    rc, out = _checker_verdict(repo)
+    assert rc == 0, (
+        "a commit written by the estate's GitHub App (Flux image-update) was refused; no local "
+        f"hook runs for the controller, so this exemption must hold. checker said:\n{out}"
+    )
+    assert "GitHub" in out, f"expected the server-commit exemption message; got:\n{out}"
+
+
+def test_a_lookalike_bot_committer_is_still_refused(tmp_path: Path) -> None:
+    """The bot pattern is not a loophole: a non-GitHub committer wearing `[bot]` is refused.
+
+    The exemption rests on GitHub stamping the address. An attacker who sets GIT_COMMITTER_EMAIL
+    to a bot-shaped address at some other domain gets nothing.
+    """
+    repo = _fresh_repo(tmp_path)
+    _commit_as(
+        repo,
+        author="attacker@example.com",
+        committer="attacker[bot]@evil.example.com",
+    )
+    rc, out = _checker_verdict(repo)
+    assert rc != 0, (
+        f"a bot-shaped committer outside github.com was exempted; checker said:\n{out}"
+    )
 
 
 def test_the_typo_string_is_not_the_real_address() -> None:
@@ -257,7 +304,8 @@ def test_the_real_address_is_the_one_the_package_declares() -> None:
     )
     code = "\n".join(_code_lines())
     emails = set(re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+", code))
-    assert emails <= {"noreply@github.com"}, (
+    allowed = {"noreply@github.com"}
+    assert emails <= allowed, (
         f"the checker's executable lines carry email literals beyond GitHub's own committer "
-        f"address: {sorted(emails - {'noreply@github.com'})}"
+        f"addresses: {sorted(emails - allowed)}"
     )
