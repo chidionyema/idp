@@ -134,32 +134,18 @@ def verdict(pr, required):
     # while `gh run list` showed only the cancellations. The estate's own merge bot was the thing
     # holding its own merges out.
     #
-    # A refresh helps exactly one population: a branch whose checks are FINISHED and some of them
-    # are red, where the redness is because main has moved on. A branch whose checks are still
-    # UNSTABLE means the MWG already merged (or tried to). A refresh here starts new CI on the
-    # feature branch, which produces new check entries -- and GitHub's statusCheckRollup returns
-    # those alongside the old entries, causing staleness cycles where the MWG reads a FAILED entry
-    # from the old run even though the new run is still completing. MWG then sees failure -> UPDATE
-    # -> new CI -> more entries -> more staleness. Measured: PR #4764 dros-daemon build.
+    # The refusal is on the checks being RUNNING, and that is the whole fix: a refresh cancels
+    # them, so the branch comes back behind with its evidence destroyed. It is NOT a refusal on
+    # UNSTABLE itself. A branch that is UNSTABLE, behind main and finished-red is the exact
+    # population this refresh exists for (#3253/#3254, #3262): the redness is only because main
+    # moved on, nothing is running, and the refresh is the only way it becomes green.
     #
-    # Fix: when state==UNSTABLE and all checks finished, skip the refresh entirely. The checks
-    # verdict below judges on merits. If green, MERGE fires next tick once GitHub propagates.
-    # If red, SKIP fires next tick. Either way, no new CI is started.
+    # Regression, measured 2026-10-04: dfedbaef0 (#5287, "delegate-build: refuse a plan that did
+    # not search...") carried an unrelated `state==UNSTABLE and behind -> SKIP` branch that turned
+    # that population into a refusal and never updated tests/test_pr_landable.py. Three tests on
+    # the same input (pr("UNSTABLE", [ci FAILURE, bdd SUCCESS], behind_by=9)) still demand UPDATE
+    # and had gone red -- the tests are the contract, and the branch below is what satisfies it.
     behind_by = pr.get("behind_by", 0) or 0
-    if state == "UNSTABLE":
-        running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]
-        if running:
-            return "SKIP", (
-                f"mergeStateStatus=UNSTABLE, {len(running)} check(s) still running; "
-                f"skipping refresh to avoid staleness cycle"
-            )
-        behind = behind_by > 0
-        if behind:
-            return "SKIP", (
-                f"mergeStateStatus=UNSTABLE, behind main by {behind_by} commit(s); "
-                f"skipping refresh -- MWG already merged, GitHub propagates asynchronously"
-            )
-        # UNSTABLE but checks finished and not behind -- let checks verdict below judge on merits.
     behind = state == "BEHIND" or behind_by > 0
     if behind and state in ("BEHIND", "UNSTABLE", "BLOCKED", "CLEAN"):
         running = [c for c in checks if (c.get("status") or "COMPLETED") != "COMPLETED"]
