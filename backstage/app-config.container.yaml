@@ -20,6 +20,18 @@ app:
   baseUrl: ${APP_BASE_URL}
 
 auth:
+  # The container build registers the guest provider ONLY. app-config.yaml (the base) also
+  # registers `oauth2Proxy: {}`, which merges in and becomes the provider the SPA tries FIRST.
+  # The edge 401s /api/auth/oauth2Proxy/refresh -- measured in a real browser 2026-10-04:
+  # guest/refresh 200, then oauth2Proxy/refresh 401, then the app throws the session away and
+  # reloads, forever. The result was a reload loop in which the face NEVER mounted (canvases: 0,
+  # zero requests for /face/talkinghead.mjs or /face/estate.glb), at every size, on every device.
+  # A provider whose refresh the edge refuses is not a fallback; it is a trap. This is the
+  # INVERSE of what this file is for (it exists to add the container's differences), and that is
+  # the point: the difference here is a SUBTRACTION, and Backstage replaces arrays rather than
+  # merging them, so restating `providers` to hold only `guest` is what removes `oauth2Proxy`.
+  # The front door still signs a verified user in by its own redirect before the SPA loads; this
+  # only stops the SPA from asking an edge it cannot ask.
   providers:
     guest:
       # The image sets NODE_ENV=production, and Backstage refuses the guest
