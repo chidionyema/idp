@@ -62,6 +62,27 @@ RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid
     yarn install --immutable
 COPY --chown=node:node . .
 RUN yarn tsc
+# WHERE THE FLEETVIEW BACKEND LIVES, BAKED IN AT BUILD TIME.
+#
+# FleetReactorApp.tsx reads `process.env.FLEETVIEW_URL ?? 'http://127.0.0.1:18790'`, and Backstage's
+# bundler inlines process.env at build time -- so if this arg is unset the shipped bundle dials
+# LOOPBACK on whatever device opens the page. Measured live 2026-10-04: opening
+# https://catalogue.mumchimp.com/fleet logged
+#   "Access to resource at 'http://127.0.0.1:18790/stream' from origin
+#    'https://catalogue.mumchimp.com' has been blocked by CORS policy",
+# because 127.0.0.1 on the founder's phone is the phone. The page loaded and the data path could
+# not, which is the laptop-bound behaviour the founder named. The default below is the public
+# Backstage origin, because the fleetview HTTP routes cross it at /api/proxy/fleetview (the proxy
+# cannot carry the SSE upgrade, so the stream dials the origin directly -- see the note in
+# FleetReactorApp.tsx). The value is the PROXY prefix, not the bare host: the backend serves
+# /stream, /signals, /replies, /work, /nudge, /ledger and /voice/* at its ROOT (serve.py), and
+# app-config.yaml's /fleetview proxy rewrites '^/api/proxy/fleetview' -> '' before forwarding. So
+# `${origin}/stream` must arrive as /api/proxy/fleetview/stream, and the bare host would 404.
+#
+# Defaulted rather than required: an image built without the arg must still reach the service the
+# way every other /api call does, not silently fall back to loopback.
+ARG FLEETVIEW_URL=https://catalogue.mumchimp.com/api/proxy/fleetview
+ENV FLEETVIEW_URL=${FLEETVIEW_URL}
 RUN yarn build:all
 RUN mkdir packages/backend/dist/skeleton packages/backend/dist/bundle \
     && tar xzf packages/backend/dist/skeleton.tar.gz -C packages/backend/dist/skeleton \
