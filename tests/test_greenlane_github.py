@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -462,3 +463,88 @@ def test_no_state_ref_is_a_fresh_start_but_a_ref_without_state_json_is_corruptio
     b.fetch()
     with pytest.raises(RuntimeError, match="no state.json"):
         b.load_state_text()
+
+
+# --- the ruleset's required checks must actually be produced on main -------------------------
+#
+# The incident this guards (found 2026-10-04): ruleset 24071703 `required-checks-main` lists
+# `guarded-paths` as a required status check on ~DEFAULT_BRANCH. guarded-paths.yml triggered on
+# pull_request, merge_group and push:[queue/**] -- but never on a push to main. Every candidate
+# was graded on queue/bNNN and passed, then the engine fast-forwarded main and DELETED the queue
+# branch, so the check never reported where the ruleset looks. On main 9bd03a78a840 the check-runs
+# were ci-success/bdd/land/tick with no guarded-paths run at all, and `bin/idp-greenlane status`
+# reported main_green:false with alarm:true indefinitely.
+#
+# A required check whose workflow cannot run on the required branch is a check that can only ever
+# report ABSENT. It is not a gate; it is a permanent red light that trains everyone to ignore the
+# alarm. This test reads the real ruleset and the real workflow triggers, so the two cannot drift.
+
+
+def _ruleset_required_contexts() -> list[str]:
+    spec = yaml.safe_load(
+        (ROOT / "platform/github/ruleset.idp.required-checks.json").read_text()
+    )
+    for rule in spec["rules"]:
+        if rule["type"] == "required_status_checks":
+            return [c["context"] for c in rule["parameters"]["required_status_checks"]]
+    raise AssertionError("ruleset declares no required_status_checks")
+
+
+def _triggers_of(doc: dict) -> dict:
+    # `on:` parses as the boolean True under YAML 1.1 resolvers.
+    return doc.get(True) or doc.get("on") or {}
+
+
+def _workflow_triggers(path: Path) -> dict:
+    return _triggers_of(yaml.safe_load(path.read_text()))
+
+
+def _push_branches(triggers: dict) -> list[str]:
+    push = triggers.get("push") or {}
+    if push is True:
+        return ["**"]  # every branch
+    return push.get("branches") or []
+
+
+def _matches_main(patterns: list[str]) -> bool:
+    return any(p in ("main", "**", "*") for p in patterns)
+
+
+def test_every_required_check_on_main_is_produced_by_a_workflow_that_runs_on_main():
+    """Each required context must come from a workflow that triggers on a main push, or from one
+    that reports on pull_request/merge_group and is therefore carried onto the main commit."""
+    workflows = sorted((ROOT / ".github/workflows").glob("*.yml"))
+    # context -> (job names it can produce, does any of its events reach main?)
+    produced: dict[str, bool] = {}
+    for wf in workflows:
+        try:
+            doc = yaml.safe_load(wf.read_text())
+        except yaml.YAMLError:
+            continue
+        jobs = doc.get("jobs") or {}
+        triggers = _triggers_of(doc)
+        reaches_main = _matches_main(_push_branches(triggers)) or bool(
+            triggers.get("pull_request") or triggers.get("merge_group")
+        )
+        for job, spec in jobs.items():
+            # A job's check-run name defaults to the job id (or its explicit `name:`).
+            name = (spec or {}).get("name") or job
+            produced.setdefault(name, reaches_main)
+            produced.setdefault(f"{name} / {name}", reaches_main)
+
+    missing = [c for c in _ruleset_required_contexts() if not produced.get(c, False)]
+    assert not missing, (
+        f"required on main but no workflow that runs on main produces them: {missing}. "
+        "A required check that never reports is not a gate -- either give its workflow a push "
+        "trigger for main, or drop it from required-checks-main."
+    )
+
+
+def test_guarded_paths_specifically_runs_on_a_main_push():
+    """The exact regression, pinned by name so it cannot come back quietly."""
+    triggers = _workflow_triggers(ROOT / ".github/workflows/guarded-paths.yml")
+    assert _matches_main(_push_branches(triggers)), (
+        "guarded-paths.yml does not trigger on a push to main, so the context "
+        "`guarded-paths` (required by ruleset required-checks-main) can only ever report ABSENT "
+        "on main -- which pins main_green to false forever."
+    )

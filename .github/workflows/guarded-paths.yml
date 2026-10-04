@@ -11,7 +11,17 @@ on:
   pull_request:
   merge_group:
   push:
-    branches: [queue/**]   # the Greenlane candidate, graded against origin/main before it becomes main
+    branches:
+      - 'queue/**'          # the Greenlane candidate, graded against origin/main before it becomes main
+      # main itself. The ruleset required-checks-main (24071703) lists `guarded-paths` as a
+      # required status check on ~DEFAULT_BRANCH, but this workflow only ever ran on
+      # pull_request/merge_group/queue/**. Every candidate was graded on queue/bNNN and passed;
+      # then main fast-forwarded and the check stayed behind on a queue branch the engine deletes.
+      # So on main the required context was permanently ABSENT (measured 2026-10-04 on
+      # 9bd03a78a840: check-runs carried ci-success/bdd/land/tick and no guarded-paths run at all),
+      # and bin/idp-greenlane status reported main_green:false with alarm:true forever. The
+      # grading is unchanged -- this only gives it the trigger the ruleset already assumes.
+      - main
 permissions:
   contents: read
 concurrency:
@@ -32,6 +42,16 @@ jobs:
       - name: run bin/idp-ci-guarded-paths against the base
         run: |
           set -uo pipefail
-          base_ref="${{ github.base_ref }}"
-          base="origin/${base_ref:-main}"
+          # On a push to main there is no base_ref, and grading main against origin/main would
+          # diff it against itself and check nothing. Grade the pushed range instead: the commit
+          # main was at before this push (${{ github.event.before }}). Guard the all-zeros sha a
+          # branch-create sends, falling back to the HEAD parent.
+          if [ -n "${{ github.base_ref }}" ]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            base="${{ github.event.before }}"
+            if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+              base="HEAD~1"
+            fi
+          fi
           bin/idp-ci-guarded-paths "$base"
