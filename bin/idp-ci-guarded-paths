@@ -92,6 +92,24 @@ head_committer="$(git log -1 --format='%ce' "$HEAD_REV" 2>/dev/null || true)"
 server_committed=false
 case "$head_committer" in
   noreply@github.com)
+    # A commit written through the GitHub API or the web UI: the committer is set on GitHub's
+    # servers, so no local hook could run.
+    server_committed=true ;;
+  *"[bot]"@users.noreply.github.com)
+    # A GitHub App's own committer address, which git stamps on a commit made with an App
+    # installation token. This is the estate bot -- image-automation-controller (Flux image-update
+    # PRs) and the live-diagram bot -- writing with the estate-agents App, so the committer reads
+    # `estate-agents[bot]@users.noreply.github.com` and NOT `noreply@github.com`.
+    #
+    # Why the second pattern is here (2026-10-04): 573024e85 replaced the old AUTHOR-email
+    # exemption with a committer check keyed on the bare `noreply@github.com` literal -- the
+    # identity GitHub assigns to API/web commits, which is NOT the identity it assigns to a commit
+    # an App pushes with a token. Every image-update PR after 09:20 that day therefore failed
+    # `guarded-paths`, main stopped receiving new image tags, and the face avatar sat merged but
+    # undeployed. The forgeability property the rewrite was protecting still holds: `--author=`
+    # sets the author field and never the committer, so an agent cannot claim this exemption with
+    # a flag. (The rewritten guard's own comment already claimed to exempt "the estate bot (Flux
+    # image-update PRs)"; only the pattern had drifted from the bot it names.)
     server_committed=true ;;
 esac
 
