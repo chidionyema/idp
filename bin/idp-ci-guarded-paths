@@ -65,34 +65,54 @@ if [ -n "$merge_bad" ]; then
 fi
 
 # 3) X-Idp-Signed trailer (defeats --no-verify).
-# Exception: commits authored by the estate bot (Flux image-update PRs, live-diagram bot) cannot
-# run the commit-msg hook because they are created via the GitHub API by a GitHub App, not via
-# git on a machine where the hook is installed. These commits never touch guarded paths (checked
-# above); the unsigned-HEAD check does not apply to them.
 #
-# Also exempt: founding engineer commits. The founding engineer may author with any of their
-# registered GitHub emails on this machine. Both emails are cryptographically verified via the
-# X-Idp-Auth trailer on any commit that touches guarded paths; the unsigned-HEAD check does not
-# apply to founder-authored commits since the commit-msg hook is installed on their machines.
-head_author="$(git log -1 --format='%ae' "$HEAD_REV" 2>/dev/null || true)"
-bot_authored=false
-founder_authored=false
-case "$head_author" in
-  *"[bot]"*|*"noreply.github.com"*|*"estate-agents"*)
-    bot_authored=true ;;
-  chidionyema@gmail.com|chidiony333@gmail.com)
-    founder_authored=true ;;
+# TWO exemptions, and only two, both of which rest on a fact the author cannot forge:
+#
+#   (a) The commit's COMMITTER is GitHub itself. A commit written through the GitHub API or the
+#       web UI is created on GitHub's servers; no local hook can run there, so no stamp can exist.
+#       The committer identity is set by GitHub, not by the pushing client -- `git commit
+#       --author=` cannot produce it. This is the estate bot (Flux image-update PRs, the
+#       live-diagram bot). These commits never touch guarded paths (checked above).
+#
+#   (b) The commit carries a VALID X-Idp-Auth trailer, verified against docs/keys/founder.pub.
+#       That is a real Ed25519 signature over a payload the private key alone can produce, so it
+#       is proof of the founder, not a claim of one.
+#
+# WHAT WAS HERE BEFORE, AND WHY IT IS GONE: the check exempted a commit when its AUTHOR EMAIL was
+# one of two hardcoded strings. That is not an identity, it is a text field, and it failed three
+# ways at once. It carried a typo (the list held `chidiony333@gmail.com`; the founder's actual
+# second address is `chidionyema333@gmail.com`, which appears in packages/sdk-py/pyproject.toml
+# and nowhere else in the estate), so the founder was exempt under one address and refused under
+# the other. It was a second copy of an identity that already lives in one place, so it drifted
+# the moment either changed. And it was forgeable: `git commit --author="<anyone>"` claimed the
+# exemption with no key, no signature, and no hook. An authorization that a text field can confer
+# is not authorization. The email list is deleted rather than repaired; a signature is the only
+# thing a human brings to this check now.
+head_committer="$(git log -1 --format='%ce' "$HEAD_REV" 2>/dev/null || true)"
+server_committed=false
+case "$head_committer" in
+  noreply@github.com)
+    server_committed=true ;;
 esac
 
 signed_line="$(printf '%s\n' "$head_msg" | grep -E '^X-Idp-Signed: ' || true)"
-if [ -z "$signed_line" ] && [ "$bot_authored" = "false" ] && [ "$founder_authored" = "false" ]; then
+founder_signed=false
+if "$IDP/bin/idp-auth-verify" "$HEAD_REV" >/dev/null 2>&1; then
+  founder_signed=true
+fi
+
+if [ -n "$signed_line" ]; then
+  : # stamped by .githooks/commit-msg; nothing further to prove
+elif [ "$server_committed" = "true" ]; then
+  echo "ok    guarded-paths  commit written by GitHub ($head_committer) — no hook can run there"
+elif [ "$founder_signed" = "true" ]; then
+  echo "ok    guarded-paths  founder X-Idp-Auth signature valid — exemption applies"
+else
   echo "FAIL  guarded-paths  HEAD is unsigned (--no-verify / --no-commit-hooks bypass detected)."
   echo "                 Every legitimate commit is stamped by .githooks/commit-msg."
+  echo "                 A commit carrying neither a stamp nor a founder signature is refused"
+  echo "                 regardless of the name in the author field; that field is not an identity."
   rc=1
-elif [ -z "$signed_line" ] && [ "$bot_authored" = "true" ]; then
-  echo "ok    guarded-paths  bot commit ($head_author) — X-Idp-Signed exemption applies"
-elif [ -z "$signed_line" ] && [ "$founder_authored" = "true" ]; then
-  echo "ok    guarded-paths  founder commit ($head_author) — X-Idp-Signed exemption applies"
 fi
 
 exit "$rc"
