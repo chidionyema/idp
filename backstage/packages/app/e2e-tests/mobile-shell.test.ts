@@ -259,3 +259,145 @@ test.describe('mobile microphone reachability', () => {
     });
   }
 });
+
+/*
+ * THE REFUSAL MUST SPEAK THE LANGUAGE OF THE DEVICE THAT REFUSED (2026-10-04).
+ *
+ * WHY. `micRefusalDetail()` ended unconditionally at "System Settings → Privacy & Security →
+ * Microphone → turn Chrome ON", and `micBlocker()`'s site-setting branch pointed at the padlock
+ * and at `chrome://settings/content/microphone`. The founder reads the fleet from a PHONE: no
+ * macOS System Settings, no Chrome settings URL, and (on iOS) no padlock. So a phone-side refusal
+ * rendered a fix that cannot be followed -- while ASSERTING macOS as the cause. A message that
+ * guesses the platform is the same defect as a gate that cannot fail, and it is why "microphone
+ * blocked" survived being "fixed" repeatedly.
+ *
+ * WHAT THIS PROVES. The tests above grant permission, so the mic SUCCEEDS there and no refusal
+ * string is ever rendered -- asserting the message inside them would assert nothing. This test
+ * forces the one state that renders a fix (getUserMedia absent on the page) and reads the page's
+ * own words back, ON THE DESCRIPTOR'S OWN PLATFORM. The Playwright device descriptors set a real
+ * iPhone/Pixel user-agent, so `micPlatform()` genuinely branches; nothing here is stubbed to a
+ * string we then check for.
+ *
+ * DECIDABLE ACROSS ENGINES, deliberately: this asserts TEXT the app chose, not a device result, so
+ * it means the same thing on WebKit (no fake-mic flags) as on Chromium. It does not claim a
+ * spoken turn completes, and it does not claim the founder's phone has granted anything -- that
+ * lives in the phone's own settings and no browser test can read it.
+ */
+test.describe('mobile microphone refusal names the device', () => {
+  for (const [path, testid] of [
+    ['/fleet', 'fleet-mic'],
+    ['/face', 'face-mic'],
+  ] as const) {
+    test(`${path} names a fix this device can follow`, async ({ page }) => {
+      // Hide getUserMedia BEFORE the bundle runs. This is the `!isSecureContext || !mediaDevices`
+      // branch of micBlocker() -- the one path that renders a pre-flight fix without needing a
+      // refusal from an OS we cannot control from CI.
+      await page.addInitScript(() => {
+        Object.defineProperty(navigator, 'mediaDevices', {
+          configurable: true,
+          get: () => undefined,
+        });
+      });
+
+      await page.goto(path, { waitUntil: 'load' });
+      expect(page.url(), `${path} redirected to ${page.url()}`).not.toMatch(
+        LOGIN_WALL,
+      );
+
+      // The same named-absence replay the reachability test pins, so this test cannot be taken
+      // down by the live /efficiency payload; see the comment there for the measured body.
+      await page.route('**/efficiency*', route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            since: '1h',
+            error:
+              'efficiency report not in this image: /app/bin/estate-efficiency-report',
+            available: false,
+          }),
+        }),
+      );
+      await page.reload({ waitUntil: 'load' });
+
+      const micButton = page.getByTestId(testid);
+      await expect(
+        micButton,
+        `${path} never rendered its mic control (testid ${testid})`,
+      ).toBeVisible({ timeout: 90_000 });
+
+      // Read the device the page believes it is on -- the same UA the app branches from.
+      const ua = await page.evaluate(() => navigator.userAgent);
+      const platform = /iPhone|iPad|iPod/i.test(ua)
+        ? 'ios'
+        : /Android/i.test(ua)
+          ? 'android'
+          : 'desktop';
+      // A descriptor that reports desktop would make the assertion below meaningless, so it is
+      // itself asserted rather than assumed.
+      expect(
+        platform,
+        `this project must run a phone descriptor to test the phone message; UA was: ${ua}`,
+      ).not.toBe('desktop');
+
+      await micButton.first().click({ timeout: 15_000 });
+
+      // Poll for the page's own words: `start()` names the block in `voice.detail`, surfaced on the
+      // control's title.
+      let detail = '';
+      for (let i = 0; i < 30; i++) {
+        detail = await page.evaluate(id => {
+          const el = document.querySelector(
+            `[data-testid="${id}"]`,
+          ) as HTMLElement | null;
+          return (
+            (el?.getAttribute('title') ?? '') +
+            ' ' +
+            (document.body.innerText || '')
+          );
+        }, testid);
+        if (/microphone/i.test(detail)) break;
+        await page.waitForTimeout(1_000);
+      }
+
+      // THE ASSERTION. A named block, and the name must fit the platform that rendered it.
+      expect(
+        detail,
+        `tapped the mic with no mediaDevices and the page named no cause; page said: ${detail.slice(0, 300)}`,
+      ).toMatch(/microphone (blocked|unavailable)/i);
+
+      // The exact defect: a Mac-only instruction shown to a phone. These strings cannot be
+      // followed on iOS or Android, so their presence on a phone descriptor is the bug.
+      expect(
+        detail,
+        'a phone was told to open macOS System Settings -- that instruction cannot be followed ' +
+          `on ${platform}. page said: ${detail.slice(0, 300)}`,
+      ).not.toMatch(/System Settings → Privacy & Security → Microphone/i);
+      expect(
+        detail,
+        `a phone was told to use chrome://settings/content/microphone, which ${platform} has no ` +
+          `such surface for. page said: ${detail.slice(0, 300)}`,
+      ).not.toMatch(/chrome:\/\/settings/i);
+
+      // And it must name the platform's OWN path, not merely avoid the Mac one. This is the
+      // positive half: silence about the real fix is as useless as the wrong fix.
+      if (platform === 'ios') {
+        expect(
+          detail,
+          `an iOS device must be told the iOS Settings path. page said: ${detail.slice(0, 300)}`,
+        ).toMatch(/Settings → Safari → Microphone/i);
+      } else {
+        expect(
+          detail,
+          `an Android device must be told the Android permission path. page said: ${detail.slice(0, 300)}`,
+        ).toMatch(/Permissions/i);
+      }
+
+      console.log(
+        `mobile mic refusal ${path}: platform=${platform} said=${detail
+          .replace(/\s+/g, ' ')
+          .slice(0, 160)}`,
+      );
+    });
+  }
+});

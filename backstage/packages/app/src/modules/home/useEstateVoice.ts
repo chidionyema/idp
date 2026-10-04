@@ -88,6 +88,58 @@ const FLEETVIEW = 'plugin://proxy/fleetview';
 const TTS_RATE = 24000;
 
 /**
+ * WHICH DEVICE IS ASKING (2026-10-04).
+ *
+ * Every instruction below used to name macOS: `micRefusalDetail` ended unconditionally with
+ * "System Settings → Privacy & Security → Microphone → turn Chrome ON", and the site-setting
+ * branch of `micBlocker` pointed at the padlock and at `chrome://settings/content/microphone`.
+ * The founder reads the fleet from a PHONE, which has no macOS System Settings, no Chrome
+ * settings URL and (on iOS) no padlock — so a phone-side refusal rendered a fix that cannot be
+ * followed, while ASSERTING macOS as the cause. That is a guess the code was making, not a
+ * measurement, and it is why "microphone blocked" survived several rounds of being "fixed".
+ *
+ * Chosen from the UA because it is the only thing that distinguishes the fixes; the permission
+ * state cannot (all three blockers throw the same NotAllowedError). iPadOS 13+ reports itself as
+ * `Macintosh`, so `maxTouchPoints > 1` is what separates an iPad from a Mac — the standard
+ * check, and the reason the Mac branch cannot simply match on "Mac".
+ */
+export type MicPlatform = 'ios' | 'android' | 'desktop';
+
+export function micPlatform(): MicPlatform {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPod/i.test(ua)) return 'ios';
+  // iPadOS 13+ masquerades as desktop Safari; a real Mac never reports touch points.
+  if (/iPad/i.test(ua)) return 'ios';
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return 'ios';
+  if (/Android/i.test(ua)) return 'android';
+  return 'desktop';
+}
+
+/** The padlock/address-bar instruction, in the words of the device actually holding the phone. */
+function siteSettingFix(): string {
+  switch (micPlatform()) {
+    case 'ios':
+      return 'microphone blocked by this site’s setting — on iOS open Settings → Safari → Microphone and choose Ask or Allow, then reload this page';
+    case 'android':
+      return 'microphone blocked by this site’s setting — tap the lock icon in the address bar → Permissions → Microphone → Allow, then reload this page';
+    default:
+      return 'microphone blocked by this site’s setting — click the padlock/tune icon LEFT OF THE ADDRESS BAR → Microphone → Allow → reload (chrome://settings/content/microphone to check the Not-allowed list)';
+  }
+}
+
+/** The OS-level instruction, for the case where the site is innocent and the platform refused. */
+function osRefusalFix(): string {
+  switch (micPlatform()) {
+    case 'ios':
+      return 'microphone blocked by iOS, not the site — open Settings → Safari → Microphone and choose Ask or Allow, then reload. (If that is already Allow, the block is the OS microphone privacy switch: Settings → Privacy & Security → Microphone.)';
+    case 'android':
+      return 'microphone blocked by Android, not the site — open Settings → Apps → Chrome → Permissions → Microphone → Allow, then reload';
+    default:
+      return 'microphone blocked by macOS, not the site — System Settings → Privacy & Security → Microphone → turn Chrome ON, then restart Chrome and reload this page';
+  }
+}
+
+/**
  * WHY THE MICROPHONE'S REFUSAL MUST BE NAMED, NOT SUMMARIZED (2026-10-03).
  *
  * The founder spent eight hours with voice dead on catalogue.mumchimp.com while the surface
@@ -114,7 +166,7 @@ async function micBlocker(): Promise<string | null> {
   try {
     const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
     if (p.state === 'denied') {
-      return 'microphone blocked by this site’s setting — click the padlock/tune icon LEFT OF THE ADDRESS BAR → Microphone → Allow → reload (chrome://settings/content/microphone to check the Not-allowed list)';
+      return siteSettingFix();
     }
     if (p.state === 'granted') return null;
     // "prompt" + a refusal moments later means the refusal happened OUTSIDE the browser’s
@@ -135,7 +187,7 @@ async function micBlocker(): Promise<string | null> {
 async function micRefusalDetail(): Promise<string> {
   const blocked = await micBlocker();
   if (blocked) return blocked;
-  return 'microphone blocked by macOS, not the site — System Settings → Privacy & Security → Microphone → turn Chrome ON, then restart Chrome and reload this page';
+  return osRefusalFix();
 }
 
 /**
@@ -729,7 +781,9 @@ export function useEstateVoice(): EstateVoice {
         /permission|denied|notallowed/i.test(msg)
           ? await micRefusalDetail()
           : /notfound|device/i.test(msg)
-            ? 'no microphone found — connect one, or check macOS → System Settings → Sound → Input'
+            ? micPlatform() === 'desktop'
+              ? 'no microphone found — connect one, or check macOS → System Settings → Sound → Input'
+              : 'no microphone found — check this device has one and that no other app is holding it, then reload'
             : `microphone failed: ${msg}`,
       );
     }
