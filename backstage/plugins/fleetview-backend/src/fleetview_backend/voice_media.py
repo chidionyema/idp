@@ -1029,6 +1029,23 @@ def log(limit: int = 50) -> dict[str, Any]:
 
 
 def log_summary(limit: int = 200) -> dict[str, Any]:
-    """The friction numbers: empty rate, median first-clause latency, per-voice speed."""
-    _engine, turnlog, _catalogue = _voice_package()
-    return turnlog.summary(limit)
+    """The friction numbers: empty rate, median first-clause latency, per-voice speed.
+
+    Degrades honestly when `sovereign` is not in this image. The Backstage Dockerfile is built
+    with `backstage/` as its context (bin/dockerfiles), so the repo-root `sovereign/` package is
+    outside the context and is not installed -- `_voice_package()` raises ModuleNotFoundError.
+    Widening the context to the repo root to ship it caused a rebuild storm (bin/dockerfiles),
+    and this endpoint is friction observability, not a core surface, so it reports its absence
+    the way `/metrics` beside it already does rather than 500ing with a raw traceback.
+    """
+    try:
+        _engine, turnlog, _catalogue = _voice_package()
+        return turnlog.summary(limit)
+    except ModuleNotFoundError as exc:
+        return {
+            "error": f"{_ENGINE_ABSENT}: {exc}",
+            "turns": 0,
+            "empty": 0,
+            "errors": 0,
+            "available": False,
+        }

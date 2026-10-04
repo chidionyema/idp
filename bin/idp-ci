@@ -864,6 +864,31 @@ else
 fi
 fi  # IDP_CI_SKIP_PYTEST
 
+# 8d. The face route keeps identity in front (ADR 0003). `backstage/app-config.container.yaml`
+#     names the rule in its own words -- "The PR that adds the public route must put identity in
+#     front of it in the same change (ADR 0003, OIDC at the gateway) or turn this flag off;
+#     tests/test_incident_backstage_image_critical_cve.py holds that rule" -- and that cited test
+#     no longer exists, so the rule stood as a comment with nothing behind it. It had already
+#     broken once in production: the edge's /api/ catch-all demanded login-forward-auth-api on
+#     /api/auth/guest/refresh, the one door that exists FOR a signed-out visitor, and the SPA
+#     never mounted (2026-10-03). This rung grades the route the cluster applies, not a
+#     paraphrase of it; each of its three assertions was proven to fail by mutating the
+#     manifest (gate removed / guest door re-gated / data plane opened). Scoped on a pull
+#     request: only a diff that touches the route, the test or this script can change it.
+if ! touched platform/backstage/overlays/oke/httproute.yaml \
+      tests/test_the_face_route_keeps_identity_in_front.py bin/idp-ci; then
+  say "ok    face-route  no face route, test or gate change against $IDP_CI_BASE"
+elif ! "$BDD_PY" -c 'import yaml' >/dev/null 2>&1; then
+  say "BLIND face-route  pyyaml is not installed: pip install pyyaml (ADR 0003 gate not graded)"
+else
+  fr=$("$BDD_PY" -m pytest -q -p no:cacheprovider $XD "$IDP/tests/test_the_face_route_keeps_identity_in_front.py" 2>&1); fr_rc=$?
+  if [ "$fr_rc" -eq 0 ]; then
+    say "ok    face-route $(printf '%s' "$fr" | grep -oE '[0-9]+ passed' | head -1) (ADR 0003: identity in front of the public face)"
+  else
+    say "FAIL  face-route tests/test_the_face_route_keeps_identity_in_front.py (rc=$fr_rc)"; printf '%s\n' "$fr" | tail -20 | sed 's/^/      /'; fail=1
+  fi
+fi
+
 # 8c. The docs site builds strict (ADR 0002, crew#603). Every page is in a Diataxis folder
 #     (tutorials, how-to, reference, explanation, decisions), every nav entry resolves and no
 #     link is dead. Before this rung the sweep that moved 169 files could break every Backstage
