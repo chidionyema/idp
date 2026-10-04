@@ -115,6 +115,35 @@ test.describe('mobile microphone reachability', () => {
         LOGIN_WALL,
       );
 
+      // STEP THROUGH THE FRONT DOOR, the way a person does.
+      //
+      // MEASURED 2026-10-04, in CI on ubuntu-latest AND reproduced in a browser on this laptop:
+      // this test failed `8 failed, 4 passed` with "never rendered its mic control (testid
+      // fleet-mic)" on BOTH /fleet and /face, on BOTH engines. The cause was not the microphone and
+      // not the message. `/fleet` and `/face` sit behind sign-in, so a signed-out visit renders the
+      // WALL -- the body reads "Bytesync | Guest | Enter as a Guest User" -- and this test never
+      // pressed Enter, so it waited 90 seconds for a control that could not exist yet. src/modules/
+      // signin/index.tsx documents the same measurement from the app's side: "before Enter the body
+      // reads 'Bytesync | Guest | Enter as a Guest User', after it the board renders".
+      //
+      // This is why the test is written to ENTER first and judge the mic second: a page can only
+      // reach for a microphone once the app is mounted, and pressing this button is what mounts it.
+      // The button carries no data-testid (the wall is Backstage's own SignInPage), so it is found
+      // by its exact visible name. The wall is best-effort: a run that is already signed in (the
+      // session persists in localStorage, per the same file) shows no button, and then there is
+      // nothing to press -- not a failure.
+      const enter = page.getByRole('button', { name: /^Enter$/ });
+      if (await enter.first().isVisible({ timeout: 20_000 }).catch(() => false)) {
+        await enter.first().click({ timeout: 15_000 });
+      }
+      await expect(
+        page.getByTestId(testid),
+        `${path} still showed the sign-in wall after pressing Enter; body said: ` +
+          (await page.evaluate(() =>
+            (document.body.innerText || '').replace(/\s+/g, ' ').slice(0, 200),
+          )),
+      ).toBeVisible({ timeout: 90_000 });
+
       // Pin the payload that crashes this page onto the route, so the test does not depend on
       // which way the live /efficiency call happens to land. Measured 2026-10-04: the endpoint is
       // bearer-guarded, and an unmocked run gets either this named-absence body or an auth failure
@@ -138,12 +167,9 @@ test.describe('mobile microphone reachability', () => {
       );
       await page.reload({ waitUntil: 'load' });
 
-      // The mic lives inside the FleetReactor canvas, which mounts after the bundle boots -- so wait
-      // for the control itself, not for the document. Measured 2026-10-04 in CI: with only
-      // domcontentloaded the run reached the tap with the app still booting, found nothing, reported
-      // tapped=false calls=0 and PASSED on the weaker assertion. That is the assertion-instead-of-
-      // proof defect: the test was green while the thing it names had not happened. The control is
-      // now waited for and asserted, so a fleet page that never renders its mic is RED, not quiet.
+      // The mic lives inside the FleetReactor canvas, which mounts after the bundle boots AND after
+      // the front door is entered (see above) -- so wait for the control itself, not for the document.
+      // The `expect` on the previous line already proved it mounted; this handle is what the tap uses.
       const micButton = page.getByTestId(testid);
       // The budget is generous on purpose, and it is not the assertion. /fleet lazily loads its
       // route chunks -- measured 2026-10-04 from the deployed runtime map:
@@ -373,38 +399,27 @@ test.describe('mobile microphone refusal names the device', () => {
           `is not the cause. page said: ${detail.slice(0, 300)}`,
       ).not.toMatch(/not on https/i);
 
-      // A named block, and the name must fit the platform that rendered it.
+      // THE CONTRACT THE FOUNDER SET, and the reason this test changed: a voice surface asks for the
+      // microphone by USING it. It never hands a phone a settings chore. His words, 2026-10-04, on
+      // reading the previous version of this file: "there is absolutely no difference... we are not
+      // going to be telling users to set anything on safari." The prior assertions here demanded the
+      // opposite -- they REQUIRED an iOS `Settings → Safari → Microphone` path and failed a page
+      // that did not print one -- so the test was enforcing the defect. A page that sends a user into
+      // a menu has already failed; the tap must reach the device, and a refusal must be short.
       expect(
         detail,
-        `tapped the mic with no mediaDevices and the page named no cause; page said: ${detail.slice(0, 300)}`,
-      ).toMatch(/microphone (blocked|unavailable)/i);
+        `a phone was sent into a settings menu -- a voice surface asks by using the microphone, ` +
+          `it does not send the user into Settings. page said: ${detail.slice(0, 300)}`,
+      ).not.toMatch(/Settings|padlock|chrome:\/\/settings/i);
 
-      // The exact defect: a Mac-only instruction shown to a phone. These strings cannot be
-      // followed on iOS or Android, so their presence on a phone descriptor is the bug.
+      // It must still SAY something when it cannot reach the device. Silence was the original
+      // defect, and this half stays: a tap that reaches nothing and names nothing is worse than a
+      // refusal. What changed is that the words must describe the attempt, not a menu to open.
       expect(
         detail,
-        'a phone was told to open macOS System Settings -- that instruction cannot be followed ' +
-          `on ${platform}. page said: ${detail.slice(0, 300)}`,
-      ).not.toMatch(/System Settings → Privacy & Security → Microphone/i);
-      expect(
-        detail,
-        `a phone was told to use chrome://settings/content/microphone, which ${platform} has no ` +
-          `such surface for. page said: ${detail.slice(0, 300)}`,
-      ).not.toMatch(/chrome:\/\/settings/i);
-
-      // And it must name the platform's OWN path, not merely avoid the Mac one. This is the
-      // positive half: silence about the real fix is as useless as the wrong fix.
-      if (platform === 'ios') {
-        expect(
-          detail,
-          `an iOS device must be told the iOS Settings path. page said: ${detail.slice(0, 300)}`,
-        ).toMatch(/Settings → Safari → Microphone/i);
-      } else {
-        expect(
-          detail,
-          `an Android device must be told the Android permission path. page said: ${detail.slice(0, 300)}`,
-        ).toMatch(/Permissions/i);
-      }
+        `tapped the mic and the page said nothing at all; a refusal must be named. ` +
+          `page said: ${detail.slice(0, 300)}`,
+      ).toMatch(/microphone|mic/i);
 
       console.log(
         `mobile mic refusal ${path}: platform=${platform} said=${detail
