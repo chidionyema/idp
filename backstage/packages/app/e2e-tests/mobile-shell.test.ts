@@ -3,10 +3,12 @@
  *
  * WHY. The founder uses /face and /fleet from a phone. The estate had no mobile browser check, so
  * every claim about the mobile experience was a desktop measurement wearing a phone's name.
- * Measured 2026-10-04 with curl (device-independent): `GET /fleet` returned 302 to
- * idcs-...identity.oraclecloud.com/oauth2/v1/authorize -- the phone is bounced to the Oracle login
- * wall and the app never loads, so getUserMedia is never called. That is the "microphone blocked"
- * the founder sees. This test is what proves the fix, on the engines a phone actually runs.
+ * The defect, measured 2026-10-04 in a real browser: /fleet served the app, then threw
+ * `TypeError: Cannot read properties of undefined (reading 'toFixed')` while rendering (the live
+ * /fleetview/efficiency payload carried no cache_hit_pct, and the hook cast it `as Frame`), which
+ * unmounted the Reactor before its mic control mounted -- 0 canvases, getUserMedia never called.
+ * An earlier `GET /fleet` 302 to the Oracle login wall was a separate, already-fixed symptom, not
+ * this cause. This test is what proves the fix, on the engines a phone actually runs.
  *
  * WHAT IT PROVES, AND WHAT IT DOES NOT. Chromium fake-mic flags (--use-fake-ui-for-media-stream,
  * --use-fake-device-for-media-stream) do not exist in WebKit, and a phone's own permission prompt
