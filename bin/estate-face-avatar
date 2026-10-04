@@ -382,7 +382,7 @@ def build() -> bytes:
 
     def add(arr: np.ndarray, target: int | None = None) -> int:
         start = len(blob)
-        blob.extend(np.ascontiguousarray(arr).tobytes())
+        blob.extend(_quantised_bytes(arr))
         while len(blob) % 4:
             blob.append(0)
         view: dict = {"buffer": 0, "byteOffset": start, "byteLength": arr.nbytes}
@@ -511,6 +511,28 @@ def build() -> bytes:
     out += struct.pack("<II", len(json_b), 0x4E4F534A) + json_b
     out += struct.pack("<II", len(bin_b), 0x004E4942) + bin_b
     return bytes(out)
+
+
+def _quantised_bytes(arr: np.ndarray, places: int = 6) -> bytes:
+    """The binary twin of `_quantise`: the geometry blob, rounded in float32 space.
+
+    Why this exists (2026-10-04): `_quantise` made the *JSON* chunk deterministic and the docstring
+    below says so, but the vertex data is written as raw float32 bytes -- `arr.astype(np.float32)`
+    then `.tobytes()` -- and that path had no rounding at all. The float64 values feeding it come
+    from arithmetic a different numpy/BLAS build may carry by a ULP (`np.linalg.norm` at line 180,
+    the accumulation in `_bust` and `_skin_weights`), and a one-ULP difference is a DIFFERENT BYTE
+    after the float32 cast. So the committed GLB matched on the laptop (numpy 2.0.2, byte-identical
+    on rebuild) and failed in CI with "does not match this generator", which is the same
+    green-locally/red-in-CI shape the JSON fix addressed, one chunk over.
+
+    Rounding in float32 space is the right place: the value that ships is the float32, so rounding
+    it to 6 decimals pins exactly the bytes that are written. 1e-6 model units is far finer than
+    any vertex this generator makes; ±0.0 collapses to +0.0 so a signed zero cannot drift either.
+    """
+    if arr.dtype == np.float32:
+        arr = np.round(arr, places).astype(np.float32)
+        arr = np.where(arr == 0.0, np.float32(0.0), arr).astype(np.float32)
+    return np.ascontiguousarray(arr).tobytes()
 
 
 def _quantise(obj: object, places: int = 6) -> object:
