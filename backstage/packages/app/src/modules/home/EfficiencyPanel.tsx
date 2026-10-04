@@ -69,7 +69,18 @@ export function useEfficiencyFrame() {
       try {
         const res = await fetchApi.fetch('plugin://proxy/fleetview/efficiency?since=1h');
         if (!res.ok) throw new Error(`efficiency ${res.status}`);
-        const next = normalizeFrame(await res.json());
+        const raw = (await res.json()) as Record<string, unknown>;
+        // The endpoint names its own absence (`available:false`, with an `error` saying why -- e.g.
+        // the image carries no estate-efficiency-report). Honour it: show the reason, not a wall of
+        // zeroes dressed as a measurement. This is the payload the live /fleet actually receives.
+        if (raw && (raw.available === false || typeof raw.error === 'string')) {
+          if (!cancelled) {
+            setError(typeof raw.error === 'string' ? raw.error : 'efficiency unavailable');
+            setFrame(null);
+          }
+          return;
+        }
+        const next = normalizeFrame(raw);
         if (!cancelled) {
           setError(null);
           setFrame(next);

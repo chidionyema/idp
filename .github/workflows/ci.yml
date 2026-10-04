@@ -440,13 +440,16 @@ jobs:
         run: yarn test --ci --watchAll=false
 
       # The founder tests /face and /fleet from a phone, and the estate had no mobile browser check,
-      # so every mobile claim was a desktop measurement wearing a phone's name (measured
-      # 2026-10-04: `GET /fleet` 302s to the Oracle login wall, so the app never loads and the mic
-      # is never requested -- read for a day as a macOS microphone refusal, which a phone cannot
-      # have). ubuntu-latest is the one place this can run: Playwright ships no WebKit or Chromium
-      # for macOS 13 (`ERROR: Playwright does not support webkit on mac13`, from the installer, on
-      # the founder's laptop). WebKit is the founder's iPhone engine; Chromium stands in for
-      # Android. The step is not skippable -- a silently skipped mobile check is not a check.
+      # so every mobile claim was a desktop measurement wearing a phone's name. The defect, measured
+      # 2026-10-04 in a real browser: /fleet served the app and then threw
+      # `TypeError: Cannot read properties of undefined (reading 'toFixed')` while rendering the
+      # efficiency frame, unmounting the Reactor before its mic control mounted -- 0 canvases,
+      # getUserMedia never called. An earlier `GET /fleet` 302 to the Oracle login wall was a
+      # separate symptom, already fixed. ubuntu-latest is the one place this can run: Playwright
+      # ships no WebKit or Chromium for macOS 13 (`ERROR: Playwright does not support webkit on
+      # mac13`, from the installer, on the founder's laptop). WebKit is the founder's iPhone engine;
+      # Chromium stands in for Android. The step is not skippable -- a silently skipped mobile check
+      # is not a check.
       - name: the browsers a phone runs (WebKit for iPhone, Chromium for Android)
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
