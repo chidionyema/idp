@@ -89,6 +89,45 @@ misconfigurations:
       The calico-kube-controllers ClusterRole in the same migration copy, carried verbatim from
       upstream. As the structural raw/ KSV-0046 entry, and dated for the reason given above.
     expired_at: 2027-03-31
+  # Measured 2026-10-04: the migration kit was registered for KSV-0009/0014/0017/0046 only, and
+  # the scan flags four more IDs on the same bytes -- KSV-0056 and KSV-0121 on calico.yaml,
+  # KSV-0014/0053/0118 on migration-job.yaml, KSV-0119 on flannel/pod-no-masq.yaml. Those are the
+  # raw/ entries above landing on the migration copy, and the gap turned every pull request red
+  # (security-scan is a required check, so a green lane could not land). Registered here on the
+  # same terms and the same date: the waiver dies when the migration runs or is abandoned.
+  - id: KSV-0056   # manage kubernetes networking
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      As the structural raw/ KSV-0056 entry above: calico-kube-controllers' ClusterRole can manage
+      NetworkPolicy objects, which is Calico's job -- it is this estate's policy enforcement layer.
+      Upstream v3.32.2 bytes carrying the four migration edits.
+    expired_at: 2027-03-31
+  - id: KSV-0121   # disallowed volumes
+    paths: ["platform/calico/raw-migration/calico.yaml"]
+    statement: >-
+      As the structural raw/ KSV-0121 entry above: the hostPath mounts are how calico-node writes
+      the CNI binary and config onto the node. Upstream bytes, migration copy.
+    expired_at: 2027-03-31
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      The flannel migration controller's pod template, as the raw-migration KSV-0009 entry above:
+      upstream-shaped bytes in the migration kit. Real finding, deferred with the rest of the kit.
+    expired_at: 2027-03-31
+  - id: KSV-0053   # exec into pods
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      The migration controller carries the create-pods/exec verbs Calico's own RBAC grants it in
+      the upstream manifest. The file is inert until an operator applies it, and the migration is
+      a watched operation, not a steady state.
+    expired_at: 2027-03-31
+  - id: KSV-0118   # default security context configured
+    paths: ["platform/calico/raw-migration/migration-job.yaml"]
+    statement: >-
+      The migration job's pod template does not set a pod-level securityContext. As the dated
+      KSV-0118 group above: adding runAsNonRoot to a job that turns out to need root fails at the
+      next tick rather than in CI, and this job has not been run yet.
+    expired_at: 2027-03-31
 
   # ------------------------------------------- a BPF LSM daemon cannot be unprivileged (structural)
   - id: KSV-0005   # SYS_ADMIN capability added
@@ -192,6 +231,40 @@ misconfigurations:
       runAsNonRoot to a job that turns out to need root fails at the next tick, not in CI, so it
       is fixed and observed on its own.
     expired_at: 2026-11-30
+  # Measured 2026-10-04: these two paths carry findings of their own and were never registered,
+  # so security-scan (a required check) was red on every pull request and no green lane could
+  # land. Both are properties of what the workload does, not oversights to fix in a CI edit.
+  - id: KSV-0009   # host network
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      This DaemonSet's whole job is to keep cross-node pod traffic un-NATed ahead of flannel's
+      SNAT chain: it re-asserts an iptables rule in the host's nat POSTROUTING every 5s, so it
+      needs the host network namespace and NET_RAW. It is a node-level network primitive, as
+      calico-node is; removing hostNetwork removes the fix for the 2026-09-08/09-26/09-28 pod->pod
+      outages the file documents at its head.
+    expired_at: 2027-03-31
+  - id: KSV-0119   # NET_RAW capability added
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      As KSV-0009 for this file: NET_RAW (and the iptables-nft binary it runs) is exactly how the
+      rule is placed. The container runs one shell loop against the host's netfilter tables.
+    expired_at: 2027-03-31
+  - id: KSV-0014   # root filesystem is not read-only
+    paths: ["platform/flannel/pod-no-masq.yaml", "platform/edge-runtime/deploy/resident-brain.yaml"]
+    statement: >-
+      pod-no-masq writes nothing but needs the host network stack and iptables as KSV-0009 says.
+      resident-brain is llama.cpp's own server image loading a 14B GGUF into a cache directory;
+      it is a real writing workload, so a read-only rootfs needs an emptyDir and a watched run
+      rather than a one-line edit in a CI pull request -- the same deferral, and the same reason,
+      as the KSV-0118 group above.
+    expired_at: 2026-12-31
+  - id: KSV-0118   # default security context configured
+    paths: ["platform/flannel/pod-no-masq.yaml"]
+    statement: >-
+      The pod runs with the host network namespace and priorityClassName system-node-critical; it
+      sets no pod-level securityContext. As the dated KSV-0118 group above: a node-level network
+      daemon is fixed and observed on its own, not by a CI edit.
+    expired_at: 2026-12-31
   - id: KSV-0014   # root filesystem is not read-only
     paths: ["platform/llm/spend-breaker-digest.yaml", "platform/spire/proof.yaml"]
     statement: >-
