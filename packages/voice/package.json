@@ -66,6 +66,7 @@
   },
   "overrides": {
     "sharp": "^0.35.4",
-    "@huggingface/transformers": "^4.3.0"
+    "@huggingface/transformers": "^4.3.0",
+    "protobufjs": "^7.6.6"
   }
 }
