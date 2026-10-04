@@ -3,6 +3,17 @@ kind: Service
 metadata:
   name: temporal-frontend-mesh
   namespace: temporal
+  # require-catalogue-entity (platform/edge/require-catalogue-entity.yaml, Enforce) refuses a
+  # Service outside a system namespace that serves a port but names no catalogue entity, and
+  # this one serves 7233 over a Tailscale LoadBalancer -- a door somebody connects to, so it
+  # names the entity, exactly as temporal.yaml does for the frontend and worker Deployments.
+  # Without it the Kyverno admission webhook denied the resource on every reconcile, the
+  # temporal Kustomization sat Ready=False for 3d17h, and main's required check
+  # `Kustomization/temporal.flux-system` stayed red -- which in turn made the greenlane's
+  # land() fast-forward refused (`GH013: 5 of 7 required status checks are in progress`), so
+  # no lane could reach main at all.
+  labels:
+    backstage.io/kubernetes-id: founder-temporal
 spec:
   type: LoadBalancer
   loadBalancerClass: tailscale
