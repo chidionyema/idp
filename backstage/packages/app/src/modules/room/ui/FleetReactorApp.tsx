@@ -54,6 +54,7 @@ import HarvPanel from './HarvPanel';
 import ConciergeTasks from './ConciergeTasks';
 import KeySync from './KeySync';
 import EfficiencyHud from './EfficiencyHud';
+import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
 import { CineCam } from './cinecam';
@@ -1993,7 +1994,12 @@ export default function FleetReactorApp() {
           strip. Before this they were placed independently and landed on top of the strip and the
           sonar (founder 2026-09-29: "the clean layout is getting bastardised"). */}
       <div className="absolute right-6 top-36 bottom-24 z-30 w-[280px] flex flex-col justify-end gap-2 pointer-events-none">
-      <EfficiencyHud />
+      {/* A crash in a live panel must not take the Reactor down: EfficiencyHud once threw on an
+          absent field and unmounted the whole page, so the mic control never mounted and a phone
+          read it as "microphone blocked". The boundary keeps one bad panel to its own corner. */}
+      <ErrorBoundary componentName="EfficiencyHud">
+        <EfficiencyHud />
+      </ErrorBoundary>
 
       {/* SAFEGUARDS: every gate decision on a real turn, newest first, as it lands on
           the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}

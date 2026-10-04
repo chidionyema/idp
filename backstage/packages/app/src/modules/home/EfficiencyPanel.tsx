@@ -23,6 +23,38 @@ type Frame = {
 
 export type { Frame as EfficiencyFrame };
 
+// The wire is not the type. `GET /fleetview/efficiency` is served by a backend that may predate a
+// field, so a payload can arrive with `cache_hit_pct` (or another numeric) simply absent. Casting
+// it `as Frame` asserted a shape the payload did not have, and two consumers (EfficiencyHud,
+// EfficiencyPanel) then called `.toFixed(1)` on `undefined` -- a render throw that unmounted the
+// whole Reactor, so /fleet showed 0 canvases and its mic control never mounted. That was the
+// "microphone blocked" on a phone: a crash, not a permission.
+// Normalise at the boundary: every declared numeric is coerced to a finite number, so a missing
+// figure displays as 0 -- a named absence -- instead of taking the page down.
+const num = (v: unknown, fallback = 0): number =>
+  typeof v === 'number' && Number.isFinite(v) ? v : fallback;
+
+function normalizeFrame(raw: unknown): Frame {
+  const r = (raw ?? {}) as Record<string, unknown>;
+  return {
+    since: typeof r.since === 'string' ? r.since : 'now',
+    calls_billed: num(r.calls_billed),
+    cache_hit_pct: num(r.cache_hit_pct),
+    cache_saved_input_equiv: num(r.cache_saved_input_equiv),
+    router_bytes_saved: num(r.router_bytes_saved),
+    prefix_checked: num(r.prefix_checked),
+    prefix_broken: num(r.prefix_broken),
+    epochs_snapped: typeof r.epochs_snapped === 'number' ? r.epochs_snapped : undefined,
+    calls_under_lock: typeof r.calls_under_lock === 'number' ? r.calls_under_lock : undefined,
+    folds_ok: typeof r.folds_ok === 'number' ? r.folds_ok : undefined,
+    folds_failed: typeof r.folds_failed === 'number' ? r.folds_failed : undefined,
+    last_fold_error:
+      typeof r.last_fold_error === 'string' || r.last_fold_error === null
+        ? (r.last_fold_error as string | null)
+        : undefined,
+  };
+}
+
 export function useEfficiencyFrame() {
   const fetchApi = useApi(fetchApiRef);
   const [frame, setFrame] = useState<Frame | null>(null);
@@ -37,7 +69,7 @@ export function useEfficiencyFrame() {
       try {
         const res = await fetchApi.fetch('plugin://proxy/fleetview/efficiency?since=1h');
         if (!res.ok) throw new Error(`efficiency ${res.status}`);
-        const next = (await res.json()) as Frame;
+        const next = normalizeFrame(await res.json());
         if (!cancelled) {
           setError(null);
           setFrame(next);
@@ -173,7 +205,7 @@ function TokenProof() {
           {lane}: {v.treat.calls} vs {v.control.calls} calls ·{' '}
           {v.pct_change_usd_per_call === null
             ? v.verdict
-            : `${v.pct_change_usd_per_call.toFixed(1)}% $/call [${v.ci95?.[0].toFixed(1)}, ${v.ci95?.[1].toFixed(1)}] ${v.verdict}`}
+            : `${v.pct_change_usd_per_call.toFixed(1)}% $/call [${num(v.ci95?.[0]).toFixed(1)}, ${num(v.ci95?.[1]).toFixed(1)}] ${v.verdict}`}
         </Chip>
       ))}
       <Summary>
