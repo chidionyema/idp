@@ -35,6 +35,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EfficiencyPanel } from './EfficiencyPanel';
+import { openSse, type SseHandle } from './sse';
 import { EstateMap } from './EstateMap';
 import { EstateMemory } from './EstateMemory';
 import {
@@ -391,16 +392,17 @@ export function Fleet() {
 
     // The stream replaces the old three-second poll. If it cannot be opened the page still shows
     // what it has; the interval below is the fallback so a board is never frozen on a stale row.
-    let source: EventSource | undefined;
-    if (typeof EventSource !== 'undefined') {
-      // EventSource does not route through fetchApi, so the plugin:// middleware is not in
-      // the path. Resolve the backend URL explicitly via discoveryApi -- wrapped in an IIFE
-      // because the useEffect callback itself is not async.
+    let source: SseHandle | undefined;
+    {
+      // Through the authenticated fetch, not `EventSource`: the native one cannot send the
+      // identity token, so the proxy answers it 401 and this board silently degraded to the
+      // poll below (measured 2026-10-04; see sse.ts). Resolve the backend URL explicitly via
+      // discoveryApi -- wrapped in an IIFE because the useEffect callback itself is not async.
       void (async () => {
         try {
           const streamBase = await discoveryApi.getBaseUrl('proxy');
-          source = new EventSource(`${streamBase}/fleetview/stream`);
-          source.onmessage = event => {
+          source = openSse(fetchApi, `${streamBase}/fleetview/stream`, {
+            onmessage: event => {
             try {
               const frame = JSON.parse(event.data);
               setBoard(current =>
@@ -429,7 +431,8 @@ export function Fleet() {
               // A frame that will not parse is dropped; the next read reconciles. Taking the board
               // down on one bad frame would lose every other session with it.
             }
-          };
+            },
+          });
         } catch {
           source = undefined;
         }

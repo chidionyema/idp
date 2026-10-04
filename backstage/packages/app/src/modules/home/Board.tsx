@@ -20,6 +20,7 @@ import {
   useApi,
 } from '@backstage/frontend-plugin-api';
 import { Chip, EstatePage, Section, Sheet, Summary } from '../shell';
+import { openSse, type SseHandle } from './sse';
 import {
   attentionReason,
   needsAttention,
@@ -75,15 +76,17 @@ export function Board() {
     void read();
 
     // SSE stream: optional for the board view. If it opens, it keeps the board current;
-    // if it cannot open (EventSource blocked or backend unavailable), the poll fallback
-    // covers it. The board does not need sub-second updates so a poll is sufficient either way.
-    let source: EventSource | undefined;
-    if (typeof EventSource !== 'undefined') {
+    // if it cannot open (backend unavailable, or the stream refused), the poll fallback covers it.
+    // The board does not need sub-second updates so a poll is sufficient either way.
+    let source: SseHandle | undefined;
+    {
       void (async () => {
         try {
           const streamBase = await discoveryApi.getBaseUrl('proxy');
-          source = new EventSource(`${streamBase}/fleetview/stream`);
-          source.onmessage = event => {
+          // Through the authenticated fetch: the native `EventSource` sends no Authorization
+          // header and the proxy answers 401 (measured 2026-10-04; see sse.ts).
+          source = openSse(fetchApi, `${streamBase}/fleetview/stream`, {
+            onmessage: event => {
             try {
               const frame = JSON.parse(event.data);
               setBoard(current =>
@@ -99,7 +102,8 @@ export function Board() {
             } catch {
               // A bad frame is dropped; the next poll reconciles.
             }
-          };
+            },
+          });
         } catch {
           source = undefined;
         }

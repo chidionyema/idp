@@ -47,6 +47,7 @@ import { tickerLine, gravityOf, fire, stepParticles, pulseRadius, PULSE_MS, burn
 import { useEstateVoice } from '../../home/useEstateVoice';
 // --- ADDED: an estate intent run by voice, shown on the fleet. ---
 import { cueToReactor, type IntentResult } from '../../home/intentCue';
+import { openSse, type SseHandle } from '../../home/sse';
 // --- ADDED: the news desk (crew#974 P2) -- the director's stories, rendered as a broadcast overlay. ---
 import NewsDesk from './NewsDesk';
 import AgentJobs from './AgentJobs';
@@ -1498,7 +1499,7 @@ export default function FleetReactorApp() {
     // gone QUIET -- nothing is emitted when an agent stops, so only a timer can notice. The stream
     // answers "something just happened" and is the only thing that can make a jet mean anything.
     // They are not redundant: one is a heartbeat, the other is a nerve.
-      let es: EventSource | null = null;
+      let es: SseHandle | null = null;
       let retryMs = 2000;
       let retryTimer: ReturnType<typeof setTimeout> | null = null;
       const connect = () => {
@@ -1514,9 +1515,13 @@ export default function FleetReactorApp() {
             retryMs = Math.min(30000, retryMs * 2);
             return;
           }
-          es = new EventSource(`${base}/fleetview/stream`);
-          es.onopen = () => { retryMs = 2000; };   // a good connection resets the backoff
-          es.onmessage = (ev) => {
+          // An authenticated fetch, not `EventSource`: the native one sends no Authorization
+          // header and gets a 401 from the proxy (measured 2026-10-04; see modules/home/sse.ts),
+          // after which the room silently fell back to polling. Same URL, same frames, credential
+          // attached.
+          es = openSse(api, `${base}/fleetview/stream`, {
+            onopen: () => { retryMs = 2000; },   // a good connection resets the backoff
+            onmessage: (ev) => {
             try {
               const frame = JSON.parse(ev.data);
               if (frame?.type === 'cue') {
@@ -1610,17 +1615,18 @@ export default function FleetReactorApp() {
                 if (arrivals.length > 200) arrivals.splice(0, arrivals.length - 200);
               }
             } catch { /* a malformed frame is not a reason to drop the channel */ }
-          };
-          es.onerror = () => {
-            try { es?.close(); } catch { /* already closed */ }
-            es = null;
-            if (cancelled) return;
-            // Backoff, capped: a backend that is down for a minute is retried every 30s rather than
-            // hammered twice a second.
-            retryTimer = setTimeout(connect, retryMs);
-            retryMs = Math.min(30000, retryMs * 2);
-          };
-        } catch { /* an EventSource the browser refuses leaves the poll doing its job */ }
+            },
+            onerror: () => {
+              try { es?.close(); } catch { /* already closed */ }
+              es = null;
+              if (cancelled) return;
+              // Backoff, capped: a backend that is down for a minute is retried every 30s rather
+              // than hammered twice a second.
+              retryTimer = setTimeout(connect, retryMs);
+              retryMs = Math.min(30000, retryMs * 2);
+            },
+          });
+        } catch { /* a stream the browser refuses leaves the poll doing its job */ }
       };
       connect();
 

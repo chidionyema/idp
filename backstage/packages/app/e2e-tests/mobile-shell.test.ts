@@ -115,6 +115,29 @@ test.describe('mobile microphone reachability', () => {
         LOGIN_WALL,
       );
 
+      // Pin the payload that crashes this page onto the route, so the test does not depend on
+      // which way the live /efficiency call happens to land. Measured 2026-10-04: the endpoint is
+      // bearer-guarded, and an unmocked run gets either this named-absence body or an auth failure
+      // depending on session state -- a test whose verdict moves with the auth wall measures the
+      // wall, not the page. Replayed here, the body is the exact 200 JSON the live /fleet receives
+      // (curl, 2026-10-04): {"since":"1h","error":"efficiency report not in this image: /app/bin/
+      // estate-efficiency-report","available":false}. It carries no cache_hit_pct, so before the
+      // normaliser the page threw `TypeError ... reading 'toFixed'` while rendering and unmounted
+      // the Reactor before the mic mounted. With the fix, the control below must still appear.
+      await page.route('**/efficiency*', route =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            since: '1h',
+            error:
+              'efficiency report not in this image: /app/bin/estate-efficiency-report',
+            available: false,
+          }),
+        }),
+      );
+      await page.reload({ waitUntil: 'load' });
+
       // The mic lives inside the FleetReactor canvas, which mounts after the bundle boots -- so wait
       // for the control itself, not for the document. Measured 2026-10-04 in CI: with only
       // domcontentloaded the run reached the tap with the app still booting, found nothing, reported
