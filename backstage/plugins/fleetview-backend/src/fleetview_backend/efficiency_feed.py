@@ -19,7 +19,24 @@ _REPORT = Path(
 )
 
 
+class ReportAbsent(RuntimeError):
+    """The report binary is not in this image, named rather than raised as a bare path error.
+
+    WHY. In the catalogue image `parents[5]` resolves to /app and the Dockerfile copies no `bin/`,
+    so every caller died on `FileNotFoundError: '/app/bin/estate-efficiency-report'` and the route
+    returned a 500 -- measured from the live pod 2026-10-04, on /efficiency and on the
+    estate-token-proof path behind `publish_highlights`. A repo-relative helper that is absent in a
+    container is an expected state, not an exception: the same class of defect as /voice/log's
+    `ModuleNotFoundError: No module named 'sovereign'`, which also 500'd instead of saying so.
+    """
+
+
+_ABSENT = "efficiency report not in this image"
+
+
 def _report():
+    if not _REPORT.exists():
+        raise ReportAbsent(str(_REPORT))
     loader = importlib.machinery.SourceFileLoader(
         "estate_efficiency_report", str(_REPORT)
     )
@@ -30,7 +47,12 @@ def _report():
 
 
 def summary(since: str = "1h") -> dict:
-    rep = _report()
+    try:
+        rep = _report()
+    except ReportAbsent as exc:
+        # The same shape /voice/log and log_summary use for `sovereign` being absent: an endpoint
+        # that cannot reach its engine is absent, not broken, and says so in the payload.
+        return {"since": since, "error": f"{_ABSENT}: {exc}", "available": False}
     totals = rep.Totals()
     for row in rep.load(rep.ledger_path(), rep.parse_since(since)):
         totals.add(row)
@@ -38,8 +60,18 @@ def summary(since: str = "1h") -> dict:
 
 
 async def stream(since: str = "1h", every_s: float = 2.0):
-    """One `efficiency` frame per tick: the window summary plus calls seen since the last tick."""
-    path = _report().ledger_path()
+    """One `efficiency` frame per tick: the window summary plus calls seen since the last tick.
+
+    Degrades like `summary` when the report is not in this image: a stream that cannot read the
+    ledger still emits frames, with the absence named, rather than dropping the connection.
+    """
+    try:
+        path = _report().ledger_path()
+    except ReportAbsent as exc:
+        while True:
+            body = {"since": since, "error": f"{_ABSENT}: {exc}", "available": False}
+            yield f"event: efficiency\ndata: {json.dumps({**body, 'new_calls': 0})}\n\n"
+            await asyncio.sleep(every_s)
     pos = path.stat().st_size if path.exists() else 0
     while True:
         calls = 0
@@ -69,6 +101,12 @@ def proof() -> dict:
     hit = _proof_cache.get("r")
     if hit and time.time() - hit[0] < _PROOF_TTL_S:
         return hit[1]
+    if not _PROOF.exists():
+        # Named absence, not a bare FileNotFoundError: the live pod logged
+        # `fleetview.efficiency_news_failed [Errno 2] No such file or directory:
+        # '/app/bin/estate-token-proof'` every tick (measured 2026-10-04), because this binary is
+        # repo-relative and the image copies no bin/.
+        return {"error": f"{_ABSENT}: {_PROOF}", "available": False}
     loader = importlib.machinery.SourceFileLoader("estate_token_proof", str(_PROOF))
     spec = importlib.util.spec_from_loader(loader.name, loader)
     mod = importlib.util.module_from_spec(spec)
@@ -111,7 +149,14 @@ def _story(
 
 
 def highlights(p: dict) -> list[dict]:
-    """The proof, as news: the estimate's total and top step, then one story per trial lane."""
+    """The proof, as news: the estimate's total and top step, then one story per trial lane.
+
+    An absent proof produces no news rather than a KeyError: `publish_highlights` calls this on
+    whatever `proof()` returns, and a proof that is not in this image (see ReportAbsent) has no
+    estimate to headline.
+    """
+    if not p or p.get("available") is False or "generated" not in p:
+        return []
     at = p["generated"]
     e, t = p["estimate"], p["trial"]
     out = []

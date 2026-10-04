@@ -153,3 +153,29 @@ def test_highlights_satisfy_the_news_story_contract():
     )
     for s in efficiency_feed.highlights(_proof({"opus": _lane(50, -12.0, "saves")})):
         jsonschema.validate(s, schema)
+
+
+def test_a_report_absent_from_the_image_is_reported_not_raised(tmp_path, monkeypatch):
+    """The live defect of 2026-10-04: /efficiency answered 500 to a bare traceback.
+
+    Measured from the pod: `FileNotFoundError: [Errno 2] No such file or directory:
+    '/app/bin/estate-efficiency-report'`, and the news loop logged the sibling
+    `'/app/bin/estate-token-proof'` every tick. The report is repo-relative and the image copies no
+    bin/, so its absence is a property of this image, not a crash. This fails on the old code,
+    which let the path error escape `summary`/`proof`; it passes now that both name it.
+    """
+    missing = tmp_path / "estate-efficiency-report"
+    monkeypatch.setattr(efficiency_feed, "_REPORT", missing)
+    monkeypatch.setattr(efficiency_feed, "_PROOF", missing)
+
+    s = efficiency_feed.summary("1h")
+    assert s["available"] is False
+    assert "not in this image" in s["error"]
+    # A caller that cannot build a frame still gets a true statement, not an exception.
+    assert s["since"] == "1h"
+
+    p = efficiency_feed.proof()
+    assert p["available"] is False
+    assert "not in this image" in p["error"]
+    # The news desk reads highlights(body) and has no stories to send for an absent proof.
+    assert efficiency_feed.highlights(p) == []
