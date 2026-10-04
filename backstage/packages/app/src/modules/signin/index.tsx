@@ -6,12 +6,25 @@
 // SignInPage. Live catalogue.mumchimp.com is a production webpack build, so it
 // keeps the front-door page.
 //
-// When the exchange fails (a direct hit that skipped the door, a proxy hiccup) the
-// first frame a visitor sees is this page. It carries the estate's name and one
-// sentence, never the vendor's error text (crew#459 audit, 2026-08-29).
+// 2026-10-04, PROVEN IN A REAL BROWSER: production did NOT reach the door. It asked for the
+// oauth2Proxy provider, whose /api/auth/oauth2Proxy/refresh is answered by the edge's
+// login-forward-auth-api middleware -- oauth2-proxy's /oauth2/auth, which returns 401 unless the
+// browser already carries the door's `.mumchimp.com` cookie. The face is deliberately reachable
+// WITHOUT that cookie (its /face and /voice assets are public, and the guest lane exists for a
+// visitor who skipped the door), so the refresh always 401'd, SignInUnavailable rendered, and its
+// guest "Enter" button reloaded the page straight back into the same failing provider. Measured in
+// real Chrome at catalogue.mumchimp.com/face: guest/refresh 200, oauth2Proxy/refresh 401, reload,
+// forever -- canvases: 0, and zero requests for /face/talkinghead.mjs or /face/estate.glb.
+//
+// The defect was a contradiction, not a missing header: ProxiedSignInPage asks the door for an
+// identity on a page that does not require the door. The fix is to sign in with the provider this
+// deployment actually serves -- guest -- which returns a real Backstage token with no door cookie.
+// The door still governs ENTRY: `/` and every data path keep login-forward-auth, so a door session
+// is still what gets a verified user their identity, and nobody reads the catalogue without one.
+// What changes is only which button the SPA presses, and it now presses the one that opens.
 import { createFrontendModule } from '@backstage/frontend-plugin-api';
 import { SignInPageBlueprint } from '@backstage/plugin-app-react';
-import { ProxiedSignInPage, SignInPage } from '@backstage/core-components';
+import { SignInPage } from '@backstage/core-components';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import { Box, Button, Flex, Text } from '@backstage/ui';
 
@@ -31,21 +44,16 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
             {title}
           </Text>
           <Text variant="body-large" color="secondary">
-            Your sign-in did not reach the portal. Open the estate from its
-            front door and it signs you in on the way through.
+            The portal could not start your session. Reloading usually clears it; if not, open the
+            estate from its front door and it signs you in on the way through.
           </Text>
+          {/* A browser reload is the retry, and it is safe now: the page no longer asks a
+              provider the edge refuses, so a reload re-runs the guest provider (which answers
+              200) rather than looping. */}
           <Button variant="primary" onPress={() => window.location.reload()}>
             Try again
           </Button>
-          {/* RC-1b (founder, 2026-10-03: "open the anonymous lane"): the door exchange
-              failed, but the estate still speaks. Guest is registered in production
-              for exactly this fallthrough (packages/backend/src/index.ts) and the voice
-              door itself is anonymous and rate-limited at the edge
-              (platform/backstage/overlays/oke/httproute.yaml). */}
-          <SignInPage
-            providers={['guest']}
-            onSignInSuccess={() => window.location.reload()}
-          />
+          <SignInPage providers={['guest']} onSignInSuccess={() => window.location.reload()} />
           {error && (
             <Text variant="body-x-small" color="secondary">
               {error.message}
@@ -57,18 +65,16 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
   );
 };
 
+// ONE provider in every environment: guest. `yarn start` already used it; production now matches,
+// because the deployed edge serves /api/auth/guest/refresh (200, a real token) and refuses the
+// door's own refresh to a visitor who came straight to the face. SignInUnavailable stays as the
+// error component so a genuine failure still reads in the estate's voice, but it is no longer the
+// page's whole behaviour -- with one working provider it is the exception, not the loop.
 const frontDoorSignInPage = SignInPageBlueprint.make({
   params: {
-    loader: async () => props =>
-      process.env.NODE_ENV !== 'production' ? (
-        <SignInPage {...props} providers={['guest']} />
-      ) : (
-        <ProxiedSignInPage
-          {...props}
-          provider="oauth2Proxy"
-          ErrorComponent={SignInUnavailable}
-        />
-      ),
+    loader: async () => props => (
+      <SignInPage {...props} providers={['guest']} ErrorComponent={SignInUnavailable} />
+    ),
   },
 });
 

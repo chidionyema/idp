@@ -188,34 +188,15 @@ spec:
       backendRefs:
         - name: catalogue
           port: 3100
-    # 2026-10-04 (the face still never mounted after the guest carve-out): measured in a real
-    # browser against the live edge, /face renders the sign-in wall in a RELOAD LOOP -- the SPA
-    # boots, calls /api/auth/oauth2Proxy/refresh, gets the catch-all's 401 (13 bytes, text/plain),
-    # throws the session away, reloads, forever. guest/refresh returns 200 throughout; the guest
-    # door was never the problem. The app had TWO providers and tried oauth2Proxy first, and
-    # whichever it is, an auth endpoint the edge refuses is an auth endpoint the app cannot use.
-    # Carved out exactly like /api/auth/guest/ above, for the same reason: a refresh endpoint
-    # must be reachable for a session to exist at all. This route decides who ASKS, never who
-    # ENTERS -- /api/catalog/ and every data path keep login-forward-auth-api, and Backstage
-    # grades every read itself. app-config.container.yaml now registers guest only, so this rule
-    # is the belt to that change's braces: a client that still calls the path gets the app's own
-    # answer instead of the wrong middleware's 401.
-    - matches:
-        - path: { type: PathPrefix, value: /api/auth/oauth2Proxy/ }
-      filters:
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: friendly-errors
-        - type: ExtensionRef
-          extensionRef:
-            group: traefik.io
-            kind: Middleware
-            name: edge-headers
-      backendRefs:
-        - name: catalogue
-          port: 3100
+    # /api/auth/oauth2Proxy/ is deliberately LEFT GATED by the /api/ catch-all below. The 2026-10-04
+    # reload loop was never the gate's fault: the app asked a provider that needs the door's cookie
+    # on a page reached without one. The root fix is in the app -- backstage/packages/app/src/
+    # modules/signin/index.tsx now signs in with `guest` in production, the provider this deployment
+    # actually serves (200, a real token, no door cookie needed), so nothing calls oauth2Proxy's
+    # refresh any more. Leaving the path carved open would be worse than gating it: a stray client
+    # would reach the backend and get a 500 (the provider has no X-Auth-Request-* headers without
+    # the door), and the path would be an unauthenticated surface nothing uses. Gated is correct --
+    # it costs nothing, because the one caller that needed it no longer exists.
     # Bearer header still wins above; the catch-all below keeps the browser login for pages.
     - matches:
         - path: { type: PathPrefix, value: /api/ }
