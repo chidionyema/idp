@@ -360,7 +360,20 @@ test.describe('mobile microphone refusal names the device', () => {
         await page.waitForTimeout(1_000);
       }
 
-      // THE ASSERTION. A named block, and the name must fit the platform that rendered it.
+      // THE FIRST ASSERTION, and the one this test was missing. The old version asserted only
+      // `/microphone (blocked|unavailable)/`, which the WRONG message also matches: measured on LIVE
+      // production 2026-10-04, an iPhone and a Pixel descriptor were both told "this page is not on
+      // https" while the page WAS on https (https://catalogue.mumchimp.com). The test was green
+      // while the page named a cause that was false and a fix that was impossible to follow. The
+      // page under test here is served over https by construction, so a message that blames the URL
+      // is itself the defect.
+      expect(
+        detail,
+        `the page is on https and told a phone to move to https -- the message names a cause that ` +
+          `is not the cause. page said: ${detail.slice(0, 300)}`,
+      ).not.toMatch(/not on https/i);
+
+      // A named block, and the name must fit the platform that rendered it.
       expect(
         detail,
         `tapped the mic with no mediaDevices and the page named no cause; page said: ${detail.slice(0, 300)}`,
