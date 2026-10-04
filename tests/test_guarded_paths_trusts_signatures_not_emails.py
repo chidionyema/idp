@@ -117,7 +117,7 @@ def _commit_as(
         [
             "git",
             "-c",
-            f"user.name=t",
+            "user.name=t",
             "-c",
             f"user.email={author}",
             "commit",
