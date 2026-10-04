@@ -1023,9 +1023,23 @@ def log(limit: int = 50) -> dict[str, Any]:
     WHY IT EXISTS. The founder, 2026-09-20: "often i have to repeat myself many times -- you need
     to have logs so you can monitor the latency and friction of all voice comms". Nothing recorded
     a turn before that; nothing would read the record if this route did not cross the proxy.
+
+    WHY IT DEGRADES INSTEAD OF RAISING (2026-04-10). `log_summary`, its sibling immediately below,
+    already treats `sovereign` being absent from this image as a reportable state, for a reason its
+    own docstring gives in full: the Backstage Dockerfile builds with `backstage/` as its context
+    (`bin/dockerfiles`), so the repo-root `sovereign/` package is NOT installed here and
+    `_voice_package()` raises ModuleNotFoundError. This function was the sibling that guard was
+    never added to, so `/voice/log` answered 500 to a bare traceback (measured live 2026-04-10 on
+    catalogue.mumchimp.com: `GET /voice/log?limit=40` -> 500, pod log `ModuleNotFoundError: No
+    module named 'sovereign'`). The face page calls it on mount, so a working page carried a red
+    500 in the console. An endpoint that cannot reach its engine is absent, not broken: it says so
+    and returns an empty turn list, which is a true statement about this image.
     """
-    _engine, turnlog, _catalogue = _voice_package()
-    return {"turns": turnlog.recent(limit)}
+    try:
+        _engine, turnlog, _catalogue = _voice_package()
+        return {"turns": turnlog.recent(limit)}
+    except ModuleNotFoundError as exc:
+        return {"error": f"{_ENGINE_ABSENT}: {exc}", "turns": [], "available": False}
 
 
 def log_summary(limit: int = 200) -> dict[str, Any]:

@@ -139,6 +139,53 @@ def test_the_guest_refresh_door_is_not_gated_by_the_login_it_establishes() -> No
         )
 
 
+def test_the_public_shell_serves_the_surfaces_a_signed_out_visitor_is_meant_to_reach() -> (
+    None
+):
+    """2026-04-10: /fleet fell through to the `/` catch-all and hit the OCI login wall.
+
+    `/face` was exempted from forward-auth so the shell could load signed-out (2026-10-02).
+    `/fleet` is the same SPA behind the same document gate and was simply missed: a real
+    Chrome at https://catalogue.mumchimp.com/fleet was redirected to
+    idcs-...identity.oraclecloud.com/ui/v1/signin, the SPA never mounted, and consequently
+    `navigator.mediaDevices.getUserMedia` was NEVER CALLED (measured: micCalls: []). The
+    founder read that as "microphone blocked on fleet"; nothing was ever asked to open.
+
+    So the rule is not "face is special". It is: the SPA shell for every surface the founder
+    reaches signed-out must sit in the un-gated document rule, and the data plane must keep
+    its gate. This asserts the shell half against the manifest the cluster applies, so
+    deleting /fleet from the public rule, or dropping the public rule entirely, turns it red.
+    The data half is `test_the_data_plane_keeps_its_gate`.
+    """
+    rules = _rules()
+    required_surfaces = ["/face", "/fleet"]
+
+    public = [
+        r
+        for r in rules
+        if all(
+            any(
+                p == surface or p.startswith(f"{surface}/")
+                for p in _matched_prefixes(r)
+            )
+            for surface in required_surfaces
+        )
+    ]
+    assert public, (
+        "no single rule exposes both /face and /fleet as public shell routes. A signed-out "
+        "visitor reaching one of them is redirected to the OCI login wall, the SPA never "
+        "mounts, and the microphone is never reached. The surfaces the shell must serve: "
+        f"{required_surfaces}"
+    )
+    for r in public:
+        names = _middleware_names(r)
+        assert not any(n.startswith("login-forward-auth") for n in names), (
+            "the public shell rule carries a forward-auth middleware "
+            f"({sorted(names)}): the SPA document is gated again, which is the 2026-04-10 "
+            "defect on /fleet. Data stays gated by the /api rules; the shell must not be."
+        )
+
+
 def test_the_data_plane_keeps_its_gate() -> None:
     """ADR 0003 consequence: opening the shell does not open the data.
 
