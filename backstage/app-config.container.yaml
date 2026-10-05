@@ -20,16 +20,25 @@ app:
   baseUrl: ${APP_BASE_URL}
 
 auth:
-  # The container build registers the guest provider ONLY. app-config.yaml (the base) also
-  # registers `oauth2Proxy: {}`, which merges in and becomes the provider the SPA tries FIRST.
-  # The edge 401s /api/auth/oauth2Proxy/refresh -- measured in a real browser 2026-10-04:
-  # guest/refresh 200, then oauth2Proxy/refresh 401, then the app throws the session away and
-  # reloads, forever. The result was a reload loop in which the face NEVER mounted (canvases: 0,
-  # zero requests for /face/talkinghead.mjs or /face/estate.glb), at every size, on every device.
-  # A provider whose refresh the edge refuses is not a fallback; it is a trap. This is the
-  # INVERSE of what this file is for (it exists to add the container's differences), and that is
-  # the point: the difference here is a SUBTRACTION, and Backstage replaces arrays rather than
-  # merging them, so restating `providers` to hold only `guest` is what removes `oauth2Proxy`.
+  # The container build registers the guest provider. The trap this comment used to describe --
+  # app-config.yaml carrying `oauth2Proxy: {}` so the SPA tried it FIRST and the edge 401ed
+  # /api/auth/oauth2Proxy/refresh -- is fixed at its source, in app-config.yaml, where the key
+  # was introduced. Measured in a real browser 2026-10-04: guest/refresh 200, then
+  # oauth2Proxy/refresh 401, then the app threw the session away and reloaded, forever (canvases:
+  # 0, zero requests for /face/talkinghead.mjs or /face/estate.glb), at every size, on every
+  # device. A provider whose refresh the edge refuses is not a fallback; it is a trap.
+  #
+  # WHY THIS FILE CANNOT HAVE BEEN THE FIX, in Backstage's own source: `auth.providers` is a MAP,
+  # and the reader UNIONS the keys of every map it merges --
+  # node_modules/@backstage/config/dist/reader.cjs.js:31,
+  #     for (const key of new Set([...Object.keys(into), ...Object.keys(fromObj)]))
+  # A later file restating `providers` adds keys; it can never remove a sibling. (Arrays are
+  # concatenated; maps are unioned, so the earlier claim here that "Backstage replaces arrays
+  # rather than merging them, so restating `providers` to hold only `guest` is what removes
+  # `oauth2Proxy`" was false -- and the live page was the proof, embedding
+  # `"providers": {"oauth2Proxy": {}}` with `guest` absent.) Subtraction is not available at
+  # this layer, so the key is removed where it enters, in the base config.
+  #
   # The front door still signs a verified user in by its own redirect before the SPA loads; this
   # only stops the SPA from asking an edge it cannot ask.
   providers:

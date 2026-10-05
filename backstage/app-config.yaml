@@ -243,9 +243,29 @@ techdocs:
 auth:
   # see https://backstage.io/docs/auth/ to learn about auth providers
   providers:
-    # Local dev only: the proxied provider needs the front door's headers, so run
-    # behind it or set them by hand. Production config is app-config.production.yaml.
-    oauth2Proxy: {}
+    # NO `oauth2Proxy` HERE, and that is the fix, not an omission. Measured 2026-10-05.
+    #
+    # `auth.providers` is a MAP, and Backstage's config reader UNIONS the keys of every map it
+    # merges -- node_modules/@backstage/config/dist/reader.cjs.js:31, `for (const key of new
+    # Set([...Object.keys(into), ...Object.keys(fromObj)]))`. A later file restating `providers`
+    # therefore CANNOT remove a sibling key: declaring `guest` downstream never removed
+    # `oauth2Proxy` here, so the SPA was handed a provider the edge refuses.
+    #
+    # The served result, read off the live page (catalogue.mumchimp.com/face, 2026-10-05):
+    #     "auth": {"providers": {"oauth2Proxy": {}}}      <- guest absent entirely
+    # and the edge answers:
+    #     POST /api/auth/oauth2Proxy/refresh -> 401 Unauthorized
+    #     POST /api/auth/guest/refresh       -> 200, a real token for user:default/guest
+    #
+    # That 401 is the whole of "the microphone is blocked": SignInPage tried oauth2Proxy, the
+    # session was thrown away, the wall stayed on "Bytesync | Guest | Enter as a Guest User",
+    # and getByTestId('fleet-mic') never mounted. The mic was never refused by the browser --
+    # no control ever existed to refuse it.
+    #
+    # A local `yarn start` behind the front door does not need this key either: the proxied
+    # provider is selected by app-config.production.yaml's own entry, and the base no longer
+    # poisons every environment that merges it.
+    #
     # Guest provider. Until 2026-10-03 it was `yarn start` only (production did not
     # register the module). RC-1b (founder, 2026-10-03: "open the anonymous lane"):
     # a visitor whose front-door exchange failed can still speak to /face -- the
