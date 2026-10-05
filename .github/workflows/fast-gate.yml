@@ -35,7 +35,16 @@ jobs:
         if: steps.actor.outputs.bot != '1'
         with: { python-version: "3.12", cache: pip, cache-dependency-path: sovereign/requirements*.txt }
       - if: steps.actor.outputs.bot != '1'
-        run: pip install -q ruff==0.15.18 pyyaml yamllint   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written
+        # numpy: bin/idp-ci runs `python3 bin/estate-face-avatar --check` whenever the face tree or
+        # the generator is touched, and that generator imports numpy at module level (line 54). This
+        # lane installed only ruff/pyyaml/yamllint, so the rung died with
+        # `ModuleNotFoundError: No module named 'numpy'` and took fast-gate red with it -- measured on
+        # run 37245957569 (main@243f9ab0f, 2026-10-05T00:03Z): "face avatar (committed GLB matches its
+        # generator)..." followed immediately by the traceback, while the sibling ci.yml job has
+        # installed `-r sovereign/requirements.txt` for this same rung since the day it was written
+        # (ci.yml:436, "the generator's Python (numpy), or the avatar check is a traceback"). Same
+        # rung, same dependency: install it here too.
+        run: pip install -q ruff==0.15.18 pyyaml yamllint -r sovereign/requirements.txt   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written; numpy (via requirements.txt): the face-avatar rung
       - if: steps.actor.outputs.bot != '1'
         run: IDP_CI_FAST=1 bin/idp-ci
       - name: python-strict (estate standard, one copy)
