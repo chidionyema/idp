@@ -2211,7 +2211,14 @@ export default function FleetReactorApp() {
           <div className="grid grid-cols-3 border-b border-white/10">
             <div className="px-4 py-2">
               <div className="text-[8px] font-mono uppercase tracking-widest text-white/35">spend</div>
-              <div className="text-[13px] font-mono text-white/85">${selectedRow.spend.toFixed(2)}</div>
+              {/* `(selectedRow.spend || 0)`, not `selectedRow.spend`: a row with no spend recorded
+                  is a fact about the fleet, not a reason to take the page down. Measured 2026-10-05
+                  in a real browser against the live site (iPhone UA): a row without `spend` threw
+                  `TypeError: Cannot read properties of undefined (reading 'toFixed')` while the
+                  Reactor was rendering, which unmounted it and took the mic control with it -- the
+                  founder's "microphone blocked" was in part the voice surface failing to exist.
+                  Line 2573 in this same file already guards this field; the panel did not. */}
+              <div className="text-[13px] font-mono text-white/85">${(selectedRow.spend || 0).toFixed(2)}</div>
             </div>
             <div className="px-4 py-2 border-l border-white/10">
               <div className="text-[8px] font-mono uppercase tracking-widest text-white/35">events</div>

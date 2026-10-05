@@ -6,6 +6,19 @@ import { useEfficiencyFrame } from '../../home/EfficiencyPanel';
 export default function EfficiencyHud() {
   const { frame, error } = useEfficiencyFrame();
   const broken = frame?.prefix_checked ? Math.round((frame.prefix_broken / frame.prefix_checked) * 100) : 0;
+  // A FRAME THAT CARRIES NO FIGURES IS NOT A FRAME (2026-10-05). The render below guarded on
+  // `frame ?` alone, and the endpoint's own "not in this image" reply is a truthy object:
+  // `{ since, error, available: false }`. So `frame.cache_hit_pct.toFixed(1)` ran on `undefined`,
+  // threw `TypeError: Cannot read properties of undefined (reading 'toFixed')` WHILE the Reactor
+  // was rendering, unmounted it, and took the mic control with it -- measured in a real browser
+  // against the live site this turn, iPhone UA: the page threw and `fleet-mic` never mounted, so
+  // the founder's "microphone blocked" was in part a voice surface that failed to exist at all.
+  // This is the crash the mobile CI suite had to route around with a stubbed /efficiency payload.
+  // A field that arrived decides the branch; a field that did not is not a number to format.
+  const complete =
+    !!frame &&
+    typeof frame.cache_hit_pct === 'number' &&
+    typeof frame.calls_billed === 'number';
   return (
     <div
       data-testid="efficiency-hud"
@@ -15,7 +28,7 @@ export default function EfficiencyHud() {
         <span className="text-[9px] font-mono uppercase tracking-widest text-white/60 flex-1">token efficiency · live</span>
         {frame ? <span className="text-[9px] font-mono text-white/40">last {frame.since}</span> : null}
       </div>
-      {frame ? (
+      {complete ? (
         <div className="px-1 flex flex-col gap-0.5 text-[10px] font-mono text-white/70">
           <div>{frame.calls_billed} calls · <span className="text-emerald-300/90">{frame.cache_hit_pct.toFixed(1)}% cache hit</span></div>
           <div>router cut {frame.router_bytes_saved} B · prefix broken {broken}% ({frame.prefix_broken}/{frame.prefix_checked})</div>

@@ -7,18 +7,26 @@
 //
 // It does NOT claim the mic works -- it measures what the mobile engine actually does, which is
 // the whole point: a desktop fake-flag result is not evidence about a phone.
-import { webkit, chromium, devices } from 'playwright';
+import { chromium, devices } from 'playwright';
 
+// Playwright's own browser download does not ship for macOS 13 (`ERROR: Playwright does not
+// support chromium on mac13`), and its WebKit build is absent from the cache. The estate's
+// existing e2e tests already drive the installed Google Chrome via `channel: 'chrome'`, so the
+// mobile emulation runs on that: Playwright supplies the device descriptor (viewport, DPR, touch,
+// userAgent) and Chrome supplies the engine. A real iPhone still uses WebKit, so this measures
+// Chromium-on-Android faithfully and approximates iOS -- and the one fact this probe exists to
+// settle (is the origin a secure context, and is getUserMedia reachable) is decided by the URL's
+// scheme and the browser's feature detection, not by the engine's rendering.
 const URL = process.env.URL || 'https://catalogue.mumchimp.com/fleet';
 const targets = [
-  ['iPhone 13 (WebKit)', webkit, devices['iPhone 13']],
-  ['Pixel 7 (Chromium)', chromium, devices['Pixel 7']],
+  ['Pixel 7 (Chrome, Android UA)', chromium, devices['Pixel 7']],
+  ['iPhone 13 (Chrome, iOS UA)', chromium, devices['iPhone 13']],
 ];
 
 for (const [label, engine, device] of targets) {
   const out = { label, url: URL };
   try {
-    const browser = await engine.launch({ headless: true });
+    const browser = await engine.launch({ headless: true, channel: 'chrome' });
     const ctx = await browser.newContext({ ...device, permissions: ['microphone'] });
     const page = await ctx.newPage();
 

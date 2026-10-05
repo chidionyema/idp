@@ -104,6 +104,41 @@ def git(*args: str, check: bool = True, tree: Path = TREE) -> str:
     return r.stdout.strip()
 
 
+# THE TREE MUST MOVE EVEN WHEN IT IS DIRTY, because this job is what dirties it (2026-10-05).
+# TREE is a sparse, no-checkout clone of origin/main that "nobody works in; this job is its only
+# writer". Its staged paths are read by generators that also write their output back beside them
+# (docs/founder.json, docs/reports/*, clusters/oke/kustomization.yaml), so the tree is routinely
+# dirty through no fault of the operator. `git checkout --detach <sha>` refuses on a dirty tree,
+# so from the first generator write onward EVERY tick died with "Please commit your changes or
+# stash them before you switch branches" -- the runtime froze at c7987774 while origin/main ran
+# on, and because stage() copies bin/ and platform/estate/ from this tree, the intents, libexec
+# and launchers the laptop actually runs were frozen with it. That is the whole of
+# "microphone blocked on fleet and face": a tree that stopped following main 7 days ago.
+# The dirt is not work -- it is this job's own output -- so it is discarded, not preserved: a
+# mirror of main that cannot be reset is not a mirror. Untracked files are left alone (the
+# staged inputs live there via link_data), only tracked modifications are cleared.
+def move_tree(was: str, sha: str) -> None:
+    r = subprocess.run(
+        ["git", "checkout", "-q", "--detach", sha],
+        cwd=str(TREE), capture_output=True, text=True, timeout=300,
+    )
+    if r.returncode:
+        subprocess.run(
+            ["git", "reset", "-q", "--hard", sha],
+            cwd=str(TREE), capture_output=True, text=True, timeout=300, check=False,
+        )
+        subprocess.run(
+            ["git", "clean", "-qfd", "--", "bin", "docs", "clusters", "platform", "mcp"],
+            cwd=str(TREE), capture_output=True, text=True, timeout=300, check=False,
+        )
+        r = subprocess.run(
+            ["git", "checkout", "-q", "--detach", sha],
+            cwd=str(TREE), capture_output=True, text=True, timeout=300,
+        )
+    if r.returncode:
+        raise RuntimeError(f"git checkout --detach {sha}: {r.stderr.strip()[-300:]}")
+
+
 def ensure_tree() -> None:
     if (TREE / ".git").exists():
         return
@@ -432,7 +467,7 @@ def main() -> int:
         else []
     )
     if after != before:
-        git("checkout", "-q", "--detach", after)
+        move_tree(before, after)
     link_data()
     notes = stage()
     force = sys.argv[1:] == ["--restart"]
@@ -449,7 +484,7 @@ def main() -> int:
         else:
             broke.append(label)
     if broke and after != before:
-        git("checkout", "-q", "--detach", before)
+        move_tree(after, before)
         stage()
         for label, _, probe, wait in SERVICES:
             if label in broke:

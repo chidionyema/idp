@@ -24,6 +24,25 @@ PORT_PRIMARY=3100
 
 log() { printf '%s  %s\n' "$(date -u +%H:%M:%SZ)" "$*"; }
 
+# THE TAILSCALE BINARY IS NOT ON launchd's PATH (2026-10-05). This script runs hourly under
+# launchd with PATH=/usr/bin:/bin:/usr/sbin:/sbin, and Tailscale.app installs its CLI at
+# /Applications/Tailscale.app/Contents/MacOS/Tailscale -- which is not on it. So the old
+# bare `command -v tailscale` was false every hour, the publish block below never ran, and
+# `tailscale serve status` stayed "No serve config" while this script still logged a
+# catalogue URL (it printed its own guess, not Tailscale's answer). The founder's phone then
+# loaded /fleet over plain http://<host>:8443, where window.isSecureContext is false and the
+# microphone can never be granted -- read for days as "microphone blocked", a permission
+# bug, when the door that publishes the page had simply never been opened.
+# Resolved by name, then by each place an install can live, and only used if it answers.
+tailscale_bin() {
+	if command -v tailscale >/dev/null 2>&1; then command -v tailscale; return 0; fi
+	for c in /Applications/Tailscale.app/Contents/MacOS/Tailscale \
+	         /usr/local/bin/tailscale /opt/homebrew/bin/tailscale; do
+		if [ -x "$c" ]; then printf '%s' "$c"; return 0; fi
+	done
+	return 1
+}
+
 # 1. Regenerate the catalogue from the one source. db-gen stays: estate.db is
 #    the queryable copy of the same facts, and dropping a renderer is not a
 #    reason to stop producing the data underneath it.
@@ -94,21 +113,30 @@ fi
 # 4. Publish on the tailnet. Not the public internet: the catalogue is a map of
 #    every asset the estate owns, and LAW 21 says the default is closed. Going
 #    public is bin/idp-publish, which is one command and the founder's call.
-if command -v tailscale >/dev/null; then
+if TS_BIN="$(tailscale_bin)"; then
   # 8443 is only claimed when nothing holds it. This runs hourly under launchd,
   # and re-pointing it every hour would silently undo a hand-made change to
   # where the published link goes -- the link would move back on its own, which
   # is the worst kind of bug because it looks like it worked and then does not.
   # Captured, not piped: this script runs under `set -o pipefail`, so a failing
   # `tailscale serve status` would decide the branch instead of the match.
-  serve_status=$(tailscale serve status 2>/dev/null || true)
+  serve_status=$("$TS_BIN" serve status 2>/dev/null || true)
   if printf '%s' "$serve_status" | grep ':8443' >/dev/null ; then
     log "publish   8443 already points somewhere -- left alone"
   else
-    tailscale serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
+    "$TS_BIN" serve --bg --http=8443 "http://127.0.0.1:$PORT_PRIMARY" >/dev/null 2>&1 || true
   fi
-  host=$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')
-  log "catalogue http://$host:8443/"
+  # The published origin, read back from Tailscale rather than composed here: an https
+  # Funnel entry is the only origin where a phone's browser will grant the microphone, and
+  # the log has to say which one is actually live.
+  host=$("$TS_BIN" status --json 2>/dev/null | jq -r '.Self.DNSName' | sed 's/\.$//')
+  if printf '%s' "$serve_status" | grep -q ':8443'; then
+    log "catalogue http://$host:8443/  (tailnet, http -- voice needs /publish for https)"
+  else
+    log "catalogue http://$host:8443/"
+  fi
+else
+  log "publish   tailscale CLI not found -- :8443 NOT published, /fleet is localhost-only"
 fi
 
 "$IDP/bin/idp-status"
