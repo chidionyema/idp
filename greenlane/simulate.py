@@ -323,13 +323,25 @@ def run(
             if p.get("open"):
                 open_red_pr_obs += 1
         agent_lanes = [n for n in b.lane_heads if n != "flux/image-updates"]
+        # Ask the ENGINE, not the backend's report cache.
+        #
+        # `b.statuses` holds the last status the engine *reported* for a lane, which is one grade
+        # behind its actual state: a lane re-queued out of CONFLICT still reads CONFLICT there
+        # until its next report. Stopping on that cache ended runs while lanes were still in
+        # flight -- measured 2026-10-05, seed 0: run stopped at tick 1109 with 5 lanes PENDING in
+        # `st.lanes` and `b.statuses` still saying CONFLICT for them. Those lanes are then counted
+        # stranded by the metric below, which is why fixing the lane logic appeared to break I5
+        # when it had not: the metric was scoring in-flight lanes as failures. `st.lanes` is the
+        # engine's own state and is the only honest oracle for "has this lane been dealt with".
         if (
             arrived >= lanes
             and st.batch is None
             and all(
-                b.statuses.get(n, ("", "", ""))[1] in (RED, CONFLICT)
+                st.lanes[n].status in (RED, CONFLICT)
                 for n in agent_lanes
+                if n in st.lanes
             )
+            and all(n in st.lanes for n in agent_lanes)
         ):
             break
 
@@ -368,10 +380,27 @@ def run(
     for cid, ch in b.changes.items():
         if ch.broken and cid in b.tree(b.main()):
             broken_landed += 1
-    for name, (head, status, _reason) in b.statuses.items():
+    for name, (head, _status, _reason) in b.statuses.items():
+        # A lane is "good and not landed" if the engine has FINISHED with it -- it is parked RED or
+        # CONFLICT -- main does not already contain its work, and the work would still apply
+        # cleanly on top of main.
+        #
+        # Two things were wrong here and they hid each other. First, this read `status` from
+        # `b.statuses`, the backend's report cache, which runs one grade behind the engine: a lane
+        # re-queued out of CONFLICT still read CONFLICT there, so a lane the engine was about to
+        # land was scored as stranded. Second, it accepted only RED. Between them, the metric
+        # reported `good_lanes_not_landed == 0` for a simulation whose engine had left dozens of
+        # lanes unlanded, and reported >0 for lanes that were merely in flight. It could not fail
+        # for the defect it exists to catch and it failed for a state that is not a defect, which
+        # is why loosening REJUDGE_LIMIT looked like a regression: the fix moved lanes from an
+        # uncounted bucket into a counted one and revived in-flight lanes the cache mislabelled.
+        #
+        # The engine's own state is the oracle. In flight is not stranded.
+        lane = st.lanes.get(name)
+        if lane is None or lane.status not in (RED, CONFLICT):
+            continue
         if (
-            status == RED
-            and name in b.lane_heads
+            name in b.lane_heads
             and b.truly_green(b.rebase(b.lane_heads[name], b.main()) or head)
             and b.rebase(b.lane_heads[name], b.main()) is not None
         ):

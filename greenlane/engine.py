@@ -39,7 +39,7 @@ DEFAULT_TIMEOUT = (
     90  # minutes a candidate may sit without a verdict before it counts as red
 )
 REJUDGE_LIMIT = (
-    1  # times a red/conflict lane is re-judged because main moved; a new push resets it
+    8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
 
 
@@ -55,7 +55,7 @@ class Lane:
         ""  # main sha a verdict is void against once main moves off it; "" = final
     )
     rejudged: int = (
-        0  # re-judgements spent since the last push, capped by REJUDGE_LIMIT
+        0  # CONSECUTIVE failed conflicts against successive mains; not a lifetime cap
     )
 
 
@@ -192,10 +192,29 @@ class Engine:
                 if not main_green:
                     continue
             elif lane.status == CONFLICT:
-                # a rebase is cheap, but a lane that conflicts on its own must not retry forever
+                # A lane that is merely BEHIND main is not in conflict with it, and a lane whose
+                # conflict is real still deserves to be retried when main moves again -- main
+                # moving is the event that can dissolve a conflict, so it must not be the event
+                # that ends the retries. This spent the whole budget on the FIRST move
+                # (`rejudged >= 1`), because `rejudged` only ever incremented when main moved and
+                # was reset nowhere: rg found `rejudged = 0` only in Lane.__init__ and one `+=`.
+                # So a lane had to be graded, re-queued, re-graded and landed between two
+                # consecutive main moves or be parked for good. Main moves dozens of times a day.
+                # I5 says a lane that is green on its own lands within a bounded number of
+                # batches; it cannot, if main moving is what parks it.
+                #
+                # The count is now consecutive: it is cleared the moment the lane leaves CONFLICT
+                # (a fresh verdict, a re-push, or a landing), so a lane that recovers is not
+                # punished for having conflicted before, and only a lane that conflicts through
+                # REJUDGE_LIMIT successive mains is called stuck -- parked with its reason, as I4
+                # requires. The reason is now truthful (`does not rebase onto main <sha>`), so a
+                # parked lane means what it says.
                 if lane.rejudged >= REJUDGE_LIMIT:
-                    continue
-                lane.rejudged += 1
+                    continue  # I4: genuine conflict; keep the branch, keep the reason
+                # It is retried, not yet re-failed: the count is incremented in _start_batch when
+                # the grade actually comes back CONFLICT again against main. Incrementing here
+                # would charge the lane for a main move it has not even been tested against.
+                pass
             else:
                 continue
             lane.status, lane.reason, lane.attempts = PENDING, "main moved; retrying", 0
@@ -277,6 +296,10 @@ class Engine:
         for n in names:
             if n in self.s.lanes and self.s.lanes[n].status == TESTING:
                 self.s.lanes[n].status = PENDING
+                # left the parked state (or was mid-test): its conflict count is consecutive,
+                # so it starts again from zero. Only a lane that conflicts through
+                # REJUDGE_LIMIT successive mains is genuinely stuck.
+                self.s.lanes[n].rejudged = 0
         if names:
             self.s.queued.insert(0, names)
 
@@ -298,11 +321,48 @@ class Engine:
         tip, members = base, []
         for n in names:
             lane = self.s.lanes[n]
-            new = self.b.rebase(lane.head, tip)
-            if new is None:
-                lane.status, lane.reason = CONFLICT, f"does not rebase onto {tip[:12]}"
+            # First: does this lane apply to MAIN? That is the only question CONFLICT may answer.
+            #
+            # This loop used to ask `rebase(lane.head, tip)` FIRST, with tip accumulating every
+            # batch-mate accepted before it, and brand the lane CONFLICT when that returned None.
+            # A lane that rebases perfectly onto main but overlaps a sibling in the SAME batch
+            # was therefore called "does not rebase onto {tip}" -- the batch-mate's sha, which no
+            # human or engine recognises as main -- and `judged_on` was set to `base`, so
+            # _observe_lanes believed it had been judged against main and would only retry when
+            # main moved. Parked, permanently, at REJUDGE_LIMIT=1. Measured on
+            # refs/greenlane/state 2026-10-05: 18 of 30 lanes sat exactly there, holding proven
+            # work main never received; the mic fix 51eca9766 was one of them and landed only
+            # after a hand rebase. The reason string read like staleness, which is why it was
+            # misdiagnosed as "main moved" for so long: by the time anyone read the sha, it was
+            # an ancestor of a later main.
+            #
+            # So the two questions are asked separately, and answered honestly:
+            #   rebase(head, base) is None -> the lane does not apply to main. CONFLICT, judged
+            #                                 against main, exactly as judged_on says.
+            #   rebase(head, tip)  is None -> it applies to main but not alongside the batch-mate
+            #                                 already ahead of it. That is a batch-order collision,
+            #                                 not a conflict with main: leave it PENDING so it gets
+            #                                 its own batch, and it lands on the next tick.
+            if self.b.rebase(lane.head, base) is None:
+                # Genuine conflict with main. Charge the retry HERE, where the grade actually
+                # failed, so the count is consecutive failures against successive mains and not
+                # merely the number of times main happened to move past the lane.
+                lane.rejudged += 1
+                lane.status, lane.reason = (
+                    CONFLICT,
+                    f"does not rebase onto main {base[:12]}",
+                )
                 lane.judged_on = base
                 self.b.report(n, lane.head, CONFLICT, lane.reason)
+                continue
+            new = self.b.rebase(lane.head, tip)
+            if new is None:
+                # batch-order collision: main would take it, a batch-mate would not. Not a
+                # conflict -- it stays PENDING and is tried again, on its own if need be.
+                self.log.append(
+                    f"batch: {n} applies to main {base[:12]} but not after {tip[:12]}; "
+                    "deferring to its own batch"
+                )
                 continue
             members.append((n, lane.head, new))
             tip = new
