@@ -1726,8 +1726,16 @@ export default function FleetReactorApp() {
 
   const openVoice = async () => {
     setVoiceOpen(true);
-    if (voice.state === 'off') await voice.start();
-    else voice.stop();
+    // A FAILED MICROPHONE MUST BE RE-ASKABLE (2026-10-05). The rule here used to be
+    // `state === 'off' ? start() : stop()` -- so once the mic had failed ONCE the button settled
+    // into 'error' and every later tap took the else branch and called stop() on a microphone that
+    // was already stopped. The founder's phone: "it says microphone is off for this page, tap the
+    // mic to try again, and when you tap nothing happens." Nothing happened because the tap WAS
+    // firing -- as a stop. 'error' is not a running state, so it can only ever mean "ask again".
+    // Only genuinely live states (listening/thinking/speaking) mean stop.
+    const live = voice.state === 'listening' || voice.state === 'thinking' || voice.state === 'speaking';
+    if (live) voice.stop();
+    else await voice.start();
   };
 
 

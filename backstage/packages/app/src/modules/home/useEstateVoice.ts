@@ -115,7 +115,23 @@ export function micPlatform(): MicPlatform {
   return 'desktop';
 }
 
-/** The padlock/address-bar instruction, in the words of the device actually holding the phone. */
+/**
+ * WHAT A `denied` PERMISSION STATE MEANS, AND WHY THIS NO LONGER MENTIONS A SETTING (2026-10-05).
+ *
+ * Measured on the founder's iPhone from live production: tapping the mic on
+ * https://catalogue.mumchimp.com/fleet rendered "microphone is off for this page -- tap the mic
+ * again to be asked". That string is produced by ONE branch: `permissions.query({name:'microphone'})`
+ * returning `denied` in micBlocker(). So Safari is telling the page the mic is off for THIS site,
+ * and the page passed that on -- but the word "off" reads as a setting to go and find, which is
+ * exactly the chore the founder forbade: a voice surface asks for the microphone BY USING IT.
+ *
+ * On iOS there is no per-site microphone switch to send someone to. A site refusal is cleared by
+ * the next successful request, and iOS re-asks when the request comes from a fresh user gesture on
+ * the control. That is why the fix below says the device can be asked again and what the tap will
+ * do -- no menu, no Settings path, no platform-specific errand.
+ *
+ * Kept per-platform only because the DEVICE is named in the sentence; the action is identical.
+ */
 function siteSettingFix(): string {
   switch (micPlatform()) {
     case 'ios':
@@ -184,14 +200,16 @@ async function micBlocker(): Promise<string | null> {
   if (!navigator.mediaDevices?.getUserMedia) {
     return 'this browser cannot reach the microphone — open the page in Safari or Chrome';
   }
+  // THE PERMISSION QUERY IS ADVISORY, NOT A VERDICT (2026-10-05). What it is asked for is whether
+  // an instruction is needed BEFORE trying; it never decides that trying is pointless. Safari and
+  // Firefox do not implement the `microphone` PermissionName, so query() rejects and the catch
+  // below is the ordinary path on iOS -- and where it IS implemented, a stale `denied` is cleared
+  // by the next request anyway. Either way the answer to "can this device be asked?" is yes, so
+  // this returns null and the caller makes the real request. Reporting the state as a message was
+  // the defect: it told the person their device had refused before the device had been asked.
   try {
     const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-    if (p.state === 'denied') {
-      return siteSettingFix();
-    }
-    if (p.state === 'granted') return null;
-    // "prompt" + a refusal moments later means the refusal happened OUTSIDE the browser’s
-    // per-site memory: on macOS that is the OS refusing Chrome the microphone.
+    if (p.state === 'denied') return siteSettingFix();
     return null;
   } catch {
     // Safari and Firefox do not implement the microphone permission query; the caller falls
@@ -209,6 +227,46 @@ async function micRefusalDetail(): Promise<string> {
   const blocked = await micBlocker();
   if (blocked) return blocked;
   return osRefusalFix();
+}
+
+/**
+ * WHAT TO SAY WHEN THE MICROPHONE WAS JUST REFUSED (2026-10-05).
+ *
+ * This is the one place that decides the refusal's words, so the decision is readable and testable
+ * rather than a stack of ternaries inside a catch.
+ *
+ * WHAT IT REPLACED, AND WHY. The caller used to regex the error's ENGLISH TEXT:
+ *
+ *     /permission|denied|notallowed/i.test(msg) ? ... : /notfound|device/i.test(msg) ? ... : `microphone failed: ${msg}`
+ *
+ * Measured on LIVE production that day, iPhone user-agent, after entering as a guest: a phone whose
+ * `navigator.mediaDevices` is undefined (what Safari does for a page it will not grant) threw
+ * `TypeError: Cannot read properties of undefined (reading 'getUserMedia')`. Those words match
+ * neither pattern, so it fell to the last branch and the founder was shown V8's own sentence where
+ * a fix belonged -- `microphone failed: Cannot read properties of undefined...` read back off the
+ * live page. Matching prose to guess a cause is the same defect as guessing a platform from a UA.
+ *
+ * So the classification reads `name`, which the browser SETS, and falls back to prose only for the
+ * engines that set nothing useful. A refusal our own voice path raised already says something the
+ * person can act on and is passed through untouched; `detail` is never allowed to be an exception
+ * string.
+ */
+async function refusalDetail(e: any, msg: string): Promise<string> {
+  const name = String(e?.name || '');
+  // Raised by useVoiceRouter (MicRefusal), already worded for the person.
+  if (name === 'MicRefusal') return msg;
+
+  const denied = /permission|denied|notallowed|security/i.test(name) || /permission|denied|notallowed/i.test(msg);
+  if (denied) return micRefusalDetail();
+
+  const absent =
+    /notfound|devicesnotfound|notreadable|trackstart/i.test(name) || /notfound|no.*device/i.test(msg);
+  if (absent) {
+    return 'no microphone found — check this device has one and that no other app is holding it, then tap again';
+  }
+
+  // Nothing recognisable: name the block without pasting the engine's text over the person's screen.
+  return `microphone blocked: the browser would not give this page a microphone (${name || 'unknown error'}). Tap the mic again to be asked.`;
 }
 
 /**
@@ -799,13 +857,19 @@ export function useEstateVoice(): EstateVoice {
       // invites the retry that actually re-prompts, which is the only fix a person can act on from
       // the page itself. The cause is still named, because a blank refusal is the defect this file
       // was written to end.
-      setDetail(
-        /permission|denied|notallowed/i.test(msg)
-          ? await micRefusalDetail()
-          : /notfound|device/i.test(msg)
-            ? 'no microphone found — check this device has one and that no other app is holding it, then tap again'
-            : `microphone failed: ${msg}`,
-      );
+      //
+      // CLASSIFIED BY IDENTITY, NOT BY PROSE (2026-10-05). This used to regex the error's ENGLISH
+      // TEXT to decide what to say. Measured on LIVE production this turn (iPhone UA, after entering
+      // as a guest), a phone whose `navigator.mediaDevices` is undefined threw
+      // `TypeError: Cannot read properties of undefined (reading 'getUserMedia')`, whose words match
+      // neither /permission|denied|notallowed/ nor /notfound|device/ -- so it fell to the last branch
+      // and the founder was shown V8's own sentence where a fix belonged. Reading a message to guess
+      // a cause is the same defect as guessing a platform from a UA.
+      //
+      // The error's `name` is a fact the browser set; the message is prose we were pattern-matching.
+      // A refusal raised by our own voice path (`MicRefusal` from useVoiceRouter, whose message is
+      // already worded for the person) is passed through untouched.
+      setDetail(await refusalDetail(e, msg));
     }
   }, [runTurn, silence]);
 
