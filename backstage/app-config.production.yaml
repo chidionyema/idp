@@ -30,9 +30,34 @@ backend:
 
 auth:
   providers:
-    # The estate front door (oauth2-proxy behind Traefik) signs people in; see
-    # packages/backend/src/auth. No guest provider: nobody enters without the domain.
-    oauth2Proxy: {}
+    # NO `oauth2Proxy` HERE. The provider is real, and it is NOT removed -- it is registered a
+    # layer down, by the front-door backend module (packages/backend/src/auth/index.ts:38,
+    # `providers.registerProvider({ providerId: 'oauth2Proxy', ... })`), which is what the door's
+    # own redirect flow talks to. Registering the authenticator in CODE and declaring the provider
+    # in CONFIG are two different things: config is the list Backstage hands the SPA so it knows
+    # which buttons to draw, and the SPA must be handed only `guest`.
+    #
+    # Declaring it here anyway is what produced the 2026-10-04 reload loop. Measured live on
+    # catalogue.mumchimp.com/face, 2026-10-05:
+    #     "auth": {"providers": {"oauth2Proxy": {}}}      <- guest absent entirely
+    #     POST /api/auth/oauth2Proxy/refresh -> 401 Unauthorized
+    #     POST /api/auth/guest/refresh       -> 200, a real token for user:default/guest
+    # The face is reached WITHOUT the door's cookie, so oauth2Proxy's refresh can never complete
+    # there; the SPA tried it first, took the 401, threw the session away and reloaded, forever.
+    # The wall stayed on "Bytesync | Guest | Enter as a Guest User" and getByTestId('fleet-mic')
+    # never mounted. The mic was never refused by the browser -- no control ever existed.
+    #
+    # And this key could not be removed from a later file: `auth.providers` is a MAP, and
+    # Backstage's reader UNIONS the keys of every map it merges --
+    # node_modules/@backstage/config/dist/reader.cjs.js:31,
+    #     for (const key of new Set([...Object.keys(into), ...Object.keys(fromObj)]))
+    # so subtraction is not available at that layer. It is removed at the source instead, in
+    # app-config.yaml, which merges into every environment.
+    guest:
+      # The image sets NODE_ENV=production, and Backstage refuses the guest provider outside
+      # development unless this is set. Without it POST /api/auth/guest/refresh answers 403 and
+      # every catalog read 401, while GET / returns 200 -- a portal that renders nothing.
+      dangerouslyAllowOutsideDevelopment: true
 
 catalog:
   # Overrides the default list locations from app-config.yaml as these contain example data.

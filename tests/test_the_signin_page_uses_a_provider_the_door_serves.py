@@ -41,6 +41,7 @@ SIGNIN = (
     / "index.tsx"
 )
 CONTAINER_CONFIG = REPO_ROOT / "backstage" / "app-config.container.yaml"
+BASE_CONFIG = REPO_ROOT / "backstage" / "app-config.yaml"
 ROUTE = REPO_ROOT / "platform" / "backstage" / "overlays" / "oke" / "httproute.yaml"
 
 # Providers an unauthenticated browser (the face's only kind of first visitor) can complete.
@@ -146,4 +147,84 @@ def test_the_data_plane_is_still_gated() -> None:
     assert gated, (
         "the /api/ catch-all lost login-forward-auth-api, so every data path is public. The face "
         "fix is an app-side provider choice; it never loosens /api/catalog/ or /api/proxy/."
+    )
+
+
+def test_the_base_config_never_introduces_a_refused_provider() -> None:
+    """ROOT CAUSE, measured 2026-10-05: the trap was planted in the BASE config.
+
+    A later file cannot remove a provider an earlier one declared. Backstage's reader UNIONS the
+    keys of every map it merges -- node_modules/@backstage/config/dist/reader.cjs.js:31:
+
+        for (const key of new Set([...Object.keys(into), ...Object.keys(fromObj)]))
+
+    so "restate `providers` to drop oauth2Proxy" is not expressible at this layer, and every
+    attempt to fix this downstream of the base left the key in place. The live page embedded
+    `"providers": {"oauth2Proxy": {}}` with `guest` absent, while the edge answered
+    guest/refresh 200 and oauth2Proxy/refresh 401.
+
+    This gates the layer the two earlier fixes never looked at. It fails on the tree that carried
+    `oauth2Proxy: {}` in app-config.yaml, and passes once the key is removed where it enters.
+    """
+    cfg = yaml.safe_load(BASE_CONFIG.read_text()) or {}
+    registered = set(((cfg.get("auth") or {}).get("providers") or {}))
+    assert registered & REQUIRES_DOOR == set(), (
+        f"app-config.yaml registers {sorted(registered & REQUIRES_DOOR)}. The base config merges "
+        "into EVERY environment, and Backstage unions map keys, so no later file can remove it -- "
+        "the provider is handed to the SPA everywhere, including the face, which is reached "
+        "without the door. Remove it here, not downstream."
+    )
+
+
+def test_the_merged_providers_are_exactly_what_the_page_asks_for() -> None:
+    """PROVE THE MECHANISM, not the files: merge the real configs the way Backstage does.
+
+    Each per-file assertion above can pass while the MERGED result is still wrong, which is
+    exactly how this bug survived two fixes: app-config.container.yaml registered `guest`
+    correctly, and production still served `oauth2Proxy`. This test re-implements the reader's
+    own merge (maps union, arrays concat) over the container's real load order and asserts on the
+    value the SPA is actually handed.
+    """
+
+    def merge(into, from_):
+        # Backstage's own rule, transcribed from reader.cjs.js:18-33 -- and the `into is None`
+        # branch is load-bearing: it ADOPTS `from_` rather than discarding it. A first-draft
+        # version of this helper returned None there and silently reported that the merged config
+        # served no providers at all, which is a false alarm this test would have raised forever.
+        if into is None:
+            return from_
+        if not isinstance(into, dict) or isinstance(from_, list):
+            return into
+        src = from_ if isinstance(from_, dict) else {}
+        out = {}
+        for key in {**into, **src}:
+            val = merge(into.get(key), src.get(key))
+            if val is not None:
+                out[key] = val
+        return out
+
+    def load(path: Path) -> dict:
+        # The container config interpolates ${VAR} and reads $file: secrets; neither touches
+        # auth.providers, and both would fail outside a pod, so they are neutralised here.
+        text = re.sub(r"\$\{[A-Z_0-9]+\}", "stub", path.read_text())
+        return yaml.safe_load(text) or {}
+
+    merged: dict = {}
+    for name in (
+        "app-config.yaml",
+        "app-config.container.yaml",
+        "app-config.production.yaml",
+    ):
+        merged = merge(merged, load(REPO_ROOT / "backstage" / name))
+
+    served = set(((merged.get("auth") or {}).get("providers") or {}))
+    named = _providers_named_in_signin()
+    assert served & REQUIRES_DOOR == set(), (
+        f"the merged config handed to the SPA still offers {sorted(served & REQUIRES_DOOR)}. "
+        "That is the 2026-10-04 reload loop: the page asks it, the edge 401s, the session is "
+        "thrown away, and the face never mounts."
+    )
+    assert named <= served, (
+        f"the page asks for {sorted(named)} but the merged config serves {sorted(served)}. A page "
+        "asking an unregistered provider is a 500 on the first refresh."
     )
