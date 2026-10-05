@@ -212,6 +212,46 @@ async function micRefusalDetail(): Promise<string> {
 }
 
 /**
+ * WHAT TO SAY WHEN THE MICROPHONE WAS JUST REFUSED (2026-10-05).
+ *
+ * This is the one place that decides the refusal's words, so the decision is readable and testable
+ * rather than a stack of ternaries inside a catch.
+ *
+ * WHAT IT REPLACED, AND WHY. The caller used to regex the error's ENGLISH TEXT:
+ *
+ *     /permission|denied|notallowed/i.test(msg) ? ... : /notfound|device/i.test(msg) ? ... : `microphone failed: ${msg}`
+ *
+ * Measured on LIVE production that day, iPhone user-agent, after entering as a guest: a phone whose
+ * `navigator.mediaDevices` is undefined (what Safari does for a page it will not grant) threw
+ * `TypeError: Cannot read properties of undefined (reading 'getUserMedia')`. Those words match
+ * neither pattern, so it fell to the last branch and the founder was shown V8's own sentence where
+ * a fix belonged -- `microphone failed: Cannot read properties of undefined...` read back off the
+ * live page. Matching prose to guess a cause is the same defect as guessing a platform from a UA.
+ *
+ * So the classification reads `name`, which the browser SETS, and falls back to prose only for the
+ * engines that set nothing useful. A refusal our own voice path raised already says something the
+ * person can act on and is passed through untouched; `detail` is never allowed to be an exception
+ * string.
+ */
+async function refusalDetail(e: any, msg: string): Promise<string> {
+  const name = String(e?.name || '');
+  // Raised by useVoiceRouter (MicRefusal), already worded for the person.
+  if (name === 'MicRefusal') return msg;
+
+  const denied = /permission|denied|notallowed|security/i.test(name) || /permission|denied|notallowed/i.test(msg);
+  if (denied) return micRefusalDetail();
+
+  const absent =
+    /notfound|devicesnotfound|notreadable|trackstart/i.test(name) || /notfound|no.*device/i.test(msg);
+  if (absent) {
+    return 'no microphone found — check this device has one and that no other app is holding it, then tap again';
+  }
+
+  // Nothing recognisable: name the block without pasting the engine's text over the person's screen.
+  return `microphone blocked: the browser would not give this page a microphone (${name || 'unknown error'}). Tap the mic again to be asked.`;
+}
+
+/**
  * Where a spoken clause goes when a face is on screen. The estate face (faceEngine.ts) plays the
  * clause itself so its lips move to the exact audio; without one, `play()` below schedules it on
  * the voice's own context as before. One sink at a time: the face that mounted last owns it.
@@ -799,13 +839,19 @@ export function useEstateVoice(): EstateVoice {
       // invites the retry that actually re-prompts, which is the only fix a person can act on from
       // the page itself. The cause is still named, because a blank refusal is the defect this file
       // was written to end.
-      setDetail(
-        /permission|denied|notallowed/i.test(msg)
-          ? await micRefusalDetail()
-          : /notfound|device/i.test(msg)
-            ? 'no microphone found — check this device has one and that no other app is holding it, then tap again'
-            : `microphone failed: ${msg}`,
-      );
+      //
+      // CLASSIFIED BY IDENTITY, NOT BY PROSE (2026-10-05). This used to regex the error's ENGLISH
+      // TEXT to decide what to say. Measured on LIVE production this turn (iPhone UA, after entering
+      // as a guest), a phone whose `navigator.mediaDevices` is undefined threw
+      // `TypeError: Cannot read properties of undefined (reading 'getUserMedia')`, whose words match
+      // neither /permission|denied|notallowed/ nor /notfound|device/ -- so it fell to the last branch
+      // and the founder was shown V8's own sentence where a fix belonged. Reading a message to guess
+      // a cause is the same defect as guessing a platform from a UA.
+      //
+      // The error's `name` is a fact the browser set; the message is prose we were pattern-matching.
+      // A refusal raised by our own voice path (`MicRefusal` from useVoiceRouter, whose message is
+      // already worded for the person) is passed through untouched.
+      setDetail(await refusalDetail(e, msg));
     }
   }, [runTurn, silence]);
 

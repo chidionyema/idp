@@ -1,4 +1,4 @@
-import { CAPTURE_WORKLET, decodeFrame, toPanel, voiceRouterUrl } from './useVoiceRouter';
+import { CAPTURE_WORKLET, decodeFrame, micRefusalMessage, toPanel, voiceRouterUrl } from './useVoiceRouter';
 
 // The capture worklet runs in the browser's audio thread, which jest does not have. It is plain
 // JavaScript, so it is executed here against a stub of the two globals that thread provides.
@@ -77,6 +77,65 @@ describe('server audio frames', () => {
 
   it('too short to hold a sample are refused', () => {
     expect(decodeFrame(new ArrayBuffer(4))).toBeNull();
+  });
+});
+
+// THE MESSAGE A REFUSED MICROPHONE RENDERS, which had no test until 2026-10-05 and therefore had
+// no floor. Measured that day on LIVE production with an iPhone user-agent, after entering as a
+// guest: tapping the mic printed `microphone failed: Cannot read properties of undefined (reading
+// 'getUserMedia')` -- V8's own sentence, on the founder's screen, where a fix belonged. The cause
+// was an unguarded `navigator.mediaDevices.getUserMedia(...)` plus a catch that printed
+// `err.message` verbatim. A phone shows exactly this: Safari does not expose `mediaDevices` to a
+// page it is not prepared to grant, so the dereference throws before any refusal can be named.
+//
+// These assertions are the floor: whatever a browser throws, the surface says something a person
+// can act on, and never a JavaScript exception string.
+describe('the microphone refusal, when the browser will not offer one', () => {
+  // Every shape a browser refuses with, named as the browser names it.
+  const thrown = [
+    Object.assign(new Error("Cannot read properties of undefined (reading 'getUserMedia')"), {
+      name: 'TypeError',
+    }),
+    Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' }),
+    Object.assign(new Error('Requested device not found'), { name: 'NotFoundError' }),
+    Object.assign(new Error('Could not start audio source'), { name: 'NotReadableError' }),
+  ];
+
+  it.each(thrown.map(e => [e.name, e] as const))(
+    'never renders the %s exception text to a person',
+    (_name, err) => {
+      const msg = micRefusalMessage(err);
+      expect(msg).not.toMatch(/Cannot read properties of undefined/);
+      expect(msg).not.toMatch(/undefined/);
+      expect(msg).toBeTruthy();
+    },
+  );
+
+  it.each(thrown.map(e => [e.name, e] as const))(
+    'names the refusal for %s, so a tap that reaches nothing is never silent',
+    (_name, err) => {
+      expect(micRefusalMessage(err)).toMatch(/microphone|mic/i);
+    },
+  );
+
+  // The founder's contract, 2026-10-04, and the one the mobile Playwright suite enforces on the
+  // live site: "we are not going to be telling users to set anything on safari." A voice surface
+  // asks for the microphone by USING it -- the fix is the next tap, never a journey into Settings.
+  it.each(thrown.map(e => [e.name, e] as const))(
+    'sends nobody into a settings menu for %s',
+    (_name, err) => {
+      expect(micRefusalMessage(err)).not.toMatch(/Settings|padlock|chrome:\/\/settings/i);
+    },
+  );
+
+  it('names a device with no input as a device with no input', () => {
+    // What CI measured as `calls=1 NotFoundError`: a grant that reached the API and found no
+    // hardware. Distinct from a refusal, because the user's action is different.
+    expect(micRefusalMessage({ name: 'NotFoundError' })).toMatch(/no audio input|device/i);
+  });
+
+  it('does not blame the page\u2019s URL, which is https by construction', () => {
+    for (const err of thrown) expect(micRefusalMessage(err)).not.toMatch(/not on https/i);
   });
 });
 

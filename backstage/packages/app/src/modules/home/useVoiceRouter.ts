@@ -24,6 +24,45 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
+/**
+ * A microphone refusal we raised OURSELVES, already worded for the person.
+ *
+ * It exists so the catch in `start()` can tell a refusal we wrote from a browser exception, and
+ * print the first and never the second. Measured on LIVE production 2026-10-05 (iPhone UA, after
+ * entering as a guest): the surface read `microphone failed: Cannot read properties of undefined
+ * (reading 'getUserMedia')` -- V8's message, handed to the founder as though it were a fix.
+ */
+class MicRefusal extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MicRefusal';
+  }
+}
+
+/**
+ * The browser's own refusal, in words the device can act on.
+ *
+ * NotAllowedError is a refusal; NotFoundError is a device with no input (CI has none, and it is
+ * what the mobile suite measured as `calls=1 NotFoundError`); anything else is named without
+ * inventing a cause. No branch sends the user into a settings menu: a voice surface asks for the
+ * microphone by using it, so the fix is the next tap, not a journey through Settings.
+ */
+export function micRefusalMessage(err: any): string {
+  switch (err?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'microphone is not allowed for this page. Tap the mic again to be asked.';
+    case 'NotFoundError':
+    case 'DevicesNotFoundError':
+      return 'microphone unavailable: this device offered no audio input. Tap the mic again to be asked.';
+    case 'NotReadableError':
+    case 'TrackStartError':
+      return 'microphone is held by another app. Close it and tap the mic again.';
+    default:
+      return `microphone blocked: the browser refused this page a microphone (${err?.name ?? 'Error'}). Tap the mic again to be asked.`;
+  }
+}
+
 // Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
 // Under `yarn start` the page is the dev server, which cannot proxy a WebSocket, and the backend's
 // proxy drops the upgrade, so the page goes to the laptop router directly: its Origin allow-list
@@ -244,6 +283,22 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     let audio: AudioContext | null = null;
     let mic: MediaStream | null = null;
     try {
+      // ASK, DO NOT DEREFERENCE (2026-10-05). This was `navigator.mediaDevices.getUserMedia(...)`,
+      // and `mediaDevices` is undefined on a page Safari will not grant the microphone to -- the
+      // exact state a phone is in. Measured on LIVE production this turn, iPhone UA, after entering
+      // as a guest: the tap rendered `microphone failed: Cannot read properties of undefined
+      // (reading 'getUserMedia')` -- a raw TypeError, because the catch below prints `err.message`.
+      //
+      // In /fleet THIS hook owns the mic, so `useEstateVoice.micBlocker()`/`micRefusalDetail()` are
+      // never consulted on this path: the device-aware messages written there could not reach the
+      // founder, which is why "microphone blocked" outlived several attempts to reword it. The
+      // refusal has to be named HERE, at the call that actually asks, in the words the device can
+      // act on -- and it must never be a JavaScript exception string dressed up as a fix.
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new MicRefusal(
+          'microphone unavailable: this browser is not offering this page a microphone. Tap the mic again to be asked.',
+        );
+      }
       mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
       });
@@ -318,7 +373,11 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
       void audio?.close();
       liveRef.current = null;
       setState('error');
-      setDetail(String(err?.message ?? err));
+      // A REFUSAL IS NOT A STACK TRACE. `String(err?.message)` put V8's own wording on the surface,
+      // so the founder read "Cannot read properties of undefined" where a fix belonged. A refusal we
+      // raised already says something a person can act on and is passed through as-is; anything else
+      // is named as a named refusal, and the raw text is kept for the console where it is useful.
+      setDetail(err instanceof MicRefusal ? err.message : micRefusalMessage(err));
       throw err;
     }
   }, [play, silence, stop]);
