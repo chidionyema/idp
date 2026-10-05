@@ -243,14 +243,21 @@ test.describe('mobile microphone reachability', () => {
       // THE DECISIVE ASSERTION. A person tapped the mic, so the page must arrive at ONE of exactly
       // two decided states, and this is the whole contract:
       //   (a) it called getUserMedia -- and then it must have a live track or a NAMED error, or
-      //   (b) it refused BEFORE calling, which is only correct when it names the fix on screen.
+      //   (b) it refused BEFORE calling, which is only correct when it says so on screen.
       // Silence is never acceptable: `tapped=false calls=0` with nothing said is the exact defect the
       // founder reported, and the earlier version of this test PASSED on it (measured in CI
       // 2026-10-04). Reachability alone was not the claim; a decided outcome is.
+      //
+      // WHAT IS DELIBERATELY NOT ASSERTED HERE (2026-10-05). An earlier revision matched
+      // /padlock|denied|microphone (blocked|unavailable)/, which is the vocabulary of the OLD bundle
+      // -- the one that answered a tap with a settings walkthrough. The founder refused that outright
+      // ("we are not going to be telling users to set anything on safari"), so a test that DEMANDS
+      // those words keeps the defect alive and goes red the moment the fix deploys. What this asserts
+      // is the durable contract instead: a tap is either answered by the device or answered in words,
+      // and the words are about the microphone. The settings-chore half is asserted as a REFUSAL by
+      // the test below, on both descriptors, which is where it belongs.
       const namedFix =
-        /microphone (blocked|unavailable)|not on https|padlock|denied|not-allowed/i.test(
-          detail,
-        );
+        /microphone|mic\b/i.test(detail);
       if (mic.calls.length === 0) {
         expect(
           namedFix,
