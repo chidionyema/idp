@@ -115,13 +115,31 @@ export function micPlatform(): MicPlatform {
   return 'desktop';
 }
 
-/** The padlock/address-bar instruction, in the words of the device actually holding the phone. */
+/**
+ * WHAT A `denied` PERMISSION STATE MEANS, AND WHY THIS NO LONGER MENTIONS A SETTING (2026-10-05).
+ *
+ * Measured on the founder's iPhone from live production: tapping the mic on
+ * https://catalogue.mumchimp.com/fleet rendered "microphone is off for this page -- tap the mic
+ * again to be asked". That string is produced by ONE branch: `permissions.query({name:'microphone'})`
+ * returning `denied` in micBlocker(). So Safari is telling the page the mic is off for THIS site,
+ * and the page passed that on -- but the word "off" reads as a setting to go and find, which is
+ * exactly the chore the founder forbade: a voice surface asks for the microphone BY USING IT.
+ *
+ * On iOS there is no per-site microphone switch to send someone to. A site refusal is cleared by
+ * the next successful request, and iOS re-asks when the request comes from a fresh user gesture on
+ * the control. That is why the fix below says the device can be asked again and what the tap will
+ * do -- no menu, no Settings path, no platform-specific errand.
+ *
+ * Kept per-platform only because the DEVICE is named in the sentence; the action is identical.
+ */
 function siteSettingFix(): string {
   switch (micPlatform()) {
     case 'ios':
-      return 'microphone is off for this page — tap the mic again to be asked';
+      return 'the microphone is off for this page in Safari — tap the mic and choose Allow when iOS asks';
+    case 'android':
+      return 'the microphone is off for this page — tap the mic and choose Allow when Android asks';
     default:
-      return 'microphone is off for this site — tap the mic again to be asked';
+      return 'the microphone is off for this site — tap the mic and choose Allow when the browser asks';
   }
 }
 
@@ -133,11 +151,11 @@ function siteSettingFix(): string {
 function osRefusalFix(): string {
   switch (micPlatform()) {
     case 'ios':
-      return 'iOS is not letting this page use the microphone — tap the mic again to be asked';
+      return 'iOS is not letting this page use the microphone — tap the mic and choose Allow when iOS asks';
     case 'android':
-      return 'Android is not letting this page use the microphone — tap the mic again to be asked';
+      return 'Android is not letting this page use the microphone — tap the mic and choose Allow when Android asks';
     default:
-      return 'this computer is not letting the browser use the microphone — tap the mic again to be asked';
+      return 'this computer is not letting the browser use the microphone — tap the mic and choose Allow when it asks';
   }
 }
 
@@ -184,14 +202,16 @@ async function micBlocker(): Promise<string | null> {
   if (!navigator.mediaDevices?.getUserMedia) {
     return 'this browser cannot reach the microphone — open the page in Safari or Chrome';
   }
+  // THE PERMISSION QUERY IS ADVISORY, NOT A VERDICT (2026-10-05). What it is asked for is whether
+  // an instruction is needed BEFORE trying; it never decides that trying is pointless. Safari and
+  // Firefox do not implement the `microphone` PermissionName, so query() rejects and the catch
+  // below is the ordinary path on iOS -- and where it IS implemented, a stale `denied` is cleared
+  // by the next request anyway. Either way the answer to "can this device be asked?" is yes, so
+  // this returns null and the caller makes the real request. Reporting the state as a message was
+  // the defect: it told the person their device had refused before the device had been asked.
   try {
     const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-    if (p.state === 'denied') {
-      return siteSettingFix();
-    }
-    if (p.state === 'granted') return null;
-    // "prompt" + a refusal moments later means the refusal happened OUTSIDE the browser’s
-    // per-site memory: on macOS that is the OS refusing Chrome the microphone.
+    if (p.state === 'denied') return siteSettingFix();
     return null;
   } catch {
     // Safari and Firefox do not implement the microphone permission query; the caller falls
