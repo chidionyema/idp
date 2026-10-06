@@ -90,15 +90,25 @@ describe('micPlatform', () => {
   // The sentence itself, which is what the person actually reads.
   // ---------------------------------------------------------------------------
 
-  it('sends an iOS person to the OS setting, because a refusal there is not re-askable', () => {
-    // Measured 2026-10-05: once "Don't Allow" is tapped on iOS, Safari holds the refusal for the
-    // origin and every later getUserMedia throws NotAllowedError at once. It never re-prompts, so
-    // "tap the mic again to be asked" is a loop: the person taps, nothing happens, same sentence.
+  it('NEVER sends an iOS person into Safari settings', () => {
+    // The estate's owner forbade this in his own words: "we are not going to be telling users to
+    // set anything on safari". cf35fb207 did the opposite and pinned it with a test; this is that
+    // test inverted. A refusal is answered by naming the state, not by handing over a menu tour.
     withUa(UA.iphone, 5, () => {
       const s = siteSettingFix();
-      expect(s).toMatch(/Settings → Safari/);
-      expect(s).toMatch(/Microphone/);
-      expect(s).toMatch(/Allow/);
+      expect(s).not.toMatch(/Settings/);
+      expect(s).not.toMatch(/Safari/);
+      expect(s).not.toMatch(/Allow/);
+      expect(s).not.toMatch(/Open Settings/);
+    });
+  });
+
+  it('names the device on iOS, and asserts nothing it did not measure', () => {
+    // The old sentence named Safari as the cause. Safari is not always the holder -- the OS can be,
+    // and so can a policy. Naming iOS is the strongest claim the code can actually support.
+    withUa(UA.iphone, 5, () => {
+      expect(siteSettingFix()).toMatch(/iOS/);
+      expect(siteSettingFix()).toMatch(/microphone/i);
     });
   });
 
