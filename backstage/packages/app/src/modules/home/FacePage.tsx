@@ -32,7 +32,23 @@ const LABEL: Record<string, string> = {
 
 export function FacePage() {
   const voice = useEstateVoice();
-  const on = voice.state !== 'off' && voice.state !== 'error';
+  // A FAILED MICROPHONE MUST BE RE-ASKABLE -- and the tap must not depend on a state comparison
+  // that has to be kept in step with the label below.
+  //
+  // The rule here was `on = state !== 'off' && state !== 'error'`, with the handler
+  // `on ? stop() : start()`. That happens to re-ask in 'error', but it gets there by two
+  // negations that must stay inverted against the label map: add a state, and the button
+  // silently changes meaning. The label directly below already promises the behaviour --
+  // `error: 'Tap to try again'` -- so the tap is expressed as the same fact: stop a live
+  // microphone, start anything else. 'error' is not running, so it can only mean "ask again".
+  // Matching FleetReactorApp.openVoice, which was fixed for the founder's phone on 2026-10-05
+  // ("it says tap the mic to try again, and when you tap nothing happens" -- the tap WAS
+  // firing, as a stop, on a microphone that had already failed).
+  const live =
+    voice.state === 'listening' ||
+    voice.state === 'thinking' ||
+    voice.state === 'speaking';
+  const on = live;
   // The wordmark is the estate's own name (LAW 46), not a string in this file. On a chrome-free
   // page nothing else names the product, so it reads here, crisp on near-black -- the fix for
   // "Bytesync title washed out", which was the sidebar's faded wordmark doing the naming before.
@@ -106,7 +122,7 @@ export function FacePage() {
         <button
           type="button"
           data-testid="face-mic"
-          onClick={() => (on ? voice.stop() : voice.start())}
+          onClick={() => (live ? voice.stop() : voice.start())}
           disabled={!voice.available}
           style={{
             pointerEvents: 'auto',
