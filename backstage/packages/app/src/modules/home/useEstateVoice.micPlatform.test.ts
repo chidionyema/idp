@@ -11,7 +11,7 @@
  * otherwise be served the Mac instruction -- the same bug, one device over. A real Mac never
  * reports touch points, which is the only thing that separates them.
  */
-import { micPlatform } from './useEstateVoice';
+import { micPlatform, siteSettingFix } from './useEstateVoice';
 
 const UA = {
   iphone:
@@ -84,5 +84,33 @@ describe('micPlatform', () => {
 
   it('says desktop when the user agent is empty, rather than throwing', () => {
     withUa('', 0, () => expect(micPlatform()).toBe('desktop'));
+  });
+
+  // ---------------------------------------------------------------------------
+  // The sentence itself, which is what the person actually reads.
+  // ---------------------------------------------------------------------------
+
+  it('sends an iOS person to the OS setting, because a refusal there is not re-askable', () => {
+    // Measured 2026-10-05: once "Don't Allow" is tapped on iOS, Safari holds the refusal for the
+    // origin and every later getUserMedia throws NotAllowedError at once. It never re-prompts, so
+    // "tap the mic again to be asked" is a loop: the person taps, nothing happens, same sentence.
+    withUa(UA.iphone, 5, () => {
+      const s = siteSettingFix();
+      expect(s).toMatch(/Settings → Safari/);
+      expect(s).toMatch(/Microphone/);
+      expect(s).toMatch(/Allow/);
+    });
+  });
+
+  it('never tells an iOS person to tap again, which cannot work there', () => {
+    withUa(UA.iphone, 5, () => {
+      expect(siteSettingFix()).not.toMatch(/tap the mic again/);
+    });
+  });
+
+  it('still offers the tap on a platform where the re-prompt is real', () => {
+    withUa(UA.linuxChrome, 0, () => {
+      expect(siteSettingFix()).toMatch(/tap the mic again/);
+    });
   });
 });

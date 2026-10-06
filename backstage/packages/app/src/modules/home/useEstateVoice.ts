@@ -125,17 +125,18 @@ export function micPlatform(): MicPlatform {
  * and the page passed that on -- but the word "off" reads as a setting to go and find, which is
  * exactly the chore the founder forbade: a voice surface asks for the microphone BY USING IT.
  *
- * On iOS there is no per-site microphone switch to send someone to. A site refusal is cleared by
- * the next successful request, and iOS re-asks when the request comes from a fresh user gesture on
- * the control. That is why the fix below says the device can be asked again and what the tap will
- * do -- no menu, no Settings path, no platform-specific errand.
+ * On iOS a REFUSED site is not re-askable. Tapping the control again throws NotAllowedError at once
+ * and Safari never re-prompts: the refusal is held for the origin until the person clears it. Saying
+ * "tap again to be asked" there is a loop, not an instruction -- the person taps, nothing happens,
+ * and the same sentence returns. The only exit is the OS, so on iOS the sentence names the OS.
  *
- * Kept per-platform only because the DEVICE is named in the sentence; the action is identical.
+ * The path is Settings > Safari > [this site] > Microphone. iOS shows a site in that list only once
+ * it has asked for the microphone; the entry exists here precisely because this page just asked.
  */
-function siteSettingFix(): string {
+export function siteSettingFix(): string {
   switch (micPlatform()) {
     case 'ios':
-      return 'microphone is off for this page — tap the mic again to be asked';
+      return 'Microphone blocked. Open Settings → Safari → [this site] → Microphone and choose Allow.';
     default:
       return 'microphone is off for this site — tap the mic again to be asked';
   }
