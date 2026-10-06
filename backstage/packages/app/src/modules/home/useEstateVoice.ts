@@ -116,7 +116,7 @@ export function micPlatform(): MicPlatform {
 }
 
 /**
- * WHAT A `denied` PERMISSION STATE MEANS, AND WHY THIS NO LONGER MENTIONS A SETTING (2026-10-05).
+ * WHAT A `denied` PERMISSION STATE MEANS, AND WHY THIS NO LONGER MENTIONS A SETTING (2026-10-06).
  *
  * Measured on the founder's iPhone from live production: tapping the mic on
  * https://catalogue.mumchimp.com/fleet rendered "microphone is off for this page -- tap the mic
@@ -125,21 +125,26 @@ export function micPlatform(): MicPlatform {
  * and the page passed that on -- but the word "off" reads as a setting to go and find, which is
  * exactly the chore the founder forbade: a voice surface asks for the microphone BY USING IT.
  *
- * On iOS a REFUSED site is not re-askable. Tapping the control again throws NotAllowedError at once
- * and Safari never re-prompts: the refusal is held for the origin until the person clears it. Saying
- * "tap again to be asked" there is a loop, not an instruction -- the person taps, nothing happens,
- * and the same sentence returns. The only exit is the OS, so on iOS the sentence names the OS.
+ * THERE WAS A SETTINGS WALKTHROUGH HERE, AND IT IS GONE. For a day this branch returned
+ *   'Microphone blocked. Open Settings -> Safari -> [this site] -> Microphone and choose Allow.'
+ * The estate's owner rejected that twice, in his own words: "we are not going to be telling users
+ * to set anything on safari", and "the instructions dont make sensse, safari should promt the
+ * user". He is right, and WebKit agrees: "the user is prompted to grant website access to capture
+ * devices when getUserMedia is first called" (webkit.org/blog/7763). Safari HAS a prompt. Calling
+ * getUserMedia IS the request. A page that renders a Settings walkthrough instead has replaced the
+ * browser's own dialog with a chore the person must do by hand.
  *
- * The path is Settings > Safari > [this site] > Microphone. iOS shows a site in that list only once
- * it has asked for the microphone; the entry exists here precisely because this page just asked.
+ * The reasoning that put it there is kept so it is not re-invented: on iOS a refused site is not
+ * re-askable through getUserMedia, so "tap again" can be a loop, and that is still true. What was
+ * wrong was the conclusion -- that the only honest reply is a menu tour. It is not. A refusal is
+ * answered by naming the state and stopping, which is what `osRefusalFix` below already says, and
+ * what this function now says too. The two must agree: before 2026-10-06 one said "tap the mic
+ * again" and the other said "open Safari settings", in the same file, for the same refusal.
  */
 export function siteSettingFix(): string {
-  switch (micPlatform()) {
-    case 'ios':
-      return 'Microphone blocked. Open Settings → Safari → [this site] → Microphone and choose Allow.';
-    default:
-      return 'microphone is off for this site — tap the mic again to be asked';
-  }
+  // One sentence, the device's words, no errand. `osRefusalFix` is the caller that ends up in
+  // front of the person, so this delegates rather than keeping a second, divergent copy.
+  return osRefusalFix();
 }
 
 /**
