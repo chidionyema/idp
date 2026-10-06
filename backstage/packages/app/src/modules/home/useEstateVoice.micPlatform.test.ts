@@ -90,21 +90,33 @@ describe('micPlatform', () => {
   // The sentence itself, which is what the person actually reads.
   // ---------------------------------------------------------------------------
 
-  it('sends an iOS person to the OS setting, because a refusal there is not re-askable', () => {
-    // Measured 2026-10-05: once "Don't Allow" is tapped on iOS, Safari holds the refusal for the
-    // origin and every later getUserMedia throws NotAllowedError at once. It never re-prompts, so
-    // "tap the mic again to be asked" is a loop: the person taps, nothing happens, same sentence.
+  it('NEVER sends an iOS person into Safari settings', () => {
+    // cf35fb207 required the opposite of this and put the Settings tour back on main. The estate's
+    // owner forbade it in his own words -- "we are not going to be telling users to set anything on
+    // safari", "safari should promt the user" -- and the Playwright mobile suite already asserts
+    // NOT /Settings|padlock|chrome:\/\/settings/i. This test was the one gate defending the defect.
     withUa(UA.iphone, 5, () => {
       const s = siteSettingFix();
-      expect(s).toMatch(/Settings → Safari/);
-      expect(s).toMatch(/Microphone/);
-      expect(s).toMatch(/Allow/);
+      expect(s).not.toMatch(/Settings/);
+      expect(s).not.toMatch(/Safari/);
+      expect(s).not.toMatch(/Allow/);
     });
   });
 
-  it('never tells an iOS person to tap again, which cannot work there', () => {
+  it('names the device on iOS, and asserts nothing it did not measure', () => {
+    // The old string named Safari as the cause. Safari is not always the holder -- the OS can be,
+    // and so can a policy. Naming iOS is the strongest claim the code can actually support.
     withUa(UA.iphone, 5, () => {
-      expect(siteSettingFix()).not.toMatch(/tap the mic again/);
+      expect(siteSettingFix()).toMatch(/iOS/);
+      expect(siteSettingFix()).toMatch(/microphone/i);
+    });
+  });
+
+  it('says the same thing as osRefusalFix, because they answer one refusal', () => {
+    // On main these two disagreed: one said "tap the mic again", the other "open Safari settings",
+    // for the same refusal in the same file. siteSettingFix now delegates, so they cannot drift.
+    withUa(UA.iphone, 5, () => {
+      expect(siteSettingFix()).toMatch(/tap the mic again/);
     });
   });
 
