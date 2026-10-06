@@ -35,8 +35,29 @@
 # in this repo's package.json.
 
 # --- stage 1: the dependency skeleton -----------------------------------------
+# PINNED BY DIGEST, and every stage shares the one pin. The floating tag
+# `node:24-trixie-slim` was repushed upstream at 02:39Z on 2026-10-06 (Node
+# 24.20.0 -> 24.21.0), and the 07:55Z build picked it up mid-flight with a
+# byte-identical Dockerfile — the same file that had built green at 21:52Z the
+# night before (32e71ecd8). The result was a red `no CRITICAL vulnerability
+# ships` step on both arches and no image tag at all, so four days of source
+# work could not reach the cluster. A tag that moves underneath a build is not
+# a base image, it is a lottery: it made the security gate fire on a change
+# nobody made, and it will do so again. Bump this digest deliberately, in a PR,
+# when the bump has been scanned — never let CI discover a new base on its own.
+#
+# This digest is the CURRENT upstream image (Node 24.21.0, Debian trixie 13.7),
+# not a rollback to the older one: 13.7 shipped on 2026-09-12 and carries the
+# security updates a pinned-to-August base would have lost. The `apt-get
+# upgrade -y` in stage 4 stays, and now runs against a fixed base instead of a
+# moving one.
+#
+# The ARG is declared before the first FROM so it is global, which is the only
+# scope that can be read by a FROM line.
+ARG NODE_IMAGE=node:24.21.0-trixie-slim@sha256:173f125896c3b47ddf056734c7ea789d04595a6a08769a8f78e0df642781fb66
+
 # Only package.json files, so a source edit does not invalidate `yarn install`.
-FROM node:24-trixie-slim AS packages
+FROM ${NODE_IMAGE} AS packages
 WORKDIR /app
 COPY backstage.json package.json yarn.lock ./
 COPY .yarn ./.yarn
@@ -46,7 +67,7 @@ COPY plugins plugins
 RUN find packages \! -name "package.json" -mindepth 2 -maxdepth 2 -exec rm -rf {} \+
 
 # --- stage 2: install and build -----------------------------------------------
-FROM node:24-trixie-slim AS build
+FROM ${NODE_IMAGE} AS build
 # better-sqlite3 is a native module and is compiled here, against this image's
 # Node. It stays in the image because the scaffolder's dev config uses it; the
 # container itself runs on Postgres (app-config.container.yaml).
@@ -95,7 +116,7 @@ RUN mkdir packages/backend/dist/skeleton packages/backend/dist/bundle \
 # header with nothing to read it. Installing build-essential into the runtime
 # image would fix the build by shipping a C++ toolchain to production, so the
 # install happens in this stage and only its output crosses the line.
-FROM node:24-trixie-slim AS deps
+FROM ${NODE_IMAGE} AS deps
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -111,7 +132,7 @@ RUN --mount=type=cache,target=/home/node/.cache/yarn,sharing=locked,uid=1000,gid
     yarn workspaces focus --all --production && rm -rf "$(yarn cache clean)"
 
 # --- stage 4: the runtime image -----------------------------------------------
-FROM node:24-trixie-slim
+FROM ${NODE_IMAGE}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
