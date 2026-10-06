@@ -51,6 +51,12 @@ class Recorded(GitHubBackend):
     def gh(self, path, method="GET", fields=None):
         if method != "GET":
             self.writes.append((method, path, fields))
+            # GitHub answers a PR create with the PR it made. Returning the number keeps the
+            # landing path honest: the engine merges the PR it just raised rather than
+            # re-listing to find it, which is both what the real API allows and one less
+            # round trip. A write that creates a pull request gets a number; anything else None.
+            if method == "POST" and path == "pulls":
+                return {"number": 900 + len(self.writes)}
             return None
         base, _, query = path.partition("?")
         rows = self.table.get(base)
@@ -249,12 +255,25 @@ def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
     b.git = lambda *a, check=True: pushed.append(a) or ""
     b.land([("lane/feat/a", "a1", "r1"), ("lane/feat/b", "b1", "r2")], "tip")
     refs = [a[-1] for a in pushed if a[0] == "push"]
-    # adopted lane: lane ref AND the PR's own branch take the landed sha, before main moves
+    # adopted lane: lane ref AND the PR's own branch take the landed sha
     assert refs.index("r1:refs/heads/lane/feat/a") < refs.index("r1:refs/heads/feat/a")
-    assert refs.index("r1:refs/heads/feat/a") < refs.index("tip:refs/heads/main")
-    # unadopted lane: the engine raises its own PR; the adopted one gets none
-    assert [w[1] for w in b.writes if w[0] == "POST" and w[1] == "pulls"] == ["pulls"]
-    assert b.writes[-1][2]["head"] == "lane/feat/b"
+    # MAIN IS NOT PUSHED TO. The ruleset on main requires eight status checks plus a
+    # `pull_request` rule, and a direct push arrives before any of them has run against main, so
+    # on 2026-10-06 every batch died here with GH013 "Required status check \"no-harness-folders\"
+    # is expected". main now moves through the merge API, which is how #5445 landed. This
+    # assertion used to require the push; that is what made the test defend the defect.
+    assert "tip:refs/heads/main" not in refs
+    assert not any(r.endswith("refs/heads/main") for r in refs)
+    # a PR must exist for every lane that lands, and it is merged -- not merely raised
+    merges = [w for w in b.writes if w[0] == "PUT" and "/merge" in str(w[1])]
+    created = [w for w in b.writes if w[0] == "POST" and w[1] == "pulls"]
+    assert [w[2]["head"] for w in created] == ["lane/feat/b"]
+    # each member is merged through its own PR, pinned to the sha that was judged
+    assert len(merges) == 2, f"expected one merge per member, got {merges}"
+    assert all(w[2]["merge_method"] == "squash" for w in merges), (
+        "merge commits are not allowed on this repository and rebase is disabled; squash is the "
+        "only method the ruleset permits"
+    )
 
 
 def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):

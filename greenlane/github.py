@@ -340,6 +340,7 @@ class GitHubBackend:
 
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
+        resolved: list[tuple[str, str, str, dict]] = []
         for lane, head, rebased in members:
             self.git("push", "-q", "-f", "origin", f"{rebased}:refs/heads/{lane}")
             pr = adopted.get(lane)
@@ -356,30 +357,76 @@ class GitHubBackend:
                     check=False,
                 )
             if not pr:
-                self._ensure_pr(lane, head, rebased, tip)
-        # GitHub's ruleset evaluation lags behind the check-run API: a required check may
-        # show as 'completed' in the API but still be 'queued' in the rules engine for up to
-        # ~30 s.  Retry on that specific error; other failures are fatal.
-        for attempt in range(1, 6):
-            try:
-                self.git("push", "-q", "origin", f"{tip}:refs/heads/main")
-                break
-            except RuntimeError as exc:
-                if attempt < 5 and "is queued" in str(exc):
-                    import time as _time
-
-                    _time.sleep(10 * attempt)
-                    continue
-                raise
-        for lane, _, _ in members:
+                number = self._ensure_pr(lane, head, rebased, tip)
+                pr = {"number": number, "branch": lane} if number else None
+            resolved.append((lane, head, rebased, pr))
+        # MAIN MOVES THROUGH THE PULL REQUEST, NOT BY A DIRECT PUSH (2026-10-06).
+        #
+        # This used to be `git push tip:refs/heads/main`. On 2026-10-06 that was refused:
+        #
+        #   remote: error: GH013: Repository rule violations found for refs/heads/main.
+        #   remote: - Required status check "no-harness-folders" is expected.
+        #
+        # and every batch failed at exactly this line, so nothing landed. The ruleset on main
+        # requires EIGHT status checks and carries a `pull_request` rule. Measured on main HEAD
+        # 2c3b3c63a, seven of the eight are absent (only `test` is present) -- because each of
+        # those workflows runs on `push`/`pull_request` against the BRANCH being pushed, and a
+        # direct push to main arrives before any of them has run against `main`. The requirement
+        # is therefore not late, it is unsatisfiable: the retry loop below was written for a lag
+        # of ~30 s and no amount of waiting can conjure a check-run that has never been created.
+        #
+        # A lane that is green is not the same fact as a commit whose required checks have passed
+        # on the protected ref, and only the second one may move main (I1). The merge API is the
+        # door that satisfies both: it lands the SAME tested sha, and it is how #5445 and #5440
+        # reached main today (mergedBy=app/estate-agents). The PR is already opened above -- this
+        # stops ignoring it and uses it.
+        #
+        # `merge_method: "squash"` IS WHAT THE RULESET PERMITS, MEASURED. `merge` is refused --
+        # "Merge commits are not allowed on this repository" -- and `rebase` too, while the API
+        # reports allow_squash_merge=true. The live proof is #5445, the last commit to reach main:
+        # head 9bd3f068f, base cf35fb207, merge commit 2c3b3c63a, and its head carried
+        # bdd, ci-success, executes-gate, fast-gate, feature-request-plan and no-harness-folders,
+        # all success. That is the shape this reproduces.
+        #
+        # WHAT THIS GIVES UP, HONESTLY. I1 says main moves to a sha whose required checks passed
+        # at that exact sha; a squash mints a NEW sha, so what is proven is the PR's head and what
+        # lands is its squash. The gap is closed the only way the platform allows: the PR head is
+        # the rebased tip itself (pushed above), so the merge applies that exact tree onto main,
+        # and GitHub's own required-check evaluation is what authorises the move -- the same
+        # authority that authorised #5445. `sha` pins the merge to the commit that was judged --
+        # the rebased commit just pushed as the lane head, which is what GitHub will squash -- so a
+        # lane that moves under us fails the call instead of landing unproven work.
+        for lane, _head, rebased, pr in resolved:
+            if not pr:
+                pr = self._pr_for(lane)
+            if not pr:
+                raise RuntimeError(
+                    f"land: no pull request for {lane}; cannot move main"
+                )
+            subject = self.git("log", "-1", "--format=%s", rebased)
+            self.gh(
+                f"pulls/{pr['number']}/merge",
+                "PUT",
+                {
+                    "merge_method": "squash",
+                    "sha": rebased,
+                    "commit_title": f"{subject} (#{pr['number']})",
+                },
+            )
+        for lane, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
 
-    def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> None:
+    def _pr_for(self, lane: str) -> Optional[dict]:
+        """The open pull request whose head is `lane`, or None."""
+        found = self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
+        return found[0] if found else None
+
+    def _ensure_pr(self, lane: str, head: str, rebased: str, tip: str) -> Optional[int]:
         existing = (
             self.gh(f"pulls?state=open&head={self.owner}:{lane}&per_page=5") or []
         )
         if existing:
-            return
+            return existing[0]["number"]
         subject = self.git("log", "-1", "--format=%s", rebased)
         body = (
             f"Landed by the Greenlane: this lane was proven green on top of main at exactly this sha "
@@ -388,11 +435,15 @@ class GitHubBackend:
             f"BDD-PROOF\nhead: {rebased}\nrequired checks green on candidate {tip}: "
             f"{', '.join(self.required)}\nEND-BDD-PROOF\n"
         )
-        self.gh(
+        created = self.gh(
             "pulls",
             "POST",
             {"title": subject, "head": lane, "base": "main", "body": body},
         )
+        # The merge that follows needs the number. Re-reading it from the API would work but
+        # costs a round trip and races with GitHub's own listing lag; the POST already carries
+        # it. `None` still means "no PR" and the caller refuses rather than guessing.
+        return (created or {}).get("number")
 
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         state = {
