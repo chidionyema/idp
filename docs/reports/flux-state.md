@@ -1,8 +1,8 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-10-06T03:00:14Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-10-06T16:45:12Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**71 objects: 50 ready, 18 not ready, 0 unknown, 3 suspended.**
+**71 objects: 56 ready, 12 not ready, 0 unknown, 3 suspended.**
 
 ## Not ready right now
 
@@ -12,18 +12,12 @@ Read from the cluster receipt taken at 2026-10-06T03:00:14Z. Every Kustomization
 - **HelmRelease dagster/dagster** since 2026-09-29T06:21:51Z: Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
 - **HelmRelease spire-mgmt/spire** since 2026-09-26T20:11:52Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deployment/spire-mgmt/spire-spiffe-oidc-discovery-provider status: 'InProgress']
-- **Kustomization flux-system/agent-workforce** since 2026-10-06T02:55:28Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/estate-db-migrate** since 2026-10-06T02:57:45Z: ExternalSecret/temporal/estate-db-role-temporal dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.external-secrets.io": failed to call webhook: Post "https://external-secrets-webhook.external-secrets.svc:443/validate-external-secrets-io-v1-externalsecret?timeout=15s": EOF 
-- **Kustomization flux-system/flux-system** since 2026-10-06T03:00:05Z: Reconciliation in progress
-- **Kustomization flux-system/hermes-agent** since 2026-10-06T02:56:14Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/hindsight** since 2026-10-06T02:55:53Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/jit** since 2026-10-06T02:56:36Z: health check failed after 202.090446ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed']
-- **Kustomization flux-system/llm** since 2026-10-06T02:55:23Z: dependency 'flux-system/estate-db-migrate' is not ready
-- **Kustomization flux-system/otto-gateway** since 2026-10-06T02:58:02Z: health check failed after 245.597953ms: failed early due to stalled resources: [Deployment/otto-gateway/otto-gateway status: 'Failed']
-- **Kustomization flux-system/otto-golden** since 2026-10-06T02:59:34Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/quad-ledger** since 2026-10-06T02:58:21Z: health check failed after 86.878052ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed']
-- **Kustomization flux-system/research-engine** since 2026-10-06T02:55:30Z: dependency 'flux-system/llm' is not ready
-- **Kustomization flux-system/temporal** since 2026-10-06T02:59:34Z: dependency 'flux-system/estate-db-migrate' is not ready
+- **Kustomization flux-system/agent-workforce** since 2026-10-06T16:42:38Z: post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable not set (strict mode): "githubAppIDQuoted"
+- **Kustomization flux-system/jit** since 2026-10-06T16:44:05Z: health check failed after 213.914372ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed']
+- **Kustomization flux-system/otto-gateway** since 2026-10-06T16:36:48Z: health check failed after 494.723647ms: failed early due to stalled resources: [Deployment/otto-gateway/otto-gateway status: 'Failed']
+- **Kustomization flux-system/priority-classes** since 2026-10-06T16:45:03Z: Reconciliation in progress
+- **Kustomization flux-system/quad-ledger** since 2026-10-06T16:43:53Z: health check failed after 49.006943ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed']
+- **Kustomization flux-system/voice-router** since 2026-10-06T16:45:05Z: Reconciliation in progress
 
 ## Every row
 
@@ -35,18 +29,12 @@ Read from the cluster receipt taken at 2026-10-06T03:00:14Z. Every Kustomization
 | HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-29T06:21:51Z | Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
 | HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T20:11:52Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deploymen |
-| Kustomization | flux-system | agent-workforce | Not ready | main@32e71ec | 2026-10-06T02:55:28Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | estate-db-migrate | Not ready | main@32e71ec | 2026-10-06T02:57:45Z | ExternalSecret/temporal/estate-db-role-temporal dry-run failed (InternalError): Internal error occurred: failed calling webhook "validate.externalsecret.externa |
-| Kustomization | flux-system | flux-system | Not ready | main@32e71ec | 2026-10-06T03:00:05Z | Reconciliation in progress |
-| Kustomization | flux-system | hermes-agent | Not ready | main@32e71ec | 2026-10-06T02:56:14Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | hindsight | Not ready | main@32e71ec | 2026-10-06T02:55:53Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | jit | Not ready | main@32e71ec | 2026-10-06T02:56:36Z | health check failed after 202.090446ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed'] |
-| Kustomization | flux-system | llm | Not ready | main@32e71ec | 2026-10-06T02:55:23Z | dependency 'flux-system/estate-db-migrate' is not ready |
-| Kustomization | flux-system | otto-gateway | Not ready | main@32e71ec | 2026-10-06T02:58:02Z | health check failed after 245.597953ms: failed early due to stalled resources: [Deployment/otto-gateway/otto-gateway status: 'Failed'] |
-| Kustomization | flux-system | otto-golden | Not ready | main@32e71ec | 2026-10-06T02:59:34Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | quad-ledger | Not ready | main@32e71ec | 2026-10-06T02:58:21Z | health check failed after 86.878052ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed'] |
-| Kustomization | flux-system | research-engine | Not ready | main@32e71ec | 2026-10-06T02:55:30Z | dependency 'flux-system/llm' is not ready |
-| Kustomization | flux-system | temporal | Not ready | main@32e71ec | 2026-10-06T02:59:34Z | dependency 'flux-system/estate-db-migrate' is not ready |
+| Kustomization | flux-system | agent-workforce | Not ready | main@74a832f | 2026-10-06T16:42:38Z | post build failed for 'GithubAccessToken.v1alpha1.generators.external-secrets.io/agent-workforce-github': envsubst error: variable substitution failed: variable |
+| Kustomization | flux-system | jit | Not ready | main@74a832f | 2026-10-06T16:44:05Z | health check failed after 213.914372ms: failed early due to stalled resources: [Deployment/jit/jit-broker status: 'Failed'] |
+| Kustomization | flux-system | otto-gateway | Not ready | main@32e71ec | 2026-10-06T16:36:48Z | health check failed after 494.723647ms: failed early due to stalled resources: [Deployment/otto-gateway/otto-gateway status: 'Failed'] |
+| Kustomization | flux-system | priority-classes | Not ready | main@74a832f | 2026-10-06T16:45:03Z | Reconciliation in progress |
+| Kustomization | flux-system | quad-ledger | Not ready | main@74a832f | 2026-10-06T16:43:53Z | health check failed after 49.006943ms: failed early due to stalled resources: [Deployment/quad/quad-ledger status: 'Failed'] |
+| Kustomization | flux-system | voice-router | Not ready | main@74a832f | 2026-10-06T16:45:05Z | Reconciliation in progress |
 | HelmRelease | flux-system | vendor-bridge | Suspended | 0.1.0+991920d87ecd | 2026-10-03T13:56:39Z |  |
 | HelmRelease | observability | signoz | Suspended | 0.138.0 | 2026-09-26T16:24:12Z |  |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
@@ -73,30 +61,36 @@ Read from the cluster receipt taken at 2026-10-06T03:00:14Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-09-26T10:39:02Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-26T18:25:31Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-26T09:48:27Z |  |
-| Kustomization | flux-system | backstage | Ready | main@32e71ec | 2026-10-06T02:55:56Z |  |
-| Kustomization | flux-system | backstage-namespace | Ready | main@32e71ec | 2026-10-06T02:59:21Z |  |
-| Kustomization | flux-system | dns | Ready | main@32e71ec | 2026-10-06T02:58:27Z |  |
-| Kustomization | flux-system | edge | Ready | main@32e71ec | 2026-10-06T02:59:05Z |  |
-| Kustomization | flux-system | epistemic-fabric | Ready | main@32e71ec | 2026-10-06T02:57:20Z |  |
-| Kustomization | flux-system | estate-db | Ready | main@32e71ec | 2026-10-06T02:57:17Z |  |
-| Kustomization | flux-system | estate-db-operator | Ready | main@32e71ec | 2026-10-06T02:51:26Z |  |
-| Kustomization | flux-system | event-bus | Ready | main@32e71ec | 2026-10-06T02:58:21Z |  |
-| Kustomization | flux-system | external-secrets | Ready | main@32e71ec | 2026-10-06T02:57:03Z |  |
-| Kustomization | flux-system | flannel | Ready | main@32e71ec | 2026-10-06T02:58:35Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-06T02:59:30Z |  |
-| Kustomization | flux-system | github-app-creds | Ready | main@32e71ec | 2026-10-06T02:56:22Z |  |
-| Kustomization | flux-system | image-automation | Ready | main@32e71ec | 2026-10-06T02:55:21Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@32e71ec | 2026-10-06T02:58:21Z |  |
-| Kustomization | flux-system | mcp | Ready | main@32e71ec | 2026-10-06T02:57:36Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@32e71ec | 2026-10-06T02:58:39Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@32e71ec | 2026-10-06T02:59:04Z |  |
-| Kustomization | flux-system | ns-fences | Ready | main@32e71ec | 2026-10-06T02:53:44Z |  |
-| Kustomization | flux-system | otto-golden-secret | Ready | main@32e71ec | 2026-10-06T02:57:51Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@32e71ec | 2026-10-06T02:53:33Z |  |
-| Kustomization | flux-system | quad-ledger-exception | Ready | main@32e71ec | 2026-10-06T02:50:34Z |  |
-| Kustomization | flux-system | reloader | Ready | main@32e71ec | 2026-10-06T02:50:15Z |  |
-| Kustomization | flux-system | searxng | Ready | main@32e71ec | 2026-10-06T02:56:29Z |  |
-| Kustomization | flux-system | secret-store | Ready | main@32e71ec | 2026-10-06T02:54:11Z |  |
-| Kustomization | flux-system | tailscale | Ready | main@32e71ec | 2026-10-06T02:55:16Z |  |
-| Kustomization | flux-system | unified-memory | Ready | main@32e71ec | 2026-10-06T02:58:03Z |  |
-| Kustomization | flux-system | voice-router | Ready | main@32e71ec | 2026-10-06T02:55:05Z |  |
+| Kustomization | flux-system | backstage | Ready | main@74a832f | 2026-10-06T16:44:53Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@74a832f | 2026-10-06T16:36:34Z |  |
+| Kustomization | flux-system | dns | Ready | main@74a832f | 2026-10-06T16:36:57Z |  |
+| Kustomization | flux-system | edge | Ready | main@74a832f | 2026-10-06T16:39:57Z |  |
+| Kustomization | flux-system | epistemic-fabric | Ready | main@74a832f | 2026-10-06T16:44:05Z |  |
+| Kustomization | flux-system | estate-db | Ready | main@74a832f | 2026-10-06T16:44:43Z |  |
+| Kustomization | flux-system | estate-db-migrate | Ready | main@74a832f | 2026-10-06T16:36:07Z |  |
+| Kustomization | flux-system | estate-db-operator | Ready | main@74a832f | 2026-10-06T16:36:48Z |  |
+| Kustomization | flux-system | event-bus | Ready | main@74a832f | 2026-10-06T16:35:34Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@74a832f | 2026-10-06T16:41:30Z |  |
+| Kustomization | flux-system | flannel | Ready | main@74a832f | 2026-10-06T16:34:57Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@74a832f | 2026-10-06T16:35:34Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-06T16:45:03Z |  |
+| Kustomization | flux-system | github-app-creds | Ready | main@74a832f | 2026-10-06T16:40:14Z |  |
+| Kustomization | flux-system | hermes-agent | Ready | main@74a832f | 2026-10-06T16:36:48Z |  |
+| Kustomization | flux-system | hindsight | Ready | main@74a832f | 2026-10-06T16:44:30Z |  |
+| Kustomization | flux-system | image-automation | Ready | main@74a832f | 2026-10-06T16:39:38Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@74a832f | 2026-10-06T16:40:54Z |  |
+| Kustomization | flux-system | llm | Ready | main@74a832f | 2026-10-06T16:40:28Z |  |
+| Kustomization | flux-system | mcp | Ready | main@74a832f | 2026-10-06T16:43:42Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@74a832f | 2026-10-06T16:37:50Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@74a832f | 2026-10-06T16:38:40Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@74a832f | 2026-10-06T16:36:48Z |  |
+| Kustomization | flux-system | otto-golden | Ready | main@74a832f | 2026-10-06T16:36:07Z |  |
+| Kustomization | flux-system | otto-golden-secret | Ready | main@74a832f | 2026-10-06T16:43:23Z |  |
+| Kustomization | flux-system | quad-ledger-exception | Ready | main@74a832f | 2026-10-06T16:42:04Z |  |
+| Kustomization | flux-system | reloader | Ready | main@74a832f | 2026-10-06T16:38:48Z |  |
+| Kustomization | flux-system | research-engine | Ready | main@74a832f | 2026-10-06T16:42:17Z |  |
+| Kustomization | flux-system | searxng | Ready | main@74a832f | 2026-10-06T16:44:26Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@74a832f | 2026-10-06T16:39:57Z |  |
+| Kustomization | flux-system | tailscale | Ready | main@74a832f | 2026-10-06T16:41:57Z |  |
+| Kustomization | flux-system | temporal | Ready | main@74a832f | 2026-10-06T16:43:01Z |  |
+| Kustomization | flux-system | unified-memory | Ready | main@74a832f | 2026-10-06T16:34:49Z |  |
