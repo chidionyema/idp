@@ -26,6 +26,7 @@ CONFTEST_VER="0.62.0"
 FLUX_VER="2.9.4"
 KUSTOMIZE_VER="5.7.1"
 KUBECONFORM_VER="0.8.0"
+SOPS_VER="3.13.3"
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -50,6 +51,21 @@ _ver_ok() {
   local out
   out="$("$path" version 2>&1; "$path" --version 2>&1; "$path" -v 2>&1; true)"
   echo "$out" | grep -qE "$want|$bare"
+}
+
+# Fetch a release that ships a bare binary (no archive) straight into TOOLS_DIR.
+_fetch_raw() {
+  local name="$1" url="$2"
+  local tmp; tmp="$(mktemp -d)"
+  _need_curl
+  if curl -sSL --retry 3 --retry-delay 2 -o "$tmp/$name" "$url" 2>/dev/null && [ -s "$tmp/$name" ]; then
+    mv "$tmp/$name" "$TOOLS_DIR/$name"
+    chmod +x "$TOOLS_DIR/$name"
+    rm -rf "$tmp"
+    return 0
+  else
+    rm -rf "$tmp"; return 1
+  fi
 }
 
 _fetch() {
@@ -132,6 +148,18 @@ else
   URL="https://github.com/yannh/kubeconform/releases/download/v${KUBECONFORM_VER}/kubeconform-${OS}-${ARCH}.tar.gz"
   if _fetch kubeconform "$URL"; then _ok "kubeconform $KUBECONFORM_VER installed"
   else _fail "kubeconform install failed (url: $URL)"; fi
+fi
+
+# sops -- Level-0 estate tool (bin/idp-workstation-bootstrap TOOLS row) that decrypts the
+# estate-secrets vault. Without it scripts/secret-load fails "sops: command not found", so no
+# key can be read by name and every caller that needs one BLINDs. Ships a bare binary, no archive.
+if _ver_ok sops "$SOPS_VER"; then
+  _ok "sops $SOPS_VER"
+else
+  _inst "sops $SOPS_VER"
+  URL="https://github.com/getsops/sops/releases/download/v${SOPS_VER}/sops-v${SOPS_VER}.${OS}.${ARCH}"
+  if _fetch_raw sops "$URL"; then _ok "sops $SOPS_VER installed"
+  else _fail "sops install failed (url: $URL)"; fi
 fi
 
 # docker -- daemon must be reachable for the compose validation rung in bin/idp-ci
