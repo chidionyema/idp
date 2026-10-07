@@ -125,4 +125,50 @@ describe('micPlatform', () => {
       expect(siteSettingFix()).toMatch(/tap the mic again/);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // The home-screen icon: a different refusal, because the re-prompt is NOT real there
+  // (bugs.webkit.org 185448, 215884, 252465). isStandaloneHomeScreen() is not exported, so this
+  // goes through the one function that already delegates to it.
+  // ---------------------------------------------------------------------------
+
+  function withStandalone(value: boolean | undefined, fn: () => void) {
+    const real = (navigator as any).standalone;
+    Object.defineProperty(navigator, 'standalone', { value, configurable: true });
+    try {
+      fn();
+    } finally {
+      Object.defineProperty(navigator, 'standalone', { value: real, configurable: true });
+    }
+  }
+
+  it('does NOT offer "tap again" on an iOS home-screen icon -- that retry cannot work there', () => {
+    withUa(UA.iphone, 5, () => {
+      withStandalone(true, () => {
+        expect(siteSettingFix()).not.toMatch(/tap the mic again/);
+        expect(siteSettingFix()).toMatch(/home-screen icon/i);
+      });
+    });
+  });
+
+  it('still says "tap the mic again" on an iOS Safari tab, where it IS real', () => {
+    withUa(UA.iphone, 5, () => {
+      withStandalone(false, () => {
+        expect(siteSettingFix()).toMatch(/tap the mic again/);
+      });
+      withStandalone(undefined, () => {
+        expect(siteSettingFix()).toMatch(/tap the mic again/);
+      });
+    });
+  });
+
+  it('never calls an iPhone "standalone" on Android or desktop, where the flag is irrelevant', () => {
+    // Guards against a future refactor reading `navigator.standalone` for a platform where no
+    // browser sets it meaningfully and it would read as a false positive.
+    withUa(UA.android, 5, () => {
+      withStandalone(true, () => {
+        expect(siteSettingFix()).toMatch(/tap the mic again/);
+      });
+    });
+  });
 });
