@@ -252,6 +252,20 @@ async def decode_stories(
             continue
 
 
+def _forget_start_time(config: Any) -> None:
+    """Drop opt_start_time once the ordered consumer exists, so its resets are valid.
+
+    nats-py 2.16.0 keeps the caller's ConsumerConfig as the ordered consumer's re-create request,
+    and on a reset (a gap, a reconnect) sets deliver_policy=BY_START_SEQUENCE and opt_start_seq
+    but leaves opt_start_time. The server refuses that pair -- 400 err_code=10094 "consumer
+    delivery policy is deliver by start sequence, but optional start time is also set" -- and the
+    reset is retried forever. Measured 2026-10-07 19:41Z, the minute the bus came back after
+    nats-0's outage: hundreds a minute from fleetview-backend, and no stories or approvals on
+    /fleet. The start time has done its work by now; the consumer was created with it.
+    """
+    config.opt_start_time = None
+
+
 async def subscribe_stories(
     nats_url: str, replay_s: int = STORY_REPLAY_S
 ) -> AsyncGenerator[tuple[str, dict], None]:
@@ -275,6 +289,7 @@ async def subscribe_stories(
             opt_start_time=start_time.strftime("%Y-%m-%dT%H:%M:%SZ"),
         )
         sub = await js.subscribe(STORY_SUBJECTS, ordered_consumer=True, config=config)
+        _forget_start_time(config)
         async for on_story in decode_stories(sub.messages):
             yield on_story
     finally:
@@ -308,6 +323,7 @@ async def subscribe_approvals(
         sub = await js.subscribe(
             "estate.approvals.>", ordered_consumer=True, config=config
         )
+        _forget_start_time(config)
         async for msg in sub.messages:
             await msg.ack()
             try:
