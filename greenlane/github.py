@@ -50,6 +50,16 @@ def _run(*args: str, check: bool = True, input: Optional[str] = None) -> str:
 
 
 class GitHubBackend:
+    # land(): how long the required re-runs a lane-head push starts may take before the merge.
+    # The tick job's timeout-minutes is 15 (.github/workflows/greenlane.yml); these fit inside it.
+    LAND_SETTLE_S = (
+        20  # for GitHub to register the re-runs, so checks() does not read the old ones
+    )
+    LAND_WAIT_S = 600
+    LAND_POLL_S = 15
+    LAND_MERGE_TRIES = 4
+    LAND_RETRY_S = 20
+
     def __init__(
         self,
         repo: str,
@@ -396,6 +406,33 @@ class GitHubBackend:
         # authority that authorised #5445. `sha` pins the merge to the commit that was judged --
         # the rebased commit just pushed as the lane head, which is what GitHub will squash -- so a
         # lane that moves under us fails the call instead of landing unproven work.
+        #
+        # THE PUSH ABOVE RESTARTS THE REQUIRED CHECKS (2026-10-07). Force-pushing the rebased sha
+        # onto the PR's head branch is a `synchronize`: GitHub queues every required workflow
+        # again on that same sha, and until those re-runs finish it answers the merge with
+        # HTTP 405 "Pull Request is not mergeable". Merging straight after the push lost that
+        # race every time: #5461 went b1893..b1897, every candidate green, every land a 405,
+        # every next tick "member changed under test; requeued" because the lane head was now
+        # the sha this method had pushed. Measured on b1896 (2b211e835): push at 18:10:04Z,
+        # seven required re-runs started 18:10:06Z, all green by 18:11Z, tick already dead.
+        # So: wait for the re-runs on the sha being landed, then merge, and retry the 405
+        # GitHub keeps returning for a few seconds while it recomputes mergeability.
+        time.sleep(self.LAND_SETTLE_S)
+        deadline = time.time() + self.LAND_WAIT_S
+        for _lane, _head, rebased, _pr in resolved:
+            while True:
+                verdict, why = self.checks(rebased)
+                if verdict == "green":
+                    break
+                if verdict == "red":
+                    raise RuntimeError(
+                        f"land: {rebased[:12]} went red after the push: {why}"
+                    )
+                if time.time() > deadline:
+                    raise RuntimeError(
+                        f"land: {rebased[:12]} still {why} {self.LAND_WAIT_S}s after the push"
+                    )
+                time.sleep(self.LAND_POLL_S)
         for lane, _head, rebased, pr in resolved:
             if not pr:
                 pr = self._pr_for(lane)
@@ -404,15 +441,22 @@ class GitHubBackend:
                     f"land: no pull request for {lane}; cannot move main"
                 )
             subject = self.git("log", "-1", "--format=%s", rebased)
-            self.gh(
-                f"pulls/{pr['number']}/merge",
-                "PUT",
-                {
-                    "merge_method": "squash",
-                    "sha": rebased,
-                    "commit_title": f"{subject} (#{pr['number']})",
-                },
-            )
+            for attempt in range(self.LAND_MERGE_TRIES):
+                try:
+                    self.gh(
+                        f"pulls/{pr['number']}/merge",
+                        "PUT",
+                        {
+                            "merge_method": "squash",
+                            "sha": rebased,
+                            "commit_title": f"{subject} (#{pr['number']})",
+                        },
+                    )
+                    break
+                except RuntimeError as e:
+                    if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
+                        raise
+                    time.sleep(self.LAND_RETRY_S)
         for lane, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
 
