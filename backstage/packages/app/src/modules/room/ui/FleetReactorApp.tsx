@@ -2750,6 +2750,19 @@ export default function FleetReactorApp() {
             {voice.heard ? <div className="text-cyan-300">› {voice.heard}</div> : null}
             {voice.reply ? <div className="text-white/85 mt-1">{voice.reply}</div> : null}
             {voice.detail ? <div className="text-white/35 mt-1">{voice.detail}</div> : null}
+            {/* One tap, not a settings tour -- see FacePage.tsx / useEstateVoice.ts
+                (isStandaloneHomeScreen): opens a real Safari tab, the one place a home-screen
+                icon's mic refusal actually clears. */}
+            {voice.micRecoveryUrl ? (
+              <a
+                href={voice.micRecoveryUrl}
+                target="_blank"
+                rel="noopener"
+                className="block mt-1 text-emerald-300 underline"
+              >
+                Open in Safari to use the mic
+              </a>
+            ) : null}
           </div>
         ) : null}
       

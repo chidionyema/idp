@@ -119,6 +119,27 @@ export function FacePage() {
         {voice.detail && (
           <div style={{ opacity: 0.55, fontSize: 12 }}>{voice.detail}</div>
         )}
+        {/* ONE TAP, NOT A SETTINGS TOUR (2026-10-08). Set only when the mic was refused inside a
+            home-screen icon, where iOS does not persist a grant and "tap again" replays the same
+            refusal forever (useEstateVoice.ts: isStandaloneHomeScreen). `target="_blank"` from a
+            standalone shell is handed to Safari as a real tab -- the one place this refusal
+            actually clears -- so this is a working escape, not an instruction to go find a toggle. */}
+        {voice.micRecoveryUrl && (
+          <a
+            href={voice.micRecoveryUrl}
+            target="_blank"
+            rel="noopener"
+            style={{
+              pointerEvents: 'auto',
+              fontSize: 13,
+              fontWeight: 600,
+              color: '#7fd1b9',
+              textDecoration: 'underline',
+            }}
+          >
+            Open in Safari to use the mic
+          </a>
+        )}
         <button
           type="button"
           data-testid="face-mic"

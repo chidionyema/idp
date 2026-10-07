@@ -39,10 +39,11 @@ jest.mock('./FleetBackdrop', () => ({ __esModule: true, default: () => null }));
 
 const mocked = require('./useEstateVoice').useEstateVoice as jest.Mock;
 
-function voiceIn(state: EstateVoiceState) {
+function voiceIn(state: EstateVoiceState, micRecoveryUrl?: string) {
   return {
     state,
     detail: state === 'error' ? 'microphone is off for this page — tap the mic to try again' : '',
+    micRecoveryUrl,
     heard: '',
     reply: '',
     available: true,
@@ -125,5 +126,24 @@ describe('FacePage — the mic button', () => {
         expect([state, voice.stop.mock.calls.length]).toEqual([state, 1]);
       }
     });
+  });
+
+  // (4) THE HOME-SCREEN ESCAPE, 2026-10-08. "tap again to be asked" is a lie inside a
+  // standalone icon (useEstateVoice.ts: isStandaloneHomeScreen) -- the page must offer the one
+  // fix that actually clears the refusal, and must not offer it when there is nothing to escape.
+  it('offers a real link to Safari when the hook sets micRecoveryUrl', () => {
+    mocked.mockReturnValue(voiceIn('error', 'https://catalogue.mumchimp.com/face'));
+    render(<FacePage />);
+    const link = screen.getByText('Open in Safari to use the mic') as HTMLAnchorElement;
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('https://catalogue.mumchimp.com/face');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toBe('noopener');
+  });
+
+  it('shows no recovery link for an ordinary error (Safari tab, Android, desktop)', () => {
+    mocked.mockReturnValue(voiceIn('error'));
+    render(<FacePage />);
+    expect(screen.queryByText('Open in Safari to use the mic')).toBeNull();
   });
 });
