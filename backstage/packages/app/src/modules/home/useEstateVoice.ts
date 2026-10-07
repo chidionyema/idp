@@ -148,13 +148,43 @@ export function siteSettingFix(): string {
 }
 
 /**
+ * True only on iOS, only when this page is running from a home-screen icon (Add to Home Screen)
+ * rather than a normal Safari tab. `navigator.standalone` is WebKit's own flag for exactly this
+ * mode; no other engine sets it meaningfully, so it is read directly rather than guessed from a
+ * media query that iOS Safari does not reliably answer the same way.
+ *
+ * WHY THIS IS CHECKED (2026-10-08). "the next tap re-prompts once the person allows it" (the
+ * claim `start()` above makes, and the one `osRefusalFix` below was built on) is true for a
+ * Safari TAB and false for a home-screen standalone web app: WebKit does not give a standalone
+ * shell the same persistent per-site microphone grant a Safari tab gets, so a refusal there does
+ * not clear on the next tap -- it repeats, sometimes until the device restarts (bugs.webkit.org
+ * 185448, 215884, 252465 -- the third still open as of this writing, years after the first). The
+ * founder's manifest (`display: "standalone"`) and apple-touch-icon exist so /face can be added
+ * to the home screen, which is exactly the mode that breaks. Tapping "try again" there is not a
+ * retry of a working mechanism; it is replaying a request WebKit has already decided to refuse.
+ */
+function isStandaloneHomeScreen(): boolean {
+  return (navigator as any).standalone === true;
+}
+
+/**
  * The refusal that reached the person, said once and in their device's words. Deliberately NOT a
  * settings walkthrough: the next tap re-asks, and a user who has decided to refuse is not helped by
  * being sent into a menu. Short enough to read on a phone at a glance.
+ *
+ * The iOS branch below is two different facts, not one (2026-10-08): a Safari tab's refusal DOES
+ * clear on the next ask, so "tap again" is true there; a home-screen icon's does not, by platform
+ * limitation, no matter how many times it is tapped. Collapsing them back into one sentence would
+ * repeat the exact defect this file was built to end -- telling the person a fix will work when it
+ * cannot -- so the standalone case is named and answered by `micRecoveryUrl` in the hook below
+ * (a one-tap link to a real Safari tab), not by this string trying to also carry an instruction.
  */
 function osRefusalFix(): string {
   switch (micPlatform()) {
     case 'ios':
+      if (isStandaloneHomeScreen()) {
+        return 'the home-screen icon cannot keep microphone access on iOS — open in Safari below';
+      }
       return 'iOS is not letting this page use the microphone — tap the mic again to be asked';
     case 'android':
       return 'Android is not letting this page use the microphone — tap the mic again to be asked';
@@ -352,6 +382,13 @@ export interface EstateVoice {
   reply: string;
   /** A short status line: timings, refusals, the reason for anything that did not work. */
   detail: string;
+  /**
+   * Set only on iOS when the mic was refused AND this page is a home-screen standalone app
+   * (`isStandaloneHomeScreen()`): the URL to open as a real Safari tab, where the refusal
+   * actually clears. Undefined everywhere else -- the UI renders a link only when this is set,
+   * rather than guessing from `detail`'s text.
+   */
+  micRecoveryUrl?: string;
   /** Whether the engine is usable at all on this host. */
   available: boolean;
   start: () => Promise<void>;
@@ -386,6 +423,7 @@ export function useEstateVoice(): EstateVoice {
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState('');
   const [detail, setDetail] = useState('');
+  const [micRecoveryUrl, setMicRecoveryUrl] = useState<string | undefined>(undefined);
   const [available, setAvailable] = useState(false);
   // `piper` WAS MISSING FROM THIS SHAPE, and the picker renders from it -- so the three Piper
   // voices the service reports were dropped on arrival and the group showed "0 voices" while the
@@ -783,6 +821,13 @@ export function useEstateVoice(): EstateVoice {
     // voice product asks for the microphone by USING it: the getUserMedia call made by the VAD
     // below IS the permission prompt, and on iOS and Android the next tap re-prompts once the
     // person allows it. Nothing on this path requires a user to open Settings.
+    //
+    // A standalone home-screen icon is the one case where that claim is false (see
+    // `isStandaloneHomeScreen` below) -- the recovery link from a PRIOR refusal is cleared here
+    // regardless, because this attempt may now be running after the person already followed it
+    // into a real Safari tab, and a stale link pointing at an app that has already fixed itself
+    // is worse than no link.
+    setMicRecoveryUrl(undefined);
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
     if (!libs.ok) {
@@ -876,6 +921,17 @@ export function useEstateVoice(): EstateVoice {
       // A refusal raised by our own voice path (`MicRefusal` from useVoiceRouter, whose message is
       // already worded for the person) is passed through untouched.
       setDetail(await refusalDetail(e, msg));
+      // THE ONE-TAP ESCAPE FROM A HOME-SCREEN REFUSAL THAT CANNOT CLEAR ITSELF (2026-10-08).
+      // `osRefusalFix` above can only NAME the standalone limitation; it cannot fix it, because
+      // nothing a standalone shell runs can turn itself into a Safari tab. A plain `<a>` with
+      // `target="_blank"` from inside a standalone web app is handed to Safari as a real tab
+      // (iOS has no concept of a second standalone window, so it cannot stay in-shell) -- the
+      // same escape the Shortcuts-app workaround uses, here as one tap instead of a setup
+      // procedure. `micPlatform()` is read again rather than trusted from closure because the
+      // person may have rotated/returned since the attempt started.
+      if (micPlatform() === 'ios' && isStandaloneHomeScreen()) {
+        setMicRecoveryUrl(window.location.href);
+      }
     }
   }, [runTurn, silence]);
 
@@ -967,6 +1023,7 @@ export function useEstateVoice(): EstateVoice {
     heard,
     reply,
     detail,
+    micRecoveryUrl,
     available,
     start,
     stop,
