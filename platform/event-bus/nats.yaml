@@ -43,7 +43,14 @@ spec:
         kind: HelmRepository
         name: nats
   install: { remediation: { retries: 3 } }
-  upgrade: { remediation: { retries: 3 } }
+  # disableWait (2026-10-07): the probe fix below could not roll out. Helm's wait judged the
+  # StatefulSet by the one pod the upgrade exists to replace -- nats-0, crash-looping on the old
+  # 1s probe -- failed "early due to stalled resources" within seconds, and rolled the template
+  # back before the controller replaced the pod: upgrades v7..v11 failed, rollbacks failed too,
+  # nats-0 still the 2026-09-09 pod. Without the wait the new template stays and the controller
+  # rolls the pod. Cost: the release reports Ready before the pod is; the proof is the bus
+  # serving its clients (nats Service endpoints, fleetview-backend connecting), not this status.
+  upgrade: { disableWait: true, remediation: { retries: 3 } }
   values:
     # Every image this chart runs names its registry. The nodes run cri-o with short-name mode
     # enforcing: a reference whose first path segment carries no registry host is admitted and
