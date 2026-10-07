@@ -149,12 +149,20 @@ spec:
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities: { drop: [ALL] }
+        # -jsz=all (below) makes /metrics enumerate every stream and consumer; the default 1s
+        # probe timeout is shorter than that scrape under real JetStream load, so the exporter
+        # was killed on every liveness cycle before it answered - restartCount in the thousands,
+        # Pod readiness permanently False, so the nats Service had zero ready endpoints and
+        # every client in the estate (JetStream being the one bus, AGENTS.md §9) timed out
+        # connecting, silently, including Fleet's live state feed. 2026-10-07.
         readinessProbe:
           httpGet: { path: /metrics, port: 7777 }
           periodSeconds: 10
+          timeoutSeconds: 10
         livenessProbe:
           httpGet: { path: /metrics, port: 7777 }
           periodSeconds: 30
+          timeoutSeconds: 10
     natsBox:
       # A shell-in-a-pod for hand debugging. Not a platform capability; nothing depends on it.
       enabled: false
