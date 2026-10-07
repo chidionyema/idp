@@ -11,10 +11,24 @@ args:
 halt_on_failure: true
 steps:
   - name: push the lane
+    timeout: 300
     cmd: |
       cd {{cwd}} || exit 2
       b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
-      git push -q origin "HEAD:refs/heads/$lane" && echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
+      out=$(git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
+      if [ $rc -eq 0 ]; then
+        echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
+      elif printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
+        # the engine (greenlane/github.py land()) force-pushes a rebased commit onto the
+        # lane's own ref before merging, then deletes it only after a successful merge; if a
+        # merge failed in between, or another session pushed this lane name, the remote ref
+        # has moved underneath this branch and a plain push is correctly rejected here.
+        echo "REJECTED lane-submit  $lane moved on origin since this branch was built (non-fast-forward) - fetch/rebase onto origin/$lane, or resubmit under a new lane name: $out" >&2
+        exit 1
+      else
+        echo "FAIL    lane-submit  push to $lane failed: $out" >&2
+        exit $rc
+      fi
   - name: wait for the verdict
     cmd: |
       cd {{cwd}} || exit 2
