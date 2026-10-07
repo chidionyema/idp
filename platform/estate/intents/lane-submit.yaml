@@ -30,6 +30,8 @@ steps:
         exit $rc
       fi
   - name: wait for the verdict
+    # above the `wait` default (1800); estate-execute reads timeout raw, so {{wait}} cannot go here
+    timeout: 1900
     cmd: |
       cd {{cwd}} || exit 2
       b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
