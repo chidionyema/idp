@@ -238,18 +238,35 @@ def test_adopted_and_owner_pull_requests_are_not_foreign_and_adopted_heads_are_f
     assert ("push", "-q", "-f", "origin", "a2:refs/heads/lane/feat/a") == pushed[0][:5]
 
 
-def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
-    b = Recorded(
-        {
-            "pulls": [
-                {
-                    "number": 5,
-                    "user": {"login": "someone"},
-                    "body": f"{ADOPTED} lane/feat/a",
-                    "head": {"ref": "feat/a", "sha": "a1"},
-                }
-            ]
+def _green(*shas):
+    return {
+        f"commits/{s}/check-runs": {
+            "check_runs": [_run(n, "success") for n in REQUIRED]
         }
+        for s in shas
+    }
+
+
+def _fast(b):
+    b.LAND_SETTLE_S = b.LAND_POLL_S = b.LAND_RETRY_S = 0
+    return b
+
+
+def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
+    b = _fast(
+        Recorded(
+            {
+                "pulls": [
+                    {
+                        "number": 5,
+                        "user": {"login": "someone"},
+                        "body": f"{ADOPTED} lane/feat/a",
+                        "head": {"ref": "feat/a", "sha": "a1"},
+                    }
+                ],
+                **_green("r1", "r2"),
+            }
+        )
     )
     pushed = []
     b.git = lambda *a, check=True: pushed.append(a) or ""
@@ -274,6 +291,77 @@ def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
         "merge commits are not allowed on this repository and rebase is disabled; squash is the "
         "only method the ruleset permits"
     )
+
+
+def test_land_waits_for_the_reruns_its_own_push_starts_before_merging():
+    # 2026-10-07, #5461: the lane-head push re-queues every required check on the same sha, and
+    # a merge issued before they finish is a 405. Five batches in a row died that way.
+    b = _fast(Recorded({}))
+    b.git = lambda *a, check=True: ""
+    reads = []
+    seq = [
+        {"check_runs": [_run(n, None, status="in_progress") for n in REQUIRED]},
+        {"check_runs": [_run(n, "success") for n in REQUIRED]},
+    ]
+    real_gh = b.gh
+
+    def gh(path, method="GET", fields=None):
+        if path.startswith("commits/r1/check-runs"):
+            reads.append(path)
+            return seq[min(len(reads), len(seq)) - 1]
+        return real_gh(path, method, fields)
+
+    b.gh = gh
+    b.land([("lane/feat/a", "a1", "r1")], "tip")
+    merges = [w for w in b.writes if w[0] == "PUT" and "/merge" in str(w[1])]
+    assert len(reads) >= 2, "merged without waiting for the re-runs the push started"
+    assert len(merges) == 1
+
+
+def test_land_retries_the_405_github_returns_while_it_recomputes_mergeability():
+    b = _fast(Recorded(_green("r1")))
+    b.git = lambda *a, check=True: ""
+    tries = []
+    real_gh = b.gh
+
+    def gh(path, method="GET", fields=None):
+        if method == "PUT" and path.endswith("/merge"):
+            tries.append(path)
+            if len(tries) < 3:
+                raise RuntimeError(
+                    f"gh api repos/o/idp/{path}: rc=1 gh: Pull Request is not mergeable (HTTP 405)"
+                )
+        return real_gh(path, method, fields)
+
+    b.gh = gh
+    b.land([("lane/feat/a", "a1", "r1")], "tip")
+    assert len(tries) == 3
+
+
+def test_land_does_not_retry_a_merge_refused_for_any_other_reason():
+    b = _fast(Recorded(_green("r1")))
+    b.git = lambda *a, check=True: ""
+
+    def gh(path, method="GET", fields=None):
+        if method == "PUT" and path.endswith("/merge"):
+            raise RuntimeError(
+                "gh: Head branch was modified. Review and try the merge again. (HTTP 409)"
+            )
+        return Recorded.gh(b, path, method, fields)
+
+    b.gh = gh
+    with pytest.raises(RuntimeError, match="409"):
+        b.land([("lane/feat/a", "a1", "r1")], "tip")
+
+
+def test_land_refuses_a_lane_whose_reruns_go_red():
+    b = _fast(
+        Recorded({"commits/r1/check-runs": {"check_runs": [_run("bdd", "failure")]}})
+    )
+    b.git = lambda *a, check=True: ""
+    with pytest.raises(RuntimeError, match="went red"):
+        b.land([("lane/feat/a", "a1", "r1")], "tip")
+    assert not [w for w in b.writes if w[0] == "PUT"]
 
 
 def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):
