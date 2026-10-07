@@ -14,5 +14,6 @@ args:
   all: {type: bool, default: false}
 steps:
   - name: work-audit
+    timeout: 900
     cmd: >
       python3 ~/.estate/libexec/work-audit.py {{days}} {{github}} {{all}}
