@@ -68,6 +68,9 @@ def blocks(vendors: dict, field: str, indent: int) -> str:
             )
         txt = router.get(field)
         if txt:
+            # Handle both string (block scalar / plain scalar) and Python list (YAML list)
+            if isinstance(txt, list):
+                txt = yaml.safe_dump(txt, default_flow_style=False)
             pad = " " * indent
             out.append(
                 "\n".join(

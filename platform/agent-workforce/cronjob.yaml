@@ -111,6 +111,42 @@ spec:
                 readOnlyRootFilesystem: true
                 capabilities: { drop: ["ALL"] }
                 seccompProfile: { type: RuntimeDefault }
+          initContainers:
+            # Pre-load the Ollama embedder so LiteLLM's embed->ollama-embed fallback is ready
+            # on the first call. Ollama lazy-loads on first use anyway, but without this the
+            # first crew embed call pays ~30s of model-pull latency inside the knowledge init.
+            # Same image as the laws init container (ghcr.io/oracle/oci-cli) since it has curl.
+            # The crew and LiteLLM both run in the cluster so ollama.llm.svc.cluster.local resolves.
+            - name: ollama-embed-pull
+              image: ghcr.io/oracle/oci-cli:20260826
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  set -eu
+                  # Pull nomic-embed-text into Ollama (768-dim, free, unlimited).
+                  # The pull API streams JSON lines; --no-buffer keeps curl from buffering
+                  # and --max-time caps at 3 minutes (the model is ~274MB on a fast link).
+                  echo "Pulling nomic-embed-text into Ollama..."
+                  code=$(curl -s -w "%{http_code}" -o /dev/null -X POST \
+                    http://ollama.llm.svc.cluster.local:11434/api/pull \
+                    -d '{"name":"nomic-embed-text"}' --no-buffer --max-time 180)
+                  if [ "$code" = "200" ]; then
+                    echo "ok   ollama-embed nomic-embed-text pulled"
+                  else
+                    echo "FAIL ollama-embed pull: HTTP $code"
+                    exit 1
+                  fi
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+                limits: { cpu: 500m, memory: 256Mi }
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 10001
+                runAsGroup: 10001
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
           containers:
             - name: crew
               image: ghcr.io/chidionyema/agent-workforce:main

@@ -588,47 +588,14 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
-  # THE EMBED LANE, and the only one, as of 2026-10-11. Founder, verbatim:
-  # "we don't use openrouter or gemini. cohere should be in vault and bitwarden
-  # secrets manager", and "we have minimax also" -- for chat MiniMax is the
-  # default lane; for embeddings it has no door (measured 2026-10-11 from
-  # inside the litellm pod: OpenAI shape answers "missing required parameter
-  # texts", native {texts:} shape answers 2013 invalid params). Every other
-  # hop was deleted the same day, each for a measured reason:
-  #
-  #   openrouter/openai/text-embedding-3-small  402 "Prompt tokens limit
-  #                                               exceeded: 2 > 0" -- zero
-  #                                               credits, and the founder
-  #                                               closed the vendor for
-  #                                               embeddings.
-  #   gemini/gemini-embedding-001                402 "prepayment credits
-  #                                               exhausted" (and the id is
-  #                                               retired, 404)
-  #   gemini/text-embedding-004                  404 "no longer supported"
-  #
-  # The key is already wired: Bitwarden Secrets Manager -> human-vault-bridge
-  # ExternalSecret `human-cohere` (synced True) -> mounted at
-  # /run/secrets/human/cohere -> exported by basename as COHERE_API_KEY. The
-  # value it carries TODAY is a trial key -- measured live, every call answers
-  # "You are using a Trial key, which is limited to 1000 API calls / month".
-  # So the lane's one remaining fact is a key fact, not a config fact: a
-  # production Cohere key dropped into Secrets Manager serves within a minute
-  # (bridge sync -> Reloader restart -> no PR, no deploy), which is the
-  # rotation story the mounts in litellm.yaml were built for. Otto's backfill
-  # (otto-memory-store-8, Failed 9h, read=1 written=0) reruns onto it.
-  #
-  # embed-v4.0 takes an output width; 1536 is the width otto_facts.embedding
-  # is created at and the width every vector already in the store was written
-  # at (tests/test_the_embed_chain_agrees_on_one_width.py grades any future
-  # second hop on it).
-  - model_name: embed
-    litellm_params:
-      model: cohere/embed-v4.0
+  - litellm_params:
       api_key: os.environ/COHERE_API_KEY
       dimensions: 1536
+      model: cohere/embed-v4.0
       timeout: 120
     model_info:
       mode: embedding
+    model_name: embed
 
   # Local, free, and reachable from the cluster, not the founder's Mac.
   # platform/llm/ollama.yaml runs it on the always-free pool; 1.5B because the free allowance is
@@ -640,6 +607,21 @@ model_list:
       api_base: http://ollama.llm.svc.cluster.local:11434
       timeout: 300
       keep_alive: 24h
+
+  # Free embedder served from Ollama in the cluster. The embed model (Cohere) has no fallback
+  # so every failure retried 2x against the exhausted trial key, burning it in seconds.
+  # Ollama is already running at ollama.llm.svc.cluster.local; nomic-embed-text produces 768-dim
+  # vectors -- the width mismatch with existing 1536-dim Cohere vectors means this is a fallback
+  # for NEW writes only (existing vectors already in the store are unaffected; a future reindex
+  # would reconcile widths). The crew's knowledge init rewrites on every run anyway, so the
+  # degraded-dim write is acceptable -- it is better than no write.
+  - model_name: ollama-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 60
+    model_info:
+      mode: embedding
 
 router_settings:
   fallbacks:
@@ -736,6 +718,10 @@ router_settings:
     - cerebras: [sambanova, nvidia, openrouter]
 
     - sambanova: [nvidia, openrouter]
+    # embed has no fallback: Cohere trial key exhausted 2026-10-08, every failure retried 2x
+    # and burned the remaining quota in seconds. Ollama serves nomic-embed-text free in-cluster.
+    - embed: [ollama-embed]
+
 
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored

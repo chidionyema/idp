@@ -862,7 +862,7 @@ vendors:
       bw: COHERE_API_KEY
       entry: dagster-env
     router:
-      cluster_lanes: |-
+      cluster_lanes:
         # THE EMBED LANE, and the only one, as of 2026-10-11. Founder, verbatim:
         # "we don't use openrouter or gemini. cohere should be in vault and bitwarden
         # secrets manager", and "we have minimax also" -- for chat MiniMax is the
@@ -904,6 +904,7 @@ vendors:
             timeout: 120
           model_info:
             mode: embedding
+  twilio:
   twilio:
     kind: secret
     secret: SEED_TWILIO_AUTH_TOKEN

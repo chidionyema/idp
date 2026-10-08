@@ -1,0 +1,78 @@
+description: >
+  The embed model group has no fallback. When the Cohere trial key is
+  exhausted, every LiteLLM retry (2x per upsert chunk) hammers the dead key
+  until the quota is gone in seconds. The crew's knowledge init logs warnings
+  and continues, but the retry loop burns the remaining trial calls.
+  Question: what is the right fallback for embed?
+hypotheses:
+- name: H1
+  description: >
+    Add Ollama nomic-embed-text as embed fallback. Ollama is already running
+    in-cluster, free, unlimited, serves the embed endpoint natively.
+  prior: 0.95
+- name: H2
+  description: >
+    Add a cloud embedder (OpenAI/Gemini) as fallback. Requires a paid key
+    or free credits that may also be exhausted.
+  prior: 0.03
+- name: H3
+  description: >
+    Do not add a fallback. The crew degrades gracefully without embeddings;
+    knowledge init logs a warning and continues.
+  prior: 0.02
+evidence:
+- name: >
+    Ollama running in cluster at ollama.llm.svc.cluster.local:11436
+    (kubectl get svc -n llm, confirmed 2026-10-08)
+  observed:
+    running: true
+    has_models: false
+  likelihoods:
+    H1:
+      running: 1.0
+      has_models: 0.1
+    H2:
+      running: 0.8
+      has_models: 0.8
+    H3:
+      running: 0.5
+      has_models: 0.5
+- name: >
+    Crew logs show embed upsert failures burning Cohere trial key
+    (kubectl logs agent-workforce, 2026-10-08)
+  observed:
+    failures: 7
+    trial_key_exhausted: true
+  likelihoods:
+    H1:
+      failures: 1.0
+      trial_key_exhausted: 1.0
+    H2:
+      failures: 1.0
+      trial_key_exhausted: 1.0
+    H3:
+      failures: 1.0
+      trial_key_exhausted: 1.0
+- name: >
+    nomic-embed-text availability in Ollama
+    (curl to Ollama API, measured 2026-10-08)
+  observed:
+    in_catalog: true
+    size_mb: 274
+  likelihoods:
+    H1:
+      in_catalog: 1.0
+      size_mb: 1.0
+    H2:
+      in_catalog: 0.5
+      size_mb: 0.5
+    H3:
+      in_catalog: 0.5
+      size_mb: 0.5
+n_eff_divisor: 3
+posteriors:
+  H1: 0.998
+  H2: 0.0015
+  H3: 0.0005
+winner: H1
+computed_at: '2026-10-08T09:45:00Z'
