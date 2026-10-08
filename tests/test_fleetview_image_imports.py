@@ -6,7 +6,8 @@ ModuleNotFoundError: voice_media.py imports jsonschema, voice_intents.py imports
 imports certifi plus two repo files, and fleetview-backend.Dockerfile installed none of them.
 test_fleetview_backend_image_entrypoint_starts.py stayed green because it only asks for /healthz,
 and serve.py imports those modules lazily, inside the routes. Past those imports the voice list
-would still have 500ed, because the image deliberately carries no `sovereign.voice`.
+would still have 500ed, because the image carried no `sovereign.voice`; on 2026-10-08 that same
+absence 500ed every /voice/hear, so the image now copies the package's four stdlib-only files.
 
 The first two tests read the Dockerfile's pip pins and COPY lines, and requires every module-level
 import in the package (and in the repo files it copies) to be stdlib, installed by that pip line,
@@ -55,11 +56,23 @@ PROVIDES = {
     "httpx": {"httpx", "httpcore", "certifi", "idna", "sniffio", "anyio"},
 }
 
-# Imported only inside a function, behind an ImportError the caller handles, and deliberately not
-# in the image: the speech engine lives on the founder's Mac, and Kafka, Langfuse and OpenTelemetry
-# are off on OKE; deploy_journeys.py stubs datasette's hookimpl when it is absent. Anything else
-# imported in a function body must be installed like the rest.
-OPTIONAL = {"sovereign", "aiokafka", "langfuse", "opentelemetry", "datasette"}
+# Imported only inside a function, behind an exception the caller handles, and deliberately not
+# in the image: the local speech models (faster_whisper, kokoro_onnx, and numpy which only they
+# need) cannot load in a 256Mi sidecar, so sovereign/voice/engine.py reaches them only on the local
+# engine path and voice_media turns their absence into a 502 naming the engine -- the router does
+# the speech on OKE. Kafka, Langfuse and OpenTelemetry are off on OKE; deploy_journeys.py stubs
+# datasette's hookimpl when it is absent. Anything else imported in a function body must be
+# installed like the rest.
+OPTIONAL = {
+    "sovereign",
+    "faster_whisper",
+    "kokoro_onnx",
+    "numpy",
+    "aiokafka",
+    "langfuse",
+    "opentelemetry",
+    "datasette",
+}
 
 
 def _image() -> tuple[set[str], list[Path]]:

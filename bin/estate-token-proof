@@ -16,7 +16,11 @@ So this reports two things and never mixes them:
                     prefix re-write it forces. An attribution, labelled as one.
 
 Dollars are LiteLLM's: `cost_usd` on each outcome row when the gateway recorded it, otherwise the
-usage priced with LiteLLM's model_prices map -- never a price sheet of our own.
+usage priced with LiteLLM's model_prices map -- never a price sheet of our own. Subscription lanes
+(claude-*) record $0, so they are always priced from usage: list-price equivalent, not cash.
+
+A lane whose treated calls had nothing cut is reported "chain inert": any $ gap between its arms
+is who called it, not the chain.
 
 USAGE
     bin/estate-token-proof                 # both sections, text
@@ -56,7 +60,9 @@ STEPS = {
     "m5": "pointer for a repeated tool result",
     "m7": "epoch compaction (old turns -> saved state)",
     "m8": "strip reasoning inside the locked range",
+    "m10": "whole-file read -> worker digest",
 }
+SUBSCRIPTION_LANES = ("claude-",)  # billed by subscription: LiteLLM records $0 a call
 PRICE_KEYS = (
     "input_cost_per_token",
     "output_cost_per_token",
@@ -148,6 +154,10 @@ def pair(rows: list[dict]) -> list[dict]:
 
 def cost(c: dict, price: dict) -> Optional[float]:
     v = c["out"].get("cost_usd")
+    if not v and c["lane"].startswith(SUBSCRIPTION_LANES):
+        # Claude rides the subscription, so LiteLLM books $0; its usage at list price is the
+        # only dollar figure a cut can move (otherwise every Claude arm reads $0.0000/call).
+        return usd(c["out"]["usage"], price.get(c["lane"]))
     return v if v is not None else usd(c["out"]["usage"], price.get(c["lane"]))
 
 
@@ -269,7 +279,7 @@ def trial(calls: list[dict], price: dict) -> dict:
             tzinfo=dt.timezone.utc
         )
         ends = (s + dt.timedelta(days=TRIAL_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    conv: dict[tuple, list[float]] = defaultdict(lambda: [0.0, 0, 0.0, "", ""])
+    conv: dict[tuple, list[float]] = defaultdict(lambda: [0.0, 0, 0.0, 0])
     for c in armed:
         d = cost(c, price)
         if d is None:
@@ -283,8 +293,14 @@ def trial(calls: list[dict], price: dict) -> dict:
         v[0] += d
         v[1] += 1
         v[2] += c["out"]["usage"].get("prompt_tokens") or 0
+        v[3] += max(
+            0, (c["pre"].get("bytes_before") or 0) - (c["pre"].get("bytes_after") or 0)
+        )
     lanes: dict[str, Any] = defaultdict(lambda: {"treat": [], "control": [], "tok": {}})
+    cut: dict[str, float] = defaultdict(float)
     for (lane, arm, _), v in conv.items():
+        if arm == "treat":
+            cut[lane] += v[3]
         lanes[lane][arm].append((v[0], v[1]))
         t = lanes[lane]["tok"].setdefault(arm, [0.0, 0])
         t[0] += v[2]
@@ -305,7 +321,10 @@ def trial(calls: list[dict], price: dict) -> dict:
                 else None,
             }
         verdict = "collecting"
-        if ci:
+        if g["treat"] and not cut[lane]:
+            # nothing was cut, so the arms differ only in which conversations landed where
+            verdict = "chain inert (nothing cut)"
+        elif ci:
             verdict = (
                 "saves"
                 if ci[2] < 0
@@ -317,6 +336,7 @@ def trial(calls: list[dict], price: dict) -> dict:
             **arms,
             "pct_change_usd_per_call": ci[0] if ci else None,
             "ci95": [ci[1], ci[2]] if ci else None,
+            "treat_bytes_cut": cut[lane],
             "verdict": verdict,
         }
     return {"started": started, "ends": ends, "days": TRIAL_DAYS, "lanes": out}

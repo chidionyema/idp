@@ -26,11 +26,17 @@ FROM docker.io/library/python:3.13-alpine
 # refusal this image would have returned on every event, honestly and for ever. Pinned like its
 # neighbours; pure Python, no wheel to pick per architecture, so the multi-arch build is unaffected.
 #
-# NOT the speech models. `sovereign/voice` is deliberately absent from this image: the microphone
-# is on the founder's Mac, so faster-whisper and the TTS engines belong next to it, and this
-# container has 250m CPU / 256Mi with a read-only root filesystem -- it could not load them if it
-# tried. What crosses to the cluster is the MEANING of an utterance (a kind=steer row), never its
-# audio, which is the whole shape of the 2026-09-22 transport change.
+# NOT the speech models, but the `sovereign.voice` package that fronts them. The microphone moved to
+# the browser (2026-09-26: POST /voice/hear carries PCM through the Backstage proxy to this
+# sidecar), and voice_media.hear()/say()/stream() all start with `from sovereign.voice import
+# engine, turnlog, catalogue` -- for the sample rate, the clause splitter and the turn log -- before
+# they ask the router to transcribe or speak. Without the package every /voice/hear answered 500
+# (ModuleNotFoundError: No module named 'sovereign') on 2026-10-08, so /face and /fleet heard
+# nothing. The four files are stdlib at module level; faster-whisper, kokoro-onnx and numpy are
+# imported lazily on the LOCAL engine path only, which this container never takes (250m CPU /
+# 256Mi, read-only root) and which hear() already turns into a 502 naming the engine. The router
+# does the speech here. Each file is named rather than the directory: sovereign/voice/static is a
+# symlink out of this build context, and the image needs none of it.
 #
 # jsonschema, pyyaml and certifi are imported at module top by voice_media.py, voice_intents.py and
 # voice.py, and httpx inside voice_media.py's cloud-voice synthesis. None was installed here, so
@@ -44,6 +50,11 @@ COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-ba
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
 COPY lib/estate_spatial.py /app/lib/estate_spatial.py
 COPY mcp/plugins/deploy_journeys.py /app/mcp/plugins/deploy_journeys.py
+COPY sovereign/__init__.py /app/sovereign/__init__.py
+COPY sovereign/voice/__init__.py /app/sovereign/voice/__init__.py
+COPY sovereign/voice/engine.py /app/sovereign/voice/engine.py
+COPY sovereign/voice/turnlog.py /app/sovereign/voice/turnlog.py
+COPY sovereign/voice/catalogue.py /app/sovereign/voice/catalogue.py
 USER 10001
 EXPOSE 18790
 EXPOSE 8091
