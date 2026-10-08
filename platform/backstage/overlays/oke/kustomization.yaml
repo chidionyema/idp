@@ -26,6 +26,8 @@ resources:
   - fleetview-voice-service.yaml
   # The voice sidecar's router key, mounted as a file (voice.py router_key()).
   - fleetview-voice-router-key.yaml
+  # /fleet proxies to the founder's Mac over the tailnet (founder order 2026-10-08).
+  - fleetview-mac-egress.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
@@ -101,6 +103,47 @@ patches:
                 env:
                   - name: POSTGRES_HOST
                     value: estate-rw.estate-db.svc.cluster.local
+  # /fleet reads the founder's Mac (fleetview-mac-egress.yaml). The image's CMD loads two configs;
+  # a third, from the app-config-fleet ConfigMap, overrides only proxy./fleetview.target. The
+  # command is the Dockerfile's CMD verbatim plus that one --config (backstage/Dockerfile:153).
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: catalogue
+      spec:
+        template:
+          spec:
+            containers:
+              - name: catalogue
+                command:
+                  - node
+                  - packages/backend
+                  - --config
+                  - app-config.yaml
+                  - --config
+                  - app-config.container.yaml
+                  - --config
+                  - /etc/backstage-fleet/app-config.fleet.yaml
+                volumeMounts:
+                  - name: app-config-fleet
+                    mountPath: /etc/backstage-fleet
+                    readOnly: true
+  # The volume is a JSON6902 add, not part of the patch above: as a strategic merge it replaced the
+  # `estate` volume's entry instead of appending (render showed `estate` twice, this one gone).
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: app-config-fleet
+          configMap:
+            name: app-config-fleet
   # The availability.idp/tier label moved with the Namespace to
   # platform/backstage/namespace/overlays/oke. The object is no longer rendered here, so a patch
   # targeting it here would have no target (crew#488).

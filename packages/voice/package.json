@@ -48,7 +48,7 @@
     "@huggingface/transformers": "^4.3.0",
     "kokoro-js": "^1.0.0",
     "onnxruntime-web": "^1.17.0",
-    "sharp": "^0.35.4"
+    "sharp": "^0.35.5"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
@@ -65,7 +65,7 @@
     }
   },
   "overrides": {
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "@huggingface/transformers": "^4.3.0",
     "protobufjs": "^7.6.6"
   }
