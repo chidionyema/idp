@@ -24,6 +24,8 @@ resources:
   # RC-1b: the anonymous voice door -- Service + port-scoped NetworkPolicy for
   # serve.py's 18790 (voice routes), reached only from the edge (Traefik), rate-limited.
   - fleetview-voice-service.yaml
+  # The voice sidecar's router key, mounted as a file (voice.py router_key()).
+  - fleetview-voice-router-key.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
   # a file outside the overlay may not, and plain `kustomize build` in the tests refuses it).
   - ../../../../backstage/founder
@@ -291,6 +293,15 @@ patches:
           secret:
             secretName: fleetview-executor
             optional: true
+      # optional: until vault-seed.yml -f entry=fleetview-voice has run, the Secret does not exist;
+      # the Pod still rolls and voice answers 503 "router key not configured" -- BLIND, not a crash.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-voice-llm
+          secret:
+            secretName: fleetview-voice-llm
+            optional: true
       # bin/idp-catalog-push already publishes catalog/estate.db as an OCI artifact
       # (oci://ghcr.io/chidionyema/idp/estate-db:latest); this container pulls the same
       # artifact estate-mcp.yaml's fetch-estate-db init container pulls, so graph/blast-radius/
@@ -393,11 +404,20 @@ patches:
             # container already mounts, not a second credential. A file, re-read on every call:
             # the token is re-minted every 45 minutes and the kubelet swaps the file in place.
             - {name: FLEETVIEW_GITHUB_TOKEN_FILE, value: /run/secrets/backstage-github/GITHUB_TOKEN}
+            # Voice's router key (voice.py router_key()): a file for the same Kyverno reason as
+            # FLEETVIEW_EXECUTOR_KEY_FILE above, re-read on every call so a rotation lands
+            # without a restart. Vault entry fleetview-voice -> fleetview-voice-router-key.yaml.
+            - {name: LITELLM_API_KEY_FILE, value: /run/secrets/fleetview-voice-llm/key}
+            # The interactive lane platform/llm/config.yaml built for this caller ("fleetview
+            # VOICE_ROUTER_MODEL=voice", measured first content 1.3-2.0s). Unset, voice.py falls
+            # back to `deepseek`, a lane the voice key is not scoped to.
+            - {name: VOICE_ROUTER_MODEL, value: voice}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
             - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
+            - {name: fleetview-voice-llm, mountPath: /run/secrets/fleetview-voice-llm, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3

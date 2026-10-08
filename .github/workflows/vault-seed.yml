@@ -15,7 +15,7 @@ on:
       entry:
         description: "which vault entry to write"
         type: choice
-        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, router-rows]
+        options: [all, prospector-engine-env, github-app, flux-writer, temporal-db, mcp-gateway, hindsight, k8sgpt, holmes, tailscale-operator, laptop, hermes, science, newsroom, fleetview-voice, router-rows]
         default: all
       delete:
         description: "schedule deletion of one vault entry by name (for a mis-named entry); the entry field is ignored when this is set"
@@ -124,6 +124,14 @@ jobs:
             # anchor_by=template and the flood never folded. `narrate` is the free lane (Groq 8B, Cerebras,
             # SambaNova per llm/config.yaml), so this grants the anchor no paid lane.
             bin/idp-router-key newsroom narrate
+          fi
+          if [ "$ENTRY" = all ] || [ "$ENTRY" = fleetview-voice ]; then
+            # The fleetview-backend sidecar's voice key (platform/backstage/overlays/oke/fleetview-voice-router-key.yaml,
+            # mounted as LITELLM_API_KEY_FILE). The lanes are what voice.py and voice_media.py ask for:
+            # voice (VOICE_ROUTER_MODEL in the overlay), intent-speculative and its target groq
+            # (/voice/speculate), voice-asr and voice-tts (the media lanes). Its own alias so voice
+            # spend is attributed and budget-capped apart from every other caller.
+            bin/idp-router-key fleetview-voice voice,intent-speculative,groq,voice-asr,voice-tts
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key

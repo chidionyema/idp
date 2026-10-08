@@ -243,8 +243,13 @@ async def speculate(
             import urllib.request
             import urllib.error
 
+            from . import voice  # noqa: PLC0415
+
             router_host = os.environ.get("LITELLM_HOST", "https://llm.mumchimp.com")
-            router_key = os.environ.get("LITELLM_API_KEY", "")
+            # voice.router_key(), not a bare env read: it re-reads LITELLM_API_KEY_FILE on every
+            # call so a rotated mounted key is picked up, falling back to LITELLM_API_KEY for
+            # local/dev launches that have no mounted file.
+            router_key = voice.router_key()
             if not router_key:
                 return {
                     "error": "router key not configured: this server cannot compile intents"
