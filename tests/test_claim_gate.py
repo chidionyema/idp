@@ -86,3 +86,47 @@ def test_only_image_tag_bumps_are_exempt_by_content_not_by_author_name():
     assert g.image_bump_only(bump)
     assert not g.image_bump_only(bump + "+  replicas: 9\n")
     assert not g.image_bump_only("")
+
+
+def _sh(cwd, *a):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", *a],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def test_a_squash_whose_lane_head_is_gone_is_judged_on_its_own_message(
+    tmp_path, monkeypatch
+):
+    # 2026-10-08, PR #5511: land() force-pushed the squash over the lane branch, the
+    # Greenlane-Head sha was on no ref, and `git log base..<head>` crashed claim-gate (exit 128)
+    # on a change it had passed minutes earlier. The lane requeued twice.
+    _sh(tmp_path, "init", "-q", "-b", "main")
+    _sh(tmp_path, "config", "user.email", "t@t")
+    _sh(tmp_path, "config", "user.name", "t")
+    _sh(tmp_path, "commit", "-q", "--allow-empty", "-m", "base")
+    base = _sh(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "bin").mkdir()
+    (tmp_path / "bin" / "voice-doctor").write_text("x\n")
+    _sh(tmp_path, "add", "-A")
+    gone = "f" * 40
+    _sh(
+        tmp_path,
+        "commit",
+        "-q",
+        "-m",
+        f"fix(voice): a thing\n\nGreenlane-Head: {gone}\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n",
+    )
+    head = _sh(tmp_path, "rev-parse", "HEAD")
+    monkeypatch.chdir(tmp_path)
+    g = _gate()
+    iss = _issue(claim=_claim())
+    assert g.judge(base, head, "Mumchimp/idp", lambda r, n: iss, NOW, "", "") == []
+    refused = _issue(claim=_claim(paths="tests/*"))
+    out = g.judge(base, head, "Mumchimp/idp", lambda r, n: refused, NOW, "", "")
+    assert "outside every claim's paths: bin/voice-doctor" in out[0]
