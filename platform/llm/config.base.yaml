@@ -21,6 +21,21 @@ model_list:
       timeout: 300
       keep_alive: 24h
 
+  # Free embedder served from Ollama in the cluster. The embed model (Cohere) has no fallback
+  # so every failure retried 2x against the exhausted trial key, burning it in seconds.
+  # Ollama is already running at ollama.llm.svc.cluster.local; nomic-embed-text produces 768-dim
+  # vectors -- the width mismatch with existing 1536-dim Cohere vectors means this is a fallback
+  # for NEW writes only (existing vectors already in the store are unaffected; a future reindex
+  # would reconcile widths). The crew's knowledge init rewrites on every run anyway, so the
+  # degraded-dim write is acceptable -- it is better than no write.
+  - model_name: ollama-embed
+    litellm_params:
+      model: ollama/nomic-embed-text
+      api_base: http://ollama.llm.svc.cluster.local:11434
+      timeout: 60
+    model_info:
+      mode: embedding
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat
@@ -31,6 +46,10 @@ router_settings:
     # job aliases) but sit in no chain while the account is unfunded: a hop that always
     # answers 402 is latency, not redundancy.
     # @vendor-fallbacks@
+    # embed has no fallback: Cohere trial key exhausted 2026-10-08, every failure retried 2x
+    # and burned the remaining quota in seconds. Ollama serves nomic-embed-text free in-cluster.
+    - embed: [ollama-embed]
+
     # @vendor-cluster-fallbacks@
   # Alias, not a model row (R75, founder 2026-09-03). The Kimi lane is console-owned: the
   # founder brought the key through the LiteLLM console on 2026-09-04 and it is stored
