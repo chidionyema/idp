@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 _UI = "backstage/packages/app/src/modules/room/ui"
 _MODULES = "backstage/packages/app/src/modules"
@@ -72,6 +73,118 @@ def _reachable_from(entry: str) -> set[str]:
         seen.add(f)
         queue.extend(_imports(_git("show", f"HEAD:{f}"), f) - seen)
     return seen
+
+
+def _face_block() -> str:
+    """The /face voice-path spec, generated from the page's own strings.
+
+    The no-gap law applies to /face too: the labels asserted here are read from
+    FacePage.tsx and useEstateVoice.ts at generation time, and the utterance from
+    probes/voice.py's own SCRIPTS table. If the page's words change, generation
+    refuses rather than grading strings that no longer exist.
+    """
+    face = _git("show", f"HEAD:{_MODULES}/home/FacePage.tsx")
+    hook = _git("show", f"HEAD:{_MODULES}/home/useEstateVoice.ts")
+
+    def grab(pat: str, src: str, what: str) -> str:
+        m = re.search(pat, src)
+        if not m:
+            print(
+                f"// GENERATION FAILED — {what} not found in the /face sources",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        return m.group(1)
+
+    idle = grab(r"off: '([^']+)'", face, "the idle button label")
+    unavailable = grab(r": '(Voice[^']*)'", face, "the unavailable text")
+    for needle, what in (
+        ("microphone blocked", "the mic-blocked detail"),
+        ("voice libraries missing (", "the voice-libraries detail"),
+    ):
+        if needle not in hook:
+            print(
+                f"// GENERATION FAILED — {what} not found in useEstateVoice.ts",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    utter = grab(
+        r'\("fleet-status\.wav", "([^"]+)"',
+        (Path(__file__).resolve().parent / "voice.py").read_text(),
+        "the fleet-status utterance in probes/voice.py",
+    )
+
+    return f"""
+test.describe('/face: the voice path a founder actually takes — mic included', () => {{
+  // GENERATED from FacePage.tsx's own labels; if the page's words change, regeneration
+  // fails rather than asserting strings that no longer exist (the no-gap law).
+  const IDLE = {idle!r};
+  const UNAVAILABLE = {unavailable!r};
+  const BTN = /{idle.lower()}|{unavailable.lower()}/i;
+
+  async function launchFace(args: string[]) {{
+    // Per-test launch args: the mic flags belong to the BROWSER, not the context, so each
+    // /face test launches its own Chrome instead of using the fixture browser.
+    const b = await chromium.launch({{ channel: 'chrome', args }});
+    const ctx = await b.newContext({{
+      permissions: ['microphone'],
+      ...(BEARER ? {{ extraHTTPHeaders: {{ authorization: `Bearer ${{BEARER}}` }} }} : {{}}),
+    }});
+    const page = await ctx.newPage();
+    return {{ b, page }};
+  }}
+
+  test('tap-to-talk opens the microphone and the face reaches Listening', async () => {{
+    test.setTimeout(120_000);
+    // The fake device keeps this deterministic on any runner (CI has no audio hardware)
+    // while exercising the real getUserMedia -> VAD -> state machine path on the page.
+    const {{ b, page }} = await launchFace(['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']);
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
+    try {{
+      await page.goto('/face', {{ waitUntil: 'commit' }});
+      if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
+      const btn = page.getByRole('button', {{ name: BTN }});
+      await expect(btn, 'the voice service door — /voice/voices through the proxy').toBeEnabled({{ timeout: 60_000 }});
+      await btn.click();
+      await expect.poll(async () => (await btn.innerText()).trim(), {{ timeout: 60_000 }}).not.toBe(IDLE);
+      const body = await page.locator('body').innerText();
+      expect(body, 'microphone blocked — the bug the founder hit 7 times').not.toContain('microphone blocked');
+      expect(body).not.toContain(UNAVAILABLE);
+      expect(body).not.toContain('voice libraries missing');
+      expect(errors, 'uncaught page errors on /face').toEqual([]);
+    }} finally {{ await b.close(); }}
+  }});
+
+  test('real speech through the page: /face hears the utterance', async () => {{
+    test.setTimeout(180_000);
+    // The same WAV L4 grades server-side, driven through the fake MICROPHONE into the
+    // real page: mic -> VAD -> POST /voice/hear -> transcript -> rendered as "You: …".
+    const wav = [process.env.SURFACES_VOICE_WAV, 'probes/fixtures/fleet-status.wav',
+                 '../../../probes/fixtures/fleet-status.wav', '../../probes/fixtures/fleet-status.wav']
+      .find(p => p && fs.existsSync(p));
+    expect(wav, 'voice fixture not found — set SURFACES_VOICE_WAV').toBeTruthy();
+    if (!wav) return;
+    const {{ b, page }} = await launchFace([`--use-file-for-fake-audio-capture=${{wav}}`, '--use-fake-ui-for-media-stream']);
+    const errors: string[] = [];
+    page.on('pageerror', e => errors.push(e.message));
+    try {{
+      await page.goto('/face', {{ waitUntil: 'commit' }});
+      if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
+      const btn = page.getByRole('button', {{ name: BTN }});
+      await expect(btn).toBeEnabled({{ timeout: 60_000 }});
+      await btn.click();
+      await expect(page.locator('body')).toContainText('You:', {{ timeout: 90_000 }});
+      await expect(page.locator('body')).toContainText({utter!r}, {{ timeout: 30_000 }});
+      const body = await page.locator('body').innerText();
+      expect(body, 'microphone blocked on the live surface').not.toContain('microphone blocked');
+      expect(body).not.toContain(UNAVAILABLE);
+      expect(body).not.toContain('voice libraries missing');
+      expect(errors, 'uncaught page errors on /face').toEqual([]);
+    }} finally {{ await b.close(); }}
+  }});
+}});
+"""
 
 
 def main() -> int:
@@ -139,6 +252,8 @@ def main() -> int:
         return 1
     orig_testid = mo.group(1)
 
+    face_block = _face_block()
+
     cases = "\n".join(
         f"  {{ name: '{n}', sel: `{s}`, kind: '{k}' }}," for n, s, k in entries
     )
@@ -148,7 +263,7 @@ def main() -> int:
   test('RadialMenu: right-click an agent opens the radial menu; Escape closes it', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click({ button: 'right' });
     await expect(page.locator('[data-testid="radial-scrim"]')).toBeVisible({ timeout: 30_000 });
@@ -161,7 +276,7 @@ def main() -> int:
   test('Spotlight: click an agent, it detaches and speaks; Escape releases', async ({ page }) => {
     test.setTimeout(120_000);
     await page.goto('/fleet', { waitUntil: 'commit' });
-    await page.getByRole('button', { name: 'Enter' }).click();
+    if (!BEARER) await page.getByRole('button', { name: 'Enter' }).click();
     await page.locator('[data-testid="room-agents"]').first().waitFor({ timeout: 60_000 });
     await page.locator('[data-testid="room-agents"]').first().click();
     await expect(page.locator('[role="dialog"][aria-label*="Agent"]')).toBeVisible({ timeout: 30_000 });
@@ -171,9 +286,15 @@ def main() -> int:
 """
     print(f"""// GENERATED by probes/gen_panels_spec.py — do not hand-edit. Regenerate instead.
 // Every non-test component in room/ui must appear here or generation fails (no hint of a gap).
-import {{ test, expect }} from '@playwright/test';
+import {{ test, expect, chromium }} from '@playwright/test';
+import * as fs from 'fs';
 
 test.use({{ channel: 'chrome' }});
+// Live runs carry the prover's machine identity through the public gate (the same door
+// probes/backstage.py uses): the proxy forwards the Bearer, the app grades it. Local runs
+// (built app, no gate) use the app's own Enter door instead.
+const BEARER = process.env.SURFACES_BEARER || '';
+if (BEARER) test.use({{ extraHTTPHeaders: {{ authorization: `Bearer ${{BEARER}}` }} }});
 
 const PANELS = [
 {cases}
@@ -188,7 +309,7 @@ test.describe('/fleet panels: every component in room/ui renders on the real pag
       r => new URL(r.url()).pathname === '/api/proxy/fleetview/sessions' && r.status() === 200,
     );
     await page.goto('/fleet', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await live;
     await page.waitForTimeout(5_000); // panels stream in after sessions land
 
@@ -223,14 +344,14 @@ test.describe('/fleet-original: the before picture beside the rewrite', () => {{
     const errors: string[] = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.goto('/fleet-original', {{ waitUntil: 'commit' }});
-    await page.getByRole('button', {{ name: 'Enter' }}).click();
+    if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
     await page.locator('[data-testid="{orig_testid}"]').first().waitFor({{ timeout: 60_000 }});
     expect(errors, 'uncaught page errors on /fleet-original').toEqual([]);
   }});
 }});
-""")
+{face_block}""")
     print(
-        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}",
+        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}; /face voice-path tests: 2",
         file=sys.stderr,
     )
     return 0

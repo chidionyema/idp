@@ -11,8 +11,10 @@ Pre-deploy (in the lane, before merge — the greenlane proof job):
 
 Post-deploy (after Flux converges; hourly by verdict-surfaces.yml):
     bin/idp-verify-surfaces --post
-    Same battery through the public gate, plus L4 real voice conversations
-    (fixture WAVs -> /voice/hear -> /voice/stream -> /voice/say -> /voice/hear).
+    Same battery through the public gate — L1/L2, L3 the generated per-panel spec in a
+    real browser against the live app (prover Bearer through the machine door),
+    L4 real voice conversations (fixture WAVs -> /voice/hear -> /voice/stream
+    -> /voice/say -> /voice/hear), L5 the live bus stream.
 
 Output: one grading line per assertion on stderr/stdout (PASS|FAIL surfaces.<x>),
 and on stdout a verdict JSON bound to what is running:
@@ -40,6 +42,64 @@ def _run(label: str, cmd: list[str], env: dict[str, str] | None = None) -> bool:
     )
     ok = p.returncode == 0
     print(f"{'PASS' if ok else 'FAIL'}  surfaces.battery.{label}", flush=True)
+    return ok
+
+
+def _l3_live(app: str) -> bool:
+    """Grade the generated per-panel spec against the LIVE app through the public gate.
+
+    Self-contained: the runner has no app node_modules, so the spec runs from a scratch
+    dir with pinned @playwright/playwright deps and the system Chrome (channel: 'chrome',
+    no browser download). SURFACES_BEARER carries the prover token — the generated spec
+    reads it, sends every request through the machine door, and skips the local Enter flow.
+    """
+    import shutil
+    import tempfile
+
+    gen = subprocess.run(
+        [sys.executable, "-m", "probes.gen_panels_spec"],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    if gen.returncode != 0:
+        print(gen.stderr, file=sys.stderr)
+        print("FAIL  surfaces.L3.generation  spec generation refused", flush=True)
+        return False
+    work = tempfile.mkdtemp(prefix="surfaces-l3-")
+    with open(os.path.join(work, "package.json"), "w") as f:
+        f.write('{"name":"surfaces-l3","private":true,"devDependencies":'
+              '{"@playwright/test":"1.49.1","playwright":"1.49.1"}}')
+    with open(os.path.join(work, "playwright.config.ts"), "w") as f:
+        f.write(
+            "import { defineConfig } from '@playwright/test';\n"
+            "export default defineConfig({\n"
+            "  use: { baseURL: process.env.BASE_URL, channel: 'chrome' },\n"
+            "  reporter: [['line']],\n"
+            "  workers: 1,\n"
+            "});\n"
+        )
+    with open(os.path.join(work, "panels.spec.ts"), "w") as f:
+        f.write(gen.stdout)
+    # npm install, not ci: a scratch dir has no lockfile; both deps are pinned exact so
+    # the resolution is deterministic anyway.
+    ci = subprocess.run(
+        ["npm", "install", "--silent", "--no-fund", "--no-audit"],
+        cwd=work, capture_output=True, text=True,
+    )
+    if ci.returncode != 0:
+        print(ci.stderr[-2000:], file=sys.stderr)
+        print("FAIL  surfaces.L3.npm  could not install the scratch playwright deps", flush=True)
+        return False
+    ok = _run(
+        "L3",
+        [os.path.join(work, "node_modules", ".bin", "playwright"), "test", "panels.spec.ts"],
+        env={
+            "BASE_URL": app,
+            "SURFACES_BEARER": os.environ.get("PROVER_TOKEN", ""),
+            # The /face real-speech test feeds this WAV through the fake microphone.
+            "SURFACES_VOICE_WAV": os.path.join(ROOT, "probes/fixtures/fleet-status.wav"),
+        },
+    )
+    shutil.rmtree(work, ignore_errors=True)
     return ok
 
 
@@ -75,6 +135,9 @@ def battery(mode: str) -> tuple[dict, int]:
             )
 
     if mode == "--post":
+        # L3: the same generated per-panel spec, graded against the LIVE app through the
+        # public gate — panels must render after deployment too, not only before it.
+        levels["L3"] = _l3_live(app)
         # L4: real voice conversations through the same door the browser uses.
         levels["L4"] = _run(
             "L4-voice", [sys.executable, "-m", "probes.voice", "--all", backend]
