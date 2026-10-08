@@ -9,20 +9,6 @@ metadata:
   namespace: agent-workforce
 automountServiceAccountToken: false
 ---
-# crewAI memory and knowledge stores (AGENT_WORKFORCE_STORAGE_DIR). A volume that outlives the pod,
-# the same reason platform/hermes-agent keeps HERMES_HOME on one (idp#365): a founder ruling
-# ingested once is recalled on every run, never lost with a finished Job.
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: agent-workforce-data
-  namespace: agent-workforce
-spec:
-  accessModes: [ReadWriteOnce]
-  resources:
-    requests:
-      storage: 5Gi
----
 # Every 15 minutes: with no argument the crew takes the oldest open ticket in a queued lane on the
 # board that has no plan comment yet, and exits `idle` when there is none. One run at a time
 # (Forbid), so two Jobs never claim one ticket. The image is the newest main of
@@ -183,8 +169,7 @@ spec:
             - name: tmp
               emptyDir: {}
             - name: data
-              persistentVolumeClaim:
-                claimName: agent-workforce-data
+              emptyDir: {}
             # One directory, three Secrets: the App token the generator mints, the Langfuse pair
             # and the router key. A projected volume, the same shape as hermes-agent's env dir.
             - name: secrets
