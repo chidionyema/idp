@@ -2,12 +2,12 @@
   "counters": {
     "extractions": 13,
     "profiles": 0,
-    "queries": 9,
+    "queries": 10,
     "resolutions": 0
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-10-01T23:05:11Z",
+  "last_run": "2026-10-08T07:21:28Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -386,6 +386,51 @@
       "kind": "link",
       "relation": "r_72ea79c9ccdb",
       "ts": "2026-10-01T23:05:11Z"
+    },
+    {
+      "entity": "gotcha/lane-submit-verdict-timeout",
+      "kind": "remember",
+      "ts": "2026-10-07T14:01:08Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_62613fd0251b",
+      "ts": "2026-10-07T14:01:08Z"
+    },
+    {
+      "entity": "gotcha/ios-standalone-mic-bug",
+      "kind": "remember",
+      "ts": "2026-10-07T23:31:09Z"
+    },
+    {
+      "entity": "mechanism/micrecoveryurl",
+      "kind": "remember",
+      "ts": "2026-10-07T23:31:09Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_30ea831269dc",
+      "ts": "2026-10-07T23:31:09Z"
+    },
+    {
+      "entity": "defect/backstage-image-frozen-by-proxy-addr-cve",
+      "kind": "remember",
+      "ts": "2026-10-08T00:12:57Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_a1a742680c8e",
+      "ts": "2026-10-08T00:12:57Z"
+    },
+    {
+      "entity": "component/build-multiarch",
+      "kind": "remember",
+      "ts": "2026-10-08T07:21:28Z"
+    },
+    {
+      "entity": "component/idp-kubeapi-mac",
+      "kind": "remember",
+      "ts": "2026-10-08T07:21:28Z"
     }
   ]
 }

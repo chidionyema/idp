@@ -23,10 +23,12 @@ WHAT THE PROMPT FORBIDS, because a voice that overclaims is worse than a voice t
   * it must answer in speech, which means one or two sentences and no markdown.
 
 CONFIG (LAW 46):
-  LITELLM_HOST        default https://llm.${ESTATE_ZONE}
-  LITELLM_API_KEY     required; no key means BLIND, never a silent fallback to a local model
-  VOICE_ROUTER_MODEL  default deepseek
-  VOICE_TIMEOUT_S     default 20
+  LITELLM_HOST          default https://llm.${ESTATE_ZONE}
+  LITELLM_API_KEY_FILE  a mounted secret file, read first; the in-cluster road (router_key())
+  LITELLM_API_KEY       fallback when no file is mounted (local/dev); no key means BLIND,
+                        never a silent fallback to a local model
+  VOICE_ROUTER_MODEL    default deepseek
+  VOICE_TIMEOUT_S       default 20
 """
 
 from __future__ import annotations
@@ -204,6 +206,27 @@ def router_host() -> str:
 
 
 def router_key() -> str:
+    """The estate's LiteLLM virtual key for this sidecar.
+
+    Read from a mounted file first, not the environment: Kyverno's secrets-not-from-env-vars
+    policy refuses a secretKeyRef env the moment the ReplicaSet rolls -- the same rule that
+    blocked FLEETVIEW_EXECUTOR_KEY_FILE's env form (serve.py's `_check_key`, 2026-09-15) before
+    it moved to a file. The chain is vault -> ExternalSecret -> Secret -> volume mount ->
+    LITELLM_API_KEY_FILE (platform/backstage/overlays/oke/fleetview-voice-router-key.yaml).
+    Re-read on every call, like `_token()` in agent_jobs.py: the key rotates and the kubelet
+    swaps the file in place underneath a running container.
+
+    LITELLM_API_KEY stays as the fallback for local/dev launches (`bin/idp-voice`, `docker run`)
+    that have no mounted file and export the key directly.
+    """
+    path = os.environ.get("LITELLM_API_KEY_FILE")
+    if path:
+        try:
+            key = Path(path).read_text().strip()
+        except OSError:
+            key = ""
+        if key:
+            return key
     return os.environ.get("LITELLM_API_KEY", "").strip()
 
 

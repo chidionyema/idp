@@ -199,3 +199,18 @@ def test_spatial_detector_ignores_bare_direction_words(voice):
         "what is on top of the queue",
     ):
         assert voice._is_spatial_intent(q) is False, q
+
+
+def test_router_key_reads_mounted_file_each_call(tmp_path, monkeypatch):
+    """In-cluster the key is a mounted file (Kyverno refuses secretKeyRef env), re-read on every
+    call so a rotated key lands without a restart; the env var is only the local/dev fallback."""
+    voice = _load(VOICE, "voice_router_key_under_test")
+    keyfile = tmp_path / "key"
+    keyfile.write_text("sk-first\n")
+    monkeypatch.setenv("LITELLM_API_KEY_FILE", str(keyfile))
+    monkeypatch.setenv("LITELLM_API_KEY", "sk-env")
+    assert voice.router_key() == "sk-first"
+    keyfile.write_text("sk-rotated\n")
+    assert voice.router_key() == "sk-rotated"
+    keyfile.unlink()
+    assert voice.router_key() == "sk-env"
