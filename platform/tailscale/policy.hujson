@@ -85,7 +85,13 @@
                 // that survives losing the cluster AND the internet vendor lines at once,
                 // which is what THE MEDIC LAW requires of the assistant that has to think
                 // while the estate is down.
-                "tag:founder-mac:11434"]},
+                "tag:founder-mac:11434",
+                // 18790: the founder's FleetView on the Mac (founder order 2026-10-08, "proxy
+                // /fleet to the Mac"). The catalogue reaches it through the operator's egress
+                // proxy (platform/backstage/overlays/oke/fleetview-mac-egress.yaml); the Mac
+                // publishes its loopback-bound service with `tailscale serve --tcp 18790`.
+                // Backstage's sign-in gates the browser; this rule only lets the proxy dial.
+                "tag:founder-mac:18790"]},
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
     // His phone reads the cluster through the bridge, and only the one port the bridge serves.
