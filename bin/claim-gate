@@ -72,6 +72,35 @@ def gh_json(path: str) -> object:
     return pages[0] if len(pages) == 1 else pages
 
 
+def has_commit(sha: str) -> bool:
+    return (
+        subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],  # noqa: S607
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def lane_text(base: str, lane_head: str, squash: str) -> str:
+    """The commit messages of the lane a squash came from.
+
+    2026-10-08, PR #5511: land() force-pushes the squash onto the PR branch, so the lane head
+    the trailer names is no longer on any ref; `git log base..<head>` exited 128, claim-gate went
+    red on a change it had passed minutes earlier, and the lane requeued twice. GitHub still
+    serves an unreferenced commit by full sha, so fetch it; failing that, the squash carries the
+    lane's own message body (greenlane/github.py), which is what a plain PR is judged on anyway.
+    """
+    if not has_commit(lane_head):
+        subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["git", "fetch", "-q", "--no-tags", "origin", lane_head],  # noqa: S607
+            capture_output=True,
+        )
+    if has_commit(lane_head):
+        return git("log", "--format=%B", f"{base}..{lane_head}")
+    return git("log", "-1", "--format=%B", squash)
+
+
 def image_bump_only(diff: str) -> bool:
     """Every changed line (not the +++/--- headers) carries a Flux image-policy marker."""
     changed = [
@@ -150,7 +179,7 @@ def judge(
             if image_bump_only(git("show", "--format=", c)):
                 continue
             lane_head = m.group(1)
-            text = git("log", "--format=%B", f"{base}..{lane_head}")
+            text = lane_text(base, lane_head, c)
             files = [
                 f
                 for f in git(
