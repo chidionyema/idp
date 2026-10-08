@@ -80,6 +80,33 @@ async def _bus_reachable(nats_url: str) -> dict:
         return {"reachable": False, "url": nats_url, "reason": type(exc).__name__}
 
 
+def _voice_sessions() -> list[dict]:
+    """The fleet the voice answers from: the SAME fleet the board draws.
+
+    On OKE the board's /fleetview proxy goes to the founder's Mac (fleetview-mac-egress.yaml),
+    but /voice/* is routed to this sidecar, whose /data/estate.db is the CI-built copy with no
+    session rows. So the board showed 431 agents while the voice said "zero agents are running"
+    (measured 2026-10-08). FLEETVIEW_SESSIONS_URL points this at the board's source; unset (a
+    laptop launch, where the local store IS the fleet) or unreachable, the local store answers.
+    """
+    url = os.environ.get("FLEETVIEW_SESSIONS_URL", "").strip()
+    if url:
+        import json  # noqa: PLC0415
+        import urllib.request  # noqa: PLC0415
+
+        try:
+            with urllib.request.urlopen(url, timeout=5) as r:  # noqa: S310 - our own Service
+                return json.load(r).get("sessions") or []
+        except Exception as exc:  # noqa: BLE001 - fall back to the local store, and say so
+            print(
+                f"voice.sessions upstream failed: {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
+    body, _ = routes.sessions_envelope()
+    return body.get("sessions") or []
+
+
 def build_app() -> FastAPI:
     app = FastAPI(title="FleetView", version="1.1.0", lifespan=lifespan)
 
@@ -293,8 +320,9 @@ def build_app() -> FastAPI:
         body = await request.json()
         question = body.get("question", "")
         history = body.get("history") or []
-        sessions_body, _ = routes.sessions_envelope()
-        sessions = sessions_body.get("sessions") or []
+        sessions = await asyncio.get_running_loop().run_in_executor(
+            None, _voice_sessions
+        )
 
         async def gen():
             # stream_ask is a plain (sync) generator: it makes blocking urllib calls to the

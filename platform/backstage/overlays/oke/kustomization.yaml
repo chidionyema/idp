@@ -461,6 +461,10 @@ patches:
             # _router_transcribe in the live sidecar). The in-cluster Service, the same literal
             # platform/research-engine uses; no /v1 suffix, voice.py appends the path itself.
             - {name: LITELLM_HOST, value: "http://litellm.llm.svc:4000"}
+            # The fleet voice answers from: the board's own source (fleetview-mac-egress.yaml),
+            # not this sidecar's CI-built estate.db, which has no session rows -- the voice said
+            # "zero agents" while the board drew 431 (serve.py _voice_sessions).
+            - {name: FLEETVIEW_SESSIONS_URL, value: "http://fleetview-mac.backstage.svc.cluster.local:18790/sessions"}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
