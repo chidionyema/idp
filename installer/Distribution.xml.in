@@ -4,19 +4,34 @@
     <license file="LICENSE" replace="true"/>
     <readme file="README" replace="true"/>
     <conclusion file="Conclusion" replace="true"/>
+    <options customize="never" hostArchitectures="x86_64,arm64"/>
+    <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
+    <installation-check script="commandLineTools()"/>
+    <script><![CDATA[
+    function commandLineTools() {
+        var git = ['/Library/Developer/CommandLineTools/usr/bin/git',
+                   '/Applications/Xcode.app/Contents/Developer/usr/bin/git'];
+        for (var i = 0; i < git.length; i++) {
+            if (system.files.fileExistsAtPath(git[i])) { return true; }
+        }
+        my.result.type = 'Fatal';
+        my.result.title = 'Command Line Tools are needed';
+        my.result.message = 'The estate converger runs git and python3 from Apple Command Line Tools, which are not on this Mac. macOS offers to install them the first time git is used.';
+        return false;
+    }
+    ]]></script>
 
     <choices-outline>
         <line choice="estate"/>
     </choices-outline>
 
     <choice id="estate"
-            title="IDP Estate Platform"
-            description="Bootstrap tools and services for the IDP Estate platform">
-        <pkg-ref id="ai.estate.pkg">idp-estate.pkg</pkg-ref>
+            title="IDP Estate converger"
+            description="Keeps this Mac on main: the estate intents and tools run from releases of main, never from a hand copy">
+        <pkg-ref id="ai.estate.pkg"/>
     </choice>
 
     <pkg-ref id="ai.estate.pkg"
-             version="0.1.0"
-             installKBytes="512"
-             auth="Admin">idp-estate.pkg</pkg-ref>
+             version="0.2.0"
+             auth="Root">idp-estate.pkg</pkg-ref>
 </installer-gui-script>

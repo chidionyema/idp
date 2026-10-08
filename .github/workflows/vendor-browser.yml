@@ -1,0 +1,28 @@
+# crew#832: the vendor self-setup driver, graded end to end against a local fake vendor in a real
+# headless Chromium. Kept out of ci.yml's pytest (pyproject --ignore=tests/browser; bin/idp-tests-for
+# never selects it) because it needs playwright + a browser; installed exactly as verdict-langfuse.yml does.
+name: vendor-browser
+on:
+  pull_request:
+    paths:
+      - bin/lib/vendor_*.py
+      - bin/idp-vendor-setup
+      - tests/browser/**
+      - .github/workflows/vendor-browser.yml
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: playwright and a headless browser
+        run: |
+          pip install -q playwright pytest pyyaml
+          playwright install --with-deps chromium
+      - name: pytest tests/browser
+        run: python -m pytest -p no:cacheprovider -o addopts='' -q tests/browser

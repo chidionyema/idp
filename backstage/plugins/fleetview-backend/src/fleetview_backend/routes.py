@@ -123,6 +123,7 @@ TRACE_PATH = "/trace"
 LEDGER_PATH = "/ledger"
 DEVICE_STATUS_PATH = "/device-status"
 DEVICE_AUTHORIZE_PATH = "/device-authorize"
+DELIVERY_PATH = "/delivery"
 
 
 def _now() -> str:

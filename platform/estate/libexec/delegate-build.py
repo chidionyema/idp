@@ -115,8 +115,14 @@ def kv(argv):
     return dict(a.split("=", 1) for a in argv if "=" in a)
 
 
-def claude(prompt, model, cwd, max_turns, tools):
-    """One headless model call. Returns (text, usage dict)."""
+def claude(prompt, model, cwd, max_turns, tools, stream=False):
+    """One headless model call. Returns (final reply, usage dict, every assistant text).
+
+    stream=True reads --output-format stream-json, so every text the model wrote is kept, not
+    only the last reply. Measured 2026-09-27 (vendor-self-setup): the planner wrote its plan, then
+    a cross-session message arrived and its LAST reply answered that message, so the plan was lost
+    though the model had written it."""
+    fmt = ["stream-json", "--verbose"] if stream else ["json"]
     r = subprocess.run(  # noqa: S603 -- fixed argv (git/claude), no shell
         [  # noqa: S607 -- git and claude resolve from PATH on purpose
             "claude",
@@ -125,7 +131,7 @@ def claude(prompt, model, cwd, max_turns, tools):
             "--model",
             model,
             "--output-format",
-            "json",
+            *fmt,
             "--max-turns",
             str(max_turns),
             "--permission-mode",
@@ -138,17 +144,48 @@ def claude(prompt, model, cwd, max_turns, tools):
         text=True,
         timeout=3600,
     )
-    try:
-        out = json.loads(r.stdout)
-    except json.JSONDecodeError:
-        return "", {"error": (r.stderr or r.stdout)[-2000:]}
+    texts, out = [], None
+    for line in r.stdout.splitlines() if stream else [r.stdout]:
+        try:
+            e = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if e.get("type") == "assistant":
+            texts += [
+                c.get("text", "")
+                for c in e.get("message", {}).get("content", [])
+                if c.get("type") == "text"
+            ]
+        elif not stream or e.get("type") == "result":
+            out = e
+    if out is None:
+        return "", {"error": (r.stderr or r.stdout)[-2000:]}, texts
     usage = out.get("usage", {})
-    return out.get("result", ""), {
-        "cost_usd": out.get("total_cost_usd"),
-        "input_tokens": usage.get("input_tokens"),
-        "output_tokens": usage.get("output_tokens"),
-        "turns": out.get("num_turns"),
-    }
+    return (
+        out.get("result", ""),
+        {
+            "cost_usd": out.get("total_cost_usd"),
+            "input_tokens": usage.get("input_tokens"),
+            "output_tokens": usage.get("output_tokens"),
+            "turns": out.get("num_turns"),
+        },
+        texts or [out.get("result", "")],
+    )
+
+
+def find_plan(texts):
+    """The last text that parses as a plan (a JSON object with steps), newest first."""
+    for t in reversed(texts):
+        m = re.search(r"\{.*\}", t, re.S)
+        if not m:
+            continue
+        try:
+            plan = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(plan, dict) and "steps" in plan:
+            return plan
+    return None
 
 
 PRIOR_ART_KINDS = ("prs", "tickets", "code")
@@ -231,18 +268,23 @@ def cmd_plan(a):
     spec = Path(os.path.expanduser(a["spec"])).read_text()
     d = ROOT / slug
     d.mkdir(parents=True, exist_ok=True)
-    text, usage = claude(
+    text, usage, texts = claude(
         PLANNER_PROMPT.replace("{shape}", PLAN_SHAPE).replace("{spec}", spec),
         a.get("planner", "claude-opus-5-5"),
         repo,
         int(a.get("max_turns", 60)),
         PLANNER_TOOLS,
+        stream=True,
     )
-    m = re.search(r"\{.*\}", text, re.S)
-    if not m:
-        print(f"planner returned no JSON: {usage}", file=sys.stderr)
+    # Every text the planner wrote, kept: a lost plan is read back from here, not re-bought.
+    (d / "plan-raw.txt").write_text("\n\n---\n\n".join(texts))
+    plan = find_plan(texts)
+    if plan is None:
+        print(
+            f"planner wrote no plan JSON in {len(texts)} text(s); see {d / 'plan-raw.txt'}: {usage}",
+            file=sys.stderr,
+        )
         return 1
-    plan = json.loads(m.group(0))
     plan.setdefault("branch", f"delegate/{slug}")
     errors = validate(plan)
     (d / "plan.json").write_text(json.dumps(plan, indent=2))
@@ -350,7 +392,9 @@ Output:
 {out}
 [/EMPIRICAL_STATE]
 The previous attempt's reasoning was deleted on purpose. Form a new hypothesis from the instructions and this output alone."""
-            text, usage = claude(prompt, builder, tree, turns, "Read,Edit,Write,Bash")
+            text, usage, _ = claude(
+                prompt, builder, tree, turns, "Read,Edit,Write,Bash"
+            )
             usage_all.append(usage)
             ok, rc, out = check(s)
             empirical.append({"attempt": attempt, "check_rc": rc, "check_output": out})
