@@ -1,0 +1,46 @@
+# /fleet reads the founder's Mac, not the sidecar (founder order 2026-10-08: "proxy /fleet to the
+# Mac"). Measured that day through a port-forward to the catalogue Pod: the in-cluster
+# fleetview-backend sidecar answered /sessions with zero rows (its /data/estate.db is the CI-built
+# artifact, and bin/estate-session-recorder only runs on the Mac), /harv "harv binary not found",
+# /key-sync "kubectl not found", /device-status "/app/bin/idp-jit does not exist", /efficiency "not
+# in this image". The Mac's own fleetview (LaunchAgent ai.estate.fleetview-backend,
+# 127.0.0.1:18790) answered every one of those with real data. So the portal proxies to it.
+#
+# Transport is sunshine-egress.yaml's, unchanged: the Tailscale operator's egress pattern, an
+# ExternalName Service carrying the Mac's tailnet IP. platform/tailscale/policy.hujson lets
+# tag:k8s reach tag:founder-mac:18790; on the Mac, `tailscale serve --bg --tcp 18790
+# tcp://127.0.0.1:18790` puts the loopback-bound service on the tailnet IP without rebinding it.
+# Honest limit: when the Mac sleeps, /fleet answers 502. That trade was the founder's choice.
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    backstage.io/kubernetes-id: fleetview
+  name: fleetview-mac
+  namespace: backstage
+  annotations:
+    tailscale.com/tailnet-ip: "${FOUNDER_MAC_TS_IP}"
+    # Create-only, for the reason sunshine-egress.yaml gives: the operator owns externalName.
+    kustomize.toolkit.fluxcd.io/ssa: IfNotPresent
+spec:
+  type: ExternalName
+  externalName: placeholder
+  ports:
+    - name: http
+      port: 18790
+      protocol: TCP
+---
+# Loaded as a third --config after the image's own two (see the catalogue command patch in
+# kustomization.yaml), so this one key overrides backstage/app-config.yaml's 127.0.0.1:18790
+# without rebuilding the image. Every other /fleetview proxy setting is inherited.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config-fleet
+  namespace: backstage
+data:
+  app-config.fleet.yaml: |
+    proxy:
+      endpoints:
+        '/fleetview':
+          target: 'http://fleetview-mac.backstage.svc.cluster.local:18790'
