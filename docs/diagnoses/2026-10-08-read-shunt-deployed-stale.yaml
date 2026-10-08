@@ -1,0 +1,93 @@
+description: 'Founder reported fast token burn and doubted the efficiency chain runs
+  at all. Measured 2026-10-08: the router read-shunt (big whole-file Read -> worker
+  digest) fired exactly once on slot 4001 (an Opus read of router-doctor.py, 534 lines,
+  18491 bytes cut), then slot 4002 came up and no shunt fired again even on files
+  well over the 350-line threshold. Question: is the chain inert because the harness
+  never calls it, because the shunt logic itself is broken, or because the live router
+  process is running code that predates the shunt.
+
+  '
+hypotheses:
+- name: H1
+  description: harness-level wiring is absent or broken (as it was before 2026-10-08,
+    when settings.json had no hooks block at all) -- the shunt is never invoked regardless
+    of router code
+  prior: 0.3333333333
+- name: H2
+  description: the shunt logic itself is broken (e.g. the worker's digest is rejected
+    as malformed) so every call falls through to pass-through
+  prior: 0.3333333333
+- name: H3
+  description: wiring and logic are both correct, but the deploy pipeline (ai.estate.runtime-sync
+    + bin/litellm-local install) only ever tracks `main`, and the fix lives on an
+    unmerged lane branch, so the running router process has stale modules
+  prior: 0.3333333334
+evidence:
+- name: content of the deployed ~/.estate/litellm-local/modules/efficiency_gateway.py
+    (read directly, 2026-10-08)
+  observed:
+    stale-module: 1
+    current-module: 0
+  likelihoods:
+    H1:
+      stale-module: 0.4
+      current-module: 0.6
+    H2:
+      stale-module: 0.1
+      current-module: 0.9
+    H3:
+      stale-module: 0.97
+      current-module: 0.03
+- name: whether a shunt ever fired at all on the live router before going quiet (slot
+    4001, router-doctor.py, 534 lines, digest returned, 18491 bytes cut; measured
+    2026-10-08)
+  observed:
+    worked-once-then-stopped: 1
+    never-worked: 0
+  likelihoods:
+    H1:
+      worked-once-then-stopped: 0.2
+      never-worked: 0.8
+    H2:
+      worked-once-then-stopped: 0.15
+      never-worked: 0.85
+    H3:
+      worked-once-then-stopped: 0.92
+      never-worked: 0.08
+- name: ~/.estate/runtime-sync.out.log tail -- the runtime clone's tracked commit
+    across many 5-minute ticks, and whether it redeploys modules/efficiency_gateway.py
+    (2026-10-08 18:16-19:39)
+  observed:
+    pinned-to-stale-main-and-redeploys: 1
+    tracks-the-fix: 0
+  likelihoods:
+    H1:
+      pinned-to-stale-main-and-redeploys: 0.35
+      tracks-the-fix: 0.65
+    H2:
+      pinned-to-stale-main-and-redeploys: 0.35
+      tracks-the-fix: 0.65
+    H3:
+      pinned-to-stale-main-and-redeploys: 0.97
+      tracks-the-fix: 0.03
+- name: Claude Code settings.json hooks block for Read, as found before fd47d2205
+    (same session, docstring of bin/idp-read-shunt)
+  observed:
+    wiring-was-missing-now-fixed: 1
+    wiring-was-fine: 0
+  likelihoods:
+    H1:
+      wiring-was-missing-now-fixed: 0.5
+      wiring-was-fine: 0.5
+    H2:
+      wiring-was-missing-now-fixed: 0.5
+      wiring-was-fine: 0.5
+    H3:
+      wiring-was-missing-now-fixed: 0.5
+      wiring-was-fine: 0.5
+posteriors:
+  H1: 0.0311499447
+  H2: 0.0058406146
+  H3: 0.9630094407
+winner: H3
+computed_at: '2026-10-08T20:06:51Z'
