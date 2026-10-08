@@ -141,6 +141,9 @@ spec:
           kubernetes.io/metadata.name: agent-workforce
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: backstage
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: cyrus
     - namespaceSelector:
         matchLabels:

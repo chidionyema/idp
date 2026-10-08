@@ -106,6 +106,9 @@ spec:
           kubernetes.io/metadata.name: kyverno
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: llm
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: observability
     - namespaceSelector:
         matchLabels:

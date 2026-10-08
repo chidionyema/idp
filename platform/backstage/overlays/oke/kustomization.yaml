@@ -455,6 +455,12 @@ patches:
             # VOICE_ROUTER_MODEL=voice", measured first content 1.3-2.0s). Unset, voice.py falls
             # back to `deepseek`, a lane the voice key is not scoped to.
             - {name: VOICE_ROUTER_MODEL, value: voice}
+            # THE ROUTER'S ADDRESS WAS NEVER GIVEN. Unset, voice.router_host() falls back to
+            # https://llm.${ESTATE_ZONE}, and ESTATE_ZONE is not in this container either, so every
+            # hear/stream/say raised "ESTATE_ZONE is not set" (measured 2026-10-08 by exec'ing
+            # _router_transcribe in the live sidecar). The in-cluster Service, the same literal
+            # platform/research-engine uses; no /v1 suffix, voice.py appends the path itself.
+            - {name: LITELLM_HOST, value: "http://litellm.llm.svc:4000"}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
