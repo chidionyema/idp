@@ -90,8 +90,11 @@ misconfigurations:
       upstream. As the structural raw/ KSV-0046 entry, and dated for the reason given above.
     expired_at: 2027-03-31
   # Measured 2026-10-04: security-scan's check 5 went red on twelve HIGH findings in the same
-  # migration copy and its two neighbours. The matrix below is what those findings are; each is
-  # the same CNI property as the raw/ entries above, on a path the register had not yet named.
+  # migration copy and its two neighbours (also: the migration kit was only registered for
+  # KSV-0009/0014/0017/0046; these are the four more IDs the scan flags on the same bytes --
+  # KSV-0056 and KSV-0121 on calico.yaml, KSV-0014/0053/0118 on migration-job.yaml -- plus
+  # KSV-0119 on flannel/pod-no-masq.yaml, covered in the structural section below). Each is the
+  # same CNI property as the raw/ entries above, on a path the register had not yet named.
   - id: KSV-0056   # manage kubernetes networking
     paths: ["platform/calico/raw-migration/calico.yaml"]
     statement: >-
