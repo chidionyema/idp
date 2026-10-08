@@ -249,7 +249,15 @@ class Engine:
             else:
                 return
         if verdict == "green":
-            self.b.land(b.members, b.tip)
+            try:
+                self.b.land(b.members, b.tip)
+            except RuntimeError as e:
+                # 2026-10-08, b1990..b1992: a land refused after a green candidate used to kill
+                # the tick, and the next tick saw the lane head moved (land had pushed the squash
+                # over it) and requeued it as new work, uncounted, squashing the squash. A
+                # refused land is a red verdict on this batch: it counts against the retries.
+                verdict, reason = "red", f"land refused: {e}"
+        if verdict == "green":
             for name, head, _ in b.members:
                 self.s.lanes[name].status = LANDED
                 self.s.lanes[name].reason = f"landed in {b.id}"
