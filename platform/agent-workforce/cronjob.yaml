@@ -94,7 +94,7 @@ spec:
                   sys.exit(1 if failed else 0)
                   PY
               env:
-                - { name: LAWS_OWNER, value: "${ESTATE_GITHUB_OWNER}" }
+                - { name: LAWS_OWNER, value: chidionyema }
                 - { name: AGENT_WORKFORCE_LAWS_DIR, value: /laws }
                 - { name: HOME, value: /tmp }
               volumeMounts:
@@ -134,7 +134,7 @@ spec:
                 - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "${OTLP_ENDPOINT}" }
                 - { name: OTEL_SERVICE_NAME, value: agent-workforce }
                 - { name: LANGFUSE_BASE_URL, value: "http://langfuse-web.observability.svc:3000" }
-                - { name: AGENT_WORKFORCE_REPO_OWNER, value: "${ESTATE_GITHUB_OWNER}" }
+                - { name: AGENT_WORKFORCE_REPO_OWNER, value: chidionyema }
                 - { name: AGENT_WORKFORCE_BOARD_REPO, value: crew }
                 - { name: AGENT_WORKFORCE_PLATFORM_REPO, value: idp }
                 - { name: AGENT_WORKFORCE_LAWS_DIR, value: /laws }
