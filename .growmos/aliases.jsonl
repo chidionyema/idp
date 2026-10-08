@@ -60,13 +60,17 @@
 {"alias": "Token Killer", "entity": "component/token-killer", "type": "COMPONENT"}
 {"alias": "TokenBudgetOrchestrator", "entity": "component/tokenbudgetorchestrator", "type": "COMPONENT"}
 {"alias": "Verification Gates", "entity": "component/verification-gates", "type": "COMPONENT"}
+{"alias": "Claude Code model set to opus not opusplan", "entity": "concept/claude-code-model-set-to-opus-not-opusplan", "type": "CONCEPT"}
 {"alias": "claude-max passthrough lane", "entity": "concept/claude-max-passthrough-lane", "type": "CONCEPT"}
+{"alias": "efficiency_gateway holdout A/B arm", "entity": "concept/efficiency-gateway-holdout-a-b-arm", "type": "CONCEPT"}
 {"alias": "estate-execute", "entity": "concept/estate-execute", "type": "CONCEPT"}
 {"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
 {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
+{"alias": "Max OAuth token expired 2026-10-08", "entity": "concept/max-oauth-token-expired-2026-10-08", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
+{"alias": "router-doctor stale settings path", "entity": "concept/router-doctor-stale-settings-path", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
 {"alias": "ui.review", "entity": "concept/ui-review", "type": "CONCEPT"}
 {"alias": "voice-2100-architecture", "entity": "concept/voice-2100-architecture", "type": "CONCEPT"}
@@ -75,6 +79,7 @@
 {"alias": "ADR 0023", "entity": "decision/adr-0023", "type": "DECISION"}
 {"alias": "ADR 0034 Free-Tier Placement", "entity": "decision/adr-0034-free-tier-placement", "type": "DECISION"}
 {"alias": "built-to-be-sold law", "entity": "decision/built-to-be-sold-law", "type": "DECISION"}
+{"alias": "CLAUDE_CONFIG_DIR migration to harness/cc", "entity": "decision/claude-config-dir-migration-to-harness-cc", "type": "DECISION"}
 {"alias": "Dual-trunk enforcement", "entity": "decision/dual-trunk-enforcement", "type": "DECISION"}
 {"alias": "front-end-kit decision", "entity": "decision/front-end-kit-decision", "type": "DECISION"}
 {"alias": "intent-engine consultant proposals", "entity": "decision/intent-engine-consultant-proposals", "type": "DECISION"}

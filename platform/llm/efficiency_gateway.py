@@ -203,6 +203,14 @@ def _session_id(data: dict) -> str:
 # conversation, never the call, so a conversation stays in one arm for its whole life.
 HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "25"))
 HOLDOUT_SALT = os.environ.get("ESTATE_HOLDOUT_SALT", "trial-2026-09-29")
+# A named exception to the hash, for a conversation someone deliberately pulled out of the
+# holdout (2026-10-08: the founder asked to be moved to treat mid-conversation after the ledger
+# showed treat billing ~15% less for Claude; re-salting would have re-rolled every live
+# conversation, so this is a narrow override instead). Read fresh per call -- a plain file, not
+# an env var, so it takes effect without a router restart. {"<conversation_key>": "control"|"treat"}
+HOLDOUT_FORCE_FILE = os.environ.get(
+    "ESTATE_HOLDOUT_FORCE_FILE", os.path.expanduser("~/.estate/efficiency-force-arm.json")
+)
 
 
 def _conversation_key(data: dict, session: str) -> str:
@@ -212,7 +220,20 @@ def _conversation_key(data: dict, session: str) -> str:
     return _h((data.get("messages") or [])[:2])
 
 
+def _forced_arm(key: str) -> Optional[str]:
+    try:
+        with open(HOLDOUT_FORCE_FILE, encoding="utf-8") as f:
+            forced = json.load(f)
+    except (OSError, ValueError):
+        return None
+    arm = forced.get(key)
+    return arm if arm in ("control", "treat") else None
+
+
 def _arm(key: str) -> str:
+    forced = _forced_arm(key)
+    if forced:
+        return forced
     h = int(hashlib.sha256(f"{HOLDOUT_SALT}:{key}".encode()).hexdigest()[:8], 16)
     return "control" if (h % 10000) < HOLDOUT_PCT * 100 else "treat"
 

@@ -2,12 +2,12 @@
   "counters": {
     "extractions": 13,
     "profiles": 0,
-    "queries": 10,
+    "queries": 11,
     "resolutions": 0
   },
   "created": "2026-09-22T18:15:24Z",
   "last_eval": null,
-  "last_run": "2026-10-08T07:21:28Z",
+  "last_run": "2026-10-08T16:22:59Z",
   "last_sample": null,
   "pending_resummarize": [],
   "runs": [
@@ -431,6 +431,61 @@
       "entity": "component/idp-kubeapi-mac",
       "kind": "remember",
       "ts": "2026-10-08T07:21:28Z"
+    },
+    {
+      "entity": "decision/claude-config-dir-migration-to-harness-cc",
+      "kind": "remember",
+      "ts": "2026-10-08T16:13:07Z"
+    },
+    {
+      "entity": "concept/router-doctor-stale-settings-path",
+      "kind": "remember",
+      "ts": "2026-10-08T16:13:07Z"
+    },
+    {
+      "entity": "concept/claude-code-model-set-to-opus-not-opusplan",
+      "kind": "remember",
+      "ts": "2026-10-08T16:13:08Z"
+    },
+    {
+      "entity": "concept/max-oauth-token-expired-2026-10-08",
+      "kind": "remember",
+      "ts": "2026-10-08T16:13:08Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_0af3f957239e",
+      "ts": "2026-10-08T16:13:09Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_6bac2825dd97",
+      "ts": "2026-10-08T16:13:10Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_d0b5818f795b",
+      "ts": "2026-10-08T16:13:10Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_d58bf96bb198",
+      "ts": "2026-10-08T16:13:11Z"
+    },
+    {
+      "entity": "concept/efficiency-gateway-holdout-a-b-arm",
+      "kind": "remember",
+      "ts": "2026-10-08T16:22:59Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_6963e22d2ced",
+      "ts": "2026-10-08T16:22:59Z"
+    },
+    {
+      "kind": "link",
+      "relation": "r_c5f5e3da3fca",
+      "ts": "2026-10-08T16:22:59Z"
     }
   ]
 }
