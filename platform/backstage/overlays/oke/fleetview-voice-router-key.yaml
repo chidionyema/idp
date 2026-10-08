@@ -1,0 +1,19 @@
+# The fleetview-backend sidecar's own LiteLLM virtual key (voice.py router_key(), voice_media.py's
+# /voice/speculate and the voice-asr/voice-tts lanes): key `key`, a router key never a vendor key,
+# from the estate vault entry `fleetview-voice` minted by .github/workflows/vault-seed.yml
+# -f entry=fleetview-voice. Mounted as a file (LITELLM_API_KEY_FILE in kustomization.yaml), not a
+# secretKeyRef env: Kyverno's secrets-not-from-env-vars refuses the env form, the same rule that
+# moved FLEETVIEW_EXECUTOR_KEY to a file on 2026-09-15. Its own key so the router attributes and
+# budget-caps voice spend apart from every other caller. No hand ever holds the value.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: fleetview-voice-llm
+  namespace: backstage
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: fleetview-voice-llm, creationPolicy: Owner }
+  data:
+    - secretKey: key
+      remoteRef: { key: fleetview-voice, property: key }
