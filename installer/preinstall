@@ -1,0 +1,14 @@
+#!/bin/sh
+# IDP-Estate.pkg preinstall. Installer runs this as root BEFORE the payload is laid down; a
+# non-zero exit installs nothing. The converger runs git and python3 from Apple's Command Line
+# Tools; Distribution.xml checks for them in the GUI, this proves they actually run.
+set -eu
+
+if ! /usr/bin/git --version >/dev/null 2>&1; then
+    echo "IDP-Estate: /usr/bin/git does not run; Command Line Tools are not installed" >&2
+    exit 1
+fi
+if ! /usr/bin/python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'; then
+    echo "IDP-Estate: /usr/bin/python3 is missing or older than 3.9" >&2
+    exit 1
+fi

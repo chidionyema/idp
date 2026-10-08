@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fleetview_backend import (
     approvals_adapter,
     claude_code_adapter,
+    delivery,
     executor_link,
     metrics,
     nats_adapter,
@@ -460,6 +461,11 @@ def build_app() -> FastAPI:
         if result is None:
             return Response(status_code=204)
         return JSONResponse(content=result)
+
+    @app.get(routes.DELIVERY_PATH)
+    def delivery_get():
+        body, status = delivery.delivery_envelope()
+        return JSONResponse(content=body, status_code=status)
 
     return app
 

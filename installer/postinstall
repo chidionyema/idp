@@ -1,0 +1,35 @@
+#!/bin/sh
+# IDP-Estate.pkg postinstall. Installer runs this as root after laying down
+#   /usr/local/estate/sbin/estate-converge and /Library/LaunchDaemons/ai.estate.converge.plist.
+# It refuses to load a converger that fails its own self-test, then loads it in the system domain,
+# where it serves whoever is logged in (docs/tickets/2026-09-27-merged-is-operating.md).
+# ESTATE_PREFIX, ESTATE_DAEMONS and LAUNCHCTL exist so tests/estate/test_installer_pkg.py can run
+# this unprivileged; Installer sets none of them.
+set -eu
+PREFIX="${ESTATE_PREFIX:-/usr/local/estate}"
+DAEMONS="${ESTATE_DAEMONS:-/Library/LaunchDaemons}"
+LAUNCHCTL="${LAUNCHCTL:-/bin/launchctl}"
+LABEL=ai.estate.converge
+
+mkdir -p "$PREFIX/converge" "$PREFIX/logs"
+# An empty directory an earlier 0.1.0 pkg left behind; rmdir removes nothing that has content.
+rmdir "$PREFIX/0.1.0" 2>/dev/null || true
+
+if ! /usr/bin/python3 "$PREFIX/sbin/estate-converge" --self-test; then
+    echo "IDP-Estate: estate-converge failed its self-test; the converger is not loaded" >&2
+    exit 1
+fi
+
+"$LAUNCHCTL" bootout "system/$LABEL" 2>/dev/null || true
+# bootout returns before launchd has let go of the label; bootstrap meanwhile fails with EIO.
+tries=0
+until "$LAUNCHCTL" bootstrap system "$DAEMONS/$LABEL.plist"; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 10 ] || break
+    sleep 1
+done
+if ! "$LAUNCHCTL" print "system/$LABEL" >/dev/null; then
+    echo "IDP-Estate: launchd does not have $LABEL after $tries retries" >&2
+    exit 1
+fi
+echo "IDP-Estate: estate-converge loaded"

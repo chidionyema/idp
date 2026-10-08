@@ -146,3 +146,6 @@ target/
 # estate-ui-kit build outputs (node build.mjs / vite build); tokens.json is the source
 packages/estate-ui-kit/dist/
 packages/estate-ui-kit/dist-gallery/
+
+# Built by installer/build.sh, never committed: a committed pkg is a stale copy of the converger.
+installer/IDP-Estate.pkg
