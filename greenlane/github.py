@@ -349,6 +349,25 @@ class GitHubBackend:
         return self.checks(sha)[0] == "red"
 
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
+        try:
+            self._land(members, tip)
+        except RuntimeError:
+            # I4: a lane that does not land keeps its branch. _land force-pushed the rebased
+            # squash over each lane ref; left there, the next tick reads it as a re-push and
+            # requeues it as new work (2026-10-08, b1990..b1992), and the author's next
+            # lane-submit is refused as non-fast-forward. Put every lane back on its own head.
+            for lane, head, _ in members:
+                self.git(
+                    "push",
+                    "-q",
+                    "-f",
+                    "origin",
+                    f"{head}:refs/heads/{lane}",
+                    check=False,
+                )
+            raise
+
+    def _land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         resolved: list[tuple[str, str, str, dict]] = []
         for lane, head, rebased in members:
