@@ -50,6 +50,10 @@
           {
             "context": "feature-request-plan",
             "integration_id": 15368
+          },
+          {
+            "context": "ci-success",
+            "integration_id": 15368
           }
         ]
       }

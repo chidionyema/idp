@@ -129,8 +129,32 @@ between surfaces.
 
 **Docker runs on Rancher Desktop (moby, x86_64) — `docker` lives at `~/.rd/bin`, the engine socket is `~/.rd/docker.sock` via the `rancher-desktop` context; there is no Docker Desktop and no colima (the `colima` context is stale and must not be used).**
 
-`~/Documents/code/crew` is shared coordination; `crew/STATE.md` is the live estate map. Never
-restart another agent's process. Never touch the Telegram token's polling.
+**Every agent declares its work before doing it, and nothing lands without that declaration**
+(founder, 2026-09-30: ten concurrent agents for two days delivered nothing that could be pointed to
+as working, because they duplicated and overwrote each other; "we can't afford all this chaos").
+These rules bind every agent, whatever model or runtime:
+
+1. **No work without a ticket.** The ticket is the claim. The claim of record is the **GitHub
+   issue**; Linear mirrors it through the existing integration (`bin/idp-linear-dispatch`). There
+   is one record, never two.
+2. **Claim it.** Assign the issue to your agent identity, label it `in-progress`, and post one
+   comment in exactly this form:
+   `CLAIM agent=<name> model=<model> paths=<glob,glob> heartbeat=<UTC ISO time>`
+3. **Check for overlap first.** Search the open `in-progress` issues. If any claimed `paths`
+   overlap yours, do not start: comment on the holder's issue and pick other work.
+4. **Heartbeat.** Refresh the claim's `heartbeat` at least hourly. A claim with no heartbeat for
+   2 hours is released; the next agent may take the issue.
+5. **Land only against your claim.** Every change carries two lines in a commit message (or the PR
+   body): `Claim: <owner>/<repo>#<n>` and `Agent: <name>`. `bin/claim-gate` runs in `ci-success`,
+   the one check the merge queue gates on, and refuses a change with no claim, a claim that is not
+   open and `in-progress`, another agent's claim, a heartbeat older than 2 hours, or a file outside
+   the claim's `paths`. Only dependency and image bots are exempt, by name, in the gate itself.
+6. **Done means operating.** Close the issue only with a proof comment: the command and its output
+   on the real path the founder uses. Then remove `in-progress`; that releases the claim.
+7. **One capability at a time per agent.** Finish, or release, before claiming the next.
+
+The founder sees every live claim on /fleet: who, what, which paths, and heartbeat age. Never restart
+another agent's process. Never touch the Telegram token's polling.
 
 ---
 

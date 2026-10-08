@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""claim-gate BASE HEAD -- refuse a change that nobody declared (AGENTS.md §5).
+
+WHY. 2026-09-30: ten agents ran for two days, duplicated and overwrote each other, and nothing they
+built could be pointed to as working. The founder: "we can't afford all this chaos", then "not
+seeing any enforcement". AGENTS.md §5 makes every agent claim its work on a GitHub issue first;
+this is the enforcement: ci-success (the one check the merge queue gates on) needs this job.
+
+A change passes when its commit messages (or the pull request body, $PR_BODY) carry
+    Claim: <owner>/<repo>#<number>      (or #<number> for this repository)
+    Agent: <name>
+and the claimed issue
+  - is open and labelled `in-progress`,
+  - has a latest comment `CLAIM agent=<name> model=<m> paths=<glob,...> heartbeat=<UTC>` whose
+    agent is the change's Agent and whose heartbeat is under 2 hours old,
+  - covers every file the change touches with one of its path globs.
+
+Two exemptions, neither of which trusts a git author name (anyone can type one):
+  - a change whose every added and removed line carries a Flux `$imagepolicy` marker: it can only
+    move image tags, the image-automation controller's job (it commits as the same
+    estate-agents[bot] identity the agents use, so the name proves nothing);
+  - a pull request GitHub itself reports as opened by dependabot[bot] ($PR_AUTHOR).
+
+The Greenlane lands work by pushing queue/<batch>: one squashed commit per lane whose message keeps
+only the subject and `Greenlane-Head: <lane head>`. There each squashed commit is judged on its own,
+its files against the claim in its lane's own commit messages.
+
+Model-agnostic: nothing here knows which model or runtime wrote the change.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timedelta, timezone
+
+DEPENDABOT = "dependabot[bot]"
+MAX_AGE = timedelta(hours=2)
+HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
+CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
+AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+CLAIM = re.compile(
+    r"^CLAIM\s+agent=(?P<agent>\S+)\s+model=(?P<model>\S+)\s+paths=(?P<paths>\S+)\s+"
+    r"heartbeat=(?P<hb>\S+)\s*$",
+    re.M,
+)
+
+
+def git(*a: str) -> str:
+    return subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["git", *a],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+
+
+def gh_json(path: str) -> object:
+    out = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["gh", "api", "--paginate", "--slurp", path],  # noqa: S607
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    pages = json.loads(out)  # --slurp: one JSON array holding every page
+    if pages and all(isinstance(p, list) for p in pages):
+        return [item for page in pages for item in page]
+    return pages[0] if len(pages) == 1 else pages
+
+
+def image_bump_only(diff: str) -> bool:
+    """Every changed line (not the +++/--- headers) carries a Flux image-policy marker."""
+    changed = [
+        ln
+        for ln in diff.splitlines()
+        if ln[:1] in "+-" and not ln.startswith(("+++", "---"))
+    ]
+    return bool(changed) and all("$imagepolicy" in ln for ln in changed)
+
+
+def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> list[str]:
+    """The reasons this change may not land; empty means it passes. `fetch(repo, n)` returns
+    (issue dict, comments list)."""
+    refs = CLAIM_REF.findall(text)
+    agents = AGENT.findall(text)
+    if not refs:
+        return [
+            "no `Claim: <owner>/<repo>#<n>` line: declare the work on an issue first (AGENTS.md §5)"
+        ]
+    if not agents:
+        return [
+            "no `Agent: <name>` line: the change must say which agent's claim it lands on"
+        ]
+    agent = agents[-1]
+    problems: list[str] = []
+    covered: set[str] = set()
+    for ref_repo, num in refs:
+        where = f"{ref_repo or repo}#{num}"
+        issue, comments = fetch(ref_repo or repo, int(num))
+        if issue.get("state") != "open":
+            problems.append(f"{where} is not open")
+            continue
+        if "in-progress" not in {lbl["name"] for lbl in issue.get("labels", [])}:
+            problems.append(f"{where} is not labelled in-progress")
+            continue
+        claims = [m for c in comments for m in CLAIM.finditer(c.get("body", ""))]
+        if not claims:
+            problems.append(f"{where} has no CLAIM comment")
+            continue
+        c = claims[-1]
+        if c["agent"] != agent:
+            problems.append(f"{where} is claimed by {c['agent']}, not {agent}")
+            continue
+        try:
+            hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
+        except ValueError:
+            problems.append(f"{where} heartbeat {c['hb']!r} is not a UTC ISO time")
+            continue
+        if now - hb > MAX_AGE:
+            problems.append(
+                f"{where} heartbeat is {now - hb} old (limit {MAX_AGE}): the claim has lapsed"
+            )
+            continue
+        globs = [g for g in c["paths"].split(",") if g]
+        covered |= {f for f in files if any(fnmatch.fnmatch(f, g) for g in globs)}
+    outside = [f for f in files if f not in covered]
+    if not problems and outside:
+        problems.append(
+            f"{len(outside)} file(s) outside every claim's paths: {', '.join(outside[:10])}"
+        )
+    return problems
+
+
+def judge(
+    base: str, head: str, repo: str, fetch, now: datetime, pr_body: str, pr_author: str
+) -> list[str]:
+    if pr_author == DEPENDABOT:
+        return []
+    commits = [c for c in git("rev-list", "--reverse", f"{base}..{head}").split() if c]
+    lanes = [
+        (c, HEAD_TRAILER.search(git("log", "-1", "--format=%B", c))) for c in commits
+    ]
+    if commits and all(m for _, m in lanes):
+        problems: list[str] = []
+        for c, m in lanes:
+            if image_bump_only(git("show", "--format=", c)):
+                continue
+            lane_head = m.group(1)
+            text = git("log", "--format=%B", f"{base}..{lane_head}")
+            files = [
+                f
+                for f in git(
+                    "diff-tree", "--no-commit-id", "-r", "--name-only", c
+                ).split("\n")
+                if f
+            ]
+            problems += [
+                f"lane {lane_head[:9]}: {p}"
+                for p in verdict(text, files, repo, fetch, now)
+            ]
+        return problems
+    if image_bump_only(git("diff", f"{base}...{head}")):
+        return []
+    text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
+    files = [f for f in git("diff", "--name-only", f"{base}...{head}").split("\n") if f]
+    return verdict(text, files, repo, fetch, now)
+
+
+def main(argv: list[str]) -> int:
+    base, head = argv[1], argv[2]
+    repo = os.environ["GITHUB_REPOSITORY"]
+
+    def fetch(r: str, n: int):
+        return gh_json(f"repos/{r}/issues/{n}"), gh_json(
+            f"repos/{r}/issues/{n}/comments?per_page=100"
+        )
+
+    problems = judge(
+        base,
+        head,
+        repo,
+        fetch,
+        datetime.now(timezone.utc),
+        os.environ.get("PR_BODY", ""),
+        os.environ.get("PR_AUTHOR", ""),
+    )
+    for p in problems:
+        print(f"FAIL  claim-gate  {p}")
+    if not problems:
+        print("ok    claim-gate  every change lands on a live claim")
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
