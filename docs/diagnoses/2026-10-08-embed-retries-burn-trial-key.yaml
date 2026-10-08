@@ -1,0 +1,75 @@
+description: 'The Cohere trial key behind the `embed` lane (1000 calls / month) is
+  spent far faster than the crew''s embedding traffic accounts for. Question: is the
+  router multiplying each failed embed call, and so is num_retries 0 on the embed
+  deployment the fix? Evidence measured 2026-10-08 from both router pods (kubectl
+  -n llm logs litellm-556c8c8fcd-jwm5t / -zm648 --since=8h). Priors are uniform and
+  the likelihoods were written down before counting. Supersedes the Ollama record
+  (2026-10-08-embed-no-fallback-ollama.yaml, removed): that fallback was 768 wide
+  against the 1536-wide otto_facts.embedding.
+
+  '
+hypotheses:
+- name: H1
+  description: 'The router''s global num_retries 2 replays every failed embed call
+    twice against the same limited key, so each client request costs three upstream
+    calls. num_retries 0 on the embed deployment cuts that cost to one call.
+
+    '
+  prior: 0.333333
+- name: H2
+  description: 'The router makes one upstream call per request, and the burn is just
+    client volume (crew knowledge init). A router retry setting would change nothing.
+
+    '
+  prior: 0.333333
+- name: H3
+  description: 'The key is wrong or unauthorised (a wiring fault, not a quota). The
+    router does not retry auth errors, and the fix is the key, not the retry count.
+
+    '
+  prior: 0.333334
+evidence:
+- name: 'Upstream cohere/embed-v4.0 attempts, split into the first attempt of a client
+    request and the router''s retries of it. 175 upstream attempts (58 + 117 "aembedding(model=cohere/embed-v4.0)
+    ... Exception" lines) served 59 failed client requests (20 + 39 _handle_llm_api_exception
+    CohereException lines), so 59 first attempts and 116 retries. Zero upstream embed
+    attempts succeeded.
+
+    '
+  observed:
+    first_attempt: 59
+    retry_attempt: 116
+  likelihoods:
+    H1:
+      first_attempt: 0.34
+      retry_attempt: 0.66
+    H2:
+      first_attempt: 0.97
+      retry_attempt: 0.03
+    H3:
+      first_attempt: 0.97
+      retry_attempt: 0.03
+- name: 'Error shape on Cohere calls in the same logs: the 429 "You are using a Trial
+    key, which is limited to 1000 API calls / month" (320 lines) against 401 (4 lines).
+
+    '
+  observed:
+    trial_key_429: 320
+    auth_401: 4
+  likelihoods:
+    H1:
+      trial_key_429: 0.97
+      auth_401: 0.03
+    H2:
+      trial_key_429: 0.97
+      auth_401: 0.03
+    H3:
+      trial_key_429: 0.1
+      auth_401: 0.9
+n_eff_divisor: 10
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-10-08T18:46:17Z'

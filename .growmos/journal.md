@@ -4892,3 +4892,7 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:37:28Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
+
+### 2026-10-08T17:04:33Z · agent
+
+Embed lane: num_retries 0 on the Cohere embed deployment (consoles.yaml, rendered into platform/llm/config.yaml) so failed upserts stop spending the exhausted trial key three times each. The Ollama nomic-embed-text fallback was dropped: it is 768 wide, otto_facts.embedding is 1536, and test_the_embed_chain_agrees_on_one_width refuses it. idp#5522.

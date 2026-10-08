@@ -910,12 +910,19 @@ vendors:
         # is created at and the width every vector already in the store was written
         # at (tests/test_the_embed_chain_agrees_on_one_width.py grades any future
         # second hop on it).
+        #
+        # num_retries 0 (2026-10-08): the router-wide num_retries 2 sent every failed upsert
+        # chunk to the trial key three times, and the crew's knowledge init spent what was
+        # left of the month's 1000 calls in seconds. A retry against a key that has run out
+        # cannot succeed, so it only uses up calls. An Ollama fallback was tried and dropped:
+        # nomic-embed-text is 768 wide, and the store takes 1536.
         - model_name: embed
           litellm_params:
             model: cohere/embed-v4.0
             api_key: os.environ/COHERE_API_KEY
             dimensions: 1536
             timeout: 120
+            num_retries: 0
           model_info:
             mode: embedding
   twilio:
