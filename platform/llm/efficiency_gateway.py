@@ -26,12 +26,17 @@ cross-call observation handles) rewrote the prefix on every call and is deleted.
   [9] checks tool call/result pairing and the first role, and never drops anything;
   [1] proves the cache survives: hashes system+tools and every transformed message per
       conversation and records how much of the previous call's prefix this call re-sent;
+  [10] read shunt: a whole-file read over 350 lines reaches the model as a worker digest,
+      for every harness (the tool is recognised by name and arguments), decided once per
+      content hash so every later call re-sends the same bytes;
   [3] does NOT act: tool schemas sit in the cached prefix and trimming them degrades tool use.
 async_log_success_event then records what the vendor actually billed for the call (uncached,
 cache read, cache write 5m/1h, output), so "saved" is measured, not estimated.
 """
 
+import asyncio
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -203,6 +208,15 @@ def _session_id(data: dict) -> str:
 # conversation, never the call, so a conversation stays in one arm for its whole life.
 HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "25"))
 HOLDOUT_SALT = os.environ.get("ESTATE_HOLDOUT_SALT", "trial-2026-09-29")
+# A named exception to the hash, for a conversation someone deliberately pulled out of the
+# holdout (2026-10-08: the founder asked to be moved to treat mid-conversation after the ledger
+# showed treat billing ~15% less for Claude; re-salting would have re-rolled every live
+# conversation, so this is a narrow override instead). Read fresh per call -- a plain file, not
+# an env var, so it takes effect without a router restart. {"<conversation_key>": "control"|"treat"}
+HOLDOUT_FORCE_FILE = os.environ.get(
+    "ESTATE_HOLDOUT_FORCE_FILE",
+    os.path.expanduser("~/.estate/efficiency-force-arm.json"),
+)
 
 
 def _conversation_key(data: dict, session: str) -> str:
@@ -212,7 +226,20 @@ def _conversation_key(data: dict, session: str) -> str:
     return _h((data.get("messages") or [])[:2])
 
 
+def _forced_arm(key: str) -> Optional[str]:
+    try:
+        with open(HOLDOUT_FORCE_FILE, encoding="utf-8") as f:
+            forced = json.load(f)
+    except (OSError, ValueError):
+        return None
+    arm = forced.get(key)
+    return arm if arm in ("control", "treat") else None
+
+
 def _arm(key: str) -> str:
+    forced = _forced_arm(key)
+    if forced:
+        return forced
     h = int(hashlib.sha256(f"{HOLDOUT_SALT}:{key}".encode()).hexdigest()[:8], 16)
     return "control" if (h % 10000) < HOLDOUT_PCT * 100 else "treat"
 
@@ -278,6 +305,207 @@ def _tool_result_text(block: dict) -> Optional[str]:
     ):
         return "\n".join(str(b.get("text") or "") for b in c)
     return None
+
+
+# --------------------------------------------------------------------------- read shunt
+#
+# [10] READ SHUNT, for every harness (2026-10-08). The read-shunt was a Claude Code PreToolUse
+# hook (bin/idp-read-shunt), so opencode, pi and every other harness sent whole files to the
+# frontier model. The estate is harness-agnostic and the router is the one place every harness
+# passes, so the shunt lives here too: a whole-file read of a big text file -- recognised by
+# the tool's name and arguments, not by harness -- reaches the model as a digest from a cheap
+# worker. Ranged reads are never shunted, so exact text is always one call away.
+#
+# Append-stable like every step here: the harness re-sends the full file on every later call,
+# so the decision (digest, or "pass" when the worker failed) is persisted by content hash on
+# first sight, first writer wins, and every later call gets exactly the same bytes.
+READ_SHUNT = os.environ.get("ESTATE_READ_SHUNT", "1") != "0"
+READ_SHUNT_LINES = int(os.environ.get("ESTATE_READ_SHUNT_LINES", "350"))
+READ_SHUNT_MAX_CHARS = int(os.environ.get("ESTATE_READ_SHUNT_MAX_CHARS", "200000"))
+READ_SHUNT_TIMEOUT = float(os.environ.get("ESTATE_READ_SHUNT_TIMEOUT", "20"))
+# deepseek, measured 2026-10-08 on a 1119-line file: 6s, well-formed, exact line ranges; the
+# free gpt-oss lanes returned empty or reasoning-only answers about half the time.
+READ_SHUNT_MODEL = os.environ.get("ESTATE_READ_SHUNT_MODEL", "deepseek")
+_READ_SHUNT_DIR_ENV = "ESTATE_READ_SHUNT_DIR"
+_READ_SHUNT_DIR_DEFAULT = "~/.estate/read-shunt-router"
+# Claude Code Read, opencode read, pi read, Cline read_file, editor view tools.
+READ_TOOLS = {"read", "read_file", "readfile", "view", "view_file", "open_file"}
+PATH_ARGS = ("file_path", "filePath", "path", "file", "filename")
+RANGE_ARGS = {
+    "offset", "limit", "pages", "start_line", "end_line", "startLine", "endLine",
+    "line_start", "line_end", "view_range", "range", "lines",
+}  # fmt: skip
+READ_SHUNT_PROMPT = """You are a code-reading worker for a senior engineer who will NOT see this file. Produce a digest they can act on without reading it. Be exact and dense; no preamble. HARD BUDGET: the whole digest must be under 2500 characters.
+
+FILE: {path} ({lines} lines; the line numbers below are the ones the engineer's read tool uses)
+
+Return, in this order, as plain text with these headings:
+PURPOSE: one or two sentences.
+STRUCTURE: the top-level units as `L<start>-L<end> <name>: <=8 words`.
+KEY VALUES: constants, env vars, paths, ports, hosts, versions, flags.
+NOTABLE: bugs, TODOs, dead code, security smells.
+READ EXACTLY: the 1-3 line ranges most worth reading verbatim.
+
+FILE CONTENT:
+{content}"""
+
+
+def _tool_calls(m: Any) -> "dict[str, tuple[str, dict]]":
+    """id -> (tool name, arguments) for every tool call an assistant message opens."""
+    out: dict = {}
+    if not isinstance(m, dict) or m.get("role") != "assistant":
+        return out
+    for tc in m.get("tool_calls") or []:
+        fn = (tc or {}).get("function") or {}
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except ValueError:
+                args = {}
+        out[tc.get("id")] = (
+            str(fn.get("name") or ""),
+            args if isinstance(args, dict) else {},
+        )
+    c = m.get("content")
+    if isinstance(c, list):
+        for b in c:
+            if isinstance(b, dict) and b.get("type") == "tool_use":
+                args = b.get("input")
+                out[b.get("id")] = (
+                    str(b.get("name") or ""),
+                    args if isinstance(args, dict) else {},
+                )
+    return out
+
+
+def _whole_file_read(name: str, args: dict) -> Optional[str]:
+    """The path of an unranged file read, or None."""
+    if name.lower().rsplit("__", 1)[-1] not in READ_TOOLS:
+        return None
+    if any(args.get(k) not in (None, "", 0, []) for k in RANGE_ARGS):
+        return None
+    for k in PATH_ARGS:
+        if isinstance(args.get(k), str) and args[k]:
+            return args[k]
+    return None
+
+
+def _shunt_digest(path: str, text: str, lines: int) -> str:
+    import urllib.request
+
+    key = os.environ.get("ESTATE_LOCAL_CALLER_KEY") or os.environ.get(
+        "LITELLM_MASTER_KEY", ""
+    )
+    body = {
+        "model": READ_SHUNT_MODEL,
+        "temperature": 0,
+        "max_tokens": 3000,
+        "metadata": {"estate_internal": INTERNAL},
+        "messages": [
+            {
+                "role": "user",
+                "content": READ_SHUNT_PROMPT.format(
+                    path=path, lines=lines, content=text[:READ_SHUNT_MAX_CHARS]
+                ),
+            }
+        ],
+    }
+    headers = {"Content-Type": "application/json", "X-Estate-Internal": INTERNAL}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    if not SHADOW_URL.startswith(("http://", "https://")):
+        raise ValueError(f"ESTATE_SHADOW_URL must be http(s): {SHADOW_URL!r}")
+    req = urllib.request.Request(  # noqa: S310 - scheme checked above
+        SHADOW_URL, data=json.dumps(body).encode(), headers=headers
+    )
+    with urllib.request.urlopen(req, timeout=READ_SHUNT_TIMEOUT) as r:  # noqa: S310
+        out = (json.load(r)["choices"][0]["message"]["content"] or "").strip()
+    # deepseek overruns the 2500-char budget on big files (a 1404-line file hit 1500 tokens
+    # before READ EXACTLY, 2026-10-08): PURPOSE + STRUCTURE is the digest, the tail is a bonus.
+    if not all(h in out.upper() for h in ("PURPOSE", "STRUCTURE")):
+        raise ValueError("malformed digest")
+    return out[:8000]
+
+
+def _shunt_decision(path: str, text: str, lines: int) -> Optional[str]:
+    """The persisted replacement for this exact text: a digest, or None to pass it through."""
+    root = os.path.expanduser(
+        os.environ.get(_READ_SHUNT_DIR_ENV) or _READ_SHUNT_DIR_DEFAULT
+    )
+    f = os.path.join(root, hashlib.sha256(text.encode()).hexdigest()[:32] + ".json")
+    try:
+        with open(f, encoding="utf-8") as fh:
+            return json.load(fh).get("digest")
+    except (OSError, ValueError):
+        pass
+    try:
+        digest: Optional[str] = _shunt_digest(path, text, lines)
+        err = None
+    except Exception as exc:  # noqa: BLE001 - a worker failure passes the read through
+        digest, err = None, str(exc)[:200]
+    rec = {"path": path, "lines": lines, "model": READ_SHUNT_MODEL, "digest": None}
+    if digest:
+        rec["digest"] = (
+            f"[router read-shunt: {path} is {lines} lines (over {READ_SHUNT_LINES}); the "
+            f"whole file went to the worker model `{READ_SHUNT_MODEL}` and this digest came "
+            f"back instead. For exact text, read it again with a line range (offset/limit) "
+            f"-- a ranged read is never shunted.]\n\n{digest}"
+        )
+    else:
+        rec["error"] = err
+    try:
+        os.makedirs(root, exist_ok=True)
+        fd = os.open(f, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(rec, fh)
+    except FileExistsError:
+        # A concurrent call decided first; its bytes are the ones every call must send.
+        try:
+            with open(f, encoding="utf-8") as fh:
+                return json.load(fh).get("digest")
+        except (OSError, ValueError):
+            return None
+    except OSError:
+        # Unpersisted, a later call could decide differently and break the prefix: pass.
+        return None
+    return rec["digest"]
+
+
+def _shunt_reads(data: dict) -> dict:
+    msgs = data.get("messages") or []
+    shunted = saved = 0
+    calls: dict = {}
+    for m in msgs:
+        if isinstance(m, dict) and m.get("role") == "assistant":
+            calls = _tool_calls(m)
+            continue
+        for b in _result_blocks(m):
+            if b.get("is_error"):
+                continue
+            name, args = calls.get(
+                b.get("tool_use_id") or b.get("tool_call_id"), ("", {})
+            )
+            path = _whole_file_read(name, args)
+            text = _tool_result_text(b) if path else None
+            if text is None:
+                continue
+            lines = text.count("\n") + 1
+            if lines <= READ_SHUNT_LINES:
+                continue
+            digest = _shunt_decision(path, text, lines)
+            if not digest:
+                continue
+            before = _json_bytes(b.get("content"))
+            b["content"] = digest
+            shunted += 1
+            saved += before - _json_bytes(digest)
+    return {
+        "action": "shunted" if shunted else "none",
+        "results": shunted,
+        "bytes": saved,
+        "why": f"whole-file read over {READ_SHUNT_LINES} lines -> worker digest, decided once per content hash",
+    }
 
 
 # --------------------------------------------------------------------------- epochs
@@ -917,6 +1145,65 @@ def _usage_numbers(response_obj: Any, kwargs: dict) -> Optional[dict]:
     }
 
 
+# [4] Budget Orchestrator, record only (2026-10-08). Counted in every "8 mechanisms" figure
+# but imported only by platform/execution/n10_validator.py; this lane never ran it. It cannot run here as
+# written: route_call blocks a call over budget (LAW 38: never fail the request) and routes by
+# a task_type Claude Code never sends -- plan/execute routing is _route_model's job. So each
+# conversation is an agent, charged what Anthropic billed, and the outcome row says where it
+# stands. 5M input-equivalents is about the p90 conversation in the ledger that day. Spend is
+# in memory, so a router restart starts every conversation's count again.
+CONV_TOKEN_BUDGET = int(os.environ.get("ESTATE_CONV_TOKEN_BUDGET", str(5_000_000)))
+BUDGET_CONVS = 4096
+
+
+def _load_budget_orchestrator() -> Any:
+    """Staged beside this module by bin/litellm-local, or in the repo tree for tests."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in (
+        os.path.join(here, "budget_orchestrator.py"),
+        os.path.join(here, "..", "efficiency", "budget_orchestrator.py"),
+    ):
+        if not os.path.isfile(path):
+            continue
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "estate_budget_orchestrator", path
+            )
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            # it logs every charge at INFO: one line per vendor call is noise in the router log
+            logging.getLogger(mod.__name__).setLevel(logging.WARNING)
+            return mod.TokenBudgetOrchestrator()
+        except Exception as exc:  # noqa: BLE001 - m4 off, never the request
+            log.warning("[4-Budget] not loaded from %s: %s", path, exc)
+    return None
+
+
+class _ConvBudget:
+    def __init__(self) -> None:
+        self._orch = _load_budget_orchestrator()
+
+    def charge(self, conv: Optional[str], usage: Optional[dict]) -> Optional[dict]:
+        if self._orch is None or not conv or not usage:
+            return None
+        budgets = self._orch.agent_budgets
+        if conv not in budgets:
+            self._orch.register_agent(conv, CONV_TOKEN_BUDGET)
+            while len(budgets) > BUDGET_CONVS:
+                old = next(iter(budgets))
+                budgets.pop(old)
+                self._orch.agent_models.pop(old, None)
+        spent = round(usage["input_equiv_billed"] + usage["output_tokens"])
+        self._orch.consume_tokens(conv, spent)
+        remaining = budgets[conv]
+        return {
+            "budget": CONV_TOKEN_BUDGET,
+            "charged": spent,
+            "remaining": remaining,
+            "over": remaining < 0,
+        }
+
+
 class EstateEfficiencyGateway(CustomLogger):
     """One append-stable chain on every call, every lane: m7 epoch, m8 edge purge, m2, m5, m9, m1."""
 
@@ -929,6 +1216,8 @@ class EstateEfficiencyGateway(CustomLogger):
         self._pending: dict = {}
         # [7][8] on every lane: epoch snap + hash lock + edge purge (idp#4893)
         self._epochs = _Epochs()
+        # [4] per-conversation token budget, record only
+        self._budget = _ConvBudget()
 
     # ---------------------------------------------------------------------- hook
 
@@ -953,23 +1242,38 @@ class EstateEfficiencyGateway(CustomLogger):
             return (
                 data  # the router's own shadow-state fold: never compacted or recorded
             )
+        pre: dict = {}
         try:
-            return self._anthropic_call(data, call_type, started)
+            session = _session_id(data)
+            # keyed before [10] edits a tool result, so the arm is the one the caller's bytes give
+            pre["conv"] = _conversation_key(data, session)
+            pre["bytes_before"] = _json_bytes(data.get("messages") or [])
+            if READ_SHUNT and _arm(pre["conv"]) == "treat":
+                # the worker call blocks for seconds on a first sight; keep the loop free
+                pre["m10"] = await asyncio.to_thread(_shunt_reads, data)
+        except Exception as exc:  # noqa: BLE001 - never fail the request (LAW 38)
+            log.warning("[10-ReadShunt] skipped: %s", exc)
+            pre["m10"] = {"action": "error", "bytes": 0, "error": str(exc)[:200]}
+        try:
+            return self._anthropic_call(data, call_type, started, pre)
         except Exception as exc:  # noqa: BLE001 - never fail the request (LAW 38)
             log.warning("[EfficiencyGateway] chain skipped: %s", exc)
             return data
 
     # ------------------------------------------------------------ anthropic lane
 
-    def _anthropic_call(self, data: dict, call_type: Any, started: float) -> dict:
+    def _anthropic_call(
+        self, data: dict, call_type: Any, started: float, pre: Optional[dict] = None
+    ) -> dict:
+        pre = pre or {}
         session = _session_id(data)
         requested = data.get("model") or ""
         data["model"] = _route_model(data)
         if data["model"] != requested:
             _fit_executor(data)
         msgs = data.get("messages") or []
-        before = _json_bytes(msgs)
-        conv = _conversation_key(data, session)
+        before = pre.get("bytes_before") or _json_bytes(msgs)
+        conv = pre.get("conv") or _conversation_key(data, session)
         arm = _arm(conv)
         if arm == "control":
             steps: dict = {}  # the holdout: the vendor gets exactly what the caller sent
@@ -977,6 +1281,8 @@ class EstateEfficiencyGateway(CustomLogger):
             epoch = self._run_epochs(data, session)
             steps = self._anthropic.run(data, session)
             steps.update(epoch)
+            if "m10" in pre:
+                steps["m10"] = pre["m10"]
         after = _json_bytes(data.get("messages") or [])
         self._calls += 1
         self._cumulative_tokens += (steps.get("m7") or {}).get("est_tokens", 0)
@@ -1076,6 +1382,9 @@ class EstateEfficiencyGateway(CustomLogger):
             else:
                 row["usage"] = _usage_numbers(response_obj, kwargs)
                 row["cost_usd"] = _cost_usd(kwargs)
+                m4 = self._budget.charge(pre.get("conv"), row["usage"])
+                if m4 is not None:
+                    row["m4"] = m4
             _ledger_write(row)
         except Exception as exc:  # noqa: BLE001 - the ledger may never fail the request
             log.warning("[ledger] outcome not written: %s", exc)

@@ -117,14 +117,15 @@ def test_the_treated_arm_is_shaped_and_the_billed_row_carries_arm_and_dollars(
     assert (out["arm"], out["cost_usd"], out["conv"]) == ("treat", 0.0123, pre["conv"])
 
 
-def _call(i, arm, conv, usd):
+def _call(i, arm, conv, usd, lane="claude-opus-5-5", cut=True):
     at = "2026-09-29T03:00:00Z"
     return [
         {
             "kind": "pre",
             "call_id": f"c{i}",
-            "model": "claude-opus-5-5",
+            "model": lane,
             "at": at,
+            "bytes_before": 1200 if arm == "treat" and cut else 1000,
             "bytes_after": 1000,
             "arm": arm,
             "conv": conv,
@@ -168,3 +169,38 @@ def test_the_report_calls_a_real_saving_and_refuses_a_noise_one(monkeypatch, tmp
         proof.trial(proof.pair(noise), {})["lanes"]["claude-opus-5-5"]["verdict"]
         != "saves"
     )
+
+
+def test_a_lane_the_chain_never_touched_is_not_blamed_for_its_callers():
+    # groq, 2026-10: one caller's 8192-token loops landed in treat; the chain had cut nothing
+    proof = _load(
+        "token_proof_under_test", os.path.join(ROOT, "bin", "estate-token-proof")
+    )
+    rows = []
+    for c in range(10):
+        for arm, base in (("treat", 0.01), ("control", 0.0001)):
+            rows += _call(
+                c * 2 + (arm == "control"), arm, f"{arm}{c}", base, "groq", False
+            )
+    lane = proof.trial(proof.pair(rows), {})["lanes"]["groq"]
+    assert (
+        lane["verdict"] == "chain inert (nothing cut)" and lane["treat_bytes_cut"] == 0
+    )
+
+
+def test_a_subscription_lane_billed_zero_is_priced_from_its_usage():
+    proof = _load(
+        "token_proof_under_test", os.path.join(ROOT, "bin", "estate-token-proof")
+    )
+    price = {
+        "claude-opus-5-5": {
+            "input_cost_per_token": 4e-6,
+            "cache_read_input_token_cost": 2e-7,
+            "output_cost_per_token": 2e-5,
+        }
+    }
+    (c,) = proof.pair(_call(0, "treat", "t0", 0.0))
+    c["out"]["usage"]["uncached_input"] = 100
+    assert abs(proof.cost(c, price) - (100 * 4e-6 + 900 * 2e-7 + 10 * 2e-5)) < 1e-12
+    (g,) = proof.pair(_call(1, "treat", "t1", 0.0, "groq"))
+    assert proof.cost(g, price) == 0.0  # a free lane's $0 is its true price

@@ -264,6 +264,8 @@ install() {
   cp "$idp/bin/litellm-local" "$STAGE/litellm-local"
   cp "$idp/llm/config.yaml" "$STAGE/config.yaml"
   for m in $MODULES; do cp "$idp/platform/llm/$m" "$STAGE/modules/$m"; done
+  # efficiency_gateway.py loads the budget orchestrator (m4) from beside itself.
+  cp "$idp/platform/efficiency/budget_orchestrator.py" "$STAGE/modules/budget_orchestrator.py"
   # The guardian (launchd/ai.estate.litellm-watchdog.plist.tmpl) runs from the stage too.
   cp "$idp/platform/llm/watchdog.py" "$STAGE/watchdog.py"
   # Vendor keys, ciphertext only: launchd cannot read ~/Documents, so the SOPS files and the
