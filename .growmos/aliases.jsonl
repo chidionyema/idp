@@ -19,6 +19,7 @@
 {"alias": "9-Layer Parallel Agent Architecture", "entity": "component/9-layer-parallel-agent-architecture", "type": "COMPONENT"}
 {"alias": "Backstage Plugin", "entity": "component/backstage-plugin", "type": "COMPONENT"}
 {"alias": "Budget Orchestrator", "entity": "component/budget-orchestrator", "type": "COMPONENT"}
+{"alias": "build-multiarch", "entity": "component/build-multiarch", "type": "COMPONENT"}
 {"alias": "bytesync-web", "entity": "component/bytesync-web", "type": "COMPONENT"}
 {"alias": "Cache Guardian", "entity": "component/cache-guardian", "type": "COMPONENT"}
 {"alias": "Cilium Alerts", "entity": "component/cilium-alerts", "type": "COMPONENT"}
@@ -34,6 +35,7 @@
 {"alias": "Gisting", "entity": "component/gisting", "type": "COMPONENT"}
 {"alias": "Governor", "entity": "component/governor", "type": "COMPONENT"}
 {"alias": "home module", "entity": "component/home-module", "type": "COMPONENT"}
+{"alias": "idp-kubeapi-mac", "entity": "component/idp-kubeapi-mac", "type": "COMPONENT"}
 {"alias": "litellm-local", "entity": "component/litellm-local", "type": "COMPONENT"}
 {"alias": "MCP Adapter", "entity": "component/mcp-adapter", "type": "COMPONENT"}
 {"alias": "net-flannel-unmasq", "entity": "component/net-flannel-unmasq", "type": "COMPONENT"}
@@ -80,6 +82,7 @@
 {"alias": "no-hardcoding law", "entity": "decision/no-hardcoding-law", "type": "DECISION"}
 {"alias": "OCI Always Free A1 cut", "entity": "decision/oci-always-free-a1-cut", "type": "DECISION"}
 {"alias": "piper lessac voice licence", "entity": "decision/piper-lessac-voice-licence", "type": "DECISION"}
+{"alias": "backstage image frozen by proxy-addr CVE", "entity": "defect/backstage-image-frozen-by-proxy-addr-cve", "type": "DEFECT"}
 {"alias": "Host provisioning drift", "entity": "defect/host-provisioning-drift", "type": "DEFECT"}
 {"alias": "salvage event 2026-09-07", "entity": "event/salvage-event-2026-09-07", "type": "EVENT"}
 {"alias": "Action Fusion", "entity": "feature/action-fusion", "type": "FEATURE"}
@@ -92,12 +95,15 @@
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
 {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
 {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
+{"alias": "iOS standalone mic bug", "entity": "gotcha/ios-standalone-mic-bug", "type": "GOTCHA"}
+{"alias": "lane-submit verdict timeout", "entity": "gotcha/lane-submit-verdict-timeout", "type": "GOTCHA"}
 {"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
 {"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
 {"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}
 {"alias": "TRAP parents[N] repo root", "entity": "gotcha/trap-parents-n-repo-root", "type": "GOTCHA"}
 {"alias": "TRAP reasoning-model token budget", "entity": "gotcha/trap-reasoning-model-token-budget", "type": "GOTCHA"}
 {"alias": "TRAP sessions DB-first", "entity": "gotcha/trap-sessions-db-first", "type": "GOTCHA"}
+{"alias": "micRecoveryUrl", "entity": "mechanism/micrecoveryurl", "type": "MECHANISM"}
 {"alias": "Founder", "entity": "person/founder", "type": "PERSON"}
 {"alias": "Dagster", "entity": "service/dagster", "type": "SERVICE"}
 {"alias": "estate MCP server", "entity": "service/estate-mcp-server", "type": "SERVICE"}

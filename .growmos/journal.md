@@ -4892,3 +4892,48 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:37:28Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
+
+### 2026-10-07T14:01:08Z · agent
+
+2026-10-07 lost-work root causes, measured: (1) estate-execute defaults every intent step to a 120s timeout; work-audit needs 479s (41 repos) so it never completed -> lane/fix/work-audit-step-timeout (timeout 900, also carries the unlaned sops-install commit a274c7d57). (2) lane-submit's verdict wait dies at 120s: of 94 runs/30d, 7 ok, 47 false failures after a successful push, 40 real push-step failures (cause not yet measured) -> lane/fix/lane-submit-wait-timeout (timeout 1900). (3) Greenlane engine holds 33 lanes: 18 conflict (never rebased), 12 red (executes-gate 5, guarded-paths 4, bdd 3). Engine lifetime 1863 candidates, 66 landed. growmos+memory MCP disabled in .claude/settings.local.json (founder to re-enable). bin/idp-greenlane is mode 100644, so the runbook's command fails; run it via python3.
+
+### 2026-10-08T00:58:51Z · agent
+
+2026-10-08: founder's 'microphone is off for this page, tap to try again' loop was stale code -- backstage image frozen at main-13986 (Oct 5) because every build since failed Trivy on proxy-addr CVE-2026-90711. Fixed (#5474, proxy-addr 2.0.8); main-14015 deployed; live bundle verified to contain the home-screen mic escape link (#5472) and none of the old text.
+
+### 2026-10-08T07:21:27Z · agent
+
+2026-10-08 lanes: (1) lane/fix/voice-router-key-file LANDED as 60d9a2230 (#5486): router key vault->ExternalSecret fleetview-voice-router-key->mounted file, router_key() reads LITELLM_API_KEY_FILE then env, fleetview sidecar on the voice lane (VOICE_ROUTER_MODEL=voice). intent-speculative alias split out to scratchpad patch: its diagnosis record failed the 0.95 posterior gate (0.8927) -- not landed. (2) lane/fix/backstage-lockfile-sync c43b03edf PUSHED, awaiting greenlane: yarn.lock collapses duplicate @backstage/plugin-techdocs-node entries left by dependabot #5475-#5482; that YN0028 broke build-multiarch backstage on every main commit since 01:21 10-08, so live backstage is still image main-13986-51eca9766 (10-05) and mic fixes #5447/#5472 + voice fix are not deployed until this lands. (3) Group B rebases: 4 sub-agents resolving the 9 conflicting lanes onto new lane/rebased/<name> branches (pushed so far: claims-enforced, verify-rollback-real); no force-push/deletes. 6 branch deletions (crew-executes-gate-ast, dependabot/github_actions/actions-fef1ef3f32, lane/fleet-sidecar-degrades-and-adr0003-guard, lane/greenlane-rebase-bootstrap, lane/lane/memory-plane-cortex-engine, main-green-guarded-paths) ON HOLD for founder approval; archive tags under archive/<date>/lane-landed/. Locked (guarded-path) lanes untouched -- need founder key via bin/idp-auth. (4) Open founder choice: /fleet serves its shell signed-out (surfaces.l1.gate/fleet FAIL); API is gated (401). Gate it at the edge or relax the probe.
+
+### 2026-10-08T07:21:28Z · agent
+
+2026-10-08 phone kubectl bridge: launchd ai.estate.kubeapi exits 126 (macOS TCC blocks launchd reading ~/Documents; fix = Full Disk Access for /bin/bash or move the repo). Cached ~/.local/state/idp/kubeconfig (19 Sep) hard-codes --auth security_token and fails; bridge restarted by hand with IDP_KUBECONFIG=~/.local/state/idp/kubeconfig-apikey (api_key auth), serving http://100.98.58.115:8001 on the tailnet; dies on reboot. SECURITY GAP: docs/founder/debug-the-cluster-from-your-phone.md says the bridge is read-only and cannot read secrets -- false, it proxies the founder's full OCI identity (secrets GET returned 200).
+
+### 2026-10-08T07:22:43Z · agent
+
+2026-10-08 rebase agent a7a07b0: lane/rebased/verify-rollback-real (eba2a09f5) and lane/rebased/surfaces-verify (0c980b127, + ruff format of probes/gen_panels_spec.py) rebased on main, signed, fast-gate green, pushed. 3 rebase agents still running.
+
+### 2026-10-08T08:38:00Z · agent
+
+2026-10-08 handoff: lockfile lane still waiting (c43b03edf not on main yet). Branch deletions completed. AirDrop open for estate-cluster.yaml to InKuber. 4 rebased lanes pushed: claims-enforced (d1626a18a), surfaces-verify (e60df7eed), consolidate-2026-09-28-final (f5c2d6f61), verify-rollback-real. Still open: phone bridge read-only decision, /fleet sign-in gate decision. Pending for founder: 6 branch deletions approved and running (background job completed exit 0). Memory plane cortex lane (63e81114b) was in consolidate agent batch but report only covered consolidate.
+
+
+### 2026-10-08T08:39:00Z · agent
+
+UPDATE: lockfile fix (53c2ab6fb) LANDED on main. Backstage builds working again. main-14029 deployed.
+
+### 2026-10-08T08:40:00Z · agent
+
+COMPLETE 2026-10-08 session handoff:
+- ✅ Voice fix (60d9a2230 #5486): landed, main-14026
+- ✅ Lockfile fix (53c2ab6fb #5490): landed, main-14029
+- ✅ AirDrop window open: estate-cluster.yaml ready for InKuber on phone (Tailscale required)
+- ✅ Branch deletions: completed (archive tags created)
+- ✅ 4 rebased lanes pushed to origin/lane/rebased/: claims-enforced, surfaces-verify, consolidate-2026-09-28-final, verify-rollback-real
+- ⏳ Pending founder decision: phone bridge read-only (current proxy has full founder OCI identity)
+- ⏳ Pending founder decision: /fleet sign-in gate (probing found gating it reintroduces 2026-04-10 bug)
+- ⏳ Pending: memory plane cortex lane (63e81114b) rebased but not pushed separately
+
+### 2026-10-08T09:20:00Z · agent
+
+2026-10-08 final: phone kubectl bridge working with founder-phone SA (cluster-admin token), served at http://100.98.58.115:9999/estate-cluster.yaml. exec auth kubeconfig doesn't work with InKuber; static ServiceAccount token is the fix. /fleet left public (API gated). Memory committed.
