@@ -5,7 +5,7 @@
  * Runs entirely client-side via Transformers.js.
  */
 
-import { pipeline, env } from '@xenova/transformers';
+import { pipeline, env } from '@huggingface/transformers';
 import type { Intent, IntentCategory, ModelProgress } from './types';
 
 // Disable local model loading attempts
