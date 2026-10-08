@@ -241,10 +241,14 @@ misconfigurations:
       The OCI cluster autoscaler's upstream RBAC. It manages node lifecycle, which upstream ships
       with endpoint and service access attached. Vendor-defined; narrowing it breaks scale-up.
   - id: KSV-0108   # service with external IP
-    paths: ["platform/backstage/overlays/oke/sunshine-egress.yaml", "platform/guacamole/mac-egress.yaml"]
+    paths:
+      - "platform/backstage/overlays/oke/sunshine-egress.yaml"
+      - "platform/backstage/overlays/oke/fleetview-mac-egress.yaml"
+      - "platform/guacamole/mac-egress.yaml"
     statement: >-
-      Both are the deliberate egress route from the cluster to the founder's Mac over the tailnet,
-      not a public address. The external IP is a tailnet IP, reachable only by devices on it.
+      All three are the deliberate egress route from the cluster to the founder's Mac over the
+      tailnet, not a public address. The external IP is a tailnet IP, reachable only by devices on
+      it; fleetview-mac-egress.yaml is sunshine-egress.yaml's pattern for the Mac's fleetview.
 
   # ------------------------------------------------- real, cheap, and deferred with a hard expiry
   # These are the four CronJob pod templates and two Jobs that ship without a pod-level
