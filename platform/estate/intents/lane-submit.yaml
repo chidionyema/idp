@@ -10,6 +10,16 @@ args:
   cwd:     {type: string, default: "."}
 halt_on_failure: true
 steps:
+  - name: the claim covers the change
+    # 2026-10-08, PR #5511: the claim missed three files the lane touched, and claim-gate said so
+    # one CI round (~15 min) after the push, twice. The same gate, run here, says it in seconds.
+    timeout: 120
+    cmd: |
+      cd {{cwd}} || exit 2
+      git fetch -q origin main || { echo "BLIND   lane-submit  cannot fetch origin/main to judge the claim" >&2; exit 2; }
+      [ -x bin/claim-gate ] || { echo "BLIND   lane-submit  no bin/claim-gate in this checkout" >&2; exit 2; }
+      GITHUB_REPOSITORY=$(gh repo view --json nameWithOwner -q .nameWithOwner) \
+        bin/claim-gate "$(git merge-base origin/main HEAD)" HEAD
   - name: push the lane
     timeout: 300
     cmd: |
