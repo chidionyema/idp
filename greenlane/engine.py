@@ -185,8 +185,14 @@ class Engine:
             None  # asked at most once a tick, and only when needed
         )
         for lane in self.s.lanes.values():
-            if not lane.judged_on or lane.judged_on == main:
+            if lane.judged_on == main:
                 continue
+            if not lane.judged_on and lane.status != CONFLICT:
+                continue
+            # A CONFLICT with no main to expire against was judged before conflicts were retried
+            # (idp#5618): 6 lanes on 2026-10-09, untouched since 2026-09-28..10-01, never retried
+            # and never counted towards REJUDGE_LIMIT -- stranded, not parked. It is retried like
+            # any conflict, and _start_batch records the main it is judged on from then on.
             if lane.status == RED:
                 # it went red while main itself was red, so the verdict says nothing about the
                 # lane (2026-09-30: 9 lanes stuck this way); judge it again on a green main
