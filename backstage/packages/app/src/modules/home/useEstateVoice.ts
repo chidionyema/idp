@@ -947,11 +947,34 @@ export function useEstateVoice(): EstateVoice {
     } catch {
       /* no device voice; the estate's own still plays */
     }
+    // ASK FOR THE MIC INSIDE THE TAP, BEFORE ANY AWAIT (2026-10-09). MicVAD.new used to make the
+    // getUserMedia call itself, after the library load and an AudioContext resume. By then iOS
+    // Safari has dropped the tap's user activation and rejects with NotAllowedError without
+    // showing a prompt ("iOS is not letting this page use the microphone"), while desktop Chrome,
+    // which is lenient here, prompted fine. The request starts here, synchronously, and the VAD is
+    // handed the stream.
+    const micStream: Promise<MediaStream> | undefined =
+      navigator.mediaDevices?.getUserMedia?.({
+        audio: {
+          channelCount: 1,
+          echoCancellation: true,
+          autoGainControl: true,
+          noiseSuppression: true,
+        },
+      });
+    micStream?.catch(() => {
+      /* surfaced where it is awaited below */
+    });
+    const releaseMic = () =>
+      micStream
+        ?.then(s => s.getTracks().forEach(t => t.stop()))
+        .catch(() => undefined);
     traceMic('tap');
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
     traceMic('libs', libs.missing.join(','));
     if (!libs.ok) {
+      void releaseMic();
       setState('error');
       setDetail(
         `voice libraries missing (${libs.missing.join(
@@ -972,6 +995,7 @@ export function useEstateVoice(): EstateVoice {
       });
       if (audio.state === 'suspended') await audio.resume();
     } catch (e: any) {
+      void releaseMic();
       traceMic('audiocontext-failed', `${e?.name}: ${e?.message || e}`);
       setState('error');
       setDetail(`AudioContext failed: ${e.message || e}`);
@@ -989,7 +1013,10 @@ export function useEstateVoice(): EstateVoice {
 
     traceMic('mic-request', audio.state);
     try {
+      const stream = micStream ? await micStream : undefined;
+      traceMic('mic-granted', stream ? 'early' : 'vad-asks');
       const vad = await (window as any).vad.MicVAD.new({
+        stream,
         // 0.8 rather than the 0.5 default: on a laptop microphone the lower threshold fires on
         // keyboard and fan noise, and every false positive is a wasted transcription.
         positiveSpeechThreshold: 0.8,
