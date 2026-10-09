@@ -633,12 +633,27 @@ def _save_choice(engine_name: str, voice: str) -> None:
         print(f"voice.select not persisted: {exc}", file=sys.stderr, flush=True)
 
 
+# How long a refused or failed router voice is skipped. Measured 2026-10-09: Groq Orpheus on the
+# on_demand tier allows 100 requests a DAY (one per clause), and once spent every /voice/say paid
+# ~5s of LiteLLM retries for a 500 before macOS `say` spoke it in ~0.8s -- the person heard nothing
+# for ~7.5s after the words were on screen. A refusal now costs one clause, not every clause.
+TTS_ROUTER_BACKOFF_S = 300.0
+_tts_router_skip_until = 0.0
+
+
+def _tts_router_failed() -> None:
+    global _tts_router_skip_until
+    _tts_router_skip_until = time.time() + TTS_ROUTER_BACKOFF_S
+
+
 async def _router_synthesise(
     text: str, rate: int, voice: str | None = None
 ) -> bytes | None:
     """Router lane voice-tts (Groq Orpheus). None means: use the local engine."""
     import httpx  # noqa: PLC0415
 
+    if time.time() < _tts_router_skip_until:
+        return None
     try:
         host, headers = _router()
         async with httpx.AsyncClient(timeout=8) as c:
@@ -658,6 +673,7 @@ async def _router_synthesise(
                 file=sys.stderr,
                 flush=True,
             )
+            _tts_router_failed()
             return None
         return _wav_to_f32(r.content, rate) or None
     except Exception as exc:  # noqa: BLE001 - any router failure falls back to the local engine
@@ -666,6 +682,7 @@ async def _router_synthesise(
             file=sys.stderr,
             flush=True,
         )
+        _tts_router_failed()
         return None
 
 

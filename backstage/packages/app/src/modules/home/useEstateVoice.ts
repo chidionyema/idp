@@ -110,7 +110,8 @@ export function micPlatform(): MicPlatform {
   if (/iPhone|iPod/i.test(ua)) return 'ios';
   // iPadOS 13+ masquerades as desktop Safari; a real Mac never reports touch points.
   if (/iPad/i.test(ua)) return 'ios';
-  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1) return 'ios';
+  if (/Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 1)
+    return 'ios';
   if (/Android/i.test(ua)) return 'android';
   return 'desktop';
 }
@@ -244,7 +245,9 @@ async function micBlocker(): Promise<string | null> {
   // this returns null and the caller makes the real request. Reporting the state as a message was
   // the defect: it told the person their device had refused before the device had been asked.
   try {
-    const p = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+    const p = await navigator.permissions.query({
+      name: 'microphone' as PermissionName,
+    });
     if (p.state === 'denied') return siteSettingFix();
     return null;
   } catch {
@@ -292,17 +295,22 @@ async function refusalDetail(e: any, msg: string): Promise<string> {
   // Raised by useVoiceRouter (MicRefusal), already worded for the person.
   if (name === 'MicRefusal') return msg;
 
-  const denied = /permission|denied|notallowed|security/i.test(name) || /permission|denied|notallowed/i.test(msg);
+  const denied =
+    /permission|denied|notallowed|security/i.test(name) ||
+    /permission|denied|notallowed/i.test(msg);
   if (denied) return micRefusalDetail();
 
   const absent =
-    /notfound|devicesnotfound|notreadable|trackstart/i.test(name) || /notfound|no.*device/i.test(msg);
+    /notfound|devicesnotfound|notreadable|trackstart/i.test(name) ||
+    /notfound|no.*device/i.test(msg);
   if (absent) {
     return 'no microphone found — check this device has one and that no other app is holding it, then tap again';
   }
 
   // Nothing recognisable: name the block without pasting the engine's text over the person's screen.
-  return `microphone blocked: the browser would not give this page a microphone (${name || 'unknown error'}). Tap the mic again to be asked.`;
+  return `microphone blocked: the browser would not give this page a microphone (${
+    name || 'unknown error'
+  }). Tap the mic again to be asked.`;
 }
 
 /**
@@ -317,6 +325,40 @@ export interface ClauseSink {
 let clauseSink: ClauseSink | null = null;
 export function setClauseSink(sink: ClauseSink | null): void {
   clauseSink = sink;
+}
+
+/**
+ * A clause the estate could not voice is spoken by the device's own voice, never left silent.
+ *
+ * Measured 2026-10-09 on the live pod: Groq's Orpheus allows 100 requests a day, and once they
+ * were spent every `/voice/say` answered after ~5s with no audio (the pod has no local engine),
+ * so the founder saw the answer and heard nothing. Resolves when the utterance ends, so the
+ * clauses after it stay in order; resolves at once where the browser has no voice.
+ */
+export function speakWithDevice(
+  text: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  const synth =
+    typeof window !== 'undefined' ? window.speechSynthesis : undefined;
+  if (
+    !synth ||
+    typeof SpeechSynthesisUtterance === 'undefined' ||
+    signal?.aborted
+  ) {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    const u = new SpeechSynthesisUtterance(text);
+    const done = () => resolve();
+    u.onend = done;
+    u.onerror = done;
+    signal?.addEventListener('abort', () => {
+      synth.cancel();
+      done();
+    });
+    synth.speak(u);
+  });
 }
 
 /**
@@ -335,7 +377,7 @@ const AUTHOR = 'founder';
 let libsPromise: Promise<{ ok: boolean; missing: string[] }> | null = null;
 
 function loadScript(src: string): Promise<boolean> {
-  return new Promise((resolve) => {
+  return new Promise(resolve => {
     const s = document.createElement('script');
     s.src = src;
     s.onload = () => resolve(true);
@@ -354,7 +396,10 @@ export function ensureVoiceLibs(): Promise<{ ok: boolean; missing: string[] }> {
     }
     // The VAD bundle reads `self.ort` as it executes, so it must load AFTER ort exists -- and it
     // must not be attempted at all if ort failed, or the error names the wrong library.
-    if (missing.length === 0 && (typeof w.vad === 'undefined' || !w.vad.MicVAD)) {
+    if (
+      missing.length === 0 &&
+      (typeof w.vad === 'undefined' || !w.vad.MicVAD)
+    ) {
       await loadScript(`${VOICE_ASSETS}vad.bundle.min.js?retry=${Date.now()}`);
     }
     if (typeof w.ort === 'undefined') missing.push('ort');
@@ -372,7 +417,12 @@ export function ensureVoiceLibs(): Promise<{ ok: boolean; missing: string[] }> {
   return libsPromise;
 }
 
-export type EstateVoiceState = 'off' | 'listening' | 'thinking' | 'speaking' | 'error';
+export type EstateVoiceState =
+  | 'off'
+  | 'listening'
+  | 'thinking'
+  | 'speaking'
+  | 'error';
 
 export interface EstateVoice {
   state: EstateVoiceState;
@@ -402,7 +452,12 @@ export interface EstateVoice {
   /** The friction summary: empty rate, medians, per-voice speed. */
   voiceStats: any;
   /** The catalogue, for a picker. */
-  catalogue: { cloud: string[]; say: string[]; kokoro: string[]; piper: string[] };
+  catalogue: {
+    cloud: string[];
+    say: string[];
+    kokoro: string[];
+    piper: string[];
+  };
   /** The live engine and voice. */
   current: { engine: string; voice: string };
   selectVoice: (engine: string, voice: string) => Promise<string>;
@@ -423,13 +478,20 @@ export function useEstateVoice(): EstateVoice {
   const [heard, setHeard] = useState('');
   const [reply, setReply] = useState('');
   const [detail, setDetail] = useState('');
-  const [micRecoveryUrl, setMicRecoveryUrl] = useState<string | undefined>(undefined);
+  const [micRecoveryUrl, setMicRecoveryUrl] = useState<string | undefined>(
+    undefined,
+  );
   const [available, setAvailable] = useState(false);
   // `piper` WAS MISSING FROM THIS SHAPE, and the picker renders from it -- so the three Piper
   // voices the service reports were dropped on arrival and the group showed "0 voices" while the
   // engine was IN FACT RUNNING PIPER. A type that does not match what the server sends is not a
   // type error; it is a silent truncation, and only the picker's optgroup label revealed it.
-  const [catalogue, setCatalogue] = useState<{ cloud: string[]; say: string[]; kokoro: string[]; piper: string[] }>({
+  const [catalogue, setCatalogue] = useState<{
+    cloud: string[];
+    say: string[];
+    kokoro: string[];
+    piper: string[];
+  }>({
     cloud: [],
     say: [],
     kokoro: [],
@@ -467,7 +529,7 @@ export function useEstateVoice(): EstateVoice {
   const silence = useCallback(() => {
     const c = ctxRef.current;
     if (!c) return;
-    c.playing.forEach((s) => {
+    c.playing.forEach(s => {
       try {
         s.stop();
       } catch {
@@ -496,12 +558,13 @@ export function useEstateVoice(): EstateVoice {
     const src = c.audio.createBufferSource();
     src.buffer = buf;
     src.connect(c.audio.destination);
-    if (c.nextStart < c.audio.currentTime + 0.02) c.nextStart = c.audio.currentTime + 0.02;
+    if (c.nextStart < c.audio.currentTime + 0.02)
+      c.nextStart = c.audio.currentTime + 0.02;
     src.start(c.nextStart);
     c.nextStart += buf.duration;
     c.playing.push(src);
     src.onended = () => {
-      c.playing = c.playing.filter((s) => s !== src);
+      c.playing = c.playing.filter(s => s !== src);
     };
     setState('speaking');
   }, []);
@@ -562,8 +625,8 @@ export function useEstateVoice(): EstateVoice {
         body: JSON.stringify({ text }),
         signal,
       });
-      if (!res.ok) return false;
-      play(await res.arrayBuffer());
+      if (!res.ok) await speakWithDevice(text, signal);
+      else play(await res.arrayBuffer());
       return true;
     },
     [fetchApi, play],
@@ -602,9 +665,12 @@ export function useEstateVoice(): EstateVoice {
         };
         borrowedRef.current = true;
       }
-      void sayClause(text).then((ok) => {
-        if (!ok) setDetail('could not speak that — the voice service refused it');
-      }).catch((e: any) => setDetail(`could not speak: ${e.message || e}`));
+      void sayClause(text)
+        .then(ok => {
+          if (!ok)
+            setDetail('could not speak that — the voice service refused it');
+        })
+        .catch((e: any) => setDetail(`could not speak: ${e.message || e}`));
     },
     [sayClause],
   );
@@ -687,7 +753,10 @@ export function useEstateVoice(): EstateVoice {
       try {
         const res = await fetchApi.fetch(`${FLEETVIEW}/voice/stream`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'text/event-stream',
+          },
           body: JSON.stringify({ question, history: historyRef.current }),
           signal: turn.signal,
         });
@@ -725,7 +794,7 @@ export function useEstateVoice(): EstateVoice {
             }
             if (event === 'delta' && payload.text) {
               if (firstClauseAt === null) firstClauseAt = performance.now();
-              setReply((p) => (p ? `${p} ${payload.text}` : payload.text));
+              setReply(p => (p ? `${p} ${payload.text}` : payload.text));
               spoken.push(payload.text);
               clauses += 1;
               // SPEAK EACH CLAUSE AS IT LANDS, and await it so the audio is scheduled in the
@@ -741,16 +810,17 @@ export function useEstateVoice(): EstateVoice {
                   body: JSON.stringify({ text: payload.text }),
                   signal: turn.signal,
                 })
-                .then((r) => (r.ok ? r.arrayBuffer() : null))
+                .then(r => (r.ok ? r.arrayBuffer() : null))
                 .catch(() => null); // one clause that cannot be spoken must not end the turn
               chain = chain.then(async () => {
                 const buf = await audio;
                 ttsSeconds += (performance.now() - ttsStarted) / 1000;
-                if (buf && !turn.signal.aborted) {
-                  if (clauses === 1 || c.playing.length === 0) setState('speaking');
-                  if (clauseSink) clauseSink.speak(buf, clauseText);
-                  else play(buf);
-                }
+                if (turn.signal.aborted) return;
+                if (clauses === 1 || c.playing.length === 0)
+                  setState('speaking');
+                if (!buf) await speakWithDevice(clauseText, turn.signal);
+                else if (clauseSink) clauseSink.speak(buf, clauseText);
+                else play(buf);
               });
             }
           }
@@ -783,7 +853,9 @@ export function useEstateVoice(): EstateVoice {
       setDetail(
         firstClauseSeconds === null
           ? `answered in ${totalSeconds.toFixed(1)}s`
-          : `first words ${firstClauseSeconds.toFixed(1)}s · reply ${totalSeconds.toFixed(1)}s`,
+          : `first words ${firstClauseSeconds.toFixed(
+              1,
+            )}s · reply ${totalSeconds.toFixed(1)}s`,
       );
 
       // CLOSE THE TURN: the friction log gets the numbers measured HERE, at the speaker, which is
@@ -828,12 +900,21 @@ export function useEstateVoice(): EstateVoice {
     // into a real Safari tab, and a stale link pointing at an app that has already fixed itself
     // is worse than no link.
     setMicRecoveryUrl(undefined);
+    // iOS Safari speaks only from a tap: an empty utterance here, inside the tap, lets
+    // `speakWithDevice` voice a clause later when the estate's own voice cannot.
+    try {
+      window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''));
+    } catch {
+      /* no device voice; the estate's own still plays */
+    }
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
     if (!libs.ok) {
       setState('error');
       setDetail(
-        `voice libraries missing (${libs.missing.join(', ')}) — ${VOICE_ASSETS} is not serving them`,
+        `voice libraries missing (${libs.missing.join(
+          ', ',
+        )}) — ${VOICE_ASSETS} is not serving them`,
       );
       return;
     }
@@ -854,7 +935,13 @@ export function useEstateVoice(): EstateVoice {
       return;
     }
 
-    const ctx: Ctx = { audio, vad: null, nextStart: 0, playing: [], turn: null };
+    const ctx: Ctx = {
+      audio,
+      vad: null,
+      nextStart: 0,
+      playing: [],
+      turn: null,
+    };
     ctxRef.current = ctx;
 
     try {
@@ -881,11 +968,16 @@ export function useEstateVoice(): EstateVoice {
             o.frequency.value = 880;
             g.gain.setValueAtTime(0.0001, audio.currentTime);
             g.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.01);
-            g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.07);
+            g.gain.exponentialRampToValueAtTime(
+              0.0001,
+              audio.currentTime + 0.07,
+            );
             o.connect(g).connect(audio.destination);
             o.start();
             o.stop(audio.currentTime + 0.08);
-          } catch { /* the tone is a courtesy; the turn does not depend on it */ }
+          } catch {
+            /* the tone is a courtesy; the turn does not depend on it */
+          }
           setState('thinking');
           setDetail('heard you — working…');
           void runTurn(buf.buffer as ArrayBuffer);
@@ -905,9 +997,16 @@ export function useEstateVoice(): EstateVoice {
       // it, resume it on the person's next touch, which is a gesture it cannot refuse.
       const vadAudio: AudioContext | undefined = vad.audioContext;
       if (vadAudio && vadAudio.state !== 'running') {
-        try { await vadAudio.resume(); } catch { /* the touch below is the fallback */ }
+        try {
+          await vadAudio.resume();
+        } catch {
+          /* the touch below is the fallback */
+        }
         if ((vadAudio.state as AudioContextState) !== 'running') {
-          const unlock = () => { void vadAudio.resume(); void audio.resume(); };
+          const unlock = () => {
+            void vadAudio.resume();
+            void audio.resume();
+          };
           window.addEventListener('touchend', unlock, { once: true });
           window.addEventListener('pointerup', unlock, { once: true });
         }
@@ -959,11 +1058,11 @@ export function useEstateVoice(): EstateVoice {
         const [l, s2] = await Promise.all([
           fetchApi
             .fetch(`${FLEETVIEW}/voice/log?limit=40`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then(r => (r.ok ? r.json() : null))
             .catch(() => null),
           fetchApi
             .fetch(`${FLEETVIEW}/voice/log/summary`)
-            .then((r) => (r.ok ? r.json() : null))
+            .then(r => (r.ok ? r.json() : null))
             .catch(() => null),
         ]);
         if (cancelled) return;
@@ -987,10 +1086,15 @@ export function useEstateVoice(): EstateVoice {
     let cancelled = false;
     fetchApi
       .fetch(`${FLEETVIEW}/voice/voices`)
-      .then((r) => r.json())
-      .then((d) => {
+      .then(r => r.json())
+      .then(d => {
         if (cancelled) return;
-        setCatalogue({ cloud: d.cloud || [], say: d.say || [], kokoro: d.kokoro || [], piper: d.piper || [] });
+        setCatalogue({
+          cloud: d.cloud || [],
+          say: d.say || [],
+          kokoro: d.kokoro || [],
+          piper: d.piper || [],
+        });
         setAvailable(true);
         setCurrent({
           engine: d.current?.engine || 'cloud',
