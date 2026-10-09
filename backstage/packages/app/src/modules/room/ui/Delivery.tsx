@@ -204,7 +204,7 @@ export default function Delivery(): JSX.Element | null {
   });
 
   return (
-    <div className="absolute bottom-24 right-6 z-40 font-mono text-[11px]">
+    <div data-testid="delivery" className="absolute bottom-24 right-6 z-40 font-mono text-[11px]">
       <button
         type="button"
         onClick={() => setOpen(prev => !prev)}

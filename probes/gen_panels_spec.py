@@ -11,6 +11,7 @@ Exit 1 if any panel lacks a discoverable signature (that is a gap, and gaps are 
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -113,6 +114,13 @@ def _face_block() -> str:
         (Path(__file__).resolve().parent / "voice.py").read_text(),
         "the fleet-status utterance in probes/voice.py",
     )
+    # The mic control on each page that talks: read from the source, so a renamed control
+    # fails generation instead of a test that clicks nothing.
+    fleet = _git("show", f"HEAD:{_MODULES}/room/ui/FleetReactorApp.tsx")
+    talking_pages = [
+        ("/face", grab(r'data-testid="(face-mic)"', face, "the /face mic control")),
+        ("/fleet", grab(r'data-testid="(fleet-mic)"', fleet, "the /fleet mic control")),
+    ]
 
     return f"""
 test.describe('/face: the voice path a founder actually takes — mic included', () => {{
@@ -156,33 +164,75 @@ test.describe('/face: the voice path a founder actually takes — mic included',
     }} finally {{ await b.close(); }}
   }});
 
-  test('real speech through the page: /face hears the utterance', async () => {{
-    test.setTimeout(180_000);
-    // The same WAV L4 grades server-side, driven through the fake MICROPHONE into the
-    // real page: mic -> VAD -> POST /voice/hear -> transcript -> rendered as "You: …".
-    const wav = [process.env.SURFACES_VOICE_WAV, 'probes/fixtures/fleet-status.wav',
-                 '../../../probes/fixtures/fleet-status.wav', '../../probes/fixtures/fleet-status.wav']
-      .find(p => p && fs.existsSync(p));
-    expect(wav, 'voice fixture not found — set SURFACES_VOICE_WAV').toBeTruthy();
-    if (!wav) return;
-    const {{ b, page }} = await launchFace([`--use-file-for-fake-audio-capture=${{wav}}`, '--use-fake-ui-for-media-stream']);
-    const errors: string[] = [];
-    page.on('pageerror', e => errors.push(e.message));
-    try {{
-      await page.goto('/face', {{ waitUntil: 'commit' }});
-      if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
-      const btn = page.getByRole('button', {{ name: BTN }});
-      await expect(btn).toBeEnabled({{ timeout: 60_000 }});
-      await btn.click();
-      await expect(page.locator('body')).toContainText('You:', {{ timeout: 90_000 }});
-      await expect(page.locator('body')).toContainText({utter!r}, {{ timeout: 30_000 }});
-      const body = await page.locator('body').innerText();
-      expect(body, 'microphone blocked on the live surface').not.toContain('microphone blocked');
-      expect(body).not.toContain(UNAVAILABLE);
-      expect(body).not.toContain('voice libraries missing');
-      expect(errors, 'uncaught page errors on /face').toEqual([]);
-    }} finally {{ await b.close(); }}
-  }});
+  // A WHOLE SPOKEN TURN, IN A REAL BROWSER, ON EVERY PAGE THAT TALKS. The same WAV L4 grades
+  // server-side, driven through the fake MICROPHONE into the real page:
+  //   mic -> VAD -> POST /voice/hear (transcript rendered) -> POST /voice/stream (the answer)
+  //   -> POST /voice/say (the answer spoken).
+  // Stopping at the transcript is how 2026-10-08 slipped through: hear can pass while the
+  // answer and the speech fail behind it, so every leg's status is asserted, not just the text.
+  for (const [route, micTestId] of {json.dumps(talking_pages)} as [string, string][]) {{
+    test(`real speech through the page: ${{route}} hears, answers and speaks`, async () => {{
+      test.setTimeout(240_000);
+      const wav = [process.env.SURFACES_VOICE_WAV, 'probes/fixtures/fleet-status.wav',
+                   '../../../probes/fixtures/fleet-status.wav', '../../probes/fixtures/fleet-status.wav']
+        .find(p => p && fs.existsSync(p));
+      expect(wav, 'voice fixture not found — set SURFACES_VOICE_WAV').toBeTruthy();
+      if (!wav) return;
+      // --use-fake-device-for-media-stream is what makes Chrome read the file at all: without it
+      // the file flag is ignored and the real microphone opens (none on a runner), so the page
+      // listened to silence and /voice/hear was never called -- measured 2026-10-08.
+      const {{ b, page }} = await launchFace([
+        '--use-fake-device-for-media-stream',
+        `--use-file-for-fake-audio-capture=${{wav}}`,
+        '--use-fake-ui-for-media-stream',
+      ]);
+      // Chrome's audio processing turns the fake FILE device to silence: with echoCancellation,
+      // noiseSuppression and autoGainControl on (the VAD library's default request) the page's
+      // stream peaked at 0.0000 while the same file unprocessed peaked at 1.02 -- measured
+      // 2026-10-08, the VAD never fired. Processing a file is meaningless, so it is switched off
+      // here and only here; everything after the mic (VAD, hear, stream, say) is the real page.
+      // What this does NOT exercise: Chrome's echo canceller on a real microphone.
+      await page.addInitScript(() => {{
+        const md = navigator.mediaDevices;
+        const gum = md.getUserMedia.bind(md);
+        md.getUserMedia = (c?: MediaStreamConstraints) => {{
+          const a = c && typeof c.audio === 'object' ? c.audio : {{}};
+          return gum({{ ...c, audio: {{ ...a, echoCancellation: false, noiseSuppression: false, autoGainControl: false }} }});
+        }};
+      }});
+      const errors: string[] = [];
+      page.on('pageerror', e => errors.push(e.message));
+      // Every status seen per leg; a later success cannot paint over an earlier failure.
+      const legs: Record<string, number[]> = {{ hear: [], stream: [], say: [] }};
+      page.on('response', r => {{
+        const m = r.url().match(/\\/voice\\/(hear|stream|say)(?:[?#]|$)/);
+        if (m) legs[m[1]].push(r.status());
+      }});
+      try {{
+        await page.goto(route, {{ waitUntil: 'commit' }});
+        if (!BEARER) await page.getByRole('button', {{ name: 'Enter' }}).click();
+        const mic = page.getByTestId(micTestId);
+        await expect(mic, `${{route}} mic control`).toBeVisible({{ timeout: 90_000 }});
+        await mic.click();
+        // On failure, name the leg that broke: a transcript that never renders is a 500 on
+        // hear far more often than a rendering bug, and the statuses say which.
+        const heard = await expect(page.locator('body'))
+          .toContainText(new RegExp({utter!r}, 'i'), {{ timeout: 90_000 }})
+          .then(() => true, () => false);
+        expect(heard, `${{route}} never rendered the heard words; voice statuses ${{JSON.stringify(legs)}}`).toBe(true);
+        await expect.poll(() => legs.say.length, {{ message: `${{route}} never called /voice/say`, timeout: 90_000 }})
+          .toBeGreaterThan(0);
+        for (const leg of ['hear', 'stream', 'say']) {{
+          expect(legs[leg].length, `${{route}} /voice/${{leg}} was never called`).toBeGreaterThan(0);
+          expect(legs[leg].filter(s => s !== 200), `${{route}} /voice/${{leg}} statuses ${{legs[leg]}}`).toEqual([]);
+        }}
+        const body = await page.locator('body').innerText();
+        expect(body, 'microphone blocked on the live surface').not.toContain('microphone blocked');
+        expect(body).not.toContain('voice libraries missing');
+        expect(errors, `uncaught page errors on ${{route}}`).toEqual([]);
+      }} finally {{ await b.close(); }}
+    }});
+  }}
 }});
 """
 
@@ -351,7 +401,7 @@ test.describe('/fleet-original: the before picture beside the rewrite', () => {{
 }});
 {face_block}""")
     print(
-        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}; /face voice-path tests: 2",
+        f"// panels covered: {len(entries)}; unreachable (wiring gap, spec goes red): {unreachable}; voice-path tests: 3 (/face listening; /face and /fleet full spoken turn)",
         file=sys.stderr,
     )
     return 0
