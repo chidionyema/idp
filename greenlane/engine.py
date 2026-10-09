@@ -131,6 +131,9 @@ class Backend(Protocol):
     ) -> bool: ...  # main's own required checks failed at sha
     def foreign_prs(self) -> list[dict]: ...  # open PRs the engine did not raise
     def relane(self, pr: dict) -> None: ...  # close it, keep the branch as a lane
+    def unclaimed(
+        self, head: str, base: str
+    ) -> str: ...  # why head may not land on a claim; "" if it may or cannot be judged
 
 
 class Engine:
@@ -311,21 +314,44 @@ class Engine:
         if names:
             self.s.queued.insert(0, names)
 
+    def _held(self, lane: Lane, base: str) -> bool:
+        """A lane that does not land on a live claim waits outside the batch (idp#5612).
+
+        claim-gate in ci-success refuses it anyway, but only after the batch has run: PR #5606
+        spent b2181 that way, and its batch-mates waited on the verdict. It stays PENDING, so
+        the CLAIM comment that fixes it is enough -- the next tick admits it, no re-push. The
+        reason is reported once, not every tick.
+        """
+        why = self.b.unclaimed(lane.head, base)
+        if not why:
+            return False
+        if lane.reason != why:
+            lane.reason = why
+            self.b.report(lane.name, lane.head, RED, why)
+        return True
+
     def _start_batch(self) -> None:
+        base = self.b.main()
         if self.s.queued:
-            names = self.s.queued.pop(0)
+            names = self.s.queued.pop(
+                0
+            )  # bisection halves were admitted with their batch
         else:
             pend = sorted(
                 (l for l in self.s.lanes.values() if l.status == PENDING),
                 key=lambda l: l.seq,
             )
-            names = [l.name for l in pend[: self.batch_size]]
+            names = []
+            for l in pend:
+                if len(names) == self.batch_size:
+                    break
+                if not self._held(l, base):
+                    names.append(l.name)
         names = [
             n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
         ]
         if not names:
             return
-        base = self.b.main()
         tip, members = base, []
         for n in names:
             lane = self.s.lanes[n]

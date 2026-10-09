@@ -58,6 +58,9 @@ class Backend:
     def foreign_prs(self):
         return []
 
+    def unclaimed(self, head, base):
+        return ""
+
     def relane(self, pr):
         pass
 
