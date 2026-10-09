@@ -148,7 +148,7 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         run: yarn playwright install --with-deps webkit chromium
-      - name: a phone is served the app, and reaches the microphone or names the refusal
+      - name: a phone is served the app, reaches the microphone, and a spoken question is heard and answered
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         env:
