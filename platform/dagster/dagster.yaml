@@ -220,6 +220,15 @@ spec:
               cpu: 250m
               memory: 1Gi
           runK8sConfig:
+            # crew#820 / class defect 2026-10-02: a failed one-shot copy Job
+            # (`estate-db-copy-dagster-r3`) sat in the namespace until a hand delete, blocking
+            # Flux and the next run. Every Job the launcher spawns takes this spec, so a Failed
+            # or Complete Job is collected by Kubernetes a minute after it ends. 60 is below the
+            # run coordinator's queuedRunCooldownSeconds (chart default 120), so a retry does not
+            # race the collector. The chart reads it here and nowhere else: k8sRunLauncher has
+            # additionalProperties: false, so a `jobSpec:` beside runK8sConfig fails the upgrade.
+            jobSpecConfig:
+              ttlSecondsAfterFinished: 60
             podSpecConfig:
               securityContext:
                 runAsNonRoot: true
