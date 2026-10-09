@@ -333,8 +333,27 @@ class GitHubBackend:
             )
             shutil.rmtree(wt, ignore_errors=True)
 
+    # Refs per delete push: one push of 1,680 `:refs/heads/queue/...` deletions is one ref update
+    # transaction GitHub may refuse whole; a chunk that fails leaves the rest to the next tick.
+    QUEUE_DELETE_CHUNK = 200
+
     def push_candidate(self, batch_id: str, tip: str) -> None:
         self.git("push", "-q", "-f", "origin", f"{tip}:refs/heads/queue/{batch_id}")
+        # Nothing deleted a finished candidate (2026-10-09, #5603): 1,680 queue/* refs, all under
+        # the branch archive's 14 days. The engine holds one batch at a time, so once this one is
+        # pushed every other queue ref is finished -- a landed batch is on main, a red one's work
+        # is still on its lanes. The first tick after this lands clears the backlog.
+        stale = [
+            ref
+            for line in self.git(
+                "ls-remote", "--heads", "origin", "refs/heads/queue/*"
+            ).splitlines()
+            for ref in line.split()[1:]
+            if ref != f"refs/heads/queue/{batch_id}"
+        ]
+        for i in range(0, len(stale), self.QUEUE_DELETE_CHUNK):
+            chunk = stale[i : i + self.QUEUE_DELETE_CHUNK]
+            self.git("push", "-q", "origin", *[f":{ref}" for ref in chunk], check=False)
 
     def checks(self, tip: str) -> tuple[str, str]:
         # filter=latest: one run per check name, the newest, so a re-run supersedes its predecessor

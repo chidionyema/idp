@@ -486,6 +486,28 @@ def _with_origin(repo: Path, bare: Path) -> None:
     _git(repo, "fetch", "-q", "origin")
 
 
+def test_a_new_candidate_deletes_every_finished_queue_branch(
+    repo, tmp_path, monkeypatch
+):
+    # 2026-10-09, #5603: 1,680 queue/* refs, because nothing deleted a finished candidate.
+    bare = tmp_path / "origin.git"
+    _with_origin(repo, bare)
+    for n in range(1, 6):
+        _git(repo, "push", "-q", "origin", f"main:refs/heads/queue/b{n}")
+    _git(repo, "push", "-q", "origin", "main:refs/heads/lane/keep")
+    b = Recorded({})
+    monkeypatch.setattr(
+        b, "QUEUE_DELETE_CHUNK", 2
+    )  # the backlog goes in several pushes
+    b.push_candidate("b6", _git(repo, "rev-parse", "main"))
+    heads = _git(bare, "for-each-ref", "--format=%(refname)", "refs/heads").split()
+    assert sorted(heads) == [
+        "refs/heads/lane/keep",
+        "refs/heads/main",
+        "refs/heads/queue/b6",
+    ]
+
+
 def _write_state(repo: Path, bare: Path, landed: int) -> str:
     """A state commit on `bare`'s refs/greenlane/state, as save_state_text() would leave it."""
     blob = subprocess.run(
