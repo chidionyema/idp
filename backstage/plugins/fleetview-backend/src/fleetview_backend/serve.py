@@ -62,11 +62,22 @@ async def lifespan(app: FastAPI):
         from fleetview_backend import key_sync
 
         asyncio.create_task(key_sync.publish_alerts(nats_url))
+        # The outbox (steer intents from the browser, signed actions from the router's
+        # action_ledger) only reaches the bus if this worker runs. Nothing started it before
+        # 2026-09-29: ~/.estate/outbox.db stayed 0 bytes and every row that would have carried
+        # an event to the Fleet director never left this process (crew#983).
+        from fleetview_backend import outbox
+
+        await outbox.start_worker(nats_url)
     sessions_url = os.environ.get("FLEETVIEW_SESSIONS_URL", "").strip()
     if sessions_url:
         # Warm the voice's fleet snapshot so the first spoken turn does not pay the relay either.
         _refresh_in_background(sessions_url)
     yield
+    if nats_url:
+        from fleetview_backend import outbox
+
+        await outbox.stop_worker()
 
 
 async def _bus_reachable(nats_url: str) -> dict:
