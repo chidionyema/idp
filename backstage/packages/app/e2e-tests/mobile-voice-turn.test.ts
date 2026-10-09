@@ -65,7 +65,10 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
       const speech = await ac.decodeAudioData(bin);
       // 6s of speech in an 8s loop: the VAD needs the silence to call the utterance finished.
       const loop = ac.createBuffer(1, ac.sampleRate * 8, ac.sampleRate);
-      loop.copyToChannel(speech.getChannelData(0).slice(0, ac.sampleRate * 6), 0);
+      loop.copyToChannel(
+        speech.getChannelData(0).slice(0, ac.sampleRate * 6),
+        0,
+      );
       const src = ac.createBufferSource();
       src.buffer = loop;
       src.loop = true;
@@ -83,7 +86,9 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
       console.log(`[page ${m.type()}] ${m.text().slice(0, 300)}`);
     }
   });
-  page.on('pageerror', e => console.log(`[page error] ${e.message.slice(0, 300)}`));
+  page.on('pageerror', e =>
+    console.log(`[page error] ${e.message.slice(0, 300)}`),
+  );
 
   const answered = page.waitForResponse(
     r => /\/voice\/stream/.test(r.url()) && r.request().method() === 'POST',
@@ -94,10 +99,14 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
   await page.getByTestId('fleet-mic').tap();
 
   // Heard: the page renders the final transcript of the utterance.
-  await expect(page.getByText(/current status of the fleet/i).first()).toBeVisible({
+  await expect(
+    page.getByText(/current status of the fleet/i).first(),
+  ).toBeVisible({
     timeout: 90_000,
   });
   // Answered: the brain's reply streams back and the page renders it with its timing.
   expect((await answered).status()).toBe(200);
-  await expect(page.getByText(/reply \d+(\.\d+)?s/).first()).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByText(/reply \d+(\.\d+)?s/).first()).toBeVisible({
+    timeout: 120_000,
+  });
 });
