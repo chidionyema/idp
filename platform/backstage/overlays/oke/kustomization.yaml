@@ -46,7 +46,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-14070-7500cb1f19fed1dd6d9ad4257c47216bddf10357 # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-14071-07113748a8c7ad640b171124ede370fb95e0d69c # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
   # arrives qualified from the base, so this entry no longer renames anything; it is kept
@@ -60,7 +60,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-14063-54fd509edbb0c144a7f44625d34177d15637817d # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-14071-07113748a8c7ad640b171124ede370fb95e0d69c # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's PodDisruptionBudget lives in ../../base/catalogue.yaml. This overlay used to
   # declare a second one as a resource, which made kustomize refuse the entire render; it is an
