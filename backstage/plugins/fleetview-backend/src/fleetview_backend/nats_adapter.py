@@ -42,10 +42,12 @@ ESTATE_NEWS_SUBJECTS = ["estate.news.story.>"]
 ESTATE_APPROVALS_NAME = "ESTATE_APPROVALS"
 ESTATE_APPROVALS_SUBJECTS = ["estate.approvals.>"]
 STORY_REPLAY_S = 3600
-# The 15-minute TTL in nanoseconds, matching outbox.py's TTL_S. The drain side expires a row
-# after TTL_S seconds; the stream's max_age is the same span in nanos so the two ends of the
-# pipeline agree on what is stale.
-STREAM_MAX_AGE_NS = 15 * 60 * 1_000_000_000
+# The 15-minute TTL, matching outbox.py's TTL_S, so the two ends of the pipeline agree on what
+# is stale. IN SECONDS: nats-py's StreamConfig.max_age is seconds and it converts to nanos
+# itself. This was nanos once, and nats-py multiplied again to 9e20 -- past int64, so the server
+# refused every add_stream with "invalid JSON" (err_code 10025), ESTATE_AGENT was never created,
+# and every bus publish failed (measured 2026-10-08 via /voice/done).
+STREAM_MAX_AGE_S = 15 * 60
 
 # The retry budget a one-shot publish asks of nats-py. The stock defaults
 # (max_reconnect_attempts=60, reconnect_time_wait=2) multiply to a 120s worst case a single
@@ -70,7 +72,7 @@ async def _ensure_stream_by_name(js, name: str, subjects: list[str]) -> None:
     bus restarting without anyone touching a kubectl command.
     """
     try:
-        await js.add_stream(name=name, subjects=subjects, max_age=STREAM_MAX_AGE_NS)
+        await js.add_stream(name=name, subjects=subjects, max_age=STREAM_MAX_AGE_S)
     except Exception as exc:  # noqa: BLE001 — only the 'already exists' refusal is harmless
         text = str(exc)
         if "already in use" in text or "stream name already in use" in text:
