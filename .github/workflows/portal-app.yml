@@ -129,6 +129,21 @@ jobs:
       # mac13`, from the installer, on the founder's laptop). WebKit is the founder's iPhone engine;
       # Chromium stands in for Android. The step is not skippable -- a silently skipped mobile check
       # is not a check.
+      # Measured 2026-10-09 (run 37898758630, job 113716901325): this job took 12m51s and the
+      # browser install alone -- `yarn playwright install --with-deps webkit chromium` fetching
+      # both engines from scratch -- was 1-3min of that, every single run, cache or no cache,
+      # whether or not the fetched bits had already changed. Same waste crew#639 found in the
+      # embedded-Postgres download (ci.yml:179-184): one slow unconditional fetch with no cache at
+      # all. Keyed on yarn.lock, which pins the resolved playwright version exactly -- a version
+      # bump changes the lockfile, so the key rotates and the next run fetches once and then stays
+      # warm. `--with-deps` still runs apt for the OS libraries every time (not cacheable here),
+      # but that's seconds, not minutes.
+      - name: cache for the browsers a phone runs
+        if: steps.touched.outputs.yes == 'true'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ hashFiles('backstage/yarn.lock') }}
       - name: the browsers a phone runs (WebKit for iPhone, Chromium for Android)
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
