@@ -36,6 +36,11 @@ spec:
                 labels:
                   backstage.io/kubernetes-id: founder-alerts
   interval: 10m
+  # The alert pipeline's probe. Same law and same measurement as kube-prometheus-stack above:
+  # blackbox sat at spec.replicas 0 from 2026-09-26 with the release reading Ready. A hand
+  # scale now lasts at most 10m.
+  driftDetection:
+    mode: enabled
   timeout: 10m
   chart:
     spec:
