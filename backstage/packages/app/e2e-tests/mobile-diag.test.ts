@@ -264,3 +264,7 @@ test.describe('DIAG original verbatim', () => {
           (mic.calls
             .map((c: any) => (c.ok ? 'granted' : c.errName))
             .join(',') || 'none'),
+      );
+    });
+  }
+});
