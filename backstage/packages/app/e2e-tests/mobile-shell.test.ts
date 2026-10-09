@@ -191,6 +191,10 @@ test.describe('mobile microphone reachability', () => {
         }),
       );
       await page.reload({ waitUntil: 'load' });
+      // The reload can land back on the wall: measured in CI 2026-10-09 on WebKit (the iPhone
+      // project), the guest session did not survive it and the page waited 90s on "Enter as a
+      // Guest User" for a control that could not exist yet. Step through again if so.
+      await enterAsGuest(page, testid);
 
       // The mic lives inside the FleetReactor canvas, which mounts after the bundle boots AND after
       // the front door is entered (see above) -- so wait for the control itself, not for the document.
@@ -232,9 +236,14 @@ test.describe('mobile microphone reachability', () => {
             (document.body.innerText || '')
           );
         }, testid);
+        // A call still in flight (ok === null) is not yet a decided state: on WebKit the loop
+        // broke on it and judged its errName before getUserMedia had answered (CI, 2026-10-09).
+        const pending =
+          mic.calls.length > 0 && mic.calls[mic.calls.length - 1].ok === null;
         if (
-          mic.calls.length > 0 ||
-          /microphone|mic|blocked|denied|not-allowed|https/i.test(detail)
+          !pending &&
+          (mic.calls.length > 0 ||
+            /microphone|mic|blocked|denied|not-allowed|https/i.test(detail))
         ) {
           break;
         }
@@ -281,8 +290,7 @@ test.describe('mobile microphone reachability', () => {
       // is the durable contract instead: a tap is either answered by the device or answered in words,
       // and the words are about the microphone. The settings-chore half is asserted as a REFUSAL by
       // the test below, on both descriptors, which is where it belongs.
-      const namedFix =
-        /microphone|mic\b/i.test(detail);
+      const namedFix = /microphone|mic\b/i.test(detail);
       if (mic.calls.length === 0) {
         expect(
           namedFix,
@@ -381,6 +389,10 @@ test.describe('mobile microphone refusal names the device', () => {
         }),
       );
       await page.reload({ waitUntil: 'load' });
+      // The reload can land back on the wall: measured in CI 2026-10-09 on WebKit (the iPhone
+      // project), the guest session did not survive it and the page waited 90s on "Enter as a
+      // Guest User" for a control that could not exist yet. Step through again if so.
+      await enterAsGuest(page, testid);
 
       const micButton = page.getByTestId(testid);
       await expect(
@@ -393,8 +405,8 @@ test.describe('mobile microphone refusal names the device', () => {
       const platform = /iPhone|iPad|iPod/i.test(ua)
         ? 'ios'
         : /Android/i.test(ua)
-          ? 'android'
-          : 'desktop';
+        ? 'android'
+        : 'desktop';
       // A descriptor that reports desktop would make the assertion below meaningless, so it is
       // itself asserted rather than assumed.
       expect(
@@ -445,7 +457,10 @@ test.describe('mobile microphone refusal names the device', () => {
       expect(
         detail,
         `a phone was sent into a settings menu -- a voice surface asks by using the microphone, ` +
-          `it does not send the user into Settings. page said: ${detail.slice(0, 300)}`,
+          `it does not send the user into Settings. page said: ${detail.slice(
+            0,
+            300,
+          )}`,
       ).not.toMatch(/Settings|padlock|chrome:\/\/settings/i);
 
       // It must still SAY something when it cannot reach the device. Silence was the original
