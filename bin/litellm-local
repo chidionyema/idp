@@ -47,7 +47,7 @@ VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT="${LITELLM_LOCAL_PORT:-4001}"   # a slot's agent sets 4001 or 4002; a canary sets its own
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py router_catalog.py lane_registry.py route_table.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py"
 
 live() { curl -sf -m 5 "http://127.0.0.1:${1:-$FRONT_PORT}/health/liveliness" >/dev/null; }
 slot_label() { echo "com.estate.litellm-local-$1"; }
@@ -240,6 +240,9 @@ ls["callbacks"] = ["local_caller_auth.proxy_handler_instance"] + [
 # Laptop only: every exchange spooled for the estate graph (platform/llm/graph_capture.py).
 if "graph_capture.proxy_handler_instance" not in ls["callbacks"]:
     ls["callbacks"].append("graph_capture.proxy_handler_instance")
+# Laptop only: every call signed and chained (platform/llm/action_ledger.py, crew#983).
+if "action_ledger.proxy_handler_instance" not in ls["callbacks"]:
+    ls["callbacks"].append("action_ledger.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 print(f"lanes  dropped {len(dropped)} with no key on this machine")
