@@ -199,13 +199,7 @@ class GitHubBackend:
         ).splitlines():
             sha, ref = line.split()
             name = ref[len("refs/heads/") :]
-            if (
-                subprocess.run(  # noqa: S603 -- fixed argv, no shell
-                    ["git", "merge-base", "--is-ancestor", sha, main],  # noqa: S607
-                    capture_output=True,
-                ).returncode
-                == 0
-            ):
+            if self._landed(sha, main):
                 # already in main: nothing left to prove; the branch is a leftover, not work
                 if name != BOT_LANE:
                     self.git("push", "-q", "origin", f":refs/heads/{name}", check=False)
@@ -222,6 +216,42 @@ class GitHubBackend:
                 continue
             out[name] = sha
         return out
+
+    def _landed(self, sha: str, main: str) -> bool:
+        """Every change on the lane is already on main (idp#5618).
+
+        Ancestry alone used to decide this, but the Greenlane lands by squash, so a lane whose
+        work reached main through ANOTHER lane is never an ancestor of it. rebase() then found
+        nothing to land, the engine read that None as CONFLICT, and the lane was parked as
+        `does not rebase onto main` -- 6 lanes on 2026-10-09, all of their work on main.
+        Either test below is exact, and they catch different shapes: merging the lane into
+        main changes nothing (a lane that drifted and was brought back), or each of its
+        commits is patch-equivalent to one on main (work landed under another sha, whose
+        lines main has since moved on from). The second is not trusted across a merge
+        commit, which `git cherry` skips and whose resolution may carry work of its own.
+        """
+
+        def ok(*args: str) -> subprocess.CompletedProcess:
+            return subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                ["git", *args],
+                capture_output=True,
+                text=True,  # noqa: S607
+            )
+
+        if ok("merge-base", "--is-ancestor", sha, main).returncode == 0:
+            return True
+        merged = ok("merge-tree", "--write-tree", main, sha)
+        if merged.returncode == 0 and merged.stdout.split()[:1] == [
+            self.git("rev-parse", f"{main}^{{tree}}")
+        ]:
+            return True
+        mb = ok("merge-base", main, sha).stdout.strip()
+        if not mb or ok("rev-list", "--merges", f"{mb}..{sha}").stdout.strip():
+            return False
+        cherry = ok("cherry", main, sha, mb)
+        return cherry.returncode == 0 and not any(
+            line.startswith("+") for line in cherry.stdout.splitlines()
+        )
 
     def _image_only(self, sha: str, main: str) -> bool:
         with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False) as f:
