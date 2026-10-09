@@ -42,7 +42,14 @@ async function enterAsGuest(page: Page, testid: string) {
     .or(page.getByTestId(testid))
     .first()
     .waitFor({ state: 'visible', timeout: 60_000 });
-  if (await enter.count()) await enter.first().click({ timeout: 15_000 });
+  if (await enter.count()) {
+    await enter.first().click({ timeout: 15_000 });
+    // Wait for the wall to go. The click starts /api/auth/guest/refresh; a reload before it
+    // returns cancels it, Backstage never stores the guest session, and the reloaded page is the
+    // wall again with no mic behind it. WebKit lost that race every time (#5560, run 37935296460:
+    // "never rendered its mic control"; reproduced locally, where the refresh shows "cancelled").
+    await enter.first().waitFor({ state: 'detached', timeout: 30_000 });
+  }
 }
 
 test.describe('mobile shell', () => {
@@ -232,9 +239,15 @@ test.describe('mobile microphone reachability', () => {
             (document.body.innerText || '')
           );
         }, testid);
+        // A call counts once it has settled. On iPhone WebKit the spy sees the call while
+        // getUserMedia is still pending (ok === null); stopping there read a pending call as a
+        // refusal with no name (run 37935296460, /face).
+        const settled =
+          mic.calls.length > 0 && mic.calls.every((c: any) => c.ok !== null);
         if (
-          mic.calls.length > 0 ||
-          /microphone|mic|blocked|denied|not-allowed|https/i.test(detail)
+          settled ||
+          (mic.calls.length === 0 &&
+            /microphone|mic|blocked|denied|not-allowed|https/i.test(detail))
         ) {
           break;
         }
@@ -257,7 +270,7 @@ test.describe('mobile microphone reachability', () => {
 
       // If the page asked, the refusal (if any) must be named, never blank.
       for (const call of mic.calls) {
-        if (!call.ok) {
+        if (call.ok === false) {
           expect(
             call.errName,
             'a refused mic must carry its error name',
@@ -294,6 +307,10 @@ test.describe('mobile microphone reachability', () => {
         // (a) The refusal must be named, and a grant must carry a live track -- "asked" and "got it"
         // are different facts.
         const call = mic.calls[mic.calls.length - 1];
+        expect(
+          call.ok,
+          'getUserMedia was called and neither granted nor refused within 30s -- a hung mic is the defect too',
+        ).not.toBeNull();
         if (call.ok) {
           expect(
             (call.tracks ?? []).length,
