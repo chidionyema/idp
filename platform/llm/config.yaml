@@ -397,11 +397,18 @@ model_list:
       input_cost_per_token: 0.0000003
     model_info:
       max_input_tokens: 131072
-  # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). An 8B
-  # instruct model on every vendor: a reasoning model spends 48 tokens thinking and answers with nothing.
+  # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). A
+  # non-reasoning instruct model: a reasoning model spends 48 tokens thinking and answers with nothing.
+  # Measured 2026-10-09 from inside the litellm pod: Llama 3.1 8B is retired at all three vendors this
+  # lane used to name (Groq "llama-3.1-8b-instant does not exist", Cerebras and SambaNova no longer
+  # list it), CEREBRAS_API_KEY_3 answers 402 and SAMBANOVA_API_KEY_3 answers 401 on chat. So every
+  # call since the lane was minted fell through to `groq` (gpt-oss-120b, a reasoning model) -- the
+  # newsroom key's ~1,260 calls 2026-10-03..09 were all answered there, none by narrate. Both rows below
+  # answered three anchor prompts in one sentence, 15-24 tokens, finish=stop, 0.08-0.58 s. Groq meters
+  # per model, so neither row shares the quota of `groq`/`fast` (gpt-oss).
   - model_name: narrate
     litellm_params:
-      model: openai/llama-3.1-8b-instant
+      model: openai/qwen/qwen3.8-27b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 4
@@ -411,24 +418,14 @@ model_list:
       max_input_tokens: 131072
   - model_name: narrate
     litellm_params:
-      model: openai/llama3.1-8b
-      api_base: https://api.cerebras.ai/v1
-      api_key: os.environ/CEREBRAS_API_KEY_3
+      model: openai/allam-2-7b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
       timeout: 4
       max_tokens: 48
       rpm: 12
     model_info:
-      max_input_tokens: 65536
-  - model_name: narrate
-    litellm_params:
-      model: openai/Meta-Llama-3.1-8B-Instruct
-      api_base: https://api.sambanova.ai/v1
-      api_key: os.environ/SAMBANOVA_API_KEY_3
-      timeout: 4
-      max_tokens: 48
-      rpm: 12
-    model_info:
-      max_input_tokens: 131072
+      max_input_tokens: 4096
   - model_name: voice-asr
     litellm_params:
       model: groq/whisper-large-v3-turbo
@@ -588,40 +585,47 @@ model_list:
       api_key: os.environ/GEMINI_API_KEY
       timeout: 300
 
-  # THE EMBED LANE, and the only one, as of 2026-10-11. Founder, verbatim:
-  # "we don't use openrouter or gemini. cohere should be in vault and bitwarden
-  # secrets manager", and "we have minimax also" -- for chat MiniMax is the
-  # default lane; for embeddings it has no door (measured 2026-10-11 from
-  # inside the litellm pod: OpenAI shape answers "missing required parameter
-  # texts", native {texts:} shape answers 2013 invalid params). Every other
-  # hop was deleted the same day, each for a measured reason:
+  # THE EMBED LANE, moved here from cohere on 2026-10-09. The cohere row (embed-v4.0) was
+  # the only hop and its key is a trial key: every call answered "You are using a Trial key,
+  # which is limited to 1000 API calls / month", and in the three days to 2026-10-09 all
+  # ~8,100 embed calls failed (agent-workforce 4,395, science 3,690, otto 29, kernel 12).
+  # MiniMax, the default chat lane, has no embeddings door (measured 2026-10-11 inside the
+  # litellm pod: OpenAI shape "missing required parameter texts", native {texts:} 2013
+  # invalid params); openrouter and gemini are closed for embeddings by the founder and
+  # out of credit besides. This key was already mounted and already paid for nothing.
   #
-  #   openrouter/openai/text-embedding-3-small  402 "Prompt tokens limit
-  #                                               exceeded: 2 > 0" -- zero
-  #                                               credits, and the founder
-  #                                               closed the vendor for
-  #                                               embeddings.
-  #   gemini/gemini-embedding-001                402 "prepayment credits
-  #                                               exhausted" (and the id is
-  #                                               retired, 404)
-  #   gemini/text-embedding-004                  404 "no longer supported"
+  # Measured 2026-10-09 from inside the litellm pod, through litellm.Router with exactly
+  # the row below: 1536 floats back. llama-nemotron-embed-vl-1b-v2 takes an output width
+  # (1536 is otto_facts.embedding's; the default is 2048) and, being an asymmetric model,
+  # refuses without input_type ("'input_type' parameter is required for asymmetric
+  # models"). `passage` is what litellm already sent cohere (search_document) for every
+  # caller, query or not. Every other embed id this key lists answered 404 for the
+  # account, and nemotron-3-embed-1b takes no width but 2048.
   #
-  # The key is already wired: Bitwarden Secrets Manager -> human-vault-bridge
-  # ExternalSecret `human-cohere` (synced True) -> mounted at
-  # /run/secrets/human/cohere -> exported by basename as COHERE_API_KEY. The
-  # value it carries TODAY is a trial key -- measured live, every call answers
-  # "You are using a Trial key, which is limited to 1000 API calls / month".
-  # So the lane's one remaining fact is a key fact, not a config fact: a
-  # production Cohere key dropped into Secrets Manager serves within a minute
-  # (bridge sync -> Reloader restart -> no PR, no deploy), which is the
-  # rotation story the mounts in litellm.yaml were built for. Otto's backfill
-  # (otto-memory-store-8, Failed 9h, read=1 written=0) reruns onto it.
+  # NVIDIA meters per model (10,000 requests/day/model), so this row cannot empty the
+  # `nvidia` chat lane's meter, nor it this one's.
   #
-  # embed-v4.0 takes an output width; 1536 is the width otto_facts.embedding
-  # is created at and the width every vector already in the store was written
-  # at (tests/test_the_embed_chain_agrees_on_one_width.py grades any future
-  # second hop on it).
+  # The vectors already in otto_facts (1,152, written 2026-09-05..11) came from
+  # gemini-embedding-001: no later model -- cohere included -- shares their space. The
+  # backfill skips rows already present, so they need their own re-embed run.
   - model_name: embed
+    litellm_params:
+      model: nvidia_nim/nvidia/llama-nemotron-embed-vl-1b-v2
+      api_key: os.environ/NVIDIA_API_KEY
+      dimensions: 1536
+      input_type: passage
+      timeout: 120
+    model_info:
+      mode: embedding
+
+  # embed-cohere: the embed lane until 2026-10-09 (it moved to nvidia, see that vendor's
+  # cluster_lanes for the measurements). Kept as its own named lane so the key still serves
+  # something through the router, and so a production key dropped into Secrets Manager is
+  # usable within a minute (bridge sync -> Reloader restart). Deliberately NOT a fallback
+  # hop of `embed`: a vector from another model is a vector in another space, and the store
+  # would compare it against nemotron vectors and report success while doing it. Switching
+  # `embed` back to cohere means re-embedding the store, in one commit, not a fallback.
+  - model_name: embed-cohere
     litellm_params:
       model: cohere/embed-v4.0
       api_key: os.environ/COHERE_API_KEY

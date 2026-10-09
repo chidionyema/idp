@@ -403,11 +403,18 @@ model_list:
       input_cost_per_token: 0.0000003
     model_info:
       max_input_tokens: 131072
-  # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). An 8B
-  # instruct model on every vendor: a reasoning model spends 48 tokens thinking and answers with nothing.
+  # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). A
+  # non-reasoning instruct model: a reasoning model spends 48 tokens thinking and answers with nothing.
+  # Measured 2026-10-09 from inside the litellm pod: Llama 3.1 8B is retired at all three vendors this
+  # lane used to name (Groq "llama-3.1-8b-instant does not exist", Cerebras and SambaNova no longer
+  # list it), CEREBRAS_API_KEY_3 answers 402 and SAMBANOVA_API_KEY_3 answers 401 on chat. So every
+  # call since the lane was minted fell through to `groq` (gpt-oss-120b, a reasoning model) -- the
+  # newsroom key's ~1,260 calls 2026-10-03..09 were all answered there, none by narrate. Both rows below
+  # answered three anchor prompts in one sentence, 15-24 tokens, finish=stop, 0.08-0.58 s. Groq meters
+  # per model, so neither row shares the quota of `groq`/`fast` (gpt-oss).
   - model_name: narrate
     litellm_params:
-      model: openai/llama-3.1-8b-instant
+      model: openai/qwen/qwen3.8-27b
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
       timeout: 4
@@ -417,24 +424,14 @@ model_list:
       max_input_tokens: 131072
   - model_name: narrate
     litellm_params:
-      model: openai/llama3.1-8b
-      api_base: https://api.cerebras.ai/v1
-      api_key: os.environ/CEREBRAS_API_KEY_3
+      model: openai/allam-2-7b
+      api_base: https://api.groq.com/openai/v1
+      api_key: os.environ/GROQ_API_KEY
       timeout: 4
       max_tokens: 48
       rpm: 12
     model_info:
-      max_input_tokens: 65536
-  - model_name: narrate
-    litellm_params:
-      model: openai/Meta-Llama-3.1-8B-Instruct
-      api_base: https://api.sambanova.ai/v1
-      api_key: os.environ/SAMBANOVA_API_KEY_3
-      timeout: 4
-      max_tokens: 48
-      rpm: 12
-    model_info:
-      max_input_tokens: 131072
+      max_input_tokens: 4096
   - model_name: voice-asr
     litellm_params:
       model: groq/whisper-large-v3-turbo
