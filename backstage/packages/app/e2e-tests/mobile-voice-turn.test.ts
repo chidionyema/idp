@@ -14,10 +14,10 @@
  * `navigator.mediaDevices` instance left WebKit calling the native method, which waited forever on
  * a permission prompt and showed "loading voice libraries…" -- a harness fault that looks exactly
  * like the product bug. The loop matters too: WebKit's VAD missed a single play that began before
- * its worklet loaded, so the speech repeats until the page posts /voice/hear, then stops so it
- * cannot barge in on the answer. Everything after the stream -- the loader, ort, the Silero VAD
- * worklet, /voice/hear, /voice/stream, the transcript and reply on screen -- is the real page
- * against the real backend.
+ * its worklet loaded, so the speech repeats until the page has heard the whole question, then
+ * stops so it cannot barge in on the answer. Everything after the stream -- the loader, ort, the
+ * Silero VAD worklet, /voice/hear, /voice/stream, the transcript and reply on screen -- is the
+ * real page against the real backend.
  *
  * WHAT IT DOES NOT PROVE. A physical iPhone: iOS Safari's real permission prompt, its audio-session
  * rules, and real microphone hardware are not exercised. Nor that sound reaches a speaker -- the
@@ -47,16 +47,29 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
     const fetch0 = window.fetch;
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       const url = String((input as Request)?.url ?? input);
+      // Speak until the page has heard the WHOLE question, then stop so the loop cannot barge in
+      // on the answer. Stopping at the first /voice/hear (as this did) failed the Pixel run of
+      // 2026-10-09: the VAD can cut the utterance at its pause and send "What is the fleet
+      // dashboard?" alone, and with the loop already stopped the rest was never said.
+      const res = fetch0(input, init);
       if (/\/voice\/hear/.test(url)) {
-        sources.forEach(s => {
-          try {
-            s.stop();
-          } catch {
-            /* already stopped */
-          }
-        });
+        res
+          .then(r => r.clone().json())
+          .then(body => {
+            console.log(`voice hear -> ${String(body?.text).slice(0, 200)}`);
+            if (/current status of the fleet/i.test(body?.text ?? '')) {
+              sources.forEach(s => {
+                try {
+                  s.stop();
+                } catch {
+                  /* already stopped */
+                }
+              });
+            }
+          })
+          .catch(() => {});
       }
-      return fetch0(input, init);
+      return res;
     };
     MediaDevices.prototype.getUserMedia = async function () {
       const ac = new AudioContext();
