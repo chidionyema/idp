@@ -65,6 +65,10 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           GH_REPO: ${{ github.repository }}
           GREENLANE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # The lane's `greenlane` commit status is written with the runner's token, which holds
+          # `statuses: write` above; the App token holds no statuses permission (#5576). Passed
+          # to report() alone, never to git, so pushes and merges still start workflows.
+          GREENLANE_STATUS_TOKEN: ${{ github.token }}
           GIT_AUTHOR_NAME: estate-agents[bot]
           GIT_AUTHOR_EMAIL: estate-agents[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: estate-agents[bot]

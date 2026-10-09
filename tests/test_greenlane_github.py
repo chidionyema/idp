@@ -421,6 +421,63 @@ def test_statuses_map_the_engines_verdicts():
         )
 
 
+def test_the_status_is_written_with_the_runners_token_not_the_apps(monkeypatch):
+    """#5576: the App token holds no `statuses` permission, so every status it posted was refused
+    and 0 of 40 landed lanes ever carried one. With a status token, the POST goes out under that
+    token, and gh()'s App-token path is not used for it."""
+    import greenlane.github as gg
+
+    seen = []
+
+    def fake_run(*args, check=True, input=None, env=None):
+        seen.append((args, input, (env or {}).get("GH_TOKEN")))
+        return ""
+
+    monkeypatch.setattr(gg, "_run", fake_run)
+    b = Recorded({}, run_url="https://run", status_token="ghs_runner")
+    b.report("lane/x", "abc", LANDED, "landed in b1")
+    assert b.writes == []  # not through gh(), which carries the App token
+    args, body, token = seen[-1]
+    assert args[:6] == (
+        "gh",
+        "api",
+        "repos/o/idp/statuses/abc",
+        "-X",
+        "POST",
+        "--input",
+    )
+    assert token == "ghs_runner"
+    assert '"context": "greenlane"' in body and '"state": "success"' in body
+
+
+def test_a_refused_status_is_said_not_swallowed(monkeypatch, capsys):
+    """The old `except RuntimeError: pass` hid a permanent 403 for weeks. A refused status still
+    never fails the tick, but it leaves a line in the log."""
+    import greenlane.github as gg
+
+    def refuse(*a, **k):
+        raise RuntimeError("gh api repos/o/idp/statuses/abc: rc=1 HTTP 403")
+
+    monkeypatch.setattr(gg, "_run", refuse)
+    b = Recorded({}, status_token="ghs_runner")
+    b.report("lane/x", "abc", RED, "why")  # must not raise
+    err = capsys.readouterr().err
+    assert "WARN" in err and "lane/x" in err and "403" in err
+
+
+def test_the_tick_hands_report_the_runners_token():
+    """The wiring: greenlane.yml passes github.token as GREENLANE_STATUS_TOKEN, and the tick's
+    backend reads it. Either half missing puts the statuses back on the App token."""
+    wf = yaml.safe_load((ROOT / ".github/workflows/greenlane.yml").read_text())
+    envs = [s.get("env", {}) for j in wf["jobs"].values() for s in j.get("steps", [])]
+    assert any(e.get("GREENLANE_STATUS_TOKEN") == "${{ github.token }}" for e in envs)
+    assert wf["permissions"]["statuses"] == "write"
+    assert (
+        'os.environ.get("GREENLANE_STATUS_TOKEN"'
+        in (ROOT / "bin/idp-greenlane").read_text()
+    )
+
+
 def _with_origin(repo: Path, bare: Path) -> None:
     """`bare` as origin, with the local main already pushed so the checkout is complete."""
     subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
