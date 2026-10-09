@@ -77,6 +77,14 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
     };
   }, WAV);
 
+  // Into the CI log: where a failing run stopped (libraries, VAD, hear, stream) is otherwise a guess.
+  page.on('console', m => {
+    if (/voice|vad|mic|ort|onnx|audio|hear/i.test(m.text())) {
+      console.log(`[page ${m.type()}] ${m.text().slice(0, 300)}`);
+    }
+  });
+  page.on('pageerror', e => console.log(`[page error] ${e.message.slice(0, 300)}`));
+
   const answered = page.waitForResponse(
     r => /\/voice\/stream/.test(r.url()) && r.request().method() === 'POST',
     { timeout: 120_000 },
