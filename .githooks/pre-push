@@ -25,8 +25,58 @@ _no_claude_guard() {
   echo "ok    Layer 0 (no-claude): clean"
 }
 
+# The refs arrive once on stdin; read them once. idp#5611: Layer 0 used to read stdin itself,
+# which left every later `while read` here with nothing. Layer 1 below still reads stdin, so it
+# still sees nothing -- unchanged on purpose: switching it on would start refusing pushes on a
+# non-ASCII rule this very file breaks. That is its own decision.
+push_refs="$(cat)"
+
 # Run Layer 0 inline — exit 1 here exits the whole hook, not a subshell
-if ! _no_claude_guard; then
+if ! _no_claude_guard <<<"$push_refs"; then
+  exit 1
+fi
+
+# idp#5611: a push to a lane is judged by the claim-gate CI runs, before it leaves the laptop.
+# PR #5606 went out by hand (git push + gh pr create, no lane-submit), carried no Claim line,
+# and was first refused in the merge queue, a batch later. A lane commit must carry
+# `Claim: <owner>/<repo>#<n>` and `Agent: <name>`, and the issue a live CLAIM comment.
+# When the gate cannot judge (offline, no gh) the push goes through BLIND; CI is the guarantee.
+_claim_guard() {
+  local root out rc repo base
+  root="$(git rev-parse --show-toplevel)"
+  [ -x "$root/bin/claim-gate" ] || { echo "BLIND claim-gate: not in this checkout"; return 0; }
+  repo="${GITHUB_REPOSITORY:-$(git remote get-url origin 2>/dev/null | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')}"
+  while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in refs/heads/lane/*) ;; *) continue ;; esac
+    [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    base="$(git merge-base origin/main "$local_sha" 2>/dev/null)" || {
+      echo "BLIND claim-gate: no origin/main to judge ${remote_ref#refs/heads/} against"
+      continue
+    }
+    rc=0
+    out="$(GITHUB_REPOSITORY="$repo" "$root/bin/claim-gate" "$base" "$local_sha" 2>&1)" || rc=$?
+    if [ "$rc" = 0 ]; then
+      echo "$out"
+    elif grep -q '^FAIL  claim-gate' <<<"$out"; then
+      grep '^FAIL  claim-gate' <<<"$out" >&2
+      cat <<EOF >&2
+
+pre-push REFUSED: ${remote_ref#refs/heads/} does not land on a live claim (AGENTS.md §5).
+   CI's claim-gate would refuse it in the merge queue, a batch later. Fix:
+     1) a commit on the lane carries:   Claim: $repo#<issue>   and   Agent: <name>
+     2) the issue is open, labelled in-progress, and its newest comment is
+        CLAIM agent=<name> model=<model> paths=<glob,glob> heartbeat=<UTC ISO time>
+        with paths covering every file the lane touches
+   platform/estate/bin/estate-execute lane-submit checks the same before it pushes.
+EOF
+      return 1
+    else
+      echo "BLIND claim-gate could not judge ${remote_ref#refs/heads/}: $(tail -1 <<<"$out")"
+    fi
+  done <<<"$push_refs"
+}
+
+if ! _claim_guard; then
   exit 1
 fi
 
