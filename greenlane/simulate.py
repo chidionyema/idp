@@ -197,6 +197,9 @@ class ChaosBackend:
     def foreign_prs(self) -> list[dict]:
         return [p for p in self.prs if p["raised_by"] != "engine" and p.get("open")]
 
+    def unclaimed(self, head: str, base: str) -> str:
+        return ""  # every simulated lane is claimed; the claim rule is pinned in its own test
+
     def relane(self, pr: dict) -> None:
         pr["open"] = False
         pr["refused"] = True
