@@ -656,7 +656,7 @@ vendors:
         \ whisper-large-v3-turbo transcribed a 3s question in 0.19-0.24s,\n# where\
         \ the laptop's local whisper took 5-20s. Orpheus needs the org admin to accept\
         \ its terms once\n# (console.groq.com playground); until then voice-tts answers\
-        \ 400 and the backend speaks locally.\n# voice: the brain the founder's spoken turn thinks with (fleetview VOICE_ROUTER_MODEL=voice). Measured\n# 2026-09-30 over 331 turns: first token p50 7.6s -- this single Groq deployment also carried the film\n# director and the newsroom anchor (~800 calls/hour at 01:00 with nobody watching), 78% of voice calls\n# (2406/3150) came back 429, and the founder's one-word answer waited in the cooldown. When Groq\n# accepts, first token is 0.34s. So `voice` is a pool of three free vendors reserved for INTERACTIVE\n# turns, and narration rides `narrate` on separate per-model quotas (Groq meters per model, so the\n# 8B narration row can run dry without the founder's row noticing). Both pools are declared here, in\n# one place, so the priority classes read as one unit; the keys are the same vendors' second and\n# third accounts, so a 429 on one class never cools the other. Answers are one or two sentences by\n# the operator's own brief: max_tokens is small and the timeout is a turn, not a job. rpm sits under\n# every vendor's free ceiling so the router refuses locally before the vendor does.\n# Measured 2026-10-02 from the founder's felt latency (\"takes forever or router times out, totally unusable\"):\n# the brain leg took 15.9s of a 16.6s turn. All three free rungs were gpt-oss-120b, a REASONING model on\n# every vendor -- it thinks before it speaks, so the first spoken token waits for the hidden chain; the\n# groq and cerebras keys 403'd from this network and sambanova's gpt-oss streamed first content ~14s in.\n# MiniMax-M3, same prompt, same night, through this same router: first content 1.32-1.96s. The lane that\n# answers is the interactive lane; the free rungs stay one hop away in the chain below\n# (voice: [narrate, fast, groq]), so a MiniMax outage degrades to free lanes, never to silence. Cost at\n# the 4k-token voice prompt is ~$0.001 a call, inside the $3/day litellm budget.\n- model_name: voice\n  litellm_params:\n    model: openai/MiniMax-M3\n    api_base: https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n    timeout: 8\n    max_tokens: 96\n    rpm: 30\n    input_cost_per_token: 0.0000003\n  model_info:\n    max_input_tokens: 131072\n# narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). An 8B\n# instruct model on every vendor: a reasoning model spends 48 tokens thinking and answers with nothing.\n- model_name: narrate\n  litellm_params:\n    model: openai/llama-3.1-8b-instant\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n    timeout: 4\n    max_tokens: 48\n    rpm: 12\n  model_info:\n    max_input_tokens: 131072\n- model_name: narrate\n  litellm_params:\n    model: openai/llama3.1-8b\n    api_base: https://api.cerebras.ai/v1\n    api_key: os.environ/CEREBRAS_API_KEY_3\n    timeout: 4\n    max_tokens: 48\n    rpm: 12\n  model_info:\n    max_input_tokens: 65536\n- model_name: narrate\n  litellm_params:\n    model: openai/Meta-Llama-3.1-8B-Instruct\n    api_base: https://api.sambanova.ai/v1\n    api_key: os.environ/SAMBANOVA_API_KEY_3\n    timeout: 4\n    max_tokens: 48\n    rpm: 12\n  model_info:\n    max_input_tokens: 131072\n- model_name: voice-asr\n  litellm_params:\n\
+        \ 400 and the backend speaks locally.\n# voice: the brain the founder's spoken turn thinks with (fleetview VOICE_ROUTER_MODEL=voice). Measured\n# 2026-09-30 over 331 turns: first token p50 7.6s -- this single Groq deployment also carried the film\n# director and the newsroom anchor (~800 calls/hour at 01:00 with nobody watching), 78% of voice calls\n# (2406/3150) came back 429, and the founder's one-word answer waited in the cooldown. When Groq\n# accepts, first token is 0.34s. So `voice` is a pool of three free vendors reserved for INTERACTIVE\n# turns, and narration rides `narrate` on separate per-model quotas (Groq meters per model, so the\n# 8B narration row can run dry without the founder's row noticing). Both pools are declared here, in\n# one place, so the priority classes read as one unit; the keys are the same vendors' second and\n# third accounts, so a 429 on one class never cools the other. Answers are one or two sentences by\n# the operator's own brief: max_tokens is small and the timeout is a turn, not a job. rpm sits under\n# every vendor's free ceiling so the router refuses locally before the vendor does.\n# Measured 2026-10-02 from the founder's felt latency (\"takes forever or router times out, totally unusable\"):\n# the brain leg took 15.9s of a 16.6s turn. All three free rungs were gpt-oss-120b, a REASONING model on\n# every vendor -- it thinks before it speaks, so the first spoken token waits for the hidden chain; the\n# groq and cerebras keys 403'd from this network and sambanova's gpt-oss streamed first content ~14s in.\n# MiniMax-M3, same prompt, same night, through this same router: first content 1.32-1.96s. The lane that\n# answers is the interactive lane; the free rungs stay one hop away in the chain below\n# (voice: [narrate, fast, groq]), so a MiniMax outage degrades to free lanes, never to silence. Cost at\n# the 4k-token voice prompt is ~$0.001 a call, inside the $3/day litellm budget.\n- model_name: voice\n  litellm_params:\n    model: openai/MiniMax-M3\n    api_base: https://api.minimax.io/v1\n    api_key: os.environ/MINIMAX_API_KEY\n    timeout: 8\n    max_tokens: 96\n    rpm: 30\n    input_cost_per_token: 0.0000003\n  model_info:\n    max_input_tokens: 131072\n# narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). A\n# non-reasoning instruct model: a reasoning model spends 48 tokens thinking and answers with nothing.\n# Measured 2026-10-09 from inside the litellm pod: Llama 3.1 8B is retired at all three vendors this\n# lane used to name (Groq \"llama-3.1-8b-instant does not exist\", Cerebras and SambaNova no longer\n# list it), CEREBRAS_API_KEY_3 answers 402 and SAMBANOVA_API_KEY_3 answers 401 on chat. So every\n# call since the lane was minted fell through to `groq` (gpt-oss-120b, a reasoning model) -- the\n# newsroom key's ~1,260 calls 2026-10-03..09 were all answered there, none by narrate. Both rows below\n# answered three anchor prompts in one sentence, 15-24 tokens, finish=stop, 0.08-0.58 s. Groq meters\n# per model, so neither row shares the quota of `groq`/`fast` (gpt-oss).\n- model_name: narrate\n  litellm_params:\n    model: openai/qwen/qwen3.8-27b\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n    timeout: 4\n    max_tokens: 48\n    rpm: 12\n  model_info:\n    max_input_tokens: 131072\n- model_name: narrate\n  litellm_params:\n    model: openai/allam-2-7b\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n    timeout: 4\n    max_tokens: 48\n    rpm: 12\n  model_info:\n    max_input_tokens: 4096\n- model_name: voice-asr\n  litellm_params:\n\
         \    model: groq/whisper-large-v3-turbo\n    api_key: os.environ/GROQ_API_KEY\n\
         \    timeout: 20\n  model_info:\n    mode: audio_transcription\n- model_name:\
         \ voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n\
@@ -804,6 +804,39 @@ vendors:
         \    api_base: https://integrate.api.nvidia.com/v1\n    api_key: os.environ/NVIDIA_API_KEY\n\
         \    timeout: 90\n    max_tokens: 8192\n  model_info:\n    max_input_tokens:\
         \ 131072\n"
+      cluster_lanes: |-
+        # THE EMBED LANE, moved here from cohere on 2026-10-09. The cohere row (embed-v4.0) was
+        # the only hop and its key is a trial key: every call answered "You are using a Trial key,
+        # which is limited to 1000 API calls / month", and in the three days to 2026-10-09 all
+        # ~8,100 embed calls failed (agent-workforce 4,395, science 3,690, otto 29, kernel 12).
+        # MiniMax, the default chat lane, has no embeddings door (measured 2026-10-11 inside the
+        # litellm pod: OpenAI shape "missing required parameter texts", native {texts:} 2013
+        # invalid params); openrouter and gemini are closed for embeddings by the founder and
+        # out of credit besides. This key was already mounted and already paid for nothing.
+        #
+        # Measured 2026-10-09 from inside the litellm pod, through litellm.Router with exactly
+        # the row below: 1536 floats back. llama-nemotron-embed-vl-1b-v2 takes an output width
+        # (1536 is otto_facts.embedding's; the default is 2048) and, being an asymmetric model,
+        # refuses without input_type ("'input_type' parameter is required for asymmetric
+        # models"). `passage` is what litellm already sent cohere (search_document) for every
+        # caller, query or not. Every other embed id this key lists answered 404 for the
+        # account, and nemotron-3-embed-1b takes no width but 2048.
+        #
+        # NVIDIA meters per model (10,000 requests/day/model), so this row cannot empty the
+        # `nvidia` chat lane's meter, nor it this one's.
+        #
+        # The vectors already in otto_facts (1,152, written 2026-09-05..11) came from
+        # gemini-embedding-001: no later model -- cohere included -- shares their space. The
+        # backfill skips rows already present, so they need their own re-embed run.
+        - model_name: embed
+          litellm_params:
+            model: nvidia_nim/nvidia/llama-nemotron-embed-vl-1b-v2
+            api_key: os.environ/NVIDIA_API_KEY
+            dimensions: 1536
+            input_type: passage
+            timeout: 120
+          model_info:
+            mode: embedding
   sambanova:
     kind: secret
     secret: SEED_SAMBANOVA_API_KEY
@@ -877,40 +910,14 @@ vendors:
       entry: dagster-env
     router:
       cluster_lanes: |-
-        # THE EMBED LANE, and the only one, as of 2026-10-11. Founder, verbatim:
-        # "we don't use openrouter or gemini. cohere should be in vault and bitwarden
-        # secrets manager", and "we have minimax also" -- for chat MiniMax is the
-        # default lane; for embeddings it has no door (measured 2026-10-11 from
-        # inside the litellm pod: OpenAI shape answers "missing required parameter
-        # texts", native {texts:} shape answers 2013 invalid params). Every other
-        # hop was deleted the same day, each for a measured reason:
-        #
-        #   openrouter/openai/text-embedding-3-small  402 "Prompt tokens limit
-        #                                               exceeded: 2 > 0" -- zero
-        #                                               credits, and the founder
-        #                                               closed the vendor for
-        #                                               embeddings.
-        #   gemini/gemini-embedding-001                402 "prepayment credits
-        #                                               exhausted" (and the id is
-        #                                               retired, 404)
-        #   gemini/text-embedding-004                  404 "no longer supported"
-        #
-        # The key is already wired: Bitwarden Secrets Manager -> human-vault-bridge
-        # ExternalSecret `human-cohere` (synced True) -> mounted at
-        # /run/secrets/human/cohere -> exported by basename as COHERE_API_KEY. The
-        # value it carries TODAY is a trial key -- measured live, every call answers
-        # "You are using a Trial key, which is limited to 1000 API calls / month".
-        # So the lane's one remaining fact is a key fact, not a config fact: a
-        # production Cohere key dropped into Secrets Manager serves within a minute
-        # (bridge sync -> Reloader restart -> no PR, no deploy), which is the
-        # rotation story the mounts in litellm.yaml were built for. Otto's backfill
-        # (otto-memory-store-8, Failed 9h, read=1 written=0) reruns onto it.
-        #
-        # embed-v4.0 takes an output width; 1536 is the width otto_facts.embedding
-        # is created at and the width every vector already in the store was written
-        # at (tests/test_the_embed_chain_agrees_on_one_width.py grades any future
-        # second hop on it).
-        - model_name: embed
+        # embed-cohere: the embed lane until 2026-10-09 (it moved to nvidia, see that vendor's
+        # cluster_lanes for the measurements). Kept as its own named lane so the key still serves
+        # something through the router, and so a production key dropped into Secrets Manager is
+        # usable within a minute (bridge sync -> Reloader restart). Deliberately NOT a fallback
+        # hop of `embed`: a vector from another model is a vector in another space, and the store
+        # would compare it against nemotron vectors and report success while doing it. Switching
+        # `embed` back to cohere means re-embedding the store, in one commit, not a fallback.
+        - model_name: embed-cohere
           litellm_params:
             model: cohere/embed-v4.0
             api_key: os.environ/COHERE_API_KEY

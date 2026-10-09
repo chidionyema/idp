@@ -1,0 +1,87 @@
+description: 'Groq call volume rose from ~30/day to ~440/day on 2026-10-06..07. Every
+  one of those calls was the newsroom virtual key (scoped to `narrate` only), answered
+  by `groq` (gpt-oss-120b), never by `narrate`: ~1,260 calls 2026-10-03..09, and the
+  only narrate rows in LiteLLM_SpendLogs are 6 failures on 2026-10-03 with an empty
+  model_group. Separately, all ~8,100 `embed` calls in the three days to 2026-10-09
+  failed. Question: why does the narrate lane never answer?
+
+  '
+hypotheses:
+- name: H1
+  description: the narrate lane's models are gone at every vendor it names (Llama
+    3.1 8B retired), so each call fails and the router falls back to `groq`
+  prior: 0.3333333333
+- name: H2
+  description: the narrate rows are healthy but over their rpm (12 per row) under
+    newsroom bursts, so overflow spills to the fallback
+  prior: 0.3333333333
+- name: H3
+  description: the narrate rows' vendor keys are not mounted in the router pod, so
+    every row fails auth
+  prior: 0.3333333334
+evidence:
+- name: router log (24h, both litellm pods) on the narrate rows' own upstream calls
+  observed:
+    model-not-found: 1
+    rate-limited: 0
+  likelihoods:
+    H1:
+      model-not-found: 0.95
+      rate-limited: 0.05
+    H2:
+      model-not-found: 0.05
+      rate-limited: 0.95
+    H3:
+      model-not-found: 0.2
+      rate-limited: 0.1
+- name: GET /models from inside the litellm pod on each narrate key (groq, cerebras,
+    sambanova), 2026-10-09
+  observed:
+    llama-3.1-8b-absent-everywhere: 1
+    listed: 0
+  likelihoods:
+    H1:
+      llama-3.1-8b-absent-everywhere: 0.97
+      listed: 0.03
+    H2:
+      llama-3.1-8b-absent-everywhere: 0.05
+      listed: 0.95
+    H3:
+      llama-3.1-8b-absent-everywhere: 0.3
+      listed: 0.7
+- name: human-groq, human-cerebras and human-sambanova Secrets carry the _3 keys and
+    are mounted on the litellm container
+  observed:
+    mounted: 1
+    missing: 0
+  likelihoods:
+    H1:
+      mounted: 0.9
+      missing: 0.1
+    H2:
+      mounted: 0.9
+      missing: 0.1
+    H3:
+      mounted: 0.05
+      missing: 0.95
+- name: newsroom calls per day vs the lane's ceiling (3 rows x 12 rpm); ~430/day is
+    well under one minute's ceiling sustained
+  observed:
+    under-ceiling: 1
+    over-ceiling: 0
+  likelihoods:
+    H1:
+      under-ceiling: 0.8
+      over-ceiling: 0.2
+    H2:
+      under-ceiling: 0.15
+      over-ceiling: 0.85
+    H3:
+      under-ceiling: 0.8
+      over-ceiling: 0.2
+posteriors:
+  H1: 0.9958909815
+  H2: 0.0005065913
+  H3: 0.0036024271
+winner: H1
+computed_at: '2026-10-09T05:41:00Z'
