@@ -1,0 +1,92 @@
+description: 'Founder reported other Claude sessions jumping in context (109k -> 200k
+  in a few turns). Measured 2026-10-09 on session 93d59731 (Opus, 336 messages, 2.17
+  MB of history): the router sent 709 KB under epoch-4 lock at 06:08:24, snapped to
+  epoch 5 (52 KB) at 06:08:33, then sent the whole 2.17 MB at 06:08:51 with m7 action
+  none, covered 0, no lock; context went 50,804 -> 195,991 tokens (169,819 cache-written
+  at Opus price) and stayed uncompacted for 13 calls until a re-snap at 06:15:00.
+  Question: why did the epoch record lose every lock.
+
+  '
+hypotheses:
+- name: H1
+  description: the shadow fold covers the history up to and including its newest message;
+    Claude Code rewrites that message between calls (side requests share the history
+    but end differently; the m1 prefix tracker shows exactly the last message changed
+    on 24% of calls), so the covered hash misses and the mismatch branch resets the
+    whole record, discarding locks whose own hashes still match
+  prior: 0.3333333333
+- name: H2
+  description: the harness genuinely rewrote old history (its own compaction or a
+    branch), so the reset was correct and the locks were really invalid
+  prior: 0.3333333333
+- name: H3
+  description: the epoch record was lost to storage or memory (CONV_MEMORY eviction,
+    a failed _save, or a router slot swap without the epoch file)
+  prior: 0.3333333334
+evidence:
+- name: ledger m1 for the call after the reset (06:08:58) and the 110 calls since
+    05:00Z -- which messages differ from the previous call
+  observed:
+    only-the-newest-message-differs: 1
+    old-history-differs: 0
+  likelihoods:
+    H1:
+      only-the-newest-message-differs: 0.95
+      old-history-differs: 0.05
+    H2:
+      only-the-newest-message-differs: 0.05
+      old-history-differs: 0.95
+    H3:
+      only-the-newest-message-differs: 0.5
+      old-history-differs: 0.5
+- name: shadow row at 06:08:33 (fold launched by a 603 ms side call) covered_msgs
+    336 = the full side-call history, then the real turn at 06:08:51 has 336 messages
+    and covered 0
+  observed:
+    fold-covered-the-tip-then-reset: 1
+    no-fold-before-reset: 0
+  likelihoods:
+    H1:
+      fold-covered-the-tip-then-reset: 0.9
+      no-fold-before-reset: 0.1
+    H2:
+      fold-covered-the-tip-then-reset: 0.3
+      no-fold-before-reset: 0.7
+    H3:
+      fold-covered-the-tip-then-reset: 0.2
+      no-fold-before-reset: 0.8
+- name: transcript 93d59731 -- compact_boundary entries near 06:08 (harness compaction)
+  observed:
+    none-near-the-reset: 1
+    harness-compacted: 0
+  likelihoods:
+    H1:
+      none-near-the-reset: 0.95
+      harness-compacted: 0.05
+    H2:
+      none-near-the-reset: 0.2
+      harness-compacted: 0.8
+    H3:
+      none-near-the-reset: 0.9
+      harness-compacted: 0.1
+- name: replay of the sequence (fold, snap, side request with a different tip, real
+    turn) through _Epochs in tests/test_efficiency_gateway_epochs.py on origin/main
+  observed:
+    reset-reproduced-in-memory: 1
+    no-reset: 0
+  likelihoods:
+    H1:
+      reset-reproduced-in-memory: 0.95
+      no-reset: 0.05
+    H2:
+      reset-reproduced-in-memory: 0.1
+      no-reset: 0.9
+    H3:
+      reset-reproduced-in-memory: 0.05
+      no-reset: 0.95
+posteriors:
+  H1: 0.9938179184
+  H2: 0.0003863801
+  H3: 0.0057957015
+winner: H1
+computed_at: '2026-10-09T06:23:40Z'

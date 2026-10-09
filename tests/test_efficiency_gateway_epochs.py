@@ -304,3 +304,51 @@ def test_the_routers_own_fold_call_is_left_alone(monkeypatch, tmp_path):
     )
     assert out["messages"] == data["messages"]
     assert _rows(tmp_path, "pre") == []
+
+
+def _retail(shape, msgs, text):
+    """The same history ending in a different newest message, as a harness side request sends."""
+    out = copy.deepcopy(msgs)
+    if shape == "openai":
+        out[-1]["content"] = text
+    else:
+        out[-1]["content"] = [{"type": "text", "text": text}]
+    return out
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_side_request_ending_differently_keeps_the_lock(monkeypatch, tmp_path, shape):
+    # 2026-10-09: a 600 ms Claude Code side request shared the history but ended in its own
+    # message; the fold covered that message, the real turn's hash missed, every lock was
+    # wiped and the conversation went to Opus whole (50k -> 196k tokens) for six minutes
+    gw = _gw(monkeypatch, tmp_path)
+    _, _, _, _, conv3, third = _epoch_run(gw, shape)
+    side = _retail(shape, conv3, "summarise this session in one line")
+    _call(gw, shape, side)
+    real = _retail(shape, conv3, "get it done")
+    out = _call(gw, shape, real)
+    assert len(out) < len(real), "the real turn is still compacted"
+    assert _strip(out[: len(third) - 1]) == _strip(third[:-1]), (
+        "and its prefix still cached"
+    )
+    assert _rows(tmp_path, "pre")[-1]["steps"]["m7"]["action"] in ("locked", "snapped")
+
+
+@pytest.mark.parametrize("shape", SHAPES)
+def test_a_broken_state_hash_falls_back_to_the_newest_matching_lock(
+    monkeypatch, tmp_path, shape
+):
+    gw = _gw(monkeypatch, tmp_path)
+    _, _, _, _, conv3, third = _epoch_run(gw, shape)
+    rec = next(iter(gw._epochs._convs.values()))
+    rec["covered_hash"] = (
+        "not-this-history"  # a fold from before this fix, past the tip
+    )
+    out = _call(gw, shape, conv3)
+    assert _strip(out) == _strip(third), "the lock still applies, byte for byte"
+    rec = next(iter(gw._epochs._convs.values()))
+    hist = [m for m in conv3 if m.get("role") != "system"]
+    assert rec["locks"], "the locks that still match are kept"
+    assert rec["locks"][-1]["cut"] <= rec["covered"] < len(hist), (
+        "never the newest message"
+    )

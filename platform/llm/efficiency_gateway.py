@@ -802,9 +802,25 @@ class _Epochs:
         with self._mu:
             rec = self._load(key, cum[0])
             if rec["covered"] > len(hist) or cum[rec["covered"]] != rec["covered_hash"]:
-                # the history was rewritten under us (the harness compacted, or a new branch)
+                # the history was rewritten under us (the harness compacted, or a new branch).
+                # Each lock carries its own hash, so fall back to the newest one this history
+                # still matches: wiping them all sent a 336-message Opus conversation whole
+                # for six minutes after a side request ended differently (2026-10-09).
+                live = [
+                    lk
+                    for lk in rec["locks"]
+                    if lk["cut"] <= len(hist) and cum[lk["cut"]] == lk["hash"]
+                ]
                 rec = _fresh(cum[0])
+                if live:
+                    rec.update(
+                        covered=live[-1]["cut"],
+                        covered_hash=live[-1]["hash"],
+                        state=live[-1]["state"],
+                        locks=live,
+                    )
                 self._convs[key] = rec
+                self._save(key, rec)
             lock = next(
                 (
                     lk
@@ -843,9 +859,14 @@ class _Epochs:
                     self._save(key, rec)
                     m7["action"] = "snapped"
             covered, state = rec["covered"], rec["state"]
+            # the state never covers the newest message: the harness rewrites it between calls
+            # (Claude Code side requests share the history but end differently; 24 % of one
+            # session's calls changed it), and a covered hash that includes it never matches again
+            tip = len(hist) - 1
             fold = (
                 sum(sizes) // CHARS_PER_TOKEN >= SHADOW_FROM_TOKENS
-                and sum(sizes[covered:]) // CHARS_PER_TOKEN >= SHADOW_EVERY_TOKENS
+                and tip > covered
+                and sum(sizes[covered:tip]) // CHARS_PER_TOKEN >= SHADOW_EVERY_TOKENS
                 and key not in self._busy
             )
             if fold:
@@ -856,9 +877,9 @@ class _Epochs:
                 self._shadow,
                 key,
                 state,
-                _chunks(hist[covered:]),
+                _chunks(hist[covered:tip]),
                 covered,
-                len(hist),
+                tip,
                 cum,
             )
         m7["shadow"] = {
