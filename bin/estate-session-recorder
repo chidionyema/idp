@@ -191,10 +191,18 @@ def _parse_iso(value: Any) -> str | None:
 def _roaming() -> list[Path]:
     """Every pi/claude-code session directory. Both tools use the same slug convention."""
     home = Path.home()
-    roots = [
-        home / ".pi" / "agent" / "sessions",
-        home / ".claude" / "projects",
-    ]
+    roots = [home / ".pi" / "agent" / "sessions"]
+    # Claude Code writes under CLAUDE_CONFIG_DIR when it is set. On this estate that is
+    # ~/.estate/harness/cc, and ~/.claude no longer exists. Reading only ~/.claude is why the board
+    # saw no claude-code session after 2026-10-01. The LaunchAgent does not inherit the shell's
+    # CLAUDE_CONFIG_DIR, so the estate's harness dir is checked explicitly too.
+    for cc in (
+        os.environ.get("CLAUDE_CONFIG_DIR"),
+        str(home / ".estate" / "harness" / "cc"),
+        str(home / ".claude"),
+    ):
+        if cc and Path(cc, "projects") not in roots:
+            roots.append(Path(cc, "projects"))
     return [r for r in roots if r.is_dir()]
 
 
@@ -363,7 +371,7 @@ def read_transcripts() -> tuple[list[Observation], list[str]]:
             "-- this machine records no agent sessions"
         )
     for root in roots:
-        provider = "claude-code" if ".claude" in str(root) else "pi"
+        provider = "pi" if ".pi" in root.parts else "claude-code"
         files = _recent_jsonl(root)
         if not files:
             blind.append(f"{provider}: no transcript written in the last {MAX_AGE_DAYS} days")
