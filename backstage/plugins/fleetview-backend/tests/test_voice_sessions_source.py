@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -15,11 +16,17 @@ import pytest
 serve = pytest.importorskip("fleetview_backend.serve")
 
 
-def _upstream(payload: dict) -> tuple[HTTPServer, str]:
+@pytest.fixture(autouse=True)
+def _no_snapshot(monkeypatch):
+    monkeypatch.setattr(serve, "_sessions_snapshot", {"rows": None, "at": 0.0})
+
+
+def _upstream(payload: dict, delay: float = 0.0) -> tuple[HTTPServer, str]:
     body = json.dumps(payload).encode()
 
     class H(BaseHTTPRequestHandler):
         def do_GET(self):  # noqa: N802
+            time.sleep(delay)
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -63,3 +70,24 @@ def test_unset_uses_the_local_store(monkeypatch):
     _empty_local(monkeypatch)
     monkeypatch.delenv("FLEETVIEW_SESSIONS_URL", raising=False)
     assert serve._voice_sessions() == []
+
+
+def test_a_turn_answers_from_the_snapshot_not_the_slow_relay(monkeypatch):
+    """2026-10-09: the Mac's board took 8-30s over the Tailscale relay and every turn waited."""
+    _empty_local(monkeypatch)
+    fresh = [{"session_id": "fresh", "activity": "working"}]
+    srv, url = _upstream({"sessions": fresh}, delay=2.0)
+    try:
+        monkeypatch.setenv("FLEETVIEW_SESSIONS_URL", url)
+        snap = [{"session_id": "snap", "activity": "finished"}]
+        serve._sessions_snapshot.update(rows=snap, at=time.time() - 60)
+        t = time.time()
+        assert serve._voice_sessions() == snap
+        assert time.time() - t < 0.5, "the turn waited on the upstream"
+        # The stale snapshot started a refresh behind the turn; the next turn sees its result.
+        deadline = time.time() + 5
+        while serve._sessions_snapshot["rows"] != fresh and time.time() < deadline:
+            time.sleep(0.05)
+        assert serve._voice_sessions() == fresh
+    finally:
+        srv.shutdown()
