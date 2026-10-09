@@ -41,8 +41,9 @@ jobs:
   # in the repository can move these tests.
   portal-app:
     # Runs on pull requests (2026-09-27): skipped there, no compiler read a PR's .tsx before it
-    # merged (PR #4467). NOT in ruleset.idp.required-checks.json (measured 2026-10-08), so it
-    # never gates a land. Still only installs when backstage/ changed, so other PRs pay nothing.
+    # merged (PR #4467). Required (ruleset.idp.required-checks.json, chidionyema/idp#5600): #5587
+    # landed with this red. With the browser cache (#5564) it takes 4-6 min against ci's 3.5-5.5,
+    # and only installs when backstage/ changed, so other lanes get an instant green job.
     needs: [gate, verify]
     runs-on: ubuntu-latest
     steps:
