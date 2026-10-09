@@ -24,7 +24,7 @@ on:
   pull_request_target:
     types: [opened, reopened, ready_for_review]
   workflow_run:
-    workflows: [ci, guarded-paths, factory-ci]
+    workflows: [ci, guarded-paths, factory-ci, portal-app]
     types: [completed]
   schedule:
     - cron: '*/5 * * * *'   # backstop: GitHub drops scheduled runs under load; nothing depends on it

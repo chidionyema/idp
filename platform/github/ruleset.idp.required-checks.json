@@ -54,6 +54,10 @@
           {
             "context": "ci-success",
             "integration_id": 15368
+          },
+          {
+            "context": "portal-app",
+            "integration_id": 15368
           }
         ]
       }
