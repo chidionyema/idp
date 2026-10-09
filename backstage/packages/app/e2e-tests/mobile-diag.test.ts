@@ -25,6 +25,10 @@ test('diag /fleet', async ({ page, context }) => {
   await enter.or(mic).first().waitFor({ timeout: 60_000 });
   if (await enter.isVisible().catch(() => false)) await enter.first().click();
   await mic.first().waitFor({ timeout: 60_000 });
+  console.log('before-reload ' + await page.evaluate(() => JSON.stringify({ inits: (window as any).__d?.inits, md: !!navigator.mediaDevices, own: Object.prototype.hasOwnProperty.call(navigator.mediaDevices || {}, 'getUserMedia') })));
+  await page.reload({ waitUntil: 'load' });
+  console.log('after-reload ' + await page.evaluate(() => JSON.stringify({ d: !!(window as any).__d, inits: (window as any).__d?.inits, md: !!navigator.mediaDevices, own: Object.prototype.hasOwnProperty.call(navigator.mediaDevices || {}, 'getUserMedia') })));
+  await mic.first().waitFor({ timeout: 90_000 });
   await mic.first().click();
   for (let i = 0; i < 25; i++) {
     const s = await page.evaluate(() => {
