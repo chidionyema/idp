@@ -25,7 +25,7 @@ spec:
     any:
       - resources:
           namespaces: [tailscale]
-          names: [ts-founder-mac-vnc*, ts-sunshine-mac*]
+          names: [ts-founder-mac-vnc*, ts-sunshine-mac*, ts-fleetview-mac*]
           kinds: [StatefulSet, Pod, ReplicaSet]
   exceptions:
     - policyName: disallow-capabilities-strict
