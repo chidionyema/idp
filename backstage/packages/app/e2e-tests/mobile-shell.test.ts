@@ -22,12 +22,28 @@
  * cannot run on the founder's laptop -- measured 2026-10-04 from the installer.
  *   yarn playwright test --config playwright.mobile.config.ts
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 
 // The app serves its shell on /face and /fleet to a signed-out browser. Anything that redirects to
 // an identity provider is the wall, named so a failure is readable.
 const LOGIN_WALL =
   /oraclecloud\.com|idcs-|identity\.oraclecloud|\/oauth2\/|\/login/i;
+
+// PRESS THE GUEST WALL'S Enter, WAITING FOR WHICHEVER OF IT OR THE MIC DRAWS FIRST (2026-10-09).
+// This used to be `if (await enter.isVisible({ timeout: 20_000 }))`, and `isVisible` IGNORES its
+// timeout: it reads the page once. Measured on ubuntu-latest WebKit (the iPhone project) against
+// live catalogue.mumchimp.com: at `load` the body is still empty, so the check said "no wall",
+// Enter was never pressed, and the page sat on "Enter as a Guest User" for the full 90s -- every
+// iPhone mic test red, and Pixel red whenever its paint lost the same race. Waiting on
+// `enter.or(mic)` presses Enter when the wall shows and skips it when a session already exists.
+async function enterAsGuest(page: Page, testid: string) {
+  const enter = page.getByRole('button', { name: /^Enter$/ });
+  await enter
+    .or(page.getByTestId(testid))
+    .first()
+    .waitFor({ state: 'visible', timeout: 60_000 });
+  if (await enter.count()) await enter.first().click({ timeout: 15_000 });
+}
 
 test.describe('mobile shell', () => {
   for (const path of ['/fleet', '/face']) {
@@ -132,10 +148,7 @@ test.describe('mobile microphone reachability', () => {
       // by its exact visible name. The wall is best-effort: a run that is already signed in (the
       // session persists in localStorage, per the same file) shows no button, and then there is
       // nothing to press -- not a failure.
-      const enter = page.getByRole('button', { name: /^Enter$/ });
-      if (await enter.first().isVisible({ timeout: 20_000 }).catch(() => false)) {
-        await enter.first().click({ timeout: 15_000 });
-      }
+      await enterAsGuest(page, testid);
       await expect(
         page.getByTestId(testid),
         `${path} still showed the sign-in wall after pressing Enter; body said: ` +
@@ -336,6 +349,10 @@ test.describe('mobile microphone refusal names the device', () => {
       expect(page.url(), `${path} redirected to ${page.url()}`).not.toMatch(
         LOGIN_WALL,
       );
+
+      // Through the guest wall first, as the reachability test does: without it the app never
+      // mounts and there is no mic control to refuse anything.
+      await enterAsGuest(page, testid);
 
       // The same named-absence replay the reachability test pins, so this test cannot be taken
       // down by the live /efficiency payload; see the comment there for the measured body.

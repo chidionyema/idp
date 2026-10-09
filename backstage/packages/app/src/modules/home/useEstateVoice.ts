@@ -897,6 +897,21 @@ export function useEstateVoice(): EstateVoice {
       });
       ctx.vad = vad;
       vad.start();
+      // THE VAD'S OWN AudioContext IS NEVER RESUMED BY THE LIBRARY (2026-10-09). MicVAD.new does
+      // `new AudioContext()` after the model loads -- several awaits after the tap -- and its
+      // start() only resumes the frame processor, never the context. iOS Safari starts a context
+      // made outside a user gesture `suspended`, so the worklet gets no frames and the page says
+      // "listening" to a microphone it can never hear. Resume it here, and if WebKit still holds
+      // it, resume it on the person's next touch, which is a gesture it cannot refuse.
+      const vadAudio: AudioContext | undefined = vad.audioContext;
+      if (vadAudio && vadAudio.state !== 'running') {
+        try { await vadAudio.resume(); } catch { /* the touch below is the fallback */ }
+        if ((vadAudio.state as AudioContextState) !== 'running') {
+          const unlock = () => { void vadAudio.resume(); void audio.resume(); };
+          window.addEventListener('touchend', unlock, { once: true });
+          window.addEventListener('pointerup', unlock, { once: true });
+        }
+      }
       setState('listening');
       setDetail('listening — speak any time');
     } catch (e: any) {
