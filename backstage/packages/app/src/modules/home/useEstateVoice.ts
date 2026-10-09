@@ -398,6 +398,26 @@ function loadScript(src: string): Promise<boolean> {
   });
 }
 
+/**
+ * Where the mic got to, said to the server. A real iPhone on the live site (2026-10-09, iOS 26)
+ * loaded the voice scripts and then requested nothing else -- no worklet, no model, no question --
+ * and the page's own error never left the phone. This GET carries the stage and the browser's error
+ * name into the edge's access log, which records the device beside it. Nothing serves the path; the
+ * log line is the point.
+ */
+export function traceMic(stage: string, detail = ''): void {
+  try {
+    void fetch(
+      `${VOICE_ASSETS}trace?stage=${encodeURIComponent(
+        stage,
+      )}&d=${encodeURIComponent(detail.slice(0, 200))}&t=${Date.now()}`,
+      { keepalive: true, credentials: 'omit' },
+    ).catch(() => undefined);
+  } catch {
+    /* tracing never affects the mic */
+  }
+}
+
 export function ensureVoiceLibs(): Promise<{ ok: boolean; missing: string[] }> {
   if (libsPromise) return libsPromise;
   libsPromise = (async () => {
@@ -927,8 +947,10 @@ export function useEstateVoice(): EstateVoice {
     } catch {
       /* no device voice; the estate's own still plays */
     }
+    traceMic('tap');
     setDetail('loading voice libraries…');
     const libs = await ensureVoiceLibs();
+    traceMic('libs', libs.missing.join(','));
     if (!libs.ok) {
       setState('error');
       setDetail(
@@ -950,6 +972,7 @@ export function useEstateVoice(): EstateVoice {
       });
       if (audio.state === 'suspended') await audio.resume();
     } catch (e: any) {
+      traceMic('audiocontext-failed', `${e?.name}: ${e?.message || e}`);
       setState('error');
       setDetail(`AudioContext failed: ${e.message || e}`);
       return;
@@ -964,6 +987,7 @@ export function useEstateVoice(): EstateVoice {
     };
     ctxRef.current = ctx;
 
+    traceMic('mic-request', audio.state);
     try {
       const vad = await (window as any).vad.MicVAD.new({
         // 0.8 rather than the 0.5 default: on a laptop microphone the lower threshold fires on
@@ -1031,9 +1055,11 @@ export function useEstateVoice(): EstateVoice {
           window.addEventListener('pointerup', unlock, { once: true });
         }
       }
+      traceMic('listening', vadAudio?.state ?? 'no-context');
       setState('listening');
       setDetail('listening — speak any time');
     } catch (e: any) {
+      traceMic('mic-failed', `${e?.name}: ${e?.message || e}`);
       setState('error');
       const msg = String(e?.message || e);
       // WHAT HAPPENED, IN ONE LINE, AND NOTHING TO GO CHANGE. A refusal used to end in a settings
