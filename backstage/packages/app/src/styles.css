@@ -906,6 +906,14 @@
 .fleet-reactor .z-40 { z-index:40; }
 .fleet-reactor .z-50 { z-index:50; }
 
+/* The laptop's delivery pill (Delivery.tsx) is not drawn on a phone (2026-10-09). At bottom-24
+   right-6 z-40 it covers the voice controls at phone width: measured on live /fleet in WebKit
+   (iPhone 13) and Chromium (Pixel 7), every tap on `fleet-mic` landed on this pill
+   ("converger-not-installed ... intercepts pointer events") and getUserMedia was never called. */
+@media (max-width: 639px) {
+  .fleet-reactor [data-testid="delivery"] { display:none; }
+}
+
 /* The hologram beside a node. Rendered only on hover or selection -- see the HOLOGRAM RULE in
    FleetReactorApp.tsx -- which is why it can afford a box and a blur where 24 permanent chips
    could not. */
