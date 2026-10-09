@@ -98,9 +98,21 @@ test.describe('mobile microphone reachability', () => {
         w.__mic.hasMediaDevices = !!md;
         w.__mic.hasGetUserMedia = !!(md && md.getUserMedia);
         w.__mic.secure = window.isSecureContext;
-        if (md && md.getUserMedia) {
-          const orig = md.getUserMedia.bind(md);
-          md.getUserMedia = async (c: MediaStreamConstraints) => {
+        // THE SPY GOES ON THE PROTOTYPE, NOT THE INSTANCE (2026-10-09, #5560). This used to assign
+        // `md.getUserMedia = ...` on the object read here. Measured on ubuntu-latest WebKit (the
+        // iPhone project) against live, with a prototype-level counter beside it (draft PR #5580,
+        // run 37929749143): the app's tap reached getUserMedia once, got a live track and the page
+        // said "listening", while this instance spy recorded 0 calls -- the method the page
+        // resolved at call time was the prototype's, not ours. So iPhone "never called
+        // getUserMedia" was this spy being blind, not the phone. A prototype spy sees every call
+        // whatever object the page holds.
+        const proto = (window as any).MediaDevices?.prototype;
+        if (md && md.getUserMedia && proto?.getUserMedia) {
+          const orig = proto.getUserMedia;
+          proto.getUserMedia = async function (
+            this: MediaDevices,
+            c: MediaStreamConstraints,
+          ) {
             const rec: any = {
               audio: !!(c && c.audio),
               ok: null,
@@ -109,7 +121,7 @@ test.describe('mobile microphone reachability', () => {
             };
             w.__mic.calls.push(rec);
             try {
-              const s = await orig(c);
+              const s = await orig.call(this, c);
               rec.ok = true;
               rec.tracks = s.getAudioTracks().map((t: MediaStreamTrack) => ({
                 label: t.label,
