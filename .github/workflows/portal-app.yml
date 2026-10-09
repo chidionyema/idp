@@ -148,9 +148,20 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         run: yarn playwright install --with-deps webkit chromium
-      - name: a phone is served the app, and reaches the microphone or names the refusal
+      - name: a phone is served the app, reaches the microphone, and a spoken question is heard and answered
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         env:
           PLAYWRIGHT_URL: https://catalogue.mumchimp.com
         run: yarn playwright test --config playwright.mobile.config.ts
+      # A red phone run with no trace can only be guessed at: the runner's engine is not the one on a
+      # laptop (2026-10-09: Pixel passed on macOS Chrome and failed on the runner's Linux Chromium).
+      - name: the phone run's report and traces, when it fails
+        if: failure() && steps.touched.outputs.yes == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-mobile
+          path: |
+            backstage/e2e-mobile-report
+            backstage/node_modules/.cache/e2e-mobile-results
+          retention-days: 7
