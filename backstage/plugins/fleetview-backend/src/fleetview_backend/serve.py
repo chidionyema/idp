@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -60,6 +62,10 @@ async def lifespan(app: FastAPI):
         from fleetview_backend import key_sync
 
         asyncio.create_task(key_sync.publish_alerts(nats_url))
+    sessions_url = os.environ.get("FLEETVIEW_SESSIONS_URL", "").strip()
+    if sessions_url:
+        # Warm the voice's fleet snapshot so the first spoken turn does not pay the relay either.
+        _refresh_in_background(sessions_url)
     yield
 
 
@@ -91,20 +97,62 @@ def _voice_sessions() -> list[dict]:
     """
     url = os.environ.get("FLEETVIEW_SESSIONS_URL", "").strip()
     if url:
-        import json  # noqa: PLC0415
-        import urllib.request  # noqa: PLC0415
-
-        try:
-            with urllib.request.urlopen(url, timeout=5) as r:  # noqa: S310 - our own Service
-                return json.load(r).get("sessions") or []
-        except Exception as exc:  # noqa: BLE001 - fall back to the local store, and say so
-            print(
-                f"voice.sessions upstream failed: {type(exc).__name__}: {exc}",
-                file=sys.stderr,
-                flush=True,
-            )
+        # A VOICE TURN NEVER WAITS ON THE MAC (2026-10-09). The upstream is the Mac over Tailscale,
+        # which runs through the "lhr" DERP relay, not a direct path: the 235KB board took 8.1s,
+        # 21.0s, 29.5s and 18.3s to arrive from inside the pod, against 0.09s on the Mac itself,
+        # and every /voice/stream waited for it before asking the model (~1s). That was most of
+        # the founder's 49s reply. So the turn answers from the last snapshot and a refresh runs
+        # behind it; only the first turn after start, with no snapshot yet, fetches inline.
+        snap = _sessions_snapshot.get("rows")
+        if snap is None:
+            rows = _fetch_board_sessions(url)
+            if rows is not None:
+                return rows
+        else:
+            if time.time() - _sessions_snapshot["at"] > SESSIONS_REFRESH_S:
+                _refresh_in_background(url)
+            return snap
     body, _ = routes.sessions_envelope()
     return body.get("sessions") or []
+
+
+# How old the voice's fleet snapshot may get before a turn starts a refresh. The board itself
+# repaints on its own SSE; this is only what the spoken answer counts from.
+SESSIONS_REFRESH_S = 15.0
+_sessions_snapshot: dict = {"rows": None, "at": 0.0}
+_sessions_refreshing = threading.Lock()
+
+
+def _fetch_board_sessions(url: str) -> list[dict] | None:
+    import json  # noqa: PLC0415
+    import urllib.request  # noqa: PLC0415
+
+    try:
+        with urllib.request.urlopen(url, timeout=5) as r:  # noqa: S310 - our own Service
+            rows = json.load(r).get("sessions") or []
+    except Exception as exc:  # noqa: BLE001 - fall back to the local store, and say so
+        print(
+            f"voice.sessions upstream failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return None
+    _sessions_snapshot.update(rows=rows, at=time.time())
+    return rows
+
+
+def _refresh_in_background(url: str) -> None:
+    # One refresh at a time: a burst of turns over a slow relay must not stack fetches.
+    if not _sessions_refreshing.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            _fetch_board_sessions(url)
+        finally:
+            _sessions_refreshing.release()
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def build_app() -> FastAPI:
