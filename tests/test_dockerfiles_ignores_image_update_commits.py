@@ -75,3 +75,18 @@ def test_tag_change_beside_a_real_line_still_builds(tmp_path):
     )
     _commit(tmp_path, "kustomization: set namespace and bump tag")
     assert _changed(tmp_path, base) == ["app"]
+
+
+def test_mid_sized_diff_is_never_dropped(tmp_path):
+    # 2026-10-09: `git diff | grep ... | grep -q` under pipefail SIGPIPEd the writer whenever
+    # grep -q quit before the diff was all written; both branches read false and #5545's
+    # 65-line diff built nothing on the Linux runner. The size band that raced was a few KB to
+    # 64KB, so every size in it is graded, several times.
+    base = _seed(tmp_path)
+    for n in (60, 200, 800, 2000, 4000):
+        (tmp_path / "main.py").write_text(
+            "".join(f"x{i} = {n}  # ›…\n" for i in range(n))
+        )
+        _commit(tmp_path, f"feat: {n} lines")
+        for _ in range(5):
+            assert _changed(tmp_path, base) == ["app"], n
