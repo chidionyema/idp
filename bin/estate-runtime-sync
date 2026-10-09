@@ -48,7 +48,23 @@ DATA = HOME / "Documents/code/idp/catalog"
 LOG, INBOX = STATE / "runtime-sync.log", STATE / "alerts/inbox.jsonl"
 # A main commit that broke a service; not retried until main moves on.
 BAD = STATE / "runtime-sync.bad"
-GO = shutil.which("go") or str(HOME / ".cache/estate-tools/go/bin/go")
+# launchd's PATH is /usr/bin:/bin, so `which` alone misses every user install. 2026-10-08: go lived only
+# in ~/.local/bin, the fallback did not exist, and every tick died in the voice build before the router.
+GO = next(
+    (
+        str(g)
+        for g in (
+            shutil.which("go"),
+            HOME / ".local/bin/go",
+            "/opt/homebrew/bin/go",
+            "/usr/local/go/bin/go",
+            "/usr/local/bin/go",
+            HOME / ".cache/estate-tools/go/bin/go",
+        )
+        if g and os.access(g, os.X_OK)
+    ),
+    "go",
+)
 UID = os.getuid()
 SPARSE = ["/*", "!/packages/", "!/rescued_patches2/"]
 LAUNCHERS = [
@@ -102,6 +118,22 @@ def git(*args: str, check: bool = True, tree: Path = TREE) -> str:
     if check and r.returncode:
         raise RuntimeError(f"git {' '.join(args)}: {r.stderr.strip()[-300:]}")
     return r.stdout.strip()
+
+
+def scrub_tree() -> str:
+    """Put back any hand edit in the tree; this job is its only writer. 2026-10-08 a hand-patched
+    efficiency_gateway.py made every `checkout` refuse for 10 hours, silently: main never deployed.
+    The edit is kept as a diff and named in an alert, never lost."""
+    if not git("status", "--porcelain", "--untracked-files=no").strip():
+        return ""
+    keep = (
+        STATE
+        / f"runtime-sync-discarded-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.diff"
+    )
+    keep.write_text(git("diff", "HEAD"))
+    git("reset", "-q", "--hard")
+    alert(f"runtime tree had hand edits; reset to main, kept in {keep}")
+    return f"discarded hand edits -> {keep.name}"
 
 
 def ensure_tree() -> None:
@@ -287,7 +319,9 @@ def sync_router(within_s: int = 120) -> list[str]:
             dst.unlink(missing_ok=True)
         else:
             dst.write_bytes(old)
-    if deployed:  # it took over and broke voice: put the previous bytes back into service
+    if (
+        deployed
+    ):  # it took over and broke voice: put the previous bytes back into service
         restart_router()
         answers(ROUTER_PROBE, within_s)
     alert(f"router {names} from main broke the router or voice; previous kept")
@@ -297,14 +331,18 @@ def sync_router(within_s: int = 120) -> list[str]:
 def build_voice_router() -> bool:
     out = STATE / "voice-router/voice-router"
     out.parent.mkdir(parents=True, exist_ok=True)
-    r = subprocess.run(
-        [GO, "build", "-trimpath", "-o", f"{out}.new", "./cmd/voice-router"],
-        cwd=TREE / "platform/voice-router",
-        capture_output=True,
-        text=True,
-        timeout=900,
-        env=dict(os.environ, CGO_ENABLED="1"),
-    )
+    try:
+        r = subprocess.run(
+            [GO, "build", "-trimpath", "-o", f"{out}.new", "./cmd/voice-router"],
+            cwd=TREE / "platform/voice-router",
+            capture_output=True,
+            text=True,
+            timeout=900,
+            env=dict(os.environ, CGO_ENABLED="1"),
+        )
+    except (OSError, subprocess.SubprocessError):
+        # no toolchain is a failed build, not a dead sync: the router still gets main
+        return False
     if r.returncode:
         return False
     os.replace(f"{out}.new", out)
@@ -421,6 +459,7 @@ def sync_frontend(sha: str) -> list[str]:
 
 def main() -> int:
     ensure_tree()
+    scrubbed = scrub_tree()
     before = git("rev-parse", "HEAD")
     git("fetch", "-q", "origin", "main")
     after = git("rev-parse", "origin/main")
@@ -432,9 +471,9 @@ def main() -> int:
         else []
     )
     if after != before:
-        git("checkout", "-q", "--detach", after)
+        git("checkout", "-q", "--force", "--detach", after)
     link_data()
-    notes = stage()
+    notes = ([scrubbed] if scrubbed else []) + stage()
     force = sys.argv[1:] == ["--restart"]
     broke = []
     for label, paths, probe, wait in SERVICES:
@@ -485,4 +524,16 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    crashed = STATE / "runtime-sync.crash"
+    try:
+        code = main()
+    except Exception as exc:
+        # a crash used to land only in runtime-sync.err.log (610 tracebacks, nobody told); one
+        # alert per distinct crash, not one every five minutes
+        why = f"runtime sync crashed: {type(exc).__name__}: {exc}"[:300]
+        if not crashed.exists() or crashed.read_text() != why:
+            crashed.write_text(why)
+            alert(why)
+        raise
+    crashed.unlink(missing_ok=True)
+    raise SystemExit(code)
