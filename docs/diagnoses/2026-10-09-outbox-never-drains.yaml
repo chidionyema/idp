@@ -1,0 +1,64 @@
+description: 'The fleetview outbox on the laptop, 2026-10-09. Question: why does every
+  row in ~/.estate/outbox.db stay `pending` (browser steer intents never reach NATS)?
+  Three competing explanations were fixed, with their likelihoods, before the per-row
+  attempt columns were read: no process ever starts the drain worker; the worker runs
+  but every publish to the bus fails; or the worker publishes but cannot mark rows
+  published. Disclosure: the code-search evidence (second item) was observed before
+  this record was written, while salvaging lane feat/action-ledger; the row-state
+  evidence (first item) was read only after the likelihoods below were committed to
+  this file.'
+hypotheses:
+- name: H1
+  description: nothing starts the outbox drain worker -- fleetview serve.py never
+    calls outbox.start_worker -- so no row is ever attempted
+  prior: 0.34
+- name: H2
+  description: the worker runs, but every publish to NATS fails (bus unreachable or
+    refused), so rows are attempted, retried and left pending with an error
+  prior: 0.33
+- name: H3
+  description: the worker runs and publishes, but the status write back to the sqlite
+    file fails (wrong path, lock, permissions), so rows look untouched
+  prior: 0.33
+n_eff_divisor: 10
+evidence:
+- name: per-row attempt state in ~/.estate/outbox.db (retries, last_attempt_at, error),
+    2026-10-09
+  observed:
+    never_attempted: 194
+    attempted_failed: 0
+    published: 0
+  likelihoods:
+    H1:
+      never_attempted: 0.97
+      attempted_failed: 0.02
+      published: 0.01
+    H2:
+      never_attempted: 0.08
+      attempted_failed: 0.9
+      published: 0.02
+    H3:
+      never_attempted: 0.8
+      attempted_failed: 0.12
+      published: 0.08
+- name: callers of outbox.start_worker / OutboxWorker on origin/main (git grep across
+    backstage, platform, bin)
+  observed:
+    none_found: 1
+    callers_found: 0
+  likelihoods:
+    H1:
+      none_found: 0.9
+      callers_found: 0.1
+    H2:
+      none_found: 0.15
+      callers_found: 0.85
+    H3:
+      none_found: 0.15
+      callers_found: 0.85
+posteriors:
+  H1: 0.9810553104
+  H2: 0.0
+  H3: 0.0189446896
+winner: H1
+computed_at: '2026-10-09T20:08:43Z'
