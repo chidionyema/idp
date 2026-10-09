@@ -350,7 +350,18 @@ export function speakWithDevice(
   }
   return new Promise(resolve => {
     const u = new SpeechSynthesisUtterance(text);
-    const done = () => resolve();
+    // `onend` is not guaranteed: Chrome drops it when the utterance is garbage-collected mid-speech
+    // and iOS Safari when the audio session is interrupted. Measured 2026-10-09 on the live site: a
+    // Pixel turn showed its whole answer and never closed, so the mic never came back. The
+    // utterance is held until it ends, and a clause can never hold the turn longer than it could
+    // take to say (~15 chars/s, generously).
+    speaking.add(u);
+    const done = () => {
+      clearTimeout(watchdog);
+      speaking.delete(u);
+      resolve();
+    };
+    const watchdog = setTimeout(done, 3000 + text.length * 70);
     u.onend = done;
     u.onerror = done;
     signal?.addEventListener('abort', () => {
@@ -360,6 +371,7 @@ export function speakWithDevice(
     synth.speak(u);
   });
 }
+const speaking = new Set<SpeechSynthesisUtterance>();
 
 /**
  * Who is speaking. The event contract's `steer` object REQUIRES an author, because "the estate
@@ -695,8 +707,8 @@ export function useEstateVoice(): EstateVoice {
       const startedAt = performance.now();
 
       let hearBody: any;
-      try {
-        const res = await fetchApi.fetch(
+      const hear = () =>
+        fetchApi.fetch(
           `${FLEETVIEW}/voice/hear?session_id=${encodeURIComponent(
             sessionId,
           )}&author=${encodeURIComponent(AUTHOR)}`,
@@ -707,6 +719,14 @@ export function useEstateVoice(): EstateVoice {
             signal: turn.signal,
           },
         );
+      try {
+        // ONE RETRY ON A DROPPED UPLOAD. Measured 2026-10-09 on the live site: a Pixel turn ended
+        // on "could not reach the voice service: Failed to fetch" while the pod logged
+        // ClientDisconnect mid-body -- the question never arrived, so sending it again is safe.
+        const res = await hear().catch(e => {
+          if (turn.signal.aborted) throw e;
+          return hear();
+        });
         hearBody = await res.json();
         if (!res.ok) {
           setState('error');
