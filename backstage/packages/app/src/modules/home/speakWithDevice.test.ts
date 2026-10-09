@@ -45,6 +45,24 @@ describe('speakWithDevice', () => {
     expect(cancelled).toBe(1);
   });
 
+  it('lets the turn go on when the browser never says the clause ended', async () => {
+    jest.useFakeTimers();
+    try {
+      (window as any).speechSynthesis.speak = (u: any) => spoken.push(u.text);
+      let settled = false;
+      const done = speakWithDevice('ten chars.').then(() => {
+        settled = true;
+      });
+      await jest.advanceTimersByTimeAsync(3000);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(800);
+      await done;
+      expect(settled).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('resolves at once where the browser has no voice', async () => {
     delete (window as any).speechSynthesis;
     await expect(speakWithDevice('anything')).resolves.toBeUndefined();
