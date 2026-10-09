@@ -72,6 +72,15 @@ def main() -> None:
     key = load_key()
     if key:
         os.environ["LITELLM_API_KEY"] = key
+    # The server inherits launchd's PATH too, and agent_jobs shells out to `gh auth token` when no
+    # token file is set. With /usr/bin:/bin only, gh (in ~/.local/bin or Homebrew) was not found and
+    # /agent-jobs answered 503 "Fleet has no GitHub credential" with gh logged in (2026-10-09).
+    tool_dirs = [
+        str(Path.home() / ".local/bin"),
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+    ]
+    os.environ["PATH"] = ":".join([*tool_dirs, os.environ.get("PATH", "/usr/bin:/bin")])
     print(
         f"fleetview-launchd: router key {'loaded' if key else 'MISSING -- /voice will answer 503'}",
         file=sys.stderr,
