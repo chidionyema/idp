@@ -382,6 +382,34 @@ class GitHubBackend:
     def main_red(self, sha: str) -> bool:
         return self.checks(sha)[0] == "red"
 
+    CLAIM_GATE = Path(__file__).resolve().parent.parent / "bin" / "claim-gate"
+
+    def unclaimed(self, head: str, base: str) -> str:
+        """Main's own bin/claim-gate on the lane, as ci-success will run it (idp#5612).
+
+        Only a FAIL is a reason to hold the lane. A gate that cannot judge -- missing, timed
+        out, gh down -- admits it: CI still runs the same gate and stays the guarantee.
+        """
+        if not self.CLAIM_GATE.is_file():
+            return ""
+        mb = self.git("merge-base", base, head, check=False) or base
+        try:
+            p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+                [sys.executable, str(self.CLAIM_GATE), mb, head],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                env={**os.environ, "GITHUB_REPOSITORY": self.repo},
+            )
+        except subprocess.TimeoutExpired:
+            return ""
+        fails = [
+            ln.removeprefix("FAIL  claim-gate  ")
+            for ln in p.stdout.splitlines()
+            if ln.startswith("FAIL  claim-gate  ")
+        ]
+        return f"no live claim: {'; '.join(fails)}" if p.returncode and fails else ""
+
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         try:
             self._land(members, tip)
