@@ -59,6 +59,7 @@ def tick() -> int:
         required_contexts(),
         run_url=os.environ.get("GREENLANE_RUN_URL", ""),
         image_only_diff=ROOT / "bin/idp-image-only-diff",
+        status_token=os.environ.get("GREENLANE_STATUS_TOKEN", ""),
     )
     b.fetch()
     st = State.loads(b.load_state_text())

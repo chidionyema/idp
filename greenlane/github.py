@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -40,8 +41,13 @@ RED_CONCLUSIONS = {
 }
 
 
-def _run(*args: str, check: bool = True, input: Optional[str] = None) -> str:
-    p = subprocess.run(args, capture_output=True, text=True, input=input)  # noqa: S603, S607 -- git/gh with fixed argv, no shell
+def _run(
+    *args: str,
+    check: bool = True,
+    input: Optional[str] = None,
+    env: Optional[dict] = None,
+) -> str:
+    p = subprocess.run(args, capture_output=True, text=True, input=input, env=env)  # noqa: S603, S607 -- git/gh with fixed argv, no shell
     if check and p.returncode != 0:
         raise RuntimeError(
             f"{' '.join(args[:3])}: rc={p.returncode} {p.stderr.strip()[:400]}"
@@ -67,6 +73,7 @@ class GitHubBackend:
         app_login: str = "estate-agents[bot]",
         run_url: str = "",
         image_only_diff: Optional[Path] = None,
+        status_token: str = "",
     ):
         self.repo, self.required, self.app_login, self.run_url = (
             repo,
@@ -75,6 +82,14 @@ class GitHubBackend:
             run_url,
         )
         self.image_only_diff = image_only_diff
+        # The token report() writes the `greenlane` commit status with (2026-10-09, #5576). Not
+        # the App's: neither the platform-engineer lane nor the App itself holds `statuses`
+        # (platform/github-app/lanes.json, manifest.json), so every status POST made with it was
+        # refused -- 0 of 40 landed lanes carried one, and lane-submit, which waits on exactly
+        # that status, timed out BLIND 102 times in 109. The runner's GITHUB_TOKEN has
+        # `statuses: write` (greenlane.yml), and a status starts no workflow, so the reason the
+        # App token exists does not apply here. Empty means "use gh's own token", as before.
+        self.status_token = status_token
         self.owner = repo.split("/")[0]
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
 
@@ -523,9 +538,27 @@ class GitHubBackend:
         if self.run_url:
             fields["target_url"] = self.run_url
         try:
-            self.gh(f"statuses/{head}", "POST", fields)
-        except RuntimeError:
-            pass  # a status is a courtesy to the lane's agent; the verdict lives in the state
+            if self.status_token:
+                _run(
+                    "gh",
+                    "api",
+                    f"repos/{self.repo}/statuses/{head}",
+                    "-X",
+                    "POST",
+                    "--input",
+                    "-",
+                    input=json.dumps(fields),
+                    env={**os.environ, "GH_TOKEN": self.status_token},
+                )
+            else:
+                self.gh(f"statuses/{head}", "POST", fields)
+        except RuntimeError as e:
+            # The verdict lives in the state, so a refused status must not fail the tick -- but it
+            # is said, not swallowed: the silent `pass` here hid a permanent 403 for weeks.
+            print(
+                f"WARN    greenlane  status for {lane} not written: {e}",
+                file=sys.stderr,
+            )
 
     def adopted_prs(self) -> list[dict]:
         """Open pull requests the engine adopted: (number, branch, lane, head)."""
