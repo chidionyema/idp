@@ -388,7 +388,8 @@ SERVICES = [
     ),
     (
         "ai.estate.fleetview-backend",
-        BACKEND_PATHS,
+        # its launcher too: the server's PATH (and so /agent-jobs' gh) is set there
+        (*BACKEND_PATHS, "bin/fleetview-launchd"),
         "http://127.0.0.1:18790/healthz",
         90,
     ),
