@@ -1713,17 +1713,6 @@ export default function FleetReactorApp() {
   // "Cannot access 'voice' before initialization" and blanked the page.
   const [voiceDraft, setVoiceDraft] = useState('');
   const [voiceOpen, setVoiceOpen] = useState(false);
-  const [voiceText, setVoiceText] = useState('');
-
-  // Keep the on-screen line in step with the engine: what was heard, the reply, and any reason
-  // the engine could not work. The engine names the real cause (mic permission vs service
-  // unreachable), which the old code could not distinguish.
-  useEffect(() => {
-    if (partial) setVoiceText(`you: ${partial}…`);
-    else if (voice.heard) setVoiceText(`you: ${voice.heard}`);
-    else if (voice.reply) setVoiceText(voice.reply);
-    else if (voice.detail) setVoiceText(voice.detail);
-  }, [partial, voice.heard, voice.reply, voice.detail]);
 
   const openVoice = async () => {
     setVoiceOpen(true);
@@ -2138,30 +2127,6 @@ export default function FleetReactorApp() {
           </div>
         );
       })()}
-
-      {/* THE EPHEMERAL SUBTITLE.
-      
-          The consultant's single biggest finding: "the biggest lie currently on screen is the
-          illusion of seamless voice control while hiding the raw transcript... the person is
-          blindly firing Whisper transcripts into a black box." This is the loop closed -- what was
-          heard, and what was said back, shown for three seconds and gone.
-      
-          Positioned just above the mic and deliberately NOT in the panel: the proof must be where
-          the person's eye already is while they are speaking. It disappears on its own, so it costs
-          no permanent space -- which is the whole reason it can exist at all. */}
-      {voice.state !== 'off' && (voice.heard || voice.reply) ? (
-        <div
-          data-testid="voice-subtitle"
-          className="absolute bottom-28 left-1/2 -translate-x-1/2 z-40 max-w-[560px] px-4 py-2 rounded-lg bg-black/80 border border-white/10 backdrop-blur-md pointer-events-none"
-        >
-          {voice.heard ? (
-            <div className="text-[12px] font-mono text-cyan-300 truncate">› {voice.heard}</div>
-          ) : null}
-          {voice.reply ? (
-            <div className="text-[12px] text-white/85 leading-snug pt-0.5 truncate">{voice.reply}</div>
-          ) : null}
-        </div>
-      ) : null}
 
       {/* THE AGENT PANEL: WHO IS WHO, AND WHAT EACH ONE IS DOING.
 
@@ -2745,10 +2710,23 @@ export default function FleetReactorApp() {
       
         {/* 2. WHAT WAS HEARD AND WHAT WAS SAID. A voice interface that does not show its words
             cannot be debugged by the person using it, and "it misheard me" is indistinguishable
-            from "it ignored me". */}
-        {voice.heard || voice.reply || voice.detail ? (
-          <div className="w-full bg-black/70 border border-white/10 backdrop-blur-md rounded-xl px-4 py-2 text-[11px] font-mono max-h-[120px] overflow-y-auto">
-            {voice.heard ? <div className="text-cyan-300">› {voice.heard}</div> : null}
+            from "it ignored me".
+
+            THE ONE PLACE A TURN IS DRAWN. There were three: this box, a "voice-subtitle" at
+            bottom-28 and a "you:" caption at bottom-24, all centred over the mic, so one turn
+            rendered as three stacked, overlapping copies (seen in the 2026-10-08 browser proof).
+            This box is kept because it alone carries the timings and the mic-recovery link; the
+            live partial the caption showed is folded in here. */}
+        {partial || voice.heard || voice.reply || voice.detail ? (
+          <div
+            data-testid="voice-transcript"
+            className="w-full bg-black/70 border border-white/10 backdrop-blur-md rounded-xl px-4 py-2 text-[11px] font-mono max-h-[120px] overflow-y-auto"
+          >
+            {partial ? (
+              <div className="text-cyan-300/60">› {partial}…</div>
+            ) : voice.heard ? (
+              <div className="text-cyan-300">› {voice.heard}</div>
+            ) : null}
             {voice.reply ? <div className="text-white/85 mt-1">{voice.reply}</div> : null}
             {voice.detail ? <div className="text-white/35 mt-1">{voice.detail}</div> : null}
             {/* One tap, not a settings tour -- see FacePage.tsx / useEstateVoice.ts
@@ -2819,15 +2797,6 @@ export default function FleetReactorApp() {
 
       {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
       <Delivery />
-      {/* The transcript, for as long as it is being spoken. It is a caption, not a control: it sits
-          above the mic, fades on its own, and is the ONLY text this page needs for voice. */}
-      {voiceText && voice.state !== 'off' ? (
-        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-40 max-w-[520px] px-3 py-1.5 rounded-lg bg-black/70 border border-white/10 backdrop-blur-md text-[11px] font-mono text-white/75 text-center pointer-events-none">
-          {voice.heard ? <span className="text-cyan-300">you: {voice.heard}</span> : null}
-          {voice.reply ? <span className={voice.heard ? ' block pt-1 text-white/85' : 'text-white/85'}>{voice.reply}</span> : null}
-          {!voice.heard && !voice.reply ? voiceText : null}
-        </div>
-      ) : null}
 
 
       <NewsDesk
