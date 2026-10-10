@@ -150,3 +150,15 @@ def test_every_known_provider_key_becomes_a_wildcard_lane(tmp_path):
         "groq": ["GROQ_API_KEY", "GROQ_API_KEY_2"],
         "nvidia_nim": ["NVIDIA_API_KEY"],
     }
+
+
+def test_the_zai_lane_rides_the_coding_plan_endpoint(tmp_path):
+    """#5691: the Z.ai key is a GLM Coding Plan key; the default endpoint refuses it (1113)."""
+    cfg, _ = _render(tmp_path, {"ZAI_API_KEY": "f", "GROQ_API_KEY": "f"})
+    wild = {
+        m["model_name"]: m["litellm_params"]
+        for m in cfg["model_list"]
+        if m["model_name"].endswith("/*")
+    }
+    assert wild["zai/*"]["api_base"] == "https://api.z.ai/api/coding/paas/v4"
+    assert "api_base" not in wild["groq/*"]
