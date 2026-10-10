@@ -531,6 +531,11 @@ class LaneRegistry(CustomLogger):
                     messages=[{"role": "user", "content": "1"}],
                     max_tokens=1,
                     timeout=_PROBE_TIMEOUT_S,
+                    # A direct call carries model_info=None, and LiteLLM's cost-based routing
+                    # handler (lowest_cost.py) does .get() on it after every success: each
+                    # probe logged an AttributeError traceback (2,244 on 2026-10-10). An empty
+                    # dict lets it return early, so probes also stay out of the routing costs.
+                    model_info={},
                 ),
                 _PROBE_TIMEOUT_S,
             )

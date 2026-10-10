@@ -350,3 +350,37 @@ def test_load_reconciles_ghost_and_probe_era_deaths(mod, tmp_path):
     assert reg.state("groq/canopylabs/orpheus-v1-english") == "ready"
     assert reg.state("groq/whisper-large-v3-turbo") == "ready"
     assert reg.state("moonshot/kimi-k3") == "dead"  # chat death is evidence, kept
+
+
+def test_a_probe_success_passes_the_cost_routing_handler_cleanly(mod, monkeypatch):
+    """The router runs cost-based-routing; its success handler crashed on every probe because a
+    direct acompletion carries model_info=None (2,244 tracebacks on 2026-10-10)."""
+    litellm = pytest.importorskip("litellm")
+    from litellm.router_strategy.lowest_cost import LowestCostLoggingHandler
+
+    seen = {}
+
+    async def fake_acompletion(**kwargs):
+        seen.update(kwargs)
+        return {"choices": []}
+
+    monkeypatch.setattr(litellm, "acompletion", fake_acompletion)
+    reg = _registry(mod)
+    asyncio.run(reg._probe_one("groq/llama", {"model": "groq/llama", "api_key": "k"}))
+
+    # The kwargs LiteLLM hands its success callbacks for a direct call: litellm_params carries
+    # whatever model_info the caller passed, and metadata is never None.
+    handler = LowestCostLoggingHandler(router_cache=litellm.DualCache())
+    logged = []
+    monkeypatch.setattr(
+        "litellm.router_strategy.lowest_cost.verbose_logger.exception",
+        lambda *a, **k: logged.append(a),
+    )
+    kwargs = {
+        "litellm_params": {
+            "metadata": {"hidden_params": {}},
+            "model_info": seen.get("model_info"),
+        }
+    }
+    asyncio.run(handler.async_log_success_event(kwargs, None, None, None))
+    assert logged == []
