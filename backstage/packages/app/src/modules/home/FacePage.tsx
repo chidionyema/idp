@@ -20,6 +20,7 @@
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import EstateFace from './EstateFace';
 import FleetBackdrop from './FleetBackdrop';
+import { useResearch } from './useResearch';
 import { useEstateVoice } from './useEstateVoice';
 
 const LABEL: Record<string, string> = {
@@ -29,6 +30,34 @@ const LABEL: Record<string, string> = {
   speaking: 'Speaking…',
   error: 'Tap to try again',
 };
+
+export function FaceFindingsStrip() {
+  const loaded = useResearch(1);
+  if (loaded.state !== 'ready' || loaded.claims.length === 0) return null;
+  const claim = loaded.claims[0];
+  const line =
+    claim.statement.length > 140 ? `${claim.statement.slice(0, 139)}…` : claim.statement;
+  return (
+    <div
+      data-testid="face-research-strip"
+      style={{
+        position: 'absolute',
+        top: 'calc(env(safe-area-inset-top, 0px) + 44px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(680px, calc(100% - 32px))',
+        textAlign: 'center',
+        fontSize: 12,
+        lineHeight: 1.5,
+        color: 'rgba(232,237,245,0.55)',
+        textShadow: '0 1px 8px rgba(11,14,20,0.8)',
+        pointerEvents: 'none',
+      }}
+    >
+      {line}
+    </div>
+  );
+}
 
 export function FacePage() {
   const voice = useEstateVoice();
@@ -66,6 +95,13 @@ export function FacePage() {
       }}
     >
       <FleetBackdrop />
+
+      {/* THE FINDINGS STRIP (idp#5714): the research department's newest verified claim, one
+          muted line under the wordmark. Silent while loading or unreadable -- the face is not a
+          dashboard, and the voice loop already reports failures -- but whenever the department
+          has produced a finding, the estate's face carries it. Never interactive: taps pass
+          through to the face. */}
+      <FaceFindingsStrip />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />

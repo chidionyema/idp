@@ -1,0 +1,100 @@
+description: 'The founder asked for a DeepSeek V4 Flash lane on the estate router
+  (2026-10-10). Before adding one, the question is what is actually wrong with the
+  DeepSeek path the router already has: the `deepseek` row is `deepseek/deepseek-chat`
+  with no api_base, so it calls api.deepseek.com directly. Question: is the lane dead
+  because the router process holds no DEEPSEEK_API_KEY (the secret is never mounted),
+  because it holds the key and the vendor refuses it, or because the lane is fine
+  and only a v4-flash model id is missing.
+
+  Measured 2026-10-10 against the cluster: deployment llm/litellm, pods litellm-568b987867-
+  {4ql54,w8kq9} (1/1 Running, 6h), 35 rendered model rows, and the manifests on main.
+
+  '
+hypotheses:
+- name: H1
+  description: the router process holds no DEEPSEEK_API_KEY -- human-deepseek is never
+    mounted into the litellm Deployment, so the row's os.environ/DEEPSEEK_API_KEY
+    resolves to nothing
+  prior: 0.3333333333
+- name: H2
+  description: the key is mounted and exported, and api.deepseek.com refuses it (revoked
+    or unpaid account)
+  prior: 0.3333333333
+- name: H3
+  description: the deepseek lane is healthy end to end, and the only thing absent
+    is a model row for a v4-flash id
+  prior: 0.3333333333
+evidence:
+- name: human-deepseek present in the litellm Deployment's volumes and volumeMounts
+    (of a list that mounts minimax, gemini, openrouter, cohere, kimi, zai, cerebras,
+    nvidia, groq, sambanova)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.02
+      absent: 0.98
+    H2:
+      present: 0.95
+      absent: 0.05
+    H3:
+      present: 0.95
+      absent: 0.05
+- name: DEEPSEEK_API_KEY visible in the running router pod's environment (printenv,
+    and os.environ inside the pod)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.02
+      absent: 0.98
+    H2:
+      present: 0.98
+      absent: 0.02
+    H3:
+      present: 0.98
+      absent: 0.02
+- name: ExternalSecret human-deepseek in namespace llm (the bridge is not the missing
+    link)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.9
+      absent: 0.1
+    H3:
+      present: 0.9
+      absent: 0.1
+- name: model_list rows in the live router naming a v4-flash model id (of 35 rows)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.1
+      absent: 0.9
+    H2:
+      present: 0.1
+      absent: 0.9
+    H3:
+      present: 0.1
+      absent: 0.9
+- name: what the DeepSeek key file carried in the bridge Secret (the field name the
+    export glob would produce)
+  observed:
+    '`DEEPSEEK_API_KEY`': 1
+  likelihoods:
+    H1:
+      '`DEEPSEEK_API_KEY`': 0.95
+    H2:
+      '`DEEPSEEK_API_KEY`': 0.95
+    H3:
+      '`DEEPSEEK_API_KEY`': 0.95
+posteriors:
+  H1: 0.997921862
+  H2: 0.001039069
+  H3: 0.001039069
+winner: H1
+computed_at: '2026-10-10T21:27:10Z'

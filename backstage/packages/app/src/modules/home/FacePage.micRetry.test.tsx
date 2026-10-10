@@ -36,6 +36,12 @@ jest.mock('@backstage/frontend-plugin-api', () => ({
 }));
 jest.mock('./EstateFace', () => ({ __esModule: true, default: () => null }));
 jest.mock('./FleetBackdrop', () => ({ __esModule: true, default: () => null }));
+// useResearch drags the catalogue graph in through useEstate (the same chain that
+// breaks core-plugin-api under jsdom here); the page renders one list, so it gets
+// a ready envelope and nothing else.
+jest.mock('./useResearch', () => ({
+  useResearch: () => ({ state: 'ready', claims: [] }),
+}));
 
 const mocked = require('./useEstateVoice').useEstateVoice as jest.Mock;
 

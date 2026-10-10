@@ -157,6 +157,18 @@ spec:
             # start unresolved without this pair, exactly the cerebras/nvidia gap above.
             - { name: human-groq, mountPath: /run/secrets/human/groq, readOnly: true }
             - { name: human-sambanova, mountPath: /run/secrets/human/sambanova, readOnly: true }
+            # 2026-10-10: the deepseek row has always declared
+            # `api_key: os.environ/DEEPSEEK_API_KEY`, but human-deepseek was mounted by
+            # neither this list nor the volumes below -- the same gap the cerebras/nvidia
+            # note above records, left unfixed for this vendor. The container exports keys
+            # by globbing /run/secrets/human/*/*, so with no file there the router process
+            # carried no DEEPSEEK_API_KEY at all (measured: `printenv` in the running pod
+            # returns none, and in-pod os.environ reports it absent), and the row resolved
+            # its api_key to nothing. The key itself was never missing: the bridge Secret
+            # human-deepseek is SecretSynced=True in this namespace and carries exactly
+            # DEEPSEEK_API_KEY. Mount it, optional like every other human door, so the row
+            # can authenticate the moment the vault holds the key.
+            - { name: human-deepseek, mountPath: /run/secrets/human/deepseek, readOnly: true }
             - { name: tmp, mountPath: /tmp }
             - { name: pobr-agent-key, mountPath: /etc/litellm/keys, readOnly: true }
           resources:
@@ -224,6 +236,8 @@ spec:
           secret: { secretName: human-groq, optional: true }
         - name: human-sambanova
           secret: { secretName: human-sambanova, optional: true }
+        - name: human-deepseek
+          secret: { secretName: human-deepseek, optional: true }
         - name: tmp
           emptyDir: { sizeLimit: 256Mi }
         - name: pobr-agent-key

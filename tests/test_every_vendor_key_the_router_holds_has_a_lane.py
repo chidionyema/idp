@@ -49,7 +49,7 @@ def _rendered_lane_names():
 
 
 def _router_mounts():
-    """Every env name the router pod will actually hold, read from its own manifest."""
+    """Every volume the router pod mounts, read from its own manifest."""
     names = set()
     for doc in yaml.safe_load_all(POD.read_text()):
         if not doc or doc.get("kind") != "Deployment":
@@ -58,6 +58,25 @@ def _router_mounts():
             for v in c.get("volumeMounts", []):
                 names.add(v["name"])
     return names
+
+
+def _upstream_fields():
+    """The env names the extracted `litellm-upstream` Secret is DECLARED to carry.
+
+    Read from the registry's targets, because the manifest names the Secret and not its keys.
+    This is what the registry asks for, not what the live Secret holds -- measured 2026-10-10,
+    llm/litellm-upstream carried 7 keys (ANTHROPIC, GEMINI, GROQ, LITELLM_DB_PASSWORD,
+    LITELLM_MASTER_KEY, MINIMAX, OPENROUTER) and NOT DEEPSEEK_API_KEY, though consoles.yaml
+    declares a deepseek -> litellm-upstream target. A declaration is not a key. So this set is
+    deliberately NOT used to prove a lane can authenticate; `_router_mounts()` is the half git
+    can actually witness, and it is the half that was missing for deepseek.
+    """
+    return {
+        t.get("field")
+        for v in _vendors().values()
+        for t in (v.get("targets") or [])
+        if t.get("entry") == "litellm-upstream" and t.get("field")
+    }
 
 
 @pytest.fixture(scope="module")
@@ -83,7 +102,20 @@ def test_a_vendor_the_router_can_reach_is_a_vendor_the_router_serves(lanes):
 
 
 def test_a_lane_the_router_serves_is_a_key_the_router_pod_mounts(lanes):
-    """A rendered lane whose key nothing mounts is a lane that answers 401 forever."""
+    """A rendered lane whose key nothing mounts is a lane that answers 401 forever.
+
+    2026-10-10: this check could not fail. It asked `"upstream" in mounts`, and `upstream` is
+    the name of a volumeMount that is always present, so the condition short-circuited to True
+    for every vendor on every run. The deepseek lane sat in exactly the state this docstring
+    describes and this test passed: the row rendered, the chain named it, and
+    `os.environ/DEEPSEEK_API_KEY` resolved to nothing, because human-deepseek was mounted by
+    neither the volumeMounts nor the volumes -- while llm/litellm-upstream, the other route,
+    carried 7 keys and not that one (measured in-cluster 2026-10-10).
+
+    The grade is the human-<vendor> mount, which is the half a checkout can witness. A
+    registry that declares a litellm-upstream target is not evidence the key is there: for
+    deepseek the declaration existed and the key did not.
+    """
     cfg = yaml.safe_load(ROUTER.read_text())
     mounts = _router_mounts()
     orphans = []
@@ -93,12 +125,10 @@ def test_a_lane_the_router_serves_is_a_key_the_router_pod_mounts(lanes):
             continue
         env = key.split("/", 1)[1]
         vendor = env.rsplit("_API_KEY", 1)[0].lower()
-        # the key arrives either inside the one extracted upstream entry or on its own
-        # human-<vendor> bridge mount; both are volumeMounts on this Deployment.
-        if "upstream" in mounts or f"human-{vendor}" in mounts:
+        if f"human-{vendor}" in mounts or f"human-{env.lower()}" in mounts:
             continue
         orphans.append((m["model_name"], env))
     assert not orphans, (  # noqa: S101
-        f"{orphans} name an environment variable the router pod mounts nothing for; the lane "
+        f"{orphans} name an environment variable no human-<vendor> mount provides; the lane "
         "renders, the chain names it, and every turn that reaches it fails auth"
     )

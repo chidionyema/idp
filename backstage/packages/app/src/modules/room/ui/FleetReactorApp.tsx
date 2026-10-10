@@ -55,6 +55,7 @@ import AgentJobs from './AgentJobs';
 import HarvPanel from './HarvPanel';
 import ConciergeTasks from './ConciergeTasks';
 import KeySync from './KeySync';
+import ResearchFindings from './ResearchFindings';
 import EfficiencyHud from './EfficiencyHud';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
@@ -2844,6 +2845,13 @@ export default function FleetReactorApp() {
           if (!base) return Promise.reject(new Error('discovery not ready'));
           return api.fetch(`${base}/fleetview/key-sync`, init);
         }}
+      />
+
+      {/* What the research department verified, newest first (idp#5714). This one is NOT behind
+          the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
+          middleware's plugin:// translation directly. */}
+      <ResearchFindings
+        call={(init) => api.fetch('plugin://research-output/claims', init)}
       />
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}

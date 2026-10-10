@@ -26,6 +26,9 @@ resources:
   - fleetview-voice-service.yaml
   # The voice sidecar's router key, mounted as a file (voice.py router_key()).
   - fleetview-voice-router-key.yaml
+  # The research department's db credential for /api/research-output
+  # (packages/backend/src/researchOutput.ts) -- same vault entry the engine reads.
+  - research-db-external-secret.yaml
   # /fleet proxies to the founder's Mac over the tailnet (founder order 2026-10-08).
   - fleetview-mac-egress.yaml
   # crew#503 CP6: backstage/founder is a kustomization of its own (a directory base may live anywhere;
@@ -490,3 +493,25 @@ patches:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
+  # idp#5714: the catalogue container (not the sidecar -- the plugin is a backend plugin,
+  # served by the node process) reads the research department's db credential from a mounted
+  # file, per secrets-not-from-env-vars. optional: true for the same reason healthchecks-ro
+  # is: a vault field that has not landed yet must not hold the whole portal in
+  # ContainerCreating (incident 2026-08-30); the plugin answers 503-unavailable until it does.
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: research-db
+          secret:
+            secretName: research-db
+            optional: true
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: research-db
+          mountPath: /run/secrets/research-db
+          readOnly: true
