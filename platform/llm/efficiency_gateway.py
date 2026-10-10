@@ -206,7 +206,9 @@ def _session_id(data: dict) -> str:
 # settles it is a randomised control: a fixed share of conversations runs with every step off,
 # and the report compares what the vendor billed per call in each arm. Assignment hashes the
 # conversation, never the call, so a conversation stays in one arm for its whole life.
-HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "25"))
+# OFF by default since 2026-10-10 (#5678): the founder chose to run every conversation through
+# the chain rather than pay for a control arm. ESTATE_HOLDOUT_PCT re-opens the trial.
+HOLDOUT_PCT = float(os.environ.get("ESTATE_HOLDOUT_PCT", "0"))
 HOLDOUT_SALT = os.environ.get("ESTATE_HOLDOUT_SALT", "trial-2026-09-29")
 # A named exception to the hash, for a conversation someone deliberately pulled out of the
 # holdout (2026-10-08: the founder asked to be moved to treat mid-conversation after the ledger
