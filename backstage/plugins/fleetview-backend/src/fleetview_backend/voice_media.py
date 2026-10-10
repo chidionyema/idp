@@ -701,6 +701,12 @@ def _macos_say(text: str, rate: int, voice: str | None = None) -> bytes | None:
 
     if not shutil.which("say"):
         return None
+    # A clause that starts with "-" (a bullet from the answer) is read by `say` as an option:
+    # measured 2026-10-10, "- two agents working" exits 1 with "invalid option" and the route
+    # answered 502 for about one clause in eight. The bullet is not speech either, so it goes.
+    text = text.lstrip("-–—•* \t")
+    if not text:
+        return None
     with tempfile.NamedTemporaryFile(suffix=".wav") as f:
         try:
             subprocess.run(
