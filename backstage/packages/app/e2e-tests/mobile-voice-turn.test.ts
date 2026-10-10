@@ -44,6 +44,17 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
   test.setTimeout(240_000);
   await page.addInitScript(b64 => {
     const sources: AudioBufferSourceNode[] = [];
+    // What the person HEARD: clauses voiced by the estate, and clauses the device spoke instead.
+    const heard = { estate: 0, device: 0 };
+    (window as any).__voiceHeard = heard;
+    const synth = window.speechSynthesis;
+    if (synth) {
+      const speak0 = synth.speak.bind(synth);
+      synth.speak = (u: SpeechSynthesisUtterance) => {
+        if (u.text) heard.device += 1;
+        speak0(u);
+      };
+    }
     const fetch0 = window.fetch;
     window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
       const url = String((input as Request)?.url ?? input);
@@ -52,6 +63,20 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
       // 2026-10-09: the VAD can cut the utterance at its pause and send "What is the fleet
       // dashboard?" alone, and with the loop already stopped the rest was never said.
       const res = fetch0(input, init);
+      if (/\/voice\/say/.test(url)) {
+        res
+          .then(r =>
+            r
+              .clone()
+              .arrayBuffer()
+              .then(b => [r.ok, b.byteLength] as const),
+          )
+          .then(([ok, n]) => {
+            if (ok && n > 0) heard.estate += 1;
+            console.log(`voice say -> ok=${ok} bytes=${n}`);
+          })
+          .catch(() => {});
+      }
       if (/\/voice\/hear/.test(url)) {
         res
           .then(r => r.clone().json())
@@ -122,4 +147,9 @@ test('/fleet hears a spoken question and answers it', async ({ page }) => {
   await expect(page.getByText(/reply \d+(\.\d+)?s/).first()).toBeVisible({
     timeout: 120_000,
   });
+  // Heard, not just shown: 2026-10-09 the reply was on screen and silent, because the estate's
+  // voice was out of quota and the pod had no local engine.
+  const heard = await page.evaluate(() => (window as any).__voiceHeard);
+  console.log(`voice heard estate=${heard.estate} device=${heard.device}`);
+  expect(heard.estate + heard.device).toBeGreaterThan(0);
 });
