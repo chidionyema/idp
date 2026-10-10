@@ -350,6 +350,8 @@ export function speakWithDevice(
   }
   return new Promise(resolve => {
     const u = new SpeechSynthesisUtterance(text);
+    const voice = deviceVoice(synth);
+    if (voice) u.voice = voice;
     // `onend` is not guaranteed: Chrome drops it when the utterance is garbage-collected mid-speech
     // and iOS Safari when the audio session is interrupted. Measured 2026-10-09 on the live site: a
     // Pixel turn showed its whole answer and never closed, so the mic never came back. The
@@ -372,6 +374,31 @@ export function speakWithDevice(
   });
 }
 const speaking = new Set<SpeechSynthesisUtterance>();
+
+// The face is a woman's, so the device speaks with a woman's voice where it has one. Left unset the
+// OS picks, and on Windows and many Androids that is a man's (2026-10-10, "male voice" on /face).
+const DEVICE_VOICES = [
+  'Samantha', // iOS, macOS
+  'Google US English', // Chrome
+  'Microsoft Aria',
+  'Microsoft Jenny',
+  'Microsoft Zira',
+  'Karen',
+  'Moira',
+  'Tessa',
+];
+
+/** The device voice to speak with: a named woman's English voice, else any English one. */
+export function deviceVoice(
+  synth: Pick<SpeechSynthesis, 'getVoices'>,
+): SpeechSynthesisVoice | undefined {
+  const voices = synth.getVoices?.() ?? [];
+  for (const name of DEVICE_VOICES) {
+    const v = voices.find(x => x.name.startsWith(name));
+    if (v) return v;
+  }
+  return voices.find(x => /female/i.test(x.name) && x.lang.startsWith('en'));
+}
 
 /**
  * Who is speaking. The event contract's `steer` object REQUIRES an author, because "the estate
@@ -1097,14 +1124,18 @@ export function useEstateVoice(): EstateVoice {
         let perm = 'unqueryable';
         try {
           perm = (
-            await navigator.permissions.query({ name: 'microphone' as PermissionName })
+            await navigator.permissions.query({
+              name: 'microphone' as PermissionName,
+            })
           ).state;
         } catch {
           /* Safari versions without the microphone PermissionName */
         }
         traceMic(
           'mic-failed-state',
-          `perm=${perm} standalone=${isStandaloneHomeScreen()} visible=${document.visibilityState} focus=${document.hasFocus()}`,
+          `perm=${perm} standalone=${isStandaloneHomeScreen()} visible=${
+            document.visibilityState
+          } focus=${document.hasFocus()}`,
         );
       })();
       setState('error');

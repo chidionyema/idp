@@ -1,4 +1,4 @@
-import { speakWithDevice } from './useEstateVoice';
+import { deviceVoice, speakWithDevice } from './useEstateVoice';
 
 // 2026-10-09: the estate's voice was out of quota and every clause came back with no audio; the
 // founder saw the answer and heard nothing. The device's voice now speaks it instead.
@@ -66,5 +66,30 @@ describe('speakWithDevice', () => {
   it('resolves at once where the browser has no voice', async () => {
     delete (window as any).speechSynthesis;
     await expect(speakWithDevice('anything')).resolves.toBeUndefined();
+  });
+
+  it("speaks with a woman's voice where the device has one, matching the face", async () => {
+    const voices = [
+      { name: 'Microsoft David', lang: 'en-US' },
+      { name: 'Microsoft Zira', lang: 'en-US' },
+    ];
+    (window as any).speechSynthesis.getVoices = () => voices;
+    let used: any;
+    const speak = (window as any).speechSynthesis.speak;
+    (window as any).speechSynthesis.speak = (u: any) => {
+      used = u.voice;
+      speak(u);
+    };
+    await speakWithDevice('hello');
+    expect(used?.name).toBe('Microsoft Zira');
+  });
+
+  it("leaves the voice to the device when it has no woman's voice it can name", () => {
+    expect(
+      deviceVoice({
+        getVoices: () => [{ name: 'Daniel', lang: 'en-GB' }],
+      } as any),
+    ).toBeUndefined();
+    expect(deviceVoice({} as any)).toBeUndefined();
   });
 });
