@@ -524,12 +524,121 @@ def flux_floor(deadline):
 VAULT_PLACEHOLDER = "shadow-vault-stand-in"
 
 
-def vault_stand_ins(external_secrets):
-    """The Secrets ESO would write for these ExternalSecrets, holding placeholders."""
+def consumer_secret_keys():
+    """{(namespace, secret name): [key names consumers read]}, from the head's manifests.
+
+    For an extract-style ExternalSecret the upstream key names are unknowable in the
+    shadow -- and also irrelevant: the only keys that matter are the ones a workload
+    actually reads. This walks the head's own platform/ manifests the way this script
+    parses every row (bounded regexes, no YAML library for the runner to lack) and
+    names those keys: valueFrom.secretKeyRef {name, key} in both spellings, and secret
+    volumes with items. An envFrom secretRef names a Secret but no key, so it
+    contributes the name with nothing behind it -- the shadow does not invent keys
+    nobody named.
+    """
+    refs = {}
+    for dirpath, _dirs, files in os.walk(os.path.join(REPO, "platform")):
+        for fname in files:
+            if not fname.endswith((".yaml", ".yml")):
+                continue
+            try:
+                with open(os.path.join(dirpath, fname), errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            for doc in re.split(r"^---\s*$", text, flags=re.M):
+                ns_m = re.search(r"^  namespace:\s*(\S+)", doc, re.M)
+                ns = ns_m.group(1) if ns_m else "default"
+
+                def add(name, key, _ns=ns):
+                    slot = refs.setdefault((_ns, name), [])
+                    if key and key not in slot:
+                        slot.append(key)
+
+                for m in re.finditer(
+                    r"secretKeyRef:\s*\n\s+name:\s*(\S+)\s*\n\s+key:\s*(\S+)", doc
+                ):
+                    add(m.group(1), m.group(2))
+                for m in re.finditer(
+                    r"secretKeyRef:\s*\{\s*name:\s*([^,}\s]+)\s*,\s*key:\s*([^}\s]+)",
+                    doc,
+                ):
+                    add(m.group(1), m.group(2))
+                # secret volumes: secretName: X, then items: - key: K until dedent.
+                # Chart values name Secrets too: existingSecret: X with a sibling
+                # secretKey: K at the same indent names the key (temporal); alone, it
+                # is a named reference with no knowable keys (hindsight's ln -> envFrom).
+                lines = doc.splitlines()
+                i = 0
+                vol = items_at = None
+                while i < len(lines):
+                    line = lines[i]
+                    i += 1
+                    m = re.match(r"^(\s*)secretName:\s*(\S+)", line)
+                    if m:
+                        vol, items_at = m.group(2), None
+                        add(vol, None)
+                        continue
+                    m = re.match(r"^(\s*)existingSecret:\s*(\S+)", line)
+                    if m:
+                        indent, name = len(m.group(1)), m.group(2)
+                        add(name, None)
+                        while i < len(lines):
+                            nxt = lines[i]
+                            s = nxt.strip()
+                            if s and not s.startswith("#"):
+                                cur = len(nxt) - len(nxt.lstrip())
+                                if cur < indent or (
+                                    cur == indent
+                                    and not s.startswith(
+                                        ("existingSecret", "secretKey")
+                                    )
+                                ):
+                                    break
+                                km = re.match(r"^(\s*)secretKey:\s*(\S+)", nxt)
+                                if km and len(km.group(1)) == indent:
+                                    add(name, km.group(2))
+                            i += 1
+                        continue
+                    if vol is None:
+                        continue
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    indent = len(line) - len(line.lstrip())
+                    if items_at is not None and indent <= items_at:
+                        items_at = None
+                    m = re.match(r"^(\s*)(items|key):\s*(\S*)", line)
+                    if not m:
+                        continue
+                    what, value = m.group(2), m.group(3)
+                    if what == "items" and not value:
+                        items_at = indent
+                    elif what == "key" and items_at is not None and indent > items_at:
+                        add(vol, value)
+                for m in re.finditer(r"secretRef:\s*\{\s*name:\s*([^},\s]+)", doc):
+                    add(m.group(1), None)
+                for m in re.finditer(r"secretRef:\s*\n\s+name:\s*(\S+)", doc):
+                    add(m.group(1), None)
+    return refs
+
+
+def vault_stand_ins(external_secrets, consumer_keys=None):
+    """The Secrets ESO would write for these ExternalSecrets, holding placeholders.
+
+    Keys come from three sources, in order of authority: the ExternalSecret's own
+    spec (data[].secretKey, target template, dataFrom rewrites), then the keys the
+    head's own consumers read from the target Secret (consumer_keys) -- which is the
+    only source that knows them for extract-style ExternalSecrets. Measured 2026-10-10,
+    greenlane 38088674916: the stand-in wrote temporal/temporal-db with zero keys, and
+    temporal-frontend died anyway: `couldn't find key password in Secret`.
+    """
     out = []
     for es in external_secrets:
         meta, spec = es.get("metadata") or {}, es.get("spec") or {}
         target = spec.get("target") or {}
+        name = target.get("name") or meta.get("name")
+        namespace = meta.get("namespace") or "default"
         keys = [d["secretKey"] for d in spec.get("data") or [] if d.get("secretKey")]
         keys += list(((target.get("template") or {}).get("data") or {}).keys())
         for src in spec.get("dataFrom") or []:
@@ -538,13 +647,15 @@ def vault_stand_ins(external_secrets):
                 tpl = (rw.get("transform") or {}).get("template") or ""
                 if tpl and "{{" not in tpl:
                     keys.append(tpl)
+        if consumer_keys:
+            keys += consumer_keys.get((namespace, name), [])
         out.append(
             {
                 "apiVersion": "v1",
                 "kind": "Secret",
                 "metadata": {
-                    "name": target.get("name") or meta.get("name"),
-                    "namespace": meta.get("namespace") or "default",
+                    "name": name,
+                    "namespace": namespace,
                     "labels": {"idp.shadow/vault-stand-in": "true"},
                 },
                 "stringData": {k: VAULT_PLACEHOLDER for k in dict.fromkeys(keys)},
@@ -556,6 +667,7 @@ def vault_stand_ins(external_secrets):
 def stand_in_vault(stop, every=5.0):
     """Until stop is set, give every ExternalSecret in the shadow its Secret, once."""
     made = set()
+    consumer_keys = consumer_secret_keys()
     while True:
         p = kube(
             ["get", "externalsecrets.external-secrets.io", "-A", "-o", "json"],
