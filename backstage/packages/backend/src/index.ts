@@ -26,6 +26,8 @@ backend.add(
 // form with live prices and fit.
 backend.add(import('./featureRegister'));
 backend.add(import('./credentialIngest'));
+// The research department's verified claims (estate-db/research.claims) on /api/research-output.
+backend.add(import('./researchOutput'));
 
 // techdocs plugin
 backend.add(import('@backstage/plugin-techdocs-backend'));
