@@ -91,7 +91,19 @@
                 // proxy (platform/backstage/overlays/oke/fleetview-mac-egress.yaml); the Mac
                 // publishes its loopback-bound service with `tailscale serve --tcp 18790`.
                 // Backstage's sign-in gates the browser; this rule only lets the proxy dial.
-                "tag:founder-mac:18790"]},
+                "tag:founder-mac:18790",
+                // 8770: the bounded command door on the founder's Mac (~/.estate/bin/mac-door,
+                // LaunchAgent com.estate.mac-door, founder order 2026-10-10). Same shape as
+                // 18790: loopback-bound, published with `tailscale serve --tcp 8770`. This rule
+                // is why the door can bind loopback instead of the tailnet IP -- `serve` puts it
+                // on the tailnet without rebinding, and authorisation here is by tag, so it does
+                // not care that the otto pod's sidecar re-enrolls and its tailnet IP changes.
+                //
+                // Reaching this port is not authorisation. Every /run carries a bearer token
+                // (401 without it), the environment is scrubbed, and each command is appended to
+                // ~/.estate/mac-door-audit.log. The grant is deliberately one port on one host:
+                // removing this line, or the tag, revokes otto's access to the Mac entirely.
+                "tag:founder-mac:8770"]},
     {"action": "accept", "src": ["group:founder"],
      "dst":    ["tag:founder-mac:*", "autogroup:self:*"]},
     // His phone reads the cluster through the bridge, and only the one port the bridge serves.
