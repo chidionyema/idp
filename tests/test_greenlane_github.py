@@ -293,6 +293,67 @@ def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
     )
 
 
+def test_land_vouches_for_the_exact_sha_before_it_merges_it():
+    """`greenlane` is a required check on main, and this is where it turns green. On 2026-10-10
+    five pull requests were raised and merged by hand; with the vouch required, only a sha the
+    engine proved can carry it. Written on the merged sha, before the merge, or the merge is
+    refused."""
+    b = _fast(Recorded(_green("r1"), run_url="https://run"))
+    b.git = lambda *a, check=True: ""
+    b.land([("lane/feat/a", "a1", "r1")], "tipsha0123456789")
+    kinds = [(w[0], w[1]) for w in b.writes]
+    vouch = kinds.index(("POST", "statuses/r1"))
+    merge = next(i for i, k in enumerate(kinds) if k[0] == "PUT" and "/merge" in k[1])
+    assert vouch < merge
+    fields = b.writes[vouch][2]
+    assert fields["context"] == "greenlane" and fields["state"] == "success"
+    assert "tipsha012345" in fields["description"]
+
+
+def test_land_merges_nothing_when_the_vouch_is_refused():
+    """Unlike report(), a refused vouch is not swallowed: the merge would be refused anyway, and
+    the lane must go back on its own head (I4) rather than sit half-landed."""
+    b = _fast(Recorded(_green("r1")))
+    b.git = lambda *a, check=True: ""
+    real_gh = b.gh
+
+    def gh(path, method="GET", fields=None):
+        if path.startswith("statuses/"):
+            raise RuntimeError("HTTP 403")
+        return real_gh(path, method, fields)
+
+    b.gh = gh
+    with pytest.raises(RuntimeError, match="403"):
+        b.land([("lane/feat/a", "a1", "r1")], "tip")
+    assert not [w for w in b.writes if w[0] == "PUT"]
+
+
+def test_main_requires_the_greenlane_vouch_and_the_engine_never_waits_on_it():
+    import importlib.machinery
+    import importlib.util
+    import json
+
+    spec = json.loads(
+        (ROOT / "platform/github/ruleset.idp.required-checks.json").read_text()
+    )
+    checks = next(
+        r["parameters"]["required_status_checks"]
+        for r in spec["rules"]
+        if r["type"] == "required_status_checks"
+    )
+    # pinned to the Actions app: the runner token that writes it, and nothing a person posts
+    assert {"context": "greenlane", "integration_id": 15368} in checks
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_greenlane", str(ROOT / "bin/idp-greenlane")
+    )
+    mod = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader("idp_greenlane", loader)
+    )
+    loader.exec_module(mod)
+    assert "greenlane" not in mod.required_contexts()
+    assert "ci-success" in mod.required_contexts()
+
+
 def test_land_waits_for_the_reruns_its_own_push_starts_before_merging():
     # 2026-10-07, #5461: the lane-head push re-queues every required check on the same sha, and
     # a merge issued before they finish is a 405. Five batches in a row died that way.
@@ -718,6 +779,12 @@ def test_every_required_check_on_main_is_produced_by_a_workflow_that_runs_on_mai
             produced.setdefault(name, reaches_main)
             produced.setdefault(f"{name} / {name}", reaches_main)
 
+    # `greenlane` is no job: it is the commit status the engine writes on the pull request's head
+    # just before it merges (GitHubBackend._land), and the ruleset judges it there.
+    produced["greenlane"] = (
+        "self._status(\n                rebased,"
+        in (ROOT / "greenlane/github.py").read_text()
+    )
     missing = [c for c in _ruleset_required_contexts() if not produced.get(c, False)]
     assert not missing, (
         f"required on main but no workflow that runs on main produces them: {missing}. "
