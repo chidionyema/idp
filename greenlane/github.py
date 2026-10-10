@@ -551,6 +551,21 @@ class GitHubBackend:
                 raise RuntimeError(
                     f"land: no pull request for {lane}; cannot move main"
                 )
+            # THE GREENLANE VOUCHES FOR THE SHA IT MERGES (2026-10-10). `greenlane` is a required
+            # check on main (ruleset.idp.required-checks.json), pinned to the Actions app, and
+            # this is the only place it is ever written as success -- so a pull request raised
+            # and merged by hand, which on 2026-10-10 was #5695, #5680, #5672, #5663 and #5646,
+            # can no longer reach main without the engine having proven it. Not swallowed like
+            # report(): without the vouch the merge below is refused, so say why here instead.
+            self._status(
+                rebased,
+                {
+                    "state": "success",
+                    "context": "greenlane",
+                    "description": f"proven on candidate {tip[:12]}",
+                    **({"target_url": self.run_url} if self.run_url else {}),
+                },
+            )
             subject = self.git("log", "-1", "--format=%s", rebased)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
@@ -600,6 +615,22 @@ class GitHubBackend:
         # it. `None` still means "no PR" and the caller refuses rather than guessing.
         return (created or {}).get("number")
 
+    def _status(self, sha: str, fields: dict) -> None:
+        if self.status_token:
+            _run(
+                "gh",
+                "api",
+                f"repos/{self.repo}/statuses/{sha}",
+                "-X",
+                "POST",
+                "--input",
+                "-",
+                input=json.dumps(fields),
+                env={**os.environ, "GH_TOKEN": self.status_token},
+            )
+        else:
+            self.gh(f"statuses/{sha}", "POST", fields)
+
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         state = {
             TESTING: "pending",
@@ -615,20 +646,7 @@ class GitHubBackend:
         if self.run_url:
             fields["target_url"] = self.run_url
         try:
-            if self.status_token:
-                _run(
-                    "gh",
-                    "api",
-                    f"repos/{self.repo}/statuses/{head}",
-                    "-X",
-                    "POST",
-                    "--input",
-                    "-",
-                    input=json.dumps(fields),
-                    env={**os.environ, "GH_TOKEN": self.status_token},
-                )
-            else:
-                self.gh(f"statuses/{head}", "POST", fields)
+            self._status(head, fields)
         except RuntimeError as e:
             # The verdict lives in the state, so a refused status must not fail the tick -- but it
             # is said, not swallowed: the silent `pass` here hid a permanent 403 for weeks.
