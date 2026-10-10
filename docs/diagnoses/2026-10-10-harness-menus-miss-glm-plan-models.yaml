@@ -1,0 +1,68 @@
+description: 'The laptop router''s harness catalog, 2026-10-10. Question: why do the
+  opencode and pi menus (catalog.json 16:04Z) lack glm-5-turbo, which the GLM Coding
+  Plan serves, and offer seven zai names the plan never served (#5697)? Three explanations
+  were fixed before the evidence was read: router_catalog.py takes zai from LiteLLM''s
+  static model list instead of the plan endpoint, the catalog ran before the zai lane
+  existed and is stale, or the plan''s own listing is what is wrong.'
+hypotheses:
+- name: H1
+  description: discover() calls litellm.get_valid_models, which for zai returns LiteLLM's
+    static list and never asks the coding/paas/v4 endpoint the lane uses
+  prior: 0.4
+- name: H2
+  description: the catalog is stale -- written before the zai lane served the plan
+    models
+  prior: 0.3
+- name: H3
+  description: the plan's own /models is what lists the wrong models
+  prior: 0.3
+evidence:
+- name: the zai list in catalog.json against LiteLLM's static zai list
+  observed:
+    identical: 1
+    differs: 0
+  likelihoods:
+    H1:
+      identical: 0.95
+      differs: 0.05
+    H2:
+      identical: 0.4
+      differs: 0.6
+    H3:
+      identical: 0.05
+      differs: 0.95
+- name: coding/paas/v4 /models with the plan key, from a cluster router pod
+  observed:
+    lists_glm_5_turbo_not_the_seven: 1
+    matches_the_menu: 0
+  likelihoods:
+    H1:
+      lists_glm_5_turbo_not_the_seven: 0.95
+      matches_the_menu: 0.05
+    H2:
+      lists_glm_5_turbo_not_the_seven: 0.6
+      matches_the_menu: 0.4
+    H3:
+      lists_glm_5_turbo_not_the_seven: 0.05
+      matches_the_menu: 0.95
+- name: catalog.json written after the router that serves zai/* booted (16:04Z, same
+    install)
+  observed:
+    after: 1
+    before: 0
+  likelihoods:
+    H1:
+      after: 0.9
+      before: 0.1
+    H2:
+      after: 0.05
+      before: 0.95
+    H3:
+      after: 0.9
+      before: 0.1
+posteriors:
+  H1: 0.987012987
+  H2: 0.010936432
+  H3: 0.002050581
+winner: H1
+computed_at: '2026-10-10T16:43:23Z'

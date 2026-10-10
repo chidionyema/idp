@@ -36,7 +36,13 @@ def required_contexts() -> list[str]:
     spec = json.loads(RULESET.read_text())
     for rule in spec["rules"]:
         if rule["type"] == "required_status_checks":
-            return [c["context"] for c in rule["parameters"]["required_status_checks"]]
+            # `greenlane` is the engine's own verdict, written just before it merges: waiting on
+            # it before writing it would hold every batch forever.
+            return [
+                c["context"]
+                for c in rule["parameters"]["required_status_checks"]
+                if c["context"] != "greenlane"
+            ]
     raise SystemExit(f"BLIND   greenlane  {RULESET} declares no required_status_checks")
 
 

@@ -241,7 +241,9 @@ if not otel_up:
 import json, time
 json.dump({"at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "served": sorted(served),
            "dropped": sorted(set(dropped) - served),
-           "providers": dict(sorted(providers.items())), "fallbacks": chains, "otel": otel_up},
+           "providers": dict(sorted(providers.items())),
+           "bases": {p: b for p, b in bases.items() if p in providers},
+           "fallbacks": chains, "otel": otel_up},
           open(os.path.join(os.path.dirname(sys.argv[2]), "lanes.json"), "w"), indent=1)
 # Laptop only: who may call this router (platform/llm/local_caller_auth.py). It runs before every
 # other callback, so a refused request costs nothing.
