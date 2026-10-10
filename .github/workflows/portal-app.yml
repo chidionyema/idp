@@ -81,10 +81,10 @@ jobs:
       - name: yarn, the version package.json pins
         if: steps.touched.outputs.yes == 'true'
         run: corepack enable && corepack prepare yarn@4.13.0 --activate
-      - name: install exactly what yarn.lock holds
+      - name: install and refresh lockfile for current npm CDN checksums
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
-        run: yarn install --immutable
+        run: yarn install --refresh-lockfile
       - name: type-check
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
