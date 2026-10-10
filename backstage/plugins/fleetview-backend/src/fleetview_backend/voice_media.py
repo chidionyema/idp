@@ -608,6 +608,10 @@ CLOUD_VOICES = [
     "austin",
     "daniel",
 ]  # Groq Orpheus, English
+# The default is the estate face's own voice, a woman's. The choice file below lives in the pod's
+# home, which no volume backs, so every deploy forgot the founder's pick and fell back to "troy" --
+# a man's voice from a woman's face (2026-10-10, "male voice" on /face).
+DEFAULT_CLOUD_VOICE = "hannah"
 _CHOICE_FILE = Path.home() / ".estate" / "voice-choice.json"
 
 
@@ -618,7 +622,10 @@ def _load_choice() -> dict[str, str]:
             return {"engine": c["engine"], "voice": c["voice"]}
     except Exception:  # noqa: BLE001, S110 - no file yet means the default below
         pass
-    return {"engine": "cloud", "voice": os.environ.get("VOICE_CLOUD_VOICE", "troy")}
+    return {
+        "engine": "cloud",
+        "voice": os.environ.get("VOICE_CLOUD_VOICE", DEFAULT_CLOUD_VOICE),
+    }
 
 
 _choice: dict[str, str] = _load_choice()
@@ -663,7 +670,8 @@ async def _router_synthesise(
                 json={
                     "model": "voice-tts",
                     "input": text,
-                    "voice": voice or os.environ.get("VOICE_CLOUD_VOICE", "troy"),
+                    "voice": voice
+                    or os.environ.get("VOICE_CLOUD_VOICE", DEFAULT_CLOUD_VOICE),
                     "response_format": "wav",
                 },
             )
