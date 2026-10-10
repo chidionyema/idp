@@ -1,0 +1,73 @@
+description: 'The router''s action ledger, 2026-10-10. Question: why was ~/.estate/action-ledger.jsonl
+  never written although the router had loaded the action_ledger callback? Three explanations
+  were fixed before the evidence was read: the callback raises while serialising the
+  request (a value json cannot encode), the callback is not registered on the running
+  router, or the write itself fails (disk full / path not writable).'
+hypotheses:
+- name: H1
+  description: record() raises while canonicalising the request body -- the proxy
+    hands callbacks a body holding datetimes and _canonical() has no default -- so
+    no call reaches the write
+  prior: 0.4
+- name: H2
+  description: the callback is not registered on the running router, so record() never
+    runs
+  prior: 0.35
+- name: H3
+  description: the write fails -- disk full or path not writable -- after the row
+    is built
+  prior: 0.25
+evidence:
+- name: action_ledger failures in the live router log (litellm-local.log tail, 2026-10-10)
+  observed:
+    datetime_not_serializable: 64
+    no_space: 0
+    silent: 0
+  likelihoods:
+    H1:
+      datetime_not_serializable: 0.9
+      no_space: 0.05
+      silent: 0.05
+    H2:
+      datetime_not_serializable: 0.05
+      no_space: 0.05
+      silent: 0.9
+    H3:
+      datetime_not_serializable: 0.1
+      no_space: 0.8
+      silent: 0.1
+- name: callback registered in the running config (router-state/config.runtime.yaml)
+  observed:
+    registered: 1
+    absent: 0
+  likelihoods:
+    H1:
+      registered: 0.9
+      absent: 0.1
+    H2:
+      registered: 0.1
+      absent: 0.9
+    H3:
+      registered: 0.9
+      absent: 0.1
+- name: unit reproduction (tests/test_action_ledger.py, a body with a datetime, on
+    main)
+  observed:
+    type_error_datetime: 1
+    recorded: 0
+  likelihoods:
+    H1:
+      type_error_datetime: 0.95
+      recorded: 0.05
+    H2:
+      type_error_datetime: 0.05
+      recorded: 0.95
+    H3:
+      type_error_datetime: 0.05
+      recorded: 0.95
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-10-10T09:43:12Z'
