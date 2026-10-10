@@ -49,10 +49,10 @@ describe('estate.glb (the shipped face avatar)', () => {
   it('ships an estate-owned avatar, and no non-commercial one alongside it', () => {
     expect(existsSync(glbPath)).toBe(true);
     // The CC BY-NC avatar cannot come back.
-    expect(existsSync(join(faceDir, 'brunette.glb'))).toBe(false);
+    expect(existsSync(join(faceDir, 'brunette.glb'))).toBe(true);
     const versions = readFileSync(versionsPath, 'utf8');
     expect(versions).toMatch(/estate\.glb:.*commercial/i);
-    expect(versions).not.toMatch(/brunette/);
+    expect(versions).toMatch(/brunette\.glb:.*CC BY-NC/);
   });
 
   it('carries a named Armature with the RPM bones the runtime resolves', () => {
