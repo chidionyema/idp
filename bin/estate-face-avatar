@@ -49,6 +49,7 @@ from __future__ import annotations
 import json
 import struct
 import sys
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -92,8 +93,13 @@ assert len(set(ARKIT)) == 53, "duplicate ARKit target name in the list"
 # spec. `parent` lays out the hierarchy; `pos` is the rest position in metres (a ~1.7 m figure,
 # head at the top since our mesh is a head-and-shoulders bust).
 FINGERS = ["Index", "Middle", "Ring", "Pinky"]
+HIPS_Y = 0.94  # rest height of an RPM figure's hips; the runtime re-derives it from the posed legs
+# The bust is modelled about its own centre; it sits this far above the Head bone (skull base).
+HEAD_CENTRE_ABOVE_HEAD_BONE = 0.07
 _BONES: list[tuple[str, str | None, tuple[float, float, float]]] = [
-    ("Hips", None, (0.0, 0.0, 0.0)),
+    # Hips at standing height, as in an RPM rig: the runtime's camera views assume a figure
+    # standing on y=0 (talkinghead.mjs setView frames 'upper' at 2/3 of eye height).
+    ("Hips", None, (0.0, HIPS_Y, 0.0)),
     ("Spine", "Hips", (0.0, 0.12, 0.0)),
     ("Spine1", "Spine", (0.0, 0.12, 0.0)),
     ("Spine2", "Spine1", (0.0, 0.12, 0.0)),
@@ -103,9 +109,12 @@ _BONES: list[tuple[str, str | None, tuple[float, float, float]]] = [
 for side, sx in (("Left", 1.0), ("Right", -1.0)):
     _BONES += [
         (f"{side}Shoulder", "Spine2", (sx * 0.06, 0.08, 0.0)),
-        (f"{side}Arm", f"{side}Shoulder", (sx * 0.12, 0.0, 0.0)),
-        (f"{side}ForeArm", f"{side}Arm", (sx * 0.24, 0.0, 0.0)),
-        (f"{side}Hand", f"{side}ForeArm", (sx * 0.22, 0.0, 0.0)),
+        # Limb bones run along their parent's local +Y, as in an RPM rig: the runtime's pose
+        # tables rotate them into place (e.g. LeftShoulder.rotation.z ~ -1.77 swings the arm out).
+        # Offsets on other axes made the posed limbs point the wrong way.
+        (f"{side}Arm", f"{side}Shoulder", (0.0, 0.12, 0.0)),
+        (f"{side}ForeArm", f"{side}Arm", (0.0, 0.24, 0.0)),
+        (f"{side}Hand", f"{side}ForeArm", (0.0, 0.22, 0.0)),
     ]
     for f in FINGERS:
         prev = f"{side}Hand"
@@ -118,17 +127,19 @@ for side, sx in (("Left", 1.0), ("Right", -1.0)):
         prev = f"{side}HandThumb{i}"
     _BONES += [
         (f"{side}UpLeg", "Hips", (sx * 0.10, -0.06, 0.0)),
-        (f"{side}Leg", f"{side}UpLeg", (0.0, -0.42, 0.0)),
-        (f"{side}Foot", f"{side}Leg", (0.0, -0.40, 0.0)),
-        (f"{side}ToeBase", f"{side}Foot", (0.0, -0.06, 0.08)),
+        # +Y too: the pose's UpLeg.rotation.z ~ 3 turns the leg to point down, and the runtime
+        # then sets the Hips height so the feet meet the floor.
+        (f"{side}Leg", f"{side}UpLeg", (0.0, 0.42, 0.0)),
+        (f"{side}Foot", f"{side}Leg", (0.0, 0.40, 0.0)),
+        (f"{side}ToeBase", f"{side}Foot", (0.0, 0.10, 0.0)),
     ]
 
 # The runtime also resolves six named objects off the Armature (talkinghead.mjs:1374-1379):
 # LeftToeBase and RightToeBase (already bones above) plus LeftEye and RightEye, which are read for
 # gaze. They are not pose bones, but a missing one is a hard TypeError, so they are nodes too.
 EYES: list[tuple[str, str, tuple[float, float, float]]] = [
-    ("LeftEye", "Head", (0.030, 0.020, 0.075)),
-    ("RightEye", "Head", (-0.030, 0.020, 0.075)),
+    ("LeftEye", "Head", (0.030, HEAD_CENTRE_ABOVE_HEAD_BONE + 0.02, 0.075)),
+    ("RightEye", "Head", (-0.030, HEAD_CENTRE_ABOVE_HEAD_BONE + 0.02, 0.075)),
 ]
 
 BONES = _BONES
@@ -163,17 +174,24 @@ def _bust(rings: int = 40, sectors: int = 56) -> tuple[np.ndarray, np.ndarray, n
     z -= 0.22 * rz * front * lower              # flatter face plane
     y += 0.10 * ry * np.clip(z / rz, -1.0, 0.0)  # fuller cranium at the back
 
-    # Neck and shoulders: below the head, pinch to a neck then flare out to shoulders, so the
-    # bust reads as a torso rather than a floating ball.
-    head_bottom = -0.80 * ry
-    below = y < head_bottom
-    t = np.clip((head_bottom - y) / (ry * 2.2), 0.0, 1.0)  # 0 at the head base, 1 at the bottom
-    neck = 1.0 - 0.55 * np.clip(t / 0.28, 0.0, 1.0)        # pinch in
-    shoulder = np.clip((t - 0.28) / 0.72, 0.0, 1.0) ** 0.7  # flare out
-    width = 0.30 + 2.6 * shoulder                           # half-width at the widest
-    x = np.where(below, np.sign(x) * width * np.abs(np.sin(T)) * 0.9 + x * neck * 0.12, x)
-    z = np.where(below, z * neck * 0.85, z)
-    y = np.where(below, y, y)
+    # Neck and shoulders: the lower rings of the sphere are re-laid below the jaw -- pinched to a
+    # neck, then flared to shoulders with real depth -- so the bust reads as a person at the
+    # chest-up framing. (The first cut squeezed the flare into the last 2 cm of the sphere, which
+    # drew as a flat plate.)
+    t_jaw = np.arccos(-0.80)                       # polar angle where the jaw meets the neck
+    below = T > t_jaw
+    s = np.clip((T - t_jaw) / (np.pi - t_jaw), 0.0, 1.0)
+    jaw_x = rx * np.sin(t_jaw) * (1.0 - 0.55 * 0.80**1.6)
+    jaw_z = rz * np.sin(t_jaw) * (1.0 - 0.55 * 0.80**1.6)
+    neck_s = 0.35
+    into_neck = np.clip(s / neck_s, 0.0, 1.0)
+    flare = np.clip((s - neck_s) / (1.0 - neck_s), 0.0, 1.0) ** 0.6
+    half_w = jaw_x + (0.050 - jaw_x) * into_neck + 0.17 * flare
+    half_d = jaw_z + (0.050 - jaw_z) * into_neck + 0.06 * flare
+    y_low = -0.80 * ry - 0.075 * into_neck - 0.10 * flare
+    x = np.where(below, half_w * np.cos(P), x)
+    z = np.where(below, half_d * np.sin(P), z)
+    y = np.where(below, y_low, y)
 
     pos = np.stack([x, y, z], axis=-1).reshape(-1, 3)
     n = np.stack([x / rx**2, y / ry**2, z / rz**2], axis=-1)
@@ -186,7 +204,9 @@ def _bust(rings: int = 40, sectors: int = 56) -> tuple[np.ndarray, np.ndarray, n
         for j in range(sectors):
             a = i * (sectors + 1) + j
             b = a + sectors + 1
-            idx += [a, b, a + 1, a + 1, b, b + 1]
+            # Counter-clockwise seen from outside (glTF front faces); the reverse order culled the
+            # outside and drew the inside of the far wall -- the back of the head, from within.
+            idx += [a, a + 1, b, a + 1, b + 1, b]
     return pos, nrm, uv, np.asarray(idx, dtype=np.uint32)
 
 
@@ -337,10 +357,10 @@ def _skin_weights(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
             (w_spine[i] * (1.0 - laterality[i]) * 0.9, "Spine1"),
             (w_spine[i] * (1.0 - laterality[i]) * 0.6, "Spine2"),
         ]
-        if x[i] >= 0:
-            cand += [(w_shoulder[i], "LeftShoulder"), (w_shoulder[i] * 0.5, "LeftArm")]
-        else:
-            cand += [(w_shoulder[i], "RightShoulder"), (w_shoulder[i] * 0.5, "RightArm")]
+        # The shoulders ride Spine2, not the shoulder/arm bones: the runtime's poses swing those
+        # bones ~100 degrees to hang the arms, and a bust has no arms to hang -- binding to them
+        # tore the shoulders across the frame.
+        cand += [(w_shoulder[i], "Spine2")]
         cand.sort(reverse=True)
         top = cand[:4]
         total = sum(c[0] for c in top) or 1.0
@@ -355,14 +375,48 @@ def _skin_weights(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return joints, contrib.astype(np.float32)
 
 
-def _inverse_bind_matrices(joints: np.ndarray) -> np.ndarray:
-    """An identity inverse-bind per joint: the rest pose is the bind pose, so IBM = identity.
+def _with_floor_anchors(pos, nrm, uv, idx, morphs, joints, weights):
+    """Append one zero-area triangle per foot, bound to the toe bone.
 
-    The runtime poses the armature itself (talkinghead.mjs poseFactory) rather than replaying
-    baked clips, so an identity bind is exactly right here, and it is honest: we bind at rest.
+    The runtime balances the figure every frame by lowering Hips until the mesh's lowest point
+    meets the floor (talkinghead.mjs "Hip-feet balance"). A bust's lowest point is its chest, so
+    without these the head sank to the floor, out of the 'upper' frame. A degenerate triangle
+    draws nothing but carries the bounds down to the feet, where an RPM body's would be.
+    """
+    world = _bone_world_positions()
+    idx_of = {n: i for i, n in enumerate(BONE_NAMES)}
+    base = len(pos)
+    add_pos, add_j = [], []
+    for toe in ("LeftToeBase", "RightToeBase"):
+        add_pos += [world[toe]] * 3
+        add_j += [[idx_of[toe], 0, 0, 0]] * 3
+    n_add = len(add_pos)
+    pos = np.vstack([pos, np.asarray(add_pos, dtype=pos.dtype)])
+    nrm = np.vstack([nrm, np.tile(np.array([0.0, 1.0, 0.0], dtype=nrm.dtype), (n_add, 1))])
+    uv = np.vstack([uv, np.zeros((n_add, 2), dtype=uv.dtype)])
+    idx = np.concatenate([idx, np.arange(base, base + n_add, dtype=idx.dtype)])
+    morphs = [(name, np.vstack([d, np.zeros((n_add, 3), dtype=d.dtype)])) for name, d in morphs]
+    joints = np.vstack([joints, np.asarray(add_j, dtype=joints.dtype)])
+    w = np.zeros((n_add, 4), dtype=weights.dtype)
+    w[:, 0] = 1.0
+    weights = np.vstack([weights, w])
+    return pos, nrm, uv, idx, morphs, joints, weights
+
+
+def _inverse_bind_matrices(joints: np.ndarray) -> np.ndarray:
+    """Inverse of each joint's rest world matrix: the mesh is bound where it sits, at rest.
+
+    Bones carry translation only, so each inverse is a pure translation by minus the joint's
+    world position. (An identity bind -- the 2026-10-04 version -- re-applied every bone's world
+    offset to vertices already in model space, so the head drew far from where the camera looked.)
     Eye nodes carry one too -- they are joints in the skin's joint list.
     """
-    return np.tile(np.eye(4, dtype=np.float32), (len(BONE_NAMES) + len(EYE_NAMES), 1, 1))
+    world = _bone_world_positions()
+    out = np.tile(np.eye(4, dtype=np.float32), (len(BONE_NAMES) + len(EYE_NAMES), 1, 1))
+    for i, name in enumerate(BONE_NAMES + EYE_NAMES):
+        out[i, :3, 3] = -world[name]
+    # glTF stores matrices column-major.
+    return np.ascontiguousarray(out.transpose(0, 2, 1))
 
 
 # =========================== GLB writing ===================================================
@@ -371,10 +425,93 @@ def _pad4(b: bytes, fill: bytes = b"\x00") -> bytes:
     return b + fill * ((4 - len(b) % 4) % 4)
 
 
+TEX_W, TEX_H = 1024, 512
+
+
+def _face_texture() -> bytes:
+    """The face painted onto the bust's UVs: skin, hair, brows, eyes and lips, as an RGB PNG.
+
+    Without it the bust drew as a blank egg -- the mouth and eye morphs moved, but nothing on the
+    surface showed where a mouth or an eye was. The features sit exactly where `_region_weights`
+    puts the morph regions (same normalised head coordinates), so the painted lips are what the
+    jaw and mouth targets move. Computed, not drawn: no third-party artwork, nothing to license.
+    """
+    u = (np.arange(TEX_W) + 0.5) / TEX_W
+    v = (np.arange(TEX_H) + 0.5) / TEX_H
+    U, V = np.meshgrid(u, v)
+    P = U * 2.0 * np.pi            # azimuth, as `_bust` lays out TEXCOORD_0
+    T = (1.0 - V) * np.pi          # `_bust` gives the crown v=1; glTF v=1 is the image's bottom row
+    lower = np.clip(-np.cos(T), 0.0, 1.0)
+    taper = 1.0 - 0.55 * lower**1.6
+    nx = np.sin(T) * np.cos(P) * taper
+    ny = np.cos(T)
+    nz = np.sin(T) * np.sin(P)
+
+    def ell(cx: float, cy: float, rx: float, ry: float) -> np.ndarray:
+        return ((nx - cx) / rx) ** 2 + ((ny - cy) / ry) ** 2
+
+    front = nz > 0.0
+    skin = np.array([0.80, 0.60, 0.50])
+    img = np.broadcast_to(skin, (TEX_H, TEX_W, 3)).copy()
+    # Cheeks: a faint warm blush.
+    for cx in (0.42, -0.42):
+        d = np.clip(1.0 - ell(cx, -0.08, 0.22, 0.14), 0.0, 1.0) * front
+        img = img * (1 - 0.25 * d[..., None]) + np.array([0.85, 0.48, 0.45]) * 0.25 * d[..., None]
+    # Hair: the crown, the back, and down the sides past the temples; the face is left open.
+    face_open = front & (ny < 0.48 - 0.25 * np.abs(nx) ** 2) & (np.abs(nx) < 0.72)
+    hair = (ny > -0.30) & ~face_open
+    img[hair] = [0.17, 0.11, 0.08]
+    # Brows.
+    for cx in (0.33, -0.33):
+        b = front & (ell(cx, 0.36 - 0.05 * np.abs(nx - cx) / 0.2, 0.17, 0.035) < 1.0)
+        img[b] = [0.20, 0.13, 0.09]
+    # Eyes: white, iris, pupil, upper lash line.
+    for cx in (0.34, -0.34):
+        e = front & (ell(cx, 0.18, 0.15, 0.075) < 1.0)
+        img[e] = [0.95, 0.94, 0.92]
+        img[front & (ell(cx, 0.18, 0.065, 0.065) < 1.0) & e] = [0.30, 0.20, 0.12]
+        img[front & (ell(cx, 0.18, 0.03, 0.03) < 1.0)] = [0.04, 0.03, 0.03]
+        lash = front & (ell(cx, 0.19, 0.16, 0.085) < 1.0) & ~e & (ny > 0.18)
+        img[lash] = [0.08, 0.05, 0.04]
+    # Nose: a soft shadow either side of the bridge and under the tip.
+    shade = np.clip(1.0 - ell(0.0, -0.13, 0.14, 0.04), 0.0, 1.0) * front
+    img *= (1 - 0.25 * shade)[..., None]
+    # Lips: upper and lower, parted by a dark line the jaw morph opens.
+    lip = front & (ell(0.0, -0.34, 0.30, 0.09) < 1.0)
+    img[lip] = [0.66, 0.30, 0.30]
+    img[front & (ell(0.0, -0.34, 0.27, 0.012) < 1.0)] = [0.25, 0.08, 0.08]
+
+    px = np.clip(np.round(np.round(img, 4) * 255.0), 0, 255).astype(np.uint8)
+    return _png(px)
+
+
+def _png(px: np.ndarray) -> bytes:
+    """A PNG with stored (uncompressed) deflate blocks: the bytes depend only on the pixels, never
+    on the zlib build -- `--check` byte-compares across machines (see `_quantise`)."""
+    h, w, _ = px.shape
+    raw = b"".join(b"\x00" + px[r].tobytes() for r in range(h))
+    blocks = bytearray()
+    for i in range(0, len(raw), 65535):
+        chunk = raw[i:i + 65535]
+        final = 1 if i + 65535 >= len(raw) else 0
+        blocks += struct.pack("<BHH", final, len(chunk), len(chunk) ^ 0xFFFF) + chunk
+    z = b"\x78\x01" + bytes(blocks) + struct.pack(">I", zlib.adler32(raw))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", zlib.crc32(tag + data))
+
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", z) + chunk(b"IEND", b""))
+
+
 def build() -> bytes:
     pos, nrm, uv, idx = _bust()
-    morphs = _morphs(pos)
+    morphs = _morphs(pos)  # regions are found on the bust about its own centre
+    # Place the bust on the skeleton: centred above the Head bone, in model space.
+    pos = pos + np.array([0.0, _bone_world_positions()["Head"][1] + HEAD_CENTRE_ABOVE_HEAD_BONE, 0.0])
     joints, weights = _skin_weights(pos)
+    pos, nrm, uv, idx, morphs, joints, weights = _with_floor_anchors(
+        pos, nrm, uv, idx, morphs, joints, weights)
     ibm = _inverse_bind_matrices(joints)
 
     views: list[dict] = []
@@ -426,6 +563,12 @@ def build() -> bytes:
     a_jnt = acc_of(v_jnt, len(joints), 4, 5123)
     a_wgt = acc_of(v_wgt, len(weights), 4, 5126)
     a_ibm = acc_of(add(ibm), len(ibm), 16, 5126)
+    png = _face_texture()
+    v_tex = len(views)
+    views.append({"buffer": 0, "byteOffset": len(blob), "byteLength": len(png)})
+    blob.extend(png)
+    while len(blob) % 4:
+        blob.append(0)
 
     targets = []
     for i, (name, delta) in enumerate(morphs):
@@ -487,11 +630,15 @@ def build() -> bytes:
                 "extras": {"targetNames": [n for n, _ in morphs]},
             }
         ],
+        "images": [{"bufferView": v_tex, "mimeType": "image/png"}],
+        "samplers": [{"magFilter": 9729, "minFilter": 9729, "wrapS": 33071, "wrapT": 33071}],
+        "textures": [{"source": 0, "sampler": 0}],
         "materials": [
             {
                 "name": "EstateSkin",
                 "pbrMetallicRoughness": {
-                    "baseColorFactor": [0.86, 0.68, 0.58, 1.0],
+                    "baseColorTexture": {"index": 0},
+                    "baseColorFactor": [1.0, 1.0, 1.0, 1.0],
                     "metallicFactor": 0.0,
                     "roughnessFactor": 0.62,
                 },
