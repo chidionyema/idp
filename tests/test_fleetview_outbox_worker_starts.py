@@ -39,3 +39,45 @@ def test_lifespan_starts_and_stops_the_outbox_worker(monkeypatch, tmp_path):
         assert not w._running
 
     asyncio.run(run())
+
+
+def test_a_row_whose_payload_carries_the_envelope_still_publishes(
+    monkeypatch, tmp_path
+):
+    """estate-execute and action_ledger store the whole event, session_id and all (idp#5651)."""
+    import json
+    import sqlite3
+
+    sent = []
+
+    class _Adapter:
+        @staticmethod
+        async def publish(nats_url, session_id, runtime, kind, phase, **kwargs):
+            sent.append((session_id, runtime, kind, phase, kwargs))
+
+    monkeypatch.setattr(outbox, "_nats", lambda: _Adapter)
+    monkeypatch.delenv("KAFKA_BROKERS", raising=False)
+    event = {
+        "session_id": "direct",
+        "runtime": "claude-code",
+        "kind": "gate",
+        "phase": "executing",
+        "at": "2026-10-10T09:09:38+00:00",
+        "gate": {"name": "estate-policy:shadow", "verdict": "refuse"},
+    }
+    con = sqlite3.connect(":memory:")
+    con.row_factory = sqlite3.Row
+    con.execute(
+        "CREATE TABLE r (session_id, runtime, kind, phase, payload)",
+    )
+    con.execute(
+        "INSERT INTO r VALUES (?, ?, ?, ?, ?)",
+        ("direct", "claude-code", "gate", "executing", json.dumps(event)),
+    )
+    row = con.execute("SELECT * FROM r").fetchone()
+
+    ok, err = asyncio.run(outbox._publish_row(row, "nats://127.0.0.1:1"))
+
+    assert (ok, err) == (True, "")
+    assert sent[0][:4] == ("direct", "claude-code", "gate", "executing")
+    assert sent[0][4]["gate"]["verdict"] == "refuse"
