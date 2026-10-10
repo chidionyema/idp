@@ -940,13 +940,6 @@ export function useEstateVoice(): EstateVoice {
     // into a real Safari tab, and a stale link pointing at an app that has already fixed itself
     // is worse than no link.
     setMicRecoveryUrl(undefined);
-    // iOS Safari speaks only from a tap: an empty utterance here, inside the tap, lets
-    // `speakWithDevice` voice a clause later when the estate's own voice cannot.
-    try {
-      window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''));
-    } catch {
-      /* no device voice; the estate's own still plays */
-    }
     // ASK FOR THE MIC INSIDE THE TAP, BEFORE ANY AWAIT (2026-10-09). MicVAD.new used to make the
     // getUserMedia call itself, after the library load and an AudioContext resume. By then iOS
     // Safari has dropped the tap's user activation and rejects with NotAllowedError without
@@ -965,6 +958,16 @@ export function useEstateVoice(): EstateVoice {
     micStream?.catch(() => {
       /* surfaced where it is awaited below */
     });
+    // THE DEVICE VOICE IS UNLOCKED AFTER THE MIC IS ASKED FOR, NEVER BEFORE (2026-10-10). iOS Safari
+    // speaks only from a tap, so an empty utterance here lets `speakWithDevice` voice a clause later
+    // when the estate's own voice cannot. It used to run first, which put iOS's audio session into
+    // playback a moment before the microphone request; the founder's iPhone (iOS 26) then refused
+    // the request within 0.3s, twice, with no prompt shown. The microphone goes first.
+    try {
+      window.speechSynthesis?.speak(new SpeechSynthesisUtterance(''));
+    } catch {
+      /* no device voice; the estate's own still plays */
+    }
     const releaseMic = () =>
       micStream
         ?.then(s => s.getTracks().forEach(t => t.stop()))
@@ -1087,6 +1090,23 @@ export function useEstateVoice(): EstateVoice {
       setDetail('listening — speak any time');
     } catch (e: any) {
       traceMic('mic-failed', `${e?.name}: ${e?.message || e}`);
+      // WHAT THE DEVICE SAID ABOUT ITSELF AT THE MOMENT OF REFUSAL. A refusal with no prompt has
+      // three causes that throw the same NotAllowedError -- the site set to Deny, Safari's own
+      // microphone access off, or the page itself -- and only this state tells them apart.
+      void (async () => {
+        let perm = 'unqueryable';
+        try {
+          perm = (
+            await navigator.permissions.query({ name: 'microphone' as PermissionName })
+          ).state;
+        } catch {
+          /* Safari versions without the microphone PermissionName */
+        }
+        traceMic(
+          'mic-failed-state',
+          `perm=${perm} standalone=${isStandaloneHomeScreen()} visible=${document.visibilityState} focus=${document.hasFocus()}`,
+        );
+      })();
       setState('error');
       const msg = String(e?.message || e);
       // WHAT HAPPENED, IN ONE LINE, AND NOTHING TO GO CHANGE. A refusal used to end in a settings
