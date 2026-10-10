@@ -126,7 +126,8 @@ backend:
     # repo dials 127.0.0.1 literally, so the v4 loopback is the one that must answer.
     host: 127.0.0.1
   csp:
-    connect-src: ["'self'", 'http:', 'https:']
+    connect-src: ["'self'", 'http:', 'https:', 'blob:']
+    img-src: ["'self'", 'data:', 'blob:']
     # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference
     # Default Helmet Content-Security-Policy values can be removed by setting the key to false
   cors:

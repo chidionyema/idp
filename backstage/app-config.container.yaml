@@ -122,7 +122,8 @@ backend:
     # 127.0.0.1:3100` return 000 while a browser on the same machine got 200.
     host: 0.0.0.0
   csp:
-    connect-src: ["'self'", 'http:', 'https:']
+    connect-src: ["'self'", 'http:', 'https:', 'blob:']
+    img-src: ["'self'", 'data:', 'blob:']
   database:
     # Postgres, not the in-memory sqlite of app-config.yaml. Two reasons, and
     # neither is preference. `:memory:` means every restart re-ingests the whole
