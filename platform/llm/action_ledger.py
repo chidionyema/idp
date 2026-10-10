@@ -72,7 +72,9 @@ def _sha(data: bytes) -> str:
 
 
 def _canonical(body: dict) -> bytes:
-    return json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    # The proxy puts datetimes in the request it hands callbacks; without default=str every such
+    # call raised "Object of type datetime is not JSON serializable" and the ledger stayed empty.
+    return json.dumps(body, sort_keys=True, separators=(",", ":"), default=str).encode()
 
 
 _KEY: Any = None
