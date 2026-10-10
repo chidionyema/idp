@@ -58,6 +58,10 @@
           {
             "context": "portal-app",
             "integration_id": 15368
+          },
+          {
+            "context": "greenlane",
+            "integration_id": 15368
           }
         ]
       }
