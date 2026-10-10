@@ -328,6 +328,9 @@ export function setClauseSink(sink: ClauseSink | null): void {
   clauseSink = sink;
 }
 
+// Utterances still sounding, held so the browser cannot garbage-collect them mid-speech.
+const speaking = new Set<SpeechSynthesisUtterance>();
+
 /**
  * A clause the estate could not voice is spoken by the device's own voice, never left silent.
  *
@@ -359,12 +362,15 @@ export function speakWithDevice(
     // utterance is held until it ends, and a clause can never hold the turn longer than it could
     // take to say (~15 chars/s, generously).
     speaking.add(u);
-    const done = () => {
-      clearTimeout(watchdog);
+    const release = () => {
       speaking.delete(u);
       resolve();
     };
-    const watchdog = setTimeout(done, 3000 + text.length * 70);
+    const watchdog = setTimeout(release, 3000 + text.length * 70);
+    const done = () => {
+      clearTimeout(watchdog);
+      release();
+    };
     u.onend = done;
     u.onerror = done;
     signal?.addEventListener('abort', () => {
@@ -374,7 +380,6 @@ export function speakWithDevice(
     synth.speak(u);
   });
 }
-const speaking = new Set<SpeechSynthesisUtterance>();
 
 // The face is a woman's, so the device speaks with a woman's voice where it has one. Left unset the
 // OS picks, and on Windows and many Androids that is a man's (2026-10-10, "male voice" on /face).
@@ -841,6 +846,34 @@ export function useEstateVoice(): EstateVoice {
           setDetail(`the fleet did not answer (${res.status})`);
           return;
         }
+        // SPEAK EACH CLAUSE AS IT LANDS, scheduled in the order it was written. Synthesis is the
+        // slow half; a clause whose audio fails is still on screen, which is why a missing clause
+        // degrades to the device voice, not to a broken turn. Defined outside the read loop so
+        // the closures it makes are not re-declared per frame.
+        const speakClause = (clauseText: string) => {
+          spoken.push(clauseText);
+          clauses += 1;
+          const first = clauses === 1;
+          const ttsStarted = performance.now();
+          const audio = fetchApi
+            .fetch(`${FLEETVIEW}/voice/say`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: clauseText }),
+              signal: turn.signal,
+            })
+            .then(r => (r.ok ? r.arrayBuffer() : null))
+            .catch(() => null); // one clause that cannot be spoken must not end the turn
+          chain = chain.then(async () => {
+            const buf = await audio;
+            ttsSeconds += (performance.now() - ttsStarted) / 1000;
+            if (turn.signal.aborted) return;
+            if (first || c.playing.length === 0) setState('speaking');
+            if (!buf) await speakWithDevice(clauseText, turn.signal);
+            else if (clauseSink) faceDone = clauseSink.speak(buf, clauseText);
+            else play(buf);
+          });
+        };
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
@@ -871,33 +904,7 @@ export function useEstateVoice(): EstateVoice {
             if (event === 'delta' && payload.text) {
               if (firstClauseAt === null) firstClauseAt = performance.now();
               setReply(p => (p ? `${p} ${payload.text}` : payload.text));
-              spoken.push(payload.text);
-              clauses += 1;
-              // SPEAK EACH CLAUSE AS IT LANDS, and await it so the audio is scheduled in the
-              // order it was written. Synthesis is the slow half; a clause whose audio fails is
-              // still on screen, which is why a missing clause degrades to silence, not to a
-              // broken turn.
-              const clauseText: string = payload.text;
-              const ttsStarted = performance.now();
-              const audio = fetchApi
-                .fetch(`${FLEETVIEW}/voice/say`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ text: payload.text }),
-                  signal: turn.signal,
-                })
-                .then(r => (r.ok ? r.arrayBuffer() : null))
-                .catch(() => null); // one clause that cannot be spoken must not end the turn
-              chain = chain.then(async () => {
-                const buf = await audio;
-                ttsSeconds += (performance.now() - ttsStarted) / 1000;
-                if (turn.signal.aborted) return;
-                if (clauses === 1 || c.playing.length === 0)
-                  setState('speaking');
-                if (!buf) await speakWithDevice(clauseText, turn.signal);
-                else if (clauseSink) faceDone = clauseSink.speak(buf, clauseText);
-                else play(buf);
-              });
+              speakClause(payload.text);
             }
           }
         }
@@ -1181,7 +1188,7 @@ export function useEstateVoice(): EstateVoice {
         setMicRecoveryUrl(window.location.href);
       }
     }
-  }, [runTurn, silence]);
+  }, [runTurn]);
 
   // The log, on a 10s cadence -- fast enough to see a problem appear, slow enough not to add to
   // the load the log exists to measure.
