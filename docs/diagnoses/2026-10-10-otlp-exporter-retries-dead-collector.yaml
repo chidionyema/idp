@@ -1,0 +1,84 @@
+description: 'The laptop router log, 2026-10-10. Question: why does the router retry
+  an OTLP collector on 127.0.0.1:4318 (8,394 ConnectionErrors) when lanes.json says
+  otel=false and the otel callback is removed from config.runtime.yaml? Three explanations
+  were fixed before the evidence was read: LiteLLM builds span/metric exporters from
+  the OTEL_* environment alone, the callback removal does not take effect and the
+  otel callback still runs, or a separate process on the laptop exports to :4318.'
+hypotheses:
+- name: H1
+  description: the launcher exports OTEL_* unconditionally and LiteLLM builds exporters
+    from the environment without the otel callback
+  prior: 0.35
+- name: H2
+  description: the otel callback still runs despite being removed from the runtime
+    config
+  prior: 0.35
+- name: H3
+  description: another process on the laptop exports to :4318
+  prior: 0.3
+evidence:
+- name: which processes carry OTEL_* in their environment
+  observed:
+    router_only: 1
+    others_too: 0
+  likelihoods:
+    H1:
+      router_only: 0.9
+      others_too: 0.1
+    H2:
+      router_only: 0.9
+      others_too: 0.1
+    H3:
+      router_only: 0.2
+      others_too: 0.8
+- name: runtime config callbacks list
+  observed:
+    otel_absent: 1
+    otel_present: 0
+  likelihoods:
+    H1:
+      otel_absent: 0.95
+      otel_present: 0.05
+    H2:
+      otel_absent: 0.2
+      otel_present: 0.8
+    H3:
+      otel_absent: 0.9
+      otel_present: 0.1
+- name: canary A/B on ports 4091/4092, same config and traffic, ~90s, OTEL_* unset
+    vs exported
+  observed:
+    unset_clean_exported_errors: 1
+    both_errors: 0
+  likelihoods:
+    H1:
+      unset_clean_exported_errors: 0.95
+      both_errors: 0.05
+    H2:
+      unset_clean_exported_errors: 0.3
+      both_errors: 0.7
+    H3:
+      unset_clean_exported_errors: 0.05
+      both_errors: 0.95
+- name: old launcher on :4093, otel callback dropped at startup (collector port dead),
+    then a dummy collector raised on that port; what the router exported to it over
+    ~75s
+  observed:
+    fastapi_server_spans_and_http_metrics_only: 1
+    litellm_callback_request_spans: 0
+  likelihoods:
+    H1:
+      fastapi_server_spans_and_http_metrics_only: 0.9
+      litellm_callback_request_spans: 0.1
+    H2:
+      fastapi_server_spans_and_http_metrics_only: 0.1
+      litellm_callback_request_spans: 0.9
+    H3:
+      fastapi_server_spans_and_http_metrics_only: 0.05
+      litellm_callback_request_spans: 0.05
+posteriors:
+  H1: 0.9921476247
+  H2: 0.0073288837
+  H3: 0.0005234917
+winner: H1
+computed_at: '2026-10-10T11:38:09Z'
