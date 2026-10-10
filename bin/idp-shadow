@@ -584,6 +584,221 @@ def stand_in_vault(stop, every=5.0):
             return
 
 
+# ---------------------------------------------------------------- the database stand-in
+#
+# The database the estate actually has. Production runs estate-db as CloudNativePG; the shadow
+# installs no operator and no cluster -- a throwaway that can never reach production has no
+# business carrying one -- so every workload that resolves estate-rw.estate-db.svc.cluster.local
+# used to find nothing and never converge. The stand-in is the same move as the vault stand-in
+# above: it stands in for the ESTATE (the server, its roles, its databases), never for the
+# change. The image is the one cluster.yaml pins (so the extensions are production's); the roles
+# and databases are the ones the head's own databases.yaml declares; and every password is the
+# vault stand-in's placeholder, which is exactly the value the vault stand-in writes into the
+# Secret the workload mounts. Nothing in the PR is touched to make room for it.
+ESTATE_DB_ROW = os.path.join(REPO, "platform", "estate-db", "cluster", "cluster.yaml")
+DATABASES_ROW = os.path.join(REPO, "platform", "estate-db", "cluster", "databases.yaml")
+DB_NS = "estate-db"
+DB_RW = "estate-rw"  # the CNPG read-write Service name, verbatim
+DB_STAND_IN = "estate-stand-in"
+
+
+def db_image():
+    """The image production's cluster pins, so the stand-in carries production's extensions."""
+    return pinned(ESTATE_DB_ROW, r"imageName: *(\S+)", "estate-db image")
+
+
+def database_rows():
+    """(database, owner, [extensions]) exactly as the estate's own seed declares them.
+
+    Parsed the way this script parses every row (pinned, eso_version): bounded regexes,
+    no YAML library for the runner to lack. The name that matters is spec's, not
+    metadata's -- temporal-visibility the Database is temporal_visibility the schema --
+    and a dashed extension line only counts under an extensions: key.
+    """
+    with open(DATABASES_ROW) as f:
+        docs = re.split(r"^---\s*$", f.read(), flags=re.M)
+    rows = []
+    for doc in docs:
+        if not re.search(r"^kind:\s*Database\s*$", doc, re.M):
+            continue
+        spec = re.search(r"^spec:\s*$\n(.*?)(?=^\S|\Z)", doc, re.M | re.S)
+        body = spec.group(1) if spec else doc
+        name = re.search(r"^  name:\s*(\S+)", body, re.M)
+        owner = re.search(r"^  owner:\s*(\S+)", body, re.M)
+        exts = re.findall(r"^    - name:\s*(\S+)", body, re.M)
+        if name and owner:
+            rows.append((name.group(1), owner.group(1), exts))
+    return rows
+
+
+def db_needs_standin(paths):
+    """True when a manifest under test points a workload at the estate database."""
+    for path in paths:
+        root = os.path.join(REPO, path.strip("/"))
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirs, files in os.walk(root):
+            for name in files:
+                if not name.endswith((".yaml", ".yml")):
+                    continue
+                with open(os.path.join(dirpath, name), errors="replace") as f:
+                    if "estate-db.svc.cluster.local" in f.read():
+                        return True
+    return False
+
+
+def db_sql(rows):
+    """The one psql script that mints the estate's roles, databases and extensions.
+
+    Guarded, not blind: only what the head's seed declares is created, and what already
+    exists is left alone -- the same ensure: present semantics CloudNativePG gives
+    production. One script, one exec, whatever the row count.
+    """
+    parts = ["\\set ON_ERROR_STOP on"]
+    for owner in dict.fromkeys(owner for _db, owner, _exts in rows):
+        parts.append(
+            f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{owner}') "
+            f"THEN CREATE ROLE \"{owner}\" LOGIN PASSWORD '{VAULT_PLACEHOLDER}'; "
+            "END IF; END $$;"
+        )
+    for db, owner, _exts in rows:
+        parts.append(
+            f'SELECT \'CREATE DATABASE "{db}" OWNER "{owner}"\' WHERE NOT EXISTS '
+            f"(SELECT FROM pg_database WHERE datname = '{db}') \\gexec"
+        )
+    for db, _owner, exts in rows:
+        if exts:
+            parts.append(f'\\connect "{db}"')
+            for ext in exts:
+                parts.append(f'CREATE EXTENSION IF NOT EXISTS "{ext}";')
+    return "\n".join(parts) + "\n"
+
+
+def db_standin_objects():
+    """The Namespace, one-Pod Deployment and estate-rw Service the stand-in needs."""
+    return [
+        {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {"name": DB_NS},
+        },
+        {
+            "apiVersion": "apps/v1",
+            "kind": "Deployment",
+            "metadata": {"name": DB_STAND_IN, "namespace": DB_NS},
+            "spec": {
+                "replicas": 1,
+                "selector": {"matchLabels": {"app": DB_STAND_IN}},
+                "template": {
+                    "metadata": {"labels": {"app": DB_STAND_IN}},
+                    "spec": {
+                        "containers": [
+                            {
+                                "name": "postgres",
+                                "image": db_image(),
+                                "command": ["/bin/bash", "-c"],
+                                "args": [
+                                    "set -e; umask 077; mkdir -p /tmp/ssl /tmp/pgdata; "
+                                    "chmod 700 /tmp/pgdata; "
+                                    f"openssl req -x509 -newkey rsa:2048 -nodes -days 3650 "
+                                    f"-subj /CN={DB_RW} -keyout /tmp/ssl/server.key "
+                                    "-out /tmp/ssl/server.crt 2>/dev/null; "
+                                    "if [ ! -s /tmp/pgdata/PG_VERSION ]; then "
+                                    'echo "$POSTGRES_SUPERUSER_PASSWORD" > /tmp/pwfile; '
+                                    "initdb -D /tmp/pgdata -U postgres --pwfile=/tmp/pwfile "
+                                    "--auth-local=trust --auth-host=scram-sha-256; fi; "
+                                    "exec postgres -D /tmp/pgdata -c ssl=on "
+                                    "-c ssl_cert_file=/tmp/ssl/server.crt "
+                                    "-c ssl_key_file=/tmp/ssl/server.key"
+                                ],
+                                "env": [
+                                    {
+                                        "name": "POSTGRES_SUPERUSER_PASSWORD",
+                                        "value": VAULT_PLACEHOLDER,
+                                    },
+                                ],
+                                "ports": [{"containerPort": 5432}],
+                            }
+                        ]
+                    },
+                },
+            },
+        },
+        {
+            "apiVersion": "v1",
+            "kind": "Service",
+            "metadata": {"name": DB_RW, "namespace": DB_NS},
+            "spec": {
+                "selector": {"app": DB_STAND_IN},
+                "ports": [{"port": 5432, "targetPort": 5432}],
+            },
+        },
+    ]
+
+
+def stand_in_database():
+    """Lay the database stand-in. Returns the failure, or None.
+
+    A Postgres that never becomes Ready, or a seed script it refuses, fails the run: a
+    shadow that cannot lay its own dependencies proves nothing about the change.
+    """
+    p = subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=json.dumps(db_standin_objects()),
+        capture_output=True,
+        text=True,
+    )
+    if p.returncode != 0:
+        return f"could not lay the database stand-in: {(p.stderr or '').strip()[-400:]}"
+    w = kube(
+        [
+            "-n",
+            DB_NS,
+            "wait",
+            "--for=condition=available",
+            f"deployment/{DB_STAND_IN}",
+            "--timeout=120s",
+        ],
+        check=False,
+        timeout=150,
+    )
+    if w.returncode != 0:
+        return (
+            "the database stand-in never became available: "
+            + (w.stderr or "").strip()[-300:]
+        )
+    seed = subprocess.run(
+        [
+            "kubectl",
+            "-n",
+            DB_NS,
+            "exec",
+            "-i",
+            f"deploy/{DB_STAND_IN}",
+            "--",
+            "psql",
+            "-U",
+            "postgres",
+            "-d",
+            "postgres",
+        ],
+        input=db_sql(database_rows()),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if seed.returncode != 0:
+        return (
+            "the database stand-in refused the estate's seed: "
+            + (seed.stderr or seed.stdout or "").strip()[-400:]
+        )
+    print(
+        f"ok      shadow  database stand-in {DB_NS}/{DB_RW} seeded from the head's "
+        "databases.yaml"
+    )
+    return None
+
+
 def ks_status(name):
     p = kube(
         ["get", "kustomization", name, "-n", "flux-system", "-o", "json"], check=False
@@ -810,6 +1025,10 @@ def verify(head, paths):
         if config_failed:
             return 1, [config_failed]
         threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
+        if db_needs_standin(paths):
+            db_failed = stand_in_database()
+            if db_failed:
+                return 1, [db_failed]
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
