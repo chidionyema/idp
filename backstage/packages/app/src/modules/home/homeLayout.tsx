@@ -13,6 +13,7 @@ import type { HomePageLayoutProps } from '@backstage/plugin-home-react/alpha';
 import { Grid } from '@backstage/ui';
 import { EstatePage } from '../shell';
 import { DoorGrid } from './DoorGrid';
+import { ResearchCard } from './ResearchCard';
 
 export function pickWidget(
   widgets: HomePageLayoutProps['widgets'],
@@ -58,6 +59,9 @@ export function EstateHomeLayout({ widgets }: HomePageLayoutProps) {
     >
       {search && <div className="estate-home-search">{search}</div>}
       <DoorGrid />
+      {/* idp#5714: what the research department verified, newest first. Between the doors and
+          the visit cards: it is content the founder reads, not a door and not a widget. */}
+      <ResearchCard />
       {visits.length > 0 && (
         <Grid.Root
           className="estate-home-aside"
