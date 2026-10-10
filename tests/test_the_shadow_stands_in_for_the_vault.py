@@ -71,3 +71,49 @@ def test_the_stand_in_creates_each_secret_once_and_stops(monkeypatch):
     assert sorted(created) == sorted(
         s["metadata"]["name"] for s in shadow.vault_stand_ins(items)
     )
+
+
+def temporal_external_secret():
+    """The measured case, greenlane 38088674916: extract-style, zero spec keys."""
+    docs = yaml.safe_load_all(
+        (REPO / "platform/temporal/external-secret.yaml").read_text()
+    )
+    return [d for d in docs if d and d.get("kind") == "ExternalSecret"]
+
+
+def test_an_extract_style_secret_gets_the_keys_its_consumers_read():
+    shadow = load_shadow()
+    consumer_keys = shadow.consumer_secret_keys()
+    # temporal reads existingSecret: temporal-db / secretKey: password from its chart
+    # values; that is the key the stand-in must mint.
+    assert consumer_keys.get(("temporal", "temporal-db")) == ["password"]
+    (sec,) = shadow.vault_stand_ins(
+        temporal_external_secret(), consumer_keys=consumer_keys
+    )
+    assert sec["metadata"]["name"] == "temporal-db"
+    assert sec["metadata"]["namespace"] == "temporal"
+    assert sec["stringData"] == {"password": shadow.VAULT_PLACEHOLDER}
+
+
+def test_spec_keys_still_win_and_consumer_keys_only_add():
+    shadow = load_shadow()
+    es = [
+        {
+            "metadata": {"name": "dual", "namespace": "ns"},
+            "spec": {
+                "target": {"name": "dual"},
+                "data": [{"secretKey": "declared", "remoteRef": {"key": "r"}}],
+            },
+        }
+    ]
+    (sec,) = shadow.vault_stand_ins(
+        es, consumer_keys={("ns", "dual"): ["declared", "read-by-pod"]}
+    )
+    assert sorted(sec["stringData"]) == ["declared", "read-by-pod"]
+    assert list(sec["stringData"].values()).count(shadow.VAULT_PLACEHOLDER) == 2
+
+
+def test_a_consumer_that_names_no_key_invents_none():
+    shadow = load_shadow()
+    # hindsight reads hindsight-env whole (chart ln -> envFrom): no named keys anywhere.
+    assert shadow.consumer_secret_keys().get(("hindsight", "hindsight-env")) == []
