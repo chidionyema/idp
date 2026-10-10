@@ -129,3 +129,17 @@ def test_the_drain_and_a_missing_key_never_break_the_call(estate, monkeypatch):
     asyncio.run(
         al.proxy_handler_instance.async_log_success_event(_call(), {}, 0, 0)
     )  # logged, not raised
+
+
+def test_a_request_carrying_a_datetime_is_still_recorded(estate):
+    """The live proxy hands callbacks a body with datetimes in it; before the fix not one call was
+    recorded ("Object of type datetime is not JSON serializable", 2026-10-10)."""
+    import datetime
+
+    call = _call()
+    call["litellm_params"]["proxy_server_request"]["body"]["received_at"] = (
+        datetime.datetime(2026, 10, 10, 9, 0, tzinfo=datetime.timezone.utc)
+    )
+    row = al.record(call, {"content": [{"type": "text", "text": "a"}]})
+    assert row is not None
+    assert al.verify()[0] == 1
