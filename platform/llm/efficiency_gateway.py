@@ -126,9 +126,10 @@ CACHE_WRITE_1H_RATE = 2.0
 # A harness setting (opusplan) is overridden by any /model switch -- measured that day, 35 pinned
 # sessions produced 88% of all turns -- so the router decides. PLAN_MARKER is the text Claude Code
 # 2.1.283 injects into the user turn in plan mode (read from its binary). A context too large for
-# the executor keeps its model rather than failing the call.
+# the executor keeps its model rather than failing the call. Founder 2026-10-10 (#5687): the executor
+# is Sonnet 5.5.
 PLAN_MARKER = "Plan mode is active."
-EXECUTOR_MODEL = os.environ.get("ESTATE_EXECUTOR_MODEL", "claude-sonnet-5")
+EXECUTOR_MODEL = os.environ.get("ESTATE_EXECUTOR_MODEL", "claude-sonnet-5-5")
 EXECUTOR_MAX_BYTES = int(os.environ.get("ESTATE_EXECUTOR_MAX_BYTES", str(600_000)))
 
 
