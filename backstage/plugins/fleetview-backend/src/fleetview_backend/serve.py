@@ -379,9 +379,27 @@ def build_app() -> FastAPI:
         body = await request.json()
         question = body.get("question", "")
         history = body.get("history") or []
-        sessions = await asyncio.get_running_loop().run_in_executor(
-            None, _voice_sessions
-        )
+        session_id = str(body.get("session_id") or "")
+
+        # A SPOKEN INTENT RUNS BEFORE THE BRAIN ANSWERS. The prompt tells the model every catalogue
+        # intent "runs on the laptop" when named, but since the page moved from the voice-router
+        # socket (which called /voice/intent inside the turn, #4437) to this stream, nothing ran
+        # them: the face could describe an intent and never do it. handle() is the same matcher,
+        # confirmation rule and audit /voice/intent uses; None means the utterance named none.
+        from fleetview_backend import voice_intents as vi
+
+        loop = asyncio.get_running_loop()
+        ran = await loop.run_in_executor(None, vi.handle, question, session_id)
+        if ran is not None:
+
+            async def intent_gen():
+                yield voice_module._sse("intent", ran)
+                yield voice_module._sse("delta", {"text": ran["text"]})
+                yield voice_module._sse("done", {"intent": ran["intent"]})
+
+            return StreamingResponse(intent_gen(), media_type="text/event-stream")
+
+        sessions = await loop.run_in_executor(None, _voice_sessions)
 
         async def gen():
             # stream_ask is a plain (sync) generator: it makes blocking urllib calls to the

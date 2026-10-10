@@ -220,3 +220,35 @@ def test_route_confirm_flow(env, client):
 
     r2 = client.post("/voice/intent", json={"text": "yes", "session_id": "r3"})
     assert r2.json()["status"] == "ok"
+
+
+def _frames(text: str) -> list[tuple[str, dict]]:
+    out = []
+    for frame in text.strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in frame.splitlines())
+        out.append((lines["event"], json.loads(lines["data"])))
+    return out
+
+
+def test_stream_runs_a_named_intent(env, client):
+    # The face talks to /voice/stream, not /voice/intent: a named intent must run there too.
+    r = client.post(
+        "/voice/stream", json={"question": "check ci status", "session_id": "s1"}
+    )
+    assert r.status_code == 200
+    frames = _frames(r.text)
+    assert frames[0] == (
+        "intent",
+        vi.result("ci-status", "ok", "all green for ci-status"),
+    )
+    assert frames[1] == ("delta", {"text": "all green for ci-status"})
+    assert frames[-1][0] == "done"
+
+
+def test_stream_risky_intent_waits_for_spoken_yes(env, client):
+    r = client.post(
+        "/voice/stream", json={"question": "run flux reconcile", "session_id": "s2"}
+    )
+    assert _frames(r.text)[0][1]["status"] == "pending_confirmation"
+    r = client.post("/voice/stream", json={"question": "yes", "session_id": "s2"})
+    assert _frames(r.text)[0][1]["status"] == "ok"
