@@ -1,8 +1,7 @@
 # The estate's own rules, on top of the upstream set the chart ships (KubePodNotReady,
 # KubePodCrashLooping, KubeNodeNotReady, TargetDown, KubePersistentVolumeFillingUp, Watchdog …).
 #   FounderSurfaceDown       a founder surface failed its probe for 5 minutes (crew#539 DoD 1)
-#   PersistentVolumeAlmostFull  a PVC is over 90 % used for 10 minutes (crew#539 CP14): this is
-#                            the alert Robusta receives through Alertmanager's robusta route
+#   PersistentVolumeAlmostFull  a PVC is over 90 % used for 10 minutes (crew#539 CP14)
 #   GatewayRefusals          the MCP gateway answered 4xx/5xx for 5 minutes (crew#498, folded into
 #                            crew#539): a refused agent is an incident, not a log line in SigNoz
 apiVersion: monitoring.coreos.com/v1
