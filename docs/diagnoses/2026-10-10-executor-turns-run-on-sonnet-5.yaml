@@ -1,0 +1,84 @@
+description: 'The laptop router, 2026-10-10. Question: why do executor turns (non-plan
+  Opus turns under 600 KB) run on claude-sonnet-5 when the founder wants Sonnet 5.5
+  (#5687)? Three explanations were fixed before the evidence was read: the gateway''s
+  own default pins claude-sonnet-5, an ESTATE_EXECUTOR_MODEL override in the router''s
+  environment sets it, or Claude Code itself asks for claude-sonnet-5 (a subagent
+  or default-Sonnet setting) and the router only passes it on.'
+hypotheses:
+- name: H1
+  description: the default of ESTATE_EXECUTOR_MODEL in efficiency_gateway.py is claude-sonnet-5
+  prior: 0.4
+- name: H2
+  description: an ESTATE_EXECUTOR_MODEL override in the router's environment sets
+    claude-sonnet-5
+  prior: 0.3
+- name: H3
+  description: Claude Code requests claude-sonnet-5 itself and the router passes it
+    through
+  prior: 0.3
+evidence:
+- name: the default at platform/llm/efficiency_gateway.py:131 on origin/main
+  observed:
+    sonnet_5: 1
+    other: 0
+  likelihoods:
+    H1:
+      sonnet_5: 0.98
+      other: 0.02
+    H2:
+      sonnet_5: 0.5
+      other: 0.5
+    H3:
+      sonnet_5: 0.5
+      other: 0.5
+- name: ESTATE_EXECUTOR_MODEL in the live router process (pid 54510) environment,
+    its LaunchAgent and config.runtime.yaml
+  observed:
+    absent: 1
+    present: 0
+  likelihoods:
+    H1:
+      absent: 0.9
+      present: 0.1
+    H2:
+      absent: 0.05
+      present: 0.95
+    H3:
+      absent: 0.9
+      present: 0.1
+- name: CLAUDE_CODE_SUBAGENT_MODEL, ANTHROPIC_DEFAULT_SONNET_MODEL or a sonnet model
+    in the Claude Code settings and the session environment
+  observed:
+    absent: 1
+    present: 0
+  likelihoods:
+    H1:
+      absent: 0.85
+      present: 0.15
+    H2:
+      absent: 0.85
+      present: 0.15
+    H3:
+      absent: 0.1
+      present: 0.9
+- name: model_requested on ledger pre rows billed to claude-sonnet-5 (1956 asked for
+    claude-opus-5-5 and were rewritten by the router; 13 asked for claude-sonnet-5)
+  observed:
+    rewritten_by_router: 1
+    requested_by_caller: 0
+  likelihoods:
+    H1:
+      rewritten_by_router: 0.95
+      requested_by_caller: 0.05
+    H2:
+      rewritten_by_router: 0.95
+      requested_by_caller: 0.05
+    H3:
+      rewritten_by_router: 0.05
+      requested_by_caller: 0.95
+posteriors:
+  H1: 0.9769175177
+  H2: 0.0207678044
+  H3: 0.0023146779
+winner: H1
+computed_at: '2026-10-10T15:02:04Z'
