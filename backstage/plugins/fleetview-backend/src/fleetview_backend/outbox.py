@@ -199,6 +199,12 @@ async def _publish_row(row: sqlite3.Row, nats_url: str) -> tuple[bool, str]:
     Continues the trace from the original request if _trace_context was stored in the payload.
     """
     payload = json.loads(row["payload"])
+    # The row's columns are the envelope; the adapters take them as named arguments. Producers
+    # outside this module (estate-execute's policy gate, platform/llm/action_ledger.py) store the
+    # whole event, envelope included, so spreading it as well raised "got multiple values for
+    # keyword argument 'session_id'" and every one of their rows failed (idp#5651).
+    for key in ("session_id", "runtime", "kind", "phase"):
+        payload.pop(key, None)
 
     # Extract and continue the trace context from the original request.
     trace_ctx = payload.pop("_trace_context", None)
