@@ -1,0 +1,68 @@
+description: 'The laptop router, 2026-10-10. Question: why do about a quarter of conversations
+  still reach the vendor with every efficiency step off, after the founder asked for
+  every conversation to run the chain (#5678)? Three explanations were fixed before
+  the evidence was read: the code default ESTATE_HOLDOUT_PCT=25 applies because nothing
+  overrides it, the live router process sets ESTATE_HOLDOUT_PCT in its environment,
+  or the force-arm file pins conversations to control.'
+hypotheses:
+- name: H1
+  description: efficiency_gateway.py defaults HOLDOUT_PCT to 25 and nothing overrides
+    it, so the conversation hash sends ~25% to control
+  prior: 0.4
+- name: H2
+  description: the live router's environment sets ESTATE_HOLDOUT_PCT
+  prior: 0.3
+- name: H3
+  description: ~/.estate/efficiency-force-arm.json pins conversations to control
+  prior: 0.3
+evidence:
+- name: ESTATE_HOLDOUT_* variables in the environment of the process listening on
+    :4002
+  observed:
+    absent: 1
+    present: 0
+  likelihoods:
+    H1:
+      absent: 0.95
+      present: 0.05
+    H2:
+      absent: 0.05
+      present: 0.95
+    H3:
+      absent: 0.9
+      present: 0.1
+- name: entries in the force-arm file that pin a conversation to control
+  observed:
+    none_control: 1
+    some_control: 0
+  likelihoods:
+    H1:
+      none_control: 0.9
+      some_control: 0.1
+    H2:
+      none_control: 0.9
+      some_control: 0.1
+    H3:
+      none_control: 0.05
+      some_control: 0.95
+- name: control share of distinct conversations in the last 60,000 ledger rows (10
+    of 43)
+  observed:
+    near_25pct: 1
+    far_from_25pct: 0
+  likelihoods:
+    H1:
+      near_25pct: 0.85
+      far_from_25pct: 0.15
+    H2:
+      near_25pct: 0.3
+      far_from_25pct: 0.7
+    H3:
+      near_25pct: 0.1
+      far_from_25pct: 0.9
+posteriors:
+  H1: 0.9817629179
+  H2: 0.0136778116
+  H3: 0.0045592705
+winner: H1
+computed_at: '2026-10-10T12:25:40Z'
