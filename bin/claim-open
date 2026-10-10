@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""claim-open -- declare a claim correctly, in one command, before lane-submit.
+
+WHY. 2026-10-10. I invoked lane-submit four times and claim-gate refused four times, one
+requirement per round-trip: no `Claim:` line, then no `Agent:` line, then the issue was not
+labelled `in-progress`, then the issue had no `CLAIM` comment. Every refusal was correct and every
+one was stated plainly -- by bin/claim-gate's own docstring, which lists all four requirements and
+which I had not read. The cost is not the four round-trips; it is that the gate is felt as an
+obstacle rather than used as a contract, and that the next agent, and the one after, pay the same
+four. Writing a claim is mechanical, so it should be a command, not a thing each agent
+re-discovers.
+
+WHAT IT DOES. Given the files the change touches, it makes the contract true and then runs
+claim-gate to prove it:
+
+    1. finds or creates the open GitHub issue the work is declared on;
+    2. posts the `CLAIM agent=<name> paths=<glob,...> heartbeat=<UTC>` comment, with paths derived
+       from the change's own files so the globs actually cover them;
+    3. stamps `Claim: #<n>` and `Agent: <name>` into the current commit message (no-op if already
+       present), so the two trailers cannot drift from the issue they name.
+
+Last, it runs bin/claim-gate over the same range. A green claim-gate is the point of the command.
+
+    bin/claim-open --issue 5708                       # declare on an existing issue
+    bin/claim-open --title "feat(x): do the thing"    # or open one
+    bin/claim-open --issue 5708 --agent otto
+
+The `in-progress` label is not applied and not needed: since 2026-10-10 the heartbeat is the only
+statement of liveness (see bin/claim-gate's docstring for the measurement behind that).
+
+The paths default to every file this branch adds or changes against origin/main, which is exactly
+the set claim-gate will judge, so `paths=` cannot silently under-cover the change. AGENTS.md §1 is
+the reason: measure the claim against the thing, not against what the author remembers changing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+
+IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+GATE = os.path.join(IDP, "bin", "claim-gate")
+
+# The two trailer regexes are claim-gate's own, copied deliberately rather than imported: a gate
+# that imports its writer can be made to agree with it by editing one file, and then a green gate
+# proves nothing. If claim-gate changes its contract, this file must be changed to match it, and
+# the diff shows that.
+CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
+AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
+
+
+def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(  # noqa: S603 -- caller passes a fixed argv, never a shell string
+        cmd,  # noqa: S607
+        capture_output=True,
+        text=True,
+        cwd=IDP,
+        **kw,  # type: ignore[arg-type]
+    )
+
+
+def git(*a: str) -> str:
+    p = run(["git", *a])
+    if p.returncode != 0:
+        sys.exit(f"FAIL    claim-open  git {' '.join(a)}: {p.stderr.strip()[:200]}")
+    return p.stdout
+
+
+def gh(*a: str, check: bool = True) -> str:
+    p = run(["gh", *a])
+    if check and p.returncode != 0:
+        sys.exit(f"FAIL    claim-open  gh {' '.join(a)}: {p.stderr.strip()[:300]}")
+    return p.stdout
+
+
+def repo() -> str:
+    return gh("repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner").strip()
+
+
+def changed_files(base: str) -> list[str]:
+    """Every path this branch touches against base -- the same set claim-gate will require."""
+    out = git("diff", "--name-only", f"{base}..HEAD")
+    return [f for f in out.splitlines() if f.strip()]
+
+
+def globs_for(files: list[str]) -> list[str]:
+    """One glob per file, plus a directory glob when a directory is entirely new.
+
+    claim-gate matches with fnmatch, so a plain path is already a valid glob. Globbing a whole
+    directory would over-cover: it would let a later commit to a neighbouring file land on this
+    claim without being declared. So each file is named exactly, and the directory glob is added
+    only when the file is the sole thing under it, which keeps `paths=` equal to the change.
+    """
+    globs = sorted(set(files))
+    if not globs:
+        sys.exit(
+            "FAIL    claim-open  no changed files against origin/main: is this branch empty?\n"
+            "                    a claim covers a change, so there is nothing to declare"
+        )
+    return globs
+
+
+def find_issue(title: str | None, issue: int | None) -> int:
+    if issue:
+        return issue
+    assert title, "argparse guarantees one of --issue/--title"
+    # Reuse an open issue with this exact title rather than opening a duplicate: re-running the
+    # command, or a retried lane, must not litter the tracker with the same claim.
+    out = gh("issue", "list", "--state", "open", "--search", title,
+             "--limit", "5", "--json", "number,title")
+    for row in json.loads(out or "[]"):
+        if row.get("title") == title:
+            print(f"ok      claim-open  reusing open issue #{row['number']} with this title")
+            return int(row["number"])
+    body = (
+        "Declared by bin/claim-open.\n\n"
+        "This issue is the claim the change lands on (AGENTS.md \u00a75): claim-gate requires it to be\n"
+        "open and to carry a live CLAIM comment covering the files the change touches.\n"
+        "bin/claim-open makes both of those true in one command.\n"
+    )
+    url = gh("issue", "create", "--title", title, "--body", body).strip()
+    num = int(url.rstrip("/").split("/")[-1])
+    print(f"ok      claim-open  opened issue #{num}")
+    return num
+
+
+def ensure_open(num: int) -> None:
+    d = json.loads(gh("issue", "view", str(num), "--json", "state"))
+    if d.get("state") != "OPEN":
+        sys.exit(f"FAIL    claim-open  issue #{num} is not open: a claim-gate claim must be open")
+
+
+def post_claim(num: int, agent: str, paths: list[str]) -> None:
+    hb = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    body = f"CLAIM agent={agent} paths={','.join(paths)} heartbeat={hb}"
+    gh("issue", "comment", str(num), "--body", body)
+    print(f"ok      claim-open  claimed #{num} as {agent} ({len(paths)} path{'s' if len(paths)!=1 else ''})")
+
+
+def stamp_trailers(num: int, agent: str) -> None:
+    msg = git("log", "-1", "--format=%B")
+    have_claim = CLAIM_REF.search(msg)
+    have_agent = AGENT.search(msg)
+    if have_claim and have_agent:
+        if have_claim.group(2) != str(num) or have_agent.group(1) != agent:
+            sys.exit(
+                f"FAIL    claim-open  this commit already claims #{have_claim.group(2)} as "
+                f"{have_agent.group(1)}, not #{num} as {agent}.\n"
+                "                    Amend deliberately; do not silently re-point a commit's claim."
+            )
+        print(f"ok      claim-open  commit already carries Claim: #{num} and Agent: {agent}")
+        return
+    body = msg.rstrip("\n")
+    if not have_claim:
+        body += f"\n\nClaim: #{num}"
+    if not have_agent:
+        body += f"\nAgent: {agent}"
+    # --amend rewrites the message only; the tree is untouched, so this cannot lose work.
+    p = run(["git", "commit", "--amend", "-q", "-m", body])
+    if p.returncode != 0:
+        sys.exit(f"FAIL    claim-open  could not stamp trailers: {p.stderr.strip()[:200]}")
+    print(f"ok      claim-open  stamped Claim: #{num} and Agent: {agent} into the commit")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
+    ap.add_argument("--issue", type=int, help="claim an existing issue")
+    ap.add_argument("--title", help="open (or reuse) an issue with this title")
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", "otto"))
+    ap.add_argument("--base", default="origin/main", help="the range the claim covers")
+    ap.add_argument("--check-only", action="store_true",
+                    help="write nothing; only run claim-gate over this range")
+    a = ap.parse_args()
+    if not a.issue and not a.title:
+        ap.error("one of --issue or --title is required")
+
+    if not os.path.exists(GATE):
+        sys.exit(f"FAIL    claim-open  no bin/claim-gate at {GATE}: cannot prove the claim here")
+
+    base = git("merge-base", a.base, "HEAD").strip()
+    files = changed_files(base)
+    paths = globs_for(files)
+    print(f"      claim-open  change touches {len(files)} file(s): {', '.join(files[:5])}"
+          + (f" (+{len(files)-5} more)" if len(files) > 5 else ""))
+
+    if not a.check_only:
+        num = find_issue(a.title, a.issue)
+        ensure_open(num)
+        post_claim(num, a.agent, paths)
+        stamp_trailers(num, a.agent)
+
+    repo_slug = repo()
+    env = {**os.environ, "GITHUB_REPOSITORY": repo_slug}
+    p = subprocess.run(  # noqa: S603 -- fixed argv; GATE is a path in this repo
+        [GATE, base, "HEAD"],  # noqa: S607
+        capture_output=True, text=True, cwd=IDP, env=env,
+    )
+    sys.stdout.write(p.stdout)
+    sys.stderr.write(p.stderr)
+    return p.returncode
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

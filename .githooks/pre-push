@@ -63,10 +63,14 @@ _claim_guard() {
 
 pre-push REFUSED: ${remote_ref#refs/heads/} does not land on a live claim (AGENTS.md §5).
    CI's claim-gate would refuse it in the merge queue, a batch later. Fix:
+     one command: bin/claim-open --title "<what you are building>"   (or --issue <n>)
+   It opens the issue, posts the CLAIM comment covering exactly the files you changed, stamps
+   the two trailers, and runs claim-gate to prove it. What claim-gate itself checks:
      1) a commit on the lane carries:   Claim: $repo#<issue>   and   Agent: <name>
-     2) the issue is open, labelled in-progress, and its newest comment is
-        CLAIM agent=<name> model=<model> paths=<glob,glob> heartbeat=<UTC ISO time>
-        with paths covering every file the lane touches
+     2) the issue is open, and carries a comment
+        CLAIM agent=<name> paths=<glob,glob> heartbeat=<UTC ISO time>
+        within the last 2 hours, with paths covering every file the lane touches
+   (No `in-progress` label any more, and the `model` field is optional, since 2026-10-10.)
    platform/estate/bin/estate-execute lane-submit checks the same before it pushes.
 EOF
       return 1

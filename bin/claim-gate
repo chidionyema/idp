@@ -6,14 +6,29 @@ built could be pointed to as working. The founder: "we can't afford all this cha
 seeing any enforcement". AGENTS.md §5 makes every agent claim its work on a GitHub issue first;
 this is the enforcement: ci-success (the one check the merge queue gates on) needs this job.
 
-A change passes when its commit messages (or the pull request body, $PR_BODY) carry
+WHAT IT IS NOW (founder, 2026-10-10: "i thinkwe should just remove the claim requirement", then
+"b" -- shrink it to the one thing it can actually prove). Measured that day before deciding:
+of the last 20 greenlane runs, 10 succeeded, 9 were CANCELLED (superseded lanes, not refusals)
+and 1 failed -- and that one failure was not this gate. So the gate is not what breaks the
+pipeline, and it is not what fixes it either. What it CAN prove is the one thing the 2026-09-30
+incident was actually about: that two live agents are not working the same files at the same
+time. Everything that was ceremony around that is gone --
+
+  - the `in-progress` label: a second, redundant way to say "live" when the heartbeat already
+    says it, and one more thing to forget;
+  - the `model=` field of the claim comment: read by nothing.
+
+What remains, and each part is load-bearing:
     Claim: <owner>/<repo>#<number>      (or #<number> for this repository)
     Agent: <name>
-and the claimed issue
-  - is open and labelled `in-progress`,
-  - has a latest comment `CLAIM agent=<name> model=<m> paths=<glob,...> heartbeat=<UTC>` whose
-    agent is the change's Agent and whose heartbeat is under 2 hours old,
-  - covers every file the change touches with one of its path globs.
+and the claimed issue is open and carries a live
+`CLAIM agent=<name> paths=<glob,...> heartbeat=<UTC>` comment from that same agent. `paths=` must
+cover every file the change touches -- THAT is the collision check. The heartbeat (under 2 hours)
+keeps it from also being a deadlock: a claim belonging to an agent that has moved on lapses by
+itself, so nothing has to be closed by hand before the next person can work.
+
+Writing one of these is mechanical, so it is a command: bin/claim-open makes all of it true and
+then runs this gate. An agent should not have to rediscover the contract by being refused.
 
 Two exemptions, neither of which trusts a git author name (anyone can type one):
   - a change whose every added and removed line carries a Flux `$imagepolicy` marker: it can only
@@ -44,7 +59,7 @@ HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
 AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
 CLAIM = re.compile(
-    r"^CLAIM\s+agent=(?P<agent>\S+)\s+model=(?P<model>\S+)\s+paths=(?P<paths>\S+)\s+"
+    r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=\S+\s+)?paths=(?P<paths>\S+)\s+"
     r"heartbeat=(?P<hb>\S+)\s*$",
     re.M,
 )
@@ -133,9 +148,9 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         if issue.get("state") != "open":
             problems.append(f"{where} is not open")
             continue
-        if "in-progress" not in {lbl["name"] for lbl in issue.get("labels", [])}:
-            problems.append(f"{where} is not labelled in-progress")
-            continue
+        # 2026-10-10: no `in-progress` label check. The label was a second way to say the same
+        # thing the heartbeat already says, and the only thing it added was one more requirement
+        # to satisfy before a change could land. Liveness is the heartbeat, below.
         claims = [m for c in comments for m in CLAIM.finditer(c.get("body", ""))]
         if not claims:
             problems.append(f"{where} has no CLAIM comment")
@@ -220,7 +235,7 @@ def main(argv: list[str]) -> int:
     for p in problems:
         print(f"FAIL  claim-gate  {p}")
     if not problems:
-        print("ok    claim-gate  every change lands on a live claim")
+        print("ok    claim-gate  no other live agent holds these files")
     return 1 if problems else 0
 
 

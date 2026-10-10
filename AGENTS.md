@@ -137,20 +137,32 @@ These rules bind every agent, whatever model or runtime:
 1. **No work without a ticket.** The ticket is the claim. The claim of record is the **GitHub
    issue**; Linear mirrors it through the existing integration (`bin/idp-linear-dispatch`). There
    is one record, never two.
-2. **Claim it.** Assign the issue to your agent identity, label it `in-progress`, and post one
-   comment in exactly this form:
-   `CLAIM agent=<name> model=<model> paths=<glob,glob> heartbeat=<UTC ISO time>`
-3. **Check for overlap first.** Search the open `in-progress` issues. If any claimed `paths`
-   overlap yours, do not start: comment on the holder's issue and pick other work.
+2. **Claim it.** One command: `bin/claim-open --title "<what you are building>"` (or `--issue <n>`
+   for an issue that already exists). It posts the claim comment, stamps the two commit trailers,
+   and runs `bin/claim-gate` to prove the whole thing green. By hand it is one comment in exactly
+   this form, on an **open** issue:
+   `CLAIM agent=<name> paths=<glob,glob> heartbeat=<UTC ISO time>`
+   (`model=<model>` is optional and read by nothing. There is no `in-progress` label any more.)
+3. **Check for overlap first.** Search the open claims. If any claimed `paths` overlap yours, do
+   not start: comment on the holder's issue and pick other work.
 4. **Heartbeat.** Refresh the claim's `heartbeat` at least hourly. A claim with no heartbeat for
-   2 hours is released; the next agent may take the issue.
+   2 hours is released; the next agent may take the issue. The heartbeat is what makes a claim
+   live -- it is also what stops an abandoned claim blocking anyone, with nobody closing it.
 5. **Land only against your claim.** Every change carries two lines in a commit message (or the PR
    body): `Claim: <owner>/<repo>#<n>` and `Agent: <name>`. `bin/claim-gate` runs in `ci-success`,
-   the one check the merge queue gates on, and refuses a change with no claim, a claim that is not
-   open and `in-progress`, another agent's claim, a heartbeat older than 2 hours, or a file outside
-   the claim's `paths`. Only dependency and image bots are exempt, by name, in the gate itself.
+   the one check the merge queue gates on, and refuses a change with no claim, an issue that is
+   not open, another agent's claim, a heartbeat older than 2 hours, or a file outside the claim's
+   `paths`. Only dependency and image bots are exempt, by name, in the gate itself.
+
+   What that gate is and is not (founder, 2026-10-10, "i thinkwe should just remove the claim
+   requirement", then "b" -- shrink it to the one thing it can actually prove). It cannot tell
+   whether the code is right; it checks that two live agents are not working the same files. The
+   `in-progress` label and the `model=` field were removed that day as ceremony around that one
+   job. Measured before cutting: of the last 20 greenlane runs, 10 succeeded, 9 were **cancelled**
+   (superseded lanes, not refusals) and 1 failed -- and that failure was not this gate. So do not
+   treat a red claim-gate as the pipeline being broken; read what it names.
 6. **Done means operating.** Close the issue only with a proof comment: the command and its output
-   on the real path the founder uses. Then remove `in-progress`; that releases the claim.
+   on the real path the founder uses. Closing it releases the claim.
 7. **One capability at a time per agent.** Finish, or release, before claiming the next.
 
 The founder sees every live claim on /fleet: who, what, which paths, and heartbeat age. Never restart

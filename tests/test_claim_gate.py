@@ -49,6 +49,20 @@ def test_a_change_on_a_live_claim_passes():
     assert run() == []
 
 
+def test_an_unlabelled_issue_is_no_longer_a_reason_to_refuse():
+    # 2026-10-10, founder "b": the `in-progress` label was a second way to say what the
+    # heartbeat already says, so it is gone. This test is the contract: an open issue with a
+    # live claim comment passes whether or not anybody remembered to label it.
+    assert run(issue=_issue(labels=(), claim=_claim())) == []
+
+
+def test_a_claim_comment_without_the_model_field_still_passes():
+    # model= was read by nothing; it is now optional rather than required.
+    hb = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+    bare = f"CLAIM agent=idp-60 paths=bin/voice-*,tests/test_voice* heartbeat={hb}"
+    assert run(issue=_issue(claim=bare)) == []
+
+
 def test_no_claim_line_is_refused():
     assert "no `Claim:" in run(text="fix: a thing\n")[0]
 
@@ -66,9 +80,8 @@ def test_a_lapsed_heartbeat_is_refused():
     assert "lapsed" in run(issue=_issue(claim=_claim(age=timedelta(hours=3))))[0]
 
 
-def test_a_closed_or_unlabelled_issue_is_refused():
+def test_a_closed_issue_is_refused():
     assert "not open" in run(issue=_issue(state="closed", claim=_claim()))[0]
-    assert "not labelled in-progress" in run(issue=_issue(labels=(), claim=_claim()))[0]
 
 
 def test_files_outside_the_claim_are_refused():
