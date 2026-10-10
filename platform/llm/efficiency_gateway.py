@@ -246,6 +246,138 @@ def _arm(key: str) -> str:
     return "control" if (h % 10000) < HOLDOUT_PCT * 100 else "treat"
 
 
+# --------------------------------------------------------------------------- exact count
+#
+# WHY (2026-10-10, #5683). The tokens AFTER the chain are exact already -- the vendor bills
+# them (uncached + cache writes + cache reads). The tokens BEFORE were only bytes / 4. The
+# founder asked for the vendor's own count of every request as the caller sent it, so one
+# background call per Anthropic request asks /v1/messages/count_tokens, authenticated as the
+# caller: the OAuth token LiteLLM keeps in secret_fields for exactly this kind of internal use.
+# Only an sk-ant-oat token is ever sent -- never the router's own key. The count never delays
+# or fails the request: it runs after the hook returns, a full pool is a skip, not a queue, and
+# every skip or refusal lands on the ledger with its reason.
+EXACT_COUNT = os.environ.get("ESTATE_EXACT_COUNT", "1") != "0"
+EXACT_COUNT_URL = os.environ.get(
+    "ESTATE_EXACT_COUNT_URL", "https://api.anthropic.com/v1/messages/count_tokens"
+)
+EXACT_COUNT_TIMEOUT = float(os.environ.get("ESTATE_EXACT_COUNT_TIMEOUT", "15"))
+EXACT_COUNT_POOL = int(os.environ.get("ESTATE_EXACT_COUNT_POOL", "4"))
+_COUNT_FIELDS = ("system", "messages", "tools", "tool_choice", "thinking")
+_count_inflight = 0
+_count_mu = threading.Lock()
+
+
+def _caller_oauth(data: dict) -> tuple[Optional[str], Optional[str]]:
+    """The caller's own subscription token and anthropic-beta header, or (None, None)."""
+    secret = data.get("secret_fields") or {}
+    raw = secret.get("raw_headers") if isinstance(secret, dict) else None
+    if not isinstance(raw, dict):
+        return None, None
+    low = {str(k).lower(): v for k, v in raw.items()}
+    auth = str(low.get("authorization") or "")
+    if not auth.startswith("Bearer sk-ant-oat"):
+        return None, None
+    return auth, low.get("anthropic-beta")
+
+
+def _count_body(data: dict, model: str) -> Optional[bytes]:
+    """The request as the caller sent it, in count_tokens' shape -- taken BEFORE the chain."""
+    if not str(model).startswith("claude"):
+        return None
+    body = {k: data[k] for k in _COUNT_FIELDS if data.get(k) is not None}
+    body["model"] = model
+    return json.dumps(body, default=str).encode()
+
+
+def _count_post(body: bytes, auth: str, beta: Optional[str]) -> dict:
+    import urllib.error
+    import urllib.request
+
+    if not EXACT_COUNT_URL.startswith("https://"):
+        raise ValueError(f"ESTATE_EXACT_COUNT_URL must be https: {EXACT_COUNT_URL!r}")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": auth,
+        "anthropic-version": "2023-06-01",
+    }
+    # count_tokens needs the oauth beta the caller already sends; keep theirs verbatim
+    if beta:
+        headers["anthropic-beta"] = beta
+    req = urllib.request.Request(  # noqa: S310 - scheme checked above
+        EXACT_COUNT_URL, data=body, headers=headers
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=EXACT_COUNT_TIMEOUT) as r:  # noqa: S310
+            return {"tokens_before": int(json.load(r)["input_tokens"])}
+    except urllib.error.HTTPError as exc:
+        return {"skipped": f"http {exc.code}"}
+
+
+async def _count_and_record(
+    body: bytes, auth: str, beta: Optional[str], call_id: Any, conv: str, model: str
+) -> None:
+    global _count_inflight
+    row: dict = {
+        "v": 2,
+        "kind": "count",
+        "call_id": call_id,
+        "conv": conv[:16],
+        "model": model,
+        "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        row.update(await asyncio.to_thread(_count_post, body, auth, beta))
+    except Exception as exc:  # noqa: BLE001 - a count may never fail anything (LAW 38)
+        row["skipped"] = f"{type(exc).__name__}: {str(exc)[:160]}"
+    finally:
+        with _count_mu:
+            _count_inflight -= 1
+    _ledger_write(row)
+
+
+def _start_count(data: dict, body: Optional[bytes], conv: str, model: str) -> None:
+    """Fire the background count, or record why not. Never raises, never awaits."""
+    global _count_inflight
+    if not EXACT_COUNT or body is None:
+        return
+    call_id = data.get("litellm_call_id")
+    auth, beta = _caller_oauth(data)
+    skip = None
+    if not auth:
+        skip = "no caller oauth token"
+    else:
+        with _count_mu:
+            if _count_inflight >= EXACT_COUNT_POOL:
+                skip = "pool full"
+            else:
+                _count_inflight += 1
+    if skip:
+        _ledger_write(
+            {
+                "v": 2,
+                "kind": "count",
+                "call_id": call_id,
+                "conv": conv[:16],
+                "model": model,
+                "skipped": skip,
+                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        )
+        return
+    try:
+        task = asyncio.get_running_loop().create_task(
+            _count_and_record(body, auth, beta, call_id, conv, model)
+        )
+        _COUNT_TASKS.add(task)
+        task.add_done_callback(_COUNT_TASKS.discard)
+    except RuntimeError:
+        with _count_mu:
+            _count_inflight -= 1
+
+
+_COUNT_TASKS: set = set()  # strong refs: the loop only holds weak ones
+
+
 def _strip_cache_control(obj: Any) -> Any:
     # Claude Code moves its cache_control breakpoints every turn; they are not content.
     if isinstance(obj, dict):
@@ -1271,6 +1403,7 @@ class EstateEfficiencyGateway(CustomLogger):
             # keyed before [10] edits a tool result, so the arm is the one the caller's bytes give
             pre["conv"] = _conversation_key(data, session)
             pre["bytes_before"] = _json_bytes(data.get("messages") or [])
+            pre["count_body"] = _count_body(data, data.get("model") or "")
             if READ_SHUNT and _arm(pre["conv"]) == "treat":
                 # the worker call blocks for seconds on a first sight; keep the loop free
                 pre["m10"] = await asyncio.to_thread(_shunt_reads, data)
@@ -1278,10 +1411,20 @@ class EstateEfficiencyGateway(CustomLogger):
             log.warning("[10-ReadShunt] skipped: %s", exc)
             pre["m10"] = {"action": "error", "bytes": 0, "error": str(exc)[:200]}
         try:
-            return self._anthropic_call(data, call_type, started, pre)
+            out = self._anthropic_call(data, call_type, started, pre)
         except Exception as exc:  # noqa: BLE001 - never fail the request (LAW 38)
             log.warning("[EfficiencyGateway] chain skipped: %s", exc)
-            return data
+            out = data
+        try:
+            _start_count(
+                data,
+                pre.get("count_body"),
+                pre.get("conv") or "",
+                data.get("model") or "",
+            )
+        except Exception as exc:  # noqa: BLE001 - never fail the request (LAW 38)
+            log.warning("[ExactCount] skipped: %s", exc)
+        return out
 
     # ------------------------------------------------------------ anthropic lane
 

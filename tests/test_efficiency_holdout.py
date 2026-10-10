@@ -66,7 +66,9 @@ def _req(session):
 
 
 def _rows(tmp_path):
-    return [json.loads(x) for x in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    # the exact count (#5683) lands its own row after the call's; these cases read the call's
+    rows = [json.loads(x) for x in (tmp_path / "ledger.jsonl").read_text().splitlines()]
+    return [r for r in rows if r.get("kind") != "count"]
 
 
 def test_a_conversation_keeps_one_arm_and_the_split_matches_the_share(
