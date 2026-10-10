@@ -114,9 +114,17 @@ run() {
   # Claude Code compacts at CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000; the ceiling's 128k default
   # would refuse a long session before its own compaction ever fires.
   export ESTATE_MAX_INPUT_TOKENS="${ESTATE_MAX_INPUT_TOKENS:-200000}"
-  export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
-  export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-  export OTEL_SERVICE_NAME=litellm-local
+  # Export the OTEL_* settings only when a collector answers. Dropping the otel callback was not
+  # enough: LiteLLM still built span and metric exporters from these variables alone, and retried
+  # the dead :4318 on every batch (8,394 ConnectionErrors in litellm-local.log, 2026-10-10).
+  _otel_ep="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
+  if python3 -c 'import socket,sys; from urllib.parse import urlparse as u; e=u(sys.argv[1]); socket.create_connection((e.hostname, e.port or 4318), timeout=1).close()' "$_otel_ep" 2>/dev/null; then
+    export OTEL_EXPORTER_OTLP_ENDPOINT="$_otel_ep"
+    export OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    export OTEL_SERVICE_NAME=litellm-local
+  else
+    unset OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_PROTOCOL OTEL_SERVICE_NAME
+  fi
 
   if [ -x "$HERE/sops" ] && [ -d "$HERE/secrets" ]; then
     for f in "$HERE"/secrets/*.yaml; do
