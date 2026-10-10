@@ -1,0 +1,84 @@
+description: 'The laptop router ledger, 2026-10-10. Question: why can the ledger not
+  say how many tokens a Claude request carried before the efficiency chain cut it,
+  when the founder asked for exact before/after counts (#5683)? Three explanations
+  were fixed before the evidence was read: the gateway never asks the vendor and records
+  only bytes, Claude Code''s own count_tokens calls through the router already measure
+  it but are not joined to requests, or the billed usage on the outcome row already
+  reflects the uncut request.'
+hypotheses:
+- name: H1
+  description: the gateway never calls count_tokens; BEFORE exists only as bytes_before
+    / 4
+  prior: 0.4
+- name: H2
+  description: Claude Code's own count_tokens calls pass through the router and could
+    be joined to each request
+  prior: 0.3
+- name: H3
+  description: the vendor's billed input on the outcome row is the uncut size
+  prior: 0.3
+evidence:
+- name: count_tokens references in platform/llm/efficiency_gateway.py on origin/main
+  observed:
+    none: 1
+    some: 0
+  likelihoods:
+    H1:
+      none: 0.95
+      some: 0.05
+    H2:
+      none: 0.8
+      some: 0.2
+    H3:
+      none: 0.8
+      some: 0.2
+- name: count_tokens posts vs messages posts in the router log (6 vs 1290)
+  observed:
+    far_fewer: 1
+    about_one_per_request: 0
+  likelihoods:
+    H1:
+      far_fewer: 0.8
+      about_one_per_request: 0.2
+    H2:
+      far_fewer: 0.05
+      about_one_per_request: 0.95
+    H3:
+      far_fewer: 0.8
+      about_one_per_request: 0.2
+- name: on 4422 calls the chain cut by 2x or more, whether billed input tokens x4
+    lies nearer bytes_after or bytes_before (4181 nearer after)
+  observed:
+    nearer_after: 1
+    nearer_before: 0
+  likelihoods:
+    H1:
+      nearer_after: 0.9
+      nearer_before: 0.1
+    H2:
+      nearer_after: 0.9
+      nearer_before: 0.1
+    H3:
+      nearer_after: 0.05
+      nearer_before: 0.95
+- name: pre rows in the whole ledger (231460) whose call_type is a count_tokens call,
+    i.e. whether the gateway hook ever sees Claude Code's own counts
+  observed:
+    zero: 1
+    some: 0
+  likelihoods:
+    H1:
+      zero: 0.9
+      some: 0.1
+    H2:
+      zero: 0.15
+      some: 0.85
+    H3:
+      zero: 0.9
+      some: 0.1
+posteriors:
+  H1: 0.96
+  H2: 0.0063157895
+  H3: 0.0336842105
+winner: H1
+computed_at: '2026-10-10T12:56:04Z'
