@@ -5,7 +5,10 @@ bin/litellm-local starts this in the background next to the router; it never blo
 
   providers -> catalog   lanes.json names each derived provider and its key variables; each
                          provider's own /models endpoint lists what it serves (LiteLLM's static
-                         list when the provider has no listing endpoint).
+                         list when the provider has no listing endpoint). A lane pinned to its own
+                         endpoint (lanes.json "bases", e.g. a subscription plan) is listed from
+                         that endpoint, and a model stays only if it answers a one-token call:
+                         Z.ai's plan /models lists glm-5.3-flashx, which the plan refuses (#5697).
   catalog  -> harnesses  one adapter per harness config schema. A harness is added by adding one
                          adapter; a provider needs nothing here at all.
 
@@ -27,22 +30,72 @@ KEY_ENV = "LITELLM_API_KEY"  # the one key every harness presents to the router
 DISCOVER_TIMEOUT_S = 30
 
 
-def discover(providers: dict[str, list[str]]) -> dict[str, list[str]]:
+def _http(url: str, key: str, body: dict | None = None) -> dict:
+    import urllib.request
+
+    if not url.startswith(("https://", "http://")):
+        raise ValueError(f"not an http(s) endpoint: {url}")
+    req = urllib.request.Request(  # noqa: S310 - scheme asserted above
+        url,
+        data=None if body is None else json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=DISCOVER_TIMEOUT_S) as r:  # noqa: S310
+        return json.load(r)
+
+
+def answers(base: str, key: str, model: str) -> bool:
+    """Whether the endpoint serves this model to this key. Only a refusal (4xx) says no: a
+    timeout or a 5xx is the endpoint's trouble, not the plan's, and never hides a model."""
+    import urllib.error
+
+    try:
+        _http(
+            base + "/chat/completions",
+            key,
+            {
+                "model": model,
+                "max_tokens": 1,
+                "messages": [{"role": "user", "content": "1"}],
+            },
+        )
+    except urllib.error.HTTPError as e:
+        return not 400 <= e.code < 500
+    except OSError:
+        return True
+    return True
+
+
+def listed(base: str, key: str) -> list[str]:
+    """The models the endpoint itself lists, kept only if it answers each one."""
+    ids = sorted(m["id"] for m in _http(base + "/models", key)["data"])
+    return [m for m in ids if answers(base, key, m)]  # one at a time: never a burst
+
+
+def discover(
+    providers: dict[str, list[str]], bases: dict[str, str] | None = None
+) -> dict[str, list[str]]:
     """provider -> sorted "<provider>/<model>" ids, from each provider's own listing."""
     import litellm
 
+    bases = bases or {}
+
     def one(p: str, var: str) -> tuple[str, list[str]]:
-        ids = litellm.get_valid_models(
-            check_provider_endpoint=True,
-            custom_llm_provider=p,
-            api_key=os.environ.get(var),
-        )
+        if p in bases:
+            ids = listed(bases[p].rstrip("/"), os.environ.get(var, ""))
+        else:
+            ids = litellm.get_valid_models(
+                check_provider_endpoint=True,
+                custom_llm_provider=p,
+                api_key=os.environ.get(var),
+            )
         return p, sorted({m if m.startswith(p + "/") else f"{p}/{m}" for m in ids})
 
     out: dict[str, list[str]] = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
         futs = [ex.submit(one, p, vs[0]) for p, vs in providers.items() if vs]
-        for f in concurrent.futures.as_completed(futs, timeout=DISCOVER_TIMEOUT_S * 2):
+        # A plan's listing waits on one probe per model, one after another.
+        for f in concurrent.futures.as_completed(futs, timeout=DISCOVER_TIMEOUT_S * 20):
             try:
                 p, ids = f.result(timeout=DISCOVER_TIMEOUT_S)
                 out[p] = ids
@@ -132,7 +185,7 @@ def sync(catalog: dict, home: Path) -> dict[str, str]:
 
 def main(lanes_path: str) -> int:
     lanes = json.loads(Path(lanes_path).read_text())
-    catalog = build(lanes, discover(lanes.get("providers", {})))
+    catalog = build(lanes, discover(lanes.get("providers", {}), lanes.get("bases", {})))
     catalog["harnesses"] = sync(catalog, Path.home())
     _write_json(Path(lanes_path).with_name("catalog.json"), catalog)
     n = sum(len(v) for v in catalog["models"].values())
