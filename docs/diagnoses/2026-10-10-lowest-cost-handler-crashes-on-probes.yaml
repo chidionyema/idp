@@ -1,0 +1,71 @@
+description: 'The laptop router log, 2026-10-10. Question: why does LiteLLM''s cost-based
+  routing handler (lowest_cost.py line 108) raise "NoneType object has no attribute
+  get" 2,244 times against ~1,350 proxied requests? Three explanations were fixed
+  before the evidence was read: the router''s own lane-health probes call litellm.acompletion
+  directly and carry model_info=None, the proxied /v1/messages path drops model_info,
+  or config deployments declare an empty model_info.'
+hypotheses:
+- name: H1
+  description: lane_registry probes call litellm.acompletion outside the Router; litellm_params
+    model_info is None while metadata is set, so the global cost handler crashes on
+    each success
+  prior: 0.35
+- name: H2
+  description: the proxied anthropic_messages path drops model_info for routed calls
+  prior: 0.35
+- name: H3
+  description: deployments in config.runtime.yaml declare model_info null
+  prior: 0.3
+evidence:
+- name: offline reproduction on the router's LiteLLM venv, cost-based Router loaded
+  observed:
+    direct_call_crashes: 1
+    routed_completion_crashes: 0
+    routed_messages_crashes: 0
+  likelihoods:
+    H1:
+      direct_call_crashes: 0.9
+      routed_completion_crashes: 0.05
+      routed_messages_crashes: 0.05
+    H2:
+      direct_call_crashes: 0.1
+      routed_completion_crashes: 0.1
+      routed_messages_crashes: 0.8
+    H3:
+      direct_call_crashes: 0.1
+      routed_completion_crashes: 0.45
+      routed_messages_crashes: 0.45
+- name: tracebacks vs proxied requests in litellm-local.log
+  observed:
+    exceeds_requests: 1
+    at_most_requests: 0
+  likelihoods:
+    H1:
+      exceeds_requests: 0.8
+      at_most_requests: 0.2
+    H2:
+      exceeds_requests: 0.1
+      at_most_requests: 0.9
+    H3:
+      exceeds_requests: 0.2
+      at_most_requests: 0.8
+- name: same direct call with model_info={} on the router's venv
+  observed:
+    clean: 1
+    crashes: 0
+  likelihoods:
+    H1:
+      clean: 0.95
+      crashes: 0.05
+    H2:
+      clean: 0.3
+      crashes: 0.7
+    H3:
+      clean: 0.3
+      crashes: 0.7
+posteriors:
+  H1: 0.9882352941
+  H2: 0.0043343653
+  H3: 0.0074303406
+winner: H1
+computed_at: '2026-10-10T11:23:04Z'
