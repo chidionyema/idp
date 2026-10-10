@@ -170,7 +170,7 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
   // replaces brunette.glb, a Ready Player Me model under CC BY-NC 4.0 -- non-commercial, which
   // a commercial product cannot ship (bin/face-licence-gate; spec
   // docs/specs/2026-10-03-face-experience-10x.md section 6).
-  await head.showAvatar({ url: `${FACE_ASSETS}estate.glb`, body: 'F', lipsyncLang: 'en' });
+  await head.showAvatar({ url: `${FACE_ASSETS}brunette.glb`, body: 'F', lipsyncLang: 'en' });
 
   // CONTINUITY: restore the mood this visitor left the face in, and count the visit. The store is
   // localStorage on a real page; a browser that refuses it (private mode) still works, just
