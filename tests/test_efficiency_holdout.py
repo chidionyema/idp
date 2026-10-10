@@ -79,6 +79,19 @@ def test_a_conversation_keeps_one_arm_and_the_split_matches_the_share(
     assert 0.22 < share < 0.28
 
 
+def test_the_holdout_is_off_unless_someone_reopens_it(monkeypatch, tmp_path):
+    # 2026-10-10 (#5678): every conversation runs the chain; no control arm by default.
+    monkeypatch.delenv("ESTATE_HOLDOUT_PCT", raising=False)
+    monkeypatch.setenv("ESTATE_EFFICIENCY_LEDGER", str(tmp_path / "ledger.jsonl"))
+    monkeypatch.setenv("ESTATE_HOLDOUT_FORCE_FILE", str(tmp_path / "none.json"))
+    mod = _load(
+        "gw_holdout_default",
+        os.path.join(ROOT, "platform", "llm", "efficiency_gateway.py"),
+    )
+    assert mod.HOLDOUT_PCT == 0
+    assert {mod._arm(f"s{i}") for i in range(4000)} == {"treat"}
+
+
 def test_the_control_arm_reaches_the_vendor_untouched_and_is_recorded(
     monkeypatch, tmp_path
 ):
