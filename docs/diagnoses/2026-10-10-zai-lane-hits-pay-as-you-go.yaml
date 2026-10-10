@@ -1,0 +1,67 @@
+description: 'The laptop router, 2026-10-10. Question: why does every call by a zai/glm-*
+  name fail with "Insufficient balance or no resource package" (17 in the ledger,
+  latest 13:58Z, model zai/glm-5.3-flash) while the founder''s GLM 5.3 plan is paid
+  (#5691)? Three explanations were fixed before the evidence was read: the derived
+  zai/* lane sends the Coding Plan key to Z.ai''s pay-as-you-go endpoint, the Coding
+  Plan itself is exhausted, or the ZAI_API_KEY the router holds is wrong or expired.'
+hypotheses:
+- name: H1
+  description: zai/* has no api_base, so LiteLLM uses api.z.ai/api/paas/v4, which
+    the Coding Plan key cannot spend on
+  prior: 0.4
+- name: H2
+  description: the GLM Coding Plan quota is exhausted
+  prior: 0.3
+- name: H3
+  description: the ZAI_API_KEY the router holds is wrong or expired
+  prior: 0.3
+evidence:
+- name: the same ZAI_API_KEY on api.z.ai/api/coding/paas/v4 (glm-5.3, glm-5.3-flash,
+    glm-5, glm-4.7, glm-4.5-air), called from a cluster router pod
+  observed:
+    answers: 1
+    refuses: 0
+  likelihoods:
+    H1:
+      answers: 0.95
+      refuses: 0.05
+    H2:
+      answers: 0.05
+      refuses: 0.95
+    H3:
+      answers: 0.02
+      refuses: 0.98
+- name: the same key and models on api.z.ai/api/paas/v4
+  observed:
+    code_1113_balance: 1
+    other: 0
+  likelihoods:
+    H1:
+      code_1113_balance: 0.95
+      other: 0.05
+    H2:
+      code_1113_balance: 0.5
+      other: 0.5
+    H3:
+      code_1113_balance: 0.05
+      other: 0.95
+- name: api_base on the zai/* lane in the live ~/.estate/router-state/config.runtime.yaml
+  observed:
+    absent: 1
+    coding_endpoint: 0
+  likelihoods:
+    H1:
+      absent: 0.97
+      coding_endpoint: 0.03
+    H2:
+      absent: 0.5
+      coding_endpoint: 0.5
+    H3:
+      absent: 0.5
+      coding_endpoint: 0.5
+posteriors:
+  H1: 0.9889852289
+  H2: 0.010591126
+  H3: 0.000423645
+winner: H1
+computed_at: '2026-10-10T15:47:34Z'
