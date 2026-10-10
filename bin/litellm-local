@@ -196,6 +196,9 @@ import litellm
 known = {getattr(p, "value", p) for p in litellm.provider_list}
 alias = {"nvidia": "nvidia_nim"}          # key names that differ from LiteLLM's provider name
 never = {"anthropic"}                     # claude-* relays the caller's own Max token
+# A key that only one endpoint honours (#5691): ZAI_API_KEY is the GLM Coding Plan key, which
+# LiteLLM's default zai endpoint (pay-as-you-go, $0 balance) refuses with code 1113.
+bases = {"zai": "https://api.z.ai/api/coding/paas/v4"}
 providers = {}
 for var in sorted(os.environ):
     mt = re.fullmatch(r"([A-Z][A-Z0-9]*)_API_KEY(?:_\d+)?", var)
@@ -204,8 +207,10 @@ for var in sorted(os.environ):
     p = alias.get(mt.group(1).lower(), mt.group(1).lower())
     if p in known and p not in never:
         providers.setdefault(p, []).append(var)
-        kept.append({"model_name": f"{p}/*",
-                     "litellm_params": {"model": f"{p}/*", "api_key": f"os.environ/{var}"}})
+        params = {"model": f"{p}/*", "api_key": f"os.environ/{var}"}
+        if p in bases:
+            params["api_base"] = bases[p]
+        kept.append({"model_name": f"{p}/*", "litellm_params": params})
 cfg["model_list"] = kept
 # A fallback chain that names a lane this machine does not serve is a silent substitution: the
 # caller asks for deepseek and is answered by another vendor. Keep only chains between served lanes,
