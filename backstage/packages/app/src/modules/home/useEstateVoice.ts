@@ -319,7 +319,8 @@ async function refusalDetail(e: any, msg: string): Promise<string> {
  * the voice's own context as before. One sink at a time: the face that mounted last owns it.
  */
 export interface ClauseSink {
-  speak(pcm: ArrayBuffer, text: string): void;
+  /** Resolves when the clause has finished sounding, including any clauses queued before it. */
+  speak(pcm: ArrayBuffer, text: string): Promise<void>;
   stop(): void;
 }
 let clauseSink: ClauseSink | null = null;
@@ -816,6 +817,8 @@ export function useEstateVoice(): EstateVoice {
       // synthesis round trips back to back. Now each request starts the moment its text lands, and
       // `chain` only orders the PLAYBACK.
       let chain: Promise<void> = Promise.resolve();
+      // The face plays clauses itself; this is when the last one it was given stops sounding.
+      let faceDone: Promise<void> = Promise.resolve();
 
       try {
         const res = await fetchApi.fetch(`${FLEETVIEW}/voice/stream`, {
@@ -824,7 +827,13 @@ export function useEstateVoice(): EstateVoice {
             'Content-Type': 'application/json',
             Accept: 'text/event-stream',
           },
-          body: JSON.stringify({ question, history: historyRef.current }),
+          // session_id: a risky intent waits for a spoken "yes", and the backend holds that
+          // pending confirmation per session.
+          body: JSON.stringify({
+            question,
+            history: historyRef.current,
+            session_id: sessionId,
+          }),
           signal: turn.signal,
         });
         if (!res.ok || !res.body) {
@@ -886,7 +895,7 @@ export function useEstateVoice(): EstateVoice {
                 if (clauses === 1 || c.playing.length === 0)
                   setState('speaking');
                 if (!buf) await speakWithDevice(clauseText, turn.signal);
-                else if (clauseSink) clauseSink.speak(buf, clauseText);
+                else if (clauseSink) faceDone = clauseSink.speak(buf, clauseText);
                 else play(buf);
               });
             }
@@ -904,6 +913,7 @@ export function useEstateVoice(): EstateVoice {
       }
 
       await chain;
+      await faceDone;
       if (turn.signal.aborted) return;
       const totalSeconds = (performance.now() - startedAt) / 1000;
       const firstClauseSeconds =

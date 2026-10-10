@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   wordTimings,
+  voicedSpan,
   IDLE_BEATS,
   nextBeat,
   readMemory,
@@ -10,6 +11,25 @@ import {
   greeting,
   CONTINUITY_KEY,
 } from './faceEngine';
+
+describe('voicedSpan', () => {
+  // 300ms of silence, 1s of tone, 200ms of silence at 24kHz: the lips move only for the tone.
+  const rate = 24000;
+  const clip = new Float32Array(rate * 1.5);
+  for (let i = rate * 0.3; i < rate * 1.3; i++) clip[i] = 0.3 * Math.sin(i / 10);
+
+  it('finds where the voice starts and stops, not the padded clip', () => {
+    const { startMs, endMs } = voicedSpan(clip, rate);
+    expect(startMs).toBeGreaterThanOrEqual(290);
+    expect(startMs).toBeLessThanOrEqual(310);
+    expect(endMs).toBeGreaterThanOrEqual(1290);
+    expect(endMs).toBeLessThanOrEqual(1310);
+  });
+
+  it('falls back to the whole clip when nothing is above the floor', () => {
+    expect(voicedSpan(new Float32Array(rate), rate)).toEqual({ startMs: 0, endMs: 1000 });
+  });
+});
 
 describe('wordTimings', () => {
   it('spreads every word across the clause, in order, inside the audio', () => {
