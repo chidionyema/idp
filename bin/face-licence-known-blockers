@@ -15,3 +15,7 @@
 # is refused outright and may never be added here. An entry that no longer matches a shipped
 # asset is itself a FAIL (bin/face-licence-gate), so the file cannot rot into a standing
 # exemption. It is empty because nothing is carried, which is the only state that means clean.
+#
+#   reopened 2026-10-10 by founder decision: estate.glb renders as a featureless bust; brunette.glb restored until a commercial realistic avatar replaces it.
+#
+brunette.glb: Ready Player Me avatar from the TalkingHead repo, CC BY-NC 4.0 (non-commercial; replace with an estate-owned avatar before any commercial use)
