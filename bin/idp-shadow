@@ -58,6 +58,30 @@ GIT_PORT = int(os.environ.get("IDP_SHADOW_GIT_PORT", "9418"))
 GIT_HOST = "host.k3d.internal"
 WORKLOAD_KINDS = ("Deployment", "StatefulSet", "DaemonSet", "Job", "CronJob")
 
+# Waiting states the kubelet retries forever but that never become Ready on their own
+# (#5710): a container that dies on every start, an image ref that does not resolve, a
+# Secret or ConfigMap that does not exist. Flux keeps the Kustomization in Progressing
+# while they retry -- that is Flux's job -- so only a direct watch of the pods can end
+# the run before the full deadline.
+POD_DOOM_REASONS = frozenset(
+    (
+        "CrashLoopBackOff",
+        "ImagePullBackOff",
+        "ErrImagePull",
+        "CreateContainerConfigError",
+        "CreateContainerError",
+        "RunContainerError",
+        "InvalidImageName",
+        "ErrImageNeverPull",
+    )
+)
+# A state must persist this long before it is a verdict: a first pull attempt shows
+# ErrImagePull, a Secret the vault stand-in has not written yet shows
+# CreateContainerConfigError, and an app that retries its way to green crash-loops a
+# few times first. 30s of uninterrupted doom means roughly four failed starts with no
+# recovery, which no workload that passes its own probes ever shows.
+POD_GRACE = float(os.environ.get("IDP_SHADOW_POD_GRACE", "30"))
+
 
 def sh(argv, check=True, timeout=600, env=None):
     p = subprocess.run(
@@ -569,9 +593,43 @@ def ks_status(name):
     return json.loads(p.stdout)
 
 
+def pod_failures():
+    """Every container the API server says is past rescue, one human line each.
+
+    One read of the pod list, so it costs one kubectl per poll cycle. A container that
+    cannot be listed for is not a failure: this watch narrows what wait_ks can conclude,
+    it never widens it.
+    """
+    p = kube(["get", "pods", "-A", "-o", "json"], check=False)
+    if p.returncode != 0:
+        return []
+    out = []
+    for pod in json.loads(p.stdout).get("items") or []:
+        meta, status = pod.get("metadata") or {}, pod.get("status") or {}
+        who = f"{meta.get('namespace')}/{meta.get('name')}"
+        for cs in (status.get("initContainerStatuses") or []) + (
+            status.get("containerStatuses") or []
+        ):
+            reason = ((cs.get("state") or {}).get("waiting") or {}).get("reason")
+            if reason not in POD_DOOM_REASONS:
+                continue
+            dead = (cs.get("lastState") or {}).get("terminated") or {}
+            detail = (
+                dead.get("message")
+                or ((cs.get("state") or {}).get("waiting") or {}).get("message")
+                or "no message"
+            )
+            out.append(
+                f"pod {who} container {cs.get('name')} is {reason} "
+                f"(restarts {int(cs.get('restartCount') or 0)}): {detail}"
+            )
+    return out
+
+
 def wait_ks(name, deadline):
     """Wait for Flux's own verdict on this path. Returns (ready, message, inventory)."""
     last = "no status reported"
+    doomed_since = None
     while time.time() < deadline:
         obj = ks_status(name)
         if obj:
@@ -598,6 +656,25 @@ def wait_ks(name, deadline):
                         "entries"
                     ) or []
                     return False, last, inv
+        # Fail fast on pods the kubelet has already given up on (#5710): a crash-looping
+        # workload holds the Kustomization in Progressing, which used to hold the whole
+        # run out to the deadline. A doom state that clears within the grace -- a pull in
+        # progress, a secret the stand-in has not written yet -- costs nothing and is
+        # waited out; only a state that persists past the grace is a verdict.
+        bad = pod_failures()
+        if bad:
+            now = time.time()
+            if doomed_since is None:
+                doomed_since = now
+            elif now - doomed_since >= POD_GRACE:
+                msg = (
+                    bad[0]
+                    if len(bad) == 1
+                    else (f"{len(bad)} stuck container(s), first: {bad[0]}")
+                )
+                return False, f"pods past rescue: {msg}", []
+        else:
+            doomed_since = None
         time.sleep(5)
     return False, f"timed out waiting for Flux: {last}", []
 
@@ -652,7 +729,9 @@ def observe(kind, ns, name):
     # only as an explicit empty set.
     ann = (obj.get("metadata") or {}).get("annotations") or {}
     obs["tests"] = (
-        [] if "shadow.estate/tests" not in ann else [{"name": ann["shadow.estate/tests"], "passed": False}]
+        []
+        if "shadow.estate/tests" not in ann
+        else [{"name": ann["shadow.estate/tests"], "passed": False}]
     )
     return obs
 
@@ -688,7 +767,9 @@ def grade_all(observations):
 
     # VERIFY has no .py suffix, so spec_from_file_location cannot infer a loader and returns None.
     spec = importlib.util.spec_from_file_location(
-        "shadow_verify", VERIFY, loader=importlib.machinery.SourceFileLoader("shadow_verify", VERIFY)
+        "shadow_verify",
+        VERIFY,
+        loader=importlib.machinery.SourceFileLoader("shadow_verify", VERIFY),
     )
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)

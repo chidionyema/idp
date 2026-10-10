@@ -54,6 +54,9 @@ def drive(monkeypatch, shadow, states, clock_step=1.0):
 
     now = [0.0]
     monkeypatch.setattr(shadow, "ks_status", fake_status)
+    # the pod watch (#5710) reads the API server every poll; this test drives the
+    # Kustomization condition in isolation, so its cluster has no pods at all
+    monkeypatch.setattr(shadow, "pod_failures", lambda: [])
     monkeypatch.setattr(shadow.time, "time", lambda: now[0])
     monkeypatch.setattr(
         shadow.time, "sleep", lambda s: now.__setitem__(0, now[0] + clock_step)
