@@ -124,6 +124,16 @@ spec:
     name: flux-system
   path: ./platform/router-events
   prune: true
+  # ESTATE_GITHUB_REPO, which backup.yaml puts in the Job's env as GITHUB_REPO=${ESTATE_GITHUB_REPO}.
+  # MEASURED 2026-10-11 on router-backup-proof-8trj6: without this the substitution never happens,
+  # the env var reaches the pod as the literal string '${ESTATE_GITHUB_REPO}', REPO becomes that,
+  # and every GitHub API URL 404s -- the same 404 that looked like a bad branch name. The value
+  # itself is in clusters/oke/estate-config.yaml (chidionyema/idp), which is why this row must
+  # name estate-config the way the llm row above does.
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config
   timeout: 2m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
