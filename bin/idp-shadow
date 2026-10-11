@@ -854,9 +854,12 @@ def stand_in_database():
     A Postgres that never becomes Ready, or a seed script it refuses, fails the run: a
     shadow that cannot lay its own dependencies proves nothing about the change.
     """
+    # A JSON document stream (--- separated), never a top-level JSON array: kubectl
+    # refuses an array with "invalid object to validate". Measured, greenlane
+    # 38096348716: every full shadow run died here, 53s into verify.
     p = subprocess.run(
         ["kubectl", "apply", "-f", "-"],
-        input=json.dumps(db_standin_objects()),
+        input="\n---\n".join(json.dumps(o) for o in db_standin_objects()),
         capture_output=True,
         text=True,
     )

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -162,3 +163,29 @@ def test_a_healthy_stand_in_says_so_and_lies_about_nothing(monkeypatch, capsys):
     assert shadow.stand_in_database() is None
     assert 'CREATE DATABASE "memory" OWNER "memory"' in seeded[0]
     assert "database stand-in estate-db/estate-rw seeded" in capsys.readouterr().out
+
+
+def test_the_apply_is_a_document_stream_never_a_json_array(monkeypatch):
+    """Greenlane 38096348716: kubectl refuses a top-level JSON array with "invalid
+    object to validate", so every full shadow run died 53s into verify."""
+    shadow = load_shadow()
+
+    class Fake:
+        def __init__(self, code, out="", err=""):
+            self.returncode, self.stdout, self.stderr = code, out, err
+
+    applied = []
+
+    def fake_run(cmd, input=None, capture_output=None, text=None, timeout=None, **_kw):
+        if cmd[:2] == ["kubectl", "apply"]:
+            applied.append(input)
+            return Fake(0, "created", "")
+        return Fake(0, "deployment condition met", "")
+
+    monkeypatch.setattr(shadow.subprocess, "run", fake_run)
+    assert shadow.stand_in_database() is None
+    (manifest,) = applied
+    docs = [json.loads(d) for d in manifest.split("\n---\n")]
+    kinds = [d["kind"] for d in docs]
+    assert kinds == ["Namespace", "Deployment", "Service"]
+    assert docs[1]["metadata"]["name"] == shadow.DB_STAND_IN
