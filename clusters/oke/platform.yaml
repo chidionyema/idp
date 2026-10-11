@@ -95,6 +95,37 @@ spec:
         name: estate-config
   timeout: 2m
 ---
+# MEASURED 2026-10-11: this row was declared until c96359f4b dropped ~80 rows down to 7, and the
+# restore commits d73db7199/c920a0f32 brought most of them back but not this one -- so
+# platform/router-events has sat in the tree with a complete kustomization, an ImagePolicy
+# (flux-system/router-events, platform/image-automation/router-events.yaml) and a Dockerfile, and
+# nothing reconciling it. The CronJob it once laid is still in the cluster, labelled
+# kustomize.toolkit.fluxcd.io/name: router-events, owned by a Kustomization that no longer exists
+# -- an orphan no PR can ever update. It kept running the pre-removal script, so the #5767 fix
+# could not reach it: the backup of the routing table stays broken while every gate is green.
+# The file in git is the one copy that survives losing a volume, which is the whole point of this
+# CronJob; a backup nothing reconciles is not a backup.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: router-events
+  namespace: flux-system
+  annotations:
+    idp.estate.io/runtime: always-on
+spec:
+  interval: 30s
+  # secret-store carries the github-app Secret the backup Job mounts; estate-db-migrate is the
+  # row that has the estate-db server up with its roles, and the Job reads the lanes from it.
+  dependsOn:
+    - name: secret-store
+    - name: estate-db-migrate
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/router-events
+  prune: true
+  timeout: 2m
+---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
