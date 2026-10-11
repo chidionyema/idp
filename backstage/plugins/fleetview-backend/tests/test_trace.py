@@ -12,7 +12,15 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
-TRACE_MODULE = REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "trace.py"
+TRACE_MODULE = (
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "trace.py"
+)
 
 
 def _load(path: Path, name: str):
@@ -170,7 +178,13 @@ def test_available_false_envelope_on_unavailable(monkeypatch):
     """routes.py's trace_envelope returns available:False/503 on TraceUnavailable."""
 
     routes_path = (
-        REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+        REPO
+        / "backstage"
+        / "plugins"
+        / "fleetview-backend"
+        / "src"
+        / "fleetview_backend"
+        / "routes.py"
     )
     monkeypatch.setenv("LANGFUSE_HOST", "")
     routes = _load(routes_path, "fleetview_routes_trace_test")

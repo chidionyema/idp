@@ -18,6 +18,17 @@ CACHE_S = 30
 _cache: dict[str, Any] = {"at": 0.0, "body": None}
 
 
+def cached_snapshot() -> dict[str, Any] | None:
+    """The last cached status body, or None when nothing is cached yet.
+
+    Callers outside this module (voice.estate_block) read through here instead of reaching
+    into _cache: the cache's layout is this module's private business, and a prompt that
+    degrades silently on a refactor is exactly the lie an except-pass hides.
+    """
+    body = _cache.get("body")
+    return body if isinstance(body, dict) else None
+
+
 def _idp_root() -> Path:
     return Path(
         os.path.expanduser(os.environ.get("ESTATE_IDP_ROOT") or "~/Documents/code/idp")

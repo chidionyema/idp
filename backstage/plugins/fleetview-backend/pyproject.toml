@@ -20,3 +20,9 @@ where = ["src"]
 
 [tool.setuptools.package-dir]
 "" = "src"
+
+[tool.pytest.ini_options]
+# The tests import the package, not a path; the src layout needs this on sys.path when the
+# plugin is not pip-installed (local runs, the pre-push gate).
+pythonpath = ["src"]
+testpaths = ["tests"]

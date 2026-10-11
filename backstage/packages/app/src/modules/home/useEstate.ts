@@ -39,8 +39,11 @@ export type Loaded =
 
 const FLUX = '/apis/kustomize.toolkit.fluxcd.io/v1/kustomizations';
 const DEPLOYMENTS = '/apis/apps/v1/deployments';
-/** The cluster is re-read this often while the page is open; the catalogue is not. */
-export const REFRESH_MS = 60_000;
+/** The cluster is re-read this often while the page is open; the catalogue is not.
+ * Lives in ./timing (leaf module); imported here and re-exported so existing imports keep
+ * working while the local uses below stay bound. */
+import { REFRESH_MS } from './timing';
+export { REFRESH_MS };
 
 /** Count entities by kind and spec.type, biggest group first. */
 export const countInventory = (items: Entity[]): InventoryRow[] => {

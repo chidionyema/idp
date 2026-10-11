@@ -17,7 +17,13 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[4]
 KAFKA_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "kafka_adapter.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "kafka_adapter.py"
 )
 
 
@@ -133,7 +139,7 @@ def test_publish_sends_event_to_kafka(kafka_module, monkeypatch):
         )
         return result
 
-    result = asyncio.get_event_loop().run_until_complete(run_test())
+    result = asyncio.run(run_test())
 
     # Verify producer was created with correct config.
     assert mock_producer_class.called
@@ -178,7 +184,7 @@ def test_publish_empty_brokers_raises_value_error(kafka_module, monkeypatch):
         )
 
     with pytest.raises(ValueError, match="kafka_brokers cannot be empty"):
-        asyncio.get_event_loop().run_until_complete(run_test())
+        asyncio.run(run_test())
 
 
 def test_producer_reused_across_calls(kafka_module, monkeypatch):
@@ -215,7 +221,7 @@ def test_producer_reused_across_calls(kafka_module, monkeypatch):
 
         return first_call_count
 
-    first_call_count = asyncio.get_event_loop().run_until_complete(run_test())
+    first_call_count = asyncio.run(run_test())
 
     # Producer should not be recreated.
     assert mock_producer_class.call_count == first_call_count
@@ -255,7 +261,7 @@ def test_producer_recreated_when_brokers_change(kafka_module, monkeypatch):
 
         return first_call_count
 
-    first_call_count = asyncio.get_event_loop().run_until_complete(run_test())
+    first_call_count = asyncio.run(run_test())
 
     # Producer should be recreated.
     assert mock_producer_class.call_count == first_call_count + 1
@@ -299,7 +305,7 @@ def test_publish_batch_sends_multiple_events(kafka_module, monkeypatch):
             events=events,
         )
 
-    results = asyncio.get_event_loop().run_until_complete(run_test())
+    results = asyncio.run(run_test())
 
     assert len(results) == 2
     assert mock_producer.send_and_wait.call_count == 2
@@ -336,7 +342,7 @@ def test_close_producer_stops_and_clears(kafka_module, monkeypatch):
         # Close it.
         await kafka_module.close_producer()
 
-    asyncio.get_event_loop().run_until_complete(run_test())
+    asyncio.run(run_test())
 
     assert kafka_module._producer is None
     assert kafka_module._producer_brokers == []
@@ -372,7 +378,7 @@ def test_sasl_auth_config_passed_to_producer(monkeypatch):
             phase="hearing",
         )
 
-    asyncio.get_event_loop().run_until_complete(run_test())
+    asyncio.run(run_test())
 
     call_kwargs = mock_producer_class.call_args[1]
     assert call_kwargs["security_protocol"] == "SASL_SSL"

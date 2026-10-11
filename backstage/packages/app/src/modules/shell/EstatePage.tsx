@@ -97,20 +97,9 @@ export function EstatePage({
   );
 }
 
-/** The measured sentence under the header: what is true right now, in one line. */
-export function Summary({
-  children,
-  testId,
-}: {
-  children: ReactNode;
-  testId?: string;
-}) {
-  return (
-    <Text variant="body-large" data-testid={testId}>
-      {children}
-    </Text>
-  );
-}
+/** The measured sentence under the header: what is true right now, in one line.
+ * Lives in ./atoms (leaf module); re-exported here so existing imports keep working. */
+export { Summary, Chip } from './atoms';
 
 /** A named block of the page. One heading, one optional line saying what it is for. */
 export function Section({
@@ -232,14 +221,8 @@ export function Tile({
   );
 }
 
-/** A small standing label on a tile -- "Everyday", a date, a count. Never colour alone. */
-export function Chip({ children, title }: { children: ReactNode; title?: string }) {
-  return (
-    <span className="estate-chip" title={title}>
-      {children}
-    </span>
-  );
-}
+/** A small standing label on a tile -- "Everyday", a date, a count. Never colour alone.
+ * Lives in ./atoms (leaf module); re-exported here so existing imports keep working. */
 
 /** A group that starts folded. The arrow is drawn as text, so it is not colour alone. */
 export function Fold({

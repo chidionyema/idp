@@ -59,6 +59,12 @@ async def lifespan(app: FastAPI):
         from fleetview_backend import efficiency_feed
 
         asyncio.create_task(efficiency_feed.publish_highlights(nats_url))
+        # The research department's verified claims, on the news channel: the same air the
+        # room's rundown and the board already breathe. Until this task the claims reached
+        # only the findings strip and a voice that was asked directly.
+        from fleetview_backend import research_feed
+
+        asyncio.create_task(research_feed.publish_claims(nats_url))
         from fleetview_backend import key_sync
 
         asyncio.create_task(key_sync.publish_alerts(nats_url))
@@ -292,6 +298,23 @@ def build_app() -> FastAPI:
         body, status = routes.greenlane_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.RESEARCH_PATH)
+    def research():
+        # Loopback GET to the portal's research-output plugin. Sync handler on purpose:
+        # FastAPI runs sync handlers in its threadpool, so the urllib read is off the event
+        # loop for free -- no get_running_loop/run_in_executor dance (that combo 500s: a sync
+        # handler has no running loop, and an awaited Future does not unpack as a tuple).
+        body, status = routes.research_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.ESTATE_PATH)
+    def estate():
+        # Green + burn + research in one envelope (routes.estate_envelope); each part
+        # individually cached, so this stays cheap on a 10-15s poll. Sync handler, same
+        # reasoning as research() above.
+        body, status = routes.estate_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.HARV_PATH)
     def harv():
         body, status = routes.harv_envelope()
@@ -382,6 +405,26 @@ def build_app() -> FastAPI:
         sessions = await asyncio.get_running_loop().run_in_executor(
             None, _voice_sessions
         )
+
+        # VOICE PRESENCE ON THE BUS: every spoken turn lands as an estate.agent event so the
+        # board and the room show the founder talking to the estate as it happens, not just
+        # agents talking to each other. Presence only -- this says a turn HAPPENED, never
+        # that it succeeded; the answer's own provenance stays in the friction log.
+        nats_url = os.environ.get("NATS_URL", "")
+        if nats_url and (question or "").strip():
+            from fleetview_backend import nats_adapter as _na
+
+            asyncio.create_task(
+                _na.publish(
+                    nats_url,
+                    session_id="voice",
+                    runtime="fleetview",
+                    kind="phase",
+                    phase="asked",
+                    tool="voice",
+                    text=str(question)[:200],
+                )
+            )
 
         async def gen():
             # stream_ask is a plain (sync) generator: it makes blocking urllib calls to the

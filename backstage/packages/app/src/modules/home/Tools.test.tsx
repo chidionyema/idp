@@ -8,7 +8,7 @@ import {
 } from '@backstage/frontend-test-utils';
 import { configApiRef } from '@backstage/frontend-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { catalogApiWith } from './testCatalog';
 import { Entity } from '@backstage/catalog-model';
 import {
   ERROR_SENTENCE,
@@ -73,7 +73,7 @@ const renderWith = (catalog: unknown) =>
       <Tools />
     </TestApiProvider>,
   );
-const render = (entities: Entity[]) => renderWith(catalogApiMock({ entities }));
+const render = (entities: Entity[]) => renderWith(catalogApiWith(entities));
 
 /** The tile a person sees for a tool: the region whose name is the tool's title. */
 const tile = (title: string) => screen.getByRole('article', { name: title });

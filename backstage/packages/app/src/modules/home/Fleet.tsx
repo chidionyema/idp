@@ -35,6 +35,8 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EfficiencyPanel } from './EfficiencyPanel';
+import { EstateStrip } from './EstateStrip';
+import { GatesPanel } from './GatesPanel';
 import { openSse, type SseHandle } from './sse';
 import { EstateMap } from './EstateMap';
 import { EstateMemory } from './EstateMemory';
@@ -458,6 +460,15 @@ export function Fleet() {
 
   return (
     <EstatePage title={TITLE} lead={LEAD}>
+      {/* ESTATE NOW + GATES: the two things a founder scans for before any table -- is the
+          estate green and what waits on me. Both draw one envelope each (/estate, /mutations),
+          the same ones the voice's brief reads, so the page and the voice never disagree. */}
+      <Section title="Estate now">
+        <EstateStrip />
+      </Section>
+      <Section title="Gates">
+        <GatesPanel />
+      </Section>
       <Section title="Estate map">
         <EstateMap />
       </Section>
