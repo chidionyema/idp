@@ -78,6 +78,30 @@ jobs:
           curl -sSL https://fluxcd.io/install.sh | sudo bash
           k3d version && flux --version
 
+      # idp#5769: every shadow run re-pulls the k3s node image, the Flux controllers and
+      # the DB stand-in's image -- ~1GB and a few minutes. The bundle workflow
+      # pre-bakes the same list (bin/idp-shadow-bundle-images.txt) into a tar and
+      # uploads it here. On a hit, k3d image import skips every pod pull; on a miss
+      # the run pulls them anyway and the next bundle workflow repopulates the cache.
+      - name: Restore the shadow image bundle
+        if: steps.scope.outputs.dirs != ''
+        id: bundle
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/idp-shadow-bundle
+          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}
+          restore-keys: |
+            shadow-bundle-
+
+      - name: Bring the bundle into the k3d image store
+        if: steps.scope.outputs.dirs != '' && steps.bundle.outputs.cache-hit == 'true'
+        run: |
+          set -euo pipefail
+          tar="$RUNNER_TEMP/idp-shadow-bundle/images.tar"
+          test -f "$tar" || { echo "bundle cache hit but tar missing at $tar"; exit 1; }
+          k3d image import -c shadow "$tar"
+          echo "ok  shadow  image bundle restored (cache hit)"
+
       - name: Stand up the shadow cluster and put the environment in it
         if: steps.scope.outputs.dirs != ''
         run: bin/idp-shadow up

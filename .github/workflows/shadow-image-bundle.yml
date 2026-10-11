@@ -1,0 +1,37 @@
+name: shadow-image-bundle
+# idp#5769: the shadow-verify workflow restores this cache on every run; we keep
+# the cache warm by rebuilding it on a daily schedule and on any change to the
+# image manifest. The tar is restored on a hit and skipped on a miss (the
+# shadow pulls the same images anyway, the next populate repopulates).
+
+on:
+  schedule:
+    - cron: '17 6 * * *'   # once a day, 06:17 UTC, off the image-update peak
+  push:
+    paths: ['bin/idp-shadow-bundle-images.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with: { fetch-depth: 1 }
+
+      - name: Build the bundle
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/idp-shadow-bundle"
+          bin/idp-shadow-bundle export "$RUNNER_TEMP/idp-shadow-bundle/images.tar"
+
+      - name: Upload the bundle
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/idp-shadow-bundle
+          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}

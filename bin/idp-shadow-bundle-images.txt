@@ -1,0 +1,18 @@
+# Images every shadow-verify run pulls. Caching this bundle (build workflow:
+# .github/workflows/shadow-image-bundle.yml; restore: shadow-verify.yml cache step)
+# turns 4m50s of fresh pulls into a few seconds, measured on flux/image-updates
+# 38145360914 (4m50s -> the 3m21s of reconcile is dominated by these).
+#
+# One image per line. Comments are ignored. k3d image import skips anything
+# already present, so adding a name is safe even before the populate runs.
+#
+# The k3s node image k3d pulls to start a single-node cluster (the biggest
+# single pull on a fresh runner -- rancher/k3s is ~1GB compressed).
+docker.io/rancher/k3s:v1.31.2-k3s1
+# Flux controllers (flux install lays the same CRDs/objects on this cluster).
+ghcr.io/fluxcd/source-controller:v1.3.0
+ghcr.io/fluxcd/kustomize-controller:v1.3.0
+ghcr.io/fluxcd/helm-controller:v0.41.1
+ghcr.io/fluxcd/notification-controller:v1.3.0
+# The DB stand-in's image, read from platform/estate-db/cluster/cluster.yaml.
+ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman

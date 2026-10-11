@@ -1,0 +1,82 @@
+"""Build and load the image bundle the shadow-verify workflow restores from cache.
+
+The shadow brings a throwaway k3d cluster up, installs Flux, and reconciles the
+platform paths under test. On a fresh runner every one of those pods pulls from
+ghcr, and the k3d node image alone is ~1GB. The bundle pre-bakes the images
+every shadow-verify needs (bin/idp-shadow-bundle-images.txt) and exports a tar
+the cache step restores; shadow-verify imports the tar into the k3d image
+store before the cluster comes up, so pods never pull from ghcr.
+
+Two halves are exposed so a test or the populate workflow can drive either
+side:
+  list_images   -- one canonical image per line, comments and blanks dropped
+  bundle_export -- docker pull then docker save; writes the tar and prints its path
+  bundle_import -- docker load on the same tar; idempotent (docker skips existing)
+
+The k3d image import command itself runs in the workflow (it talks to the
+k3d-internal docker socket); this script only handles docker pull/save/load
+so it is testable without a k3d install.
+"""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REPO = HERE.parent
+IMAGES_FILE = HERE / "idp-shadow-bundle-images.txt"
+
+
+def list_images(path: Path = IMAGES_FILE) -> list[str]:
+    """Every image in the bundle manifest, in file order, comments and blanks
+    dropped, duplicates preserved (docker pulls each at most once, in any
+    case)."""
+    images: list[str] = []
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        images.append(line)
+    return images
+
+
+def bundle_export(images: list[str], tar: Path) -> None:
+    """docker pull each, then docker save them all to a single tar.
+
+    docker pull is idempotent (a cached layer is free). docker save with
+    multiple refs writes them all into one tar; a workflow can `k3d image
+    import` the same tar without unpacking it on the runner."""
+    if not images:
+        raise SystemExit("no images to export; check bin/idp-shadow-bundle-images.txt")
+    for img in images:
+        subprocess.run(["docker", "pull", img], check=True)
+    subprocess.run(["docker", "save", "-o", str(tar), *images], check=True)
+
+
+def bundle_import(tar: Path) -> None:
+    """docker load the tar; idempotent for whatever docker already has."""
+    if not tar.exists():
+        raise SystemExit(f"bundle tar not found: {tar}")
+    subprocess.run(["docker", "load", "-i", str(tar)], check=True)
+
+
+def _self_test() -> int:
+    # The script lives in the bin/ directory with no extension; pytest
+    # loads it via SourceFileLoader. This entry point is a thin wrapper for
+    # shell use; the tests cover the functions.
+    argv = sys.argv[1:]
+    if not argv or argv[0] != "export":
+        raise SystemExit(f"usage: {sys.argv[0]} export <tar>   # docker pull + save")
+    if argv[0] == "export":
+        out = Path(argv[1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        bundle_export(list_images(), out)
+        print(f"ok  bundle  {out} ({out.stat().st_size} bytes)")
+        return 0
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(_self_test())
