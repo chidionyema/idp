@@ -676,7 +676,7 @@ def stand_in_vault(stop, every=5.0):
         items = (
             json.loads(p.stdout or "{}").get("items", []) if p.returncode == 0 else []
         )
-        for sec in vault_stand_ins(items):
+        for sec in vault_stand_ins(items, consumer_keys):
             key = (sec["metadata"]["namespace"], sec["metadata"]["name"])
             if key in made:
                 continue
