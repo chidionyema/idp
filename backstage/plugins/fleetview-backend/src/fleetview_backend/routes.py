@@ -79,6 +79,8 @@ __all__ = [
     "TRACE_PATH",
     "LEDGER_PATH",
     "DEVICE_STATUS_PATH",
+    "RESEARCH_PATH",
+    "ESTATE_PATH",
     "device_status_envelope",
     "DEVICE_AUTHORIZE_PATH",
     "device_authorize_envelope",
@@ -92,6 +94,8 @@ __all__ = [
     "graph_envelope",
     "memory_envelope",
     "greenlane_envelope",
+    "research_envelope",
+    "estate_envelope",
     "harv_envelope",
     "check_receipts_envelope",
     "mutations_envelope",
@@ -114,6 +118,8 @@ BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
 GREENLANE_PATH = "/greenlane"
+RESEARCH_PATH = "/research"
+ESTATE_PATH = "/estate"
 HARV_PATH = "/harv"
 CHECK_RECEIPTS_PATH = "/check-receipts"
 MUTATIONS_PATH = "/mutations"
@@ -259,6 +265,40 @@ def greenlane_envelope() -> tuple[dict[str, Any], int]:
     return greenlane.greenlane_status(), 200
 
 
+def research_envelope() -> tuple[dict[str, Any], int]:
+    # The research department's claims through the portal's ONE reader (research_feed):
+    # a loopback GET to the research-output plugin, never a second Postgres client here.
+    from fleetview_backend import research_feed
+
+    return research_feed.research_claims(), 200
+
+
+def estate_envelope() -> tuple[dict[str, Any], int]:
+    # The estate in one glance: green lane, router burn, newest verified research. Three
+    # readers already proven on their own, joined per-part so one dead part reads
+    # available: False with its reason while the others still answer. The /estate strip and
+    # the voice's brief both draw from this -- one source, so the founder and the voice
+    # cannot describe two different estates. Each part is wrapped: the readers are
+    # contractually soft, but a raise from any of them must degrade ITS segment only,
+    # never 500 the whole envelope.
+    def _soft(fn):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 -- a dead segment says so; the envelope lives
+            return {"available": False, "error": f"{type(exc).__name__}: {exc}"[:300]}
+
+    from fleetview_backend import research_feed
+    from fleetview_backend import spend
+
+    body: dict[str, Any] = {
+        "generated_at": _now(),
+        "green": _soft(greenlane.greenlane_status),
+        "burn": _soft(spend.spend_total),
+        "research": _soft(research_feed.research_claims),
+    }
+    return body, 200
+
+
 def harv_envelope() -> tuple[dict[str, Any], int]:
     # The harvester's funnel as measured now; unreadable is unavailable with a reason, never empty.
     return harv.harv_status(), 200
@@ -350,15 +390,14 @@ def trace_envelope(session_id: str) -> tuple[dict[str, Any], int]:
 
 
 def ledger_tail_envelope(session_id: str) -> tuple[dict[str, Any], int]:
-    try:
-        result = ledger_tail.ledger_tail(session_id)
-    except ledger_tail.LedgerUnavailable as exc:
-        return {
-            "available": False,
-            "error": str(exc),
-            "records": [],
-        }, 503
-    return {"available": True, "error": None, **result}, 200
+    # ledger_tail is contractually soft: it returns [] on any error and never raises, so the
+    # envelope is always 200 — the log pane renders an empty fold, not an error, for a session
+    # with no ledger. Rows under "rows", the key the Fleet Log fold reads.
+    return {
+        "available": True,
+        "error": None,
+        "rows": ledger_tail.ledger_tail(session_id),
+    }, 200
 
 
 # ── agent jobs (agent_jobs.py): give an agent a task from Fleet, watch it become a merged PR ──

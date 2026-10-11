@@ -22,6 +22,7 @@ import EstateFace from './EstateFace';
 import FleetBackdrop from './FleetBackdrop';
 import { useResearch } from './useResearch';
 import { useEstateVoice } from './useEstateVoice';
+import { useEstateStrip } from './EstateStrip';
 
 const LABEL: Record<string, string> = {
   off: 'Tap to talk',
@@ -55,6 +56,53 @@ export function FaceFindingsStrip() {
       }}
     >
       {line}
+    </div>
+  );
+}
+
+export function FaceEstateLine() {
+  // The estate's vitals under the wordmark: green lane and router burn, one muted line, the
+  // findings strip's own design law (silent while loading or unreadable -- the face is not a
+  // dashboard). Research already owns the line below; this line is the lane and the burn, from
+  // the SAME /estate envelope /fleet reads, so the two surfaces can never disagree.
+  const loaded = useEstateStrip();
+  if (loaded.state !== 'ready') return null;
+  const { green, burn } = loaded.body;
+  const bits: string[] = [];
+  if (green?.available) {
+    const lanes = green.state?.lanes ?? {};
+    const red = Object.values(lanes).filter(l => (l?.status ?? '') !== 'green').length;
+    // Three states, exactly as the strip draws them: unknown is not red. Collapsing undefined
+    // into 'main RED' would have the face cry wolf during every lane-reader hiccup.
+    if (green.main?.green === undefined) {
+      bits.push('main unknown');
+    } else if (green.main.green && red === 0 && (green.work_lost?.length ?? 0) === 0) {
+      bits.push('main green · all lanes green');
+    } else {
+      bits.push(green.main.green ? `${red} red lane(s)` : 'main RED');
+    }
+  }
+  if (burn?.measured) bits.push(`$${(burn.total_usd ?? 0).toFixed(2)} burn`);
+  if (bits.length === 0) return null;
+  return (
+    <div
+      data-testid="face-estate-line"
+      style={{
+        position: 'absolute',
+        top: 'calc(env(safe-area-inset-top, 0px) + 68px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(680px, calc(100% - 32px))',
+        textAlign: 'center',
+        fontSize: 11,
+        lineHeight: 1.5,
+        letterSpacing: '0.04em',
+        color: 'rgba(232,237,245,0.45)',
+        textShadow: '0 1px 8px rgba(11,14,20,0.8)',
+        pointerEvents: 'none',
+      }}
+    >
+      {bits.join(' · ')}
     </div>
   );
 }
@@ -102,6 +150,7 @@ export function FacePage() {
           has produced a finding, the estate's face carries it. Never interactive: taps pass
           through to the face. */}
       <FaceFindingsStrip />
+      <FaceEstateLine />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />
