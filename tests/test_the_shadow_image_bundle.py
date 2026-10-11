@@ -86,3 +86,83 @@ def test_an_empty_manifest_refuses_to_export(monkeypatch, tmp_path):
         assert "no images" in str(e)
     else:
         raise AssertionError("empty manifest should refuse")
+
+
+def test_cache_key_is_stable_for_the_same_inputs(tmp_path):
+    b = load_shadow_bundle()
+    manifest = tmp_path / "m.txt"
+    manifest.write_text("a:1\nb:2\n")
+    flux = [
+        "ghcr.io/fluxcd/source-controller:v1",
+        "ghcr.io/fluxcd/kustomize-controller:v1",
+    ]
+    k1 = b.cache_key(manifest, flux)
+    k2 = b.cache_key(manifest, flux)
+    assert k1 == k2
+    assert k1.startswith("shadow-bundle-")
+    assert len(k1.split("-", 1)[1]) == 16
+
+
+def test_cache_key_changes_when_manifest_changes(tmp_path):
+    b = load_shadow_bundle()
+    m1, m2 = tmp_path / "a.txt", tmp_path / "b.txt"
+    m1.write_text("a:1\n")
+    m2.write_text("a:2\n")
+    flux = ["ghcr.io/fluxcd/source-controller:v1"]
+    assert b.cache_key(m1, flux) != b.cache_key(m2, flux)
+
+
+def test_cache_key_changes_when_flux_version_changes(tmp_path):
+    b = load_shadow_bundle()
+    m = tmp_path / "m.txt"
+    m.write_text("a:1\n")
+    assert b.cache_key(m, ["source-controller:v1"]) != b.cache_key(
+        m, ["source-controller:v2"]
+    )
+
+
+def test_derive_flux_runs_flux_install_export_and_yq(monkeypatch):
+    b = load_shadow_bundle()
+    calls: list[list[str]] = []
+
+    def fake_run(argv, check=True, capture_output=True, input=None, text=True, **kw):
+        calls.append(list(argv))
+        if argv[:2] == ["flux", "install"]:
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                "- image: ghcr.io/fluxcd/source-controller:v1\n- image: ghcr.io/fluxcd/kustomize-controller:v1\n- image: ghcr.io/fluxcd/helm-controller:v1\n- image: ghcr.io/fluxcd/notification-controller:v1\n",
+                "",
+            )
+        if argv and argv[0] == "yq":
+            return subprocess.CompletedProcess(
+                argv,
+                0,
+                "ghcr.io/fluxcd/source-controller:v1\nghcr.io/fluxcd/kustomize-controller:v1\nghcr.io/fluxcd/helm-controller:v1\nghcr.io/fluxcd/notification-controller:v1\n",
+                "",
+            )
+        raise AssertionError(f"unexpected call: {argv}")
+
+    monkeypatch.setattr(b.subprocess, "run", fake_run)
+    images = b.derive_flux_images()
+    assert images == [
+        "ghcr.io/fluxcd/helm-controller:v1",
+        "ghcr.io/fluxcd/kustomize-controller:v1",
+        "ghcr.io/fluxcd/notification-controller:v1",
+        "ghcr.io/fluxcd/source-controller:v1",
+    ]
+
+
+def test_derive_flux_refuses_an_empty_manifest(monkeypatch):
+    b = load_shadow_bundle()
+
+    def fake_run(argv, check=True, capture_output=True, input=None, text=True, **kw):
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(b.subprocess, "run", fake_run)
+    try:
+        b.derive_flux_images()
+    except SystemExit as e:
+        assert "no images" in str(e)
+    else:
+        raise AssertionError("empty manifest should refuse")
