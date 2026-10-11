@@ -107,6 +107,10 @@ jobs:
         run: |
           set -euo pipefail
           tar="$RUNNER_TEMP/idp-shadow-bundle/images.tar"
+          echo "RUNNER_TEMP=$RUNNER_TEMP"
+          echo "expected tar path: $tar"
+          ls -la "$RUNNER_TEMP/idp-shadow-bundle/" 2>&1 || true
+          find "$RUNNER_TEMP" -name 'images.tar' -maxdepth 5 2>&1 | head -3
           test -f "$tar" || { echo "bundle cache hit but tar missing at $tar"; exit 1; }
           k3d image import -c shadow "$tar"
           echo "ok  shadow  image bundle restored (cache hit)"
