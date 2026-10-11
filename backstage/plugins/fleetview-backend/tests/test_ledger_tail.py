@@ -15,10 +15,22 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[4]
 LEDGER_TAIL_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "ledger_tail.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "ledger_tail.py"
 )
 ROUTES_MODULE = (
-    REPO / "backstage" / "plugins" / "fleetview-backend" / "src" / "routes.py"
+    REPO
+    / "backstage"
+    / "plugins"
+    / "fleetview-backend"
+    / "src"
+    / "fleetview_backend"
+    / "routes.py"
 )
 
 

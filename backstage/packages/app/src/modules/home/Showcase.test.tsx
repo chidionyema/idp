@@ -13,7 +13,7 @@ import {
   fetchApiRef,
 } from '@backstage/frontend-plugin-api';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { catalogApiWith } from './testCatalog';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Entity } from '@backstage/catalog-model';
 import { Showcase } from './Showcase';
@@ -80,14 +80,12 @@ const render = (missing: string[] = []) =>
       apis={[
         [
           catalogApiRef,
-          catalogApiMock({
-            entities: [
-              layer('edge', 'edge'),
-              layer('otto', 'agents'),
-              system('edge', 'Edge'),
-              system('agents', 'Agents'),
-            ],
-          }),
+          catalogApiWith([
+            layer('edge', 'edge'),
+            layer('otto', 'agents'),
+            system('edge', 'Edge'),
+            system('agents', 'Agents'),
+          ]),
         ],
         [configApiRef, mockApis.config({ data: { app: { title: 'Estate' } } })],
         [kubernetesApiRef, kubernetes as any],

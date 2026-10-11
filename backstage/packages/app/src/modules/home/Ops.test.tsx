@@ -11,7 +11,7 @@ import {
 } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
+import { catalogApiWith } from './testCatalog';
 import { Entity } from '@backstage/catalog-model';
 import { HC_CHECKS } from './healthchecks';
 import { INVENTORY_JSON } from './inventory';
@@ -153,7 +153,7 @@ const render = (lists: Record<string, unknown[]>, fail = false) =>
                   },
           } as any,
         ],
-        [catalogApiRef, catalogApiMock({ entities })],
+        [catalogApiRef, catalogApiWith(entities)],
         [
           discoveryApiRef,
           { getBaseUrl: async () => 'http://backend/api/proxy' },

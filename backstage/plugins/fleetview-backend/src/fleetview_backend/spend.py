@@ -88,3 +88,56 @@ def spend_for(session_id: str) -> float | None:
         except (TypeError, ValueError):
             continue
     return total if matched else None
+
+
+_CACHE_S = 60
+_total_cache: dict[str, Any] = {"at": 0.0, "body": None}
+
+
+def spend_total(now: float | None = None) -> dict[str, Any]:
+    """Fleet burn through the router, across every tagged call in the ledger's window.
+
+    The /estate strip and the voice's brief both ask "what is the fleet costing right now";
+    before this the number existed per session only, and the fleet-wide one did not exist at
+    all. Same honest contract as spend_for: a proxy that is down or refuses the key reads
+    {measured: False, reason}, never {measured: True, total_usd: 0}. Cached _CACHE_S so a
+    10s poll costs the proxy one read a minute.
+    """
+    import time
+
+    t = now if now is not None else time.time()
+    if _total_cache["body"] is not None and t - _total_cache["at"] < _CACHE_S:
+        return _total_cache["body"]
+
+    base = _base_url()
+    if not base:
+        body = {"measured": False, "reason": f"{_BASE_URL_ENV} is unset"}
+    else:
+        rows = _fetch_logs(base)
+        if rows is None:
+            body = {
+                "measured": False,
+                "reason": "the router's /spend/logs did not answer",
+            }
+        else:
+            total = 0.0
+            calls = 0
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                calls += 1
+                try:
+                    total += float(row.get("spend") or 0)
+                except (TypeError, ValueError):
+                    continue
+            body = {
+                "measured": True,
+                "total_usd": round(total, 4),
+                "calls": calls,
+                "rows_in_slice": len(rows),
+            }
+    # A success is worth the full cache window; a failure only five seconds, so a proxy that
+    # blips at t=0 is not frozen into every /estate read and every voice turn for a minute.
+    stamp = t if body.get("measured") else t - _CACHE_S + 5
+    _total_cache.update(at=stamp, body=body)
+    return body

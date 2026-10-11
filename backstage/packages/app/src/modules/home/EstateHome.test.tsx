@@ -5,7 +5,6 @@ import {
   mockApis,
 } from '@backstage/frontend-test-utils';
 import { catalogApiRef } from '@backstage/plugin-catalog-react';
-import { catalogApiMock } from '@backstage/plugin-catalog-react/testUtils';
 import { configApiRef } from '@backstage/frontend-plugin-api';
 import { kubernetesApiRef } from '@backstage/plugin-kubernetes';
 import { Entity } from '@backstage/catalog-model';
@@ -13,6 +12,7 @@ import { EstateHome } from './EstateHome';
 import { ago, count, fluxState, isEstateInternal, layerState, podsOf, verdict } from './estate';
 import { REFRESH_MS, countInventory } from './useEstate';
 import { screenUrl } from './estate';
+import { catalogApiWith } from './testCatalog';
 
 const layer = (name: string, system = 'delivery'): Entity => ({
   apiVersion: 'backstage.io/v1alpha1',
@@ -90,7 +90,7 @@ const render = (entities: Entity[], k8s: ReturnType<typeof kubernetes>) =>
   renderInTestApp(
     <TestApiProvider
       apis={[
-        [catalogApiRef, catalogApiMock({ entities })],
+        [catalogApiRef, catalogApiWith(entities)],
         [
           configApiRef,
           mockApis.config({ data: { app: { title: 'Mumchimp estate' } } }),
