@@ -44,6 +44,35 @@ export function wordTimings(text: string, ms: number, leadMs = 60): WordTimings 
   return { words, wtimes, wdurations };
 }
 
+/**
+ * Where speech actually is in a clause: the first and last 10ms window louder than the floor.
+ *
+ * The voices pad each clause with silence (macOS `say` leads with ~100-300ms), and spreading the
+ * words over the WHOLE clip opened the mouth before the voice and kept it moving after: the lips
+ * and the sound visibly out of step. The words are spread over this span instead. Pure.
+ */
+export function voicedSpan(
+  f32: Float32Array,
+  rate: number,
+  floor = 0.02,
+): { startMs: number; endMs: number } {
+  const win = Math.max(1, Math.round(rate / 100));
+  let first = -1;
+  let last = -1;
+  for (let i = 0; i < f32.length; i += win) {
+    let sum = 0;
+    const end = Math.min(f32.length, i + win);
+    for (let j = i; j < end; j++) sum += f32[j] * f32[j];
+    if (Math.sqrt(sum / (end - i)) > floor) {
+      if (first < 0) first = i;
+      last = end;
+    }
+  }
+  const total = (f32.length / rate) * 1000;
+  if (first < 0) return { startMs: 0, endMs: total };
+  return { startMs: (first / rate) * 1000, endMs: (last / rate) * 1000 };
+}
+
 export interface EstateFace extends ClauseSink {
   /** The mood the face is currently resting in (continuity reflects this back to the visit). */
   mood(): string;
@@ -196,6 +225,8 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
   let beat = 0;
   let idle: ReturnType<typeof setTimeout> | null = null;
   let speaking = false;
+  let speakingUntil = 0;
+  const ends = new Set<() => void>();
   const runIdle = () => {
     if (speaking) return;
     const b = nextBeat(beat++);
@@ -225,24 +256,42 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
     },
     speak(pcm: ArrayBuffer, text: string) {
       const f32 = new Float32Array(pcm);
-      if (!f32.length) return;
+      if (!f32.length) return Promise.resolve();
       speaking = true;
       const ctx: AudioContext = head.audioCtx;
       if (ctx.state === 'suspended') ctx.resume().catch(() => undefined);
       const audio = ctx.createBuffer(1, f32.length, TTS_RATE);
       audio.copyToChannel(f32, 0);
+      const { startMs, endMs } = voicedSpan(f32, TTS_RATE);
+      const t = wordTimings(text, endMs - startMs, 0);
       head.speakAudio(
-        { audio, ...wordTimings(text, audio.duration * 1000) },
+        { audio, ...t, wtimes: t.wtimes.map((w) => Math.round(w + startMs)) },
         { lipsyncLang: 'en' },
       );
-      // The clause's own duration ends the speaking window; idle life resumes after it.
-      setTimeout(() => {
-        speaking = false;
-      }, audio.duration * 1000 + 250);
+      // TalkingHead QUEUES clauses, so this one ends after every clause already queued, not
+      // `duration` from now. The voice waits on this before it listens again: going back to
+      // listening while the face was still talking let the mic hear the face.
+      const now = performance.now();
+      speakingUntil = Math.max(speakingUntil, now) + audio.duration * 1000;
+      const until = speakingUntil;
+      return new Promise<void>((resolve) => {
+        const done = () => {
+          if (until === speakingUntil) speaking = false;
+          resolve();
+        };
+        ends.add(done);
+        setTimeout(() => {
+          ends.delete(done);
+          done();
+        }, until - now + 250);
+      });
     },
     stop() {
       speaking = false;
+      speakingUntil = 0;
       head.stopSpeaking();
+      for (const done of ends) done();
+      ends.clear();
     },
     dispose() {
       if (idle) clearTimeout(idle);
