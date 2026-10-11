@@ -390,6 +390,11 @@ def flux_kustomization(name, path, source="shadow", substitute=False, ks_timeout
 # the change. Flux lays the floor too; this process still applies nothing it proves.
 ESO_ROW = os.path.join(REPO, "platform", "secrets", "external-secrets.yaml")
 ESO_GIT = "https://github.com/external-secrets/external-secrets"
+# The row holding the github-app ExternalSecret. Four production rows substitute from the Secret
+# it produces, so the shadow has to lay it (see flux_floor). Path is repo-relative, like the
+# other rows the floor names.
+CREDS_ROW_NAME = "shadow-floor-github-app-creds"
+CREDS_ROW_PATH = "./platform/github-app-creds"
 # MEASURED 2026-09-27 once the vault stand-in landed (idp#4510): platform/llm then failed on
 # `no matches for kind "HTTPRoute"` and unified-memory-server on `no matches for kind
 # "HTTPScaledObject"`. Production has both: clusters/oke/ingress.yaml lays the Gateway API CRDs,
@@ -516,6 +521,18 @@ def flux_floor(deadline):
     )
     for name, path, source in floor:
         flux_kustomization(name, path, source)
+    # #5747 follow-up, measured 2026-10-11 on run 38146045240: a row whose postBuild names
+    # github-app cannot converge until that Secret exists, and the Secret is written by ESO from
+    # an ExternalSecret that lives in a row of its own (platform/github-app-creds). The shadow
+    # reconciles only the path under test, so github-app-creds was never applied, stand_in_vault
+    # never saw its ExternalSecret, flux-system/github-app never appeared, and vault_wait timed
+    # out after 120s: platform/mcp and platform/temporal then failed with
+    #   substitute from 'Secret/github-app' error: secrets "github-app" not found
+    # Four production rows (clusters/oke/platform.yaml lines 161, 183, 318, and the mcp row at
+    # 159) declare dependsOn github-app-creds for exactly this reason, so the shadow lays that
+    # row like the rest of the floor. Applied, never waited on: ESO has no controller here, so
+    # the ExternalSecret can never report Ready -- the stand-in writes its Secret from the spec.
+    flux_kustomization(CREDS_ROW_NAME, CREDS_ROW_PATH, "shadow")
     failed = []
     for name, path, _ in floor:
         ready, msg, _inv = wait_ks(name, deadline)
@@ -1188,9 +1205,11 @@ def verify(head, paths):
         threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
         # #5747: a row whose postBuild names github-app cannot converge until that Secret exists,
         # and stand_in_vault finds it only after the github-app-creds row has applied the
-        # ExternalSecret. Wait for it here, bounded, so the mcp row is not applied into a
-        # missing-Secret failure that Flux then retries on its 5m interval. A timeout is not
-        # fatal: rows that do not name github-app converge regardless.
+        # ExternalSecret. flux_floor lays that row before this point, so the ExternalSecret is
+        # in the shadow; the stand-in polls every 5s and vault_wait bounds the wait. Wait here so
+        # the mcp row is not applied into a missing-Secret failure that Flux then retries on its
+        # 5m interval. A timeout is still not fatal: rows that do not name github-app converge
+        # regardless.
         if vault_wait("flux-system", "github-app", timeout=120):
             print("ok      shadow  vault stand-in flux-system/github-app is ready")
         else:
