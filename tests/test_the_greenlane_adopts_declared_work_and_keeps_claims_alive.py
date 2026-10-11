@@ -16,14 +16,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from greenlane import github as G  # noqa: E402
-
-NOW = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
 
 
 def _pr(number=1, body="", sha="s1", ref="fix/face", login="chidionyema"):
@@ -99,7 +96,9 @@ def test_a_body_declaration_is_enough_no_commit_lookup(monkeypatch):
 
 
 def _claim(agent="opencode", paths="bin/x", age=timedelta(minutes=90), model=None):
-    hb = (NOW - age).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # Ages are measured from the real clock: the production check compares against
+    # datetime.now(), so a frozen fixture here would drift from fresh to lapsed mid-run.
+    hb = (datetime.now(timezone.utc) - age).strftime("%Y-%m-%dT%H:%M:%SZ")
     model_field = f" model={model} " if model else " "
     return f"CLAIM agent={agent}{model_field}paths={paths} heartbeat={hb}"
 
