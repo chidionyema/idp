@@ -189,3 +189,7 @@ def test_the_apply_is_a_document_stream_never_a_json_array(monkeypatch):
     kinds = [d["kind"] for d in docs]
     assert kinds == ["Namespace", "Deployment", "Service"]
     assert docs[1]["metadata"]["name"] == shadow.DB_STAND_IN
+    # Available must mean serving (greenlane 38118221613: the seed exec raced initdb
+    # and found no socket), so the deployment carries a real readiness probe.
+    (container,) = docs[1]["spec"]["template"]["spec"]["containers"]
+    assert container["readinessProbe"]["exec"]["command"][-1].startswith("pg_isready")

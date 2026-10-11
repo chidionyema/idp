@@ -829,6 +829,24 @@ def db_standin_objects():
                                         "value": VAULT_PLACEHOLDER,
                                     },
                                 ],
+                                # Available must mean serving: with no probe the
+                                # deployment goes Available the moment the container
+                                # runs, while initdb is still mid-flight, and the seed
+                                # exec finds no socket. Measured, greenlane
+                                # 38118221613: "connection to server on socket
+                                # /var/run/postgresql/.s.PGSQL.5432 failed".
+                                "readinessProbe": {
+                                    "exec": {
+                                        "command": [
+                                            "/bin/bash",
+                                            "-c",
+                                            "pg_isready -U postgres -d postgres",
+                                        ],
+                                    },
+                                    "periodSeconds": 1,
+                                    "timeoutSeconds": 3,
+                                    "failureThreshold": 60,
+                                },
                                 "ports": [{"containerPort": 5432}],
                             }
                         ]
