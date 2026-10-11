@@ -37,27 +37,35 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/idp-shadow-bundle"
-          # Flux controllers, derived from the same manifest the shadow applies.
-          flux install --export \
-            | yq -o=tsv '.. | select(has("image")).image' \
-            | sort -u \
-            >  "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt"
           # Static manifest (k3s node image + DB stand-in). rg is the local
           # convention (AGENTS.md §10) but the runner is a fresh ubuntu image
           # without it; grep -E is the port that's there.
           cat bin/idp-shadow-bundle-images.txt \
             | grep -vE '^\s*(#|$)' \
             >  "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
+          # Flux controllers, derived from the same manifest the shadow applies.
+          bin/idp-shadow-bundle flux-images \
+            > "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt"
           cat "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt" \
             >> "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
           echo "bundle images:"
           cat "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
           bin/idp-shadow-bundle export "$RUNNER_TEMP/idp-shadow-bundle/images.tar"
 
+      - name: Compute the cache key
+        id: keygen
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: |
+          set -euo pipefail
+          key=$(bin/idp-shadow-bundle key --flux-list "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt")
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "cache key: $key"
+
       - name: Upload the bundle
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/idp-shadow-bundle
-          # The key includes the derived flux list so a flux release (new tag)
-          # invalidates the cache; the manifest is the rest of the contract.
-          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}-${{ hashFiles(format('{0}/idp-shadow-bundle/flux-images.txt', runner.temp)) }}
+          # The key is what shadow-verify computes in its own 'Compute the
+          # cache key' step; the bin script guarantees they match.
+          key: ${{ steps.keygen.outputs.key }}

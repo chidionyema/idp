@@ -80,18 +80,27 @@ jobs:
 
       # idp#5769: every shadow run re-pulls the k3s node image, the Flux controllers and
       # the DB stand-in's image -- ~1GB and a few minutes. The bundle workflow
-      # pre-bakes the same list (bin/idp-shadow-bundle-images.txt) into a tar and
-      # uploads it here. On a hit, k3d image import skips every pod pull; on a miss
-      # the run pulls them anyway and the next bundle workflow repopulates the cache.
+      # pre-bakes the same list (bin/idp-shadow-bundle-images.txt + the four
+      # flux controllers) into a tar and uploads it here. On a hit, k3d image
+      # import skips every pod pull; on a miss the run pulls them anyway and
+      # the next bundle workflow repopulates the cache.
+      - name: Compute the bundle's cache key
+        if: steps.scope.outputs.dirs != ''
+        id: bundle_key
+        run: |
+          set -euo pipefail
+          bin/idp-shadow-bundle flux-images > "$RUNNER_TEMP/flux-images.txt"
+          key=$(bin/idp-shadow-bundle key --flux-list "$RUNNER_TEMP/flux-images.txt")
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "shadow-bundle cache key: $key"
+
       - name: Restore the shadow image bundle
         if: steps.scope.outputs.dirs != ''
         id: bundle
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/idp-shadow-bundle
-          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}
-          restore-keys: |
-            shadow-bundle-
+          key: ${{ steps.bundle_key.outputs.key }}
 
       - name: Bring the bundle into the k3d image store
         if: steps.scope.outputs.dirs != '' && steps.bundle.outputs.cache-hit == 'true'
