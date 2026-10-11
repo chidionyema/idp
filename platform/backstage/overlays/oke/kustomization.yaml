@@ -49,7 +49,7 @@ images:
     newName: ghcr.io/chidionyema/backstage
     # image-automation-controller rewrites this line from ImagePolicy flux-system/backstage
     # (platform/image-automation/backstage.yaml, crew#267); the marker is how it finds the line.
-    newTag: main-14190-6ce867840dcb0c9ba7b954b863197e6f10d2a0ed # {"$imagepolicy": "flux-system:backstage:tag"}
+    newTag: main-14178-04189ecd19bf663f87e8b226275e2a216a946a2f # {"$imagepolicy": "flux-system:backstage:tag"}
   # OKE's CRI-O enforces fully qualified names: `postgres:17.6-alpine` failed with
   # "short name mode is enforcing" on 2026-08-25. k3d resolves either form. The name now
   # arrives qualified from the base, so this entry no longer renames anything; it is kept
@@ -63,7 +63,7 @@ images:
     # the sidecar cannot pull and Flux reports it. image-automation-controller then rewrites this
     # line from ImagePolicy flux-system/fleetview-backend (platform/image-automation/
     # fleetview-backend.yaml); the marker is how it finds the line.
-    newTag: main-14190-6ce867840dcb0c9ba7b954b863197e6f10d2a0ed # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
+    newTag: main-14161-fc4e9996975959dc202d32b37802211098d9e3b6 # {"$imagepolicy": "flux-system:fleetview-backend:tag"}
 patches:
   # The catalogue's PodDisruptionBudget lives in ../../base/catalogue.yaml. This overlay used to
   # declare a second one as a resource, which made kustomize refuse the entire render; it is an
@@ -468,12 +468,25 @@ patches:
             # not this sidecar's CI-built estate.db, which has no session rows -- the voice said
             # "zero agents" while the board drew 431 (serve.py _voice_sessions).
             - {name: FLEETVIEW_SESSIONS_URL, value: "http://fleetview-mac.backstage.svc.cluster.local:18790/sessions"}
+            # idp#5737: research_feed's loopback to the portal that shares this pod. The
+            # module defaults to the dev port 7107, but app-config.container.yaml (the only
+            # config the container runs) listens on 3100 -- measured 2026-10-11 in the live
+            # sidecar: /research answered "Connection refused" while 127.0.0.1:3100 was open
+            # and 7107 refused. The one reader (research-output plugin), no second Postgres
+            # client here.
+            - {name: FLEETVIEW_PORTAL_URL, value: "http://127.0.0.1:3100"}
+            # The token the portal's auth door demands (research_feed._auth_headers), a
+            # mounted file from the same backstage-env Secret for the same
+            # secrets-not-from-env-vars reason as FLEETVIEW_EXECUTOR_KEY_FILE above; the
+            # volume is the fleetview-research op at the bottom of this file.
+            - {name: FLEETVIEW_RESEARCH_TOKEN_FILE, value: /run/secrets/fleetview-research/RESEARCH_FEED_TOKEN}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             - {name: estate, mountPath: /estate, readOnly: true}
             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
             - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
             - {name: fleetview-voice-llm, mountPath: /run/secrets/fleetview-voice-llm, readOnly: true}
+            - {name: fleetview-research, mountPath: /run/secrets/fleetview-research, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3
@@ -515,3 +528,24 @@ patches:
           name: research-db
           mountPath: /run/secrets/research-db
           readOnly: true
+  # idp#5737: the research feed's token, one field of the backstage-env vault JSON
+  # (bin/idp-estate-seed), mounted into the SIDECAR (the catalogue container already has the
+  # whole backstage-env secret at /run/secrets/backstage; sidecar mounts are its own). Only
+  # the RESEARCH_FEED_TOKEN key is projected -- the sidecar has no business holding the
+  # portal's Postgres password. optional: true for the same reason research-db and
+  # healthchecks-ro are: a vault field that has not landed yet degrades the /research and
+  # /estate strips to available:false with a reason (research_feed's envelope), never a pod
+  # that cannot start (incident 2026-08-30).
+  - target:
+      kind: Deployment
+      name: catalogue
+    patch: |
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-research
+          secret:
+            secretName: backstage-env
+            items:
+              - {key: RESEARCH_FEED_TOKEN, path: RESEARCH_FEED_TOKEN}
+            optional: true
