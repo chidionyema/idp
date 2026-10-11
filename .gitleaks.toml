@@ -1,0 +1,41 @@
+# .gitleaks.toml — exemptions for findings that are known, reviewed, and not credentials.
+#
+# `bin/estate-security-scan` runs `gitleaks detect --log-opts=HEAD` with no --config, so
+# gitleaks picks this file up from the repository root by its own default lookup. The check
+# itself is unchanged: this file only names values that are provably not secrets.
+#
+# WHY A CONFIG AND NOT `#gitleaks:allow`. The inline annotation argues its case at the line
+# that carries the value, which is the right place for a value that only ever exists in the
+# working tree. It is the wrong tool here: `--log-opts=HEAD` walks every commit reachable from
+# HEAD, so a value that was committed (and only annotated afterwards) is re-found in the
+# historical blob, where no annotation exists. An annotation added in a later commit cannot
+# reach back and edit an earlier one. A config applies to the scan as a whole, which is what
+# a finding in history needs. (idp#5794 measured exactly this: the fixture was committed at
+# a6ab5b4cdabf and the annotation, added on top, did not clear it.)
+#
+# Everything below is an exemption for a SYNTHETIC value that exists to be redacted. Each one
+# names a single path and a single rule, never a rule globally: a real key committed to any
+# other file — including another file in the same directory — still fails the scan.
+
+[extend]
+# Keep every built-in rule, including generic-api-key. This file adds exemptions; it does not
+# replace the ruleset, and it must never be edited to do so.
+useDefault = true
+
+[[allowlists]]
+description = "test_replies_roundtrip_and_redaction_at_the_writer: the fake key is the input that proves the writer redacts it, and is asserted absent two lines later (idp#5794)."
+paths = [
+  '''^backstage/plugins/fleetview-backend/tests/test_reply_work_routes\.py$''',
+]
+# Scoped to the one rule that fires on it. A credential of any other shape in this same file
+# is still reported.
+regexTarget = "match"
+rules = [
+  "generic-api-key",
+]
+# The value is deliberately the well-known dummy: a repeated abcdef0123456789 pattern that is
+# not a key for anything. If this value ever becomes a real key the pattern below stops
+# matching and the finding returns, which is the intended failure mode.
+regexes = [
+  '''sk-abcdef0123456789abcdef''',
+]
