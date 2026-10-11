@@ -100,7 +100,10 @@ def test_cache_key_is_stable_for_the_same_inputs(tmp_path):
     k2 = b.cache_key(manifest, flux)
     assert k1 == k2
     assert k1.startswith("shadow-bundle-")
-    assert len(k1.split("-", 1)[1]) == 16
+    # 'shadow-bundle-' (14 chars) + 16 hex chars; the format is the contract
+    # both workflows depend on (change it and the keys stop matching).
+    assert len(k1) == 14 + 16
+    assert all(c in "0123456789abcdef" for c in k1[14:])
 
 
 def test_cache_key_changes_when_manifest_changes(tmp_path):
