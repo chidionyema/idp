@@ -53,11 +53,24 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       # The prover's machine identity (same exchange oke-check.yml uses): without it the
       # vault read below is BLIND and the battery 401s at the gate pretending to be verified.
       # domain_base_url and oci_region are required inputs: without them the action threw
       # "Input required and not supplied: domain_base_url" and the battery never ran -- every
       # run red for that reason alone, 22 in a row to 2026-10-08, none of them testing voice.
+      #
+      # The OIDC token is not the vault read. With the token finally scoped (2026-10-11),
+      # run 38168478401 exchanged it successfully and the battery then reported, in its own
+      # words, `BLIND   cloud  oci CLI is not installed` -> `BLOCKED surfaces  vault read of
+      # backstage-env.PROVER_TOKEN failed; L4/L5 would 401 at the gate`. `bin/idp-cloud secret
+      # get` shells out to the oci CLI, and no step in this file ever installed it; every other
+      # workflow that reads the vault installs it from .github/requirements/oci-cli.txt
+      # (verdict-backstage.yml:42, green on main), the file whose own header says it exists so
+      # setup-python has something to hash for `cache: pip`.
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -123,16 +136,45 @@ jobs:
             -f "output[title]=$line" -f "output[summary]=$summary" >/dev/null
           printf '### verdict-surfaces\n```\n%s\n```\n' "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: a standing red pages crew#1019 (dispatched red rolls back instead, next job)
-        if: failure() && steps.verdict.outputs.dispatched != 'true'
+        # `failure()` in a step's `if:` sees only the steps that have already run, and the step that
+        # decides red comes below this one -- so this page could not fire even once the gate itself
+        # was fixed. Measured 2026-10-11, run 38169906354: the gate below failed and this step was
+        # SKIPPED. Page on the same signal the gate and the check-run publish.
+        if: always() && steps.verdict.outputs.outcome != 'PASS' && steps.verdict.outputs.dispatched != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           body="$ts **verdict/surfaces** (hourly): FAIL — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) — the surfaces battery is red on the standing deployment; see the check-run for the failing level."
-          gh issue comment 1019 --repo chidionyema/crew --body "$body" || true
+          # No `|| true` here. Measured 2026-10-11 on run 38170143168: with it, this step reported
+          # SUCCESS while the comment was refused — `GraphQL: Resource not accessible by integration
+          # (addComment)`, because the workflow's own GITHUB_TOKEN is an installation token scoped to
+          # this repository and cannot comment on chidionyema/crew — and crew#1019 stayed at one
+          # comment, from 2026-10-02. A page that cannot page must be red, not green. The red still
+          # reaches the founder without any extra credential: the run is red and the verify/surfaces
+          # check-run on the commit says failure. Delivering the comment itself needs a repo secret
+          # holding a token with issue:write on chidionyema/crew; that is the vault's job, not this
+          # file's, and no such secret exists in this repository today (measured: the only
+          # cross-repo writers in .github/workflows/ are the verdict workflows themselves, all on
+          # the default token).
+          gh issue comment 1019 --repo chidionyema/crew --body "$body"
       - name: the job is red when the battery is not PASS
         if: always()
-        run: grep -qE '^PASS +surfaces' verify.out || { grep -E '^(PASS|FAIL) +surfaces' verify.out | tail -3; exit 1; }
+        # Measured 2026-10-11, run 38169517103 -- the first run whose battery actually executed:
+        # this step ran `grep -qE '^PASS +surfaces' verify.out` and reported SUCCESS on a run whose
+        # own verdict was FAIL (`{"state": "FAIL", "levels": {"L1L2": false, "L3": false,
+        # "L4": false, "L5": false}}`), because the pattern matches the per-item lines too:
+        # `PASS  surfaces.coverage.pages` and `PASS  surfaces.l2.backend.negative/agent-jobs` both
+        # begin with `PASS surfaces`. verify.out carries no top-level `PASS surfaces` line at all;
+        # its verdict is that JSON, and the step's own `outcome` output -- the value the check-run
+        # already publishes -- is the same signal. So the job never went red, `if: failure()` was
+        # never true, and both things this file exists for (page crew#1019 on a standing red, roll
+        # the image back on a dispatched red) were unreachable: a report, not a gate. Gate on the
+        # one signal, so check-run red and job red cannot disagree.
+        run: |
+          if [ "${{ steps.verdict.outputs.outcome }}" = "PASS" ]; then exit 0; fi
+          grep -E '^(PASS|FAIL|BLOCKED|BLIND)' verify.out 2>/dev/null | tail -5 || true
+          exit 1
   rollback:
     needs: battery
     if: failure() && needs.battery.outputs.dispatched == 'true'
