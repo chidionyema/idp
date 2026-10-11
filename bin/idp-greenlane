@@ -83,7 +83,74 @@ def tick() -> int:
     )
     for name, why in b.refused.items():
         print(f"REFUSED greenlane  {name}: {why}")
+    rearm(st)
     return 0
+
+
+def rearm(st: State) -> None:
+    """Chain one more tick if a lane is still unproven (2026-10-11).
+
+    A lane push fires `push` exactly once, and it competes for the single
+    `greenlane` concurrency slot with the continuous stream of `workflow_run`
+    ticks that every completion on main produces. Losing that race cancels the
+    lane's only trigger: measured over the last 100 greenlane runs, 8 of 11
+    `push` runs were cancelled and 52 of 76 cancellations killed a run that had
+    already started. The `schedule` backstop that is supposed to cover this
+    fired twice in that same window against a `*/5` cron (288/day expected), so
+    nothing re-armed a lost lane and it sat unproven on origin until an agent
+    dispatched a tick by hand.
+
+    A cancelled run never reaches this function, so the re-arm cannot come from
+    the run that was lost. It comes from whichever tick runs next and observes
+    work outstanding -- which is why the chain has to be self-sustaining rather
+    than relying on the event that establishes the work.
+
+    Re-arming is safe to repeat because a tick is idempotent: the engine persists
+    `state.json` in git (bin/idp-greenlane.tick saves it in a `finally`), and a
+    run killed mid-flight is requeued from that state rather than stranded. The
+    guard is only against a runaway loop: a tick with no lane outstanding
+    dispatches nothing, so the chain terminates as soon as the estate is clean.
+    """
+    if not os.environ.get("GH_TOKEN"):
+        return  # no credential to dispatch with; the next event-triggered tick covers it
+    outstanding = sorted(
+        name
+        for name, lane in st.lanes.items()
+        if (
+            lane.status not in ("landed", "red")
+            or (lane.status == "landed" and lane.judged_on != st.main)
+        )
+    )
+    if not outstanding and not st.queued:
+        return  # nothing unproven: let the chain end here, as it must to stay finite
+    proc = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        [  # noqa: S607
+            "gh",
+            "workflow",
+            "run",
+            "greenlane.yml",
+            "--ref",
+            "main",
+            "--repo",
+            repo(),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode == 0:
+        print(
+            f"ok      greenlane  re-armed a tick: {len(outstanding)} lane(s) still "
+            f"unproven ({', '.join(outstanding[:4])}"
+            f"{'...' if len(outstanding) > 4 else ''})"
+        )
+    else:
+        # A refused dispatch must be loud: silence here is a lane that sits
+        # unproven with nothing left to move it.
+        print(
+            f"REFUSED greenlane  re-arm dispatch failed rc={proc.returncode}: "
+            f"{(proc.stderr or '').strip()[:200]}"
+        )
 
 
 def status() -> int:
