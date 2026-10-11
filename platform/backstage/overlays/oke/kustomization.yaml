@@ -389,6 +389,19 @@ patches:
             secretName: ghcr-pull
             items:
               - {key: .dockerconfigjson, path: config.json}
+      # idp#5737: the fleetview's OWN tables (fleetview_signals/_replies/_work) cannot live in the
+      # snapshot at /data -- fleetview-data is mounted readOnly on purpose (the shipped catalogue
+      # is an OCI artifact, not a database this pod writes), so the first CREATE TABLE 500'd with
+      # "attempt to write a readonly database" (measured 2026-10-11 in the live sidecar: GET /work
+      # -> 500, /sessions -> 200 off the same snapshot). An emptyDir the sidecar can write, at a
+      # path FLEETVIEW_DB points at; the laptop sets nothing and signals.py falls back to
+      # ESTATE_DB exactly as before. Pod-local: work/replies telemetry dies with the pod and is
+      # re-reported by the sessions' own hooks -- recorded here as known debt, not hidden.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-state
+          emptyDir: {}
       - op: add
         path: /spec/template/spec/containers/-
         value:
@@ -413,6 +426,11 @@ patches:
           # actually controls reachability from anywhere else.
           env:
             - {name: ESTATE_DB, value: /data/estate.db}
+            # The WRITABLE half. ESTATE_DB stays pointed at the read-only catalogue snapshot that
+            # graph/blast-radius/sessions read; signals.py prefers FLEETVIEW_DB for the tables it
+            # OWNS (fleetview_signals/_replies/_work), so a write can never again depend on a
+            # mount that is read-only by design. See the fleetview-state volume above.
+            - {name: FLEETVIEW_DB, value: /state/estate.db}
             - {name: ESTATE_CATALOG_PATH, value: /estate/catalog-info.yaml}
             # Turns on routes.py's relay path for /mutations, /mutations/approve,
             # /mutations/reject (executor_link.py): unset, every local `docker run`/laptop launch
@@ -482,6 +500,9 @@ patches:
             - {name: FLEETVIEW_RESEARCH_TOKEN_FILE, value: /run/secrets/fleetview-research/RESEARCH_FEED_TOKEN}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
+            # WRITABLE -- the only mount on this container that is: the fleetview's own state
+            # lives here (FLEETVIEW_DB), everything else is a read-only snapshot or a secret.
+            - {name: fleetview-state, mountPath: /state}
             - {name: estate, mountPath: /estate, readOnly: true}
             - {name: fleetview-executor, mountPath: /run/secrets/fleetview-executor, readOnly: true}
             - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}

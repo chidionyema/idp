@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from datetime import datetime, timezone
 from typing import Any
 
@@ -246,8 +247,16 @@ def reply_envelope(session_id: str, limit: int = 20) -> tuple[dict[str, Any], in
     what a board shows when the reader is not looking at any one agent; a session id narrows it to
     that conversation. Always 200 with a possibly-empty list, like `signals_envelope`: an agent
     that has not spoken yet is not an error.
+
+    THE READ IS SOFT. The board polls this every two seconds; a database that cannot answer (a
+    volume gone read-only -- which is exactly how the first deployment of this route failed) must
+    not turn the HUD into a 500. Empty rows AND the reason in the body: a quiet fleet and a
+    broken one look the same to a status code, so the reason is what tells them apart.
     """
-    return {"replies": signals.replies_for(session_id, limit=limit)}, 200
+    try:
+        return {"replies": signals.replies_for(session_id, limit=limit)}, 200
+    except sqlite3.Error as exc:
+        return {"replies": [], "error": str(exc)}, 200
 
 
 def post_reply(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
@@ -273,9 +282,13 @@ def work_envelope() -> tuple[dict[str, Any], int]:
     """`GET /work` -- what each session is working on: branch and current step.
 
     Keyed by session id so the board can merge it into rows it already has, rather than a list the
-    reader has to join by hand. Always 200 with a possibly-empty map.
+    reader has to join by hand. Always 200 with a possibly-empty map; SOFT for the same reason
+    `reply_envelope` is -- a read that cannot be served is a reason, not a 500.
     """
-    return {"work": signals.work_for()}, 200
+    try:
+        return {"work": signals.work_for()}, 200
+    except sqlite3.Error as exc:
+        return {"work": {}, "error": str(exc)}, 200
 
 
 def post_work(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
