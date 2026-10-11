@@ -142,22 +142,28 @@ jobs:
         # SKIPPED. Page on the same signal the gate and the check-run publish.
         if: always() && steps.verdict.outputs.outcome != 'PASS' && steps.verdict.outputs.dispatched != 'true'
         env:
-          GH_TOKEN: ${{ github.token }}
+          # bin/idp-github-app reads the github-app vault secret through bin/idp-cloud, which
+          # shells out to the oci CLI -- the session the OIDC token exchange opened above.
+          OCI_CLI_AUTH: security_token
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           body="$ts **verdict/surfaces** (hourly): FAIL — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) — the surfaces battery is red on the standing deployment; see the check-run for the failing level."
-          # No `|| true` here. Measured 2026-10-11 on run 38170143168: with it, this step reported
-          # SUCCESS while the comment was refused — `GraphQL: Resource not accessible by integration
-          # (addComment)`, because the workflow's own GITHUB_TOKEN is an installation token scoped to
-          # this repository and cannot comment on chidionyema/crew — and crew#1019 stayed at one
-          # comment, from 2026-10-02. A page that cannot page must be red, not green. The red still
-          # reaches the founder without any extra credential: the run is red and the verify/surfaces
-          # check-run on the commit says failure. Delivering the comment itself needs a repo secret
-          # holding a token with issue:write on chidionyema/crew; that is the vault's job, not this
-          # file's, and no such secret exists in this repository today (measured: the only
-          # cross-repo writers in .github/workflows/ are the verdict workflows themselves, all on
-          # the default token).
-          gh issue comment 1019 --repo chidionyema/crew --body "$body"
+          # The page needs an identity that can write to chidionyema/crew. The workflow's own
+          # GITHUB_TOKEN cannot: measured 2026-10-11, run 38170507984, `GraphQL: Resource not
+          # accessible by integration (addComment)` -- an installation token is scoped to the
+          # repository running the workflow, and crew#1019 stayed at one comment. The estate's own
+          # GitHub App can: `bin/idp-github-app token <lane>` mints an installation token narrowed
+          # by platform/github-app/lanes.json, and `ticket-verifier` is the narrowest lane that can
+          # comment on an issue -- metadata:read, issues:write, actions:read; no contents, no pull
+          # requests, no workflows. Same incantation as ticket-verification.yml:59, which posts to
+          # crew#102 from this same OIDC session. No `|| true`: a page that cannot page must be red,
+          # not green, which is how the refusal stayed invisible until now.
+          tok=$(bin/idp-github-app token ticket-verifier 2>&1) || { echo "BLIND   page  no App token: ${tok:0:160}"; exit 2; }
+          echo "::add-mask::$tok"
+          GH_TOKEN="$tok" gh issue comment 1019 --repo chidionyema/crew --body "$body"
       - name: the job is red when the battery is not PASS
         if: always()
         # Measured 2026-10-11, run 38169517103 -- the first run whose battery actually executed:
