@@ -114,6 +114,8 @@ STREAM_PATH = "/stream"
 NOTES_PATH = "/notes"
 NUDGE_PATH = "/nudge"
 SIGNALS_PATH = "/signals"
+REPLIES_PATH = "/replies"
+WORK_PATH = "/work"
 BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
@@ -235,6 +237,66 @@ def add_nudge(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
 
 def signals_envelope(session_id: str) -> tuple[dict[str, Any], int]:
     return {"signals": signals.signals_for(session_id)}, 200
+
+
+def reply_envelope(session_id: str, limit: int = 20) -> tuple[dict[str, Any], int]:
+    """`GET /replies?session_id=...` -- what the sessions said back.
+
+    THE READ HALF OF THE REPLY CHANNEL. Empty `session_id` returns the fleet-wide feed, which is
+    what a board shows when the reader is not looking at any one agent; a session id narrows it to
+    that conversation. Always 200 with a possibly-empty list, like `signals_envelope`: an agent
+    that has not spoken yet is not an error.
+    """
+    return {"replies": signals.replies_for(session_id, limit=limit)}, 200
+
+
+def post_reply(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """`POST /replies` -- a session (or a person) records what was said.
+
+    A blank session_id or text is 400 (`InvalidSignal`, the same distinction signals draw between
+    'never reached a session' and 'reached it and failed'). Anything else is recorded.
+    """
+    try:
+        row = signals.reply(
+            session_id=str(body.get("session_id") or ""),
+            runtime=str(body.get("runtime") or "unknown"),
+            text=str(body.get("text") or ""),
+            author=str(body.get("author") or "agent"),
+            in_reply_to=body.get("in_reply_to"),
+        )
+    except signals.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    return {"reply": row}, 201
+
+
+def work_envelope() -> tuple[dict[str, Any], int]:
+    """`GET /work` -- what each session is working on: branch and current step.
+
+    Keyed by session id so the board can merge it into rows it already has, rather than a list the
+    reader has to join by hand. Always 200 with a possibly-empty map.
+    """
+    return {"work": signals.work_for()}, 200
+
+
+def post_work(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """`POST /work` -- a session reports its branch and step.
+
+    One row per session, upserted: "what is it working on" has one answer at a time, and a log of
+    forty steps would make the reader choose between them.
+    """
+    try:
+        row = signals.record_work(
+            session_id=str(body.get("session_id") or ""),
+            runtime=str(body.get("runtime") or "unknown"),
+            branch=str(body.get("branch") or ""),
+            step=str(body.get("step") or ""),
+            # The pid is its own field. Encoded as `step = "pid 1234"` it survived exactly until
+            # the agent ran its first tool, which overwrote the step.
+            pid=body.get("pid") if isinstance(body.get("pid"), int) else None,
+        )
+    except signals.InvalidSignal as exc:
+        return {"error": str(exc)}, 400
+    return {"work": row}, 201
 
 
 def blast_radius_envelope(node_id: str) -> tuple[dict[str, Any], int]:

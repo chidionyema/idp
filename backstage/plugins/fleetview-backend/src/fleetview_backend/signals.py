@@ -44,6 +44,7 @@ CONFIG (LAW 46):
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import json
 import os
@@ -75,29 +76,143 @@ def _db_path() -> Path:
     return Path(os.environ.get("ESTATE_DB", str(_DB_DEFAULT)))
 
 
-def _connect() -> sqlite3.Connection:
-    con = sqlite3.connect(str(_db_path()))
-    con.row_factory = sqlite3.Row
-    con.execute(
-        """
-        CREATE TABLE IF NOT EXISTS fleetview_signals (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            session_id TEXT NOT NULL,
-            runtime    TEXT NOT NULL,
-            kind       TEXT NOT NULL,
-            by         TEXT NOT NULL,
-            text       TEXT NOT NULL,
-            ok         INTEGER NOT NULL,
-            error      TEXT,
-            created_at TEXT NOT NULL
-        )
-        """
+_SIGNALS_DDL = """
+    CREATE TABLE IF NOT EXISTS fleetview_signals (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        runtime    TEXT NOT NULL,
+        kind       TEXT NOT NULL,
+        by         TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        ok         INTEGER NOT NULL,
+        error      TEXT,
+        created_at TEXT NOT NULL,
+        -- When the session's own hook CONSUMED the directive. NULL means written and not yet read,
+        -- which is a different fact from ok=0 (the write failed).
+        read_at    TEXT
     )
+"""
+_REPLIES_DDL = """
+    CREATE TABLE IF NOT EXISTS fleetview_replies (
+        id         INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id TEXT NOT NULL,
+        runtime    TEXT NOT NULL,
+        -- "agent" for the session's own output, a name for a person.
+        author     TEXT NOT NULL,
+        text       TEXT NOT NULL,
+        -- The steer this answers, when the session knows. NULL for an unsolicited update.
+        in_reply_to INTEGER,
+        created_at TEXT NOT NULL
+    )
+"""
+_WORK_DDL = """
+    CREATE TABLE IF NOT EXISTS fleetview_work (
+        session_id TEXT PRIMARY KEY,
+        runtime    TEXT NOT NULL,
+        branch     TEXT NOT NULL DEFAULT '',
+        step       TEXT NOT NULL DEFAULT '',
+        -- The session's own process id, reported once at startup. ITS OWN COLUMN, because `step`
+        -- is overwritten on every tool call: encoded as "pid 1234" in the step text it survived
+        -- exactly until the agent ran anything.
+        pid        INTEGER,
+        updated_at TEXT NOT NULL
+    )
+"""
+
+_SCHEMA_READY: set[str] = set()
+
+
+def _ensure_schema(con: sqlite3.Connection) -> None:
+    """Create every table this module owns, ONCE per database path per process.
+
+    CALLED FROM `_connect` SO NO CALLER HAS TO REMEMBER. That is deliberate: the previous shape had
+    each function calling its own `_ensure_*`, and when one refactor removed the inline `CREATE`
+    from `_connect` the signals table stopped being created for any FRESH database -- while every
+    existing database kept working, so every test passed. Found by creating a fresh database on
+    purpose. One place, reached by every path, is the fix that cannot rot that way.
+
+    The additive migrations are kept: a database created by an older version still works.
+    """
+    key = str(_db_path())
+    if key in _SCHEMA_READY:
+        return
+    con.execute(_SIGNALS_DDL)
     con.execute(
         "CREATE INDEX IF NOT EXISTS fleetview_signals_session "
         "ON fleetview_signals (session_id, runtime, created_at)"
     )
-    return con
+    con.execute(_REPLIES_DDL)
+    con.execute(
+        "CREATE INDEX IF NOT EXISTS fleetview_replies_session "
+        "ON fleetview_replies (session_id, created_at)"
+    )
+    con.execute(_WORK_DDL)
+    # Additive migrations, each guarded by reading the table's own columns so they are idempotent
+    # and cannot fail on a fresh database.
+    for table, column, decl in (
+        ("fleetview_signals", "read_at", "TEXT"),
+        ("fleetview_work", "pid", "INTEGER"),
+    ):
+        try:
+            cols = {r[1] for r in con.execute(f"PRAGMA table_info({table})").fetchall()}
+            if cols and column not in cols:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+        except sqlite3.Error:
+            pass
+    _SCHEMA_READY.add(key)
+
+
+@contextlib.contextmanager
+def _connect():
+    """A connection that is COMMITTED AND CLOSED, and that can share the file.
+
+    TWO DEFECTS FIXED HERE, both found by review 2026-09-20.
+
+    1. `with sqlite3.connect(...) as con:` DOES NOT CLOSE THE CONNECTION. sqlite3's connection
+       context manager commits or rolls back a transaction and nothing else -- the file descriptor
+       is released only by refcounting, and every call site in this module used that form. Under
+       load, or on any path that held a reference, descriptors accumulated.
+
+    2. NO WAL, NO BUSY TIMEOUT. Two processes write this database (the Fleetview backend and the
+       voice service), and the default rollback journal takes an exclusive lock for every write, so
+       a concurrent reader or writer raises `database is locked`. Worse, `_record` had no handler
+       for it: a steer, a reply, or a KILL could complete its side effect and then report 500,
+       because the audit row failed after the deed was done.
+
+    WAL lets readers and one writer work concurrently; `busy_timeout` waits rather than failing.
+    `check_same_thread=False` because the FastAPI handlers run in a threadpool.
+    """
+    con = sqlite3.connect(str(_db_path()), timeout=5.0, check_same_thread=False)
+    con.row_factory = sqlite3.Row
+    # PRAGMAs are per-connection except journal_mode, which is per-database and persists -- setting
+    # it repeatedly is harmless and is what makes a fresh database correct on first write.
+    # SCHEMA ONCE PER PROCESS, here, so no caller has to remember. This also means a fresh
+    # database is complete on the first connection rather than depending on which function ran
+    # first -- which is exactly how a missing table survives testing.
+    _ensure_schema(con)
+    try:
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("PRAGMA busy_timeout=5000")
+        con.execute("PRAGMA synchronous=NORMAL")
+    except sqlite3.Error:
+        # A read-only or exotic filesystem refuses these. Not fatal: the connection still works,
+        # just with the old locking behaviour, and refusing to start would be worse.
+        pass
+    try:
+        yield con
+        con.commit()
+    except Exception:
+        try:
+            con.rollback()
+        except sqlite3.Error:
+            pass
+        raise
+    finally:
+        # THE PART THE OLD FORM NEVER DID.
+        try:
+            con.close()
+        except sqlite3.Error:
+            pass
 
 
 def _now() -> str:
@@ -105,6 +220,18 @@ def _now() -> str:
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """One audit row as the API returns it.
+
+    `read_at` is the acknowledgement: when the session's own hook consumed the directive. It is
+    delivered alongside `ok` because the two answer DIFFERENT questions and conflating them is
+    what made the board lie. `ok` describes the WRITE (did the channel accept the dispatch),
+    `read_at` describes the READ (did the agent see it).
+
+    Read with `.keys()` rather than `row["read_at"]` because this function is also reached by
+    a database created before the column existed, and a missing acknowledgement must read as
+    absent, not raise.
+    """
+    keys = row.keys()
     return {
         "id": row["id"],
         "session_id": row["session_id"],
@@ -115,6 +242,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "ok": bool(row["ok"]),
         "error": row["error"],
         "created_at": row["created_at"],
+        "read_at": row["read_at"] if "read_at" in keys else None,
+        # The two-part verdict the board actually renders, so the page does not have to infer
+        # it from two nullable fields and get it wrong. Never a third state: 'sent' and 'read'
+        # are the only things the tables can prove.
+        "acknowledged": bool("read_at" in keys and row["read_at"]),
     }
 
 
@@ -342,15 +474,178 @@ def nudge(session_id: str, runtime: str, by: str, text: str = "") -> dict[str, A
     )
 
 
-def signals_for(session_id: str) -> list[dict[str, Any]]:
+def signals_for(session_id: str, limit: int = 100) -> list[dict[str, Any]]:
     """Every signal attempt recorded for a session, newest first -- the audit trail a board row
     can show, mirroring notes_for's read-back in notes.py."""
     session_id = (session_id or "").strip()
     if not session_id:
         return []
+    limit = max(1, min(int(limit or 100), 500))
     with _connect() as con:
         rows = con.execute(
-            "SELECT * FROM fleetview_signals WHERE session_id = ? ORDER BY created_at DESC",
-            (session_id,),
+            "SELECT * FROM fleetview_signals WHERE session_id = ? "
+            "ORDER BY created_at DESC LIMIT ?",
+            (session_id, limit),
         ).fetchall()
     return [_row_to_dict(r) for r in rows]
+
+
+# --------------------------------------------------------------------------- reply channel
+#
+# WHAT THE SESSIONS SAID BACK. A steer has an audit row (`fleetview_signals`); this is the other
+# half of a conversation: the session's own output, or a person's, written through one door so the
+# board can show a thread instead of two disconnected logs.
+
+
+def reply(
+    session_id: str,
+    runtime: str,
+    text: str,
+    author: str = "agent",
+    in_reply_to: int | None = None,
+) -> dict[str, Any]:
+    """Record what a session said. The write half of the reply channel.
+
+    Deliberately NOT routed through `_require_channel`: a runtime with no steering path can still
+    speak. The pi extension, a shell hook, and a person at a keyboard all reach this the same way,
+    so a runtime gains a voice the moment it can make one HTTP call -- which is a far lower bar
+    than gaining a steering channel.
+    """
+    session_id = (session_id or "").strip()
+    if not session_id:
+        raise InvalidSignal("session_id is required")
+    text = (text or "").strip()
+    if not text:
+        raise InvalidSignal("text is required")
+    # SCRUB BEFORE STORING, not at render time.
+    #
+    # An agent's reply routinely quotes a path and can quote a credential it just read; this table
+    # is also read by the fleet-wide feed, so a secret caught only in the panel would still be in
+    # the database and in every other reader. Redacting at the writer means it never lands at all.
+    # See redact.py for what it catches and, honestly, for what it cannot.
+    try:
+        from fleetview_backend import redact as _redact_mod  # noqa: PLC0415
+
+        text, _removed = _redact_mod.redact(text)
+    except Exception:  # noqa: BLE001,S110 -- a missing scrubber must not drop a message
+        # Fail OPEN, deliberately, and unlike almost every other guard here: losing a conversation
+        # turn is worse than the residual risk of a secret the patterns would have caught, and this
+        # is a mitigation rather than a boundary.
+        pass
+    author = (author or "agent").strip() or "agent"
+    # A cap, because this is rendered in a panel and a model that loops must not fill the screen
+    # or the disk. 8000 characters is longer than any spoken answer and shorter than a runaway.
+    if len(text) > 8000:
+        text = text[:8000] + "…"
+    runtime = (runtime or "unknown").strip() or "unknown"
+    with _connect() as con:
+        cur = con.execute(
+            "INSERT INTO fleetview_replies "
+            "(session_id, runtime, author, text, in_reply_to, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, runtime, author, text, in_reply_to, _now()),
+        )
+        row = con.execute(
+            "SELECT * FROM fleetview_replies WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return _reply_to_dict(row)
+
+
+def replies_for(session_id: str = "", limit: int = 20) -> list[dict[str, Any]]:
+    """The newest replies, for one session or for the whole board.
+
+    An empty `session_id` returns the fleet-wide feed -- what was said most recently, by anyone --
+    which is what a board needs to show a conversation the reader is not already looking at.
+    """
+    session_id = (session_id or "").strip()
+    limit = max(1, min(int(limit or 20), 200))
+    with _connect() as con:
+        if session_id:
+            rows = con.execute(
+                "SELECT * FROM fleetview_replies WHERE session_id = ? "
+                "ORDER BY created_at DESC LIMIT ?",
+                (session_id, limit),
+            ).fetchall()
+        else:
+            rows = con.execute(
+                "SELECT * FROM fleetview_replies ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    return [_reply_to_dict(r) for r in rows]
+
+
+def _reply_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    """A reply row as a plain dict.
+
+    NOT `_row_to_dict`. That one reads `kind`, which only `fleetview_signals` has -- reusing it
+    raised `IndexError: No item with that key` on the first read of a reply, which is what a shared
+    serializer does when two tables only look similar. A reply has `author` and `in_reply_to`; a
+    signal has `kind` and `ok`.
+    """
+    return {
+        "id": row["id"],
+        "session_id": row["session_id"],
+        "runtime": row["runtime"],
+        "author": row["author"],
+        "text": row["text"],
+        "in_reply_to": row["in_reply_to"],
+        "created_at": row["created_at"],
+    }
+
+
+# --------------------------------------------------------------------------- work channel
+#
+# WHAT EACH SESSION IS WORKING ON, one current-state row per session. The Fleet board merges this
+# into rows it already renders; a conversation panel shows what was said, this shows what is
+# being done right now.
+
+
+def record_work(
+    session_id: str,
+    runtime: str,
+    branch: str = "",
+    step: str = "",
+    pid: int | None = None,
+) -> dict[str, Any]:
+    """Upsert what a session is working on. One row per session -- this is current state, not a log.
+
+    A LOG WOULD BE WRONG HERE. "What is it working on" has exactly one answer at a time, and forty
+    historical steps would make the reader choose between them. The step changes are already in
+    `session_events`; this table only holds the latest.
+    """
+    session_id = (session_id or "").strip()
+    if not session_id:
+        raise InvalidSignal("session_id is required")
+    runtime = (runtime or "unknown").strip() or "unknown"
+    with _connect() as con:
+        # COALESCE-style merge: a call that reports only a step must not blank the branch, and one
+        # reporting only a branch must not blank the step. The two arrive from different hooks.
+        con.execute(
+            "INSERT INTO fleetview_work (session_id, runtime, branch, step, pid, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(session_id) DO UPDATE SET "
+            "  runtime = excluded.runtime, "
+            "  branch  = CASE WHEN excluded.branch <> '' THEN excluded.branch ELSE branch END, "
+            "  step    = CASE WHEN excluded.step   <> '' THEN excluded.step   ELSE step   END, "
+            "  pid     = COALESCE(excluded.pid, pid), "
+            "  updated_at = excluded.updated_at",
+            (
+                session_id,
+                runtime,
+                (branch or "")[:200],
+                (step or "")[:200],
+                pid,
+                _now(),
+            ),
+        )
+        row = con.execute(
+            "SELECT * FROM fleetview_work WHERE session_id = ?", (session_id,)
+        ).fetchone()
+    return dict(row) if row else {}
+
+
+def work_for() -> dict[str, dict[str, Any]]:
+    """Every session's current work, keyed by session id, for the board to merge into its rows."""
+    with _connect() as con:
+        rows = con.execute("SELECT * FROM fleetview_work").fetchall()
+    return {r["session_id"]: dict(r) for r in rows}

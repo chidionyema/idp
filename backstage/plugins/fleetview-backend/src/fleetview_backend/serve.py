@@ -15,6 +15,7 @@ Run:
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 import threading
@@ -255,6 +256,83 @@ def build_app() -> FastAPI:
     @app.get(routes.SIGNALS_PATH)
     def signals_get(session_id: str):
         body, status = routes.signals_envelope(session_id)
+        return JSONResponse(content=body, status_code=status)
+
+    @app.get(routes.REPLIES_PATH)
+    def replies_get(session_id: str = "", limit: int = 20):
+        body, status = routes.reply_envelope(session_id, limit)
+        return JSONResponse(content=body, status_code=status)
+
+    # ------------------------------------------------------------------ identity on the
+    # DESTRUCTIVE PATHS
+    #
+    # WHY THIS EXISTS. Measured by review 2026-09-20: `POST /work` accepts a caller-supplied pid
+    # for ANY session id with no authentication. CORS is not an access control -- a page can send
+    # a cross-origin request without a preflight by using `Content-Type: text/plain`, and
+    # FastAPI's `await request.json()` does not care about the header. What the pid is FOR is the
+    # hard-stop path (`/kill`, restored separately): a forged work row would aim it at a process
+    # of the forger's choosing.
+    #
+    # `FLEETVIEW_BOARD_KEY` is a shared secret on that pair, following the pattern the executor
+    # relay already uses (`FLEETVIEW_EXECUTOR_KEY`). It is UNLIKE the executor key in one way that
+    # matters: the BROWSER must present it, so it cannot be a secret in the cryptographic sense --
+    # anything the page can read, a page can leak. What it buys is that a drive-by page cannot
+    # forge the call without first reading this app's own memory, and it makes the tampering
+    # deliberate rather than accidental.
+    #
+    # THE HONEST GAP, stated rather than implied: this is not user authentication. On loopback,
+    # with this board as the only client, it raises the bar from "any page" to "a page that can
+    # read the board's key". Real identity is the estate's own C4/C5 work and is not claimed here.
+    #
+    # `/work` GET and both `/replies` verbs stay open: they are reads of telemetry and writes of
+    # conversation text (redacted at the writer in redact.py), not the pid chain.
+    def _check_board_key(x_board_key: str | None) -> None:
+        expected = os.environ.get("FLEETVIEW_BOARD_KEY")
+        key_file = os.environ.get("FLEETVIEW_BOARD_KEY_FILE")
+        if not expected and key_file:
+            try:
+                expected = Path(key_file).read_text().strip() or None
+            except FileNotFoundError:
+                expected = None
+        # UNSET MEANS NO ENFORCEMENT, deliberately: a laptop run must keep working with no vault
+        # loaded, and the alternative -- a service that refuses to start -- is worse for the case
+        # this rule actually protects (a public deployment). The estate's secrets work is what sets
+        # it in the cluster, and the log warns so an unset key is visible rather than assumed.
+        if not expected:
+            logging.getLogger(__name__).warning(
+                "FLEETVIEW_BOARD_KEY is unset: the destructive work/kill chain is UNPROTECTED"
+            )
+            return
+        if x_board_key != expected:
+            raise HTTPException(status_code=401, detail="bad or missing board key")
+
+    # WHAT EACH SESSION IS WORKING ON. GET reads it; POST is the session's own report.
+    @app.get(routes.WORK_PATH)
+    def work_get():
+        body, status = routes.work_envelope()
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.WORK_PATH)
+    async def work_post(
+        request: Request, x_board_key: str | None = Header(default=None)
+    ):
+        # `/work` writes the PID that a hard-stop will signal, so it is half of the destructive
+        # chain even though it is not destructive itself.
+        _check_board_key(x_board_key)
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001
+            return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
+        body, status = routes.post_work(payload if isinstance(payload, dict) else {})
+        return JSONResponse(content=body, status_code=status)
+
+    @app.post(routes.REPLIES_PATH)
+    async def replies_post(request: Request):
+        try:
+            payload = await request.json()
+        except Exception:  # noqa: BLE001 -- a body that is not JSON never reached a session
+            return JSONResponse(content={"error": "body must be JSON"}, status_code=400)
+        body, status = routes.post_reply(payload if isinstance(payload, dict) else {})
         return JSONResponse(content=body, status_code=status)
 
     @app.get(routes.TRACE_PATH)
