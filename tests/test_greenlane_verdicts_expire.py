@@ -55,6 +55,9 @@ class Backend:
     def report(self, lane, head, status, reason):
         pass
 
+    def heartbeat(self, lane, head):
+        pass
+
     def foreign_prs(self):
         return []
 
