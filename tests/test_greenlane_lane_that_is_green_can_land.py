@@ -46,6 +46,7 @@ class FakeBackend:
     def __init__(self, main: str) -> None:
         self._main = main
         self.reported: list[tuple[str, str, str, str]] = []
+        self.heartbeats: list[tuple[str, str]] = []
 
     def main(self) -> str:
         return self._main
@@ -69,6 +70,9 @@ class FakeBackend:
 
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         self.reported.append((lane, head, status, reason))
+
+    def heartbeat(self, lane: str, head: str) -> None:
+        self.heartbeats.append((lane, head))
 
     def adopted_prs(self):  # pragma: no cover - unused here
         return []
