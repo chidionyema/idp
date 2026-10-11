@@ -357,9 +357,21 @@ def flux_kustomization(name, path, source="shadow", substitute=False, ks_timeout
         },
     }
     if substitute:
-        # What every production row that publishes a hostname carries (clusters/oke/*.yaml).
+        # 2026-10-11, #5747: this used to write ONLY estate-config, so a row that production
+        # declares with github-app as well (clusters/oke/platform.yaml lines 161, 183, 318 and the
+        # mcp row) was rendered in the shadow against a substituteFrom production does not have.
+        # estate-config carries no githubApp* key (grep -c githubAppIDQuoted = 0), and
+        # githubAppIDQuoted lives only in the github-app Secret, so `platform/mcp` failed with
+        #   envsubst error: variable substitution failed: variable not set (strict mode):
+        #   "githubAppIDQuoted"
+        # The shadow stands in for the estate, never for the change (the rule the vault stand-in
+        # above already states) -- so it substitutes from the same sources the row names. The
+        # github-app Secret is laid by stand_in_vault before these rows are applied.
         ks["spec"]["postBuild"] = {
-            "substituteFrom": [{"kind": "ConfigMap", "name": "estate-config"}]
+            "substituteFrom": [
+                {"kind": "ConfigMap", "name": "estate-config"},
+                {"kind": "Secret", "name": "github-app"},
+            ]
         }
     subprocess.run(
         ["kubectl", "apply", "-f", "-"],
@@ -662,6 +674,22 @@ def vault_stand_ins(external_secrets, consumer_keys=None):
             }
         )
     return out
+
+
+def vault_wait(namespace, name, timeout=120.0, every=2.0):
+    """Block until the vault stand-in has laid <namespace>/<name>, or the timeout expires.
+
+    #5747: stand_in_vault runs in a background thread, so a row applied immediately after it
+    starts can name a Secret the thread has not created yet. Bounded and non-fatal -- the
+    caller decides what a timeout means.
+    """
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        p = kube(["get", "secret", name, "-n", namespace, "-o", "name"], check=False)
+        if p.returncode == 0:
+            return True
+        time.sleep(every)
+    return False
 
 
 def stand_in_vault(stop, every=5.0):
@@ -1158,6 +1186,18 @@ def verify(head, paths):
         if config_failed:
             return 1, [config_failed]
         threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
+        # #5747: a row whose postBuild names github-app cannot converge until that Secret exists,
+        # and stand_in_vault finds it only after the github-app-creds row has applied the
+        # ExternalSecret. Wait for it here, bounded, so the mcp row is not applied into a
+        # missing-Secret failure that Flux then retries on its 5m interval. A timeout is not
+        # fatal: rows that do not name github-app converge regardless.
+        if vault_wait("flux-system", "github-app", timeout=120):
+            print("ok      shadow  vault stand-in flux-system/github-app is ready")
+        else:
+            print(
+                "note    shadow  flux-system/github-app did not appear within 120s; "
+                "rows substituting from it will report a missing Secret"
+            )
         if db_needs_standin(paths):
             db_failed = stand_in_database()
             if db_failed:
