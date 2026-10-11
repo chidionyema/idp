@@ -53,11 +53,24 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
       # The prover's machine identity (same exchange oke-check.yml uses): without it the
       # vault read below is BLIND and the battery 401s at the gate pretending to be verified.
       # domain_base_url and oci_region are required inputs: without them the action threw
       # "Input required and not supplied: domain_base_url" and the battery never ran -- every
       # run red for that reason alone, 22 in a row to 2026-10-08, none of them testing voice.
+      #
+      # The OIDC token is not the vault read. With the token finally scoped (2026-10-11),
+      # run 38168478401 exchanged it successfully and the battery then reported, in its own
+      # words, `BLIND   cloud  oci CLI is not installed` -> `BLOCKED surfaces  vault read of
+      # backstage-env.PROVER_TOKEN failed; L4/L5 would 401 at the gate`. `bin/idp-cloud secret
+      # get` shells out to the oci CLI, and no step in this file ever installed it; every other
+      # workflow that reads the vault installs it from .github/requirements/oci-cli.txt
+      # (verdict-backstage.yml:42, green on main), the file whose own header says it exists so
+      # setup-python has something to hash for `cache: pip`.
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token from the GitHub OIDC token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
