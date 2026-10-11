@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -164,6 +165,25 @@ def status() -> int:
         )
         return json.loads(p.stdout) if p.returncode == 0 and p.stdout else None
 
+    def gh_or_why(path: str) -> tuple[dict | None, str]:
+        """As `gh`, but it hands back the reason when the read failed.
+
+        A required check that reads `absent` because GitHub refused the read is not the same
+        fact as one that ran and is not there, and the founder acts on which it is.
+        """
+        p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+            ["gh", "api", f"repos/{r}/{path}"],  # noqa: S607
+            capture_output=True,
+            text=True,  # noqa: S607
+        )
+        if p.returncode != 0 or not p.stdout.strip():
+            lines = (p.stderr or p.stdout or f"rc={p.returncode}").strip().splitlines()
+            return None, (lines[-1][:140] if lines else f"rc={p.returncode}")
+        try:
+            return json.loads(p.stdout), ""
+        except json.JSONDecodeError as e:
+            return None, f"unparseable: {str(e)[:120]}"
+
     out: dict = {"repo": r}
     ref = gh(f"git/ref/{STATE_REF[5:]}")
     st = State()
@@ -198,17 +218,37 @@ def status() -> int:
         {"number": p["number"], "user": p["user"]["login"], "head": p["head"]["ref"]}
         for p in prs
     ]
-    main = gh("commits/main/check-runs?per_page=100&filter=latest") or {}
+    def required_read(context: str) -> str:
+        """The newest check run with this exact name on main's tip (2026-10-11).
+
+        This read one page of every check on main's tip
+        (`commits/main/check-runs?per_page=100&filter=latest`) and keyed it by name. The
+        Greenlane's own `tick` reports a check on main's sha every ~80s, so that one page fills
+        with `tick` long before the checks that ran when main landed: measured 2026-10-11
+        main e47ab313e carried 249 check-runs, 132 of them `tick`, and not one of the eight
+        required contexts was in the first hundred. All eight read `absent`, `main.green` was
+        false and /fleet raised its alarm, while bdd, ci-success, fast-gate / fast-gate,
+        guarded-paths, test and portal-app were all `success` on that commit. Asking for the
+        name is bounded -- each required context has one or two runs against those 132 ticks --
+        so the tick stream cannot bury it.
+        """
+        d, why = gh_or_why(
+            f"commits/main/check-runs?check_name={quote(context, safe='')}&per_page=100"
+        )
+        if d is None:
+            # Never green, and never a silent `absent`: the founder can tell "I could not read
+            # this" from "this did not run".
+            return f"unreadable: {why}"
+        runs = [c for c in (d.get("check_runs") or []) if c.get("name") == context]
+        if not runs:
+            return "absent"
+        newest = max(runs, key=lambda c: c.get("completed_at") or c.get("started_at") or "")
+        return newest.get("conclusion") or newest.get("status") or "absent"
+
     required = required_contexts()
-    latest = {c["name"]: c for c in main.get("check_runs", [])}
     out["main"] = {
         "sha": (gh("commits/main") or {}).get("sha", "")[:12],
-        "required": {
-            c: (latest.get(c) or {}).get("conclusion")
-            or (latest.get(c) or {}).get("status")
-            or "absent"
-            for c in required
-        },
+        "required": {c: required_read(c) for c in required},
     }
     out["main"]["green"] = all(
         v in ("success", "skipped", "neutral") for v in out["main"]["required"].values()
