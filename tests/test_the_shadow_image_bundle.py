@@ -22,17 +22,14 @@ def load_shadow_bundle():
     return mod
 
 
-def test_the_manifest_lists_every_image_the_run_needs(tmp_path):
+def test_the_manifest_lists_every_static_image_the_run_needs(tmp_path):
     b = load_shadow_bundle()
     images = b.list_images()
-    # k3s node image (the biggest single pull), all four flux controllers, the
-    # DB stand-in's pinned image. These are the ones every run pulls today.
+    # k3s node image (the biggest single pull) and the DB stand-in's pinned
+    # image. The four flux controllers are NOT here on purpose: the populate
+    # workflow derives them from `flux install --export` so the cache stays
+    # in sync with the version the install script would lay down.
     assert any(img.endswith("rancher/k3s:v1.31.2-k3s1") for img in images), images
-    for ctl in ("source-controller", "kustomize-controller", "helm-controller"):
-        assert any(ctl in img and "ghcr.io/fluxcd/" in img for img in images), (
-            ctl,
-            images,
-        )
     assert any("postgres-partman" in img for img in images), images
     # The manifest is comment-and-blank-tolerant.
     assert all(img and not img.startswith("#") for img in images)
