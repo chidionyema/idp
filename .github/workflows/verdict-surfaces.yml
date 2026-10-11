@@ -29,6 +29,14 @@ permissions:
   contents: write   # the rollback job pushes a revert lane branch
   checks: write
   issues: write
+  id-token: write   # the OIDC token this job trades for OCI access
+  # WITHOUT THE LINE ABOVE THE BATTERY NEVER RUNS. Declaring a `permissions:` block sets every
+  # unlisted scope to none, so id-token is absent, the exchange action dies on
+  # "Unable to get ACTIONS_ID_TOKEN_REQUEST_URL env variable", and `run the battery through the
+  # public gate` is SKIPPED -- the job is red before it grades anything, so the public front door
+  # was graded by nothing, hourly, since this workflow was written (git log -S id-token: empty).
+  # Measured 2026-10-11: 21 workflows that trade an OIDC token all carry this line; oke-check.yml,
+  # which runs the identical exchange, is green on main. This file was the only one without it.
 concurrency:
   group: verdict-surfaces
   cancel-in-progress: false
