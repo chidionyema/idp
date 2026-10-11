@@ -145,7 +145,21 @@ jobs:
           gh issue comment 1019 --repo chidionyema/crew --body "$body" || true
       - name: the job is red when the battery is not PASS
         if: always()
-        run: grep -qE '^PASS +surfaces' verify.out || { grep -E '^(PASS|FAIL) +surfaces' verify.out | tail -3; exit 1; }
+        # Measured 2026-10-11, run 38169517103 -- the first run whose battery actually executed:
+        # this step ran `grep -qE '^PASS +surfaces' verify.out` and reported SUCCESS on a run whose
+        # own verdict was FAIL (`{"state": "FAIL", "levels": {"L1L2": false, "L3": false,
+        # "L4": false, "L5": false}}`), because the pattern matches the per-item lines too:
+        # `PASS  surfaces.coverage.pages` and `PASS  surfaces.l2.backend.negative/agent-jobs` both
+        # begin with `PASS surfaces`. verify.out carries no top-level `PASS surfaces` line at all;
+        # its verdict is that JSON, and the step's own `outcome` output -- the value the check-run
+        # already publishes -- is the same signal. So the job never went red, `if: failure()` was
+        # never true, and both things this file exists for (page crew#1019 on a standing red, roll
+        # the image back on a dispatched red) were unreachable: a report, not a gate. Gate on the
+        # one signal, so check-run red and job red cannot disagree.
+        run: |
+          if [ "${{ steps.verdict.outputs.outcome }}" = "PASS" ]; then exit 0; fi
+          grep -E '^(PASS|FAIL|BLOCKED|BLIND)' verify.out 2>/dev/null | tail -5 || true
+          exit 1
   rollback:
     needs: battery
     if: failure() && needs.battery.outputs.dispatched == 'true'
