@@ -95,6 +95,34 @@ def test_an_extract_style_secret_gets_the_keys_its_consumers_read():
     assert sec["stringData"] == {"password": shadow.VAULT_PLACEHOLDER}
 
 
+def test_the_loop_wires_consumer_keys_into_the_secrets(monkeypatch):
+    """Greenlane 38122701810: the loop computed consumer_secret_keys() but never
+    passed it, and temporal-db was born with 0 keys again. The loop itself must
+    deliver the keys -- not just vault_stand_ins when handed them by a test."""
+    shadow = load_shadow()
+    stop = threading.Event()
+    listed, created = [], []
+
+    def fake_kube(argv, check=True, timeout=300):
+        listed.append(argv)
+        if len(listed) == 2:
+            stop.set()
+        return subprocess.CompletedProcess(
+            argv, 0, json.dumps({"items": temporal_external_secret()}), ""
+        )
+
+    def fake_run(argv, input=None, **kw):
+        created.append(json.loads(input))
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+    monkeypatch.setattr(shadow, "kube", fake_kube)
+    monkeypatch.setattr(shadow.subprocess, "run", fake_run)
+    shadow.stand_in_vault(stop, every=0)
+    (sec,) = created
+    assert sec["metadata"]["name"] == "temporal-db"
+    assert sec["stringData"] == {"password": shadow.VAULT_PLACEHOLDER}
+
+
 def test_spec_keys_still_win_and_consumer_keys_only_add():
     shadow = load_shadow()
     es = [
