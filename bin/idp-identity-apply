@@ -69,6 +69,20 @@ if [ "$mfa" != "Required" ]; then
   if printf '%s' "$pm" | jq -e '.data.mfaEnrollmentType == "Required"' >/dev/null 2>&1; then echo "ok      identity domain MFA enrollment required for all users (Face ID can be enrolled at the next sign-in, #5753)"
   else echo "FAIL    identity domain MFA enrollment PATCH refused: $(printf '%s' "$pm" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
 else echo "ok      identity domain MFA enrollment already required for all users"; fi
+# The other half of the gate: mfaEnabledCategory on SsoSettings. mfaEnrollmentType only says
+# "enroll when the user signs in"; if this category is NONE the domain never shows the MFA step
+# at all (founder saw the plain Oracle login page even with enrollment Required, 2026-10-11).
+# Not terraform-reachable (SsoSettings has no provider resource; SignOnPolicies REST refuses
+# API-key signatures), so same idempotent SCIM PATCH. Enum on this domain: NONE | ALL
+# (ALL_USERS/EVERYONE/USERS refused 400, measured 2026-10-11).
+mec=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SsoSettings" 2>/dev/null | jq -r '.data.Resources[0].mfaEnabledCategory // ""')
+if [ "$mec" != "ALL" ]; then
+  T2=$(mktemp -d); chmod 700 "$T2"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" 2>/dev/null || true' EXIT
+  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"mfaEnabledCategory","value":"ALL"}]}' > "$T2/m.json"
+  pm2=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/SsoSettings/SsoSettings" --request-body "file://$T2/m.json" 2>&1)
+  if printf '%s' "$pm2" | jq -e '.data.mfaEnabledCategory == "ALL"' >/dev/null 2>&1; then echo "ok      identity domain MFA enabled for all users at sign-in (#5753)"
+  else echo "FAIL    identity domain SsoSettings MFA PATCH refused: $(printf '%s' "$pm2" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
+else echo "ok      identity domain MFA enabled for all users at sign-in already"; fi
 M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
