@@ -143,3 +143,45 @@ def test_a_squash_whose_lane_head_is_gone_is_judged_on_its_own_message(
     refused = _issue(claim=_claim(paths="tests/*"))
     out = g.judge(base, head, "Mumchimp/idp", lambda r, n: refused, NOW, "", "")
     assert "outside every claim's paths: bin/voice-doctor" in out[0]
+
+
+def test_a_body_trailer_fix_is_seen_without_a_new_event(monkeypatch):
+    """idp#5758 mechanism 3: a re-run judges the original pull_request event's body snapshot,
+    so a trailer fix in the body stayed invisible and the gate failed identically (measured on
+    run 38131990376). When PR_NUMBER is set the gate fetches the live body."""
+    import subprocess as sp
+
+    monkeypatch.setenv("PR_NUMBER", "5704")
+    monkeypatch.delenv("PR_BODY", raising=False)
+
+    def fake_run(argv, capture_output=False, text=False, timeout=None):
+        assert argv[:2] == ["gh", "api"]
+        return sp.CompletedProcess(
+            argv, 0, "Claim: Mumchimp/idp#5755\nAgent: opencode\n", ""
+        )
+
+    import subprocess as sp
+
+    g = _gate()
+    monkeypatch.setattr(g.subprocess, "run", fake_run)
+    assert "Claim: Mumchimp/idp#5755" in g.live_body("Mumchimp/idp")
+
+
+def test_with_no_pr_number_the_snapshot_still_speaks(monkeypatch):
+    monkeypatch.delenv("PR_NUMBER", raising=False)
+    monkeypatch.setenv("PR_BODY", "Claim: Mumchimp/idp#1\nAgent: a\n")
+    assert "Claim: Mumchimp/idp#1" in _gate().live_body("Mumchimp/idp")
+
+
+def test_a_failed_fetch_falls_back_to_the_snapshot(monkeypatch):
+    import subprocess as sp
+
+    monkeypatch.setenv("PR_NUMBER", "5704")
+    monkeypatch.setenv("PR_BODY", "Claim: Mumchimp/idp#1\nAgent: a\n")
+
+    def fake_run(argv, capture_output=False, text=False, timeout=None):
+        return sp.CompletedProcess(argv, 1, "", "gh: boom")
+
+    g = _gate()
+    monkeypatch.setattr(g.subprocess, "run", fake_run)
+    assert "Claim: Mumchimp/idp#1" in g.live_body("Mumchimp/idp")
