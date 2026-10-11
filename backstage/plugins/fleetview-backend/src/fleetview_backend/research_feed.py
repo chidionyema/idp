@@ -26,6 +26,7 @@ TWO JOBS, ONE READER.
    sidecar's other work; the loop logs and tries again next sweep.
 
 CONFIG (LAW 46): FLEETVIEW_PORTAL_URL (default http://127.0.0.1:7107),
+  FLEETVIEW_RESEARCH_TOKEN_FILE (bearer token for the portal's auth door).
 ESTATE_RESEARCH_EVERY_S (default 300), ESTATE_RESEARCH_CLAIMS (default 8, the sweep window).
 """
 
@@ -77,6 +78,32 @@ def _portal_url() -> str:
         os.environ.get(_PORTAL_URL_ENV, "").strip().rstrip("/")
         or "http://127.0.0.1:7107"
     )
+
+
+def _auth_headers() -> dict[str, str]:
+    """The bearer the portal's httpRouter demands (crew#631's door).
+
+    The loopback GET to /api/research-output/claims is refused 401 without identity
+    (measured 2026-10-11, pod exec from the sidecar: 401 Unauthorized) -- the portal has one
+    login, and this feed is a caller like any other. The static RESEARCH_FEED_TOKEN (app-
+    config.container.yaml backend.auth.externalAccess, subject fleetview-research-feed) is
+    read from a mounted file, re-read on every call like every other credential in this
+    backend, so a vault rotation lands without a restart. No file (dev, or the vault field
+    has not landed yet): no header, and the portal's own refusal becomes the envelope's
+    reason -- never an empty list dressed as data.
+    """
+
+    # ruff S105: credential-file env names are read inline (the serve.py/signals.py
+    # convention) -- a module constant holding "...TOKEN..." reads as a hardcoded secret.
+    path = os.environ.get("FLEETVIEW_RESEARCH_TOKEN_FILE", "").strip()
+    if not path:
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            token = fh.read().strip()
+    except OSError:
+        return {}
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def _every_s() -> int:
@@ -142,7 +169,7 @@ def research_claims(now: float | None = None, fetch=None) -> dict[str, Any]:
 
 
 def _http_get(url: str) -> tuple[int, str]:
-    req = urllib.request.Request(url)  # noqa: S310 -- the estate's own portal, never caller input
+    req = urllib.request.Request(url, headers=_auth_headers())  # noqa: S310 -- the estate's own portal, never caller input
     with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:  # noqa: S310 -- as above
         return resp.status, resp.read().decode("utf-8", "replace")
 
