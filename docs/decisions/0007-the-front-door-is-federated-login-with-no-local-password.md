@@ -65,8 +65,10 @@ gateway's ForwardAuth; the provider is the estate's own OCI identity domain (`pl
   `github.com/login/oauth/authorize`. A 401, a 200 or a wrong Location is a FAIL.
 - Residual: the probe cannot see whether the client id in the vault is the real one; only the
   founder's first sign-in proves that, and that sign-in is the `DONE:` receipt on crew#269.
-- Residual: sessions are cookies, so they die with the pod restart (no Redis). Twelve-hour expiry;
-  a restart means one more GitHub round-trip, no password.
+- Residual: sessions are cookies, so they die with the pod restart (no Redis). ~~Twelve-hour
+  expiry~~ **720h expiry since 2026-10-05** (founder: Face ID on the phone, phase 1 — re-auth at
+  most monthly; stolen-cookie window grows to 30d, accepted for a one-founder estate); a restart
+  means one more IdP round-trip, no password.
 
 ## Sources
 
