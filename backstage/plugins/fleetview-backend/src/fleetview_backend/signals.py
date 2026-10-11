@@ -34,6 +34,9 @@ rule `notes.py`'s `InvalidNote` follows.
 
 CONFIG (LAW 46):
   ESTATE_DB            -- default `<repo>/catalog/estate.db`
+  FLEETVIEW_DB         -- optional; when set, the tables THIS module owns live there instead
+                          (the cluster sets it to a writable volume; ESTATE_DB stays the
+                          read-only catalogue snapshot). Unset on the laptop: no change.
   ESTATE_STATE_PATH_PREFIX -- ledger root, default ~/.claude/state/prompt-ledger/; directives dir
                               is derived as <ledger_root>/../directives/
   NATS_URL             -- default nats://nats.event-bus.svc:4222
@@ -56,6 +59,26 @@ from typing import Any
 _ROOT = Path(__file__).resolve().parents[5]
 _DB_DEFAULT = _ROOT / "catalog" / "estate.db"
 
+
+def _db_path() -> Path:
+    """Where THIS module's tables live -- preferring FLEETVIEW_DB over ESTATE_DB.
+
+    WHY A SECOND KNOB. In the cluster, ESTATE_DB points at the catalogue snapshot the
+    fetch-estate-db init container ships, and that volume is read-only ON PURPOSE: the shipped
+    catalogue is an artifact, not a database this pod writes. The fleetview's own tables
+    (fleetview_signals/_replies/_work) must still be writable, so the overlay gives the sidecar a
+    writable emptyDir and points FLEETVIEW_DB at it -- measured 2026-10-11: with only ESTATE_DB
+    set, GET /work answered 500 `attempt to write a readonly database` while /sessions served
+    200 off the same snapshot. On the laptop neither variable is special: FLEETVIEW_DB is unset,
+    the ESTATE_DB fallback holds, and everything stays one database, exactly as before.
+    """
+    raw = (
+        os.environ.get("FLEETVIEW_DB", "").strip()
+        or os.environ.get("ESTATE_DB", "").strip()
+    )
+    return Path(raw) if raw else _DB_DEFAULT
+
+
 MAX_TEXT_LENGTH = 4000
 DEFAULT_NUDGE_TEXT = "Nudge from FleetView: this session has been idle. Please post a status, or wrap up."
 
@@ -70,10 +93,6 @@ class InvalidSignal(ValueError):
 
 class UnsupportedRuntime(ValueError):
     """Raised for a runtime with no live signal path -- routes.py turns this into 422."""
-
-
-def _db_path() -> Path:
-    return Path(os.environ.get("ESTATE_DB", str(_DB_DEFAULT)))
 
 
 _SIGNALS_DDL = """

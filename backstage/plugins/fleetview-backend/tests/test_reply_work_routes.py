@@ -154,3 +154,65 @@ def test_replies_in_reply_to_links_the_thread(client):
     assert r.status_code == 201
     feed = client.get("/replies", params={"session_id": "founder"}).json()["replies"]
     assert feed[0]["in_reply_to"] == first["id"]
+
+
+def test_fleetview_db_env_moves_the_tables_the_module_owns(monkeypatch, tmp_path):
+    """The cluster ships ESTATE_DB read-only (the catalogue snapshot, mounted ro on purpose),
+    so the sidecar gets FLEETVIEW_DB for the tables THIS module owns. The write must land in the
+    FLEETVIEW_DB file -- measured 2026-10-11 in the live sidecar: with only ESTATE_DB set, the
+    first CREATE TABLE answered 500 `attempt to write a readonly database`. The laptop sets
+    nothing and falls back to ESTATE_DB exactly as before (every other test here proves that)."""
+    import sqlite3
+
+    from fleetview_backend import signals
+
+    state_db = tmp_path / "state" / "estate.db"
+    state_db.parent.mkdir()
+    snapshot_db = tmp_path / "snapshot.db"
+    monkeypatch.setenv("ESTATE_DB", str(snapshot_db))
+    monkeypatch.setenv("FLEETVIEW_DB", str(state_db))
+
+    row = signals.record_work(
+        session_id="s5", runtime="pi", step="writing on the state db"
+    )
+    assert row["session_id"] == "s5"
+    # The state db now exists and holds the table; the snapshot db was never created.
+    con = sqlite3.connect(str(state_db))
+    names = {
+        r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")
+    }
+    con.close()
+    assert {"fleetview_work", "fleetview_replies", "fleetview_signals"} <= names
+    assert not snapshot_db.exists()
+
+
+def test_work_and_replies_reads_degrade_with_a_reason_not_a_500(client, monkeypatch):
+    """The board polls these every two seconds. A database that cannot answer is a reason in the
+    envelope, not a 500 -- a quiet fleet and a broken one look identical to a status code, and
+    the envelope contract (always 200, error carried) is what tells them apart."""
+    import sqlite3
+
+    from fleetview_backend import routes
+
+    monkeypatch.setattr(
+        routes.signals,
+        "work_for",
+        lambda: (_ for _ in ()).throw(
+            sqlite3.OperationalError("attempt to write a readonly database")
+        ),
+    )
+    monkeypatch.setattr(
+        routes.signals,
+        "replies_for",
+        lambda *a, **k: (_ for _ in ()).throw(
+            sqlite3.OperationalError("disk I/O error")
+        ),
+    )
+    r = client.get("/work")
+    assert r.status_code == 200
+    assert r.json()["work"] == {}
+    assert "readonly" in r.json()["error"]
+    r = client.get("/replies")
+    assert r.status_code == 200
+    assert r.json()["replies"] == []
+    assert "disk I/O" in r.json()["error"]
