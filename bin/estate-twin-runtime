@@ -32,6 +32,10 @@ CONFIG (LAW 46 -- no host, port or path is a literal in behaviour):
   ESTATE_TWIN_STREAM      the JetStream stream (default ESTATE_EVENTS)
   ESTATE_TWIN_SUBJECT     the subject root (default estate.runtime)
   ESTATE_TWIN_FRESH_S     freshness window a reader applies (default 180)
+  ESTATE_TWIN_BUS_RESOLVE_S  seconds a bus hostname gets to resolve, in a child process
+                             that is killed when the budget expires (default 3)
+  ESTATE_TWIN_BUS_PROBE_S    seconds one bus connect, and one JetStream read, may take
+                             before the probe drops that candidate (default 8)
 
 Exit codes: 0 ok, 1 nothing could be read, 2 the graph could not be opened.
 """
@@ -40,6 +44,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import ipaddress
 import json
 import os
 import re
@@ -47,6 +52,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2043,6 +2049,54 @@ def sweep_domains(con: sqlite3.Connection) -> dict:
     return counts
 
 
+_RESOLVE_SNIPPET = "import socket,sys;socket.getaddrinfo(sys.argv[1],int(sys.argv[2]))"
+
+
+def _bus_resolve_s() -> float:
+    """Seconds a bus hostname gets to resolve (CONFIG)."""
+    return float(_env("ESTATE_TWIN_BUS_RESOLVE_S", "3"))
+
+
+def _bus_probe_s() -> float:
+    """Seconds one bus connect, and one JetStream read, may take (CONFIG)."""
+    return float(_env("ESTATE_TWIN_BUS_PROBE_S", "8"))
+
+
+def _host_port(url: str) -> tuple[str, int]:
+    """The host and port a bus URL names. No network here: this only splits the string."""
+    parsed = urllib.parse.urlsplit(url)
+    return parsed.hostname or "", parsed.port or 4222
+
+
+def _resolves(host: str, port: int, budget_s: float) -> bool:
+    """True when `host` resolves within `budget_s`.
+
+    getaddrinfo is a blocking C call: in this process it cannot be interrupted, a thread
+    running it cannot be killed (only leaked), and the interpreter joins its threads at exit
+    -- so a stalled resolver would move the hang from the probe to process exit. The probe
+    runs in a child this process can kill, which is what makes the budget real. A literal
+    address needs no resolver at all.
+    """
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        pass
+    else:
+        return True
+    try:
+        done = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [sys.executable, "-c", _RESOLVE_SNIPPET, host, str(port)],
+            capture_output=True,
+            timeout=budget_s,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return done.returncode == 0
+
+
 def _bus_streams(con: sqlite3.Connection) -> int:
     """JetStream streams, over the estate's own bus. Lazily imported so every other flag
     works with no NATS client present."""
@@ -2062,20 +2116,31 @@ def _bus_streams(con: sqlite3.Connection) -> int:
                 "nats://127.0.0.1:4222",
             ]
         )
+        resolve_s = _bus_resolve_s()
+        probe_s = _bus_probe_s()
         last = None
         nc = None
         for url in candidates:
+            host, port = _host_port(url)
+            # A name that does not resolve here is not a candidate, it is a cost: nats-py
+            # would run its whole ladder against it (see below) after paying the resolver,
+            # which on a CI runner is the slowest call in this sweep.
+            if not _resolves(host, port, resolve_s):
+                last = f"{url}: {host} does not resolve here (bounded probe, {resolve_s:g}s)"
+                continue
             try:
-                # allow_reconnect=False: the default nats-py client treats a FIRST-connect
-                # failure as a disconnect and retries the same server up to
-                # max_reconnect_attempts (60, ~2s apart) before giving up -- up to two
-                # minutes per candidate. Measured 2026-09-14: with --domains added to CI,
-                # the in-cluster candidate is unreachable from every runner this repo uses
-                # (no VPN hop in catalog-render.yml), so that retry loop ran on every single
-                # sweep. This is a bounded probe, not a session that should reconnect, so one
-                # attempt per candidate is correct and the next candidate (or BLIND) is the
-                # recovery, not nats-py's own backoff.
-                nc = await nats.connect(url, connect_timeout=5, allow_reconnect=False)
+                # allow_reconnect=False does NOT bound a first connect: measured 2026-10-11,
+                # nats-py retries on its own every reconnect_time_wait (2s) up to
+                # max_reconnect_attempts (60) -- 61 attempts, ~122s, against a name that
+                # cannot resolve, and the same ladder again against a server that refuses.
+                # Two candidates therefore cost ~244s, which is how the acceptance suite's
+                # 180s timeout kills this sweep (issue #5788). wait_for makes one candidate
+                # one attempt; the next candidate (or BLIND) is the recovery, not nats-py's
+                # own backoff.
+                nc = await asyncio.wait_for(
+                    nats.connect(url, connect_timeout=5, allow_reconnect=False),
+                    timeout=probe_s,
+                )
                 break
             except Exception as e:  # noqa: BLE001 - the next candidate is the recovery
                 last = e
@@ -2084,7 +2149,10 @@ def _bus_streams(con: sqlite3.Connection) -> int:
         try:
             js = nc.jetstream()
             out = []
-            for name in await js.streams_info():
+            # Bounded as well: a bus that accepts the connection and never answers the
+            # JetStream API held this sweep for over four minutes (measured 2026-10-11,
+            # a live nats-server on 127.0.0.1:4222 that does not answer streams_info).
+            for name in await asyncio.wait_for(js.streams_info(), timeout=probe_s):
                 info = name
                 out.append(
                     {
@@ -2144,9 +2212,16 @@ def publish(events: list[dict]) -> int:
         import nats  # imported late so --once works with no NATS client present
 
         n = 0
-        # allow_reconnect=False: see the matching note in _bus_streams -- an unreachable bus
-        # should fail once, in connect_timeout, not retry nats-py's own reconnect ladder.
-        nc = await nats.connect(url, connect_timeout=5, allow_reconnect=False)
+        # The same two bounds as _bus_streams, for the same two measured reasons: a host that
+        # does not resolve here is skipped, and the connect gets a deadline (publishing is
+        # best effort -- the caller below already treats any exception as "0 events sent").
+        host, port = _host_port(url)
+        if not _resolves(host, port, _bus_resolve_s()):
+            return 0
+        nc = await asyncio.wait_for(
+            nats.connect(url, connect_timeout=5, allow_reconnect=False),
+            timeout=_bus_probe_s(),
+        )
         try:
             for e in events:
                 await nc.publish(f"{subject}.{e['kind']}", json.dumps(e).encode())
