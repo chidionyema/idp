@@ -60,6 +60,15 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3 }
+  # 2026-10-11: every Deployment this release owns sat at spec.replicas 0 for 45 days while the
+  # release read Ready ("Helm upgrade succeeded", 2026-09-26T10:39Z). The server components were
+  # scaled to 0 by hand after an upgrade; helm-controller only renders on a spec change, so nothing
+  # put them back and `temporal-frontend` kept a ClusterIP with no endpoints. `sovereign-worker`
+  # then CrashLoopBackOff'd on `tcp connect error 10.96.12.174:7233 TimedOut`, which is the symptom
+  # and not the fault. Same defect and same remedy as the cert-manager row (platform/edge/):
+  # driftDetection re-applies the chart every interval, so a hand scale now lasts at most 10m.
+  driftDetection:
+    mode: enabled
   values:
     # Chart 1.x carries no bundled store or metrics stack (the cassandra/mysql/postgresql/
     # elasticsearch/prometheus/grafana sub-charts were removed in 1.0.0; the chart's
