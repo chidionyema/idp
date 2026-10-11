@@ -700,7 +700,6 @@ class GitHubBackend:
     def foreign_prs(self) -> list[dict]:
         prs = self.gh("pulls?state=open&per_page=100") or []
         out = []
-        owner = self.repo.split("/")[0]
         for pr in prs:
             body = pr.get("body") or ""
             if pr.get("user", {}).get("login") == self.app_login and MARKER in body:
