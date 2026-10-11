@@ -153,7 +153,19 @@ spec:
                   try:
                       head = api("GET", f"/repos/{REPO}/git/ref/heads/{BACKUP_BRANCH}")
                   except Exception:
-                      base = api("GET", f"/repos/{REPO}/git/ref/heads/{REPO.split('/')[-1]}")
+                      # The default branch, ASKED FOR, not guessed. This used to read
+                      #   f".../git/ref/heads/{REPO.split('/')[-1]}"
+                      # which assumes the default branch is named after the repository (`idp`).
+                      # It is `main`. refs/heads/idp does not exist, so the API answered 404 on
+                      # every bootstrap -- and the bootstrap is the path taken on every run while
+                      # the backup branch is absent, which it was. The DR backup of the routing
+                      # table therefore never wrote once (idp#5767): a fresh failed Job every 15
+                      # minutes on the clock, and no copy of the lanes outside estate-db.
+                      repo_info = api("GET", f"/repos/{REPO}")
+                      base = api(
+                          "GET",
+                          f"/repos/{REPO}/git/ref/heads/{repo_info['default_branch']}",
+                      )
                       try:
                           api("POST", f"/repos/{REPO}/git/refs",
                               {"ref": f"refs/heads/{BACKUP_BRANCH}", "sha": base["object"]["sha"]})
