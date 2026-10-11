@@ -146,7 +146,18 @@ jobs:
         run: |
           ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           body="$ts **verdict/surfaces** (hourly): FAIL — [run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) — the surfaces battery is red on the standing deployment; see the check-run for the failing level."
-          gh issue comment 1019 --repo chidionyema/crew --body "$body" || true
+          # No `|| true` here. Measured 2026-10-11 on run 38170143168: with it, this step reported
+          # SUCCESS while the comment was refused — `GraphQL: Resource not accessible by integration
+          # (addComment)`, because the workflow's own GITHUB_TOKEN is an installation token scoped to
+          # this repository and cannot comment on chidionyema/crew — and crew#1019 stayed at one
+          # comment, from 2026-10-02. A page that cannot page must be red, not green. The red still
+          # reaches the founder without any extra credential: the run is red and the verify/surfaces
+          # check-run on the commit says failure. Delivering the comment itself needs a repo secret
+          # holding a token with issue:write on chidionyema/crew; that is the vault's job, not this
+          # file's, and no such secret exists in this repository today (measured: the only
+          # cross-repo writers in .github/workflows/ are the verdict workflows themselves, all on
+          # the default token).
+          gh issue comment 1019 --repo chidionyema/crew --body "$body"
       - name: the job is red when the battery is not PASS
         if: always()
         # Measured 2026-10-11, run 38169517103 -- the first run whose battery actually executed:
