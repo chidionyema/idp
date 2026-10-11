@@ -16,11 +16,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -30,6 +32,22 @@ BOT_LANE = "flux/image-updates"
 STATE_REF = "refs/greenlane/state"
 MARKER = "Greenlane-Batch:"
 ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
+AGENT_DECLARATION = re.compile(r"^(Claim|Agent):", re.M)
+CLAIM_REF = re.compile(r"^Claim:\s*(?:[\w.-]+/[\w.-]+)?#(\d+)\s*$", re.M)
+CLAIM_LINE = re.compile(
+    r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=(?P<model>\S+)\s+)?paths=(?P<paths>\S+)\s+"
+    r"heartbeat=(?P<hb>\S+)\s*$",
+    re.M,
+)
+STAMP_AFTER = timedelta(
+    minutes=45
+)  # the gate's limit is 2h; stamp at most about hourly
+
+
+def _bodies(comments: list) -> list:
+    return [c.get("body") or "" for c in comments]
+
+
 GREEN_CONCLUSIONS = {"success", "skipped", "neutral"}
 RED_CONCLUSIONS = {
     "failure",
@@ -682,17 +700,20 @@ class GitHubBackend:
     def foreign_prs(self) -> list[dict]:
         prs = self.gh("pulls?state=open&per_page=100") or []
         out = []
-        owner = self.repo.split("/")[0]
         for pr in prs:
             body = pr.get("body") or ""
             if pr.get("user", {}).get("login") == self.app_login and MARKER in body:
                 continue
             if ADOPTED in body:
                 continue  # already a lane; lanes() follows its head
-            # The repository owner's own pull request is the founder's landing vehicle for
-            # the enforcement paths agents may not touch (workflows, rulesets, this engine:
+            # A PR that declares nothing is the founder's own hand work -- the landing vehicle
+            # for the enforcement paths agents may not touch (workflows, rulesets, this engine:
             # crew#985). It is never closed or relaned; the founder merges it by hand.
-            if pr.get("user", {}).get("login") == owner:
+            # 2026-10-11 (idp#5758): this exempted by author login, but every agent pushes with
+            # the shared gh auth, so every agent PR was exempt too and dead agent work piled up
+            # red for a day+ (#5617, #5632, #5704). Agent work always declares itself
+            # (AGENTS.md §5 rule 5); only an undeclared PR is founder hand work.
+            if not self.declared(pr):
                 continue
             out.append(
                 {
@@ -703,6 +724,60 @@ class GitHubBackend:
                 }
             )
         return out
+
+    def declared(self, pr: dict) -> bool:
+        """Does this pull request say an agent raised it? A `Claim:`/`Agent:` line in the body
+        or the head commit message (AGENTS.md §5 rule 5). The pulls listing carries no commit
+        messages, so the head commit is fetched only when the body is silent."""
+        if AGENT_DECLARATION.search(pr.get("body") or ""):
+            return True
+        c = self.gh(f"commits/{pr.get('head', {}).get('sha', '')}") or {}
+        msg = (c.get("commit") or {}).get("message") or ""
+        return bool(AGENT_DECLARATION.search(msg))
+
+    def heartbeat(self, lane: str, head: str) -> None:
+        """Refresh the heartbeat of the claim a held lane lands on (idp#5758): an agent waiting
+        on the lane queue must not watch its claim lapse and its finished work get refused.
+        Stamps at most about hourly (the gate's limit is 2h), keeps the agent and paths the
+        claim already declares, and never holds a lane on a stamping failure."""
+        try:
+            base = (
+                self.git("merge-base", "origin/main", head, check=False)
+                or "origin/main"
+            )
+            msgs = self.git("log", "--format=%B", f"{base}..{head}", check=False)
+            m = CLAIM_REF.search(msgs)
+            if not m:
+                return
+            issue, comments = self._issue_comments(m.group(1))
+            claims = [c for c in map(CLAIM_LINE.search, _bodies(comments)) if c]
+            if not claims:
+                return
+            c = claims[-1]
+            hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
+            if datetime.now(timezone.utc) - hb <= STAMP_AFTER:
+                return
+            model = f" model={c['model']}" if c["model"] else ""
+            self.gh(
+                f"issues/{m.group(1)}/comments",
+                "POST",
+                {
+                    "body": (
+                        f"CLAIM agent={c['agent']}{model} paths={c['paths']} "
+                        f"heartbeat={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n"
+                        f"Heartbeat refreshed by the Greenlane: lane `{lane}` is held and still "
+                        f"proving this claim's work (idp#5758 -- the machine keeps the claim "
+                        f"alive it is working on)."
+                    )
+                },
+            )
+        except Exception:
+            return
+
+    def _issue_comments(self, num: str):
+        issue = self.gh(f"issues/{num}") or {}
+        comments = self.gh(f"issues/{num}/comments?per_page=100") or []
+        return issue, comments
 
     def relane(self, pr: dict) -> None:
         """Adopt a hand-raised pull request: its branch becomes the lane, the PR stays open and

@@ -28,6 +28,10 @@ class Backend:
         self.heads, self.held = heads, unclaimed
         self.candidates: list[str] = []
         self.reported: list[tuple[str, str, str, str]] = []
+        self.heartbeats: list[tuple[str, str]] = []
+
+    def heartbeat(self, lane: str, head: str) -> None:
+        self.heartbeats.append((lane, head))
 
     def now(self):
         return 0.0
@@ -157,3 +161,12 @@ def test_no_gate_in_the_checkout_admits_the_lane(gated, tmp_path):
     b, sha, _, mp = gated
     mp.setattr(GitHubBackend, "CLAIM_GATE", tmp_path / "absent")
     assert b.unclaimed(sha, sha) == ""
+
+
+def test_the_tick_keeps_a_held_claims_heartbeat_alive():
+    """idp#5758 mechanism 2: an agent waiting on the lane queue must not watch its claim
+    lapse (2h) while the lane holds its branch for hours -- the tick stamps for every lane
+    it observes; the GitHub backend decides whether the stamp is due."""
+    b = Backend({"lane/a": "ha", "lane/b": "hb"}, unclaimed=set())
+    E.Engine(b, E.State()).tick()
+    assert sorted(b.heartbeats) == [("lane/a", "ha"), ("lane/b", "hb")]

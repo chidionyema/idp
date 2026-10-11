@@ -214,6 +214,25 @@ def judge(
     return verdict(text, files, repo, fetch, now)
 
 
+def live_body(repo: str) -> str:
+    """The PR body as it is now, not as the opening-day event snapshot carried it (idp#5758:
+    a re-run judges github.event.pull_request.body from the original event, so a trailer fix
+    in the body stayed invisible and the gate failed identically). Falls back to the snapshot
+    when there is no PR number or the fetch fails -- CI still runs the same gate."""
+    num = os.environ.get("PR_NUMBER", "")
+    if not num:
+        return os.environ.get("PR_BODY", "")
+    p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+        ["gh", "api", f"repos/{repo}/pulls/{num}", "--jq", ".body"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if p.returncode == 0:
+        return p.stdout or ""
+    return os.environ.get("PR_BODY", "")
+
+
 def main(argv: list[str]) -> int:
     base, head = argv[1], argv[2]
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -229,7 +248,7 @@ def main(argv: list[str]) -> int:
         repo,
         fetch,
         datetime.now(timezone.utc),
-        os.environ.get("PR_BODY", ""),
+        live_body(repo),
         os.environ.get("PR_AUTHOR", ""),
     )
     for p in problems:

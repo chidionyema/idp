@@ -131,6 +131,9 @@ class Backend(Protocol):
     ) -> bool: ...  # main's own required checks failed at sha
     def foreign_prs(self) -> list[dict]: ...  # open PRs the engine did not raise
     def relane(self, pr: dict) -> None: ...  # close it, keep the branch as a lane
+    def heartbeat(
+        self, lane: str, head: str
+    ) -> None: ...  # keep a held lane's claim alive
     def unclaimed(
         self, head: str, base: str
     ) -> str: ...  # why head may not land on a claim; "" if it may or cannot be judged
@@ -166,6 +169,9 @@ class Engine:
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
         for name, head in heads.items():
+            # idp#5758: a lane the engine holds is live work; keep its claim's heartbeat
+            # fresh so the queue itself does not lapse the claim out from under the agent.
+            self.b.heartbeat(name, head)
             lane = self.s.lanes.get(name)
             if lane is None:
                 self.s.seq += 1

@@ -92,6 +92,7 @@ class ChaosBackend:
         self.direct_push_attempts = self.direct_push_succeeded = 0
         self.hand_prs = self.hand_prs_refused = 0
         self.landed_changes: set[str] = set()
+        self.heartbeats: list[tuple[str, str]] = []
 
     # -- the world -------------------------------------------------------------------------
     def tree(self, sha: str) -> frozenset:
@@ -199,6 +200,9 @@ class ChaosBackend:
 
     def unclaimed(self, head: str, base: str) -> str:
         return ""  # every simulated lane is claimed; the claim rule is pinned in its own test
+
+    def heartbeat(self, lane: str, head: str) -> None:
+        self.heartbeats.append((lane, head))  # the tick stamps; the simulation records
 
     def relane(self, pr: dict) -> None:
         pr["open"] = False
