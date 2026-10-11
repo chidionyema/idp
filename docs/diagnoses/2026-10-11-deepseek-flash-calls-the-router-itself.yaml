@@ -1,0 +1,148 @@
+description: 'The `deepseek-v4-flash` lane (landed #5726 for #5723) routed correctly
+  but every call timed out, so the lane never answered a real request. Question is
+  whether the router is blocked from leaving the cluster, or whether this one destination
+  is unreachable. Measured 2026-10-11 from inside the router pod and from the laptop,
+  same moment, with the same mounted key. Supersedes the "the cluster cannot reach
+  llm.mumchimp.com" framing in issue #5730: that host is reachable from the laptop
+  by design, and unreachable from the cluster by design too -- neither is a fault.
+  The fault was the lane''s api_base.
+
+  '
+hypotheses:
+- name: H1
+  description: 'The lane points at the router''s own public hostname from inside the
+    cluster, so the request is a hairpin the cluster''s egress path cannot complete.
+    The destination is fine from anywhere else; the config is wrong. Fix: drop the
+    api_base so the lane dials the vendor endpoint directly.
+
+    '
+  prior: 0.4
+- name: H2
+  description: 'Cluster egress is broken or over-restricted (NetworkPolicy, SNAT,
+    no route), so no external destination is reachable and the fix is on the egress
+    path.
+
+    '
+  prior: 0.3
+- name: H3
+  description: 'The host llm.mumchimp.com is genuinely down, so nothing reaches it
+    from anywhere and the fix belongs on that service.
+
+    '
+  prior: 0.3
+evidence:
+- name: 'Reachability split, measured from inside the router pod with the same interpreter
+    at the same moment: a destination-specific silent drop against other public hosts.
+    Counted over the four hosts probed (llm.mumchimp.com, api.groq.com, api.minimax.chat,
+    generativelanguage.googleapis.com) -- one dropped, three opened.
+
+    '
+  observed:
+    destinations_dropped: 1
+    destinations_opened: 3
+  likelihoods:
+    H1:
+      destinations_dropped: 0.35
+      destinations_opened: 0.65
+    H2:
+      destinations_dropped: 0.97
+      destinations_opened: 0.03
+    H3:
+      destinations_dropped: 0.35
+      destinations_opened: 0.65
+- name: 'The egress policy permits the destination: NetworkPolicy allow-internet-egress
+    in ns llm allows 0.0.0.0/0 on TCP 443 with only RFC1918, CGNAT and link-local
+    excluded, and 193.123.184.22 is in none of the excluded ranges. Counted as the
+    allow/deny decision the policy actually makes for this address.
+
+    '
+  observed:
+    destination_allowed_by_policy: 1
+    destination_denied_by_policy: 0
+  likelihoods:
+    H1:
+      destination_allowed_by_policy: 0.95
+      destination_denied_by_policy: 0.05
+    H2:
+      destination_allowed_by_policy: 0.2
+      destination_denied_by_policy: 0.8
+    H3:
+      destination_allowed_by_policy: 0.6
+      destination_denied_by_policy: 0.4
+- name: 'The drop is silent (no RST after a 6.0s connect timeout on both 443 and 80),
+    which is a firewall drop rather than a refused or closed port; and the key itself
+    works, returning HTTP 200 on api.deepseek.com/v1/models while the same key against
+    llm.mumchimp.com raises URLError. Counted as the two transports observed with
+    that one mounted key.
+
+    '
+  observed:
+    destination_answered: 1
+    destination_unreachable: 1
+    no_rst_on_timeout: 1
+  likelihoods:
+    H1:
+      destination_answered: 0.45
+      destination_unreachable: 0.5
+      no_rst_on_timeout: 0.9
+    H2:
+      destination_answered: 0.1
+      destination_unreachable: 0.85
+      no_rst_on_timeout: 0.9
+    H3:
+      destination_answered: 0.05
+      destination_unreachable: 0.9
+      no_rst_on_timeout: 0.3
+- name: 'The identities in play: the routing-cost-layer spec (docs/specs/2026-09-24-llm-routing-
+    cost-layer.md, line 44) states the router IS "LiteLLM proxy at llm.mumchimp.com,
+    running in the idp-router pod on OKE"; the cluster egresses as a public address
+    inside the destination''s own 193.123.184.0/22; and the destination resolves to
+    193.123.184.22 with no CDN in front, so a hairpin is the only reading left. Counted
+    as the three facts checked against the config and the wire.
+
+    '
+  observed:
+    router_host_is_the_router_itself: 1
+    egress_ip_shares_slash22_with_destination: 1
+    no_cdn_in_front_of_destination: 1
+  likelihoods:
+    H1:
+      router_host_is_the_router_itself: 0.97
+      egress_ip_shares_slash22_with_destination: 0.85
+      no_cdn_in_front_of_destination: 0.7
+    H2:
+      router_host_is_the_router_itself: 0.4
+      egress_ip_shares_slash22_with_destination: 0.4
+      no_cdn_in_front_of_destination: 0.6
+    H3:
+      router_host_is_the_router_itself: 0.4
+      egress_ip_shares_slash22_with_destination: 0.3
+      no_cdn_in_front_of_destination: 0.5
+n_eff_divisor: 1
+posteriors:
+  H1: 0.9967251373
+  H2: 2.6946e-06
+  H3: 0.0032721681
+winner: H1
+resolution: 'platform/vendors/consoles.yaml: the `deepseek-v4-flash` lane row loses
+  its api_base. litellm then uses the vendor default (api.deepseek.com), which is
+  reachable from the cluster and authenticates with the key already mounted at /run/secrets/human/deepseek.
+  The mutation is in the registry, not in the rendered platform/llm/config.yaml, which
+  bin/idp-vendor-render regenerates.
+
+  '
+trade_off: 'The lane no longer shares the row shape platform/llm/config.local.yaml
+  serves as default/fast. That shape was only ever correct off-cluster: on the laptop
+  llm.mumchimp.com is the router reached over the public internet, and in the pod
+  it is the router reached by calling itself. Cost: if the estate ever wants DeepSeek
+  traffic to traverse an in-cluster gateway hop for accounting, that hop has to be
+  a Service name, never the public hostname.
+
+  '
+second_order: 'Any other lane that copies an api_base from config.local.yaml into
+  the cluster registry has the same defect. The grep that found this one is `rg -n
+  mumchimp platform/vendors/` and it should return nothing for lanes served from inside
+  the cluster; after this change it returns only the explanatory comment.
+
+  '
+computed_at: '2026-10-11T06:53:18Z'

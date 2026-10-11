@@ -48,7 +48,6 @@ model_list:
   - model_name: deepseek-v4-flash
     litellm_params:
       model: deepseek/deepseek-v4-flash
-      api_base: https://llm.mumchimp.com/v1
       api_key: os.environ/DEEPSEEK_API_KEY
       timeout: 60
       max_tokens: 8192
@@ -670,7 +669,7 @@ router_settings:
     # now applies to Gemini itself, so it moved to the back -- see the measurement on the
     # gemini block below.
     - deepseek: [gemini, minimax, groq]
-    # DeepSeek V4 Flash (founder 2026-10-10). Reaches DeepSeek via the mumchimp gateway; that api_base is the whole difference, and it is the row shape platform/llm/config.local.yaml already serves as default/fast. The plain `deepseek` row has no api_base and goes to api.deepseek.com, which answered 401 in-pod. Ends in `groq` (sovereign cp30).
+    # DeepSeek V4 Flash (founder 2026-10-10). Reaches DeepSeek directly: the lane row above # carries no api_base, so litellm dials the vendor endpoint itself. It briefly pointed at # the mumchimp router host instead, copied from platform/llm/config.local.yaml, where that # host IS the router because the laptop calls it from outside the cluster. From inside the # cluster that hostname is the router own public address, so the lane asked the router to # call itself and every request died on the hairpin. See # docs/diagnoses/2026-10-11-deepseek-flash-calls-the-router-itself.yaml. # Ends in `groq` (sovereign cp30).
     - deepseek-v4-flash: [minimax, gemini, groq]
 
     # Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax answers 401 `invalid api
