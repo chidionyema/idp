@@ -9,10 +9,10 @@
 # The k3s node image k3d pulls to start a single-node cluster (the biggest
 # single pull on a fresh runner -- rancher/k3s is ~1GB compressed).
 docker.io/rancher/k3s:v1.31.2-k3s1
-# Flux controllers (flux install lays the same CRDs/objects on this cluster).
-ghcr.io/fluxcd/source-controller:v1.3.0
-ghcr.io/fluxcd/kustomize-controller:v1.3.0
-ghcr.io/fluxcd/helm-controller:v0.41.1
-ghcr.io/fluxcd/notification-controller:v1.3.0
 # The DB stand-in's image, read from platform/estate-db/cluster/cluster.yaml.
 ghcr.io/chidionyema/postgres-partman:18.1-postgres-partman
+# The four Flux controllers are NOT listed here on purpose: the populate
+# workflow derives them from `flux install --export` so the cache stays in
+# sync with whatever version `fluxcd.io/install.sh` installs today, and the
+# kustomize-controller / source-controller / helm-controller / notification-
+# controller tags move on Flux's own release cadence.

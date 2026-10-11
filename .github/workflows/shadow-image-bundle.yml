@@ -22,16 +22,40 @@ jobs:
       - uses: actions/checkout@v7
         with: { fetch-depth: 1 }
 
+      - name: Install Flux
+        # The bundle's four flux-controller refs are pinned to whatever
+        # `flux install --export` writes today; we re-derive them below so the
+        # cache stays in sync with Flux's own release cadence.
+        run: |
+          set -euo pipefail
+          curl -sSL https://fluxcd.io/install.sh | sudo bash
+          flux --version
+
       - name: Build the bundle
         env:
           RUNNER_TEMP: ${{ runner.temp }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/idp-shadow-bundle"
+          # Flux controllers, derived from the same manifest the shadow applies.
+          flux install --export \
+            | yq -o=tsv '.. | select(has("image")).image' \
+            | sort -u \
+            >  "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt"
+          # Static manifest (k3s node image + DB stand-in).
+          cat bin/idp-shadow-bundle-images.txt \
+            | rg -v '^\s*(#|$)' \
+            >  "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
+          cat "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt" \
+            >> "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
+          echo "bundle images:"
+          cat "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
           bin/idp-shadow-bundle export "$RUNNER_TEMP/idp-shadow-bundle/images.tar"
 
       - name: Upload the bundle
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/idp-shadow-bundle
-          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}
+          # The key includes the derived flux list so a flux release (new tag)
+          # invalidates the cache; the manifest is the rest of the contract.
+          key: shadow-bundle-${{ hashFiles('bin/idp-shadow-bundle-images.txt') }}-${{ hashFiles(format('{0}/idp-shadow-bundle/flux-images.txt', runner.temp)) }}
