@@ -42,9 +42,11 @@ jobs:
             | yq -o=tsv '.. | select(has("image")).image' \
             | sort -u \
             >  "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt"
-          # Static manifest (k3s node image + DB stand-in).
+          # Static manifest (k3s node image + DB stand-in). rg is the local
+          # convention (AGENTS.md §10) but the runner is a fresh ubuntu image
+          # without it; grep -E is the port that's there.
           cat bin/idp-shadow-bundle-images.txt \
-            | rg -v '^\s*(#|$)' \
+            | grep -vE '^\s*(#|$)' \
             >  "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
           cat "$RUNNER_TEMP/idp-shadow-bundle/flux-images.txt" \
             >> "$RUNNER_TEMP/idp-shadow-bundle/all-images.txt"
