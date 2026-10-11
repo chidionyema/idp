@@ -32,12 +32,13 @@ so the contract was read out of the runtime rather than assumed:
      UpLeg, Leg, Foot, ToeBase. A missing bone is a TypeError at line 1320, not a soft skip.
   3. The mesh must expose the ARKit blendshape names as morph targets; ~53 are addressed by name.
      The runtime synthesizes mouthOpen, mouthSmile, eyesClosed, eyesLookUp and eyesLookDown from
-     those (mtExtras, line 734), so carrying the 53 is sufficient -- extras arrive for free.
+     those (mtExtras, line 734) -- but NOT the 15 `viseme_*` targets lip-sync drives. Those must
+     be in the mesh or the mouth stays still while the voice speaks (2026-10-10; see VISEMES).
   4. Inverse kinematics needs nothing from the GLB: the runtime builds its own IK skeleton
      (ikMesh, line 874) from an internal `ikSetup`.
 
 Hence this generator emits a skinned head-and-torso mesh whose skin is bound to the RPM bone
-names above, plus the 53 ARKit morph targets. Bone rest positions are ours (a compact, stylised
+names above, plus the 53 ARKit and 15 viseme morph targets. Bone rest positions are ours (a compact, stylised
 figure), the names are the runtime's contract, and every byte is computed here.
 
 Deterministic: same input -> same bytes (no timestamps, no randomness). `--check` re-derives the
@@ -86,6 +87,50 @@ TONGUE = ["tongueOut"]
 ARKIT = BROW + CHEEK + EYE + JAW + MOUTH + NOSE + TONGUE
 assert len(ARKIT) == 53, f"expected 53 ARKit targets, built {len(ARKIT)}"
 assert len(set(ARKIT)) == 53, "duplicate ARKit target name in the list"
+
+# --- The lip-sync contract ------------------------------------------------------------------
+# TalkingHead's lip-sync does not move ARKit targets: every spoken sound is a keyframe on one of
+# the 15 Oculus visemes, `viseme_<name>` (talkinghead.mjs:761, the visemeNames list), and only
+# morph names the GLB carries are registered (talkinghead.mjs:1266-1310) -- a keyframe on a name
+# the mesh lacks is dropped without a word. Until 2026-10-10 this head carried none, so the face
+# "spoke" with a still mouth. Each viseme is authored as a mix of the ARKit deltas below, the same
+# way the runtime itself mixes its RPM extras (mtExtras, talkinghead.mjs:734), so the mouth shapes
+# stay in step with the regions the ARKit targets already move. Weights are per sound family:
+# closed lips (PP), lower lip under the teeth (FF), open vowel (aa), rounded (O, U), spread (E, I).
+VISEMES: dict[str, dict[str, float]] = {
+    "viseme_sil": {},
+    "viseme_PP": {"mouthClose": 0.6, "mouthPressLeft": 0.5, "mouthPressRight": 0.5,
+                  "mouthRollLower": 0.3, "mouthRollUpper": 0.3},
+    "viseme_FF": {"mouthRollLower": 0.8, "mouthUpperUpLeft": 0.3, "mouthUpperUpRight": 0.3,
+                  "jawOpen": 0.1},
+    "viseme_TH": {"jawOpen": 0.25, "tongueOut": 0.6, "mouthLowerDownLeft": 0.2,
+                  "mouthLowerDownRight": 0.2},
+    "viseme_DD": {"jawOpen": 0.3, "mouthLowerDownLeft": 0.3, "mouthLowerDownRight": 0.3,
+                  "mouthStretchLeft": 0.2, "mouthStretchRight": 0.2},
+    "viseme_kk": {"jawOpen": 0.35, "mouthStretchLeft": 0.3, "mouthStretchRight": 0.3,
+                  "mouthLowerDownLeft": 0.2, "mouthLowerDownRight": 0.2},
+    "viseme_CH": {"jawOpen": 0.2, "mouthFunnel": 0.6, "mouthPucker": 0.3,
+                  "mouthUpperUpLeft": 0.2, "mouthUpperUpRight": 0.2},
+    "viseme_SS": {"jawOpen": 0.1, "mouthStretchLeft": 0.5, "mouthStretchRight": 0.5,
+                  "mouthSmileLeft": 0.3, "mouthSmileRight": 0.3, "mouthUpperUpLeft": 0.2,
+                  "mouthUpperUpRight": 0.2, "mouthLowerDownLeft": 0.2, "mouthLowerDownRight": 0.2},
+    "viseme_nn": {"jawOpen": 0.2, "mouthClose": 0.2, "mouthLowerDownLeft": 0.2,
+                  "mouthLowerDownRight": 0.2},
+    "viseme_RR": {"jawOpen": 0.2, "mouthFunnel": 0.4, "mouthPucker": 0.3},
+    "viseme_aa": {"jawOpen": 0.7, "mouthLowerDownLeft": 0.4, "mouthLowerDownRight": 0.4,
+                  "mouthUpperUpLeft": 0.3, "mouthUpperUpRight": 0.3},
+    "viseme_E": {"jawOpen": 0.35, "mouthStretchLeft": 0.5, "mouthStretchRight": 0.5,
+                 "mouthSmileLeft": 0.3, "mouthSmileRight": 0.3, "mouthLowerDownLeft": 0.3,
+                 "mouthLowerDownRight": 0.3},
+    "viseme_I": {"jawOpen": 0.2, "mouthStretchLeft": 0.7, "mouthStretchRight": 0.7,
+                 "mouthSmileLeft": 0.4, "mouthSmileRight": 0.4, "mouthUpperUpLeft": 0.2,
+                 "mouthUpperUpRight": 0.2},
+    "viseme_O": {"jawOpen": 0.45, "mouthFunnel": 0.7, "mouthPucker": 0.2,
+                 "mouthLowerDownLeft": 0.2, "mouthLowerDownRight": 0.2},
+    "viseme_U": {"jawOpen": 0.15, "mouthPucker": 0.9, "mouthFunnel": 0.4},
+}
+assert len(VISEMES) == 15, f"expected the 15 Oculus visemes, built {len(VISEMES)}"
+assert all(k in ARKIT for mix in VISEMES.values() for k in mix), "a viseme mixes an unknown target"
 
 # --- The bone contract --------------------------------------------------------------------
 # Every name the runtime resolves under `Armature`. Collected from talkinghead.mjs's pose
@@ -305,10 +350,19 @@ def _direction_for(name: str) -> tuple[str, np.ndarray]:
 
 def _morphs(pos: np.ndarray) -> list[tuple[str, np.ndarray]]:
     w = _region_weights(pos)
-    return [
+    arkit = [
         (name, (w[_direction_for(name)[0]][:, None] * _direction_for(name)[1]).astype(np.float32))
         for name in ARKIT
     ]
+    deltas = dict(arkit)
+    visemes = []
+    for name, mix in VISEMES.items():
+        # Summed in float64 in the dict's fixed order, then cast: same bytes on every machine.
+        d = np.zeros((len(pos), 3), dtype=np.float64)
+        for k, v in mix.items():
+            d += deltas[k].astype(np.float64) * v
+        visemes.append((name, d.astype(np.float32)))
+    return arkit + visemes
 
 
 # =========================== skinning ======================================================
@@ -728,7 +782,8 @@ def main(argv: list[str]) -> int:
         return 0
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_bytes(data)
-    print(f"wrote {OUT} ({len(data)} bytes, {len(ARKIT)} morph targets, {len(BONES)} bones)")
+    print(f"wrote {OUT} ({len(data)} bytes, {len(ARKIT)} ARKit + {len(VISEMES)} viseme morph targets, "
+          f"{len(BONES)} bones)")
     return 0
 
 

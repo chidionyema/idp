@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   wordTimings,
+  voicedSpan,
   IDLE_BEATS,
   nextBeat,
   readMemory,
@@ -11,13 +12,38 @@ import {
   CONTINUITY_KEY,
 } from './faceEngine';
 
+describe('voicedSpan', () => {
+  // 300ms of silence, 1s of tone, 200ms of silence at 24kHz: the lips move only for the tone.
+  const rate = 24000;
+  const clip = new Float32Array(rate * 1.5);
+  for (let i = rate * 0.3; i < rate * 1.3; i++)
+    clip[i] = 0.3 * Math.sin(i / 10);
+
+  it('finds where the voice starts and stops, not the padded clip', () => {
+    const { startMs, endMs } = voicedSpan(clip, rate);
+    expect(startMs).toBeGreaterThanOrEqual(290);
+    expect(startMs).toBeLessThanOrEqual(310);
+    expect(endMs).toBeGreaterThanOrEqual(1290);
+    expect(endMs).toBeLessThanOrEqual(1310);
+  });
+
+  it('falls back to the whole clip when nothing is above the floor', () => {
+    expect(voicedSpan(new Float32Array(rate), rate)).toEqual({
+      startMs: 0,
+      endMs: 1000,
+    });
+  });
+});
+
 describe('wordTimings', () => {
   it('spreads every word across the clause, in order, inside the audio', () => {
     const t = wordTimings('The estate is live, founder.', 2000);
     expect(t.words).toEqual(['The', 'estate', 'is', 'live,', 'founder.']);
     expect(t.wtimes[0]).toBeGreaterThan(0);
-    for (let i = 1; i < t.wtimes.length; i++) expect(t.wtimes[i]).toBeGreaterThan(t.wtimes[i - 1]);
-    const end = t.wtimes[t.wtimes.length - 1] + t.wdurations[t.wdurations.length - 1];
+    for (let i = 1; i < t.wtimes.length; i++)
+      expect(t.wtimes[i]).toBeGreaterThan(t.wtimes[i - 1]);
+    const end =
+      t.wtimes[t.wtimes.length - 1] + t.wdurations[t.wdurations.length - 1];
     expect(end).toBeLessThanOrEqual(2000);
     expect(end).toBeGreaterThan(1900);
   });
@@ -62,14 +88,33 @@ describe('estate.glb (the shipped face avatar)', () => {
     expect(buf.readUInt32LE(0)).toBe(0x46546c67); // 'glTF'
     const jsonLength = buf.readUInt32LE(12);
     const gltf = JSON.parse(buf.subarray(20, 20 + jsonLength).toString('utf8'));
-    const nodeNames: string[] = gltf.nodes.map((n: { name?: string }) => n.name);
+    const nodeNames: string[] = gltf.nodes.map(
+      (n: { name?: string }) => n.name,
+    );
     expect(nodeNames).toContain('Armature');
     for (const bone of [
-      'Hips', 'Spine', 'Spine1', 'Spine2', 'Neck', 'Head',
-      'LeftShoulder', 'LeftArm', 'LeftForeArm', 'LeftHand',
-      'RightShoulder', 'RightArm', 'RightForeArm', 'RightHand',
-      'LeftUpLeg', 'LeftLeg', 'LeftFoot', 'LeftToeBase',
-      'RightUpLeg', 'RightLeg', 'RightFoot', 'RightToeBase',
+      'Hips',
+      'Spine',
+      'Spine1',
+      'Spine2',
+      'Neck',
+      'Head',
+      'LeftShoulder',
+      'LeftArm',
+      'LeftForeArm',
+      'LeftHand',
+      'RightShoulder',
+      'RightArm',
+      'RightForeArm',
+      'RightHand',
+      'LeftUpLeg',
+      'LeftLeg',
+      'LeftFoot',
+      'LeftToeBase',
+      'RightUpLeg',
+      'RightLeg',
+      'RightFoot',
+      'RightToeBase',
     ]) {
       expect(nodeNames).toContain(bone);
     }
@@ -85,11 +130,38 @@ describe('estate.glb (the shipped face avatar)', () => {
     const names: string[] = gltf.meshes[0].extras.targetNames;
     // 53 ARKit targets; the runtime synthesizes mouthOpen/mouthSmile/eyesClosed/eyesLookUp/
     // eyesLookDown from these, so the mesh must carry the sources.
-    expect(names.length).toBe(53);
-    for (const n of ['jawOpen', 'mouthPucker', 'eyeBlinkLeft', 'browInnerUp', 'tongueOut']) {
+    expect(names.length).toBe(68);
+    for (const n of [
+      'jawOpen',
+      'mouthPucker',
+      'eyeBlinkLeft',
+      'browInnerUp',
+      'tongueOut',
+    ]) {
       expect(names).toContain(n);
     }
-    expect(prim.targets.length).toBe(53);
+    // ...plus the 15 Oculus visemes lip-sync keyframes. The runtime drops a keyframe on a name the
+    // mesh lacks without a word, so without these the face spoke with a still mouth (2026-10-10).
+    for (const v of [
+      'sil',
+      'PP',
+      'FF',
+      'TH',
+      'DD',
+      'kk',
+      'CH',
+      'SS',
+      'nn',
+      'RR',
+      'aa',
+      'E',
+      'I',
+      'O',
+      'U',
+    ]) {
+      expect(names).toContain(`viseme_${v}`);
+    }
+    expect(prim.targets.length).toBe(68);
     // Skinned to the armature, or the bones move nothing.
     expect(prim.attributes.JOINTS_0).toBeDefined();
     expect(prim.attributes.WEIGHTS_0).toBeDefined();
@@ -109,7 +181,10 @@ describe('estate.glb (the shipped face avatar)', () => {
     let out = '';
     let err = '';
     try {
-      out = execFileSync('python3', [gen, '--check'], { encoding: 'utf8', timeout: 60_000 });
+      out = execFileSync('python3', [gen, '--check'], {
+        encoding: 'utf8',
+        timeout: 60_000,
+      });
     } catch (e) {
       const x = e as { stdout?: string; stderr?: string; message?: string };
       out = String(x.stdout ?? '');
@@ -127,21 +202,25 @@ describe('estate.glb (the shipped face avatar)', () => {
  */
 describe('idle life', () => {
   it('schedules blinks often and settles/moves rarely', () => {
-    const blinks = IDLE_BEATS.filter((b) => b.blink).length;
-    const settles = IDLE_BEATS.filter((b) => b.mood).length;
-    const moves = IDLE_BEATS.filter((b) => b.gesture || b.lookAhead !== undefined).length;
+    const blinks = IDLE_BEATS.filter(b => b.blink).length;
+    const settles = IDLE_BEATS.filter(b => b.mood).length;
+    const moves = IDLE_BEATS.filter(
+      b => b.gesture || b.lookAhead !== undefined,
+    ).length;
     expect(blinks).toBeGreaterThanOrEqual(4);
     expect(settles).toBeGreaterThanOrEqual(2);
     expect(moves).toBeGreaterThanOrEqual(2);
     // Every beat does something. An empty beat is dead air on screen.
     for (const b of IDLE_BEATS) {
-      expect(Boolean(b.blink || b.mood || b.gesture || b.lookAhead !== undefined)).toBe(true);
+      expect(
+        Boolean(b.blink || b.mood || b.gesture || b.lookAhead !== undefined),
+      ).toBe(true);
       expect(b.afterMs).toBeGreaterThan(400);
     }
   });
 
   it('is irregular, not a metronome', () => {
-    const gaps = IDLE_BEATS.map((b) => b.afterMs);
+    const gaps = IDLE_BEATS.map(b => b.afterMs);
     expect(new Set(gaps).size).toBeGreaterThan(3);
   });
 
@@ -192,14 +271,26 @@ describe('visit continuity', () => {
     const blank = { visits: 0, mood: 'neutral', lastSeen: 0 };
     expect(readMemory(null)).toEqual(blank);
     expect(readMemory(fakeStore())).toEqual(blank);
-    expect(readMemory(fakeStore({ [CONTINUITY_KEY]: '{not json' }))).toEqual(blank);
-    expect(readMemory(fakeStore({ [CONTINUITY_KEY]: '{"visits":"x","mood":"purple"}' }))).toEqual(blank);
+    expect(readMemory(fakeStore({ [CONTINUITY_KEY]: '{not json' }))).toEqual(
+      blank,
+    );
+    expect(
+      readMemory(
+        fakeStore({ [CONTINUITY_KEY]: '{"visits":"x","mood":"purple"}' }),
+      ),
+    ).toEqual(blank);
   });
 
   it('answers the visit with a line that names the familiarity', () => {
-    expect(greeting({ visits: 0, mood: 'neutral', lastSeen: 0 })).toMatch(/estate is up/i);
-    expect(greeting({ visits: 1, mood: 'neutral', lastSeen: 0 })).toMatch(/estate is up/i);
-    expect(greeting({ visits: 2, mood: 'happy', lastSeen: 0 })).toMatch(/back/i);
+    expect(greeting({ visits: 0, mood: 'neutral', lastSeen: 0 })).toMatch(
+      /estate is up/i,
+    );
+    expect(greeting({ visits: 1, mood: 'neutral', lastSeen: 0 })).toMatch(
+      /estate is up/i,
+    );
+    expect(greeting({ visits: 2, mood: 'happy', lastSeen: 0 })).toMatch(
+      /back/i,
+    );
     expect(greeting({ visits: 5, mood: 'happy', lastSeen: 0 })).toContain('5');
   });
 });
