@@ -136,7 +136,11 @@ jobs:
             -f "output[title]=$line" -f "output[summary]=$summary" >/dev/null
           printf '### verdict-surfaces\n```\n%s\n```\n' "$line" >> "$GITHUB_STEP_SUMMARY"
       - name: a standing red pages crew#1019 (dispatched red rolls back instead, next job)
-        if: failure() && steps.verdict.outputs.dispatched != 'true'
+        # `failure()` in a step's `if:` sees only the steps that have already run, and the step that
+        # decides red comes below this one -- so this page could not fire even once the gate itself
+        # was fixed. Measured 2026-10-11, run 38169906354: the gate below failed and this step was
+        # SKIPPED. Page on the same signal the gate and the check-run publish.
+        if: always() && steps.verdict.outputs.outcome != 'PASS' && steps.verdict.outputs.dispatched != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
