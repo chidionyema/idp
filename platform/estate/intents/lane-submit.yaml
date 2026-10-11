@@ -24,7 +24,14 @@ steps:
     timeout: 300
     cmd: |
       cd {{cwd}} || exit 2
-      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
+      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
+      # 2026-10-11: a lane branch is already named lane/<name>, so the old `${lane:-lane/$b}`
+      # pushed lane/lane/<name> whenever --lane was omitted. Measured on this very change:
+      # branch lane/front-door-identity-row pushed as lane/lane/front-door-identity-row, which
+      # the engine then queued as a second lane of the same commit. Prepend only when the
+      # prefix is missing (#5756). The fix belongs here, in the file estate-runtime-sync reads:
+      # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
+      case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
       out=$(git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
       if [ $rc -eq 0 ]; then
         echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
@@ -44,7 +51,8 @@ steps:
     timeout: 1900
     cmd: |
       cd {{cwd}} || exit 2
-      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; lane=${lane:-lane/$b}
+      b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
+      case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
       sha=$(git rev-parse HEAD); repo=$(gh repo view --json nameWithOwner -q .nameWithOwner)
       end=$(( $(date +%s) + {{wait}} )); s=""
       # the verdict is the `greenlane` commit status on this sha, written by the engine
