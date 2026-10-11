@@ -289,9 +289,17 @@ class Engine:
             lane = self.s.lanes[name]
             lane.attempts += 1
             if lane.attempts <= self.retries:
+                # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
+                # and `_start_batch` serves `queued` before the pending list -- so a lane that
+                # had already spent a full check suite ran as a ONE-lane batch in front of lanes
+                # that had never been tested at all. Measured 2026-10-11: refs/greenlane/state
+                # held 12 red lanes against 11 pending, and a lane pushed 14:29:58 waited 46 min
+                # for its first batch while successful ticks ran every ~80s. The lane is set
+                # PENDING either way, and its `seq` is unchanged, so plain `seq` order already
+                # puts it near the front: the group bought it a place ahead of newer work and a
+                # suite of its own, and nothing else.
                 lane.status = PENDING
                 lane.reason = f"retry after: {reason}"
-                self.s.queued.insert(0, [name])
             else:
                 lane.status, lane.reason = RED, reason
                 # main red under it: the verdict says nothing about the lane (2026-09-30)
