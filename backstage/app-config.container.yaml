@@ -105,6 +105,18 @@ backend:
           token:
             $file: /run/secrets/backstage/PROVER_TOKEN
           subject: idp-prover
+      # idp#5737: the fleetview sidecar's research feed. The loopback GET to
+      # /api/research-output/claims is refused 401 without identity (measured 2026-10-11,
+      # pod exec from the sidecar), and a second Postgres client in the sidecar is the
+      # duplicate the estate deletes (research_feed.py). Same door as the prover, its own
+      # subject so the two callers are tellable apart in the audit log, and the same
+      # backstage-env Secret volume -- the token is one more field in the vault JSON
+      # (bin/idp-estate-seed), mounted where every other credential in this portal lives.
+      - type: static
+        options:
+          token:
+            $file: /run/secrets/backstage/RESEARCH_FEED_TOKEN
+          subject: fleetview-research-feed
   listen:
     port: 3100
     # 0.0.0.0 INSIDE the container, 127.0.0.1 on the host. These are not in

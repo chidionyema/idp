@@ -15,6 +15,31 @@ import json
 from fleetview_backend import research_feed, routes
 
 
+def test_auth_headers_empty_without_token_file(monkeypatch, tmp_path):
+    """No FLEETVIEW_RESEARCH_TOKEN_FILE: no header. Dev runs like this; the portal's
+    401 then becomes the envelope's reason, which is the soft contract, not an error."""
+    monkeypatch.delenv("FLEETVIEW_RESEARCH_TOKEN_FILE", raising=False)
+    assert research_feed._auth_headers() == {}
+
+
+def test_auth_headers_bearer_from_file(monkeypatch, tmp_path):
+    """The mounted token file is read per call: rotate the file, the next call carries
+    the new token, no restart. A stray newline is the vault's problem, not ours."""
+    token_file = tmp_path / "RESEARCH_FEED_TOKEN"
+    token_file.write_text("tok-abc\n")
+    monkeypatch.setenv("FLEETVIEW_RESEARCH_TOKEN_FILE", str(token_file))
+    assert research_feed._auth_headers() == {"Authorization": "Bearer tok-abc"}
+    token_file.write_text("tok-xyz")
+    assert research_feed._auth_headers() == {"Authorization": "Bearer tok-xyz"}
+
+
+def test_auth_headers_missing_file_is_no_header(monkeypatch, tmp_path):
+    """A declared file that is not mounted yet (optional: true volume, vault field
+    pending) degrades to headerless -- the same shape as an unset path."""
+    monkeypatch.setenv("FLEETVIEW_RESEARCH_TOKEN_FILE", str(tmp_path / "absent"))
+    assert research_feed._auth_headers() == {}
+
+
 def _portal(status: int, body: dict | str):
     """A fetch seam shaped like research_feed._http_get."""
 
