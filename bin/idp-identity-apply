@@ -51,6 +51,24 @@ if [ "$sc" != "true" ]; then
   if printf '%s' "$pr" | jq -e '.data.signingCertPublicAccess == true' >/dev/null 2>&1; then echo "ok      identity domain signing certificate is public (JWKS readable by oauth2-proxy)"
   else echo "FAIL    identity domain Settings PATCH refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
 else echo "ok      identity domain signing certificate is public"; fi
+# Phase 2 of Face ID at the front door (#5753): MFA enrollment must be required for all users, or
+# the domain never offers a second factor and Face ID can never appear at the front door. The
+# terraform resource for this singleton is PUT-everything (49 attributes) and its import never
+# lands clean: the provider does not persist authentication_factor_setting_id, so every plan
+# would replace the domain's whole factor policy, and one wrong value in that PUT is a founder
+# lockout. Same decision as the signing certificate above (crew#269): a one-attribute SCIM
+# PATCH, idempotent, read back. The FIDO2 factor itself is already enabled in the domain
+# (fido_authenticator_enabled=true, userVerification=PREFERRED, measured 2026-10-11). The
+# domain's enum here is "Required" ("Optional" | "Required"; the classic-IDCS value
+# "RequiredForAll" is refused with 400 on this OCI-generation domain, measured 2026-10-11).
+mfa=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings/AuthenticationFactorSettings?attributes=mfaEnrollmentType" 2>/dev/null | jq -r '.data.mfaEnrollmentType // ""')
+if [ "$mfa" != "Required" ]; then
+  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "$T"' EXIT
+  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"mfaEnrollmentType","value":"Required"}]}' > "$T/m.json"
+  pm=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings/AuthenticationFactorSettings" --request-body "file://$T/m.json" 2>&1)
+  if printf '%s' "$pm" | jq -e '.data.mfaEnrollmentType == "Required"' >/dev/null 2>&1; then echo "ok      identity domain MFA enrollment required for all users (Face ID can be enrolled at the next sign-in, #5753)"
+  else echo "FAIL    identity domain MFA enrollment PATCH refused: $(printf '%s' "$pm" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
+else echo "ok      identity domain MFA enrollment already required for all users"; fi
 M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
