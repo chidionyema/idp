@@ -137,7 +137,31 @@ spec:
       cookie-domain: ".${ESTATE_ZONE}"
       cookie-secure: true
       cookie-samesite: lax
-      cookie-expire: 12h
+      # 2026-10-05, founder: "i want Face ID, on the phone." Phase 1 of that is making the
+      # phone stop asking daily -- 12h meant a full IdP round-trip every morning (and again after
+      # every pod restart). 720h = one re-auth a month at most; phase 2 (FIDO2 factor on the
+      # domain, platform/oci/identity) makes the re-auth itself a Face ID prompt. Trade-off,
+      # stated: the cookie guards every authenticated hostname on .<zone>, so a stolen cookie
+      # is now valid up to 30 days instead of 12 hours. One-founder estate, cookie is Secure,
+      # SameSite=Lax, encrypted with the vault-held cookie secret; accepted deliberately.
+      cookie-expire: 720h
+      # 2026-10-11, founder: "403 Forbidden at auth.mumchimp.com after sign-in." Measured in the
+      # proxy's own log, not guessed: the failing callback carried state=...:https://catalogue.
+      # mumchimp.com/ while no /oauth2/start for any host appears in the 2h43m of retained logs
+      # (11:51:26-14:34:28) -- so that flow was begun before the window, and its callback landed
+      # no sooner than 2h29m later. The CSRF cookie lives 15m by default (--cookie-csrf-expire
+      # 15m0s), so it was long expired when the phone came back to the tab. MFA did not cause
+      # this: it turned a seconds-long sign-in into a multi-step one and made an old 15m
+      # assumption routine instead of rare. A suspended phone tab is normal; the door must cope.
+      cookie-csrf-expire: 12h
+      # Second, independent defect, same measurement: two logins were in flight at once (state
+      # X6xO9.. -> 403 at 14:20:19, state G1VXeF.. -> 302 at 14:20:23, four seconds apart). With
+      # csrf-per-request off, every flow shares one _oauth2_proxy_csrf cookie name and the first
+      # callback to finish deletes it for all the others -- so even a fresh sign-in can 403.
+      # Trade-off, stated: a cookie per flow, bounded by the limit, oldest evicted first. Left
+      # unbounded the cookie request header grows until the proxy answers 431 Header Too Large.
+      cookie-csrf-per-request: true
+      cookie-csrf-per-request-limit: 5
     service:
       portNumber: 80
     securityContext:
