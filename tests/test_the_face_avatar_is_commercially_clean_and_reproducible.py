@@ -2,9 +2,14 @@
 
 Three facts have to hold, and each was a live defect:
 
-1. The avatar is commercially licensed. The face shipped brunette.glb (Ready Player Me, CC BY-NC
-   4.0 -- non-commercial) into a product the estate is trying to sell. bin/face-licence-gate
-   refuses that now; this proves the gate is still wired to the real tree.
+1. The avatar the face loads carries a recorded licence, and when that licence is non-commercial
+   the debt is declared, dated and printed -- never silent. The face shipped brunette.glb (Ready
+   Player Me, CC BY-NC 4.0 -- non-commercial) into a product the estate is trying to sell; that
+   was a sentence in VERSIONS nothing read, which is the defect. bin/face-licence-gate refuses a
+   NEW non-commercial asset outright, and carries the one the founder restored on 2026-10-10
+   (brunette.glb; estate.glb renders as a featureless bust, issue #5673) as dated debt in
+   bin/face-licence-known-blockers. This proves the gate is wired to the real tree AND that the
+   asset it grades is the asset the face loads.
 
 2. The committed GLB matches the generator that claims to have authored it. The licence record
    says "authored by bin/estate-face-avatar"; this is what makes the claim checkable.
@@ -20,6 +25,7 @@ Three facts have to hold, and each was a live defect:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -44,25 +50,64 @@ def _avatar_module() -> dict:
     return ns
 
 
-def test_the_non_commercial_avatar_is_gone_and_the_shipped_one_is_estate_owned():
-    assert GLB.is_file(), "the face ships estate.glb"
-    assert not (GLB.parent / "brunette.glb").exists(), (
-        "brunette.glb is CC BY-NC 4.0 and cannot ship in a commercial product; it must not return"
+def test_the_non_commercial_avatar_is_a_declared_debt_not_a_silent_one():
+    """brunette.glb ships by founder decision (2026-10-10, issue #5673). The licence defect was
+    never that it shipped -- it was that nothing read the sentence saying it must not. So grade
+    the declaration, not the asset's absence."""
+    assert GLB.is_file(), (
+        "the face ships estate.glb, the generator's estate-owned output"
+    )
+    shipped = GLB.parent / "brunette.glb"
+    assert shipped.is_file(), (
+        "brunette.glb is the avatar the face loads (faceEngine.ts showAvatar) since the "
+        "2026-10-10 founder decision; if it is gone, delete its entry from "
+        "bin/face-licence-known-blockers in the same change"
     )
     text = VERSIONS.read_text()
     assert "estate.glb" in text
-    assert "commercial" in text.lower()
-    assert "brunette" not in text, (
-        "the licence record must not still describe the removed asset"
+    assert "brunette" in text, (
+        "the licence record must name the non-commercial asset that ships, or the debt is silent"
+    )
+    known = (ROOT / "bin/face-licence-known-blockers").read_text()
+    assert "brunette.glb: " in known, (
+        "a non-commercial asset may ship only as a declared, dated entry in the ratchet; a "
+        "non-commercial asset with no entry is the original defect"
     )
 
 
-def test_the_licence_gate_passes_on_the_real_tree():
+def test_the_licence_gate_carries_the_debt_and_claims_no_clearance():
     r = _run(str(GATE))
     assert r.returncode == 0, (
         f"bin/face-licence-gate refused the shipped tree:\n{r.stdout}{r.stderr}"
     )
-    assert "every face asset carries a commercial licence" in r.stdout
+    assert "PASS-WITH-DEBT" in r.stdout, (
+        "the gate must not claim clean clearance while a non-commercial asset ships"
+    )
+    assert "brunette.glb is non-commercial and still shipped" in r.stdout, (
+        "the carried debt must be printed, not merely tolerated"
+    )
+    assert "every face asset carries a commercial licence" not in r.stdout, (
+        "that verdict line means 'no debt', and debt is carried"
+    )
+
+
+def test_the_gate_grades_the_avatar_the_face_actually_loads():
+    """The gate claims to grade "the assets the face actually loads". That is only true if it
+    reads the load: a GLB fetched from anywhere but the directory it globs would be graded by
+    nothing while the glob passed. faceEngine.ts is where the face names its avatar."""
+    src = ROOT / "backstage/packages/app/src/modules/home/faceEngine.ts"
+    loaded = set(re.findall(r"([A-Za-z0-9_.-]+\.glb)", src.read_text()))
+    assert loaded, "faceEngine.ts must name the avatar it loads"
+    r = _run(str(GATE), "--list")
+    assert r.returncode == 0, (
+        f"bin/face-licence-gate --list failed:\n{r.stdout}{r.stderr}"
+    )
+    listed = set(re.findall(r"([A-Za-z0-9_.-]+\.glb)", r.stdout))
+    missing = loaded - listed
+    assert not missing, (
+        f"the face loads {sorted(missing)} and bin/face-licence-gate does not grade it; "
+        f"the gate grades only what it lists: {sorted(listed)}"
+    )
 
 
 def test_the_committed_glb_matches_its_generator():
