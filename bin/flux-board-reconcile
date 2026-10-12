@@ -34,6 +34,14 @@ path stays as it is: an event is a trigger that files a row fast, and this is th
 the board. Because it also REFUSES to report success while the board contradicts the cluster, the
 invariant is a gate that can fail, not a sentence in a docstring.
 
+The verdict cannot be read the instant the writes land. GitHub's issue search answers with the
+board as it stood seconds ago, so the read that judges the pass waits -- bounded, and printed
+while it waits -- for the rows this pass wrote to become visible. Measured 2026-10-12 on run
+38280594349: the reconcile closed 67 rows and opened 4, then judged the result and was told
+"#3554 names flux-system/via-negativa, which no longer exists" about a row it had itself just
+closed. It did exactly the right thing and went red, and a gate that fails correct work is a gate
+that gets turned off.
+
     bin/flux-board-reconcile                                   # the scheduled call
     bin/flux-board-reconcile --dry-run                         # print the plan, change nothing
     bin/flux-board-reconcile --verify-only                     # grade the board, change nothing
@@ -44,13 +52,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 LABEL = "P0"
+# The verdict re-reads the live board until it can see the writes it just made (see settle):
+# bounded in both attempts and seconds, and printed while it waits, so the wait is never silent.
+SETTLE_BUDGET_S = 90.0
+SETTLE_POLL_S = 5.0
+SETTLE_MAX_ATTEMPTS = 60
 TITLE = "P0: Flux cannot reconcile Kustomization/{name}.{ns}"
 TITLE_RE = re.compile(
     r"^P0: Flux cannot reconcile Kustomization/(?P<name>[A-Za-z0-9._-]+)\.(?P<ns>[A-Za-z0-9-]+)$"
@@ -94,7 +109,8 @@ def kustomizations_from_kubectl(doc) -> list[dict]:
     for it in doc.get("items", []):
         md = it.get("metadata") or {}
         conds = {
-            c.get("type"): c.get("status") for c in (it.get("status") or {}).get("conditions", [])
+            c.get("type"): c.get("status")
+            for c in (it.get("status") or {}).get("conditions", [])
         }
         out.append(
             {
@@ -125,7 +141,9 @@ def plan(
     for key, group in sorted(by_key.items()):
         group.sort(key=lambda r: (r.get("createdAt") or "", r["number"]))
         if key not in present:
-            close += [(r["number"], f"{key} no longer exists in the cluster") for r in group]
+            close += [
+                (r["number"], f"{key} no longer exists in the cluster") for r in group
+            ]
         elif key in not_ready:
             keep.append((key, group[0]["number"]))
             close += [
@@ -169,6 +187,48 @@ def violations(rows: list[dict], present: set[str], not_ready: set[str]) -> list
     return bad
 
 
+def settle(
+    read_rows,
+    judge,
+    budget_s: float = SETTLE_BUDGET_S,
+    poll_s: float = SETTLE_POLL_S,
+    say=print,
+):
+    """Re-read the live board until the judge is satisfied, within a budget, and say so waiting.
+
+    GitHub's issue search is an eventually-consistent index: it answers with the board as it stood
+    seconds ago. Closing 67 rows and opening 4, then reading straight back, therefore hands the
+    verdict the PREVIOUS board -- measured 2026-10-12 on run 38280594349, which closed #3554 and
+    was then told "#3554 names flux-system/via-negativa, which no longer exists". A correct pass
+    went red.
+
+    The wait is bounded by seconds AND by attempts (so no poll interval, not even 0, can spin),
+    and a board that still contradicts the cluster when the budget runs out is still a failure --
+    the gate keeps its teeth and only the false red goes. The reader and the judge are injected,
+    so this is graded without a network.
+    """
+    after = read_rows()
+    bad = judge(after)
+    waited, attempts = 0.0, 0
+    while bad and waited < budget_s and attempts < SETTLE_MAX_ATTEMPTS:
+        say(
+            f"        board not settled: {len(bad)} row(s) still read as they were; re-reading"
+        )
+        time.sleep(poll_s)
+        waited += poll_s
+        attempts += 1
+        after = read_rows()
+        bad = judge(after)
+    if attempts:
+        if bad:
+            say(
+                f"        still contradicts the cluster after {waited:.0f}s and {attempts} re-reads"
+            )
+        else:
+            say(f"        settled after {waited:.0f}s")
+    return after, bad
+
+
 # --- the impure edge: gh, kubectl and the clock. Everything above is pure and tested. ---
 
 
@@ -183,8 +243,17 @@ def load_rows_from_gh() -> list[dict]:
     """
     r = _run(
         [
-            "gh", "issue", "list", "--state", "open", "--label", LABEL,
-            "--limit", "1000", "--json", "number,title,createdAt",
+            "gh",
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--label",
+            LABEL,
+            "--limit",
+            "1000",
+            "--json",
+            "number,title,createdAt",
         ]
     )
     if r.returncode != 0:
@@ -224,7 +293,18 @@ def close_row(number: int, why: str, stamp: str) -> bool:
         "The board is made equal to the cluster every 15 minutes, so a row lives only while its "
         f"object exists and is not Ready. This is that pass.\n\nreconciled: {stamp}\n"
     )
-    r = _run(["gh", "issue", "close", str(number), "--reason", "completed", "--comment", body])
+    r = _run(
+        [
+            "gh",
+            "issue",
+            "close",
+            str(number),
+            "--reason",
+            "completed",
+            "--comment",
+            body,
+        ]
+    )
     if r.returncode != 0:
         print(f"FAIL    close #{number}: {r.stderr.strip()[:200]}", file=sys.stderr)
         return False
@@ -240,7 +320,9 @@ def open_row(title: str, key: str, stamp: str) -> bool:
         "and a missed event cannot orphan it.\n\n"
         f"reconciled: {stamp}\n"
     )
-    r = _run(["gh", "issue", "create", "--title", title, "--label", LABEL, "--body", body])
+    r = _run(
+        ["gh", "issue", "create", "--title", title, "--label", LABEL, "--body", body]
+    )
     if r.returncode != 0:
         print(f"FAIL    open '{title}': {r.stderr.strip()[:200]}", file=sys.stderr)
         return False
@@ -248,7 +330,12 @@ def open_row(title: str, key: str, stamp: str) -> bool:
     return True
 
 
-def simulate(rows: list[dict], close: list[tuple[int, str]], to_open: list[tuple[str, str]], stamp: str) -> list[dict]:
+def simulate(
+    rows: list[dict],
+    close: list[tuple[int, str]],
+    to_open: list[tuple[str, str]],
+    stamp: str,
+) -> list[dict]:
     """The board the plan produces, without touching GitHub. Verifying this is what makes the
     recorded fixture in tests/ grade a real board without needing a network."""
     closed = {n for n, _ in close}
@@ -259,25 +346,43 @@ def simulate(rows: list[dict], close: list[tuple[int, str]], to_open: list[tuple
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="make the Flux alarm's board equal to the cluster")
-    ap.add_argument("--cluster-json", help="a kubectl get kustomizations -A -o json recording")
-    ap.add_argument("--rows-json", help="a gh issue list recording: [{number,title,createdAt}]")
-    ap.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
-    ap.add_argument("--verify-only", action="store_true", help="change nothing, just grade the board")
+    ap = argparse.ArgumentParser(
+        description="make the Flux alarm's board equal to the cluster"
+    )
+    ap.add_argument(
+        "--cluster-json", help="a kubectl get kustomizations -A -o json recording"
+    )
+    ap.add_argument(
+        "--rows-json", help="a gh issue list recording: [{number,title,createdAt}]"
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true", help="print the plan, change nothing"
+    )
+    ap.add_argument(
+        "--verify-only",
+        action="store_true",
+        help="change nothing, just grade the board",
+    )
     a = ap.parse_args()
 
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     recorded = bool(a.rows_json)
     cluster = (
-        load_cluster_from_recording(a.cluster_json) if a.cluster_json else load_cluster_from_kubectl()
+        load_cluster_from_recording(a.cluster_json)
+        if a.cluster_json
+        else load_cluster_from_kubectl()
     )
     rows = load_rows_from_recording(a.rows_json) if a.rows_json else load_rows_from_gh()
     present, not_ready = readiness(cluster)
     close, keep, to_open = plan(rows, present, not_ready)
 
     managed = [r for r in rows if touches(r.get("title", ""))]
-    print(f"cluster {len(present)} kustomizations, {len(not_ready)} not Ready: {sorted(not_ready)}")
-    print(f"board   {len(rows)} open {LABEL} rows, {len(managed)} naming a Kustomization")
+    print(
+        f"cluster {len(present)} kustomizations, {len(not_ready)} not Ready: {sorted(not_ready)}"
+    )
+    print(
+        f"board   {len(rows)} open {LABEL} rows, {len(managed)} naming a Kustomization"
+    )
     print(f"plan    close {len(close)}  keep {len(keep)}  open {len(to_open)}")
     for n, why in close:
         print(f"        close #{n}  {why}")
@@ -288,7 +393,10 @@ def main() -> int:
         bad = violations(simulate(rows, close, to_open, stamp), present, not_ready)
         print("dry-run: nothing changed")
         if bad:
-            print(f"        the plan does not fix it: {len(bad)} violations remain", file=sys.stderr)
+            print(
+                f"        the plan does not fix it: {len(bad)} violations remain",
+                file=sys.stderr,
+            )
             for b in bad[:10]:
                 print(f"          {b}", file=sys.stderr)
             return 1
@@ -302,22 +410,34 @@ def main() -> int:
         for key, title in to_open:
             failed += not open_row(title, key, stamp)
         if failed:
-            print(f"FAIL    flux-board-reconcile  {failed} board writes failed", file=sys.stderr)
+            print(
+                f"FAIL    flux-board-reconcile  {failed} board writes failed",
+                file=sys.stderr,
+            )
             return 1
 
     if recorded or a.verify_only:
         # the recording is the whole world here: verify the plan's end state, not a live board.
         after = simulate(rows, close, to_open, stamp)
+        bad = violations(after, present, not_ready)
     else:
-        after = load_rows_from_gh()
-
-    bad = violations(after, present, not_ready)
+        after, bad = settle(
+            load_rows_from_gh,
+            lambda live: violations(live, present, not_ready),
+            budget_s=float(os.environ.get("ESTATE_BOARD_SETTLE_S", SETTLE_BUDGET_S)),
+            poll_s=float(os.environ.get("ESTATE_BOARD_SETTLE_POLL_S", SETTLE_POLL_S)),
+        )
     if bad:
-        print(f"FAIL    flux-board-reconcile  the board still contradicts the cluster ({len(bad)}):", file=sys.stderr)
+        print(
+            f"FAIL    flux-board-reconcile  the board still contradicts the cluster ({len(bad)}):",
+            file=sys.stderr,
+        )
         for b in bad[:20]:
             print(f"          {b}", file=sys.stderr)
         return 1
-    print(f"ok      flux-board-reconcile  {len(after)} rows, every one an object that exists and is not Ready")
+    print(
+        f"ok      flux-board-reconcile  {len(after)} rows, every one an object that exists and is not Ready"
+    )
     return 0
 
 
