@@ -1,0 +1,47 @@
+name: git.commit-staged
+description: >
+  Commit what is already staged, through a door that fits the pre-commit guard.
+
+  WHY THIS EXISTS (2026-10-12). `.githooks/pre-commit` is a real guard -- ruff format, ruff check,
+  a whole-project `tsc --noEmit` on staged .ts/.tsx, shellcheck, yamllint -- and on this checkout it
+  takes 55-90s, dominated by tsc. That variance crosses the executor's 60s ceiling, which is the
+  shape AGENTS.md names: a verb offered a door that sometimes does not fit it. Measured on this
+  checkout the same afternoon: the first two attempts were SIGTERMed inside the hook and reported
+  NOTHING (`exit 124`, the log empty -- redirected output is block-buffered, so the process never
+  reached its own last line), and a third succeeded once ruff and tsc were warm. So the verb
+  sometimes fits and sometimes does not, and when it does not the caller is told nothing at all. A
+  detached `nohup ... &` retry does not rescue it: detached work dies with the session (measured --
+  ticks stopped at 50s and never resumed), and `setsid` does not exist on macOS, so the first such
+  "retry" silently never started.
+
+  The remedy is the one `lane-submit` records for itself -- declare the door the work needs and run
+  it through a door that fits (`estate_invoke git.commit-staged timeout=300`), never `--no-verify`
+  (the guard is not bypassed here; it is given time to finish) and never a hand-walked founder
+  procedure. A failure reported by this intent is the guard refusing: read its output, not this
+  line.
+
+  `--no-verify` is deliberately NOT an argument. A commit that skips the guard is the failure the
+  guard exists to prevent.
+args:
+  message_file: {type: string, help: "Path to a file holding the full commit message"}
+  cwd:         {type: string, default: ".", help: "Repository to commit in"}
+# The door this verb needs, measured: ~90s of hook on a quiet laptop. 300 leaves room for a busy one.
+door_s: 300
+halt_on_failure: true
+steps:
+  - name: the message exists, and something is staged
+    timeout: 10
+    cmd: |
+      cd {{cwd}} || exit 2
+      [ -s {{message_file}} ] || { echo "BLIND   git.commit-staged  no message at {{message_file}}" >&2; exit 2; }
+      git diff --cached --name-only | grep -q . || { echo "BLIND   git.commit-staged  nothing staged in {{cwd}}" >&2; exit 2; }
+      echo "ok      git.commit-staged  $(git diff --cached --name-only | wc -l | tr -d ' ') staged"
+  - name: commit, with the pre-commit guard running for as long as it needs
+    timeout: 280
+    cmd: |
+      cd {{cwd}} || exit 2
+      git commit -q -F {{message_file}} || {
+        echo "FAIL    git.commit-staged  the commit did not land (the guard refused, or the door was short)" >&2
+        exit 1
+      }
+      echo "ok      git.commit-staged  $(git rev-parse --abbrev-ref HEAD) = $(git rev-parse --short HEAD)"
