@@ -8,14 +8,24 @@ kind: ExternalSecret
 metadata:
   name: hermes-agent-env
   namespace: otto-gateway
-  annotations:
-    idp.platform/reload-on-mint: >-
-      the gateway reads the mounted env file at boot, so the roll every 45m is how a fresh installation token reaches it before its 60m expiry
 spec:
   # 45m keeps every mint inside the GitHub token's 60-minute life (see hermes-agent/gateway.yaml).
   refreshInterval: 45m
   secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target: { name: hermes-agent-env, creationPolicy: Owner }
+  target:
+    name: hermes-agent-env
+    creationPolicy: Owner
+    template:
+      # The installation token is re-minted every 45m and used to roll this pod each time (36
+      # ReplicaSets in 21h, measured 2026-10-12), and every roll registered a new tailnet node
+      # until the tailnet hit its node quota and the tailscale sidecar crash-looped. Nothing
+      # needs the roll: gh and git read the token from this mounted file on every call (the
+      # wrapper in deployment.yaml), and kubelet refreshes the file in place. Same fix as
+      # platform/backstage/overlays/oke/github-token.yaml. Cost: a vault rotation of another
+      # key in this entry (EXA, ESTATE_MCP_KEY) no longer rolls the pod; roll it by hand then.
+      metadata:
+        annotations:
+          reloader.stakater.com/ignore: "true"
   dataFrom:
     # Telegram fields renamed on the way in, as in hermes-agent: this pod's Telegram credential is
     # otto-gateway-channels, and the fork's loader must never find a second TELEGRAM_BOT_TOKEN.
