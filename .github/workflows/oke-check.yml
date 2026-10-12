@@ -22,9 +22,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "check (compare and report drift) or apply (apply the declared state and seed the vault)"
+        description: "check (compare and report drift), apply (apply the declared state and seed the vault), or probe (read-only dump of the identity domain's sign-on policies -- the one knob an API-key laptop cannot read)"
         type: choice
-        options: [check, apply, surge-node, surge-finish, break-glass]
+        options: [check, apply, probe, surge-node, surge-finish, break-glass]
         default: check
       playbook:
         description: "Break-glass only: runs the one named recovery playbook while the runner is admitted to the cluster; diagnose, architect-doctor and secret-census are read-only"
@@ -151,7 +151,7 @@ jobs:
       # secrets are platform/oci/identity. Until this step it had no CI caller: bin/idp-identity-apply
       # ran from a laptop whose OCI session expires (crew#247, R26). The same machine identity plans
       # it on every check and applies it on apply; the rebuild step above rendered its remote state.
-      - name: bin/idp-identity-apply ${{ inputs.mode == 'apply' && 'apply' || 'plan' }} (crew#408)
+      - name: bin/idp-identity-apply ${{ inputs.mode == 'apply' && 'apply' || (inputs.mode == 'probe' && 'probe' || 'plan') }} (crew#408)
         if: ${{ always() }}
         env:
           OCI_CLI_AUTH: security_token
@@ -160,7 +160,7 @@ jobs:
           DOMAIN_BASE_URL: ${{ vars.DOMAIN_BASE_URL }}
           ESTATE_FOUNDER_EMAIL: ${{ vars.ESTATE_FOUNDER_EMAIL }}
         run: |
-          if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; else bin/idp-identity-apply plan; fi
+          if [ "${{ inputs.mode }}" = apply ]; then bin/idp-identity-apply apply -auto-approve; elif [ "${{ inputs.mode }}" = probe ]; then bin/idp-identity-apply probe; else bin/idp-identity-apply plan; fi
       # crew#66 root trust (5453747447; crew#575, crew#576): every estate-born entry -- the router
       # master key, the Postgres passwords, the store's JWT signing key and internal keys, the MCP
       # gateway key, the cookie secret, Backstage's env, and the router keys hindsight and hermes
