@@ -120,6 +120,30 @@ if [ "$mec" != "ALL" ]; then
   if printf '%s' "$pm2" | jq -e '.data.mfaEnabledCategory == "ALL"' >/dev/null 2>&1; then echo "ok      identity domain MFA enabled for all users at sign-in (#5753)"
   else echo "FAIL    identity domain SsoSettings MFA PATCH refused: $(printf '%s' "$pm2" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
 else echo "ok      identity domain MFA enabled for all users at sign-in already"; fi
+# The passkey itself (#5818). A WebAuthn credential created with authenticatorSelectionResidentKey
+# =NONE is NON-DISCOVERABLE: the server must name it in allowCredentials, so a username -- and on
+# this door a password -- has to come first, and the credential can therefore never be a
+# passwordless factor, whatever a rule says. Measured live 2026-10-12: requireResidentKey=false,
+# residentKey="NONE", userVerification="PREFERRED". That is the mechanism behind
+# authenticationFactor="Passwordless" being inert at the door: the domain held no credential it
+# could offer on its own, so it fell back to the password form. REQUIRED residency makes the
+# credential a passkey -- the thing a platform authenticator (Face ID / Touch ID) signs in with
+# unaccompanied -- and REQUIRED user verification makes the ceremony a real biometric rather than
+# a bare presence tap, which is what "Face ID alone" has to mean. Same one-object SCIM PATCH as
+# mfaEnrollmentType above: idempotent, read back, no terraform and no founder lockout path.
+read_fido() {
+  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings" 2>/dev/null \
+    | jq -r '.data.Resources[0]["urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings"] // {} | "\(.authenticatorSelectionResidentKey // "")/\(.authenticatorSelectionRequireResidentKey // "")/\(.authenticatorSelectionUserVerification // "")"'
+}
+fido=$(read_fido)
+if [ "$fido" != "REQUIRED/true/REQUIRED" ]; then
+  T=$(mktemp -d); chmod 700 "$T"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" 2>/dev/null || true' EXIT
+  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings:authenticatorSelectionResidentKey","value":"REQUIRED"},{"op":"replace","path":"urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings:authenticatorSelectionRequireResidentKey","value":true},{"op":"replace","path":"urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings:authenticatorSelectionUserVerification","value":"REQUIRED"}]}' > "$T/f.json"
+  pf=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings/AuthenticationFactorSettings" --request-body "file://$T/f.json" 2>&1)
+  rb=$(read_fido)
+  if [ "$rb" = "REQUIRED/true/REQUIRED" ]; then echo "ok      identity FIDO2 credentials are passkeys (residentKey=REQUIRED, userVerification=REQUIRED): the domain can offer a Face ID sign-in with no password (#5818)"
+  else echo "FAIL    identity FIDO2 passkey PATCH refused (read back met=$rb): $(printf '%s' "$pf" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
+else echo "ok      identity FIDO2 credentials are already passkeys (residentKey=REQUIRED, userVerification=REQUIRED)"; fi
 M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
