@@ -105,4 +105,4 @@ jobs:
         run: |
           n=$(gh issue list --state open --search 'in:title "P0: login drill failed"' --json number -q '.[0].number')
           [ -z "$n" ] && exit 0
-          gh issue close "$n" --reason completed --comment "$(printf 'green: the door offered the Face ID / security-key step and the sign-in completed.\nrun: %s/%s/actions/runs/%s' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}')"
+          gh issue close "$n" --reason completed --comment "$(printf 'green: the door offered the Face ID / security-key step and the sign-in completed.\nrun: %s/%s/actions/runs/%s' "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")"
