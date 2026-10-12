@@ -88,7 +88,7 @@ export default function ResearchFindings({
     unavailable ? 'text-rose-300 border-rose-400/40' : 'text-white/80 border-white/15';
 
   return (
-    <div className="absolute top-[16rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
