@@ -1,0 +1,158 @@
+description: 'The laptop router log, 2026-10-12. Question: why does the router keep
+  a lane that its own probes show failing in service and under constant probing --
+  194 of 200 probes failed on openai/openai/gpt-oss-120b while real calls to it ran
+  at p50 8998 ms, and 579 of 584 failed on gemini/gemini-2.5-flash -- instead of holding
+  it out of rotation? Four mechanisms were fixed before the evidence was read: the
+  registry''s own state machine cannot hold the lane out (a success promotes any condemned
+  lane unconditionally, and a spent balance is read as a transient rate limit), the
+  vendor lanes are fine and only the probes are wrong, litellm routes without consulting
+  lane state so lane_registry is passive telemetry, or the failures are the laptop''s
+  network rather than a fact about the lane.'
+hypotheses:
+- name: H1
+  description: lane_registry's own state machine cannot hold a failing lane out of
+    rotation. observe() promotes any condemned lane to READY on a success without
+    consulting the reset it just computed, and classify_failure() tests the rate signal
+    before the credit signal, so a spent balance is held as EXHAUSTED (30 s probe
+    cadence) instead of DEAD/credit (600 s).
+  prior: 0.25
+- name: H2
+  description: the lanes are healthy and the probes are the defect -- the probe request
+    itself (params or payload) draws the 429s, so continuing to serve the lane is
+    correct.
+  prior: 0.25
+- name: H3
+  description: litellm's router chooses lanes without consulting lane_registry state,
+    which is passive telemetry; no branch in the registry decides what serves traffic.
+  prior: 0.25
+- name: H4
+  description: the failures are environmental -- laptop network, DNS or the local
+    proxy -- and not a fact about the lane or the registry.
+  prior: 0.25
+evidence:
+- name: the state of the 194-of-200-failing lane while it was still being served
+  observed:
+    ready: 1
+    quarantined: 0
+  likelihoods:
+    H1:
+      ready: 0.9
+      quarantined: 0.1
+    H2:
+      ready: 0.85
+      quarantined: 0.15
+    H3:
+      ready: 0.9
+      quarantined: 0.1
+    H4:
+      ready: 0.7
+      quarantined: 0.3
+- name: offline reproduction of the condensation transition (condemn, then one success)
+  observed:
+    a_success_restores_ready: 1
+    stays_condemned: 0
+  likelihoods:
+    H1:
+      a_success_restores_ready: 0.95
+      stays_condemned: 0.05
+    H2:
+      a_success_restores_ready: 0.5
+      stays_condemned: 0.5
+    H3:
+      a_success_restores_ready: 0.5
+      stays_condemned: 0.5
+    H4:
+      a_success_restores_ready: 0.5
+      stays_condemned: 0.5
+- name: the shape of the failing probe's payload
+  observed:
+    vendor_daily_quota: 1
+    probe_artifact: 0
+  likelihoods:
+    H1:
+      vendor_daily_quota: 0.85
+      probe_artifact: 0.15
+    H2:
+      vendor_daily_quota: 0.1
+      probe_artifact: 0.9
+    H3:
+      vendor_daily_quota: 0.5
+      probe_artifact: 0.5
+    H4:
+      vendor_daily_quota: 0.2
+      probe_artifact: 0.8
+- name: how the credit-dead lane is classified
+  observed:
+    exhausted_rate_not_dead_credit: 1
+    dead_credit: 0
+  likelihoods:
+    H1:
+      exhausted_rate_not_dead_credit: 0.9
+      dead_credit: 0.1
+    H2:
+      exhausted_rate_not_dead_credit: 0.35
+      dead_credit: 0.65
+    H3:
+      exhausted_rate_not_dead_credit: 0.5
+      dead_credit: 0.5
+    H4:
+      exhausted_rate_not_dead_credit: 0.4
+      dead_credit: 0.6
+- name: the probe cadence the failing lane actually received
+  observed:
+    about_30s: 1
+    about_600s: 0
+  likelihoods:
+    H1:
+      about_30s: 0.9
+      about_600s: 0.1
+    H2:
+      about_30s: 0.55
+      about_600s: 0.45
+    H3:
+      about_30s: 0.5
+      about_600s: 0.5
+    H4:
+      about_30s: 0.5
+      about_600s: 0.5
+- name: the promotion branch in the deployed module (platform/llm/lane_registry.py)
+  observed:
+    promotes_condemned_unconditionally: 1
+    guarded: 0
+  likelihoods:
+    H1:
+      promotes_condemned_unconditionally: 0.98
+      guarded: 0.02
+    H2:
+      promotes_condemned_unconditionally: 0.5
+      guarded: 0.5
+    H3:
+      promotes_condemned_unconditionally: 0.2
+      guarded: 0.8
+    H4:
+      promotes_condemned_unconditionally: 0.5
+      guarded: 0.5
+- name: the classifier ordering in the deployed module (platform/llm/lane_registry.py)
+  observed:
+    rate_before_credit: 1
+    credit_first: 0
+  likelihoods:
+    H1:
+      rate_before_credit: 0.97
+      credit_first: 0.03
+    H2:
+      rate_before_credit: 0.5
+      credit_first: 0.5
+    H3:
+      rate_before_credit: 0.35
+      credit_first: 0.65
+    H4:
+      rate_before_credit: 0.5
+      credit_first: 0.5
+posteriors:
+  H1: 0.9833363027
+  H2: 0.0035941308
+  H3: 0.0069191823
+  H4: 0.0061503842
+winner: H1
+computed_at: '2026-10-12T12:30:01Z'

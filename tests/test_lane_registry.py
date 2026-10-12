@@ -384,3 +384,87 @@ def test_a_probe_success_passes_the_cost_routing_handler_cleanly(mod, monkeypatc
     }
     asyncio.run(handler.async_log_success_event(kwargs, None, None, None))
     assert logged == []
+
+
+# ------------------------------------- credit outranks rate, and a quota is not a blip
+
+# The payload Gemini returns for an account with no money left: a 402 credit error inside a
+# 500, which ALSO carries RESOURCE_EXHAUSTED. Copied from
+# ~/.estate/router/lanes.jsonl, 2026-10-12 (gemini/gemini-2.5-flash).
+GEMINI_EMPTY = (
+    'litellm.APIConnectionError: GeminiException - {\n  "error": {\n    "code": 402,\n'
+    '    "message": "Your prepayment credits are depleted. Please go to AI Studio",\n'
+    '    "status": "RESOURCE_EXHAUSTED"\n  }\n}'
+)
+
+
+def test_a_depleted_balance_is_credit_even_though_the_vendor_says_resource_exhausted(
+    mod,
+):
+    """Measured 2026-10-12. Gemini answers a call on an empty account with a 500 whose body is
+    `"code": 402, "message": "Your prepayment credits are depleted"` -- and which also carries
+    `"status": "RESOURCE_EXHAUSTED"`. The rate test matched that string first, so
+    gemini/gemini-2.5-flash classified as EXHAUSTED/rate: a state whose reset_at is None and
+    whose probe cadence is 30 s. A lane that is out of money was therefore probed every 30 s
+    (584 probes in 6 h, 579 of them failed) where DEAD/credit would have waited 600 s. Nothing
+    about an empty balance is transient and nothing about it recovers by waiting, so it is the
+    stronger fact and must be read first."""
+    assert mod.classify_failure(500, GEMINI_EMPTY) == ("dead", "credit")
+
+    reg = _registry(mod)
+    reg.observe_failure("moonshot/kimi-k3", 500, GEMINI_EMPTY)
+    assert reg.state("moonshot/kimi-k3") == "dead"
+    assert reg._lanes["moonshot/kimi-k3"]["reason"] == "credit"
+
+
+def test_a_plain_rate_limit_is_still_exhausted(mod):
+    """The other half of the ordering: a real 429 with no credit signal must not be read as a
+    dead lane, which would quarantine a lane that recovers on its own."""
+    assert mod.classify_failure(429, "Rate limit reached on requests per day") == (
+        "exhausted",
+        "rate",
+    )
+    assert mod.classify_failure(None, "resource_exhausted: quota") == (
+        "exhausted",
+        "rate",
+    )
+
+
+def test_one_success_does_not_clear_a_daily_quota(mod):
+    """Measured 2026-10-12. openai/openai/gpt-oss-120b is on a DAILY request quota: it failed
+    194 of 200 probes with `Rate limit reached ... on requests per d[ay]` and named no reset,
+    yet every real call that squeezed through promoted it straight back to ready -- the old code
+    called `_transition(READY)` on any success while EXHAUSTED. The router therefore kept serving
+    it real traffic at p50 8,998 ms. A success proves the lane answers; it does not prove the
+    window rolled. With no reset named, only the probe brings this lane back."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    reg.observe_failure(dep, 429, "Rate limit reached for model on requests per day")
+    assert reg.state(dep) == "exhausted"
+    assert reg._lanes[dep].get("reset_at") is None
+
+    for _ in range(5):
+        reg.observe_success(dep, 120.0)
+
+    assert reg.state(dep) == "exhausted"
+
+
+def test_a_dated_exhaustion_heals_once_the_reset_it_named_has_passed(mod):
+    """The lane the vendor put a clock on: after the reset it named, a real call is the
+    strongest probe again and heals it."""
+    dep = "groq/llama-3.3-70b-versatile"
+    reg = _registry(mod)
+    reg.observe_failure(dep, 429, "rate limit reached")
+    reg._lanes[dep]["reset_at"] = 1.0  # a reset that has long since passed
+    reg.observe_success(dep, 120.0)
+    assert reg.state(dep) == "ready"
+
+
+def test_one_success_still_clears_a_dead_lane(mod):
+    """DEAD is credit or auth, and an answered call disproves both outright -- the
+    credit-came-back path, which this change must not break."""
+    reg = _registry(mod)
+    reg.observe_failure("moonshot/kimi-k3", 402, "insufficient balance")
+    assert reg.state("moonshot/kimi-k3") == "dead"
+    reg.observe_success("moonshot/kimi-k3", 120.0)
+    assert reg.state("moonshot/kimi-k3") == "ready"
