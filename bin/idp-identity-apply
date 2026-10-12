@@ -167,6 +167,18 @@ if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""'
   echo "ok      identity front door sign-on policy already assigned (second factor at every sign-in; Face ID alone offered to the pilot cohort, #5818/#5858)"
 else
   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
+  # Refuse to send a schema this domain does not have, by name. The domain answers an unknown URN
+  # with "Schema is not recognized", which is how this lane's first governed apply went red on
+  # 2026-10-12: a Group here is core SCIM (urn:ietf:params:scim:schemas:core:2.0:Group), not
+  # oracle:idcs:Group -- and no plan can tell you which, only the domain can. Four reads, on the
+  # path that is about to write, turn a blind refusal into a line that names the URN.
+  for sch in urn:ietf:params:scim:schemas:core:2.0:Group \
+             urn:ietf:params:scim:schemas:oracle:idcs:Condition \
+             urn:ietf:params:scim:schemas:oracle:idcs:Rule \
+             urn:ietf:params:scim:schemas:oracle:idcs:Policy; do
+    sn=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Schemas/$sch" 2>/dev/null | jq -r '.data.name // ""' || true)
+    [ -n "$sn" ] || { echo "FAIL    identity apply would send a schema this domain does not have: $sch"; exit 1; }
+  done
   # condition: the same target.action="Login" vocabulary the domain's own Console condition uses
   fcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door sign-in") | .id' | head -1)
   printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],"name":"front door sign-in","attributeName":"target.action","operator":"eq","attributeValue":"\"Login\""}' > "$T3/c.json"
@@ -198,14 +210,14 @@ else
   if [ -n "$drill_uid" ]; then
     gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id,members" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
     if [ -z "$gid" ]; then
-      jq -n --arg g "$pl_group" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Group"],displayName:$g,description:"Face ID alone (passwordless) pilot cohort for the front door -- #5858",members:[{value:$u,type:"User"}]}' > "$T3/g.json"
+      jq -n --arg g "$pl_group" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:core:2.0:Group"],displayName:$g,description:"Face ID alone (passwordless) pilot cohort for the front door -- #5858",members:[{value:$u,type:"User"}]}' > "$T3/g.json"
       pg=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups" --request-body "file://$T3/g.json" 2>&1)
       gid=$(printf '%s' "$pg" | jq -r '.data.id // ""')
       [ -n "$gid" ] || { echo "FAIL    identity passwordless cohort group refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
     else
       mem=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups/$gid?attributes=members" 2>/dev/null | jq -c '[.data.members[]? | {value,type}]')
       if ! printf '%s' "$mem" | jq -e --arg u "$drill_uid" 'any(.[]; .value == $u)' >/dev/null 2>&1; then
-        jq -n --arg g "$pl_group" --argjson m "$mem" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Group"],displayName:$g,members:($m + [{value:$u,type:"User"}])}' > "$T3/g.json"
+        jq -n --arg g "$pl_group" --argjson m "$mem" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:core:2.0:Group"],displayName:$g,members:($m + [{value:$u,type:"User"}])}' > "$T3/g.json"
         pg=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups/$gid" --request-body "file://$T3/g.json" 2>&1)
         printf '%s' "$pg" | jq -e --arg u "$drill_uid" 'any(.data.members[]?; .value == $u)' >/dev/null 2>&1 || { echo "FAIL    identity passwordless cohort membership refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
       fi
