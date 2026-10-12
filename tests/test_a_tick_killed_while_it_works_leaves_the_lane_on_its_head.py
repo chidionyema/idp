@@ -107,11 +107,25 @@ def test_a_tick_killed_inside_its_first_loop_still_published_the_lane():
 
 
 def test_the_lane_is_published_before_the_per_lane_work():
-    """The ordering is the fix: the heartbeat is where the cancellation lands."""
+    """The ordering is the fix: the heartbeat is where the cancellation lands, and it is last.
+
+    idp#5951 moved that loop to the end of the tick -- stamping a claim is maintenance, judging a
+    batch and pushing a candidate are the work -- so a tick killed in it has already advanced a
+    lane. This test asserts both halves: something was published before the stamp, and the batch
+    went out before it too, which is why `events` now ends with the heartbeat rather than being
+    exactly report-then-heartbeat.
+    """
     be, eng = _fresh(kill=True)
     with pytest.raises(Cancelled):
         eng.tick()
-    assert be.events == [("report", "lane/x"), ("heartbeat", "lane/x")], be.events
+    assert be.events[-1] == ("heartbeat", "lane/x"), be.events
+    assert [e for e in be.events if e[0] == "report"], (
+        "the tick was killed in the heartbeat with nothing published"
+    )
+    assert be.candidates, (
+        "the stamping loop runs after the batch work now, so a cancellation there leaves the "
+        "candidate pushed instead of losing the whole tick to claim stamps"
+    )
 
 
 def test_a_lane_already_known_is_not_republished_every_tick():
