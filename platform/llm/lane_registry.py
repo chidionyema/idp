@@ -161,6 +161,17 @@ def classify_failure(status: Optional[int], text: str) -> tuple[str, str]:
         # the router's own "model group does not exist" carries no HTTP status; measured on
         # the :4010 canary 2026-10-02 (transition to degraded for a model that never existed)
         return "", ""
+    # Credit outranks rate. A vendor that is out of money reports it as a quota error:
+    # measured 2026-10-12, Gemini answers a call on a depleted account with
+    # `"code": 402, "message": "Your prepayment credits are depleted"` inside a 500, and the
+    # body also carries `"status": "RESOURCE_EXHAUSTED"`. With the rate test first,
+    # gemini/gemini-2.5-flash classified as EXHAUSTED/rate -- a state with no reset_at and a
+    # 30 s probe cadence -- so a permanently dead lane was probed every 30 s (584 probes in
+    # 6 h, 579 of them failed) instead of every 600 s as DEAD/credit. Nothing about an empty
+    # balance is transient and nothing about it recovers by waiting, which is exactly why it
+    # is the stronger fact and must be read first.
+    if _CREDIT_RE.search(text) or status == 402:
+        return DEAD, REASON_CREDIT
     if (
         status == 429
         or "rate limit" in text.lower()
@@ -173,8 +184,6 @@ def classify_failure(status: Optional[int], text: str) -> tuple[str, str]:
         or "invalid api key" in text.lower()
     ):
         return DEAD, REASON_AUTH
-    if _CREDIT_RE.search(text) or status == 402:
-        return DEAD, REASON_CREDIT
     if status is None and ("timeout" in text.lower() or "timed out" in text.lower()):
         return DEGRADED, REASON_TIMEOUT
     if status is not None and 500 <= status < 600:
@@ -416,8 +425,22 @@ class LaneRegistry(CustomLogger):
                         pass
             reset = _reset_epoch(hdrs, now)
             if lane["state"] in (EXHAUSTED, DEAD, DRAINING):
-                # credit came back / reset passed — a real call is the strongest probe
-                self._transition(lane, READY, "")
+                # A success proves the lane answers; it does not prove the window rolled.
+                # DEAD is credit or auth, and an answered call disproves both outright.
+                # EXHAUSTED is a rate limit the vendor dated: wait for the reset it named,
+                # and when it named none (a daily quota) let the PROBE -- not one request
+                # that slipped through -- bring the lane back. Measured 2026-10-12:
+                # openai/openai/gpt-oss-120b is on a daily quota, failed 194 of 200 probes,
+                # and every call that squeezed through promoted it straight back to READY,
+                # so the router kept serving it real traffic at p50 8,998 ms. DRAINING is a
+                # deliberate drain; a success does not cancel it.
+                if lane["state"] == DEAD:
+                    self._transition(lane, READY, "")
+                elif lane["state"] == EXHAUSTED:
+                    # the reset the vendor named when it 429'd us, not one on this success
+                    named = lane.get("reset_at")
+                    if named is not None and now >= named:
+                        self._transition(lane, READY, "")
             elif (
                 reset
                 and lane["state"] == READY
