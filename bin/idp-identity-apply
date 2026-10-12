@@ -187,8 +187,21 @@ pl_group="estate-passwordless-pilots"
 # through on its password with no second factor (run 38273745676), where the second-factor rule alone
 # had stopped it 34 minutes earlier. So a value the drill has not measured is never sent, and wiring
 # the rule waits for one; `bin/idp-identity-apply probe` prints every rule's own `return` list -- the
-# vocabulary this domain's own rules use -- to find it.
+# vocabulary this domain's own rules use -- to find it. A value that a drill HAS measured is
+# recorded once, with the run that measured it, in platform/identity/passwordless-factor.json;
+# that record is the only way PL_AF becomes non-empty. A record whose value carries no evidence
+# is refused rather than wired, because the failure it would cause is a door with no factor at
+# all, not a red apply.
 PL_AF=""
+PL_AF_RECORD="$IDP/platform/identity/passwordless-factor.json"
+if [ -r "$PL_AF_RECORD" ]; then
+  pl_af_v=$(jq -r '.authenticationFactor // ""' "$PL_AF_RECORD" 2>/dev/null || true)
+  pl_af_e=$(jq -r '.evidence // ""' "$PL_AF_RECORD" 2>/dev/null || true)
+  if [ -n "$pl_af_v" ]; then
+    [ -n "$pl_af_e" ] || { echo "FAIL    identity passwordless rule: $PL_AF_RECORD carries authenticationFactor=$pl_af_v with no evidence (the drill run that measured it); refusing to wire a factor value no drill has measured as honoured (#5858)"; exit 1; }
+    PL_AF="$pl_af_v"
+  fi
+fi
 pl_cohort_ready() {
   local gid mus devf mu nf out un
   gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
@@ -268,7 +281,10 @@ else
   # reads back as user.groups[*].value coany ["<id>"] (read 2026-10-12), the shape below.
   drill_uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
   [ -n "$drill_uid" ] || drill_uid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users?filter=userName%20eq%20%22estate-drill%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
-  pl_rid=""
+  # The rule id looked up by name above is KEPT: the write below PUTs an existing rule when there
+  # is one. Clearing it here (as this did until 2026-10-12) made every write a POST, so the first
+  # run with a measured factor value would have posted a SECOND rule named "front door offers
+  # passwordless sign-in" -- a duplicate name, or a refusal, depending on the domain.
   if [ -n "$drill_uid" ]; then
     gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id,members" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
     if [ -z "$gid" ]; then
@@ -315,7 +331,7 @@ else
     else
       pl_rid=""
       if [ "$pl_unmeasured" = true ]; then
-        echo "WAIT    identity passwordless cohort: every member holds an ENROLLED passkey, but no passkey-only authenticationFactor value has been measured for this domain, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, and a value the domain ignores would remove that second factor without offering Face ID (#5858; drill runs 38273855150, 38273745676, 2026-10-12)."
+        echo "WAIT    identity passwordless cohort: every member holds an ENROLLED passkey, but no passkey-only authenticationFactor value has been measured for this domain, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, and a value the domain ignores would remove that second factor without offering Face ID (#5858; drill runs 38273855150, 38273745676, 2026-10-12). Record a drill-measured value with its evidence in $PL_AF_RECORD, and the next apply wires it."
       else
         echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
       fi
