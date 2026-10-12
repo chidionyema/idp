@@ -1,0 +1,513 @@
+{
+ "recorded": "2026-10-12",
+ "why": "The board as it actually stood when the founder counted 59 open rows, and the cluster it was supposed to describe. 60 open P0 rows named 31 objects; 41 objects existed and 4 were not Ready. Kept verbatim because a plan is only proven against the board it will meet, and this one is worse than a synthetic fixture in every way that matters: 53 rows named an object that was Ready at that moment, 2 were duplicates of one still-burning object (jit), 1 named an object deleted from the cluster (flux-webhook), and the live fire of the day (quad-ledger) had no row at all. One P0 in the list is not this alarm's (#5867, the login drill) and must be left alone.\n\nWhy the rows accumulated is measured, not inferred, and is not in this file: the alarm's recovery step closes exactly one row per recovery event (`gh issue list --search 'in:title ...' | head -1` in .github/workflows/flux-events.yml), so an object that fired N times keeps N-1 of its rows open for good. Counted on 2026-10-12: 19 titles held a row closed by a recovery and another row older than that close still open (jit: #5338 closed 2026-10-12T06:58:35Z while #5270 and #4362 stayed open; estate-db: #4823 closed 2026-09-30T21:04:46Z while #2703, #3287 and #3536 stayed open). That is why bin/flux-board-reconcile reads no events at all.",
+ "cluster": [
+  {
+   "namespace": "flux-system",
+   "name": "agent-workforce",
+   "ready": false
+  },
+  {
+   "namespace": "flux-system",
+   "name": "backstage",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "backstage-namespace",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "dns",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "edge",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "epistemic-fabric",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "estate-db",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "estate-db-migrate",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "estate-db-operator",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "event-bus",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "external-secrets",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "flannel",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "flux-system",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "gateway-api-crds",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "github-app-creds",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "hermes-agent",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "hindsight",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "identity",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "image-automation",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "jit",
+   "ready": false
+  },
+  {
+   "namespace": "flux-system",
+   "name": "kyverno",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "llm",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "mcp",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "monitoring",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "monitoring-rules",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "ns-fences",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "otto-gateway",
+   "ready": false
+  },
+  {
+   "namespace": "flux-system",
+   "name": "otto-golden",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "otto-golden-secret",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "priority-classes",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "quad-ledger",
+   "ready": false
+  },
+  {
+   "namespace": "flux-system",
+   "name": "quad-ledger-exception",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "reloader",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "research-engine",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "router-events",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "searxng",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "secret-store",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "tailscale",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "temporal",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "unified-memory",
+   "ready": true
+  },
+  {
+   "namespace": "flux-system",
+   "name": "voice-router",
+   "ready": true
+  }
+ ],
+ "rows": [
+  {
+   "number": 5867,
+   "title": "P0: login drill failed",
+   "createdAt": "2026-10-12T13:22:57Z"
+  },
+  {
+   "number": 5835,
+   "title": "P0: Flux cannot reconcile Kustomization/jit.flux-system",
+   "createdAt": "2026-10-12T06:58:36Z"
+  },
+  {
+   "number": 5804,
+   "title": "P0: Flux cannot reconcile Kustomization/otto-gateway.flux-system",
+   "createdAt": "2026-10-11T23:06:48Z"
+  },
+  {
+   "number": 5349,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-system.flux-system",
+   "createdAt": "2026-10-03T16:21:52Z"
+  },
+  {
+   "number": 5325,
+   "title": "P0: Flux cannot reconcile Kustomization/agent-workforce.flux-system",
+   "createdAt": "2026-10-03T10:11:20Z"
+  },
+  {
+   "number": 5324,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-10-03T10:06:28Z"
+  },
+  {
+   "number": 5323,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-10-03T10:04:08Z"
+  },
+  {
+   "number": 5270,
+   "title": "P0: Flux cannot reconcile Kustomization/jit.flux-system",
+   "createdAt": "2026-10-02T08:35:51Z"
+  },
+  {
+   "number": 5253,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db.flux-system",
+   "createdAt": "2026-10-01T19:46:48Z"
+  },
+  {
+   "number": 5130,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-09-30T00:37:26Z"
+  },
+  {
+   "number": 4879,
+   "title": "P0: Flux cannot reconcile Kustomization/secret-store.flux-system",
+   "createdAt": "2026-09-28T23:23:07Z"
+  },
+  {
+   "number": 4372,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-system.flux-system",
+   "createdAt": "2026-09-26T19:59:29Z"
+  },
+  {
+   "number": 4366,
+   "title": "P0: Flux cannot reconcile Kustomization/sandbox-live.flux-system",
+   "createdAt": "2026-09-26T12:19:07Z"
+  },
+  {
+   "number": 4364,
+   "title": "P0: Flux cannot reconcile Kustomization/notify.flux-system",
+   "createdAt": "2026-09-26T12:07:51Z"
+  },
+  {
+   "number": 4362,
+   "title": "P0: Flux cannot reconcile Kustomization/jit.flux-system",
+   "createdAt": "2026-09-26T11:10:08Z"
+  },
+  {
+   "number": 4361,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-system.flux-system",
+   "createdAt": "2026-09-26T11:09:56Z"
+  },
+  {
+   "number": 4350,
+   "title": "P0: Flux cannot reconcile Kustomization/kyverno.flux-system",
+   "createdAt": "2026-09-26T09:30:13Z"
+  },
+  {
+   "number": 4349,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-catalog.flux-system",
+   "createdAt": "2026-09-26T09:30:08Z"
+  },
+  {
+   "number": 4329,
+   "title": "P0: Flux cannot reconcile Kustomization/trivy.flux-system",
+   "createdAt": "2026-09-26T08:31:53Z"
+  },
+  {
+   "number": 4188,
+   "title": "P0: Flux cannot reconcile Kustomization/trivy.flux-system",
+   "createdAt": "2026-09-26T00:29:29Z"
+  },
+  {
+   "number": 4177,
+   "title": "P0: Flux cannot reconcile Kustomization/sandbox-live.flux-system",
+   "createdAt": "2026-09-25T23:57:51Z"
+  },
+  {
+   "number": 4062,
+   "title": "P0: Flux cannot reconcile Kustomization/llm.flux-system",
+   "createdAt": "2026-09-25T11:13:03Z"
+  },
+  {
+   "number": 3975,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-system.flux-system",
+   "createdAt": "2026-09-25T02:37:56Z"
+  },
+  {
+   "number": 3972,
+   "title": "P0: Flux cannot reconcile Kustomization/acg.flux-system",
+   "createdAt": "2026-09-25T02:25:56Z"
+  },
+  {
+   "number": 3905,
+   "title": "P0: Flux cannot reconcile Kustomization/sandbox-launch.flux-system",
+   "createdAt": "2026-09-23T04:35:14Z"
+  },
+  {
+   "number": 3901,
+   "title": "P0: Flux cannot reconcile Kustomization/cross-node-drill.flux-system",
+   "createdAt": "2026-09-23T04:18:59Z"
+  },
+  {
+   "number": 3773,
+   "title": "P0: Flux cannot reconcile Kustomization/calico.flux-system",
+   "createdAt": "2026-09-19T11:24:20Z"
+  },
+  {
+   "number": 3744,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-09-18T16:39:47Z"
+  },
+  {
+   "number": 3708,
+   "title": "P0: Flux cannot reconcile Kustomization/idp-agent.flux-system",
+   "createdAt": "2026-09-17T19:24:09Z"
+  },
+  {
+   "number": 3705,
+   "title": "P0: Flux cannot reconcile Kustomization/calico.flux-system",
+   "createdAt": "2026-09-17T19:09:49Z"
+  },
+  {
+   "number": 3554,
+   "title": "P0: Flux cannot reconcile Kustomization/via-negativa.flux-system",
+   "createdAt": "2026-09-15T18:46:24Z"
+  },
+  {
+   "number": 3548,
+   "title": "P0: Flux cannot reconcile Kustomization/crossplane-storage-capability.flux-system",
+   "createdAt": "2026-09-15T16:42:01Z"
+  },
+  {
+   "number": 3540,
+   "title": "P0: Flux cannot reconcile Kustomization/cross-node-drill.flux-system",
+   "createdAt": "2026-09-15T15:01:29Z"
+  },
+  {
+   "number": 3536,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db.flux-system",
+   "createdAt": "2026-09-15T14:31:49Z"
+  },
+  {
+   "number": 3533,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-webhook.flux-system",
+   "createdAt": "2026-09-15T14:00:03Z"
+  },
+  {
+   "number": 3532,
+   "title": "P0: Flux cannot reconcile Kustomization/robusta.flux-system",
+   "createdAt": "2026-09-15T14:00:01Z"
+  },
+  {
+   "number": 3506,
+   "title": "P0: Flux cannot reconcile Kustomization/prospector.flux-system",
+   "createdAt": "2026-09-15T05:39:26Z"
+  },
+  {
+   "number": 3502,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-09-15T04:37:30Z"
+  },
+  {
+   "number": 3432,
+   "title": "P0: Flux cannot reconcile Kustomization/human-vault.flux-system",
+   "createdAt": "2026-09-14T11:16:14Z"
+  },
+  {
+   "number": 3409,
+   "title": "P0: Flux cannot reconcile Kustomization/human-vault-bridge.flux-system",
+   "createdAt": "2026-09-14T02:33:46Z"
+  },
+  {
+   "number": 3407,
+   "title": "P0: Flux cannot reconcile Kustomization/prospector.flux-system",
+   "createdAt": "2026-09-14T01:44:15Z"
+  },
+  {
+   "number": 3380,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-09-13T14:18:00Z"
+  },
+  {
+   "number": 3378,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db-migrate.flux-system",
+   "createdAt": "2026-09-13T14:07:55Z"
+  },
+  {
+   "number": 3287,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db.flux-system",
+   "createdAt": "2026-09-12T23:29:27Z"
+  },
+  {
+   "number": 3285,
+   "title": "P0: Flux cannot reconcile Kustomization/commerce.flux-system",
+   "createdAt": "2026-09-12T23:27:03Z"
+  },
+  {
+   "number": 3221,
+   "title": "P0: Flux cannot reconcile Kustomization/llm.flux-system",
+   "createdAt": "2026-09-12T15:04:52Z"
+  },
+  {
+   "number": 3151,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-12T03:35:41Z"
+  },
+  {
+   "number": 3100,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-11T17:49:34Z"
+  },
+  {
+   "number": 3018,
+   "title": "P0: Flux cannot reconcile Kustomization/prospector.flux-system",
+   "createdAt": "2026-09-11T04:14:20Z"
+  },
+  {
+   "number": 2978,
+   "title": "P0: Flux cannot reconcile Kustomization/concierge.flux-system",
+   "createdAt": "2026-09-10T21:45:59Z"
+  },
+  {
+   "number": 2976,
+   "title": "P0: Flux cannot reconcile Kustomization/human-vault-bridge.flux-system",
+   "createdAt": "2026-09-10T21:35:01Z"
+  },
+  {
+   "number": 2950,
+   "title": "P0: Flux cannot reconcile Kustomization/flux-system.flux-system",
+   "createdAt": "2026-09-10T17:21:00Z"
+  },
+  {
+   "number": 2854,
+   "title": "P0: Flux cannot reconcile Kustomization/prospector.flux-system",
+   "createdAt": "2026-09-10T03:30:16Z"
+  },
+  {
+   "number": 2718,
+   "title": "P0: Flux cannot reconcile Kustomization/cyrus.flux-system",
+   "createdAt": "2026-09-09T04:08:50Z"
+  },
+  {
+   "number": 2703,
+   "title": "P0: Flux cannot reconcile Kustomization/estate-db.flux-system",
+   "createdAt": "2026-09-09T02:07:36Z"
+  },
+  {
+   "number": 2641,
+   "title": "P0: Flux cannot reconcile Kustomization/priority-classes.flux-system",
+   "createdAt": "2026-09-08T21:16:51Z"
+  },
+  {
+   "number": 2618,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-08T18:34:32Z"
+  },
+  {
+   "number": 2609,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-08T17:43:14Z"
+  },
+  {
+   "number": 2598,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-08T15:45:52Z"
+  },
+  {
+   "number": 2581,
+   "title": "P0: Flux cannot reconcile Kustomization/chaos.flux-system",
+   "createdAt": "2026-09-08T12:55:47Z"
+  }
+ ]
+}
