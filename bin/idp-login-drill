@@ -473,8 +473,14 @@ with sync_playwright() as p:
                    if pressed else "there was not even a login-methods disclosure to open")
             fail("passwordless",
                  f"the door does not offer Face ID alone to {USER}: after the username, {how} on "
-                 f"{page.url.split('?')[0]}, and the password form is still the way in, so the "
-                 f"passwordless value the policy rules carry is not honoured by this domain. "
+                 f"{page.url.split('?')[0]}, and the password form is still the way in. This walk "
+                 f"sees the door, not the policy, so it cannot say why -- whether a passwordless "
+                 f"rule is wired to the front door at all is answered by `bin/idp-identity-apply "
+                 f"probe` (its polrule line), never from here. Measured 2026-10-12: this line used "
+                 f"to assert the carried value was 'not honoured by this domain' while the policy "
+                 f"called no passwordless rule at all (run 38296585146 red, probe 38297811340 "
+                 f"showing one rule called, sequence 1, the second factor), and the wrong "
+                 f"diagnosis cost two hours. "
                  f"Controls the door does offer: {inv}")
         at = press(offer)
         if not at:

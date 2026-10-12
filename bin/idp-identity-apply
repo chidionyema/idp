@@ -23,7 +23,8 @@ cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config
 # which is the WRONG ENDPOINT NAME on this OCI-generation domain and 401s every auth (API key
 # and the CI runner's security token alike, measured 2026-10-12). The live endpoints are
 # /admin/v1/{Policies,Rules,Conditions} -- readable by the same auth that reads Apps. Probe
-# prints the app's policy ref, every policy, rule and condition, then exits -- no PUT, no PATCH,
+# prints the app's policy ref, every policy, rule and condition, and which of those rules the
+# front-door policy actually calls, then exits -- no PUT, no PATCH,
 # no vault read, no tofu. The enforcement block below was designed from this dump, not from the
 # classic-IDCS docs, because this domain has already refused two of their values (RequiredForAll
 # and ALL_USERS, both 400, measured 2026-10-11).
@@ -39,6 +40,18 @@ if [ "${1:-plan}" = probe ]; then
   # offered no passkey control to the cohort and then signed it in with its password alone).
   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null \
     | jq -c '.data.Resources[] | {id, name, return}' | sed 's/^/probe   rule     /'
+  # Which rules the front-door policy actually CALLS, and in what order. A rule can exist, be
+  # active and carry a factor value while the policy never references it -- measured 2026-10-12:
+  # the domain held two live rules named "front door offers passwordless sign-in" while the door
+  # still asked the cohort for its password (drill run 38296585146), and a dump that lists rules
+  # without the policy's own sequence cannot tell "wired and not honoured" from "not wired at
+  # all". Two different fixes, and tonight's two-hour detour was the difference (#5858).
+  if [ -n "$appid" ]; then
+    fdp=$(printf '%s' "$app" | jq -r '.signonPolicy.value // ""')
+    [ -n "$fdp" ] || fdp=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$appid?attributes=signonPolicy" 2>/dev/null | jq -r '.data.signonPolicy.value // ""')
+    oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fdp?attributes=name,rules" 2>/dev/null \
+      | jq -c '{policy: .data.name, called: [(.data.rules[]? | {rule: .value, sequence})]}' | sed 's/^/probe   polrule  /'
+  fi
   # does the app itself carry a passwordless/FIDO switch, or is the sign-on policy the only place
   # on this domain where a factor is named? Attribute names only, never their values.
   if [ -n "$appid" ]; then
