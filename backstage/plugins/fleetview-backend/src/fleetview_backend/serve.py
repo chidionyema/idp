@@ -39,6 +39,28 @@ from fleetview_backend import (
 )
 
 
+class _ClosingStream(StreamingResponse):
+    """A StreamingResponse that closes its body iterator when the response ends.
+
+    WHY (issue #5829). Starlette answers a streamed response with
+    `async for chunk in self.body_iterator: await send(...)` and no aclose(). When the client goes
+    away, listen_for_disconnect returns and the task group cancels the sender -- but the sender is
+    suspended in `send`, not in the iterator, so the generator is left at its yield with nobody to
+    resume it and every finally behind it never runs. Measured live: 191 sockets to nats:4222
+    behind 49 inbound ones, `[Errno 24] Too many open files` 12,114 times. Closing the iterator is
+    the one thing this response owns, so it closes it here, after the cancelled scope has exited
+    (the finally below runs whether __call__ returned or raised).
+    """
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            aclose = getattr(self.body_iterator, "aclose", None)
+            if aclose is not None:
+                await aclose()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     nats_url = os.environ.get("NATS_URL", "")
@@ -191,21 +213,40 @@ def build_app() -> FastAPI:
                 yield routes.stream_frames([record])[0]
             import json as _json
 
+            # Each source closes itself when this response ends (issue #5829). The generator has
+            # to be closed, not merely abandoned: one suspended at its yield never runs its
+            # finally, and the finally is what releases the bus subscription.
             async def _events():
-                async for event in nats_adapter.subscribe_stream(nats_url):
-                    yield f"data: {_json.dumps(event)}\n\n"
+                gen = nats_adapter.subscribe_stream(nats_url)
+                try:
+                    async for event in gen:
+                        yield f"data: {_json.dumps(event)}\n\n"
+                finally:
+                    await nats_adapter.close_gen(gen)
 
             async def _cues():
-                async for cue in nats_adapter.subscribe_cues(nats_url):
-                    yield routes.cue_frame(cue)
+                gen = nats_adapter.subscribe_cues(nats_url)
+                try:
+                    async for cue in gen:
+                        yield routes.cue_frame(cue)
+                finally:
+                    await nats_adapter.close_gen(gen)
 
             async def _stories():
-                async for on, story in nats_adapter.subscribe_stories(nats_url):
-                    yield routes.story_frame(on, story)
+                gen = nats_adapter.subscribe_stories(nats_url)
+                try:
+                    async for on, story in gen:
+                        yield routes.story_frame(on, story)
+                finally:
+                    await nats_adapter.close_gen(gen)
 
             async def _approvals():
-                async for approval in nats_adapter.subscribe_approvals(nats_url):
-                    yield f"data: {__import__('json').json.dumps({'type': 'approval', **approval})}\n\n"
+                gen = nats_adapter.subscribe_approvals(nats_url)
+                try:
+                    async for approval in gen:
+                        yield f"data: {__import__('json').json.dumps({'type': 'approval', **approval})}\n\n"
+                finally:
+                    await nats_adapter.close_gen(gen)
 
             last_hb = asyncio.get_event_loop().time()
             merged = nats_adapter.merge(
@@ -214,15 +255,18 @@ def build_app() -> FastAPI:
                 nats_adapter.isolated("stories", _stories()),
                 nats_adapter.isolated("approvals", _approvals()),
             )
-            async for frame in merged:
-                yield frame
-                now = asyncio.get_event_loop().time()
-                if now - last_hb >= 30:
+            try:
+                async for frame in merged:
+                    yield frame
+                    now = asyncio.get_event_loop().time()
+                    if now - last_hb >= 30:
+                        yield ": heartbeat\n\n"
+                        last_hb = now
+                while True:
+                    await asyncio.sleep(30)
                     yield ": heartbeat\n\n"
-                    last_hb = now
-            while True:
-                await asyncio.sleep(30)
-                yield ": heartbeat\n\n"
+            finally:
+                await nats_adapter.close_gen(merged)
 
         async def gen():
             body, _status = routes.sessions_envelope()
@@ -232,7 +276,7 @@ def build_app() -> FastAPI:
                 await asyncio.sleep(30)
                 yield ": heartbeat\n\n"
 
-        return StreamingResponse(
+        return _ClosingStream(
             gen_nats() if nats_url else gen(), media_type="text/event-stream"
         )
 

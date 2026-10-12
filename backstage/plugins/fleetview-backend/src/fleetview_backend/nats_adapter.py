@@ -161,19 +161,105 @@ async def publish(
         await nc.drain()
 
 
+# The stream plane's ONE connection (issue #5829). /stream used to call nats.connect four times
+# per client -- events, cues, stories, approvals -- and each connection lived in that client's own
+# generator, which Starlette never closes (its stream_response has no aclose()), so a tab that goes
+# away between two chunks left four sockets behind. Measured live: 191 sockets to nats:4222 behind
+# 49 inbound ones, `[Errno 24] Too many open files` 12,114 times in a 231 MB error log.
+# A connection a client does not own is a connection it cannot leak. The subscriptions still belong
+# to their client and are still closed by whoever opened them (close_sub/close_gen).
+_STREAM_CONNS: dict[tuple[int, str], Any] = {}
+_STREAM_DIALS: dict[tuple[int, str], asyncio.Task] = {}
+_STREAM_LOCKS: dict[int, asyncio.Lock] = {}
+
+
+def _stream_lock(loop_id: int) -> asyncio.Lock:
+    lock = _STREAM_LOCKS.get(loop_id)
+    if lock is None:
+        lock = asyncio.Lock()  # created on the loop that will wait on it
+        _STREAM_LOCKS[loop_id] = lock
+    return lock
+
+
+def _record_dial(task: asyncio.Task, key: tuple) -> None:
+    """Record a finished dial. Cancellation and failure are forgotten, not left unretrieved."""
+    if task.cancelled() or task.exception() is not None:
+        _STREAM_DIALS.pop(key, None)  # the next client gets to try again
+        return
+    _STREAM_CONNS[key] = task.result()
+
+
+async def _stream_conn(nats_url: str) -> Any:
+    """The stream plane's connection: one per process and event loop, opened once.
+
+    The dial runs as its OWN task, not inline. Measured (issue #5829): a client that disconnects
+    while the first `nats.connect` is in flight cancels the caller, and an inline dial dies with
+    it -- the connection was never recorded, so the next client dialled again and left one
+    stranded socket per client (dials climbing one per client, on a real bus). The connection
+    belongs to the process, so the dial does; the caller merely waits for it, shielded.
+    """
+    _require_nats()
+    url = _nats_url(nats_url)
+    key = (id(asyncio.get_running_loop()), url)
+    async with _stream_lock(key[0]):
+        nc = _STREAM_CONNS.get(key)
+        if nc is not None and not nc.is_closed:
+            return nc
+        dial = _STREAM_DIALS.get(key)
+        if dial is None or dial.done():
+            dial = asyncio.create_task(_dial_bus(url))
+            _STREAM_DIALS[key] = dial
+            dial.add_done_callback(lambda task: _record_dial(task, key))
+    return await asyncio.shield(
+        dial
+    )  # the caller's cancellation must not abort the dial
+
+
+async def _dial_bus(nats_url: str) -> Any:
+    import nats
+
+    return await nats.connect(nats_url)
+
+
+async def close_sub(sub: Any) -> None:
+    """Release one client's subscription; the shared connection stays open.
+
+    Never raises: it runs in a finally, usually while the response that owned the subscription is
+    already being torn down, and a close failure must not become the error the caller sees.
+    """
+    if sub is None:
+        return
+    try:
+        await sub.unsubscribe()
+    except Exception as exc:  # noqa: BLE001 -- a close failure is logged, never raised
+        logger.info("fleetview.stream_sub_close_failed err=%s", exc)
+
+
+async def close_gen(gen: Any) -> None:
+    """Close an async generator, if it is one. Never raises, for close_sub's reason.
+
+    Cancelling the task that iterates a generator does NOT close it, and a generator left
+    suspended at its yield never runs its finally -- which is the whole of issue #5829.
+    """
+    aclose = getattr(gen, "aclose", None)
+    if aclose is None:
+        return
+    try:
+        await aclose()
+    except Exception as exc:  # noqa: BLE001 -- a close failure is logged, never raised
+        logger.info("fleetview.stream_gen_close_failed err=%s", exc)
+
+
 async def subscribe_stream(nats_url: str) -> AsyncGenerator[dict, None]:
     """Subscribe to `estate.agent.>` and yield each decoded JSON message as a dict.
 
     Raises RuntimeError("nats-py not installed") when nats-py is absent.
-    Uses a push subscription on JetStream so the consumer gets the full durable
-    replay. Yields control back to the event loop between messages so the SSE
+    Uses a push subscription on JetStream, on the shared stream connection, so the consumer gets
+    the full durable replay. Yields control back to the event loop between messages so the SSE
     generator can interleave heartbeats.
     """
-    _require_nats()
-    import nats
-
-    url = _nats_url(nats_url)
-    nc = await nats.connect(url)
+    nc = await _stream_conn(nats_url)
+    sub = None
     try:
         js = nc.jetstream()
         sub = await js.subscribe("estate.agent.>")
@@ -186,7 +272,7 @@ async def subscribe_stream(nats_url: str) -> AsyncGenerator[dict, None]:
                 # go dark because one adapter emitted bad JSON.
                 continue
     finally:
-        await nc.drain()
+        await close_sub(sub)
 
 
 async def decode_cues(messages: AsyncIterable) -> AsyncGenerator[dict, None]:
@@ -212,16 +298,14 @@ async def subscribe_cues(nats_url: str) -> AsyncGenerator[dict, None]:
 
     Raises RuntimeError("nats-py not installed") when nats-py is absent.
     """
-    _require_nats()
-    import nats
-
-    nc = await nats.connect(_nats_url(nats_url))
+    nc = await _stream_conn(nats_url)
+    sub = None
     try:
         sub = await nc.subscribe(CUE_SUBJECT)
         async for cue in decode_cues(sub.messages):
             yield cue
     finally:
-        await nc.drain()
+        await close_sub(sub)
 
 
 async def decode_stories(
@@ -278,11 +362,10 @@ async def subscribe_stories(
     caller's isolated() wrapper turns that into a logged, isolated end, not a dead /stream).
     Raises RuntimeError("nats-py not installed") when nats-py is absent.
     """
-    _require_nats()
-    import nats
     from nats.js import api as js_api
 
-    nc = await nats.connect(_nats_url(nats_url))
+    nc = await _stream_conn(nats_url)
+    sub = None
     try:
         js = nc.jetstream()
         start_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=replay_s)
@@ -295,7 +378,7 @@ async def subscribe_stories(
         async for on_story in decode_stories(sub.messages):
             yield on_story
     finally:
-        await nc.drain()
+        await close_sub(sub)
 
 
 async def subscribe_approvals(
@@ -310,11 +393,10 @@ async def subscribe_approvals(
     logged, isolated end, not a dead /stream).
     Raises RuntimeError("nats-py not installed") when nats-py is absent.
     """
-    _require_nats()
-    import nats
     from nats.js import api as js_api
 
-    nc = await nats.connect(_nats_url(nats_url))
+    nc = await _stream_conn(nats_url)
+    sub = None
     try:
         js = nc.jetstream()
         start_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=replay_s)
@@ -335,7 +417,7 @@ async def subscribe_approvals(
             if isinstance(obj, dict) and obj.get("ledger_id"):
                 yield obj
     finally:
-        await nc.drain()
+        await close_sub(sub)
 
 
 async def isolated(name: str, gen: AsyncIterator) -> AsyncGenerator[Any, None]:
@@ -350,6 +432,10 @@ async def isolated(name: str, gen: AsyncIterator) -> AsyncGenerator[Any, None]:
     except Exception as exc:  # noqa: BLE001 -- isolate this source, never the merged stream
         logger.info("fleetview.stream_source_down source=%s err=%s", name, exc)
         return
+    finally:
+        # Closing the wrapper must close the source it wraps, all the way down to the bus: a
+        # generator suspended at its yield has no finally of its own that anyone will reach.
+        await close_gen(gen)
 
 
 async def merge(*gens: AsyncIterator) -> AsyncGenerator[Any, None]:
@@ -386,3 +472,12 @@ async def merge(*gens: AsyncIterator) -> AsyncGenerator[Any, None]:
         for t in tasks:
             if not t.done():
                 t.cancel()
+        # Cancelling is not closing (issue #5829): until the cancelled _drain tasks are awaited,
+        # the source generators behind them are still suspended at their yields and their finally
+        # blocks never run. Await the cancellation to completion, then close each source -- as a
+        # finally, so a consumer that is itself being cancelled still closes what it opened.
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            for gen in gens:
+                await close_gen(gen)
