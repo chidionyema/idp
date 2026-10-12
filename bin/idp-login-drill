@@ -591,12 +591,18 @@ with sync_playwright() as p:
     def offered_controls():
         return [c for c in controls(page) if is_passkey(c)]
 
-    def inventory():
-        cs = controls(page)
-        return ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in cs[:8]) or "none"
+    def inventory(cs=None):
+        cs = controls(page) if cs is None else cs
+        return ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in cs[:10]) or "none"
 
     faceid_controls = offered_controls()
     faceid_offered = bool(faceid_controls)
+    # The menu is the founder's question, and until now nothing reported what it holds: the
+    # photograph is taken BEFORE it is pressed, and the press was followed only by another check of
+    # the Face ID vocabulary -- so a red row could say "no Face ID" about a menu nobody had looked
+    # inside. Keep the page as it was, then say what the press actually changed.
+    pre_disclosure_controls, pre_disclosure_url = controls(page), page.url
+    disclosure_pressed = ""
     webauthn = []
     # The domain fronts the factor list with an "Enable Secure Verification" interstitial: the
     # page says the two method families exist and asks for one click before it shows them
@@ -639,16 +645,33 @@ with sync_playwright() as p:
             try:
                 page.locator(f"button:has-text('{label}'), a:has-text('{label}')").first.click(timeout=3000)
                 page.wait_for_timeout(1500)
+                disclosure_pressed = label
                 faceid_controls = offered_controls()
                 if faceid_controls:
                     faceid_offered = True
             except PWError:
                 continue
+    # What the menu holds, named whether or not it holds a passkey. The founder can see this control
+    # and cannot see behind it, so a grade that stops at "the door offers a:'Show alternative login
+    # methods'" answers a different question than his: every control the press added, and the text it
+    # added, so the next row carries the menu's own contents instead of a vocabulary miss.
+    if disclosure_pressed and not faceid_offered:
+        before_names = {str(c.get("name", "")) for c in pre_disclosure_controls}
+        gained = [c for c in controls(page) if str(c.get("name", "")) not in before_names]
+        after_text = page_text(page)
+        gained_text = (after_text[len(text):] if after_text.startswith(text) else after_text)[:400]
+        print('DISCLOSURE: pressed "{}" at the {} step; url {} -> {}; the menu holds {} control(s) '
+              'the page did not have before: {} | text it added: {!r}'.format(
+                  disclosure_pressed, mfa_kind, pre_disclosure_url.split("?")[0],
+                  page.url.split("?")[0], len(gained),
+                  ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in gained[:12]) or "none",
+                  gained_text))
     if not faceid_offered:
         fail("mfa",
              f"the door engages MFA (kind={mfa_kind}) but offers no control for Face ID or a security "
              f"key on the {page.url.split('?')[0]} screen; the founder cannot use the passkey that is "
-             f"enabled in the domain. Controls the door does offer: {inventory()}")
+             f"enabled in the domain. Controls the door offers with the menu closed: "
+             f"{inventory(pre_disclosure_controls)}; with it open: {inventory(controls(page))}")
     # What the control actually does: a real passkey/security-key offer drives a WebAuthn call.
     # With the UI suppressed and no virtual authenticator attached, a request can be recorded but
     # no credential can be created, so an observe-only run never burns an enrolment slot. Skipped
