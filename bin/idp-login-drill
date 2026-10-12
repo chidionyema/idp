@@ -176,6 +176,78 @@ def page_text(page):
         return ""
 
 
+def controls(page):
+    # What the door OFFERS is what it shows as something pressable, never what its copy says. A
+    # page can name "a security key" in prose and offer no such control -- which is exactly the
+    # false green this drill reported while the founder could see there was no Face ID at the
+    # door. Enumerate the interactive elements across every shadow root and every frame, so
+    # "offered" is answered with controls a visitor can press.
+    js = """() => {
+      const out = [];
+      const nm = (el) => (el.getAttribute('aria-label') || el.getAttribute('title') ||
+        (el.innerText || el.textContent || '').trim() || el.value || el.getAttribute('alt') || '').trim();
+      const walk = (root) => {
+        for (const el of root.querySelectorAll('button,a,[role=button],[role=link],input[type=submit],input[type=button],summary')) {
+          const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
+          if (cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0) {
+            const n = nm(el);
+            if (n) out.push({name: n.slice(0, 80), tag: el.tagName.toLowerCase()});
+          }
+        }
+        for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+      };
+      walk(document.body);
+      return out;
+    }"""
+    found = []
+    for fr in page.frames:
+        try:
+            found += fr.evaluate(js) or []
+        except PWError:
+            continue
+    seen, uniq = set(), []
+    for c in found:
+        k = (str(c.get("name", "")).strip().lower(), c.get("tag"))
+        if k not in seen:
+            seen.add(k)
+            uniq.append(c)
+    return uniq
+
+
+def webauthn_requests(page):
+    reqs = []
+    for fr in page.frames:
+        try:
+            reqs += fr.evaluate("() => window.__drillWebauthn || []") or []
+        except PWError:
+            continue
+    return reqs
+
+
+# A passkey/security-key offer is, mechanically, a call to navigator.credentials with a publicKey.
+# No amount of page copy can fake that, so the drill records every such request and can answer with
+# the ceremony rather than with a phrase.
+WEBAUTHN_HOOK = """() => {
+  window.__drillWebauthn = [];
+  const wrap = (k) => {
+    const orig = navigator.credentials && navigator.credentials[k];
+    if (!orig) return;
+    navigator.credentials[k] = function (opts) {
+      const pk = opts && opts.publicKey;
+      if (pk) {
+        const sel = pk.authenticatorSelection || {};
+        window.__drillWebauthn.push({call: k, rpId: (pk.rp && pk.rp.id) || null,
+          attachment: sel.authenticatorAttachment || null,
+          userVerification: sel.userVerification || null,
+          algos: (pk.pubKeyCredParams || []).map((a) => a.alg)});
+      }
+      return orig.apply(this, arguments);
+    };
+  };
+  wrap('create'); wrap('get');
+}"""
+
+
 started = time.time()
 mfa_kind = "none"
 faceid_offered = False
@@ -186,6 +258,7 @@ with sync_playwright() as p:
         fail("browser", f"chromium will not launch: {e}")
     ctx = browser.new_context(ignore_https_errors=False)
     ctx.set_default_timeout(TIMEOUT)
+    ctx.add_init_script(script=WEBAUTHN_HOOK)
     page = ctx.new_page()
     page_errors = []
     page.on("pageerror", lambda e: page_errors.append(safe(str(e))))
@@ -273,7 +346,19 @@ with sync_playwright() as p:
         mfa_kind = "challenge"
     else:
         mfa_kind = "faceid-only"
-    faceid_offered = bool(FACEID_TEXT.search(text))
+    # Prose may classify the step; it may never claim the factor. The page's own copy names "a
+    # security key" while showing no such control (measured 2026-10-12), and matching that prose
+    # reported faceid=offered on runs where the founder could see no Face ID at the door.
+    def offered_controls():
+        return [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
+
+    def inventory():
+        cs = controls(page)
+        return ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in cs[:8]) or "none"
+
+    faceid_controls = offered_controls()
+    faceid_offered = bool(faceid_controls)
+    webauthn = []
     # The domain fronts the factor list with an "Enable Secure Verification" interstitial: the
     # page says the two method families exist and asks for one click before it shows them
     # (measured 2026-10-12). Clicking it is navigation, not enrolment -- the credential is made
@@ -292,7 +377,8 @@ with sync_playwright() as p:
                     mfa_kind = "enroll"
                 elif CHALLENGE_TEXT.search(text):
                     mfa_kind = "challenge"
-                faceid_offered = bool(FACEID_TEXT.search(text))
+                faceid_controls = offered_controls()
+                faceid_offered = bool(faceid_controls)
         except PWError:
             pass
     # Always photograph the MFA page so a red row carries the picture of what the founder saw.
@@ -306,17 +392,36 @@ with sync_playwright() as p:
         try:
             page.locator("button:has-text('Other options'), a:has-text('Other options')").first.click(timeout=3000)
             page.wait_for_timeout(1500)
-            text2 = page.locator("body").inner_text(timeout=3000) or ""
-            if FACEID_TEXT.search(text2):
+            faceid_controls = offered_controls()
+            if faceid_controls:
                 faceid_offered = True
-                text = text2
         except PWError:
             pass
     if not faceid_offered:
         fail("mfa",
-             f"the door engages MFA (kind={mfa_kind}) but does not offer Face ID or a security key on "
-             f"the {page.url.split('?')[0]} screen; the founder cannot use the passkey that is enabled "
-             f"in the domain. Visible options excerpt: {safe(text)[:240]}")
+             f"the door engages MFA (kind={mfa_kind}) but offers no control for Face ID or a security "
+             f"key on the {page.url.split('?')[0]} screen; the founder cannot use the passkey that is "
+             f"enabled in the domain. Controls the door does offer: {inventory()}")
+    # What the control actually does: a real passkey/security-key offer drives a WebAuthn call.
+    # With the UI suppressed and no virtual authenticator attached, a request can be recorded but
+    # no credential can be created, so an observe-only run never burns an enrolment slot. Skipped
+    # under DRILL_ENROLL=1, where the ceremony below is the proof and must not be disturbed.
+    offer = '{}:"{}"'.format(faceid_controls[0].get("tag"), faceid_controls[0].get("name"))
+    mech = "unprobed" if ENROLL else "none"
+    if not ENROLL:
+        try:
+            ctx.new_cdp_session(page).send("WebAuthn.enable", {"enableUI": False})
+            cand = re.sub(r"['\"\\\\]", "", str(faceid_controls[0].get("name", "")))[:40]
+            if cand:
+                page.locator(f"button:has-text('{cand}'), a:has-text('{cand}'), "
+                             f"[role=button]:has-text('{cand}'), [role=link]:has-text('{cand}')").first.click(timeout=4000)
+                page.wait_for_timeout(1500)
+        except PWError:
+            pass
+        webauthn = webauthn_requests(page)
+        mech = "create" if any(w.get("call") == "create" for w in webauthn) else \
+               "get" if webauthn else "none"
+
     # Face ID (or a security key) is offered. With DRILL_ENROLL=1, complete the ceremony with
     # a virtual authenticator so the hourly run leaves the door behind a real WebAuthn step;
     # without it, observe only -- enrolling creates a FIDO2 credential and a real one per
@@ -348,7 +453,8 @@ with sync_playwright() as p:
     else:
         # Observation-only run: do not complete the ceremony. The verdict is "Face ID is offered",
         # which is the answer the founder needs, and no credential is created.
-        print(f"ok      login-drill  observed mfa={mfa_kind}, faceid=offered at {urlparse(page.url).hostname} in {time.time()-started:.1f}s")
+        print(f"ok      login-drill  observed mfa={mfa_kind}, faceid=offered({offer}, webauthn={mech}) "
+              f"at {urlparse(page.url).hostname} in {time.time()-started:.1f}s")
         sys.exit(0)
 
     # 4. the session must actually serve the catalogue: 200 and the Backstage shell
@@ -397,5 +503,5 @@ with sync_playwright() as p:
     if who.status != 200:
         fail("identity", f"auth provider oauth2Proxy answered {who.status} to the door's session: {safe(who.text())[:240]}")
 
-    print(f"ok      login-drill  signed in as {USER}, mfa={mfa_kind}, faceid=offered in {time.time()-started:.1f}s")
+    print(f"ok      login-drill  signed in as {USER}, mfa={mfa_kind}, faceid=offered({offer}, webauthn=ceremony) in {time.time()-started:.1f}s")
 PYDRIVER
