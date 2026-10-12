@@ -12,7 +12,8 @@
 # non-commercial asset, so the blocker is a red build rather than a sentence in a spec.
 #
 # It grades the thing itself, not a proxy: the assets the face actually loads, and the licence each
-# one carries.
+# one carries. "Actually loads" is read from the face source (faceEngine.ts), not assumed from the
+# directory listing -- a GLB fetched from anywhere else is otherwise graded by nothing.
 #
 # The existing blocker is carried as dated debt (bin/face-licence-known-blockers) rather than
 # failing main the day this lands -- main must never go red. The debt is printed on every run, the
@@ -85,6 +86,36 @@ if [ -z "${assets// /}" ]; then
   say "FAIL  face-licence-gate  no avatar (.glb) under backstage/packages/app/public/face/"
   say "      The face cannot mount without one; an empty face dir is not a pass."
   exit 1
+fi
+
+# Tie the grade to the load. Everything above grades the directory; the claim is that this grades
+# what the face loads, so read the load. faceEngine.ts (home) is where the face names its avatar --
+# if it names one this gate never saw, the pass above graded the wrong tree, and the gate says so.
+if [ "$LIST" = 0 ]; then
+  FACE_ENGINE="$IDP/backstage/packages/app/src/modules/home/faceEngine.ts"
+  if [ ! -f "$FACE_ENGINE" ]; then
+    say "FAIL  face-licence-gate  no face source at ${FACE_ENGINE#"$IDP/"}"
+    say "      Without it the gate cannot prove it graded the avatar the face loads."
+    exit 1
+  fi
+  loaded="$(grep -oE '[A-Za-z0-9_.-]+\.glb' "$FACE_ENGINE" 2>/dev/null | sort -u || true)"
+  if [ -z "$loaded" ]; then
+    say "FAIL  face-licence-gate  the face source names no avatar (.glb) to load"
+    say "      The gate grades the avatar the face loads; a load it cannot read is not a pass."
+    exit 1
+  fi
+  for l in $loaded; do
+    case " $assets " in
+      *" $l "*) ;;
+      *) say "FAIL  face-licence-gate  the face loads ${l}, which is not under the graded face dir"
+         say "      Graded:${assets}"
+         say "      Move it under backstage/packages/app/public/face/ so its licence is graded."
+         fail=1 ;;
+    esac
+  done
+  if [ "$fail" -ne 0 ]; then
+    exit 1
+  fi
 fi
 
 for asset in $assets; do

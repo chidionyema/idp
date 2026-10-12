@@ -1,6 +1,6 @@
 # Known non-commercial face assets -- tracked debt, not clearance.
 #
-# EMPTY as of 2026-10-04. The debt this file was opened for is CLOSED.
+# NOT EMPTY. One entry is carried; the list is the ratchet, not a clean bill.
 #
 #   recorded 2026-10-03 by the face lane (docs/specs/2026-10-03-face-experience-10x.md §1/§6)
 #   blocker  the face shipped brunette.glb, a Ready Player Me avatar out of the TalkingHead repo
