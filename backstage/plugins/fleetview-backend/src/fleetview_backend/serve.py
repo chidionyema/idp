@@ -376,6 +376,14 @@ def build_app() -> FastAPI:
         body, status = routes.greenlane_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.CLAIMS_PATH)
+    def claims():
+        # The live agent claims (routes.claims_envelope, fleetview_backend/claims.py): who holds
+        # which paths, and how stale the heartbeat is. Sync handler on purpose -- the GitHub read
+        # is urllib inside, and FastAPI runs sync handlers in its threadpool.
+        body, status = routes.claims_envelope()
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.RESEARCH_PATH)
     def research():
         # Loopback GET to the portal's research-output plugin. Sync handler on purpose:

@@ -57,6 +57,11 @@ import ConciergeTasks from './ConciergeTasks';
 import KeySync from './KeySync';
 import ResearchFindings from './ResearchFindings';
 import EfficiencyHud from './EfficiencyHud';
+// --- ADDED: whether main is green and what each lane's tick decided, and who holds which files
+// right now. AGENTS.md section 5 promises the founder sees every live claim on /fleet; until
+// these two panels no fleet surface rendered either fact. ---
+import GreenlaneHud from './GreenlaneHud';
+import ClaimsPanel from './ClaimsPanel';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
@@ -2852,6 +2857,27 @@ export default function FleetReactorApp() {
           middleware's plugin:// translation directly. */}
       <ResearchFindings
         call={(init) => api.fetch('plugin://research-output/claims', init)}
+      />
+
+      {/* Is main green on the commit it is at, and what did the tick decide about every lane
+          (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
+          engine's own; this only refuses to draw a green main it could not read. */}
+      <GreenlaneHud
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/greenlane`, init);
+        }}
+      />
+
+      {/* Who is holding which paths right now, and how stale their heartbeat is
+          (fleetview_backend/claims.py, AGENTS.md section 5). */}
+      <ClaimsPanel
+        call={(init) => {
+          const base = baseUrlRef.current;
+          if (!base) return Promise.reject(new Error('discovery not ready'));
+          return api.fetch(`${base}/fleetview/claims`, init);
+        }}
       />
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}

@@ -162,6 +162,19 @@ def _gh(method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
         raise JobRefused(502, f"GitHub is unreachable from Fleet ({why}).") from None
 
 
+def gh_get(path: str) -> tuple[int, Any]:
+    """One authenticated GET against the estate's GitHub, for the modules that are not agent
+    jobs (claims.py reads the live claims through here).
+
+    The credential -- FLEETVIEW_GITHUB_TOKEN_FILE in the cluster, re-read every call because the
+    App token is re-minted every 45 minutes, `gh auth token` on the laptop -- and the translation
+    of every GitHub failure already live in `_gh`. A second module with its own token read and
+    its own 401 sentence would be a second credential path to rotate and a second place for the
+    rate-limit answer to be wrong.
+    """
+    return _gh("GET", path)
+
+
 def _recent_runs(per_page: int = 20) -> list[dict]:
     status, body = _gh(
         "GET", f"/repos/{repo()}/actions/workflows/{WORKFLOW}/runs?per_page={per_page}"
