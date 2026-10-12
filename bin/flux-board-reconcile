@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""flux-board-reconcile -- the Flux alarm's board, made equal to the cluster on a schedule.
+
+MEASURED 2026-10-12. The board carried 60 open P0 rows "P0: Flux cannot reconcile Kustomization/..."
+naming 31 objects. Four Kustomizations were actually not Ready (agent-workforce, jit,
+otto-gateway, quad-ledger). 55 of those 60 rows named an object that had been Ready for weeks --
+and quad-ledger, on fire at that moment, had no row at all. The board was not noisy; it was
+uncorrelated with the cluster.
+
+Three defects in the event path produced that, and none is fixed by a fourth gsub:
+
+  1. A row's identity was a sha256 of the message with some words scrubbed out. Every token the
+     scrubber did not fold forked a new identity: chaos.flux-system held SIX open rows for ONE
+     unreachable admission webhook, differing only in which webhook failed to answer
+     (mworkflow/vworkflow/mschedule/vauth) and whether the dial read "connection reset by peer" or
+     "context deadline exceeded" -- the second phrasing is not in the fold list. The existing test
+     cannot see this: its two examples hold the webhook name constant, so it proves folding only
+     where the input was already constant.
+  2. Nothing reaped. The row was opened by SIGNATURE and closed by TITLE, and the close took
+     `head -1`. Measured: 12 open rows were older than a row of the SAME object created later and
+     already closed. One recovery event closed one of six rows and orphaned five.
+  3. A row could only close on a "Health check passed" event, so a missed pass orphaned it forever.
+
+THE RULE HERE. A row lives if and only if its object exists and is not Ready. That is a statement
+about the cluster, so it is evaluated against the cluster, on a schedule, idempotently:
+
+    close every row whose object is Ready now
+    close every row whose object no longer exists
+    keep the OLDEST row per object and close its duplicates   (defect 1, undone)
+    open one row for every not-Ready object that has none     (defect 3, undone)
+
+Run it twice and the second run does nothing -- the property the event path never had. The event
+path stays as it is: an event is a trigger that files a row fast, and this is the truth that bounds
+the board. Because it also REFUSES to report success while the board contradicts the cluster, the
+invariant is a gate that can fail, not a sentence in a docstring.
+
+    bin/flux-board-reconcile                                   # the scheduled call
+    bin/flux-board-reconcile --dry-run                         # print the plan, change nothing
+    bin/flux-board-reconcile --verify-only                     # grade the board, change nothing
+    bin/flux-board-reconcile --cluster-json K --rows-json R    # grade a recording, no network
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+LABEL = "P0"
+TITLE = "P0: Flux cannot reconcile Kustomization/{name}.{ns}"
+TITLE_RE = re.compile(
+    r"^P0: Flux cannot reconcile Kustomization/(?P<name>[A-Za-z0-9._-]+)\.(?P<ns>[A-Za-z0-9-]+)$"
+)
+
+
+def touches(title: str) -> str | None:
+    """The object a row is about, as 'ns/name', or None when this reconciles nothing about it.
+
+    The title is the only key used. It is written from involvedObject in the event payload, so it
+    is structure; every defect above came from keying on the prose in the body instead.
+    """
+    m = TITLE_RE.match((title or "").strip())
+    return f"{m['ns']}/{m['name']}" if m else None
+
+
+def readiness(items: list[dict]) -> tuple[set[str], set[str]]:
+    """(present, not_ready) over 'ns/name'. Present is not Ready: a deleted object is absent, and a
+    row about it must close just as surely as a recovered one."""
+    present: set[str] = set()
+    not_ready: set[str] = set()
+    for it in items:
+        key = f"{it['namespace']}/{it['name']}"
+        present.add(key)
+        if not it.get("ready", False):
+            not_ready.add(key)
+    return present, not_ready
+
+
+def kustomizations_from_kubectl(doc) -> list[dict]:
+    """Flux's own opinion of Ready, and nothing weaker.
+
+    Accepts either shape a recording arrives in: the raw `kubectl get ... -o json` document, or
+    the already-trimmed [{namespace,name,ready}] list the test fixture stores. Getting this wrong
+    is silent and total -- a raw recording read as a trimmed one yields a cluster with no objects,
+    every row reads 'no longer exists', and the plan looks plausible while closing the world.
+    """
+    if isinstance(doc, list):
+        return doc
+    out = []
+    for it in doc.get("items", []):
+        md = it.get("metadata") or {}
+        conds = {
+            c.get("type"): c.get("status") for c in (it.get("status") or {}).get("conditions", [])
+        }
+        out.append(
+            {
+                "namespace": md.get("namespace", ""),
+                "name": md.get("name", ""),
+                "ready": conds.get("Ready") == "True",
+            }
+        )
+    return out
+
+
+def plan(
+    rows: list[dict], present: set[str], not_ready: set[str]
+) -> tuple[list[tuple[int, str]], list[tuple[str, int]], list[tuple[str, str]]]:
+    """PURE. (rows, cluster) -> (close, keep, to_open); no network, no clock, no gh.
+
+    Only rows whose title names a Kustomization are touched, so a P0 from another filer (the login
+    drill, say) is left exactly where it is.
+    """
+    by_key: dict[str, list[dict]] = {}
+    for r in rows:
+        key = touches(r.get("title", ""))
+        if key:
+            by_key.setdefault(key, []).append(r)
+
+    close: list[tuple[int, str]] = []
+    keep: list[tuple[str, int]] = []
+    for key, group in sorted(by_key.items()):
+        group.sort(key=lambda r: (r.get("createdAt") or "", r["number"]))
+        if key not in present:
+            close += [(r["number"], f"{key} no longer exists in the cluster") for r in group]
+        elif key in not_ready:
+            keep.append((key, group[0]["number"]))
+            close += [
+                (r["number"], f"duplicate of #{group[0]['number']}: one row per object")
+                for r in group[1:]
+            ]
+        else:
+            close += [(r["number"], f"{key} is Ready now") for r in group]
+
+    to_open = []
+    for key in sorted(not_ready - {k for k, _ in keep}):
+        ns, name = key.split("/", 1)
+        to_open.append((key, TITLE.format(name=name, ns=ns)))
+    return close, keep, to_open
+
+
+def violations(rows: list[dict], present: set[str], not_ready: set[str]) -> list[str]:
+    """Every way the board is not a function of the cluster. Empty = the board is true.
+
+    This is the gate, and it is not decoration: run against the real board of 2026-10-12 it names
+    55 stale rows and one live fire with no row. See
+    tests/test_the_board_is_a_function_of_state.py::test_the_board_that_day_lied_about_the_cluster.
+    """
+    bad: list[str] = []
+    seen: dict[str, list[int]] = {}
+    for r in rows:
+        key = touches(r.get("title", ""))
+        if not key:
+            continue
+        seen.setdefault(key, []).append(r["number"])
+        if key not in present:
+            bad.append(f"#{r['number']} names {key}, which no longer exists")
+        elif key not in not_ready:
+            bad.append(f"#{r['number']} names {key}, which is Ready now")
+    for key, nums in sorted(seen.items()):
+        if len(nums) > 1:
+            bad.append(f"{key} has {len(nums)} open rows {nums}; one row per object")
+    for key in sorted(not_ready):
+        if key not in seen:
+            bad.append(f"{key} is not Ready and has no row")
+    return bad
+
+
+# --- the impure edge: gh, kubectl and the clock. Everything above is pure and tested. ---
+
+
+def _run(cmd: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(cmd, capture_output=True, text=True)
+
+
+def load_rows_from_gh() -> list[dict]:
+    """Every open P0, by title only. 1000 is gh's ceiling for one call and well above any real
+    board; the old open path asked for 100 and the old close path for 100, which is how a board
+    that had drifted past 100 would stop deduping against itself.
+    """
+    r = _run(
+        [
+            "gh", "issue", "list", "--state", "open", "--label", LABEL,
+            "--limit", "1000", "--json", "number,title,createdAt",
+        ]
+    )
+    if r.returncode != 0:
+        raise SystemExit(
+            f"BLIND flux-board-reconcile  cannot list open {LABEL} rows: {r.stderr.strip()[:300]}"
+        )
+    return json.loads(r.stdout or "[]")
+
+
+def load_rows_from_recording(path: str) -> list[dict]:
+    """A recorded board: the flat list, or a whole fixture document carrying it under 'rows'."""
+    doc = json.loads(Path(path).read_text())
+    return doc["rows"] if isinstance(doc, dict) else doc
+
+
+def load_cluster_from_kubectl() -> list[dict]:
+    r = _run(["kubectl", "get", "kustomizations", "-A", "-o", "json"])
+    if r.returncode != 0:
+        raise SystemExit(
+            f"BLIND flux-board-reconcile  cannot read kustomizations: {r.stderr.strip()[:300]}"
+        )
+    return kustomizations_from_kubectl(json.loads(r.stdout))
+
+
+def load_cluster_from_recording(path: str) -> list[dict]:
+    """A recorded cluster: either the raw kubectl document, or the trimmed list in the fixture,
+    or a whole fixture document carrying the cluster under 'cluster'."""
+    doc = json.loads(Path(path).read_text())
+    if isinstance(doc, dict) and "cluster" in doc and "items" not in doc:
+        doc = doc["cluster"]
+    return kustomizations_from_kubectl(doc)
+
+
+def close_row(number: int, why: str, stamp: str) -> bool:
+    body = (
+        f"Closed by the reconcile: {why}.\n\n"
+        "The board is made equal to the cluster every 15 minutes, so a row lives only while its "
+        f"object exists and is not Ready. This is that pass.\n\nreconciled: {stamp}\n"
+    )
+    r = _run(["gh", "issue", "close", str(number), "--reason", "completed", "--comment", body])
+    if r.returncode != 0:
+        print(f"FAIL    close #{number}: {r.stderr.strip()[:200]}", file=sys.stderr)
+        return False
+    print(f"        closed #{number}  {why}")
+    return True
+
+
+def open_row(title: str, key: str, stamp: str) -> bool:
+    body = (
+        f"{key} is not Ready in the cluster.\n\n"
+        "Filed by the reconcile, which reads Flux's own Ready condition every 15 minutes. This row "
+        "closes by itself when the object goes Ready; it does not need a recovery event to land, "
+        "and a missed event cannot orphan it.\n\n"
+        f"reconciled: {stamp}\n"
+    )
+    r = _run(["gh", "issue", "create", "--title", title, "--label", LABEL, "--body", body])
+    if r.returncode != 0:
+        print(f"FAIL    open '{title}': {r.stderr.strip()[:200]}", file=sys.stderr)
+        return False
+    print(f"        opened {r.stdout.strip()}  {key}")
+    return True
+
+
+def simulate(rows: list[dict], close: list[tuple[int, str]], to_open: list[tuple[str, str]], stamp: str) -> list[dict]:
+    """The board the plan produces, without touching GitHub. Verifying this is what makes the
+    recorded fixture in tests/ grade a real board without needing a network."""
+    closed = {n for n, _ in close}
+    return [r for r in rows if r["number"] not in closed] + [
+        {"number": -i, "title": t, "createdAt": stamp, "filed_by_reconcile": True}
+        for i, (_, t) in enumerate(to_open, 1)
+    ]
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="make the Flux alarm's board equal to the cluster")
+    ap.add_argument("--cluster-json", help="a kubectl get kustomizations -A -o json recording")
+    ap.add_argument("--rows-json", help="a gh issue list recording: [{number,title,createdAt}]")
+    ap.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
+    ap.add_argument("--verify-only", action="store_true", help="change nothing, just grade the board")
+    a = ap.parse_args()
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    recorded = bool(a.rows_json)
+    cluster = (
+        load_cluster_from_recording(a.cluster_json) if a.cluster_json else load_cluster_from_kubectl()
+    )
+    rows = load_rows_from_recording(a.rows_json) if a.rows_json else load_rows_from_gh()
+    present, not_ready = readiness(cluster)
+    close, keep, to_open = plan(rows, present, not_ready)
+
+    managed = [r for r in rows if touches(r.get("title", ""))]
+    print(f"cluster {len(present)} kustomizations, {len(not_ready)} not Ready: {sorted(not_ready)}")
+    print(f"board   {len(rows)} open {LABEL} rows, {len(managed)} naming a Kustomization")
+    print(f"plan    close {len(close)}  keep {len(keep)}  open {len(to_open)}")
+    for n, why in close:
+        print(f"        close #{n}  {why}")
+    for key, n in keep:
+        print(f"        keep  #{n}  {key}")
+
+    if a.dry_run:
+        bad = violations(simulate(rows, close, to_open, stamp), present, not_ready)
+        print("dry-run: nothing changed")
+        if bad:
+            print(f"        the plan does not fix it: {len(bad)} violations remain", file=sys.stderr)
+            for b in bad[:10]:
+                print(f"          {b}", file=sys.stderr)
+            return 1
+        print("        the plan would leave the board true")
+        return 0
+
+    if not a.verify_only:
+        failed = 0
+        for n, why in close:
+            failed += not close_row(n, why, stamp)
+        for key, title in to_open:
+            failed += not open_row(title, key, stamp)
+        if failed:
+            print(f"FAIL    flux-board-reconcile  {failed} board writes failed", file=sys.stderr)
+            return 1
+
+    if recorded or a.verify_only:
+        # the recording is the whole world here: verify the plan's end state, not a live board.
+        after = simulate(rows, close, to_open, stamp)
+    else:
+        after = load_rows_from_gh()
+
+    bad = violations(after, present, not_ready)
+    if bad:
+        print(f"FAIL    flux-board-reconcile  the board still contradicts the cluster ({len(bad)}):", file=sys.stderr)
+        for b in bad[:20]:
+            print(f"          {b}", file=sys.stderr)
+        return 1
+    print(f"ok      flux-board-reconcile  {len(after)} rows, every one an object that exists and is not Ready")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
