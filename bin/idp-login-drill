@@ -427,6 +427,22 @@ with sync_playwright() as p:
                        f"{hook_state!r}), so any 'no WebAuthn request' from this run would be this "
                        "script's, not the door's")
 
+    # Two ways a control is the passkey's. Its own name says so ("FIDO Authenticator"), or it
+    # is the action button of a card that is headed as the FIDO factor: with a passkey enrolled
+    # the door skips the factor list and shows "FIDO Authenticator Verification" with a single
+    # button:"Verify" (screenshot of run 38290425763, 2026-10-12), whose name carries none of
+    # the vocabulary. The card must name FIDO and must not name the Mobile App, so the Verify
+    # that approves a push -- a different factor -- is still not counted. Defined here, ahead of
+    # step 2, because the passwordless walk meets the same card: named by vocabulary alone it
+    # skipped "Verify" and graded a door that offers Face ID as one that does not.
+    def is_passkey(c):
+        if FACEID_TEXT.search(str(c.get("name", ""))):
+            return True
+        own = str(c.get("card", ""))
+        return (bool(re.match(r"^(verify|continue|next)$", str(c.get("name", "")).strip(), re.I))
+                and bool(re.search(r"fido authenticator", own, re.I))
+                and not re.search(r"mobile app", own, re.I))
+
     # 2. sign in as the drill user
     for b in BANNER_SELECTORS:
         loc = page.locator(b).first
@@ -451,7 +467,7 @@ with sync_playwright() as p:
             # FACEID_TEXT matches a disclosure too ("other options"), so a disclosure is pressed and
             # then excluded from the candidates. Otherwise this walk presses a menu, no ceremony
             # follows, and it grades its own click as the door refusing to offer a passkey.
-            cands = [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
+            cands = [c for c in controls(page) if is_passkey(c)]
             passkeys = [c for c in cands if not DISCLOSURE_TEXT.search(str(c.get("name", "")))]
             if passkeys:
                 offer = passkeys[0]
@@ -580,20 +596,6 @@ with sync_playwright() as p:
     # Prose may classify the step; it may never claim the factor. The page's own copy names "a
     # security key" while showing no such control (measured 2026-10-12), and matching that prose
     # reported faceid=offered on runs where the founder could see no Face ID at the door.
-    # Two ways a control is the passkey's. Its own name says so ("FIDO Authenticator"), or it
-    # is the action button of a card that is headed as the FIDO factor: with a passkey enrolled
-    # the door skips the factor list and shows "FIDO Authenticator Verification" with a single
-    # button:"Verify" (screenshot of run 38290425763, 2026-10-12), whose name carries none of
-    # the vocabulary. The card must name FIDO and must not name the Mobile App, so the Verify
-    # that approves a push -- a different factor -- is still not counted.
-    def is_passkey(c):
-        if FACEID_TEXT.search(str(c.get("name", ""))):
-            return True
-        own = str(c.get("card", ""))
-        return (bool(re.match(r"^(verify|continue|next)$", str(c.get("name", "")).strip(), re.I))
-                and bool(re.search(r"fido authenticator", own, re.I))
-                and not re.search(r"mobile app", own, re.I))
-
     def offered_controls():
         return [c for c in controls(page) if is_passkey(c)]
 
