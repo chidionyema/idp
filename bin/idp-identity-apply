@@ -17,27 +17,25 @@ ESTATE_FOUNDER_EMAIL="${ESTATE_FOUNDER_EMAIL:-$(gh variable get ESTATE_FOUNDER_E
 : "${DOMAIN_BASE_URL:?DOMAIN_BASE_URL: run bin/idp-oci-bootstrap}"; : "${ESTATE_FOUNDER_EMAIL:?ESTATE_FOUNDER_EMAIL: the email the front door admits}"
 cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config.yaml")
 [ "${cfg%/}" = "${DOMAIN_BASE_URL%/}" ] || { echo "FAIL    identity estate-config ESTATE_OIDC_DOMAIN_URL ($cfg) differs from DOMAIN_BASE_URL; the pod would sign in against a different domain than the client lives in"; exit 2; }
-# `probe` is the read-only door to the one MFA knob no laptop can see: the app's sign-on policy.
-# There is no Terraform resource for it (no oci_identity_domains_sign_on_policy in provider
-# oracle/oci 8.19+, measured 404 against the provider docs 2026-10-12) and SignOnPolicies REST
-# refuses an API-key signature (401, measured this domain 2026-10-12), so the only auth that
-# reads it is the CI runner's security token. Probe prints the app's policy ref, every policy,
-# and every rule, then exits -- no PATCH, no vault read, no tofu. The enforcement block that
-# follows below was designed from this dump, not from the classic-IDCS docs, because this
-# OCI-generation domain has already refused two of their values (RequiredForAll and ALL_USERS,
-# both 400, measured 2026-10-11).
+# `probe` is the read-only door to the app's sign-on policy. There is no Terraform resource
+# for it (no oci_identity_domains sign-on resource in provider oracle/oci 8.19+, measured 404
+# against the provider docs 2026-10-12), and the classic docs point at /admin/v1/SignOnPolicies,
+# which is the WRONG ENDPOINT NAME on this OCI-generation domain and 401s every auth (API key
+# and the CI runner's security token alike, measured 2026-10-12). The live endpoints are
+# /admin/v1/{Policies,Rules,Conditions} -- readable by the same auth that reads Apps. Probe
+# prints the app's policy ref, every policy, rule and condition, then exits -- no PUT, no PATCH,
+# no vault read, no tofu. The enforcement block below was designed from this dump, not from the
+# classic-IDCS docs, because this domain has already refused two of their values (RequiredForAll
+# and ALL_USERS, both 400, measured 2026-10-11).
 if [ "${1:-plan}" = probe ]; then
   app=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id,displayName,signonPolicy" 2>/dev/null | jq -c '.data.Resources[0] // empty')
   echo "probe   app      $app"
-  pol=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SignOnPolicies" 2>&1)
-  if printf '%s' "$pol" | jq -e '.data.Resources' >/dev/null 2>&1; then
-    printf '%s' "$pol" | jq -c '.data.Resources[] | {id, name, active}' | sed 's/^/probe   policy   /'
-    rules=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SignOnPolicyRules" 2>/dev/null)
-    printf '%s' "$rules" | jq -c '.data.Resources[]? | {id, name, active, signonPolicy: .signonPolicy.value, rule, then: ."then"}' | sed 's/^/probe   rule     /'
-  else
-    echo "BLIND   probe    SignOnPolicies refused this auth (run me as mode=probe on oke-check, where the runner holds a security token): $(printf '%s' "$pol" | tr -d '\n' | head -c 140)"
-    exit 2
-  fi
+  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null \
+    | jq -c '.data.Resources[] | {id, name, active}' | sed 's/^/probe   policy   /'
+  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null \
+    | jq -c '.data.Resources[] | {id, name}' | sed 's/^/probe   rule     /'
+  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null \
+    | jq -c '.data.Resources[] | {id}' | sed 's/^/probe   cond     /'
   exit 0
 fi
 # compartment: the CI variable when the job sets it, else the vault, as bin/idp-vault-put
@@ -106,6 +104,40 @@ if [ "$mec" != "ALL" ]; then
   if printf '%s' "$pm2" | jq -e '.data.mfaEnabledCategory == "ALL"' >/dev/null 2>&1; then echo "ok      identity domain MFA enabled for all users at sign-in (#5753)"
   else echo "FAIL    identity domain SsoSettings MFA PATCH refused: $(printf '%s' "$pm2" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; fi
 else echo "ok      identity domain MFA enabled for all users at sign-in already"; fi
+# The enforcement itself (#5818): the app's own sign-on policy. The knobs above are domain-level
+# and the drill measured they do not bind a second factor to THIS app (bd34e386a, 2026-10-12
+# 00:58Z: the door signed straight through on the password alone, mfa_kind=none). The app carries
+# no signonPolicy ref, so it falls to DefaultSignOnPolicy, whose DefaultSignOnRule returns
+# authenticationFactor IDP -- password only (all three shapes read from this domain's own dump,
+# 2026-10-12). No Terraform resource manages Policies/Rules/Conditions, so like the singletons
+# above this is an idempotent SCIM ensure, read back: one condition (target.action eq "Login"),
+# one rule (IDP+2FA with the same factor spelling as the domain's own Console MFA rule, enrolment
+# not skippable, every sign-in), one policy holding that rule, and the policy assigned to the
+# app. The grader is the hourly login drill: it should stop at mfa=enroll with faceid=offered.
+fd_app=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id,signonPolicy" 2>/dev/null | jq -r '.data.Resources[0] // empty | (.signonPolicy.value // "")')
+if [ "$fd_app" = "FrontDoorSignOnPolicy" ]; then
+  echo "ok      identity front door sign-on policy already assigned (second factor required at every sign-in)"
+else
+  T3=$(mktemp -d); chmod 700 "$T3"
+  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],"id":"FrontDoorLoginCondition","name":"front door sign-in","attribute-name":"target.action","operator":"eq","attribute-value":"\"Login\""}' > "$T3/c.json"
+  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],"id":"FrontDoorMfaRule","name":"front door requires a second factor","policy-type":{"value":"SignOn"},"condition-group":{"value":"FrontDoorLoginCondition"},"-return":[{"name":"effect","value":"ALLOW"},{"name":"reAuthenticate","value":"false"},{"name":"authenticationFactor","value":"IDP+2FA"},{"name":"2FAFactors","value":"[\"TOTP\",\"PUSH\",\"FIDO_AUTHENTICATOR\",\"BYPASSCODE\"]"},{"name":"allowUserToSkip2FAEnrolment","value":"false"},{"name":"2FAFrequency","value":"ALWAYS"}]}' > "$T3/r.json"
+  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],"id":"FrontDoorSignOnPolicy","name":"Front Door Sign-On Policy","description":"assigned to estate-front-door by bin/idp-identity-apply (#5818)","active":true,"policy-type":{"value":"SignOn"},"rules":[{"value":"FrontDoorMfaRule"}]}' > "$T3/p.json"
+  fd_appid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
+  printf '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"signonPolicy","value":{"value":"FrontDoorSignOnPolicy"}}]}' > "$T3/a.json"
+  pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/FrontDoorLoginCondition" --request-body "file://$T3/c.json" 2>&1)
+  printf '%s' "$pc" | jq -e '.data.id == "FrontDoorLoginCondition"' >/dev/null 2>&1 || { echo "FAIL    identity front door condition PUT refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/FrontDoorMfaRule" --request-body "file://$T3/r.json" 2>&1)
+  printf '%s' "$pr" | jq -e '.data.id == "FrontDoorMfaRule"' >/dev/null 2>&1 || { echo "FAIL    identity front door MFA rule PUT refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  pp=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/FrontDoorSignOnPolicy" --request-body "file://$T3/p.json" 2>&1)
+  printf '%s' "$pp" | jq -e '.data.active == true' >/dev/null 2>&1 || { echo "FAIL    identity front door policy PUT refused: $(printf '%s' "$pp" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  pa=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid" --request-body "file://$T3/a.json" 2>&1)
+  rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=signonPolicy" 2>/dev/null | jq -r '.data.Resources[0].signonPolicy.value // ""')
+  if [ "$rb" = "FrontDoorSignOnPolicy" ]; then
+    echo "ok      identity front door sign-on policy assigned (second factor required at every sign-in, #5818)"
+  else
+    echo "FAIL    identity front door app signonPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1
+  fi
+fi
 M="$IDP/platform/oci/identity"
 # the provider signs in the way the oci CLI in this run does: SecurityToken under GitHub OIDC
 # (oke-check sets OCI_CLI_AUTH=security_token), APIKey on a laptop (crew#408)
