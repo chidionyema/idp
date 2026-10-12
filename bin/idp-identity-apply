@@ -17,6 +17,29 @@ ESTATE_FOUNDER_EMAIL="${ESTATE_FOUNDER_EMAIL:-$(gh variable get ESTATE_FOUNDER_E
 : "${DOMAIN_BASE_URL:?DOMAIN_BASE_URL: run bin/idp-oci-bootstrap}"; : "${ESTATE_FOUNDER_EMAIL:?ESTATE_FOUNDER_EMAIL: the email the front door admits}"
 cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config.yaml")
 [ "${cfg%/}" = "${DOMAIN_BASE_URL%/}" ] || { echo "FAIL    identity estate-config ESTATE_OIDC_DOMAIN_URL ($cfg) differs from DOMAIN_BASE_URL; the pod would sign in against a different domain than the client lives in"; exit 2; }
+# `probe` is the read-only door to the one MFA knob no laptop can see: the app's sign-on policy.
+# There is no Terraform resource for it (no oci_identity_domains_sign_on_policy in provider
+# oracle/oci 8.19+, measured 404 against the provider docs 2026-10-12) and SignOnPolicies REST
+# refuses an API-key signature (401, measured this domain 2026-10-12), so the only auth that
+# reads it is the CI runner's security token. Probe prints the app's policy ref, every policy,
+# and every rule, then exits -- no PATCH, no vault read, no tofu. The enforcement block that
+# follows below was designed from this dump, not from the classic-IDCS docs, because this
+# OCI-generation domain has already refused two of their values (RequiredForAll and ALL_USERS,
+# both 400, measured 2026-10-11).
+if [ "${1:-plan}" = probe ]; then
+  app=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id,displayName,signonPolicy" 2>/dev/null | jq -c '.data.Resources[0] // empty')
+  echo "probe   app      $app"
+  pol=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SignOnPolicies" 2>&1)
+  if printf '%s' "$pol" | jq -e '.data.Resources' >/dev/null 2>&1; then
+    printf '%s' "$pol" | jq -c '.data.Resources[] | {id, name, active}' | sed 's/^/probe   policy   /'
+    rules=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SignOnPolicyRules" 2>/dev/null)
+    printf '%s' "$rules" | jq -c '.data.Resources[]? | {id, name, active, signonPolicy: .signonPolicy.value, rule, then: ."then"}' | sed 's/^/probe   rule     /'
+  else
+    echo "BLIND   probe    SignOnPolicies refused this auth (run me as mode=probe on oke-check, where the runner holds a security token): $(printf '%s' "$pol" | tr -d '\n' | head -c 140)"
+    exit 2
+  fi
+  exit 0
+fi
 # compartment: the CI variable when the job sets it, else the vault, as bin/idp-vault-put
 C="${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}"
 # vault and key: the ones the existing estate secrets already live in; placeholders are imported, never re-created
