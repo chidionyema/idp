@@ -68,7 +68,15 @@ KOKORO_VOICES = os.environ.get("VOICE_KOKORO_VOICES") or str(
     __import__("pathlib").Path(MODEL_CACHE) / "voices-v1.0.bin"
 )
 KOKORO_VOICE = os.environ.get("VOICE_KOKORO_VOICE", "af_heart")
-SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", "Zarvox")
+# A woman's voice, like KOKORO_VOICE and PIPER_VOICE above it and DEFAULT_CLOUD_VOICE in
+# `fleetview_backend/voice_media.py`. It was "Zarvox" -- macOS's novelty robot, a man's voice --
+# making this the only one of the estate's four voice defaults that disagreed with the face it
+# speaks from. No manifest sets VOICE_SAY_VOICE, so this default is what production actually
+# speaks with: measured 2026-10-12, `/voice/voices` on catalogue.mumchimp.com reported
+# {"kokoro":"af_heart","say":"Zarvox","piper":"en_US-lessac-medium","cloud":"hannah"}
+# -- three women and one robot. `voice_media.py` already defaulted to "Samantha"; the two sides
+# are one voice and must not disagree (fleetview#5662).
+SAY_VOICE = os.environ.get("VOICE_SAY_VOICE", "Samantha")
 PIPER_VOICE = os.environ.get("VOICE_PIPER_VOICE", "en_US-lessac-medium")
 
 # The router is the estate's own (LAW 34: one router key per identity, no vendor keys on the Mac).
