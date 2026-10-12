@@ -265,7 +265,7 @@ spec:
             - flux pull artifact oci://ghcr.io/chidionyema/idp/estate-state:latest --output /run/estate-state || echo "estate-state pull failed; the boot will log BLIND"
           env:
             - { name: DOCKER_CONFIG, value: /creds }   # flux reads the registry login from $DOCKER_CONFIG/config.json
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318" }   # LAW 50
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://otlp.monitoring.svc:4318" }   # LAW 50
           volumeMounts:
             - { name: estate-state, mountPath: /run/estate-state }
             - { name: ghcr-creds, mountPath: /creds, readOnly: true }

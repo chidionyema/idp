@@ -20,6 +20,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import threading
 
 import yaml
@@ -83,19 +84,11 @@ def test_the_config_reads_exactly_the_fields_the_secret_holds() -> None:
 
 
 def _verify():
-    """bin/idp-bootstrap-vendors' own verify(), lifted out of its heredoc and run as written."""
-    src = BOOTSTRAP.read_text()
-    body = src[src.index("def verify(v, subs):") :]
-    body = body[: body.index("\ndef ", 1)]
-    ns = {"__builtins__": __builtins__}
-    # The code run is this repo's own verify(), which lives in a bash heredoc and cannot be imported.
-    exec(  # noqa: S102
-        "import base64, re, sys, urllib.error, urllib.request\n"
-        "def zone(): return ''\n"
-        "def say(*a): print(*a)\n" + body,
-        ns,
-    )
-    return ns["verify"]
+    """The one verify() the estate has: bin/lib/vendor_verify.py, bound to this checkout."""
+    sys.path.insert(0, str(ROOT / "bin/lib"))
+    import vendor_verify  # noqa: PLC0415
+
+    return lambda v, subs: vendor_verify.verify(v, subs, str(ROOT))
 
 
 class _Gateway(http.server.BaseHTTPRequestHandler):
