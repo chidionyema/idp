@@ -1028,6 +1028,23 @@ export function useEstateVoice(): EstateVoice {
     // showing a prompt ("iOS is not letting this page use the microphone"), while desktop Chrome,
     // which is lenient here, prompted fine. The request starts here, synchronously, and the VAD is
     // handed the stream.
+    // THE API ITSELF CAN BE ABSENT, AND `?.` IS NOT A HANDLING OF IT (2026-10-12, measured live).
+    // The founder's iPhone on /fleet: `navigator.mediaDevices` is undefined, so the optional chain
+    // below makes `micStream` undefined without a word, the next trace records 'vad-asks' as though
+    // a grant had happened, and MicVAD.new -- handed no stream -- opens the microphone itself and
+    // throws "TypeError: undefined is not an object (evaluating 'navigator.mediaDevices
+    // .getUserMedia')", which is the message that reached /voice/trace at 22:37Z and the only
+    // answer the trace could give. This is not the pre-flight permission gate deleted above: there
+    // is no permission to ask for when the API does not exist, so "ask for the microphone by using
+    // it" cannot be attempted. The check is for the API alone, it names the browser instead of
+    // sending the person to a Settings page that cannot change it, and it returns before the VAD
+    // can throw something nobody can act on.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      traceMic('mic-unavailable', 'this browser cannot reach the microphone');
+      setState('error');
+      setDetail('this browser cannot reach the microphone — open the page in Safari or Chrome');
+      return;
+    }
     const micStream: Promise<MediaStream> | undefined =
       navigator.mediaDevices?.getUserMedia?.({
         audio: {
