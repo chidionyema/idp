@@ -11,15 +11,10 @@ digraph {
   "oci_identity_policy.workers_write_receipts" [label="oci_identity_policy\nworkers_write_receipts"];
   "random_password.flux_webhook" [label="random_password\nflux_webhook"];
   "oci_vault_secret.flux_webhook_token" [label="oci_vault_secret\nflux_webhook_token"];
-  "random_password.signoz_root" [label="random_password\nsignoz_root"];
-  "oci_vault_secret.signoz" [label="oci_vault_secret\nsignoz"];
   "random_password.superset_db" [label="random_password\nsuperset_db"];
   "oci_vault_secret.superset_db_password" [label="oci_vault_secret\nsuperset_db_password"];
   "random_password.superset_secret_key" [label="random_password\nsuperset_secret_key"];
   "oci_vault_secret.superset_secret_key" [label="oci_vault_secret\nsuperset_secret_key"];
-  "random_password.otlp_ingest" [label="random_password\notlp_ingest"];
-  "oci_vault_secret.otlp_ingest_password" [label="oci_vault_secret\notlp_ingest_password"];
-  "oci_vault_secret.otlp_ingest_users" [label="oci_vault_secret\notlp_ingest_users"];
   "random_password.commerce_db" [label="random_password\ncommerce_db"];
   "random_password.commerce_encryption_primary" [label="random_password\ncommerce_encryption_primary"];
   "random_password.commerce_encryption_deterministic" [label="random_password\ncommerce_encryption_deterministic"];
