@@ -132,9 +132,10 @@ def test_estate_envelope_joins_green_burn_and_research(monkeypatch):
     # the monkeypatched seams are the ones the envelope actually resolves.
     monkeypatch.setattr(routes, "research_feed", research_feed, raising=False)
     monkeypatch.setattr(routes, "spend", spend, raising=False)
+    # the envelope reads the cached lane status, never the slow `gh api` read inline
     monkeypatch.setattr(
         routes.greenlane,
-        "greenlane_status",
+        "greenlane_status_nowait",
         lambda now=None: {"available": False, "error": "no bin/idp-greenlane"},
     )
     monkeypatch.setattr(

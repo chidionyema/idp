@@ -360,3 +360,23 @@ def test_garbage_state_json(tmp_path):
     assert result["state"] is None
     codes = [a["code"] for a in result["alerts"]]
     assert "converger-missing" in codes
+
+
+def test_malformed_plist_drops_itself_not_the_board(tmp_path):
+    import plistlib
+
+    from fleetview_backend import delivery
+
+    agents = tmp_path / "LaunchAgents"
+    agents.mkdir()
+    prog = tmp_path / "prog"
+    prog.write_text("#!/bin/sh\n")
+    (agents / "ai.estate.good.plist").write_bytes(
+        plistlib.dumps({"Label": "ai.estate.good", "Program": str(prog)})
+    )
+    # `--` inside an XML comment is not well-formed: plistlib raises ExpatError.
+    (agents / "ai.estate.bad.plist").write_text(
+        '<?xml version="1.0"?>\n<!-- a -- b -->\n<plist><dict/></plist>\n'
+    )
+    jobs = delivery.jobs(agents, "")
+    assert [j["label"] for j in jobs] == ["ai.estate.good"]

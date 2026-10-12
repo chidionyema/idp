@@ -116,7 +116,7 @@ def _transitions(
     return events
 
 
-def _emit_event(
+async def _emit_event(
     nats_url: str,
     nats_adapter: Any,
     ledger_id: str,
@@ -133,16 +133,12 @@ def _emit_event(
         "domains": proposal.get("domains", []),
     }
     try:
-        # Run the async publish in a new event loop — this function is called from
-        # a sync polling thread. Creating a fresh loop per event is slightly wasteful
-        # but correct and the poll interval (5 s) makes it negligible.
-        import asyncio as _asyncio
-
-        _asyncio.run(
-            nats_adapter.publish(
-                nats_url, ledger_id, "approvals", kind, "decided", **payload
-            )
-        )
+        # Awaited on the server's own loop, on the subject the board reads. This was
+        # asyncio.run() of the agent-event publish(): asyncio.run() raises inside a running
+        # loop, payload["kind"] collided with publish()'s own `kind`, and the subject it built
+        # was estate.agent.approvals.*, which subscribe_approvals never reads. Three ways no
+        # approval ever reached /fleet (measured 2026-10-12).
+        await nats_adapter.publish_approval(nats_url, ledger_id, kind, payload)
         _logger.info("fleetview.approval_event %s %s", ledger_id, kind)
     except Exception as exc:  # noqa: BLE001
         _logger.warning(
@@ -179,7 +175,7 @@ async def run_approvals_adapter(nats_url: str) -> None:
 
             for ledger_id, kind in _transitions(prev_state, proposals, staged):
                 proposal = _load_proposal(ledger_id) if kind == "approved" else {}
-                _emit_event(nats_url, _na, ledger_id, kind, proposal, now)
+                await _emit_event(nats_url, _na, ledger_id, kind, proposal, now)
 
             prev_state = curr_state
 
