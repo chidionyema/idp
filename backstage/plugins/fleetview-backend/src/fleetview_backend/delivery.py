@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import plistlib
+from xml.parsers.expat import ExpatError
 import sqlite3
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -192,7 +193,9 @@ def jobs(agents_dir: Path, launchctl_text: str) -> list[dict[str, Any]]:
         try:
             with plist_path.open("rb") as fh:
                 data = plistlib.load(fh)
-        except (OSError, plistlib.InvalidFileException):
+        except (OSError, plistlib.InvalidFileException, ExpatError):
+            # One unreadable plist (a `--` inside an XML comment is enough) drops itself from
+            # the board; it must not 503 the whole delivery view.
             continue
         label = data.get("Label")
         if not label or not label.startswith(JOB_PREFIXES):

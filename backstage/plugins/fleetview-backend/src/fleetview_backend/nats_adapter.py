@@ -56,6 +56,13 @@ STREAM_MAX_AGE_S = 15 * 60
 CONNECT_MAX_RECONNECT_ATTEMPTS = 2
 CONNECT_RECONNECT_TIME_WAIT = 1.0
 CONNECT_TIMEOUT = 2.0
+# How long publish() waits for the shared connection's dial: the same budget as above.
+PUBLISH_DIAL_WAIT_S = (
+    CONNECT_MAX_RECONNECT_ATTEMPTS * CONNECT_RECONNECT_TIME_WAIT + CONNECT_TIMEOUT + 1
+)
+# Set on a connection once ESTATE_AGENT is known to exist behind it.
+_STREAM_READY_ATTR = "_estate_agent_stream_ready"
+_APPROVALS_READY_ATTR = "_estate_approvals_stream_ready"
 
 
 async def _ensure_stream(js) -> None:
@@ -132,7 +139,7 @@ async def publish(
     Raises RuntimeError("nats-py not installed") when nats-py is absent.
     """
     _require_nats()
-    import nats
+    from nats.js.errors import NoStreamResponseError
 
     url = _nats_url(nats_url)
     event: dict = {
@@ -147,18 +154,43 @@ async def publish(
     subject = f"estate.agent.{runtime}.{session_id}.{kind}"
     payload = json.dumps(event).encode()
 
-    nc = await nats.connect(
-        url,
-        max_reconnect_attempts=CONNECT_MAX_RECONNECT_ATTEMPTS,
-        reconnect_time_wait=CONNECT_RECONNECT_TIME_WAIT,
-        connect_timeout=CONNECT_TIMEOUT,
-    )
+    # The process's one bus connection, not a dial per event. A dial and an add_stream per
+    # publish was ~1 connection a second for days: nats-server's client ids passed 180,000 in
+    # 2.4 days of uptime and it stopped answering connects (measured 2026-10-12). The wait is
+    # bounded by the same <=5s budget the per-event dial had; the dial itself is shielded and
+    # carries on for the next caller.
+    nc = await asyncio.wait_for(_stream_conn(url), PUBLISH_DIAL_WAIT_S)
+    js = nc.jetstream()
+    if not getattr(nc, _STREAM_READY_ATTR, False):
+        await _ensure_stream(js)
+        setattr(nc, _STREAM_READY_ATTR, True)
     try:
-        js = nc.jetstream()
+        await js.publish(subject, payload)
+    except NoStreamResponseError:
+        # the bus came back without the stream: create it once more, then publish once more
         await _ensure_stream(js)
         await js.publish(subject, payload)
-    finally:
-        await nc.drain()
+
+
+async def publish_approval(
+    nats_url: str, ledger_id: str, kind: str, payload: dict
+) -> None:
+    """Publish one decision on `estate.approvals.<ledger_id>.<kind>`, the subject
+    subscribe_approvals reads, on the shared connection.
+
+    Raises RuntimeError("nats-py not installed") when nats-py is absent.
+    """
+    _require_nats()
+    nc = await asyncio.wait_for(_stream_conn(_nats_url(nats_url)), PUBLISH_DIAL_WAIT_S)
+    js = nc.jetstream()
+    if not getattr(nc, _APPROVALS_READY_ATTR, False):
+        await _ensure_stream_by_name(
+            js, ESTATE_APPROVALS_NAME, ESTATE_APPROVALS_SUBJECTS
+        )
+        setattr(nc, _APPROVALS_READY_ATTR, True)
+    await js.publish(
+        f"estate.approvals.{ledger_id}.{kind}", json.dumps(payload).encode()
+    )
 
 
 # The stream plane's ONE connection (issue #5829). /stream used to call nats.connect four times
@@ -215,10 +247,17 @@ async def _stream_conn(nats_url: str) -> Any:
     )  # the caller's cancellation must not abort the dial
 
 
+async def _log_bus_error(exc: Exception) -> None:
+    # nats-py's default error_cb logs a full traceback for every failed reconnect attempt: 30
+    # lines every 2s while the bus is down, which grew this process's error log to 277 MB on a
+    # disk with 2.9 GB free (measured 2026-10-12). One line says the same thing.
+    logger.warning("fleetview.bus_error %s: %s", type(exc).__name__, exc)
+
+
 async def _dial_bus(nats_url: str) -> Any:
     import nats
 
-    return await nats.connect(nats_url)
+    return await nats.connect(nats_url, error_cb=_log_bus_error)
 
 
 async def close_sub(sub: Any) -> None:
