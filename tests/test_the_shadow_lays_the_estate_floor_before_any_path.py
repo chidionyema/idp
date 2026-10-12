@@ -63,6 +63,11 @@ def test_the_floor_is_production_eso_crds_and_priority_classes(monkeypatch):
         "./traefik/crds": "shadow-floor-traefik",
         "./libcalico-go/config/crd": "shadow-floor-calico",
         "./platform/priority-classes": "shadow",
+        # #5777 (2026-10-11) added the row that produces the Secret platform/github-app-creds
+        # ExternalSecrets stand in for, and did not add it here, so this exact-dict assertion
+        # went red on main and stayed red: CI is diff-scoped (bin/idp-tests-for), and the only
+        # file that reads this one is the change itself. Found 2026-10-12 by running it.
+        "./platform/github-app-creds": "shadow",
     }
     assert (REPO / "platform/priority-classes/priorityclasses.yaml").exists()
 

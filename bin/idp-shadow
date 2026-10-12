@@ -551,6 +551,38 @@ def flux_floor(deadline):
 # the target Secret ESO would have written, with the keys ESO would have written and a
 # placeholder value. A workload that needs the real credential to go Ready still fails.
 VAULT_PLACEHOLDER = "shadow-vault-stand-in"
+# A key whose consumer PARSES it cannot be stood in with prose: the consumer dies on its first
+# byte, before it ever reaches the network, and the row holding it can then never converge in any
+# shadow run -- a gap in the shadow that looks exactly like a broken change.
+#
+# Measured 2026-10-12 on the open image-update PR 5890 (run 38287453511, job 114939495218):
+# platform/mcp's fetch-estate-db init container runs `flux pull artifact` with DOCKER_CONFIG=/creds
+# and parses /creds/config.json -- the stood-in ghcr-pull/.dockerconfigjson -- so it died with
+#   parsing config file (/creds/config.json): invalid character 's' looking for beginning of value
+# which is the `s` of the placeholder below. platform/mcp therefore never converged, and an
+# image-update PR always carries the platform/mcp and platform/temporal kustomizations, so this
+# row was always in scope: every built image sat at shadow-verify and never moved the overlays.
+#
+# The stand-in still forges nothing. An empty auths block is anonymous, and the artifact is
+# anonymously readable: measured the same day, the anonymous token from
+# https://ghcr.io/token?scope=repository:chidionyema/idp/estate-db:pull&service=ghcr.io reads
+# /v2/chidionyema/idp/estate-db/manifests/latest with HTTP 200. A row that needs a real credential
+# to go Ready still fails -- at the registry, where it belongs, not at the parser.
+JSON_STAND_IN = '{"auths":{}}'
+
+
+def is_json_key(key):
+    """True for a secret key a consumer parses as JSON rather than reads as a string.
+
+    `.dockerconfigjson` is the key the OCI tooling parses (a docker config), and a `.json` suffix
+    is that same contract spelled differently (a service-account key, a GCP key).
+    """
+    return key == ".dockerconfigjson" or key.endswith(".json")
+
+
+def placeholder(key):
+    """The stand-in value for one key, in the shape that key's own consumer parses."""
+    return JSON_STAND_IN if is_json_key(key) else VAULT_PLACEHOLDER
 
 
 def consumer_secret_keys():
@@ -687,7 +719,7 @@ def vault_stand_ins(external_secrets, consumer_keys=None):
                     "namespace": namespace,
                     "labels": {"idp.shadow/vault-stand-in": "true"},
                 },
-                "stringData": {k: VAULT_PLACEHOLDER for k in dict.fromkeys(keys)},
+                "stringData": {k: placeholder(k) for k in dict.fromkeys(keys)},
             }
         )
     return out
