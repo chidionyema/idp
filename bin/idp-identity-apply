@@ -30,10 +30,26 @@ cfg=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$IDP/clusters/oke/estate-config
 if [ "${1:-plan}" = probe ]; then
   app=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id,displayName,signonPolicy" 2>/dev/null | jq -c '.data.Resources[0] // empty')
   echo "probe   app      $app"
+  appid=$(printf '%s' "$app" | jq -r '.id // ""')
   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null \
     | jq -c '.data.Resources[] | {id, name, active}' | sed 's/^/probe   policy   /'
+  # every rule with its `return` list, not just its name: the factor values this domain's own rules
+  # carry are the only authority on what it honours at sign-in, and a name alone cannot say why a
+  # rule the domain ignores is worse than no rule at all (#5858, measured 2026-10-12: the door
+  # offered no passkey control to the cohort and then signed it in with its password alone).
   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null \
-    | jq -c '.data.Resources[] | {id, name}' | sed 's/^/probe   rule     /'
+    | jq -c '.data.Resources[] | {id, name, return}' | sed 's/^/probe   rule     /'
+  # does the app itself carry a passwordless/FIDO switch, or is the sign-on policy the only place
+  # on this domain where a factor is named? Attribute names only, never their values.
+  if [ -n "$appid" ]; then
+    oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$appid" 2>/dev/null \
+      | jq -r '.data | keys_unsorted | map(select(test("factor|password|fido|webauthn|passkey";"i"))) | join(",")' \
+      | sed 's/^/probe   appattrs /'
+  fi
+  # and if the domain enumerates the factor values its own Rule schema accepts, this is where it says so
+  oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Schemas/urn:ietf:params:scim:schemas:oracle:idcs:Rule" 2>/dev/null \
+    | jq -c '[.data.attributes[]? | select(.name | test("factor|^return$|passwordless";"i")) | {name,type,multiValued,canonicalValues,description}]' \
+    | sed 's/^/probe   rschema  /'
   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null \
     | jq -c '.data.Resources[] | {id}' | sed 's/^/probe   cond     /'
   exit 0
@@ -163,6 +179,16 @@ fpid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1
 # is ready, else "0 <the members still waiting>". Reads only, and the one place this is decided:
 # the skip below and the write further down both ask it, so they cannot disagree.
 pl_group="estate-passwordless-pilots"
+# The factor value a passkey-only sign-in needs, in THIS domain's vocabulary -- and empty until a
+# drill has measured that this domain honours it, because a value the domain does not know is not
+# refused: it ALLOWs the sign-in with no factor at all. #5858 shipped "Passwordless", and the drill
+# measured exactly that on 2026-10-12: after the username the door offered no passkey control and
+# the password form was the only way in (run 38273855150), and the same account then signed straight
+# through on its password with no second factor (run 38273745676), where the second-factor rule alone
+# had stopped it 34 minutes earlier. So a value the drill has not measured is never sent, and wiring
+# the rule waits for one; `bin/idp-identity-apply probe` prints every rule's own `return` list -- the
+# vocabulary this domain's own rules use -- to find it.
+PL_AF=""
 pl_cohort_ready() {
   local gid mus devf mu nf out un
   gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
@@ -196,7 +222,11 @@ fi
 # sign-in to a cohort whose only member held no passkey -- no second factor for that member, and
 # no Face ID prompt either. So the skip asks the domain the same question the write does, and a
 # rule that should not be wired falls through to the ensure that unwires it.
-if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ] && [ "$(pl_cohort_ready)" = 1 ]; then
+# The same question includes the factor value: a policy that carries a rule whose value this domain
+# does not honour is not "already assigned", it is a door with no factor at all (#5858). With no
+# measured value the rule is not one that should be wired, so this falls through to the ensure that
+# unwires it.
+if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ] && [ -n "$PL_AF" ] && [ "$(pl_cohort_ready)" = 1 ]; then
   echo "ok      identity front door sign-on policy already assigned (second factor at every sign-in; Face ID alone offered to the pilot cohort, #5818/#5858)"
 else
   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
@@ -266,8 +296,10 @@ else
     # pre-empts, so the order is forced, and convergent: enrol the passkey, and the next apply
     # wires the rule for that member. The fact itself is read by pl_cohort_ready, above.
     pl_state=$(pl_cohort_ready)
-    pl_ready=true; pl_wait=""
-    if [ "$pl_state" != 1 ]; then pl_ready=false; pl_wait="${pl_state#0}"; fi
+    pl_ready=true; pl_wait="${pl_state#0}"
+    if [ "$pl_state" != 1 ]; then pl_ready=false; fi
+    pl_unmeasured=false
+    if [ "$pl_ready" = true ] && [ -z "$PL_AF" ]; then pl_ready=false; pl_unmeasured=true; fi
     if [ "$pl_ready" = true ]; then
       pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
       jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
@@ -275,14 +307,18 @@ else
       else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pc.json" 2>&1); fi
       pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
       [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-      jq -n --arg c "$pcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"Passwordless"}]}' > "$T3/pl.json"
+      jq -n --arg c "$pcid" --arg af "$PL_AF" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:$af}]}' > "$T3/pl.json"
       if [ -n "$pl_rid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid" --request-body "file://$T3/pl.json" 2>&1)
       else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
       pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
       [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
     else
       pl_rid=""
-      echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
+      if [ "$pl_unmeasured" = true ]; then
+        echo "WAIT    identity passwordless cohort: every member holds an ENROLLED passkey, but no passkey-only authenticationFactor value has been measured for this domain, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, and a value the domain ignores would remove that second factor without offering Face ID (#5858; drill runs 38273855150, 38273745676, 2026-10-12)."
+      else
+        echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
+      fi
     fi
   else
     echo "BLIND   identity passwordless cohort: the drill account could not be read, so no rule was pointed at nobody -- the policy keeps the second-factor rule alone"
@@ -303,7 +339,7 @@ else
     echo "ok      identity front door sign-on policy assigned (second factor at every sign-in, #5818)"
     if [ -n "$pl_rid" ]; then
       rb_af=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid?attributes=return" 2>/dev/null | jq -r '[.data.return[]? | select(.name == "authenticationFactor") | .value] | join(",")')
-      echo "ok      identity front door offers Face ID alone to $pl_group (authenticationFactor=$rb_af, rule sequence 1, #5858) -- the drill measures whether this domain honours it"
+      echo "ok      identity front door offers Face ID alone to $pl_group (authenticationFactor=$rb_af, rule sequence 1, #5858) -- a measured value, wired after a drill showed the door offering the passkey alone for it"
     fi
   else
     echo "FAIL    identity front door app signonPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1
