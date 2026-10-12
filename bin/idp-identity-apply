@@ -142,6 +142,12 @@ tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
 #      refused. Read back from this domain 2026-10-12: the Security Default's own condition is
 #      {attributeName:"target.action", operator:"eq", attributeValue:"\"Login\""} under
 #      schemas [urn:ietf:params:scim:schemas:oracle:idcs:Condition].
+#   3b. The same spelling governs the Rule and Policy bodies: the domain's own MFA rule reads
+#      back as policyType/conditionGroup (read 2026-10-12), and the dash form is refused the
+#      same way. Measured in production against run 38211191902: the Condition was created
+#      (front door sign-in, 46e5dafb927a42e6844a12c136e8742c) and the apply then died at the
+#      Rule, which did not exist -- so camelCase was the whole of the Condition's cost, and
+#      the Rule and Policy carried the identical defect.
 #   4. The ensure runs AFTER the tofu apply, not before it: tofu owns the App resource and its
 #      provider does not model signonPolicy (no such attribute in oracle/oci 8.19+), so a
 #      drift-driven tofu PUT of the app would strip the ref the SCIM PATCH just set. The PATCH
@@ -162,13 +168,13 @@ else
   [ -n "$fcid" ] || { echo "FAIL    identity front door condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
   # rule: a second factor at every sign-in, enrolment not skippable, the Console rule's factors
   frid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door requires a second factor") | .id' | head -1)
-  jq -n --arg c "$fcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door requires a second factor","policy-type":{value:"SignOn"},"condition-group":{value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"IDP+2FA"},{name:"2FAFactors",value:"[\"TOTP\",\"PUSH\",\"FIDO_AUTHENTICATOR\",\"BYPASSCODE\"]"},{name:"allowUserToSkip2FAEnrolment",value:"false"},{name:"2FAFrequency",value:"ALWAYS"}]}' > "$T3/r.json"
+  jq -n --arg c "$fcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door requires a second factor","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"IDP+2FA"},{name:"2FAFactors",value:"[\"TOTP\",\"PUSH\",\"FIDO_AUTHENTICATOR\",\"BYPASSCODE\"]"},{name:"allowUserToSkip2FAEnrolment",value:"false"},{name:"2FAFrequency",value:"ALWAYS"}]}' > "$T3/r.json"
   if [ -n "$frid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$frid" --request-body "file://$T3/r.json" 2>&1)
   else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/r.json" 2>&1); fi
   frid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
   [ -n "$frid" ] || { echo "FAIL    identity front door MFA rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
   # policy: active, SignOn, holding that one rule
-  jq -n --arg r "$frid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818)",active:true,"policy-type":{value:"SignOn"},rules:[{value:$r,sequence:1}]}' > "$T3/p.json"
+  jq -n --arg r "$frid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818)",active:true,"policyType":{value:"SignOn"},rules:[{value:$r,sequence:1}]}' > "$T3/p.json"
   if [ -n "$fpid" ]; then pp=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid" --request-body "file://$T3/p.json" 2>&1)
   else pp=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" --request-body "file://$T3/p.json" 2>&1); fi
   fpid=$(printf '%s' "$pp" | jq -r '.data.id // ""')
