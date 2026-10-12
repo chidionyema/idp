@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""launchd's door into /fleet's frontend: the Backstage app served from main, never a checkout.
+
+WHY. :3100 was a `yarn start` an agent ran by hand in ~/Documents/code/idp, the shared checkout,
+so /fleet showed whatever branch and uncommitted edits sat there (2026-09-27: no intent visuals,
+main's cinecam.ts and intentCue.ts missing). This serves ~/.estate/frontend/idp, which
+estate-runtime-sync keeps on origin/main; the dev server hot-reloads what the sync checks out.
+
+It waits for its port to be free rather than failing to bind, so it takes over the moment a
+hand-run server stops, and never fights one. No secret: the app needs none (the backend's one
+credential, research_reader's, is a file path it is pointed at, never a value in its env).
+
+The same door serves the Backstage backend (:7107, ai.estate.backstage-backend) with
+FLEET_FRONTEND_WORKSPACE=backend: it too was a hand-run `yarn workspace backend start` in the
+shared checkout, and when its child died on 2026-09-27 nothing brought it back.
+"""
+
+import os
+import socket
+import sys
+import time
+from pathlib import Path
+
+TREE = Path(
+    os.environ.get("FLEET_FRONTEND_TREE")
+    or Path.home() / ".estate/frontend/idp/backstage"
+)
+PORT = int(os.environ.get("FLEET_FRONTEND_PORT") or 3100)
+WORKSPACE = os.environ.get("FLEET_FRONTEND_WORKSPACE") or "app"
+
+
+def node() -> Path:
+    found = sorted(
+        (Path.home() / ".nvm/versions/node").glob("v22.*/bin/node"),
+        key=lambda p: [int(x) for x in p.parts[-3][1:].split(".")],
+    )
+    return found[-1] if found else Path("/usr/local/bin/node")
+
+
+# BOTH STACKS, because the dev server binds [::1] and the proxy dials 127.0.0.1 (2026-10-05).
+# Backstage's `yarn start` listens on IPv6 loopback only; this probe asked 127.0.0.1, so it
+# answered "free" while the port was occupied, and `tailscale serve --http=8443
+# http://127.0.0.1:3100` proxied to an IPv4 socket no one held -- the founder's phone got a
+# 502 on the tailnet URL. A liveness probe that only asks one address family is a probe that
+# cannot fail, which by AGENTS.md 3 is not a probe.
+def _listens(family, addr) -> bool:
+    with socket.socket(family, socket.SOCK_STREAM) as s:
+        s.settimeout(1)
+        return s.connect_ex((addr, PORT)) == 0
+
+
+def port_busy() -> bool:
+    return _listens(socket.AF_INET, "127.0.0.1") or _listens(socket.AF_INET6, "::1")
+
+
+RESEARCH_SECRET = Path.home() / ".estate/secrets/dev/research-reader-password"
+
+
+# The backend's research-output plugin defaults to in-cluster names this Mac cannot reach, so
+# local /fleet showed no research (2026-10-12: 503 ENOENT on every claims read). Once
+# bin/idp-research-tunnel has written its credential, point the plugin at that tunnel, as the
+# read-only role. setdefault: an operator's own RESEARCH_DB_* still wins.
+def research_env() -> None:
+    if WORKSPACE != "backend" or not RESEARCH_SECRET.exists():
+        return
+    os.environ.setdefault("RESEARCH_DB_PASSWORD_FILE", str(RESEARCH_SECRET))
+    os.environ.setdefault("RESEARCH_DB_HOST", "127.0.0.1")
+    os.environ.setdefault("RESEARCH_DB_PORT", os.environ.get("RESEARCH_TUNNEL_PORT") or "15432")
+    os.environ.setdefault("RESEARCH_DB_USER", "research_reader")
+
+
+def main() -> None:
+    research_env()
+    waited = False
+    while port_busy():
+        if not waited:
+            print(
+                f"fleetview-{WORKSPACE}: :{PORT} held by another server; waiting",
+                flush=True,
+            )
+            waited = True
+        time.sleep(15)
+    yarn = next((TREE / ".yarn/releases").glob("yarn-*.cjs"))
+    n = node()
+    os.environ["PATH"] = f"{n.parent}:{os.environ.get('PATH', '/usr/bin:/bin')}"
+    os.chdir(TREE)
+    print(f"fleetview-{WORKSPACE}: serving {TREE} on :{PORT} with {n}", flush=True)
+    os.execv(str(n), [str(n), str(yarn), "workspace", WORKSPACE, "start"])
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -179,3 +179,67 @@ def test_a_report_absent_from_the_image_is_reported_not_raised(tmp_path, monkeyp
     assert "not in this image" in p["error"]
     # The news desk reads highlights(body) and has no stories to send for an absent proof.
     assert efficiency_feed.highlights(p) == []
+
+
+def _fake_proof(tmp_path, monkeypatch, body: str):
+    script = tmp_path / "estate-token-proof"
+    script.write_text(body)
+    monkeypatch.setattr(efficiency_feed, "_PROOF", script)
+    monkeypatch.setattr(efficiency_feed, "_proof_cache", {})
+
+
+def test_the_proof_runs_in_its_own_process(tmp_path, monkeypatch):
+    """The 2026-10-12 sawtooth: the proof loaded a 497 MB ledger into the server (+2.2 GB) every
+    five minutes, and the server never gave the pages back. Run as a child, its memory leaves
+    with it; the server keeps only the JSON. Fails on the old in-process loader, which ran the
+    script inside this pid."""
+    import os
+
+    _fake_proof(
+        tmp_path,
+        monkeypatch,
+        "import json, os, sys\n"
+        "assert sys.argv[1:] == ['--json'], sys.argv\n"
+        "print(json.dumps({'pid': os.getpid(), 'trial': {'lanes': {}}}))\n",
+    )
+    p = efficiency_feed.proof()
+    assert p["pid"] != os.getpid()
+    assert p["trial"] == {"lanes": {}}
+
+
+def test_a_proof_that_dies_is_named_not_raised(tmp_path, monkeypatch):
+    _fake_proof(tmp_path, monkeypatch, "raise SystemExit('ledger unreadable')\n")
+    p = efficiency_feed.proof()
+    assert p["available"] is False
+    assert "exited 1" in p["error"] and "ledger unreadable" in p["error"]
+    assert efficiency_feed.highlights(p) == []
+
+
+def test_callers_racing_an_expired_cache_share_one_proof(tmp_path, monkeypatch):
+    """2026-10-12: the news loop and /efficiency/proof each started a 1.5 GB child at once, and
+    both timed out. Concurrent callers now wait on the one run in flight."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    runs = tmp_path / "runs"
+    _fake_proof(
+        tmp_path,
+        monkeypatch,
+        f"import json, time\nopen({str(runs)!r}, 'a').write('x')\ntime.sleep(0.5)\n"
+        "print(json.dumps({'trial': {'lanes': {}}}))\n",
+    )
+    with ThreadPoolExecutor(4) as pool:
+        bodies = list(pool.map(lambda _: efficiency_feed.proof(), range(4)))
+    assert runs.read_text() == "x"
+    assert all(b == {"trial": {"lanes": {}}} for b in bodies)
+
+
+def test_a_failed_proof_is_not_rerun_before_the_ttl(tmp_path, monkeypatch):
+    runs = tmp_path / "runs"
+    _fake_proof(
+        tmp_path,
+        monkeypatch,
+        f"open({str(runs)!r}, 'a').write('x')\nraise SystemExit(3)\n",
+    )
+    assert efficiency_feed.proof()["available"] is False
+    assert efficiency_feed.proof()["available"] is False
+    assert runs.read_text() == "x"
