@@ -33,6 +33,7 @@ STATE_REF = "refs/greenlane/state"
 MARKER = "Greenlane-Batch:"
 ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
 AGENT_DECLARATION = re.compile(r"^(Claim|Agent):", re.M)
+AGENT_TRAILER = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:[\w.-]+/[\w.-]+)?#(\d+)\s*$", re.M)
 CLAIM_LINE = re.compile(
     r"^CLAIM\s+agent=(?P<agent>\S+)\s+(?:model=(?P<model>\S+)\s+)?paths=(?P<paths>\S+)\s+"
@@ -754,6 +755,15 @@ class GitHubBackend:
             if not claims:
                 return
             c = claims[-1]
+            # The lane's own trailer names the agent that raised it. Refreshing a claim held by
+            # a different agent keeps alive a claim the claim-gate must refuse on every run: the
+            # lane can never pass, the path is held for as long as the machine keeps stamping,
+            # and the holder's heartbeat stays fresh so the claim never lapses (idp#5617 -- 16
+            # refreshes over 55 hours, the one open PR red on `claimed by opencode, not
+            # claude-code`). Stamp only the claim the lane names; leave another agent's alone.
+            declared = AGENT_TRAILER.search(msgs)
+            if declared and declared.group(1) != c["agent"]:
+                return
             hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
             if datetime.now(timezone.utc) - hb <= STAMP_AFTER:
                 return
