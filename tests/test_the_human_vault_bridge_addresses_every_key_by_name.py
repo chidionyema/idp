@@ -122,48 +122,9 @@ def test_the_bridge_covers_the_vendor_the_founder_actually_uses():
     )
 
 
-def test_the_seed_never_overwrites_a_key_the_founder_has_set():
-    """A PushSecret defaults to Replace, which would rewrite his rotated key from the estate's
-    stale copy on the next refresh -- silently undoing every rotation. IfNotExists fills an
-    empty slot and touches nothing else."""
-    docs = seed_docs()
-    assert docs
-    for d in docs:
-        assert d["spec"]["updatePolicy"] == "IfNotExists", d["metadata"]["name"]
-        assert d["spec"]["deletionPolicy"] == "None", d["metadata"]["name"]
-
-
-def test_one_key_the_estate_lacks_cannot_stop_the_others_being_seeded():
-    """Measured 2026-09-07: one absent key fails the whole object it sits in and seeds none of
-    its siblings. MOONSHOT_API_KEY is in the registry and in no Secret, so grouping would have
-    cost GEMINI and OPENROUTER their seed."""
-    docs = seed_docs()
-    for d in docs:
-        assert len(d["spec"]["data"]) == 1, d["metadata"]["name"]
-
-
-def test_the_seed_reads_the_secret_the_registry_says_holds_the_key():
-    """A target names `entry:` when the estate holds a copy of the key worth seeding from, and
-    omits it when the founder's own copy is the only live one -- MiniMax's estate copies were
-    measured revoked at the vendor on 2026-09-10 (HTTP 401, invalid api key 2049) and unset, so
-    seeding from them would push a dead key over a working one. An entry-less row is therefore
-    a row the seed must NOT carry, which the equality below grades in both directions: a missing
-    seed for a row that names an entry, and a seed for a row that does not."""
-    reg = yaml.safe_load(REGISTRY.read_text())["vendors"]
-    want = {
-        (t["ns"], t["bw"]): (t["entry"], t["field"])
-        for v in reg.values()
-        if v.get("store_default") == "human-vault"
-        for t in (v.get("targets") or [])
-        if t.get("bw") and t.get("ns") and t.get("entry") and not t.get("derived")
-    }
-    got = {}
-    for d in seed_docs():
-        if not d:
-            continue
-        m = d["spec"]["data"][0]["match"]
-        got[(d["metadata"]["namespace"], m["remoteRef"]["remoteKey"])] = (
-            d["spec"]["selector"]["secret"]["name"],
-            m["secretKey"],
-        )
-    assert got == want
+def test_the_bridge_only_pulls():
+    """#5336 dropped the seed PushSecrets: the pull pattern owns vendor keys, and the founder's
+    vault is written by a person, never pushed into from the estate's copies. Their three tests
+    stayed behind and graded an empty list (two red on main, one vacuously green); this is the
+    property they now stand for."""
+    assert seed_docs() == []

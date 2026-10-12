@@ -45,7 +45,16 @@ spec:
         name: flux-system
         namespace: flux-system
       interval: 5m
+  # disableWait: this release is nothing but ExternalSecrets, and each one reports its own
+  # Ready condition one minute after it lands. Helm waiting on them graded the release on keys
+  # nobody has put in the vault yet -- an optional field, or PUBLIC_SERVER_URL before the
+  # concierge cutover writes it -- so a correct render timed out at 5m, spent its 3 retries and
+  # stalled. 2026-10-03 the release was then suspended by hand and sat on that chart for nine
+  # days while #5928's render was packaged and never applied. A missing key is the
+  # ExternalSecret's red, not the bridge's.
   install:
+    disableWait: true
     remediation: { retries: 3 }
   upgrade:
+    disableWait: true
     remediation: { retries: 3 }
