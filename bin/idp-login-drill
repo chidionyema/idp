@@ -579,16 +579,25 @@ with sync_playwright() as p:
     except PWError:
         pass
     if not faceid_offered:
-        # Expand any "Other options" disclosure before declaring defeat -- IDCS nests Face ID
-        # under a menu on some skins, and the founder only sees it after a click.
-        try:
-            page.locator("button:has-text('Other options'), a:has-text('Other options')").first.click(timeout=3000)
-            page.wait_for_timeout(1500)
-            faceid_controls = offered_controls()
-            if faceid_controls:
-                faceid_offered = True
-        except PWError:
-            pass
+        # Expand the disclosure before declaring defeat -- IDCS nests Face ID under a menu on some
+        # skins, and the founder only sees it after a click. The label depends on the skin and the
+        # step: this domain's sign-in screen renders the way in as a:"Show alternative login
+        # methods" (measured 2026-10-12 16:26Z, run 38277106763) while the factor list uses "Other
+        # options". Press ONLY a disclosure. The sibling control on that screen is button:"Verify",
+        # which approves a push to the Oracle Mobile Authenticator -- a different factor, and
+        # pressing it would grade a door that never offered the passkey as if it had.
+        for label in ("Other options", "Show alternative login methods", "Other sign-in options",
+                      "Alternative login methods", "More options"):
+            if faceid_offered:
+                break
+            try:
+                page.locator(f"button:has-text('{label}'), a:has-text('{label}')").first.click(timeout=3000)
+                page.wait_for_timeout(1500)
+                faceid_controls = offered_controls()
+                if faceid_controls:
+                    faceid_offered = True
+            except PWError:
+                continue
     if not faceid_offered:
         fail("mfa",
              f"the door engages MFA (kind={mfa_kind}) but offers no control for Face ID or a security "
