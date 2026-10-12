@@ -38,6 +38,10 @@ import * as THREE from 'three';
 // front end reaches the Python plugin, which reads estate.db. ---
 import { fetchApiRef, discoveryApiRef } from '@backstage/core-plugin-api';
 import { useApi } from '@backstage/core-plugin-api';
+// --- ADDED 2026-10-12: the Kokoro voices this device can speak itself. The pod lists the voices
+// FILE on the host that answers, and has none, so this group used to be empty -- and an empty group
+// is HIDDEN by the filter below, which is why the picker offered no Kokoro at all. ---
+import { BROWSER_KOKORO_VOICES, kokoroSpeaksInTheBrowser } from '../../home/browserKokoro';
 // The four motion primitives: thinking breathes, waiting drifts, stuck jitters, finished sinks.
 // The colour was always honest; the motion was a uniform bob, which the design calls the single
 // worst mistake -- an agent stuck in a retry loop looked exactly like one thinking.
@@ -2053,8 +2057,19 @@ export default function FleetReactorApp() {
           a glass list the same idiom as the rest of the HUD. Every choice goes through
           /voice/select, and the chip shows what the service says is live. */}
       {(() => {
+        // THE KOKORO VOICES THE POD DOES NOT HAVE (2026-10-12). `/voice/voices` lists the voices
+        // file on the pod, which has none, so this group was empty -- and `groups.filter(list =>
+        // list.length)` below HID it. The founder asked for them by name: "i want the kokoro voices
+        // as options also". The browser holds the engine (browserKokoro.ts, via kokoro-js) and
+        // speaks them itself, so when the pod cannot offer a Kokoro voice the list is the device's,
+        // and the label says which of the two is speaking.
+        const browserKokoro = kokoroSpeaksInTheBrowser(legacyVoice.catalogue.kokoro);
         const groups: [string, string, string[]][] = [
-          ['kokoro', 'Kokoro', legacyVoice.catalogue.kokoro || []],
+          [
+            'kokoro',
+            browserKokoro ? 'Kokoro · this device' : 'Kokoro',
+            browserKokoro ? [...BROWSER_KOKORO_VOICES] : legacyVoice.catalogue.kokoro,
+          ],
           ['say', 'macOS', legacyVoice.catalogue.say || []],
           ['piper', 'Piper', legacyVoice.catalogue.piper || []],
           ['cloud', 'Online', legacyVoice.catalogue.cloud || []],

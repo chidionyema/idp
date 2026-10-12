@@ -56,6 +56,12 @@
 //   * barge-in: speaking while it talks stops playback AND aborts the in-flight turn.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchApiRef, useApi } from '@backstage/core-plugin-api';
+import {
+  kokoroSpeaksInTheBrowser,
+  rememberBrowserKokoroVoice,
+  storedBrowserKokoroVoice,
+  synthesiseBrowserKokoro,
+} from './browserKokoro';
 
 /**
  * The VAD and onnxruntime bundles, served by THIS APP at its own origin.
@@ -692,20 +698,48 @@ export function useEstateVoice(): EstateVoice {
     setState('off');
   }, [silence]);
 
-  /** One clause of text to audio, in the voice that is currently live, and play it. */
-  const sayClause = useCallback(
-    async (text: string, signal?: AbortSignal) => {
+  /**
+   * WHOSE KOKORO -- this device's, or the pod's (2026-10-12).
+   *
+   * The picker offers all 54 Kokoro voices (FleetReactorApp, from browserKokoro.ts) because the
+   * founder asked for them as options -- "i want the kokoro voices as options also" -- and this is
+   * the half that makes a choice MEAN something: the pod cannot synthesise Kokoro (it has no
+   * voices file, so `/voice/select` refuses the name and `/voice/say` answers 502), so when the
+   * pod reports no Kokoro voices of its own, the browser speaks the clause with the engine it
+   * already has -- kokoro-js, the same one `useSpeculativeVoice` uses.
+   *
+   * Falls through to the pod when the browser cannot (model not downloaded yet, no WebGPU): the
+   * sentence that cannot be said in the chosen voice is still read, in another voice.
+   */
+  const clauseAudio = useCallback(
+    async (text: string, signal?: AbortSignal): Promise<ArrayBuffer | null> => {
+      if (kokoroSpeaksInTheBrowser(catalogue.kokoro)) {
+        const local = await synthesiseBrowserKokoro(text, current.voice);
+        if (local) return local;
+      }
       const res = await fetchApi.fetch(`${FLEETVIEW}/voice/say`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
         signal,
       });
-      if (!res.ok) await speakWithDevice(text, signal);
-      else play(await res.arrayBuffer());
+      return res.ok ? res.arrayBuffer() : null;
+    },
+    [catalogue.kokoro, current.voice, fetchApi],
+  );
+
+  /** One clause of text to audio, in the voice that is currently live, and play it. */
+  const sayClause = useCallback(
+    async (text: string, signal?: AbortSignal) => {
+      const buf = await clauseAudio(text, signal);
+      // A clause synthesised after a barge-in is not spoken: local Kokoro takes seconds, so the
+      // window this closes is the founder's own interruption, not a theoretical one.
+      if (signal?.aborted) return true;
+      if (!buf) await speakWithDevice(text, signal);
+      else play(buf);
       return true;
     },
-    [fetchApi, play],
+    [clauseAudio, play, speakWithDevice],
   );
 
   const speak = useCallback(
@@ -866,15 +900,8 @@ export function useEstateVoice(): EstateVoice {
           clauses += 1;
           const first = clauses === 1;
           const ttsStarted = performance.now();
-          const audio = fetchApi
-            .fetch(`${FLEETVIEW}/voice/say`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: clauseText }),
-              signal: turn.signal,
-            })
-            .then(r => (r.ok ? r.arrayBuffer() : null))
-            .catch(() => null); // one clause that cannot be spoken must not end the turn
+          // The same choice of speaker as `sayClause`: this device's Kokoro when the pod has none.
+          const audio = clauseAudio(clauseText, turn.signal).catch(() => null); // one clause that cannot be spoken must not end the turn
           chain = chain.then(async () => {
             const buf = await audio;
             ttsSeconds += (performance.now() - ttsStarted) / 1000;
@@ -977,7 +1004,7 @@ export function useEstateVoice(): EstateVoice {
         /* the log is an instrument; its absence must not break the conversation */
       }
     },
-    [current.engine, current.voice, fetchApi, play, silence, sessionId],
+    [clauseAudio, current.engine, current.voice, fetchApi, play, silence, sessionId],
   );
 
   const start = useCallback(async () => {
@@ -1248,10 +1275,20 @@ export function useEstateVoice(): EstateVoice {
           piper: d.piper || [],
         });
         setAvailable(true);
-        setCurrent({
-          engine: d.current?.engine || 'cloud',
-          voice: d.current?.[d.current?.engine] || DEFAULT_VOICE,
-        });
+        // A KOKORO VOICE CHOSEN ON THIS DEVICE SURVIVES THE RELOAD. The pod's own choice file
+        // cannot hold one (it has no such voice to save), so a reload would quietly put the face
+        // back into the pod's cloud voice and the founder's pick would be gone, unremarked.
+        const storedKokoro = kokoroSpeaksInTheBrowser(d.kokoro || [])
+          ? storedBrowserKokoroVoice()
+          : null;
+        setCurrent(
+          storedKokoro
+            ? { engine: 'kokoro', voice: storedKokoro }
+            : {
+                engine: d.current?.engine || 'cloud',
+                voice: d.current?.[d.current?.engine] || DEFAULT_VOICE,
+              },
+        );
       })
       .catch(() => {
         if (!cancelled) {
@@ -1269,6 +1306,15 @@ export function useEstateVoice(): EstateVoice {
 
   const selectVoice = useCallback(
     async (engine: string, voice: string) => {
+      // A KOKORO VOICE THE POD CANNOT SPEAK IS SPOKEN HERE. `/voice/select` validates the name
+      // against the voices file on the pod (`sovereign/voice/catalogue.select`), and the pod has
+      // none, so posting a Kokoro choice there would be refused -- a 400 for a choice that works
+      // perfectly well on the device reading this page.
+      if (engine === 'kokoro' && kokoroSpeaksInTheBrowser(catalogue.kokoro)) {
+        setCurrent({ engine, voice });
+        rememberBrowserKokoroVoice(voice);
+        return `now speaking with ${voice}, on this device`;
+      }
       try {
         const r = await fetchApi.fetch(`${FLEETVIEW}/voice/select`, {
           method: 'POST',
@@ -1283,7 +1329,7 @@ export function useEstateVoice(): EstateVoice {
         return `failed: ${e.message || e}`;
       }
     },
-    [fetchApi],
+    [catalogue.kokoro, fetchApi],
   );
 
   // Leave nothing running when the surface unmounts.
