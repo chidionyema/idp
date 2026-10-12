@@ -222,17 +222,50 @@ else
         printf '%s' "$pg" | jq -e --arg u "$drill_uid" 'any(.data.members[]?; .value == $u)' >/dev/null 2>&1 || { echo "FAIL    identity passwordless cohort membership refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
       fi
     fi
-    pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
-    jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
-    if [ -n "$pcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pcid" --request-body "file://$T3/pc.json" 2>&1)
-    else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pc.json" 2>&1); fi
-    pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
-    [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-    jq -n --arg c "$pcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"Passwordless"}]}' > "$T3/pl.json"
-    if [ -n "$pl_rid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid" --request-body "file://$T3/pl.json" 2>&1)
-    else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
-    pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
-    [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    # A passwordless rule over a member who has no passkey is not a passkey prompt. Measured
+    # 2026-10-12: the cohort's only member signed in with its password and never saw a second
+    # factor (13:21Z drill -- no MFA step, straight out to the catalogue), where the same account
+    # had hit mfa=challenge with Face ID offered 34 minutes earlier under the second-factor rule
+    # alone. The domain states the fact this rule depends on: /admin/v1/Devices carries, per user,
+    # an authenticationFactor of type FIDO_AUTHENTICATOR whose status is ENROLLED once the ceremony
+    # completes -- INITIATED means it was started and never finished, and the drill account holds
+    # eleven of those (read 2026-10-12). So the rule is wired only for a cohort whose passkeys
+    # exist; a member without one cannot be signed in without the second factor by this file.
+    # Enrolment needs the second-factor challenge that this very rule pre-empts, so the order is
+    # forced, and convergent: enrol the passkey, and the next apply wires the rule for that member.
+    pl_ready=true
+    pl_wait=""
+    devf="$T3/devices.json"
+    oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Devices?count=200" 2>/dev/null > "$devf" || true
+    mus=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups/$gid?attributes=members" 2>/dev/null | jq -r '.data.members[]?.value' 2>/dev/null || true)
+    if [ -z "$mus" ]; then
+      pl_ready=false
+      pl_wait=" (the cohort's members could not be read)"
+    fi
+    for mu in $mus; do
+      nf=$(jq -r --arg u "$mu" '[.data.Resources[]? | select(([.additionalAttributes[]? | select(.key == "user.value") | .value] | join("")) == $u) | select(([.authenticationFactors[]? | select(.type == "FIDO_AUTHENTICATOR" and .status == "ENROLLED")] | length) > 0)] | length' "$devf" 2>/dev/null)
+      if [ "${nf:-0}" -gt 0 ] 2>/dev/null; then :; else
+        pl_ready=false
+        un=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users/$mu?attributes=userName" 2>/dev/null | jq -r '.data.userName // "?"')
+        pl_wait="$pl_wait $un"
+      fi
+    done
+    if [ "$pl_ready" = true ]; then
+      pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
+      jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
+      if [ -n "$pcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pcid" --request-body "file://$T3/pc.json" 2>&1)
+      else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pc.json" 2>&1); fi
+      pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
+      [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+      jq -n --arg c "$pcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"Passwordless"}]}' > "$T3/pl.json"
+      if [ -n "$pl_rid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid" --request-body "file://$T3/pl.json" 2>&1)
+      else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
+      pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
+      [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    else
+      pl_rid=""
+      echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
+    fi
   else
     echo "BLIND   identity passwordless cohort: the drill account could not be read, so no rule was pointed at nobody -- the policy keeps the second-factor rule alone"
   fi

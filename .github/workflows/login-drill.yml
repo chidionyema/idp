@@ -80,9 +80,15 @@ jobs:
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
-          DRILL_ENROLL: ${{ inputs.enroll == 'true' && '1' || '0' }}
-          DRILL_PASSWORDLESS: ${{ inputs.passwordless == 'true' && '1' || '0' }}
+          # A workflow_dispatch boolean input reaches `inputs.x` as a boolean, and a boolean
+          # compared to the string 'true' coerces to 1 == NaN, which is false -- so both flags read
+          # as 0 however they are dispatched. Measured: run 38255148613 passed passwordless=true and
+          # the walk logged DRILL_PASSWORDLESS: 0, then graded the wrong question. Accept either
+          # shape, and print what actually arrived so a flag cannot go missing in silence again.
+          DRILL_ENROLL: ${{ (inputs.enroll == true || inputs.enroll == 'true') && '1' || '0' }}
+          DRILL_PASSWORDLESS: ${{ (inputs.passwordless == true || inputs.passwordless == 'true') && '1' || '0' }}
           DRILL_DEVICE: ${{ inputs.device }}
+          DRILL_INPUTS_RAW: enroll=${{ inputs.enroll }} passwordless=${{ inputs.passwordless }}
         run: |
           set -o pipefail
           bin/idp-login-drill 2>&1 | tee drill.out
