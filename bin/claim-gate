@@ -139,7 +139,21 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         return [
             "no `Agent: <name>` line: the change must say which agent's claim it lands on"
         ]
-    agent = agents[-1]
+    # 2026-10-12: `git log --format=%B` prints newest first, so `agents[-1]` was the OLDEST
+    # commit's trailer. A range naming two agents therefore passed whenever the claim holder
+    # happened to be the older one; measured on this tree, a range naming idp-60 and idp-99 was
+    # judged clear against a claim held by idp-99 while idp-60 wrote to the claimed files. The
+    # one thing this gate can prove is that two live agents are not working the same files
+    # (AGENTS.md §5), so every name in the range must be the claimant's -- a range that names
+    # two agents is not one agent's change, and no single claim covers it.
+    named = sorted(set(agents))
+    if len(named) > 1:
+        return [
+            "the change names %d agents (%s): one claim covers one agent's work, so this range "
+            "cannot land as it stands -- rebase so it carries only the claimant's commits"
+            % (len(named), ", ".join(named))
+        ]
+    agent = named[0]
     problems: list[str] = []
     covered: set[str] = set()
     for ref_repo, num in refs:

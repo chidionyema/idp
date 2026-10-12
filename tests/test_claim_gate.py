@@ -76,6 +76,30 @@ def test_another_agents_claim_is_refused():
     assert "claimed by idp-57, not idp-60" in out[0]
 
 
+def test_a_range_naming_two_agents_is_refused():
+    # 2026-10-12: `git log --format=%B` prints newest first and the gate read `agents[-1]`, i.e.
+    # the OLDEST commit's trailer. So a second agent's commits passed whenever the claim holder
+    # happened to be the older one. Measured before the fix: this exact range was judged clear
+    # against a claim held by idp-99, while idp-60 wrote to files only idp-99 had claimed.
+    two = (
+        "fix(voice): the newer commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        "\nfix(voice): the older commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-99\n"
+    )
+    out = run(text=two, issue=_issue(claim=_claim(agent="idp-99")))
+    assert "names 2 agents" in out[0]
+    assert "idp-60" in out[0] and "idp-99" in out[0]
+
+
+def test_a_range_naming_one_agent_twice_still_passes():
+    # The refusal above is about DIFFERENT names, not about a lane carrying several commits.
+    # One agent's multi-commit lane is the ordinary case and must not be refused.
+    two = (
+        "fix(voice): the newer commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+        "\nfix(voice): the older commit\n\nClaim: Mumchimp/crew#12\nAgent: idp-60\n"
+    )
+    assert run(text=two) == []
+
+
 def test_a_lapsed_heartbeat_is_refused():
     assert "lapsed" in run(issue=_issue(claim=_claim(age=timedelta(hours=3))))[0]
 
@@ -159,8 +183,6 @@ def test_a_body_trailer_fix_is_seen_without_a_new_event(monkeypatch):
         return sp.CompletedProcess(
             argv, 0, "Claim: Mumchimp/idp#5755\nAgent: opencode\n", ""
         )
-
-    import subprocess as sp
 
     g = _gate()
     monkeypatch.setattr(g.subprocess, "run", fake_run)
