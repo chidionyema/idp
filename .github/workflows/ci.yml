@@ -50,8 +50,17 @@ jobs:
   # verdict there is an incident, not a gate. Founder, 2026-09-07: "move the offline-gate to run
   # strictly PRE-MERGE. No un-graded code enters main ever again."
   #
-  # So it runs on the pull request, where it can still refuse, and on the push to main, where the
-  # empty IDP_CI_BASE grades every directory rather than only the diff. Both, not either.
+  # WHERE IT ACTUALLY RUNS, measured 2026-10-12 on the lane's own queue push (run 38272112654):
+  # `offline-gate` and both `bdd-suites` legs RAN and succeeded on queue/b2496. That push is what
+  # the lane grades before it raises anything, so the founder's rule above holds -- no un-graded
+  # code enters main -- and the `if:` below is not the reversal it looks like. What it does say is
+  # narrower than the sentence that used to sit here ("Both, not either", which the `if:`
+  # contradicted and which cost an agent a session of believing PRs were graded): on a PULL REQUEST
+  # this job is SKIPPED, and the required `bdd` check counts a skip as a pass, so a HAND-RAISED pull
+  # request is graded by neither while looking green. That is why a hand-raised pull request is not
+  # a route to main (AGENTS.md §2) -- PR #5672 merged exactly that way, `bdd-suites` skipped and
+  # `bdd` success. The lane is the route, and the lane is graded; the skip here is de-duplication
+  # for the lane-raised PR, which re-runs this job on a commit the queue push already graded.
   offline-gate:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
