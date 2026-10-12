@@ -20,6 +20,11 @@ on:
         type: boolean
         required: false
         default: false
+      device:
+        description: "Take the drill on this phone, by Playwright device name (e.g. 'iPhone 15', 'Pixel 7') -- empty means the desktop context"
+        type: string
+        required: false
+        default: ""
   push:
     branches: [main]
     paths:
@@ -71,6 +76,7 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
           DRILL_ENROLL: ${{ inputs.enroll == 'true' && '1' || '0' }}
+          DRILL_DEVICE: ${{ inputs.device }}
         run: |
           set -o pipefail
           bin/idp-login-drill 2>&1 | tee drill.out
@@ -79,7 +85,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: login-drill-home
-          path: ${{ runner.temp }}/login-drill-home.png
+          path: |
+            ${{ runner.temp }}/login-drill-home.png
+            ${{ runner.temp }}/login-drill-home.dom.txt
           if-no-files-found: warn
           retention-days: 14
       - name: the verdict is on the run summary, pass or fail

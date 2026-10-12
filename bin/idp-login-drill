@@ -83,7 +83,7 @@ export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
 # The password crosses into python as an environment variable only. It is never an argument, so
 # it never appears in ps, and the driver never prints it.
 "$PY" - <<'PYDRIVER'
-import os, re, sys, time
+import os, re, sys, time, hashlib
 from urllib.parse import urlparse
 
 USER = os.environ["DRILL_USER"]
@@ -93,6 +93,10 @@ DOMAIN_HOST = urlparse(os.environ["DRILL_DOMAIN"]).hostname or ""
 HOME = f"https://catalogue.{ZONE}/"
 TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
 ENROLL = os.environ.get("DRILL_ENROLL", "0") == "1"
+# The founder signs in on a phone. A desktop-shaped context measures a surface he does not use, so
+# the device is part of the instrument: DRILL_DEVICE names a Playwright device ("iPhone 15"), and
+# the same drill is then taken on that phone's browser, viewport and touch behaviour included.
+DEVICE = os.environ.get("DRILL_DEVICE", "")
 
 # Redact the password in every failure detail and in every captured page body, so a red row's
 # screenshot or step summary can never become a leak (LAW 46, crew#301).
@@ -120,6 +124,7 @@ RESET_TEXT = re.compile(r"(change your password|new password|password (has )?exp
 # it offered the right factor.
 ENROLL_TEXT = re.compile(r"(set (up|it) (now|today)|enroll|get started|first[- ]time|add (a |an )(method|device|security|key|passkey))", re.I)
 CHALLENGE_TEXT = re.compile(r"(verify (your identity|it.?s you)|two[- ]step|multi[- ]factor|enter the (code|otp)|approve the (notification|push))", re.I)
+CONTINUE_TEXT = re.compile(r"(setup|set up|continue|next|get started|add |enrol|enroll|try |use )", re.I)
 # The Face ID / security-key option. IDCS presents it as a button or a link in the MFA screen's
 # "Other options" menu; the regex matches any of the common phrasings, case-insensitive, across
 # ... and the domain's own label for the factor, which this drill learned the hard way: the front
@@ -188,25 +193,54 @@ def controls(page):
     # "offered" is answered with controls a visitor can press.
     js = """() => {
       const out = [];
+      const els = [];
       const nm = (el) => (el.getAttribute('aria-label') || el.getAttribute('title') ||
         (el.innerText || el.textContent || '').trim() || el.value || el.getAttribute('alt') || '').trim();
+      const card = (el) => {
+        // The door offers "Mobile App" and "FIDO Authenticator" side by side, each with its own
+        // Setup control, so a selector that matches only the word presses whichever comes first in
+        // the DOM -- measured 2026-10-12 on the real door: button:"Setup" pressed after
+        // button:"FIDO Authenticator" produced no ceremony. Report each control's own card, so the
+        // press can be bound to the factor that was asked for.
+        let n = el, t = '';
+        for (let i = 0; i < 7 && n; i++) {
+          t = (n.innerText || n.textContent || '').trim();
+          if (t.length > 400) break;
+          if (/fido|security key|passkey|mobile app/i.test(t)) break;
+          n = n.parentElement || (n.getRootNode() && n.getRootNode().host) || null;
+        }
+        return (t || '').replace(/\\s+/g, ' ').slice(0, 120);
+      };
       const walk = (root) => {
         for (const el of root.querySelectorAll('button,a,[role=button],[role=link],input[type=submit],input[type=button],summary')) {
           const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
           if (cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0) {
             const n = nm(el);
-            if (n) out.push({name: n.slice(0, 80), tag: el.tagName.toLowerCase()});
+            if (n) {
+              el.setAttribute('data-drill-idx', String(els.length));
+              els.push(el);
+              out.push({name: n.slice(0, 80), tag: el.tagName.toLowerCase(), idx: els.length - 1,
+                off: !!(el.disabled || el.getAttribute('aria-disabled') === 'true'),
+                x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), card: card(el),
+                html: (el.outerHTML || '').replace(/\\s+/g, ' ').slice(0, 300),
+                parent: el.parentElement ? (el.parentElement.tagName.toLowerCase() + ' ' +
+                  Array.from(el.parentElement.attributes || []).map((a) => a.name + '=' + a.value)
+                    .join(' ')).slice(0, 200) : ''});
+            }
           }
         }
         for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
       };
       walk(document.body);
+      window.__drillCtl = els;
       return out;
     }"""
     found = []
     for fr in page.frames:
         try:
-            found += fr.evaluate(js) or []
+            for c in fr.evaluate(js) or []:
+                c["frame"] = fr.url[:80]
+                found.append(c)
         except PWError:
             continue
     seen, uniq = set(), []
@@ -218,20 +252,48 @@ def controls(page):
     return uniq
 
 
+SCROLL_JS = """(i) => {
+  // Put the control on screen and answer with where it now is. A phone viewport leaves the
+  // factor card below the fold, and a box measured in another frame is not a place this page
+  // can click -- both would press empty space and report the door as refusing.
+  const all = [];
+  const walk = (root) => {
+    for (const el of root.querySelectorAll('[data-drill-idx]')) all.push(el);
+    for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+  };
+  walk(document.body);
+  const el = all.find((e) => e.getAttribute('data-drill-idx') === String(i)) ||
+             (window.__drillCtl || [])[i];
+  if (!el) return null;
+  el.scrollIntoView({block: 'center', inline: 'center'});
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+}"""
+
+
 def webauthn_requests(page):
+    # Every open page and frame of the browser, not only the one that was pressed: the ceremony may
+    # open in a new window, and a page-scoped read would then answer "no request" for a door that
+    # did raise one -- the same defect as reading a phrase instead of the control.
     reqs = []
-    for fr in page.frames:
-        try:
-            reqs += fr.evaluate("() => window.__drillWebauthn || []") or []
-        except PWError:
-            continue
+    try:
+        pages = list(page.context.pages)
+    except PWError:
+        pages = [page]
+    for pg in pages:
+        for fr in pg.frames:
+            try:
+                reqs += fr.evaluate("() => window.__drillWebauthn || []") or []
+            except PWError:
+                continue
     return reqs
 
 
 # A passkey/security-key offer is, mechanically, a call to navigator.credentials with a publicKey.
 # No amount of page copy can fake that, so the drill records every such request and can answer with
 # the ceremony rather than with a phrase.
-WEBAUTHN_HOOK = """() => {
+WEBAUTHN_HOOK = """(() => {
   window.__drillWebauthn = [];
   const wrap = (k) => {
     const orig = navigator.credentials && navigator.credentials[k];
@@ -249,7 +311,7 @@ WEBAUTHN_HOOK = """() => {
     };
   };
   wrap('create'); wrap('get');
-}"""
+})()"""
 
 
 started = time.time()
@@ -260,12 +322,72 @@ with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
     except PWError as e:
         fail("browser", f"chromium will not launch: {e}")
-    ctx = browser.new_context(ignore_https_errors=False)
+    try:
+        ctx = browser.new_context(**p.devices[DEVICE]) if DEVICE else browser.new_context(ignore_https_errors=False)
+    except KeyError:
+        fail("config", f"DRILL_DEVICE={DEVICE!r} is not a Playwright device name, so no phone was measured")
     ctx.set_default_timeout(TIMEOUT)
+    # The hook must be INVOKED here. Added as a bare function expression it is an expression
+    # statement: Playwright evaluates the init script as a script, the function is created and
+    # thrown away, and window.__drillWebauthn never exists -- so every "no WebAuthn request"
+    # verdict this drill has produced was about this line, not the door (measured 2026-10-12:
+    # four rounds of FAIL on a door whose own payload had already created the enrolment request).
     ctx.add_init_script(script=WEBAUTHN_HOOK)
     page = ctx.new_page()
     page_errors = []
     page.on("pageerror", lambda e: page_errors.append(safe(str(e))))
+
+    # The domain asks the BROWSER whether it has a platform authenticator when it renders the
+    # factor screen, and answers that question in its own markup: with none present the FIDO enrol
+    # button comes back disabled="" and every press on it does nothing. Attaching after the page
+    # had rendered (2026-10-12) therefore graded this browser, not the door: the press landed, the
+    # button carried oj-focus, and it was dead by the door's own attribute. Attach before the first
+    # navigation, so the door's capability check sees what a person's phone would show it.
+    try:
+        auth = ctx.new_cdp_session(page)
+        auth.send("WebAuthn.enable", {"enableUI": False})
+        auth.send("WebAuthn.addVirtualAuthenticator", {"options": {
+            "protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
+            "hasUserVerification": True, "isUserVerified": True,
+            "automaticPresenceSimulation": bool(ENROLL)}})
+    except PWError as e:
+        fail("config", f"the drill could not attach a virtual authenticator before the door "
+                       f"rendered, so its own capability check cannot pass and any refusal would "
+                       f"be this browser's, not the door's: {e}")
+
+    # The door's own data: its SPA states what it will offer in the payloads it fetches, and a
+    # control the door disables is explained by that payload or not at all.
+    seen = []
+
+    def note_response(resp):
+        # Read the body as it arrives. By the time the drill refuses, the enroll screen's own
+        # payloads are gone from the browser and asking for them then raises (measured 2026-10-12:
+        # Network.getResponseBody -- no resource with given identifier found).
+        try:
+            if resp.request.resource_type not in ("xhr", "fetch") or len(seen) >= 60:
+                return
+            if "json" not in (resp.headers or {}).get("content-type", ""):
+                return
+            seen.append("{} {}\n    {}".format(resp.status, resp.url, safe(resp.text())[:600]))
+        except (PWError, OSError, TypeError, ValueError):
+            pass
+
+    page.on("response", note_response)
+
+    def press(c):
+        # Scroll the chosen control into view and press it at the box it then occupies, in the
+        # frame it belongs to; answer where it was pressed, or None if it could not be reached.
+        for fr in page.frames:
+            if c.get("frame") and fr.url[:80] != c["frame"]:
+                continue
+            try:
+                p2 = fr.evaluate(SCROLL_JS, int(c.get("idx", -1)))
+            except (PWError, ValueError, TypeError):
+                p2 = None
+            if p2:
+                page.mouse.click(int(p2["x"]), int(p2["y"]))
+                return p2
+        return None
 
     # 1. the door must hand an anonymous visitor to the identity domain, not serve the catalogue
     try:
@@ -275,6 +397,24 @@ with sync_playwright() as p:
     host = urlparse(page.url).hostname or ""
     if host != DOMAIN_HOST:
         fail("redirect", f"{HOME} landed on {host}, expected the identity domain {DOMAIN_HOST}")
+    # A gate that can fail: grade the detector before grading the door with it. The door redirects
+    # and navigates, and reading the page in the middle of that raises "execution context was
+    # destroyed" -- an instrument that dies on the door's own redirect grades nothing (measured
+    # 2026-10-12, run 38238382947: the check itself raised and the run ended in a traceback). So
+    # read it on a settled page, retry across the navigations, and still refuse if it never appears.
+    hook_state, hook_deadline = None, time.time() + 30
+    while time.time() < hook_deadline:
+        try:
+            hook_state = page.evaluate("() => typeof window.__drillWebauthn")
+            if hook_state == "object":
+                break
+        except PWError:
+            hook_state = None
+        page.wait_for_timeout(500)
+    if hook_state != "object":
+        fail("config", "the drill's WebAuthn hook did not install (window.__drillWebauthn is "
+                       f"{hook_state!r}), so any 'no WebAuthn request' from this run would be this "
+                       "script's, not the door's")
 
     # 2. sign in as the drill user
     for b in BANNER_SELECTORS:
@@ -410,38 +550,140 @@ with sync_playwright() as p:
     # With the UI suppressed and no virtual authenticator attached, a request can be recorded but
     # no credential can be created, so an observe-only run never burns an enrolment slot. Skipped
     # under DRILL_ENROLL=1, where the ceremony below is the proof and must not be disturbed.
+    presses, uvpa, trace, walk_error = [], None, [], None
     if not ENROLL:
         try:
-            ctx.new_cdp_session(page).send("WebAuthn.enable", {"enableUI": False})
-            href = page.url
-            # The control may start the ceremony in place, or lead to the screen that does; follow
-            # it one hop before deciding it does nothing.
-            for _ in range(2):
-                cand = re.sub(r"['\"\\\\]", "", str(faceid_controls[0].get("name", "")))[:40]
-                if not cand:
+            # The authenticator has been attached since before the door rendered (the block above);
+            # there is nothing to add here, only the requests to read back.
+            # The factor's own control and the control that raises the ceremony are two different
+            # presses on this domain (measured: button:"FIDO Authenticator", then button:"Setup"),
+            # and the first press does not change the URL -- so a probe that stopped after one press
+            # called a working door "decoration". Follow the screen forward the way a person does,
+            # pressing the control that belongs to the FIDO card, until a request appears.
+            uvpa = None
+            try:
+                uvpa = page.evaluate(
+                    "() => (window.PublicKeyCredential && PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable)"
+                    " ? PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable() : null")
+            except PWError:
+                # A capability read that fails must not become "the door refused": it stays measured
+                # as unknown and the verdict below reports it as unknown.
+                uvpa = None
+            presses, clicked, stale = [], set(), set()
+            try:
+                shot0 = prev_shot = hashlib.sha256(page.screenshot()).hexdigest()[:8]
+            except PWError:
+                shot0 = prev_shot = "?"
+            trace.append(f"before any press: shot={shot0} url={page.url.split('?')[0]}")
+
+            def rank(c):
+                name, own = str(c.get("name", "")), str(c.get("card", ""))
+                factor_card = 0 if re.search(r"fido|security key|passkey", own, re.I) else (
+                    1 if not re.search(r"mobile app", own, re.I) else 2)
+                if FACEID_TEXT.search(name):
+                    return (0, factor_card)
+                if CONTINUE_TEXT.search(name):
+                    return (1, factor_card)
+                return (9, 9)
+
+            for _ in range(8):
+                here = [c for c in controls(page) if (str(c.get("name")), c.get("x"), c.get("y")) not in clicked]
+                here = [c for c in here if rank(c)[0] < 9]
+                # A control the door renders disabled cannot act, so pressing it tests nothing; and
+                # a control that changed nothing when pressed is not the way forward either. Both
+                # are recorded rather than counted as the door refusing.
+                fresh = [c for c in here if str(c.get("name")) not in stale]
+                if fresh:
+                    here = fresh
+                live = [c for c in here if not c.get("off")]
+                if not live:
+                    trace.append(f"{len(presses) + 1}. the only control left for this factor is one "
+                                 f"the door renders disabled: " + "; ".join(
+                                     f"{c.get('tag')}:{str(c.get('name'))[:40]}" for c in here))
                     break
+                pick = sorted(live, key=rank)[0]
+                clicked.add((str(pick.get("name")), pick.get("x"), pick.get("y")))
+                # Press it where it is, with a real mouse: a trusted input at the control's own box,
+                # scrolled into view first, so it lands on the control that was chosen.
+                pt = press(pick)
+                if not pt:
+                    trace.append(f"{len(presses) + 1}. could not reach {str(pick.get('name'))[:40]!r} "
+                                 f"to press it (idx={pick.get('idx')}, frame={pick.get('frame')})")
+                    break
+                presses.append(str(pick.get("name"))[:40])
+                page.wait_for_timeout(2000 if len(presses) > 1 else 1500)
+                # Prove the press LANDED, never assume it: a page that does not change after a
+                # press means the input missed its target, and a verdict read from there would be
+                # about the instrument, not the door (2026-10-12: two presses, byte-identical
+                # screen, and no way to tell which of the two had happened).
                 try:
-                    page.locator(f"button:has-text('{cand}'), a:has-text('{cand}'), "
-                                 f"[role=button]:has-text('{cand}'), [role=link]:has-text('{cand}')").first.click(timeout=4000)
+                    active = page.evaluate("() => { const a = document.activeElement; return a ? a.tagName"
+                                           " + ':' + (a.innerText || a.value || '').slice(0, 30) : 'none'; }")
                 except PWError:
-                    break
-                page.wait_for_timeout(1500)
+                    active = "?"
+                try:
+                    shot = hashlib.sha256(page.screenshot()).hexdigest()[:8]
+                except PWError:
+                    shot = "?"
+                trace.append(f"{len(presses)}. pressed {str(pick.get('name'))[:40]!r} at "
+                             f"{pt['x']},{pt['y']} -> active={active} shot={shot} "
+                             f"webauthn={len(webauthn_requests(page))}")
                 if webauthn_requests(page):
                     break
-                if page.url == href:
-                    break
-                href = page.url
-                faceid_controls = offered_controls() or faceid_controls
-        except PWError:
-            pass
+                if shot != "?" and shot == prev_shot:
+                    stale.add(str(pick.get("name")))
+                prev_shot = shot
+            # Which factors the door itself will start. A control that is live for the Mobile App
+            # card and dead for the FIDO card is the door's own decision about this factor, and a
+            # control dead for both is not about WebAuthn at all -- so measure both, and never press
+            # a control the door has disabled.
+            for card_name in ("Mobile App", "FIDO Authenticator"):
+                card = [c for c in controls(page) if str(c.get("name")) == card_name and not c.get("off")]
+                if not card:
+                    continue
+                if press(card[0]):
+                    page.wait_for_timeout(1500)
+                    setup = [c for c in controls(page) if str(c.get("name")) == "Setup"]
+                    trace.append("panel after selecting {!r}: {}".format(card_name, "; ".join(
+                        "Setup disabled={}".format(bool(c.get("off"))) for c in setup) or "no Setup control"))
+        except PWError as e:
+            walk_error = e
         webauthn = webauthn_requests(page)
+        pressed = " -> ".join(presses)
+        if walk_error is not None and not webauthn:
+            # The walk died before it could measure the screen. An empty record here is the
+            # instrument's, not the door's -- reporting "the door produced no WebAuthn request" from
+            # a walk that never completed is the exact defect this drill has now produced four
+            # times (2026-10-12), so it is refused as a config failure instead.
+            fail("config", f"the drill could not walk the factor screen to the ceremony, so it never "
+                           f"measured the door: {type(walk_error).__name__}: {walk_error}")
         offer = '{}:"{}"'.format(faceid_controls[0].get("tag"), faceid_controls[0].get("name"))
         if not webauthn:
+            now = controls(page)
+            # The door's own markup, its own copy and the record of every press, written next to
+            # the screenshot and uploaded with it: the next reader measures the door, not a story
+            # about it, and needs no second run to see what the page was made of.
+            try:
+                with open(os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png").replace(".png", ".dom.txt"), "w") as fh:
+                    fh.write("url: " + page.url + "\n\npresses:\n" + "\n".join(trace)
+                             + "\n\ncopy:\n" + safe(page_text(page)) + "\n\ncontrols:\n"
+                             + "\n".join('{}:"{}" at {},{} disabled={} card="{}"\n    html={}\n    parent={}'.format(
+                                 c.get("tag"), c.get("name"), c.get("x"), c.get("y"), bool(c.get("off")),
+                                 c.get("card"), c.get("html"), c.get("parent")) for c in now)
+                             + "\n\napi:\n" + "\n".join(seen) + "\n")
+            except (OSError, TypeError, PWError):
+                pass
+            shut = [c for c in now if c.get("off") and rank(c)[0] < 9]
             fail("mfa",
-                 f"the door shows the control {offer} for Face ID, but pressing it produced no WebAuthn "
-                 f"request, so the factor cannot be used on the {page.url.split('?')[0]} screen and the "
-                 f"founder cannot use the passkey enabled in the domain; the control is decoration. "
-                 f"Controls the door does offer: {inventory()}")
+                 f"the door shows the control {offer} for Face ID, but it is unusable: pressing "
+                 f"{pressed or 'it'} produced no WebAuthn request on the "
+                 f"{page.url.split('?')[0]} screen (the browser reports a platform authenticator:"
+                 f" {uvpa}), so the founder cannot use the passkey enabled in "
+                 f"the domain. Controls the door does offer: {inventory()}."
+                 + ("; the door renders its own factor control disabled: "
+                    + ", ".join('{}:"{}"'.format(c.get("tag"), str(c.get("name"))[:40]) for c in shut)
+                    if shut else "")
+                 + f" The door's own copy: {safe(page_text(page))[:300]}")
         # A platform authenticator is Touch ID / Face ID; cross-platform is an external security
         # key. If the door only ever asks for a cross-platform one, this machine's biometrics are
         # never offered and saying "faceid=offered" would be the same false green as before.
@@ -465,19 +707,8 @@ with sync_playwright() as p:
     # without it, observe only -- enrolling creates a FIDO2 credential and a real one per
     # hour would hit the domain's maxEnrolledDevices cap.
     if ENROLL:
-        try:
-            client = ctx.new_cdp_session(page)
-            # navigator.credentials.create with a virtual authenticator (platform, UV preferred)
-            client.send("WebAuthn.enable", {"enableUI": False})
-            client.send("WebAuthn.addVirtualAuthenticator", {
-                "options": {
-                    "protocol": "ctap2", "transport": "internal",
-                    "hasResidentKey": True, "hasUserVerification": True,
-                    "isUserVerified": True, "automaticPresenceSimulation": True,
-                }
-            }, )
-        except PWError as e:
-            fail("mfa", f"Face ID option is offered but a virtual authenticator could not be attached: {e}")
+        # The authenticator was attached before the first navigation with presence simulation on,
+        # the way a person's Touch ID answers, so the ceremony below completes for real.
         try:
             page.locator("button:has-text('Face ID'), a:has-text('Face ID'), button:has-text('security key'), a:has-text('security key'), button:has-text('passkey'), a:has-text('passkey'), button:has-text('FIDO'), a:has-text('FIDO'), button:has-text('Continue'), a:has-text('Continue')").first.click(timeout=5000)
         except PWError:
