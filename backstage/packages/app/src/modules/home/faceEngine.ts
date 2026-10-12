@@ -194,11 +194,15 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
     cameraView: 'upper',
     avatarMood: 'neutral',
   });
-  // estate.glb is authored by bin/estate-face-avatar: an estate-owned, commercially licensed
-  // avatar (RPM bone names + 53 ARKit blendshapes) generated from geometry we compute. It
-  // replaces brunette.glb, a Ready Player Me model under CC BY-NC 4.0 -- non-commercial, which
-  // a commercial product cannot ship (bin/face-licence-gate; spec
-  // docs/specs/2026-10-03-face-experience-10x.md section 6).
+  // brunette.glb is the avatar the face loads. It is a Ready Player Me model under CC BY-NC 4.0 --
+  // non-commercial -- restored by founder decision on 2026-10-10 because the estate-owned
+  // alternative (estate.glb, authored by bin/estate-face-avatar: RPM bone names + 53 ARKit
+  // blendshapes generated from geometry we compute) rendered as a featureless bust. This is
+  // tracked debt, not clearance: bin/face-licence-known-blockers carries the entry and
+  // bin/face-licence-gate prints it on every run (issue #5673). Replace it with a commercially
+  // licensed or commissioned realistic avatar (spec
+  // docs/specs/2026-10-03-face-experience-10x.md section 6) and delete the debt entry in the
+  // same change.
   await head.showAvatar({ url: `${FACE_ASSETS}brunette.glb`, body: 'F', lipsyncLang: 'en' });
 
   // CONTINUITY: restore the mood this visitor left the face in, and count the visit. The store is

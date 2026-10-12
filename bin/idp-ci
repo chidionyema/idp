@@ -238,9 +238,11 @@ fi
   # shipped face. The face shipped brunette.glb, a CC BY-NC avatar, into a product the estate is
   # trying to sell; VERSIONS said so in a sentence nothing read. This rung turns that sentence into
   # a red build. It grades the assets the face loads and the licence each carries, not a proxy.
-  # Proven able to fail 2026-10-03 (a new non-commercial asset -> exit 1); as of 2026-10-04 the
-  # blocker is CLOSED -- brunette.glb is gone and estate.glb is estate-owned, so the rung passes
-  # clean with no carried debt, and still refuses any new non-commercial or unrecorded asset.
+  # Proven able to fail 2026-10-03 (a new non-commercial asset -> exit 1). The 2026-10-04 closure
+  # was reopened 2026-10-10 by founder decision (estate.glb renders as a featureless bust;
+  # brunette.glb restored, issue #5673), so the rung passes PASS-WITH-DEBT and prints the carried
+  # debt rather than claiming clearance. It still refuses any new non-commercial or unrecorded
+  # asset, and it grades the avatar the face actually loads (read from faceEngine.ts).
   # Gate: bin/face-licence-gate.
   if [ -x "$IDP/bin/face-licence-gate" ]; then
     if touched backstage/packages/app/public/face/ || touched bin/estate-face-vendor \
