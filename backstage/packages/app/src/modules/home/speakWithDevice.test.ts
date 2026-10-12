@@ -1,4 +1,4 @@
-import { deviceVoice, speakWithDevice } from './useEstateVoice';
+import { DEFAULT_VOICE, deviceVoice, speakWithDevice } from './useEstateVoice';
 
 // 2026-10-09: the estate's voice was out of quota and every clause came back with no audio; the
 // founder saw the answer and heard nothing. The device's voice now speaks it instead.
@@ -91,5 +91,16 @@ describe('speakWithDevice', () => {
       } as any),
     ).toBeUndefined();
     expect(deviceVoice({} as any)).toBeUndefined();
+  });
+});
+
+// The voice the surface arrives in, and speaks with when the catalogue reports no current voice.
+// It was 'troy' until 2026-10-10 -- a man's voice out of a woman's face (founder, /face). The two
+// defaults, this one and the backend's, are checked against each other in
+// fleetview-backend/tests/test_the_face_speaks_in_a_womans_voice.py.
+describe('DEFAULT_VOICE', () => {
+  it("is a woman's voice, not one of Orpheus's men", () => {
+    expect(DEFAULT_VOICE).toBe('hannah');
+    expect(['troy', 'austin', 'daniel']).not.toContain(DEFAULT_VOICE);
   });
 });
