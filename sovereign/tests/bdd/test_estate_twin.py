@@ -24,6 +24,8 @@ from pathlib import Path
 import pytest
 from pytest_bdd import given, scenarios, then, when
 
+from . import _build_lock
+
 scenarios("features/twin/estate-twin.feature")
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -62,17 +64,31 @@ def _build_graph() -> None:
     if _BUILT:
         return
     _BUILT = True
-    if ASSET_DB.exists():
-        return
     ASSET_DB.parent.mkdir(parents=True, exist_ok=True)
     dbgen = ROOT / "bin" / "db-gen"
     twin = ROOT / "bin" / "estate-twin-runtime"
-    for cmd in ([str(dbgen)], [str(twin), "--once", "--code", "--domains"]):
-        if not Path(cmd[0]).exists():
-            continue
-        # Best effort by design: each half is optional, and the twin writes its own tables
-        # even when the receipt cannot be read.
-        _run(cmd)  # noqa: S603 - fixed argv, no shell
+
+    def _build() -> None:
+        for cmd in ([str(dbgen)], [str(twin), "--once", "--code", "--domains"]):
+            if not Path(cmd[0]).exists():
+                continue
+            # Best effort by design: each half is optional, and the twin writes its own tables
+            # even when the receipt cannot be read.
+            _run(cmd)  # noqa: S603 - fixed argv, no shell
+
+    # Once per SUITE, not once per worker. `-n auto` hands this file's seven scenarios to four
+    # xdist workers, every one of which reaches a `_db()` step within milliseconds of the
+    # others, and `ASSET_DB.exists()` is false for all of them at that moment -- so four twin
+    # sweeps ran at once, 526 processes each, all writing the same SQLite file. That is how one
+    # slow build became a SIGKILL at the 180s cap (CI 2026-10-11, job 114542690924: "1 failed,
+    # 371 passed", the one failure a TimeoutExpired on the twin). The workers that wait now
+    # find the winner's database and return.
+    #
+    # The `ASSET_DB.exists()` check this replaces is the same defect one step smaller: db-gen
+    # creates the file and the twin fills it afterwards, so a worker arriving mid-build found a
+    # database that exists and is not the graph. Readiness is decided under the lock, once the
+    # builder has left -- never from the file's presence.
+    _build_lock.build_once(ASSET_DB, _build)
     if not ASSET_DB.exists():
         pytest.fail(
             f"the estate's graph could not be built at {ASSET_DB.relative_to(ROOT)}; "
