@@ -129,16 +129,20 @@ tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
 # not skippable, every sign-in), one policy holding that rule, and the policy assigned to the
 # app. The grader is the hourly login drill: it should stop at mfa=enroll with faceid=offered.
 #
-# Three facts the first apply taught (run 38206416420, 2026-10-12, "condition PUT refused:
-# The resource does not exist"):
+# Four facts the first applies taught (run 38206416420 "condition PUT refused: The resource
+# does not exist"; run 38208401584 "Missing required attribute(s): attributeName,attributeValue"):
 #   1. These ids are SERVER-assigned. PUT to a chosen id cannot create; creation is POST to the
 #      collection, and the returned id is what everything else references. The readable ids in
 #      the domain's own policies (OciConsolePolicy, DefaultSignOnPolicy) were minted by IDCS's
 #      own idcssm app, not by clients.
-#   2. The rule's return list is `return`, exactly as the domain's own
-#      OciConsoleMFANonAdminRule serializes it (read back from this domain 2026-10-12), not
-#      `-return`.
-#   3. The ensure runs AFTER the tofu apply, not before it: tofu owns the App resource and its
+#   2. The rule's return list is `return`, exactly as the domain's own MFA rule
+#      (OciConsoleMFANonAdminRule, "MFA for all users") serializes it (read back from this
+#      domain 2026-10-12), not `-return`.
+#   3. Conditions take camelCase attributeName/attributeValue; the SCIM-style dash form is
+#      refused. Read back from this domain 2026-10-12: the Security Default's own condition is
+#      {attributeName:"target.action", operator:"eq", attributeValue:"\"Login\""} under
+#      schemas [urn:ietf:params:scim:schemas:oracle:idcs:Condition].
+#   4. The ensure runs AFTER the tofu apply, not before it: tofu owns the App resource and its
 #      provider does not model signonPolicy (no such attribute in oracle/oci 8.19+), so a
 #      drift-driven tofu PUT of the app would strip the ref the SCIM PATCH just set. The PATCH
 #      is the last writer in every run, and the next run re-reads and re-asserts it.
@@ -151,7 +155,7 @@ else
   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
   # condition: the same target.action="Login" vocabulary the domain's own Console condition uses
   fcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door sign-in") | .id' | head -1)
-  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],"name":"front door sign-in","attribute-name":"target.action","operator":"eq","attribute-value":"\"Login\""}' > "$T3/c.json"
+  printf '%s' '{"schemas":["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],"name":"front door sign-in","attributeName":"target.action","operator":"eq","attributeValue":"\"Login\""}' > "$T3/c.json"
   if [ -n "$fcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$fcid" --request-body "file://$T3/c.json" 2>&1)
   else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/c.json" 2>&1); fi
   fcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
