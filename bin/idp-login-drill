@@ -122,8 +122,12 @@ ENROLL_TEXT = re.compile(r"(set (up|it) (now|today)|enroll|get started|first[- ]
 CHALLENGE_TEXT = re.compile(r"(verify (your identity|it.?s you)|two[- ]step|multi[- ]factor|enter the (code|otp)|approve the (notification|push))", re.I)
 # The Face ID / security-key option. IDCS presents it as a button or a link in the MFA screen's
 # "Other options" menu; the regex matches any of the common phrasings, case-insensitive, across
+# ... and the domain's own label for the factor, which this drill learned the hard way: the front
+# door offers it as the button "FIDO Authenticator", which contains none of the consumer phrasings
+# above. A platform FIDO authenticator is Touch ID / Face ID; a cross-platform one is a security
+# key. The vocabulary must name the factor the domain actually prints.
 # the full visible text. A match is the answer to the founder's question.
-FACEID_TEXT = re.compile(r"(face\s*id|touch\s*id|fingerprint|passkey|security\s*key|webauthn|use (a |an )?(security|pass)?\s*key|use (your )?(face|touch)\s*id|other (sign[- ]?in )?options)", re.I)
+FACEID_TEXT = re.compile(r"(face\s*id|touch\s*id|fingerprint|passkey|security\s*key|webauthn|fido|use (a |an )?(security|pass)?\s*key|use (your )?(face|touch)\s*id|other (sign[- ]?in )?options)", re.I)
 # The interstitial this domain shows in front of its factor list: it names the two method
 # families and asks for a click, and carries no factor of its own. Recognised so the drill opens
 # it instead of grading it as if it were the list of factors.
@@ -406,21 +410,55 @@ with sync_playwright() as p:
     # With the UI suppressed and no virtual authenticator attached, a request can be recorded but
     # no credential can be created, so an observe-only run never burns an enrolment slot. Skipped
     # under DRILL_ENROLL=1, where the ceremony below is the proof and must not be disturbed.
-    offer = '{}:"{}"'.format(faceid_controls[0].get("tag"), faceid_controls[0].get("name"))
-    mech = "unprobed" if ENROLL else "none"
     if not ENROLL:
         try:
             ctx.new_cdp_session(page).send("WebAuthn.enable", {"enableUI": False})
-            cand = re.sub(r"['\"\\\\]", "", str(faceid_controls[0].get("name", "")))[:40]
-            if cand:
-                page.locator(f"button:has-text('{cand}'), a:has-text('{cand}'), "
-                             f"[role=button]:has-text('{cand}'), [role=link]:has-text('{cand}')").first.click(timeout=4000)
+            href = page.url
+            # The control may start the ceremony in place, or lead to the screen that does; follow
+            # it one hop before deciding it does nothing.
+            for _ in range(2):
+                cand = re.sub(r"['\"\\\\]", "", str(faceid_controls[0].get("name", "")))[:40]
+                if not cand:
+                    break
+                try:
+                    page.locator(f"button:has-text('{cand}'), a:has-text('{cand}'), "
+                                 f"[role=button]:has-text('{cand}'), [role=link]:has-text('{cand}')").first.click(timeout=4000)
+                except PWError:
+                    break
                 page.wait_for_timeout(1500)
+                if webauthn_requests(page):
+                    break
+                if page.url == href:
+                    break
+                href = page.url
+                faceid_controls = offered_controls() or faceid_controls
         except PWError:
             pass
         webauthn = webauthn_requests(page)
-        mech = "create" if any(w.get("call") == "create" for w in webauthn) else \
-               "get" if webauthn else "none"
+        offer = '{}:"{}"'.format(faceid_controls[0].get("tag"), faceid_controls[0].get("name"))
+        if not webauthn:
+            fail("mfa",
+                 f"the door shows the control {offer} for Face ID, but pressing it produced no WebAuthn "
+                 f"request, so the factor cannot be used on the {page.url.split('?')[0]} screen and the "
+                 f"founder cannot use the passkey enabled in the domain; the control is decoration. "
+                 f"Controls the door does offer: {inventory()}")
+        # A platform authenticator is Touch ID / Face ID; cross-platform is an external security
+        # key. If the door only ever asks for a cross-platform one, this machine's biometrics are
+        # never offered and saying "faceid=offered" would be the same false green as before.
+        att = {w.get("attachment") for w in webauthn}
+        if att == {"cross-platform"}:
+            fail("mfa",
+                 f"the door offers {offer} but requests only a cross-platform authenticator "
+                 f"(an external security key); Face ID needs a platform authenticator, so the "
+                 f"founder is still not offered the biometric on this machine")
+    else:
+        offer = '{}:"{}"'.format(faceid_controls[0].get("tag"), faceid_controls[0].get("name"))
+
+    # detail, so a green row proves the mechanism and not the label
+    det = "none"
+    if webauthn:
+        w = webauthn[0]
+        det = f"{w.get('call')},attachment={w.get('attachment')},uv={w.get('userVerification')}"
 
     # Face ID (or a security key) is offered. With DRILL_ENROLL=1, complete the ceremony with
     # a virtual authenticator so the hourly run leaves the door behind a real WebAuthn step;
@@ -441,7 +479,7 @@ with sync_playwright() as p:
         except PWError as e:
             fail("mfa", f"Face ID option is offered but a virtual authenticator could not be attached: {e}")
         try:
-            page.locator("button:has-text('Face ID'), a:has-text('Face ID'), button:has-text('security key'), a:has-text('security key'), button:has-text('passkey'), a:has-text('passkey'), button:has-text('Continue'), a:has-text('Continue')").first.click(timeout=5000)
+            page.locator("button:has-text('Face ID'), a:has-text('Face ID'), button:has-text('security key'), a:has-text('security key'), button:has-text('passkey'), a:has-text('passkey'), button:has-text('FIDO'), a:has-text('FIDO'), button:has-text('Continue'), a:has-text('Continue')").first.click(timeout=5000)
         except PWError:
             pass
         # Let the WebAuthn ceremony resolve, then continue to the session stage.
@@ -453,7 +491,7 @@ with sync_playwright() as p:
     else:
         # Observation-only run: do not complete the ceremony. The verdict is "Face ID is offered",
         # which is the answer the founder needs, and no credential is created.
-        print(f"ok      login-drill  observed mfa={mfa_kind}, faceid=offered({offer}, webauthn={mech}) "
+        print(f"ok      login-drill  observed mfa={mfa_kind}, faceid=offered({offer}, webauthn={det}) "
               f"at {urlparse(page.url).hostname} in {time.time()-started:.1f}s")
         sys.exit(0)
 
