@@ -574,8 +574,22 @@ with sync_playwright() as p:
     # Prose may classify the step; it may never claim the factor. The page's own copy names "a
     # security key" while showing no such control (measured 2026-10-12), and matching that prose
     # reported faceid=offered on runs where the founder could see no Face ID at the door.
+    # Two ways a control is the passkey's. Its own name says so ("FIDO Authenticator"), or it
+    # is the action button of a card that is headed as the FIDO factor: with a passkey enrolled
+    # the door skips the factor list and shows "FIDO Authenticator Verification" with a single
+    # button:"Verify" (screenshot of run 38290425763, 2026-10-12), whose name carries none of
+    # the vocabulary. The card must name FIDO and must not name the Mobile App, so the Verify
+    # that approves a push -- a different factor -- is still not counted.
+    def is_passkey(c):
+        if FACEID_TEXT.search(str(c.get("name", ""))):
+            return True
+        own = str(c.get("card", ""))
+        return (bool(re.match(r"^(verify|continue|next)$", str(c.get("name", "")).strip(), re.I))
+                and bool(re.search(r"fido authenticator", own, re.I))
+                and not re.search(r"mobile app", own, re.I))
+
     def offered_controls():
-        return [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
+        return [c for c in controls(page) if is_passkey(c)]
 
     def inventory():
         cs = controls(page)
@@ -669,7 +683,7 @@ with sync_playwright() as p:
                 name, own = str(c.get("name", "")), str(c.get("card", ""))
                 factor_card = 0 if re.search(r"fido|security key|passkey", own, re.I) else (
                     1 if not re.search(r"mobile app", own, re.I) else 2)
-                if FACEID_TEXT.search(name):
+                if is_passkey(c):
                     return (0, factor_card)
                 if CONTINUE_TEXT.search(name):
                     return (1, factor_card)
