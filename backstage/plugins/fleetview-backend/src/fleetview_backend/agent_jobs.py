@@ -21,6 +21,13 @@ FLEETVIEW_GITHUB_TOKEN_FILE on EVERY call because it is re-minted every 45 minut
 run to its PR needs pull_requests: read and a failure's own line needs checks: read; a lane
 without them gets "Fleet may not read pull requests." and the failed step's name, never an error.
 On the laptop, `gh auth token`. It is never logged and never returned.
+
+THE TLS TRUST STORE. Every call is made with a context built from certifi's bundle, because the
+interpreter launchd runs this service with has no CA bundle of its own. Without it every GitHub
+call died "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate" and this whole door
+-- the claims panel, the job buttons, the voice job path -- answered 502 "GitHub is unreachable
+from Fleet" (measured 2026-10-12, issue #5830). Verification is never switched off to work around
+a missing bundle: a context that trusts nothing and a context that checks nothing are both wrong.
 """
 
 from __future__ import annotations
@@ -28,6 +35,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import subprocess
 import threading
 import time
@@ -107,6 +115,30 @@ def _token() -> str:
     )
 
 
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def ssl_context() -> ssl.SSLContext:
+    """The context every GitHub call is made with: certifi's bundle, verification never off.
+
+    WHY (issue #5830). The interpreter launchd runs this service with ships no CA bundle of its
+    own, so the platform default trusts nothing and every call died
+    "CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate" -- measured 2026-10-12 on
+    /claims, and it is the same door as the job buttons and the voice job path. certifi is already
+    installed for that interpreter; the bundle, not the network, was missing. Built once per
+    process: reloading a CA bundle on every call is waste on a work surface.
+    """
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is None:
+        try:
+            import certifi
+
+            _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        except Exception:  # noqa: BLE001 -- no certifi: the platform default, unchanged
+            _SSL_CONTEXT = ssl.create_default_context()
+    return _SSL_CONTEXT
+
+
 def _gh(method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
     """One GitHub API call. Returns (status, parsed body); raises JobRefused for anything the
     caller cannot act on. 403 and 404 come back to the caller when it asked for them (reads that
@@ -126,7 +158,10 @@ def _gh(method: str, path: str, body: dict | None = None) -> tuple[int, Any]:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT_S) as r:  # noqa: S310
+        # certifi's bundle: this interpreter has no CA store of its own (issue #5830)
+        with urllib.request.urlopen(  # noqa: S310
+            req, timeout=HTTP_TIMEOUT_S, context=ssl_context()
+        ) as r:
             raw = r.read()
             return r.status, (json.loads(raw) if raw.strip() else None)
     except urllib.error.HTTPError as e:
