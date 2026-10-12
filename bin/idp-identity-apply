@@ -155,8 +155,16 @@ tofu -chdir="$M" "${1:-plan}" -input=false "${@:2}" \
 fdj=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=id,signonPolicy" 2>/dev/null | jq -c '.data.Resources[0] // empty')
 fd_appid=$(printf '%s' "$fdj" | jq -r '.id // ""')
 fpid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "Front Door Sign-On Policy") | .id' | head -1)
-if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ]; then
-  echo "ok      identity front door sign-on policy already assigned (second factor required at every sign-in)"
+# Drift, not just absence: the assignment alone is not the whole of what this block owns any
+# more. A re-run must also notice a policy that has lost the passwordless cohort rule, or the
+# early exit would report "already assigned" over a policy it had stopped enforcing.
+pl_rid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door offers passwordless sign-in") | .id' | head -1)
+pl_wired=false
+if [ -n "$fpid" ] && [ -n "$pl_rid" ]; then
+  pl_wired=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$pl_rid" '((.data.rules // []) | map(.value) | index($r)) != null' 2>/dev/null)
+fi
+if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ]; then
+  echo "ok      identity front door sign-on policy already assigned (second factor at every sign-in; Face ID alone offered to the pilot cohort, #5818/#5858)"
 else
   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
   # condition: the same target.action="Login" vocabulary the domain's own Console condition uses
@@ -173,8 +181,53 @@ else
   else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/r.json" 2>&1); fi
   frid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
   [ -n "$frid" ] || { echo "FAIL    identity front door MFA rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-  # policy: active, SignOn, holding that one rule
-  jq -n --arg r "$frid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818)",active:true,"policyType":{value:"SignOn"},rules:[{value:$r,sequence:1}]}' > "$T3/p.json"
+  # Face ID ALONE (#5858). The domain creates a Rule with ANY string in authenticationFactor:
+  # a probe rule carrying "BOGUS" was created and read back unharmed, then deleted, and the
+  # domain's rule list came back to its own seven plus #5818's (measured 2026-10-12). So
+  # create-time validation cannot answer whether a value is honoured at sign-in; only the door's
+  # own page can. And if a rule whose value the domain ignores matched EVERY user, the second
+  # factor #5818 installed would be silently gone for the founder. Hence a cohort: the rule
+  # matches one group, the drill account is its only member, the drill measures whether the door
+  # then offers the passkey first -- and widening the rollout is adding a member, not editing a
+  # rule. The group condition's vocabulary is the domain's own: its isInTheseGroups condition
+  # reads back as user.groups[*].value coany ["<id>"] (read 2026-10-12), the shape below.
+  pl_group="estate-passwordless-pilots"
+  drill_uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
+  [ -n "$drill_uid" ] || drill_uid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users?filter=userName%20eq%20%22estate-drill%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
+  pl_rid=""
+  if [ -n "$drill_uid" ]; then
+    gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id,members" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
+    if [ -z "$gid" ]; then
+      jq -n --arg g "$pl_group" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Group"],displayName:$g,description:"Face ID alone (passwordless) pilot cohort for the front door -- #5858",members:[{value:$u,type:"User"}]}' > "$T3/g.json"
+      pg=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups" --request-body "file://$T3/g.json" 2>&1)
+      gid=$(printf '%s' "$pg" | jq -r '.data.id // ""')
+      [ -n "$gid" ] || { echo "FAIL    identity passwordless cohort group refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    else
+      mem=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups/$gid?attributes=members" 2>/dev/null | jq -c '[.data.members[]? | {value,type}]')
+      if ! printf '%s' "$mem" | jq -e --arg u "$drill_uid" 'any(.[]; .value == $u)' >/dev/null 2>&1; then
+        jq -n --arg g "$pl_group" --argjson m "$mem" --arg u "$drill_uid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Group"],displayName:$g,members:($m + [{value:$u,type:"User"}])}' > "$T3/g.json"
+        pg=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups/$gid" --request-body "file://$T3/g.json" 2>&1)
+        printf '%s' "$pg" | jq -e --arg u "$drill_uid" 'any(.data.members[]?; .value == $u)' >/dev/null 2>&1 || { echo "FAIL    identity passwordless cohort membership refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+      fi
+    fi
+    pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
+    jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
+    if [ -n "$pcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pcid" --request-body "file://$T3/pc.json" 2>&1)
+    else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pc.json" 2>&1); fi
+    pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
+    [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    jq -n --arg c "$pcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"Passwordless"}]}' > "$T3/pl.json"
+    if [ -n "$pl_rid" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid" --request-body "file://$T3/pl.json" 2>&1)
+    else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
+    pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
+    [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  else
+    echo "BLIND   identity passwordless cohort: the drill account could not be read, so no rule was pointed at nobody -- the policy keeps the second-factor rule alone"
+  fi
+  # policy: active, SignOn, the cohort rule first (when there is one), the second factor after it
+  if [ -n "$pl_rid" ]; then pl_rules=$(jq -n --arg pl "$pl_rid" --arg mfa "$frid" '[{value:$pl,sequence:1},{value:$mfa,sequence:2}]')
+  else pl_rules=$(jq -n --arg mfa "$frid" '[{value:$mfa,sequence:1}]'); fi
+  jq -n --argjson r "$pl_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818); Face ID alone to the passwordless pilot cohort (#5858)",active:true,"policyType":{value:"SignOn"},rules:$r}' > "$T3/p.json"
   if [ -n "$fpid" ]; then pp=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid" --request-body "file://$T3/p.json" 2>&1)
   else pp=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" --request-body "file://$T3/p.json" 2>&1); fi
   fpid=$(printf '%s' "$pp" | jq -r '.data.id // ""')
@@ -184,7 +237,11 @@ else
   pa=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid" --request-body "file://$T3/a.json" 2>&1)
   rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=signonPolicy" 2>/dev/null | jq -r '.data.Resources[0].signonPolicy.value // ""')
   if [ "$rb" = "$fpid" ]; then
-    echo "ok      identity front door sign-on policy assigned (second factor required at every sign-in, #5818)"
+    echo "ok      identity front door sign-on policy assigned (second factor at every sign-in, #5818)"
+    if [ -n "$pl_rid" ]; then
+      rb_af=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid?attributes=return" 2>/dev/null | jq -r '[.data.return[]? | select(.name == "authenticationFactor") | .value] | join(",")')
+      echo "ok      identity front door offers Face ID alone to $pl_group (authenticationFactor=$rb_af, rule sequence 1, #5858) -- the drill measures whether this domain honours it"
+    fi
   else
     echo "FAIL    identity front door app signonPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1
   fi

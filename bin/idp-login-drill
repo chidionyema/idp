@@ -93,6 +93,8 @@ DOMAIN_HOST = urlparse(os.environ["DRILL_DOMAIN"]).hostname or ""
 HOME = f"https://catalogue.{ZONE}/"
 TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
 ENROLL = os.environ.get("DRILL_ENROLL", "0") == "1"
+# Face ID ALONE (#5858): assert the door offers the passkey before it asks for the password.
+PASSWORDLESS = os.environ.get("DRILL_PASSWORDLESS", "0") == "1"
 # The founder signs in on a phone. A desktop-shaped context measures a surface he does not use, so
 # the device is part of the instrument: DRILL_DEVICE names a Playwright device ("iPhone 15"), and
 # the same drill is then taken on that phone's browser, viewport and touch behaviour included.
@@ -424,6 +426,51 @@ with sync_playwright() as p:
                 loc.click()
         except PWError:
             pass
+    if PASSWORDLESS:
+        # With a passwordless rule in front of this account the door is meant to offer the passkey
+        # BEFORE it asks for the password. Played before the password is typed, because a password
+        # typed first is the thing the founder asked to stop typing. The assertion is mechanical:
+        # a passkey offer is a control, and pressing that control must drive navigator.credentials
+        # -- page copy can fabricate neither.
+        first(page, USER_SELECTORS, "username").fill(USER)
+        try:
+            page.keyboard.press("Enter")
+        except PWError:
+            pass
+        offer, deadline = None, time.time() + 20
+        while time.time() < deadline:
+            cs = [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
+            if cs:
+                offer = cs[0]
+                break
+            page.wait_for_timeout(1000)
+        if not offer:
+            inv = ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in controls(page)[:8]) or "none"
+            fail("passwordless",
+                 f"the door does not offer Face ID alone to {USER}: after the username there is no "
+                 f"passkey control on {page.url.split('?')[0]} and the password form is still the way "
+                 f"in, so the passwordless value the policy rules carry is not honoured by this "
+                 f"domain. Controls the door does offer: {inv}")
+        at = press(offer)
+        if not at:
+            fail("config", f"the drill could not reach {offer.get('name')!r} to press it, so any "
+                           f"'no WebAuthn request' from here would be this script's, not the door's")
+        w, wdeadline = [], time.time() + 15
+        while time.time() < wdeadline:
+            w = webauthn_requests(page)
+            if w:
+                break
+            page.wait_for_timeout(1000)
+        if not w:
+            fail("passwordless",
+                 f"the door offered {offer.get('name')!r} to {USER} but pressing it drove no WebAuthn "
+                 f"request (navigator.credentials was never called), so the control is decoration and no "
+                 f"Face ID can follow it")
+        calls = ",".join(sorted({str(r.get("call")) for r in w}))
+        print(f"ok      login-drill  Face ID alone is offered at the door for {USER}: pressed "
+              f"{offer.get('name')!r} and the door drove navigator.credentials [{calls}] "
+              f"({len(w)} request(s)) in {time.time()-started:.1f}s -- no password was typed")
+        raise SystemExit(0)
     first(page, USER_SELECTORS, "username").fill(USER)
     first(page, PASS_SELECTORS, "password").fill(PASSWORD)
     try:

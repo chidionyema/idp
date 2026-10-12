@@ -25,6 +25,11 @@ on:
         type: string
         required: false
         default: ""
+      passwordless:
+        description: "Assert the door offers Face ID ALONE -- the passkey before the password (#5858); no password is typed"
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [main]
     paths:
@@ -76,6 +81,7 @@ jobs:
           OCI_REGION: ${{ vars.OCI_REGION }}
           DRILL_SHOT: ${{ runner.temp }}/login-drill-home.png
           DRILL_ENROLL: ${{ inputs.enroll == 'true' && '1' || '0' }}
+          DRILL_PASSWORDLESS: ${{ inputs.passwordless == 'true' && '1' || '0' }}
           DRILL_DEVICE: ${{ inputs.device }}
         run: |
           set -o pipefail
