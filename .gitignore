@@ -12,6 +12,9 @@ catalog/catalog-info.yaml
 catalog/estate.db
 catalog/estate.db.tmp
 catalog/estate.db-journal
+# The lock the acceptance suite builds that database under (sovereign/tests/bdd/_build_lock.py).
+# Same class as the database itself: an artifact of building it, not a thing to commit.
+catalog/.graph-build.lock
 
 # Runtime
 logs/

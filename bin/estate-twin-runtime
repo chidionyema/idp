@@ -54,6 +54,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -223,23 +224,70 @@ def upsert_edge(
 # ----------------------------------------------------------------------------- kubectl
 
 
+# The cluster is asked once. Seven call sites in this file each read the API, and when a
+# kubeconfig exists but its server does not answer, every one of them paid a full dial
+# timeout -- measured 2026-10-12: five reads at 23.3s each, 116s of a 218s sweep, and the
+# acceptance suite SIGKILLs the sweep at 180s, so it got no graph at all. The first read is
+# still paid; if it says the server cannot be reached, the rest return the same sentence
+# without dialling, and each domain writes the BLIND node it would have written anyway.
+#
+# Only "cannot be reached" is remembered. A read that fails for another reason -- Forbidden
+# on one resource, a 404 -- is per-resource, and remembering it would blind domains that can
+# still be read, which is a worse defect than the delay this fixes.
+_KUBECTL_UNREACHABLE: str | None = None
+
+# What "cannot be reached" sounds like, from kubectl. Matched case-insensitively.
+_KUBECTL_UNREACHABLE_SAYS = (
+    "unable to connect to the server",
+    "connection refused",
+    "connection reset",
+    "no such host",
+    "i/o timeout",
+    "context deadline exceeded",
+    "tls handshake timeout",
+    "no configuration has been provided",
+    "dial tcp",
+    "was refused",
+)
+
+
+def _kubectl_budget_s() -> float:
+    """Seconds one cluster read may take. A read that has not answered by then is not going
+    to; the sweep is a snapshot, and BLIND with a reason beats a stall."""
+    return float(_env("ESTATE_TWIN_KUBECTL_S", "15"))
+
+
 def _kubectl(args: list[str]) -> tuple[bool, str]:
     """Read the cluster. Returns (ok, stdout). Never raises, never writes."""
+    global _KUBECTL_UNREACHABLE
+    if _KUBECTL_UNREACHABLE is not None:
+        return False, _KUBECTL_UNREACHABLE
     kubectl = _env("KUBECTL", "/usr/local/bin/kubectl")
     if not os.path.exists(kubectl):
         import shutil as _shutil
 
         kubectl = _shutil.which("kubectl") or "kubectl"
+    budget = _kubectl_budget_s()
     try:
         p = subprocess.run(  # noqa: S603 - fixed argv, no shell, no caller-built string
-            [kubectl, *args],
+            [kubectl, *args, f"--request-timeout={int(budget)}s"],
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=budget + 5,
         )
     except Exception as e:
-        return False, str(e)
-    return p.returncode == 0, (p.stdout if p.returncode == 0 else p.stderr)
+        _KUBECTL_UNREACHABLE = f"the cluster could not be reached: {e}"
+        return False, _KUBECTL_UNREACHABLE
+    if p.returncode == 0:
+        return True, p.stdout
+    why = (p.stderr or p.stdout or "").strip()
+    if any(s in why.lower() for s in _KUBECTL_UNREACHABLE_SAYS):
+        _KUBECTL_UNREACHABLE = f"the cluster could not be reached: {why[:200]}"
+        # The first caller gets the same sentence the rest will get. One condition, one reason:
+        # a BLIND node that reads differently depending on which domain asked first is the
+        # graph reporting the timing of the sweep as though it were the state of the cluster.
+        return False, _KUBECTL_UNREACHABLE
+    return False, why
 
 
 def _age_seconds(iso: str) -> int | None:
@@ -370,6 +418,13 @@ def sweep_deployments(con: sqlite3.Connection) -> int:
     return n
 
 
+# Read once per process. The runtime half and the domains sweep both ask for it (measured
+# 2026-10-12: 9.1s each, 18.3s of a 218s sweep), and it is the same object both times --
+# cluster-state rewrites it every 15 minutes. Only a SUCCESS is remembered, so a read that
+# failed is still retried by the next caller, which is today's behaviour.
+_RECEIPT: dict | None = None
+
+
 def read_receipt() -> dict | None:
     """The estate's own cluster-state receipt, which cluster-state writes every 15 minutes.
 
@@ -384,6 +439,9 @@ def read_receipt() -> dict | None:
 
     Returns the receipt body, or None when it cannot be read (BLIND, never empty-as-clean).
     """
+    global _RECEIPT
+    if _RECEIPT is not None:
+        return _RECEIPT
     bucket = _env("ESTATE_RECEIPT_BUCKET", "estate-drill-receipts")
     name = _env("ESTATE_RECEIPT_NAME", "state/cluster")
     ok, out = _kubectl_or_cloud(["object", "get", "--bucket", bucket, "--name", name])
@@ -392,9 +450,10 @@ def read_receipt() -> dict | None:
     lines = out.splitlines()
     body = lines[1] if lines and lines[0].startswith("ok ") else out
     try:
-        return json.loads(body)
+        _RECEIPT = json.loads(body)
     except Exception:
         return None
+    return _RECEIPT
 
 
 def _kubectl_or_cloud(args: list[str]) -> tuple[bool, str]:
@@ -1096,18 +1155,43 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     estate deletes, and the graders went with it. It takes 12.7s over 954 refs.
     """
     ensure_schema(con)
-    names = [
-        b
-        for b in _git(
-            [
-                "for-each-ref",
-                "--sort=-committerdate",
-                "--format=%(refname:short)",
-                "refs/heads/",
-            ]
-        ).splitlines()
-        if b.strip() and b.strip() != base.replace("origin/", "")
-    ]
+    # The branches, their tip dates and their added-file lists: one `git` call plus a bounded
+    # pool, not two processes per branch. This used to spawn a `git log -1` and a `git diff`
+    # for every branch -- 263 branches, 526 processes -- and the acceptance suite SIGKILLs the
+    # sweep at 180s (measured 2026-10-12: 106s of a 218s sweep in this function alone). The
+    # date is folded into the ref listing that was already being paid for, and the diffs are
+    # I/O waits on a subprocess, so they run concurrently. The count is unchanged: files in
+    # the branch's tree that are not in the base tree.
+    pairs: list[tuple[str, str]] = []
+    for line in _git(
+        [
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(refname:short) %(committerdate:short)",
+            "refs/heads/",
+        ]
+    ).splitlines():
+        name, _, date = line.strip().rpartition(" ")
+        if not name or name == base.replace("origin/", ""):
+            continue
+        pairs.append((name, date))
+    names = [b for b, _ in pairs]
+
+    def _added_on(branch: str) -> list[str]:
+        return [
+            f
+            for f in _git(
+                ["diff", "--name-only", "--diff-filter=A", f"{base}..{branch}"]
+            ).splitlines()
+            if f.strip()
+        ]
+
+    jobs = int(_env("ESTATE_TWIN_GIT_JOBS", str(min(8, (os.cpu_count() or 2)))))
+    if jobs > 1 and len(pairs) > 1:
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            added_by_branch = list(pool.map(_added_on, names))
+    else:
+        added_by_branch = [_added_on(b) for b in names]
     # `stranded` means one thing: the branch adds a file main does not have. A second
     # threshold (age) split one concept into two counts and made the twin disagree with the
     # catalogue generator, which counts the same set. Age is recorded in the metadata as
@@ -1121,15 +1205,7 @@ def sweep_code(con: sqlite3.Connection, base: str = "origin/main") -> dict:
     absent: set[str] = set()
     added_across_branches = 0
 
-    for b in names:
-        added = [
-            f
-            for f in _git(
-                ["diff", "--name-only", "--diff-filter=A", f"{base}..{b}"]
-            ).splitlines()
-            if f.strip()
-        ]
-        date = _git(["log", "-1", "--format=%cs", b]).strip()
+    for (b, date), added in zip(pairs, added_by_branch):
         age_days = _age_days(date)
         if not added:
             continue
