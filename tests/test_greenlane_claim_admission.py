@@ -79,9 +79,14 @@ def test_the_reason_is_reported_once_not_every_tick():
     for _ in range(3):
         st = E.Engine(b, st).tick()
     assert st.batch is None and b.candidates == []
-    assert [r for r in b.reported if r[0] == "lane/a"] == [
-        ("lane/a", "ha", E.RED, NO_CLAIM)
-    ]
+    lines = [r for r in b.reported if r[0] == "lane/a"]
+    # idp#5819 added a second, different line: the lane is now published the moment the tick
+    # sees it, so a run cancelled while it works still leaves something on the head. What this
+    # test is about -- that a line is not re-posted on every tick -- is asserted for each.
+    assert [r for r in lines if r[3] == NO_CLAIM] == [("lane/a", "ha", E.RED, NO_CLAIM)]
+    published = [r for r in lines if r[3] != NO_CLAIM]
+    assert len(published) == 1, lines
+    assert published[0][2] == E.TESTING and "queued" in published[0][3], published
 
 
 def test_posting_the_claim_is_enough_the_next_tick_admits_the_same_head():

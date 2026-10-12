@@ -169,10 +169,24 @@ class Engine:
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
         for name, head in heads.items():
+            lane = self.s.lanes.get(name)
+            if lane is None or lane.head != head:
+                # idp#5819: publish the lane before the work. The heartbeat below is one API
+                # call per lane and this tick shares the single `greenlane` concurrency slot
+                # with every completion on main, so a tick is usually cancelled inside this
+                # loop (measured 2026-10-12: 82 of the last 100 runs cancelled), and before
+                # this line a tick killed here left the handover with nothing at all on its
+                # head -- an agent could not tell a live lane from a lost one, and the
+                # backstop that should have covered it fires every 3-9 hours, not every five
+                # minutes (#5918). The batch that picks the lane up overwrites this with
+                # `testing in <batch> at <tip>`, so the line is replaced by the truth the
+                # moment there is a truth to replace it.
+                self.b.report(
+                    name, head, TESTING, "queued: the lane has not judged it yet"
+                )
             # idp#5758: a lane the engine holds is live work; keep its claim's heartbeat
             # fresh so the queue itself does not lapse the claim out from under the agent.
             self.b.heartbeat(name, head)
-            lane = self.s.lanes.get(name)
             if lane is None:
                 self.s.seq += 1
                 self.s.lanes[name] = Lane(name, head, seq=self.s.seq)
