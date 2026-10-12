@@ -12,27 +12,31 @@ description: >
   ceiling with the push still in flight (`exit 124`), and the lane ref landed on origin a moment
   later -- so the caller was told nothing while the work had in fact been handed over. Handing
   over the branch is the whole job and it converges on its own (AGENTS.md §2); the verdict is an
-  observation, not a wait. Read it with `ci.status` on the head sha.
+  observation, not a wait. Read it from the commit status on the head sha: `gh api
+  repos/<owner>/<repo>/commits/<sha>/status` answers `pending` the moment the lane picks the branch
+  up and then success or failure -- which is the exact command the last step prints for you.
 
-  It needs ~80s of door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 20-30s, pre-push
-  guard 32s + push, confirm 2s) -- and the shadow policy records 161 of 189 runs not ok in 30d,
-  p_fail 0.85, which is what an 80s verb does when every door it is offered is 55-60s. So run it
-  through a door that fits: `estate_invoke lane-submit timeout=80`, or the session plane. The
-  default MCP door (55s) and the harness door (60s) will kill it mid-push and tell you nothing.
+  It needs a 120s door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 5.8-8.4s, the
+  pre-push guard 32s of its own accord -- `timing 32s total; slowest rungs: 19s tsc backstage,
+  12s ruff` -- plus the push itself, 37.4s once and past 40s the next time). That is 45-55s of
+  unavoidable work whose variance crosses 60, which is why the shadow policy records 164 of 192
+  runs not ok in 30d, p_fail 0.85: it is not a slow verb, it is a verb offered a door too small
+  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=120`, or the
+  session plane. The default MCP door (55s) and the harness door (60s) kill it mid-push and tell
+  you nothing.
 args:
   lane:    {type: string, default: "", description: "lane name; default lane/<current branch>"}
   cwd:     {type: string, default: "."}
 # the door this intent needs, so a caller can be told instead of guessing (and so the test below
 # can refuse a step that outlives the door it is run through).
-door_s: 80
+door_s: 120
 halt_on_failure: true
 steps:
   - name: the claim covers the change
     # 2026-10-08, PR #5511: the claim missed three files the lane touched, and claim-gate said so
     # one CI round (~15 min) after the push, twice. The same gate, run here, says it in seconds.
-    # Measured 2026-10-12: a 10s cap here timed out inside `git fetch -q origin main`, so the
-    # step was failing for a reason that had nothing to do with the claim it is checking.
-    timeout: 30
+    # Measured 2026-10-12: 5.8s and 8.4s on two runs, and a 10s cap timed out inside `git fetch`.
+    timeout: 20
     cmd: |
       cd {{cwd}} || exit 2
       git fetch -q origin main || { echo "BLIND   lane-submit  cannot fetch origin/main to judge the claim" >&2; exit 2; }
@@ -40,10 +44,10 @@ steps:
       GITHUB_REPOSITORY=$(gh repo view --json nameWithOwner -q .nameWithOwner) \
         bin/claim-gate "$(git merge-base origin/main HEAD)" HEAD
   - name: push the lane
-    # Measured 2026-10-12: the pre-push guard reports itself -- `timing 32s total; slowest rungs:
-    # 19s tsc backstage, 12s ruff` -- so guard + network is ~35-45s and this step is the whole
-    # budget. The guard is not bypassed to buy time (AGENTS.md, Laws and Guards).
-    timeout: 40
+    # Measured 2026-10-12: the guard reports itself -- `timing 32s total; slowest rungs: 19s tsc
+    # backstage, 12s ruff` -- and guard + push was 37.4s on one run and past 40s on the next. The
+    # guard is not bypassed to buy time (AGENTS.md, Laws and Guards); the door is sized to it.
+    timeout: 60
     cmd: |
       cd {{cwd}} || exit 2
       b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
@@ -71,8 +75,8 @@ steps:
   - name: hand it over
     # The lane ticks on its own and nothing here waits for it. This proves the branch is actually
     # on origin -- the one thing the removed wait was ever asked to confirm -- and names where the
-    # verdict will appear, then returns. An agent reads the verdict with `ci.status` when it wants
-    # the answer; it does not hold the 60s door open for it.
+    # verdict will appear, then returns. An agent reads the verdict from the commit status when it
+    # wants the answer; it does not hold the 60s door open for it.
     timeout: 10
     cmd: |
       cd {{cwd}} || exit 2
@@ -86,4 +90,4 @@ steps:
       fi
       echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
       echo "        verdict: gh api repos/$repo/commits/$sha/status --jq '.statuses[]|select(.context==\"greenlane\")|.state+\" \"+.description'"
-      echo "        (or ci.status sha=$sha) - the lane proves this branch on top of the current main, then lands it"
+      echo "        that is the whole observation - the lane proves this branch on top of the current main, then lands it"
