@@ -38,6 +38,9 @@ DEFAULT_RETRIES = (
 DEFAULT_TIMEOUT = (
     90  # minutes a candidate may sit without a verdict before it counts as red
 )
+HEARTBEAT_EVERY_MIN = (
+    50  # minutes between claim stamps per lane; the gate's own limit is two hours
+)
 REJUDGE_LIMIT = (
     8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
@@ -56,6 +59,9 @@ class Lane:
     )
     rejudged: int = (
         0  # CONSECUTIVE failed conflicts against successive mains; not a lifetime cap
+    )
+    stamped: float = (
+        0.0  # backend clock (minutes) the engine last stamped this lane's claim
     )
 
 
@@ -164,6 +170,7 @@ class Engine:
             self._judge_batch()
         if self.s.batch is None:
             self._start_batch()
+        self._heartbeat_lanes()
         return self.s
 
     def _observe_lanes(self) -> None:
@@ -171,22 +178,18 @@ class Engine:
         for name, head in heads.items():
             lane = self.s.lanes.get(name)
             if lane is None or lane.head != head:
-                # idp#5819: publish the lane before the work. The heartbeat below is one API
-                # call per lane and this tick shares the single `greenlane` concurrency slot
-                # with every completion on main, so a tick is usually cancelled inside this
-                # loop (measured 2026-10-12: 82 of the last 100 runs cancelled), and before
-                # this line a tick killed here left the handover with nothing at all on its
-                # head -- an agent could not tell a live lane from a lost one, and the
-                # backstop that should have covered it fires every 3-9 hours, not every five
-                # minutes (#5918). The batch that picks the lane up overwrites this with
-                # `testing in <batch> at <tip>`, so the line is replaced by the truth the
+                # idp#5819: publish the lane before the work. This tick shares the single
+                # `greenlane` concurrency slot with every completion on main, so it is usually
+                # cancelled inside its own work (measured 2026-10-12: 82 of the last 100 runs
+                # cancelled), and before this line a tick killed here left the handover with
+                # nothing at all on its head -- an agent could not tell a live lane from a lost
+                # one, and the backstop that should have covered it fires every 3-9 hours, not
+                # every five minutes (#5918). The batch that picks the lane up overwrites this
+                # with `testing in <batch> at <tip>`, so the line is replaced by the truth the
                 # moment there is a truth to replace it.
                 self.b.report(
                     name, head, TESTING, "queued: the lane has not judged it yet"
                 )
-            # idp#5758: a lane the engine holds is live work; keep its claim's heartbeat
-            # fresh so the queue itself does not lapse the claim out from under the agent.
-            self.b.heartbeat(name, head)
             if lane is None:
                 self.s.seq += 1
                 self.s.lanes[name] = Lane(name, head, seq=self.s.seq)
@@ -247,6 +250,48 @@ class Engine:
             else:
                 continue
             lane.status, lane.reason, lane.attempts = PENDING, "main moved; retrying", 0
+
+    def _final(self, lane: Lane) -> bool:
+        """True when this lane can never move again, whatever else happens (idp#5953).
+
+        A RED lane is final unless main itself was red when it was judged -- then `judged_on`
+        names that main and it is re-judged on a green one (#5618). A CONFLICT lane is final once
+        it has conflicted through REJUDGE_LIMIT successive mains: parked with its reason, as I4
+        requires. Nothing will report them again, no batch will ever contain them (only PENDING
+        lanes are selected), and the branch is the record, so there is nothing left to keep
+        alive on their behalf.
+        """
+        if lane.status == RED:
+            return not lane.judged_on
+        if lane.status == CONFLICT:
+            return lane.rejudged >= REJUDGE_LIMIT
+        return False
+
+    def _heartbeat_lanes(self) -> None:
+        """Keep the claim of every lane that can still move fresh (idp#5758), at most hourly.
+
+        Last in the tick, deliberately. Stamping a claim is maintenance -- it holds a live
+        agent's claim against the queue's own two-hour lapse -- while judging a batch and pushing
+        a candidate are the work that waiting cannot redo. A tick that dies here has already
+        advanced a lane.
+
+        And once an hour, not once a tick. `heartbeat` is not a cheap call: measured 2026-10-12,
+        1.88s each (two local `git` invocations to find the lane's claim trailer, then a comments
+        read), so the 29 lanes a tick held cost ~55s of an ~85s tick -- the whole of idp#5951.
+        The freshness it protects is hourly by the claim gate's own rule, and the backend already
+        refuses to write a stamp younger than STAMP_AFTER (greenlane/github.py:768) -- but it
+        refuses only AFTER spending those git calls and that read, because the stamp's age lives
+        in the comment. `Lane.stamped` is that answer kept where it costs nothing, so the
+        question is answered from state instead of asked again over the network.
+        """
+        now = self.b.now()
+        for lane in self.s.lanes.values():
+            if self._final(lane):
+                continue
+            if lane.stamped and now - lane.stamped < HEARTBEAT_EVERY_MIN:
+                continue
+            self.b.heartbeat(lane.name, lane.head)
+            lane.stamped = now
 
     def _judge_batch(self) -> None:
         b = self.s.batch
