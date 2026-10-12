@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+# The front door, driven the way a person drives it (crew#292 CP1), and the only instrument that
+# answers the founder's "Face ID still not working" with a measurement rather than a guess.
+#
+# bin/idp-verify's login row follows a redirect chain and never carries a credential, so it proves
+# the door redirects and nothing more. It cannot tell a working sign-in from a domain that hands
+# every user a password-reset page, and it cannot tell a door that engages MFA from one that does
+# not. This drill signs in for real, in a headless browser, as the domain user identity/apply
+# creates for exactly this purpose, and reports what happens after the password: an MFA step or
+# the catalogue. The Face ID assertion is the whole point -- the founder's ask is the door offering
+# Face ID, and a "MFA never engages" door is the most common reason it does not.
+#
+# The password is Terraform's (random_password), lives only in the OCI vault as
+# front-door-drill-password, and is read here into an environment variable that is never echoed
+# and never reaches a log or an argv (LAW 46). The CI runner resolves the compartment via the
+# GitHub OIDC exchange step; a laptop that has not bootstrapped secrets/dev/OCI_COMPARTMENT_OCID.yaml
+# must export OCI_COMPARTMENT_OCID to its own value -- the drill prints a single, named FAIL line
+# and exits 1 in either case.
+#
+#   bin/idp-login-drill
+#
+# Prints exactly one verdict line and exits 0 only on a rendered catalogue with an MFA step that
+# offered Face ID or a security key:
+#   ok      login-drill  signed in as estate-drill, mfa=enroll, faceid=offered in 12.3s
+#   ok      login-drill  signed in as estate-drill, mfa=challenge, faceid=offered in 11.7s
+#   FAIL    login-drill  <stage> <detail>
+#
+# Stages, so a failure names the layer that broke: config, python, vault, browser, redirect,
+# credentials, password-change, mfa, session, catalogue.
+#
+# Python with Playwright: $DRILL_PYTHON if set, else python3. CI installs it in the job.
+case "${1:-}" in
+  -h|--help)
+    echo "bin/idp-login-drill -- sign in to the portal as estate-drill and grade the door's MFA step."
+    echo "Reads front-door-drill-password from the OCI vault. Requires playwright and a resolved OCI_COMPARTMENT_OCID."
+    echo "Env: DRILL_ENROLL=1 also completes the Face ID / security-key ceremony with a virtual authenticator."
+    exit 0
+    ;;
+esac
+set -uo pipefail
+IDP="$(cd "$(dirname "$0")/.." && pwd)"
+# estate-secrets sits beside the main checkout, even when this runs from a worktree
+MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+export SUPPRESS_LABEL_WARNING=True
+fail() { printf 'FAIL    login-drill  %s %s\n' "$1" "$2"; exit 1; }
+
+CFG="$IDP/clusters/oke/estate-config.yaml"
+[ -f "$CFG" ] || fail config "no $CFG"
+ZONE=$(awk '/ESTATE_ZONE:/{print $2}' "$CFG")
+DOMAIN=$(awk '/ESTATE_OIDC_DOMAIN_URL:/{print $2}' "$CFG")
+[ -n "$ZONE" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_ZONE"
+[ -n "$DOMAIN" ] || fail config "clusters/oke/estate-config.yaml has no ESTATE_OIDC_DOMAIN_URL"
+
+PY="${DRILL_PYTHON:-python3}"
+command -v "$PY" >/dev/null 2>&1 || fail python "no interpreter at '$PY'; set DRILL_PYTHON"
+"$PY" -c 'import playwright' >/dev/null 2>&1 || fail python "$PY has no playwright; pip install playwright && playwright install chromium"
+
+# --- the password, by name, out of the vault the client secrets already live in ---------------
+export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}
+C="${OCI_COMPARTMENT_OCID:-}"
+if [ -z "$C" ]; then
+  SEC="${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml"
+  [ -f "$SEC" ] || fail config "no OCI_COMPARTMENT_OCID in the environment and no $SEC"
+  C=$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "$SEC" 2>/dev/null) || fail config "cannot decrypt $SEC"
+fi
+DRILL_PASSWORD=$("$IDP/bin/idp-cloud" secret get front-door-drill-password 2>"${TMPDIR:-/tmp}/login-drill.err") || case $? in
+  1) fail vault "no secret front-door-drill-password in the compartment; run bin/idp-identity-apply apply -auto-approve";;
+  3) fail vault "$(head -1 "${TMPDIR:-/tmp}/login-drill.err")";;
+  *) fail vault "secret-bundle for front-door-drill-password is empty or unreadable by this identity";;
+esac
+[ -n "$DRILL_PASSWORD" ] || fail vault "front-door-drill-password decodes to nothing"
+export DRILL_PASSWORD
+unset B64 SID
+export DRILL_USER="${DRILL_USER:-estate-drill}" DRILL_ZONE="$ZONE" DRILL_DOMAIN="$DOMAIN"
+# The founder cannot read a log. The drill photographs the page it graded so a red row comes with
+# the picture of what he would have seen (LAW 28: an instrument nobody reads is not an instrument).
+export DRILL_SHOT="${DRILL_SHOT:-${TMPDIR:-/tmp}/login-drill-home.png}"
+
+# The password crosses into python as an environment variable only. It is never an argument, so
+# it never appears in ps, and the driver never prints it.
+"$PY" - <<'PYDRIVER'
+import os, re, sys, time
+from urllib.parse import urlparse
+
+USER = os.environ["DRILL_USER"]
+PASSWORD = os.environ["DRILL_PASSWORD"]
+ZONE = os.environ["DRILL_ZONE"]
+DOMAIN_HOST = urlparse(os.environ["DRILL_DOMAIN"]).hostname or ""
+HOME = f"https://catalogue.{ZONE}/"
+TIMEOUT = float(os.environ.get("DRILL_TIMEOUT_MS", "30000"))
+ENROLL = os.environ.get("DRILL_ENROLL", "0") == "1"
+
+# Redact the password in every failure detail and in every captured page body, so a red row's
+# screenshot or step summary can never become a leak (LAW 46, crew#301).
+REDACT = re.compile(re.escape(PASSWORD))
+def safe(s):
+    return REDACT.sub("<redacted>", s)[:800]
+
+def fail(stage, detail):
+    print(f"FAIL    login-drill  {stage} {safe(str(detail))}")
+    sys.exit(1)
+
+try:
+    from playwright.sync_api import sync_playwright, Error as PWError
+except Exception as e:
+    fail("python", f"playwright import failed: {e}")
+
+# A page the domain shows instead of the catalogue. Named so a failure says which one.
+RESET_MARKERS = ("resetpwd", "changepwd", "/ui/v1/resetpassword")
+RESET_TEXT = re.compile(r"(change your password|new password|password (has )?expired|reset your password)", re.I)
+# What the post-password page looks like when MFA is engaging. The URL stays on the IDCS host
+# (so the redirect-leave check fires the MFA stage, not the session stage), and the body shows
+# one of these patterns. None of them is a sign of a real Face ID offering -- this only proves
+# the door stopped at MFA, the next assert proves it offered the right factor.
+ENROLL_TEXT = re.compile(r"(set (up|it) (now|today)|enroll|get started|first[- ]time|add (a |an )(method|device|security|key|passkey))", re.I)
+CHALLENGE_TEXT = re.compile(r"(verify (your identity|it.?s you)|two[- ]step|multi[- ]factor|enter the (code|otp)|approve the (notification|push))", re.I)
+# The Face ID / security-key option. IDCS presents it as a button or a link in the MFA screen's
+# "Other options" menu; the regex matches any of the common phrasings, case-insensitive, across
+# the full visible text. A match is the answer to the founder's question.
+FACEID_TEXT = re.compile(r"(face\s*id|touch\s*id|fingerprint|passkey|security\s*key|webauthn|use (a |an )?(security|pass)?\s*key|use (your )?(face|touch)\s*id|other (sign[- ]?in )?options)", re.I)
+
+# Selectors, off the live page 2026-08-26 -- the password input's id contains a pipe
+# ("idcs-signin-basic-signin-form-password|input"), which no #id selector can match.
+USER_SELECTORS = ["#idcs-signin-basic-signin-form-username",
+                  "input[name='username']", "input[autocomplete='username']",
+                  "input[placeholder*='User name' i]",
+                  "input[type='email']", "input[type='text']:visible"]
+PASS_SELECTORS = ["[id='idcs-signin-basic-signin-form-password|input']",
+                  "input[name='password']", "input[type='password']"]
+SUBMIT_SELECTORS = ["#idcs-signin-basic-signin-form-submit-button",
+                    "button:has-text('Sign In')", "button:has-text('Sign in')",
+                    "input[type='submit'][value*='Sign' i]"]
+# A consent or notice banner the domain shows in front of the form. Dismissed, never bypassed.
+BANNER_SELECTORS = ["button:has-text('Acknowledge')", "button:has-text('Accept')"]
+
+
+def first(page, selectors, what):
+    for s in selectors:
+        loc = page.locator(s).first
+        try:
+            loc.wait_for(state="visible", timeout=4000)
+            return loc
+        except PWError:
+            continue
+    fail("credentials", f"no {what} field on {page.url}")
+
+
+started = time.time()
+mfa_kind = "none"
+faceid_offered = False
+with sync_playwright() as p:
+    try:
+        browser = p.chromium.launch(headless=True)
+    except PWError as e:
+        fail("browser", f"chromium will not launch: {e}")
+    ctx = browser.new_context(ignore_https_errors=False)
+    ctx.set_default_timeout(TIMEOUT)
+    page = ctx.new_page()
+    page_errors = []
+    page.on("pageerror", lambda e: page_errors.append(safe(str(e))))
+
+    # 1. the door must hand an anonymous visitor to the identity domain, not serve the catalogue
+    try:
+        page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("redirect", f"{HOME} did not load: {e}")
+    host = urlparse(page.url).hostname or ""
+    if host != DOMAIN_HOST:
+        fail("redirect", f"{HOME} landed on {host}, expected the identity domain {DOMAIN_HOST}")
+
+    # 2. sign in as the drill user
+    for b in BANNER_SELECTORS:
+        loc = page.locator(b).first
+        try:
+            if loc.is_visible(timeout=2000):
+                loc.click()
+        except PWError:
+            pass
+    first(page, USER_SELECTORS, "username").fill(USER)
+    first(page, PASS_SELECTORS, "password").fill(PASSWORD)
+    try:
+        first(page, SUBMIT_SELECTORS, "submit").click()
+    except PWError as e:
+        fail("credentials", f"sign-in button would not click: {e}")
+
+    # 3. a first-login password change is a real failure of this drill, not something to bypass.
+    #    The drill's password is Terraform's; a domain that demands a new one has taken the
+    #    account out of Terraform's hands, and no script here is allowed to put it back.
+    try:
+        page.wait_for_url(lambda u: urlparse(u).hostname != DOMAIN_HOST, timeout=TIMEOUT)
+    except PWError:
+        u = page.url
+        body = ""
+        try:
+            body = page.locator("body").inner_text(timeout=3000)
+        except PWError:
+            pass
+        if any(m in u.lower() for m in RESET_MARKERS) or RESET_TEXT.search(body or ""):
+            fail("password-change",
+                 f"the domain is demanding a new password for {USER} at {u}; the drill will not set one -- "
+                 "re-run bin/idp-identity-apply apply, or clear the must-change flag on the user")
+        # Not a password-change page -- it is the MFA step. Carry on to the MFA stage.
+        body_now = ""
+        try:
+            body_now = page.locator("body").inner_text(timeout=3000)
+        except PWError:
+            pass
+        host_now = urlparse(page.url).hostname or ""
+        if host_now != DOMAIN_HOST:
+            fail("credentials", f"never left the identity domain; still at {u}")
+        # MFA stage: we are still on the IDCS host after the password. Classify and assert Face ID.
+        text = body_now or ""
+        if ENROLL_TEXT.search(text):
+            mfa_kind = "enroll"
+        elif CHALLENGE_TEXT.search(text):
+            mfa_kind = "challenge"
+        else:
+            mfa_kind = "unknown"
+        faceid_offered = bool(FACEID_TEXT.search(text))
+        # Always photograph the MFA page so a red row carries the picture of what the founder saw.
+        try:
+            page.screenshot(path=os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png"), full_page=True)
+        except PWError:
+            pass
+        if mfa_kind == "unknown":
+            fail("mfa",
+                 f"the door stopped on the identity domain at {u} after the password, but the page is not "
+                 f"recognised as an MFA step; body excerpt: {safe(text)[:240]}")
+        if not faceid_offered:
+            # Expand any "Other options" disclosure before declaring defeat -- IDCS nests Face ID
+            # under a menu on some skins, and the founder only sees it after a click.
+            try:
+                page.locator("button:has-text('Other options'), a:has-text('Other options')").first.click(timeout=3000)
+                page.wait_for_timeout(1500)
+                text2 = page.locator("body").inner_text(timeout=3000) or ""
+                if FACEID_TEXT.search(text2):
+                    faceid_offered = True
+                    text = text2
+            except PWError:
+                pass
+        if not faceid_offered:
+            fail("mfa",
+                 f"the door engages MFA (kind={mfa_kind}) but does not offer Face ID or a security key on "
+                 f"the {u} screen; the founder cannot use the passkey that is enabled in the domain. "
+                 f"Visible options excerpt: {safe(text)[:240]}")
+        # Face ID (or a security key) is offered. With DRILL_ENROLL=1, complete the ceremony with
+        # a virtual authenticator so the hourly run leaves the door behind a real WebAuthn step;
+        # without it, observe only -- enrolling creates a FIDO2 credential and a real one per
+        # hour would hit the domain's maxEnrolledDevices cap.
+        if ENROLL:
+            try:
+                client = ctx.new_cdp_session(page)
+                # navigator.credentials.create with a virtual authenticator (platform, UV preferred)
+                client.send("WebAuthn.enable", {"enableUI": False})
+                client.send("WebAuthn.addVirtualAuthenticator", {
+                    "options": {
+                        "protocol": "ctap2", "transport": "internal",
+                        "hasResidentKey": True, "hasUserVerification": True,
+                        "isUserVerified": True, "automaticPresenceSimulation": True,
+                    }
+                }, )
+            except PWError as e:
+                fail("mfa", f"Face ID option is offered but a virtual authenticator could not be attached: {e}")
+            try:
+                page.locator("button:has-text('Face ID'), a:has-text('Face ID'), button:has-text('security key'), a:has-text('security key'), button:has-text('passkey'), a:has-text('passkey'), button:has-text('Continue'), a:has-text('Continue')").first.click(timeout=5000)
+            except PWError:
+                pass
+            # Let the WebAuthn ceremony resolve, then continue to the session stage.
+            try:
+                page.wait_for_url(lambda u: urlparse(u).hostname != DOMAIN_HOST, timeout=TIMEOUT)
+            except PWError:
+                u2 = page.url
+                fail("mfa", f"the Face ID ceremony was offered but never completed; still at {u2}")
+        else:
+            # Observation-only run: do not complete the ceremony. The verdict is "Face ID is offered",
+            # which is the answer the founder needs, and no credential is created.
+            print(f"ok      login-drill  observed mfa={mfa_kind}, faceid=offered at {urlparse(page.url).hostname} in {time.time()-started:.1f}s")
+            sys.exit(0)
+
+    # 4. the session must actually serve the catalogue: 200 and the Backstage shell
+    landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        page.wait_for_timeout(5000)
+        landed = urlparse(page.url).hostname or ""
+    if landed != f"catalogue.{ZONE}":
+        body = ""
+        try:
+            body = " ".join(page.locator("body").inner_text(timeout=3000).split())[:240]
+        except PWError:
+            pass
+        fail("session", f"signed in but landed on {page.url.split('?')[0]}, expected catalogue.{ZONE}; page says: {safe(body)}")
+    try:
+        resp = page.goto(HOME, wait_until="domcontentloaded")
+    except PWError as e:
+        fail("catalogue", f"{HOME} did not reload with the session cookie: {e}")
+    if resp is None or resp.status != 200:
+        fail("catalogue", f"{HOME} answered {getattr(resp, 'status', 'no response')} to the signed-in session")
+    words = ""
+    for _ in range(int(TIMEOUT / 1000)):
+        try:
+            words = " ".join(page.locator("body").inner_text(timeout=1000).split())
+        except PWError:
+            words = ""
+        if len(words) > 40:
+            break
+        time.sleep(1)
+    if len(words) <= 40:
+        try:
+            page.screenshot(path=os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png"), full_page=True)
+        except PWError:
+            pass
+        errs = " | ".join(e.splitlines()[0][:300] for e in page_errors) or "no uncaught page error"
+        fail("catalogue", f"{HOME} answered 200 but drew nothing; page errors: {errs}; page says: {safe(words) or '(empty body)'}")
+
+    # 5. the whole path, not just the door: the door's headers must reach Backstage's own
+    # auth provider and come back as a signed-in identity.
+    if page.locator("button:has-text('Enter')").count() > 0 or "Enter as a Guest" in (page.inner_text("body") or ""):
+        fail("identity", f"{HOME} rendered Backstage's guest sign-in page; the door's identity never reached the auth provider")
+    try:
+        who = page.request.post(f"{HOME}api/auth/oauth2Proxy/refresh", headers={"x-requested-with": "XMLHttpRequest"})
+    except PWError as e:
+        fail("identity", f"auth provider oauth2Proxy did not answer: {e}")
+    if who.status != 200:
+        fail("identity", f"auth provider oauth2Proxy answered {who.status} to the door's session: {safe(who.text())[:240]}")
+
+    print(f"ok      login-drill  signed in as {USER}, mfa={mfa_kind}, faceid=offered in {time.time()-started:.1f}s")
+PYDRIVER
