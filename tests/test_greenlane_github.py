@@ -801,3 +801,68 @@ def test_guarded_paths_specifically_runs_on_a_main_push():
         "`guarded-paths` (required by ruleset required-checks-main) can only ever report ABSENT "
         "on main -- which pins main_green to false forever."
     )
+
+
+def _lane_with_origin(tmp_path: Path, repo: Path, trailer: str) -> str:
+    """A repository with an `origin/main` and a lane branch whose head commit declares the
+    claim, so `heartbeat` reads the lane's own trailers the way it does in a real run."""
+    bare = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(bare)], check=True)
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", "main")
+    _git(repo, "checkout", "-q", "-b", "lane/test/claim")
+    (repo / "b.txt").write_text("two\n")
+    _git(repo, "add", "b.txt")
+    _git(repo, "commit", "-q", "-m", f"work\n\n{trailer}")
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def _stale_claim(agent: str) -> dict:
+    return {
+        "body": f"CLAIM agent={agent} paths=greenlane/** heartbeat=2020-01-01T00:00:00Z"
+    }
+
+
+def _stamps(b: Recorded) -> list:
+    return [w for w in b.writes if w[1] == "issues/5616/comments"]
+
+
+def test_the_heartbeat_never_re_arms_another_agent_s_claim(tmp_path, repo):
+    """idp#5617: the lane's commit trailer named claude-code while issue #5616 was claimed by
+    opencode. The greenlane refreshed opencode's claim 16 times over 55 hours, so it never
+    lapsed and `claim-gate` refused every run with `claimed by opencode, not claude-code` --
+    one pull request, 55 hours, no run that could ever pass. A claim the lane does not name is
+    left to expire. Paired with the test below, which proves the same setup does stamp when
+    the lane names the holder, so an empty writes list here is the guard and not a dead
+    harness (heartbeat swallows its own exceptions by design)."""
+    head = _lane_with_origin(
+        tmp_path, repo, "Claim: chidionyema/idp#5616\nAgent: claude-code"
+    )
+    b = Recorded({"issues/5616/comments": [_stale_claim("opencode")]})
+    b.heartbeat("lane/test/claim", head)
+    assert _stamps(b) == [], (
+        "the greenlane re-armed a claim its own lane does not name, which is what let "
+        "#5617 sit red for 55 hours"
+    )
+
+
+def test_the_heartbeat_still_stamps_the_lane_s_own_claim(tmp_path, repo):
+    """The guard is not a mute: a lane that does name the holder still keeps it alive, which is
+    the whole point of idp#5758."""
+    head = _lane_with_origin(
+        tmp_path, repo, "Claim: chidionyema/idp#5616\nAgent: opencode"
+    )
+    b = Recorded({"issues/5616/comments": [_stale_claim("opencode")]})
+    b.heartbeat("lane/test/claim", head)
+    stamps = _stamps(b)
+    assert len(stamps) == 1, "the lane's own claim was not refreshed"
+    assert stamps[0][2]["body"].startswith("CLAIM agent=opencode ")
+
+
+def test_a_lane_without_an_agent_trailer_is_unchanged(tmp_path, repo):
+    """A lane that declares only a `Claim:` (AGENTS.md §5 rule 5 allows it) keeps the previous
+    behaviour rather than silently losing its heartbeat."""
+    head = _lane_with_origin(tmp_path, repo, "Claim: chidionyema/idp#5616")
+    b = Recorded({"issues/5616/comments": [_stale_claim("opencode")]})
+    b.heartbeat("lane/test/claim", head)
+    assert len(_stamps(b)) == 1
