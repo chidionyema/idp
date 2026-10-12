@@ -236,6 +236,10 @@ if [ -r "$PL_AF_RECORD" ]; then
   pl_af_e=$(jq -r '.evidence // ""' "$PL_AF_RECORD" 2>/dev/null || true)
   if [ -n "$pl_af_v" ]; then
     [ -n "$pl_af_e" ] || { echo "FAIL    identity passwordless rule: $PL_AF_RECORD carries authenticationFactor=$pl_af_v with no evidence (the drill run that measured it); refusing to wire a factor value no drill has measured as honoured (#5858)"; exit 1; }
+    # The cohort's IdP rule (further down) offers the password beside the passkey, so whatever this
+    # rule returns also governs a cohort member who typed the password: a value with no second
+    # factor in it would sign that member in on the password alone -- the #5858 failure again.
+    case "$pl_af_v" in *2FA*) ;; *) echo "FAIL    identity passwordless rule: $PL_AF_RECORD carries authenticationFactor=$pl_af_v, which asks no second factor, and the cohort's IdP rule still offers the password -- refusing to let a cohort password through alone (#5858)"; exit 1 ;; esac
     PL_AF="$pl_af_v"
   fi
 fi
@@ -430,6 +434,84 @@ else
   else
     echo "FAIL    identity front door app signonPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1
   fi
+fi
+
+# Face ID FIRST (#5858). Which sign-in methods the door offers is not a sign-on rule at all: it is the
+# IDENTITY-PROVIDER policy, read before any sign-on rule. Read 2026-10-12: the domain held only
+# DefaultIDPPolicy, whose one rule returns LocalIDPs ["UserNamePassword"], and the local IdP
+# FIDO_AUTHENTICATOR was enabled=false -- so no sign-on factor value could ever have put the passkey
+# first, which is the whole of why "Passwordless" was inert at the door. Oracle's passwordless
+# recipe is: enable the FIDO IdP, then an IdP rule assigning "Fido Authenticator", scoped to a group,
+# at priority 1. Its recipe leaves Username-Password OUT of that rule; this file keeps it IN, for two
+# reasons: the cohort's member is the drill account, whose hourly walk types the password
+# (bin/idp-login-drill, PASS_SELECTORS) and would go red on a door with no password field; and a
+# passkey-only member who loses the phone has no way back in. The password path must keep the second
+# factor, so a PL_AF without "2FA" is refused at the top of this file. Whether the passkey path then
+# skips that second factor is NOT yet measured: the passwordless drill (passwordless=true) answers it. So: the IdP on; one IdP policy owned
+# by this file and assigned to the front door alone (App.idpPolicy {value}), holding
+#   1. the pilot cohort -> LocalIDPs ["UserNamePassword","FIDO_AUTHENTICATOR"], and only while
+#      pl_cohort_ready and userVerification=REQUIRED -- the same gate as the sign-on rule above:
+#      a passkey offered to a member who has none is a dead button;
+#   2. everyone -> a copy of DefaultIDPRule's own condition and return, read live, so the founder's
+#      door is exactly the domain default. The copy is read back and must equal the default before
+#      the policy is assigned; a mismatch fails here rather than reaching the door.
+# The cohort rule carries the group condition alone, no `operation eq "IDP Discovery"` string: if the
+# domain combined the two as OR, the passkey offer would reach every user, members with no passkey
+# among them. A group condition the
+# domain does not evaluate at discovery fails safe -- the cohort falls to rule 2, today's door -- and
+# the drill measures which happened.
+fido_on=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/IdentityProviders/FIDO_AUTHENTICATOR?attributes=enabled" 2>/dev/null | jq -r '.data.enabled // ""')
+if [ "$fido_on" != true ]; then
+  T4=$(mktemp -d); chmod 700 "$T4"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" "${T4:-/dev/null}" 2>/dev/null || true' EXIT
+  printf '%s' '{"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":[{"op":"replace","path":"enabled","value":true}]}' > "$T4/e.json"
+  pe=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/IdentityProviders/FIDO_AUTHENTICATOR" --request-body "file://$T4/e.json" 2>&1)
+  fido_on=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/IdentityProviders/FIDO_AUTHENTICATOR?attributes=enabled" 2>/dev/null | jq -r '.data.enabled // ""')
+  [ "$fido_on" = true ] || { echo "FAIL    identity FIDO_AUTHENTICATOR identity provider enable refused: $(printf '%s' "$pe" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  echo "ok      identity FIDO_AUTHENTICATOR identity provider enabled (the domain default policy still offers it to nobody)"
+else echo "ok      identity FIDO_AUTHENTICATOR identity provider already enabled"; fi
+if [ -n "$fd_appid" ]; then
+  T4=${T4:-$(mktemp -d)}; chmod 700 "$T4"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" "${T4:-/dev/null}" 2>/dev/null || true' EXIT
+  rule_id() { oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r --arg n "$1" '.data.Resources[]? | select(.name == $n) | .id' | head -1; }
+  put_or_post() { # collection, id-or-empty, body file -> echoes the id, or empty with the refusal on stderr
+    local r; if [ -n "$2" ]; then r=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/$1/$2" --request-body "file://$3" 2>&1)
+    else r=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/$1" --request-body "file://$3" 2>&1); fi
+    printf '%s' "$r" | jq -r '.data.id // ""' 2>/dev/null || true
+    printf '%s' "$r" | jq -e '.data.id' >/dev/null 2>&1 || printf '%s' "$r" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200 >&2
+  }
+  dflt=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/DefaultIDPRule" 2>/dev/null | jq -c '.data | {condition, cg: .conditionGroup.value, ret: ([.return[]? | {name, value}] | sort_by(.name))}')
+  [ -n "$dflt" ] && [ "$(printf '%s' "$dflt" | jq -r '.ret | length')" -gt 0 ] || { echo "FAIL    identity DefaultIDPRule unreadable, so the front door's identity-provider policy was not touched"; exit 1; }
+  jq -n --argjson d "$dflt" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door identity providers (everyone)",policyType:{value:"IdentityProvider"},condition:$d.condition,conditionGroup:{type:"Condition",value:$d.cg},return:$d.ret}' > "$T4/ia.json"
+  iaid=$(put_or_post Rules "$(rule_id "front door identity providers (everyone)")" "$T4/ia.json" 2>"$T4/err") \
+    && [ -n "$iaid" ] || { echo "FAIL    identity front door everyone IdP rule refused: $(cat "$T4/err")"; exit 1; }
+  ia_rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$iaid" 2>/dev/null | jq -c '.data | {condition, cg: .conditionGroup.value, ret: ([.return[]? | {name, value}] | sort_by(.name))}')
+  [ "$ia_rb" = "$dflt" ] || { echo "FAIL    identity front door everyone IdP rule reads back as $ia_rb, not the domain default $dflt; the policy was not assigned"; exit 1; }
+  ip_rules=$(jq -n --arg a "$iaid" '[{value:$a,sequence:1}]')
+  ip_cohort=false
+  if [ "$(pl_cohort_ready)" = 1 ] && [ "$(pl_uv_value)" = REQUIRED ]; then
+    ipgid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
+    ipcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
+    jq -n --arg g "[\"$ipgid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T4/ic.json"
+    ipcid=$(put_or_post Conditions "$ipcid" "$T4/ic.json" 2>"$T4/err") && [ -n "$ipgid" ] && [ -n "$ipcid" ] \
+      || { echo "FAIL    identity passwordless cohort condition refused: $(cat "$T4/err")"; exit 1; }
+    jq -n --arg c "$ipcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers the passkey (pilot cohort)",policyType:{value:"IdentityProvider"},conditionGroup:{type:"Condition",value:$c},return:[{name:"LocalIDPs",value:"[\"UserNamePassword\",\"FIDO_AUTHENTICATOR\"]"},{name:"SocialIDPs",value:"[]"},{name:"SamlIDPs",value:"[]"},{name:"X509IDPs",value:"[]"},{name:"userChoice",value:"false"}]}' > "$T4/ip.json"
+    ipid=$(put_or_post Rules "$(rule_id "front door offers the passkey (pilot cohort)")" "$T4/ip.json" 2>"$T4/err") \
+      && [ -n "$ipid" ] || { echo "FAIL    identity front door passkey IdP rule refused: $(cat "$T4/err")"; exit 1; }
+    ip_rules=$(jq -n --arg p "$ipid" --arg a "$iaid" '[{value:$p,sequence:1},{value:$a,sequence:2}]')
+    ip_cohort=true
+  else
+    echo "WAIT    identity front door passkey offer: the pilot cohort is not every-member-ENROLLED with userVerification=REQUIRED, so its IdP rule stays unwired -- the door offers the domain default to everyone"
+  fi
+  ipol=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "Front Door Identity Provider Policy") | .id' | head -1)
+  jq -n --argjson r "$ip_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Identity Provider Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5858): the passkey offered beside the password for the pilot cohort, the domain default for everyone else",active:true,policyType:{value:"IdentityProvider"},rules:$r}' > "$T4/ipp.json"
+  ipol=$(put_or_post Policies "$ipol" "$T4/ipp.json" 2>"$T4/err") && [ -n "$ipol" ] || { echo "FAIL    identity front door IdP policy refused: $(cat "$T4/err")"; exit 1; }
+  jq -n --arg p "$ipol" '{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"replace",path:"idpPolicy",value:{value:$p}}]}' > "$T4/ipa.json"
+  pa=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid" --request-body "file://$T4/ipa.json" 2>&1)
+  rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid?attributes=idpPolicy" 2>/dev/null | jq -r '.data.idpPolicy.value // ""')
+  [ "$rb" = "$ipol" ] || { echo "FAIL    identity front door app idpPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+  if [ "$ip_cohort" = true ]; then echo "ok      identity front door IdP policy assigned: passkey offered beside the password for $pl_group (rule 1), the domain default for everyone else (#5858)"
+  else echo "ok      identity front door IdP policy assigned: the domain default for everyone (#5858)"; fi
+else
+  echo "BLIND   identity front door app not found, so no identity-provider policy was assigned"
 fi
 
 # The domain sets mustChange=true on the password Terraform supplies at create (the flag is read-only on
