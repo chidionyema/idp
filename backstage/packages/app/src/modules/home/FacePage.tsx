@@ -23,6 +23,7 @@ import FleetBackdrop from './FleetBackdrop';
 import { useResearch } from './useResearch';
 import { useEstateVoice } from './useEstateVoice';
 import { useEstateStrip } from './EstateStrip';
+import { useMilestones } from './useMilestones';
 
 const LABEL: Record<string, string> = {
   off: 'Tap to talk',
@@ -37,7 +38,9 @@ export function FaceFindingsStrip() {
   if (loaded.state !== 'ready' || loaded.claims.length === 0) return null;
   const claim = loaded.claims[0];
   const line =
-    claim.statement.length > 140 ? `${claim.statement.slice(0, 139)}…` : claim.statement;
+    claim.statement.length > 140
+      ? `${claim.statement.slice(0, 139)}…`
+      : claim.statement;
   return (
     <div
       data-testid="face-research-strip"
@@ -71,12 +74,18 @@ export function FaceEstateLine() {
   const bits: string[] = [];
   if (green?.available) {
     const lanes = green.state?.lanes ?? {};
-    const red = Object.values(lanes).filter(l => (l?.status ?? '') !== 'green').length;
+    const red = Object.values(lanes).filter(
+      l => (l?.status ?? '') !== 'green',
+    ).length;
     // Three states, exactly as the strip draws them: unknown is not red. Collapsing undefined
     // into 'main RED' would have the face cry wolf during every lane-reader hiccup.
     if (green.main?.green === undefined) {
       bits.push('main unknown');
-    } else if (green.main.green && red === 0 && (green.work_lost?.length ?? 0) === 0) {
+    } else if (
+      green.main.green &&
+      red === 0 &&
+      (green.work_lost?.length ?? 0) === 0
+    ) {
       bits.push('main green · all lanes green');
     } else {
       bits.push(green.main.green ? `${red} red lane(s)` : 'main RED');
@@ -109,6 +118,10 @@ export function FaceEstateLine() {
 
 export function FacePage() {
   const voice = useEstateVoice();
+  // Milestones spoken through the SAME voice engine as everything else (idp#5737 item 3). The
+  // gate lives in milestoneSpeech.ts; this only joins the news stream to the mouth. Off by
+  // default: the face does not start narrating unasked.
+  const milestones = useMilestones(voice.speak);
   // A FAILED MICROPHONE MUST BE RE-ASKABLE -- and the tap must not depend on a state comparison
   // that has to be kept in step with the label below.
   //
@@ -225,6 +238,33 @@ export function FacePage() {
             Open in Safari to use the mic
           </a>
         )}
+        {/* THE MILESTONE TOGGLE (idp#5737 item 3): the explicit switch the item asks for. It sits
+            in the same pill as the mic so "does the face talk on its own?" is answerable in one
+            glance, and it is a real control -- quiet hours and the rate cap are the gate's job, not
+            this button's. */}
+        <button
+          type="button"
+          data-testid="face-milestone-toggle"
+          aria-pressed={milestones.prefs.enabled}
+          onClick={() => milestones.setEnabled(!milestones.prefs.enabled)}
+          style={{
+            pointerEvents: 'auto',
+            justifySelf: 'center',
+            background: 'none',
+            border: 'none',
+            padding: '2px 6px',
+            fontSize: 12,
+            letterSpacing: '0.04em',
+            cursor: 'pointer',
+            color: milestones.prefs.enabled
+              ? '#7fd1b9'
+              : 'rgba(232,237,245,0.55)',
+          }}
+        >
+          {milestones.prefs.enabled
+            ? 'Milestones: spoken'
+            : 'Milestones: silent'}
+        </button>
         <button
           type="button"
           data-testid="face-mic"
