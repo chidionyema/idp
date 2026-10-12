@@ -219,6 +219,12 @@ spec:
                 done
               fi
               mkdir -p "$HERMES_HOME/skills" "$HERMES_HOME/bin"
+              # Background traffic (compression, titles, search, vision) falls back to OpenRouter's
+              # PAID google/gemini-3.6-flash unless told otherwise (hermes_cli/config_defaults.py
+              # auxiliary.free_only). The estate is free-tier first (decision 0034), so pin the
+              # fallback to a :free model and let the fork skip the step when none answers. Written
+              # only when absent: the volume's config.yaml is the fork's, and an edit there stands.
+              [ -e "$HERMES_HOME/config.yaml" ] || printf 'auxiliary:\n  free_only: true\n  openrouter_model: nvidia/nemotron-3-ultra-550b-a55b:free\n' > "$HERMES_HOME/config.yaml"
               # The image's skills (82 SKILL.md under /app/hermes-agent/skills on main-92) never
               # reached HERMES_HOME because this command replaces the image entrypoint: the
               # door answered "skills_list: 0" on 2026-09-06 while they sat one directory over.
