@@ -82,6 +82,17 @@ import { fetchApiRef, useApi } from '@backstage/core-plugin-api';
  */
 export const VOICE_ASSETS = '/voice/';
 
+/**
+ * The voice the face speaks in before the catalogue resolves, and the fallback when the catalogue
+ * reports no current voice.
+ *
+ * A woman's, matching the backend's `DEFAULT_CLOUD_VOICE` in `fleetview_backend/voice_media.py`.
+ * The two must not disagree: the choice file lives in the pod's home, which no volume backs, so a
+ * fresh deploy forgets the founder's pick and this default is what is actually heard. It was
+ * `'troy'` on both sides until 2026-10-10, which put a man's voice in a woman's face.
+ */
+export const DEFAULT_VOICE = 'hannah';
+
 /** The FleetView backend, through the Backstage proxy. See the header: never a bare path. */
 const FLEETVIEW = 'plugin://proxy/fleetview';
 
@@ -562,7 +573,7 @@ export function useEstateVoice(): EstateVoice {
     kokoro: [],
     piper: [],
   });
-  const [current, setCurrent] = useState({ engine: 'cloud', voice: 'troy' });
+  const [current, setCurrent] = useState({ engine: 'cloud', voice: DEFAULT_VOICE });
   // THE VOICE LOG. Polled slowly: a turn log changes only when a turn happens, and the board is
   // already polling four other endpoints every 2 seconds.
   const [voiceLog, setVoiceLog] = useState<any[]>([]);
@@ -1239,7 +1250,7 @@ export function useEstateVoice(): EstateVoice {
         setAvailable(true);
         setCurrent({
           engine: d.current?.engine || 'cloud',
-          voice: d.current?.[d.current?.engine] || 'troy',
+          voice: d.current?.[d.current?.engine] || DEFAULT_VOICE,
         });
       })
       .catch(() => {
