@@ -50,6 +50,7 @@ from typing import Any
 # Sibling modules in the same package. Direct imports replace the old importlib.util _load() hacks.
 from fleetview_backend import (
     blast,
+    claims,
     device_access,
     handoff,
     evals,
@@ -95,6 +96,7 @@ __all__ = [
     "graph_envelope",
     "memory_envelope",
     "greenlane_envelope",
+    "claims_envelope",
     "research_envelope",
     "estate_envelope",
     "harv_envelope",
@@ -121,6 +123,7 @@ BLAST_RADIUS_PATH = "/blast-radius"
 GRAPH_PATH = "/graph"
 MEMORY_PATH = "/memory"
 GREENLANE_PATH = "/greenlane"
+CLAIMS_PATH = "/claims"
 RESEARCH_PATH = "/research"
 ESTATE_PATH = "/estate"
 HARV_PATH = "/harv"
@@ -338,6 +341,13 @@ def memory_envelope() -> tuple[dict[str, Any], int]:
 def greenlane_envelope() -> tuple[dict[str, Any], int]:
     # The lane's invariants as measured now; unreadable is unavailable with a reason, never green.
     return greenlane.greenlane_status(), 200
+
+
+def claims_envelope() -> tuple[dict[str, Any], int]:
+    # The live agent claims as measured now -- who, what, which paths, and heartbeat age
+    # (AGENTS.md section 5). Unreadable is `available: false` with its reason; an empty list
+    # would say "nobody holds anything" at the moment the estate cannot tell.
+    return claims.claims_snapshot(), 200
 
 
 def research_envelope() -> tuple[dict[str, Any], int]:
