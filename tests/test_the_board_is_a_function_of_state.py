@@ -13,6 +13,10 @@ first of them fails if the gate itself stops being able to fail.
 
 import importlib.machinery
 import importlib.util
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -169,3 +173,169 @@ def test_ready_is_fluxs_own_condition_and_nothing_weaker(rec):
     }
     present, not_ready = m.readiness(m.kustomizations_from_kubectl(doc))
     assert not_ready == {"n/no-condition", "n/unknown"} and "n/ready" in present
+
+
+# --- the verdict cannot outrun GitHub's index (run 38280594349, 2026-10-12) -------------------
+
+# A gh whose LIST endpoint answers with the board as it stood a few reads ago, while the writes
+# land immediately. That is not a mock of GitHub; it is the one behaviour of GitHub's issue search
+# that turned this reconcile's own correct pass red.
+FAKE_GH = """#!/usr/bin/env python3
+import json
+import os
+import sys
+from pathlib import Path
+
+d = Path(os.environ["FAKE_GH_DIR"])
+lag = int(os.environ.get("FAKE_GH_LAG", "1"))
+argv = sys.argv[1:]
+state = d / "open.json"
+reads = d / "reads"
+
+if argv[:2] == ["issue", "list"]:
+    n = int(reads.read_text()) if reads.exists() else 0
+    n += 1
+    reads.write_text(str(n))
+    print((state if n > lag else d / "at-first.json").read_text())
+elif argv[:2] == ["issue", "close"]:
+    num = int(argv[2])
+    rows = [r for r in json.loads(state.read_text()) if r["number"] != num]
+    state.write_text(json.dumps(rows))
+elif argv[:2] == ["issue", "create"]:
+    title = argv[argv.index("--title") + 1]
+    rows = json.loads(state.read_text())
+    rows.append({"number": 9000 + len(rows), "title": title, "createdAt": "2026-10-12T00:00:00Z"})
+    state.write_text(json.dumps(rows))
+    print("https://github.com/chidionyema/idp/issues/9000")
+else:
+    print("fake gh: unhandled: " + " ".join(argv), file=sys.stderr)
+    sys.exit(1)
+"""
+
+
+def _board_row(n, name):
+    return {
+        "number": n,
+        "title": f"P0: Flux cannot reconcile Kustomization/{name}.flux-system",
+        "createdAt": "2026-09-01T00:00:00Z",
+    }
+
+
+def test_the_verdict_waits_for_github_to_show_its_own_writes():
+    """The reconcile closed 67 rows and opened 4, then judged itself against the board as it stood
+    BEFORE those writes, and went red on a correct pass. The wait is the fix; the judge is
+    unchanged, so nothing that was really wrong is green now."""
+    m = _module()
+    present = {"flux-system/quad-ledger"}
+    not_ready = {"flux-system/quad-ledger"}
+    stale = [_board_row(3554, "via-negativa")]
+    settled = [_board_row(5885, "quad-ledger")]
+    reads = []
+
+    def read():
+        reads.append(1)
+        return stale if len(reads) < 3 else settled
+
+    after, bad = m.settle(
+        read,
+        lambda rs: m.violations(rs, present, not_ready),
+        budget_s=1.0,
+        poll_s=0.0,
+        say=lambda *_: None,
+    )
+    assert bad == [], bad
+    assert len(reads) == 3, (
+        "the first re-read is stale by construction; the verdict must wait"
+    )
+    assert [r["number"] for r in after] == [5885]
+
+
+def test_a_board_that_never_settles_is_still_a_failure():
+    """The teeth stay. A board that genuinely contradicts the cluster is still a failure, and the
+    wait cannot turn that green -- nor hang a 15-minute job, because it is bounded in attempts."""
+    m = _module()
+    stale = [_board_row(3554, "via-negativa")]
+    reads = []
+
+    def read():
+        reads.append(1)
+        return stale
+
+    after, bad = m.settle(
+        read,
+        lambda rs: m.violations(
+            rs, {"flux-system/quad-ledger"}, {"flux-system/quad-ledger"}
+        ),
+        budget_s=0.05,
+        poll_s=0.02,
+        say=lambda *_: None,
+    )
+    assert bad, "a board that never settles must still be a failure"
+    assert len(reads) <= 5, f"bounded, not a spin: {len(reads)} reads"
+
+
+def _run_reconcile(tmp_path, cluster, board, lag):
+    """Run the real script against a gh that lags its own writes by `lag` reads."""
+    gh_home = tmp_path / "gh"
+    gh_home.mkdir()
+    (gh_home / "open.json").write_text(json.dumps(board))
+    (gh_home / "at-first.json").write_text(json.dumps(board))
+    shim = tmp_path / "bin"
+    shim.mkdir()
+    (shim / "gh").write_text(FAKE_GH)
+    (shim / "gh").chmod(0o755)
+    cluster_json = tmp_path / "cluster.json"
+    cluster_json.write_text(json.dumps(cluster))
+
+    env = dict(os.environ)
+    env.update(
+        PATH=f"{shim}:{env['PATH']}",
+        FAKE_GH_DIR=str(gh_home),
+        FAKE_GH_LAG=str(lag),
+        ESTATE_BOARD_SETTLE_S="0.05",
+        ESTATE_BOARD_SETTLE_POLL_S="0.02",
+    )
+    r = subprocess.run(
+        [sys.executable, str(SCRIPT), "--cluster-json", str(cluster_json)],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd=str(ROOT),
+    )
+    return r.returncode, r.stdout + r.stderr, gh_home
+
+
+CLUSTER = [
+    {"namespace": "flux-system", "name": "edge", "ready": False},
+    {"namespace": "flux-system", "name": "recovered", "ready": True},
+]
+
+
+def test_the_real_run_is_green_when_github_shows_the_writes(tmp_path):
+    """End to end: the board is written correctly and the index needs one read to catch up. Before
+    the wait, this run exited 1 -- which is exactly what production did (run 38280594349)."""
+    board = [_board_row(100, "recovered"), _board_row(101, "edge")]
+    rc, out, gh_home = _run_reconcile(tmp_path, CLUSTER, board, lag=2)
+    assert rc == 0, out
+    assert "settled after" in out
+    assert "#100 names" not in out, "the stale read must never reach the verdict"
+    assert "ok      flux-board-reconcile" in out
+    left = [r["number"] for r in json.loads((gh_home / "open.json").read_text())]
+    assert left == [101], (
+        f"the row about a recovered object was closed; the live one kept: {left}"
+    )
+
+
+def test_the_real_run_is_red_when_the_board_really_contradicts_the_cluster(tmp_path):
+    """And the gate still refuses. Here the writes are right but no read ever shows them, so the
+    pass cannot certify the board and says so, naming the contradiction -- a stale read is a
+    failure to see, never a licence to claim success."""
+    board = [_board_row(100, "recovered"), _board_row(101, "edge")]
+    rc, out, gh_home = _run_reconcile(tmp_path, CLUSTER, board, lag=999)
+    assert rc == 1, out
+    assert "the board still contradicts the cluster" in out
+    assert "still contradicts the cluster after" in out, (
+        "the bounded wait must say how long it waited"
+    )
+    left = [r["number"] for r in json.loads((gh_home / "open.json").read_text())]
+    assert left == [101], f"the board itself was written correctly: {left}"
