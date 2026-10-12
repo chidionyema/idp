@@ -3,8 +3,13 @@ description: >
   Runs bin/estate-security-scan from chidionyema/idp against the calling
   repository: gitleaks over the whole git history, pip-audit over every tracked
   requirements*.txt, npm audit over every tracked package-lock.json, and the
-  security policy gate where one exists. Non-zero exit fails the job; the
-  ruleset `estate-security-scan` then refuses the merge.
+  security policy gate where one exists. Non-zero exit fails the job, and since
+  2026-10-12 `ci-success` judges that job -- a required context on main -- so a
+  leak in git history refuses the landing. Before that it refused nothing: on
+  main's a66f09e0b this job concluded `failure` and `ci-success` concluded
+  `success`, on the same commit. (The ruleset named here previously,
+  `estate-security-scan`, does not exist on idp; the check that is required is
+  `ci-success`.)
 runs:
   using: composite
   steps:

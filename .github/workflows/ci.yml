@@ -541,7 +541,19 @@ jobs:
 
   ci-success:
     if: always()
-    needs: [fast-gate, bdd, executes-gate, feature-request-plan, ui-kit, claim-gate]
+    # security-scan is judged here since 2026-10-12. It sat outside this list for as long as the
+    # job has existed. Measured on main's a66f09e0b (PR #5792, 2026-10-11T18:27:56Z) the same
+    # commit held `security-scan = failure` (gitleaks: a leak in the history reachable from HEAD)
+    # and `ci-success = success` -- the estate landed a commit with a red secret scan and the one
+    # check the ruleset requires said green, because this job judged a hand-written list that did
+    # not name it. The scan's action and the Definition of Done both say a leak in git history
+    # blocks the merge; this leg is what makes that true, and it needs no ruleset change, since
+    # `ci-success` is already a required context on main.
+    #
+    # On a pull request the job is `skipped` (its `if:` puts it on the push to main and the merge
+    # queue only) and `skipped` is a pass in the loop below, the same case as the `bdd` leg, so a
+    # PR that cannot run the scan is never refused for not running it.
+    needs: [fast-gate, bdd, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan]
     runs-on: ubuntu-latest
     steps:
       - name: every required job in this workflow is success or skipped
@@ -551,7 +563,7 @@ jobs:
           set -euo pipefail
           echo "$NEEDS_JSON" | jq .
           fail=0
-          for job in fast-gate bdd executes-gate feature-request-plan ui-kit claim-gate; do
+          for job in fast-gate bdd executes-gate feature-request-plan ui-kit claim-gate security-scan; do
             result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
             case "$result" in
               success|skipped) echo "$job: pass ($result)" ;;
