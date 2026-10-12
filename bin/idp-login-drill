@@ -307,7 +307,7 @@ WEBAUTHN_HOOK = """(() => {
         const sel = pk.authenticatorSelection || {};
         window.__drillWebauthn.push({call: k, rpId: (pk.rp && pk.rp.id) || null,
           attachment: sel.authenticatorAttachment || null,
-          userVerification: sel.userVerification || null,
+          userVerification: sel.userVerification || pk.userVerification || null,  // get() carries it on publicKey, create() on authenticatorSelection
           algos: (pk.pubKeyCredParams || []).map((a) => a.alg)});
       }
       return orig.apply(this, arguments);
@@ -467,6 +467,15 @@ with sync_playwright() as p:
                  f"the door offered {offer.get('name')!r} to {USER} but pressing it drove no WebAuthn "
                  f"request (navigator.credentials was never called), so the control is decoration and no "
                  f"Face ID can follow it")
+        # Passkey alone replaces the password AND the second factor, so the biometric is the only
+        # factor left. With userVerification "preferred" or "discouraged" the ceremony can finish on
+        # a bare tap or a security key, and "Face ID alone" is then "any tap alone".
+        uvs = {str(r.get("userVerification")) for r in w}
+        if "required" not in uvs:
+            fail("passwordless",
+                 f"the door drove navigator.credentials for {USER} without userVerification=required "
+                 f"(saw {sorted(uvs)}), so a passkey alone could be satisfied without Face ID: the "
+                 f"biometric is not what stands in for the password")
         calls = ",".join(sorted({str(r.get("call")) for r in w}))
         print(f"ok      login-drill  Face ID alone is offered at the door for {USER}: pressed "
               f"{offer.get('name')!r} and the door drove navigator.credentials [{calls}] "
