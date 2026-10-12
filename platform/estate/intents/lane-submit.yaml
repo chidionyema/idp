@@ -44,9 +44,15 @@ steps:
       GITHUB_REPOSITORY=$(gh repo view --json nameWithOwner -q .nameWithOwner) \
         bin/claim-gate "$(git merge-base origin/main HEAD)" HEAD
   - name: push the lane
-    # Measured 2026-10-12: the guard reports itself -- `timing 32s total; slowest rungs: 19s tsc
-    # backstage, 12s ruff` -- and guard + push was 37.4s on one run and past 40s on the next. The
-    # guard is not bypassed to buy time (AGENTS.md, Laws and Guards); the door is sized to it.
+    # 2026-10-12 (#5814): guard + push costs ~35s on a quiet laptop and crossed the 60s cap with
+    # ~10 agents live -- `estate_invoke lane-submit` answered TIMEOUT exit 124 while the lane ref
+    # landed on origin anyway, so a caller could not tell a handed-over branch from nothing
+    # happening at all. The cap cannot simply be raised: 60s is the estate's own ceiling for a
+    # command (the executor refuses anything above it, whatever the unit), and the guard that
+    # spends 32s of it is not bypassed (AGENTS.md, Laws and Guards). So the step stops inferring
+    # the handover from its own exit code -- it bounds the push well inside the cap and then READS
+    # THE REMOTE REF, which answers the only question that matters whether or not the local push
+    # survived.
     timeout: 60
     cmd: |
       cd {{cwd}} || exit 2
@@ -58,9 +64,19 @@ steps:
       # prefix is missing (#5756). The fix belongs here, in the file estate-runtime-sync reads:
       # patching ~/.estate/intents/lane-submit.yaml alone is reverted by the next sync.
       case "$lane" in lane/*) ;; *) lane="lane/$lane" ;; esac
-      out=$(git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
-      if [ $rc -eq 0 ]; then
-        echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD)"
+      sha=$(git rev-parse HEAD)
+      # The push is bounded INSIDE the step, not by the step's own cap, so the step always reaches
+      # the measurement below: a push killed locally can still have landed on the remote (#5814),
+      # and a step killed by its own cap reports nothing at all. 50 of the step's 60 seconds go to
+      # the push; the remaining 10 always belong to the ls-remote that reports the outcome. The
+      # bound is `timeout` when it exists (a shim on macOS, GNU on the runners) and no bound when
+      # it does not -- never a hard dependency, or the push never happens at all.
+      BOUND=""; command -v timeout >/dev/null 2>&1 && BOUND="timeout 50"
+      out=$($BOUND git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
+      # The handover, measured. Not this process's exit code: a timeout can outlive the push.
+      on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
+      if [ "$on" = "$sha" ]; then
+        echo "ok      lane-submit  $lane = $(git rev-parse --short HEAD) on origin"
       elif printf '%s' "$out" | grep -qiE 'non-fast-forward|fetch first|stale info'; then
         # the engine (greenlane/github.py land()) force-pushes a rebased commit onto the
         # lane's own ref before merging, then deletes it only after a successful merge; if a
@@ -69,8 +85,9 @@ steps:
         echo "REJECTED lane-submit  $lane moved on origin since this branch was built (non-fast-forward) - fetch/rebase onto origin/$lane, or resubmit under a new lane name: $out" >&2
         exit 1
       else
-        echo "FAIL    lane-submit  push to $lane failed: $out" >&2
-        exit $rc
+        rc=${rc:-1}; [ "$rc" -ne 0 ] || rc=1
+        echo "FAIL    lane-submit  $lane on origin is '${on:-absent}', not $sha (push rc=$rc): $out" >&2
+        exit "$rc"
       fi
   - name: hand it over
     # The lane ticks on its own and nothing here waits for it. This proves the branch is actually

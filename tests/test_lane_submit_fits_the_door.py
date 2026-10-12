@@ -97,3 +97,36 @@ def test_the_verdict_is_still_reachable_without_a_wait():
     assert "ci.status" in text or "/status" in text, (
         "lane-submit does not name how to read the verdict (ci.status, or the gh api line)"
     )
+
+
+def test_the_push_step_measures_the_handover_instead_of_inferring_it():
+    """#5814: the timeout is ambiguous. The push is not killed with it, so the ref can land while
+    the intent reports `exit 124`, and the caller cannot tell a handed-over branch from nothing
+    happening at all -- measured twice on 2026-10-12, and the ref moved after the kill both
+    times. So the step has to end by reading the remote ref. Two things make that true, and
+    neither is decoration: the push needs a deadline of its own inside the step, or the step's
+    cap kills it before it measures anything, and the remote ref has to be compared against the
+    commit actually being handed over, or a stale ref reads as a landing."""
+    push = next(s for s in _steps() if "push" in s["name"])
+    cmd = push["cmd"]
+    assert "git ls-remote --heads origin" in cmd, (
+        "the push step never reads the remote ref, so its exit code is the only account of the "
+        "handover -- which is the ambiguity #5814 is about"
+    )
+    assert '"$on" = "$sha"' in cmd, (
+        "the push step reads the remote ref but does not compare it to the commit being handed "
+        "over, so a stale ref on the lane reads as a successful landing"
+    )
+    inner = re.search(r'BOUND="timeout (\d+)"', cmd)
+    assert inner, (
+        "the push has no deadline of its own inside the step, so the step's own cap can kill it "
+        "before it reaches the measurement that replaces guessing"
+    )
+    assert int(inner.group(1)) < int(push["timeout"]), (
+        f"the push may run {inner.group(1)}s inside a step capped at {push['timeout']}s, leaving "
+        f"no room for the ls-remote that has to report the outcome"
+    )
+    assert "command -v timeout" in cmd, (
+        "the push bound is a hard dependency on `timeout` being installed: where it is not, the "
+        "push itself never runs. Bound it when the tool is there, push unbounded when it is not"
+    )
