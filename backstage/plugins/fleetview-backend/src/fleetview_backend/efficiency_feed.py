@@ -11,6 +11,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import threading
 from pathlib import Path
 
 _REPORT = Path(
@@ -92,9 +93,21 @@ _PROOF = Path(
     or Path(__file__).resolve().parents[5] / "bin" / "estate-token-proof"
 )
 _PROOF_TTL_S = 300
+_PROOF_TIMEOUT_S = 300
 _proof_cache: dict = {}
+_proof_lock = threading.Lock()
 
 
+# IN ITS OWN PROCESS, because the whole ledger does not fit in this one (2026-10-12). The proof
+# loads every ledger row at once: on a 497 MB ledger that is +2.2 GB for 53 s, and run in-process
+# every NEWS_EVERY_S the allocator never handed it back -- the backend sawtoothed 200 MB -> 2.1 GB
+# on a laptop already deep in swap, and nats wedged behind it. A child process returns every page
+# to the OS when it exits; the server keeps only the JSON it printed.
+#
+# ONE AT A TIME, AND A FAILURE IS CACHED TOO. The news loop and /efficiency/proof each started
+# their own child when the cache expired: two 1.5 GB children on a loaded laptop, both timed out at
+# 300 s, and an uncached failure meant the next caller started a third. A caller that arrives
+# mid-run waits for that run's answer; a failed answer holds for the TTL like a good one.
 def proof() -> dict:
     import time
 
@@ -107,13 +120,35 @@ def proof() -> dict:
         # '/app/bin/estate-token-proof'` every tick (measured 2026-10-04), because this binary is
         # repo-relative and the image copies no bin/.
         return {"error": f"{_ABSENT}: {_PROOF}", "available": False}
-    loader = importlib.machinery.SourceFileLoader("estate_token_proof", str(_PROOF))
-    spec = importlib.util.spec_from_loader(loader.name, loader)
-    mod = importlib.util.module_from_spec(spec)
-    loader.exec_module(mod)
-    body = mod.report(None)
-    _proof_cache["r"] = (time.time(), body)
-    return body
+    with _proof_lock:
+        hit = _proof_cache.get("r")
+        if hit and time.time() - hit[0] < _PROOF_TTL_S:
+            return hit[1]
+        body = _run_proof()
+        _proof_cache["r"] = (time.time(), body)
+        return body
+
+
+def _run_proof() -> dict:
+    import subprocess
+    import sys
+
+    try:
+        done = subprocess.run(
+            [sys.executable, str(_PROOF), "--json"],
+            capture_output=True,
+            text=True,
+            timeout=_PROOF_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "error": f"proof timed out after {_PROOF_TIMEOUT_S}s",
+            "available": False,
+        }
+    if done.returncode != 0:
+        tail = (done.stderr.strip().splitlines() or ["no stderr"])[-1]
+        return {"error": f"proof exited {done.returncode}: {tail}", "available": False}
+    return json.loads(done.stdout)
 
 
 # ── highlights on the news channel ─────────────────────────────────────────────────────────

@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# The research department's claims, readable by the laptop's /fleet.
+#
+# /fleet on this Mac is served by a local Backstage backend (:7107, bin/fleetview-frontend-launchd),
+# and its research-output plugin reads estate-db's `research` database -- which lives in the
+# cluster, at estate-rw.estate-db.svc.cluster.local, a name this Mac cannot resolve. Measured
+# 2026-10-12: every /api/research-output/claims answered 503 ENOENT for the in-cluster password
+# path, so the research rail on the local Fleet was empty while 1125 verified claims sat in the db.
+#
+# So this job does two things, in order, and then holds:
+#   1. writes the research_reader password (estate-db secret estate-db-role-research-reader) to
+#      ~/.estate/secrets/dev/research-reader-password, mode 600, re-fetched on every start so a
+#      vault rotation lands at the next restart. research_reader is the read side of the research
+#      database (platform/estate-db/cluster/cluster.yaml): it cannot write a claim, so the laptop
+#      never holds the engine's own write credential.
+#   2. execs `kubectl port-forward svc/estate-rw` on 127.0.0.1:${RESEARCH_TUNNEL_PORT:-15432},
+#      loopback only. When the forward drops (pod restart, network) kubectl exits and launchd
+#      (ai.estate.research-tunnel, KeepAlive) brings it back.
+set -euo pipefail
+PORT="${RESEARCH_TUNNEL_PORT:-15432}"
+SECRET_FILE="${RESEARCH_DB_PASSWORD_FILE:-$HOME/.estate/secrets/dev/research-reader-password}"
+
+trap 'echo "FAIL  research-tunnel  exit $? at line $LINENO" >&2' ERR
+
+die() {
+	printf 'BLIND   research-tunnel  %s\n' "$1" >&2
+	exit 2
+}
+
+command -v kubectl >/dev/null || die "no kubectl on PATH"
+
+pw="$(kubectl -n estate-db get secret estate-db-role-research-reader \
+	-o jsonpath='{.data.password}' --request-timeout=20s | base64 -d)" ||
+	die "cannot read estate-db/estate-db-role-research-reader (is the cluster reachable?)"
+[ -n "$pw" ] || die "estate-db-role-research-reader has an empty password"
+
+mkdir -p "$(dirname "$SECRET_FILE")"
+tmp="$(mktemp "$SECRET_FILE.XXXXXX")"
+chmod 600 "$tmp"
+printf '%s' "$pw" >"$tmp"
+mv -f "$tmp" "$SECRET_FILE"
+unset pw
+
+echo "ok      research-tunnel  credential -> $SECRET_FILE; forwarding 127.0.0.1:$PORT -> estate-db/estate-rw:5432"
+exec kubectl -n estate-db port-forward --address 127.0.0.1 svc/estate-rw "$PORT:5432"
