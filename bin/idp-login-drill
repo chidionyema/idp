@@ -140,6 +140,14 @@ FACEID_TEXT = re.compile(r"(face\s*id|touch\s*id|fingerprint|passkey|security\s*
 # families and asks for a click, and carries no factor of its own. Recognised so the drill opens
 # it instead of grading it as if it were the list of factors.
 SECURE_VERIFICATION_TEXT = re.compile(r"(enable secure verification|secure verification methods)", re.I)
+# The disclosure that HIDES another way in. It is a menu, not a factor and not an offer: pressing
+# it is a click, and the passkey is behind it. Two labels measured on this domain 2026-10-12 --
+# a:"Show alternative login methods" on the sign-in screen (run 38277106763) and "Other options"
+# on the factor list. One list for both steps, so neither walk can drift from the other's: a walk
+# that renames the menu in only one place is how a false red is born.
+DISCLOSURE_LABELS = ("Other options", "Show alternative login methods", "Other sign-in options",
+                     "Alternative login methods", "More options")
+DISCLOSURE_TEXT = re.compile("|".join(re.escape(l) for l in DISCLOSURE_LABELS), re.I)
 
 # Selectors, off the live page 2026-08-26 -- the password input's id contains a pipe
 # ("idcs-signin-basic-signin-form-password|input"), which no #id selector can match.
@@ -438,20 +446,36 @@ with sync_playwright() as p:
             page.keyboard.press("Enter")
         except PWError:
             pass
-        offer, deadline = None, time.time() + 20
+        offer, deadline, pressed = None, time.time() + 20, None
         while time.time() < deadline:
-            cs = [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
-            if cs:
-                offer = cs[0]
+            # FACEID_TEXT matches a disclosure too ("other options"), so a disclosure is pressed and
+            # then excluded from the candidates. Otherwise this walk presses a menu, no ceremony
+            # follows, and it grades its own click as the door refusing to offer a passkey.
+            cands = [c for c in controls(page) if FACEID_TEXT.search(str(c.get("name", "")))]
+            passkeys = [c for c in cands if not DISCLOSURE_TEXT.search(str(c.get("name", "")))]
+            if passkeys:
+                offer = passkeys[0]
                 break
+            if pressed is None:
+                try:
+                    page.locator(", ".join(f"button:has-text('{l}'), a:has-text('{l}')"
+                                           for l in DISCLOSURE_LABELS)).first.click(timeout=3000)
+                    page.wait_for_timeout(1500)
+                    pressed = next((str(c.get("name")) for c in cands
+                                    if DISCLOSURE_TEXT.search(str(c.get("name", "")))), "a login-methods menu")
+                    continue
+                except PWError:
+                    pass
             page.wait_for_timeout(1000)
         if not offer:
             inv = ", ".join('{}:"{}"'.format(c.get("tag"), c.get("name")) for c in controls(page)[:8]) or "none"
+            how = (f"the door's own {pressed!r} menu was opened and still no passkey control followed"
+                   if pressed else "there was not even a login-methods disclosure to open")
             fail("passwordless",
-                 f"the door does not offer Face ID alone to {USER}: after the username there is no "
-                 f"passkey control on {page.url.split('?')[0]} and the password form is still the way "
-                 f"in, so the passwordless value the policy rules carry is not honoured by this "
-                 f"domain. Controls the door does offer: {inv}")
+                 f"the door does not offer Face ID alone to {USER}: after the username, {how} on "
+                 f"{page.url.split('?')[0]}, and the password form is still the way in, so the "
+                 f"passwordless value the policy rules carry is not honoured by this domain. "
+                 f"Controls the door does offer: {inv}")
         at = press(offer)
         if not at:
             fail("config", f"the drill could not reach {offer.get('name')!r} to press it, so any "
@@ -595,8 +619,7 @@ with sync_playwright() as p:
         # options". Press ONLY a disclosure. The sibling control on that screen is button:"Verify",
         # which approves a push to the Oracle Mobile Authenticator -- a different factor, and
         # pressing it would grade a door that never offered the passkey as if it had.
-        for label in ("Other options", "Show alternative login methods", "Other sign-in options",
-                      "Alternative login methods", "More options"):
+        for label in DISCLOSURE_LABELS:
             if faceid_offered:
                 break
             try:
