@@ -51,6 +51,23 @@ describe('fetchClaims', () => {
     expect(calls[0].config.user).toBe('research');
     expect(calls[0].config.host).toBe('estate-rw.estate-db.svc.cluster.local');
     expect(calls[0].config.statement_timeout).toBeGreaterThan(0);
+    expect(calls[0].config.port).toBe(5432);
+  });
+
+  it('connects where a dev tunnel says, as the role it names', async () => {
+    // The laptop's /fleet reaches estate-rw through bin/idp-research-tunnel as research_reader.
+    const { io, calls } = fakeIo(ROWS);
+    const { status } = await claimsEnvelope(io, '3', {
+      secretFile: '/x',
+      host: '127.0.0.1',
+      port: 15432,
+      user: 'research_reader',
+    });
+    expect(status).toBe(200);
+    expect(calls[0].config.host).toBe('127.0.0.1');
+    expect(calls[0].config.port).toBe(15432);
+    expect(calls[0].config.user).toBe('research_reader');
+    expect(calls[0].values).toEqual([3]);
   });
 
   it('clamps the limit into 1..50', async () => {
