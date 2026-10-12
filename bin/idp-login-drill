@@ -124,6 +124,10 @@ CHALLENGE_TEXT = re.compile(r"(verify (your identity|it.?s you)|two[- ]step|mult
 # "Other options" menu; the regex matches any of the common phrasings, case-insensitive, across
 # the full visible text. A match is the answer to the founder's question.
 FACEID_TEXT = re.compile(r"(face\s*id|touch\s*id|fingerprint|passkey|security\s*key|webauthn|use (a |an )?(security|pass)?\s*key|use (your )?(face|touch)\s*id|other (sign[- ]?in )?options)", re.I)
+# The interstitial this domain shows in front of its factor list: it names the two method
+# families and asks for a click, and carries no factor of its own. Recognised so the drill opens
+# it instead of grading it as if it were the list of factors.
+SECURE_VERIFICATION_TEXT = re.compile(r"(enable secure verification|secure verification methods)", re.I)
 
 # Selectors, off the live page 2026-08-26 -- the password input's id contains a pipe
 # ("idcs-signin-basic-signin-form-password|input"), which no #id selector can match.
@@ -149,6 +153,27 @@ def first(page, selectors, what):
         except PWError:
             continue
     fail("credentials", f"no {what} field on {page.url}")
+
+
+def page_text(page):
+    # The domain renders its sign-in copy inside shadow roots, and inner_text() reads the light
+    # DOM only: on the factor screen it returned "Cloud Infrastructure" alone from a page whose
+    # own screenshot shows the whole interstitial (measured 2026-10-12 by OCR of the drill's
+    # artifact). Walk the tree with the shadow roots included, and normalise whitespace, so the
+    # vocabulary above reads what the founder actually sees.
+    js = """() => {
+      const parts = [];
+      const walk = (root) => {
+        for (const el of root.querySelectorAll('*')) if (el.shadowRoot) walk(el.shadowRoot);
+        parts.push(root.textContent || '');
+      };
+      walk(document.body);
+      return parts.join(' ');
+    }"""
+    try:
+        return " ".join((page.evaluate(js) or "").split())
+    except PWError:
+        return ""
 
 
 started = time.time()
@@ -206,7 +231,7 @@ with sync_playwright() as p:
             # visible password field means the form is still up (or its DOM is stale mid-submit)
             # and its "other sign-in options" link would read as a factor screen it is not.
             if page.locator("input[type='password']:visible").count() == 0:
-                body = page.locator("body").inner_text(timeout=2000) or ""
+                body = page_text(page)
         except PWError:
             body = ""
         if body and (ENROLL_TEXT.search(body) or CHALLENGE_TEXT.search(body) or FACEID_TEXT.search(body)):
@@ -219,10 +244,7 @@ with sync_playwright() as p:
 
     if not saw_mfa:
         u = page.url
-        try:
-            text = page.locator("body").inner_text(timeout=3000) or ""
-        except PWError:
-            text = ""
+        text = page_text(page)
         if any(m in u.lower() for m in RESET_MARKERS) or RESET_TEXT.search(text):
             fail("password-change",
                  f"the domain is demanding a new password for {USER} at {u}; the drill will not set one -- "
@@ -252,6 +274,27 @@ with sync_playwright() as p:
     else:
         mfa_kind = "faceid-only"
     faceid_offered = bool(FACEID_TEXT.search(text))
+    # The domain fronts the factor list with an "Enable Secure Verification" interstitial: the
+    # page says the two method families exist and asks for one click before it shows them
+    # (measured 2026-10-12). Clicking it is navigation, not enrolment -- the credential is made
+    # only by the ceremony DRILL_ENROLL gates below. Without this step the drill grades the
+    # interstitial as if it were the list of factors, and reds a door that is working.
+    if not faceid_offered and SECURE_VERIFICATION_TEXT.search(text):
+        try:
+            page.locator("button:has-text('Enable Secure Verification'), "
+                         "a:has-text('Enable Secure Verification'), "
+                         "button:has-text('Continue'), a:has-text('Continue')").first.click(timeout=5000)
+            page.wait_for_timeout(2500)
+            revealed = page_text(page)
+            if revealed and len(revealed) > len(text):
+                text = revealed
+                if ENROLL_TEXT.search(text):
+                    mfa_kind = "enroll"
+                elif CHALLENGE_TEXT.search(text):
+                    mfa_kind = "challenge"
+                faceid_offered = bool(FACEID_TEXT.search(text))
+        except PWError:
+            pass
     # Always photograph the MFA page so a red row carries the picture of what the founder saw.
     try:
         page.screenshot(path=os.environ.get("DRILL_SHOT", "/tmp/login-drill-home.png"), full_page=True)
