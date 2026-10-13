@@ -5,8 +5,10 @@ sha and squash-merges that exact sha. bin/idp-image-update-pr used to end with b
 with allow_auto_merge true again every controller push armed GitHub's auto-merge on the same pull
 request (#6107), which merges whatever head goes green first and races the engine for main.
 
-These run the script itself against a fake `gh` and pin both directions: nothing arms, and an arm
-left by an older run is taken off.
+These run the script itself against a fake `gh`, inside a throwaway clone with its own `origin`
+(the script merges main and pushes when the branch is behind, so it must never see this checkout),
+and pin both directions: nothing arms, and an arm left by an older run is taken off. A third pins
+the refresh: a branch behind main is refreshed even while GitHub calls it BLOCKED (#6114).
 """
 
 from __future__ import annotations
@@ -30,7 +32,43 @@ esac
 """
 
 
-def _run(tmp_path: Path, armed: str) -> tuple[subprocess.CompletedProcess, list[str]]:
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-c", "core.hooksPath=/dev/null", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def _clone(tmp_path: Path, behind: bool) -> Path:
+    """A bare origin holding main and flux/image-updates, and a clone checked out on the branch."""
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    _git(seed, "init", "-q", "-b", "main")
+    _git(seed, "config", "user.email", "t@t")
+    _git(seed, "config", "user.name", "t")
+    (seed / "tag.yaml").write_text("tag: old\n")
+    _git(seed, "add", ".")
+    _git(seed, "commit", "-qm", "fork point")
+    _git(seed, "checkout", "-qb", "flux/image-updates")
+    (seed / "tag.yaml").write_text("tag: new\n")
+    _git(seed, "commit", "-qam", "platform: image update")
+    if behind:
+        _git(seed, "checkout", "-q", "main")
+        (seed / "other.yaml").write_text("main moved on\n")
+        _git(seed, "add", ".")
+        _git(seed, "commit", "-qm", "main moves on")
+    _git(tmp_path, "clone", "-q", "--bare", str(seed), "origin.git")
+    _git(tmp_path, "clone", "-q", "-b", "flux/image-updates", "origin.git", "work")
+    return tmp_path / "work"
+
+
+def _run(
+    tmp_path: Path, armed: str, behind: bool = False
+) -> tuple[subprocess.CompletedProcess, list[str]]:
+    work = _clone(tmp_path, behind)
     (tmp_path / "gh").write_text(FAKE_GH)
     (tmp_path / "gh").chmod(0o755)
     log = tmp_path / "gh.log"
@@ -44,7 +82,12 @@ def _run(tmp_path: Path, armed: str) -> tuple[subprocess.CompletedProcess, list[
         "MERGEABLE_WAIT": "0",
     }
     run = subprocess.run(
-        ["bash", str(SCRIPT)], capture_output=True, text=True, env=env, timeout=30
+        ["bash", str(SCRIPT)],
+        cwd=work,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=30,
     )
     return run, log.read_text().splitlines()
 
@@ -61,6 +104,21 @@ def test_an_arm_left_by_an_older_run_is_taken_off(tmp_path):
     assert run.returncode == 0, run.stdout + run.stderr
     merges = [c for c in calls if c.startswith("pr merge")]
     assert merges == ["pr merge 7 --disable-auto"], calls
+
+
+def test_a_branch_behind_main_is_refreshed_though_github_says_blocked(tmp_path):
+    run, _ = _run(tmp_path, armed="false", behind=True)
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "was BEHIND main, merged main" in run.stdout, run.stdout
+    origin = tmp_path / "origin.git"
+    _git(origin, "merge-base", "--is-ancestor", "main", "flux/image-updates")
+    assert _git(origin, "show", "flux/image-updates:tag.yaml") == "tag: new"
+
+
+def test_a_branch_that_holds_main_is_left_alone(tmp_path):
+    run, _ = _run(tmp_path, armed="false")
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert "merged main" not in run.stdout, run.stdout
 
 
 def test_the_script_no_longer_reaches_for_pr_arm():

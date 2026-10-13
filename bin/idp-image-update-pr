@@ -51,6 +51,14 @@ done
 # that main had already repaired. A branch that is BEHIND main is refreshed for the same reason a
 # CONFLICTING one is -- so the deploy is graded by the gates that are actually on main.
 behind=$(gh pr view "$n" --json mergeStateStatus -q .mergeStateStatus)
+# 2026-10-13 (#6114): GitHub says BLOCKED, not BEHIND, while a required status is red, and the red
+# status was this very staleness -- idp-image-only-diff grades the diff from the fork point, so a
+# file main had re-laid in the setter's own format still read as 21 non-tag lines. The refresh that
+# would have cured it never ran. Whether the head contains main is git's question, so ask git.
+git fetch -q origin main
+if [ "$behind" != BEHIND ] && ! git merge-base --is-ancestor origin/main HEAD; then
+  behind=BEHIND
+fi
 case "$m" in
   MERGEABLE)
     # "BEHIND" is GitHub's own word for "mergeable, but the head does not contain the base".
