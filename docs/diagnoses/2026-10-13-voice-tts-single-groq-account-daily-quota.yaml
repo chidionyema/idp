@@ -1,0 +1,103 @@
+description: 'The estate router (deploy/litellm, ns llm) log, 48 h to 2026-10-13.
+  Question: why does /voice/say on the catalogue fail, leaving the face to speak through
+  browser Kokoro or show an error? voice-tts was ONE deployment: canopylabs/orpheus-v1-english
+  on GROQ_API_KEY. Four mechanisms are weighed: that single account''s daily request
+  quota is spent and the router has no second deployment to route to; the Groq org
+  has not accepted Orpheus''s terms; the pod''s egress to Groq is failing; or callers
+  are calling the lane wrongly. Disclosure: the failure counts below were pulled (kubectl
+  logs deploy/litellm --since=48h, every voice-tts / orpheus line matching error|exception|fail,
+  1502 lines) before this record was written; the likelihoods are what each mechanism
+  predicts on its face, not fitted to those counts. n_eff_divisor 100: the lines are
+  retries inside two daily quota windows on one account, not 1502 independent events.
+  Not established here: whether GROQ_API_KEY_2/_3 have accepted the Orpheus terms
+  (a direct probe from the pod was not run) -- a key that has not answers 400, and
+  the pool cools it like a spent one, so the change is safe either way.'
+n_eff_divisor: 100
+hypotheses:
+- name: H1
+  description: the one Groq account's on_demand daily request quota for Orpheus (100
+    RPD) is spent, and with a single voice-tts deployment the router has nothing to
+    route around.
+  prior: 0.25
+- name: H2
+  description: the Groq org has not accepted the Orpheus model terms, so every speech
+    call is refused 400 regardless of quota.
+  prior: 0.25
+- name: H3
+  description: the litellm pod cannot reach api.groq.com reliably (DNS, TLS, egress,
+    timeouts) -- environmental, not a fact about the account.
+  prior: 0.25
+- name: H4
+  description: callers send the lane malformed requests (wrong endpoint or params),
+    so the failures are a client defect.
+  prior: 0.25
+evidence:
+- name: failure category of every voice-tts / orpheus error line in the router log,
+    48 h
+  observed:
+    daily_request_quota: 1493
+    terms_not_accepted: 0
+    network: 1
+    caller_misuse: 8
+  likelihoods:
+    H1:
+      daily_request_quota: 0.9
+      terms_not_accepted: 0.02
+      network: 0.03
+      caller_misuse: 0.05
+    H2:
+      daily_request_quota: 0.05
+      terms_not_accepted: 0.85
+      network: 0.05
+      caller_misuse: 0.05
+    H3:
+      daily_request_quota: 0.05
+      terms_not_accepted: 0.02
+      network: 0.88
+      caller_misuse: 0.05
+    H4:
+      daily_request_quota: 0.1
+      terms_not_accepted: 0.05
+      network: 0.05
+      caller_misuse: 0.8
+- name: Groq organisations named in the quota refusals
+  observed:
+    exactly_one_org: 1
+    several_orgs: 0
+  likelihoods:
+    H1:
+      exactly_one_org: 0.95
+      several_orgs: 0.05
+    H2:
+      exactly_one_org: 0.5
+      several_orgs: 0.5
+    H3:
+      exactly_one_org: 0.5
+      several_orgs: 0.5
+    H4:
+      exactly_one_org: 0.5
+      several_orgs: 0.5
+- name: voice-tts deployments in the rendered router config on origin/main
+  observed:
+    one_deployment: 1
+    pooled: 0
+  likelihoods:
+    H1:
+      one_deployment: 0.9
+      pooled: 0.1
+    H2:
+      one_deployment: 0.5
+      pooled: 0.5
+    H3:
+      one_deployment: 0.5
+      pooled: 0.5
+    H4:
+      one_deployment: 0.5
+      pooled: 0.5
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+  H4: 0.0
+winner: H1
+computed_at: '2026-10-13T12:23:39Z'
