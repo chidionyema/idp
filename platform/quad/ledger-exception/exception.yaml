@@ -47,4 +47,10 @@ spec:
       - resources:
           kinds: [Deployment, Pod, ReplicaSet]
           namespaces: [quad]
-          names: [quad-ledger]
+          # The ReplicaSet and its pods carry generated suffixes (quad-ledger-5fdd66647f-79s26), so
+          # `names: [quad-ledger]` alone matched only the Deployment. Measured 2026-10-13: Kyverno
+          # admitted the Deployment and refused every pod, ReplicaFailure for 10 days. The label
+          # keeps the CronJobs' pods (quad-ledger-anchor-*, name label quad-ledger-anchor) out.
+          names: [quad-ledger, quad-ledger-*]
+          selector:
+            matchLabels: { app.kubernetes.io/name: quad-ledger }
