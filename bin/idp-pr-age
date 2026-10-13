@@ -70,9 +70,9 @@ MERGEABLE = {"CLEAN", "UNSTABLE", "HAS_HOOKS"}
 
 
 def reason(pr: dict) -> str:
-    # A lane is the Greenlane's to land (AGENTS.md:75): arming one is a second lander, and that is
-    # how #6069 reached main on 2026-10-13 without being proven on top of it. Its age and its red
-    # are the Greenlane's to report, on the lane head's `greenlane` status.
+    # A lane is the Greenlane's to land (AGENTS.md:75): arming one makes a second lander racing it.
+    # A lane PR exists whenever one is hand-raised on a lane branch (#6069, 2026-10-13). Its age and
+    # its red are the Greenlane's to report, on the lane head's `greenlane` status.
     body = pr.get("body") or ""
     if (pr.get("headRefName") or "").startswith("lane/") or any(s in body for s in GREENLANE_STAMPS):
         return "greenlane"
