@@ -486,6 +486,10 @@ patches:
             # not this sidecar's CI-built estate.db, which has no session rows -- the voice said
             # "zero agents" while the board drew 431 (serve.py _voice_sessions).
             - {name: FLEETVIEW_SESSIONS_URL, value: "http://fleetview-mac.backstage.svc.cluster.local:18790/sessions"}
+            # A spoken intent runs where estate-execute is: the laptop's own /voice/intent, the same
+            # Mac route. This sidecar matches against the shipped catalog and forwards only a match
+            # or its yes/no (voice_intents._on_laptop), so a plain question never waits on the Mac.
+            - {name: FLEETVIEW_INTENTS_URL, value: "http://fleetview-mac.backstage.svc.cluster.local:18790/voice/intent"}
             # idp#5737: research_feed's loopback to the portal that shares this pod. The
             # module defaults to the dev port 7107, but app-config.container.yaml (the only
             # config the container runs) listens on 3100 -- measured 2026-10-11 in the live

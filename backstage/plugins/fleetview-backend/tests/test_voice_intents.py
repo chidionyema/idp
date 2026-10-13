@@ -252,3 +252,12 @@ def test_stream_risky_intent_waits_for_spoken_yes(env, client):
     assert _frames(r.text)[0][1]["status"] == "pending_confirmation"
     r = client.post("/voice/stream", json={"question": "yes", "session_id": "s2"})
     assert _frames(r.text)[0][1]["status"] == "ok"
+
+
+def test_a_json_answer_is_spoken_by_its_summary(env):
+    _write_stub(
+        env / "estate-execute",
+        '#!/bin/sh\nprintf \'{\\n  "summary": "CI on main: 38 passed, all green.",\\n  "failed": 0\\n}\\n\'\n',
+    )
+    r = vi.handle("check ci status", "s9")
+    assert r["text"] == "CI on main: 38 passed, all green."

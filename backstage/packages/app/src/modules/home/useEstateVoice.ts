@@ -99,6 +99,12 @@ export const VOICE_ASSETS = '/voice/';
  */
 export const DEFAULT_VOICE = 'hannah';
 
+/** This device's Kokoro voice when the pod cannot speak: a woman's, for the same face. */
+export const FALLBACK_KOKORO_VOICE = 'af_heart';
+
+/** How long a pod that failed to speak is left alone before a clause asks it again. */
+const POD_VOICE_REST_MS = 10 * 60 * 1000;
+
 /** The FleetView backend, through the Backstage proxy. See the header: never a bare path. */
 const FLEETVIEW = 'plugin://proxy/fleetview';
 
@@ -710,22 +716,41 @@ export function useEstateVoice(): EstateVoice {
    *
    * Falls through to the pod when the browser cannot (model not downloaded yet, no WebGPU): the
    * sentence that cannot be said in the chosen voice is still read, in another voice.
+   *
+   * AND THE OTHER WAY ROUND (2026-10-13). With the pod's cloud voice chosen, every clause used to
+   * load the Kokoro model only for it to refuse "hannah", then wait ~5s for the pod's 502 (Orpheus's
+   * 100 requests a day spent), then speak in the OS voice. Now only a Kokoro choice goes to the
+   * browser first; a pod that cannot speak is answered by this device's Kokoro in a woman's voice,
+   * and is left to rest for a while so the next clause does not wait out the same 502.
    */
+  const podVoiceRestsUntil = useRef(0);
   const clauseAudio = useCallback(
     async (text: string, signal?: AbortSignal): Promise<ArrayBuffer | null> => {
-      if (kokoroSpeaksInTheBrowser(catalogue.kokoro)) {
+      const browserKokoro = kokoroSpeaksInTheBrowser(catalogue.kokoro);
+      if (current.engine === 'kokoro' && browserKokoro) {
         const local = await synthesiseBrowserKokoro(text, current.voice);
         if (local) return local;
       }
-      const res = await fetchApi.fetch(`${FLEETVIEW}/voice/say`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-        signal,
-      });
-      return res.ok ? res.arrayBuffer() : null;
+      if (Date.now() >= podVoiceRestsUntil.current) {
+        try {
+          const res = await fetchApi.fetch(`${FLEETVIEW}/voice/say`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text }),
+            signal,
+          });
+          const buf = res.ok ? await res.arrayBuffer() : null;
+          if (buf && buf.byteLength) return buf;
+        } catch (e) {
+          if (signal?.aborted) throw e;
+        }
+        podVoiceRestsUntil.current = Date.now() + POD_VOICE_REST_MS;
+      }
+      // The chosen Kokoro voice already failed above; asking the same engine again would only wait.
+      if (current.engine === 'kokoro' && browserKokoro) return null;
+      return synthesiseBrowserKokoro(text, FALLBACK_KOKORO_VOICE);
     },
-    [catalogue.kokoro, current.voice, fetchApi],
+    [catalogue.kokoro, current.engine, current.voice, fetchApi],
   );
 
   /** One clause of text to audio, in the voice that is currently live, and play it. */
