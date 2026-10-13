@@ -554,6 +554,15 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             # BLIND while the cluster and the session were both healthy. `oci_compartment`
             # above already exports OCI_CLI_AUTH=security_token; this branch never called
             # it, which is the whole bug. Default it here rather than requiring the export.
+            # 2026-10-13: and the default was taken before whoami ran. `oci_compartment` sources
+            # it inside `$(...)`, a subshell, so the api_key it picks when no session is live
+            # never reached this shell: create-kubeconfig ran --auth security_token against a
+            # profile with no token file and every refresh since 2026-09-19 failed ("Config value
+            # for 'security_token_file' must be specified"). Whoami runs here, in this shell.
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
+            fi
             export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
             export SUPPRESS_LABEL_WARNING=True
             # And the SECOND bug the 401 had been hiding, found once auth stopped failing:
@@ -612,7 +621,11 @@ for entry in doc.get("users") or []:
     ex = (entry.get("user") or {}).get("exec")
     if not ex or "--auth" in (ex.get("args") or []):
         continue
-    ex["args"] = ["--auth", os.environ.get("OCI_CLI_AUTH", "security_token")] + list(ex.get("args") or [])
+    pin = ["--auth", os.environ.get("OCI_CLI_AUTH", "security_token")]
+    # The plugin runs under whatever profile kubectl's caller has; pin the one that minted it.
+    if os.environ.get("OCI_CLI_PROFILE"):
+        pin += ["--profile", os.environ["OCI_CLI_PROFILE"]]
+    ex["args"] = pin + list(ex.get("args") or [])
     changed = True
 if changed:
     with open(path, "w") as fh:
