@@ -270,8 +270,8 @@ def test_a_truncated_compare_falls_back_to_the_plain_count():
 
 
 class TestALaneIsLeftToTheGreenlane:
-    """#6069 (2026-10-13): lane/backstage-release-immutable was refreshed and squash-merged by
-    merge-when-green, so it reached main without the Greenlane proving it green on top of main."""
+    """#6069 (2026-10-13): merge-when-green refreshed lane/backstage-release-immutable with
+    update-branch, moving the lane head under the Greenlane, which then landed the refreshed commit."""
 
     def test_a_green_lane_is_not_merged(self, landable):
         v = landable.verdict(pr("CLEAN", GREEN, headRefName="lane/x"), REQUIRED)

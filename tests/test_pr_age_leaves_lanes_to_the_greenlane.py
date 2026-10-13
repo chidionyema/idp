@@ -1,9 +1,9 @@
 """bin/idp-pr-age must never arm a Greenlane lane.
 
-#6069 (2026-10-13): lane/backstage-release-immutable reached main squashed by estate-agents[bot]
-with no Greenlane stamp in its body -- landed by a second lander, so never proven green on top of
-main. idp-pr-age arms every green PR it sees through bin/idp-pr-arm, which merges outright where
-GitHub refuses to arm; skipping only flux/image-updates left every lane open to it.
+A lane is the Greenlane's to land (AGENTS.md:75). idp-pr-age arms every green PR it sees through
+bin/idp-pr-arm, which merges outright where GitHub refuses to arm; skipping only flux/image-updates
+left every lane PR -- #6069 was one, hand-raised on lane/backstage-release-immutable on 2026-10-13
+-- open to a second lander racing the Greenlane.
 """
 
 from __future__ import annotations
