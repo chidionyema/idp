@@ -1,0 +1,34 @@
+# The quad-ledger image (cmd/quad-ledger, ADR 0035) rolls on every main build that touches it, same
+# mechanism as fleetview-backend.yaml in this directory: image-reflector lists tags, the policy picks
+# the highest run number, and the one ImageUpdateAutomation named "backstage" (path: ./, whole
+# checkout) rewrites any $imagepolicy marker it finds. The markers live in
+# platform/quad/ledger/ledger.yaml on the deployment and both cronjobs.
+#
+# Without this pair the markers pointed at a policy that did not exist, so nothing ever replaced the
+# `:main` placeholder; build-multiarch tags only `:<sha>` and `main-<run>-<sha>`, never `:main`, and
+# every quad-ledger pod sat in ImagePullBackOff on "manifest unknown" (2026-10-13).
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: quad-ledger
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/quad-ledger
+  interval: 1m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: quad-ledger
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: quad-ledger
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc
