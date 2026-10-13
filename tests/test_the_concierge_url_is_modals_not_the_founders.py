@@ -91,3 +91,15 @@ def test_the_secrets_are_carried_before_anything_deploys():
     carry = next(i for i, n in enumerate(names) if n.startswith("carry the founder's"))
     assert carry < names.index("deploy to Modal")
     assert carry < names.index("deploy the always-on endpoint to Modal")
+
+
+def test_the_concierge_can_answer_not_only_hear():
+    # main.py: Client(os.environ["TWILIO_ACCOUNT_SID"], ...) -- every outbound message needs it,
+    # and without it the inbound door (signature check) stays green while Mum hears nothing back.
+    rows = yaml.safe_load((ROOT / "platform/vendors/consoles.yaml").read_text())[
+        "vendors"
+    ]
+    assert "TWILIO_ACCOUNT_SID" in [t.get("field") for t in rows["twilio"]["targets"]]
+    run = _step("carry the founder's concierge secrets")
+    assert "TWILIO_ACCOUNT_SID" in run
+    assert "TWILIO_ACCOUNT_SID=AC*" in run

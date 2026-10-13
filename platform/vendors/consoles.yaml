@@ -966,6 +966,11 @@ vendors:
       field: TWILIO_WHATSAPP_NUMBER
       bw: TWILIO_WHATSAPP_NUMBER
       optional: true
+    - entry: concierge-twilio
+      ns: concierge
+      field: TWILIO_ACCOUNT_SID
+      bw: TWILIO_ACCOUNT_SID
+      optional: true
   card-key:
     kind: secret
     secret: SEED_CONCIERGE_CARD_KEY
