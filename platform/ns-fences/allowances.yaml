@@ -472,7 +472,10 @@ flows:
     # epistemic.* streams; declared on both sides for the same reason as otto-gateway/commerce/llm.
     # voice-router is the newsroom (crew#974), declared on both sides.
     # backstage: fleetview sidecar reads ESTATE_NEWS/cinema cues, crew#974 P2.
-    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router, backstage]
+    # quad: quad-ledger's consume container subscribes on nats.event-bus:4222 (platform/quad/
+    # ledger/ledger.yaml); without it consume timed out on 10.96.1.13:4222 and crash-looped once
+    # estate-db let it through (2026-10-13).
+    ingress_from: [otto-gateway, commerce, llm, epistemic-fabric, voice-router, backstage, quad]
   epistemic-fabric:
     # idp#3448 CP1: four ingestion connectors. Each publishes to the NATS bus (event-bus) and
     # polls or verifies a webhook against an external vendor API (GitHub, Slack) over the public
