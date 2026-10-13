@@ -528,6 +528,13 @@ with sync_playwright() as p:
               f"({len(w)} request(s)) in {time.time()-started:.1f}s -- no password was typed")
         raise SystemExit(0)
     first(page, USER_SELECTORS, "username").fill(USER)
+    # A username-first door (SsoSettings.userNameFirst) holds the password field back until the
+    # username is submitted.
+    if page.locator("input[type='password']:visible").count() == 0:
+        try:
+            page.keyboard.press("Enter")
+        except PWError:
+            pass
     first(page, PASS_SELECTORS, "password").fill(PASSWORD)
     try:
         first(page, SUBMIT_SELECTORS, "submit").click()
