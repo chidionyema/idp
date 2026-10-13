@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# crew#267 / crew#439: open or refresh the flux/image-updates pull request and arm auto-merge.
+# crew#267 / crew#439: open or refresh the flux/image-updates pull request; greenlane merges it.
 # crew#439: idp#298 sat CONFLICTING for two hours while every push printed "ok auto-merge armed".
 # A pull request that is not MERGEABLE is not ok: merge main into the branch (the controller's
 # newTag lines win) and push with the flux-writer key so ci runs on the branch and the head commit
@@ -77,24 +77,17 @@ case "$m" in
     exit 1
     ;;
 esac
-# idp#1046: this was `gh pr merge --auto --squash`, which the repository has refused since
-# `allow_auto_merge` was set to false beside the founder-only-releases ruleset on 2026-08-30. The
-# step exited 1 on every controller push and no deploy reached the cluster for thirteen hours.
-# bin/idp-pr-arm reports the true state instead: armed if the repository allows it, waiting on the
-# founder if it does not. The branch is an old fork of main, so main's copy of the tool is used --
-# the same reason this script is itself run from origin/main (.github/workflows/image-update-pr.yml).
-# Three places to look, in order, because none of them is guaranteed. The two tools ship in the same
-# bin/ directory, so the copy beside this script is the one that matches it -- and it is the only one
-# that exists when the workflow runs this script from main against a checkout of the deploy branch.
-# Then this checkout, for a run started from the branch itself. Then neither, which is not a failure
-# of the deploy: it is this change on its way to main, so it says the true thing and exits 0 rather
-# than killing the run with git's exit 128.
-arm=$(cd "$(dirname "$0")" && pwd)/idp-pr-arm
-if [ ! -x "$arm" ]; then
-  arm=bin/idp-pr-arm
+# 2026-10-13: the merge is greenlane's, so nothing here arms GitHub's auto-merge. This ended with
+# bin/idp-pr-arm, and allow_auto_merge is true again, so every controller push armed it (#6107,
+# enabledBy app/estate-agents 18:52:45Z). But flux/image-updates is greenlane's BOT_LANE
+# (greenlane/github.py): the engine batches it, rebases it, pushes the rebased sha to this branch and
+# squash-merges that exact sha once its required checks pass. Native auto-merge on the same pull
+# request merges whatever head goes green first -- including a controller push greenlane never
+# batched -- and races the engine for main, which is the race lane PRs are kept out of (#6091).
+# An arm left over from an older run is taken off, so the next controller push heals the PR.
+armed=$(gh pr view "$n" --json autoMergeRequest -q '.autoMergeRequest != null')
+if [ "$armed" = true ]; then
+  gh pr merge "$n" --disable-auto >/dev/null &&
+    echo "refresh image-update-pr #$n native auto-merge disarmed; greenlane lands this branch" >&2
 fi
-if [ ! -x "$arm" ]; then
-  echo "waiting image-update-pr #$n is open; bin/idp-pr-arm is not in this checkout, so the merge is the founder's: https://github.com/${GH_REPO:-chidionyema/idp}/pull/$n"
-  exit 0
-fi
-bash "$arm" "$n" --squash
+echo "ok      image-update-pr  #$n open; greenlane lands flux/image-updates, no native auto-merge: https://github.com/${GH_REPO:-chidionyema/idp}/pull/$n"

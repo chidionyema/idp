@@ -1,6 +1,7 @@
 # crew#267: image-automation-controller pushes a new catalogue tag to flux/image-updates
 # (platform/image-automation/backstage.yaml). main's rulesets have no bypass actors, so the change
-# reaches main as a pull request with auto-merge. ci.yml runs the required checks on the push to
+# reaches main as a pull request that greenlane lands (flux/image-updates is its BOT_LANE; no
+# native auto-merge, which would race the engine -- 2026-10-13). ci.yml runs the required checks on the push to
 # this branch; a pull request opened with GITHUB_TOKEN fires no pull_request run, and does not
 # need to, because the ruleset grades check runs on the head commit.
 # crew#439: a CONFLICTING pull request is refreshed by bin/idp-image-update-pr, never reported ok.
@@ -30,9 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }  # crew#439: the refresh merges origin/main
-      # idp#769: auto-merge armed under GITHUB_TOKEN merges as github-actions[bot] and starts no
-      # workflow on main; the App's token arms it as an App push. The action checks out main's
-      # copy of the tool itself (this branch is an old fork of main).
+      # idp#769: the App's token opens and edits the pull request (and takes off any stale
+      # auto-merge) as the App, not github-actions[bot]. The action checks out main's copy of the
+      # tool itself (this branch is an old fork of main).
       - id: app
         uses: ./.github/actions/github-app-token
         with:
@@ -41,7 +42,7 @@ jobs:
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
           oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
-      - name: open or refresh the pull request, auto-merge on green
+      - name: open or refresh the pull request for greenlane to land
         env:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           WRITER_KEY_B64: ${{ secrets.SEED_FLUX_WRITER_IDENTITY_B64 }}
