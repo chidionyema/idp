@@ -129,9 +129,10 @@ jobs:
             # The fleetview-backend sidecar's voice key (platform/backstage/overlays/oke/fleetview-voice-router-key.yaml,
             # mounted as LITELLM_API_KEY_FILE). The lanes are what voice.py and voice_media.py ask for:
             # voice (VOICE_ROUTER_MODEL in the overlay), intent-speculative and its target groq
-            # (/voice/speculate), voice-asr and voice-tts (the media lanes). Its own alias so voice
-            # spend is attributed and budget-capped apart from every other caller.
-            bin/idp-router-key fleetview-voice voice,intent-speculative,groq,voice-asr,voice-tts
+            # (/voice/speculate), voice-asr, voice-tts and its MiniMax fallback voice-tts-minimax (the
+            # media lanes). Its own alias so voice spend is attributed and budget-capped apart from
+            # every other caller.
+            bin/idp-router-key fleetview-voice voice,intent-speculative,groq,voice-asr,voice-tts,voice-tts-minimax
           fi
           if [ "$ENTRY" = all ] || [ "$ENTRY" = laptop ]; then
             # The founder's Mac (pi, every CLI, the consult path) calls the router with ONE virtual key

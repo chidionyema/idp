@@ -645,53 +645,70 @@ def _save_choice(engine_name: str, voice: str) -> None:
 # ~5s of LiteLLM retries for a 500 before macOS `say` spoke it in ~0.8s -- the person heard nothing
 # for ~7.5s after the words were on screen. A refusal now costs one clause, not every clause.
 TTS_ROUTER_BACKOFF_S = 300.0
-_tts_router_skip_until = 0.0
+# The router voices, asked in order. Each lane is skipped on its own: 2026-10-13 Orpheus refused
+# every call (model_terms_required on two of three Groq accounts, the third's daily cap spent), and
+# one shared backoff would have silenced MiniMax for the same five minutes. MiniMax has no "hannah";
+# the voice it is sent is its own, a woman's like the face (probed 200 with WAV 2026-10-13).
+# Gemini is not a rung: every Gemini speech model answered 402, prepayment credits depleted.
+MINIMAX_VOICE = "English_Graceful_Lady"
+TTS_ROUTER_LANES = ("voice-tts", "voice-tts-minimax")
+_tts_lane_skip_until: dict[str, float] = {}
+# "lane:voice" of the last router answer, so the engine log names the vendor that spoke.
+_tts_last_router_voice = ""
 
 
-def _tts_router_failed() -> None:
-    global _tts_router_skip_until
-    _tts_router_skip_until = time.time() + TTS_ROUTER_BACKOFF_S
+def _tts_router_failed(lane: str) -> None:
+    _tts_lane_skip_until[lane] = time.time() + TTS_ROUTER_BACKOFF_S
 
 
 async def _router_synthesise(
     text: str, rate: int, voice: str | None = None
 ) -> bytes | None:
-    """Router lane voice-tts (Groq Orpheus). None means: use the local engine."""
+    """Router lanes voice-tts (Groq Orpheus), then voice-tts-minimax. None means: use the local engine."""
     import httpx  # noqa: PLC0415
 
-    if time.time() < _tts_router_skip_until:
-        return None
-    try:
-        host, headers = _router()
-        async with httpx.AsyncClient(timeout=8) as c:
-            r = await c.post(
-                f"{host}/v1/audio/speech",
-                headers=headers,
-                json={
-                    "model": "voice-tts",
-                    "input": text,
-                    "voice": voice
-                    or os.environ.get("VOICE_CLOUD_VOICE", DEFAULT_CLOUD_VOICE),
-                    "response_format": "wav",
-                },
-            )
-        if r.status_code != 200 or not r.content.startswith(b"RIFF"):
+    global _tts_last_router_voice
+    for lane in TTS_ROUTER_LANES:
+        if time.time() < _tts_lane_skip_until.get(lane, 0.0):
+            continue
+        lane_voice = (
+            MINIMAX_VOICE
+            if lane == "voice-tts-minimax"
+            else voice or os.environ.get("VOICE_CLOUD_VOICE", DEFAULT_CLOUD_VOICE)
+        )
+        try:
+            host, headers = _router()
+            async with httpx.AsyncClient(timeout=8) as c:
+                r = await c.post(
+                    f"{host}/v1/audio/speech",
+                    headers=headers,
+                    json={
+                        "model": lane,
+                        "input": text,
+                        "voice": lane_voice,
+                        "response_format": "wav",
+                    },
+                )
+            if r.status_code != 200 or not r.content.startswith(b"RIFF"):
+                print(
+                    f"voice.say router {lane} refused {r.status_code}: {r.text[:200]}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                _tts_router_failed(lane)
+                continue
+            pcm = _wav_to_f32(r.content, rate)
+            if pcm:
+                _tts_last_router_voice = f"{lane}:{lane_voice}"
+                return pcm
+        except Exception as exc:  # noqa: BLE001 - any router failure falls through to the next lane
             print(
-                f"voice.say router refused {r.status_code}: {r.text[:200]}",
+                f"voice.say router {lane} failed: {type(exc).__name__}: {exc}",
                 file=sys.stderr,
                 flush=True,
             )
-            _tts_router_failed()
-            return None
-        return _wav_to_f32(r.content, rate) or None
-    except Exception as exc:  # noqa: BLE001 - any router failure falls back to the local engine
-        print(
-            f"voice.say router failed: {type(exc).__name__}: {exc}",
-            file=sys.stderr,
-            flush=True,
-        )
-        _tts_router_failed()
-        return None
+            _tts_router_failed(lane)
+    return None
 
 
 def _macos_say(text: str, rate: int, voice: str | None = None) -> bytes | None:
@@ -875,7 +892,7 @@ async def say(text: str) -> tuple[bytes | None, str | None]:
     if chosen == "cloud":
         pcm = await _router_synthesise(text, engine.TTS_SAMPLE_RATE, voice)
         if pcm:
-            _log_engine("say", f"router:voice-tts:{voice}", started)
+            _log_engine("say", f"router:{_tts_last_router_voice}", started)
             return pcm, None
     if chosen in ("cloud", "say"):
         # macOS `say`: ~1s a clause measured 2026-09-26 on the i5 laptop, against Kokoro's ~26s.
@@ -915,7 +932,7 @@ async def say(text: str) -> tuple[bytes | None, str | None]:
     if chosen not in ("cloud", "say"):
         pcm = await _router_synthesise(text, engine.TTS_SAMPLE_RATE, None)
         if pcm:
-            _log_engine("say", "router:voice-tts:default", started)
+            _log_engine("say", f"router:{_tts_last_router_voice}", started)
             return pcm, None
         pcm = await loop.run_in_executor(
             None, _macos_say, text, engine.TTS_SAMPLE_RATE, None
