@@ -1,3 +1,4 @@
+import asyncio
 import os
 import json
 import hashlib
@@ -10,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
 from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, status
+from pydantic import BaseModel, Field
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
@@ -72,6 +74,14 @@ EMBED_DIM = int(os.environ.get("MEMORY_EMBED_DIM", "1536"))
 # Bounded well inside the request path: a store that hangs on its own embedding call is worse
 # than one that stores the fact unembedded, because the caller cannot even write the fact.
 EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
+# The floor under /memories/recall: the least cosine similarity a fact may have to be returned.
+# MAPLE's retrieval gate cannot be that floor. Its score is sim + 0.3*rho + 0.4*tau - penalties,
+# so with the defaults (rho = tau = 1, no penalties) a fact scores sim + 0.7 and the gate
+# (> 0.35) refuses only sim < -0.35: every fact with a vector passes, however unrelated, and
+# recall would return the nearest N facts whether or not any is near. 0.2 is a starting value
+# NOT yet measured against the live lane (no related/unrelated pairs have been embedded and
+# compared); calibrate it from real pairs and set MEMORY_RECALL_MIN_COSINE, don't trust it.
+RECALL_MIN_COSINE = float(os.environ.get("MEMORY_RECALL_MIN_COSINE", "0.2"))
 
 
 def _embed(text: str) -> Optional[List[float]]:
@@ -452,6 +462,77 @@ async def memory_save(
                 }
 
 
+async def _ranked(
+    cur,
+    query_vector: List[float],
+    namespace: str,
+    limit: int,
+    min_cosine: Optional[float] = None,
+) -> list:
+    """The MAPLE-Guard-ranked facts nearest `query_vector` in `namespace`, best first.
+
+    Rows with no vector are not candidates: `embedding <=> q` on NULL ranks them nowhere, and
+    counting them would only spend the candidate window on facts that cannot match by meaning.
+    """
+    # Enforce Production HNSW Recall Configuration
+    await cur.execute("SET LOCAL hnsw.ef_search = 100;")
+    await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order';")
+
+    # Query candidates from pgvector
+    query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
+    await cur.execute(
+        """
+        SELECT
+            id, namespace, key, content, trust_tier, version, provenance, updated_at,
+            relevance_rho, truthfulness_tau, harm_h, taint_level, scope_risk,
+            1 - (embedding <=> %s::vector) AS cosine_sim
+        FROM memories
+        WHERE namespace = %s AND is_quarantined = FALSE AND embedding IS NOT NULL
+        ORDER BY embedding <=> %s::vector
+        LIMIT %s;
+        """,
+        (query_vector_str, namespace, query_vector_str, limit * 2),
+    )
+    candidates = await cur.fetchall()
+
+    # Execute MAPLE-Guard Lifecycle Retrieval Ranking
+    scored_results = []
+    for c in candidates:
+        sim = c["cosine_sim"] or 0.0
+        if min_cosine is not None and sim < min_cosine:
+            continue
+        conditional_risk = 0.0  # Evaluated by agent query context
+        final_score = MAPLEGuard.calculate_retrieval_score(
+            cosine_sim=sim,
+            rho=c["relevance_rho"],
+            tau=c["truthfulness_tau"],
+            h=c["harm_h"],
+            taint=c["taint_level"],
+            scope=c["scope_risk"],
+            conditional_risk=conditional_risk,
+        )
+
+        # Check for retrieval-gate failure
+        if final_score > 0.35:  # Gate acceptance cutoff
+            scored_results.append(
+                {
+                    "id": str(c["id"]),
+                    "key": c["key"],
+                    "content": c["content"],
+                    "trust_tier": c["trust_tier"],
+                    "version": c["version"],
+                    "provenance": c["provenance"],
+                    "recorded_at": c["updated_at"].isoformat(),
+                    "maple_score": round(final_score, 4),
+                    "cosine_sim": round(sim, 4),
+                }
+            )
+
+    # Re-sort based on the multi-factor MAPLE equation and truncate to requested limit
+    scored_results.sort(key=lambda x: x["maple_score"], reverse=True)
+    return scored_results[:limit]
+
+
 @app.post("/memories/search", status_code=status.HTTP_200_OK)
 async def memory_search(
     query_vector: List[float],
@@ -467,59 +548,38 @@ async def memory_search(
         )
 
     async with conn.cursor() as cur:
-        # Enforce Production HNSW Recall Configuration
-        await cur.execute("SET LOCAL hnsw.ef_search = 100;")
-        await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order';")
+        return {"results": await _ranked(cur, query_vector, namespace, limit)}
 
-        # Query candidates from pgvector
-        query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
-        await cur.execute(
-            """
-            SELECT
-                id, namespace, key, content, trust_tier, version,
-                relevance_rho, truthfulness_tau, harm_h, taint_level, scope_risk,
-                1 - (embedding <=> %s::vector) AS cosine_sim
-            FROM memories
-            WHERE namespace = %s AND is_quarantined = FALSE
-            ORDER BY embedding <=> %s::vector
-            LIMIT %s;
-            """,
-            (query_vector_str, namespace, query_vector_str, limit * 2),
+
+class RecallRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=8000)
+    namespace: str = "default"
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+@app.post("/memories/recall", status_code=status.HTTP_200_OK)
+async def memory_recall(
+    payload: RecallRequest,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
+):
+    """Search by meaning from text: the server embeds the query with the same lane and width
+    it embeds facts with, so no client ever holds a vector and none can embed with the wrong
+    model. When the lane cannot answer this is a 503, not an empty list: 'nothing matches' and
+    'could not look' are different answers and the caller falls back differently on each."""
+    # urllib blocks; off the event loop so one slow embed call does not stall every request.
+    vec = await asyncio.to_thread(_embed, payload.query)
+    if vec is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="embed lane unavailable: cannot search by meaning right now",
         )
-        candidates = await cur.fetchall()
-
-        # Execute MAPLE-Guard Lifecycle Retrieval Ranking
-        scored_results = []
-        for c in candidates:
-            sim = c["cosine_sim"] or 0.0
-            conditional_risk = 0.0  # Evaluated by agent query context
-            final_score = MAPLEGuard.calculate_retrieval_score(
-                cosine_sim=sim,
-                rho=c["relevance_rho"],
-                tau=c["truthfulness_tau"],
-                h=c["harm_h"],
-                taint=c["taint_level"],
-                scope=c["scope_risk"],
-                conditional_risk=conditional_risk,
+    async with conn.cursor() as cur:
+        return {
+            "results": await _ranked(
+                cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
             )
-
-            # Check for retrieval-gate failure
-            if final_score > 0.35:  # Gate acceptance cutoff
-                scored_results.append(
-                    {
-                        "id": str(c["id"]),
-                        "key": c["key"],
-                        "content": c["content"],
-                        "trust_tier": c["trust_tier"],
-                        "version": c["version"],
-                        "maple_score": round(final_score, 4),
-                        "cosine_sim": round(sim, 4),
-                    }
-                )
-
-        # Re-sort based on the multi-factor MAPLE equation and truncate to requested limit
-        scored_results.sort(key=lambda x: x["maple_score"], reverse=True)
-        return {"results": scored_results[:limit]}
+        }
 
 
 # ---------------------------------------------------------------------
@@ -679,6 +739,63 @@ async def embeddings_status(
         "embed_model": EMBED_MODEL,
         "embed_dim": EMBED_DIM,
     }
+
+
+# One call embeds at most this many facts: each is a network round trip to the lane, and the
+# request must finish inside the caller's door. Repeat the call until `remaining` is 0.
+BACKFILL_MAX_BATCH = 25
+BACKFILL_BUDGET_S = 40.0
+
+
+@app.post("/embeddings/backfill", status_code=status.HTTP_200_OK)
+async def embeddings_backfill(
+    limit: int = Query(10, ge=1, le=BACKFILL_MAX_BATCH),
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
+):
+    """Embed facts that were stored without a vector (the 47 of 2026-10-02, and any written
+    while the lane was down). Only the caller's own tenant's rows are visible (row-level
+    security), so this can never touch another tenant's facts. A fact whose content changed
+    while its vector was being computed is left alone: the write that changed it embeds it."""
+    if not EMBED_URL:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="embed lane not configured: nothing to backfill with",
+        )
+    deadline = time.monotonic() + BACKFILL_BUDGET_S
+    embedded = failed = 0
+    async with conn.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT id, content FROM memories
+            WHERE embedding IS NULL AND is_quarantined = FALSE
+            ORDER BY created_at
+            LIMIT %s;
+            """,
+            (limit,),
+        )
+        todo = await cur.fetchall()
+        for row in todo:
+            if time.monotonic() > deadline:
+                break
+            vec = await asyncio.to_thread(_embed, row["content"])
+            if vec is None:
+                failed += 1
+                continue
+            await cur.execute(
+                """
+                UPDATE memories SET embedding = %s::vector
+                WHERE id = %s AND content = %s AND embedding IS NULL;
+                """,
+                (_vector_literal(vec), row["id"], row["content"]),
+            )
+            embedded += cur.rowcount
+        await cur.execute(
+            "SELECT count(*) AS remaining FROM memories "
+            "WHERE embedding IS NULL AND is_quarantined = FALSE;"
+        )
+        remaining = (await cur.fetchone())["remaining"]
+    return {"embedded": embedded, "failed": failed, "remaining": remaining}
 
 
 @app.get("/digest/{namespace}", status_code=status.HTTP_200_OK)

@@ -88,6 +88,13 @@ REVOKE TRUNCATE, REFERENCES ON memories FROM PUBLIC;
 CREATE OR REPLACE FUNCTION fn_bump_memory_version()
 RETURNS TRIGGER AS $$
 BEGIN
+    -- Filling in a missing vector (POST /embeddings/backfill) changes nothing about the fact,
+    -- so it is not a new version: the bump would leave a version with no memory_versions row,
+    -- and /history is the record of what was true when. Any other column changing still bumps.
+    IF NEW.embedding IS DISTINCT FROM OLD.embedding
+       AND (to_jsonb(NEW) - 'embedding' - 'updated_at') = (to_jsonb(OLD) - 'embedding' - 'updated_at') THEN
+        RETURN NEW;
+    END IF;
     NEW.version = OLD.version + 1;
     NEW.updated_at = CURRENT_TIMESTAMP;
     RETURN NEW;

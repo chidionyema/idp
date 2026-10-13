@@ -38,6 +38,9 @@ class Store:
     def __init__(self, raw: str | None = None, status: int = 200):
         self.raw, self.status = raw, status
         self.facts: dict = {}
+        # what POST /memories/recall answers with: None = a server without the route (404),
+        # a list = results, an int = that HTTP status with no results
+        self.semantic = None
         self.seen: list = []
         self.server = HTTPServer(("127.0.0.1", 0), self._handler())
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -76,6 +79,20 @@ class Store:
                 self._answer(
                     store.status, {"status": "CREATED", "id": "x", "version": 1}
                 )
+
+            def do_POST(self):  # noqa: N802
+                body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                if not self._record(body):
+                    return self._answer(
+                        403, {"detail": "Access token invalid or revoked"}
+                    )
+                if self.path != "/memories/recall" or store.semantic is None:
+                    return self._answer(404, {"detail": "Not Found"})
+                if isinstance(store.semantic, int):
+                    return self._answer(
+                        store.semantic, {"detail": "embed lane unavailable"}
+                    )
+                self._answer(200, {"results": store.semantic})
 
             def do_GET(self):  # noqa: N802
                 if not self._record():
@@ -149,10 +166,12 @@ def test_one_namespace_serves_every_surface_with_the_host_and_token_it_needs(
         "a thing happened", "otto", "fact", [], "mcp", cfg=cfg_for(s.url)
     )
     memory.do_recall("thing", "", "", [], 5, cfg=cfg_for(s.url))
-    (m1, p1, h1, _), (m2, p2, h2, _) = s.seen
-    assert (m1, m2) == ("PUT", "GET")
-    assert p1.startswith("/memories/estate/fact.otto.") and p2 == "/memories/estate"
-    assert h1["Host"] == h2["Host"] == "unified-memory.estate.internal"
+    # recall asks for meaning (POST) and then lists (GET): the words are the floor under it
+    (m1, p1, h1, _), (m2, p2, h2, _), (m3, p3, h3, _) = s.seen
+    assert (m1, m2, m3) == ("PUT", "POST", "GET")
+    assert p1.startswith("/memories/estate/fact.otto.")
+    assert (p2, p3) == ("/memories/recall", "/memories/estate")
+    assert h1["Host"] == h2["Host"] == h3["Host"] == "unified-memory.estate.internal"
 
 
 def test_remember_then_recall_returns_the_memory_with_its_fields(store, cfg_for):
@@ -261,3 +280,85 @@ def test_the_recall_payload_is_held_under_the_ceiling(store, cfg_for):
         memory.do_remember(f"{i} " + "x" * 400, "s", "fact", [], "mcp", cfg=c)
     out = memory.do_recall("", "", "", [], 20, cfg=c)
     assert 0 < len(out["memories"]) < 20
+
+
+def hit(key, content, **provenance):
+    return {"key": key, "content": content, "provenance": provenance}
+
+
+def test_recall_asks_the_server_to_search_by_meaning_and_returns_its_hits_first(
+    store, cfg_for
+):
+    s = store()
+    memory.do_remember(
+        "the postgres volume filled its disk", "pg", "incident", [], "t", cfg_for(s.url)
+    )
+    s.semantic = [
+        hit("k-meaning", "the database ran out of space", subject="pg", kind="incident")
+    ]
+    out = memory.do_recall("where is the data kept", "", "", [], 5, cfg_for(s.url))
+    posts = [r for r in s.seen if r[0] == "POST"]
+    assert posts and posts[0][1] == "/memories/recall"
+    assert posts[0][3]["query"] == "where is the data kept"
+    assert posts[0][3]["namespace"] == "estate"
+    assert posts[0][2]["Authorization"] == f"Bearer {TOKEN}"
+    assert out["memories"][0]["text"] == "the database ran out of space"
+    assert out["matched_by_meaning"] == 1
+
+
+def test_recall_keeps_the_word_match_for_facts_the_vectors_missed(store, cfg_for):
+    s = store()
+    memory.do_remember(
+        "the vault rotates keys weekly", "vault", "fact", [], "t", cfg_for(s.url)
+    )
+    s.semantic = [hit("elsewhere", "an unrelated semantic hit")]
+    out = memory.do_recall("vault", "", "", [], 5, cfg_for(s.url))
+    texts = [m["text"] for m in out["memories"]]
+    assert texts == ["an unrelated semantic hit", "the vault rotates keys weekly"]
+
+
+def test_a_fact_found_both_ways_is_returned_once(store, cfg_for):
+    s = store()
+    wrote = memory.do_remember(
+        "the vault rotates keys weekly", "vault", "fact", [], "t", cfg_for(s.url)
+    )
+    s.semantic = [
+        hit(wrote["key"], "the vault rotates keys weekly", **wrote["metadata"])
+    ]
+    out = memory.do_recall("vault", "", "", [], 5, cfg_for(s.url))
+    assert [m["text"] for m in out["memories"]] == ["the vault rotates keys weekly"]
+
+
+def test_the_filters_apply_to_what_the_server_returned_by_meaning(store, cfg_for):
+    s = store()
+    s.semantic = [
+        hit("a", "pg incident", subject="pg", kind="incident"),
+        hit("b", "vault decision", subject="vault", kind="decision"),
+    ]
+    out = memory.do_recall("anything", "vault", "", [], 5, cfg_for(s.url))
+    assert [m["text"] for m in out["memories"]] == ["vault decision"]
+
+
+def test_recall_falls_back_to_words_when_the_store_cannot_search_by_meaning(
+    store, cfg_for
+):
+    for semantic in (None, 503):  # an old server without the route; the embed lane down
+        s = store()
+        memory.do_remember(
+            "the vault rotates keys weekly", "vault", "fact", [], "t", cfg_for(s.url)
+        )
+        s.semantic = semantic
+        out = memory.do_recall("vault", "", "", [], 5, cfg_for(s.url))
+        assert [m["text"] for m in out["memories"]] == ["the vault rotates keys weekly"]
+        assert out["matched_by_meaning"] == 0
+        assert "error" not in out
+
+
+def test_an_empty_query_does_not_spend_an_embedding(store, cfg_for):
+    s = store()
+    memory.do_remember(
+        "the vault rotates keys weekly", "vault", "fact", [], "t", cfg_for(s.url)
+    )
+    out = memory.do_recall("", "", "", [], 5, cfg_for(s.url))
+    assert len(out["memories"]) == 1
+    assert not [r for r in s.seen if r[0] == "POST" and r[1] == "/memories/recall"]

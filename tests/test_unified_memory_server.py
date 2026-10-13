@@ -659,3 +659,162 @@ def test_a_non_http_embed_url_is_never_opened(database_url, tmp_path):
         r = put(c, a, "estate", "k1", "a fact")
         assert r.status_code == 200
         assert r.json()["search_by_meaning"] is False
+
+
+# --- recall by meaning, and the backfill that makes old facts reachable -------------------------
+# The lane here is a concept model, not a constant: each concept a text mentions lights one axis,
+# so two texts that share no words but share a concept are near, and two unrelated ones are
+# orthogonal. That is the property the real lane has and a constant-vector stub cannot show.
+
+CONCEPTS = {
+    "secret": ("password", "credential", "token", "vault", "secret"),
+    "storage": ("database", "postgres", "disk", "volume"),
+    "voice": ("kokoro", "speech", "tts", "voice"),
+}
+
+
+def concept_vector(text, width=1536):
+    low = text.lower()
+    vec = [0.0] * width
+    for axis, words in enumerate(CONCEPTS.values()):
+        if any(w in low for w in words):
+            vec[axis] = 1.0
+    if not any(vec):
+        vec[width - 1] = 1.0
+    return vec
+
+
+@contextmanager
+def concept_router():
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("content-length", 0))
+            text = json.loads(self.rfile.read(n))["input"]
+            seen.append(text)
+            out = json.dumps({"data": [{"embedding": concept_vector(text)}]}).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", seen
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def recall(client, tenant, query, ns="estate", limit=5):
+    return client.post(
+        "/memories/recall",
+        json={"query": query, "namespace": ns, "limit": limit},
+        headers=tenant.headers(),
+    )
+
+
+def test_recall_finds_a_fact_by_meaning_when_no_word_is_shared(database_url):
+    with concept_router() as (url, _), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "the postgres volume filled its disk overnight")
+        put(c, a, "estate", "k2", "kokoro speech is rendered on the gpu node")
+        r = recall(c, a, "where is the database stored")
+        assert r.status_code == 200
+        keys = [m["key"] for m in r.json()["results"]]
+        # "database"/"stored" never appear in k1's text; "postgres volume disk" is the same
+        # concept. k2 is an unrelated concept and must not come back.
+        assert keys == ["k1"]
+        assert r.json()["results"][0]["provenance"] == {}
+
+
+def test_recall_does_not_cross_namespaces_or_tenants(database_url):
+    with concept_router() as (url, _), booted_with_embed(database_url, url) as c:
+        a, b = Tenant(database_url, "A"), Tenant(database_url, "B")
+        put(c, a, "estate", "k1", "the vault holds the credential")
+        put(c, a, "other", "k2", "the vault holds another credential")
+        assert [m["key"] for m in recall(c, a, "secret").json()["results"]] == ["k1"]
+        assert recall(c, b, "secret").json()["results"] == []
+
+
+def test_recall_with_the_lane_down_says_so_instead_of_returning_nothing(database_url):
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "the vault holds the credential")
+        r = recall(c, a, "credential")
+        assert r.status_code == 503
+        assert "embed lane" in r.json()["detail"]
+
+
+def test_backfill_makes_unvectorised_facts_searchable_without_touching_history(
+    database_url,
+):
+    # written while the lane was down: stored, but with no vector
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as down:
+        a = Tenant(database_url, "A")
+        put(down, a, "estate", "k1", "the postgres volume filled its disk overnight")
+        put(down, a, "estate", "k2", "the vault holds the credential")
+        assert embedding_status(down, a)["unvectorised"] == 2
+
+    def history_and_versions():
+        with psycopg.connect(database_url) as conn:
+            return (
+                conn.execute("SELECT count(*) FROM memory_versions").fetchone()[0],
+                conn.execute(
+                    "SELECT key, version FROM memories ORDER BY key"
+                ).fetchall(),
+            )
+
+    before = history_and_versions()
+    with concept_router() as (url, _), booted_with_embed(database_url, url) as c:
+        assert recall(c, a, "database").json()["results"] == []  # nothing to find yet
+        r = c.post("/embeddings/backfill", headers=a.headers())
+        assert r.status_code == 200
+        assert r.json() == {"embedded": 2, "failed": 0, "remaining": 0}
+        assert [m["key"] for m in recall(c, a, "database").json()["results"]] == ["k1"]
+        assert embedding_status(c, a)["unvectorised"] == 0
+        # a second pass has nothing to do and says so
+        assert c.post("/embeddings/backfill", headers=a.headers()).json() == {
+            "embedded": 0,
+            "failed": 0,
+            "remaining": 0,
+        }
+    # a vector is not a new version of the fact: no bump, no history row
+    assert history_and_versions() == before
+
+
+def test_backfill_only_touches_the_callers_own_tenant(database_url):
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as down:
+        a, b = Tenant(database_url, "A"), Tenant(database_url, "B")
+        put(down, a, "estate", "k1", "tenant a credential")
+        put(down, b, "estate", "k1", "tenant b credential")
+    with concept_router() as (url, seen), booted_with_embed(database_url, url) as c:
+        assert (
+            c.post("/embeddings/backfill", headers=a.headers()).json()["embedded"] == 1
+        )
+        assert seen == ["tenant a credential"]
+        assert embedding_status(c, a)["unvectorised"] == 0
+        assert embedding_status(c, b)["unvectorised"] == 1
+
+
+def test_backfill_with_the_lane_down_counts_failures_and_changes_nothing(database_url):
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "stored without a vector")
+        r = c.post("/embeddings/backfill", headers=a.headers())
+        assert r.status_code == 200
+        assert r.json() == {"embedded": 0, "failed": 1, "remaining": 1}
+
+
+def test_backfill_with_no_lane_configured_is_refused_not_silent(database_url):
+    with TestClient(load_app(database_url).app) as c:
+        a = Tenant(database_url, "A")
+        r = c.post("/embeddings/backfill", headers=a.headers())
+        assert r.status_code == 503
+        assert "not configured" in r.json()["detail"]
