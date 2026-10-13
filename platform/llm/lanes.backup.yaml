@@ -204,13 +204,8 @@ model_list:
       model: openai/canopylabs/orpheus-v1-english
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: voice-tts
+  - model_name: voice-tts-minimax
     litellm_params:
-      model: openai/canopylabs/orpheus-v1-english
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: voice-tts
-    litellm_params:
-      model: openai/canopylabs/orpheus-v1-english
-      api_base: https://api.groq.com/openai/v1
+      model: minimax/speech-02-turbo
+      api_base: https://api.minimax.io
       api_key: os.environ/LITELLM_UPSTREAM_KEY
