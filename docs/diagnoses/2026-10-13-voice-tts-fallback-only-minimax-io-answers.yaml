@@ -1,0 +1,91 @@
+description: 'Which vendor the router already holds a key for can speak for the face
+  while Groq Orpheus refuses (model_terms_required on two accounts, the daily cap
+  on the third -- 2026-10-13-voice-tts-pool-routes-to-groq-accounts-without-orpheus-terms.yaml)?
+  Probed 2026-10-13 from inside deploy/litellm (ns llm) with the pod''s own GEMINI_API_KEY
+  and MINIMAX_API_KEY, one short English sentence per call: every Gemini model whose
+  name carries "tts" in /v1beta/models (5) via :generateContent with AUDIO modality;
+  MiniMax speech-2.5-turbo-preview and speech-02-turbo via /v1/t2a_v2 on both api.minimax.io
+  and api.minimaxi.com. Disclosure: the probes ran before this record was written;
+  the likelihoods are what each hypothesis predicts on its face. n_eff_divisor 2:
+  the calls share one pod, one minute and one key per vendor, so they are not independent.
+  Each endpoint is its own evidence row, graded on its own outcome. MiniMax''s 2049
+  arrives inside an HTTP 200, so the probe graded the body (base_resp.status_code
+  and a RIFF header), not the status.'
+n_eff_divisor: 2
+hypotheses:
+- name: H1
+  description: only MiniMax at api.minimax.io serves speech on the router's keys;
+    it is the fallback.
+  prior: 0.25
+- name: H2
+  description: Gemini serves speech on GEMINI_API_KEY; it is the fallback.
+  prior: 0.25
+- name: H3
+  description: MiniMax serves speech only at api.minimaxi.com (the mainland endpoint).
+  prior: 0.25
+- name: H4
+  description: no vendor key the router holds serves speech; the face falls back to
+    local engines only.
+  prior: 0.25
+evidence:
+- name: api.minimax.io /v1/t2a_v2, speech-2.5-turbo-preview and speech-02-turbo (base_resp
+    0 and a RIFF body, 230206 and 109278 bytes)
+  observed:
+    wav: 2
+    refused: 0
+  likelihoods:
+    H1:
+      wav: 0.95
+      refused: 0.05
+    H2:
+      wav: 0.3
+      refused: 0.7
+    H3:
+      wav: 0.05
+      refused: 0.95
+    H4:
+      wav: 0.03
+      refused: 0.97
+- name: api.minimaxi.com /v1/t2a_v2, the same two models (HTTP 200 carrying base_resp
+    2049 invalid api key, no audio)
+  observed:
+    wav: 0
+    refused: 2
+  likelihoods:
+    H1:
+      wav: 0.2
+      refused: 0.8
+    H2:
+      wav: 0.3
+      refused: 0.7
+    H3:
+      wav: 0.95
+      refused: 0.05
+    H4:
+      wav: 0.03
+      refused: 0.97
+- name: Gemini :generateContent with AUDIO modality, the five tts models /v1beta/models
+    lists (402 prepayment credits depleted on every one)
+  observed:
+    wav: 0
+    refused: 5
+  likelihoods:
+    H1:
+      wav: 0.05
+      refused: 0.95
+    H2:
+      wav: 0.95
+      refused: 0.05
+    H3:
+      wav: 0.05
+      refused: 0.95
+    H4:
+      wav: 0.03
+      refused: 0.97
+posteriors:
+  H1: 0.9580363665
+  H2: 0.0001682301
+  H3: 0.0031514354
+  H4: 0.038643968
+winner: H1
+computed_at: '2026-10-13T17:21:20Z'
