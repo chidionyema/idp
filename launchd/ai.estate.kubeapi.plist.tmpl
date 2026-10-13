@@ -12,7 +12,9 @@
   <key>WorkingDirectory</key><string>${IDP}</string>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <!-- kubectl is a per-user install on this Mac (~/.local/bin); without it the job
+         exits 2 "no kubectl on PATH" every 30s (2026-10-13). -->
+    <key>PATH</key><string>${HOME}/.local/bin:/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
