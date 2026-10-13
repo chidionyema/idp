@@ -1,0 +1,48 @@
+# The concierge deploys when its code lands (2026-10-13).
+#
+# The concierge runs on Modal, so Flux never applies it; its road there is
+# .github/workflows/concierge-deploy.yml in idp, because only idp holds the Modal root and an App
+# credential. mums-concierge holds no secret at all, so it cannot dispatch that workflow when its
+# main moves -- and until this file, nothing did: every concierge deploy on record was a button.
+#
+# So Flux watches mums-concierge main, the way it watches idp (platform/image-automation/backstage.yaml,
+# `provider: github`), with the estate App the github-dispatch Provider already uses. A new commit is
+# a NewArtifact event; this Alert passes only that one and the Provider turns it into a
+# repository_dispatch on idp with event_type `GitRepository/mums-concierge.flux-system`, the type
+# concierge-deploy.yml listens for. Nothing here builds or applies the concierge: the artifact is
+# read by no Kustomization.
+#
+# The Provider and the github-app Secret are applied by nothing today: their row (alerts-github,
+# path ./platform/alerts-github) went in the 2026-09-26 consolidation and the objects were left on
+# the cluster. They still answer (flux-events runs on every reconcile); if they are ever removed,
+# this Alert fails to dispatch and Flux says so on the Alert's status.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: mums-concierge
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/chidionyema/mums-concierge
+  provider: github   # the estate App: githubApp* keys in the github-app Secret
+  ref:
+    branch: main
+  secretRef:
+    name: github-app
+---
+apiVersion: notification.toolkit.fluxcd.io/v1beta3
+kind: Alert
+metadata:
+  name: concierge-landed
+  namespace: flux-system
+spec:
+  providerRef: { name: github-dispatch }
+  eventSeverity: info
+  # NewArtifact's message; "no changes since last reconciliation" and the rest never dispatch.
+  inclusionList:
+    - "^stored artifact for commit "
+  summary: "mums-concierge main moved: deploy the concierge"
+  eventSources:
+    - kind: GitRepository
+      name: mums-concierge
+      namespace: flux-system
