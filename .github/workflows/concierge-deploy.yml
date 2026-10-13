@@ -38,7 +38,27 @@
 # which is a console step and is tracked as one.
 name: concierge-deploy
 
+# WHAT LANDS DEPLOYS ITSELF. Until 2026-10-13 the button was the only way in, so a concierge change
+# that landed sat on main undeployed until someone pressed it -- every deploy on record is a
+# workflow_dispatch. The Greenlane moves main and Flux deploys what lands, but Flux reaches the
+# cluster and the concierge runs on Modal. Two roads now carry a landing here, neither with a new
+# credential:
+#   push                 idp main changed this file. Not platform/vendors/consoles.yaml: it moved 26
+#                        times in 30 days, nearly all for other vendors, and each would redeploy the
+#                        public endpoint; a concierge vault row lands with a change here anyway.
+#   repository_dispatch  mums-concierge main moved. Flux watches it as a GitRepository with the
+#                        estate App, and its Alert dispatches here through the github-dispatch
+#                        Provider (clusters/oke/flux-system/alerts/concierge-landed.yaml). Only idp
+#                        holds a credential, so mums-concierge cannot call this itself.
+# Both deploy for real: `inputs.dry_run` is empty on them, and every deploying step is gated on
+# `!= true`, so empty means deploy. The button still defaults to a dry run.
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/concierge-deploy.yml
+  repository_dispatch:
+    types: [GitRepository/mums-concierge.flux-system]
   workflow_dispatch:
     inputs:
       dry_run:
@@ -260,10 +280,10 @@ jobs:
       # run: these are copies, so the cluster's value is the truth and a rotation there lands here
       # on the next deploy. Values are masked in the log and never echoed.
       - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
 
       - name: carry the founder's concierge secrets from the cluster to Modal
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         env:
           OCI_CLI_AUTH: security_token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
@@ -356,7 +376,7 @@ jobs:
           echo "        $missing of 4 missing"
 
       - name: deploy to Modal
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -euo pipefail
           # Every secret the function declares must exist, because Modal refuses a deploy whose
@@ -391,7 +411,7 @@ jobs:
       # first version of the plan for this step deployed unconditionally, which would have made
       # dry_run=true a lie for exactly the artifact that faces the public internet.
       - name: deploy the always-on endpoint to Modal
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         id: webapp
         run: |
           set -euo pipefail
@@ -457,7 +477,7 @@ jobs:
       # (and, on a first run, the marker the deploy step created). The Twilio token lives in
       # `human-twilio` and is not touched.
       - name: cut the endpoint over to its own Modal URL
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -euo pipefail
           # Read the URL back from the platform that issued it, with the API that actually carries it.
@@ -498,7 +518,7 @@ jobs:
       # so it costs no second container. Twilio-signed like the webhook it sits beside. THIS REPO IS
       # PUBLIC: the words are made up and only timings and engine names come back, by design.
       - name: self-check the live endpoint (intent, voice, transcription)
-        if: ${{ inputs.dry_run == false }}
+        if: ${{ inputs.dry_run != true }}
         run: |
           set -euo pipefail
           URL=$(python -c 'import modal; print(modal.Function.from_name("mums-concierge-web", "web").get_web_url() or "")')

@@ -4,3 +4,4 @@ resources:
   - flux-telegram.yaml
   - provider.yaml
   - alert.yaml
+  - concierge-landed.yaml
