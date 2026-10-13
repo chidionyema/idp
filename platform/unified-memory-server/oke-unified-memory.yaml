@@ -3,8 +3,10 @@
 # replaces ran its own pgvector with a 50Gi volume, a second copy of the data layer.
 #
 # Free tier (ADR 0034, rung 6): scale-to-zero behind the KEDA HTTP add-on. Idle it requests
-# nothing; awake it requests 50m CPU and 128Mi. It calls no model and no vendor, so it spends
-# nothing: search by meaning stays off until embeddings can go through LiteLLM.
+# nothing; awake it requests 50m CPU and 128Mi. It calls no vendor directly: the vector for each
+# fact is computed through the estate router (llm/, lane `embed`), the one door to a model and
+# the one place the vendor key lives. Without that, every row keeps a NULL vector and recall
+# finds nothing -- the state measured on 2026-10-02: 47 rows, 0 vectors.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -28,11 +30,18 @@ spec:
       data:
         DATABASE_URL: "postgresql://memory:{{ .password }}@estate-rw.estate-db.svc.cluster.local:5432/memory?sslmode=require"
         MEMORY_SURFACE_TOKEN: "{{ .token }}"
+        # The router key, from the SAME vault entry otto-gateway reads (otto-golden), by name
+        # and never copied. It is the RAW key, not the `sk-<sha256>` form otto derives for its
+        # sidecar: the estate router looks a virtual key up and accepts the raw one (measured
+        # 2026-09-10 in an otto-gateway pod: raw -> accepted, derived -> 401).
+        MEMORY_EMBED_API_KEY: "{{ .litellm_api_key }}"
   data:
     - secretKey: password
       remoteRef: { key: estate-db, property: memory-password }
     - secretKey: token
       remoteRef: { key: unified-memory, property: surface-token }
+    - secretKey: litellm_api_key
+      remoteRef: { key: otto-golden, property: LITELLM_API_KEY }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -69,6 +78,12 @@ spec:
             # secrets-not-from-env-vars (kyverno): files from the mounted Secret, read by main.py.
             - { name: DATABASE_URL_FILE, value: /var/run/memory/DATABASE_URL }
             - { name: MEMORY_SURFACE_TOKEN_FILE, value: /var/run/memory/MEMORY_SURFACE_TOKEN }
+            # The embed lane (llm/). The width must equal schema.sql's vector(1536) and the
+            # lane's own `dimensions`; main.py refuses a vector of any other width.
+            - { name: MEMORY_EMBED_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
+            - { name: MEMORY_EMBED_MODEL, value: "embed" }
+            - { name: MEMORY_EMBED_DIM, value: "1536" }
+            - { name: MEMORY_EMBED_API_KEY_FILE, value: /var/run/memory/MEMORY_EMBED_API_KEY }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
           # Ready means the schema ran and the pool is open: the lifespan does both before the
           # app serves anything, /docs included.
