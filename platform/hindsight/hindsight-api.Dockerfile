@@ -21,6 +21,17 @@ FROM ghcr.io/vectorize-io/hindsight-api:0.9.2@sha256:7b14a1f4062252992d017675875
 ENV HF_HUB_CACHE=/opt/hindsight-models/hub
 
 USER root
+# The vendor image ships six CRITICALs that have fixes, and the build's trivy gate refused it
+# (build-multiarch on 8a3984f2b, 2026-10-13): perl-base 5.40.1-6 (CVE-2026-13221, -42496, -8376),
+# PyJWT 2.13.0 (CVE-2026-102268), anyio 4.11.0 (CVE-2026-63374), sentence-transformers 5.2.0
+# (CVE-2026-68770). Every pin in the venv admits the fixed versions (anyio<5, pyjwt<3,
+# sentence-transformers>=5); the gate below proves the newer sentence-transformers still gives
+# the vectors already stored.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends --only-upgrade perl-base \
+    && rm -rf /var/lib/apt/lists/* \
+    && uv pip install --python /app/api/.venv/bin/python --no-cache \
+        'pyjwt[crypto]>=2.14.0' 'anyio>=4.14.2' 'sentence-transformers>=5.6.0'
 RUN mkdir -p /opt/hindsight-models/hub \
     && HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0 /app/api/.venv/bin/python -c "\
 from huggingface_hub import snapshot_download; \
@@ -35,10 +46,16 @@ snapshot_download('cross-encoder/ms-marco-MiniLM-L-6-v2', revision='233902d25c44
     && printf 233902d25c440f23af6f7d6e94d2946bac0bee0a > /opt/hindsight-models/hub/models--cross-encoder--ms-marco-MiniLM-L-6-v2/refs/main \
     && chmod -R a+rX /opt/hindsight-models
 # Gate: both models must load with the network off, exactly as the pod will, or the build fails
-# here instead of in a CrashLoopBackOff.
+# here instead of in a CrashLoopBackOff. They must also answer what the live 0.9.2 pod answers
+# (hindsight-api-bcd445f9f-x6bkq, sentence-transformers 5.2.0, same revisions, 2026-10-13), or
+# every new vector would drift from the stored ones.
 RUN HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 HF_HOME=/tmp/hf-home /app/api/.venv/bin/python -c "\
 from sentence_transformers import SentenceTransformer, CrossEncoder; \
-print(SentenceTransformer('BAAI/bge-small-en-v1.5').encode(['ok']).shape); \
-print(CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2').predict([('a', 'b')]))" \
+v = SentenceTransformer('BAAI/bge-small-en-v1.5').encode(['the estate remembers'])[0]; \
+s = float(CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2').predict([('a', 'b')])[0]); \
+print(v.shape, list(v[:4]), s); \
+assert v.shape == (384,); \
+assert all(abs(float(a) - b) < 1e-3 for a, b in zip(v[:4], [-0.04894, 0.04007, 0.06701, -0.02038])), 'embedding drifted'; \
+assert abs(s - -6.3800964) < 1e-2, 'reranker drifted'" \
     && rm -rf /tmp/hf-home
 USER 1000
