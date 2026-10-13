@@ -94,13 +94,20 @@ jobs:
           # Tar it up
           tar -czvf backstage-app.tar.gz Backstage.app
 
+      # One release per build. The repo has immutable releases on, so a published release takes no
+      # new assets: the old single `backstage-latest` tag was published once (2026-09-29, empty) and
+      # every build after it failed here with "Cannot upload asset ... to an immutable release".
+      # Not a prerelease either: a draft prerelease publishes on release.published, which the action
+      # cannot follow with an upload on an immutable repo. make_latest false keeps the repo's
+      # "Latest" badge off a Backstage build.
       - name: Upload to Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: backstage-latest
-          name: Backstage (latest main build)
+          tag_name: backstage-build-${{ github.run_number }}
+          name: Backstage (main build ${{ github.run_number }})
           draft: false
-          prerelease: true
+          prerelease: false
+          make_latest: false
           files: backstage-app.tar.gz
           generate_release_notes: true
         env:
