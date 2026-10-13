@@ -675,7 +675,7 @@ vendors:
         \    timeout: 20\n  model_info:\n    mode: audio_transcription\n- model_name:\
         \ voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
-        \    timeout: 20\n  model_info:\n    mode: audio_speech\n# voice-tts on the other two Groq accounts, same model_name on purpose -- the pool `groq` above\n# already is, for the same reason. Orpheus on the on_demand tier allows 100 requests a DAY per\n# account, and a single deployment gave the router nothing to route around: the router log for the\n# 48 h to 2026-10-13 holds 1493 Orpheus refusals 'requests per day (RPD): Limit 100, Used 100',\n# all on one org (docs/diagnoses/2026-10-13-voice-tts-single-groq-account-daily-quota.yaml). The\n# pod has no local engine to fall back to. A spent account now cools down and the other two speak.\n- model_name: voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_2\n    timeout: 20\n  model_info:\n    mode: audio_speech\n- model_name: voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n    timeout: 20\n  model_info:\n    mode: audio_speech\n"
+        \    timeout: 20\n  model_info:\n    mode: audio_speech\n"
       fallbacks: |
         # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
         # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`

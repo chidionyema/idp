@@ -1,0 +1,78 @@
+description: 'The estate router (deploy/litellm, ns llm) log from the pod restart at 12:43
+  on 2026-10-13, after #6065 pooled voice-tts across GROQ_API_KEY, _2 and _3. Question:
+  why do most /v1/audio/speech calls now return 500, when before the pool the first 100
+  each day succeeded? Four mechanisms are weighed: the Groq accounts behind _2/_3 have
+  not accepted Orpheus''s terms and the router keeps routing to them; account 1''s daily
+  quota alone; egress to Groq; or callers calling the lane wrongly. Disclosure: the counts
+  below were pulled (kubectl logs deploy/litellm --since=72h, which reaches back only to
+  the 12:43 restart) before this record was written; the likelihoods are what each
+  mechanism predicts on its face. n_eff_divisor 2: 14 calls in about two hours from one
+  caller, partly bunched (13:52:24 x2, 14:42:17 x3). This retracts a claim in
+  2026-10-13-voice-tts-single-groq-account-daily-quota.yaml: that a key without the terms
+  "answers 400, and the pool cools it like a spent one". It does not: LiteLLM v1.98.0
+  cools a deployment only on 429, 401, 404 and 408 (litellm/router_utils/cooldown_handlers.py
+  _is_cooldown_required, lines 233-243), and a 400 is not retried, so each call shuffled
+  onto an account without the terms fails outright. Not established: which of _2/_3 lacks
+  the terms -- the refusal lines do not name the key.'
+n_eff_divisor: 2
+hypotheses:
+- name: H1
+  description: one or both of the Groq accounts behind GROQ_API_KEY_2/_3 have not accepted
+    the Orpheus terms; they answer 400 model_terms_required, which LiteLLM neither cools
+    down nor retries, so simple-shuffle keeps sending calls to them and each one fails.
+  prior: 0.25
+- name: H2
+  description: account 1's daily Orpheus quota (100 RPD) is spent and the other two are
+    spent with it -- the failures are quota, as before the pool.
+  prior: 0.25
+- name: H3
+  description: the litellm pod cannot reach api.groq.com reliably (DNS, TLS, egress, timeouts).
+  prior: 0.25
+- name: H4
+  description: callers send the lane malformed requests (wrong endpoint or params).
+  prior: 0.25
+evidence:
+- name: error class of every failed voice-tts call in the router log since the 12:43 restart
+  observed:
+    terms_not_accepted: 11
+    daily_request_quota: 3
+    network: 0
+    caller_misuse: 0
+  likelihoods:
+    H1:
+      terms_not_accepted: 0.85
+      daily_request_quota: 0.1
+      network: 0.02
+      caller_misuse: 0.03
+    H2:
+      terms_not_accepted: 0.02
+      daily_request_quota: 0.9
+      network: 0.03
+      caller_misuse: 0.05
+    H3:
+      terms_not_accepted: 0.02
+      daily_request_quota: 0.05
+      network: 0.88
+      caller_misuse: 0.05
+    H4:
+      terms_not_accepted: 0.05
+      daily_request_quota: 0.1
+      network: 0.05
+      caller_misuse: 0.8
+- name: endpoint of the failed calls (Router INFO litellm.<fn>(model=voice-tts))
+  observed:
+    aspeech: 1
+    acompletion: 0
+  likelihoods:
+    H1:
+      aspeech: 0.95
+      acompletion: 0.05
+    H2:
+      aspeech: 0.95
+      acompletion: 0.05
+    H3:
+      aspeech: 0.95
+      acompletion: 0.05
+    H4:
+      aspeech: 0.3
+      acompletion: 0.7
