@@ -97,7 +97,7 @@ jobs:
       - name: Restore the shadow image bundle
         if: steps.scope.outputs.dirs != ''
         id: bundle
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/idp-shadow-bundle
           key: ${{ steps.bundle_key.outputs.key }}
