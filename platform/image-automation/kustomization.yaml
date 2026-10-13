@@ -17,5 +17,6 @@ resources:
   - epistemic-ingest.yaml
   - via-negativa.yaml
   - fleetview-backend.yaml
+  - quad-ledger.yaml
   - zeroedge.yaml
   - voice-router.yaml
