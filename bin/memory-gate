@@ -113,10 +113,12 @@ CFG="$(kubectl -n "$NS" exec "$POD" -c estate-mcp -- sh -c \
 ok "door is configured"
 
 # Rung 2 -- write, then read back, through the real plugin. This is the rung that matters:
-# it is the difference between a store and a memory.
+# it is the difference between a store and a memory. The probe writes to its own namespace:
+# in `estate` every run left a fact that every real recall then ranked against.
 PROBE="memory-gate probe $(date +%s) $$"
 OUT="$(kubectl -n "$NS" exec "$POD" -c estate-mcp -- python -c "
-import importlib.util
+import importlib.util, os
+os.environ['ESTATE_MEMORY_NAMESPACE'] = 'memory-gate'
 spec=importlib.util.spec_from_file_location('em','/app/plugins/estate_memory.py')
 m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 w=m.do_remember('''$PROBE''','memory-gate','measurement',['gate'],'memory-gate')
