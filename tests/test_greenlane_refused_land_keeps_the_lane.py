@@ -91,6 +91,113 @@ def test_land_puts_every_lane_back_on_its_own_head_when_it_is_refused():
     with pytest.raises(RuntimeError, match="went red"):
         B().land([("lane/a", "a1", "r1"), ("lane/b", "b1", "r2")], "tip")
     assert pushes[-2:] == [
-        ("push", "-q", "-f", "origin", "a1:refs/heads/lane/a"),
-        ("push", "-q", "-f", "origin", "b1:refs/heads/lane/b"),
+        (
+            "push",
+            "-q",
+            "--force-with-lease=refs/heads/lane/a:r1",
+            "origin",
+            "a1:refs/heads/lane/a",
+        ),
+        (
+            "push",
+            "-q",
+            "--force-with-lease=refs/heads/lane/b:r2",
+            "origin",
+            "b1:refs/heads/lane/b",
+        ),
     ]
+
+
+def _origin(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
+    """A bare origin with lane/x on head1, and a clone the backend pushes from."""
+    import subprocess
+
+    def g(cwd, *a):
+        return subprocess.run(
+            ["git", "-C", str(cwd), *a], capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    origin, work = tmp_path / "origin.git", tmp_path / "work"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    subprocess.run(["git", "clone", "-q", str(origin), str(work)], check=True)
+    g(work, "config", "user.email", "t@t")
+    g(work, "config", "user.name", "t")
+    shas = {}
+    for name in ("head1", "squash", "author"):
+        g(work, "checkout", "-q", "--orphan", name)
+        g(work, "commit", "-q", "--allow-empty", "-m", name)
+        shas[name] = g(work, "rev-parse", "HEAD")
+    g(work, "push", "-q", "origin", f"{shas['head1']}:refs/heads/lane/x")
+    return origin, work, shas
+
+
+def _backend(work: Path):
+    class B(GitHubBackend):
+        def __init__(self):
+            super().__init__("o/idp", ["bdd"])
+
+        def git(self, *a, check=True):
+            return super().git("-C", str(work), *a, check=check)
+
+        def adopted_prs(self):
+            return []
+
+    return B()
+
+
+def _lane_ref(origin: Path) -> str:
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(origin), "rev-parse", "refs/heads/lane/x"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
+def test_an_author_push_mid_land_is_not_erased_by_the_squash(tmp_path):
+    """2026-10-13, #6084: the author pushed 2c0156b01 while b2709 tested the old head; the
+    squash went over it unleased, and so did the restore."""
+    origin, work, s = _origin(tmp_path)
+    b = _backend(work)
+    b.git("push", "-q", "-f", "origin", f"{s['author']}:refs/heads/lane/x")
+    with pytest.raises(RuntimeError):
+        b._land([("lane/x", s["head1"], s["squash"])], "tip")
+    assert _lane_ref(origin) == s["author"]
+
+
+def test_the_restore_leaves_an_author_push_alone(tmp_path):
+    origin, work, s = _origin(tmp_path)
+    b = _backend(work)
+    b.git("push", "-q", "-f", "origin", f"{s['author']}:refs/heads/lane/x")
+
+    class Refused(type(b)):
+        def _land(self, members, tip):
+            raise RuntimeError("land: went red after the push")
+
+    r = Refused()
+    with pytest.raises(RuntimeError):
+        r.land([("lane/x", s["head1"], s["squash"])], "tip")
+    assert _lane_ref(origin) == s["author"]
+
+
+def test_the_restore_still_puts_a_squashed_lane_back(tmp_path):
+    origin, work, s = _origin(tmp_path)
+    b = _backend(work)
+
+    class SquashThenRefuse(type(b)):
+        def _land(self, members, tip):
+            for lane, head, rebased in members:
+                self.git(
+                    "push",
+                    "-q",
+                    f"--force-with-lease=refs/heads/{lane}:{head}",
+                    "origin",
+                    f"{rebased}:refs/heads/{lane}",
+                )
+            raise RuntimeError("land: went red after the push")
+
+    with pytest.raises(RuntimeError):
+        SquashThenRefuse().land([("lane/x", s["head1"], s["squash"])], "tip")
+    assert _lane_ref(origin) == s["head1"]

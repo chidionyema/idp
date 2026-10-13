@@ -467,11 +467,14 @@ class GitHubBackend:
             # squash over each lane ref; left there, the next tick reads it as a re-push and
             # requeues it as new work (2026-10-08, b1990..b1992), and the author's next
             # lane-submit is refused as non-fast-forward. Put every lane back on its own head.
-            for lane, head, _ in members:
+            # Only a lane still on the squash goes back: one that holds anything else was pushed
+            # by its author mid-land, and a bare -f erased that push (2026-10-13, #6084's
+            # 2c0156b01 at 20:14:01Z, overwritten at 20:14:09Z and 20:15:53Z).
+            for lane, head, rebased in members:
                 self.git(
                     "push",
                     "-q",
-                    "-f",
+                    f"--force-with-lease=refs/heads/{lane}:{rebased}",
                     "origin",
                     f"{head}:refs/heads/{lane}",
                     check=False,
@@ -482,7 +485,16 @@ class GitHubBackend:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
         resolved: list[tuple[str, str, str, dict]] = []
         for lane, head, rebased in members:
-            self.git("push", "-q", "-f", "origin", f"{rebased}:refs/heads/{lane}")
+            # leased to the head the batch tested: a lane its author has moved since is new work,
+            # and landing the old squash over it would erase the push. Refused, it raises, and
+            # land() treats it as a refused land (I4).
+            self.git(
+                "push",
+                "-q",
+                f"--force-with-lease=refs/heads/{lane}:{head}",
+                "origin",
+                f"{rebased}:refs/heads/{lane}",
+            )
             pr = adopted.get(lane)
             if pr and pr["branch"] != lane:
                 # the PR's own branch takes the landed sha, so GitHub marks the PR merged
