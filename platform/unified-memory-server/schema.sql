@@ -238,3 +238,53 @@ GRANT SELECT, INSERT ON memory_versions TO memory_app;
 GRANT USAGE ON SEQUENCE memory_versions_version_id_seq TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON rate_limits TO memory_app;
 GRANT EXECUTE ON FUNCTION fn_hit_rate_limit(TEXT, BIGINT, INT) TO memory_app;
+
+-- 10. Test leftovers deleted, history included. A live BDD run from an unmerged branch
+-- (2026-10-01, test_unified_memory_spec_bdd.py) and the memory gate's old probe wrote these
+-- into the namespaces real recall ranks against; on 2026-10-13 they were 34 of 47 facts and
+-- outranked every real one. The founder chose deletion over quarantine (2026-10-13, "delete
+-- them", then "Delete anyway" when told it means lifting the append-only guard). Named key by
+-- key, so no real fact can match. The guard is lifted only when one of them still exists, and
+-- inside the boot transaction: a failure rolls the lift back with the delete, and once they
+-- are gone every later boot is a no-op that never touches the guard. FORCE ROW LEVEL SECURITY
+-- holds the migrating owner too, so each tenant is set in turn, and the setting cleared after.
+DO $$
+DECLARE
+    t UUID;
+    doomed UUID[];
+BEGIN
+    FOR t IN SELECT tenant_id FROM tenants LOOP
+        PERFORM set_config('app.tenant_id', t::text, true);
+        SELECT array_agg(id) INTO doomed FROM memories WHERE (namespace, key) IN (VALUES
+            ('estate', 'bdd.promote.bdd9bda212daa62'), ('estate', 'bdd.promote.bdd7d7bb87200cc'),
+            ('estate', 'bdd.llm1.bdd1de600f4c276'), ('estate', 'bdd.llm1.bdd8b2c6ab53076'),
+            ('estate', 'bdd.llm2.bdd1de600f4c276'), ('estate', 'bdd.llm2.bdd8b2c6ab53076'),
+            ('estate', 'bdd.harm.bdd480995f6cc81'), ('estate', 'bdd.harm.bddd41fbc72c129'),
+            ('estate', 'bdd.guard.bdd9eaf02d7bc62'), ('estate', 'bdd.guard.bddc64f1121f5b8'),
+            ('estate', 'bdd.new.bdd777abff0e0d1'), ('estate', 'bdd.old.bdd777abff0e0d1'),
+            ('estate', 'bdd.new.bddcc1677b49fbd'), ('estate', 'bdd.old.bddcc1677b49fbd'),
+            ('estate', 'bdd.sem.bddd61b518941b6'), ('estate', 'bdd.sem.bdd5fb3ac115425'),
+            ('estate', 'bdd.bddae0bfe20b40f'), ('estate', 'bdd.bddce01492d5888'),
+            ('estate', 'estate.history.bddd8683f095075'),
+            ('estate', 'estate.history.bdd045829124f63'),
+            ('founder', 'estate.expiring.bdd77690fd82a88'),
+            ('founder', 'estate.expiring.bdd7c332e2da604'),
+            ('founder', 'estate.test.bddb939df044952'), ('founder', 'estate.test.bdd43467d69802b'),
+            ('founder', 'estate.forget.bdd7cab29ea9d79'),
+            ('founder', 'estate.forget.bdd21c63d763c83'),
+            ('estate', 'gate-smoke'),
+            ('estate', 'measurement.memory-gate.c736d73e5d9bf801'),
+            ('estate', 'measurement.memory-gate.a3793b5c8c5a6768'),
+            ('estate', 'measurement.memory-gate.2827f97c14b0c6d3'),
+            ('estate', 'measurement.memory-gate.614deee11be97dd1'),
+            ('estate', 'measurement.memory-gate.10942472c1eda1d9'),
+            ('estate', 'measurement.memory-gate.51562056a8038935'),
+            ('estate', 'measurement.crew-990-proof.979e5e072dcdc9d3'));
+        IF doomed IS NOT NULL THEN
+            ALTER TABLE memory_versions DISABLE TRIGGER trg_refuse_history_rewrite;
+            DELETE FROM memories WHERE id = ANY(doomed);
+            ALTER TABLE memory_versions ENABLE TRIGGER trg_refuse_history_rewrite;
+        END IF;
+    END LOOP;
+    PERFORM set_config('app.tenant_id', '', true);
+END $$;
