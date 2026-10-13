@@ -1870,10 +1870,10 @@ export default function FleetReactorApp() {
         {(() => {
           // Four verbs at four compass points, as the founder's design arranges them.
           const ring = [
-            { verb: 'stop', label: 'Stop', pos: 'translate(-50%,-50%) translate(0,-46px)', fg: '#ff0055', bd: 'rgba(255,0,85,.5)' },
-            { verb: 'steer', label: 'Steer', pos: 'translate(-50%,-50%) translate(46px,0)', fg: '#00f0ff', bd: 'rgba(0,240,255,.5)' },
-            { verb: 'apprv', label: 'Apprv', pos: 'translate(-50%,-50%) translate(0,46px)', fg: '#00ffaa', bd: 'rgba(0,255,170,.5)' },
-            { verb: 'deny', label: 'Deny', pos: 'translate(-50%,-50%) translate(-46px,0)', fg: '#ffaa00', bd: 'rgba(255,170,0,.5)' },
+            { verb: 'stop', label: 'Stop', pos: 'translate(-50%,-50%) translate(0,-64px)', fg: '#ff0055', bd: 'rgba(255,0,85,.5)' },
+            { verb: 'steer', label: 'Steer', pos: 'translate(-50%,-50%) translate(64px,0)', fg: '#00f0ff', bd: 'rgba(0,240,255,.5)' },
+            { verb: 'apprv', label: 'Approve', pos: 'translate(-50%,-50%) translate(0,64px)', fg: '#00ffaa', bd: 'rgba(0,255,170,.5)' },
+            { verb: 'deny', label: 'Deny', pos: 'translate(-50%,-50%) translate(-64px,0)', fg: '#ffaa00', bd: 'rgba(255,170,0,.5)' },
           ];
           return ring.map((b) => (
             <button
@@ -1881,7 +1881,7 @@ export default function FleetReactorApp() {
               type="button"
               data-testid={`radial-${b.verb}`}
               onClick={() => void handleAction(b.verb)}
-              className="absolute w-[42px] h-[42px] rounded-full flex items-center justify-center text-[8px] font-mono uppercase tracking-wider cursor-pointer backdrop-blur-md"
+              className="absolute w-[60px] h-[60px] rounded-full flex items-center justify-center text-[12px] font-mono uppercase cursor-pointer backdrop-blur-md"
               style={{
                 transform: b.pos,
                 color: b.fg,
@@ -1901,14 +1901,14 @@ export default function FleetReactorApp() {
         ref={tooltipRef} 
         className="absolute z-50 pointer-events-none opacity-0 transition-opacity duration-200 bg-black/60 backdrop-blur-md border border-white/10 p-3 rounded-lg flex flex-col gap-1 shadow-2xl"
       >
-        <div className="text-[9px] uppercase tracking-widest text-white/40 font-mono">Node Identity</div>
+        <div className="text-[12px] uppercase tracking-widest text-white/60 font-mono">Node Identity</div>
         <div id="tt-id" className="text-sm font-bold font-mono text-white">---</div>
-        <div id="tt-state" className="text-[10px] font-bold uppercase tracking-wider mt-1">---</div>
+        <div id="tt-state" className="text-[12px] font-bold uppercase tracking-wider mt-1">---</div>
         {/* The context the tooltip was missing: what this agent is doing, which harness it runs,
             which repo it is in, and what it has cost. */}
-        <div id="tt-task" className="text-[11px] text-white/80 mt-2 max-w-[320px] leading-snug"></div>
-        <div id="tt-meta" className="text-[10px] font-mono text-white/45 mt-1"></div>
-        <div id="tt-spend" className="text-[10px] font-mono text-white/35 mt-0.5"></div>
+        <div id="tt-task" className="text-[12px] text-white/80 mt-2 max-w-[320px] leading-snug"></div>
+        <div id="tt-meta" className="text-[12px] font-mono text-white/60 mt-1"></div>
+        <div id="tt-spend" className="text-[12px] font-mono text-white/60 mt-0.5"></div>
       </div>
 
       {/* Top HUD.
@@ -1929,14 +1929,14 @@ export default function FleetReactorApp() {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.8)]"></div>
             <h1 className="text-2xl font-bold tracking-[0.2em] text-white drop-shadow-md">FLEET REACTOR</h1>
-          </div>          <p className="text-[10px] text-white/40 uppercase font-mono tracking-widest pl-5">Native Spatial Topology • Active Stream</p>
+          </div>          <p className="text-[12px] text-white/60 uppercase font-mono tracking-widest pl-5">Native Spatial Topology • Active Stream</p>
         </div>
 
         {/* Global Action Controls */}
         <div className="flex items-center gap-4 pointer-events-auto">
            {uiState.selectedNodeId && (
              <div className="flex items-center gap-3 bg-black/40 border border-white/10 backdrop-blur-md px-4 py-2 rounded-lg transition-all shadow-lg">
-                <span className="text-[10px] uppercase text-white/50 font-mono">Target Lock</span>
+                <span className="text-[12px] uppercase text-white/60 font-mono">Target Lock</span>
                 <span className="text-sm font-mono text-cyan-400 font-bold">{uiState.selectedNodeId}</span>
              </div>
            )}
@@ -1950,7 +1950,7 @@ export default function FleetReactorApp() {
              className={`px-6 py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all duration-300 
                ${uiState.blastMode 
                  ? 'bg-red-500/20 border-red-500 text-red-400 backdrop-blur-md shadow-[0_0_20px_rgba(255,0,0,0.4)]' 
-                 : (uiState.selectedNodeId ? 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-cyan-500/50 hover:text-cyan-400 backdrop-blur-md hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-black/40 border-white/15 text-white/35 cursor-not-allowed')
+                 : (uiState.selectedNodeId ? 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-cyan-500/50 hover:text-cyan-400 backdrop-blur-md hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-black/40 border-white/15 text-white/60 cursor-not-allowed')
                }`}
            >
              {uiState.blastMode ? '[ Cancel Sonar ]' : '[ Blast Radius Sonar ]'}
@@ -1971,7 +1971,7 @@ export default function FleetReactorApp() {
           be confused. */}
       <div
         data-testid="reactor-telemetry"
-        className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full border backdrop-blur-md text-[10px] font-mono uppercase tracking-widest whitespace-nowrap max-w-[92vw] overflow-hidden text-ellipsis"
+        className="absolute top-16 left-1/2 -translate-x-1/2 z-40 px-4 py-1.5 rounded-full border backdrop-blur-md text-[12px] font-mono uppercase tracking-widest whitespace-nowrap max-w-[92vw] overflow-hidden text-ellipsis"
         style={{
           color: live.ok ? COLORS.finished : COLORS.stuck,
           borderColor: live.ok ? 'rgba(255,255,255,.1)' : 'rgba(255,0,85,.4)',
@@ -2034,11 +2034,11 @@ export default function FleetReactorApp() {
         className="w-full rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
       >
         <div className="flex items-baseline gap-2 px-1 pb-1">
-          <span className="text-[9px] font-mono uppercase tracking-widest text-white/60 flex-1">safeguards · live</span>
-          <span className="text-[9px] font-mono text-emerald-300/80">{gates.filter((g) => g.gate.verdict === 'pass').length} pass</span>
-          <span className="text-[9px] font-mono text-rose-400/90">{gates.filter((g) => g.gate.verdict === 'refuse').length} refused</span>
+          <span className="text-[12px] font-mono uppercase tracking-widest text-white/60 flex-1">safeguards · live</span>
+          <span className="text-[12px] font-mono text-emerald-300/80">{gates.filter((g) => g.gate.verdict === 'pass').length} pass</span>
+          <span className="text-[12px] font-mono text-rose-400/90">{gates.filter((g) => g.gate.verdict === 'refuse').length} refused</span>
           {gates.some((g) => g.gate.verdict === 'blind') ? (
-            <span className="text-[9px] font-mono text-amber-300/80">{gates.filter((g) => g.gate.verdict === 'blind').length} blind</span>
+            <span className="text-[12px] font-mono text-amber-300/80">{gates.filter((g) => g.gate.verdict === 'blind').length} blind</span>
           ) : null}
         </div>
         {gates.length ? gates.slice(0, 6).map((g, i) => (
@@ -2048,18 +2048,18 @@ export default function FleetReactorApp() {
                 className="inline-block w-1.5 h-1.5 rounded-full"
                 style={{ background: g.gate.verdict === 'pass' ? '#34d399' : g.gate.verdict === 'refuse' ? '#fb7185' : '#fcd34d' }}
               />
-              <span className="text-[9px] font-mono text-white/70">{g.gate.name}</span>
-              <span className="text-[9px] font-mono text-white/40">{g.gate.verdict}</span>
-              <span className="text-[8px] font-mono text-white/30 truncate flex-1 text-right">
+              <span className="text-[12px] font-mono text-white/70">{g.gate.name}</span>
+              <span className="text-[12px] font-mono text-white/60">{g.gate.verdict}</span>
+              <span className="text-[12px] font-mono text-white/60 truncate flex-1 text-right">
                 {String(g.session_id || '').slice(0, 8)} · {String(g.at || '').slice(11, 19)}
               </span>
             </div>
             {g.gate.verdict !== 'pass' && (g.gate.reason || g.gate.claim) ? (
-              <div className="text-[9px] text-white/45 truncate pl-3">{g.gate.claim || g.gate.reason}</div>
+              <div className="text-[12px] text-white/60 truncate pl-3">{g.gate.claim || g.gate.reason}</div>
             ) : null}
           </div>
         )) : (
-          <div className="px-1 py-1 text-[9px] font-mono text-white/30">no gate decision on the bus yet</div>
+          <div className="px-1 py-1 text-[12px] font-mono text-white/60">no gate decision on the bus yet</div>
         )}
       </div>
       </div>
@@ -2107,11 +2107,11 @@ export default function FleetReactorApp() {
                 background: 'rgba(3,5,8,.55)', backdropFilter: 'blur(10px)',
                 border: `1px solid ${voiceMenu ? 'rgba(0,240,255,.55)' : 'rgba(0,240,255,.18)'}`,
                 boxShadow: voiceMenu ? '0 0 18px rgba(0,240,255,.25)' : 'none',
-                fontSize: 10, letterSpacing: '.18em', textTransform: 'uppercase',
+                fontSize: 12, letterSpacing: '.18em', textTransform: 'uppercase',
               }}
             >
               <span style={{ width: 6, height: 6, borderRadius: 999, background: '#00f0ff', boxShadow: '0 0 8px #00f0ff', flex: 'none' }} />
-              <span style={{ color: 'rgba(255,255,255,.4)' }}>voice</span>
+              <span style={{ color: 'rgba(255,255,255,.6)' }}>voice</span>
               <span style={{ color: '#00f0ff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{shown.voice}</span>
               <span style={{ marginLeft: 'auto', color: 'rgba(0,240,255,.6)', transform: voiceMenu ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
             </button>
@@ -2125,7 +2125,7 @@ export default function FleetReactorApp() {
               >
                 {groups.filter(([, , list]) => list.length).map(([engine, label, list]) => (
                   <div key={engine}>
-                    <div style={{ padding: '8px 8px 4px', fontSize: 9, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.3)' }}>
+                    <div style={{ padding: '8px 8px 4px', fontSize: 12, letterSpacing: '.25em', textTransform: 'uppercase', color: 'rgba(255,255,255,.6)' }}>
                       {label} · {list.length}
                     </div>
                     {list.map((v) => {
@@ -2142,7 +2142,7 @@ export default function FleetReactorApp() {
                           }}
                           style={{
                             display: 'block', width: '100%', textAlign: 'left', padding: '5px 10px', borderRadius: 6,
-                            cursor: 'pointer', fontSize: 11, letterSpacing: '.06em', border: 'none',
+                            cursor: 'pointer', fontSize: 12, letterSpacing: '.06em', border: 'none',
                             color: on ? '#00f0ff' : 'rgba(255,255,255,.7)',
                             background: on ? 'rgba(0,240,255,.12)' : 'transparent',
                           }}
@@ -2193,7 +2193,7 @@ export default function FleetReactorApp() {
           <div className="flex items-start justify-between gap-2 px-4 py-3 border-b border-white/10">
             <div className="min-w-0">
               <div
-                className="text-[9px] font-mono uppercase tracking-widest"
+                className="text-[12px] font-mono uppercase tracking-widest"
                 style={{ color: COLORS[selectedRow.activity] }}
               >
                 {selectedRow.activity} · {selectedRow.runtime}
@@ -2207,7 +2207,7 @@ export default function FleetReactorApp() {
             <button
               type="button"
               onClick={() => setUiState((s) => ({ ...s, selectedNodeId: null }))}
-              className="tab-plain text-white/40 hover:text-white/80 text-[14px] leading-none px-1 cursor-pointer bg-black/40 rounded"
+              className="tab-plain text-white/60 hover:text-white/80 text-[14px] leading-none px-1 cursor-pointer bg-black/40 rounded"
               title="deselect"
             >
               ✕
@@ -2217,15 +2217,15 @@ export default function FleetReactorApp() {
           {/* The numbers, which is what a person asks next after "what is it doing". */}
           <div className="grid grid-cols-3 border-b border-white/10">
             <div className="px-4 py-2">
-              <div className="text-[8px] font-mono uppercase tracking-widest text-white/35">spend</div>
+              <div className="text-[12px] font-mono uppercase tracking-widest text-white/60">spend</div>
               <div className="text-[13px] font-mono text-white/85">${selectedRow.spend.toFixed(2)}</div>
             </div>
             <div className="px-4 py-2 border-l border-white/10">
-              <div className="text-[8px] font-mono uppercase tracking-widest text-white/35">events</div>
+              <div className="text-[12px] font-mono uppercase tracking-widest text-white/60">events</div>
               <div className="text-[13px] font-mono text-white/85">{selectedRow.events}</div>
             </div>
             <div className="px-4 py-2 border-l border-white/10">
-              <div className="text-[8px] font-mono uppercase tracking-widest text-white/35">quiet</div>
+              <div className="text-[12px] font-mono uppercase tracking-widest text-white/60">quiet</div>
               <div className="text-[13px] font-mono text-white/85">
                 {selectedRow.ageMs == null ? '—'
                   : selectedRow.ageMs < 60000 ? `${Math.round(selectedRow.ageMs / 1000)}s`
@@ -2276,7 +2276,7 @@ export default function FleetReactorApp() {
             );
             if (!thread.length) {
               return (
-                <div className="px-3 py-3 text-[10px] font-mono text-white/30">
+                <div className="px-3 py-3 text-[12px] font-mono text-white/60">
                   nothing said yet — type below and it answers at its next turn
                 </div>
               );
@@ -2289,7 +2289,7 @@ export default function FleetReactorApp() {
                     className={`flex flex-col ${m.who === 'you' ? 'items-end' : 'items-start'}`}
                   >
                     <div
-                      className={`max-w-[92%] px-2 py-1 rounded-lg text-[11px] leading-snug ${
+                      className={`max-w-[92%] px-2 py-1 rounded-lg text-[12px] leading-snug ${
                         m.who === 'you'
                           ? 'bg-cyan-500/12 border border-cyan-500/25 text-cyan-100/90'
                           : 'bg-white/6 border border-white/10 text-white/85'
@@ -2297,7 +2297,7 @@ export default function FleetReactorApp() {
                     >
                       {String(m.text).slice(0, 700)}
                     </div>
-                    <div className="text-[8px] font-mono text-white/25 pt-0.5">
+                    <div className="text-[12px] font-mono text-white/60 pt-0.5">
                       {m.who === 'you' ? 'you' : m.who}
                       {' · '}
                       {String(m.at).slice(11, 19)}
@@ -2338,16 +2338,16 @@ export default function FleetReactorApp() {
               }}
               rows={2}
               placeholder={`message this ${selectedRow.runtime} session…`}
-              className="w-full resize-none bg-black/50 border border-white/10 focus:border-cyan-500/50 rounded-lg px-2 py-1.5 text-[11px] font-mono text-white/85 placeholder-white/25 outline-none"
+              className="w-full resize-none bg-black/50 border border-white/10 focus:border-cyan-500/50 rounded-lg px-2 py-1.5 text-[12px] font-mono text-white/85 placeholder-white/25 outline-none"
             />
             <div className="flex items-center justify-between pt-1.5">
-              <span className="text-[9px] font-mono text-white/30">
+              <span className="text-[12px] font-mono text-white/60">
                 {steerStatus || `delivered at its next turn · ${selectedRow.runtime}`}
               </span>
               <button
                 type="submit"
                 disabled={!steerDraft.trim()}
-                className="tab-plain px-3 py-1 rounded-md border border-cyan-500/40 text-cyan-300 text-[10px] font-mono uppercase tracking-widest cursor-pointer bg-cyan-500/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-cyan-500/15"
+                className="tab-plain px-3 py-1 rounded-md border border-cyan-500/40 text-cyan-300 text-[12px] font-mono uppercase tracking-widest cursor-pointer bg-cyan-500/10 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-cyan-500/15"
               >
                 send
               </button>
@@ -2375,7 +2375,7 @@ export default function FleetReactorApp() {
             <button
               type="button"
               onClick={() => void endSession('stop', selectedRow)}
-              className="tab-plain flex-1 px-2 py-1 rounded-md border border-amber-500/40 text-amber-300 text-[10px] font-mono uppercase tracking-widest cursor-pointer bg-amber-500/10 hover:bg-amber-500/15"
+              className="tab-plain flex-1 px-2 py-1 rounded-md border border-amber-500/40 text-amber-300 text-[12px] font-mono uppercase tracking-widest cursor-pointer bg-amber-500/10 hover:bg-amber-500/15"
               title="ask it to shut down at its next turn boundary"
             >
               stop
@@ -2391,14 +2391,14 @@ export default function FleetReactorApp() {
                   void endSession('kill', selectedRow);
                 }
               }}
-              className="tab-plain px-3 py-1 rounded-md border border-red-500/40 text-red-300 text-[10px] font-mono uppercase tracking-widest cursor-pointer bg-red-500/10 hover:bg-red-500/15"
+              className="tab-plain px-3 py-1 rounded-md border border-red-500/40 text-red-300 text-[12px] font-mono uppercase tracking-widest cursor-pointer bg-red-500/10 hover:bg-red-500/15"
               title="send SIGTERM to the process — for a rogue or wedged session"
             >
               kill
             </button>
           </div>
           {endStatus ? (
-            <div className="px-3 pb-2 text-[9px] font-mono text-white/45">{endStatus}</div>
+            <div className="px-3 pb-2 text-[12px] font-mono text-white/60">{endStatus}</div>
           ) : null}
         </div>
       ) : null}
@@ -2439,7 +2439,7 @@ export default function FleetReactorApp() {
             aria-label={`fleet panel: ${rows.filter((r) => r.activity === 'stuck').length} stuck, ${rows.filter((r) => r.activity === 'thinking').length} thinking, ${rows.filter((r) => r.activity === 'waiting').length} waiting`}
             className="absolute top-36 left-4 z-30 flex items-center gap-2 px-2 py-1.5 rounded-md bg-black/40 border border-white/10 backdrop-blur-sm cursor-pointer hover:border-cyan-500/40"
           >
-            <span className="text-[10px] font-mono text-white/45">▤</span>
+            <span className="text-[12px] font-mono text-white/60">▤</span>
             {/* THE NUMBERS WERE LABELLED BY COLOUR ALONE (founder 2026-10-02: "a small chip
                 floats with no label"). Colour is not a label -- the three numbers now say what
                 they are, at 8px, once, under the counts they belong to. */}
@@ -2448,13 +2448,13 @@ export default function FleetReactorApp() {
                 {(['stuck', 'thinking', 'waiting'] as const).map((a) => {
                   const n = rows.filter((r) => r.activity === a).length;
                   return (
-                    <span key={a} className="text-[10px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.2)' }}>
+                    <span key={a} className="text-[12px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.6)' }}>
                       {n}
                     </span>
                   );
                 })}
               </span>
-              <span className="text-[8px] font-mono text-white/35 tracking-wider">stuck · think · wait</span>
+              <span className="text-[12px] font-mono text-white/60 tracking-wider">stuck · think · wait</span>
             </span>
           </button>
         ) : (
@@ -2468,7 +2468,7 @@ export default function FleetReactorApp() {
             data-testid="panel-close"
             onClick={() => setPanelOpen(false)}
             title="collapse"
-            className="absolute -top-1 -right-1 z-40 w-5 h-5 rounded-full bg-black/70 border border-white/15 text-white/40 hover:text-white/80 text-[10px] font-mono cursor-pointer"
+            className="absolute -top-1 -right-1 z-40 w-5 h-5 rounded-full bg-black/70 border border-white/15 text-white/60 hover:text-white/80 text-[12px] font-mono cursor-pointer"
           >
             ✕
           </button>
@@ -2485,10 +2485,10 @@ export default function FleetReactorApp() {
                 // called "ugly display, not 2100 fitting" and asked me to change SIX times. There
                 // was no colour to change: there was a MISSING background, and `appearance: none`
                 // to stop the browser painting its own button chrome over whatever we set.
-                className={`tab-plain px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-widest cursor-pointer transition-colors ${
+                className={`tab-plain px-2 py-0.5 rounded text-[12px] font-mono uppercase tracking-widest cursor-pointer transition-colors ${
                   panelTab === t
                     ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/40'
-                    : 'bg-black/40 text-white/35 border border-white/5 hover:text-white/70'
+                    : 'bg-black/40 text-white/60 border border-white/5 hover:text-white/70'
                 }`}
               >
                 {t}
@@ -2501,7 +2501,7 @@ export default function FleetReactorApp() {
               data-testid="panel-depth"
               onClick={() => setDepth((d) => (d >= 2 ? 0 : d + 1))}
               title={`detail level ${depth} of 2 — click for ${depth >= 2 ? 'less' : 'more'}`}
-              className="tab-plain ml-auto text-[9px] font-mono text-white/35 hover:text-cyan-300 cursor-pointer tracking-widest bg-black/40 rounded px-1"
+              className="tab-plain ml-auto text-[12px] font-mono text-white/60 hover:text-cyan-300 cursor-pointer tracking-widest bg-black/40 rounded px-1"
             >
               {depth === 0 ? '···' : depth === 1 ? '··' : '·'}
             </button>
@@ -2515,8 +2515,8 @@ export default function FleetReactorApp() {
                   const n = rows.filter((r) => r.activity === a).length;
                   return (
                     <span key={a} className="flex items-baseline gap-1">
-                      <span className="text-[13px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.2)' }}>{n}</span>
-                      <span className="text-[7px] font-mono uppercase text-white/35">{a.slice(0, 4)}</span>
+                      <span className="text-[13px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.6)' }}>{n}</span>
+                      <span className="text-[12px] font-mono uppercase text-white/60">{a.slice(0, 4)}</span>
                     </span>
                   );
                 })}
@@ -2533,9 +2533,9 @@ export default function FleetReactorApp() {
                       style={{ borderLeft: `2px solid ${COLORS[r.activity]}`, background: talkingTo ? 'rgba(0,240,255,.08)' : undefined }}
                     >
                       <div className="flex items-baseline gap-1">
-                        <span className="text-[8px] font-mono uppercase flex-none" style={{ color: COLORS[r.activity] }}>{r.activity}</span>
+                        <span className="text-[12px] font-mono uppercase flex-none" style={{ color: COLORS[r.activity] }}>{r.activity}</span>
                         <span
-                          className="text-[10px] text-white/80 truncate flex-1 cursor-pointer"
+                          className="text-[12px] text-white/80 truncate flex-1 cursor-pointer"
                           onClick={() => {
                             const node = engineState.current.nodes.find((n: any) => n.sessionId === r.sessionId);
                             if (node) setUiState((s2) => ({ ...s2, selectedNodeId: node.id }));
@@ -2550,7 +2550,7 @@ export default function FleetReactorApp() {
                           // text colour, so the browser painted rgb(239,239,239) behind the mic glyph
                           // -- nine white squares down the rail, measured 2026-09-20.
                           className="tab-plain flex-none px-1 py-0.5 rounded cursor-pointer bg-black/40 hover:bg-cyan-500/15"
-                          style={{ color: talkingTo ? '#00f0ff' : 'rgba(255,255,255,.35)' }}
+                          style={{ color: talkingTo ? '#00f0ff' : 'rgba(255,255,255,.6)' }}
                         >
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                             <rect x="9" y="3" width="6" height="11" rx="3" />
@@ -2565,22 +2565,22 @@ export default function FleetReactorApp() {
                       </div>
                       {/* depth 1: which work. */}
                       {depth >= 1 && (r.branch || r.step) ? (
-                        <div className="pt-0.5 text-[9px] font-mono leading-tight">
+                        <div className="pt-0.5 text-[12px] font-mono leading-tight">
                           {r.branch ? <div className="text-cyan-300/70 truncate">{r.branch}</div> : null}
-                          {r.step ? <div className="text-white/45 truncate">{r.step}</div> : null}
+                          {r.step ? <div className="text-white/60 truncate">{r.step}</div> : null}
                         </div>
                       ) : null}
                       {/* depth 2: everything the record holds. */}
                       {depth >= 2 ? (
                         <>
-                          <div className="text-[9px] font-mono text-white/40 truncate pt-0.5">
+                          <div className="text-[12px] font-mono text-white/60 truncate pt-0.5">
                             {[r.runtime, r.model, r.repo].filter(Boolean).join(' · ')}
                           </div>
-                          <div className="text-[9px] font-mono text-white/30">
+                          <div className="text-[12px] font-mono text-white/60">
                             ${(r.spend || 0).toFixed(2)} · {r.events} ev
                           </div>
                           {mine.length ? (
-                            <div className="text-[9px] text-white/60 leading-snug pt-0.5">
+                            <div className="text-[12px] text-white/60 leading-snug pt-0.5">
                               › {String(mine[0].text).slice(0, 90)}
                             </div>
                           ) : null}
@@ -2590,10 +2590,10 @@ export default function FleetReactorApp() {
                   );
                 })}
                 {activeRows.length === 0 ? (
-                  <div className="px-2 py-1 text-[10px] font-mono text-white/25">nothing working right now</div>
+                  <div className="px-2 py-1 text-[12px] font-mono text-white/60">nothing working right now</div>
                 ) : null}
                 {hiddenWorking > 0 ? (
-                  <div className="px-2 py-1 text-[9px] font-mono text-white/30">
+                  <div className="px-2 py-1 text-[12px] font-mono text-white/60">
                     +{hiddenWorking} more working — all {rows.length} are in the room
                   </div>
                 ) : null}
@@ -2608,25 +2608,25 @@ export default function FleetReactorApp() {
               {ledgerRows.length ? ledgerRows.slice(0, 40).map((row: any, i: number) => (
                 <div key={row.id ?? i} className="px-2 py-1 rounded-md bg-black/35 border border-white/5">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-[8px] font-mono text-white/40 truncate flex-1">
+                    <span className="text-[12px] font-mono text-white/60 truncate flex-1">
                       {String(row.session_id || '').slice(-14)}
                     </span>
-                    <span className="text-[8px] font-mono text-white/30">
+                    <span className="text-[12px] font-mono text-white/60">
                       {String(row.ts || row.created_at || '').slice(11, 19)}
                     </span>
                   </div>
-                  <div className="text-[9px] font-mono text-white/70 truncate">
+                  <div className="text-[12px] font-mono text-white/70 truncate">
                     {row.kind || row.type || 'event'}
                   </div>
                   {depth >= 1 && row.text ? (
-                    <div className="text-[9px] text-white/45 truncate">{String(row.text).slice(0, 80)}</div>
+                    <div className="text-[12px] text-white/60 truncate">{String(row.text).slice(0, 80)}</div>
                   ) : null}
                 </div>
               )) : (
-                <div className="px-2 py-1 text-[10px] font-mono text-white/30 leading-relaxed">
+                <div className="px-2 py-1 text-[12px] font-mono text-white/60 leading-relaxed">
                   {selectedRow ? 'no receipts recorded for this session yet' : 'select an agent to see its receipts'}
                   <br />
-                  <span className="text-white/20">
+                  <span className="text-white/60">
                     the ledger is per-session; a receipt appears when its claim is checked against
                     its trace
                   </span>
@@ -2635,7 +2635,7 @@ export default function FleetReactorApp() {
               {/* THE CHECKS, stated as what they are rather than as buttons that would 503 on a
                   laptop with no Langfuse. */}
               {depth >= 2 ? (
-                <div className="px-2 pt-2 text-[9px] font-mono text-white/25 leading-relaxed">
+                <div className="px-2 pt-2 text-[12px] font-mono text-white/60 leading-relaxed">
                   checks available: /check-receipts · /trace
                   <br />
                   both need LANGFUSE_HOST, which this host does not have
@@ -2654,32 +2654,32 @@ export default function FleetReactorApp() {
                       `empty` is the one behind "I had to repeat myself" -- a spoken utterance the
                       transcriber produced nothing for. `first` is what a person feels as latency,
                       as opposed to `total`, which is how long the sentence took. */}
-                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[9px] font-mono">
-                    <div className="flex justify-between"><span className="text-white/35">turns</span><span className="text-white/80">{voice.voiceStats.turns}</span></div>
-                    <div className="flex justify-between"><span className="text-white/35">misheard</span><span style={{ color: voice.voiceStats.empty > 0 ? COLORS.stuck : 'rgba(255,255,255,.8)' }}>{voice.voiceStats.empty} <span className="text-white/30">({Math.round((voice.voiceStats.empty_rate || 0) * 100)}%)</span></span></div>
-                    <div className="flex justify-between"><span className="text-white/35">hear</span><span className="text-white/80">{voice.voiceStats.asr_median_s ?? '—'}s</span></div>
-                    <div className="flex justify-between"><span className="text-white/35">1st word</span><span className="text-white/80">{voice.voiceStats.first_clause_median_s ?? '—'}s</span></div>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] font-mono">
+                    <div className="flex justify-between"><span className="text-white/60">turns</span><span className="text-white/80">{voice.voiceStats.turns}</span></div>
+                    <div className="flex justify-between"><span className="text-white/60">misheard</span><span style={{ color: voice.voiceStats.empty > 0 ? COLORS.stuck : 'rgba(255,255,255,.8)' }}>{voice.voiceStats.empty} <span className="text-white/60">({Math.round((voice.voiceStats.empty_rate || 0) * 100)}%)</span></span></div>
+                    <div className="flex justify-between"><span className="text-white/60">hear</span><span className="text-white/80">{voice.voiceStats.asr_median_s ?? '—'}s</span></div>
+                    <div className="flex justify-between"><span className="text-white/60">1st word</span><span className="text-white/80">{voice.voiceStats.first_clause_median_s ?? '—'}s</span></div>
                   </div>
                   {voice.voiceStats.first_clause_p90_s ? (
-                    <div className="text-[8px] font-mono text-white/25 pt-1">
+                    <div className="text-[12px] font-mono text-white/60 pt-1">
                       p90 first word {voice.voiceStats.first_clause_p90_s}s · worst
                     </div>
                   ) : null}
                 </div>
               ) : (
-                <div className="px-2 text-[10px] font-mono text-white/30">no voice turns recorded yet</div>
+                <div className="px-2 text-[12px] font-mono text-white/60">no voice turns recorded yet</div>
               )}
               {voice.voiceLog.slice(0, 20).map((t: any) => (
                 <div key={t.id} className="px-2 py-1 rounded-md bg-black/35 border border-white/5">
                   <div className="flex items-baseline gap-1">
-                    <span className="text-[8px] font-mono text-white/30 flex-none">{String(t.heard_at).slice(11, 19)}</span>
-                    <span className="text-[9px] font-mono flex-1 truncate"
+                    <span className="text-[12px] font-mono text-white/60 flex-none">{String(t.heard_at).slice(11, 19)}</span>
+                    <span className="text-[12px] font-mono flex-1 truncate"
                       style={{ color: t.outcome === 'empty' ? COLORS.stuck : t.outcome === 'error' ? COLORS.stuck : 'rgba(255,255,255,.7)' }}>
                       {t.outcome === 'empty' ? 'misheard — no words' : (t.voice || t.engine || '')}
                     </span>
-                    <span className="text-[9px] font-mono text-white/45 flex-none">{t.llm_first_s ?? '—'}s</span>
+                    <span className="text-[12px] font-mono text-white/60 flex-none">{t.llm_first_s ?? '—'}s</span>
                   </div>
-                  <div className="text-[8px] font-mono text-white/30">
+                  <div className="text-[12px] font-mono text-white/60">
                     hear {t.asr_s ?? '—'}s · speak {t.tts_s ?? '—'}s · {t.words ?? 0}w
                     {t.detail ? ` · ${String(t.detail).slice(0,40)}` : ''}
                   </div>
@@ -2719,8 +2719,8 @@ export default function FleetReactorApp() {
         {/* 1. THE TARGET. Always visible when the engine is on, because "who am I talking to" is the
             one question a voice interface must answer before it is asked. */}
         {voice.state !== 'off' ? (
-          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/70 border border-white/10 backdrop-blur-md text-[11px] font-mono">
-            <span className="text-white/40">talking to</span>
+          <div className="flex items-center gap-2 px-3 py-1 rounded-full bg-black/70 border border-white/10 backdrop-blur-md text-[12px] font-mono">
+            <span className="text-white/60">talking to</span>
             <span data-testid="voice-addressee" className={voiceTarget ? 'text-cyan-300' : 'text-white/80'}>
               {(() => {
                 if (!voiceTarget) return 'the fleet';
@@ -2733,7 +2733,7 @@ export default function FleetReactorApp() {
                 type="button"
                 onClick={() => { voiceTargetRef.current = ''; setVoiceTarget(''); }}
                 title="address the fleet instead"
-                className="tab-plain text-white/40 hover:text-white/80 cursor-pointer px-1 bg-black/40 rounded"
+                className="tab-plain text-white/60 hover:text-white/80 cursor-pointer px-1 bg-black/40 rounded"
               >
                 ✕
               </button>
@@ -2753,7 +2753,7 @@ export default function FleetReactorApp() {
         {partial || voice.heard || voice.reply || voice.detail ? (
           <div
             data-testid="voice-transcript"
-            className="w-full bg-black/70 border border-white/10 backdrop-blur-md rounded-xl px-4 py-2 text-[11px] font-mono max-h-[120px] overflow-y-auto"
+            className="w-full bg-black/70 border border-white/10 backdrop-blur-md rounded-xl px-4 py-2 text-[12px] font-mono max-h-[120px] overflow-y-auto"
           >
             {partial ? (
               <div className="text-cyan-300/60">› {partial}…</div>
@@ -2761,7 +2761,7 @@ export default function FleetReactorApp() {
               <div className="text-cyan-300">› {voice.heard}</div>
             ) : null}
             {voice.reply ? <div className="text-white/85 mt-1">{voice.reply}</div> : null}
-            {voice.detail ? <div className="text-white/35 mt-1">{voice.detail}</div> : null}
+            {voice.detail ? <div className="text-white/60 mt-1">{voice.detail}</div> : null}
             {/* One tap, not a settings tour -- see FacePage.tsx / useEstateVoice.ts
                 (isStandaloneHomeScreen): opens a real Safari tab, the one place a home-screen
                 icon's mic refusal actually clears. */}

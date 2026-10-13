@@ -101,14 +101,14 @@ function NewsBug({ channelDef, story }: NewsBugProps): JSX.Element {
               animation: 'newsdesk-live-pulse 1.1s ease-in-out infinite',
             }}
           />
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#ff5577', letterSpacing: 1 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#ff5577', letterSpacing: 1 }}>
             LIVE
           </span>
         </div>
       ) : story ? (
         <span
           style={{
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: 600,
             color: 'rgba(255,255,255,0.5)',
             letterSpacing: 1,

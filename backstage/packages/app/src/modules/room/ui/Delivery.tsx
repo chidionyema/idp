@@ -204,7 +204,7 @@ export default function Delivery(): JSX.Element | null {
   });
 
   return (
-    <div data-testid="delivery" className="pointer-events-auto font-mono text-[11px]">
+    <div data-testid="delivery" className="pointer-events-auto font-mono text-[12px]">
       <button
         type="button"
         onClick={() => setOpen(prev => !prev)}
@@ -239,7 +239,7 @@ export default function Delivery(): JSX.Element | null {
 
               {data && data.converges.length > 0 ? (
                 <div>
-                  <div className="text-white/50 mb-1">merge → operating</div>
+                  <div className="text-white/60 mb-1">merge → operating</div>
                   <div className="relative pl-3 border-l border-white/20 space-y-2">
                     {data.converges.map((c, idx) => (
                       <div
@@ -251,13 +251,13 @@ export default function Delivery(): JSX.Element | null {
                           {prChips(c.prs).map(pr => (
                             <span
                               key={pr}
-                              className="rounded bg-white/10 px-1 py-0.5 text-[10px]"
+                              className="rounded bg-white/10 px-1 py-0.5 text-[12px]"
                             >
                               {pr}
                             </span>
                           ))}
                           <span className="text-white/60">{formatLatency(c.latency_s)}</span>
-                          <span className="text-white/40">{formatRelative(c.time)}</span>
+                          <span className="text-white/60">{formatRelative(c.time)}</span>
                         </div>
                       </div>
                     ))}
@@ -267,12 +267,12 @@ export default function Delivery(): JSX.Element | null {
 
               {jobs.length > 0 ? (
                 <div>
-                  <div className="flex items-center justify-between text-white/50 mb-1">
+                  <div className="flex items-center justify-between text-white/60 mb-1">
                     <span>jobs</span>
                     <button
                       type="button"
                       onClick={() => setShowAllJobs(prev => !prev)}
-                      className="text-white/40 hover:text-white/70"
+                      className="text-white/60 hover:text-white/70"
                     >
                       all
                     </button>
@@ -301,13 +301,13 @@ export default function Delivery(): JSX.Element | null {
 
               {data && data.unmerged_runs.length > 0 ? (
                 <div>
-                  <div className="text-white/50 mb-1">unmerged runs</div>
+                  <div className="text-white/60 mb-1">unmerged runs</div>
                   <div className="space-y-1">
                     {data.unmerged_runs.map(r => (
                       <div key={r.id} className="flex items-center gap-2">
                         <span className="truncate">{r.intent}</span>
-                        <span className="text-white/50">{r.harness}</span>
-                        <span className="text-white/40">{formatRelative(r.started_at)}</span>
+                        <span className="text-white/60">{r.harness}</span>
+                        <span className="text-white/60">{formatRelative(r.started_at)}</span>
                       </div>
                     ))}
                   </div>
@@ -316,7 +316,7 @@ export default function Delivery(): JSX.Element | null {
 
               {data && data.delegate.length > 0 ? (
                 <div>
-                  <div className="text-white/50 mb-1">delegate</div>
+                  <div className="text-white/60 mb-1">delegate</div>
                   <div className="space-y-1">
                     {data.delegate.map(d => (
                       <div key={d.slug} className="flex items-center gap-1.5">

@@ -136,7 +136,7 @@ export default function KeySync({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[11px] font-mono hover:text-white ${tone}`}
+        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${tone}`}
       >
         {summary(board, err)}
       </button>
@@ -151,7 +151,7 @@ export default function KeySync({
               {err || board?.error || 'the key board answered without rows.'}
             </p>
           ) : !board ? (
-            <p className="text-white/50">reading the bridges…</p>
+            <p className="text-white/60">reading the bridges…</p>
           ) : (
             <>
               {alerting ? (
@@ -160,7 +160,7 @@ export default function KeySync({
                   {board.alerts!.map(a => a.bridge).join(', ')}
                 </p>
               ) : null}
-              <label className="flex items-center gap-2 text-[10px] text-white/50">
+              <label className="flex items-center gap-2 text-[12px] text-white/60">
                 <input
                   id="keys-show-synced"
                   type="checkbox"
@@ -179,35 +179,35 @@ export default function KeySync({
                   className={`mt-2 p-2 rounded-lg border ${TONE[r.state]}`}
                 >
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-[11px] text-white/90 break-all flex-1 min-w-0">
+                    <span className="font-mono text-[12px] text-white/90 break-all flex-1 min-w-0">
                       {r.name}
                     </span>
                     {r.state === 'missing' ? (
                       <button
                         type="button"
                         onClick={() => copy(r.name)}
-                        className="shrink-0 px-1.5 py-0.5 rounded border border-white/20 text-[10px] text-white/70 hover:text-white"
+                        className="shrink-0 px-1.5 py-0.5 rounded border border-white/20 text-[12px] text-white/70 hover:text-white"
                       >
                         {copied === r.name ? 'copied' : 'copy name'}
                       </button>
                     ) : null}
-                    <span className="shrink-0 text-[10px] uppercase tracking-wider">
+                    <span className="shrink-0 text-[12px] uppercase tracking-wider">
                       {STATE_LABEL[r.state]}
                       {r.blip ? ' · blipped' : ''}
                     </span>
                   </div>
-                  <div className="mt-1 text-[10px] text-white/55">
+                  <div className="mt-1 text-[12px] text-white/55">
                     {r.namespaces.map(n => n.namespace).join(' · ')} · last synced{' '}
                     {ago(r.last_ok, now())}
                   </div>
                   {r.state === 'missing' ? (
-                    <div className="mt-1 text-[10px] text-white/70">
+                    <div className="mt-1 text-[12px] text-white/70">
                       Create a secret named exactly{' '}
                       <span className="font-mono text-white/90">{r.name}</span> in the estate's
                       Bitwarden project.
                     </div>
                   ) : r.reason && r.state !== 'synced' ? (
-                    <div className="mt-1 text-[10px] text-white/45 break-words">{r.reason}</div>
+                    <div className="mt-1 text-[12px] text-white/60 break-words">{r.reason}</div>
                   ) : null}
                 </div>
               ))}

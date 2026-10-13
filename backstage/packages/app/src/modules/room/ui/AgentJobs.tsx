@@ -70,7 +70,7 @@ function StageChips({ job }: { job: Job }) {
       {PIPELINE.map((s, i) => {
         const here = i === at;
         const past = at >= 0 && i < at;
-        let cls = 'text-white/25 border-white/5';
+        let cls = 'text-white/60 border-white/5';
         if (past) cls = 'text-white/55 border-white/15';
         if (here) cls = CURRENT[job.state];
         return (
@@ -78,7 +78,7 @@ function StageChips({ job }: { job: Job }) {
             key={s}
             data-stage={s}
             aria-current={here ? 'step' : undefined}
-            className={`px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider ${cls}`}
+            className={`px-1.5 py-0.5 rounded border text-[12px] font-mono uppercase tracking-wider ${cls}`}
           >
             {s}
           </span>
@@ -89,7 +89,7 @@ function StageChips({ job }: { job: Job }) {
         <span
           data-stage={job.stage}
           aria-current="step"
-          className={`px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase tracking-wider ${CURRENT.failed}`}
+          className={`px-1.5 py-0.5 rounded border text-[12px] font-mono uppercase tracking-wider ${CURRENT.failed}`}
         >
           {job.stage}
         </span>
@@ -200,7 +200,7 @@ export default function AgentJobs({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="px-3 py-1.5 rounded-full bg-black/70 border border-white/15 backdrop-blur-md text-[11px] font-mono text-white/80 hover:text-white"
+        className="px-3 py-1.5 rounded-full bg-black/70 border border-white/15 backdrop-blur-md text-[12px] font-mono text-white/80 hover:text-white"
       >
         agent jobs{running ? ` · ${running} running` : ''}
       </button>
@@ -217,7 +217,7 @@ export default function AgentJobs({
             }}
           >
             <label
-              className="block text-[10px] font-mono uppercase tracking-wider text-white/45 mb-1"
+              className="block text-[12px] font-mono uppercase tracking-wider text-white/60 mb-1"
               htmlFor="agent-job-task"
             >
               Give an agent a job
@@ -238,7 +238,7 @@ export default function AgentJobs({
                 id="agent-job-harness"
                 value={harness}
                 onChange={e => setHarness(e.target.value)}
-                className="rounded-md bg-white/5 border border-white/10 px-2 py-1 text-[11px] font-mono"
+                className="rounded-md bg-white/5 border border-white/10 px-2 py-1 text-[12px] font-mono"
               >
                 {HARNESSES.map(h => (
                   <option key={h} value={h}>
@@ -247,8 +247,8 @@ export default function AgentJobs({
                 ))}
               </select>
               <span
-                className={`text-[10px] font-mono ${
-                  tooLong ? 'text-rose-300' : 'text-white/30'
+                className={`text-[12px] font-mono ${
+                  tooLong ? 'text-rose-300' : 'text-white/60'
                 }`}
                 data-testid="agent-job-count"
               >
@@ -262,7 +262,7 @@ export default function AgentJobs({
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </div>
-            <p className="mt-1 text-[10px] text-white/35">
+            <p className="mt-1 text-[12px] text-white/60">
               The task is published on the public run page. Name secrets by env
               var, never paste them.
             </p>
@@ -271,7 +271,7 @@ export default function AgentJobs({
           {notice ? (
             <div
               role="status"
-              className={`mt-2 text-[11px] ${
+              className={`mt-2 text-[12px] ${
                 notice.ok ? 'text-emerald-300' : 'text-rose-300'
               }`}
             >
@@ -281,15 +281,15 @@ export default function AgentJobs({
 
           <div className="mt-3 border-t border-white/10 pt-2">
             {boardError ? (
-              <div role="alert" className="text-[11px] text-amber-300">
+              <div role="alert" className="text-[12px] text-amber-300">
                 {boardError}
               </div>
             ) : null}
             {jobs === null && !boardError ? (
-              <div className="text-[11px] text-white/40">Reading jobs…</div>
+              <div className="text-[12px] text-white/60">Reading jobs…</div>
             ) : null}
             {jobs !== null && jobs.length === 0 ? (
-              <div className="text-[11px] text-white/40">
+              <div className="text-[12px] text-white/60">
                 No agent jobs yet.
               </div>
             ) : null}
@@ -303,17 +303,17 @@ export default function AgentJobs({
                 >
                   <div className="flex items-start gap-2">
                     <span className="flex-1 break-words">{j.task}</span>
-                    <span className="text-[9px] font-mono text-white/35">
+                    <span className="text-[12px] font-mono text-white/60">
                       {j.harness || '?'}
                     </span>
                   </div>
                   <StageChips job={j} />
                   {j.reason ? (
-                    <div className="mt-1 text-[11px] text-rose-200/90 break-words">
+                    <div className="mt-1 text-[12px] text-rose-200/90 break-words">
                       {j.reason}
                     </div>
                   ) : null}
-                  <div className="mt-1 flex gap-3 text-[10px] font-mono">
+                  <div className="mt-1 flex gap-3 text-[12px] font-mono">
                     {j.run_url ? (
                       <a
                         href={j.run_url}
