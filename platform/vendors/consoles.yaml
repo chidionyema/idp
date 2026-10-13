@@ -212,7 +212,7 @@ vendors:
         \    input_cost_per_token: 0.0000003\n    output_cost_per_token: 0.0000012\n\
         \  model_info:\n    # M2.7 reads 204,800 tokens, a fifth of the primary's\
         \ window. Capped here so an\n    # oversized turn is refused by the estate\
-        \ rather than by the vendor mid-failover.\n    max_input_tokens: 204800\n"
+        \ rather than by the vendor mid-failover.\n    max_input_tokens: 204800\n\n# The face's second voice, asked by voice_media.py only when voice-tts refuses. Its own alias, not a\n# second voice-tts deployment: the router lays the caller's voice over a deployment's params\n# (litellm v1.98.0 router.py _aspeech: **data, then \"voice\"), and MiniMax maps only OpenAI-style voice\n# names, so Orpheus's \"hannah\" would reach MiniMax as a voice it does not have. The caller sends this\n# lane a MiniMax voice instead. Measured 2026-10-13 from the router pod: speech-02-turbo on\n# MINIMAX_API_KEY at api.minimax.io answered 200 with WAV for English_Graceful_Lady (api.minimaxi.com\n# answers 2049 invalid api key for the same key); every Gemini speech model answered 402, prepayment\n# credits depleted.\n- model_name: voice-tts-minimax\n  litellm_params:\n    model: minimax/speech-02-turbo\n    api_base: https://api.minimax.io\n    api_key: os.environ/MINIMAX_API_KEY\n    timeout: 20\n    # Pinned rather than left to LiteLLM's price map, for the reason on the minimax row: an unpriced\n    # lane records $0.0000 and max_budget never trips. $60 per million characters\n    # (model_cost[\"minimax/speech-02-turbo\"] on the live v1.98.0 router).\n    input_cost_per_character: 0.00006\n  model_info:\n    mode: audio_speech\n"
       fallbacks: '# Measured from inside the router pod 2026-09-04 21:5xZ: MiniMax
         answers 401 `invalid api
 
@@ -675,7 +675,7 @@ vendors:
         \    timeout: 20\n  model_info:\n    mode: audio_transcription\n- model_name:\
         \ voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n\
         \    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY\n\
-        \    timeout: 20\n  model_info:\n    mode: audio_speech\n# voice-tts on the other two Groq accounts, same model_name on purpose -- the pool `groq` above\n# already is, for the same reason. Orpheus on the on_demand tier allows 100 requests a DAY per\n# account, and a single deployment gave the router nothing to route around: the router log for the\n# 48 h to 2026-10-13 holds 1493 Orpheus refusals 'requests per day (RPD): Limit 100, Used 100',\n# all on one org (docs/diagnoses/2026-10-13-voice-tts-single-groq-account-daily-quota.yaml). The\n# pod has no local engine to fall back to. A spent account now cools down and the other two speak.\n- model_name: voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_2\n    timeout: 20\n  model_info:\n    mode: audio_speech\n- model_name: voice-tts\n  litellm_params:\n    model: openai/canopylabs/orpheus-v1-english\n    api_base: https://api.groq.com/openai/v1\n    api_key: os.environ/GROQ_API_KEY_3\n    timeout: 20\n  model_info:\n    mode: audio_speech\n"
+        \    timeout: 20\n  model_info:\n    mode: audio_speech\n"
       fallbacks: |
         # The floor is a pool of pools, not one vendor (founder 2026-09-27: "concerned by reliance
         # on groq ... what happens if groq runs out"). Every chain in this registry ends in `groq`

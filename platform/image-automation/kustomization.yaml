@@ -20,3 +20,4 @@ resources:
   - quad-ledger.yaml
   - zeroedge.yaml
   - voice-router.yaml
+  - hindsight-api.yaml

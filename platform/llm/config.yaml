@@ -134,6 +134,27 @@ model_list:
       # oversized turn is refused by the estate rather than by the vendor mid-failover.
       max_input_tokens: 204800
 
+  # The face's second voice, asked by voice_media.py only when voice-tts refuses. Its own alias, not a
+  # second voice-tts deployment: the router lays the caller's voice over a deployment's params
+  # (litellm v1.98.0 router.py _aspeech: **data, then "voice"), and MiniMax maps only OpenAI-style voice
+  # names, so Orpheus's "hannah" would reach MiniMax as a voice it does not have. The caller sends this
+  # lane a MiniMax voice instead. Measured 2026-10-13 from the router pod: speech-02-turbo on
+  # MINIMAX_API_KEY at api.minimax.io answered 200 with WAV for English_Graceful_Lady (api.minimaxi.com
+  # answers 2049 invalid api key for the same key); every Gemini speech model answered 402, prepayment
+  # credits depleted.
+  - model_name: voice-tts-minimax
+    litellm_params:
+      model: minimax/speech-02-turbo
+      api_base: https://api.minimax.io
+      api_key: os.environ/MINIMAX_API_KEY
+      timeout: 20
+      # Pinned rather than left to LiteLLM's price map, for the reason on the minimax row: an unpriced
+      # lane records $0.0000 and max_budget never trips. $60 per million characters
+      # (model_cost["minimax/speech-02-turbo"] on the live v1.98.0 router).
+      input_cost_per_character: 0.00006
+    model_info:
+      mode: audio_speech
+
   # Coding only. The plan's usage policy (docs.z.ai devpack/usage-policy, read
   # 2026-10-01): "GLM Coding Plan may only be used within officially supported tools
   # and products". So this lane sits in no pool and no fallback chain: nothing reaches
@@ -447,28 +468,6 @@ model_list:
       model: openai/canopylabs/orpheus-v1-english
       api_base: https://api.groq.com/openai/v1
       api_key: os.environ/GROQ_API_KEY
-      timeout: 20
-    model_info:
-      mode: audio_speech
-  # voice-tts on the other two Groq accounts, same model_name on purpose -- the pool `groq` above
-  # already is, for the same reason. Orpheus on the on_demand tier allows 100 requests a DAY per
-  # account, and a single deployment gave the router nothing to route around: the router log for the
-  # 48 h to 2026-10-13 holds 1493 Orpheus refusals 'requests per day (RPD): Limit 100, Used 100',
-  # all on one org (docs/diagnoses/2026-10-13-voice-tts-single-groq-account-daily-quota.yaml). The
-  # pod has no local engine to fall back to. A spent account now cools down and the other two speak.
-  - model_name: voice-tts
-    litellm_params:
-      model: openai/canopylabs/orpheus-v1-english
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY_2
-      timeout: 20
-    model_info:
-      mode: audio_speech
-  - model_name: voice-tts
-    litellm_params:
-      model: openai/canopylabs/orpheus-v1-english
-      api_base: https://api.groq.com/openai/v1
-      api_key: os.environ/GROQ_API_KEY_3
       timeout: 20
     model_info:
       mode: audio_speech

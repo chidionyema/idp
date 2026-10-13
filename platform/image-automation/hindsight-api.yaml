@@ -1,0 +1,30 @@
+# The hindsight api image (platform/hindsight/hindsight-api.Dockerfile: the vendor's image plus
+# its two local models) rolls on every main build that touches it, same mechanism as
+# voice-router.yaml in this directory: image-reflector lists tags, the policy picks the highest run
+# number, and the one ImageUpdateAutomation named "backstage" (path: ./, whole checkout) rewrites
+# the $imagepolicy marker on api.image.tag in platform/hindsight/hindsight.yaml.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: hindsight-api
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/hindsight-api
+  interval: 1m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: hindsight-api
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: hindsight-api
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

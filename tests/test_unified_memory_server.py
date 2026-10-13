@@ -471,6 +471,68 @@ def test_the_table_owner_is_held_to_tenant_isolation_too(pg):
         assert c.execute("SELECT content FROM memory_versions").fetchall() == []
 
 
+def test_boot_deletes_the_named_test_leftovers_and_nothing_else(pg):
+    """schema.sql section 10, on the estate-db shape (an owner held to FORCE ROW LEVEL
+    SECURITY): the named leftovers go with their history, in every tenant; a real fact and a
+    leftover's key in another namespace stay; the append-only guard is back on after; a
+    later boot changes nothing."""
+    url = estate_db_shaped(pg)
+    with TestClient(load_app(url).app) as client:
+        a, b = Tenant(url, "A"), Tenant(url, "B")
+        for tenant in (a, b):
+            assert (
+                put(
+                    client, tenant, "estate", "gate-smoke", "gate smoke probe"
+                ).status_code
+                == 200
+            )
+            assert (
+                put(
+                    client, tenant, "estate", "gate-smoke", "gate smoke again"
+                ).status_code
+                == 200
+            )
+            assert (
+                put(
+                    client, tenant, "founder", "estate.test.bddb939df044952", "v"
+                ).status_code
+                == 200
+            )
+        assert put(client, a, "estate", "fact.greenlane.x", "real").status_code == 200
+        assert (
+            put(client, a, "other", "gate-smoke", "not a leftover").status_code == 200
+        )
+
+    def rows(tenant):
+        with psycopg.connect(url, autocommit=True) as c:
+            c.execute(
+                "SELECT set_config('app.tenant_id', %s, false)", (str(tenant.id),)
+            )
+            return (
+                c.execute(
+                    "SELECT namespace, key FROM memories ORDER BY 1, 2"
+                ).fetchall(),
+                c.execute(
+                    "SELECT DISTINCT namespace, key FROM memory_versions ORDER BY 1, 2"
+                ).fetchall(),
+            )
+
+    kept = [("estate", "fact.greenlane.x"), ("other", "gate-smoke")]
+    for _ in range(2):  # the boot that deletes, then one that must be a no-op
+        with TestClient(load_app(url).app):
+            pass
+        assert rows(a) == (kept, kept)
+        assert rows(b) == ([], [])
+
+    with psycopg.connect(url) as c:
+        # A's tenant set, so the delete reaches rows and the row trigger has one to refuse.
+        c.execute("SELECT set_config('app.tenant_id', %s, false)", (str(a.id),))
+        with pytest.raises(
+            psycopg.errors.CheckViolation, match="HISTORY_IS_APPEND_ONLY"
+        ):
+            c.execute("DELETE FROM memory_versions")
+
+
 # --- the production shape: estate-db, a mounted secret, the vault's token, the limit -------
 
 

@@ -70,13 +70,24 @@ spec:
         # Never call huggingface.co at boot. The namespace fence only allows egress to
         # estate-db, llm and observability, so the hub call sits in SYN_SENT forever and
         # the startup probe fails (observed 2026-09-08 inside the pod: 3.174.141.51:443).
-        # The embedding and reranker models are already on the image; offline is correct.
+        # The embedding and reranker models are baked into the estate's own image (below), so
+        # offline is correct.
         HF_HUB_OFFLINE: "1"
         TRANSFORMERS_OFFLINE: "1"
-      # No PVC for the model cache: the models are on the image (offline above), the cache held
-      # 217M, and OCI rounds every block volume up to 50GB against an account volume limit that
-      # refused agent-workforce-data (2026-10-13). An emptyDir keeps the path writable under the
-      # read-only root filesystem; a restart re-warms it from the image.
+        # Where hindsight-api.Dockerfile put the models: outside ~/.cache, which the emptyDir
+        # below hides. The image sets this too; it is here so the values say where they come from.
+        HF_HUB_CACHE: /opt/hindsight-models/hub
+      # The vendor image downloads its models on first boot and cannot here (no egress, offline
+      # above). This is the vendor image plus those models: platform/hindsight/hindsight-api.Dockerfile.
+      # Until 2026-10-13 the 50GB modelCache PVC was the only copy of them, and #6088 removed it on
+      # the wrong belief that the vendor image carried them (the new pod CrashLoopBackOff'd).
+      image:
+        repository: ghcr.io/chidionyema/hindsight-api
+        tag: "main-0-0000000000000000000000000000000000000000" # {"$imagepolicy": "flux-system:hindsight-api:tag"}
+      # No PVC for the model cache: the models are on the image, the cache held 217M, and OCI
+      # rounds every block volume up to 50GB against an account volume limit that refused
+      # agent-workforce-data (2026-10-13). An emptyDir keeps the path writable under the read-only
+      # root filesystem.
       persistence:
         modelCache: { enabled: false }
       extraVolumes:
