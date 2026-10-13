@@ -267,3 +267,32 @@ def test_a_truncated_compare_falls_back_to_the_plain_count():
     assert (
         _behind(compare) == 300
     )  # cannot see all commits, so it refuses to discount any
+
+
+class TestALaneIsLeftToTheGreenlane:
+    """#6069 (2026-10-13): lane/backstage-release-immutable was refreshed and squash-merged by
+    merge-when-green, so it reached main without the Greenlane proving it green on top of main."""
+
+    def test_a_green_lane_is_not_merged(self, landable):
+        v = landable.verdict(pr("CLEAN", GREEN, headRefName="lane/x"), REQUIRED)
+        assert v[0] == "SKIP", v
+
+    def test_a_behind_lane_is_not_refreshed(self, landable):
+        """update-branch moves the lane head; the Greenlane would read it as new work."""
+        v = landable.verdict(
+            pr("BEHIND", GREEN, behind_by=3, headRefName="lane/x"), REQUIRED
+        )
+        assert v[0] == "SKIP", v
+
+    @pytest.mark.parametrize(
+        "stamp", ["Greenlane-Lane: lane/feat/x", "Greenlane-Batch: candidate abc"]
+    )
+    def test_a_pr_the_greenlane_stamped_is_not_merged(self, landable, stamp):
+        """An adopted PR keeps its own branch name; the body stamp is what marks it a lane."""
+        v = landable.verdict(pr("CLEAN", GREEN, body=f"work\n\n{stamp}\n"), REQUIRED)
+        assert v[0] == "SKIP", v
+
+    def test_ordinary_work_still_merges(self, landable):
+        assert (
+            landable.verdict(pr("CLEAN", GREEN, body="plain"), REQUIRED)[0] == "MERGE"
+        )
