@@ -448,18 +448,19 @@ fi
 # passkey-only member who loses the phone has no way back in. The password path must keep the second
 # factor, so a PL_AF without "2FA" is refused at the top of this file. Whether the passkey path then
 # skips that second factor is NOT yet measured: the passwordless drill (passwordless=true) answers it. So: the IdP on; one IdP policy owned
-# by this file and assigned to the front door alone (App.idpPolicy {value}), holding
-#   1. the pilot cohort -> LocalIDPs ["UserNamePassword","FIDO_AUTHENTICATOR"], and only while
-#      pl_cohort_ready and userVerification=REQUIRED -- the same gate as the sign-on rule above:
-#      a passkey offered to a member who has none is a dead button;
-#   2. everyone -> a copy of DefaultIDPRule's own condition and return, read live, so the founder's
-#      door is exactly the domain default. The copy is read back and must equal the default before
-#      the policy is assigned; a mismatch fails here rather than reaching the door.
-# The cohort rule carries the group condition alone, no `operation eq "IDP Discovery"` string: if the
-# domain combined the two as OR, the passkey offer would reach every user, members with no passkey
-# among them. A group condition the
-# domain does not evaluate at discovery fails safe -- the cohort falls to rule 2, today's door -- and
-# the drill measures which happened.
+# by this file and assigned to the front door alone (App.idpPolicy {value}), holding ONE rule:
+# everyone -> a copy of DefaultIDPRule's own condition and return, read live, with FIDO_AUTHENTICATOR
+# added to its LocalIDPs only while pl_cohort_ready and userVerification=REQUIRED -- the same gate as
+# the sign-on rule above. The copy is read back and must equal what was sent before the policy is
+# assigned; a mismatch fails here rather than reaching the door.
+# Not scoped to the cohort, because a cohort-scoped IdP rule can never fire. Measured 2026-10-13
+# 00:06Z, 47 min after CI wired a rule 1 for the cohort (user.groups[*].value coany, the same shape
+# as the console's own OciConsoleGroupCondition) with estate-drill a member: the door's loginCtx
+# carried userNameRequired=false, i.e. the domain picks the IdPs before it knows the user, the group
+# condition never matches, and every visitor -- the cohort too -- got rule 2's password-only form.
+# Offering the passkey to everyone loosens nothing: who must also give a second factor is decided by
+# the sign-on policy, after the user is known, where the cohort condition does evaluate. A visitor
+# with no passkey who presses it gets a refused ceremony and the password beside it.
 fido_on=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/IdentityProviders/FIDO_AUTHENTICATOR?attributes=enabled" 2>/dev/null | jq -r '.data.enabled // ""')
 if [ "$fido_on" != true ]; then
   T4=$(mktemp -d); chmod 700 "$T4"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" "${T4:-/dev/null}" 2>/dev/null || true' EXIT
@@ -480,35 +481,28 @@ if [ -n "$fd_appid" ]; then
   }
   dflt=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/DefaultIDPRule" 2>/dev/null | jq -c '.data | {condition, cg: .conditionGroup.value, ret: ([.return[]? | {name, value}] | sort_by(.name))}')
   [ -n "$dflt" ] && [ "$(printf '%s' "$dflt" | jq -r '.ret | length')" -gt 0 ] || { echo "FAIL    identity DefaultIDPRule unreadable, so the front door's identity-provider policy was not touched"; exit 1; }
-  jq -n --argjson d "$dflt" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door identity providers (everyone)",policyType:{value:"IdentityProvider"},condition:$d.condition,conditionGroup:{type:"Condition",value:$d.cg},return:$d.ret}' > "$T4/ia.json"
+  ip_cohort=false
+  if [ "$(pl_cohort_ready)" = 1 ] && [ "$(pl_uv_value)" = REQUIRED ]; then
+    ip_cohort=true
+  else
+    echo "WAIT    identity front door passkey offer: the pilot cohort is not every-member-ENROLLED with userVerification=REQUIRED, so the passkey stays off the door -- it offers the domain default to everyone"
+  fi
+  # The rule as it must read back: the default, plus the passkey after the password when the gate is open.
+  want=$(printf '%s' "$dflt" | jq -c --argjson on "$ip_cohort" 'if $on then .ret |= map(if .name == "LocalIDPs" then .value = ((.value | fromjson) as $l | if ($l | index("FIDO_AUTHENTICATOR")) then $l else $l + ["FIDO_AUTHENTICATOR"] end | tojson) else . end) else . end')
+  jq -n --argjson d "$want" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door identity providers (everyone)",policyType:{value:"IdentityProvider"},condition:$d.condition,conditionGroup:{type:"Condition",value:$d.cg},return:$d.ret}' > "$T4/ia.json"
   iaid=$(put_or_post Rules "$(rule_id "front door identity providers (everyone)")" "$T4/ia.json" 2>"$T4/err") \
     && [ -n "$iaid" ] || { echo "FAIL    identity front door everyone IdP rule refused: $(cat "$T4/err")"; exit 1; }
   ia_rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$iaid" 2>/dev/null | jq -c '.data | {condition, cg: .conditionGroup.value, ret: ([.return[]? | {name, value}] | sort_by(.name))}')
-  [ "$ia_rb" = "$dflt" ] || { echo "FAIL    identity front door everyone IdP rule reads back as $ia_rb, not the domain default $dflt; the policy was not assigned"; exit 1; }
+  [ "$ia_rb" = "$want" ] || { echo "FAIL    identity front door everyone IdP rule reads back as $ia_rb, not $want; the policy was not assigned"; exit 1; }
   ip_rules=$(jq -n --arg a "$iaid" '[{value:$a,sequence:1}]')
-  ip_cohort=false
-  if [ "$(pl_cohort_ready)" = 1 ] && [ "$(pl_uv_value)" = REQUIRED ]; then
-    ipgid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
-    ipcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
-    jq -n --arg g "[\"$ipgid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T4/ic.json"
-    ipcid=$(put_or_post Conditions "$ipcid" "$T4/ic.json" 2>"$T4/err") && [ -n "$ipgid" ] && [ -n "$ipcid" ] \
-      || { echo "FAIL    identity passwordless cohort condition refused: $(cat "$T4/err")"; exit 1; }
-    jq -n --arg c "$ipcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers the passkey (pilot cohort)",policyType:{value:"IdentityProvider"},conditionGroup:{type:"Condition",value:$c},return:[{name:"LocalIDPs",value:"[\"UserNamePassword\",\"FIDO_AUTHENTICATOR\"]"},{name:"SocialIDPs",value:"[]"},{name:"SamlIDPs",value:"[]"},{name:"X509IDPs",value:"[]"},{name:"userChoice",value:"false"}]}' > "$T4/ip.json"
-    ipid=$(put_or_post Rules "$(rule_id "front door offers the passkey (pilot cohort)")" "$T4/ip.json" 2>"$T4/err") \
-      && [ -n "$ipid" ] || { echo "FAIL    identity front door passkey IdP rule refused: $(cat "$T4/err")"; exit 1; }
-    ip_rules=$(jq -n --arg p "$ipid" --arg a "$iaid" '[{value:$p,sequence:1},{value:$a,sequence:2}]')
-    ip_cohort=true
-  else
-    echo "WAIT    identity front door passkey offer: the pilot cohort is not every-member-ENROLLED with userVerification=REQUIRED, so its IdP rule stays unwired -- the door offers the domain default to everyone"
-  fi
   ipol=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "Front Door Identity Provider Policy") | .id' | head -1)
-  jq -n --argjson r "$ip_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Identity Provider Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5858): the passkey offered beside the password for the pilot cohort, the domain default for everyone else",active:true,policyType:{value:"IdentityProvider"},rules:$r}' > "$T4/ipp.json"
+  jq -n --argjson r "$ip_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Identity Provider Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5858): the domain default, with the passkey offered beside the password once the pilot cohort is enrolled",active:true,policyType:{value:"IdentityProvider"},rules:$r}' > "$T4/ipp.json"
   ipol=$(put_or_post Policies "$ipol" "$T4/ipp.json" 2>"$T4/err") && [ -n "$ipol" ] || { echo "FAIL    identity front door IdP policy refused: $(cat "$T4/err")"; exit 1; }
   jq -n --arg p "$ipol" '{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"replace",path:"idpPolicy",value:{value:$p}}]}' > "$T4/ipa.json"
   pa=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid" --request-body "file://$T4/ipa.json" 2>&1)
   rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps/$fd_appid?attributes=idpPolicy" 2>/dev/null | jq -r '.data.idpPolicy.value // ""')
   [ "$rb" = "$ipol" ] || { echo "FAIL    identity front door app idpPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-  if [ "$ip_cohort" = true ]; then echo "ok      identity front door IdP policy assigned: passkey offered beside the password for $pl_group (rule 1), the domain default for everyone else (#5858)"
+  if [ "$ip_cohort" = true ]; then echo "ok      identity front door IdP policy assigned: passkey offered beside the password to everyone at the door; the sign-on policy decides who still owes a second factor (#5858)"
   else echo "ok      identity front door IdP policy assigned: the domain default for everyone (#5858)"; fi
 else
   echo "BLIND   identity front door app not found, so no identity-provider policy was assigned"
