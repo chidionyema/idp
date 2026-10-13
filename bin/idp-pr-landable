@@ -8,6 +8,8 @@ platform/github/ruleset.idp.required-checks.json rather than a list typed here -
 that is added to the ruleset and not to this tool would otherwise be a check nothing waits for.
 
 WHAT IT REFUSES, each a real case rather than a precaution:
+  a Greenlane lane          a lane/* head, or a body the Greenlane stamped: it lands lanes itself,
+                            and a second lander put #6069 on main unproven (2026-10-13)
   draft                     ONLY when it is otherwise unfinished. A draft that is green, clean
                             and unheld gets READY instead: the flag is the author's, and the
                             author is a session that ended (crew, 2026-09-08, five green drafts
@@ -43,6 +45,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RULESET = os.path.join(ROOT, "platform", "github", "ruleset.idp.required-checks.json")
 HOLD = {"hold", "do-not-merge", "wip"}
+# greenlane/github.py MARKER and ADOPTED: the bodies of the PRs the Greenlane raised or adopted
+GREENLANE_STAMPS = ("Greenlane-Batch:", "Greenlane-Lane:")
 
 
 def required_contexts(path=RULESET):
@@ -96,6 +100,16 @@ def verdict(pr, required):
     missing = sorted(required - names)
     state = pr.get("mergeStateStatus")
 
+    # A lane is the Greenlane's to land, and nobody else's (AGENTS.md:75). Measured 2026-10-13:
+    # #6069 (lane/backstage-release-immutable) reached main as "Merge branch 'main' into
+    # lane/backstage-release-immutable" -- this tool's UPDATE, then a squash by estate-agents[bot]
+    # -- with no Greenlane stamp in its body, so the lane was never proven green on top of main.
+    # Refreshing a lane is refused too: update-branch moves the lane head, and the Greenlane reads
+    # a moved head as new work and requeues it.
+    head = pr.get("headRefName") or ""
+    body = pr.get("body") or ""
+    if head.startswith("lane/") or any(s in body for s in GREENLANE_STAMPS):
+        return "SKIP", "a Greenlane lane; the Greenlane is the only thing that lands it"
     if labels & HOLD:
         return "SKIP", "labelled " + ",".join(sorted(labels & HOLD))
     if state == "DIRTY":
