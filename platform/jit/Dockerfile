@@ -1,6 +1,11 @@
 # The broker's image. Distroless, non-root, no shell: the one workload that can mint write
 # access is not a workload anyone should be able to get a prompt inside.
-FROM python:3.12-slim AS build
+# The build's Python must be the runtime's. distroless/python3-debian12 runs Debian 12's 3.11, and
+# cffi (cryptography's dependency) ships a per-version extension: built on 3.12 it lands as
+# _cffi_backend.cpython-312-*.so, which 3.11 cannot import. Measured 2026-10-13: jit-broker in
+# CrashLoopBackOff (1112 restarts) on `No module named '_cffi_backend'` since the enrollment door
+# added cryptography. tests/test_image_python_matches_runtime.py holds the pair together.
+FROM python:3.11-slim-bookworm AS build
 WORKDIR /w
 # cryptography verifies the Ed25519 signature a first-time device makes with the estate age
 # identity (ADR 0032). It is the same library the estate already trusts for TLS; the wheel is
