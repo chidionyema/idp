@@ -162,6 +162,8 @@ jobs:
           PY
 
       - name: mint the secrets the runtime declares, from the roots the estate already holds
+        env:
+          OPENAI_ROOT: ${{ secrets.SEED_OPENAI_API_KEY }}
         run: |
           set -euo pipefail
           # LAW 52: ONE ROOT PER PROVIDER, SET ONCE; CODE MINTS THE REST; NEVER A CONSOLE STEP.
@@ -234,6 +236,21 @@ jobs:
             VISION_API_KEY="${{ secrets.SEED_ANTHROPIC_API_KEY }}" \
             CONCIERGE_VISION_MODEL="claude-sonnet-4-6"
 
+          # THE CALL LANE. Live phone calls use OpenAI's realtime model (mums_concierge
+          # voice_endpoints.py), founder-chosen 2026-10-13 -- no other root in the estate speaks
+          # audio both ways. Unlike the secrets above it is REWRITTEN EVERY RUN (--force) once the root
+          # is set: a rotated key must reach the endpoint, and nothing is encrypted under it to orphan.
+          # Until SEED_OPENAI_API_KEY is set the secret is created holding no key, so the endpoint still
+          # deploys and a call hears "send me a voice note" (voice_endpoints.calls_available).
+          if [ -n "$OPENAI_ROOT" ]; then
+            modal secret create realtime-lane OPENAI_API_KEY="$OPENAI_ROOT" --force >/dev/null
+            echo "ok      realtime-lane holds the OpenAI key: calls are on"
+          else
+            ensure_secret realtime-lane REALTIME_LANE=unset
+            echo "note    SEED_OPENAI_API_KEY is not set: calls answer with the voice-note message."
+            echo "        Set it with bin/idp-set-root openai, then re-run this workflow."
+          fi
+
       # THE FOUNDER'S HALF, CARRIED, NOT RE-ASKED. TWILIO_AUTH_TOKEN, the three numbers and the card
       # key are born in Bitwarden (consoles.yaml `twilio` and `card-key` rows) and the vendor bridge
       # already lands each in the `concierge` namespace. GitHub holds none of them and must not
@@ -270,6 +287,9 @@ jobs:
             exit 1
           }
           echo "::add-mask::$tok"
+          # Kept for the self-check step, which signs its probe the way Twilio signs a webhook.
+          # Runner-local, mode 600, never echoed; the runner is discarded when the job ends.
+          (umask 077; printf '%s' "$tok" > "$RUNNER_TEMP/twilio-auth-token")
           twilio=(TWILIO_AUTH_TOKEN="$tok")
           # Optional, each in its own Secret (platform/vendors/templates/externalsecrets.yaml): an
           # absent one narrows what the door does; it does not hold the deploy out.
@@ -384,7 +404,8 @@ jobs:
             echo "        will keep finding nothing to deploy. agent.py IS deployed; nothing is lost."
             exit 1
           fi
-          # The endpoint declares exactly these three secret names (ephemeral/webapp.py:94-100).
+          # The endpoint declares exactly these five secret names (ephemeral/webapp.py, _WEB_SECRETS);
+          # vision-lane and realtime-lane are minted by the step above, the first three are not.
           # Modal refuses a deploy whose declared secret is absent, so confirm them by CREATING, not by
           # reading `modal secret list` -- that table truncates names to fit the column
           # (cloudflare-r2-credentials prints as cloudflare-r2-cred...), which is the defect this
@@ -404,7 +425,7 @@ jobs:
           # cutover replaces it -- the same state as "URL not known yet", which it already handles.
           modal secret create concierge-tunnel CONCIERGE_TUNNEL_PENDING=1 >/dev/null 2>&1 \
             && echo "ok      concierge-tunnel created as a marker; the cutover below fills it" || true
-          for s in human-twilio concierge-tunnel cloudflare-r2-credentials; do
+          for s in human-twilio concierge-tunnel cloudflare-r2-credentials vision-lane realtime-lane; do
             out=$(modal secret create "$s" PROBE=1 2>&1) && {
               modal secret delete "$s" --yes >/dev/null 2>&1 || true
               echo "FAIL    concierge-deploy  the endpoint declares secret '$s' and it does not exist."
@@ -469,6 +490,39 @@ jobs:
           echo "ok      modal   concierge-tunnel now holds $URL"
           echo "next    the Twilio console webhook must point here; that is a console step, tracked"
           echo "        separately, and it is the one thing this workflow cannot do for itself"
+
+      # THE DEPLOY PROVES ITSELF. Every check before this needed the founder's phone, and the
+      # shopping request that went silent on 2026-10-13 was a missing key nobody could see from here.
+      # /health/selfcheck (mums_concierge main.py) times the slow steps of a reply -- the intent parse,
+      # edge-tts, the offline voice, transcription -- inside the always-on container she is served by,
+      # so it costs no second container. Twilio-signed like the webhook it sits beside. THIS REPO IS
+      # PUBLIC: the words are made up and only timings and engine names come back, by design.
+      - name: self-check the live endpoint (intent, voice, transcription)
+        if: ${{ inputs.dry_run == false }}
+        run: |
+          set -euo pipefail
+          URL=$(python -c 'import modal; print(modal.Function.from_name("mums-concierge-web", "web").get_web_url() or "")')
+          python - "$URL" "$RUNNER_TEMP/twilio-auth-token" <<'PY'
+          import base64, hashlib, hmac, json, sys, urllib.error, urllib.parse, urllib.request
+          base, token_file = sys.argv[1].rstrip("/"), sys.argv[2]
+          url, params = f"{base}/health/selfcheck", {"probe": "1"}
+          token = open(token_file).read().strip()
+          payload = url + "".join(f"{k}{params[k]}" for k in sorted(params))
+          sig = base64.b64encode(hmac.new(token.encode(), payload.encode(), hashlib.sha1).digest()).decode()
+          req = urllib.request.Request(url, data=urllib.parse.urlencode(params).encode(),
+                                       headers={"X-Twilio-Signature": sig})
+          try:
+              resp = urllib.request.urlopen(req, timeout=280)
+          except urllib.error.HTTPError as err:
+              resp = err
+          body = resp.read().decode()
+          try:
+              print(json.dumps(json.loads(body), indent=2))
+          except ValueError:
+              print(f"FAIL    concierge-deploy  /health/selfcheck answered {resp.status}: {body[:200]}")
+              sys.exit(1)
+          sys.exit(0 if resp.status == 200 else 1)
+          PY
 
       - name: dry run -- say plainly what was not done
         if: ${{ inputs.dry_run == true }}

@@ -999,6 +999,18 @@ vendors:
       ns: concierge
       field: CARD_KEY_HEX
       bw: CONCIERGE_CARD_KEY
+  openai:
+    kind: secret
+    secret: SEED_OPENAI_API_KEY
+    page: https://platform.openai.com/api-keys
+    shape: sk-[A-Za-z0-9_-]{20,}
+    verify:
+      method: GET
+      url: https://api.openai.com/v1/models
+      headers:
+        Authorization: Bearer {key}
+    rotation: assisted
+    store_default: human-vault
   exa:
     kind: secret
     secret: SEED_EXA_API_KEY
