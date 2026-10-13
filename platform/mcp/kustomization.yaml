@@ -17,7 +17,7 @@ images:
   # pull and Flux reports it. image-automation-controller rewrites the newTag line from
   # ImagePolicy flux-system/estate-mcp; the marker is how it finds the line.
   - name: ghcr.io/chidionyema/estate-mcp
-    newTag: main-14344-edcf495a7b24705ae2d97b267fba9b4f546efe80 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
+    newTag: main-14372-05a44932222da51da25b41154f0e67de85085679 # {"$imagepolicy": "flux-system:estate-mcp:tag"}
 configMapGenerator:
   - name: mcp-config
     files:
