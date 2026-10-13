@@ -6,8 +6,26 @@ set -euo pipefail
 # IDP_ROOT lets the installer be run from a worktree while the jobs point at the
 # permanent checkout (crew#280: two jobs were installed from /tmp/claude-501/wt-idp-oke
 # and died with it). Optional label args limit the install to those jobs.
-IDP="${IDP_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
-case "$IDP" in /tmp/*|/private/tmp/*|/var/folders/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
+SELF="$(cd "$(dirname "$0")/.." && pwd)"
+# Jobs point at the runtime tree bin/estate-runtime-sync keeps on main, not at the checkout this
+# runs from. launchd cannot read ~/Documents (macOS TCC): a job rendered there exits 126 or 78
+# with "Operation not permitted" on every spawn. 2026-10-13: 15 jobs installed from the shared
+# checkout on 2026-09-20/21 had never run once; their logs held nothing but that line.
+# --check still renders this tree, so it grades the templates being edited.
+RUNTIME="$HOME/.estate/runtime/idp"
+if [ "${1:-}" != "--check" ] && [ -z "${IDP_ROOT:-}" ] && [ -d "$RUNTIME/launchd" ]; then
+  IDP="$RUNTIME"
+else
+  IDP="${IDP_ROOT:-$SELF}"
+fi
+if [ "$IDP" != "$RUNTIME" ]; then
+  case "$IDP" in /tmp/*|/private/tmp/*|/var/folders/*|*/.wt-*) echo "refusing: $IDP is a temporary checkout; set IDP_ROOT to the permanent one (LAW 46)"; exit 2;; esac
+fi
+if [ "${1:-}" != "--check" ]; then
+  case "$IDP" in "$HOME"/Documents/*|"$HOME"/Desktop/*|"$HOME"/Downloads/*)
+    echo "refusing: launchd cannot read $IDP (macOS TCC); run bin/estate-runtime-sync to create $RUNTIME, or set IDP_ROOT outside Documents/Desktop/Downloads"; exit 2;;
+  esac
+fi
 ONLY=("$@")
 
 # A script is not built until it has been executed once (LAW 45, bin/idp-script-compiles).
@@ -44,6 +62,9 @@ TEMPORAL_BIN="$(command -v temporal || true)"
 # 2026-09-13: '${PYTHON}' is not an absolute path). Resolved here, once, per machine, the same
 # way TEMPORAL_BIN is -- a bare `python3` would exit 78 with an empty log.
 PYTHON_BIN="$(command -v python3 || true)"
+# The PATH a job inherits is this shell's; entries launchd cannot read (TCC) are dropped, so a
+# command resolves to the runtime tree's copy rather than to a checkout under ~/Documents.
+PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -vE "^$HOME/(Documents|Desktop|Downloads)(/|$)" | paste -sd: -)"
 # crew#396: ai.estate.temporal.plist.tmpl is retired; the engine is platform/temporal on the cluster.
 for t in "$IDP"/launchd/*.plist.tmpl; do
   name="$(basename "${t%.tmpl}")"
@@ -51,8 +72,18 @@ for t in "$IDP"/launchd/*.plist.tmpl; do
     keep=0; for o in "${ONLY[@]}"; do [ "$name" = "ai.estate.$o.plist" ] && keep=1; done
     [ "$keep" = 1 ] || continue
   fi
+  # The cluster owns these; a second copy on the Mac only crash-loops (2026-10-13: all three
+  # had never run here). Scheduling is Dagster's (platform/scheduling/one-scheduler.yaml).
+  case "$name" in ai.estate.idp.plist|ai.estate.scheduler.plist|ai.estate.sovereign-worker.plist)
+    echo "skipped ${name%.plist}: runs on the cluster, not this Mac"; continue;;
+  esac
   IDP="$IDP" HOME="$HOME" PATH="$PATH" TEMPORAL_BIN="$TEMPORAL_BIN" PYTHON_BIN="$PYTHON_BIN" envsubst '${IDP} ${HOME} ${PATH} ${TEMPORAL_BIN} ${PYTHON_BIN}' < "$t" > "$DEST/$name"
   plutil -lint "$DEST/$name" >/dev/null
+  # launchd opens the log paths itself and creates no directories; a missing one fails the spawn.
+  for k in StandardOutPath StandardErrorPath; do
+    p="$(plutil -extract "$k" raw "$DEST/$name" 2>/dev/null || true)"
+    if [ -n "$p" ]; then mkdir -p "$(dirname "$p")"; fi
+  done
   label="${name%.plist}"
   launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
   launchctl bootstrap "gui/$(id -u)" "$DEST/$name"
