@@ -498,7 +498,10 @@ flows:
     # guacamole/env.yaml, platform/healthchecks/env.yaml), not only in the one-shot migration
     # Jobs -- these are standing daily diallers, and a database neither can reach is a service
     # that does not start.
-    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge, unified-memory]
+    # quad: quad-ledger's migrate init container, its consumer and both CronJobs dial estate-rw
+    # for database quad_ledger (platform/quad/ledger/ledger.yaml); without it migrate timed out
+    # on 10.96.195.9:5432 and the Deployment never started (2026-10-13).
+    ingress_from: [backstage, otto-gateway, hindsight, temporal, llm, observability, commerce, dagster, research, guacamole, healthchecks, via-negativa, sovereign-system, forge, unified-memory, quad]
   temporal:
     # 2026-09-06: estate-db-copy-temporal-r2 timed out on estate-rw from this namespace once Calico
     # enforced the fence; estate-db named temporal on its ingress side, this side named nothing.

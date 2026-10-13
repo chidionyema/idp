@@ -157,6 +157,9 @@ spec:
           kubernetes.io/metadata.name: otto-gateway
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: quad
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: research
     - namespaceSelector:
         matchLabels:
