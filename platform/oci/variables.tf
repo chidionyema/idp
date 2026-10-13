@@ -55,6 +55,14 @@ variable "shop_backup_retention_days" {
   default = 90
 }
 
+# When the quad-ledger anchor PAR stops working (quad.tf). OCI requires an expiry; a dated value
+# rather than timeadd(timestamp()), which would replace the PAR on every plan. When it lapses the
+# quad-ledger-anchor CronJob fails its PUT with 404: move this date forward and apply.
+variable "quad_anchor_par_expires" {
+  type    = string
+  default = "2027-10-13T00:00:00Z"
+}
+
 variable "oci_auth" {
   description = "Provider auth: APIKey on a laptop (bin/idp-oci-login), SecurityToken under GitHub OIDC."
   type        = string
