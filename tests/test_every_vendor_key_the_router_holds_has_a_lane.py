@@ -9,8 +9,8 @@ call them direct.
 This runs the renderer -- the same one bin/idp-ci runs -- and grades what it produced.
 """
 
-import subprocess
-import sys
+import importlib.machinery
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -27,24 +27,32 @@ POD = ROOT / "platform" / "llm" / "litellm.yaml"
 CONSOLE_OWNED = {"kimi", "deepseek"}
 
 
+def _vendor_render():
+    """bin/idp-vendor-render as a module: its render() in memory, never its write.
+
+    Run as a script it rewrites llm/config.yaml and platform/llm/config.yaml in the checkout,
+    so every test run silently undid an uncommitted edit to either file (2026-10-13: a lane's
+    voice-tts rows vanished on each pre-push run).
+    """
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_vendor_render", str(ROOT / "bin" / "idp-vendor-render")
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
+
+
 def _vendors():
     d = yaml.safe_load(CONSOLES.read_text())
     return d.get("vendors", d)
 
 
 def _rendered_lane_names():
-    proc = subprocess.run(  # noqa: S603
-        [sys.executable, str(ROOT / "bin" / "idp-vendor-render")],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert proc.returncode == 0, (  # noqa: S101
-        f"the renderer that owns platform/llm/config.yaml failed, so nothing below is "
-        f"gradeable:\n{proc.stdout[-2000:]}\n{proc.stderr[-2000:]}"
-    )
-    cfg = yaml.safe_load(ROUTER.read_text())
+    vr = _vendor_render()
+    vendors = yaml.safe_load(vr.REG.read_text())["vendors"]
+    base = "platform/llm/config.base.yaml"
+    cfg = yaml.safe_load(vr.render(vendors, (ROOT / base).read_text(), base))
     return {m["model_name"] for m in cfg["model_list"]}
 
 

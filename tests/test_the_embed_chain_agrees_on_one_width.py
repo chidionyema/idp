@@ -23,16 +23,31 @@ no gate and no user will say so. This one grades it from the rendered router con
 gateway's own environment, so the two cannot drift apart.
 """
 
-import subprocess
-import sys
+import importlib.machinery
+import importlib.util
 from pathlib import Path
 
 import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-ROUTER = ROOT / "platform" / "llm" / "config.yaml"
 GATEWAY = ROOT / "platform" / "otto-gateway" / "deployment.yaml"
+
+
+def _vendor_render():
+    """bin/idp-vendor-render as a module: its render() in memory, never its write.
+
+    Run as a script it rewrites llm/config.yaml and platform/llm/config.yaml in the checkout,
+    so every test run silently undid an uncommitted edit to either file (2026-10-13: a lane's
+    voice-tts rows vanished on each pre-push run).
+    """
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_vendor_render", str(ROOT / "bin" / "idp-vendor-render")
+    )
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
 
 
 @pytest.fixture(scope="module")
@@ -45,17 +60,10 @@ def rendered():
     the rendered file alone and this test would assert a generated artefact back at
     itself and could never catch a registry edit that renders wrong.
     """
-    proc = subprocess.run(  # noqa: S603
-        [sys.executable, str(ROOT / "bin" / "idp-vendor-render")],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert proc.returncode == 0, (
-        f"bin/idp-vendor-render failed:\n{proc.stdout}{proc.stderr}"
-    )
-    return yaml.safe_load(ROUTER.read_text())
+    vr = _vendor_render()
+    vendors = yaml.safe_load(vr.REG.read_text())["vendors"]
+    base = "platform/llm/config.base.yaml"
+    return yaml.safe_load(vr.render(vendors, (ROOT / base).read_text(), base))
 
 
 def _gateway_env():
