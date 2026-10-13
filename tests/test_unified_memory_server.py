@@ -18,13 +18,17 @@ randomised comparison against an independent reference model.
 import concurrent.futures
 import hashlib
 import importlib.util
+import json
 import os
 import random
 import secrets
 import sys
 import tempfile
+import threading
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import pytest
@@ -526,3 +530,132 @@ def test_thirty_requests_a_minute_per_token_and_a_refused_token_is_counted(boote
             (token_hash,),
         ).fetchone()[0]
     assert counted == 3
+
+
+# --- the vector is written by the server, or recall finds nothing ------------------------------
+# Measured 2026-10-02: 47 facts and 0 vectors in the store, and every probe still said healthy,
+# because the search ranks by `embedding <=> query` and no code anywhere wrote that column.
+# These run the real app and a real HTTP listener standing in for the estate router's `embed`
+# lane -- the server's own call is the thing under test, not a patched function.
+
+
+@contextmanager
+def fake_router(width):
+    """An OpenAI-shaped /v1/embeddings listener answering `width` floats, and counting calls."""
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("content-length", 0))
+            seen.append(
+                {
+                    "path": self.path,
+                    "auth": self.headers.get("authorization"),
+                    "body": json.loads(self.rfile.read(n)),
+                }
+            )
+            out = json.dumps(
+                {"data": [{"embedding": [0.01 * ((i % 7) + 1) for i in range(width)]}]}
+            ).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.send_header("content-length", str(len(out)))
+            self.end_headers()
+            self.wfile.write(out)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", seen
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+@contextmanager
+def booted_with_embed(database_url, url, **extra):
+    env = {
+        "MEMORY_EMBED_URL": url,
+        "MEMORY_EMBED_MODEL": "embed",
+        "MEMORY_EMBED_API_KEY": "router-key",
+        "MEMORY_EMBED_TIMEOUT_S": "3",
+        **extra,
+    }
+    try:
+        module = load_app(database_url, **env)
+        with TestClient(module.app) as client:
+            yield client
+    finally:
+        for name in env:
+            os.environ.pop(name, None)
+
+
+def embedding_status(client, tenant):
+    return client.get("/embeddings/status", headers=tenant.headers()).json()
+
+
+def test_a_written_fact_gets_its_vector_from_the_embed_lane(database_url):
+    with fake_router(1536) as (url, seen), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        r = put(c, a, "estate", "k1", "the router key lives in the vault")
+        assert r.status_code == 200
+        assert r.json()["search_by_meaning"] is True
+        assert seen[0]["path"] == "/v1/embeddings"
+        assert seen[0]["auth"] == "Bearer router-key"
+        assert seen[0]["body"] == {
+            "model": "embed",
+            "input": "the router key lives in the vault",
+        }
+        status = embedding_status(c, a)
+        assert (status["facts"], status["vectorised"], status["unvectorised"]) == (
+            1,
+            1,
+            0,
+        )
+
+
+def test_a_vector_of_the_wrong_width_is_refused_not_stored(database_url):
+    # A hop of another width writes a vector the store cannot compare to anything it holds,
+    # and does it silently. The fact is still kept; the gap is a number, not a surprise.
+    with fake_router(1024) as (url, _), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        r = put(c, a, "estate", "k1", "fact written through a lane of the wrong width")
+        assert r.status_code == 200
+        assert r.json()["search_by_meaning"] is False
+        assert embedding_status(c, a)["unvectorised"] == 1
+
+
+def test_a_down_router_never_fails_the_write_and_the_gap_is_counted(database_url):
+    # Nothing listens on port 9: the connection is refused. The agent's write must still land.
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as c:
+        a = Tenant(database_url, "A")
+        r = put(c, a, "estate", "k1", "written while the embed lane was down")
+        assert r.status_code == 200
+        assert r.json()["search_by_meaning"] is False
+        status = embedding_status(c, a)
+        assert (status["facts"], status["unvectorised"]) == (1, 1)
+        assert status["embed_lane_configured"] is True
+
+
+def test_an_update_re_embeds_the_new_content(database_url):
+    with fake_router(1536) as (url, seen), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "first wording")
+        put(c, a, "estate", "k1", "second wording")
+        assert [s["body"]["input"] for s in seen] == ["first wording", "second wording"]
+        assert embedding_status(c, a)["vectorised"] == 1
+
+
+def test_a_non_http_embed_url_is_never_opened(database_url, tmp_path):
+    # file:// through urlopen would be a filesystem read dressed as a model call.
+    secret = tmp_path / "x.json"
+    secret.write_text(json.dumps({"data": [{"embedding": [0.1] * 1536}]}))
+    with booted_with_embed(database_url, secret.as_uri()) as c:
+        a = Tenant(database_url, "A")
+        r = put(c, a, "estate", "k1", "a fact")
+        assert r.status_code == 200
+        assert r.json()["search_by_meaning"] is False
