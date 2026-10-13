@@ -27,6 +27,17 @@ def test_status_is_served_and_cached(monkeypatch, tmp_path):
     assert again["available"] is False and "rc=3" in again["error"]
 
 
+def test_root_defaults_to_the_tree_this_module_runs_from(monkeypatch):
+    # Not the shared checkout: that sits on whatever lane an agent left it on, and its older
+    # engine could not read main's state file ("lanes · unreadable", 2026-10-13).
+    monkeypatch.delenv("ESTATE_IDP_ROOT", raising=False)
+    root = greenlane._idp_root()
+    assert (
+        root / "backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py"
+    ).exists()
+    assert (root / "bin" / "idp-greenlane").exists()
+
+
 def test_missing_tool_is_unavailable_not_green(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_IDP_ROOT", str(tmp_path))
     greenlane._cache.update(at=0.0, body=None)

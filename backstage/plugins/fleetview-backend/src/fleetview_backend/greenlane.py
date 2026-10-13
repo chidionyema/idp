@@ -32,9 +32,19 @@ def cached_snapshot() -> dict[str, Any] | None:
 
 
 def _idp_root() -> Path:
-    return Path(
-        os.path.expanduser(os.environ.get("ESTATE_IDP_ROOT") or "~/Documents/code/idp")
-    )
+    """The tree this module runs from, unless ESTATE_IDP_ROOT names another.
+
+    It defaulted to ~/Documents/code/idp, the SHARED checkout, which sits on whatever lane
+    branch an agent left it on. The backend runs from ~/.estate/runtime/idp (synced to main),
+    so the panel ran main's code against a lane's engine: on 2026-10-13 the checkout's
+    engine.py predated #5954's `stamped` field, every read raised TypeError, and the pill
+    read "lanes · unreadable". Code and tool now come from the same tree.
+    """
+    env = os.environ.get("ESTATE_IDP_ROOT")
+    if env:
+        return Path(os.path.expanduser(env))
+    # <root>/backstage/plugins/fleetview-backend/src/fleetview_backend/greenlane.py
+    return Path(__file__).resolve().parents[5]
 
 
 def greenlane_status(now: float | None = None) -> dict[str, Any]:
