@@ -65,6 +65,12 @@ MAX_VALID_FROM_SKEW = timedelta(seconds=60)
 # dimension (1536, matching schema.sql's vector(1536) and the HNSW index on it).
 EMBED_URL = _secret("MEMORY_EMBED_URL")
 EMBED_MODEL = os.environ.get("MEMORY_EMBED_MODEL", "embed")
+# The lane a recall QUERY is embedded with: the same model and width as EMBED_MODEL, asked as a
+# question rather than a passage. The model is asymmetric, and the same query typed passage vs
+# query ranked the stored facts differently on the live lane (2026-10-13, see embed-query in
+# platform/vendors/consoles.yaml). Facts are never embedded with this lane: a passage vector is
+# what a query is compared against.
+EMBED_QUERY_MODEL = os.environ.get("MEMORY_EMBED_QUERY_MODEL", "embed-query")
 # 1536: the width the column is created at, and the width the router's `embed` lane is
 # configured to return (platform/llm/config.yaml, nvidia llama-nemotron-embed-vl-1b-v2 with
 # dimensions: 1536, measured 2026-10-09). A default nobody chose is an accident, so it is
@@ -84,8 +90,11 @@ EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
 RECALL_MIN_COSINE = float(os.environ.get("MEMORY_RECALL_MIN_COSINE", "0.2"))
 
 
-def _embed(text: str) -> Optional[List[float]]:
+def _embed(text: str, model: Optional[str] = None) -> Optional[List[float]]:
     """The EMBED_DIM-wide vector for `text`, or None if the lane is unreachable.
+
+    `model` is the router lane; EMBED_MODEL (a fact, as a passage) unless the caller is
+    embedding a search query, which passes EMBED_QUERY_MODEL.
 
     None is not an error the caller raises: a fact whose vector could not be computed is
     still a fact worth keeping (the write must not fail because a model was briefly down),
@@ -109,7 +118,7 @@ def _embed(text: str) -> Optional[List[float]]:
         # still stored, and `vector_status` counts it. A refused scheme is therefore visible
         # as unvectorised rather than as a warning nobody reads.
         return None
-    body = json.dumps({"model": EMBED_MODEL, "input": text}).encode("utf-8")
+    body = json.dumps({"model": model or EMBED_MODEL, "input": text}).encode("utf-8")
     # The scheme is validated above, so this is the one shape urlopen is allowed to see.
     req = urllib.request.Request(  # noqa: S310
         url,
@@ -568,7 +577,7 @@ async def memory_recall(
     model. When the lane cannot answer this is a 503, not an empty list: 'nothing matches' and
     'could not look' are different answers and the caller falls back differently on each."""
     # urllib blocks; off the event loop so one slow embed call does not stall every request.
-    vec = await asyncio.to_thread(_embed, payload.query)
+    vec = await asyncio.to_thread(_embed, payload.query, EMBED_QUERY_MODEL)
     if vec is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -737,6 +746,7 @@ async def embeddings_status(
         "unvectorised": row["unvectorised"],
         "embed_lane_configured": bool(EMBED_URL),
         "embed_model": EMBED_MODEL,
+        "embed_query_model": EMBED_QUERY_MODEL,
         "embed_dim": EMBED_DIM,
     }
 

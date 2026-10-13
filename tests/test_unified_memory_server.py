@@ -805,6 +805,25 @@ def test_recall_does_not_cross_namespaces_or_tenants(database_url):
         assert recall(c, b, "secret").json()["results"] == []
 
 
+def test_a_recall_query_is_embedded_as_a_question_and_a_fact_as_a_passage(database_url):
+    # The lane's model is asymmetric: a query must be asked as a query to rank passages by
+    # meaning. Facts and the backfill stay on the passage lane; only the search text goes to
+    # the query lane.
+    with fake_router(1536) as (url, seen), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "the router key lives in the vault")
+        assert recall(c, a, "where is the key").status_code == 200
+        assert [(s["body"]["model"], s["body"]["input"]) for s in seen] == [
+            ("embed", "the router key lives in the vault"),
+            ("embed-query", "where is the key"),
+        ]
+        status = embedding_status(c, a)
+        assert (status["embed_model"], status["embed_query_model"]) == (
+            "embed",
+            "embed-query",
+        )
+
+
 def test_recall_with_the_lane_down_says_so_instead_of_returning_nothing(database_url):
     with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as c:
         a = Tenant(database_url, "A")

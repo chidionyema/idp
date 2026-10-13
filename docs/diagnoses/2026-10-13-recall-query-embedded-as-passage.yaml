@@ -1,0 +1,147 @@
+description: 'unified-memory recall, 2026-10-13. Question: why does POST /memories/recall
+  not return the right fact in slot 1 for "where do branches meet into main" and "where
+  is postgres hosted in this estate", now that recall reaches the embed lane end to
+  end (#6049)? Four competing explanations, with their predictions, were fixed before
+  the probe ran: the recall query is embedded with input_type passage on an asymmetric
+  model; the 1536 output width degrades ranking; the stored facts do not hold an answer
+  any embedding could find; or the embedding ranks correctly and the fault is elsewhere
+  in recall. Evidence: one probe run from inside the litellm pod, straight to NVIDIA
+  (llama-nemotron-embed-vl-1b-v2), every non-quarantined stored fact embedded as a
+  passage at 1536 and 2048, each question embedded as passage@1536, query@1536 and
+  query@2048, and the rank of the fact that answers it recorded under each.'
+hypotheses:
+- name: H1
+  description: the recall query is embedded with input_type passage (the `embed` lane
+    pins it) on an asymmetric model, so it is compared passage-to-passage; typed as
+    a query it would rank the answering fact first
+  prior: 0.25
+- name: H2
+  description: the 1536 output width (truncated from the model's native 2048) loses
+    enough of the vector to misrank, whatever the input_type
+  prior: 0.25
+- name: H3
+  description: no stored fact is close enough to the question for any embedding to
+    rank it first -- the fact is missing, quarantined, or worded too far from the
+    question
+  prior: 0.25
+- name: H4
+  description: the embedding already ranks the answering fact first; the miss is elsewhere
+    in recall (the cosine floor, the namespace or tenant filter, the gate)
+  prior: 0.25
+evidence:
+- name: per probe question, whether the answering fact ranks first with the query
+    typed passage@1536 (today's path) and typed query@1536 (embed-query)
+  observed:
+    query_fixes: 1
+    both_first: 0
+    neither_first: 1
+    passage_only: 0
+  likelihoods:
+    H1:
+      query_fixes: 0.75
+      both_first: 0.1
+      neither_first: 0.1
+      passage_only: 0.05
+    H2:
+      query_fixes: 0.1
+      both_first: 0.1
+      neither_first: 0.7
+      passage_only: 0.1
+    H3:
+      query_fixes: 0.05
+      both_first: 0.05
+      neither_first: 0.85
+      passage_only: 0.05
+    H4:
+      query_fixes: 0.05
+      both_first: 0.8
+      neither_first: 0.05
+      passage_only: 0.1
+- name: per probe question, whether query@2048 puts the same fact first as query@1536
+  observed:
+    same_top: 0
+    different_top: 2
+  likelihoods:
+    H1:
+      same_top: 0.85
+      different_top: 0.15
+    H2:
+      same_top: 0.4
+      different_top: 0.6
+    H3:
+      same_top: 0.6
+      different_top: 0.4
+    H4:
+      same_top: 0.85
+      different_top: 0.15
+- name: second probe, answering fact's rank with the query typed query vs passage,
+    both at 1536
+  observed:
+    query_better: 8
+    same_rank: 0
+    passage_better: 0
+  likelihoods:
+    H1:
+      query_better: 0.8
+      same_rank: 0.1
+      passage_better: 0.1
+    H2:
+      query_better: 0.35
+      same_rank: 0.3
+      passage_better: 0.35
+    H3:
+      query_better: 0.35
+      same_rank: 0.3
+      passage_better: 0.35
+    H4:
+      query_better: 0.15
+      same_rank: 0.7
+      passage_better: 0.15
+- name: second probe, answering fact's rank with the query typed query, at 2048 vs
+    1536
+  observed:
+    wider_better: 0
+    same_rank: 8
+    narrower_better: 0
+  likelihoods:
+    H1:
+      wider_better: 0.3
+      same_rank: 0.4
+      narrower_better: 0.3
+    H2:
+      wider_better: 0.7
+      same_rank: 0.2
+      narrower_better: 0.1
+    H3:
+      wider_better: 0.3
+      same_rank: 0.4
+      narrower_better: 0.3
+    H4:
+      wider_better: 0.2
+      same_rank: 0.6
+      narrower_better: 0.2
+- name: second probe, answering fact in slot 1 with the query typed query at 1536
+    (embed-query)
+  observed:
+    first: 6
+    not_first: 2
+  likelihoods:
+    H1:
+      first: 0.7
+      not_first: 0.3
+    H2:
+      first: 0.2
+      not_first: 0.8
+    H3:
+      first: 0.1
+      not_first: 0.9
+    H4:
+      first: 0.8
+      not_first: 0.2
+posteriors:
+  H1: 0.999997991
+  H2: 3.029e-07
+  H3: 4.138e-07
+  H4: 1.2924e-06
+winner: H1
+computed_at: '2026-10-13T15:20:51Z'

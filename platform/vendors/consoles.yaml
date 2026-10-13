@@ -851,6 +851,22 @@ vendors:
             timeout: 120
           model_info:
             mode: embedding
+        # embed-query: the same model, width and key as `embed`, asked as a QUESTION. The model is
+        # asymmetric: a search embeds its query as `query` and compares it against facts embedded
+        # as `passage`. `embed` pins passage, so every recall query went in as a passage too.
+        # Probed on the live NIM 2026-10-13 at width 1536: the same query typed passage vs query
+        # flipped the ranking of the stored facts; width 2048 moved the query case by under 0.015,
+        # so the width is not the lever, the type is. Facts stay on `embed`; only a caller's
+        # search text comes here. Same model, so the same 10,000/day NVIDIA meter as `embed`.
+        - model_name: embed-query
+          litellm_params:
+            model: nvidia_nim/nvidia/llama-nemotron-embed-vl-1b-v2
+            api_key: os.environ/NVIDIA_API_KEY
+            dimensions: 1536
+            input_type: query
+            timeout: 120
+          model_info:
+            mode: embedding
   sambanova:
     kind: secret
     secret: SEED_SAMBANOVA_API_KEY
