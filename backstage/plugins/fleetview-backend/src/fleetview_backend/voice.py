@@ -75,7 +75,11 @@ _SPATIAL_PATTERN = re.compile(
     # Bare left/right/top/bottom are NOT spatial: "right now" sent every such question here and 503'd.
     r"(?:leftmost|rightmost|topmost|bottommost)|"
     r"the\s+\w+\s+(?:one|from\s+the\s+(?:left|right))|"
-    r"the\s+(?:first|second|third|fourth|fifth|last)"
+    # An ordinal followed by a span of time is not a comet: "in the last hour" sent the question
+    # here, the pod has no comets, and the person heard nothing.
+    r"the\s+(?:first|second|third|fourth|fifth|last)\b"
+    r"(?!\s+(?:\d+\s+|few\s+|couple\s+of\s+)?"
+    r"(?:hours?|minutes?|days?|weeks?|months?|years?|time|night|morning|run|call)s?\b)"
     r")\b|"
     r"\bthe\s+(red|green|blue|amber|grey|gray)\s+(?:one)?\b",
     re.IGNORECASE,
@@ -670,12 +674,15 @@ def stream_ask(
         return
 
     # CP6 spatial fast-path: same as ask() -- skip the LLM for spatial phrases.
+    # The browser speaks `delta` events only, so a resolved comet is said as one clause. A miss or a
+    # blind river falls through to the model, which can still answer the question it was asked.
     spatial = spatial_fast_path(question)
     if spatial is not None:
         body, status = spatial
-        yield _sse("answer" if status == 200 else "error", body)
-        yield _sse("done", {"status": status})
-        return
+        if status == 200 and body.get("sha"):
+            yield _sse("delta", {"text": body["answer"]})
+            yield _sse("done", {**body, "status": status})
+            return
 
     if not router_ready():
         yield _sse(

@@ -50,6 +50,10 @@ COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-ba
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
 COPY lib/estate_spatial.py /app/lib/estate_spatial.py
 COPY mcp/plugins/deploy_journeys.py /app/mcp/plugins/deploy_journeys.py
+# The voice intent catalog, for MATCHING only: voice_intents.default_dir() resolves to
+# /app/platform/estate/intents, and nothing here runs them -- a match is forwarded to the
+# laptop (FLEETVIEW_INTENTS_URL). Without it every spoken intent fell through to the model.
+COPY platform/estate/intents /app/platform/estate/intents
 COPY sovereign/__init__.py /app/sovereign/__init__.py
 COPY sovereign/voice/__init__.py /app/sovereign/voice/__init__.py
 COPY sovereign/voice/engine.py /app/sovereign/voice/engine.py

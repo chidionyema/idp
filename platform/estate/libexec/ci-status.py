@@ -33,8 +33,12 @@ if pr_num and not sha:
         "draft", False
     )  # REST says "draft"; "isDraft" is the GraphQL/gh name
 elif not sha:
-    print(json.dumps({"error": "pr= or sha= required"}))
-    sys.exit(1)
+    # "check ci status" out loud names no PR: the question is main's head (2026-10-13).
+    d = gh_json(f"repos/{repo}/commits/main")
+    sha = d["sha"]
+    branch = "main"
+    title = d["commit"]["message"].splitlines()[0]
+    is_draft = False
 else:
     branch = "?"
     title = "?"
@@ -47,7 +51,18 @@ failed = [r for r in runs if r.get("conclusion") == "failure"]
 skipped = [r for r in runs if r.get("conclusion") == "skipped"]
 passed = [r for r in runs if r.get("conclusion") == "success"]
 
+where = f"PR {pr_num}" if pr_num else ("main" if branch == "main" else sha[:8])
+if failed:
+    verdict = f"{len(failed)} failed: " + ", ".join(r["name"] for r in failed[:3])
+elif pending:
+    verdict = f"no failures, {len(pending)} still running"
+else:
+    verdict = "all green"
+# One sentence a voice can say; the rest of this JSON is for agents (voice_intents._spoken_result).
+summary = f"CI on {where}: {len(passed)} passed, {verdict}."
+
 result = {
+    "summary": summary,
     "sha": sha[:8],
     "branch": branch,
     "title": title,

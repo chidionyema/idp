@@ -201,6 +201,48 @@ def test_spatial_detector_ignores_bare_direction_words(voice):
         assert voice._is_spatial_intent(q) is False, q
 
 
+def test_a_span_of_time_is_not_a_comet(voice):
+    # "in the last hour" took the spatial path, found no comets on the pod and 503'd the question.
+    for q in (
+        "how many calls in the last hour",
+        "what failed in the last 3 days",
+        "who ran the first time today",
+        "what happened in the last couple of minutes",
+    ):
+        assert voice._is_spatial_intent(q) is False, q
+    assert voice._is_spatial_intent("focus the last one") is True
+    assert voice._is_spatial_intent("stop the first") is True
+
+
+def _events(chunks) -> list[tuple[str, dict]]:
+    import json
+
+    out = []
+    for frame in "".join(chunks).strip().split("\n\n"):
+        lines = dict(line.split(": ", 1) for line in frame.splitlines())
+        out.append((lines["event"], json.loads(lines["data"])))
+    return out
+
+
+def test_stream_speaks_a_resolved_comet_as_a_delta(voice):
+    # The browser only speaks `delta`; an `answer` event was resolved and then never heard.
+    frames = _events(voice.stream_ask("focus the one on the left", []))
+    assert frames[0][0] == "delta"
+    assert "1111111" in frames[0][1]["text"]
+    assert frames[-1][0] == "done" and frames[-1][1]["sha"] == "1" * 40
+
+
+def test_stream_blind_river_falls_through_to_the_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("ESTATE_DB", str(tmp_path / "never.db"))
+    monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+    monkeypatch.delenv("LITELLM_API_KEY_FILE", raising=False)
+    v = _load(VOICE, "voice_under_test_blind_stream")
+    frames = _events(v.stream_ask("the one on the left", []))
+    # No comets: the spatial path steps aside, and the model path speaks for itself.
+    assert "no comets visible" not in frames[0][1].get("error", "")
+    assert "LITELLM_API_KEY" in frames[0][1]["error"]
+
+
 def test_router_key_reads_mounted_file_each_call(tmp_path, monkeypatch):
     """In-cluster the key is a mounted file (Kyverno refuses secretKeyRef env), re-read on every
     call so a rotated key lands without a restart; the env var is only the local/dev fallback."""

@@ -11,6 +11,7 @@ import re
 import subprocess
 import threading
 import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -78,7 +79,9 @@ def _concierge(session_id: str, text: str, task: str, now: float) -> dict:
 
     if not task:
         _audit(session_id, text, CONCIERGE, "error", None, 0)
-        return result(CONCIERGE, "error", "Say the task too: concierge, then what to do.")
+        return result(
+            CONCIERGE, "error", "Say the task too: concierge, then what to do."
+        )
     try:
         task = concierge_tasks.validate(task)
     except concierge_tasks.TaskRefused as exc:
@@ -88,7 +91,11 @@ def _concierge(session_id: str, text: str, task: str, now: float) -> dict:
         _PENDING[session_id] = (CONCIERGE, now)
         _PENDING_TASK[session_id] = task
     _audit(session_id, text, CONCIERGE, "pending_confirmation", None, 0)
-    return result(CONCIERGE, "pending_confirmation", f"Ask the concierge to: {task}? Say yes to confirm.")
+    return result(
+        CONCIERGE,
+        "pending_confirmation",
+        f"Ask the concierge to: {task}? Say yes to confirm.",
+    )
 
 
 def _send_concierge(session_id: str, text: str, task: str) -> dict:
@@ -98,7 +105,14 @@ def _send_concierge(session_id: str, text: str, task: str) -> dict:
     try:
         started = concierge_tasks.start(task, by=f"voice:{session_id}")
     except concierge_tasks.TaskRefused as exc:
-        _audit(session_id, text, CONCIERGE, "error", exc.status, int((time.monotonic() - t0) * 1000))
+        _audit(
+            session_id,
+            text,
+            CONCIERGE,
+            "error",
+            exc.status,
+            int((time.monotonic() - t0) * 1000),
+        )
         return result(CONCIERGE, "error", str(exc)[:160])
     _audit(session_id, text, CONCIERGE, "ok", 0, int((time.monotonic() - t0) * 1000))
     return result(
@@ -282,11 +296,81 @@ def _last_line(s: str) -> str:
     return ""
 
 
-def execute(intent: str) -> tuple[str, str, int | None, int]:
+def _spoken_result(s: str) -> str:
+    # An intent that answers in JSON (ci-status) ends on "}", which is not an answer: say its
+    # "summary" sentence instead (2026-10-13).
+    try:
+        body = json.loads(s)
+    except ValueError:
+        return _last_line(s)
+    if isinstance(body, dict) and isinstance(body.get("summary"), str):
+        return body["summary"][:160]
+    return _last_line(s)
+
+
+def executor() -> str | None:
     exe = os.path.expanduser(
         os.environ.get("ESTATE_EXECUTE") or "~/.estate/bin/estate-execute"
     )
-    if not (os.path.isfile(exe) and os.access(exe, os.X_OK)):
+    return exe if os.path.isfile(exe) and os.access(exe, os.X_OK) else None
+
+
+# THE POD HANDS AN INTENT TO THE LAPTOP (2026-10-13). The pod has no estate-execute and, until this
+# image shipped the catalog, no intents to match either, so "check ci status" on the live site was
+# answered by the model as a question. FLEETVIEW_INTENTS_URL is the laptop's own /voice/intent over
+# fleetview-mac-egress.yaml: the pod matches locally (no turn waits on the Mac to learn it named
+# nothing) and forwards only a match, or the yes/no to a confirmation the laptop is holding.
+_REMOTE_PENDING: dict[str, float] = {}
+
+
+def laptop_url() -> str:
+    return os.environ.get("FLEETVIEW_INTENTS_URL", "").strip()
+
+
+def _forward(url: str, text: str, session_id: str) -> dict | None:
+    req = urllib.request.Request(  # noqa: S310 -- fixed, operator-supplied URL only
+        url,
+        data=json.dumps({"text": text, "session_id": session_id}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=EXEC_TIMEOUT_S + 15) as resp:  # noqa: S310
+        if resp.status == 204:
+            return None
+        body = json.loads(resp.read())
+    if not (
+        isinstance(body, dict)
+        and body.get("status") in _CUES
+        and isinstance(body.get("text"), str)
+    ):
+        raise ValueError(
+            "the laptop answered with something that is not an intent result"
+        )
+    return body
+
+
+def _on_laptop(
+    url: str, text: str, session_id: str, name: str, now: float
+) -> dict | None:
+    t0 = time.monotonic()
+    try:
+        ran = _forward(url, text, session_id)
+    except (OSError, ValueError):
+        _audit(
+            session_id, text, name, "error", None, int((time.monotonic() - t0) * 1000)
+        )
+        return result(
+            name, "error", "The laptop is not answering, so that cannot run now."
+        )
+    if ran is not None and ran["status"] == "pending_confirmation":
+        with _LOCK:
+            _REMOTE_PENDING[session_id] = now
+    return ran
+
+
+def execute(intent: str) -> tuple[str, str, int | None, int]:
+    exe = executor()
+    if exe is None:
         return ("error", "Intents run on the laptop only.", None, 0)
     t0 = time.monotonic()
     try:
@@ -307,7 +391,7 @@ def execute(intent: str) -> tuple[str, str, int | None, int]:
         return ("error", f"{_spoken(intent)} could not start.", None, dur)
     dur = int((time.monotonic() - t0) * 1000)
     if proc.returncode == 0:
-        return ("ok", _last_line(proc.stdout) or f"{_spoken(intent)} done.", 0, dur)
+        return ("ok", _spoken_result(proc.stdout) or f"{_spoken(intent)} done.", 0, dur)
     last = _last_line(proc.stderr) or _last_line(proc.stdout)
     text = (
         f"{_spoken(intent)} failed. {last}" if last else f"{_spoken(intent)} failed."
@@ -360,6 +444,13 @@ def handle(text: str, session_id: str) -> dict | None:
             _audit(session_id, text, name, "cancelled", None, 0)
             return result(name, "cancelled", f"Cancelled {_spoken(name)}.")
 
+    url = laptop_url() if executor() is None else ""
+    with _LOCK:
+        remote_since = _REMOTE_PENDING.pop(session_id, None)
+    if url and remote_since is not None and now - remote_since <= PENDING_TTL_S:
+        if norm in YES or norm in NO:
+            return _on_laptop(url, text, session_id, "intent", now)
+
     task = agent_job_task(text)
     if task is not None:
         return _agent_job(session_id, text, task, now)
@@ -370,6 +461,8 @@ def handle(text: str, session_id: str) -> dict | None:
     name = match(text, load_catalog())
     if name is None:
         return None
+    if url:
+        return _on_laptop(url, text, session_id, name, now)
 
     if name not in READ_ONLY:
         with _LOCK:
