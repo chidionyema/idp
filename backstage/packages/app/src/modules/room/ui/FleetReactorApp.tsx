@@ -787,6 +787,18 @@ export default function FleetReactorApp() {
   const api = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
   const baseUrlRef = useRef(null);
+  // THE RAIL PANELS WAIT FOR DISCOVERY; THEY DO NOT FAIL ON IT. Each panel polls once on mount,
+  // and on mount `baseUrlRef` is still null -- so its call used to reject "discovery not ready",
+  // the pill read "unreachable", and it stayed that way until the next 30s poll (measured
+  // 2026-10: first real rail request at 42s, 30s after mount). A department that has not been
+  // asked yet is not unreachable. Resolve the base here instead; a real failure still throws.
+  const fleetCall = useCallback(
+    (route: string) => async (init?: RequestInit) => {
+      if (!baseUrlRef.current) baseUrlRef.current = await discovery.getBaseUrl('proxy');
+      return api.fetch(`${baseUrlRef.current}/fleetview/${route}`, init);
+    },
+    [api, discovery],
+  );
   const [live, setLive] = useState({ ok: false, count: 0, error: null, ticker: '' });
 
   // --- ADDED: voice -> intent. The result's cue becomes a ring (and, for burn/fire, a burst) from the fleet's centre, and its text holds the ticker for 4s. ---
@@ -2844,22 +2856,14 @@ export default function FleetReactorApp() {
             the discovery proxy like every remote-capable call here, so it works from the phone. */}
         <ErrorBoundary componentName="AgentJobs">
         <AgentJobs
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/agent-jobs`, init);
-          }}
+          call={fleetCall('agent-jobs')}
         />
         </ErrorBoundary>
 
         {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
         <ErrorBoundary componentName="HarvPanel">
         <HarvPanel
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/harv`, init);
-          }}
+          call={fleetCall('harv')}
         />
         </ErrorBoundary>
 
@@ -2867,11 +2871,7 @@ export default function FleetReactorApp() {
             (fleetview_backend/concierge_tasks.py). */}
         <ErrorBoundary componentName="ConciergeTasks">
         <ConciergeTasks
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/concierge-tasks`, init);
-          }}
+          call={fleetCall('concierge-tasks')}
         />
         </ErrorBoundary>
 
@@ -2879,11 +2879,7 @@ export default function FleetReactorApp() {
             Names and states only; a missing key shows the exact name to create. */}
         <ErrorBoundary componentName="KeySync">
         <KeySync
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/key-sync`, init);
-          }}
+          call={fleetCall('key-sync')}
         />
         </ErrorBoundary>
 
@@ -2901,11 +2897,7 @@ export default function FleetReactorApp() {
             engine's own; this only refuses to draw a green main it could not read. */}
         <ErrorBoundary componentName="GreenlaneHud">
         <GreenlaneHud
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/greenlane`, init);
-          }}
+          call={fleetCall('greenlane')}
         />
         </ErrorBoundary>
 
@@ -2913,11 +2905,7 @@ export default function FleetReactorApp() {
             (fleetview_backend/claims.py, AGENTS.md section 5). */}
         <ErrorBoundary componentName="ClaimsPanel">
         <ClaimsPanel
-          call={(init) => {
-            const base = baseUrlRef.current;
-            if (!base) return Promise.reject(new Error('discovery not ready'));
-            return api.fetch(`${base}/fleetview/claims`, init);
-          }}
+          call={fleetCall('claims')}
         />
         </ErrorBoundary>
       </div>
