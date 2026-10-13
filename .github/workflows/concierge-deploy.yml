@@ -273,10 +273,19 @@ jobs:
           twilio=(TWILIO_AUTH_TOKEN="$tok")
           # Optional, each in its own Secret (platform/vendors/templates/externalsecrets.yaml): an
           # absent one narrows what the door does; it does not hold the deploy out.
-          for f in MOM_PHONE_NUMBER GUARDIAN_PHONE_NUMBER TWILIO_WHATSAPP_NUMBER; do
+          for f in MOM_PHONE_NUMBER GUARDIAN_PHONE_NUMBER TWILIO_WHATSAPP_NUMBER TWILIO_ACCOUNT_SID; do
             v=$(field "human-twilio-$(printf '%s' "$f" | tr 'A-Z_' 'a-z-')" "$f")
             if [ -n "$v" ]; then echo "::add-mask::$v"; twilio+=("$f=$v"); else echo "note    $f is not in the vault yet"; fi
           done
+          # The SID is optional to the BRIDGE (one absent key must not hold the token out) but not to
+          # the product: main.py builds its Twilio client from it, so without it every reply,
+          # voice note and guardian alert fails while the inbound door stays green. Loud, not silent.
+          sid=no; for kv in "${twilio[@]}"; do case "$kv" in TWILIO_ACCOUNT_SID=AC*) sid=yes ;; esac; done
+          [ "$sid" = yes ] || {
+            echo "FAIL    concierge-deploy  no TWILIO_ACCOUNT_SID (AC...) in concierge/human-twilio-twilio-account-sid."
+            echo "        The concierge could hear Mum and never answer. Nothing deployed."
+            exit 1
+          }
           modal secret create human-twilio "${twilio[@]}" --force >/dev/null
           echo "ok      modal   human-twilio carried from the cluster (${#twilio[@]} fields)"
 
