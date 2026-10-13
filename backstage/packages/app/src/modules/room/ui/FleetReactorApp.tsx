@@ -1928,14 +1928,14 @@ export default function FleetReactorApp() {
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.8)]"></div>
-            <h1 className="text-2xl font-bold tracking-[0.2em] text-white drop-shadow-md">FLEET REACTOR</h1>
+            <h1 className="text-lg sm:text-2xl whitespace-nowrap font-bold tracking-[0.2em] text-white drop-shadow-md">FLEET REACTOR</h1>
           </div>          <p className="text-[12px] text-white/60 uppercase font-mono tracking-widest pl-5">Native Spatial Topology • Active Stream</p>
         </div>
 
         {/* Global Action Controls */}
         <div className="flex items-center gap-4 pointer-events-auto">
            {uiState.selectedNodeId && (
-             <div className="flex items-center gap-3 bg-black/40 border border-white/10 backdrop-blur-md px-4 py-2 rounded-lg transition-all shadow-lg">
+             <div className="hidden sm:flex items-center gap-3 bg-black/40 border border-white/10 backdrop-blur-md px-4 py-2 rounded-lg transition-all shadow-lg">
                 <span className="text-[12px] uppercase text-white/60 font-mono">Target Lock</span>
                 <span className="text-sm font-mono text-cyan-400 font-bold">{uiState.selectedNodeId}</span>
              </div>
@@ -1947,13 +1947,21 @@ export default function FleetReactorApp() {
                 backdrop-blur -- a near-invisible label over a dark smear ("unreadable, black
                 blob", 2026-10-02). Disabled is now legible glass like the rest of the HUD,
                 and the blur moves to the active states only, where it has something to blur. */
-             className={`px-6 py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all duration-300 
+             /* AT 390px THIS WRAPPED TO THREE LINES (67px tall) and sat on the voice chip and the
+                app bar's Find button. Disabled, it is a promise about a node not yet chosen, so a
+                phone shows it only once there is one; it never wraps. */
+             className={`${uiState.selectedNodeId ? 'block' : 'hidden sm:block'} whitespace-nowrap px-4 py-2 sm:px-6 sm:py-3 rounded-lg border text-xs font-bold uppercase tracking-widest transition-all duration-300 
                ${uiState.blastMode 
                  ? 'bg-red-500/20 border-red-500 text-red-400 backdrop-blur-md shadow-[0_0_20px_rgba(255,0,0,0.4)]' 
                  : (uiState.selectedNodeId ? 'bg-white/5 border-white/20 text-white hover:bg-white/10 hover:border-cyan-500/50 hover:text-cyan-400 backdrop-blur-md hover:shadow-[0_0_15px_rgba(0,240,255,0.2)]' : 'bg-black/40 border-white/15 text-white/60 cursor-not-allowed')
                }`}
            >
-             {uiState.blastMode ? '[ Cancel Sonar ]' : '[ Blast Radius Sonar ]'}
+             {uiState.blastMode ? '[ Cancel Sonar ]' : (
+               <>
+                 <span className="sm:hidden">[ Sonar ]</span>
+                 <span className="hidden sm:inline">[ Blast Radius Sonar ]</span>
+               </>
+             )}
            </button>
         </div>
       </div>
