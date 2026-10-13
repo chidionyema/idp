@@ -1,0 +1,25 @@
+# The floor every agent stands on: agent-reader, read-everything-write-nothing (WJ.1,
+# platform/rbac-floor/). c96359f4b ("~80 flux rows down to 7") dropped this row and #4375, the
+# restore, was closed for its other rows, so nothing reconciled it and Flux pruned the
+# ServiceAccount with the row (the `agents` namespace survived on its prune: disabled annotation).
+# Measured 2026-10-13: `kubectl create token agent-reader -n agents` answered NotFound, and
+# bin/idp-kube handed every session the founder's cluster-admin principal instead.
+#
+# Nothing in it substitutes, so nothing can hold it down; jit.yaml waits on it, because a broker
+# standing up before the floor exists would be a second way to write, not the only one.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: rbac-floor
+  namespace: flux-system
+spec:
+  interval: 30s
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/rbac-floor
+  prune: true
+  wait: true
+  timeout: 2m
