@@ -53,3 +53,41 @@ def test_the_first_deploy_is_not_refused_for_a_secret_only_the_cutover_can_fill(
         )
     ]
     assert "modal secret create concierge-tunnel" in deploy
+
+
+def _step(prefix):
+    steps = yaml.safe_load(WORKFLOW)["jobs"]["deploy"]["steps"]
+    (step,) = [s for s in steps if s.get("name", "").startswith(prefix)]
+    return step["run"]
+
+
+def test_the_founders_twilio_fields_reach_the_secret_the_endpoint_declares():
+    run = _step("carry the founder's concierge secrets")
+    assert "field human-twilio TWILIO_AUTH_TOKEN" in run
+    assert "modal secret create human-twilio" in run
+    for f in ("MOM_PHONE_NUMBER", "GUARDIAN_PHONE_NUMBER", "TWILIO_WHATSAPP_NUMBER"):
+        assert f in run
+
+
+def test_there_is_one_card_key_and_it_is_the_founders():
+    assert "ensure_secret card-key" not in _step(
+        "mint the secrets the runtime declares"
+    )
+    run = _step("carry the founder's concierge secrets")
+    assert "field human-card-key CARD_KEY_HEX" in run
+    assert "modal secret create card-key" in run
+
+
+def test_no_carried_value_is_left_unmasked():
+    run = _step("carry the founder's concierge secrets")
+    for var in ("tok", "v", "key"):
+        assert f'::add-mask::${var}"' in run
+
+
+def test_the_secrets_are_carried_before_anything_deploys():
+    names = [
+        s.get("name", "") for s in yaml.safe_load(WORKFLOW)["jobs"]["deploy"]["steps"]
+    ]
+    carry = next(i for i, n in enumerate(names) if n.startswith("carry the founder's"))
+    assert carry < names.index("deploy to Modal")
+    assert carry < names.index("deploy the always-on endpoint to Modal")
