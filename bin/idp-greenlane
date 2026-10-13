@@ -84,11 +84,11 @@ def tick() -> int:
     )
     for name, why in b.refused.items():
         print(f"REFUSED greenlane  {name}: {why}")
-    rearm(st)
+    rearm(st, b.main())
     return 0
 
 
-def rearm(st: State) -> None:
+def rearm(st: State, main: str) -> None:
     """Chain one more tick if a lane is still unproven (2026-10-11).
 
     A lane push fires `push` exactly once, and it competes for the single
@@ -111,6 +111,13 @@ def rearm(st: State) -> None:
     run killed mid-flight is requeued from that state rather than stranded. The
     guard is only against a runaway loop: a tick with no lane outstanding
     dispatches nothing, so the chain terminates as soon as the estate is clean.
+
+    `main` is passed in, not read off `st` (2026-10-13): `State` has no `main` field, and
+    `st.main` raised AttributeError on every tick that held a landed lane -- the tick right
+    after every landing. The state was already saved, so only the re-arm was lost: 72
+    greenlane runs failed that way in the 24h to 2026-10-13T18:00Z (e.g. run 38440451958,
+    b2687), each leaving the queue idle until the next event-triggered tick. The tests set
+    `st.main` on their own `State`, which a plain dataclass accepts, so they never saw it.
     """
     if not os.environ.get("GH_TOKEN"):
         return  # no credential to dispatch with; the next event-triggered tick covers it
@@ -119,7 +126,7 @@ def rearm(st: State) -> None:
         for name, lane in st.lanes.items()
         if (
             lane.status not in ("landed", "red")
-            or (lane.status == "landed" and lane.judged_on != st.main)
+            or (lane.status == "landed" and lane.judged_on != main)
         )
     )
     if not outstanding and not st.queued:
