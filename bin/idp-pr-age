@@ -52,6 +52,8 @@ FIELDS = "number,title,body,createdAt,mergeable,mergeStateStatus,isDraft,statusC
 # 2026-08-31: this robot drafted PR 1011 -- the portal the founder was waiting on -- because a
 # separate fault had made it red, and the red clock would have closed it at six bounds.
 DEPLOY_BRANCH = os.environ.get("ESTATE_DEPLOY_BRANCH", "flux/image-updates")
+# greenlane/github.py MARKER and ADOPTED: the bodies of the PRs the Greenlane raised or adopted
+GREENLANE_STAMPS = ("Greenlane-Batch:", "Greenlane-Lane:")
 STACKED = re.compile(r"[Ss]tacked on (?:([\w-]+))?#(\d+)")
 
 
@@ -68,6 +70,12 @@ MERGEABLE = {"CLEAN", "UNSTABLE", "HAS_HOOKS"}
 
 
 def reason(pr: dict) -> str:
+    # A lane is the Greenlane's to land (AGENTS.md:75): arming one is a second lander, and that is
+    # how #6069 reached main on 2026-10-13 without being proven on top of it. Its age and its red
+    # are the Greenlane's to report, on the lane head's `greenlane` status.
+    body = pr.get("body") or ""
+    if (pr.get("headRefName") or "").startswith("lane/") or any(s in body for s in GREENLANE_STAMPS):
+        return "greenlane"
     if pr.get("mergeable") == "CONFLICTING":
         return "conflict"
     if pr.get("mergeStateStatus") in MERGEABLE:
@@ -117,6 +125,8 @@ def act(repo: str, n: int, age_h: float, why: str, max_h: float, head: str = "")
         # main; a draft or a close here is an outage, not tidiness (idp#1046). It is still printed,
         # and bin/idp-deploy-lag is the instrument that grades how far behind it has fallen.
         return "deploy-untouched"
+    if why == "greenlane":
+        return "greenlane-untouched"
     if why == "green":
         p = arm(slug, n)
         if p.returncode != 0:
