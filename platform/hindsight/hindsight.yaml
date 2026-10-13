@@ -73,10 +73,18 @@ spec:
         # The embedding and reranker models are already on the image; offline is correct.
         HF_HUB_OFFLINE: "1"
         TRANSFORMERS_OFFLINE: "1"
+      # No PVC for the model cache: the models are on the image (offline above), the cache held
+      # 217M, and OCI rounds every block volume up to 50GB against an account volume limit that
+      # refused agent-workforce-data (2026-10-13). An emptyDir keeps the path writable under the
+      # read-only root filesystem; a restart re-warms it from the image.
       persistence:
-        modelCache: { enabled: true, size: 5Gi }   # the local embedding model survives a restart
-      extraVolumes: [{ name: tmp, emptyDir: {} }]  # the only writable path besides the model cache
-      extraVolumeMounts: [{ name: tmp, mountPath: /tmp }]
+        modelCache: { enabled: false }
+      extraVolumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: model-cache, emptyDir: { sizeLimit: 1Gi } }
+      extraVolumeMounts:
+        - { name: tmp, mountPath: /tmp }
+        - { name: model-cache, mountPath: /home/hindsight/.cache }
       resources:
         requests: { cpu: 50m, memory: 1Gi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
         limits: { cpu: "1", memory: 2Gi }
