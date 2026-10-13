@@ -604,6 +604,20 @@ class GitHubBackend:
                     time.sleep(self.LAND_RETRY_S)
         for lane, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
+        # MAIN MOVED THROUGH THE API, SO origin/main IS STALE (2026-10-13). main() reads the
+        # remote-tracking ref fetched at the top of the tick, and tick() starts the next batch
+        # straight after this landing -- on the main from before it. The next tick then voids
+        # that batch as "main moved under it" and its candidate's check suite is thrown away:
+        # b2704 landed #6107 at 19:49:48Z, b2705 was built on 8a3984f2bc45 in the same tick and
+        # voided at 19:51:28Z. Not checked: main has already moved, and a failed fetch here must
+        # not read as a refused land (that would mark landed lanes red); it only costs that batch.
+        self.git(
+            "fetch",
+            "-q",
+            "origin",
+            "+refs/heads/main:refs/remotes/origin/main",
+            check=False,
+        )
 
     def _pr_for(self, lane: str) -> Optional[dict]:
         """The open pull request whose head is `lane`, or None."""

@@ -866,3 +866,58 @@ def test_a_lane_without_an_agent_trailer_is_unchanged(tmp_path, repo):
     b = Recorded({"issues/5616/comments": [_stale_claim("opencode")]})
     b.heartbeat("lane/test/claim", head)
     assert len(_stamps(b)) == 1
+
+
+class _MergesOnOrigin(Recorded):
+    """The merge API, played by the bare origin: a squash PUT moves origin's main the way GitHub
+    does, behind the local remote-tracking ref -- which is the whole of the 2026-10-13 defect."""
+
+    def __init__(self, table: dict, repo: Path, **kw):
+        super().__init__(table, **kw)
+        self.repo = repo
+
+    def gh(self, path, method="GET", fields=None):
+        out = super().gh(path, method, fields)
+        if method == "PUT" and path.endswith("/merge"):
+            # Moved on the bare repository itself: a `git push` from the clone would also update
+            # the clone's origin/main, which is exactly the refresh that GitHub's merge never does.
+            bare = _git(self.repo, "remote", "get-url", "origin")
+            _git(Path(bare), "update-ref", "refs/heads/main", fields["sha"])
+        return out
+
+
+def _landable(tmp_path: Path, repo: Path) -> tuple[str, str]:
+    """origin/main fetched, and a lane pushed to origin one commit ahead of it."""
+    head = _lane_with_origin(tmp_path, repo, "Claim: chidionyema/idp#5616")
+    _git(repo, "push", "-q", "origin", "lane/test/claim")
+    _git(repo, "fetch", "-q", "origin")
+    return _git(repo, "rev-parse", "origin/main"), head
+
+
+def test_main_after_a_landing_is_the_main_the_landing_made(tmp_path, repo):
+    """b2704 landed #6107 at 19:49:48Z and b2705 was started in the same tick on the main from
+    before it (8a3984f2bc45), then voided at 19:51:28Z as "main moved under it": tick() starts
+    the next batch straight after land(), and main() read an origin/main nobody had refetched."""
+    before, head = _landable(tmp_path, repo)
+    b = _fast(_MergesOnOrigin(_green(head), repo))
+    assert b.main() == before
+    b.land([("lane/test/claim", head, head)], head)
+    assert b.main() == head, (
+        "main() still names the main from before the landing, so the next batch is built on it"
+    )
+
+
+def test_a_failed_refresh_after_the_merge_is_not_a_refused_land(tmp_path, repo):
+    """main has already moved when the refresh runs; raising there would mark the landed lanes
+    red. The only cost of a failed refresh is the one batch it would have saved."""
+    _, head = _landable(tmp_path, repo)
+    b = _fast(_MergesOnOrigin(_green(head), repo))
+    real = b.git
+
+    def git(*a, check=True):
+        if a[:1] == ("fetch",):
+            return real("fetch", "-q", "no-such-remote", check=check)
+        return real(*a, check=check)
+
+    b.git = git
+    b.land([("lane/test/claim", head, head)], head)  # does not raise
