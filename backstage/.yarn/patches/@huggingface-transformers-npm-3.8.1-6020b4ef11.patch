@@ -1,0 +1,13 @@
+diff --git a/dist/transformers.web.js b/dist/transformers.web.js
+index 8158381bf49fa32a4fa8a3919807a0307c649ad0..af887b21687cbb417cc032e73d4a6afa18b87d43 100644
+--- a/dist/transformers.web.js
++++ b/dist/transformers.web.js
+@@ -5098,7 +5098,7 @@ if (RUNNING_LOCALLY) {
+     // NOTE: We wrap `import.meta` in a call to `Object` to prevent Webpack from trying to bundle it in CommonJS.
+     // Although we get the warning: "Accessing import.meta directly is unsupported (only property access or destructuring is supported)",
+     // it is safe to ignore since the bundled value (`{}`) isn't used for CommonJS environments (we use __dirname instead).
+-    const _import_meta_url = Object(import.meta).url;
++    const _import_meta_url = import.meta.url;
+ 
+     if (_import_meta_url) {
+         dirname__ = node_path__WEBPACK_IMPORTED_MODULE_1__.dirname(node_path__WEBPACK_IMPORTED_MODULE_1__.dirname(node_url__WEBPACK_IMPORTED_MODULE_2__.fileURLToPath(_import_meta_url))) // ESM

@@ -55,7 +55,8 @@
     "@types/react-dom": "^18",
     "prismjs": "^1.30.0",
     "tar": "^7.5.19",
-    "file-type": "^21.3.1"
+    "file-type": "^21.3.1",
+    "@huggingface/transformers@npm:^3.5.1": "patch:@huggingface/transformers@npm%3A3.8.1#~/.yarn/patches/@huggingface-transformers-npm-3.8.1-6020b4ef11.patch"
   },
   "prettier": "@backstage/cli/config/prettier",
   "lint-staged": {

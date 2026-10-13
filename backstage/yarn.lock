@@ -5643,7 +5643,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@huggingface/transformers@npm:^3.5.1, @huggingface/transformers@npm:^3.8.0":
+"@huggingface/transformers@npm:3.8.1":
   version: 3.8.1
   resolution: "@huggingface/transformers@npm:3.8.1"
   dependencies:
@@ -5652,6 +5652,18 @@ __metadata:
     onnxruntime-web: "npm:1.22.0-dev.20250409-89f8206ba4"
     sharp: "npm:^0.34.1"
   checksum: 10c0/5fa8112ecf4fecee21eb82b1970b6290e0ab7b32166bc67ee12b539ff9d23a0d1fe6eab308a478e31167118c963b9eeef5fdbcc27ba19a20a350ef51e36fb0f6
+  languageName: node
+  linkType: hard
+
+"@huggingface/transformers@patch:@huggingface/transformers@npm%3A3.8.1#~/.yarn/patches/@huggingface-transformers-npm-3.8.1-6020b4ef11.patch":
+  version: 3.8.1
+  resolution: "@huggingface/transformers@patch:@huggingface/transformers@npm%3A3.8.1#~/.yarn/patches/@huggingface-transformers-npm-3.8.1-6020b4ef11.patch::version=3.8.1&hash=6ca645"
+  dependencies:
+    "@huggingface/jinja": "npm:^0.5.3"
+    onnxruntime-node: "npm:1.21.0"
+    onnxruntime-web: "npm:1.22.0-dev.20250409-89f8206ba4"
+    sharp: "npm:^0.34.1"
+  checksum: 10c0/5b4a757cab9dffa7cfdd8a3b1a2cd1d26ce94228ed5c264479918552c10c69bb1d87124070f8c538c528985b1d2a1c79237fc3d86bece3a299415a4e4831e139
   languageName: node
   linkType: hard
 
@@ -13481,7 +13493,7 @@ __metadata:
     "@backstage/plugin-user-settings": "npm:^0.9.6"
     "@backstage/theme": "npm:^0.7.3"
     "@backstage/ui": "npm:^0.17.1"
-    "@huggingface/transformers": "npm:^3.8.0"
+    "@huggingface/transformers": "patch:@huggingface/transformers@npm%3A3.8.1#~/.yarn/patches/@huggingface-transformers-npm-3.8.1-6020b4ef11.patch"
     "@material-ui/core": "npm:^4.12.2"
     "@material-ui/icons": "npm:^4.9.1"
     "@playwright/test": "npm:^1.32.3"
@@ -13497,7 +13509,7 @@ __metadata:
     "@xyflow/react": "npm:^12.11.6"
     cross-env: "npm:^7.0.0"
     dagre: "npm:^0.8.5"
-    kokoro-js: "npm:^1.0.0"
+    kokoro-js: "patch:kokoro-js@npm%3A1.2.1#~/.yarn/patches/kokoro-js-npm-1.2.1-04fbbbeaff.patch"
     react: "npm:^18.0.2"
     react-dom: "npm:^18.0.2"
     react-router: "npm:^6.30.2"
@@ -22612,13 +22624,23 @@ __metadata:
   languageName: node
   linkType: hard
 
-"kokoro-js@npm:^1.0.0":
+"kokoro-js@npm:1.2.1":
   version: 1.2.1
   resolution: "kokoro-js@npm:1.2.1"
   dependencies:
     "@huggingface/transformers": "npm:^3.5.1"
     phonemizer: "npm:^1.2.1"
   checksum: 10c0/b8e7bd778b1772e88402ea1d7e75ca2cd71b533bd50c3b646e65461df7aaa1ece3f07d4a9ab3bc8158cd6b607f12db6e05ade553327fd25101b68fcf4c706e19
+  languageName: node
+  linkType: hard
+
+"kokoro-js@patch:kokoro-js@npm%3A1.2.1#~/.yarn/patches/kokoro-js-npm-1.2.1-04fbbbeaff.patch":
+  version: 1.2.1
+  resolution: "kokoro-js@patch:kokoro-js@npm%3A1.2.1#~/.yarn/patches/kokoro-js-npm-1.2.1-04fbbbeaff.patch::version=1.2.1&hash=ca093f"
+  dependencies:
+    "@huggingface/transformers": "npm:^3.5.1"
+    phonemizer: "npm:^1.2.1"
+  checksum: 10c0/a66d2c436e1e889d2c7a0b688a909bc5b521e90e5b3f4e0b2c94602afcaee7c9258b014ad50c68f39db757f2238f9a45c0ed583e08bad688cda0305f52c5aa89
   languageName: node
   linkType: hard
 
