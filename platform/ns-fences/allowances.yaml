@@ -263,7 +263,9 @@ flows:
     # research: the hourly research engine sends every lane's prompt through the router
     # (platform/research-engine/cronjob.yaml:105, LITELLM_BASE_URL).
     # backstage: the fleetview sidecar's voice lanes (voice, voice-asr, voice-tts).
-    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge, voice-router, backstage]
+    # unified-memory: the memory server embeds every fact it stores, and every recall query,
+    # through the `embed` lane (MEMORY_EMBED_URL, platform/unified-memory-server/oke-unified-memory.yaml:83).
+    ingress_from: [edge, healing, agent-workforce, mcp, hindsight, otto-gateway, robusta, research, cyrus, via-negativa, sovereign-system, forge, voice-router, backstage, unified-memory]
   research:
     # The research engine is an hourly CronJob (platform/research-engine/cronjob.yaml, schedule
     # "23 * * * *"), so it holds no long-lived pod and nothing here was measured from one. Every
@@ -654,8 +656,11 @@ flows:
   unified-memory:
     # The estate's memory layer (§6). estate-db: its own role and database on the one Postgres
     # (estate-rw.estate-db, DATABASE_URL). keda: every request arrives through the HTTP add-on's
-    # interceptor. No llm and no internet: it calls no model.
-    egress: [estate-db]
+    # interceptor. llm: every remember, every recall query and the backfill call the router's
+    # `embed` lane (MEMORY_EMBED_URL, litellm.llm.svc). Undeclared, llm's default-deny dropped
+    # every embed call: measured 2026-10-13, /embeddings/backfill failed 2 of 2 per call on the
+    # 20s timeout and the router's log never saw one request. No internet: the router does that.
+    egress: [estate-db, llm]
     ingress_from: [keda]
   sovereign-system:
     # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).

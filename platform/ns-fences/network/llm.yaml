@@ -174,6 +174,9 @@ spec:
           kubernetes.io/metadata.name: sovereign-system
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: unified-memory
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: via-negativa
     - namespaceSelector:
         matchLabels:
