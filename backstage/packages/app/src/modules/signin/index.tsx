@@ -70,11 +70,25 @@ export const SignInUnavailable = ({ error }: { error?: Error }) => {
 // door's own refresh to a visitor who came straight to the face. SignInUnavailable stays as the
 // error component so a genuine failure still reads in the estate's voice, but it is no longer the
 // page's whole behaviour -- with one working provider it is the exception, not the loop.
+//
+// No "Enter as a Guest User" wall. Backstage's multi-provider page already signs in silently with
+// the provider stored under PROVIDER_STORAGE_KEY (the reload/new-tab rows measured below); only a
+// browser that has never pressed Enter met the wall. With one provider there is nothing to choose,
+// so the key is seeded to 'guest' before the page mounts and the first visit takes the same silent
+// path. If guest/refresh ever fails, Backstage drops the key and renders the button as before.
+const PROVIDER_STORAGE_KEY = '@backstage/core:SignInPage:provider';
 const frontDoorSignInPage = SignInPageBlueprint.make({
   params: {
-    loader: async () => props => (
-      <SignInPage {...props} providers={['guest']} ErrorComponent={SignInUnavailable} />
-    ),
+    loader: async () => props => {
+      try {
+        if (!window.localStorage.getItem(PROVIDER_STORAGE_KEY)) {
+          window.localStorage.setItem(PROVIDER_STORAGE_KEY, 'guest');
+        }
+      } catch {
+        // storage blocked (private mode): the button still works
+      }
+      return <SignInPage {...props} providers={['guest']} ErrorComponent={SignInUnavailable} />;
+    },
   },
 });
 
