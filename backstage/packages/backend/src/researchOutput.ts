@@ -48,12 +48,16 @@ export type ClaimsIo = {
     password: string;
     connectionTimeoutMillis: number;
     statement_timeout: number;
-  }) => { query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>; end: () => Promise<void> };
+  }) => {
+    connect: () => Promise<void>;
+    query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>;
+    end: () => Promise<void>;
+  };
 };
 
 export const productionIo: ClaimsIo = {
   readSecret: path => fs.readFile(path, 'utf-8'),
-  // pg's Client satisfies the seam structurally: query(sql, values) and end().
+  // pg's Client satisfies the seam structurally: connect(), query(sql, values) and end().
   connect: config => new Client(config),
 };
 
@@ -83,6 +87,11 @@ export const fetchClaims = async (
     statement_timeout: STATEMENT_TIMEOUT_MS,
   });
   try {
+    // connect() first, and awaited. pg queues a query issued on an unconnected Client and never
+    // runs it, and connectionTimeoutMillis only starts counting inside connect() -- the version of
+    // this file without it held every request open forever (measured live 2026-10-13: the guest
+    // call to /claims never answered, and /fleet's research pill never left "unreachable").
+    await client.connect();
     // Only columns measured to exist on the claims table (psql, 2026-10-10); newest first.
     const result = await client.query(
       'SELECT created_at, status, statement FROM claims ORDER BY created_at DESC LIMIT $1',
