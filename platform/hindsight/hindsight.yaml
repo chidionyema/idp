@@ -37,9 +37,9 @@ spec:
     # crew#524 CP1 (2026-08-27): 4 installs failed on 'Deployment hindsight-api status Failed' and the
     # release stalled with no pod evidence left; one more attempt per hour lets the 15-min
     # cluster-state snapshot catch the pod's own reason (LAW 29: attribute before repair).
-    remediation: { retries: 3 }
+    remediation: {retries: 3}
   upgrade:
-    remediation: { retries: 3 }
+    remediation: {retries: 3}
     # A deployment this chart leaves in a Failed state (its own probe recycles a slow/bad start)
     # is "stalled" to Helm's upgrade waiter, so a normal upgrade aborts and rolls back without
     # ever applying the corrected values or postRenderer (2026-09-08: hindsight stayed on the old
@@ -47,11 +47,11 @@ spec:
     # deployment instead of waiting on it, so the current health-correct values land.
     force: true
   values:
-    existingSecret: hindsight-env   # platform/hindsight/external-secret.yaml
+    existingSecret: hindsight-env # platform/hindsight/external-secret.yaml
     postgresql:
-      enabled: false                # platform/hindsight/postgres.yaml
+      enabled: false # platform/hindsight/postgres.yaml
       external:
-        host: estate-rw.estate-db.svc.cluster.local   # the one estate Postgres (platform/estate-db)
+        host: estate-rw.estate-db.svc.cluster.local # the one estate Postgres (platform/estate-db)
         port: 5432
         database: hindsight
         username: hindsight
@@ -81,6 +81,9 @@ spec:
       # above). This is the vendor image plus those models: platform/hindsight/hindsight-api.Dockerfile.
       # Until 2026-10-13 the 50GB modelCache PVC was the only copy of them, and #6088 removed it on
       # the wrong belief that the vendor image carried them (the new pod CrashLoopBackOff'd).
+      # This file is kept in the format the image setter writes ({a: b}, one space before a
+      # comment): it re-serialises the whole file on every tag bump, so any other spacing rides
+      # along and bin/idp-image-only-diff refuses the bump as not a plain image change (#6114).
       image:
         repository: ghcr.io/chidionyema/hindsight-api
         tag: "main-0-0000000000000000000000000000000000000000" # {"$imagepolicy": "flux-system:hindsight-api:tag"}
@@ -89,33 +92,33 @@ spec:
       # agent-workforce-data (2026-10-13). An emptyDir keeps the path writable under the read-only
       # root filesystem.
       persistence:
-        modelCache: { enabled: false }
+        modelCache: {enabled: false}
       extraVolumes:
-        - { name: tmp, emptyDir: {} }
-        - { name: model-cache, emptyDir: { sizeLimit: 1Gi } }
+        - {name: tmp, emptyDir: {}}
+        - {name: model-cache, emptyDir: {sizeLimit: 1Gi}}
       extraVolumeMounts:
-        - { name: tmp, mountPath: /tmp }
-        - { name: model-cache, mountPath: /home/hindsight/.cache }
+        - {name: tmp, mountPath: /tmp}
+        - {name: model-cache, mountPath: /home/hindsight/.cache}
       resources:
-        requests: { cpu: 50m, memory: 1Gi }   # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
-        limits: { cpu: "1", memory: 2Gi }
+        requests: {cpu: 50m, memory: 1Gi} # crew#584 zealot rule 1: micro CPU request, burst limit; the memory floor stays (incident-set)
+        limits: {cpu: "1", memory: 2Gi}
     worker:
-      enabled: false                # one api pod runs its internal worker; a second is a second copy
+      enabled: false # one api pod runs its internal worker; a second is a second copy
     controlPlane:
-      enabled: false                # the UI is a surface nobody is onboarded to yet (LAW 36)
+      enabled: false # the UI is a surface nobody is onboarded to yet (LAW 36)
     tei:
-      embedding: { enabled: false } # api embeds in-process; TEI is a second model server
-      reranker: { enabled: false }
+      embedding: {enabled: false} # api embeds in-process; TEI is a second model server
+      reranker: {enabled: false}
     podSecurityContext:
       runAsNonRoot: true
       runAsUser: 1000
       runAsGroup: 1000
       fsGroup: 1000
-      seccompProfile: { type: RuntimeDefault }
+      seccompProfile: {type: RuntimeDefault}
     securityContext:
       allowPrivilegeEscalation: false
       readOnlyRootFilesystem: true
-      capabilities: { drop: ["ALL"] }
+      capabilities: {drop: ["ALL"]}
   # crew#573, measured 2026-08-28 (oke-check 33172282641). hindsight-api ran 13h at 0/1 ready and
   # was SIGKILLed 392 times, and the reason was destroyed on every one of them. The chart gives the
   # api a livenessProbe and a readinessProbe and no startupProbe, so the kubelet has no way to tell a
@@ -156,7 +159,7 @@ spec:
   postRenderers:
     - kustomize:
         patches:
-          - target: { kind: Service }
+          - target: {kind: Service}
             patch: |
               apiVersion: v1
               kind: Service
@@ -164,7 +167,7 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-hindsight
-          - target: { kind: HTTPRoute }
+          - target: {kind: HTTPRoute}
             patch: |
               apiVersion: v1
               kind: HTTPRoute
@@ -172,7 +175,7 @@ spec:
                 name: every-interface-is-a-door
                 labels:
                   backstage.io/kubernetes-id: founder-hindsight
-          - target: { kind: Deployment, name: hindsight-api }
+          - target: {kind: Deployment, name: hindsight-api}
             patch: |
               apiVersion: apps/v1
               kind: Deployment
