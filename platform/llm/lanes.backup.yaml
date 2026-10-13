@@ -73,6 +73,10 @@ model_list:
     litellm_params:
       model: cohere/embed-v4.0
       api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: embed-query
+    litellm_params:
+      model: nvidia_nim/nvidia/llama-nemotron-embed-vl-1b-v2
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
   - model_name: fast
     litellm_params:
       model: openai/MiniMax-M3
