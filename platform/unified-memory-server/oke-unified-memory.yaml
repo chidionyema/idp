@@ -82,6 +82,9 @@ spec:
             # lane's own `dimensions`; main.py refuses a vector of any other width.
             - { name: MEMORY_EMBED_URL, value: "http://litellm.llm.svc.cluster.local:4000/v1" }
             - { name: MEMORY_EMBED_MODEL, value: "embed" }
+            # A recall query is embedded as a question, not a passage: same model and width as
+            # `embed`, asked the other way (platform/vendors/consoles.yaml, embed-query).
+            - { name: MEMORY_EMBED_QUERY_MODEL, value: "embed-query" }
             - { name: MEMORY_EMBED_DIM, value: "1536" }
             - { name: MEMORY_EMBED_API_KEY_FILE, value: /var/run/memory/MEMORY_EMBED_API_KEY }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://signoz-otel-collector.observability.svc:4318 }
