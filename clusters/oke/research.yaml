@@ -71,3 +71,8 @@ spec:
     substituteFrom:
       - kind: ConfigMap
         name: estate-config
+      # githubAppIDQuoted / githubAppInstallationIDQuoted for the GithubAccessToken generator
+      # (platform/agent-workforce/external-secret.yaml); same Secret backstage reads. secret-store,
+      # already in dependsOn, is what creates it.
+      - kind: Secret
+        name: github-app
