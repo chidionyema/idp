@@ -460,6 +460,19 @@ if [ -n "$fd_appid" ]; then
   [ "$rb" = "$ipol" ] || { echo "FAIL    identity front door app idpPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
   if [ "$ip_cohort" = true ]; then echo "ok      identity front door IdP policy assigned: passkey offered beside the password to everyone at the door; the sign-on policy decides who still owes a second factor (#5858)"
   else echo "ok      identity front door IdP policy assigned: the domain default for everyone (#5858)"; fi
+  # The rule above only reaches the door when the domain asks for the username first. With
+  # SsoSettings.userNameFirst=false (the default) the sign-in page renders username+password in one
+  # form and never draws a passkey control: measured 2026-10-13, policy wired, loginCtx
+  # userNameRequired=false, no WebAuthn call. Oracle's passwordless recipe names this switch
+  # ("Enable UserName First"). Follows the same gate: on while the passkey is offered, off otherwise.
+  unf=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SsoSettings?attributes=userNameFirst" 2>/dev/null | jq -r '.data.Resources[0].userNameFirst // false')
+  if [ "$unf" != "$ip_cohort" ]; then
+    jq -n --argjson v "$ip_cohort" '{schemas:["urn:ietf:params:scim:api:messages:2.0:PatchOp"],Operations:[{op:"replace",path:"userNameFirst",value:$v}]}' > "$T4/unf.json"
+    pu=$(oci raw-request --http-method PATCH --target-uri "$DOMAIN_BASE_URL/admin/v1/SsoSettings/SsoSettings" --request-body "file://$T4/unf.json" 2>&1)
+    unf=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/SsoSettings?attributes=userNameFirst" 2>/dev/null | jq -r '.data.Resources[0].userNameFirst // false')
+    [ "$unf" = "$ip_cohort" ] || { echo "FAIL    identity SsoSettings userNameFirst=$ip_cohort PATCH refused: $(printf '%s' "$pu" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    echo "ok      identity domain sign-in asks for the username first: $ip_cohort"
+  else echo "ok      identity domain sign-in asks for the username first: $ip_cohort already"; fi
 else
   echo "BLIND   identity front door app not found, so no identity-provider policy was assigned"
 fi
