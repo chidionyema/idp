@@ -110,7 +110,7 @@ export default function HarvPanel({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[11px] font-mono hover:text-white ${tone}`}
+        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${tone}`}
       >
         {label}
       </button>
@@ -125,7 +125,7 @@ export default function HarvPanel({
               {err || harv?.error || 'harv answered without a funnel.'}
             </p>
           ) : !harv ? (
-            <p className="text-white/50">reading the funnel…</p>
+            <p className="text-white/60">reading the funnel…</p>
           ) : (
             <>
               <p
@@ -137,30 +137,30 @@ export default function HarvPanel({
                   ? ` · ${harv.evidence.toLocaleString()} evidence entries`
                   : ''}
               </p>
-              <div className="mt-2 text-[9px] uppercase tracking-wider text-white/40">
+              <div className="mt-2 text-[12px] uppercase tracking-wider text-white/60">
                 shelf, all runs
               </div>
               <div className="flex gap-1 mt-1" data-testid="harv-tiers">
                 {Object.entries(harv.shelf || {}).map(([t, n]) => (
                   <span
                     key={t}
-                    className="px-1.5 py-0.5 rounded border border-emerald-400/40 text-emerald-200 text-[10px] font-mono"
+                    className="px-1.5 py-0.5 rounded border border-emerald-400/40 text-emerald-200 text-[12px] font-mono"
                   >
                     {t} · {n.toLocaleString()}
                   </span>
                 ))}
               </div>
-              <div className="mt-3 text-[9px] uppercase tracking-wider text-white/40">
+              <div className="mt-3 text-[12px] uppercase tracking-wider text-white/60">
                 funnel, last run only
               </div>
               {groups(harv.stages || []).map(g => (
                 <div key={g.name} className="mt-3" data-group={g.name}>
-                  <div className="text-[9px] uppercase tracking-wider text-white/40">
+                  <div className="text-[12px] uppercase tracking-wider text-white/60">
                     {g.name}
                   </div>
                   {g.rows.map(r => (
                     <div key={r.stage} className="flex items-center gap-2 mt-1">
-                      <span className="w-40 shrink-0 font-mono text-[10px] text-white/70 truncate">
+                      <span className="w-40 shrink-0 font-mono text-[12px] text-white/70 truncate">
                         {r.stage}
                       </span>
                       <span className="flex-1 h-1.5 rounded bg-white/5">
@@ -169,7 +169,7 @@ export default function HarvPanel({
                           style={{ width: `${Math.max(2, (r.n / g.top) * 100)}%` }}
                         />
                       </span>
-                      <span className="w-12 text-right font-mono text-[10px]">
+                      <span className="w-12 text-right font-mono text-[12px]">
                         {r.n.toLocaleString()}
                       </span>
                     </div>

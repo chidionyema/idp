@@ -98,7 +98,7 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
       </p>
     );
   }
-  if (!lane) return <p className="text-white/50">reading the lane…</p>;
+  if (!lane) return <p className="text-white/60">reading the lane…</p>;
 
   const counts = laneCounts(lane.state?.lanes);
   const broken = notGreen(lane.main?.required);
@@ -116,7 +116,7 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
       {broken.length ? (
         <ul data-testid="greenlane-checks" className="mt-1">
           {broken.map(([name, v]) => (
-            <li key={name} className="font-mono text-[10px] text-rose-200/90">
+            <li key={name} className="font-mono text-[12px] text-rose-200/90">
               {name} · {v}
             </li>
           ))}
@@ -129,10 +129,10 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
           main — work is lost
         </p>
       ) : (
-        <p className="mt-2 text-white/45">work lost · 0</p>
+        <p className="mt-2 text-white/60">work lost · 0</p>
       )}
 
-      <div className="mt-2 text-[9px] uppercase tracking-wider text-white/40">
+      <div className="mt-2 text-[12px] uppercase tracking-wider text-white/60">
         open pull requests
         {lane.invariants?.open_prs_not_raised_by_engine
           ? ` · ${lane.invariants.open_prs_not_raised_by_engine} not raised by the engine`
@@ -141,38 +141,38 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
       {lane.open_prs?.length ? (
         <ul data-testid="greenlane-open-prs">
           {lane.open_prs.map(p => (
-            <li key={p.number} className="font-mono text-[10px] text-amber-200/90">
+            <li key={p.number} className="font-mono text-[12px] text-amber-200/90">
               #{p.number} {p.head} ({p.user})
             </li>
           ))}
         </ul>
       ) : (
-        <p className="text-white/45 text-[10px]">none</p>
+        <p className="text-white/60 text-[12px]">none</p>
       )}
 
-      <div className="mt-3 text-[9px] uppercase tracking-wider text-white/40">
+      <div className="mt-3 text-[12px] uppercase tracking-wider text-white/60">
         lanes · {Object.keys(lane.state?.lanes || {}).length} held
         {counts.length ? ` · ${counts.map(([s, n]) => `${n} ${s}`).join(' · ')}` : ''}
       </div>
       <ul data-testid="greenlane-lanes" className="mt-1">
         {Object.entries(lane.state?.lanes || {}).map(([name, l]) => (
           <li key={name} className="mb-1">
-            <span className={`font-mono text-[10px] ${laneTone(l.status || '')}`}>
+            <span className={`font-mono text-[12px] ${laneTone(l.status || '')}`}>
               {l.status}
             </span>{' '}
-            <span className="font-mono text-[10px] text-white/80">{name}</span>
+            <span className="font-mono text-[12px] text-white/80">{name}</span>
             {l.reason ? (
-              <div className="text-[10px] text-white/45 truncate">{l.reason}</div>
+              <div className="text-[12px] text-white/60 truncate">{l.reason}</div>
             ) : null}
           </li>
         ))}
       </ul>
       {lane.state?.available === false ? (
-        <p className="mt-2 text-amber-200 text-[10px]">
+        <p className="mt-2 text-amber-200 text-[12px]">
           lane state unreadable: {lane.state.error}
         </p>
       ) : null}
-      <p className="mt-2 text-[9px] font-mono text-white/35">
+      <p className="mt-2 text-[12px] font-mono text-white/60">
         {lane.read_at ? `read ${lane.read_at}` : ''}
         {landedLine}
       </p>
@@ -225,7 +225,7 @@ export default function GreenlaneHud({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[11px] font-mono hover:text-white ${laneToneFor(
+        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${laneToneFor(
           lane,
           err,
         )}`}

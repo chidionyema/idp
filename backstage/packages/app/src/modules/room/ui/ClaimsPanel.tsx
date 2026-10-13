@@ -61,7 +61,7 @@ export function claimTone(reason: string): string {
     case 'unreadable heartbeat':
       return 'text-rose-300 border-rose-400/40';
     default:
-      return 'text-white/45 border-white/15'; // issue closed: released work, not a problem
+      return 'text-white/60 border-white/15'; // issue closed: released work, not a problem
   }
 }
 
@@ -90,7 +90,7 @@ function BoardBody({ data, err }: { data: Claims | null; err: string | null }) {
       </p>
     );
   }
-  if (!data) return <p className="text-white/50">reading the claims…</p>;
+  if (!data) return <p className="text-white/60">reading the claims…</p>;
   if (data.claims.length === 0) {
     return (
       <p data-testid="claims-empty" className="text-white/60">
@@ -105,17 +105,17 @@ function BoardBody({ data, err }: { data: Claims | null; err: string | null }) {
           <div className="flex items-baseline gap-2">
             <span
               data-testid={`claim-reason-${c.issue}`}
-              className={`px-1.5 rounded border text-[9px] font-mono ${claimTone(c.reason)}`}
+              className={`px-1.5 rounded border text-[12px] font-mono ${claimTone(c.reason)}`}
             >
               {c.reason}
             </span>
-            <span className="font-mono text-[11px] text-white/90">{c.agent}</span>
-            <span className="font-mono text-[10px] text-white/45">
+            <span className="font-mono text-[12px] text-white/90">{c.agent}</span>
+            <span className="font-mono text-[12px] text-white/60">
               #{c.issue} · {ageLine(c.age_s)}
             </span>
           </div>
-          <div className="text-[11px] text-white/75">{c.title || '(title not read)'}</div>
-          <div className="font-mono text-[10px] text-cyan-200/80 break-all">
+          <div className="text-[12px] text-white/75">{c.title || '(title not read)'}</div>
+          <div className="font-mono text-[12px] text-cyan-200/80 break-all">
             {c.paths.join(', ')}
           </div>
         </li>
@@ -169,7 +169,7 @@ export default function ClaimsPanel({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[11px] font-mono hover:text-white ${claimToneFor(
+        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${claimToneFor(
           data,
           err,
         )}`}
@@ -184,7 +184,7 @@ export default function ClaimsPanel({
         >
           <BoardBody data={data} err={err} />
           {data && data.available ? (
-            <p data-testid="claims-footnote" className="mt-2 text-[9px] font-mono text-white/35">
+            <p data-testid="claims-footnote" className="mt-2 text-[12px] font-mono text-white/60">
               {data.source} · last {data.window_h}h
               {data.truncated
                 ? ' · the window filled before it ended, so older claims were not read'

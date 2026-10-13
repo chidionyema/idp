@@ -172,7 +172,7 @@ export function RadialMenu(props: RadialMenuProps): JSX.Element {
             width: 120,
             textAlign: 'center',
             pointerEvents: 'none',
-            fontSize: 11,
+            fontSize: 12,
             lineHeight: 1.3,
           }}
         >

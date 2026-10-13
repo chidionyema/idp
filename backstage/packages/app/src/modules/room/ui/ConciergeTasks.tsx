@@ -53,7 +53,7 @@ const KIND: Record<string, string> = {
   needs_human: 'text-rose-300',
   failed: 'text-rose-300',
   done: 'text-emerald-300',
-  retry: 'text-white/40',
+  retry: 'text-white/60',
   act: 'text-cyan-200/80',
   plan: 'text-white/70',
 };
@@ -185,7 +185,7 @@ export default function ConciergeTasks({
         type="button"
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
-        className="px-3 py-1.5 rounded-full bg-black/70 border border-white/15 backdrop-blur-md text-[11px] font-mono text-white/80 hover:text-white max-w-[92vw] truncate"
+        className="px-3 py-1.5 rounded-full bg-black/70 border border-white/15 backdrop-blur-md text-[12px] font-mono text-white/80 hover:text-white max-w-[92vw] truncate"
       >
         concierge{running ? ` · ${running} running` : ''}
         {!open && newest && newest.state === 'running' ? (
@@ -205,7 +205,7 @@ export default function ConciergeTasks({
             }}
           >
             <label
-              className="block text-[10px] font-mono uppercase tracking-wider text-white/45 mb-1"
+              className="block text-[12px] font-mono uppercase tracking-wider text-white/60 mb-1"
               htmlFor="concierge-goal"
             >
               Ask the concierge
@@ -227,11 +227,11 @@ export default function ConciergeTasks({
                 value={url}
                 onChange={e => setUrl(e.target.value)}
                 placeholder="start at (optional URL)"
-                className="flex-1 min-w-0 rounded-md bg-white/5 border border-white/10 px-2 py-1 text-[11px] font-mono placeholder-white/25"
+                className="flex-1 min-w-0 rounded-md bg-white/5 border border-white/10 px-2 py-1 text-[12px] font-mono placeholder-white/25"
               />
               <span
-                className={`text-[10px] font-mono ${
-                  tooLong ? 'text-rose-300' : 'text-white/30'
+                className={`text-[12px] font-mono ${
+                  tooLong ? 'text-rose-300' : 'text-white/60'
                 }`}
                 data-testid="concierge-count"
               >
@@ -245,7 +245,7 @@ export default function ConciergeTasks({
                 {sending ? 'Sending…' : 'Send'}
               </button>
             </div>
-            <p className="mt-1 text-[10px] text-white/35">
+            <p className="mt-1 text-[12px] text-white/60">
               Or say it: “concierge, …”. It opens your Chrome on the laptop and
               stops at any pay step.
             </p>
@@ -254,7 +254,7 @@ export default function ConciergeTasks({
           {notice ? (
             <div
               role="status"
-              className={`mt-2 text-[11px] ${
+              className={`mt-2 text-[12px] ${
                 notice.ok ? 'text-emerald-300' : 'text-rose-300'
               }`}
             >
@@ -264,15 +264,15 @@ export default function ConciergeTasks({
 
           <div className="mt-3 border-t border-white/10 pt-2">
             {boardError ? (
-              <div role="alert" className="text-[11px] text-amber-300">
+              <div role="alert" className="text-[12px] text-amber-300">
                 {boardError}
               </div>
             ) : null}
             {tasks === null && !boardError ? (
-              <div className="text-[11px] text-white/40">Reading tasks…</div>
+              <div className="text-[12px] text-white/60">Reading tasks…</div>
             ) : null}
             {tasks !== null && tasks.length === 0 ? (
-              <div className="text-[11px] text-white/40">
+              <div className="text-[12px] text-white/60">
                 No concierge tasks yet.
               </div>
             ) : null}
@@ -287,7 +287,7 @@ export default function ConciergeTasks({
                   <div className="flex items-start gap-2">
                     <span className="flex-1 break-words">{t.goal}</span>
                     <span
-                      className={`px-1.5 py-0.5 rounded border text-[9px] font-mono uppercase ${
+                      className={`px-1.5 py-0.5 rounded border text-[12px] font-mono uppercase ${
                         STATE[t.state]
                       }`}
                     >
@@ -295,7 +295,7 @@ export default function ConciergeTasks({
                     </span>
                   </div>
                   {t.state !== 'running' && t.summary ? (
-                    <div className="mt-1 text-[11px] text-white/80 break-words">
+                    <div className="mt-1 text-[12px] text-white/80 break-words">
                       {t.summary}
                     </div>
                   ) : null}
@@ -304,7 +304,7 @@ export default function ConciergeTasks({
                       {t.found.map((f, i) => (
                         <li
                           key={i}
-                          className="text-[11px] text-emerald-300 break-words"
+                          className="text-[12px] text-emerald-300 break-words"
                         >
                           ✓ {f}
                         </li>
@@ -313,18 +313,18 @@ export default function ConciergeTasks({
                   ) : null}
                   <ol
                     aria-label={`steps of ${t.task_id}`}
-                    className="mt-1 flex flex-col gap-0.5 font-mono text-[10px]"
+                    className="mt-1 flex flex-col gap-0.5 font-mono text-[12px]"
                   >
                     {t.events.slice(-6).map((e, i) => (
                       <li
                         key={`${e.step}-${i}`}
-                        className={`break-words ${KIND[e.kind] || 'text-white/50'}`}
+                        className={`break-words ${KIND[e.kind] || 'text-white/60'}`}
                       >
-                        <span className="text-white/30">{e.kind}</span> {e.text}
+                        <span className="text-white/60">{e.kind}</span> {e.text}
                       </li>
                     ))}
                   </ol>
-                  <div className="mt-1 flex gap-3 text-[10px] font-mono">
+                  <div className="mt-1 flex gap-3 text-[12px] font-mono">
                     {t.url ? (
                       <a
                         href={t.url}
@@ -336,7 +336,7 @@ export default function ConciergeTasks({
                       </a>
                     ) : null}
                     {t.receipt ? (
-                      <span className="text-white/35">receipt kept</span>
+                      <span className="text-white/60">receipt kept</span>
                     ) : null}
                   </div>
                 </li>

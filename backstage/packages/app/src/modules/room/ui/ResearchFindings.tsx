@@ -94,7 +94,7 @@ export default function ResearchFindings({
         onClick={() => setOpen(o => !o)}
         aria-expanded={open}
         data-testid="research-pill"
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[11px] font-mono hover:text-white ${tone}`}
+        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${tone}`}
       >
         {summary(board, err)}
       </button>
@@ -110,7 +110,7 @@ export default function ResearchFindings({
               {err || board?.error || 'the research board answered without claims.'}
             </p>
           ) : !board ? (
-            <p className="text-white/50">reading the research department…</p>
+            <p className="text-white/60">reading the research department…</p>
           ) : claims.length === 0 ? (
             <p className="text-white/60">
               The engine has answered no questions yet. Its first hourly run puts the first
@@ -126,7 +126,7 @@ export default function ResearchFindings({
                 <div className="text-[12px] leading-snug text-white/90 break-words">
                   {c.statement}
                 </div>
-                <div className="mt-1 text-[10px] uppercase tracking-wider">
+                <div className="mt-1 text-[12px] uppercase tracking-wider">
                   {c.status || 'unlabelled'} · {ago(c.created_at, now())}
                 </div>
               </div>
