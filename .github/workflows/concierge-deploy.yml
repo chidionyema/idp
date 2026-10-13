@@ -216,10 +216,10 @@ jobs:
           # is a key a human can be guessed at having reused.
           ensure_secret kms-master-key KMS_MASTER_KEY="$(openssl rand -hex 32)"
 
-          # A DIFFERENT key from the profile's: one key decrypting both her browsing session and her
-          # card would make a leaked profile key a leaked card, and the profile key is the one that
-          # moves on every order.
-          ensure_secret card-key CARD_KEY_HEX="$(openssl rand -hex 32)"
+          # card-key is NOT minted here any more. A random key made in CI was a second card key
+          # beside the one the founder holds in Bitwarden (CONCIERGE_CARD_KEY, LAW 54), so the two
+          # halves of the concierge could encrypt and decrypt a card with different keys. It is
+          # carried from the cluster in the next step instead, like the Twilio fields.
 
           # THE VISION LANE. It was missing entirely, so the first real order would have failed on
           # its first screenshot with a missing-key error -- and `OPENAI_API_KEY`, which the runtime
@@ -233,6 +233,62 @@ jobs:
           ensure_secret vision-lane \
             VISION_API_KEY="${{ secrets.SEED_ANTHROPIC_API_KEY }}" \
             CONCIERGE_VISION_MODEL="claude-sonnet-4-6"
+
+      # THE FOUNDER'S HALF, CARRIED, NOT RE-ASKED. TWILIO_AUTH_TOKEN, the three numbers and the card
+      # key are born in Bitwarden (consoles.yaml `twilio` and `card-key` rows) and the vendor bridge
+      # already lands each in the `concierge` namespace. GitHub holds none of them and must not
+      # become a second home (LAW 44), so this run reads them where they already are -- the same
+      # OIDC road estate-secret-prune.yml takes to the cluster -- and writes the two Modal secrets
+      # the code declares: `human-twilio` (webapp.py) and `card-key` (agent.py). --force, every
+      # run: these are copies, so the cluster's value is the truth and a rotation there lands here
+      # on the next deploy. Values are masked in the log and never echoed.
+      - uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
+        if: ${{ inputs.dry_run == false }}
+
+      - name: carry the founder's concierge secrets from the cluster to Modal
+        if: ${{ inputs.dry_run == false }}
+        env:
+          OCI_CLI_AUTH: security_token
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_CLUSTER_NAME: ${{ vars.OCI_CLUSTER_NAME || 'estate' }}
+        run: |
+          set -euo pipefail
+          cl=$(bin/idp-cloud cluster list)
+          cid=$(printf '%s\n' "$cl" | awk -v n="$OCI_CLUSTER_NAME" '$1==n{print $2; exit}')
+          [ -n "$cid" ] || { echo "FAIL    concierge-deploy  no ACTIVE cluster named $OCI_CLUSTER_NAME"; exit 1; }
+          KUBECONFIG=$(mktemp); export KUBECONFIG
+          trap 'rm -f "$KUBECONFIG"' EXIT
+          bin/idp-cloud cluster kubeconfig "$cid" --file "$KUBECONFIG"
+          field() { # <secret> <key> -> the value, or nothing
+            kubectl get secret "$1" -n concierge -o jsonpath="{.data.$2}" 2>/dev/null | base64 -d 2>/dev/null || true
+          }
+
+          tok=$(field human-twilio TWILIO_AUTH_TOKEN)
+          [ -n "$tok" ] || {
+            echo "FAIL    concierge-deploy  concierge/human-twilio holds no TWILIO_AUTH_TOKEN."
+            echo "        The webhook cannot verify Twilio's signature without it. Nothing deployed."
+            exit 1
+          }
+          echo "::add-mask::$tok"
+          twilio=(TWILIO_AUTH_TOKEN="$tok")
+          # Optional, each in its own Secret (platform/vendors/templates/externalsecrets.yaml): an
+          # absent one narrows what the door does; it does not hold the deploy out.
+          for f in MOM_PHONE_NUMBER GUARDIAN_PHONE_NUMBER TWILIO_WHATSAPP_NUMBER; do
+            v=$(field "human-twilio-$(printf '%s' "$f" | tr 'A-Z_' 'a-z-')" "$f")
+            if [ -n "$v" ]; then echo "::add-mask::$v"; twilio+=("$f=$v"); else echo "note    $f is not in the vault yet"; fi
+          done
+          modal secret create human-twilio "${twilio[@]}" --force >/dev/null
+          echo "ok      modal   human-twilio carried from the cluster (${#twilio[@]} fields)"
+
+          key=$(field human-card-key CARD_KEY_HEX)
+          [[ "$key" =~ ^[0-9a-f]{64}$ ]] || {
+            echo "FAIL    concierge-deploy  concierge/human-card-key holds no 64-hex CARD_KEY_HEX."
+            echo "        A card key of the wrong shape is worse than none. Nothing deployed."
+            exit 1
+          }
+          echo "::add-mask::$key"
+          modal secret create card-key CARD_KEY_HEX="$key" --force >/dev/null
+          echo "ok      modal   card-key carried from the cluster (the Bitwarden key, not a new one)"
 
       - name: what the deploy needs, and whether it is there
         run: |
