@@ -216,33 +216,21 @@ fpid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1
 # is ready, else "0 <the members still waiting>". Reads only, and the one place this is decided:
 # the skip below and the write further down both ask it, so they cannot disagree.
 pl_group="estate-passwordless-pilots"
-# The factor value a passkey-only sign-in needs, in THIS domain's vocabulary -- and empty until a
-# drill has measured that this domain honours it, because a value the domain does not know is not
-# refused: it ALLOWs the sign-in with no factor at all. #5858 shipped "Passwordless", and the drill
-# measured exactly that on 2026-10-12: after the username the door offered no passkey control and
-# the password form was the only way in (run 38273855150), and the same account then signed straight
-# through on its password with no second factor (run 38273745676), where the second-factor rule alone
-# had stopped it 34 minutes earlier. So a value the drill has not measured is never sent, and wiring
-# the rule waits for one; `bin/idp-identity-apply probe` prints every rule's own `return` list -- the
-# vocabulary this domain's own rules use -- to find it. A value that a drill HAS measured is
-# recorded once, with the run that measured it, in platform/identity/passwordless-factor.json;
-# that record is the only way PL_AF becomes non-empty. A record whose value carries no evidence
-# is refused rather than wired, because the failure it would cause is a door with no factor at
-# all, not a red apply.
-PL_AF=""
-PL_AF_RECORD="$IDP/platform/identity/passwordless-factor.json"
-if [ -r "$PL_AF_RECORD" ]; then
-  pl_af_v=$(jq -r '.authenticationFactor // ""' "$PL_AF_RECORD" 2>/dev/null || true)
-  pl_af_e=$(jq -r '.evidence // ""' "$PL_AF_RECORD" 2>/dev/null || true)
-  if [ -n "$pl_af_v" ]; then
-    [ -n "$pl_af_e" ] || { echo "FAIL    identity passwordless rule: $PL_AF_RECORD carries authenticationFactor=$pl_af_v with no evidence (the drill run that measured it); refusing to wire a factor value no drill has measured as honoured (#5858)"; exit 1; }
-    # The cohort's IdP rule (further down) offers the password beside the passkey, so whatever this
-    # rule returns also governs a cohort member who typed the password: a value with no second
-    # factor in it would sign that member in on the password alone -- the #5858 failure again.
-    case "$pl_af_v" in *2FA*) ;; *) echo "FAIL    identity passwordless rule: $PL_AF_RECORD carries authenticationFactor=$pl_af_v, which asks no second factor, and the cohort's IdP rule still offers the password -- refusing to let a cohort password through alone (#5858)"; exit 1 ;; esac
-    PL_AF="$pl_af_v"
-  fi
-fi
+# Face ID ALONE (#5858) is a sign-on rule that knows HOW the user signed in, not a factor value.
+# This domain's rules only ever return authenticationFactor IDP or IDP+2FA (probe, 2026-10-13); the
+# "Passwordless" #5858 shipped is no value of its own, so it was taken and ignored, and no drill could
+# ever measure a passkey-only value because none exists. IDP means "the identity provider that signed
+# you in is enough"; the passkey is already an identity provider at this door (the IdP policy further
+# down). So the rule is: signed in BY the FIDO authenticator -> ALLOW, IDP, at sequence 1; everyone
+# else falls through to the second-factor rule. The condition's vocabulary is the domain's own,
+# read back from a rule the founder made once in the Console (2026-10-13 01:27Z, condition
+# 5f579060..): attributeName subject.authenticatedBy, operator in, attributeValue ["FIDO_AUTHENTICATOR"].
+# Nobody without a passkey can match it, so it needs no cohort; it does need userVerification
+# REQUIRED, or "signed in by the passkey" could be a bare tap rather than Face ID (pl_uv_value).
+pk_rule="front door passkey sign-in"
+pk_cond="front door signed in with a passkey"
+pk_attr="subject.authenticatedBy"
+pk_val='["FIDO_AUTHENTICATOR"]'
 pl_cohort_ready() {
   local gid mus devf mu nf out un
   gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
@@ -276,26 +264,20 @@ pl_uv_value() {
   oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/AuthenticationFactorSettings/AuthenticationFactorSettings" 2>/dev/null \
     | jq -r '.data["urn:ietf:params:scim:schemas:oracle:idcs:extension:fido:AuthenticationFactorSettings"].authenticatorSelectionUserVerification // ""'
 }
-# Drift, not just absence: the assignment alone is not the whole of what this block owns any
-# more. A re-run must also notice a policy that has lost the passwordless cohort rule, or the
-# early exit would report "already assigned" over a policy it had stopped enforcing.
-pl_rid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door offers passwordless sign-in") | .id' | head -1)
-pl_wired=false
-if [ -n "$fpid" ] && [ -n "$pl_rid" ]; then
-  pl_wired=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$pl_rid" '((.data.rules // []) | map(.value) | index($r)) != null' 2>/dev/null)
+# Drift, not just absence: a policy that has lost the passkey rule (or carries it while
+# userVerification is not REQUIRED) is not "already assigned", so the skip asks the domain the same
+# question the write does.
+pk_rid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r --arg n "$pk_rule" '.data.Resources[]? | select(.name == $n) | .id' | head -1)
+pk_wired=false
+if [ -n "$fpid" ] && [ -n "$pk_rid" ]; then
+  pk_wired=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$pk_rid" '(.data.rules // []) | map(select(.value == $r and .sequence == 1)) | length > 0' 2>/dev/null)
 fi
-# Drift runs both ways, and the direction that removes the second factor is the one this early
-# exit missed: measured 2026-10-12, the rule was wired and the policy assigned, so a run that had
-# just landed the passkey gate printed "already assigned" over a door still offering passwordless
-# sign-in to a cohort whose only member held no passkey -- no second factor for that member, and
-# no Face ID prompt either. So the skip asks the domain the same question the write does, and a
-# rule that should not be wired falls through to the ensure that unwires it.
-# The same question includes the factor value: a policy that carries a rule whose value this domain
-# does not honour is not "already assigned", it is a door with no factor at all (#5858). With no
-# measured value the rule is not one that should be wired, so this falls through to the ensure that
-# unwires it.
-if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pl_wired" = true ] && [ -n "$PL_AF" ] && [ "$(pl_cohort_ready)" = 1 ] && [ "$(pl_uv_value)" = REQUIRED ]; then
-  echo "ok      identity front door sign-on policy already assigned (second factor at every sign-in; Face ID alone offered to the pilot cohort, #5818/#5858)"
+pk_uv=$(pl_uv_value)
+pk_want=false; [ "$pk_uv" = REQUIRED ] && pk_want=true
+pl_stale=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r '[.data.Resources[]? | select(.name == "front door offers passwordless sign-in")] | length')
+pk_stray=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null | jq -r --arg fp "$fpid" --arg n "$pk_rule" '[.data.Resources[]? | select(.name == $n and .id != $fp)] | length')
+if [ -n "$fpid" ] && [ "$(printf '%s' "$fdj" | jq -r '.signonPolicy.value // ""')" = "$fpid" ] && [ "$pk_wired" = "$pk_want" ] && [ "${pl_stale:-1}" = 0 ] && [ "${pk_stray:-1}" = 0 ]; then
+  echo "ok      identity front door sign-on policy already assigned (a passkey sign-in is Face ID alone: $pk_wired; every other sign-in owes a second factor, #5818/#5858)"
 else
   T3=$(mktemp -d); chmod 700 "$T3"; trap 'rm -rf "${T:-/dev/null}" "${T2:-/dev/null}" "${T3:-/dev/null}" 2>/dev/null || true' EXIT
   # Refuse to send a schema this domain does not have, by name. The domain answers an unknown URN
@@ -324,33 +306,29 @@ else
   else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/r.json" 2>&1); fi
   frid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
   [ -n "$frid" ] || { echo "FAIL    identity front door MFA rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-  # Face ID ALONE (#5858). The domain creates a Rule with ANY string in authenticationFactor:
-  # a probe rule carrying "BOGUS" was created and read back unharmed, then deleted, and the
-  # domain's rule list came back to its own seven plus #5818's (measured 2026-10-12). So
-  # create-time validation cannot answer whether a value is honoured at sign-in; only the door's
-  # own page can. And if a rule whose value the domain ignores matched EVERY user, the second
-  # factor #5818 installed would be silently gone for the founder. Hence a cohort: the rule
-  # matches one group, the drill account is its only member, the drill measures whether the door
-  # then offers the passkey first -- and widening the rollout is adding a member, not editing a
-  # rule. The group condition's vocabulary is the domain's own: its isInTheseGroups condition
-  # reads back as user.groups[*].value coany ["<id>"] (read 2026-10-12), the shape below.
+  # The passwordless pilot cohort: the group the IdP policy below reads (pl_cohort_ready) before
+  # it offers the passkey at the door. The drill account is its member; widening the rollout is
+  # adding a member. The group condition's vocabulary is the domain's own (user.groups[*].value).
   drill_uid=$(tofu -chdir="$M" output -raw drill_user_id 2>/dev/null || true)
   [ -n "$drill_uid" ] || drill_uid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Users?filter=userName%20eq%20%22estate-drill%22&attributes=id" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
-  # The id the top of this file found is the rule to UPDATE; pl_rid is what the policy will carry,
-  # and stays empty until this run has wired a rule. Clearing the one variable for both jobs sent
-  # every wiring to POST, and the domain does not enforce name uniqueness: a probe on 2026-10-12
-  # read two rules named "front door offers passwordless sign-in" (b336d451.., 72c663d0..).
-  pl_rid_old="$pl_rid"
-  pl_rid=""
-  # Rules left by earlier runs carry a value this domain never honoured and belong to no policy:
-  # keep the one this file updates, delete the rest, so none can be wired by mistake later.
-  for dup in $(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r --arg k "$pl_rid_old" '.data.Resources[]? | select(.name == "front door offers passwordless sign-in" and .id != $k) | .id'); do
-    if [ "$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$dup" '((.data.rules // []) | map(.value) | index($r)) != null')" = true ]; then
-      echo "WARN    identity duplicate passwordless rule $dup is wired into the policy, so it was left alone"; continue
+  # Rules named "front door offers passwordless sign-in" carry "Passwordless", a value this domain
+  # takes and ignores (top of this file). None is ever wired again: the policy PUT below stops
+  # calling one, and this deletes every one the policy does not call, so a wired one goes next run.
+  for old in $(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door offers passwordless sign-in") | .id'); do
+    if [ "$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid?attributes=rules" 2>/dev/null | jq -r --arg r "$old" '((.data.rules // []) | map(.value) | index($r)) != null')" = true ]; then
+      echo "WARN    identity \"Passwordless\" rule $old is still wired; this run's policy PUT unwires it and the next run deletes it"; continue
     fi
-    oci raw-request --http-method DELETE --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$dup" >/dev/null 2>&1 \
-      && echo "ok      identity removed duplicate passwordless rule $dup (same name as the one kept)" \
-      || echo "WARN    identity could not remove duplicate passwordless rule $dup"
+    oci raw-request --http-method DELETE --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$old" >/dev/null 2>&1 \
+      && echo "ok      identity removed \"Passwordless\" rule $old (a value this domain ignores)" \
+      || echo "WARN    identity could not remove \"Passwordless\" rule $old"
+  done
+  # The Console's first draft of the passkey rule (2026-10-13 01:27Z) sat in a policy of its own,
+  # inactive and assigned to nothing. This file owns the rule now and reuses it by name below; the
+  # draft's policy goes. Only an INACTIVE one: an active policy of that name is somebody's door.
+  for sp in $(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" 2>/dev/null | jq -r --arg fp "$fpid" --arg n "$pk_rule" '.data.Resources[]? | select(.name == $n and .id != $fp and .active != true) | .id'); do
+    oci raw-request --http-method DELETE --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$sp" >/dev/null 2>&1 \
+      && echo "ok      identity removed the Console's inactive draft policy $sp (its rule is wired into the front door policy instead)" \
+      || echo "WARN    identity could not remove the Console's inactive draft policy $sp"
   done
   if [ -n "$drill_uid" ]; then
     gid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Groups?filter=displayName%20eq%20%22$pl_group%22&attributes=id,members" 2>/dev/null | jq -r '.data.Resources[0].id // ""')
@@ -367,56 +345,36 @@ else
         printf '%s' "$pg" | jq -e --arg u "$drill_uid" 'any(.data.members[]?; .value == $u)' >/dev/null 2>&1 || { echo "FAIL    identity passwordless cohort membership refused: $(printf '%s' "$pg" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
       fi
     fi
-    # A passwordless rule over a member who has no passkey is not a passkey prompt. Measured
-    # 2026-10-12: the cohort's only member signed in with its password and never saw a second
-    # factor (13:21Z drill -- no MFA step, straight out to the catalogue), where the same account
-    # had hit mfa=challenge with Face ID offered 34 minutes earlier under the second-factor rule
-    # alone. The domain states the fact this rule depends on: /admin/v1/Devices carries, per user,
-    # an authenticationFactor of type FIDO_AUTHENTICATOR whose status is ENROLLED once the ceremony
-    # completes -- INITIATED means it was started and never finished. So the rule is wired only for
-    # a cohort whose passkeys exist; a member without one cannot be signed in without the second
-    # factor by this file. Enrolment needs the second-factor challenge that this very rule
-    # pre-empts, so the order is forced, and convergent: enrol the passkey, and the next apply
-    # wires the rule for that member. The fact itself is read by pl_cohort_ready, above.
-    pl_state=$(pl_cohort_ready)
-    pl_ready=true; pl_wait="${pl_state#0}"
-    if [ "$pl_state" != 1 ]; then pl_ready=false; fi
-    pl_unmeasured=false
-    if [ "$pl_ready" = true ] && [ -z "$PL_AF" ]; then pl_ready=false; pl_unmeasured=true; fi
-    pl_uv_wait=""
-    if [ "$pl_ready" = true ]; then
-      pl_uv=$(pl_uv_value)
-      if [ "$pl_uv" != REQUIRED ]; then pl_ready=false; pl_uv_wait="${pl_uv:-unreadable}"; fi
-    fi
-    if [ "$pl_ready" = true ]; then
-      pcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r '.data.Resources[]? | select(.name == "front door passwordless cohort") | .id' | head -1)
-      jq -n --arg g "[\"$gid\"]" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:"front door passwordless cohort",attributeName:"user.groups[*].value",operator:"coany",attributeValue:$g}' > "$T3/pc.json"
-      if [ -n "$pcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pcid" --request-body "file://$T3/pc.json" 2>&1)
-      else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pc.json" 2>&1); fi
-      pcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
-      [ -n "$pcid" ] || { echo "FAIL    identity passwordless cohort condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-      jq -n --arg c "$pcid" --arg af "$PL_AF" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:"front door offers passwordless sign-in","policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:$af}]}' > "$T3/pl.json"
-      if [ -n "$pl_rid_old" ]; then pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid_old" --request-body "file://$T3/pl.json" 2>&1)
-      else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pl.json" 2>&1); fi
-      pl_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
-      [ -n "$pl_rid" ] || { echo "FAIL    identity passwordless rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
-    else
-      pl_rid=""
-      if [ -n "$pl_uv_wait" ]; then
-        echo "WAIT    identity passwordless cohort: the domain's passkey userVerification is $pl_uv_wait, not REQUIRED, so a passkey alone could be satisfied by a bare tap or a security key rather than Face ID; the passwordless rule stays unwired and the policy keeps the second-factor rule alone (#5858)."
-      elif [ "$pl_unmeasured" = true ]; then
-        echo "WAIT    identity passwordless cohort: every member holds an ENROLLED passkey, but no passkey-only authenticationFactor value has been measured for this domain, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, and a value the domain ignores would remove that second factor without offering Face ID (#5858; drill runs 38273855150, 38273745676, 2026-10-12). Record a drill-measured value with its evidence in $PL_AF_RECORD, and the next apply wires it."
-      else
-        echo "WAIT    identity passwordless cohort: no ENROLLED FIDO_AUTHENTICATOR device for$pl_wait, so the passwordless rule stays unwired -- the policy keeps the second-factor rule alone, which is also the challenge the enrolment ceremony needs (#5858). Enrol the passkey and the next apply wires the rule for that member."
-      fi
-    fi
   else
-    echo "BLIND   identity passwordless cohort: the drill account could not be read, so no rule was pointed at nobody -- the policy keeps the second-factor rule alone"
+    echo "BLIND   identity passwordless cohort: the drill account could not be read, so the cohort group was not maintained"
   fi
-  # policy: active, SignOn, the cohort rule first (when there is one), the second factor after it
-  if [ -n "$pl_rid" ]; then pl_rules=$(jq -n --arg pl "$pl_rid" --arg mfa "$frid" '[{value:$pl,sequence:1},{value:$mfa,sequence:2}]')
+  # Face ID ALONE: the passkey rule, in the vocabulary at the top of this file, read back before it is wired.
+  if [ "$pk_want" = true ]; then
+    pkcid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" 2>/dev/null | jq -r --arg n "$pk_cond" --arg a "$pk_attr" --arg v "$pk_val" '.data.Resources[]? | select(.name == $n or (.attributeName == $a and .attributeValue == $v)) | .id' | head -1)
+    jq -n --arg n "$pk_cond" --arg a "$pk_attr" --arg v "$pk_val" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Condition"],name:$n,attributeName:$a,operator:"in",attributeValue:$v}' > "$T3/pkc.json"
+    if [ -n "$pkcid" ]; then pc=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pkcid" --request-body "file://$T3/pkc.json" 2>&1)
+    else pc=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions" --request-body "file://$T3/pkc.json" 2>&1); fi
+    pkcid=$(printf '%s' "$pc" | jq -r '.data.id // ""')
+    [ -n "$pkcid" ] || { echo "FAIL    identity passkey sign-in condition refused: $(printf '%s' "$pc" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    jq -n --arg n "$pk_rule" --arg c "$pkcid" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Rule"],name:$n,"policyType":{value:"SignOn"},"conditionGroup":{type:"Condition",value:$c},return:[{name:"effect",value:"ALLOW"},{name:"reAuthenticate",value:"false"},{name:"authenticationFactor",value:"IDP"}]}' > "$T3/pk.json"
+    pk_rid=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" 2>/dev/null | jq -r --arg n "$pk_rule" '.data.Resources[]? | select(.name == $n) | .id' | head -1)
+    if [ -n "$pk_rid" ]; then
+      pr=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pk_rid" --request-body "file://$T3/pk.json" 2>&1)
+    else pr=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules" --request-body "file://$T3/pk.json" 2>&1); fi
+    pk_rid=$(printf '%s' "$pr" | jq -r '.data.id // ""')
+    [ -n "$pk_rid" ] || { echo "FAIL    identity passkey sign-in rule refused: $(printf '%s' "$pr" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1; }
+    # The domain takes any value without complaint, so what it holds is read back, not assumed.
+    pk_rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Conditions/$pkcid" 2>/dev/null | jq -r '.data | "\(.attributeName) \(.operator) \(.attributeValue)"')
+    pk_rf=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pk_rid" 2>/dev/null | jq -r '.data | "\(.conditionGroup.value) \([.return[]? | select(.name == "authenticationFactor") | .value] | join(","))"')
+    [ "$pk_rb" = "$pk_attr in $pk_val" ] && [ "$pk_rf" = "$pkcid IDP" ] || { echo "FAIL    identity passkey sign-in rule reads back as [$pk_rf] over [$pk_rb], not [$pkcid IDP] over [$pk_attr in $pk_val]; the policy was not given it"; pk_rid=""; exit 1; }
+  else
+    pk_rid=""
+    echo "WAIT    identity passkey sign-in: the domain's passkey userVerification is ${pk_uv:-unreadable}, not REQUIRED, so a passkey sign-in could be a bare tap rather than Face ID; the policy keeps the second-factor rule alone (#5858)"
+  fi
+  # policy: active, SignOn, the passkey rule first (when there is one), the second factor after it
+  if [ -n "$pk_rid" ]; then pl_rules=$(jq -n --arg pl "$pk_rid" --arg mfa "$frid" '[{value:$pl,sequence:1},{value:$mfa,sequence:2}]')
   else pl_rules=$(jq -n --arg mfa "$frid" '[{value:$mfa,sequence:1}]'); fi
-  jq -n --argjson r "$pl_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818); Face ID alone to the passwordless pilot cohort (#5858)",active:true,"policyType":{value:"SignOn"},rules:$r}' > "$T3/p.json"
+  jq -n --argjson r "$pl_rules" '{schemas:["urn:ietf:params:scim:schemas:oracle:idcs:Policy"],name:"Front Door Sign-On Policy",description:"assigned to estate-front-door by bin/idp-identity-apply (#5818); a passkey sign-in is Face ID alone (#5858)",active:true,"policyType":{value:"SignOn"},rules:$r}' > "$T3/p.json"
   if [ -n "$fpid" ]; then pp=$(oci raw-request --http-method PUT --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies/$fpid" --request-body "file://$T3/p.json" 2>&1)
   else pp=$(oci raw-request --http-method POST --target-uri "$DOMAIN_BASE_URL/admin/v1/Policies" --request-body "file://$T3/p.json" 2>&1); fi
   fpid=$(printf '%s' "$pp" | jq -r '.data.id // ""')
@@ -427,9 +385,8 @@ else
   rb=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Apps?filter=displayName%20eq%20%22estate-front-door%22&attributes=signonPolicy" 2>/dev/null | jq -r '.data.Resources[0].signonPolicy.value // ""')
   if [ "$rb" = "$fpid" ]; then
     echo "ok      identity front door sign-on policy assigned (second factor at every sign-in, #5818)"
-    if [ -n "$pl_rid" ]; then
-      rb_af=$(oci raw-request --http-method GET --target-uri "$DOMAIN_BASE_URL/admin/v1/Rules/$pl_rid?attributes=return" 2>/dev/null | jq -r '[.data.return[]? | select(.name == "authenticationFactor") | .value] | join(",")')
-      echo "ok      identity front door offers Face ID alone to $pl_group (authenticationFactor=$rb_af, rule sequence 1, #5858) -- a measured value, wired after a drill showed the door offering the passkey alone for it"
+    if [ -n "$pk_rid" ]; then
+      echo "ok      identity front door: a passkey sign-in is Face ID alone ($pk_attr in $pk_val -> IDP, rule sequence 1); every other sign-in still owes a second factor (#5858)"
     fi
   else
     echo "FAIL    identity front door app signonPolicy PATCH refused: $(printf '%s' "$pa" | jq -r '.detail // .data.detail // .' 2>/dev/null | head -c 200)"; exit 1
@@ -446,8 +403,7 @@ fi
 # reasons: the cohort's member is the drill account, whose hourly walk types the password
 # (bin/idp-login-drill, PASS_SELECTORS) and would go red on a door with no password field; and a
 # passkey-only member who loses the phone has no way back in. The password path must keep the second
-# factor, so a PL_AF without "2FA" is refused at the top of this file. Whether the passkey path then
-# skips that second factor is NOT yet measured: the passwordless drill (passwordless=true) answers it. So: the IdP on; one IdP policy owned
+# factor: it does, because only a sign-in authenticated BY the passkey matches the IDP rule above. So: the IdP on; one IdP policy owned
 # by this file and assigned to the front door alone (App.idpPolicy {value}), holding ONE rule:
 # everyone -> a copy of DefaultIDPRule's own condition and return, read live, with FIDO_AUTHENTICATOR
 # added to its LocalIDPs only while pl_cohort_ready and userVerification=REQUIRED -- the same gate as
