@@ -4,7 +4,7 @@
 # Three processes, one command, one verdict:
 #   1. Backstage board     (the FleetView surface)   -> localhost:3100 / backend 7107
 #   2. FleetView backend   (voice routes + /metrics)  -> 127.0.0.1:18790
-#   3. Voice loop          (ASR + LLM + TTS on CPU)   -> 127.0.0.1:8770
+#   3. Voice loop          (ASR + LLM + TTS on CPU)   -> 127.0.0.1:8771
 #
 # WHY THIS EXISTS. Until now "start voice" was three hand-wired commands across three runtimes
 # (nvm+yarn for the board, a venv python for the backend, a DIFFERENT venv at /tmp for the loop),
@@ -74,7 +74,7 @@ board_up() { probe "http://localhost:7107/api/auth/guest/refresh"; }
 # FleetView backend answers /healthz (built by serve.py).
 backend_up() { probe "http://127.0.0.1:18790/healthz"; }
 # The voice loop's server serves /healthz (sovereign/voice/server.py).
-voice_up() { probe "http://127.0.0.1:8770/healthz"; }
+voice_up() { probe "http://127.0.0.1:8771/healthz"; }
 
 # --------------------------------------------------------------------------- start: backend
 start_backend() {
@@ -82,6 +82,7 @@ start_backend() {
 		say "OK    backend   already up on 18790"
 		return 0
 	fi
+	[ "$CHECK" -eq 1 ] && { say "DOWN  backend   not answering on 18790 (--check starts nothing)"; return 1; }
 	say "start  backend   serve-fleetview -> 18790"
 	"$IDP/bin/serve-fleetview" --port 18790 > "$RUN/fleetview.log" 2>&1 &
 	echo $! > "$RUN/fleetview.pid"
@@ -94,9 +95,10 @@ start_backend() {
 # --------------------------------------------------------------------------- start: voice loop
 start_voice() {
 	if voice_up; then
-		say "OK    voice     already up on 8770"
+		say "OK    voice     already up on 8771"
 		return 0
 	fi
+	[ "$CHECK" -eq 1 ] && { say "DOWN  voice     not answering on 8771 (--check starts nothing)"; return 1; }
 	# The loop's own readiness first: venv + models + key, before we spend the 89s warmup.
 	# If the venv is missing, bootstrap it (one-time) rather than requiring a hand-run command.
 	bootstrap_voice_venv || return 1
@@ -105,11 +107,11 @@ start_voice() {
 		sed 's/^/         /' "$RUN/voice-check.log" >&2
 		return 1
 	fi
-	say "start  voice     bin/voice-loop -> 8770"
+	say "start  voice     bin/voice-loop -> 8771"
 	"$IDP/bin/voice-loop" > "$RUN/voice-loop.log" 2>&1 &
 	echo $! > "$RUN/voice-loop.pid"
 	for _ in $(seq 1 60); do voice_up && break; sleep 2; done
-	if voice_up; then say "OK    voice     proven up (8770)"; else
+	if voice_up; then say "OK    voice     proven up (8771)"; else
 		say "DOWN  voice     not answering after 120s -- see $RUN/voice-loop.log"; return 1
 	fi
 }
@@ -120,6 +122,7 @@ start_board() {
 		say "OK    board     already up (3100/7107)"
 		return 0
 	fi
+	[ "$CHECK" -eq 1 ] && { say "DOWN  board     not answering on 7107 (--check starts nothing)"; return 1; }
 	# idp-up starts the board and waits for 7107 itself, so a DOWN here is idp-up's own verdict.
 	say "start  board     bin/idp-up (Backstage -> 3100 / backend 7107)"
 	"$IDP/bin/idp-up" > "$RUN/board.log" 2>&1
