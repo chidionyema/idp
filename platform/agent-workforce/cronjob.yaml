@@ -12,12 +12,19 @@ automountServiceAccountToken: false
 # crewAI memory and knowledge stores (AGENT_WORKFORCE_STORAGE_DIR). A volume that outlives the pod,
 # the same reason platform/hermes-agent keeps HERMES_HOME on one (idp#365): a founder ruling
 # ingested once is recalled on every run, never lost with a finished Job.
+#
+# Node-local (platform/local-path): OCI rounds a block volume up to 50 GB and the tenancy is past
+# its block-storage limit, so the oci-bv claim agent-workforce-data sat Pending (LimitExceeded) and
+# every Job hit its deadline unscheduled. A new name because a claim's class is immutable. The old
+# claim never bound, so it holds no data; this row does not prune, so it stays Pending until deleted. The volume lives with its node: losing the node
+# loses the crew's memory, not the board or the laws, which it re-reads every run.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: agent-workforce-data
+  name: agent-workforce-memory
   namespace: agent-workforce
 spec:
+  storageClassName: local-path
   accessModes: [ReadWriteOnce]
   resources:
     requests:
@@ -184,7 +191,7 @@ spec:
               emptyDir: {}
             - name: data
               persistentVolumeClaim:
-                claimName: agent-workforce-data
+                claimName: agent-workforce-memory
             # One directory, three Secrets: the App token the generator mints, the Langfuse pair
             # and the router key. A projected volume, the same shape as hermes-agent's env dir.
             - name: secrets
