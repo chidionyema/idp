@@ -184,6 +184,7 @@ jobs:
       - name: mint the secrets the runtime declares, from the roots the estate already holds
         env:
           OPENAI_ROOT: ${{ secrets.SEED_OPENAI_API_KEY }}
+          ANTHROPIC_ROOT: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
           # LAW 52: ONE ROOT PER PROVIDER, SET ONCE; CODE MINTS THE REST; NEVER A CONSOLE STEP.
@@ -252,9 +253,19 @@ jobs:
           # hold is a vendor key. So the vendor lane is minted here, and the runtime PREFERS the
           # router the moment one is configured -- printing that it is not, rather than falling back
           # silently, because a silent vendor call is how a provider-agnostic rule stops being one.
-          ensure_secret vision-lane \
-            VISION_API_KEY="${{ secrets.SEED_ANTHROPIC_API_KEY }}" \
-            CONCIERGE_VISION_MODEL="claude-sonnet-4-6"
+          #
+          # REWRITTEN EVERY RUN (--force), like the call lane below (idp#6131). It was create-only, so
+          # the endpoint kept whatever key was current when it was first minted, and a rotated
+          # SEED_ANTHROPIC_API_KEY never reached it: the live self-check's intent step was refused on
+          # every run while every other step passed. Nothing is encrypted under it to orphan.
+          if [ -n "$ANTHROPIC_ROOT" ]; then
+            modal secret create vision-lane VISION_API_KEY="$ANTHROPIC_ROOT" \
+              CONCIERGE_VISION_MODEL="claude-sonnet-4-6" --force >/dev/null
+            echo "ok      vision-lane holds the current Anthropic key"
+          else
+            echo "FAIL    concierge-deploy  SEED_ANTHROPIC_API_KEY is not set: intent and vision have no lane"
+            exit 1
+          fi
 
           # THE CALL LANE. Live phone calls use OpenAI's realtime model (mums_concierge
           # voice_endpoints.py), founder-chosen 2026-10-13 -- no other root in the estate speaks
