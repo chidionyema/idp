@@ -31,13 +31,13 @@ type Client struct {
 	HTTP      *http.Client
 }
 
-// FromEnv reads LLM_BASE_URL, LLM_MODEL and LLM_API_KEY. The defaults point at
+// FromEnv reads LLM_BASE_URL, LLM_MODEL and the key (APIKeyFromEnv). The defaults point at
 // the local estate router and its fast lane.
 func FromEnv() *Client {
 	c := &Client{
 		BaseURL: env("LLM_BASE_URL", "http://127.0.0.1:4000/v1"),
 		Model:   env("LLM_MODEL", "fast"),
-		APIKey:  os.Getenv("LLM_API_KEY"),
+		APIKey:  APIKeyFromEnv(),
 		// Headroom for reasoning lanes: the router's fast lane (gpt-oss) streams
 		// ~200-300 hidden reasoning chunks first; at 300 the answer came back
 		// empty (measured 2026-09-26). The system prompt bounds spoken length.
@@ -61,6 +61,22 @@ func NarrateFromEnv() *Client {
 	// One spoken sentence; the lane's own max_tokens (48) is the hard cap.
 	c.MaxTokens = 256
 	return c
+}
+
+// APIKeyFromEnv is LLM_API_KEY, else the trimmed contents of the file LLM_API_KEY_FILE names.
+// The file is how the cluster hands the key over: Kyverno's secrets-not-from-env-vars refuses a
+// Pod that takes a Secret through env, so platform/voice-router/deploy mounts it instead.
+// A missing or unreadable file is no key, which keeps the anchor on templates rather than failing.
+func APIKeyFromEnv() string {
+	if v := os.Getenv("LLM_API_KEY"); v != "" {
+		return v
+	}
+	if p := os.Getenv("LLM_API_KEY_FILE"); p != "" {
+		if b, err := os.ReadFile(p); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
+	return ""
 }
 
 func env(k, def string) string {
