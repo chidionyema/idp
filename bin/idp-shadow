@@ -855,15 +855,62 @@ def db_needs_standin(paths):
     return False
 
 
-def db_sql(rows):
+def managed_roles():
+    """(role, login, [inRoles]) exactly as cluster.yaml's spec.managed.roles declares them.
+
+    #6179 (2026-10-14): databases.yaml names owners, not the roles the operator mints beside
+    them. memory_app is one: production declares it NOLOGIN and makes memory a member, and
+    schema.sql's own CREATE ROLE memory_app is the fallback a role with no CREATEROLE cannot
+    take. Seeded from databases.yaml alone, unified-memory-server crash-looped in the shadow.
+    """
+    with open(ESTATE_DB_ROW) as f:
+        text = f.read()
+    block = re.search(
+        r"^  managed:\s*\n    roles:\s*\n(.*?)(?=^  \S|^\S|\Z)", text, re.M | re.S
+    )
+    if not block:
+        return []
+    roles = []
+    for item in re.split(r"^      - ", block.group(1), flags=re.M)[1:]:
+        name = re.match(r"name:\s*(\S+)", item)
+        if not name:
+            continue
+        login = re.search(r"^        login:\s*(\S+)", item, re.M)
+        member = re.search(
+            r"^        inRoles:\s*\n((?:          - .*\n?)+)", item, re.M
+        )
+        roles.append(
+            (
+                name.group(1),
+                bool(login) and login.group(1) == "true",
+                re.findall(r"- (\S+)", member.group(1)) if member else [],
+            )
+        )
+    return roles
+
+
+def db_sql(rows, roles=()):
     """The one psql script that mints the estate's roles, databases and extensions.
 
     Guarded, not blind: only what the head's seed declares is created, and what already
     exists is left alone -- the same ensure: present semantics CloudNativePG gives
-    production. One script, one exec, whatever the row count.
+    production. One script, one exec, whatever the row count. The managed roles come first,
+    memberships after every role exists, then any owner the cluster does not declare.
     """
     parts = ["\\set ON_ERROR_STOP on"]
+    for role, login, _in in roles:
+        how = f"LOGIN PASSWORD '{VAULT_PLACEHOLDER}'" if login else "NOLOGIN"
+        parts.append(
+            f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{role}') "
+            f'THEN CREATE ROLE "{role}" {how}; END IF; END $$;'
+        )
+    for role, _login, member_of in roles:
+        for parent in member_of:
+            parts.append(f'GRANT "{parent}" TO "{role}";')
+    declared = {role for role, _login, _in in roles}
     for owner in dict.fromkeys(owner for _db, owner, _exts in rows):
+        if owner in declared:
+            continue
         parts.append(
             f"DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{owner}') "
             f"THEN CREATE ROLE \"{owner}\" LOGIN PASSWORD '{VAULT_PLACEHOLDER}'; "
@@ -1011,7 +1058,7 @@ def stand_in_database():
             "-d",
             "postgres",
         ],
-        input=db_sql(database_rows()),
+        input=db_sql(database_rows(), managed_roles()),
         capture_output=True,
         text=True,
         timeout=120,

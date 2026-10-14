@@ -71,6 +71,24 @@ def test_the_seed_script_is_guarded_not_blind():
     assert "shadow-vault-stand-in" in sql  # the vault stand-in's placeholder, verbatim
 
 
+def test_the_roles_the_operator_manages_are_minted_too():
+    # #6179: unified-memory-server's schema.sql runs as memory and needs memory_app, which
+    # only cluster.yaml declares; seeded from databases.yaml alone the pod crash-looped.
+    shadow = load_shadow()
+    by = {r[0]: r for r in shadow.managed_roles()}
+    assert by["memory_app"] == ("memory_app", False, [])
+    assert by["memory"] == ("memory", True, ["memory_app"])
+    assert by["research_reader"] == ("research_reader", True, ["research_consumer"])
+    sql = shadow.db_sql(shadow.database_rows(), shadow.managed_roles())
+    assert 'CREATE ROLE "memory_app" NOLOGIN' in sql
+    assert 'GRANT "memory_app" TO "memory";' in sql
+    # every role is minted once, whether the cluster declares it, a database owns it, or both
+    names = set(by) | {owner for _d, owner, _e in shadow.database_rows()}
+    assert sql.count("CREATE ROLE") == len(names)
+    # memberships after every role exists, or the GRANT names a role not yet minted
+    assert sql.index("GRANT") > sql.rindex('CREATE ROLE "memory"')
+
+
 def test_the_service_is_named_what_the_workloads_resolve():
     shadow = load_shadow()
     kinds = {
