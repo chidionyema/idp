@@ -239,6 +239,92 @@ GRANT USAGE ON SEQUENCE memory_versions_version_id_seq TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON rate_limits TO memory_app;
 GRANT EXECUTE ON FUNCTION fn_hit_rate_limit(TEXT, BIGINT, INT) TO memory_app;
 
+-- 11. Active Runtime Harness Tables (ADR 0036 — one memory plane, Python port of DefaultActiveAgentHarness)
+-- Four tables, all with tenant_id and the same RLS as memories.
+-- identity and RLS pattern mirrors sections 2 and 4 exactly.
+
+CREATE TABLE IF NOT EXISTS harness_idempotency (
+    idempotency_key TEXT NOT NULL,
+    tenant_id UUID NOT NULL,
+    outcome TEXT NOT NULL,  -- 'progress'|'blocked'|'failed'|'needs_info'|'done'
+    output TEXT NOT NULL,
+    error_code TEXT,
+    error_summary TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (tenant_id, idempotency_key)
+);
+
+CREATE TABLE IF NOT EXISTS approval_tickets (
+    ticket_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
+    payload_hash TEXT NOT NULL,  -- SHA-256 hex
+    agent_id TEXT NOT NULL,
+    tool_name TEXT NOT NULL,
+    target_resource TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    approved_by TEXT,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resume_data JSONB,  -- serialised AgentTurnInput so a run can resume after restart
+    CONSTRAINT uq_approval_payload_hash_pending
+        UNIQUE (tenant_id, payload_hash, status)
+        WHERE status = 'pending'
+);
+
+CREATE TABLE IF NOT EXISTS harness_scratchpad (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    run_id TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value JSONB NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    CONSTRAINT uq_scratchpad_run_key UNIQUE (tenant_id, run_id, key)
+);
+
+CREATE TABLE IF NOT EXISTS preference_recurrence (
+    id BIGSERIAL PRIMARY KEY,
+    tenant_id UUID NOT NULL,
+    signature TEXT NOT NULL,  -- SHA-256 of subject|predicate|object
+    count INT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_preference_sig UNIQUE (tenant_id, signature)
+);
+
+ALTER TABLE harness_idempotency ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_idempotency FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS harness_tenant_isolation ON harness_idempotency;
+CREATE POLICY harness_tenant_isolation ON harness_idempotency
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
+ALTER TABLE approval_tickets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE approval_tickets FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS harness_tenant_isolation ON approval_tickets;
+CREATE POLICY harness_tenant_isolation ON approval_tickets
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
+ALTER TABLE harness_scratchpad ENABLE ROW LEVEL SECURITY;
+ALTER TABLE harness_scratchpad FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS harness_tenant_isolation ON harness_scratchpad;
+CREATE POLICY harness_tenant_isolation ON harness_scratchpad
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
+ALTER TABLE preference_recurrence ENABLE ROW LEVEL SECURITY;
+ALTER TABLE preference_recurrence FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS harness_tenant_isolation ON preference_recurrence;
+CREATE POLICY harness_tenant_isolation ON preference_recurrence
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
+GRANT SELECT, INSERT, UPDATE ON harness_idempotency TO memory_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON approval_tickets TO memory_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON harness_scratchpad TO memory_app;
+GRANT SELECT, INSERT, UPDATE ON preference_recurrence TO memory_app;
+GRANT USAGE ON SEQUENCE harness_scratchpad_id_seq TO memory_app;
+GRANT USAGE ON SEQUENCE preference_recurrence_id_seq TO memory_app;
+
 -- 10. Test leftovers deleted, history included. A live BDD run from an unmerged branch
 -- (2026-10-01, test_unified_memory_spec_bdd.py) and the memory gate's old probe wrote these
 -- into the namespaces real recall ranks against; on 2026-10-13 they were 34 of 47 facts and
