@@ -36,7 +36,7 @@ if ! _no_claude_guard <<<"$push_refs"; then
   exit 1
 fi
 
-# idp#5611: a push to a lane is judged by the claim-gate CI runs, before it leaves the laptop.
+# idp#5611: a pushed branch is judged by the claim-gate CI runs, before it leaves the laptop.
 # PR #5606 went out by hand (git push + gh pr create, no lane-submit), carried no Claim line,
 # and was first refused in the merge queue, a batch later. A lane commit must carry
 # `Claim: <owner>/<repo>#<n>` and `Agent: <name>`, and the issue a live CLAIM comment.
@@ -47,7 +47,11 @@ _claim_guard() {
   [ -x "$root/bin/claim-gate" ] || { echo "BLIND claim-gate: not in this checkout"; return 0; }
   repo="${GITHUB_REPOSITORY:-$(git remote get-url origin 2>/dev/null | sed -E 's#\.git$##; s#^.*[:/]([^/]+/[^/]+)$#\1#')}"
   while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
-    case "$remote_ref" in refs/heads/lane/*) ;; *) continue ;; esac
+    # Every branch, not only lane/*: CI runs claim-gate on every pull request. Measured 2026-10-14:
+    # each claim-gate failure in the last 100 CI runs came from a branch this guard skipped
+    # (fix/*, perf/*, voice-estate-memory, mem-wire-all-agents). main and queue/* are the
+    # Greenlane's own pushes, judged per lane in CI.
+    case "$remote_ref" in refs/heads/main | refs/heads/queue/*) continue ;; refs/heads/*) ;; *) continue ;; esac
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
     base="$(git merge-base origin/main "$local_sha" 2>/dev/null)" || {
       echo "BLIND claim-gate: no origin/main to judge ${remote_ref#refs/heads/} against"
