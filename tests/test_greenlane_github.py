@@ -468,6 +468,66 @@ def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):
     assert _git(repo, "worktree", "list").count("\n") == 0
 
 
+def test_a_lane_brought_up_to_date_by_update_branch_keeps_its_own_message(repo):
+    # PUT update-branch leaves the lane head a bot "Merge branch 'main'" commit with no
+    # trailers. The candidate used to take its subject, author and trailers from that merge,
+    # so `Claim:` was dropped and claim-gate refused the lane (7316f4af4, #6148).
+    _git(repo, "checkout", "-q", "-b", "work")
+    (repo / "b.txt").write_text("b\n")
+    _git(repo, "add", "b.txt")
+    _git(
+        repo,
+        "commit",
+        "-q",
+        "--author",
+        "Lane Author <lane@t>",
+        "-m",
+        "the real fix (#6103)",
+        "-m",
+        "Claim: #6103\nAgent: claude-code",
+    )
+    _git(repo, "checkout", "-q", "main")
+    (repo / "a.txt").write_text("two\n")
+    _git(repo, "commit", "-q", "-am", "main moves on")
+    _git(repo, "checkout", "-q", "work")
+    _git(
+        repo,
+        "-c",
+        "user.name=estate-agents[bot]",
+        "merge",
+        "-q",
+        "--no-ff",
+        "main",
+        "-m",
+        "Merge branch 'main' into work",
+    )
+    head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "c.txt").write_text("c\n")
+    _git(repo, "add", "c.txt")
+    _git(repo, "commit", "-q", "-m", "main moves again")
+    onto = _git(repo, "rev-parse", "HEAD")
+    new = Recorded({}).rebase(head, onto)
+    assert new and _git(repo, "rev-parse", f"{new}^") == onto
+    assert (
+        _git(repo, "log", "-1", "--format=%s|%an", new)
+        == "the real fix (#6103)|Lane Author"
+    )
+    assert (
+        _git(
+            repo,
+            "log",
+            "-1",
+            "--format=%(trailers:key=Claim)%(trailers:key=Agent)",
+            new,
+        )
+        == "Claim: #6103\nAgent: claude-code"
+    )
+    # The body lists the lane's own commit, not every commit main ever had.
+    body = _git(repo, "log", "-1", "--format=%b", new)
+    assert "the real fix" in body and "main moves on" not in body and "root" not in body
+
+
 def test_statuses_map_the_engines_verdicts():
     b = Recorded({}, run_url="https://run")
     for status, state in ((LANDED, "success"), (RED, "failure"), (CONFLICT, "failure")):
