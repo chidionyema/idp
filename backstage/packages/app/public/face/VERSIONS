@@ -2,3 +2,5 @@ talkinghead 1.7.0 (MIT)
 three 0.180.0 (MIT)
 estate.glb: estate-owned avatar, authored by bin/estate-face-avatar (commercial; generated geometry, no third-party asset, no licence to track)
 brunette.glb: Ready Player Me avatar from the TalkingHead repo, CC BY-NC 4.0 (non-commercial; replace with an estate-owned avatar before any commercial use)
+  modified 2026-10-14: meshes quantized (KHR_mesh_quantization) and textures re-encoded as WebP
+  (EXT_texture_webp) with glTF-Transform 4.5.1, 4.72 MB -> 2.91 MB; renders within mean 0.29/255 of the original.
