@@ -9,4 +9,4 @@ resources:
 images:
   # Placeholder tag until image-automation rewrites it from ImagePolicy flux-system/voice-router.
   - name: ghcr.io/chidionyema/voice-router
-    newTag: main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b # {"$imagepolicy": "flux-system:voice-router:tag"}
+    newTag: main-14459-8d0817f76ac8051652fef5f920b335679b510553 # {"$imagepolicy": "flux-system:voice-router:tag"}
