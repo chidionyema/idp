@@ -27,12 +27,26 @@ VOL="${DISK_GUARD_PATH:-/System/Volumes/Data}"   # the writable volume, as bin/i
 RUST_ROOTS="${DISK_CLEANUP_RUST_ROOTS:-$HOME/Documents/code/idp}"
 WT_REPOS="${DISK_CLEANUP_WT_REPOS:-$HOME/Documents/code/idp}"
 WT_IDLE_MIN="${DISK_CLEANUP_WT_IDLE_MIN:-360}"
+WT_FRESH_MIN="${DISK_CLEANUP_WT_FRESH_MIN:-60}"
+WT_STALE_MIN="${DISK_CLEANUP_WT_STALE_MIN:-4320}"
+WT_ARCHIVE_MAX_MB="${DISK_CLEANUP_WT_ARCHIVE_MAX_MB:-64}"
+WT_QUARANTINE_DAYS="${DISK_CLEANUP_WT_QUARANTINE_DAYS:-30}"
+QUAR="${DISK_CLEANUP_QUARANTINE:-$HOME/.estate/quarantine/worktrees}"
+TMP_ROOT="${DISK_CLEANUP_TMP_ROOT-$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)}"
+TMP_IDLE_MIN="${DISK_CLEANUP_TMP_IDLE_MIN:-360}"
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
-case "$WT_IDLE_MIN" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_WT_IDLE_MIN=$WT_IDLE_MIN is not a number"; exit 1;; esac
+for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN; do
+  case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
+done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
+# $TMPDIR, resolved (lsof and git report /private/var/...): only a per-user temp dir or a test's.
+if [ -n "$TMP_ROOT" ] && [ -d "$TMP_ROOT" ]; then
+  TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
+  case "$TMP_ROOT" in /private/var/folders/?*|/private/tmp/?*|/tmp/?*|"$HOME"/?*) ;; *) TMP_ROOT=;; esac
+else TMP_ROOT=; fi
 
 free_k() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print $4}'; }
 # A bounded call: after $1 seconds its whole process group is killed (exit 142). The group, not
@@ -155,40 +169,116 @@ fi
 #   - every commit reachable from a branch, tag or remote ref (the branch itself counts: removing
 #     the checkout leaves the branch and all its commits in the repository);
 #   - not locked; no process has its working directory inside it (a live session or server);
-#   - its index, HEAD and reflog untouched for WT_IDLE_MIN minutes (default 6h).
-# Removal is `git worktree remove` WITHOUT --force, so git re-checks cleanliness itself, except when
-# the only changes are rebuildable output (then --force, once; a lock still refuses). No
-# process is signalled and nothing outside the worktree directory is touched.
+#   - its index, HEAD and reflog untouched for WT_IDLE_MIN minutes (default 6h);
+#   - and, merged to origin/main or not, not created or touched in the last WT_FRESH_MIN (60m): a
+#     fresh `worktree add` of origin/main is clean, merged and has no process in it yet (agent
+#     shells do not keep their cwd there), and was removed minutes after it was made (2026-10-14,
+#     idp-wt-kyv, twice, mid-fetch).
+# Leftovers are archived, not a reason to keep the checkout. Measured 2026-10-14: the volume at
+# 323M free while ~24 worktrees (~6.6G) were all kept, most for 0-4M of logs/, estate.db or
+# .estate/ state, or for a change nobody had touched in days. So a worktree that passes every check
+# above except these has them saved under $QUAR/<utc>-<name>/ first, then is removed with --force:
+#   - ignored files outside the rebuildable set -> ignored.tgz (unless one was written in the
+#     last WT_IDLE_MIN: a live server's log or db);
+#   - uncommitted or untracked work, only once the git dir AND every changed file are untouched
+#     for WT_STALE_MIN (3 days) -> work.patch (git diff --binary HEAD) + untracked.tgz;
+#   - a detached HEAD's own commits, after the same 3 days -> refs/estate/kept/<utc>-<name>.
+# An archive over WT_ARCHIVE_MAX_MB (64M) is dropped and the worktree kept. The quarantine and its
+# refs are deleted after WT_QUARANTINE_DAYS (30). Otherwise removal is `git worktree remove`
+# WITHOUT --force, so git re-checks cleanliness itself, except when the only changes are
+# rebuildable output (then --force, once; a lock still refuses). No process is signalled and
+# nothing outside the worktree directory and the quarantine is touched.
 REBUILDABLE='(^|/)(node_modules|target|dist|dist-types|build|__pycache__|\.pytest_cache|\.ruff_cache|\.mypy_cache|\.venv|venv|\.tox|coverage|\.coverage|\.turbo|\.next|\.cache|htmlcov)(/|$)|\.pyc$|\.tsbuildinfo$'
+# recent_in MIN DIR < paths relative to DIR: is any of them (or anything under one) newer than MIN?
+recent_in() {
+  local min=$1 dir=$2 p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    [ -n "$(find "$dir/${p%/}" -mmin -"$min" -print 2>/dev/null | head -1)" ] && return 0
+  done
+  return 1
+}
+GITDIR_FILES='index
+HEAD
+logs/HEAD'
+# Prints the reason to keep the worktree; nothing to remove it; "~<kinds>" to archive the
+# leftovers named by <kinds> (work, ignored, commits) and then remove it.
 unsettled() {
-  local repo=$1 wt=$2 out gd
+  local repo=$1 wt=$2 out gd work ign salvage=
   out=$(git -C "$wt" status --porcelain --ignored=matching 2>/dev/null) || { echo "git status failed"; return; }
   # A change confined to rebuildable output (a branch cut before target/ was untracked, then
   # cargo-cleaned: 1669 " D .../target/..." lines) is build output, not work.
-  if printf '%s\n' "$out" | grep -v '^!! ' | cut -c4- | grep -Ev "$REBUILDABLE" | grep -q .; then echo "uncommitted or untracked files"; return; fi
-  if printf '%s\n' "$out" | sed -n 's/^!! //p' | grep -Ev "$REBUILDABLE" | grep -q .; then
-    echo "ignored files that are not build output"; return; fi
+  work=$(printf '%s\n' "$out" | grep -v '^!! ' | cut -c4- | grep -Ev "$REBUILDABLE")
+  ign=$(printf '%s\n' "$out" | sed -n 's/^!! //p' | grep -Ev "$REBUILDABLE")
   # Every commit must stay reachable from a ref once the checkout is gone. A branch keeps its own
   # commits (pushed or not, squash-merged or not); a detached HEAD's commits must be on a branch,
   # tag or remote, or `git gc` would eventually take them.
   out=$(git -C "$wt" rev-list -n1 HEAD --not --branches --tags --remotes 2>/dev/null) || { echo "git rev-list failed"; return; }
-  if [ -n "$out" ] || ! git -C "$wt" rev-parse -q --verify HEAD >/dev/null; then
-    echo "commits reachable only from this checkout's HEAD"; return; fi
+  git -C "$wt" rev-parse -q --verify HEAD >/dev/null || { echo "commits reachable only from this checkout's HEAD"; return; }
+  gd=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || { echo "no git dir"; return; }
+  [ -n "$work" ] && salvage="$salvage work"
+  [ -n "$out" ] && salvage="$salvage commits"
+  if [ -n "$salvage" ] && { printf '%s\n' "$GITDIR_FILES" | recent_in "$WT_STALE_MIN" "$gd" ||
+       printf '%s\n' "$work" | sed 's/.* -> //' | recent_in "$WT_STALE_MIN" "$wt"; }; then
+    if [ -n "$work" ]; then echo "uncommitted or untracked files"; else echo "commits reachable only from this checkout's HEAD"; fi
+    return
+  fi
+  [ -n "$ign" ] && salvage="$salvage ignored"
   if git -C "$repo" worktree list --porcelain | awk -v w="$wt" '$1=="worktree"{c=($2==w)} c&&$1=="locked"{f=1} END{exit !f}'; then
     echo "locked"; return; fi
   # lsof reports resolved paths (/private/tmp), git the path it was given (/tmp): compare both.
   if printf '%s\n' "$CWDS" | awk -v w="$wt" -v r="$(cd "$wt" && pwd -P)" \
        'index($0, w"/")==1 || $0==w || index($0, r"/")==1 || $0==r {f=1} END{exit !f}'; then
     echo "a process is working inside it"; return; fi
-  gd=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null) || { echo "no git dir"; return; }
-  # A checkout whose HEAD is already in origin/main holds nothing that is not on main: it needs no
-  # idle wait (the wait only guards work in progress, and there is none to lose).
-  git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null && return
-  if [ "$WT_IDLE_MIN" -gt 0 ] && [ -n "$(find "$gd/index" "$gd/HEAD" "$gd/logs/HEAD" -mmin -"$WT_IDLE_MIN" 2>/dev/null | head -1)" ]; then
+  if [ "$WT_FRESH_MIN" -gt 0 ] && printf '%s\n' "$GITDIR_FILES" | recent_in "$WT_FRESH_MIN" "$gd"; then
+    echo "created or used in the last ${WT_FRESH_MIN}m"; return; fi
+  # A checkout whose HEAD is already in origin/main holds nothing that is not on main: past the
+  # fresh floor it needs no idle wait (the wait only guards work in progress, and there is none).
+  if ! git -C "$wt" merge-base --is-ancestor HEAD origin/main 2>/dev/null &&
+     [ "$WT_IDLE_MIN" -gt 0 ] && printf '%s\n' "$GITDIR_FILES" | recent_in "$WT_IDLE_MIN" "$gd"; then
     echo "used in the last ${WT_IDLE_MIN}m"; return; fi
+  if [ -n "$ign" ] && [ "$WT_IDLE_MIN" -gt 0 ] && printf '%s\n' "$ign" | recent_in "$WT_IDLE_MIN" "$wt"; then
+    echo "ignored files that are not build output, written in the last ${WT_IDLE_MIN}m"; return; fi
+  [ -z "$salvage" ] || echo "~${salvage# }"
+}
+# archive REPO WT KINDS: save the leftovers, print where; non-zero (and nothing left behind) when
+# a step fails or the archive is over the cap.
+archive() {
+  local repo=$1 wt=$2 kinds=" $3 " q out list
+  q="$QUAR/$(date -u +%Y%m%dT%H%M%SZ)-$(basename "$wt")"
+  mkdir -p "$q" && chmod 700 "$QUAR" "$q" || { echo "cannot create $q"; return 1; }
+  { echo "$wt"; git -C "$wt" branch --show-current; git -C "$wt" rev-parse HEAD; } >"$q/origin"
+  out=$(git -C "$wt" status --porcelain --ignored=matching)
+  case "$kinds" in *" work "*)
+    git -C "$wt" diff --binary HEAD >"$q/work.patch" || { rm -rf "$q"; echo "git diff failed"; return 1; }
+    list=$(printf '%s\n' "$out" | sed -n 's/^?? //p' | grep -Ev "$REBUILDABLE")
+    if [ -n "$list" ] && ! printf '%s\n' "$list" | tar -czf "$q/untracked.tgz" -C "$wt" -T - 2>/dev/null; then
+      rm -rf "$q"; echo "tar of untracked files failed"; return 1; fi;;
+  esac
+  case "$kinds" in *" ignored "*)
+    list=$(printf '%s\n' "$out" | sed -n 's/^!! //p' | grep -Ev "$REBUILDABLE")
+    if ! printf '%s\n' "$list" | tar -czf "$q/ignored.tgz" -C "$wt" -T - 2>/dev/null; then
+      rm -rf "$q"; echo "tar of ignored files failed"; return 1; fi;;
+  esac
+  if [ "$(size_m "$q")" -gt "$WT_ARCHIVE_MAX_MB" ]; then
+    out=$(size_m "$q"); rm -rf "$q"; echo "${out}M of leftovers, over the ${WT_ARCHIVE_MAX_MB}M archive cap"; return 1; fi
+  case "$kinds" in *" commits "*)
+    git -C "$repo" update-ref "refs/estate/kept/$(basename "$q")" "$(git -C "$wt" rev-parse HEAD)" ||
+      { rm -rf "$q"; echo "update-ref failed"; return 1; };;
+  esac
+  echo "$q"
 }
 if [ "$WORKTREES" = 1 ]; then
+  # `git status` refreshes and rewrites the index when it can, which would reset the very idle
+  # clock read above: every run would keep the worktree it looked at.
+  export GIT_OPTIONAL_LOCKS=0
   CWDS=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
+  if [ "$APPLY" = 1 ] && [ -d "$QUAR" ]; then
+    find "$QUAR" -mindepth 1 -maxdepth 1 -type d -mtime +"$WT_QUARANTINE_DAYS" 2>/dev/null | while IFS= read -r q; do
+      for repo in $WT_REPOS; do git -C "$repo" update-ref -d "refs/estate/kept/${q##*/}" 2>/dev/null; done
+      rm -rf "$q" && echo "  freed  quarantine  ${q##*/}  (over ${WT_QUARANTINE_DAYS}d)"
+    done
+  fi
   for repo in $WT_REPOS; do
     # Said, not skipped: under a launchd job that macOS will not let into ~/Documents (TCC), both
     # checks fail, and a silent `continue` read as "nothing to free" on every tick (2026-10-14).
@@ -198,21 +288,58 @@ if [ "$WORKTREES" = 1 ]; then
     git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r wt; do
       [ "$wt" = "$main" ] && continue
       [ -d "$wt" ] || continue
-      case "$wt" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) ;; *) echo "  keep   worktree  $wt  (not under HOME or /tmp)"; continue;; esac
+      under=
+      case "$wt" in "$HOME"/?*|/private/tmp/?*|/tmp/?*) under=1;; esac
+      if [ -n "$TMP_ROOT" ]; then case "$wt" in "$TMP_ROOT"/?*) under=1;; esac; fi
+      if [ -z "$under" ]; then echo "  keep   worktree  $wt  (not under HOME, /tmp or \$TMPDIR)"; continue; fi
       why=$(unsettled "$repo" "$wt")
       m=$(size_m "$wt")
+      salvage=; case "$why" in "~"*) salvage=${why#\~}; why=;; esac
       if [ -n "$why" ]; then echo "  keep   worktree  ${m}M  $wt  ($why)"; continue; fi
       b=$(git -C "$wt" branch --show-current); b=${b:-detached $(git -C "$wt" rev-parse --short HEAD)}
-      if [ "$APPLY" = 0 ]; then echo "  would  worktree  ${m}M  $wt  ($b; restore: git worktree add $wt ${b#detached })"; continue; fi
-      # --force only when unsettled() found nothing but rebuildable output; git still refuses a
-      # locked worktree (that needs --force twice).
-      force=; git -C "$wt" status --porcelain 2>/dev/null | grep -q . && force=--force
+      if [ "$APPLY" = 0 ]; then echo "  would  worktree  ${m}M  $wt  ($b${salvage:+; archive: $salvage}; restore: git worktree add $wt ${b#detached })"; continue; fi
+      kept=
+      if [ -n "$salvage" ]; then
+        kept=$(archive "$repo" "$wt" "$salvage") || { echo "  keep   worktree  ${m}M  $wt  (archive refused: $kept)"; continue; }
+      fi
+      # --force only when unsettled() found nothing but rebuildable output, or the leftovers are
+      # archived; git still refuses a locked worktree (that needs --force twice).
+      force=; { [ -n "$kept" ] || git -C "$wt" status --porcelain 2>/dev/null | grep -q .; } && force=--force
       if git -C "$repo" worktree remove $force "$wt" >/dev/null 2>&1 && [ ! -e "$wt" ]; then
-        echo "  freed  worktree  ${m}M  $wt  (restore: git worktree add $wt ${b#detached })"
+        echo "  freed  worktree  ${m}M  $wt  (restore: git worktree add $wt ${b#detached }${kept:+; leftovers ($salvage): $kept})"
       else
         echo "  !! worktree $wt: git refused to remove it"; fi
     done
   done
+fi
+
+# Stale temp (worktrees=true). Measured 2026-10-14: 2.1G in the user's $TMPDIR older than 6h --
+# go's go-build* dirs, mktemp -d / tempfile dirs, jest caches -- that nothing deletes (macOS clears
+# it only at reboot). An entry goes when it is ours, has a tool's temp name, nothing under it was
+# written in TMP_IDLE_MIN (6h), it holds no git checkout (the pass above judges those) and no
+# process has a file open or its cwd under it. Only top-level entries of $TMPDIR, never $TMPDIR.
+TMP_NAMES='^(go-build[0-9]+|tmp\.[A-Za-z0-9]{6,}|tmp[a-z0-9_]{8}|jest_[a-z0-9]+)$'
+if [ "$WORKTREES" = 1 ] && [ -n "$TMP_ROOT" ]; then
+  cands=$(find "$TMP_ROOT" -mindepth 1 -maxdepth 1 -user "$(id -u)" -mmin +"$TMP_IDLE_MIN" 2>/dev/null |
+          while IFS= read -r p; do printf '%s\n' "${p##*/}" | grep -Eq "$TMP_NAMES" && printf '%s\n' "$p"; done)
+  if [ -n "$cands" ]; then
+    OPEN=$(lsof -Fn 2>/dev/null | sed -n 's/^n//p')
+    while IFS= read -r p; do
+      m=$(size_m "$p")
+      if [ -n "$(find "$p" -mmin -"$TMP_IDLE_MIN" -print 2>/dev/null | head -1)" ]; then
+        echo "  keep   tmp  ${m}M  $p  (written in the last ${TMP_IDLE_MIN}m)"; continue; fi
+      if [ -n "$(find "$p" -maxdepth 3 -name .git -print 2>/dev/null | head -1)" ]; then
+        echo "  keep   tmp  ${m}M  $p  (holds a git checkout)"; continue; fi
+      if printf '%s\n' "$OPEN" | awk -v w="$p" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'; then
+        echo "  keep   tmp  ${m}M  $p  (a process has a file open under it)"; continue; fi
+      if [ "$APPLY" = 0 ]; then echo "  would  tmp  ${m}M  $p"; continue; fi
+      rm -rf "$p"
+      if [ -e "$p" ]; then echo "  !! tmp $p still there after delete"; fails=$((fails + 1))
+      else echo "  freed  tmp  ${m}M  $p"; fi
+    done <<EOF
+$cands
+EOF
+  fi
 fi
 
 if [ "$APPLY" = 1 ]; then
