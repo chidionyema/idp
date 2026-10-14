@@ -33,8 +33,22 @@ each workload's .status as the API server recorded it. A workload the reconcile 
 absent from the inventory and fails; a workload that never became Ready fails; silence fails.
 
   bin/idp-shadow up
-  bin/idp-shadow verify --head <sha> [--path platform/x ...]
+  bin/idp-shadow verify --head <sha> [--path platform/x ...] [--record out.json]
+  bin/idp-shadow judge --head-record head.json [--base-record base.json]
   bin/idp-shadow down
+
+THE PR IS GRADED ON WHAT IT CHANGED (2026-10-14, #6194). A shadow run reconciles each changed
+path on a cluster that holds only the floor, so a path whose namespace, CRD or database secret
+lives in another row fails there on every commit, the PR's or not. #6194 was 24 lines of newTag:
+bumps and went red on 14 of its 15 paths: commerce/app (namespace from platform/commerce/data),
+jit (namespace agents from platform/rbac-floor), nodesoftware-operator (ServiceMonitor CRD from
+clusters/oke/monitoring.yaml), dagster (secret estate-db-dagster from platform/estate-db/cluster),
+observability (superset-memory-seed writes to a superset database the shadow does not have), and
+eight more charged with dagster's pod because the pod watch read every pod in the cluster. So:
+  - a stuck pod is charged only to the Kustomization whose objects own it (owned_by), and
+  - CI runs the same paths at the PR's merge-base beside the head (`verify --record` twice), and
+    `judge` fails the PR only for a failure the base does not show. A base run that is missing or
+    BLIND excuses nothing: the head's failures then stand exactly as before.
 """
 
 import argparse
@@ -47,7 +61,10 @@ import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-REPO = os.path.dirname(HERE)
+# The tree under test. It defaults to this checkout; CI points it at a clone of the commit being
+# proved (the head, or the merge-base for the base run), so the tool that grades is the one this
+# checkout carries while the rows, stand-ins and served commit all come from the commit itself.
+REPO = os.environ.get("IDP_SHADOW_TREE") or os.path.dirname(HERE)
 VERIFY = os.path.join(HERE, "idp-shadow-verify")
 SYNC = os.path.join(HERE, "idp-shadow-sync")
 
@@ -1037,18 +1054,84 @@ def ks_status(name):
     return json.loads(p.stdout)
 
 
-def pod_failures():
-    """Every container the API server says is past rescue, one human line each.
+FLUX_KS_LABEL = "kustomize.toolkit.fluxcd.io/name"
+HELM_NAME_LABEL = "helm.toolkit.fluxcd.io/name"
+HELM_NS_LABEL = "helm.toolkit.fluxcd.io/namespace"
+OWNER_KINDS = "replicasets,jobs,deployments,statefulsets,daemonsets,cronjobs"
 
-    One read of the pod list, so it costs one kubectl per poll cycle. A container that
-    cannot be listed for is not a failure: this watch narrows what wait_ks can conclude,
-    it never widens it.
+
+def owned_by(obj, ks, releases, by_uid):
+    """Does `obj`'s controller chain reach an object Kustomization `ks` applied?
+
+    Flux labels what a Kustomization applies with its name, and helm-controller labels what a
+    HelmRelease renders with the release's; a pod carries neither, so the chain is walked through
+    ownerReferences (pod -> ReplicaSet -> Deployment, pod -> Job -> CronJob). `releases` is the
+    (namespace, name) of every HelmRelease `ks` applied.
     """
-    p = kube(["get", "pods", "-A", "-o", "json"], check=False)
+    seen = set()
+    while obj is not None:
+        md = obj.get("metadata") or {}
+        labels = md.get("labels") or {}
+        if labels.get(FLUX_KS_LABEL) == ks:
+            return True
+        if (labels.get(HELM_NS_LABEL), labels.get(HELM_NAME_LABEL)) in releases:
+            return True
+        uid = md.get("uid")
+        if uid in seen:
+            return False
+        seen.add(uid)
+        refs = md.get("ownerReferences") or []
+        ctrl = next((r for r in refs if r.get("controller")), refs[0] if refs else None)
+        obj = by_uid.get(ctrl.get("uid")) if ctrl else None
+    return False
+
+
+def _items(argv):
+    p = kube(argv, check=False)
     if p.returncode != 0:
+        return None
+    return json.loads(p.stdout).get("items") or []
+
+
+def pod_failures(ks=None):
+    """Every container past rescue that belongs to Kustomization `ks`, one human line each.
+
+    `ks=None` is every pod in the cluster. That was the only mode until #6194, where one dagster
+    pod stuck on a missing Secret was reported as the failure of eight other paths that do not
+    own it. A pod whose chain cannot be read is not charged: this watch narrows what wait_ks can
+    conclude, it never widens it, and Flux's own health check still fails a path whose workload
+    never becomes ready.
+    """
+    pods = _items(["get", "pods", "-A", "-o", "json"])
+    if pods is None:
         return []
+    if ks is not None:
+        owners = _items(["get", OWNER_KINDS, "-A", "-o", "json"]) or []
+        by_uid = {(o.get("metadata") or {}).get("uid"): o for o in owners}
+        hrs = (
+            _items(
+                [
+                    "get",
+                    "helmreleases.helm.toolkit.fluxcd.io",
+                    "-A",
+                    "-l",
+                    f"{FLUX_KS_LABEL}={ks}",
+                    "-o",
+                    "json",
+                ]
+            )
+            or []
+        )
+        releases = {
+            (
+                (h.get("metadata") or {}).get("namespace"),
+                (h.get("metadata") or {}).get("name"),
+            )
+            for h in hrs
+        }
+        pods = [pod for pod in pods if owned_by(pod, ks, releases, by_uid)]
     out = []
-    for pod in json.loads(p.stdout).get("items") or []:
+    for pod in pods:
         meta, status = pod.get("metadata") or {}, pod.get("status") or {}
         who = f"{meta.get('namespace')}/{meta.get('name')}"
         for cs in (status.get("initContainerStatuses") or []) + (
@@ -1105,7 +1188,7 @@ def wait_ks(name, deadline):
         # run out to the deadline. A doom state that clears within the grace -- a pull in
         # progress, a secret the stand-in has not written yet -- costs nothing and is
         # waited out; only a state that persists past the grace is a verdict.
-        bad = pod_failures()
+        bad = pod_failures(name)
         if bad:
             now = time.time()
             if doomed_since is None:
@@ -1232,16 +1315,67 @@ def grade_all(observations):
     return failed
 
 
-def verify(head, paths):
+def signature(message):
+    """A failure with what differs between two runs of the same failure taken out.
+
+    Pod and ReplicaSet suffixes, commit shas, durations, restart counts and timestamps change from
+    run to run; the kind, the object, the reason and the missing thing do not. Two runs fail the
+    same way exactly when their signatures are equal.
+    """
+    s = message.lower()
+    s = re.sub(r"\b[0-9a-f]{12,64}\b", "<sha>", s)
+    # Kubernetes generates ReplicaSet and pod suffixes from this alphabet (apimachinery's
+    # util/rand: no vowels, no 0, 1 or 3), so a hyphen-joined run of it is generated, not named:
+    # d945998bkr5v8, 698xw, xkzqv. A rare word is spelled from it too (`https` in a policy name);
+    # that only equates two failures that differ in nothing else.
+    # A ReplicaSet hash and a pod suffix are two segments or, truncated to 63 characters, one.
+    s = re.sub(r"(-[bcdfghjklmnpqrstvwxz2456789]{5,}\b)+", "-<gen>", s)
+    # A Go duration is one token whatever its shape: 1m1.194572576s and 58.0021s.
+    s = re.sub(r"\b(\d+(\.\d+)?(ms|h|m|s))+\b", "<dur>", s)
+    s = re.sub(r"\d+(\.\d+)?", "<n>", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def write_record(record, head, rc, fails):
+    """The run as data, so the head's run and the base's can be compared by `judge`."""
+    if not record:
+        return
+    doc = {
+        "head": head,
+        "rc": rc,
+        "failures": [
+            {"scope": sc, "message": m, "signature": signature(m)} for sc, m in fails
+        ],
+    }
+    with open(record, "w") as f:
+        json.dump(doc, f, indent=2)
+
+
+def verify(head, paths, record=None):
+    """Run the shadow on `head`; with `record`, also write the run's failures as JSON."""
+    fails = []
+    rc = 2
+    try:
+        rc, fails = _verify(head, paths)
+        return rc, [m for _, m in fails]
+    finally:
+        write_record(record, head, rc, fails)
+
+
+def _verify(head, paths):
+    """(rc, [(scope, message)]): scope is the path, workload or floor stage that failed."""
     if not head:
         return 2, [
-            "--head is required: a shadow run proves one commit, or it proves nothing"
+            (
+                "run",
+                "--head is required: a shadow run proves one commit, or it proves nothing",
+            )
         ]
     for tool in ("k3d", "kubectl", "flux"):
         if not have(tool):
-            return 2, [f"{tool} is not installed; this run proves nothing"]
+            return 2, [("run", f"{tool} is not installed; this run proves nothing")]
     if not paths:
-        return 2, ["no path under test; nothing to reconcile"]
+        return 2, [("run", "no path under test; nothing to reconcile")]
 
     daemon = serve_tree()
     vault_stop = threading.Event()
@@ -1249,10 +1383,10 @@ def verify(head, paths):
         flux_source(head)
         floor_failed = flux_floor(time.time() + 300)
         if floor_failed:
-            return 1, floor_failed
+            return 1, [("floor", m) for m in floor_failed]
         config_failed = estate_config()
         if config_failed:
-            return 1, [config_failed]
+            return 1, [("estate-config", config_failed)]
         threading.Thread(target=stand_in_vault, args=(vault_stop,), daemon=True).start()
         # #5747: a row whose postBuild names github-app cannot converge until that Secret exists,
         # and stand_in_vault finds it only after the github-app-creds row has applied the
@@ -1271,7 +1405,7 @@ def verify(head, paths):
         if db_needs_standin(paths):
             db_failed = stand_in_database()
             if db_failed:
-                return 1, [db_failed]
+                return 1, [("database", db_failed)]
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
@@ -1283,7 +1417,9 @@ def verify(head, paths):
         for name, path in names:
             ready, msg, inv = wait_ks(name, deadline)
             if not ready:
-                hard.append(f"{path}: the environment refused to converge it -- {msg}")
+                hard.append(
+                    (path, f"{path}: the environment refused to converge it -- {msg}")
+                )
                 print(f"FAIL    shadow  flux could not reconcile {path}: {msg}")
                 continue
             print(
@@ -1302,12 +1438,15 @@ def verify(head, paths):
             return 1, hard
         if not observations:
             return 1, [
-                "the reconcile created no workload; a shadow that deployed nothing "
-                "has proved nothing"
+                (
+                    "run",
+                    "the reconcile created no workload; a shadow that deployed nothing "
+                    "has proved nothing",
+                )
             ]
         failed = grade_all(observations)
         if failed:
-            return 1, [f"{w}: {'; '.join(rs)}" for w, rs in failed]
+            return 1, [(w, f"{w}: {'; '.join(rs)}") for w, rs in failed]
         print(
             f"ok      shadow-verify  {len(observations)} workload(s) converged on head {head} "
             f"under flux (shadow-verify SUCCESS)"
@@ -1320,6 +1459,74 @@ def verify(head, paths):
             daemon.wait(timeout=10)
         except subprocess.TimeoutExpired:
             daemon.kill()
+
+
+# ---------------------------------------------------------------- judge
+
+
+def load_record(path):
+    """A record `verify --record` wrote, or None when it is missing or unreadable."""
+    try:
+        with open(path) as f:
+            doc = json.load(f)
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(doc, dict) or doc.get("rc") not in (0, 1, 2):
+        return None
+    if not isinstance(doc.get("failures"), list):
+        return None
+    return doc
+
+
+def judge(head_record, base_record):
+    """Grade the head on what it changed: a failure the merge-base shows too is not the PR's.
+
+    Fail-closed in every direction it can be: no readable head record is BLIND (2); a BLIND head
+    run is BLIND; and a base record that is missing, unreadable or BLIND excuses nothing, so the
+    head's failures stand exactly as a single run would have graded them.
+    """
+    h = load_record(head_record) if head_record else None
+    if h is None:
+        return 2, [
+            f"no readable head record at {head_record!r}; the run proves nothing"
+        ]
+    if h["rc"] == 2:
+        return 2, [f["message"] for f in h["failures"]] or ["the head run was BLIND"]
+    if h["rc"] == 0:
+        print(
+            f"ok      shadow-verify  head {h.get('head')} converged (shadow-verify SUCCESS)"
+        )
+        return 0, []
+    b = load_record(base_record) if base_record else None
+    known = set()
+    if b is None or b["rc"] == 2:
+        print(
+            "note    shadow-verify  no usable base run; every head failure is graded as the PR's"
+        )
+    else:
+        known = {(f.get("scope"), f.get("signature")) for f in b["failures"]}
+    new, inherited = [], []
+    for f in h["failures"]:
+        sig = f.get("signature") or signature(f.get("message", ""))
+        (inherited if (f.get("scope"), sig) in known else new).append(f)
+    for f in inherited:
+        print(
+            f"note    shadow-verify  inherited from base {b.get('head')}: {f['message']}"
+        )
+    if new:
+        for f in new:
+            print(
+                f"FAIL    shadow-verify  introduced by head {h.get('head')}: {f['message']}"
+            )
+        return 1, [f["message"] for f in new]
+    if not h["failures"]:
+        # rc 1 with nothing named: a run that failed without saying why. Not a pass.
+        return 1, ["the head run failed and recorded no failure"]
+    print(
+        f"ok      shadow-verify  head {h.get('head')} introduced no failure; "
+        f"{len(inherited)} inherited from base {b.get('head')} (shadow-verify SUCCESS)"
+    )
+    return 0, []
 
 
 # ---------------------------------------------------------------- down
@@ -1335,7 +1542,7 @@ def down():
 
 def main(argv):
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["up", "verify", "down"])
+    ap.add_argument("cmd", choices=["up", "verify", "judge", "down"])
     ap.add_argument("--head", help="the commit under test (verify)")
     ap.add_argument(
         "--path",
@@ -1343,14 +1550,19 @@ def main(argv):
         default=[],
         help="a directory Flux should reconcile; repeatable",
     )
+    ap.add_argument("--record", help="verify: write the run's failures here as JSON")
+    ap.add_argument("--head-record", help="judge: the head run's record")
+    ap.add_argument("--base-record", help="judge: the merge-base run's record")
     a = ap.parse_args(argv)
 
     if a.cmd == "up":
         rc, lines = up()
     elif a.cmd == "down":
         rc, lines = down()
+    elif a.cmd == "judge":
+        rc, lines = judge(a.head_record, a.base_record)
     else:
-        rc, lines = verify(a.head, a.path)
+        rc, lines = verify(a.head, a.path, a.record)
     for line in lines:
         print(f"       {line}")
     return rc
