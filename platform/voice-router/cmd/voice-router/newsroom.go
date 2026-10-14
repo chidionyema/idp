@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -92,10 +91,10 @@ func runNewsroom(ctx context.Context, log *slog.Logger, nc *nats.Conn, js nats.J
 
 	// Without a router key the router refuses the call, so the anchor desk stays on templates.
 	var anchor *newsroom.Anchor
-	if os.Getenv("LLM_API_KEY") != "" {
+	if brain.APIKeyFromEnv() != "" {
 		anchor = &newsroom.Anchor{Brain: brain.NarrateFromEnv()}
 	} else {
-		log.Info("newsroom.anchor_template_only", "reason", "LLM_API_KEY unset")
+		log.Info("newsroom.anchor_template_only", "reason", "LLM_API_KEY and LLM_API_KEY_FILE unset")
 	}
 
 	ed := newsroom.NewEditor()
