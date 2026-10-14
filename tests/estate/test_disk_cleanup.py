@@ -62,6 +62,7 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess:
         "HOME": str(home),
         "DISK_GUARD_PATH": str(home),
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
+        "DISK_CLEANUP_TMP_ROOT": "",
     }
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -216,7 +217,7 @@ def _worktrees(tmp_path: Path):
 
 
 def _run_wt(
-    home: Path, repo: Path, *args: str, idle: str = "0"
+    home: Path, repo: Path, *args: str, idle: str = "0", **extra: str
 ) -> subprocess.CompletedProcess:
     env = {
         **os.environ,
@@ -225,6 +226,9 @@ def _run_wt(
         "DISK_CLEANUP_RUST_ROOTS": str(home / "none"),
         "DISK_CLEANUP_WT_REPOS": str(repo),
         "DISK_CLEANUP_WT_IDLE_MIN": idle,
+        "DISK_CLEANUP_WT_FRESH_MIN": "0",
+        "DISK_CLEANUP_TMP_ROOT": "",
+        **{f"DISK_CLEANUP_{k.upper()}": v for k, v in extra.items()},
     }
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -247,12 +251,12 @@ def test_worktrees_removes_only_the_settled_and_keeps_every_kind_of_work(tmp_pat
         busy.kill()
     assert r.returncode == 0, r.stdout + r.stderr
     gone = {n for n, w in wts.items() if not w.exists()}
-    assert gone == {"settled", "built"}, r.stdout
+    # "ignored" holds only an ignored .env: it is archived to the quarantine, then removed
+    assert gone == {"settled", "built", "ignored"}, r.stdout
     out = r.stdout
     for name, why in [
         ("dirty", "uncommitted or untracked files"),
         ("untracked", "uncommitted or untracked files"),
-        ("ignored", "ignored files that are not build output"),
         ("detached", "commits reachable only from this checkout's HEAD"),
         ("locked", "locked"),
         ("busy", "a process is working inside it"),
@@ -290,6 +294,184 @@ def test_worktrees_are_off_by_default(tmp_path):
     home, repo, wts = _worktrees(tmp_path)
     r = _run_wt(home, repo, "true", "false")
     assert r.returncode == 0 and all(w.exists() for w in wts.values()), r.stdout
+
+
+# --- leftovers are archived, not a reason to keep 6.6G of checkouts (2026-10-14) ---
+
+APPLY_WT = ("true", "false", "0", "true")
+
+
+def _age(root: Path, days: float) -> None:
+    """Back-date root and everything under it, so the idle and stale windows read it as old."""
+    t = os.path.getmtime(root) - days * 86400
+    for d, dirs, files in os.walk(root):
+        for f in files:
+            os.utime(Path(d) / f, (t, t), follow_symlinks=False)
+        os.utime(d, (t, t))
+
+
+def _gitdir(repo: Path, wt: Path) -> Path:
+    return repo / ".git/worktrees" / wt.name
+
+
+def _quarantine(home: Path, name: str) -> Path:
+    [q] = [
+        q
+        for q in (home / ".estate/quarantine/worktrees").iterdir()
+        if q.name.endswith(f"-{name}")
+    ]
+    return q
+
+
+def test_a_fresh_worktree_of_main_is_kept_until_the_fresh_floor_passes(tmp_path):
+    """2026-10-14: `worktree add --detach origin/main` was removed mid-fetch, minutes after it was
+    made: clean, merged, and no process had its cwd there yet."""
+    home, repo, wts = _worktrees(tmp_path)
+    _git("update-ref", "refs/remotes/origin/main", "main", cwd=repo)
+    r = _run_wt(home, repo, *APPLY_WT, idle="360", wt_fresh_min="60")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert wts["settled"].exists(), r.stdout
+    assert f"{wts['settled']}  (created or used in the last 60m)" in r.stdout, r.stdout
+    _age(
+        _gitdir(repo, wts["settled"]), 0.1
+    )  # 2.4h old: past the floor, merged, so no idle wait
+    r = _run_wt(home, repo, *APPLY_WT, idle="360", wt_fresh_min="60")
+    assert not wts["settled"].exists(), r.stdout
+
+
+def test_ignored_leftovers_are_archived_and_the_worktree_removed(tmp_path):
+    home, repo, wts = _worktrees(tmp_path)
+    r = _run_wt(home, repo, *APPLY_WT)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not wts["ignored"].exists(), r.stdout
+    q = _quarantine(home, "ignored")
+    assert f"leftovers (ignored): {q}" in r.stdout, r.stdout
+    assert oct(q.stat().st_mode & 0o777) == "0o700"
+    names = subprocess.run(
+        ["tar", "-tzf", q / "ignored.tgz"], capture_output=True, text=True
+    ).stdout
+    assert names.split() == [".env"], names
+    # the branch comes back with git, the .env from the archive
+    _git("worktree", "add", "-q", str(wts["ignored"]), "ignored", cwd=repo)
+    subprocess.run(["tar", "-xzf", q / "ignored.tgz", "-C", wts["ignored"]], check=True)
+    assert (wts["ignored"] / ".env").read_text() == "TOKEN_NAME_ONLY=1"
+
+
+def test_ignored_files_written_recently_keep_the_worktree(tmp_path):
+    """A server's log or db under an ignored path is live state while it is being written."""
+    home, repo, wts = _worktrees(tmp_path)
+    _age(_gitdir(repo, wts["ignored"]), 1)
+    r = _run_wt(home, repo, *APPLY_WT, idle="360")
+    assert wts["ignored"].exists(), r.stdout
+    assert (
+        "ignored files that are not build output, written in the last 360m" in r.stdout
+    ), r.stdout
+
+
+def test_stale_work_is_saved_then_removed_and_fresh_work_is_not(tmp_path):
+    home, repo, wts = _worktrees(tmp_path)
+    for name in ("dirty", "untracked", "detached"):
+        _age(wts[name], 5)
+        _age(_gitdir(repo, wts[name]), 5)
+    only_here = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=wts["detached"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    r = _run_wt(home, repo, *APPLY_WT, idle="360")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not any(wts[n].exists() for n in ("dirty", "untracked", "detached")), (
+        r.stdout
+    )
+    assert "work.txt" in (_quarantine(home, "dirty") / "work.patch").read_text()
+    names = subprocess.run(
+        ["tar", "-tzf", _quarantine(home, "untracked") / "untracked.tgz"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert names.split() == ["notes.md"], names
+    # the detached HEAD's own commit outlives the checkout on a ref, so gc cannot take it
+    ref = f"refs/estate/kept/{_quarantine(home, 'detached').name}"
+    kept = subprocess.run(
+        ["git", "rev-parse", ref], cwd=repo, capture_output=True, text=True
+    )
+    assert kept.stdout.strip() == only_here, kept.stderr
+
+
+def test_a_changed_file_touched_inside_three_days_keeps_stale_git_state(tmp_path):
+    """An agent editing for days without `git add` moves no git file: the edit itself counts."""
+    home, repo, wts = _worktrees(tmp_path)
+    _age(_gitdir(repo, wts["untracked"]), 5)
+    r = _run_wt(home, repo, *APPLY_WT, idle="360")
+    assert wts["untracked"].exists(), r.stdout
+    assert f"{wts['untracked']}  (uncommitted or untracked files)" in r.stdout, r.stdout
+
+
+def test_an_archive_over_the_cap_keeps_the_worktree_and_leaves_nothing(tmp_path):
+    home, repo, wts = _worktrees(tmp_path)
+    (wts["ignored"] / ".env").write_bytes(os.urandom(3 * 1024 * 1024))
+    r = _run_wt(home, repo, *APPLY_WT, wt_archive_max_mb="1")
+    assert wts["ignored"].exists(), r.stdout
+    assert "archive refused: 3M of leftovers, over the 1M archive cap" in r.stdout, (
+        r.stdout
+    )
+    qroot = home / ".estate/quarantine/worktrees"
+    assert not any(q.name.endswith("-ignored") for q in qroot.iterdir()), list(
+        qroot.iterdir()
+    )
+
+
+def test_the_quarantine_and_its_refs_expire(tmp_path):
+    home, repo, wts = _worktrees(tmp_path)
+    q = home / ".estate/quarantine/worktrees/20260901T000000Z-old"
+    q.mkdir(parents=True)
+    (q / "work.patch").write_text("x")
+    _git("update-ref", f"refs/estate/kept/{q.name}", "main", cwd=repo)
+    _age(q, 40)
+    r = _run_wt(home, repo, *APPLY_WT)
+    assert not q.exists() and f"freed  quarantine  {q.name}" in r.stdout, r.stdout
+    gone = subprocess.run(
+        ["git", "rev-parse", "-q", "--verify", f"refs/estate/kept/{q.name}"], cwd=repo
+    )
+    assert gone.returncode != 0
+
+
+def test_stale_temp_goes_and_live_or_foreign_temp_stays(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir()
+    t = tmp_path / "T"
+    entries = {
+        "go-build123": True,  # go's build dir, untouched 1d
+        "tmp.Ab12Cd34": True,  # mktemp -d
+        "tmpab_cd123": True,  # python tempfile.mkdtemp
+        "tmp.Fresh123": False,  # an old dir with a file in it written just now
+        "tmp.Hasgit12": False,  # holds a checkout: the worktree pass judges it
+        "tmp.Opened12": False,  # a process holds a file open under it
+        "kyverno-render": False,  # not a tool's temp name
+    }
+    for n in entries:
+        (t / n / "sub").mkdir(parents=True)
+        (t / n / "sub/blob").write_bytes(os.urandom(1024 * 1024))
+    (t / "tmp.Hasgit12/wt").mkdir()
+    (t / "tmp.Hasgit12/wt/.git").write_text("gitdir: elsewhere\n")
+    for n in entries:
+        _age(t / n, 1)
+    os.utime(t / "tmp.Fresh123/sub/blob")
+    holder = open(t / "tmp.Opened12/sub/blob", "rb")
+    try:
+        repo = tmp_path / "none"
+        dry = _run_wt(home, repo, "false", "false", "0", "true", tmp_root=str(t))
+        assert all((t / n).exists() for n in entries), dry.stdout
+        r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(t))
+    finally:
+        holder.close()
+    for n, goes in entries.items():
+        assert (t / n).exists() is not goes, (n, r.stdout)
+    assert "(written in the last 360m)" in r.stdout
+    assert "(holds a git checkout)" in r.stdout
+    assert "(a process has a file open under it)" in r.stdout, r.stdout
+    assert t.is_dir(), "the temp root itself is never removed"
 
 
 @pytest.mark.parametrize("make", ["absent", "not-a-repo"])
@@ -339,6 +521,7 @@ def _run_env(home: Path, extra: dict, *args: str) -> subprocess.CompletedProcess
         "HOME": str(home),
         "DISK_GUARD_PATH": str(home),
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
+        "DISK_CLEANUP_TMP_ROOT": "",
         **extra,
     }
     return subprocess.run(
@@ -400,9 +583,18 @@ def test_a_stale_lock_from_a_dead_run_is_taken_over(tmp_path):
     (lock / "pid").write_text(str(dead.pid))
     p = _run(home, "true")
     assert "another disk-cleanup" not in p.stdout
-    # go-build, not the whole list: a real yarn on the host (the Fleet dev server) rightly
-    # protects the yarn cache, and that guard is tested elsewhere.
-    assert not (home / "Library/Caches/go-build").exists()
+    # One cache, not the whole list: a real yarn or go build on the host (the Fleet dev server, a
+    # voice-router build) rightly protects its cache, and those guards are tested elsewhere.
+    idle = [
+        c
+        for c, guard in (
+            ("Library/Caches/go-build", "go (build|test|install|run|vet) "),
+            ("Library/Caches/pip", "pip3? (install|download|wheel)|-m pip "),
+            ("Library/Caches/Homebrew", r"Homebrew/brew\.rb|bin/brew( |$)"),
+        )
+        if subprocess.run(["pgrep", "-f", guard], capture_output=True).returncode != 0
+    ]
+    assert idle and not (home / idle[0]).exists(), (idle, p.stdout)
     assert not lock.exists(), "the lock outlived the run"
 
 
@@ -440,3 +632,35 @@ def test_the_default_build_pattern_names_every_kind_of_build(cmd, building):
     src = SCRIPT.read_text()
     default = re.search(r'DISK_CLEANUP_BUILDING:-(.*?)\}"', src).group(1)
     assert bool(re.search(default, cmd)) is building, cmd
+
+
+def test_worktrees_under_tmpdir_are_judged_and_others_outside_home_are_not(tmp_path):
+    """The dry run of 2026-10-14 had the $TMPDIR check inverted: a checkout in $TMPDIR was
+    refused, and one anywhere else outside HOME and /tmp would have been judged."""
+    home, repo, wts = _worktrees(tmp_path)
+    t = tmp_path / "T"
+    inside, outside = t / "wt-in", tmp_path / "elsewhere/wt-out"
+    for wt in (inside, outside):
+        _git("worktree", "add", "-q", "--detach", str(wt), "main", cwd=repo)
+    r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(t))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not inside.exists(), r.stdout
+    assert outside.exists(), r.stdout
+    assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+
+
+def test_with_no_resolvable_tmp_root_an_outside_worktree_is_kept(tmp_path):
+    """The guard must keep a worktree outside HOME and /tmp even when $TMPDIR cannot be
+    resolved (2026-10-14: the rewrite uses a single under= flag so both TMP_ROOT-set and
+    TMP_ROOT-blank paths are explicit; the old `[ -n "$TMP_ROOT" ] && case ... || keep`
+    chain was correct in the blank direction only by accident of operator precedence,
+    and the prior tests put every worktree under HOME so the unset path was never hit)."""
+    home, repo, wts = _worktrees(tmp_path)
+    outside = tmp_path / "elsewhere/wt-out"
+    _git("worktree", "add", "-q", "--detach", str(outside), "main", cwd=repo)
+    # tmp_root points at a path that does not exist: the script's `else TMP_ROOT=; fi`
+    # blanks TMP_ROOT, so the guard runs with no TMPDIR to test against
+    r = _run_wt(home, repo, *APPLY_WT, tmp_root=str(tmp_path / "no-such-tmp"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert outside.exists(), r.stdout
+    assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
