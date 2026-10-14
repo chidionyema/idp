@@ -63,8 +63,13 @@ SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 # Runtime dependencies. nsenter comes from util-linux; python3 from base; curl
 # from base. We pin via apt-get update before installing so the layer is
 # reproducible.
+# `upgrade` too: the base tag is rebuilt on Debian's schedule, not on the security archive's,
+# and `install` never upgrades what the base already ships. On 2026-10-14 that left perl-base
+# at 5.36.0-7+deb12u3 with three CRITICALs fixed in deb12u4 (CVE-2026-8376, -42496, -13221),
+# and the scan refused this image.
 RUN set -euo pipefail \
     && apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl python3 util-linux coreutils \
     && rm -rf /var/lib/apt/lists/*
