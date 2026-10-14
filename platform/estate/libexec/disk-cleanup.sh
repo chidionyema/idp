@@ -190,8 +190,11 @@ unsettled() {
 if [ "$WORKTREES" = 1 ]; then
   CWDS=$(lsof -a -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
   for repo in $WT_REPOS; do
-    [ -d "$repo" ] || continue
-    main=$(git -C "$repo" rev-parse --show-toplevel 2>/dev/null) || continue
+    # Said, not skipped: under a launchd job that macOS will not let into ~/Documents (TCC), both
+    # checks fail, and a silent `continue` read as "nothing to free" on every tick (2026-10-14).
+    [ -d "$repo" ] || { echo "  BLIND  worktrees  cannot see $repo"; fails=$((fails + 1)); continue; }
+    main=$(git -C "$repo" rev-parse --show-toplevel 2>&1) || {
+      echo "  BLIND  worktrees  cannot read $repo: ${main:0:120}"; fails=$((fails + 1)); continue; }
     git -C "$repo" worktree list --porcelain | sed -n 's/^worktree //p' | while IFS= read -r wt; do
       [ "$wt" = "$main" ] && continue
       [ -d "$wt" ] || continue
