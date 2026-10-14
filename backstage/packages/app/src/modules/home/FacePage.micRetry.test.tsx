@@ -15,8 +15,10 @@
  * The hook is mocked, because the defect is in the button's state->verb mapping and nothing else.
  * Mocking getUserMedia here would test the browser, not this page.
  */
-// `jest` IS DELIBERATELY THE GLOBAL HERE, NOT THE @jest/globals IMPORT -- see FleetVoice.test.tsx:
-// swc's jest pass hoists `jest.mock(...)` above the imports only when it sees the bare global.
+// `jest` IS DELIBERATELY THE GLOBAL HERE, NOT THE @jest/globals IMPORT. backstage-cli transpiles
+// with @swc/jest, whose jest pass hoists `jest.mock(...)` above the imports only when it sees the
+// bare global; with `jest` imported the call stays AFTER the require, the real module is already
+// loaded, and the factory mocks nothing (measured 2026-09-22).
 import { describe, it, expect, afterEach } from '@jest/globals';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
