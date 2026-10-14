@@ -41,6 +41,8 @@ class Store:
         # what POST /memories/recall answers with: None = a server without the route (404),
         # a list = results, an int = that HTTP status with no results
         self.semantic = None
+        # what POST /memories/brief answers with: None = a server without the route (404)
+        self.brief = None
         self.seen: list = []
         self.server = HTTPServer(("127.0.0.1", 0), self._handler())
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -86,6 +88,8 @@ class Store:
                     return self._answer(
                         403, {"detail": "Access token invalid or revoked"}
                     )
+                if self.path == "/memories/brief" and store.brief is not None:
+                    return self._answer(200, store.brief)
                 if self.path != "/memories/recall" or store.semantic is None:
                     return self._answer(404, {"detail": "Not Found"})
                 if isinstance(store.semantic, int):
@@ -362,3 +366,57 @@ def test_an_empty_query_does_not_spend_an_embedding(store, cfg_for):
     out = memory.do_recall("", "", "", [], 5, cfg_for(s.url))
     assert len(out["memories"]) == 1
     assert not [r for r in s.seen if r[0] == "POST" and r[1] == "/memories/recall"]
+
+
+def test_remember_records_the_runtime_that_wrote_it(store, cfg_for):
+    s = store()
+    out = memory.do_remember(
+        "x", "otto", "fact", [], "mcp", cfg=cfg_for(s.url), runtime=" Cursor "
+    )
+    assert out["metadata"]["runtime"] == "cursor"
+    assert next(iter(s.facts.values()))["provenance"]["runtime"] == "cursor"
+
+
+def test_brief_asks_the_server_once_and_keeps_both_halves(store, cfg_for):
+    s = store()
+    s.brief = {
+        "relevant": [hit("k1", "postgres filled its disk", kind="incident")],
+        "recent": [hit("d1", "one memory store", kind="decision")],
+        "search_by_meaning": True,
+    }
+    out = memory.do_brief("fix the database", 8, cfg=cfg_for(s.url))
+    ((method, path, headers, body),) = s.seen
+    assert (method, path) == ("POST", "/memories/brief")
+    assert body == {"task": "fix the database", "namespace": "estate", "limit": 8}
+    assert headers["Host"] == "unified-memory.estate.internal"
+    assert out["relevant"] == [
+        {"text": "postgres filled its disk", "metadata": {"kind": "incident"}}
+    ]
+    assert out["recent"] == [
+        {"text": "one memory store", "metadata": {"kind": "decision"}}
+    ]
+    assert out["search_by_meaning"] is True
+
+
+def test_brief_drops_recent_before_relevant_under_the_ceiling(store, cfg_for):
+    s = store()
+    s.brief = {
+        "relevant": [hit("k1", "a" * 300, kind="fact")],
+        "recent": [hit(f"d{i}", "b" * 300, kind="decision") for i in range(5)],
+        "search_by_meaning": True,
+    }
+    out = memory.do_brief("t", 8, cfg=cfg_for(s.url, byte_ceiling=1000))
+    assert len(out["relevant"]) == 1
+    assert 0 < len(out["recent"]) < 5
+
+
+def test_a_store_that_cannot_brief_is_an_error_not_a_crash(store, cfg_for):
+    s = store()  # no brief route: an old server answers 404
+    out = memory.do_brief("t", 8, cfg=cfg_for(s.url))
+    assert (out["relevant"], out["recent"]) == ([], [])
+    assert "404" in out["error"]
+
+
+def test_brief_with_no_url_never_opens_a_socket(cfg_for):
+    out = memory.do_brief("t", 8, cfg=cfg_for(""))
+    assert "unset" in out["error"]
