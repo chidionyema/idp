@@ -251,7 +251,8 @@ class Engine:
                 continue
             lane.status, lane.reason, lane.attempts = PENDING, "main moved; retrying", 0
 
-    def _final(self, lane: Lane) -> bool:
+    @staticmethod
+    def final(lane: Lane) -> bool:
         """True when this lane can never move again, whatever else happens (idp#5953).
 
         A RED lane is final unless main itself was red when it was judged -- then `judged_on`
@@ -286,7 +287,7 @@ class Engine:
         """
         now = self.b.now()
         for lane in self.s.lanes.values():
-            if self._final(lane):
+            if self.final(lane):
                 continue
             if lane.stamped and now - lane.stamped < HEARTBEAT_EVERY_MIN:
                 continue
