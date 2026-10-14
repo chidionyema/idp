@@ -100,6 +100,10 @@ hindsight         HINDSIGHT_API_LLM_API_KEY  minimax
 hermes-agent-env  LITELLM_API_KEY            minimax,gemini,deepseek,embed
 otto-golden       LITELLM_API_KEY            minimax,gemini,deepseek,embed
 agent-workforce   LITELLM_API_KEY            minimax,fast,deepseek,embed
+# the memory layer's own key: it embeds facts (embed) and recall queries (embed-query). It read
+# otto-golden's key until 2026-10-14; that key predates embed-query, so every recall since #6084
+# was refused by the router (403 key_model_access_denied) and answered 503.
+unified-memory    LITELLM_API_KEY            embed,embed-query
 via-negativa      LITELLM_API_KEY            groq
 laptop            key                        @router
 EOF
