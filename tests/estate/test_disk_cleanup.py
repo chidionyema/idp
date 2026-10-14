@@ -292,6 +292,21 @@ def test_worktrees_are_off_by_default(tmp_path):
     assert r.returncode == 0 and all(w.exists() for w in wts.values()), r.stdout
 
 
+@pytest.mark.parametrize("make", ["absent", "not-a-repo"])
+def test_a_repo_it_cannot_read_is_blind_not_nothing_to_free(tmp_path, make):
+    """2026-10-14: under launchd, macOS kept /bin/bash out of ~/Documents (TCC), `git worktree list`
+    failed, and a silent `continue` printed nothing -- 0M freed every tick, read as a clean disk.
+    A plain directory stands in for the refused repo: git fails on both the same way."""
+    home = tmp_path / "home"
+    home.mkdir()
+    repo = tmp_path / "repo"
+    if make == "not-a-repo":
+        repo.mkdir()
+    r = _run_wt(home, repo, "true", "false", "0", "true")
+    assert r.returncode == 3, r.stdout + r.stderr
+    assert "BLIND  worktrees  cannot " in r.stdout and str(repo) in r.stdout, r.stdout
+
+
 # --- Docker, the lock and the time limits (review by idp-57, 2026-09-30) ---
 
 
