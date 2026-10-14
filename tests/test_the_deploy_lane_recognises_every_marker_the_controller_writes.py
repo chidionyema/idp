@@ -226,7 +226,9 @@ esac
 """
 
 
-def _run_the_land_job(tmp_path, *, classifier_exit: int, state: str):
+def _run_the_land_job(
+    tmp_path, *, classifier_exit: int, state: str, verdict: str = "MERGE ready"
+):
     """Run the workflow's OWN shell, with `gh` and the two bin/ scripts stubbed.
 
     The script is read out of deploy-when-green.yml rather than restated here, so the
@@ -243,7 +245,7 @@ def _run_the_land_job(tmp_path, *, classifier_exit: int, state: str):
     bind = tmp_path / "bin"
     bind.mkdir()
     (bind / "idp-image-only-diff").write_text(f"#!{BASH}\nexit {classifier_exit}\n")
-    (bind / "idp-pr-landable").write_text(f'#!{BASH}\necho "MERGE ready"\n')
+    (bind / "idp-pr-landable").write_text(f'#!{BASH}\necho "{verdict}"\n')
     for f in (stub / "gh", bind / "idp-image-only-diff", bind / "idp-pr-landable"):
         f.chmod(0o755)
 
@@ -261,30 +263,35 @@ def _run_the_land_job(tmp_path, *, classifier_exit: int, state: str):
     )
 
 
-def test_a_behind_pull_request_is_refreshed_rather_than_parked(tmp_path):
-    """The deadlock that kept the lane shut even with the classifier fixed.
+def test_the_deploy_branch_is_never_rewritten_here(tmp_path):
+    """Greenlane lands flux/image-updates, rebased onto main (2026-10-14).
 
-    `gh pr diff` is the THREE-DOT diff, so a hunk against a frozen merge-base survives
-    every merge to main -- measured on #3839, whose base d879408 still carries the blank
-    line the controller had already dropped from the branch. The only thing that clears it
-    is refreshing the branch, and that lived inside try_land, behind the classifier that
-    the stale hunk was failing. Row 1 must break that tie itself.
+    This row used to call update-branch on a refused bump that was BEHIND, because `gh pr diff`
+    is the three-dot diff and a stale merge-base kept #3839 shut. Greenlane now grades
+    `main..candidate`, so that refresh only made another writer on the branch. Each write
+    restarted the required checks: #6174 went through 12 heads in 49 minutes.
     """
-    r = _run_the_land_job(tmp_path, classifier_exit=1, state="BEHIND")
-    assert r.returncode == 0, r.stderr
-    assert "STUB-UPDATE-BRANCH" in r.stdout, (
-        f"a refused bump that is BEHIND was never refreshed: {r.stdout.strip()} -- a stale "
-        "merge-base then keeps the lane shut for good, because no merge to main moves it"
-    )
+    for exit_code, verdict in ((1, "MERGE ready"), (0, "UPDATE behind main")):
+        run_dir = tmp_path / verdict.split()[0]
+        run_dir.mkdir()
+        r = _run_the_land_job(
+            run_dir,
+            classifier_exit=exit_code,
+            state="BEHIND",
+            verdict=verdict,
+        )
+        assert r.returncode == 0, r.stderr
+        assert "STUB-UPDATE-BRANCH" not in r.stdout, r.stdout
+        assert "greenlane" in r.stdout, r.stdout
 
 
-def test_a_refused_bump_that_is_not_behind_still_waits_for_the_founder(tmp_path):
-    """The refresh must not become a way to retry every refusal. Only a stale base is
-    the estate's own fault; anything else is a real content change and his call."""
+def test_a_refused_bump_is_left_to_greenlane(tmp_path):
+    """A refusal here is not the last word: the three-dot diff can carry a stale hunk that
+    greenlane's rebased candidate does not, and greenlane is what lands the branch."""
     r = _run_the_land_job(tmp_path, classifier_exit=1, state="CLEAN")
     assert r.returncode == 0, r.stderr
     assert "STUB-UPDATE-BRANCH" not in r.stdout, r.stdout
-    assert "waits for the founder" in r.stdout, r.stdout
+    assert "greenlane grades it rebased onto main" in r.stdout, r.stdout
 
 
 def test_refreshing_never_merges(tmp_path):

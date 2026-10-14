@@ -273,8 +273,20 @@ class GitHubBackend:
         )
 
     def _image_only(self, sha: str, main: str) -> bool:
+        # Grade the commit that would land, not the branch's history. `main...sha` is the
+        # three-dot diff from the merge-base, and flux/image-updates forks from whatever main
+        # looked like when it was cut, so a line main has re-laid since still reads as a non-tag
+        # hunk (#3839, #6114). That stale base is why three writers kept rewriting the branch
+        # -- image-update-pr's merge of main and two update-branch calls in deploy-when-green --
+        # and every rewrite restarted the required checks (2026-10-14: #6174 had 12 heads in 49
+        # minutes, #6114 took 226 minutes to land). rebase() builds the candidate the engine
+        # tests and lands, so `main..candidate` is exactly the change main would take. When it
+        # builds nothing (a conflict, or nothing left to land) the three-dot diff is graded as
+        # before, and the engine reports that case as it always has.
+        candidate = self.rebase(sha, main)
+        rng = f"{main}..{candidate}" if candidate else f"{main}...{sha}"
         with tempfile.NamedTemporaryFile("w", suffix=".diff", delete=False) as f:
-            f.write(self.git("diff", f"{main}...{sha}"))
+            f.write(self.git("diff", rng))
         try:
             return (
                 subprocess.run([str(self.image_only_diff), "--diff", f.name]).returncode  # noqa: S603, S607 -- git/gh with fixed argv, no shell

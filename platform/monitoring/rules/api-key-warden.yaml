@@ -21,7 +21,7 @@ spec:
           annotations:
             summary: "Vendor key {{ $labels.vendor }}/{{ $labels.field }} is invalid"
             description: "The API key {{ $labels.field }} for vendor {{ $labels.vendor }} failed its proof check and is no longer valid. Replace it at the vendor's console and re-activate through the portal."
-        
+
         - alert: VendorKeyUnchecked
           expr: |
             time() - estate_vendor_key_checked_timestamp > (4 * 3600)
@@ -32,7 +32,7 @@ spec:
           annotations:
             summary: "API key warden has not reported in over 4 hours"
             description: "The api-key-warden job has not reported key status in over 4 hours. Check that the scheduled job is running and the pushgateway is reachable."
-        
+
         - alert: VendorKeyWardenJobFailed
           expr: kube_job_failed{job_name=~"api-key-warden.*"} > 0
           for: 5m

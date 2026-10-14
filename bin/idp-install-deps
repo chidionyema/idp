@@ -27,6 +27,8 @@ FLUX_VER="2.9.4"
 KUSTOMIZE_VER="5.7.1"
 KUBECONFORM_VER="0.8.0"
 SOPS_VER="3.13.3"
+TEMPORAL_VER="1.9.1"
+YAMLLINT_VER="1.37.1"   # pip, not a release binary; .github/workflows/ci.yml and fast-gate.yml pin the same
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"
@@ -160,6 +162,63 @@ else
   URL="https://github.com/getsops/sops/releases/download/v${SOPS_VER}/sops-v${SOPS_VER}.${OS}.${ARCH}"
   if _fetch_raw sops "$URL"; then _ok "sops $SOPS_VER installed"
   else _fail "sops install failed (url: $URL)"; fi
+fi
+
+# temporal -- the CLI whose dev server the cp27 acceptance scenarios start (temporal.cli_binary,
+# sovereign/shadow/config_keys.py) instead of the SDK downloading one. CI's runner has it on PATH;
+# a workstation without it failed all three cp27 scenarios with "temporal CLI not on PATH".
+if _ver_ok temporal "$TEMPORAL_VER"; then
+  _ok "temporal $TEMPORAL_VER"
+else
+  _inst "temporal $TEMPORAL_VER"
+  URL="https://github.com/temporalio/cli/releases/download/v${TEMPORAL_VER}/temporal_cli_${TEMPORAL_VER}_${OS}_${ARCH}.tar.gz"
+  if _fetch temporal "$URL"; then _ok "temporal $TEMPORAL_VER installed"
+  else _fail "temporal install failed (url: $URL)"; fi
+fi
+
+# yamllint -- the yamllint rung in bin/idp-ci and .githooks/pre-commit refuse when it is missing,
+# rather than skipping. It is a Python package, so it gets its own venv under TOOLS_DIR (no
+# --user install into whichever python3 is first on PATH) and a symlink beside the binaries.
+if _ver_ok yamllint "$YAMLLINT_VER"; then
+  _ok "yamllint $YAMLLINT_VER"
+else
+  _inst "yamllint $YAMLLINT_VER"
+  if python3 -m venv "$TOOLS_DIR/yamllint-venv" >/dev/null 2>&1 \
+     && "$TOOLS_DIR/yamllint-venv/bin/pip" install -q "yamllint==$YAMLLINT_VER" >/dev/null 2>&1; then
+    ln -sf "$TOOLS_DIR/yamllint-venv/bin/yamllint" "$TOOLS_DIR/yamllint"
+    _ok "yamllint $YAMLLINT_VER installed"
+  else _fail "yamllint install failed (python3 -m venv + pip install yamllint==$YAMLLINT_VER)"; fi
+fi
+
+# python 3.12 -- the interpreter ci.yml's offline-gate runs bin/idp-ci on, with the same pip lines.
+# macOS ships 3.9, and the gate on 3.9 is a different program (bin/idp-ci, "the workstation's
+# interpreter is CI's"). One venv for every worktree; fleetview-backend, the only editable
+# requirement, is left out here and put on PYTHONPATH by bin/idp-ci from the checkout it runs in.
+# Rebuilt only when a requirements file changes, and then in place: uv installs just the delta.
+# The cold build was ~17 min on a 2017 i5, nearly all of it rustc: cryptography stopped shipping
+# x86_64 macOS wheels at 49, so uv compiles it from source, and uv's cache had been pruned when the
+# disk filled. Wheels uv had to build are copied to $_WH, outside that cache, and offered back with
+# --find-links -- same version as CI, compiled once per machine.
+_REPO="$(cd "$(dirname "$0")/.." && pwd)"
+_PYV="$TOOLS_DIR/py312-venv"
+_WH="$TOOLS_DIR/wheelhouse"
+_PYSTAMP="$(cat "$_REPO"/sovereign/requirements*.txt | shasum -a 256 | cut -c1-16)"
+if [ -x "$_PYV/bin/python" ] && [ "$(cat "$_PYV/.idp-stamp" 2>/dev/null)" = "$_PYSTAMP" ]; then
+  _ok "python $("$_PYV/bin/python" -c 'import sys; print(sys.version.split()[0])') (gate venv)"
+elif ! command -v uv >/dev/null 2>&1; then
+  _fail "python gate venv needs uv to fetch 3.12: curl -LsSf https://astral.sh/uv/install.sh | sh"
+else
+  _inst "python 3.12 gate venv (sovereign/requirements*.txt)"
+  _req="$(mktemp)"
+  grep -v '^-e ' "$_REPO/sovereign/requirements-dev.txt" | sed "s#^-r requirements.txt#-r $_REPO/sovereign/requirements.txt#" > "$_req"
+  if uv venv -q --allow-existing --python 3.12 "$_PYV" \
+     && mkdir -p "$_WH" && uv pip install -q --python "$_PYV/bin/python" --find-links "$_WH" -r "$_req" \
+          check-jsonschema sqlite-utils pyyaml dagster dagster-webserver "yamllint==$YAMLLINT_VER" \
+          ruff==0.15.18 "mkdocs<2" mkdocs-techdocs-core; then
+    find "$(uv cache dir)"/sdists-v* -name '*.whl' -exec cp -n {} "$_WH"/ \; 2>/dev/null
+    printf '%s' "$_PYSTAMP" > "$_PYV/.idp-stamp"; _ok "python gate venv installed"
+  else _fail "python gate venv install failed (uv pip install into $_PYV)"; fi
+  rm -f "$_req"
 fi
 
 # docker -- daemon must be reachable for the compose validation rung in bin/idp-ci

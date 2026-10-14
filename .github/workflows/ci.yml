@@ -100,7 +100,7 @@ jobs:
       - name: tools
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck jq sqlite3 age
-          pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver
+          pip install -q check-jsonschema sqlite-utils pyyaml dagster dagster-webserver yamllint==1.37.1   # bin/idp-ci rung 1c.2, same pin as bin/idp-install-deps
           pip install -q -r sovereign/requirements-dev.txt   # crew#219 R39: the bdd acceptance leg
           pip install -q "mkdocs<2" mkdocs-techdocs-core   # bin/idp-ci rung 8c: docs site builds --strict (ADR 0002)
       - uses: ./.github/actions/estate-tools

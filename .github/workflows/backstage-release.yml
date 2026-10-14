@@ -49,7 +49,7 @@ jobs:
       - name: Package as .app
         run: |
           mkdir -p Backstage.app/Contents/{MacOS,Resources}
-          
+
           # Info.plist — use Python to avoid shell escaping issues with YAML vars
           python3 << 'PYEOF'
           import pathlib
@@ -79,7 +79,7 @@ jobs:
           #!/bin/sh
           BACKSTAGE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
           cd "$BACKSTAGE_DIR"
-          
+
           # Find Node
           for p in /opt/homebrew/bin/node /usr/local/bin/node; do
             [ -x "$p" ] && exec "$p" serve --port 3000 || true

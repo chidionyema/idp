@@ -323,4 +323,4 @@ jobs:
           echo "  cosign verify $image@$digest \\"
           echo "    --new-bundle-format=false \\"
           echo "    --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
-          echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com" 
+          echo "    --certificate-oidc-issuer https://token.actions.githubusercontent.com"
