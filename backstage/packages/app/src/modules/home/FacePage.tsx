@@ -289,7 +289,9 @@ export function FacePage() {
             ? on
               ? `${LABEL[voice.state]} · tap to stop`
               : LABEL[voice.state]
-            : 'Voice is not available here'}
+            : voice.checking
+              ? 'Connecting…'
+              : 'Voice is not available here'}
         </button>
       </div>
     </div>
