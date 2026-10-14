@@ -1,0 +1,118 @@
+#!/usr/bin/env python3
+"""Estate memory as a stdio MCP server, for any runtime (#6156).
+
+Every runtime registers this one command (bin/estate-memory-install writes the entry), so no
+runtime's config holds the door's URL or key: the bridge reads the key by name when the first tool
+is called, from MCP_GATEWAY_KEY or the vault, and forwards to the gateway with the Bearer header.
+
+It serves only the manifest's memory tools (brief, recall, remember). The gateway behind it holds
+execute_command and the rest; passing those through would make this a second execution surface,
+and execution is intents only (AGENTS.md section 7). A call to any other tool is refused here.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "..",
+        "platform",
+        "estate",
+        "memory",
+    ),
+)
+import door  # noqa: E402
+
+TOOLS = set(door.MANIFEST["tools"])
+TIMEOUT_S = 30
+
+
+class Bridge:
+    def __init__(self):
+        self.secret = None
+
+    def key(self) -> str:
+        if self.secret is None:
+            self.secret = door.key()
+        return self.secret
+
+    def handle(self, msg: dict) -> dict | None:
+        if "id" not in msg:
+            return None  # notifications need no answer, and the door holds no session for us
+        method, mid = msg.get("method"), msg["id"]
+        if method == "initialize":
+            return ok(
+                mid,
+                {
+                    "protocolVersion": msg.get("params", {}).get(
+                        "protocolVersion", "2025-06-18"
+                    ),
+                    "capabilities": {"tools": {"listChanged": False}},
+                    "serverInfo": {"name": door.MANIFEST["server"], "version": "1"},
+                    "instructions": "Estate memory, shared by every agent and model. Call brief at the "
+                    "start of a task, recall before deciding, remember what a later session should know.",
+                },
+            )
+        if method == "ping":
+            return ok(mid, {})
+        if method not in ("tools/list", "tools/call"):
+            return {
+                "jsonrpc": "2.0",
+                "id": mid,
+                "error": {"code": -32601, "message": f"no method {method}"},
+            }
+        if method == "tools/call" and msg.get("params", {}).get("name") not in TOOLS:
+            return refuse(mid, f"estate-memory serves {sorted(TOOLS)} only")
+        secret = self.key()
+        if not secret:
+            env = door.MANIFEST["door"]["key_env"]
+            return refuse(
+                mid,
+                f"no {env}: export it, or add the vault entry dev/{env} (AGENTS.md section 4)",
+            )
+        try:
+            reply, _ = door.post(msg, secret, TIMEOUT_S)
+        except Exception as e:
+            return refuse(
+                mid, f"memory door unreachable: {type(e).__name__}: {str(e)[:200]}"
+            )
+        if reply is None:
+            return refuse(mid, "memory door gave no reply")
+        if method == "tools/list" and "result" in reply:
+            reply["result"]["tools"] = [
+                t for t in reply["result"].get("tools", []) if t["name"] in TOOLS
+            ]
+        return reply
+
+
+def ok(mid, result: dict) -> dict:
+    return {"jsonrpc": "2.0", "id": mid, "result": result}
+
+
+def refuse(mid, why: str) -> dict:
+    return ok(mid, {"content": [{"type": "text", "text": why}], "isError": True})
+
+
+def main() -> int:
+    bridge = Bridge()
+    for line in sys.stdin:
+        if not line.strip():
+            continue
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        out = bridge.handle(msg)
+        if out is not None:
+            sys.stdout.write(json.dumps(out) + "\n")
+            sys.stdout.flush()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
