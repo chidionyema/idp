@@ -1,9 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!-- bin/idp-disk-watch, copied to ~/.estate/bin: launchd cannot run /bin/sh under ~/Documents (TCC). -->
+<!-- WHY python3 IS ProgramArguments[0] AND NOT the script. Measured 2026-10-14: a launchd job whose
+     responsible process is /bin/bash gets "Operation not permitted" on ~/Documents/code/idp, so the
+     worktree pass in disk-cleanup.sh could not run `git worktree list` and freed 0M on every 5-minute
+     tick while 2.8G of settled worktrees sat in /tmp and the volume reached 0G free. The same job
+     started by THIS python3 reads the repo, and the bash and git it starts inherit that (launchctl
+     submit probes: /bin/bash 128, framework python3 0, /usr/bin/python3 128). The grant is per
+     binary, so the binary is named here rather than the rendered PYTHON_BIN: `command -v python3`
+     can resolve to /usr/bin/python3, which has no grant. The script stays a child (subprocess.call,
+     not exec), so the responsible process stays python3. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>ai.estate.disk-watch</string>
   <key>ProgramArguments</key><array>
+    <string>/Library/Frameworks/Python.framework/Versions/3.12/bin/python3</string>
+    <string>-c</string>
+    <string>import subprocess, sys; sys.exit(subprocess.call(sys.argv[1:]))</string>
+    <string>/bin/bash</string>
     <string>${HOME}/.estate/bin/idp-disk-watch</string>
   </array>
   <key>StartInterval</key><integer>300</integer>

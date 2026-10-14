@@ -1,4 +1,4 @@
-"""idp#5611: .githooks/pre-push runs claim-gate on a push to a lane, before it leaves the laptop.
+"""idp#5611: .githooks/pre-push runs claim-gate on a pushed branch, before it leaves the laptop.
 
 PR #5606 was pushed by hand (git push + gh pr create, no lane-submit) with no Claim line and was
 first refused in the merge queue, a batch later. These pushes are real: a bare origin, a clone
@@ -97,8 +97,19 @@ def test_a_lane_on_a_live_claim_goes_out(clone):
     assert git(clone, "ls-remote", "origin", "lane/fix/claimed").stdout
 
 
-def test_a_branch_that_is_not_a_lane_is_not_judged(clone):
-    p = push(clone, "scratch/try", "fail")
+@pytest.mark.parametrize("branch", ["fix/disk-watch-tcc-blind", "voice-estate-memory"])
+def test_a_branch_that_is_not_a_lane_is_judged_too(clone, branch):
+    # 2026-10-14: every claim-gate failure in the last 100 CI runs came from a non-lane branch
+    # this hook used to skip; CI judges every pull request, so the hook does too.
+    p = push(clone, branch, "fail")
+    assert p.returncode != 0
+    assert f"pre-push REFUSED: {branch} does not land on a live claim" in p.stderr
+    assert git(clone, "ls-remote", "origin", branch).stdout == ""
+
+
+@pytest.mark.parametrize("branch", ["main", "queue/batch-1"])
+def test_the_greenlanes_own_pushes_are_not_judged_here(clone, branch):
+    p = push(clone, branch, "fail")
     assert p.returncode == 0, p.stderr
     assert gate_calls(clone) == []
 

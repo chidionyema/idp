@@ -39,7 +39,22 @@ notify() {
 	/usr/bin/osascript -e "display notification \"$1\" with title \"Estate disk\" sound name \"Basso\"" >/dev/null 2>&1
 }
 
-clean() { [ -f "$CLEANUP" ] && bash "$CLEANUP" true false 0 true >>"$LOG" 2>&1; date +%s >"$ACTED"; }
+# A cleanup that exits non-zero (3: a BLIND repo or a delete it could not prove) is said, not only
+# logged: 2026-10-14 the worktree pass could not read the repo under launchd (TCC), and the volume
+# reached 0G while every tick looked like a clean run. At most once an hour.
+FAILSTAMP="$HOME/.estate/disk-watch.last-fail-alert"
+clean() {
+	[ -f "$CLEANUP" ] || { date +%s >"$ACTED"; return; }
+	bash "$CLEANUP" true false 0 true >>"$LOG" 2>&1
+	rc=$?
+	date +%s >"$ACTED"
+	[ "$rc" = 0 ] && return
+	last=$(cat "$FAILSTAMP" 2>/dev/null || echo 0)
+	if [ $(($(date +%s) - last)) -ge 3600 ]; then
+		notify "Cleanup failed (exit $rc): part of the disk could not be read or freed. See ~/.estate/disk-watch.log (BLIND / !! lines)."
+		date +%s >"$FAILSTAMP"
+	fi
+}
 
 if [ "$free_gb" -lt "$ACT_GB" ] && [ "$free_gb" -ge "$CRIT_GB" ]; then
 	# Every run, not every 30 min (founder 2026-09-30: "it needs to run every 5 minutes so we never
