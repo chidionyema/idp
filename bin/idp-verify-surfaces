@@ -91,7 +91,11 @@ def _l3_live(app: str) -> bool:
         return False
     ok = _run(
         "L3",
-        [os.path.join(work, "node_modules", ".bin", "playwright"), "test", "panels.spec.ts"],
+        # --config: _run works from the repo root, where no playwright config lives, so without it
+        # the scratch config is never read and the root is searched for the spec: "No tests found"
+        # on every hourly run (2026-10-14).
+        [os.path.join(work, "node_modules", ".bin", "playwright"), "test",
+         "--config", os.path.join(work, "playwright.config.ts"), "panels.spec.ts"],
         env={
             "BASE_URL": app,
             "SURFACES_BEARER": os.environ.get("PROVER_TOKEN", ""),

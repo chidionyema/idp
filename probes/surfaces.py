@@ -72,9 +72,12 @@ def enumerate_inventory() -> dict[str, list[str]]:
     inv["pages"] = sorted(pages)
     inv["public_pages"] = sorted(pages & public_seed)
 
-    # face assets: every file under public/face is load-bearing for the avatar
+    # face assets: every file under public/face is load-bearing for the avatar. The URL keeps the
+    # path UNDER public/face (2026-10-14): this once took the basename, so three/build/
+    # three.module.js was probed as /face/three.module.js -- a path that does not exist, which the
+    # SPA answers with its 10835B HTML shell, graded PASS hourly for eleven scripts.
     inv["face_assets"] = sorted(
-        "/face/" + line.split("/")[-1]
+        "/face/" + line.removeprefix(_ASSET_DIR + "/")
         for line in _git(
             "ls-tree", "-r", "HEAD", "--name-only", _ASSET_DIR
         ).splitlines()
@@ -110,7 +113,9 @@ def enumerate_inventory() -> dict[str, list[str]]:
     return inv
 
 
-_STATE_RE = re.compile(r"EstateVoiceState = ([^;]+);")
+# `=\s*`, not `= `: the union is written one member per line, so a literal space after `=` never
+# matched and voice_states enumerated EMPTY on every run (coverage.voice_states red, 2026-10-14).
+_STATE_RE = re.compile(r"EstateVoiceState =\s*([^;]+);")
 
 
 # --- probe plan: which inventory class each level covers ----------------------
@@ -148,6 +153,18 @@ def _looks_like_login(body: str) -> bool:
     return any(m in head for m in LOGIN_MARKERS)
 
 
+def _wrong_asset_body(path: str, body: str) -> str:
+    """Why this body is not the asset its path names, or '' when it is. Status and size cannot
+    tell: the SPA answers any unknown path with 200 and its HTML shell. A .glb starts with the
+    glTF magic; a script never starts with markup."""
+    head = body.lstrip()[:16].lower()
+    if path.endswith(".glb") and not body.startswith("glTF"):
+        return "NOT glTF"
+    if path.endswith((".js", ".mjs")) and head.startswith(("<!doctype", "<html")):
+        return "HTML, NOT A SCRIPT"
+    return ""
+
+
 def l1_gate_battery(
     host: str, inv: dict[str, list[str]], get=http, timeout: int = 15
 ) -> list:
@@ -169,9 +186,16 @@ def l1_gate_battery(
         size = len(body or "")
         login = _looks_like_login(body or "")
         if kind == "public":
-            ok = status == 200 and size >= floor and not login
-            why = f"200 >={floor}B, no login page"
-            got = f"{status}, {size}B" + (", LOGIN PAGE" if login else "")
+            wrong = _wrong_asset_body(path, body or "")
+            ok = status == 200 and size >= floor and not login and not wrong
+            why = f"200 >={floor}B, no login page" + (
+                ", the asset itself" if path.startswith("/face/") else ""
+            )
+            got = (
+                f"{status}, {size}B"
+                + (", LOGIN PAGE" if login else "")
+                + (f", {wrong}" if wrong else "")
+            )
         else:
             ok = (bool(login) and status == 200) or status in (401, 403)
             why = "gate present (login page or 401/403) signed-out"
