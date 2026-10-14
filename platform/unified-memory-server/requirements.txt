@@ -3,3 +3,7 @@ fastapi==0.141.0
 uvicorn==0.30.6
 psycopg[binary]==3.2.13
 psycopg-pool==3.2.8
+# OpenTelemetry — for active-runtime harness telemetry (net-new; no-op when OTEL_EXPORTER_OTLP_ENDPOINT unset)
+opentelemetry-api==1.29.0
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
