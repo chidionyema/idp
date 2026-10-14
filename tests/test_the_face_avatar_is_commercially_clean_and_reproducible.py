@@ -184,3 +184,19 @@ def test_the_embedded_json_is_serialisable_and_carries_no_float_noise():
         f"shipped node translations carry float-accumulation noise, so the bytes are not "
         f"reproducible across interpreters: {noise[:5]}"
     )
+
+
+def test_the_shipped_avatar_stays_compressed():
+    """brunette.glb was 4.72 MB of PNG textures and float32 vertices, fetched before the face could
+    show anything. Quantizing the meshes and re-encoding the textures as WebP brought it to 2.91 MB
+    with no visible change (mean 0.29/255 per pixel, resting and mouth open). Pin it, so a fresh
+    copy out of the TalkingHead repo cannot quietly put the 1.8 MB back."""
+    raw = (GLB.parent / "brunette.glb").read_bytes()
+    assert len(raw) < 3_200_000, (
+        f"brunette.glb is {len(raw)} bytes; re-run the quantize + WebP pass"
+    )
+    header = json.loads(raw[20 : 20 + int.from_bytes(raw[12:16], "little")])
+    assert {"KHR_mesh_quantization", "EXT_texture_webp"} <= set(
+        header.get("extensionsUsed", [])
+    )
+    assert all(i.get("mimeType") == "image/webp" for i in header["images"])
