@@ -17,6 +17,7 @@ directions, because a bare test that re-arm fires would pass against an infinite
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.machinery
 import importlib.util
 import sys
@@ -76,9 +77,11 @@ class _Dispatch:
         return r
 
 
-def _state(*lanes: E.Lane, main: str = "aaa", queued=None) -> E.State:
+def _state(*lanes: E.Lane, queued=None) -> E.State:
+    # Built only through State's own fields. The helper used to set `st.main` by hand, which
+    # State has never had, and that is what let rearm() read it and pass here while every
+    # production tick that landed a batch raised AttributeError (2026-10-14).
     st = E.State()
-    st.main = main
     for lane in lanes:
         st.lanes[lane.name] = lane
     if queued:
@@ -105,23 +108,63 @@ def test_a_chain_ends_when_nothing_is_outstanding(mod, monkeypatch):
     assert _only_dispatch(d) == [], "no lanes outstanding must dispatch nothing"
 
 
-def test_a_lane_landed_on_the_current_main_does_not_re_arm(mod, monkeypatch):
-    """Landed against the main it was judged on: done, so the chain ends."""
+def test_a_landed_lane_does_not_re_arm_and_does_not_raise(mod, monkeypatch):
+    """The 2026-10-14 crash: a tick that lands a batch leaves LANDED lanes in state.
+
+    A dataclass accepts any attribute assigned to it, so this is also pinned at the type: State
+    has no `main`, and nothing here may supply one.
+    """
+    assert "main" not in {f.name for f in dataclasses.fields(E.State)}
     d = _Dispatch()
     monkeypatch.setattr(mod.subprocess, "run", d)
-    mod.rearm(
-        _state(E.Lane(name="lane/a", head="h1", status=E.LANDED, judged_on="aaa"))
-    )
+    mod.rearm(_state(E.Lane(name="lane/a", head="h1", status=E.LANDED)))
     assert _only_dispatch(d) == []
 
 
-def test_a_verdict_expired_by_a_main_move_still_re_arms(mod, monkeypatch):
-    """Landed, but main moved off the sha it was judged on: its verdict is void."""
+def test_a_landed_lane_with_a_stale_judged_on_does_not_re_arm(mod, monkeypatch):
+    """A lane that conflicted, then landed, keeps the sha it conflicted on in `judged_on`.
+
+    The engine never reopens a LANDED lane (_observe_lanes passes it by), so re-arming on that
+    stale sha would dispatch a tick that can do nothing for it, every tick, for as long as the
+    branch exists.
+    """
     d = _Dispatch()
     monkeypatch.setattr(mod.subprocess, "run", d)
     mod.rearm(
         _state(E.Lane(name="lane/a", head="h1", status=E.LANDED, judged_on="OLD"))
     )
+    assert _only_dispatch(d) == []
+
+
+def test_a_parked_conflict_does_not_re_arm(mod, monkeypatch):
+    """Conflicted through REJUDGE_LIMIT mains: parked with its reason (I4), final.
+
+    Measured 2026-10-14: 7 parked conflicts in refs/greenlane/state, each one enough on its
+    own to keep the chain dispatching forever.
+    """
+    d = _Dispatch()
+    monkeypatch.setattr(mod.subprocess, "run", d)
+    lane = E.Lane(name="lane/a", head="h1", status=E.CONFLICT, rejudged=E.REJUDGE_LIMIT)
+    mod.rearm(_state(lane))
+    assert _only_dispatch(d) == []
+
+
+def test_a_conflict_still_inside_its_budget_is_outstanding(mod, monkeypatch):
+    """Not yet parked: the engine retries it when main moves, so it is not done."""
+    d = _Dispatch()
+    monkeypatch.setattr(mod.subprocess, "run", d)
+    lane = E.Lane(
+        name="lane/a", head="h1", status=E.CONFLICT, rejudged=E.REJUDGE_LIMIT - 1
+    )
+    mod.rearm(_state(lane))
+    assert len(_only_dispatch(d)) == 1
+
+
+def test_a_lane_red_on_a_red_main_is_outstanding(mod, monkeypatch):
+    """`judged_on` set on RED means main was red under it: re-judged on a green main (#5618)."""
+    d = _Dispatch()
+    monkeypatch.setattr(mod.subprocess, "run", d)
+    mod.rearm(_state(E.Lane(name="lane/a", head="h1", status=E.RED, judged_on="m1")))
     assert len(_only_dispatch(d)) == 1
 
 
