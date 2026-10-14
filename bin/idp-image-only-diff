@@ -37,9 +37,28 @@ import sys
 # sits on: the marker is placed by a human in the manifest and the controller rewrites only the
 # value beside it. So widening the key does not widen the trust -- a line still cannot pass
 # without the marker, and the policy set still has to be identical either side of the diff.
+#
+# A third form, 2026-10-14: `image: <repo>:<tag>` with the bare marker (no `:tag` suffix), which
+# the controller rewrites whole. platform/quad/ledger/ledger.yaml carries it, and from the day the
+# quad-ledger policy first moved, every bump (#6194) was "not a plain image bump". Here the value
+# names the repository too, so the marker alone would let a hand-edit swap WHICH image runs; the
+# repository must therefore be identical either side of the diff, and only the tag may move.
 TAG_LINE = re.compile(
-    r'^\s*(?:newTag|tag):\s*(?P<tag>\S+)\s*#\s*\{"\$imagepolicy":\s*"(?P<policy>[^"]+)"\s*\}\s*$'
+    r'^\s*(?:-\s+)?(?P<key>newTag|tag|image):\s*(?P<tag>\S+)\s*#\s*\{"\$imagepolicy":\s*"(?P<policy>[^"]+)"\s*\}\s*$'
 )
+
+
+def owner(m):
+    """What a tag line binds: its policy, and for the `image:` form also the repository."""
+    if m.group("key") != "image":
+        return (m.group("policy"), "")
+    value = m.group("tag")
+    repo = value.split("@", 1)[0]
+    if ":" in repo.rsplit("/", 1)[-1]:
+        repo = repo.rsplit(":", 1)[0]
+    return (m.group("policy"), repo)
+
+
 # File headers and hunk headers carry + and - but are not content.
 HEADER = ("+++", "---")
 
@@ -77,13 +96,13 @@ def grade(diff: str):
                 f"changes a line that is not an automation-owned image tag, in "
                 f"{sorted(files)[-1] if files else 'the diff'}: {body.strip()[:90]!r}"
             )
-        bucket.append(m.group("policy"))
+        bucket.append(owner(m))
 
     if not added:
         return False, "changes nothing; there is no tag to ship"
     if sorted(added) != sorted(removed):
         return False, (
-            f"rewrites which policy owns a line, not just its tag: "
+            f"rewrites which policy owns a line (or the repository it names), not just its tag: "
             f"{sorted(removed)} -> {sorted(added)}"
         )
     return (
