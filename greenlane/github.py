@@ -328,10 +328,22 @@ class GitHubBackend:
                 return None
             if _run("git", "-C", wt, "status", "--porcelain") == "":
                 return None  # nothing to land
-            subject = self.git("log", "-1", "--format=%s", head)
-            author = self.git("log", "-1", "--format=%an <%ae>", head)
-            body = self.git("--no-pager", "log", "--reverse", "--format=%h %s", *new)
-            # Carry the lane head's trailers onto the candidate. bin/idp-ci-guarded-paths refuses a
+            # Subject, author and trailers come from the lane's OWN commits (`new`), not from
+            # `head`. The merge-when-green, deploy-when-green and wake-blocked jobs bring a lane
+            # up to date with PUT update-branch, which leaves `head` a "Merge branch 'main'"
+            # commit by estate-agents[bot] that has no trailers. `git cherry` skips that merge,
+            # so the work still landed. But the candidate went out under the merge's subject and
+            # author with no Claim:, and claim-gate refused it as "no live claim". That is
+            # 7316f4af4 on concierge-vision-minimax (#6148), 2026-10-14: the squash of 1da835c97,
+            # whose `Claim: #6103` was dropped. `--no-walk` lists just these commits. A plain
+            # `log` walks all of their ancestors, so that body had 6115 lines of main's history.
+            last = new[-1]
+            subject = self.git("log", "-1", "--format=%s", last)
+            author = self.git("log", "-1", "--format=%an <%ae>", last)
+            body = self.git(
+                "--no-pager", "log", "--no-walk=unsorted", "--format=%h %s", *new
+            )
+            # Carry the lane commits' trailers onto the candidate. bin/idp-ci-guarded-paths refuses a
             # candidate whose HEAD carries no X-Idp-Signed trailer, and that trailer is put there
             # by .githooks/commit-msg -- which never runs here, because this commit is made by the
             # engine. Dropping it made every lane authored by anything other than the founder or
@@ -339,7 +351,10 @@ class GitHubBackend:
             # lane's own hook stamped X-Idp-Signed, and the squash threw it away. %(trailers) is
             # git's own trailer block, so a commit with none contributes nothing and the message
             # is unchanged for it.
-            trailers = self.git("log", "-1", "--format=%(trailers)", head).strip()
+            seen = self.git(
+                "log", "--no-walk=unsorted", "--format=%(trailers:only,unfold)", *new
+            ).splitlines()
+            trailers = "\n".join(dict.fromkeys(t for t in seen if t.strip()))
             msg = f"{subject}\n\nGreenlane-Head: {head}\n\n{body}\n"
             if trailers:
                 msg = f"{msg}\n{trailers}\n"
