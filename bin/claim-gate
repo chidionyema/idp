@@ -25,7 +25,9 @@ and the claimed issue is open and carries a live
 `CLAIM agent=<name> paths=<glob,...> heartbeat=<UTC>` comment from that same agent. `paths=` must
 cover every file the change touches -- THAT is the collision check. The heartbeat (under 2 hours)
 keeps it from also being a deadlock: a claim belonging to an agent that has moved on lapses by
-itself, so nothing has to be closed by hand before the next person can work.
+itself, so nothing has to be closed by hand before the next person can work. Lapsing frees the
+issue for the NEXT claim; it does not by itself refuse the holder's change, because until another
+agent claims, nobody else holds those files.
 
 Writing one of these is mechanical, so it is a command: bin/claim-open makes all of it true and
 then runs this gate. An agent should not have to rediscover the contract by being refused.
@@ -178,10 +180,15 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
         except ValueError:
             problems.append(f"{where} heartbeat {c['hb']!r} is not a UTC ISO time")
             continue
-        if now - hb > MAX_AGE:
-            problems.append(
-                f"{where} heartbeat is {now - hb} old (limit {MAX_AGE}): the claim has lapsed"
-            )
+        # 2026-10-14: an old heartbeat alone no longer refuses. The two hours exist so an
+        # abandoned claim stops blocking OTHER agents (AGENTS.md §5.4): once lapsed, anyone may
+        # post their own CLAIM, and that newer comment fails the `claimed by` check above. Until
+        # someone does, the newest claim is still this agent's and nobody else holds the files,
+        # which is the one thing this gate proves. Refusing it anyway turned every pull request
+        # that waited two hours red with no change to it -- #6198 and #6208, measured 10-14, the
+        # moment Greenlane (the only thing that re-stamps a waiting lane's heartbeat) went red.
+        if hb > now + MAX_AGE:
+            problems.append(f"{where} heartbeat {c['hb']!r} is in the future")
             continue
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(fnmatch.fnmatch(f, g) for g in globs)}

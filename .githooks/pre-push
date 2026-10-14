@@ -73,8 +73,8 @@ pre-push REFUSED: ${remote_ref#refs/heads/} does not land on a live claim (AGENT
      1) a commit on the lane carries:   Claim: $repo#<issue>   and   Agent: <name>
      2) the issue is open, and carries a comment
         CLAIM agent=<name> paths=<glob,glob> heartbeat=<UTC ISO time>
-        within the last 2 hours, with paths covering every file the lane touches
-   (No `in-progress` label any more, and the `model` field is optional, since 2026-10-10.)
+        that is the newest CLAIM on that issue, with paths covering every file the lane touches
+   (No \`in-progress\` label any more, and the \`model\` field is optional, since 2026-10-10.)
    platform/estate/bin/estate-execute lane-submit checks the same before it pushes.
 EOF
       return 1
