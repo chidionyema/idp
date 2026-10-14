@@ -15,12 +15,12 @@ set -uo pipefail
 IDP="$(cd "$(dirname "$0")/.." && pwd)"
 PY="$IDP/.voice-venv/bin/python"
 WORD="${1:-what is stuck in the fleet right now}"
-LOOP="http://127.0.0.1:8770"
+LOOP="http://127.0.0.1:8771"
 
 # Readiness: the loop must be warm, or this is a cold import that reads as a hang.
 ready="$($PY -c "import urllib.request,json; d=json.load(urllib.request.urlopen('$LOOP/healthz')); print('1' if d.get('asr') and d.get('tts') else '0')" 2>/dev/null || echo 0)"
 if [ "$ready" != "1" ]; then
-  echo "DOWN  voice loop is not warm on 8770 — run bin/voice-loop and wait for /healthz asr+tts=true" >&2
+  echo "DOWN  voice loop is not warm on 8771 — run bin/voice-loop and wait for /healthz asr+tts=true" >&2
   exit 1
 fi
 
@@ -45,7 +45,7 @@ arr = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768.0
 pcm = arr.tobytes()
 
 async def main():
-    uri = "ws://127.0.0.1:8770/voice/stream"
+    uri = "ws://127.0.0.1:8771/voice/stream"
     async with websockets.connect(uri, max_size=None) as ws:
         t0 = time.perf_counter()
         await ws.send(pcm)
