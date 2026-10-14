@@ -184,7 +184,7 @@ jobs:
       - name: mint the secrets the runtime declares, from the roots the estate already holds
         env:
           OPENAI_ROOT: ${{ secrets.SEED_OPENAI_API_KEY }}
-          ANTHROPIC_ROOT: ${{ secrets.SEED_ANTHROPIC_API_KEY }}
+          MINIMAX_ROOT: ${{ secrets.SEED_MINIMAX_API_KEY }}
         run: |
           set -euo pipefail
           # LAW 52: ONE ROOT PER PROVIDER, SET ONCE; CODE MINTS THE REST; NEVER A CONSOLE STEP.
@@ -258,12 +258,22 @@ jobs:
           # the endpoint kept whatever key was current when it was first minted, and a rotated
           # SEED_ANTHROPIC_API_KEY never reached it: the live self-check's intent step was refused on
           # every run while every other step passed. Nothing is encrypted under it to orphan.
-          if [ -n "$ANTHROPIC_ROOT" ]; then
-            modal secret create vision-lane VISION_API_KEY="$ANTHROPIC_ROOT" \
-              CONCIERGE_VISION_MODEL="claude-sonnet-4-6" --force >/dev/null
-            echo "ok      vision-lane holds the current Anthropic key"
+          #
+          # MINIMAX, NOT ANTHROPIC (idp#6103). The Anthropic account behind this lane ran out of credit
+          # ("Your credit balance is too low", runs 38514023715 and 38514732151) and the founder
+          # declined to top it up. MiniMax-M3 is the model the estate's `minimax` router lane already
+          # serves, and it reads screenshots: asked through that lane on 2026-10-15 with the
+          # runtime's own two prompts, it read a basket screenshot's product, quantity, total and
+          # delivery slot, put the click inside the Checkout button, and returned the intent JSON.
+          # (MiniMax-M2.7 is text-only: it answered "I don't have the screenshot".) The runtime picks
+          # its endpoint from VISION_BASE_URL, so MiniMax needs no code change.
+          if [ -n "$MINIMAX_ROOT" ]; then
+            modal secret create vision-lane VISION_API_KEY="$MINIMAX_ROOT" \
+              VISION_BASE_URL="https://api.minimax.io/v1" \
+              CONCIERGE_VISION_MODEL="MiniMax-M3" --force >/dev/null
+            echo "ok      vision-lane holds the current MiniMax key (MiniMax-M3)"
           else
-            echo "FAIL    concierge-deploy  SEED_ANTHROPIC_API_KEY is not set: intent and vision have no lane"
+            echo "FAIL    concierge-deploy  SEED_MINIMAX_API_KEY is not set: intent and vision have no lane"
             exit 1
           fi
 

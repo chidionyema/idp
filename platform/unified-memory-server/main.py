@@ -485,7 +485,13 @@ async def _ranked(
     """
     # Enforce Production HNSW Recall Configuration
     await cur.execute("SET LOCAL hnsw.ef_search = 100;")
-    await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order';")
+    # pgvector < 0.8 has no iterative scan, and once its library is loaded in a backend the
+    # unknown setting is refused; a savepoint keeps that refusal from aborting the search.
+    try:
+        async with cur.connection.transaction():
+            await cur.execute("SET LOCAL hnsw.iterative_scan = 'relaxed_order';")
+    except psycopg.errors.InvalidName:
+        pass
 
     # Query candidates from pgvector
     query_vector_str = "[" + ",".join(map(str, query_vector)) + "]"
@@ -589,6 +595,66 @@ async def memory_recall(
                 cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
             )
         }
+
+
+# The kinds a session should hear about whatever its task: what was decided, and what broke.
+BRIEF_RECENT_KINDS = ("decision", "incident")
+
+
+class BriefRequest(BaseModel):
+    task: str = Field(default="", max_length=8000)
+    namespace: str = "default"
+    limit: int = Field(default=8, ge=1, le=30)
+
+
+@app.post("/memories/brief", status_code=status.HTTP_200_OK)
+async def memory_brief(
+    payload: BriefRequest,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008 — FastAPI DI
+    conn=Depends(get_db_conn),  # noqa: B008 — FastAPI DI: Depends() in a default IS the API
+):
+    """What a session should know before it starts: the facts nearest its task, and the
+    newest decisions and incidents. Unlike recall this never 503s on a down lane -- a session
+    start waits on it, and the recent half needs no vector -- so `search_by_meaning` says
+    whether the task half was answered at all."""
+    relevant: list = []
+    vec = None
+    if payload.task.strip():
+        vec = await asyncio.to_thread(_embed, payload.task, EMBED_QUERY_MODEL)
+    async with conn.cursor() as cur:
+        if vec is not None:
+            relevant = await _ranked(
+                cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
+            )
+        seen = [r["key"] for r in relevant]
+        await cur.execute(
+            """
+            SELECT key, content, trust_tier, version, provenance, updated_at
+            FROM memories
+            WHERE namespace = %s AND is_quarantined = FALSE
+              AND provenance->>'kind' = ANY(%s) AND NOT (key = ANY(%s))
+            ORDER BY valid_from DESC, updated_at DESC
+            LIMIT %s;
+            """,
+            (payload.namespace, list(BRIEF_RECENT_KINDS), seen, payload.limit),
+        )
+        recent = [
+            {
+                "key": r["key"],
+                "content": r["content"],
+                "trust_tier": r["trust_tier"],
+                "version": r["version"],
+                "provenance": r["provenance"],
+                "recorded_at": r["updated_at"].isoformat(),
+            }
+            for r in await cur.fetchall()
+        ]
+    return {
+        "namespace": payload.namespace,
+        "relevant": relevant,
+        "recent": recent,
+        "search_by_meaning": vec is not None,
+    }
 
 
 # ---------------------------------------------------------------------
