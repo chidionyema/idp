@@ -408,6 +408,14 @@ KEDA_ROW = os.path.join(REPO, "platform", "keda", "keda.yaml")
 # traefik chart installs its CRDs, and calico-node runs the version the raw manifest pins.
 TRAEFIK_ROW = os.path.join(REPO, "platform", "edge", "traefik.yaml")
 CALICO_ROW = os.path.join(REPO, "platform", "calico", "raw-migration", "calico.yaml")
+# MEASURED 2026-10-14 (run 38526820263, #6148): platform/unified-memory-server failed on `no
+# matches for kind "ImagePolicy" in version "image.toolkit.fluxcd.io/v1"`. It was red on every
+# change to that path on main, image updates included. Production runs image-reflector and
+# image-automation (clusters/oke/flux-system/gotk-components.yaml); the shadow installs neither.
+# The shadow takes their CRDs at the controller versions production pins. It does not take the
+# controllers, which would scan ghcr and commit tag bumps.
+FLUX_ROW = os.path.join(REPO, "clusters", "oke", "flux-system", "gotk-components.yaml")
+IMAGE_CONTROLLERS = ("image-reflector-controller", "image-automation-controller")
 
 
 # MEASURED 2026-09-27 (idp#4582): platform/llm failed on `spec.hostnames[0]: Invalid value:
@@ -489,6 +497,17 @@ def floor_sources():
             "https://github.com/projectcalico/calico",
             pinned(CALICO_ROW, r"calico/node:(v[0-9][^\s\"]*)", "calico/node image"),
             "./libcalico-go/config/crd",
+        ),
+        *(
+            (
+                f"shadow-floor-{c}",
+                f"https://github.com/fluxcd/{c}",
+                pinned(
+                    FLUX_ROW, rf"ghcr\.io/fluxcd/{c}:(v[0-9][^\s\"]*)", f"{c} image"
+                ),
+                "./config/crd",
+            )
+            for c in IMAGE_CONTROLLERS
         ),
     ]
 
