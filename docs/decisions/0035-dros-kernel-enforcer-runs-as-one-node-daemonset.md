@@ -23,7 +23,7 @@ breaking the restricted posture of the pods it guards.
   5.15.0-322.203.3.5.el8uek.aarch64. No reboot and no boot-parameter change is needed.
 - **Privileged namespaces already exist** for node agents: `calico-system`, `coroot`,
   `observability-agent`, `tailscale`, `tigera-operator` carry `pod-security.kubernetes.io/enforce=privileged`.
-- **The BPF program has two bypasses** (`bpf/dros_enforce.bpf.c` on main):
+- **The BPF program has two bypasses** (`cmd/dros-daemon/bpf/dros_enforce.bpf.c` on main):
   1. It keys `agent_process_status` on the host **PID** (tgid) and lets any unregistered PID through
      (step 6, "Unknown process: allow"). Any subprocess an agent spawns (`git`, `curl`, `python`)
      has a new PID, is unregistered, and connects freely. A sidecar also sees container PIDs, not

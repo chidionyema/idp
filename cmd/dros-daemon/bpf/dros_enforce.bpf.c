@@ -1,4 +1,4 @@
-// bpf/dros_enforce.bpf.c
+// cmd/dros-daemon/bpf/dros_enforce.bpf.c
 // Layer 4: DROS eBPF Enforcement Engine
 // Kernel-space BPF LSM hook that intercepts socket_connect syscalls.
 // Blocks direct agent egress; only loopback:8080 (elpis-proxy) is permitted.
