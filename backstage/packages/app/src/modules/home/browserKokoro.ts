@@ -106,9 +106,37 @@ export const BROWSER_KOKORO_VOICES: readonly string[] = [
  * which decides who synthesises), so it lives in one function: the pod speaks Kokoro exactly when
  * it can list it, because both come from the same voices file on that host. An empty list is
  * therefore not "no Kokoro" but "not this host's Kokoro" -- and the browser takes it from there.
+ *
+ * Unless this browser cannot run the model (`deviceRunsKokoro`): then neither speaks it, the
+ * picker's browser group is empty and hidden, and the pod's voice is what the face uses.
  */
 export function kokoroSpeaksInTheBrowser(podKokoroVoices: readonly string[] | undefined): boolean {
-  return !podKokoroVoices || podKokoroVoices.length === 0;
+  return (!podKokoroVoices || podKokoroVoices.length === 0) && deviceRunsKokoro();
+}
+
+/**
+ * Can THIS browser run the model at all? Not on WebKit: Safari, and every browser on an iPhone or
+ * iPad, which are WebKit underneath whatever their name.
+ *
+ * MEASURED, NOT ASSUMED (2026-10-14, real Safari 16.6 on an 8GB Mac, import already fixed by
+ * `letStreamsIterate`). The 92MB model took ~2 minutes to download and ~70 seconds more to start
+ * from Safari's own cache; fetching the first voice then took the page's JavaScript heap to ~1GB,
+ * Safari logged memory pressure, and the page stopped answering without speaking a sample. A
+ * voice that never says its first word is not an option, so on WebKit it is not offered and no
+ * clause starts the download. Chrome, Edge and Firefox are unchanged. If a later Safari is
+ * measured to speak, narrow this rather than delete it.
+ *
+ * "Chrome/" also covers Edge, Opera and Android browsers. jsdom's agent names neither Safari nor
+ * Mobile, so tests run as a browser that can.
+ */
+export function deviceRunsKokoro(
+  userAgent: string = typeof navigator === 'undefined' ? '' : navigator.userAgent,
+): boolean {
+  const webkit =
+    /AppleWebKit\//.test(userAgent) &&
+    /(Safari|Mobile)\//.test(userAgent) &&
+    !/(Chrome|Chromium)\//.test(userAgent);
+  return !webkit;
 }
 
 /**
@@ -140,8 +168,8 @@ export const KOKORO_RETRY_MS = 10 * 60 * 1000;
  * Safari's ReadableStream has no async iterator, so importing kokoro-js threw "undefined is not a
  * function near '...r of ...a'" as an unhandled page error -- outside any try/catch of ours -- and
  * the model then failed with "TypeError: Internal error". With this in place the import is clean.
- * (On Safari 16.6 the model load then stalls rather than fails; `loadKokoro` below never makes a
- * clause wait on it, so the pod speaks instead.)
+ * (On Safari 16.6 the model then runs out of memory instead, so Safari no longer loads it at all:
+ * see `deviceRunsKokoro`. This stays for any other browser without the iterator.)
  */
 export function letStreamsIterate(): void {
   const proto = typeof ReadableStream === 'undefined' ? undefined : ReadableStream.prototype;
@@ -210,7 +238,8 @@ function loadKokoro(): Promise<import('kokoro-js').KokoroTTS> | null {
  *
  * The caller falls back to the pod's `/voice/say` and then to the device voice when this returns
  * null, so an offline phone, a browser without WebGPU, or a model that fails to download all end
- * in speech rather than in silence.
+ * in speech rather than in silence. On a browser that cannot run the model (`deviceRunsKokoro`)
+ * it is null without starting the download -- the pod's fallback asks for it too.
  *
  * NO CLAUSE WAITS FOR THE DOWNLOAD (2026-10-14). Until the model is in memory this starts the load
  * and answers null at once, so the clause is spoken by the next speaker now rather than by Kokoro
@@ -222,7 +251,7 @@ export async function synthesiseBrowserKokoro(
   voice: string,
 ): Promise<ArrayBuffer | null> {
   const clause = (text || '').trim();
-  if (!clause) return null;
+  if (!clause || !deviceRunsKokoro()) return null;
   const tts = _ready;
   if (!tts) {
     loadKokoro();
