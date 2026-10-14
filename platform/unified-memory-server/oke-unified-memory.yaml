@@ -30,9 +30,10 @@ spec:
       data:
         DATABASE_URL: "postgresql://memory:{{ .password }}@estate-rw.estate-db.svc.cluster.local:5432/memory?sslmode=require"
         MEMORY_SURFACE_TOKEN: "{{ .token }}"
-        # The router key, from the SAME vault entry otto-gateway reads (otto-golden), by name
-        # and never copied. It is the RAW key, not the `sk-<sha256>` form otto derives for its
-        # sidecar: the estate router looks a virtual key up and accepts the raw one (measured
+        # The router key, the memory layer's own (bin/idp-estate-seed ROUTER_PLAN: embed and
+        # embed-query only). It read otto-golden's key until 2026-10-14; that key predates
+        # embed-query, so every recall was refused by the router and answered 503. It is the RAW
+        # key: the estate router looks a virtual key up and accepts the raw one (measured
         # 2026-09-10 in an otto-gateway pod: raw -> accepted, derived -> 401).
         MEMORY_EMBED_API_KEY: "{{ .litellm_api_key }}"
   data:
@@ -41,7 +42,7 @@ spec:
     - secretKey: token
       remoteRef: { key: unified-memory, property: surface-token }
     - secretKey: litellm_api_key
-      remoteRef: { key: otto-golden, property: LITELLM_API_KEY }
+      remoteRef: { key: unified-memory, property: LITELLM_API_KEY }
 ---
 apiVersion: apps/v1
 kind: Deployment
