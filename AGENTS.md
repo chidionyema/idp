@@ -155,8 +155,9 @@ These rules bind every agent, whatever model or runtime:
 5. **Land only against your claim.** Every change carries two lines in a commit message (or the PR
    body): `Claim: <owner>/<repo>#<n>` and `Agent: <name>`. `bin/claim-gate` runs in `ci-success`,
    the one check the merge queue gates on, and refuses a change with no claim, an issue that is
-   not open, another agent's claim, a heartbeat older than 2 hours, or a file outside the claim's
-   `paths`. Only dependency and image bots are exempt, by name, in the gate itself.
+   not open, another agent's claim (including one posted after yours lapsed), or a file outside the
+   claim's `paths`. A lapsed heartbeat frees the issue for the next claim; on its own it does not
+   refuse your change, because until someone else claims, nobody else holds those files. Only dependency and image bots are exempt, by name, in the gate itself.
 
    What that gate is and is not (founder, 2026-10-10, "i thinkwe should just remove the claim
    requirement", then "b" -- shrink it to the one thing it can actually prove). It cannot tell

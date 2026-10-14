@@ -100,8 +100,21 @@ def test_a_range_naming_one_agent_twice_still_passes():
     assert run(text=two) == []
 
 
-def test_a_lapsed_heartbeat_is_refused():
-    assert "lapsed" in run(issue=_issue(claim=_claim(age=timedelta(hours=3))))[0]
+def test_a_lapsed_heartbeat_nobody_took_over_still_lands():
+    """A pull request that waits past two hours is not a collision (#6198, #6208 on 10-14)."""
+    assert run(issue=_issue(claim=_claim(age=timedelta(hours=30)))) == []
+
+
+def test_a_claim_taken_over_after_it_lapsed_is_refused():
+    """Lapsing is what lets the next agent claim; once they have, the old holder cannot land."""
+    old = _claim(age=timedelta(hours=3))
+    rival = _claim(agent="idp-77")
+    iss = ({"state": "open", "labels": []}, [{"body": old}, {"body": rival}])
+    assert "claimed by idp-77, not idp-60" in run(issue=iss)[0]
+
+
+def test_a_heartbeat_from_the_future_is_refused():
+    assert "future" in run(issue=_issue(claim=_claim(age=-timedelta(hours=5))))[0]
 
 
 def test_a_closed_issue_is_refused():
