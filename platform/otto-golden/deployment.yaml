@@ -128,6 +128,11 @@ spec:
             # costs no one their answer, it just arrives without memory.
             - { name: OTTO_MEMORY_RECALL_TIMEOUT_S, value: "30" }
             - { name: OTTO_MEMORY_RETAIN_TIMEOUT_S, value: "5" }
+            # The unified estate memory (platform/otto-golden/mcp-key.yaml), shared with @Ottototbot
+            # and the Mac. otto/memory/estate_mcp.py: unset or unreadable is a no-op, and its brief
+            # is bounded on the answering path, so an outage never costs an answer.
+            - { name: ESTATE_MCP_URL, value: "http://agentgateway.mcp.svc.cluster.local:3000/estate/mcp" }
+            - { name: ESTATE_MCP_KEY_FILE, value: /run/secrets/otto-golden-mcp/ESTATE_MCP_KEY }
             # LAW 50: every workload emits to the central collector. Same endpoint and mode as
             # platform/llm/litellm.yaml; otto/obs/config.py reads OTEL_EXPORTER_OTLP_ENDPOINT
             # directly and refuses to start in otlp mode without it.
@@ -186,6 +191,9 @@ spec:
             - name: router-key
               mountPath: /run/secrets/otto-golden-router-key
               readOnly: true
+            - name: mcp-key
+              mountPath: /run/secrets/otto-golden-mcp
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
@@ -195,3 +203,6 @@ spec:
           secret: { secretName: otto-staging-telegram }
         - name: router-key
           secret: { secretName: otto-golden-router-key }
+        # Optional, like otto-gateway's MCP key: the pod starts before ESO has written it.
+        - name: mcp-key
+          secret: { secretName: otto-golden-mcp, optional: true }
