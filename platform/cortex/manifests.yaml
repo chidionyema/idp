@@ -37,7 +37,7 @@ data:
 ---
 # Secrets by name, from the vault (AGENTS.md 4). The encryption key never appears in this
 # repo: losing it means losing the memory, and a key in git is a key that is already lost.
-apiVersion: external-secrets.io/v1beta1
+apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: cortex-secrets

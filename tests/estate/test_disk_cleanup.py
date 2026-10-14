@@ -402,7 +402,7 @@ def test_a_running_compose_build_skips_docker(tmp_path):
 
         time.sleep(0.5)
         p = _run(home, "true")
-        assert "SKIP   docker  a docker build is running" in p.stdout
+        assert "SKIP   docker  an image build is running" in p.stdout
         assert "prune" not in log.read_text()
     finally:
         builder.kill()

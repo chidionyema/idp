@@ -562,7 +562,14 @@ jobs:
     # On a pull request the job is `skipped` (its `if:` puts it on the push to main and the merge
     # queue only) and `skipped` is a pass in the loop below, the same case as the `bdd` leg, so a
     # PR that cannot run the scan is never refused for not running it.
-    needs: [fast-gate, bdd, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan]
+    #
+    # 2026-10-14: the list below was hand-written twice (here and in the loop) and five gating jobs
+    # were in neither: verifier, offline-gate, bdd-suites, messaging-demo, migrate-domain. On the
+    # Greenlane candidate a5ef26fae (PR #6191) offline-gate was `failure`, ci-success `success`, the
+    # greenlane status read "success proven", and main fast-forwarded red -- four pushes in a row.
+    # The loop now judges every key of `needs`, so this is the one list, and
+    # tests/test_ci_success_judges_every_job.py fails if a job in this file is missing from it.
+    needs: [fast-gate, verifier, offline-gate, bdd, bdd-suites, messaging-demo, migrate-domain, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan]
     runs-on: ubuntu-latest
     steps:
       - name: every required job in this workflow is success or skipped
@@ -572,7 +579,7 @@ jobs:
           set -euo pipefail
           echo "$NEEDS_JSON" | jq .
           fail=0
-          for job in fast-gate bdd executes-gate feature-request-plan ui-kit claim-gate security-scan; do
+          for job in $(echo "$NEEDS_JSON" | jq -r 'keys[]'); do
             result=$(echo "$NEEDS_JSON" | jq -r --arg j "$job" '.[$j].result')
             case "$result" in
               success|skipped) echo "$job: pass ($result)" ;;
