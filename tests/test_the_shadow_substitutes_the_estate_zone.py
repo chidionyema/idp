@@ -57,6 +57,10 @@ def test_every_path_under_test_substitutes_from_the_estate_config_it_lays(
     monkeypatch.setattr(shadow, "flux_source", lambda head: None)
     monkeypatch.setattr(shadow, "flux_floor", lambda deadline: [])
     monkeypatch.setattr(shadow, "stand_in_vault", lambda stop: None)
+    # #5722 (2026-10-10) added the database stand-in, a multi-document apply this test's
+    # fake_run cannot parse. It was not stubbed here, so the test went red on main and stayed
+    # red: CI is diff-scoped (bin/idp-tests-for), and nothing that changed since read this file.
+    monkeypatch.setattr(shadow, "stand_in_database", lambda: None)
     monkeypatch.setattr(shadow, "wait_ks", lambda name, deadline: (False, "x", []))
 
     shadow.verify("abc123", ["platform/llm"])
@@ -64,8 +68,13 @@ def test_every_path_under_test_substitutes_from_the_estate_config_it_lays(
     assert files == [str(REPO / "clusters" / "oke" / "estate-config.yaml")]
     (ks,) = [o for o in applied if o["kind"] == "Kustomization"]
     assert ks["spec"]["path"] == "platform/llm"
+    # #5747 (2026-10-11): the shadow substitutes from the sources production rows name, and four
+    # of them name github-app as well (flux_kustomization says which).
     assert ks["spec"]["postBuild"] == {
-        "substituteFrom": [{"kind": "ConfigMap", "name": "estate-config"}]
+        "substituteFrom": [
+            {"kind": "ConfigMap", "name": "estate-config"},
+            {"kind": "Secret", "name": "github-app"},
+        ]
     }
 
 
