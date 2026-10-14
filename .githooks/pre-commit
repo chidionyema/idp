@@ -117,18 +117,21 @@ if [ -n "$staged_yaml" ]; then
     while IFS= read -r f; do
       [ -z "$f" ] && continue
       [ -f "$f" ] || continue
-      if ! yamllint -d relaxed "$f" >/dev/null 2>&1; then
+      if ! yamllint -c .yamllint "$f" >/dev/null 2>&1; then
         echo "  FAIL yamllint $f"
         yaml_fail=1
       fi
     done <<<"$staged_yaml"
     if [ "$yaml_fail" = 1 ]; then
-      echo "pre-commit: yamllint failed. fix: yamllint -d relaxed <file>" >&2
+      echo "pre-commit: yamllint failed. fix: yamllint -c .yamllint <file>" >&2
       exit 1
     fi
     echo "  yamllint: $(printf '%s\n' "$staged_yaml" | tr '\n' ' ')"
   else
-    echo "pre-commit: yamllint unavailable, skipping (CI enforces via fast-gate.yml)" >&2
+    # Refused, not skipped (2026-10-14): CI's fast-gate installed yamllint and never ran it, so
+    # "CI enforces" was not true, and a duplicated key sat in a kyverno fixture for seven weeks.
+    echo "pre-commit: yamllint is not installed. fix: bin/idp-install-deps" >&2
+    exit 1
   fi
 fi
 

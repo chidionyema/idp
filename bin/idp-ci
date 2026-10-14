@@ -138,13 +138,14 @@ with open('$f','rb') as fh:
       ;;
     esac
   done
-  # yamllint on YAML files (if available)
+  # yamllint on YAML files, against the shared .yamllint. Missing is a FAIL, not a skip.
+  command -v yamllint >/dev/null 2>&1 || { echo "  FAIL yamllint is not installed -- run bin/idp-install-deps"; fail=1; }
   if command -v yamllint >/dev/null 2>&1; then
     for f in $(git ls-files | grep -v '^\.git/'); do
       case "$f" in
       *.yaml|*.yml)
         [ -f "$f" ] || continue
-        if yamllint -d relaxed "$f" >/dev/null 2>&1; then
+        if yamllint -c "$IDP/.yamllint" "$f" >/dev/null 2>&1; then
           : # clean
         else
           echo "  FAIL yamllint $f"
@@ -275,6 +276,47 @@ need python3
 [ "$FULL" = 1 ] && { need helm; need kyverno; need flux; need kustomize; need kubeconform; }
 
 MPY="$IDP/.venv/bin/python"; [ -x "$MPY" ] || MPY=python3
+# The workstation's interpreter is CI's, or the gate is grading a different program. Until
+# 2026-10-14 no checkout had a usable .venv (the committed `.venv` blob, .gitignore:28), so this fell
+# to /usr/bin/python3 -- 3.9.6 on macOS -- and the bdd rung ran there: 50 failed and 12 errors in
+# 36 minutes, `X | None` annotations among them, against a suite CI runs green on 3.12.
+# bin/idp-install-deps builds the shared one below from the same requirements files ci.yml installs;
+# fleetview-backend is the one editable requirement, so it is put on the path from this checkout
+# rather than installed into a venv every worktree shares.
+if [ ! -x "$IDP/.venv/bin/python" ] && [ -x "$HOME/.cache/estate-tools/py312-venv/bin/python" ]; then
+  MPY="$HOME/.cache/estate-tools/py312-venv/bin/python"
+  PATH="$HOME/.cache/estate-tools/py312-venv/bin:$PATH"
+  export PYTHONPATH="$IDP/backstage/plugins/fleetview-backend/src${PYTHONPATH:+:$PYTHONPATH}"
+fi
+if ! "$MPY" -c 'import sys; sys.exit(sys.version_info[:2] < (3, 12))' 2>/dev/null; then
+  say "FAIL  python   $("$MPY" --version 2>&1) is not CI's 3.12 -- run bin/idp-install-deps"; fail=1
+fi
+
+# 1c.2 yamllint, against the one config every caller shares (.yamllint). Before 2026-10-14 only
+#      --check ran it, and nothing called --check: fast-gate.yml installed yamllint and never ran
+#      it, so a duplicated key reached tests/fixtures/kyverno/upstream/kustomization.yaml and sat
+#      there for seven weeks. It runs in both modes now. On a pull request (IDP_CI_BASE set) it
+#      lints the YAML the diff touches, in seconds; with no base, every tracked YAML file, in
+#      parallel batches of 40 (one process over all ~1100 files took 150 s on a 2017 i5). A
+#      missing yamllint is a FAIL, never a skip: a rung that cannot fail is not a rung.
+if command -v yamllint >/dev/null 2>&1; then
+  if [ -n "${IDP_CI_BASE:-}" ]; then
+    ylf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.yaml' '*.yml')
+  else
+    ylf=$(cd "$IDP" && git ls-files -- '*.yaml' '*.yml')
+  fi
+  yln=$(printf '%s' "$ylf" | grep -c .)
+  if [ "$yln" = 0 ]; then say "ok    yamllint no YAML in the diff against $IDP_CI_BASE"
+  else
+    # Judged on the output, not the exit status: macOS's BSD xargs returns 0 under -P even when
+    # a batch exits 1 (measured 2026-10-14 -- a duplicated key passed), where GNU returns 123.
+    # Anything that is not a warning line (an [error], a traceback, a bad config) is red.
+    ylo=$(cd "$IDP" && printf '%s\n' "$ylf" | tr '\n' '\0' | xargs -0 -n 40 -P "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)" yamllint -c .yamllint -f parsable 2>&1)
+    ylbad=$(printf '%s\n' "$ylo" | grep -v '\[warning\]' | grep .)
+    if [ -z "$ylbad" ]; then say "ok    yamllint $yln file(s) against .yamllint"
+    else say "FAIL  yamllint fix: yamllint -c .yamllint <file>"; printf '%s\n' "$ylbad" | head -30 | sed 's/^/      /'; fail=1; fi
+  fi
+else say "FAIL  yamllint is not installed -- run bin/idp-install-deps"; fail=1; fi
 
 # The 100-row rule registry (rules.yaml) and its engine (bin/idp-rules) were deleted 2026-09-21 on
 # the founder's ruling. A rule is a rung in this file, not a row in a table: every check below runs
@@ -311,9 +353,11 @@ if [ "$FAST" = 1 ]; then
   # 1d.2: tsc --noEmit on the backstage app package. A build failure in CI for an unused
   # identifier is a 1950-pattern embarrassment; refuse it locally with the same compiler.
   # Locally blind is red. In Actions this job installs no node_modules; portal-app (a required
-  # check, run on pull requests) is the compiler there.
-  (cd "$IDP" && bin/idp-backstage-tsc); rc=$?
-  if [ $rc = 0 ]; then say "ok    tsc      backstage"
+  # check, run on pull requests) is the compiler there. Scoped by touched(): a diff with no
+  # backstage/ file cannot change what tsc reads, and it was 175 s of a pre-push under load.
+  if touched backstage/ bin/idp-backstage-tsc; then (cd "$IDP" && bin/idp-backstage-tsc); rc=$?; else rc=4; fi
+  if [ $rc = 4 ]; then say "ok    tsc      backstage untouched since $IDP_CI_BASE"
+  elif [ $rc = 0 ]; then say "ok    tsc      backstage"
   elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
   else say "FAIL  tsc      backstage"; fail=1; fi
   # 1d.3: ruff format --check on the whole repo. Same reason as tsc.
@@ -474,13 +518,6 @@ for agcfg in mcp/agentgateway.yaml platform/mcp/agentgateway.yaml; do
   if check-jsonschema --schemafile "$AG_SCHEMA" "$IDP/$agcfg" >/dev/null 2>&1; then say "ok    schema   $agcfg against agentgateway $AG_TAG"
   else say "FAIL  schema   $agcfg does not match agentgateway $AG_TAG's config schema"; fail=1; fi
 done
-
-# catalog-gen is slow (60 s) and runs on every commit. It belongs in a nightly
-# schedule or pre-merge gate, not in the per-commit fast path. All rungs that call
-# catalog-gen are wrapped in this guard; set IDP_CATALOG_NIGHTLY=1 to run them.
-if [ "${IDP_CATALOG_NIGHTLY:-}" != "1" ]; then
-  say "skip   catalog-gen rungs off (IDP_CATALOG_NIGHTLY != 1); set =1 to run"
-else
 
 # 4. incident_2026_08_24_dropped_assets: N inventory rows must yield N catalog
 #    entities and N database rows. catalog-gen silently dropped slug-colliding
@@ -1097,16 +1134,6 @@ else
   say "FAIL  jev-scope direct TypeSafeClient usage found; route through mcp/plugins/jev.py"; fail=1
 fi
 
-timing_summary
-[ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
-# --full: write sentinel on success so the pre-push hook proceeds without re-running.
-if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
-  _sha=$(git -C "$IDP" rev-parse HEAD 2>/dev/null || echo unknown)
-  mkdir -p "$HOME/.cache/idp-ci-verified"
-  touch "$HOME/.cache/idp-ci-verified/$_sha"
-  say "ok    verified  sentinel written for $_sha"
-fi
-exit "$fail"
 # Decision 0028: the evidence layer's live case. This is not the fixture pair again -- it grades
 # the REAL manifest the cluster reconciles, and it asserts the two properties whose absence is
 # silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
@@ -1132,4 +1159,14 @@ if python3 "$IDP/bin/idp-api-version-gate" "$IDP/platform" "$IDP/clusters" >/dev
    && python3 "$IDP/bin/idp-api-version-gate" "$IDP/tests/fixtures/api-version/good" >/dev/null 2>&1; then
   say "ok    apiversion no manifest in platform/ or clusters/ names a group/version this estate has migrated off"
 else say "FAIL  apiversion a manifest names a retired group/version, or the gate does not discriminate"; fail=1; fi
+
+timing_summary
+[ "$fail" -eq 0 ] && say "PASS  idp-ci" || say "FAIL  idp-ci"
+# --full: write sentinel on success so the pre-push hook proceeds without re-running.
+if [ "$FULL" = 1 ] && [ "$fail" -eq 0 ]; then
+  _sha=$(git -C "$IDP" rev-parse HEAD 2>/dev/null || echo unknown)
+  mkdir -p "$HOME/.cache/idp-ci-verified"
+  touch "$HOME/.cache/idp-ci-verified/$_sha"
+  say "ok    verified  sentinel written for $_sha"
 fi
+exit "$fail"

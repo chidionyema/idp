@@ -1,0 +1,17 @@
+# One yamllint config for every caller: .githooks/pre-commit, .githooks/pre-push (via
+# bin/idp-prepush-gate), bin/idp-ci --check and .github/workflows/fast-gate.yml. They each used to
+# pass `-d relaxed` inline, so a rule changed in one place and not the others.
+#
+# relaxed is the base: syntax, duplicate keys, trailing spaces and a missing final newline are
+# errors, everything stylistic stays a warning. 2026-10-14: the first whole-tree run found a
+# duplicated `target:` in tests/fixtures/kyverno/upstream/kustomization.yaml, which silently
+# narrowed the fallback's Enforce patch to one policy. That is the class this exists for.
+extends: relaxed
+
+# Go templates are not YAML until helm or the Backstage scaffolder renders them; linting the
+# source reports `{{ ... }}` as a syntax error. The rendered output is judged instead, by
+# bin/idp-kubeconform and bin/idp-kyverno-render.
+ignore: |
+  deploy/helm/*/templates/
+  platform/vendors/templates/
+  backstage/templates/*/skeleton/

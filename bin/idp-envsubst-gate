@@ -26,13 +26,19 @@ import sys
 
 import yaml
 
+# libyaml's parser and emitter when this Python has them, the pure-Python ones otherwise -- the same
+# safe constructor and representer either way. yaml.safe_load is always the pure-Python path: 118 s
+# of a 140 s run (cProfile, 2026-10-14), and bin/idp-ci runs this gate three times.
+SAFE_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+SAFE_DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
 def source_keys() -> dict[str, dict[str, str]]:
     keys: dict[str, dict[str, str]] = {}
     for f in glob.glob(str(ROOT / "clusters" / "*" / "*.yaml")):
-        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+        for d in yaml.load_all(pathlib.Path(f).read_text(), Loader=SAFE_LOADER):
             if d and d.get("kind") == "ConfigMap":
                 keys.setdefault(d["metadata"]["name"], {}).update({k: str(v) for k, v in (d.get("data") or {}).items()})
     boot = (ROOT / "bin" / "idp-flux-bootstrap").read_text()
@@ -42,7 +48,7 @@ def source_keys() -> dict[str, dict[str, str]]:
     # target template's data keys, or the data[].secretKey names, and nothing else reaches Flux.
     for f in glob.glob(str(ROOT / "platform" / "**" / "*.yaml"), recursive=True):
         try:
-            docs = list(yaml.safe_load_all(pathlib.Path(f).read_text()))
+            docs = list(yaml.load_all(pathlib.Path(f).read_text(), Loader=SAFE_LOADER))
         except yaml.YAMLError:
             continue
         for d in docs:
@@ -55,7 +61,7 @@ def source_keys() -> dict[str, dict[str, str]]:
 
 def kustomizations():
     for f in sorted(glob.glob(str(ROOT / "clusters" / "*" / "*.yaml"))):
-        for d in yaml.safe_load_all(pathlib.Path(f).read_text()):
+        for d in yaml.load_all(pathlib.Path(f).read_text(), Loader=SAFE_LOADER):
             if d and d.get("kind") == "Kustomization" and str(d.get("apiVersion", "")).startswith("kustomize.toolkit") and d["spec"].get("postBuild", {}).get("substituteFrom"):
                 yield d
 
@@ -74,14 +80,14 @@ SUBSTITUTE_DISABLED = ("kustomize.toolkit.fluxcd.io/substitute", "disabled")
 def substituted_docs(rendered: str) -> str:
     """What Flux will actually run envsubst over: everything not opted out by annotation."""
     kept = []
-    for d in yaml.safe_load_all(rendered):
+    for d in yaml.load_all(rendered, Loader=SAFE_LOADER):
         if not isinstance(d, dict):
             continue
         ann = (d.get("metadata") or {}).get("annotations") or {}
         if str(ann.get(SUBSTITUTE_DISABLED[0], "")).strip() == SUBSTITUTE_DISABLED[1]:
             continue
         kept.append(d)
-    return yaml.safe_dump_all(kept)
+    return yaml.dump_all(kept, Dumper=SAFE_DUMPER)
 
 
 def render(path: str, env: dict[str, str]) -> tuple[int, str]:

@@ -13,6 +13,15 @@ wrong in a year, this adapter changes its output format and the estate does not.
 import json, os, re, subprocess, sys
 from typing import Any, Dict
 
+# libyaml's parser when this Python has it, the pure-Python one otherwise -- the same safe
+# constructor either way. yaml.safe_load always takes the pure-Python path, and that alone was 192 s
+# of a 224 s run over the ~3000 tracked manifests (cProfile, 2026-10-14); bin/idp-ci calls this
+# generator six times, so it was over ten minutes of the gate.
+def _safe_loader():
+    import yaml
+    return getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
 # INV and OUT can be overridden so CI can run this against a fixture (bin/idp-ci).
 INV = os.environ.get("INV") or os.path.expanduser("~/.estate/state/inventory.json")
 OUT = os.environ.get("OUT") or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "catalog")
@@ -480,7 +489,7 @@ def front_door_entities():
         # them as malformed flow mappings (the externalsecrets incident 2026-09-22).
         if "/templates/" in os.path.relpath(f, IDP_ROOT):
             continue
-        for d in yaml.safe_load_all(open(f)):
+        for d in yaml.load_all(open(f), Loader=_safe_loader()):
             if d and d.get("kind") == "HTTPRoute":
                 rel = os.path.relpath(f, IDP_ROOT)
                 for h in d["spec"].get("hostnames", []):
@@ -542,7 +551,7 @@ def founder_surface_entities():
     probe = os.environ.get("CATALOG_GEN_PROBE") == "1"
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     docs = []
-    for d in yaml.safe_load_all(open(FOUNDER_FILE)):
+    for d in yaml.load_all(open(FOUNDER_FILE), Loader=_safe_loader()):
         if not d:
             continue
         for link in d["metadata"].get("links", []):
@@ -561,7 +570,7 @@ def founder_surface_entities():
 def yaml_links(doc):
     """(title, url) pairs from an already-rendered entity document."""
     import yaml
-    d = yaml.safe_load(doc)
+    d = yaml.load(doc, Loader=_safe_loader())
     return [(f"{d['metadata']['name']}: {l.get('title') or 'Open'}", l["url"])
             for l in (d or {}).get("metadata", {}).get("links", [])]
 
@@ -606,14 +615,14 @@ def _row_namespace(kind, ns, src):
     kz = os.path.join(src, "kustomization.yaml")
     if os.path.exists(kz):
         try:
-            k = yaml.safe_load(open(kz)) or {}
+            k = yaml.load(open(kz), Loader=_safe_loader()) or {}
             if isinstance(k, dict) and k.get("namespace"):
                 return k["namespace"]
         except yaml.YAMLError:
             pass
     for f in sorted(_glob.glob(os.path.join(src, "namespace*.yaml")) + _glob.glob(os.path.join(src, "namespace", "**", "*.yaml"), recursive=True)):
         try:
-            for d in yaml.safe_load_all(open(f)):
+            for d in yaml.load_all(open(f), Loader=_safe_loader()):
                 if isinstance(d, dict) and d.get("kind") == "Namespace":
                     return (d.get("metadata") or {}).get("name", "")
         except yaml.YAMLError:
@@ -672,7 +681,7 @@ def registry_vendors():
     if not os.path.isfile(path):
         return {}
     import yaml
-    data = yaml.safe_load(open(path)) or {}
+    data = yaml.load(open(path), Loader=_safe_loader()) or {}
     return data.get("vendors") or {}
 
 
@@ -690,7 +699,7 @@ def battalion_config_entities():
 
     hosting_path = os.path.join(IDP_ROOT, "platform", "llm", "hosting-cost-table.yaml")
     if os.path.isfile(hosting_path):
-        table = yaml.safe_load(open(hosting_path)) or {}
+        table = yaml.load(open(hosting_path), Loader=_safe_loader()) or {}
         rows = table.get("rows") or []
         grades = sorted({r.get("grade") for r in rows if r.get("grade")})
         ann = {
@@ -721,7 +730,7 @@ def battalion_config_entities():
 
     matrix_path = os.path.join(IDP_ROOT, "platform", "llm", "routing-matrix.yaml")
     if os.path.isfile(matrix_path):
-        matrix = yaml.safe_load(open(matrix_path)) or {}
+        matrix = yaml.load(open(matrix_path), Loader=_safe_loader()) or {}
         axes = matrix.get("axes") or {}
         toggles = {
             k: v.get("enabled")
@@ -772,7 +781,7 @@ def cluster_entities():
             continue
         rel = os.path.relpath(f, IDP_ROOT)
         try:
-            loaded = list(yaml.safe_load_all(open(f)))
+            loaded = list(yaml.load_all(open(f), Loader=_safe_loader()))
         except yaml.YAMLError:
             continue
         for d in loaded:
@@ -819,7 +828,7 @@ def cluster_entities():
     # the cluster runs, never a name typed here.
     vals = os.path.join(IDP_ROOT, "platform", "cni", "cilium-values.yaml")
     if os.path.exists(vals):
-        cv = yaml.safe_load(open(vals)) or {}
+        cv = yaml.load(open(vals), Loader=_safe_loader()) or {}
         hub = (cv.get("hubble") or {})
         for tool, on, what in (("cilium", True, "Cilium replaces flannel as the CNI: pod networking, network policy and eBPF datapath (platform/cni/cilium-values.yaml, applied by playbook cilium-replace, never a Flux row)."),
                                ("hubble", bool(hub.get("enabled")), f"Hubble is Cilium's flow observability: relay {'on' if (hub.get('relay') or {}).get('enabled') else 'off'}, UI {'on' if (hub.get('ui') or {}).get('enabled') else 'off'}; flows and metrics per pod, counted by bin/idp-telemetry-coverage.")):

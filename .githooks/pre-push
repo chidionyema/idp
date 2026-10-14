@@ -184,8 +184,13 @@ if [ ! -x "$repo_root/bin/idp-ci" ]; then
   exit 0
 fi
 
-echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 bin/idp-ci ..."
-if ! IDP_CI_FAST=1 "$repo_root/bin/idp-ci"; then
+# Graded against main, as CI grades the pull request (2026-10-14). With no IDP_CI_BASE every
+# path-gated rung reads "no base" as "everything changed": a push touching no Backstage file ran
+# tsc over backstage (175 s) and yamllint over all 1134 YAML files (100 s), 290 s against the 50 s
+# lane-submit gives its push. The queue's six checks still grade the whole tree on the server.
+base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
+echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
+if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
 
 ❌ pre-push REFUSED: idp-fast-gate caught errors.
