@@ -15,6 +15,7 @@
  */
 import {
   BROWSER_KOKORO_VOICES,
+  deviceRunsKokoro,
   KOKORO_WEB_MODEL,
   kokoroSpeaksInTheBrowser,
   letStreamsIterate,
@@ -59,6 +60,50 @@ describe('who speaks Kokoro', () => {
     // A laptop checkout: the voices file is there, so the server speaks them and the reload-safe
     // choice file it keeps is the one that should win.
     expect(kokoroSpeaksInTheBrowser(['af_heart'])).toBe(false);
+  });
+
+  it('is nobody on Safari, so the picker does not offer a voice that never speaks', () => {
+    jest.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(UA.safariMac);
+    expect(kokoroSpeaksInTheBrowser([])).toBe(false);
+    jest.restoreAllMocks();
+  });
+});
+
+// Real agent strings. The Mac Safari one is the browser measured on 2026-10-14.
+const UA = {
+  safariMac:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Safari/605.1.15',
+  safariIphone:
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+  chromeIphone:
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/118.0.5993.69 Mobile/15E148 Safari/604.1',
+  chromeMac:
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
+  edge:
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
+  chromeAndroid:
+    'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36',
+  firefox: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:131.0) Gecko/20100101 Firefox/131.0',
+};
+
+describe('which browsers can run the model', () => {
+  // Measured in real Safari 16.6, 2026-10-14: ~2 minutes to download, ~70s to start, then ~1GB of
+  // JavaScript heap and a page that stopped answering before the first sample.
+  it('is not WebKit -- Safari, or any browser on an iPhone', () => {
+    expect(deviceRunsKokoro(UA.safariMac)).toBe(false);
+    expect(deviceRunsKokoro(UA.safariIphone)).toBe(false);
+    expect(deviceRunsKokoro(UA.chromeIphone)).toBe(false);
+  });
+
+  it('is every other browser, unchanged', () => {
+    expect(deviceRunsKokoro(UA.chromeMac)).toBe(true);
+    expect(deviceRunsKokoro(UA.edge)).toBe(true);
+    expect(deviceRunsKokoro(UA.chromeAndroid)).toBe(true);
+    expect(deviceRunsKokoro(UA.firefox)).toBe(true);
+  });
+
+  it('includes the test runner, so the other tests here exercise the browser path', () => {
+    expect(deviceRunsKokoro()).toBe(true);
   });
 });
 
@@ -161,6 +206,17 @@ describe('a clause never waits for the model', () => {
     await synth('Five.', 'af_heart');
     await settle();
     expect(load).toHaveBeenCalledTimes(2);
+  });
+
+  it('never starts the download on Safari', async () => {
+    jest.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(UA.safariMac);
+    load.mockResolvedValue({ generate });
+
+    for (const clause of ['One.', 'Two.', 'Three.']) {
+      await expect(synth(clause, 'af_heart')).resolves.toBeNull();
+    }
+    await settle();
+    expect(load).not.toHaveBeenCalled();
   });
 });
 
