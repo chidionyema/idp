@@ -189,6 +189,13 @@ fi
 # tsc over backstage (175 s) and yamllint over all 1134 YAML files (100 s), 290 s against the 50 s
 # lane-submit gives its push. The queue's six checks still grade the whole tree on the server.
 base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
+# A fresh clone or worktree that never fetched main has no origin/main to measure from, and an empty
+# base is the full sweep. Fetch it once and ask again; offline, the empty base stays and the push is
+# graded whole -- slow, never wrong.
+if [ -z "$base" ]; then
+  git -C "$repo_root" fetch -q origin main 2>/dev/null \
+    && base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
+fi
 echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
 if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
