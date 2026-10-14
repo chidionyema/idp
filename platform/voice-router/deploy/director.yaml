@@ -46,10 +46,12 @@ spec:
               value: ":8080"
             - name: LLM_BASE_URL
               value: "http://litellm.llm.svc:4000/v1"
-            # Optional: until vault-seed mints the `newsroom` entry the anchor stays on templates.
-            - name: LLM_API_KEY
-              valueFrom:
-                secretKeyRef: { name: newsroom-llm, key: key, optional: true }
+            # The key is a mounted file, not env: Kyverno's secrets-not-from-env-vars refuses a Pod
+            # that takes a Secret through env (the offline-gate kyverno rung, 2026-10-14). The
+            # binary reads it via brain.APIKeyFromEnv. Optional: until vault-seed mints the
+            # `newsroom` entry the file is absent and the anchor stays on templates.
+            - name: LLM_API_KEY_FILE
+              value: /var/run/secrets/newsroom-llm/key
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://signoz-otel-collector.observability.svc:4318"
           ports:
@@ -82,6 +84,13 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: newsroom-llm
+              mountPath: /var/run/secrets/newsroom-llm
+              readOnly: true
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: newsroom-llm
+          secret:
+            secretName: newsroom-llm
+            optional: true
