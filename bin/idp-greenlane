@@ -27,7 +27,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from greenlane.engine import Engine, State  # noqa: E402
+from greenlane.engine import LANDED, Engine, State  # noqa: E402
 from greenlane.github import STATE_REF, GitHubBackend  # noqa: E402
 
 RULESET = ROOT / "platform/github/ruleset.idp.required-checks.json"
@@ -114,13 +114,17 @@ def rearm(st: State) -> None:
     """
     if not os.environ.get("GH_TOKEN"):
         return  # no credential to dispatch with; the next event-triggered tick covers it
+    # Outstanding is the engine's own answer, not a second copy of it (2026-10-14). The copy
+    # read `st.main`, which State has never had -- main lives on the backend -- so every tick
+    # that landed a batch raised AttributeError here (5 of the 7 failed greenlane runs on
+    # 2026-10-14) and the chain broke exactly when it had just moved main. The tests passed
+    # because their helper set `st.main` by hand. The copy also counted a parked CONFLICT
+    # (rejudged >= REJUDGE_LIMIT) as outstanding, so 7 parked lanes kept the chain alive
+    # forever. A LANDED lane is never reopened by the engine, so it is done whatever main is.
     outstanding = sorted(
         name
         for name, lane in st.lanes.items()
-        if (
-            lane.status not in ("landed", "red")
-            or (lane.status == "landed" and lane.judged_on != st.main)
-        )
+        if lane.status != LANDED and not Engine.final(lane)
     )
     if not outstanding and not st.queued:
         return  # nothing unproven: let the chain end here, as it must to stay finite
