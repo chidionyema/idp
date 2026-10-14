@@ -22,16 +22,15 @@ import (
 )
 
 const (
-	statusUnknown  uint8 = 0
-	statusActive   uint8 = 1
-	statusRevoked  uint8 = 2
+	statusUnknown uint8 = 0
+	statusActive  uint8 = 1
+	statusRevoked uint8 = 2
 )
 
 func main() {
 	// Remove memlock limit required by eBPF subsystem.
 	if err := rlimit.RemoveMemlock(); err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Removing memory locks: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Removing memory locks: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -42,15 +41,13 @@ func main() {
 
 	spec, err := ebpf.LoadCollectionSpec(bpfObjPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Failed reading BPF bytecode: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Failed reading BPF bytecode: %v\n", err)
 		os.Exit(1)
 	}
 
 	coll, err := ebpf.NewCollection(spec)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Loading BPF maps into kernel: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Loading BPF maps into kernel: %v\n", err)
 		os.Exit(1)
 	}
 	defer coll.Close()
@@ -60,16 +57,14 @@ func main() {
 		Program: coll.Programs["dros_socket_connect"],
 	})
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Attaching to LSM hook (requires kernel CONFIG_BPF_LSM=y): %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Attaching to LSM hook (requires kernel CONFIG_BPF_LSM=y): %v\n", err)
 		os.Exit(1)
 	}
 	defer l.Close()
 
 	agentMap := coll.Maps["agent_process_status"]
 	if agentMap == nil {
-		fmt.Fprintf(os.Stderr, "FATAL: BPF map 'agent_process_status' not found in object
-")
+		fmt.Fprintf(os.Stderr, "FATAL: BPF map 'agent_process_status' not found in object\n")
 		os.Exit(1)
 	}
 
@@ -79,8 +74,7 @@ func main() {
 
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "FATAL: Opening management socket: %v
-", err)
+		fmt.Fprintf(os.Stderr, "FATAL: Opening management socket: %v\n", err)
 		os.Exit(1)
 	}
 	defer listener.Close()
@@ -106,8 +100,7 @@ func main() {
 			http.Error(w, fmt.Sprintf("bpf map error: %v", err), http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("DROS: Registered agent PID %d (ACTIVE)
-", pid)
+		fmt.Printf("DROS: Registered agent PID %d (ACTIVE)\n", pid)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("REGISTERED"))
 	})
@@ -130,8 +123,7 @@ func main() {
 			http.Error(w, fmt.Sprintf("bpf map error: %v", err), http.StatusInternalServerError)
 			return
 		}
-		fmt.Printf("DROS: Revoked agent PID %d — next syscall returns -EPERM
-", pid)
+		fmt.Printf("DROS: Revoked agent PID %d — next syscall returns -EPERM\n", pid)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("REVOKED"))
 	})
@@ -161,8 +153,7 @@ func main() {
 	}()
 
 	fmt.Println("DROS_ENFORCER_ACTIVE: Kernel hooks locked to socket_connect via BPF LSM")
-	fmt.Printf("DROS: Management socket at %s
-", socketPath)
+	fmt.Printf("DROS: Management socket at %s\n", socketPath)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)

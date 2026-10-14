@@ -33,6 +33,15 @@ on:
     branches: [main]
   # idp#769: four merges by github-actions[bot] fired no push run, so main's images were never
   # built. This rebuilds main by hand: `since` is the commit the diff starts from; empty builds every image.
+  # 2026-10-14: EVERY image, daily, publishing nothing. A pull request and a main push build only
+  # the images a change reaches, but whether an image builds also depends on what nobody here
+  # changes: its base tag being deleted upstream, and CVEs published against bytes that never
+  # moved. Four images (spire-key-broker, dros-daemon, identity-bootstrapper, runsc) had rotted
+  # that way, unseen until #6128 -- a Dependabot bump to this file, which builds everything --
+  # turned red for faults it did not make. Built daily, rot surfaces here, on main, the day it
+  # happens, not on the next unrelated pull request that touches this file.
+  schedule:
+    - cron: '23 4 * * *'
   workflow_dispatch:
     inputs:
       since:
@@ -57,6 +66,7 @@ jobs:
   fast-gate:   # crew#584 CP-C: lint red never boots this workflow's heavy jobs
     uses: ./.github/workflows/fast-gate.yml
   verifier:    # three-stage gauntlet over the PR diff (structural/symbolic/execution)
+    if: github.event_name != 'schedule'   # a schedule has no diff, and an empty diff is BLIND red
     uses: ./.github/workflows/verifier.yml
   discover:
     needs: fast-gate
@@ -76,6 +86,7 @@ jobs:
           case "${{ github.event_name }}" in
             pull_request) base="origin/${{ github.base_ref }}" ;;
             workflow_dispatch) base="${{ inputs.since }}" ;;   # empty: every image
+            schedule) base="" ;;                                # every image
             *) base="${{ github.event.before }}" ;;
           esac
           list=$(bin/dockerfiles --json --changed-since "$base")
@@ -130,7 +141,7 @@ jobs:
           # invocation exports both. `type=docker` is single-platform only,
           # which is fine because each matrix leg is one platform.
           outputs: |
-            ${{ github.event_name != 'pull_request' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=cacheonly' }}
+            ${{ github.event_name != 'pull_request' && github.event_name != 'schedule' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', steps.name.outputs.image) || 'type=cacheonly' }}
             type=docker,dest=/tmp/scan.tar
           # THE LAYER CACHE LIVES IN GHCR, NOT IN THE ACTIONS CACHE.
           #
@@ -147,7 +158,7 @@ jobs:
           # ignore-error: a failed cache write costs the next build some time. It must never
           # hold back this release.
           cache-from: type=registry,ref=${{ steps.name.outputs.image }}-buildcache:${{ steps.name.outputs.arch }}
-          cache-to: ${{ github.event_name != 'pull_request' && format('type=registry,ref={0}-buildcache:{1},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true', steps.name.outputs.image, steps.name.outputs.arch) || '' }}
+          cache-to: ${{ github.event_name != 'pull_request' && github.event_name != 'schedule' && format('type=registry,ref={0}-buildcache:{1},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true', steps.name.outputs.image, steps.name.outputs.arch) || '' }}
       # NO CRITICAL VULNERABILITY GETS A TAG.
       #
       # This runs after the per-arch push, which looks backwards and is not. The
@@ -163,6 +174,7 @@ jobs:
       # opens a PR a human reads. Raise this bar when the CRITICAL count has
       # been zero for a month, not before.
       - name: no CRITICAL vulnerability ships
+        id: scan
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           input: /tmp/scan.tar
@@ -170,13 +182,32 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: table
-      - if: github.event_name != 'pull_request'
+      # A red scan named nothing on the checks page: its table sits in a log the reader has to
+      # download, and #6128 sat red on two images for a day as "exit code 1". On failure only,
+      # the same scan (DB already cached) as JSON, one annotation per finding.
+      - if: failure() && steps.scan.outcome == 'failure'
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          input: /tmp/scan.tar
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '0'
+          format: json
+          output: /tmp/critical.json
+      - if: failure() && steps.scan.outcome == 'failure'
+        env:
+          IMG: ${{ matrix.dockerfile.name }}
+        run: |
+          jq -r --arg img "$IMG" '.Results[]? | .Target as $t | .Vulnerabilities[]? |
+            "::error title=\(.VulnerabilityID) in \($img)::\(.PkgName) \(.InstalledVersion), fixed in \(.FixedVersion) (\($t))"' \
+            /tmp/critical.json
+      - if: github.event_name != 'pull_request' && github.event_name != 'schedule'
         run: |
           mkdir -p /tmp/digests/${{ steps.name.outputs.slug }}
           # artifact paths may not contain ":" -- store the hex only, re-prefix in merge
           d="${{ steps.build.outputs.digest }}"; touch "/tmp/digests/${{ steps.name.outputs.slug }}/${d#sha256:}"
           echo "${{ steps.name.outputs.image }}" > /tmp/digests/${{ steps.name.outputs.slug }}/IMAGE
-      - if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request' && github.event_name != 'schedule'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: digests-${{ steps.name.outputs.slug }}-${{ steps.name.outputs.arch }}
@@ -194,7 +225,7 @@ jobs:
     # below already fails if an image's digests are missing, so a genuinely broken image still
     # fails its own row and only its own row.
     if: |
-      always() && github.event_name != 'pull_request' && needs.discover.outputs.dockerfiles != '[]'
+      always() && github.event_name != 'pull_request' && github.event_name != 'schedule' && needs.discover.outputs.dockerfiles != '[]'
     runs-on: ubuntu-24.04
     # id-token is what makes the signature keyless. Cosign exchanges this run's
     # OIDC token for a short-lived Fulcio certificate, so there is no signing
