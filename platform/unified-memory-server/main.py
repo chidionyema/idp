@@ -10,7 +10,16 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
 
-from fastapi import FastAPI, Depends, HTTPException, Header, Query, Request, status
+from fastapi import (
+    FastAPI,
+    Depends,
+    HTTPException,
+    Header,
+    Query,
+    Request,
+    Response,
+    status,
+)
 from pydantic import BaseModel, Field
 import psycopg
 from psycopg.rows import dict_row
@@ -23,6 +32,32 @@ from security_core import (
     MemoryWritePayload,
     SecurityViolationException,
 )
+
+from harness import (
+    ApprovalWebhookHandler,
+    HarnessTelemetry,
+    PostgresApprovalStore,
+    PostgresScratchpadStore,
+    WebhookHttpResponse,
+)
+
+# Singleton telemetry instance — one per server process.
+_harness_telemetry = HarnessTelemetry()
+_approval_handler: ApprovalWebhookHandler | None = None
+
+
+def _get_approval_handler() -> ApprovalWebhookHandler:
+    global _approval_handler
+    if _approval_handler is None:
+        signing_secret = (
+            _secret("HARNESS_APPROVAL_WEBHOOK_SECRET") or "insecure-dev-secret"
+        )
+        _approval_handler = ApprovalWebhookHandler(
+            signing_secret=signing_secret,
+            approval_store=PostgresApprovalStore(),
+            telemetry=_harness_telemetry,
+        )
+    return _approval_handler
 
 
 def _secret(name: str) -> Optional[str]:
@@ -898,3 +933,196 @@ async def memory_digest(
         )
         row = await cur.fetchone()
     return {"namespace": namespace, "facts": row["facts"], "digest": row["digest"]}
+
+
+# ---------------------------------------------------------------------
+# Active Runtime Harness Endpoints
+# ADR 0036: one memory plane. The harness writes facts through the existing
+# memory_save path (no duplication), and this server owns the four harness
+# tables. Future work integrates buildActiveContextBrief into /memories/brief
+# and consolidateTurnCandidates into do_remember in estate_memory.py.
+# ---------------------------------------------------------------------
+
+
+@app.post(
+    "/harness/approvals",
+    summary="Approval webhook callback (HMAC-SHA256 verified)",
+)
+async def harness_approval_webhook(
+    request: Request,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+    x_fleet_timestamp: Optional[str] = Header(None, alias="x-fleet-timestamp"),
+    x_fleet_signature: Optional[str] = Header(None, alias="x-fleet-signature"),
+) -> Response:
+    """POST handler for approval webhook callbacks from Slack or internal UI.
+    Verifies HMAC-SHA256 signature and 5-minute replay window, then updates
+    the ticket status atomically and resumes any suspended run."""
+    raw_body = await request.body()
+    raw_body_str = raw_body.decode("utf-8")
+    handler = _get_approval_handler()
+    resp = handler.handle_webhook(
+        conn, raw_body_str, x_fleet_timestamp, x_fleet_signature
+    )
+    return Response(
+        content=json.dumps(resp.body),
+        status_code=resp.status_code,
+        media_type="application/json",
+    )
+
+
+@app.get(
+    "/harness/telemetry/{tenant_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Harness telemetry snapshot for /fleet view",
+)
+async def harness_telemetry(
+    tenant_id: str,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+) -> Dict[str, Any]:
+    """Read counts directly from the four harness tables for the /fleet view.
+    Works when no OTel tracing stack is running — the /fleet view reads from
+    the tables, not from traces."""
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "SELECT count(*) AS cnt FROM harness_idempotency WHERE tenant_id = %s;",
+            (tenant_id,),
+        )
+        idempotency_count = (await cur.fetchone())["cnt"]
+
+        await cur.execute(
+            "SELECT status, count(*) AS cnt FROM approval_tickets WHERE tenant_id = %s GROUP BY status;",
+            (tenant_id,),
+        )
+        ticket_rows = await cur.fetchall()
+        tickets_by_status = {r["status"]: r["cnt"] for r in ticket_rows}
+
+        await cur.execute(
+            "SELECT count(DISTINCT run_id) AS cnt FROM harness_scratchpad "
+            "WHERE tenant_id = %s AND expires_at > %s;",
+            (tenant_id, datetime.now(timezone.utc)),
+        )
+        active_runs = (await cur.fetchone())["cnt"]
+
+        snap = _harness_telemetry.get_snapshot()
+
+    return {
+        "tenant_id": tenant_id,
+        "harness": {
+            "idempotency_entries": idempotency_count,
+            "approval_tickets": {
+                "pending": tickets_by_status.get("pending", 0),
+                "approved": tickets_by_status.get("approved", 0),
+                "consumed": tickets_by_status.get("consumed", 0),
+                "rejected": tickets_by_status.get("rejected", 0),
+            },
+            "active_runs": active_runs,
+        },
+        "otel_snapshot": {
+            "prefetch_count": snap.prefetch_count,
+            "last_brief_tokens": snap.last_brief_tokens,
+            "facts_promoted": snap.facts_promoted,
+            "facts_ignored_ephemeral": snap.facts_ignored_ephemeral,
+            "facts_blocked_stale_or_untrusted": snap.facts_blocked_stale_or_untrusted,
+            "facts_archived": snap.facts_archived,
+            "attempts_by_outcome": snap.attempts_by_outcome,
+            "strategy_pivots": snap.strategy_pivots,
+            "circuit_breaker_trips": snap.circuit_breaker_trips,
+            "approval_events": snap.approval_events,
+            "total_cost_usd": snap.total_cost_usd,
+        },
+    }
+
+
+@app.post(
+    "/harness/memory/prefetch",
+    status_code=status.HTTP_200_OK,
+    summary="Build active context brief for an agent run (Active Memory pre-fetch)",
+)
+async def harness_memory_prefetch(
+    run_id: str,
+    task: str,
+    project_id: Optional[str] = None,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+) -> Dict[str, Any]:
+    """Pre-fetch hook: called before an agent run starts.
+    Calls ActiveMemoryEngine.buildActiveContextBrief and returns the brief text.
+    Wire this into do_recall in estate_memory.py as the first step of any
+    agent session start."""
+    from harness import (
+        ActiveMemoryEngine,
+        PostgresCortexAdapter,
+    )
+
+    tenant_id = auth["tenant_id"]
+    cortex = PostgresCortexAdapter(conn)
+    scratchpad = PostgresScratchpadStore()
+    engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
+
+    brief, tokens = engine.build_active_context_brief(
+        conn, tenant_id, project_id, run_id, task
+    )
+    return {"brief": brief, "estimated_tokens": tokens}
+
+
+@app.post(
+    "/harness/memory/consolidate",
+    status_code=status.HTTP_200_OK,
+    summary="Consolidate extracted facts after an agent run (Active Memory post-write)",
+)
+async def harness_memory_consolidate(
+    run_id: str,
+    project_id: Optional[str] = None,
+    provenance: str = "user_direct",
+    candidates: Optional[List[Dict[str, Any]]] = None,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+) -> Dict[str, Any]:
+    """Post-write hook: called after an agent run finishes a turn.
+    Calls ActiveMemoryEngine.consolidateTurnCandidates to gate ephemeral facts,
+    enforce global-preference rules, and write bi-temporal facts to memories.
+    Wire this into do_remember in estate_memory.py."""
+    from harness import (
+        ActiveMemoryEngine,
+        ExtractedFactCandidate,
+        PostgresCortexAdapter,
+    )
+
+    tenant_id = auth["tenant_id"]
+    cortex = PostgresCortexAdapter(conn)
+    scratchpad = PostgresScratchpadStore()
+    engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
+
+    parsed_candidates = []
+    if candidates:
+        for c in candidates:
+            parsed_candidates.append(
+                ExtractedFactCandidate(
+                    scope=c.get("scope", "ephemeral_turn"),
+                    subject=c.get("subject", ""),
+                    predicate=c.get("predicate", ""),
+                    object=c.get("object", ""),
+                    artifact_uri=c.get("artifactUri"),
+                    artifact_version_hash=c.get("artifactVersionHash"),
+                    source_event_timestamp_iso=c.get("sourceEventTimestampIso"),
+                    explicit_permanence_intent=c.get("explicitPermanenceIntent", False),
+                    confidence=c.get("confidence", 1.0),
+                )
+            )
+
+    stats = engine.consolidate_turn_candidates(
+        conn, tenant_id, project_id, run_id, provenance, parsed_candidates
+    )
+    return {"memory_stats": stats}
+
+
+# ---------------------------------------------------------------------
+# Active Runtime Harness Endpoints
+# Wire into existing memory endpoints for pre-fetch (brief) and
+# consolidation (remember). The full run loop lives here for now;
+# future work integrates it into the agent execution layer.
+# ---------------------------------------------------------------------
+
+    return WebhookHttpResponse(400, {"ok": False, "error": "use Request object"})
