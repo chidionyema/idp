@@ -11,7 +11,7 @@
  *   2. the clause that then reaches the audio clock is the one the BROWSER synthesised: no
  *      `/voice/say` request, and the samples played are the browser's.
  *
- * The audio device is a fake -- jsdom has no AudioContext, which is why FleetVoice.test.tsx mocks
+ * The audio device is a fake -- jsdom has no AudioContext, which is why the page tests mock
  * this hook outright instead of running it. The fake is deliberately thin: it records what was
  * handed to `createBuffer`, so the assertion is about the audio that would be HEARD.
  */
