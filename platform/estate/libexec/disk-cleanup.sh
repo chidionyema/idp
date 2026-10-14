@@ -129,7 +129,7 @@ if [ -x "$DOCKER" ] && [ -x "$RDCTL" ] && tmo "$T_INFO" "$DOCKER" --context ranc
   if [ "$APPLY" = 0 ]; then
     echo "  would  docker  $(tmo 30 "$DOCKER" --context rancher-desktop system df --format '{{.Type}} {{.Reclaimable}}' 2>/dev/null | tr '\n' ';')  then fstrim"
   elif pgrep -f "$BUILDING" >/dev/null 2>&1; then
-    echo "  SKIP   docker  a docker build is running"
+    echo "  SKIP   docker  an image build is running"
   else
     d0=$(free_k)
     for step in "image prune -f" "builder prune -af --filter until=24h"; do
