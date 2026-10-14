@@ -17,6 +17,7 @@ import {
   BROWSER_KOKORO_VOICES,
   KOKORO_WEB_MODEL,
   kokoroSpeaksInTheBrowser,
+  letStreamsIterate,
   pcmFromKokoro,
   rememberBrowserKokoroVoice,
   storedBrowserKokoroVoice,
@@ -96,5 +97,121 @@ describe('the remembered device voice', () => {
 
   it('is null when nothing was ever chosen', () => {
     expect(storedBrowserKokoroVoice()).toBeNull();
+  });
+});
+
+describe('a clause never waits for the model', () => {
+  // The founder, 2026-10-14: "i get text response right away but voice is lagging and mostly
+  // does not work". Every clause used to await the 86MB model load, and a failed load was
+  // forgotten at once, so on a browser where the model never loads each clause paid for the
+  // attempt again before the pod could speak it.
+  const generate = jest.fn(async () => ({ audio: new Float32Array([0.1, 0.2]) }));
+  let load: jest.Mock;
+  let synth: typeof import('./browserKokoro').synthesiseBrowserKokoro;
+  let retryMs: number;
+
+  const settle = () => new Promise(r => setTimeout(r, 0));
+
+  beforeEach(() => {
+    jest.resetModules();
+    generate.mockClear();
+    load = jest.fn();
+    jest.doMock('kokoro-js', () => ({ KokoroTTS: { from_pretrained: load } }));
+    jest.isolateModules(() => {
+      const m = require('./browserKokoro');
+      synth = m.synthesiseBrowserKokoro;
+      retryMs = m.KOKORO_RETRY_MS;
+    });
+  });
+
+  afterEach(() => {
+    jest.dontMock('kokoro-js');
+    jest.restoreAllMocks();
+  });
+
+  it('answers null at once while the model loads, then speaks once it has', async () => {
+    let finish: (tts: unknown) => void = () => undefined;
+    load.mockReturnValue(new Promise(r => (finish = r)));
+
+    // The load has not finished: the clause goes to the next speaker now, not after it.
+    await expect(synth('Hello there.', 'af_heart')).resolves.toBeNull();
+    await expect(synth('And again.', 'af_heart')).resolves.toBeNull();
+    expect(load).toHaveBeenCalledTimes(1);
+
+    finish({ generate });
+    await settle();
+    const pcm = await synth('Now in Kokoro.', 'af_heart');
+    expect(pcm).not.toBeNull();
+    expect(generate).toHaveBeenCalledWith('Now in Kokoro.', { voice: 'af_heart' });
+  });
+
+  it('believes a failed load for a while instead of retrying it on every clause', async () => {
+    const now = jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    load.mockRejectedValue(new TypeError('undefined is not a function'));
+
+    await expect(synth('One.', 'af_heart')).resolves.toBeNull();
+    await settle();
+    for (const clause of ['Two.', 'Three.', 'Four.']) {
+      await expect(synth(clause, 'af_heart')).resolves.toBeNull();
+    }
+    expect(load).toHaveBeenCalledTimes(1);
+
+    // After the rest, a connection that has since recovered is given its chance.
+    now.mockReturnValue(1_000_000 + retryMs);
+    await synth('Five.', 'af_heart');
+    await settle();
+    expect(load).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('a stream kokoro-js can read on Safari', () => {
+  // Measured in real Safari 16.6, 2026-10-14: kokoro-js's phonemizer reads its dictionary with
+  // `for await (const chunk of stream)`, Safari's ReadableStream cannot be iterated that way, and
+  // importing kokoro-js threw "undefined is not a function near '...r of ...a'".
+  const real = (globalThis as { ReadableStream?: unknown }).ReadableStream;
+
+  // Safari's shape: a reader, and no async iterator.
+  class SafariStream {
+    released = false;
+    constructor(private chunks: string[]) {}
+    getReader() {
+      return {
+        read: async () =>
+          this.chunks.length
+            ? { done: false, value: this.chunks.shift() }
+            : { done: true, value: undefined },
+        releaseLock: () => {
+          this.released = true;
+        },
+      };
+    }
+  }
+
+  afterEach(() => {
+    (globalThis as { ReadableStream?: unknown }).ReadableStream = real;
+  });
+
+  it('is iterable with for-await once the gap is filled, and lets go of its reader', async () => {
+    (globalThis as { ReadableStream?: unknown }).ReadableStream = SafariStream;
+    letStreamsIterate();
+    const stream = new SafariStream(['a', 'b', 'c']);
+    const seen: string[] = [];
+    for await (const chunk of stream as unknown as AsyncIterable<string>) seen.push(chunk);
+    expect(seen).toEqual(['a', 'b', 'c']);
+    expect(stream.released).toBe(true);
+  });
+
+  it("leaves a browser's own iterator alone", () => {
+    const own = async function* own() {};
+    class ModernStream {}
+    Object.defineProperty(ModernStream.prototype, Symbol.asyncIterator, { value: own });
+    (globalThis as { ReadableStream?: unknown }).ReadableStream = ModernStream;
+    letStreamsIterate();
+    expect(ModernStream.prototype[Symbol.asyncIterator as keyof ModernStream]).toBe(own);
+  });
+
+  it('does nothing where there is no ReadableStream at all', () => {
+    (globalThis as { ReadableStream?: unknown }).ReadableStream = undefined;
+    expect(() => letStreamsIterate()).not.toThrow();
   });
 });

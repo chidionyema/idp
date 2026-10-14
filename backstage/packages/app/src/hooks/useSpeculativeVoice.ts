@@ -16,6 +16,7 @@
  * 2026-09-22: Built for FleetView's edge voice architecture.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { letStreamsIterate } from '../modules/home/browserKokoro';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -164,6 +165,8 @@ async function loadTransformers(): Promise<TransformersModule> {
 
 async function loadKokoro(): Promise<KokoroModule> {
   if (!kokoroPromise) {
+    // kokoro-js throws at import on Safari without this; see `letStreamsIterate`.
+    letStreamsIterate();
     kokoroPromise = import('kokoro-js');
   }
   return kokoroPromise;
