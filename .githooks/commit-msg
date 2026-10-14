@@ -9,9 +9,20 @@ set -euo pipefail
 msg_file="$1"
 secret_path="$(git rev-parse --git-path idp-hook-secret 2>/dev/null || echo)"
 [ -n "$secret_path" ] || { echo "REFUSE: cannot resolve git dir for hook secret" >&2; exit 1; }
-if [ ! -f "$secret_path" ]; then
-  echo "REFUSE: hook secret missing at $secret_path -- run bin/idp-install-hooks" >&2
-  exit 1
+# A missing key is provisioned here, the way bin/idp-install-hooks does it. Every `git worktree add`
+# tree starts without one (its git dir is new), so the first commit in each was refused until the
+# install script ran -- twice in one session on 2026-10-14 (#5814). The key proves nothing beyond
+# "this hook ran": guarded-paths checks the trailer is PRESENT and cannot verify the HMAC, the key
+# being per-checkout and never on the tree. So the hook running is the whole proof, and making it
+# here weakens nothing. A commit that skips the hook still gets no key and no stamp.
+if [ ! -s "$secret_path" ]; then
+  if (umask 077 && openssl rand -hex 32 > "$secret_path") 2>/dev/null && [ -s "$secret_path" ]; then
+    echo "ok    secret  commit-msg HMAC key provisioned ($(dirname "$secret_path"))" >&2
+  else
+    rm -f "$secret_path"
+    echo "REFUSE: hook secret missing at $secret_path and could not be made (openssl missing?) -- run bin/idp-install-hooks" >&2
+    exit 1
+  fi
 fi
 secret="$(cat "$secret_path")"
 [ -n "$secret" ] || { echo "REFUSE: hook secret at $secret_path is empty" >&2; exit 1; }

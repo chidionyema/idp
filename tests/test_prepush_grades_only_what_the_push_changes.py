@@ -97,3 +97,13 @@ def test_a_base_is_never_empty_on_a_push(clone):
     push(clone, "scratch/b")
     [call] = ci_calls(clone)
     assert not call.endswith("base="), call
+
+
+def test_a_clone_that_never_fetched_main_still_gets_a_base(clone):
+    # A fresh worktree or clone has no origin/main yet; with no base the push was graded whole.
+    base = git(clone, "rev-parse", "origin/main").stdout.strip()
+    git(clone, "update-ref", "-d", "refs/remotes/origin/main")
+    commit(clone, "b.txt")
+    p = push(clone, "scratch/b")
+    assert p.returncode == 0, p.stderr
+    assert ci_calls(clone) == [f"fast=1 base={base}"]
