@@ -529,6 +529,12 @@ export interface EstateVoice {
   micRecoveryUrl?: string;
   /** Whether the engine is usable at all on this host. */
   available: boolean;
+  /**
+   * True until the service has answered whether voice is available. `available` starts false, so
+   * without this the page announced "Voice is not available here" on every load until
+   * /voice/voices came back -- a refusal for what was only a wait.
+   */
+  checking?: boolean;
   start: () => Promise<void>;
   stop: () => void;
   /** Make the engine speak one sentence, outside a conversation. Used for spoken replies. */
@@ -570,6 +576,7 @@ export function useEstateVoice(): EstateVoice {
     undefined,
   );
   const [available, setAvailable] = useState(false);
+  const [checking, setChecking] = useState(true);
   // `piper` WAS MISSING FROM THIS SHAPE, and the picker renders from it -- so the three Piper
   // voices the service reports were dropped on arrival and the group showed "0 voices" while the
   // engine was IN FACT RUNNING PIPER. A type that does not match what the server sends is not a
@@ -1149,6 +1156,12 @@ export function useEstateVoice(): EstateVoice {
         positiveSpeechThreshold: 0.8,
         negativeSpeechThreshold: 0.5,
         minSpeechFrames: 3,
+        // THE END OF A SENTENCE IS ~500 ms OF SILENCE, NOT ~770 (2026-10-14). Unset, this is the
+        // bundle's 8 frames of 1536 samples at 16 kHz (96 ms each): every turn waited out three
+        // quarters of a second of quiet before it was even sent. 5 frames is ~480 ms, the
+        // estate's own end-of-utterance default (packages/voice, 500 ms); shorter cuts a person
+        // off at a mid-sentence pause, which costs a whole turn rather than saving a fraction.
+        redemptionFrames: 5,
         preSpeechPadFrames: 5,
         baseAssetPath: VOICE_ASSETS,
         onnxWASMBasePath: VOICE_ASSETS,
@@ -1310,6 +1323,7 @@ export function useEstateVoice(): EstateVoice {
       .then(r => r.json())
       .then(d => {
         if (cancelled) return;
+        setChecking(false);
         setCatalogue({
           cloud: d.cloud || [],
           say: d.say || [],
@@ -1334,6 +1348,7 @@ export function useEstateVoice(): EstateVoice {
       })
       .catch(() => {
         if (!cancelled) {
+          setChecking(false);
           setAvailable(false);
           // NAMES THE SERVICE, NOT A PORT. The old text was "voice service not reachable on 8899",
           // which was only ever true on one laptop and told a cluster user to look for something
@@ -1384,6 +1399,7 @@ export function useEstateVoice(): EstateVoice {
     detail,
     micRecoveryUrl,
     available,
+    checking,
     start,
     stop,
     speak,

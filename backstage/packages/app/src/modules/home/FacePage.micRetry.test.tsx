@@ -153,3 +153,25 @@ describe('FacePage — the mic button', () => {
     expect(screen.queryByText('Open in Safari to use the mic')).toBeNull();
   });
 });
+
+describe('FacePage — the mic button before the service has answered', () => {
+  afterEach(() => {
+    cleanup();
+    jest.clearAllMocks();
+  });
+
+  // 2026-10-14: `available` starts false, so every load announced "Voice is not available here"
+  // until /voice/voices came back. A wait is not a refusal.
+  it('says it is connecting, not that voice is unavailable, while the check is in flight', () => {
+    mocked.mockReturnValue({ ...voiceIn('off'), available: false, checking: true });
+    render(<FacePage />);
+    expect(screen.getByTestId('face-mic')).toHaveTextContent('Connecting…');
+    expect(screen.getByTestId('face-mic')).not.toHaveTextContent('not available');
+  });
+
+  it('still says voice is not available once the service has said so', () => {
+    mocked.mockReturnValue({ ...voiceIn('off'), available: false, checking: false });
+    render(<FacePage />);
+    expect(screen.getByTestId('face-mic')).toHaveTextContent('Voice is not available here');
+  });
+});
