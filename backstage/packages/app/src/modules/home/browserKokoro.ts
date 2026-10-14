@@ -124,7 +124,49 @@ export function pcmFromKokoro(audio: Float32Array | number[]): ArrayBuffer {
   return f32.slice().buffer;
 }
 
+/**
+ * How long a failed model load is believed before the next clause may try again.
+ *
+ * The same rest the voice hook gives a pod that cannot speak (`POD_VOICE_REST_MS`).
+ */
+export const KOKORO_RETRY_MS = 10 * 60 * 1000;
+
+/**
+ * Make a `ReadableStream` iterable with `for await` where the browser does not, BEFORE kokoro-js
+ * is imported. Call it from every place that imports kokoro-js.
+ *
+ * WHY (2026-10-14, measured in real Safari 16.6). kokoro-js's phonemizer (1.2.1) unpacks its
+ * dictionary at module load with `for await (const chunk of blob.stream().pipeThrough(...))`.
+ * Safari's ReadableStream has no async iterator, so importing kokoro-js threw "undefined is not a
+ * function near '...r of ...a'" as an unhandled page error -- outside any try/catch of ours -- and
+ * the model then failed with "TypeError: Internal error". With this in place the import is clean.
+ * (On Safari 16.6 the model load then stalls rather than fails; `loadKokoro` below never makes a
+ * clause wait on it, so the pod speaks instead.)
+ */
+export function letStreamsIterate(): void {
+  const proto = typeof ReadableStream === 'undefined' ? undefined : ReadableStream.prototype;
+  if (!proto || Symbol.asyncIterator in proto) return;
+  Object.defineProperty(proto, Symbol.asyncIterator, {
+    configurable: true,
+    writable: true,
+    value: async function* iterate(this: ReadableStream) {
+      const reader = this.getReader();
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) return;
+          yield value;
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+}
+
 let _loading: Promise<import('kokoro-js').KokoroTTS> | null = null;
+let _ready: import('kokoro-js').KokoroTTS | null = null;
+let _failedAt = -Infinity;
 
 /**
  * The model, loaded once per page and shared by every clause.
@@ -133,17 +175,32 @@ let _loading: Promise<import('kokoro-js').KokoroTTS> | null = null;
  * `useSpeculativeVoice.ts` uses is the same one, but a static import here would put it in the
  * first paint of every surface that mounts the voice hook. Downloads only when a Kokoro voice is
  * actually chosen.
+ *
+ * A FAILED LOAD RESTS (2026-10-14). It used to be forgotten at once, so that the next clause, "on
+ * a connection that works", could try -- which on a browser where the model never loads (Safari,
+ * measured live) meant EVERY clause re-attempted the 86MB load before it fell back to the pod, and
+ * the founder heard the text arrive and the voice lag behind it: "i get text response right away
+ * but voice is lagging and mostly does not work". The failure is now believed for
+ * `KOKORO_RETRY_MS`.
  */
-function loadKokoro(): Promise<import('kokoro-js').KokoroTTS> {
+function loadKokoro(): Promise<import('kokoro-js').KokoroTTS> | null {
   if (!_loading) {
+    if (Date.now() - _failedAt < KOKORO_RETRY_MS) return null;
+    letStreamsIterate();
     _loading = import('kokoro-js')
       .then(({ KokoroTTS }) => KokoroTTS.from_pretrained(KOKORO_WEB_MODEL, { dtype: 'q8' }))
+      .then(tts => {
+        _ready = tts;
+        return tts;
+      })
       .catch(err => {
-        // A failed load must not be cached as the answer for ever: the next clause, on a
-        // connection that works, should be allowed to try.
         _loading = null;
+        _failedAt = Date.now();
         throw err;
       });
+    // Nobody may be awaiting this load (see below), and a rejection with no handler is a page
+    // error in its own right.
+    _loading.catch(() => undefined);
   }
   return _loading;
 }
@@ -153,7 +210,12 @@ function loadKokoro(): Promise<import('kokoro-js').KokoroTTS> {
  *
  * The caller falls back to the pod's `/voice/say` and then to the device voice when this returns
  * null, so an offline phone, a browser without WebGPU, or a model that fails to download all end
- * in speech rather than in silence. Slow is acceptable here and silence is not.
+ * in speech rather than in silence.
+ *
+ * NO CLAUSE WAITS FOR THE DOWNLOAD (2026-10-14). Until the model is in memory this starts the load
+ * and answers null at once, so the clause is spoken by the next speaker now rather than by Kokoro
+ * after a download measured in tens of seconds; the clauses after the load completes are Kokoro's.
+ * "Slow is acceptable" was the old rule here, and it is what made the voice trail the text.
  */
 export async function synthesiseBrowserKokoro(
   text: string,
@@ -161,8 +223,12 @@ export async function synthesiseBrowserKokoro(
 ): Promise<ArrayBuffer | null> {
   const clause = (text || '').trim();
   if (!clause) return null;
+  const tts = _ready;
+  if (!tts) {
+    loadKokoro();
+    return null;
+  }
   try {
-    const tts = await loadKokoro();
     const result = await tts.generate(clause, { voice: voice as never });
     const audio = (result as { audio?: Float32Array }).audio;
     if (!audio || !audio.length) return null;
