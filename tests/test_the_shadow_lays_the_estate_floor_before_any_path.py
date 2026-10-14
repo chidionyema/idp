@@ -51,23 +51,36 @@ def test_the_floor_is_production_eso_crds_and_priority_classes(monkeypatch):
         if o["kind"] == "GitRepository"
     }
     assert srcs["shadow-floor-eso"]["ref"] == {"tag": "v" + pinned}
+    # Keyed by row name, not path: three floor repos keep their CRDs at ./config/crd.
     ks = {
-        o["spec"]["path"]: o["spec"]["sourceRef"]["name"]
+        o["metadata"]["name"]: (o["spec"]["path"], o["spec"]["sourceRef"]["name"])
         for o in applied
         if o["kind"] == "Kustomization"
     }
+    floor = "shadow-floor-"
     assert ks == {
-        "./deploy/crds": "shadow-floor-eso",
-        "./config/crd/experimental": "shadow-floor-gateway-api",
-        "./config/crd": "shadow-floor-keda-http",
-        "./traefik/crds": "shadow-floor-traefik",
-        "./libcalico-go/config/crd": "shadow-floor-calico",
-        "./platform/priority-classes": "shadow",
+        f"{floor}eso-crds": ("./deploy/crds", f"{floor}eso"),
+        f"{floor}gateway-api-crds": (
+            "./config/crd/experimental",
+            f"{floor}gateway-api",
+        ),
+        f"{floor}keda-http-crds": ("./config/crd", f"{floor}keda-http"),
+        f"{floor}traefik-crds": ("./traefik/crds", f"{floor}traefik"),
+        f"{floor}calico-crds": ("./libcalico-go/config/crd", f"{floor}calico"),
+        f"{floor}image-reflector-controller-crds": (
+            "./config/crd",
+            f"{floor}image-reflector-controller",
+        ),
+        f"{floor}image-automation-controller-crds": (
+            "./config/crd",
+            f"{floor}image-automation-controller",
+        ),
+        f"{floor}priority-classes": ("./platform/priority-classes", "shadow"),
         # #5777 (2026-10-11) added the row that produces the Secret platform/github-app-creds
         # ExternalSecrets stand in for, and did not add it here, so this exact-dict assertion
         # went red on main and stayed red: CI is diff-scoped (bin/idp-tests-for), and the only
         # file that reads this one is the change itself. Found 2026-10-12 by running it.
-        "./platform/github-app-creds": "shadow",
+        f"{floor}github-app-creds": ("./platform/github-app-creds", "shadow"),
     }
     assert (REPO / "platform/priority-classes/priorityclasses.yaml").exists()
 
@@ -162,3 +175,39 @@ def test_a_floor_that_does_not_converge_fails_the_run_before_any_path(monkeypatc
     )
     rc, why = shadow.verify("a" * 40, ["platform/llm"])
     assert (rc, why, paths) == (1, ["no CRDs"], [])
+
+
+def test_the_floor_takes_flux_image_crds_at_production_versions(monkeypatch):
+    """2026-10-14 (run 38526820263): platform/unified-memory-server failed on no kind
+    "ImagePolicy" in image.toolkit.fluxcd.io/v1, on every change to it including image updates.
+    Production runs image-reflector and image-automation; the shadow installed neither."""
+    shadow = load_shadow()
+    applied = []
+    monkeypatch.setattr(
+        shadow.subprocess,
+        "run",
+        lambda argv, input=None, **kw: (
+            applied.append(json.loads(input))
+            or subprocess.CompletedProcess(argv, 0, "", "")
+        ),
+    )
+    monkeypatch.setattr(shadow, "wait_ks", lambda name, deadline: (True, "", []))
+    assert shadow.flux_floor(0) == []
+    srcs = {
+        o["metadata"]["name"]: o["spec"]
+        for o in applied
+        if o["kind"] == "GitRepository"
+    }
+
+    gotk = (REPO / "clusters/oke/flux-system/gotk-components.yaml").read_text()
+    for controller in ("image-reflector-controller", "image-automation-controller"):
+        assert controller in re.search(r"# Components: (\S+)", gotk).group(1)
+        tag = re.search(rf"ghcr\.io/fluxcd/{controller}:(v[0-9.]+)", gotk).group(1)
+        spec = srcs[f"shadow-floor-{controller}"]
+        assert spec["url"] == f"https://github.com/fluxcd/{controller}"
+        assert spec["ref"] == {"tag": tag}
+        assert spec["ignore"] == "/*\n!/config/crd/\n"
+
+    # the kinds the failing row uses, so the floor is the one it needs
+    image = (REPO / "platform/unified-memory-server/image.yaml").read_text()
+    assert "apiVersion: image.toolkit.fluxcd.io/v1\nkind: ImagePolicy" in image
