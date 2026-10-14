@@ -590,7 +590,13 @@ def build_app() -> FastAPI:
                         break
                     yield frame
             except Exception as exc:  # noqa: BLE001
-                yield f"event: error\ndata: {{'error': '{exc}'}}\n\n"
+                # Through _sse like every other frame (2026-10-14). This was hand-built as
+                # {'error': '...'} -- Python's repr, not JSON -- so the page's JSON.parse threw,
+                # the frame was skipped, and a turn whose brain had failed ended in silence with
+                # no error shown. An exception carrying a newline would also have split the frame.
+                yield voice_module._sse(
+                    "error", {"error": str(exc) or type(exc).__name__}
+                )
 
         return StreamingResponse(gen(), media_type="text/event-stream")
 
