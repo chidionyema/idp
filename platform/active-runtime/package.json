@@ -1,0 +1,22 @@
+{
+  "name": "@estate/active-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Active Memory + Active Focus: the mandatory harness between agents, working memory and Cortex (bi-temporal facts, payload-bound approvals, strategy pivots, idempotent MCP proxy, OTel, approval webhook).",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "1.9.0",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "22.7.5",
+    "convex": "1.17.4",
+    "typescript": "5.6.3",
+    "vitest": "2.1.8"
+  },
+  "packageManager": "pnpm@12.11.2+sha512.25a51652a196785af5f28bda6dfe8dc582ebefa4ac1d180221ce1390231c5fb76637822ea4b6e4633ce74acdcb0a77f725af11bad38177fdeddaee818a955cb9"
+}
