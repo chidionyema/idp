@@ -56,10 +56,10 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 
-# Where the ingress actually listens. bin/voice-loop defaults to 127.0.0.1:8770 and SILERO VAD
+# Where the ingress actually listens. bin/voice-loop defaults to 127.0.0.1:8771 and SILERO VAD
 # REQUIRES A SECURE ORIGIN, so this is 127.0.0.1 and not a LAN address -- engine.py's notes record
 # that http://<lan-ip> makes the browser refuse the microphone with no useful message.
-VOICE_WS = os.environ.get("IDP_VOICE_WS", "ws://127.0.0.1:8770/voice/stream")
+VOICE_WS = os.environ.get("IDP_VOICE_WS", "ws://127.0.0.1:8771/voice/stream")
 
 # The estate's one router. PROXY_BASE_URL is https://llm.${ESTATE_ZONE} in the literal manifest, so
 # nothing here names the zone either.

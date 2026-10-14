@@ -159,6 +159,28 @@ if [ -z "$locks" ]; then
 elif ! command -v npm >/dev/null; then
   say "BLIND npm       npm not on PATH"; blind=1
 else
+  # Recorded dismissals: a TRACKED .npm-audit-ignores file, one advisory per line:
+  # "<GHSA-id> <review-by YYYY-MM-DD> <reason>". For an advisory with no patched release at all
+  # (braces <=3.0.3, GHSA-vfj7-8cjw-p6xm, 2026-09-18: every repo shipping bash-language-server
+  # turned permanently red). Unlike .pip-audit-ignores, the date is mandatory: an entry past it
+  # fails, so a dismissal is re-read rather than forgotten. Each dismissal is printed in the
+  # receipt, and it only ever clears the advisories it names; one undismissed finding still fails.
+  nig=""
+  if git ls-files --error-unmatch .npm-audit-ignores >/dev/null 2>&1; then
+    today=$(date -u +%F)
+    while IFS= read -r iline; do
+      case "$iline" in ''|'#'*) continue ;; esac
+      read -r iid idate ireason <<<"$iline"
+      if ! [[ "$iid" =~ ^GHSA(-[0-9a-z]{4}){3}$ ]] || ! [[ "$idate" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || [ -z "$ireason" ]; then
+        say "FAIL  npm       .npm-audit-ignores line is not \"<GHSA-id> <review-by YYYY-MM-DD> <reason>\": $(printf '%s' "$iline" | cut -c1-80)"; fail=1
+      elif [[ "$idate" < "$today" ]]; then
+        say "FAIL  npm       .npm-audit-ignores $iid was to be reviewed by $idate; re-read the advisory, then fix, re-date or remove it"; fail=1
+      else
+        nig="$nig $iid"
+        say "note  npm       dismissed $iid until $idate: $(printf '%s' "$ireason" | cut -c1-160)"
+      fi
+    done < .npm-audit-ignores
+  fi
   nfail=0
   for l in $locks; do
     d=$(dirname "$l")
@@ -184,9 +206,29 @@ else
         # answer just as readily as for a real advisory, and on 2026-09-04 hermes-v2#72 was
         # refused by "npm warn audit 503 Service Unavailable" reported as
         # "high or critical advisories in shipped dependencies" with a 503 as its evidence.
-        say "FAIL  npm       $d: high or critical advisories in shipped dependencies"
-        [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
-        nfail=1
+        # A dismissal clears a finding only when every High+ advisory in the report is one it
+        # names; the report is re-read as JSON for that, and JSON that cannot be read clears nothing.
+        open="unread"
+        if [ -n "$nig" ]; then
+          open=$(cd "$d" && timeout 300 npm audit --package-lock-only --audit-level=high --omit=dev --json 2>/dev/null |
+            NIG="$nig" python3 -c 'import json, os, sys
+dismissed = set(os.environ["NIG"].split())
+try:
+    vulns = json.load(sys.stdin)["vulnerabilities"]
+except Exception:
+    print("unread"); sys.exit()
+found = {v["url"].rsplit("/", 1)[-1] for p in vulns.values() for v in p["via"]
+         if isinstance(v, dict) and v.get("severity") in ("high", "critical") and v.get("url")}
+print(" ".join(sorted(found - dismissed)) if found else "unread")')
+        fi
+        if [ -z "$open" ]; then
+          say "ok    npm       $d: every high or critical advisory is a recorded dismissal"
+        else
+          say "FAIL  npm       $d: high or critical advisories in shipped dependencies"
+          [ "$open" = "unread" ] || say "      not dismissed: $open"
+          [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'
+          nfail=1
+        fi
       elif printf '%s' "$out" | grep -qiE '5[0-9][0-9] |429 |service unavailable|econnreset|etimedout|eai_again|enotfound|socket hang up|audit endpoint'; then
         # A registry that answered with an HTTP error or dropped the socket measured nothing.
         # Under the flake protocol an unrelated infrastructure failure must not hold a correct
@@ -214,7 +256,7 @@ else
     fi
   done
   [ $nfail = 1 ] && fail=1
-  [ $nfail = 0 ] && say "ok    npm       npm audit over $(echo "$locks" | wc -l | tr -d ' ') package-lock.json: no high or critical advisories"
+  [ $nfail = 0 ] && say "ok    npm       npm audit over $(echo "$locks" | wc -l | tr -d ' ') package-lock.json: no high or critical advisories${nig:+ beyond the recorded dismissals}"
 fi
 
 # 3. policy: every control row on the security policy page names a proof that exists.

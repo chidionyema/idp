@@ -13,7 +13,7 @@
 #      and the browser refuses the microphone with no useful message. Serving on 127.0.0.1 and
 #      saying so is the difference between "it works" and a silent failure.
 #
-#   bin/voice-loop                    # start on 127.0.0.1:8770
+#   bin/voice-loop                    # start on 127.0.0.1:8771
 #   bin/voice-loop --port N
 #   bin/voice-loop --check            # report readiness; start nothing
 set -uo pipefail
@@ -39,7 +39,7 @@ VENV="${VOICE_VENV:-$IDP/.voice-venv}"
 if [ ! -x "$VENV/bin/python" ]; then
 	"$PY" -m venv "$VENV" || { echo "venv creation failed with $PY" >&2; exit 1; }
 fi
-PORT=8770
+PORT=8771
 MODE=start
 
 while [ $# -gt 0 ]; do
