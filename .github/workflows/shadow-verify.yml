@@ -31,6 +31,12 @@ on:
       paths:
         description: 'space-separated dirs to reconcile (default: what the diff changed)'
         required: false
+      head:
+        description: 'commit to prove (default: the dispatched ref); the grader is always the dispatched ref'
+        required: false
+      base:
+        description: 'commit the head is graded against (default: head~1)'
+        required: false
 
 concurrency:
   group: shadow-verify-${{ github.event.pull_request.number || github.ref }}
@@ -40,38 +46,81 @@ permissions:
   contents: read
 
 jobs:
-  shadow-verify:
+  # 2026-10-14, #6194: 24 lines of newTag: bumps went red on 14 of 15 paths, every one a gap the
+  # shadow has on any commit (a namespace, CRD or database secret laid by another row; eight paths
+  # charged with one dagster pod). A PR is graded on what it CHANGED: the same paths run at the
+  # merge-base beside the head, and `judge` fails the PR only for a failure the base does not
+  # show. A base run that is missing or BLIND excuses nothing (bin/idp-shadow judge).
+  scope:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    outputs:
+      dirs: ${{ steps.scope.outputs.dirs }}
+      head: ${{ steps.scope.outputs.head }}
+      base: ${{ steps.scope.outputs.base }}
     steps:
       - uses: actions/checkout@v7
         with:
-          # The shadow proves the head commit itself, so the tree must be the head, not a
-          # merge commit GitHub synthesised, and the history must reach the base to diff it.
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The scope is the diff of the commit under test, so it is read from that commit.
+          ref: ${{ github.event.inputs.head || github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
       - name: Which directories is this change asking the environment to accept?
         id: scope
         run: |
           set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          base="${{ github.event.inputs.base || github.event.pull_request.base.sha }}"
+          [ -n "$base" ] || base="$(git rev-parse HEAD~1)"
           if [ -n "${{ github.event.inputs.paths }}" ]; then
             dirs="${{ github.event.inputs.paths }}"
           else
-            base="${{ github.event.pull_request.base.sha }}"
-            [ -n "$base" ] || base="$(git rev-parse HEAD~1)"
             # One owner for this list already exists; a second would disagree with it (crew#623).
             dirs="$(bin/idp-kyverno-dirs "$base" --narrow | tr '\n' ' ')"
           fi
-          echo "dirs=$dirs" >> "$GITHUB_OUTPUT"
+          # The base run proves the tree this PR started from, not whatever main is now.
+          mb="$(git merge-base "$base" "$head")"
+          {
+            echo "dirs=$dirs"
+            echo "head=$head"
+            echo "base=$mb"
+          } >> "$GITHUB_OUTPUT"
           if [ -z "${dirs// /}" ]; then
             echo "no platform directory changed; nothing for the environment to accept"
           else
-            echo "the environment is asked to accept: $dirs"
+            echo "the environment is asked to accept: $dirs (head $head, graded against $mb)"
           fi
 
+  run:
+    needs: scope
+    if: needs.scope.outputs.dirs != ''
+    name: shadow-run (${{ matrix.side }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        side: [head, base]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The grader: the PR's own head, or the dispatched ref. The commit it proves is cloned
+          # beside it below, so a dispatch can grade any commit with this ref's tool.
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Lay the commit under test beside the grader
+        id: tree
+        run: |
+          set -euo pipefail
+          target="${{ matrix.side == 'head' && needs.scope.outputs.head || needs.scope.outputs.base }}"
+          git fetch -q origin "$target" 2>/dev/null || true
+          # --shared: every object this checkout fetched is reachable, the target included.
+          git clone -q --shared --no-checkout "$GITHUB_WORKSPACE" "$RUNNER_TEMP/tree/idp"
+          git -C "$RUNNER_TEMP/tree/idp" checkout -q --detach "$target"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "the ${{ matrix.side }} run proves $target"
+
       - name: Install k3d and Flux
-        if: steps.scope.outputs.dirs != ''
         run: |
           set -euo pipefail
           curl -sSL https://raw.githubusercontent.com/k3d-io/k3d/main/install.sh | bash
@@ -85,7 +134,6 @@ jobs:
       # import skips every pod pull; on a miss the run pulls them anyway and
       # the next bundle workflow repopulates the cache.
       - name: Compute the bundle's cache key
-        if: steps.scope.outputs.dirs != ''
         id: bundle_key
         run: |
           set -euo pipefail
@@ -95,7 +143,6 @@ jobs:
           echo "shadow-bundle cache key: $key"
 
       - name: Restore the shadow image bundle
-        if: steps.scope.outputs.dirs != ''
         id: bundle
         uses: actions/cache@v6
         with:
@@ -103,11 +150,10 @@ jobs:
           key: ${{ steps.bundle_key.outputs.key }}
 
       - name: Stand up the shadow cluster and put the environment in it
-        if: steps.scope.outputs.dirs != ''
         run: bin/idp-shadow up
 
       - name: Bring the bundle into the k3d image store
-        if: steps.scope.outputs.dirs != '' && steps.bundle.outputs.cache-hit == 'true'
+        if: steps.bundle.outputs.cache-hit == 'true'
         run: |
           set -euo pipefail
           tar="$RUNNER_TEMP/idp-shadow-bundle/images.tar"
@@ -116,17 +162,22 @@ jobs:
           echo "ok  shadow  image bundle restored (cache hit)"
 
       - name: Hand the commit to Flux and read back what really happened
-        if: steps.scope.outputs.dirs != ''
+        id: verify
         env:
           IDP_SHADOW_TIMEOUT: '900'
+          IDP_SHADOW_TREE: ${{ runner.temp }}/tree/idp
         run: |
-          set -euo pipefail
+          set -uo pipefail
           args=""
-          for d in ${{ steps.scope.outputs.dirs }}; do args="$args --path $d"; done
-          bin/idp-shadow verify --head "${{ github.event.pull_request.head.sha || github.sha }}" $args
+          for d in ${{ needs.scope.outputs.dirs }}; do args="$args --path $d"; done
+          # The run's verdict is data for `judge`, not this job's exit: a red head run with a
+          # green base must still reach the comparison. The record says how the run ended.
+          bin/idp-shadow verify --head "${{ steps.tree.outputs.target }}" $args \
+            --record "$RUNNER_TEMP/record/${{ matrix.side }}.json"
+          echo "rc=$?" >> "$GITHUB_OUTPUT"
 
       - name: What the environment saw, when it refused
-        if: failure()
+        if: always() && steps.verify.outputs.rc != '0'
         run: |
           kubectl get kustomizations -n flux-system -o wide || true
           kubectl get events -A --sort-by=.lastTimestamp | tail -40 || true
@@ -136,6 +187,46 @@ jobs:
             kubectl logs -n "${p%%/*}" "${p##*/}" --tail=50 --all-containers 2>&1 | tail -50 || true
           done
 
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: shadow-record-${{ matrix.side }}
+          path: ${{ runner.temp }}/record/${{ matrix.side }}.json
+          if-no-files-found: ignore
+
       - name: Tear the shadow down
         if: always()
         run: bin/idp-shadow down || true
+
+  # The check deploy-when-green and bin/idp-pr-landable read, by this name.
+  shadow-verify:
+    needs: [scope, run]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || github.event.pull_request.head.sha }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        if: needs.scope.outputs.dirs != ''
+        continue-on-error: true   # a missing record is graded by judge, fail-closed
+        with:
+          pattern: shadow-record-*
+          path: ${{ runner.temp }}/record
+          merge-multiple: true
+
+      - name: Grade the head on what it changed
+        run: |
+          set -euo pipefail
+          if [ "${{ needs.scope.result }}" != "success" ]; then
+            echo "FAIL    shadow-verify  the scope job did not finish; the run proves nothing"
+            exit 2
+          fi
+          if [ -z "$(echo '${{ needs.scope.outputs.dirs }}' | tr -d ' ')" ]; then
+            echo "no platform directory changed; nothing for the environment to accept"
+            exit 0
+          fi
+          bin/idp-shadow judge \
+            --head-record "$RUNNER_TEMP/record/head.json" \
+            --base-record "$RUNNER_TEMP/record/base.json"

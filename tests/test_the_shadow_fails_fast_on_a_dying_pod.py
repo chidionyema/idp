@@ -60,7 +60,7 @@ def drive(monkeypatch, shadow, ks_states, pod_states, clock_step=1.0):
         last_ks[0] = next(ks_seq, last_ks[0])
         return last_ks[0]
 
-    def fake_pods():
+    def fake_pods(ks=None):
         last_pod[0] = next(pod_seq, last_pod[0])
         polls[0] += 1
         return last_pod[0]
@@ -137,7 +137,7 @@ def test_a_healthy_run_is_never_accused(monkeypatch):
 def test_pods_that_cannot_be_listed_are_not_a_verdict(monkeypatch):
     shadow = load_shadow()
 
-    def blind():
+    def blind(ks=None):
         return []
 
     now = [0.0]
