@@ -1,0 +1,35 @@
+{
+  "_": "The one source for estate memory in every agent runtime (#6156). bin/estate-memory-install renders this into each runtime's own config and --check reports drift. A new runtime is a new entry under runtimes, not a new integration.",
+  "door": {
+    "url": "https://mcp.mumchimp.com/estate/mcp",
+    "header": "Authorization",
+    "scheme": "Bearer",
+    "key_env": "MCP_GATEWAY_KEY",
+    "vault_loader": "~/Documents/code/estate-secrets/scripts/secret-load",
+    "vault_entry": ["dev", "MCP_GATEWAY_KEY", "MCP_GATEWAY_KEY"]
+  },
+  "server": "estate-memory",
+  "tools": ["brief", "recall", "remember"],
+  "bridge": "bin/estate-memory-mcp",
+  "session_start": "bin/estate-brief",
+  "runtimes": {
+    "claude-code": {
+      "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},
+      "hook": {"kind": "settings", "file": "$CLAUDE_CONFIG_DIR/settings.json", "event": "SessionStart"}
+    },
+    "cursor": {
+      "mcp": {"file": "~/.cursor/mcp.json", "key": "mcpServers", "shape": "stdio"}
+    },
+    "gemini": {
+      "mcp": {"file": "~/.gemini/settings.json", "key": "mcpServers", "shape": "stdio"}
+    },
+    "opencode": {
+      "mcp": {"file": "~/.config/opencode/opencode.jsonc", "key": "mcp", "shape": "opencode"},
+      "hook": {"kind": "link", "source": "platform/estate/memory/opencode-estate-memory.js", "dest": "~/.config/opencode/plugin/estate-memory.js"}
+    },
+    "pi": {
+      "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio"},
+      "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"}
+    }
+  }
+}

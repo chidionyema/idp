@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+"""Give every agent runtime on this machine estate memory, from one manifest (#6156).
+
+    bin/estate-memory-install                    write what is missing or stale, for every runtime present
+    bin/estate-memory-install --check            write nothing; exit 1 when any present runtime has drifted
+    bin/estate-memory-install --runtime pi       one runtime only (repeatable)
+
+The manifest is platform/estate/memory/runtimes.json. For each runtime it names an MCP entry (the
+same bin/estate-memory-mcp everywhere) and, where the runtime has one, a session-start hook (the
+same bin/estate-brief everywhere). A runtime whose config directory is absent is skipped, not
+created: installing a config for a tool nobody uses is how a second copy starts.
+
+Only the estate-memory entry and the estate-brief hook are touched; every other key in a config is
+kept as it was. A link destination that exists and is not a symlink is refused, never replaced --
+it is somebody's file. Paths written point at the primary checkout ($IDP, default
+~/Documents/code/idp), not at the worktree this runs from, so a lane's /tmp checkout never ends up
+in a runtime's config. No key is written anywhere: the bridge reads it by name at call time.
+"""
+
+import argparse
+import json
+import os
+import re
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent.parent
+MANIFEST = json.loads(
+    (HERE / "platform" / "estate" / "memory" / "runtimes.json").read_text()
+)
+
+
+def expand(p: str, rt: dict) -> Path:
+    if p.startswith("$CLAUDE_CONFIG_DIR"):
+        base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser(
+            rt["mcp"]["default_dir"]
+        )
+        p = base + p[len("$CLAUDE_CONFIG_DIR") :]
+    return Path(os.path.expanduser(p))
+
+
+def load(path: Path) -> dict:
+    if not path.exists():
+        return {}
+    text = path.read_text()
+    if path.suffix == ".jsonc" and re.search(r"(?m)^\s*//|/\*", text):
+        raise SystemExit(
+            f"refused: {path} has comments; rewriting it as JSON would drop them"
+        )
+    return json.loads(text) if text.strip() else {}
+
+
+def save(path: Path, data: dict) -> None:
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f, indent=2)
+        f.write("\n")
+    if path.exists():
+        os.chmod(tmp, path.stat().st_mode & 0o777)
+    os.replace(tmp, path)
+
+
+def mcp_entry(shape: str, root: Path) -> dict:
+    bridge = str(root / MANIFEST["bridge"])
+    if shape == "opencode":
+        return {"type": "local", "command": ["python3", bridge], "enabled": True}
+    return {"command": "python3", "args": [bridge]}
+
+
+def brief_command(root: Path) -> str:
+    return f"python3 {root / MANIFEST['session_start']}"
+
+
+def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
+    """The changes this runtime needs: (what, where, how to apply), empty when in step."""
+    mcp_file = expand(rt["mcp"]["file"], rt)
+    if not mcp_file.parent.is_dir():
+        return [("absent", mcp_file.parent, None)]
+    changes = []
+
+    cfg = load(mcp_file)
+    want = mcp_entry(rt["mcp"]["shape"], root)
+    if cfg.get(rt["mcp"]["key"], {}).get(MANIFEST["server"]) != want:
+
+        def put_mcp(path=mcp_file, key=rt["mcp"]["key"], want=want):
+            data = load(path)
+            data.setdefault(key, {})[MANIFEST["server"]] = want
+            save(path, data)
+
+        changes.append(("mcp", mcp_file, put_mcp))
+
+    hook = rt.get("hook")
+    if hook and hook["kind"] == "settings":
+        path, cmd = expand(hook["file"], rt), brief_command(root)
+        groups = load(path).get("hooks", {}).get(hook["event"], [])
+        mine = [
+            h
+            for g in groups
+            for h in g.get("hooks", [])
+            if MANIFEST["session_start"] in h.get("command", "")
+        ]
+        if [h.get("command") for h in mine] != [cmd]:
+
+            def put_hook(path=path, event=hook["event"], cmd=cmd):
+                data = load(path)
+                kept = [
+                    g
+                    for g in data.setdefault("hooks", {}).get(event, [])
+                    if not any(
+                        MANIFEST["session_start"] in h.get("command", "")
+                        for h in g.get("hooks", [])
+                    )
+                ]
+                data["hooks"][event] = [
+                    *kept,
+                    {"hooks": [{"type": "command", "command": cmd}]},
+                ]
+                save(path, data)
+
+            changes.append(("hook", path, put_hook))
+    elif hook and hook["kind"] == "link":
+        dest, source = expand(hook["dest"], rt), root / hook["source"]
+        if dest.is_symlink() and Path(os.readlink(dest)) == source:
+            pass
+        elif dest.exists() and not dest.is_symlink():
+            changes.append(("refused", dest, None))
+        else:
+
+            def link(dest=dest, source=source):
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                if dest.is_symlink():
+                    dest.unlink()
+                dest.symlink_to(source)
+
+            changes.append(("hook", dest, link))
+    return changes
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument("--runtime", action="append", choices=sorted(MANIFEST["runtimes"]))
+    ap.add_argument("--root", default=os.environ.get("IDP", "~/Documents/code/idp"))
+    args = ap.parse_args(argv)
+    root = Path(os.path.expanduser(args.root))
+
+    drift = refused = 0
+    for name in args.runtime or sorted(MANIFEST["runtimes"]):
+        for what, where, apply in plan(name, MANIFEST["runtimes"][name], root) or [
+            ("ok", None, None)
+        ]:
+            if what == "absent":
+                print(f"absent   {name:<12} no {where}")
+            elif what == "ok":
+                print(f"ok       {name}")
+            elif what == "refused":
+                refused += 1
+                print(
+                    f"REFUSED  {name:<12} {where} exists and is not a link; move it to install"
+                )
+            elif args.check:
+                drift += 1
+                print(f"DRIFT    {name:<12} {what} {where}")
+            else:
+                apply()
+                print(f"wrote    {name:<12} {what} {where}")
+    return 1 if drift or refused else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
