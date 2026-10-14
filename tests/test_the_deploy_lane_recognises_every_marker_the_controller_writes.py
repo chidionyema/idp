@@ -112,6 +112,60 @@ def test_both_forms_in_one_pull_request_pass_together():
 # ------------------------------------------- the boundary the widening must not move
 
 
+# ----------------------------------------------- the whole-image form (#6194, 2026-10-14)
+
+IMG_MARK = '# {"$imagepolicy": "flux-system:quad-ledger"}'
+REPO_ = "ghcr.io/chidionyema/quad-ledger"
+
+
+def test_the_whole_image_form_is_recognised():
+    """platform/quad/ledger/ledger.yaml's shape, verbatim: `image: repo:tag` with the bare marker."""
+    d = diff(
+        "platform/quad/ledger/ledger.yaml",
+        (
+            f"          image: {REPO_}:{OLD} {IMG_MARK}",
+            f"          image: {REPO_}:{NEW} {IMG_MARK}",
+        ),
+        (
+            f"        - image: {REPO_}:{OLD} {IMG_MARK}",
+            f"        - image: {REPO_}:{NEW} {IMG_MARK}",
+        ),
+    )
+    ok, why = grade(d)
+    assert ok, why
+
+
+def test_swapping_the_repository_behind_the_marker_is_refused():
+    """The value names the image, so the marker alone would let a hand-edit change WHICH image runs."""
+    d = diff(
+        "platform/quad/ledger/ledger.yaml",
+        (
+            f"          image: {REPO_}:{OLD} {IMG_MARK}",
+            f"          image: ghcr.io/evil/quad-ledger:{NEW} {IMG_MARK}",
+        ),
+    )
+    ok, why = grade(d)
+    assert ok is False and "repository" in why
+
+
+def test_a_registry_port_is_not_mistaken_for_the_tag():
+    reg = "registry.local:5000/quad-ledger"
+    d = diff(
+        "platform/quad/ledger/ledger.yaml",
+        (f"  image: {reg}:{OLD} {IMG_MARK}", f"  image: {reg}:{NEW} {IMG_MARK}"),
+    )
+    ok, why = grade(d)
+    assert ok, why
+    d = diff(
+        "platform/quad/ledger/ledger.yaml",
+        (
+            f"  image: {reg}:{OLD} {IMG_MARK}",
+            f"  image: registry.local:5001/quad-ledger:{NEW} {IMG_MARK}",
+        ),
+    )
+    assert grade(d)[0] is False
+
+
 def test_a_tag_line_without_the_marker_is_still_refused():
     """The marker is the whole proof of ownership. A bare `tag:` -- which a Helm values
     file is full of, and which no controller wrote -- must not become mergeable."""
