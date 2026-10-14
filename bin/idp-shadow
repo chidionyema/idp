@@ -1347,6 +1347,10 @@ def write_record(record, head, rc, fails):
             {"scope": sc, "message": m, "signature": signature(m)} for sc, m in fails
         ],
     }
+    # The workflow names $RUNNER_TEMP/record/<side>.json and nothing creates record/: without
+    # this, verify died here on both sides of every pull request that touched a platform/ dir,
+    # no record was uploaded, and judge failed the run as unreadable (#6224, #6226, 10-14).
+    os.makedirs(os.path.dirname(record) or ".", exist_ok=True)
     with open(record, "w") as f:
         json.dump(doc, f, indent=2)
 
