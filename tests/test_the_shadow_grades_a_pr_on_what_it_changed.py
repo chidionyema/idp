@@ -208,6 +208,17 @@ def test_different_failures_keep_different_signatures():
     assert len({missing_secret, pull, other_secret}) == 3
 
 
+def test_the_record_is_written_into_a_directory_nothing_created(tmp_path):
+    """CI passes --record $RUNNER_TEMP/record/<side>.json, and record/ does not exist yet. On
+    10-14 write_record raised FileNotFoundError there on both sides, so every pull request
+    touching a platform/ dir reached judge with no records and was red for it."""
+    shadow = load_shadow()
+    for side in ("head", "base"):
+        path = tmp_path / "record" / f"{side}.json"
+        shadow.write_record(str(path), "abc1234", 1, [("platform/x", "boom")])
+        assert json.loads(path.read_text())["failures"][0]["scope"] == "platform/x"
+
+
 def test_6194_is_green_when_every_failure_is_inherited(tmp_path):
     shadow = load_shadow()
     head = record(tmp_path, "head", "68d1b51", 1, RUN_6194)
