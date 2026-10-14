@@ -1,0 +1,17 @@
+# Unified estate memory for Otto numun (@numun_bot): brief before an answer, remember after it,
+# through the agentgateway's /estate/mcp route -- the same memory @Ottototbot (platform/hermes-agent)
+# and the operator's Mac read, so what one Otto learns the others recall. The key is the gateway's
+# own MCP_GATEWAY_KEY from vault entry `mcp-gateway`, the value platform/hermes-agent/mcp-key.yaml
+# projects. otto/memory/estate_mcp.py reads it from ESTATE_MCP_KEY_FILE; unset is a no-op.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: otto-golden-mcp
+  namespace: otto-golden
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target: { name: otto-golden-mcp, creationPolicy: Owner }
+  data:
+    - secretKey: ESTATE_MCP_KEY
+      remoteRef: { key: mcp-gateway, property: MCP_GATEWAY_KEY }

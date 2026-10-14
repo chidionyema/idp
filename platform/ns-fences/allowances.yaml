@@ -213,7 +213,9 @@ flows:
   # outage: this namespace renders default-deny and rendered no allow-internet-egress, and
   # #2439 is what made twelve namespaces' fences real rather than decoration.
   agent-workforce:
-    egress: [observability, llm]
+    # mcp: unified estate memory (brief / recall / remember) through the agentgateway's /estate/mcp
+    # route, the memory Otto and the operator's Mac share. The key is platform/agent-workforce/external-secret.yaml (agent-workforce-mcp).
+    egress: [observability, llm, mcp]
     egress_internet: [443]
   # decision 0026 step 2. The provider pods talk to the OCI control plane over 443 and
   # nothing else; the collector hop is the usual one. Not rendered until the namespace is
@@ -306,7 +308,9 @@ flows:
     # ghcr.io/chidionyema/idp/estate-db:latest" and no result, while the mcp fence rendered no
     # allow-internet-egress at all.
     egress_internet: [443]
-    ingress_from: [edge, hermes-agent, otto-gateway]
+    # otto-golden, voice-router, agent-workforce: the unified estate memory's other readers (Otto
+    # numun, fleetview voice, the crew), each declared from its own side above as well.
+    ingress_from: [edge, hermes-agent, otto-gateway, otto-golden, voice-router, agent-workforce]
   monitoring:
     # edge: Alertmanager and Prometheus are reached through the gateway, which is why edge has
     # admitted monitoring since the fence was written -- but this side never said so, and a
@@ -365,7 +369,9 @@ flows:
     egress: [jit]
     egress_internet: [443]
   otto-golden:
-    egress: [observability, hindsight]
+    # mcp: unified estate memory (brief / recall / remember) through the agentgateway's /estate/mcp
+    # route, the memory Otto and the operator's Mac share. The key is platform/otto-golden/mcp-key.yaml.
+    egress: [observability, hindsight, mcp]
     ingress_from: [edge]
   otto-gateway:
     # llm is the estate's model router, and it is on the answering path twice over: the
@@ -490,7 +496,9 @@ flows:
   voice-router:
     # crew#974 P1: the newsroom director reads epistemic.* and publishes estate.news.* on the bus, and narrates through the router.
     # The API server needs no line here: policy_docs gives every namespace allow-apiserver-egress, and that is how its watcher reaches events, Kustomizations and HelmReleases.
-    egress: [event-bus, llm]
+    # mcp: unified estate memory, so the brain answers from what the estate remembers. The key is
+    # platform/voice-router/deploy/external-secret.yaml (voice-router-mcp).
+    egress: [event-bus, llm, mcp]
   estate-db:
     # Serves an admission webhook, so the control plane calls IN. It is outside the pod
     # network and outside every namespace selector, so default-deny drops it and only an
