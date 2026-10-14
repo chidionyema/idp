@@ -124,13 +124,13 @@ def test_only_the_engines_own_pull_requests_are_not_foreign():
         {
             "number": 2,
             "user": {"login": "estate-agents[bot]"},
-            "body": "no marker",
+            "body": "no marker\n\nAgent: otto",
             "head": {"ref": "feat/b", "sha": "s2"},
         },
         {
             "number": 3,
             "user": {"login": "someone"},
-            "body": f"{MARKER} forged",
+            "body": f"{MARKER} forged\n\nClaim: #1",
             "head": {"ref": "feat/c", "sha": "s3"},
         },
     ]
@@ -205,7 +205,7 @@ def test_adopted_and_owner_pull_requests_are_not_foreign_and_adopted_heads_are_f
             "body": "workflow fix",
             "head": {"ref": "fix/w", "sha": "w1"},
         },
-        {  # a draft by an agent is work: foreign, to be adopted
+        {  # a draft by an agent is work: foreign, to be adopted; it declares in its head commit
             "number": 3,
             "user": {"login": "someone"},
             "body": "",
@@ -213,7 +213,9 @@ def test_adopted_and_owner_pull_requests_are_not_foreign_and_adopted_heads_are_f
             "draft": True,
         },
     ]
-    b = Recorded({"pulls": prs})
+    b = Recorded(
+        {"pulls": prs, "commits/d1": {"commit": {"message": "wip\n\nAgent: otto"}}}
+    )
     assert [p["number"] for p in b.foreign_prs()] == [3]
     assert b.adopted_prs() == [
         {"number": 1, "branch": "feat/a", "lane": "lane/feat/a", "head": "a2"}
