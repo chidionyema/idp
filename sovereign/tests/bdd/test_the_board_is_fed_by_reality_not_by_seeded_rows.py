@@ -51,6 +51,11 @@ def _load():
 @pytest.fixture()
 def rec(monkeypatch, tmp_path):
     monkeypatch.setenv("ESTATE_DB", str(tmp_path / "estate.db"))
+    # The recorder reads Claude Code's transcripts from $CLAUDE_CONFIG_DIR as well as $HOME, and
+    # every agent session sets it -- run from one, these scenarios counted that session's 41 real
+    # transcripts instead of the fixture home's. Each scenario's home is the only source.
+    monkeypatch.delenv("CLAUDE_CONFIG_DIR", raising=False)
+    monkeypatch.delenv("RECORDER_SOURCES", raising=False)
     return _load()
 
 

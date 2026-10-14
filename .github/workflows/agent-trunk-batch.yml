@@ -66,6 +66,7 @@ jobs:
           # batch does not open until that is resolved, because opening it would hand a known
           # failure to a human and call it review.
           git checkout --quiet origin/agent-trunk
+          pip install -q yamllint==1.37.1   # bin/idp-ci rung 1c.2 refuses when yamllint is missing
           if [ -x bin/idp-ci ]; then
             IDP_CI_FAST=1 bin/idp-ci || {
               echo "::error::agent-trunk is red; not batching. Fix it on agent-trunk first."

@@ -22,7 +22,10 @@ pick_python() {
 if [ ! -x "$VENV/bin/python" ]; then
   if command -v uv >/dev/null 2>&1; then
     uv venv --python 3.10 "$VENV" >/dev/null
-    uv pip install --python "$VENV/bin/python" -r "$REQ" >/dev/null
+    # The wheelhouse holds wheels this machine had to compile (bin/idp-install-deps): cryptography
+    # ships no x86_64 macOS wheel past 48, and building it is ~10 min of rustc per fresh worktree.
+    mkdir -p "$HOME/.cache/estate-tools/wheelhouse"
+    uv pip install --python "$VENV/bin/python" --find-links "$HOME/.cache/estate-tools/wheelhouse" -r "$REQ" >/dev/null
   else
     PY="$(pick_python)" || { echo "sb: no python3 >=3.10 on PATH and no uv available" >&2; exit 2; }
     "$PY" -m venv "$VENV"

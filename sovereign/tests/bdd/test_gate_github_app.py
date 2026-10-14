@@ -49,7 +49,8 @@ def _unknown(state: dict, tmp_path: Path) -> None:
     state["run"] = subprocess.run(
         [str(IDP / "bin" / "idp-github-app"), "token", "no-such-lane"],
         env={
-            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+            # /opt/local/bin: MacPorts' jq, which the lane lookup reads the manifest with.
+            "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin:/opt/local/bin",
             "HOME": str(tmp_path),
         },
         capture_output=True,
