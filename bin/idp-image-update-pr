@@ -36,40 +36,22 @@ case "$body" in
     ;;
 esac
 m=UNKNOWN
-behind=false
 for _ in 1 2 3 4 5 6 7 8 9 10; do
   m=$(gh pr view "$n" --json mergeable -q .mergeable)
   [ "$m" != UNKNOWN ] && break
   sleep "${MERGEABLE_WAIT:-10}"
 done
-# crew#267 / 2026-10-04: the branch forks from the main it was first cut from and the controller
-# only ever ADDS tag commits on top, so its tree keeps whatever main looked like back then. Every
-# gate that lives in the tree -- bin/idp-ci-guarded-paths runs against the PR head's own copy -- is
-# therefore graded as it was on the fork point, not as it is on main today. On 2026-10-04 573024e85
-# rewrote the guarded-paths exemption, main stopped accepting image tags, and this branch could
-# never pass again because its copy of the guard predated the fix: the deploy was red on a gate
-# that main had already repaired. A branch that is BEHIND main is refreshed for the same reason a
-# CONFLICTING one is -- so the deploy is graded by the gates that are actually on main.
-behind=$(gh pr view "$n" --json mergeStateStatus -q .mergeStateStatus)
-# 2026-10-13 (#6114): GitHub says BLOCKED, not BEHIND, while a required status is red, and the red
-# status was this very staleness -- idp-image-only-diff grades the diff from the fork point, so a
-# file main had re-laid in the setter's own format still read as 21 non-tag lines. The refresh that
-# would have cured it never ran. Whether the head contains main is git's question, so ask git.
-git fetch -q origin main
-if [ "$behind" != BEHIND ] && ! git merge-base --is-ancestor origin/main HEAD; then
-  behind=BEHIND
-fi
+# A branch that is merely BEHIND main is left alone (2026-10-14). This script used to merge main
+# into it so the deploy was graded by main's gates rather than the fork point's (crew#267,
+# 2026-10-04) and its diff by main's layout rather than the merge-base's (#6114). Greenlane now
+# does both: it rebases the branch onto main, tests that candidate, and grades
+# `main..candidate` with bin/idp-image-only-diff. The refresh was also a second writer on a branch
+# the controller already writes. Every merge restarted the required checks, and the merge commit
+# carried no X-Idp-Signed stamp, so guarded-paths refused it outright (24c4f5e, 49e3dbc on #6174:
+# 12 heads in 49 minutes). Only a CONFLICTING branch is refreshed, because greenlane's rebase
+# cannot build a candidate from one either.
 case "$m" in
-  MERGEABLE)
-    # "BEHIND" is GitHub's own word for "mergeable, but the head does not contain the base".
-    if [ "$behind" = BEHIND ]; then
-      git fetch origin main
-      git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \
-        merge origin/main --no-edit -X ours -m "$branch: merge main, keep the controller's newTag lines (crew#267)"
-      git push "${PUSH_URL:-origin}" "HEAD:$branch"
-      echo "refresh image-update-pr #$n was BEHIND main, merged main as $(git rev-parse --short HEAD), pushed with the writer key"
-    fi
-    ;;
+  MERGEABLE) ;;
   CONFLICTING)
     git fetch origin main
     git -c user.name=image-update-pr -c user.email=image-update-pr@users.noreply.github.com \

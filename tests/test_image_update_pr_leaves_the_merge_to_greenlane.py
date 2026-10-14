@@ -6,9 +6,10 @@ with allow_auto_merge true again every controller push armed GitHub's auto-merge
 request (#6107), which merges whatever head goes green first and races the engine for main.
 
 These run the script itself against a fake `gh`, inside a throwaway clone with its own `origin`
-(the script merges main and pushes when the branch is behind, so it must never see this checkout),
+(the script merges main and pushes when the branch conflicts, so it must never see this checkout),
 and pin both directions: nothing arms, and an arm left by an older run is taken off. A third pins
-the refresh: a branch behind main is refreshed even while GitHub calls it BLOCKED (#6114).
+that a branch merely behind main is not rewritten: greenlane rebases it, and every rewrite here
+restarted the required checks on an unsigned head guarded-paths refused (2026-10-14, #6174).
 """
 
 from __future__ import annotations
@@ -106,13 +107,15 @@ def test_an_arm_left_by_an_older_run_is_taken_off(tmp_path):
     assert merges == ["pr merge 7 --disable-auto"], calls
 
 
-def test_a_branch_behind_main_is_refreshed_though_github_says_blocked(tmp_path):
+def test_a_branch_behind_main_is_left_for_greenlane_to_rebase(tmp_path):
+    work = tmp_path / "work"
     run, _ = _run(tmp_path, armed="false", behind=True)
     assert run.returncode == 0, run.stdout + run.stderr
-    assert "was BEHIND main, merged main" in run.stdout, run.stdout
+    assert "merged main" not in run.stdout, run.stdout
     origin = tmp_path / "origin.git"
-    _git(origin, "merge-base", "--is-ancestor", "main", "flux/image-updates")
-    assert _git(origin, "show", "flux/image-updates:tag.yaml") == "tag: new"
+    assert _git(origin, "rev-parse", "flux/image-updates") == _git(
+        work, "rev-parse", "HEAD"
+    )
 
 
 def test_a_branch_that_holds_main_is_left_alone(tmp_path):

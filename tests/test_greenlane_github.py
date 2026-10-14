@@ -983,3 +983,43 @@ def test_a_failed_refresh_after_the_merge_is_not_a_refused_land(tmp_path, repo):
 
     b.git = git
     b.land([("lane/test/claim", head, head)], head)  # does not raise
+
+
+def test_the_deploy_lane_is_graded_on_the_commit_that_would_land(tmp_path, repo):
+    """#6114, 2026-10-13: the controller re-lays a file in its setter's format and main lands the
+    same re-lay through another lane. The branch's merge-base still has the old layout, so the
+    three-dot diff reads the re-lay as a non-tag hunk and the deploy was refused until something
+    rewrote the branch onto main. Rebased onto main, the only change left is the tag. (A re-lay
+    touching the tag's own lines conflicts on the rebase and on GitHub alike, and stays with
+    image-update-pr's CONFLICTING refresh.)"""
+    k = repo / "k.yaml"
+    k.write_text("a: 1\n\n\nb: 2\nc: 3\nd: 4\nnewTag: v1\n")
+    _git(repo, "add", "k.yaml")
+    _git(repo, "commit", "-q", "-m", "base")
+    _git(repo, "checkout", "-q", "-b", BOT_LANE)
+    k.write_text(
+        "a: 1\nb: 2\nc: 3\nd: 4\nnewTag: v2\n"
+    )  # the setter drops the blank lines
+    _git(repo, "commit", "-q", "-am", "platform: image update")
+    lane = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    k.write_text("a: 1\nb: 2\nc: 3\nd: 4\nnewTag: v1\n")  # main re-lays it the same way
+    _git(repo, "commit", "-q", "-am", "re-lay k.yaml")
+    main = _git(repo, "rev-parse", "HEAD")
+    grader = tmp_path / "image-only"
+    grader.write_text(
+        "#!/bin/sh\n"
+        "grep -E '^[-+]' \"$2\" | grep -vE '^(---|[+][+][+]) ' | grep -vq newTag && exit 1\n"
+        "exit 0\n"
+    )
+    grader.chmod(0o755)
+    b = Recorded({}, image_only_diff=grader)
+    assert (
+        "\n-\n" in _git(repo, "diff", f"{main}...{lane}") + "\n"
+    )  # the stale hunk is there
+    assert b._image_only(lane, main)
+    _git(repo, "checkout", "-q", BOT_LANE)
+    (repo / "other.txt").write_text("content\n")
+    _git(repo, "add", "other.txt")
+    _git(repo, "commit", "-q", "-m", "not a tag")
+    assert not b._image_only(_git(repo, "rev-parse", "HEAD"), main)
