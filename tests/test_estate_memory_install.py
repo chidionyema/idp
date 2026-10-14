@@ -23,10 +23,9 @@ def _script(name):
 
 
 def run(home, *args, env=None):
-    e = {**os.environ, "HOME": str(home), "IDP": "/repo"}
-    e.pop(
-        "CLAUDE_CONFIG_DIR", None
-    )  # the developer's own harness dir must never be the one written
+    e = {**os.environ, "HOME": str(home)}
+    for name in ("CLAUDE_CONFIG_DIR", "ESTATE_MEMORY_HOME"):
+        e.pop(name, None)  # the developer's own dirs must never be the ones written
     e.update(env or {})
     return subprocess.run(
         [sys.executable, INSTALL, *args], env=e, capture_output=True, text=True
@@ -49,6 +48,10 @@ def home(tmp_path):
     return tmp_path
 
 
+def installed(home, rel):
+    return str((home / ".estate" / "memory").resolve() / rel)
+
+
 def test_install_writes_every_present_runtime_and_keeps_every_other_key(home):
     cc = {"CLAUDE_CONFIG_DIR": str(home / ".estate" / "harness" / "cc")}
     first = run(home, env=cc)
@@ -58,17 +61,26 @@ def test_install_writes_every_present_runtime_and_keeps_every_other_key(home):
     assert cursor["estate"] == {"command": "x"}
     assert cursor["estate-memory"] == {
         "command": "python3",
-        "args": ["/repo/bin/estate-memory-mcp"],
+        "args": [installed(home, "bin/estate-memory-mcp")],
     }
     settings = json.loads(
         (home / ".estate" / "harness" / "cc" / "settings.json").read_text()
     )
     assert settings["model"] == "m" and "PreToolUse" in settings["hooks"]
     assert settings["hooks"]["SessionStart"] == [
-        {"hooks": [{"type": "command", "command": "python3 /repo/bin/estate-brief"}]}
+        {
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": f"python3 {installed(home, 'bin/estate-brief')}",
+                }
+            ]
+        }
     ]
     link = home / ".pi" / "agent" / "extensions" / "estate-memory.ts"
-    assert os.readlink(link) == "/repo/platform/estate/memory/pi-estate-memory.ts"
+    assert os.readlink(link) == installed(
+        home, "platform/estate/memory/pi-estate-memory.ts"
+    )
 
     assert run(home, "--check", env=cc).returncode == 0
     run(home, env=cc)  # a second run changes nothing
@@ -76,6 +88,31 @@ def test_install_writes_every_present_runtime_and_keeps_every_other_key(home):
         json.loads((home / ".estate" / "harness" / "cc" / "settings.json").read_text())
         == settings
     )
+
+
+def test_runtimes_run_a_copy_that_works_and_drifts_when_stale(home):
+    assert run(home, "--runtime", "cursor").returncode == 0
+    brief = installed(home, "bin/estate-brief")
+    # the copy runs on its own: no key here, so it is silent and exits 0, not a traceback
+    out = subprocess.run(
+        [sys.executable, brief],
+        env={"HOME": str(home), "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert out.returncode == 0 and "Traceback" not in out.stderr, out.stderr
+    with open(brief, "a") as f:
+        f.write("# stale\n")
+    out = run(home, "--check", "--runtime", "cursor")
+    assert out.returncode == 1 and "DRIFT    home" in out.stdout
+    assert run(home, "--runtime", "cursor").returncode == 0
+    assert run(home, "--check", "--runtime", "cursor").returncode == 0
+
+
+def test_a_checkout_is_never_the_home(home):
+    out = run(home, "--home", ROOT)
+    assert out.returncode != 0 and "runtimes run a copy" in out.stdout + out.stderr
 
 
 def test_an_absent_runtime_is_skipped_never_created(home):
@@ -116,7 +153,7 @@ def test_opencode_gets_its_own_shape(home):
     assert cfg["model"] == "m"
     assert cfg["mcp"]["estate-memory"] == {
         "type": "local",
-        "command": ["python3", "/repo/bin/estate-memory-mcp"],
+        "command": ["python3", installed(home, "bin/estate-memory-mcp")],
         "enabled": True,
     }
 

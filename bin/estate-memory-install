@@ -12,9 +12,14 @@ created: installing a config for a tool nobody uses is how a second copy starts.
 
 Only the estate-memory entry and the estate-brief hook are touched; every other key in a config is
 kept as it was. A link destination that exists and is not a symlink is refused, never replaced --
-it is somebody's file. Paths written point at the primary checkout ($IDP, default
-~/Documents/code/idp), not at the worktree this runs from, so a lane's /tmp checkout never ends up
-in a runtime's config. No key is written anywhere: the bridge reads it by name at call time.
+it is somebody's file. No key is written anywhere: the bridge reads it by name at call time.
+
+Runtimes run a copy, not a checkout. The bridge, the brief, the door and the manifest are copied
+into a home of their own ($ESTATE_MEMORY_HOME, default ~/.estate/memory, laid out as the repo is)
+and every config points there. A checkout is somebody's working tree: on 2026-10-14 the primary
+one sat on another lane's branch, 119 commits behind main, without these files at all, and a
+branch switch would have taken memory out of every runtime at once. --check reports a stale copy
+as drift, so a merged change reaches the runtimes by one rerun from an up-to-date checkout.
 """
 
 import argparse
@@ -70,6 +75,43 @@ def mcp_entry(shape: str, root: Path) -> dict:
 
 def brief_command(root: Path) -> str:
     return f"python3 {root / MANIFEST['session_start']}"
+
+
+def home_files() -> list[str]:
+    """Every file a runtime runs or links, as a path relative to the repo."""
+    links = [
+        rt["hook"]["source"]
+        for rt in MANIFEST["runtimes"].values()
+        if rt.get("hook", {}).get("kind") == "link"
+    ]
+    memory = "platform/estate/memory"
+    return [
+        MANIFEST["bridge"],
+        MANIFEST["session_start"],
+        f"{memory}/door.py",
+        f"{memory}/runtimes.json",
+        *links,
+    ]
+
+
+def plan_home(root: Path) -> list[tuple[str, Path, object]]:
+    """The copies the home needs so it matches this checkout, empty when in step."""
+    changes = []
+    for rel in home_files():
+        source, dest = HERE / rel, root / rel
+        if dest.exists() and dest.read_bytes() == source.read_bytes():
+            continue
+
+        def copy(source=source, dest=dest):
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
+            with os.fdopen(fd, "wb") as f:
+                f.write(source.read_bytes())
+            os.chmod(tmp, source.stat().st_mode & 0o777)
+            os.replace(tmp, dest)
+
+        changes.append(("copy", dest, copy))
+    return changes
 
 
 def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
@@ -141,15 +183,23 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--runtime", action="append", choices=sorted(MANIFEST["runtimes"]))
-    ap.add_argument("--root", default=os.environ.get("IDP", "~/Documents/code/idp"))
+    ap.add_argument(
+        "--home", default=os.environ.get("ESTATE_MEMORY_HOME", "~/.estate/memory")
+    )
     args = ap.parse_args(argv)
-    root = Path(os.path.expanduser(args.root))
+    root = Path(os.path.expanduser(args.home)).resolve()
+    if root == HERE:
+        raise SystemExit(
+            f"refused: the home {root} is this checkout; runtimes run a copy"
+        )
 
     drift = refused = 0
-    for name in args.runtime or sorted(MANIFEST["runtimes"]):
-        for what, where, apply in plan(name, MANIFEST["runtimes"][name], root) or [
-            ("ok", None, None)
-        ]:
+    rows = [("home", plan_home(root))] + [
+        (name, plan(name, MANIFEST["runtimes"][name], root))
+        for name in args.runtime or sorted(MANIFEST["runtimes"])
+    ]
+    for name, changes in rows:
+        for what, where, apply in changes or [("ok", None, None)]:
             if what == "absent":
                 print(f"absent   {name:<12} no {where}")
             elif what == "ok":
