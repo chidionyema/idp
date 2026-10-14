@@ -899,3 +899,102 @@ def test_backfill_with_no_lane_configured_is_refused_not_silent(database_url):
         r = c.post("/embeddings/backfill", headers=a.headers())
         assert r.status_code == 503
         assert "not configured" in r.json()["detail"]
+
+
+# --- the session-start brief: the task's nearest facts, and what was decided or broke lately -----
+
+
+def brief(client, tenant, task="", ns="estate", limit=8):
+    return client.post(
+        "/memories/brief",
+        json={"task": task, "namespace": ns, "limit": limit},
+        headers=tenant.headers(),
+    )
+
+
+def test_brief_returns_the_tasks_nearest_facts_and_the_newest_decisions(database_url):
+    with concept_router() as (url, _), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        put(c, a, "estate", "k1", "the postgres volume filled its disk overnight")
+        put(
+            c,
+            a,
+            "estate",
+            "d1",
+            "we keep one memory store",
+            provenance={"kind": "decision"},
+        )
+        put(
+            c,
+            a,
+            "estate",
+            "i1",
+            "kokoro speech fell over",
+            provenance={"kind": "incident"},
+        )
+        put(
+            c,
+            a,
+            "estate",
+            "f1",
+            "kokoro runs on the gpu node",
+            provenance={"kind": "fact"},
+        )
+        r = brief(c, a, "where is the database stored")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["search_by_meaning"] is True
+        assert [m["key"] for m in body["relevant"]] == ["k1"]
+        # newest first, and only the kinds every session should hear about
+        assert [m["key"] for m in body["recent"]] == ["i1", "d1"]
+
+
+def test_brief_does_not_repeat_a_relevant_fact_in_recent(database_url):
+    with concept_router() as (url, _), booted_with_embed(database_url, url) as c:
+        a = Tenant(database_url, "A")
+        put(
+            c,
+            a,
+            "estate",
+            "d1",
+            "the vault holds the credential",
+            provenance={"kind": "decision"},
+        )
+        body = brief(c, a, "where is the secret").json()
+        assert [m["key"] for m in body["relevant"]] == ["d1"]
+        assert body["recent"] == []
+
+
+def test_brief_with_the_lane_down_still_answers_with_what_needs_no_vector(database_url):
+    # A session start waits on this call; a down lane must cost it the task half, not all of it.
+    with booted_with_embed(database_url, "http://127.0.0.1:9/v1") as c:
+        a = Tenant(database_url, "A")
+        put(
+            c,
+            a,
+            "estate",
+            "d1",
+            "we keep one memory store",
+            provenance={"kind": "decision"},
+        )
+        r = brief(c, a, "anything at all")
+        assert r.status_code == 200
+        body = r.json()
+        assert (body["search_by_meaning"], body["relevant"]) == (False, [])
+        assert [m["key"] for m in body["recent"]] == ["d1"]
+
+
+def test_brief_stays_in_its_namespace_and_tenant(database_url):
+    with TestClient(load_app(database_url).app) as c:
+        a, b = Tenant(database_url, "A"), Tenant(database_url, "B")
+        put(c, a, "estate", "d1", "tenant a decided", provenance={"kind": "decision"})
+        put(
+            c,
+            a,
+            "other",
+            "d2",
+            "other namespace decided",
+            provenance={"kind": "decision"},
+        )
+        assert [m["key"] for m in brief(c, a).json()["recent"]] == ["d1"]
+        assert brief(c, b).json()["recent"] == []
