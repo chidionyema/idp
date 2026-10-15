@@ -200,8 +200,15 @@ if [ -z "$base" ]; then
   git -C "$repo_root" fetch -q origin main 2>/dev/null \
     && base=$(git -C "$repo_root" merge-base HEAD origin/main 2>/dev/null || true)
 fi
-echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
-if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
+# A worktree checked out from main (fresh feature branch at origin/main) has no diff to gate.
+# Skip the gate in that case: nothing to lint, nothing to type-check.
+local_head=$(git -C "$repo_root" rev-parse HEAD)
+remote_main=$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)
+if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
+  echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
+elif [ -n "$base" ]; then
+  echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
+  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
 
 ❌ pre-push REFUSED: idp-fast-gate caught errors.
@@ -223,6 +230,7 @@ if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
 
 EOF
   exit 1
+  fi
 fi
 
 echo "✅ idp-fast-gate: green"
