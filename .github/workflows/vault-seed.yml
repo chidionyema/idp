@@ -152,16 +152,22 @@ jobs:
             # it, so every brief/recall/remember from the Mac was refused "no MCP_GATEWAY_KEY" (2026-10-14).
             # It is the one key agentgateway's /estate/mcp route accepts (platform/mcp/agentgateway.yaml).
             bin/idp-cloud secret get mcp-gateway | jq -er .MCP_GATEWAY_KEY | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev MCP_GATEWAY_KEY MCP_GATEWAY_KEY
+            # The fleetview-backend sidecar needs the unified-memory surface token to call
+            # /harness/stats for the /fleet harness panel (#6227). The token lives in the
+            # backstage-env vault entry (bin/idp-estate-seed seeds it); this line delivers
+            # its MEMORY_SURFACE_TOKEN field into estate-secrets so the backstage pod can
+            # mount it alongside the other backstage-env fields (backstage-external-secret.yaml).
+            bin/idp-cloud secret get backstage-env | jq -er .MEMORY_SURFACE_TOKEN | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" backstage-env MEMORY_SURFACE_TOKEN MEMORY_SURFACE_TOKEN
             # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
             # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
-            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml secrets/dev/MCP_GATEWAY_KEY.yaml
+            git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml secrets/dev/MCP_GATEWAY_KEY.yaml secrets/backstage-env/MEMORY_SURFACE_TOKEN.yaml
             # Run 33258762617: the commit was made, estate-secrets' pre-push hook asked gh whether the repo is
             # still private, gh had no token, the hook refused, and `|| echo unchanged` turned that into a green
             # run. The hook gets the token so it can answer; a refused push is an error, never "unchanged".
             if git -C "$RUNNER_TEMP/estate-secrets" -c user.name=vault-seed -c user.email=vault-seed@users.noreply.github.com \
                  commit -q -m "laptop router key and memory gateway key (vault-seed run $GITHUB_RUN_ID)" 2>/dev/null; then
               GH_TOKEN="$tok" git -C "$RUNNER_TEMP/estate-secrets" push -q origin HEAD || { echo "error   laptop key written but the push to estate-secrets was refused"; exit 1; }
-              echo "ok      laptop keys delivered to estate-secrets as LITELLM_LAPTOP_KEY and MCP_GATEWAY_KEY"
+              echo "ok      laptop keys + backstage-env delivered to estate-secrets"
             else
               echo "info    laptop key unchanged in estate-secrets"
             fi
