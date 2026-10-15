@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS approval_tickets (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resume_data JSONB,  -- serialised AgentTurnInput so a run can resume after restart
     CONSTRAINT uq_approval_payload_hash_pending
-        UNIQUE (tenant_id, payload_hash, status)
+        UNIQUE (tenant_id, payload_hash)
         WHERE status = 'pending'
 );
 
