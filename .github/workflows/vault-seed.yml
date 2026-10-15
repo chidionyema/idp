@@ -74,6 +74,8 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
+          # Debug: list dynamic groups to find the GitHub machine identity's group
+          oci iam dynamic-group list --compartment-id "$OCI_TENANCY_OCID" --all 2>&1 | grep -E '"name"|"description"' | head -20 || true
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
