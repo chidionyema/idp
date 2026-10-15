@@ -57,7 +57,7 @@ jobs:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
-          ESTATE_VAULT_OCID: ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa
+
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
           OCI_S3_ACCESS_KEY: ${{ secrets.OCI_S3_ACCESS_KEY }}
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
