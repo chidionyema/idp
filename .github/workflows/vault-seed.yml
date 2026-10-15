@@ -153,10 +153,13 @@ jobs:
             # It is the one key agentgateway's /estate/mcp route accepts (platform/mcp/agentgateway.yaml).
             bin/idp-cloud secret get mcp-gateway | jq -er .MCP_GATEWAY_KEY | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" dev MCP_GATEWAY_KEY MCP_GATEWAY_KEY
             # The fleetview-backend sidecar needs the unified-memory surface token to call
-            # /harness/stats for the /fleet harness panel (#6227). The token lives in the
-            # backstage-env vault entry (bin/idp-estate-seed seeds it); this line delivers
-            # its MEMORY_SURFACE_TOKEN field into estate-secrets so the backstage pod can
-            # mount it alongside the other backstage-env fields (backstage-external-secret.yaml).
+            # /harness/stats for the /fleet harness panel (#6227). bin/idp-estate-seed is the
+            # canonical creator of backstage-env, but the Mac has no OCI key (ADR 0017). Create
+            # backstage-env here directly using the workflow's OCI session (crew#66 root trust:
+            # backstage-env is an estate-born entry, crew#248: the machine identity writes it).
+            python3 -c 'import secrets; print("MEMORY_SURFACE_TOKEN=sk-"+secrets.token_hex(24))' > "$RUNNER_TEMP/backstage-env-seed" && \
+              ESTATE_ENV_FILE="$RUNNER_TEMP/backstage-env-seed" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>/dev/null || true
+            # Now deliver it into estate-secrets.
             bin/idp-cloud secret get backstage-env | jq -er .MEMORY_SURFACE_TOKEN | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" backstage-env MEMORY_SURFACE_TOKEN MEMORY_SURFACE_TOKEN
             # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
             # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
