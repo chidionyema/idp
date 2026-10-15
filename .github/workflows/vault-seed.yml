@@ -166,7 +166,10 @@ jobs:
             mkdir -p "$(dirname "$SOPS_AGE_KEY_FILE")" && umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > "$SOPS_AGE_KEY_FILE"
             _tok="sk-$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
             _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
-            ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE >/dev/null 2>&1 || true
+            # Write to OCI Vault. --merge creates the entry if it does not yet exist;
+            # exit 1 (NotFound) is expected on first delivery and is handled fine.
+            # Exit 2 (real failure) surfaces as a step failure and stops the run.
+            ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
             # secret-add tries to read the existing file for filename-override; instead, write fresh.
             mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
