@@ -74,19 +74,20 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # Get vault management endpoint, capturing the actual error
+          # Try to get vault key OCID via the vault's management endpoint
           _rc=0; _out=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" 2>&1) || _rc=$?
+          echo "vault get rc=$_rc out=$_out"
           if [ "$_rc" = 0 ]; then
             _mgmt_ep=$(echo "$_out" | jq -r '.data."management-endpoint"' 2>/dev/null)
-            echo "ok      vault management endpoint: $_mgmt_ep"
-          else
-            echo "vault get failed (rc=$_rc): $_out"
-            _mgmt_ep=""
+            echo "vault management endpoint: $_mgmt_ep"
+            if [ -n "$_mgmt_ep" ]; then
+              _rc=0; _out=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) || _rc=$?
+              echo "key-list rc=$_rc keys=$(echo "$_out" | jq -r '.[]' 2>/dev/null | tr '\n' ' ')"
+            fi
           fi
-          if [ -n "$_mgmt_ep" ]; then
-            _rc=0; _out=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) || _rc=$?
-            if [ "$_rc" = 0 ]; then echo "keys: $(echo "$_out" | jq -r '.[]' 2>/dev/null | tr '\n' ' ')"; else echo "key-list failed (rc=$_rc): $_out"; fi
-          fi
+          # List dynamic groups to find the GitHub machine identity's group
+          _rc=0; _out=$(oci iam dynamic-group list --compartment-id "$OCI_TENANCY_OCID" --all 2>&1) || _rc=$?
+          echo "dynamic-group list rc=$_rc: $(echo "$_out" | jq -r '.[].name' 2>/dev/null | tr '\n' ' ')"
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
