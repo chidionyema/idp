@@ -169,8 +169,16 @@ jobs:
             # Write to OCI Vault. --merge creates the entry if it does not yet exist;
             # Diagnose vault + key OCID resolution first to catch resolution failures.
             source bin/idp-cloud  # get oci_vault_id and oci_vault_key_id
+            # Also try tofu output directly
+            _tf_vid=$(cd platform/oci && tofu output -raw vault_id 2>&1) && echo "tofu    vault_id: $_tf_vid" || echo "tofu    vault_id failed: $_tf_vid"
             _vid=$(oci_vault_id 2>&1) && echo "ok      vault OCID resolved: $_vid" || echo "FAIL    vault OCID unresolved: $_vid"
             _kid=$(oci_vault_key_id "$_vid" 2>&1) && echo "ok      key OCID resolved: $_kid" || echo "FAIL    key OCID unresolved: $_kid"
+            # Also try listing vault secrets directly
+            if [ -n "$_vid" ]; then
+              _vl=$(oci vault secret list --vault-id "$_vid" --output json 2>&1) && echo "vault-list ok: $(echo $_vl | jq -r '.[0].name' 2>/dev/null || echo 'empty')" || echo "vault-list failed: $_vl"
+            else
+              echo "vault-list skipped: no vault OCID"
+            fi
             # Attempt vault write. exit 0 = success; exit 1 = NotFound+create (handled); exit 2 = unreachable (proceed to SOPS)
             _vp_out=$(ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>&1) || _vp_rc=$?
             [ -n "${_vp_rc:-}" ] && echo "vault-write exited $_vp_rc" || true
