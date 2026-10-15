@@ -57,6 +57,7 @@ jobs:
           OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
+          ESTATE_VAULT_OCID: ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa
           OCI_OS_NAMESPACE: ${{ vars.OCI_OS_NAMESPACE }}
           OCI_S3_ACCESS_KEY: ${{ secrets.OCI_S3_ACCESS_KEY }}
           OCI_S3_SECRET_KEY: ${{ secrets.OCI_S3_SECRET_KEY }}
@@ -179,6 +180,11 @@ jobs:
             else
               echo "vault-list skipped: no vault OCID"
             fi
+            # Try querying the vault's management endpoint for keys directly
+            _mgmt=$(oci vault get --vault-id "$_vid" --query 'data."management-endpoint"' --raw-output 2>&1) && echo "mgmt endpoint: $_mgmt" || echo "mgmt endpoint failed: $_mgmt"
+            if [ -n "$_mgmt" ]; then
+              _keys=$(oci kms management key list --endpoint "$_mgmt" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) && echo "keys: $(echo $_keys | jq -r '.[]' 2>/dev/null | tr '\n' ' ')" || echo "key-list failed: $_keys"
+            fi
             # Attempt vault write. exit 0 = success; exit 1 = NotFound+create (handled); exit 2 = unreachable (proceed to SOPS)
             _vp_out=$(ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>&1) || _vp_rc=$?
             [ -n "${_vp_rc:-}" ] && echo "vault-write exited $_vp_rc" || true
@@ -187,6 +193,11 @@ jobs:
               2) echo "WARN    backstage-env OCI vault unreachable (exit 2); SOPS backup is the fallback" ;;
               *) echo "WARN    backstage-env OCI write failed with exit $_vp_rc; SOPS backup is the fallback" ;;
             esac
+            # Also try to get the vault key OCID from the vault's management endpoint (needs vault OCID)
+            _mgmt_ep=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" --query 'data."management-endpoint"' --raw-output 2>&1) && echo "ok      vault management endpoint: $_mgmt_ep" || echo "vault management endpoint failed: $_mgmt_ep"
+            if [ -n "$_mgmt_ep" ]; then
+              _k=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) && echo "key list: $(echo $_k | jq -r '.[]' 2>/dev/null | tr '\n' ' ')" || echo "key list failed: $_k"
+            fi
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
             # secret-add tries to read the existing file for filename-override; instead, write fresh.
             mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
