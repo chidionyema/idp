@@ -154,7 +154,10 @@ flows:
     # llm: the fleetview sidecar's voice (/voice/hear, /voice/stream, /voice/say) calls the
     # router at litellm.llm.svc:4000. Undeclared, every call timed out at the fence (measured
     # 2026-10-08 from inside the sidecar); declared on llm's ingress_from too.
-    egress: [dagster, estate-db, event-bus, identity, kyverno, llm, robusta, tailscale]
+    # unified-memory: the fleetview sidecar's /fleet harness panel calls unified-memory-server
+    # for agent harness telemetry (#6227). Without this the connection times out at the fence.
+    # keda: the backstage sidecar runs a KEDA watcher that needs to reach the KEDA operator (crew#839).
+    egress: [dagster, estate-db, event-bus, identity, kyverno, llm, robusta, tailscale, unified-memory, keda]
     ingress_from: [edge]
     # api.github.com. The portal's buttons are scaffolder templates whose one step is
     # `github:actions:dispatch`, and the catalogue also ingests entities and TechDocs over the
@@ -237,7 +240,8 @@ flows:
     # (platform/unified-memory-server/oke-unified-memory.yaml, HTTPScaledObject).
     egress: [observability, unified-memory]
     # mcp: the estate MCP server, the agents' door to memory, calls the interceptor's proxy.
-    ingress_from: [mcp]
+    # backstage: the backstage sidecar runs a KEDA watcher that needs to reach the KEDA operator.
+    ingress_from: [backstage, mcp]
   llm:
     # estate-db: the router mints budgeted virtual keys and writes every call to a spend ledger
     # in postgres `litellm` (platform/llm/litellm.yaml composes DATABASE_URL against
@@ -296,7 +300,7 @@ flows:
     # which is how an agent -- an assistant session, Otto on Telegram -- asks the investigator
     # a question. Both directions declared, as above.
     # keda: the memory server (unified-memory) is reached through the HTTP add-on's interceptor.
-    egress: [observability, hindsight, robusta, llm, keda]
+    egress: [observability, hindsight, robusta, llm, keda, unified-memory]
     # The server does not ship its data. Both init containers run `flux pull artifact
     # oci://ghcr.io/chidionyema/idp/estate-db` (platform/mcp/estate-mcp.yaml), so the pod itself
     # dials the public internet before the server starts -- this is not an image pull, which the
@@ -662,12 +666,14 @@ flows:
   unified-memory:
     # The estate's memory layer (§6). estate-db: its own role and database on the one Postgres
     # (estate-rw.estate-db, DATABASE_URL). keda: every request arrives through the HTTP add-on's
-    # interceptor. llm: every remember, every recall query and the backfill call the router's
-    # `embed` lane (MEMORY_EMBED_URL, litellm.llm.svc). Undeclared, llm's default-deny dropped
-    # every embed call: measured 2026-10-13, /embeddings/backfill failed 2 of 2 per call on the
-    # 20s timeout and the router's log never saw one request. No internet: the router does that.
+    # interceptor. backstage: the fleetview sidecar reads /harness/stats for the /fleet telemetry
+    # panel (#6227). mcp: the estate MCP server, the agents' door to memory.
+    # llm: the HTTP interceptor (litellm's proxy) that unified-memory reaches over. The interceptor
+    # is the `embed` lane of the router -- every fact stored is embedded on write, and every
+    # recall query is embedded before the vector search. Measured 2026-10-13: without this the
+    # /embeddings/backfill calls failed every time on the 20s timeout.
     egress: [estate-db, llm]
-    ingress_from: [keda]
+    ingress_from: [backstage, keda, mcp]
   sovereign-system:
     # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).
     # All LLM calls must go through the estate proxy in llm; no direct vendor egress is declared
