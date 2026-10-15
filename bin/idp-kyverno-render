@@ -107,20 +107,36 @@ done
 # directory's namespace transformer rewrote it to observability, and this judge passed a render
 # that admission refused for 41 hours.
 rm -rf "$S/exceptions"; mkdir -p "$S/exceptions"
-python3 - "$IDP" "$S/exceptions" <<'PY'
+python3 - "$IDP" "$S/exceptions" "$@" <<'PY'
 import sys, yaml, pathlib, subprocess
-idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = set()
+idp = pathlib.Path(sys.argv[1]); out = pathlib.Path(sys.argv[2]); n = 0; paths = {}
+def add(p, strict):  # ./platform/x and platform/x are one directory; build it once. Strict wins: a
+    key = p[2:] if p.startswith("./") else p  # dir clusters/oke applies must render, a judged one may skip.
+    paths[key] = paths.get(key, False) or strict
 for k in sorted((idp / "clusters/oke").glob("*.yaml")):
     for d in yaml.safe_load_all(open(k)):
         path = ((d or {}).get("spec") or {}).get("path", "")
         if (d or {}).get("kind") == "Kustomization" and path.startswith("./platform/"):
-            paths.add(path)
+            add(path, True)
+# 2026-10-15: the dirs this run is judging declare waivers too, and admission honours a
+# PolicyException wherever in the estate it is declared, so long as it lands in namespace kyverno.
+# Loading them only from clusters/oke Kustomization paths refused four SPIRE chart hook Pods for the
+# seven policies platform/spire/exception.yaml already waives -- 26 of the 32 failures the rung
+# printed -- because no clusters/oke Kustomization names ./platform/spire. A judged dir that will
+# not render is skipped, never fatal: a waiver that fails to load is a red verdict, the
+# fail-closed direction. Only loading more waivers can turn a red verdict green, never the reverse.
+for a in sys.argv[3:]:
+    if a:
+        add(a, False)
 # The estate's own ClusterPolicies (require-priority-class, provider-independence R43, ...) ship in
 # the same tree; until 2026-08-28 (crew#66) only the upstream/prospector set was judged here, so a
 # platform policy could refuse at admission what this judge had passed. They are appended to the set.
 est = 0
-for path in sorted(paths):
-    r = subprocess.run(["kubectl", "kustomize", str(idp / path)], capture_output=True, text=True, check=True)
+for path, strict in sorted(paths.items()):
+    r = subprocess.run(["kubectl", "kustomize", str(idp / path)], capture_output=True, text=True,
+                       check=strict)
+    if r.returncode != 0:
+        continue
     for d in yaml.safe_load_all(r.stdout):
         if d and d.get("kind") == "PolicyException" and d["metadata"].get("namespace") == "kyverno":
             (out / f"{n}.yaml").write_text(yaml.safe_dump(d)); n += 1
@@ -130,7 +146,7 @@ for path in sorted(paths):
             # count and no verdict. Strip it so the policy is judged, not skipped.
             d["metadata"].pop("namespace", None)
             with open(out.parent / "policies.yaml", "a") as f: f.write("---\n" + yaml.safe_dump(d)); est += 1
-print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths")
+print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths and the dirs judged")
 print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
 PY
 
@@ -419,11 +435,38 @@ open(p, "w").write(yaml.safe_dump_all(docs))
 PY
 }
 
+# 2026-10-15: the rung was red on every main push, and 20 of platform/flannel's failures were for a
+# pod admission has accepted for 16 days. Kyverno's own ConfigMap says why:
+#   kubectl get cm kyverno -n kyverno -o jsonpath='{.data.resourceFilters}'
+#   [*/*,kyverno,*] [Event,*,*] [*/*,kube-system,*] [*/*,kube-public,*] [*/*,kube-node-lease,*] ...
+# The admission controller is filtered out of those namespaces, so an Enforce policy that matches
+# every Pod (disallow-capabilities-strict) let a kube-system pod which adds NET_ADMIN through a real
+# `kubectl apply --dry-run=server`, while this judge called the same pod 20 failures. A verdict
+# about a policy that admission never applies is not a stricter gate, it is a false one: it held
+# main red for resources no change to the estate could fix. The gap this papers over is real --
+# nothing polices kube-system -- and it belongs to the Kyverno config, not to a judge that must
+# agree with admission. A filter that cannot read its input keeps the file, so this is fail-closed.
+filter_unwatched() {  # <file>: drop what Kyverno's resourceFilters keep admission from ever seeing
+  python3 - "$1" <<'PYF' || true
+import sys, yaml
+UNWATCHED = {"kyverno", "kube-system", "kube-public", "kube-node-lease"}
+p = sys.argv[1]
+docs = [d for d in yaml.safe_load_all(open(p)) if d]
+kept = [d for d in docs if (d.get("metadata") or {}).get("namespace") not in UNWATCHED]
+if len(kept) == len(docs):
+    raise SystemExit(0)
+print(f"note  {p.rsplit('/', 1)[-1]}: {len(docs) - len(kept)} resource(s) in a namespace Kyverno's "
+      f"resourceFilters exclude, not judged (admission never sees them)")
+open(p, "w").write(yaml.safe_dump_all(kept) if kept else "")
+PYF
+}
+
 declare -A _LABEL _KIND
 res=()
 
 for plain in "$S"/plain-*.yaml; do
   [ -s "$plain" ] || continue
+  filter_unwatched "$plain"; [ -s "$plain" ] || continue
   _LABEL["$plain"]=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
   _KIND["$plain"]="plain   "
   res+=("$plain")
@@ -443,6 +486,7 @@ if [ -s "$S/prep-fail.txt" ]; then
 fi
 while read -r name ns npatch; do
   f="$S/$name.final.yaml"; [ -s "$f" ] || continue
+  filter_unwatched "$f"; [ -s "$f" ] || continue
   _LABEL["$f"]="$name ($ns, $npatch patches)"; _KIND["$f"]="render  "
   res+=("$f")
 done < "$S/releases.txt"
