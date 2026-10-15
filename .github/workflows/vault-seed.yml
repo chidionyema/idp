@@ -74,11 +74,21 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # The OCI vault for estate secrets is in the estate compartment (OCI_COMPARTMENT_OCID).
-          # Re-pull tofu state from S3 now that the backend_override.tf is rendered by bin/idp-oci-login --check.
-          (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          _vid=$(cd platform/oci && tofu output -raw vault_id 2>/dev/null) && echo "tofu    vault_id: $_vid" || echo "tofu    vault_id: EMPTY"
-          _kid=$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null) && echo "tofu    vault_key_id: $_kid" || echo "tofu    vault_key_id: EMPTY"
+          # Get vault+key OCID from the laptop.key secret that was written in a previous successful run.
+          # Use 'oci vault secret list --name laptop.key' to find the secret (compartment-scoped, no vault OCID needed).
+          _secret_ids=$(oci vault secret list --compartment-id "$OCI_COMPARTMENT_OCID" --name laptop.key --all --query "data[?\\"lifecycle-state\\"=='ACTIVE'].id" --output json 2>/dev/null | jq -r '.[]' 2>/dev/null) || _secret_ids=""
+          if [ -n "$_secret_ids" ]; then
+            _sid=$(echo "$_secret_ids" | head -1)
+            echo "laptop.key secret id: $_sid"
+            _rc=0; _secret=$(oci vault secret get --secret-id "$_sid" 2>&1) || _rc=$?
+            if [ "$_rc" = 0 ]; then
+              _vault_ocid=$(echo "$_secret" | jq -r '.data."vault-id"' 2>/dev/null)
+              _key_ocid=$(echo "$_secret" | jq -r '.data."key-id"' 2>/dev/null)
+              echo "ESTATE_VAULT_OCID=$_vault_ocid"
+              echo "ESTATE_VAULT_KEY_OCID=$_key_ocid"
+              export ESTATE_VAULT_OCID="$_vault_ocid" ESTATE_VAULT_KEY_OCID="$_key_ocid"
+            fi
+          fi
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
