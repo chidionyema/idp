@@ -74,28 +74,15 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # Find laptop.key in the estate vault by trying both the estate compartment and the ESO vault.
-          # First try estate compartment vault (from tofu state).
-          _vid=$(cd platform/oci && tofu output -raw vault_id 2>/dev/null) && echo "tofu    vault_id: $_vid" || echo "tofu    vault_id: EMPTY"
-          _kid=$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null) && echo "tofu    vault_key_id: $_kid" || echo "tofu    vault_key_id: EMPTY"
-          # Try listing laptop.key in the estate compartment vault
-          for _vid in "$(cd platform/oci && tofu output -raw vault_id 2>/dev/null)" "ocid1.vault.oc1.uk-london-1.ervi35puaagem.abwgiljsj3naku45j7hnffej3xlqb3b3oiv6voegh5nhzekbxqofbxqxm5sa"; do
-            [ -z "$_vid" ] && continue
-            _rc=0; _secrets=$(oci vault secret list --vault-id "$_vid" --all 2>&1) || _rc=$?
-            echo "vault $_vid: secret list rc=$_rc count=$(echo "$_secrets" | jq 'length' 2>/dev/null || echo 0)"
-            _sid=$(echo "$_secrets" | jq -r '.[] | select(.name=="laptop.key") | .id' 2>/dev/null)
-            if [ -n "$_sid" ]; then
-              echo "laptop.key found in vault $_vid: $_sid"
-              _rc=0; _s=$(oci vault secret get --secret-id "$_sid" 2>&1) || _rc=$?
-              if [ "$_rc" = 0 ]; then
-                _vk=$(echo "$_s" | jq -r '.data."key-id"' 2>/dev/null)
-                echo "ESTATE_VAULT_OCID=$_vid"
-                echo "ESTATE_VAULT_KEY_OCID=$_vk"
-                export ESTATE_VAULT_OCID="$_vid" ESTATE_VAULT_KEY_OCID="$_vk"
-                break
-              fi
-            fi
-          done
+          # The tofu state has the ESO vault OCID. Use it directly as the vault for vault-seed.
+          _vid="$(cd platform/oci && tofu output -raw vault_id 2>/dev/null)"
+          _kid="$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null)"
+          echo "tofu    vault_id: $_vid"
+          echo "tofu    vault_key_id: $_kid"
+          if [ -n "$_vid" ] && [ -n "$_kid" ]; then
+            echo "Setting ESTATE_VAULT_OCID and ESTATE_VAULT_KEY_OCID from tofu state"
+            export ESTATE_VAULT_OCID="$_vid" ESTATE_VAULT_KEY_OCID="$_kid"
+          fi
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
