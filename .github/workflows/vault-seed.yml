@@ -75,7 +75,11 @@ jobs:
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
           # Debug: list dynamic groups to find the GitHub machine identity's group
-          oci iam dynamic-group list --compartment-id "$OCI_TENANCY_OCID" --all 2>&1 | grep -E '"name"|"description"' | head -20 || true
+          oci iam dynamic-group list --compartment-id "$OCI_TENANCY_OCID" --all 2>&1 | python3 -c "import json,sys; [print(d.get('name',''), d.get('description','')) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null || echo "dynamic-group list failed"
+          # Also try listing identity providers (OIDC)
+          oci iam identity-provider list --compartment-id "$OCI_TENANCY_OCID" --protocol OCI_IDCS 2>&1 | python3 -c "import json,sys; [print(d.get('name',''), d.get('description','')) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null || echo "identity-provider list failed"
+          # Try to get the vault's encryption key directly from the vault's management endpoint using the hardcoded vault OCID
+          _key_via_vault=$(oci vault secret list --vault-id "$ESTATE_VAULT_OCID" --query 'data[0].id' --output json 2>/dev/null) && echo "vault secrets: $_key_via_vault" || echo "vault secret list failed: $_key_via_vault"
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
@@ -202,6 +206,8 @@ jobs:
             fi
             # Also try the vault OCID as-is (no compartment query)
             _mgmt2=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" 2>&1) && echo "vault get ok: $(echo $_mgmt2 | jq -r '.data."management-endpoint"' 2>/dev/null)" || echo "vault get failed: $_mgmt2"
+            # Try listing vault keys using the vault's key OCID from terraform output
+            (cd platform/oci && tofu output -raw vault_key_id 2>/dev/null | xargs -I{} sh -c 'echo "vault_key_id from tofu: {}"') || echo "vault_key_id from tofu: not found"
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
             # secret-add tries to read the existing file for filename-override; instead, write fresh.
             mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
