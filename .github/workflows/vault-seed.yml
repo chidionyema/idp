@@ -67,7 +67,9 @@ jobs:
           SEED_GITHUB_APP_SLUG: ${{ secrets.SEED_GITHUB_APP_SLUG }}
           SEED_GITHUB_APP_CLIENT_ID: ${{ secrets.SEED_GITHUB_APP_CLIENT_ID }}
           SEED_GITHUB_APP_PEM_B64: ${{ secrets.SEED_GITHUB_APP_PEM_B64 }}
+          SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}
         run: |
+          mkdir -p ~/.config/prospector && umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > ~/.config/prospector/age-key.txt
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
@@ -157,10 +159,25 @@ jobs:
             # canonical creator of backstage-env, but the Mac has no OCI key (ADR 0017). Create
             # backstage-env here directly using the workflow's OCI session (crew#66 root trust:
             # backstage-env is an estate-born entry, crew#248: the machine identity writes it).
-            python3 -c 'import secrets; print("MEMORY_SURFACE_TOKEN=sk-"+secrets.token_hex(24))' > "$RUNNER_TEMP/backstage-env-seed" && \
-              ESTATE_ENV_FILE="$RUNNER_TEMP/backstage-env-seed" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>/dev/null || true
-            # Now deliver it into estate-secrets.
-            bin/idp-cloud secret get backstage-env | jq -er .MEMORY_SURFACE_TOKEN | SECRET_REPLACE=1 "$RUNNER_TEMP/estate-secrets/scripts/secret-add" backstage-env MEMORY_SURFACE_TOKEN MEMORY_SURFACE_TOKEN
+            #
+            # Step 1: mint the token and write it into the OCI vault as backstage-env.
+            # Step 2: deliver it into estate-secrets as a SOPS-encrypted YAML.
+            export SOPS_AGE_KEY_FILE="$RUNNER_TEMP/age-key.txt"
+            mkdir -p "$(dirname "$SOPS_AGE_KEY_FILE")" && umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > "$SOPS_AGE_KEY_FILE"
+            _tok="sk-$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+            _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
+            ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE >/dev/null 2>&1 || true
+            # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
+            # secret-add tries to read the existing file for filename-override; instead, write fresh.
+            mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
+            printf 'MEMORY_SURFACE_TOKEN: %s\n' "$_tok" | \
+              SOPS_AGE_KEY_FILE="$SOPS_AGE_KEY_FILE" \
+              python3 -c 'import json,sys; d=json.dumps({"MEMORY_SURFACE_TOKEN": sys.stdin.read().strip()}); print(d)' | \
+              (cd "$RUNNER_TEMP/estate-secrets" && sops --encrypt \
+                --filename-override secrets/backstage-env/MEMORY_SURFACE_TOKEN.yaml \
+                --input-type json --output-type yaml /dev/stdin) > \
+                "$RUNNER_TEMP/estate-secrets/secrets/backstage-env/MEMORY_SURFACE_TOKEN.yaml"
+            echo "ok      backstage-env/MEMORY_SURFACE_TOKEN written to estate-secrets"
             # `commit -am` never stages a NEW file: the first delivery of LITELLM_LAPTOP_KEY.yaml printed
             # "unchanged" and pushed nothing (run 33257838162). Add the file by name, then commit.
             git -C "$RUNNER_TEMP/estate-secrets" add secrets/dev/LITELLM_LAPTOP_KEY.yaml secrets/dev/MCP_GATEWAY_KEY.yaml secrets/backstage-env/MEMORY_SURFACE_TOKEN.yaml
