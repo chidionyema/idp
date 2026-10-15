@@ -32,7 +32,7 @@ from typing import Any
 
 _URL_ENV = "ESTATE_MEMORY_URL"
 _HOST_ENV = "ESTATE_MEMORY_HOST"
-_TOKEN_FILE_ENV = "ESTATE_MEMORY_TOKEN_FILE"
+_TFILE_ENV = "ESTATE_MEMORY_TOKEN_FILE"
 _TIMEOUT_ENV = "ESTATE_MEMORY_TIMEOUT_S"
 _TIMEOUT_DEFAULT = 20.0
 
@@ -41,7 +41,7 @@ def _read_token(token_file: str) -> str:
     try:
         with open(token_file) as f:
             return f.read().strip()
-    except OSError as exc:
+    except OSError:
         return ""
 
 
@@ -83,12 +83,12 @@ def harness_stats() -> dict[str, Any]:
             "store": {},
         }
 
-    token_file = os.environ.get(_TOKEN_FILE_ENV, "").strip()
+    token_file = os.environ.get(_TFILE_ENV, "").strip()
     token = _read_token(token_file) if token_file else ""
     if not token:
         return {
             "available": False,
-            "error": f"no surface token at {_TOKEN_FILE_ENV}",
+            "error": f"no surface token at {_TFILE_ENV}",
             "telemetry": {},
             "store": {},
         }
