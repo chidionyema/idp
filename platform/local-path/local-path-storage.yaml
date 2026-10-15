@@ -95,12 +95,32 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: local-path-provisioner
-          image: rancher/local-path-provisioner:v0.0.31
+          # The registry host is written out. The nodes run cri-o with short-name mode enforcing,
+          # so an unqualified `rancher/local-path-provisioner` is never resolved and the pull never
+          # happens at all: require-registry-host (platform/edge/require-registry-host.yaml) is the
+          # estate's own record of that incident class (crew#284 seaweedfs, crew#325 tailscale).
+          image: docker.io/rancher/local-path-provisioner:v0.0.31
           imagePullPolicy: IfNotPresent
           securityContext:
             readOnlyRootFilesystem: true
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
+          # The provisioner exposes no health endpoint, so the probe is the one thing it cannot run
+          # without: its ConfigMap, mounted at /etc/config. busybox is in this image (upstream
+          # package/Dockerfile installs it), so `sh` is a check that can actually run -- a probe
+          # whose command is absent is not a probe, it is a CrashLoop the kubelet reports as
+          # unhealthy. Liveness and readiness are the same check on purpose: a provisioner that
+          # cannot read its config cannot provision anything, and a restart is the only remedy.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "test -r /etc/config/config.json"]
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -r /etc/config/config.json"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
           command:
             - local-path-provisioner
             - --debug
