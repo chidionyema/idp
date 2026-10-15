@@ -35,6 +35,26 @@ spec:
   owner: group:default/platform
   domain: platform
 ---
+# Coroot is the service map (platform/coroot/coroot.yaml, Layer 1 of the asymmetric collection
+# pattern): the edge that says checkout calls payments, and that payments is timing out. Its
+# Services carry backstage.io/kubernetes-id=coroot through the release's postRenderer, and
+# require-catalogue-entity (Enforce) refuses a Service that names an entity the catalogue does not
+# hold -- so this entity is what makes that label true rather than a shape that satisfies a regex.
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: coroot
+  title: 'Coroot (the service map)'
+  description: >-
+    Which process calls which, over which protocol, with which error rate: the estate's
+    zero-instrumentation service map, assembled from sockets at the kernel.
+  tags: [platform]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: observability
+---
 apiVersion: backstage.io/v1alpha1
 kind: System
 metadata:

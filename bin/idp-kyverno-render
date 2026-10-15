@@ -100,6 +100,68 @@ for want in no-optional-secret-references money-rail-single-writer; do
   exit 2
 done
 
+# A rule held in Audit refuses nothing. Admission writes it into the cluster's policy report and
+# lets the object through, and this estate holds rules in Audit on purpose: require-registry-host is
+# Audit because an unqualified image is admitted fine and then fails to pull minutes later (crew#284
+# and crew#325 are both that incident), and no webhook can refuse an object over a failure that has
+# not happened yet. platform/edge/flux-only-writes is Audit for the same kind of reason. The Kyverno
+# CLI prints an Audit violation as `fail` like any other, so a rung counting the CLI's failures
+# refused what admission accepts -- the same defect as judging a directory admission never sees, and
+# a gate that refuses correct work is an outage (LAW 38). Measured 2026-10-15: this was red on main
+# for platform/local-path (4 of its 6) and for the coroot release (4 of its 92).
+#
+# Two files come out: the audit list, so the batch attribution reports an Audit violation as an
+# audit count instead of a red -- the violations stay visible, which is what promotes
+# kyverno-secrets-policy to Enforce -- and a refusing-rules-only set for the one-at-a-time fallback.
+# Effective action is the rule's own failureAction, else the policy's validationFailureAction, else
+# Enforce. Rule-level wins, so platform/scheduling/require-priority-class keeps its two Enforce
+# rules and loses only its Audit one; a policy left with no refusing rule is not judged at all.
+python3 - "$S/policies.yaml" "$S/audit.tsv" "$S/policies-enforce.yaml" <<'PY'
+import sys, yaml
+
+src, audit_path, enforce_path = sys.argv[1:4]
+docs = [d for d in yaml.safe_load_all(open(src)) if isinstance(d, dict)]
+audit, out = [], []
+
+
+def _action(rule, spec):
+    for key in ("validate", "verifyImages", "mutate", "generate"):
+        body = rule.get(key)
+        if isinstance(body, dict) and body.get("failureAction"):
+            return str(body["failureAction"])
+    return str(spec.get("validationFailureAction") or "Enforce")
+
+
+for d in docs:
+    spec = d.get("spec") if isinstance(d.get("spec"), dict) else {}
+    rules = spec.get("rules")
+    if not isinstance(d.get("kind"), str) or not d["kind"].endswith("Policy") \
+            or not isinstance(rules, list):
+        out.append(d)
+        continue
+    keep = []
+    for r in rules:
+        if _action(r, spec).lower() == "audit":
+            audit.append((d.get("metadata", {}).get("name"), r.get("name")))
+            continue
+        keep.append(r)
+    if keep:
+        spec["rules"] = keep
+        out.append(d)
+
+with open(audit_path, "w") as fh:
+    for pol, rule in audit:
+        fh.write("%s\t%s\n" % (pol, rule))
+with open(enforce_path, "w") as fh:
+    yaml.safe_dump_all(out, fh)
+if audit:
+    print("audit  policies  %d rule(s) refuse nothing and are counted as audits, not failures:"
+          % len(audit))
+    for pol, rule in audit:
+        print("                 %s/%s" % (pol, rule))
+PY
+export KV_AUDIT="$S/audit.tsv"
+
 # PolicyExceptions are handed to the CLI as admission sees them: Kyverno honours only the ones in
 # namespace kyverno (platform/kyverno/kyverno.yaml features.policyExceptions), wherever in the estate
 # they are declared, so every path a clusters/oke Kustomization points at is rendered once here.
@@ -149,6 +211,32 @@ for path, strict in sorted(paths.items()):
 print(f"exceptions {n} PolicyExceptions in namespace kyverno across clusters/oke paths and the dirs judged")
 print(f"policies  +{est} estate ClusterPolicies from clusters/oke paths (platform/edge, platform/scheduling)")
 PY
+
+# The CLI refuses to load a PolicyException whose spec.exceptions[] entry has no ruleNames, and it
+# aborts the whole run rather than the one entry: `Error: failed to load exceptions (... ruleNames:
+# Required value ...)`, exit 1, no report, nothing judged. Every kyverno call below passes
+# "${exc[@]}", so one unloadable waiver is not one bad verdict -- it is the whole rung judging
+# nothing, while this script still printed green verdict lines, which is what it did on 2026-10-15
+# (the exception that did it was written in the same commit as this check). The API server's rule is
+# the CLI's rule; enforce it here, once, by name, and go BLIND rather than green.
+python3 - "$S/exceptions" <<'PYX'
+import sys, glob, yaml
+bad = []
+for p in sorted(glob.glob(sys.argv[1] + "/*.yaml")):
+    for d in yaml.safe_load_all(open(p)):
+        if not isinstance(d, dict) or d.get("kind") != "PolicyException":
+            continue
+        for i, e in enumerate((d.get("spec") or {}).get("exceptions") or []):
+            if not e.get("ruleNames"):
+                bad.append("%s: spec.exceptions[%d] (%s) names no ruleNames"
+                           % (p.rsplit("/", 1)[-1], i, e.get("policyName")))
+if bad:
+    sys.stderr.write("BLIND  exceptions  the CLI will not load these PolicyExceptions, so every\n")
+    sys.stderr.write("                   verdict below would be a verdict on nothing:\n")
+    for b in bad:
+        sys.stderr.write("                 " + b + "\n")
+    raise SystemExit(2)
+PYX
 
 rc=0
 # 2026-08-28 (crew#584, founder: "tests were supposed to be 9x faster"): this loop ran the 16 platform
@@ -299,14 +387,14 @@ judge_batch() {  # judge_batch <verdict-file> <label> <resource-file>...: one ky
     # The report did not account for every result against a file we asked about. Never guess a
     # verdict: judge one at a time, which is what this did before the batch existed.
     echo "note  $label: per-resource attribution incomplete, judging one at a time" >> "$vf"
-    for f in "$@"; do judge_one "$f" >> "$vf" || echo 1 > "${vf%.txt}.rc"; done
+    for f in "$@"; do judge_one "$f" >> "$vf" || echo $? > "${vf%.txt}.rc"; done
     return 0
   fi
   while IFS=$'\t' read -r verdict file counts; do
     [ -n "$verdict" ] || continue
     if [ "$verdict" = red ]; then
       # Only the file that broke pays for a second process, and it prints the block it always did.
-      judge_one "$file" >> "$vf" || echo 1 > "${vf%.txt}.rc"
+      judge_one "$file" >> "$vf" || echo $? > "${vf%.txt}.rc"
     else
       echo "ok    ${_KIND[$file]} ${_LABEL[$file]}: $counts" >> "$vf"
     fi
@@ -323,9 +411,21 @@ judge_batch() {  # judge_batch <verdict-file> <label> <resource-file>...: one ky
 # an empty report -- attribution fell back every time and the whole speedup measured zero, while
 # kyverno was writing 38KB of perfectly good report into the pipe (2026-09-07).
 cat > "$S/attribute.py" <<'ATTRIB'
-import json, sys, collections, yaml
+import json, sys, os, collections, yaml
 
 files = sys.argv[1:]
+
+# The rules admission does not refuse because they are held in Audit, written by the caller
+# (KV_AUDIT). A violation of one of these is still reported -- as an audit, in the same verdict
+# line -- but it is not a red, because a red here means "admission would refuse this" and an Audit
+# rule refuses nothing.
+AUDIT = set()
+_ap = os.environ.get("KV_AUDIT")
+if _ap and os.path.exists(_ap):
+    for _line in open(_ap):
+        _line = _line.rstrip("\n")
+        if _line:
+            AUDIT.add(tuple(_line.split("\t", 1)))
 
 def bail(why):
     sys.stderr.write("      kyverno attribution fell back: %s\n" % why)
@@ -375,7 +475,10 @@ for r in rep.get("results", []):
             bail("two files in this batch carry %s" % (key,))
         if key not in owner:
             bail("no file in this batch declares %s" % (key,))
-        counts[owner[key]][r.get("result")] += 1
+        if r.get("result") == "fail" and (r.get("policy"), r.get("rule")) in AUDIT:
+            counts[owner[key]]["audit"] += 1
+        else:
+            counts[owner[key]][r.get("result")] += 1
         seen += 1
 
 summary = rep.get("summary") or {}
@@ -387,15 +490,29 @@ for f in files:
     if c["fail"] or c["error"]:
         print("red\t%s" % f)
     else:
-        print("ok\t%s\tpass: %d, fail: 0, warn: %d, error: 0, skip: %d "
-              % (f, c["pass"], c["warn"], c["skip"]))
+        print("ok\t%s\tpass: %d, fail: 0, warn: %d, error: 0, skip: %d, audit: %d "
+              % (f, c["pass"], c["warn"], c["skip"], c["audit"]))
 ATTRIB
 
 judge_one() {  # judge_one <resource-file>: the pre-batch verdict block, for a batch that went red
   local res="$1" out summary label kind
   label="${_LABEL[$res]}"; kind="${_KIND[$res]}"
-  out=$(kyverno apply "$S/policies.yaml" "${exc[@]}" --resource "$res" 2>&1 || true)
+  # The refusing rules only: this path prints the failures a person reads, and a rule held in Audit
+  # is not a failure. Same reason as the audit list above (LAW 38), applied to the fallback.
+  out=$(kyverno apply "$S/policies-enforce.yaml" "${exc[@]}" --resource "$res" 2>&1 || true)
   summary=$(grep -E '^pass:' <<<"$out" | tail -1)
+  # A verdict this gate prints is one something measured. The CLI prints its summary line even when
+  # nothing fails (measured: `Applying 0 policy rule(s)` is followed by `pass: 0, fail: 0, ...`), so
+  # no summary means the CLI judged nothing at all -- an exception it would not load, a policy set it
+  # would not read, a binary that never started. Reading that as "no failures" is a green with
+  # nothing behind it: on 2026-10-15 an invalid PolicyException aborted every kyverno call and this
+  # function printed five `ok` lines over a rung that had not judged one rule. No summary is BLIND,
+  # never ok, and the CLI's own first lines go on the log so the reason is read, not inferred.
+  if [ -z "$summary" ]; then
+    echo "BLIND $kind $label: kyverno printed no summary; it judged nothing."
+    grep -vE '^[[:space:]]*$' <<<"$out" | head -5 | sed 's/^/      /'
+    return 2
+  fi
   if grep -qE 'policy .* -> resource .* failed' <<<"$out"; then
     echo "FAIL  $kind $label: $summary"
     grep -E 'policy .* -> resource .* failed' <<<"$out" | sed 's/^/      /'; return 1
@@ -515,5 +632,17 @@ if [ "${#res[@]}" -gt 0 ]; then
   done
 fi
 wait
-for v in "${order[@]}"; do cat "$v"; [ -f "${v%.txt}.rc" ] && rc=1; done
+# Two rungs read this exit code and they are not the same rung: idp-ci prints `BLIND kyverno` for 2
+# and `FAIL  kyverno  a HelmRelease or workload render fails admission policy` for 1. Until
+# 2026-10-15 every .rc collapsed to 1, so a run whose judge could not read a summary -- and judged no
+# rule at all -- read as policies to fix rather than as a judge that could not see (the invalid
+# PolicyException of that day). judge_one is the only thing that returns 2, and BLIND wins over a red:
+# if one batch judged nothing, the headline is the blindness, not another batch's failing rule.
+for v in "${order[@]}"; do
+  cat "$v"
+  if [ -f "${v%.txt}.rc" ]; then
+    r=$(cat "${v%.txt}.rc")
+    if [ "$r" = 2 ]; then rc=2; elif [ "$rc" != 2 ] && [ "$r" != 0 ]; then rc=1; fi
+  fi
+done
 exit $rc
