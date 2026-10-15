@@ -121,7 +121,7 @@ kind: Service
 metadata:
   name: unified-memory-server
   namespace: unified-memory
-  labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp }
+  labels: { app.kubernetes.io/name: unified-memory-server, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
 spec:
   type: ClusterIP
   selector: { app.kubernetes.io/name: unified-memory-server }
