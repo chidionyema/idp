@@ -74,20 +74,11 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # Diagnose the vault access: try to list secrets with vault OCID, then with compartment
-          _rc=0; _secrets=$(oci vault secret list --vault-id "$ESTATE_VAULT_OCID" --all 2>&1) || _rc=$?
-          echo "secret-list vault=$ESTATE_VAULT_OCID rc=$_rc count=$(echo "$_secrets" | jq 'length' 2>/dev/null || echo 0)"
-          _rc=0; _secrets2=$(oci vault secret list --compartment-id "$OCI_COMPARTMENT_OCID" --all 2>&1) || _rc=$?
-          echo "secret-list compartment=$OCI_COMPARTMENT_OCID rc=$_rc count=$(echo "$_secrets2" | jq 'length' 2>/dev/null || echo 0)"
-          # Get key OCID from the first existing secret
-          _first=$(echo "$_secrets2" | jq -r '.[0].id' 2>/dev/null)
-          if [ -n "$_first" ] && [ "$_first" != null ]; then
-            _rc=0; _details=$(oci vault secret get --secret-id "$_first" 2>&1) || _rc=$?
-            if [ "$_rc" = 0 ]; then
-              _key_id=$(echo "$_details" | jq -r '.data."key-id"' 2>/dev/null)
-              echo "ESTATE_VAULT_KEY_OCID=$_key_id"
-            fi
-          fi
+          # The OCI vault for estate secrets is in the estate compartment (OCI_COMPARTMENT_OCID).
+          # Re-pull tofu state from S3 now that the backend_override.tf is rendered by bin/idp-oci-login --check.
+          (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
+          _vid=$(cd platform/oci && tofu output -raw vault_id 2>/dev/null) && echo "tofu    vault_id: $_vid" || echo "tofu    vault_id: EMPTY"
+          _kid=$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null) && echo "tofu    vault_key_id: $_kid" || echo "tofu    vault_key_id: EMPTY"
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
           env | sed -n 's/^SEED_//p' > "$ESTATE_ENV_FILE"
