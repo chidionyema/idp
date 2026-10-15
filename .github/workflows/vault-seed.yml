@@ -177,16 +177,23 @@ jobs:
             _tok="sk-$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
             _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
             # Write to OCI Vault. --merge creates the entry if it does not yet exist.
-            source bin/idp-cloud  # get oci_vault_id and oci_vault_key_id
-            _vid=$(oci_vault_id 2>&1) && echo "ok      vault OCID: $_vid" || echo "FAIL    vault OCID unresolved (SOPS fallback only)"
-            # Attempt vault write. exit 0 = success; exit 1 = NotFound+create (handled); exit 2 = unreachable (proceed to SOPS)
-            _vp_out=$(ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>&1) || _vp_rc=$?
-            [ -n "${_vp_rc:-}" ] && echo "vault-write exited $_vp_rc" || true
-            case "${_vp_rc:-0}" in
-              0|1) echo "ok      backstage-env written to OCI vault (rc=$_vp_rc)" ;;
-              2) echo "WARN    backstage-env OCI vault unreachable (exit 2); SOPS backup is the fallback" ;;
-              *) echo "WARN    backstage-env OCI write failed with exit $_vp_rc; SOPS backup is the fallback" ;;
-            esac
+            # Check vault OCID before attempting vault-write (prevents set -e exit from vget failure).
+            source bin/idp-cloud 2>/dev/null
+            _vid=$(oci_vault_id 2>/dev/null) && _vid_ok=1 || _vid_ok=0
+            echo "vault OCID check: vid=$_vid ok=$_vid_ok ESTATE_VAULT_OCID=${ESTATE_VAULT_OCID:-unset}"
+            # Attempt vault write only if vault OCID is resolvable.
+            if [ "$_vid_ok" = 1 ] && [ -n "$_vid" ]; then
+              _vp_out=$(ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>&1) && _vp_rc=0 || _vp_rc=$?
+              [ -n "${_vp_rc:-}" ] && echo "vault-write exited $_vp_rc" || true
+              case "${_vp_rc:-0}" in
+                0|1) echo "ok      backstage-env written to OCI vault (rc=$_vp_rc)" ;;
+                2) echo "WARN    backstage-env OCI vault unreachable (exit 2); SOPS backup is the fallback" ;;
+                *) echo "WARN    backstage-env OCI write failed with exit $_vp_rc; SOPS backup is the fallback" ;;
+              esac
+            else
+              echo "WARN    vault OCID unresolved (${_vid:-empty}); skipping OCI vault-write, using SOPS backup only"
+              _vp_rc=2
+            fi
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
             # secret-add tries to read the existing file for filename-override; instead, write fresh.
             mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
