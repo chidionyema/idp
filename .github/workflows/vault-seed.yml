@@ -195,11 +195,13 @@ jobs:
               2) echo "WARN    backstage-env OCI vault unreachable (exit 2); SOPS backup is the fallback" ;;
               *) echo "WARN    backstage-env OCI write failed with exit $_vp_rc; SOPS backup is the fallback" ;;
             esac
-            # Also try to get the vault key OCID from the vault's management endpoint (needs vault OCID)
+            # Also try to get the vault key OCID from the vault's management endpoint
             _mgmt_ep=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" --query 'data."management-endpoint"' --raw-output 2>&1) && echo "ok      vault management endpoint: $_mgmt_ep" || echo "vault management endpoint failed: $_mgmt_ep"
             if [ -n "$_mgmt_ep" ]; then
               _k=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) && echo "key list: $(echo $_k | jq -r '.[]' 2>/dev/null | tr '\n' ' ')" || echo "key list failed: $_k"
             fi
+            # Also try the vault OCID as-is (no compartment query)
+            _mgmt2=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" 2>&1) && echo "vault get ok: $(echo $_mgmt2 | jq -r '.data."management-endpoint"' 2>/dev/null)" || echo "vault get failed: $_mgmt2"
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
             # secret-add tries to read the existing file for filename-override; instead, write fresh.
             mkdir -p "$RUNNER_TEMP/estate-secrets/secrets/backstage-env"
