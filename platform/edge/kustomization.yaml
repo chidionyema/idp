@@ -44,6 +44,11 @@ resources:
   - dev-loop-policy.yaml
   - provider-edge-exception.yaml
   - provider-storage-exception.yaml
+  # 2026-10-15: coroot's waiver sat here as a ClusterPolicy held in Audit and was not in this
+  # list, so the cluster never held a waiver at all and admission refused all 92 failures of that
+  # release. It is a PolicyException now -- the only form admission consults -- it is listed here,
+  # and bin/idp-kyverno-render reads it from this path.
+  - coroot-exception.yaml
   - capacity-policy.yaml
   # crew#623: the money layer. Three rules the Lago images cannot satisfy, scoped to lago-* in
   # the commerce namespace; the file itself says what was measured and when each is retested.

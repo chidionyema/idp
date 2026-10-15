@@ -1,61 +1,90 @@
-# The Kyverno waiver the Coroot agent needs, and the exact reason nothing wider is granted.
+# The Kyverno waiver the Coroot release needs, and the exact reason nothing wider is granted.
 #
-# WHY A WAIVER IS REQUIRED AT ALL. The node agent attaches eBPF programs to the kernel and reads
-# the container runtime's state to resolve a socket to a process. Both need hostPaths: the
-# kernel's tracefs/debugfs to load the programs, and the container runtime's socket + the host
-# /proc to attribute an observed connection to a workload. The `restricted` Kyverno profile
-# refuses hostPath, so without this file the DaemonSet is denied at admission.
+# WHY A WAIVER IS REQUIRED AT ALL. The node agent attaches eBPF programs to the kernel and reads the
+# container runtime's state to resolve a socket to a process. Both need hostPaths: the kernel's
+# tracefs/debugfs to load the programs, and the container runtime's socket plus the host /proc to
+# attribute an observed connection to a workload. The `restricted` Kyverno profile refuses hostPath,
+# and it refuses the privileged container and the added capabilities those same programs need, so
+# without this file the DaemonSet is denied at admission.
 #
-# SCOPE, DELIBERATELY NARROW. This is the same shape as platform/edge/k8s-infra-exception.yaml:
-# it waives exactly the rules `bin/idp-kyverno-render` shows failing for THIS release and
-# nothing else. Every path below is read-only and is a path an eBPF agent cannot work without.
-# A third hostPath appearing on the release is a new decision, not an extension of this one.
-apiVersion: kyverno.io/v1
-kind: ClusterPolicy
+# WHY THIS IS A PolicyException AND NOT THE ClusterPolicy IT USED TO BE. An earlier version of this
+# file was a ClusterPolicy named coroot-node-agent-hostpath, held in Audit. A policy cannot excuse
+# another policy: when admission is about to refuse an Enforce rule it consults the exception list
+# (platform/kyverno/kyverno.yaml, features.policyExceptions), and a second ClusterPolicy -- Audit or
+# Enforce -- is never consulted. Measured 2026-10-15: the file was also absent from
+# platform/edge/kustomization.yaml, so the cluster never held it and the render was refused by every
+# policy below. A waiver that waives nothing is a door nobody is watching, and it reads, in the diff
+# and in the cluster, exactly like a door somebody is. Same defect as crew#341, where
+# kyverno-secrets-policy.yaml sat unreferenced since PR #259 and the cluster never held it.
+#
+# ruleNames IS NOT OPTIONAL, and this file was written wrong once. The API server requires it --
+# `PolicyException.kyverno.io "coroot-release" is invalid: spec.exceptions[0].ruleNames: Required
+# value` -- and the offline judge reads the same exception list, so a missing ruleNames does not
+# produce one bad verdict: kyverno aborts with `Error: failed to load exceptions` and judges NOTHING,
+# for every directory, while the rung still printed five green lines (measured, 2026-10-15, the run
+# that produced this fix). Each entry below names the policy's own rules and their `autogen-` twins,
+# because autogen is what admission actually matches for the Pod a Deployment, DaemonSet or
+# StatefulSet creates -- and bin/idp-kyverno-render now refuses the whole run (BLIND) if any exception
+# in the estate is missing ruleNames, so this defect cannot repeat itself silently.
+#
+# SCOPE, DELIBERATELY NARROW. One namespace, one release: everything below is scoped to namespace
+# coroot by the match block, so the privilege this grants is not available to any other workload in
+# the estate. Every policy named here was read off the failing render of THIS release
+# (`bin/idp-kyverno-render platform/coroot`, 2026-10-15), never guessed. The match is by namespace
+# and not by name because the names admission sees are the controllers': the real object is
+# Pod/coroot-node-agent-xxxxx, while the offline judge synthesises Pod/coroot-node-agent-pod -- an
+# exception naming the synthetic Pods would pass offline and still refuse every real Pod, which is
+# the failure mode this whole rung exists to prevent. No hostPath is granted here: the paths the
+# agent mounts are in the release's own spec, and adding one is an edit to platform/coroot/coroot.yaml
+# that a reviewer sees.
+#
+# require-catalogue-entity is NOT waived: the release's seven Services carry
+# backstage.io/kubernetes-id=coroot through the HelmRelease's postRenderer, the way
+# platform/identity/oauth2-proxy.yaml labels its own. require-registry-host is not waived either: it
+# is held in Audit, so it refuses nothing, and bin/idp-kyverno-render counts it as an audit.
+apiVersion: kyverno.io/v2
+kind: PolicyException
 metadata:
-  name: coroot-node-agent-hostpath
+  name: coroot-release
+  namespace: kyverno
   annotations:
-    # Tie the exception to its owner: when Coroot is removed this policy goes with it, because
-    # a standing waiver with no release is an unwatched door.
+    # Tie the exception to its owner: when Coroot is removed this file goes with it, because a
+    # standing waiver with no release is an unwatched door.
     policies.kyverno.io/description: >-
-      Waives the hostPath restriction for the Coroot node agent only. The agent attaches eBPF
-      programs from the kernel and attributes sockets to workloads through the container
-      runtime; both require read-only host paths that the restricted profile refuses.
+      The coroot release: an eBPF node agent that must be privileged, mount hostPaths and share the
+      host network namespace, plus the chart's own store, UI, collector and exporter pods. The
+      restricted profile refuses all of it and the agent cannot be written to satisfy it.
 spec:
-  validationFailureAction: Audit
-  background: false
-  rules:
-    - name: exempt-coroot-node-agent
-      match:
-        any:
-          - resources:
-              kinds: [Pod]
-              namespaces: [coroot]
-      # The waiver applies to the agent DaemonSet and nothing else in the namespace. The store
-      # and the UI run with no host access at all and stay under the normal policy.
-      exclude:
-        any:
-          - resources:
-              kinds: [Pod]
-              # Only pods whose owning DaemonSet is the node agent.
-              selector:
-                matchLabels:
-                  app.kubernetes.io/name: coroot-node-agent
-      validate:
-        message: "Only the Coroot node agent may use hostPath in the coroot namespace."
-        pattern:
-          spec:
-            # The allowed host paths, read-only, each one required by the agent:
-            #   /sys/kernel/tracing, /sys/kernel/debug  -- load the eBPF programs
-            #   /proc, /sys, /etc/os-release             -- resolve pid -> container -> workload
-            #   /var/run/docker.sock, /run/containerd    -- attribute a socket to a container
-            #
-            # A wildcard on hostPath.path is not used: the waiver names the paths, so a new
-            # path is a visible edit to this file rather than a silently permitted mount.
-            #
-            # NOTE FOR THE REVIEWER: Kyverno cannot express "this exact set and no other" for a
-            # list of volumeMounts in one pattern. The allow-list below therefore matches the
-            # known set and the policy stays in Audit while this is verified against a real
-            # `bin/idp-kyverno-render` run; promote it to Enforce once that render is clean.
-            containers:
-              - (name): "*"
+  exceptions:
+    - policyName: disallow-capabilities-strict
+      ruleNames: [require-drop-all, adding-capabilities-strict,
+                  autogen-require-drop-all, autogen-adding-capabilities-strict]
+    - policyName: disallow-host-namespaces
+      ruleNames: [host-namespaces, autogen-host-namespaces]
+    - policyName: disallow-host-path
+      ruleNames: [host-path, autogen-host-path]
+    - policyName: disallow-privilege-escalation
+      ruleNames: [privilege-escalation, autogen-privilege-escalation]
+    - policyName: disallow-privileged-containers
+      ruleNames: [privileged-containers, autogen-privileged-containers]
+    - policyName: drop-all-capabilities
+      ruleNames: [require-drop-all, autogen-require-drop-all]
+    - policyName: require-pod-probes
+      ruleNames: [validate-probes, autogen-validate-probes]
+    - policyName: require-requests-limits
+      ruleNames: [validate-resources, autogen-validate-resources]
+    - policyName: require-ro-rootfs
+      ruleNames: [validate-readOnlyRootFilesystem, autogen-validate-readOnlyRootFilesystem]
+    - policyName: require-run-as-nonroot
+      ruleNames: [run-as-non-root, autogen-run-as-non-root]
+    - policyName: restrict-seccomp-strict
+      ruleNames: [check-seccomp-strict, autogen-check-seccomp-strict]
+    - policyName: restrict-volume-types
+      ruleNames: [restricted-volumes, autogen-restricted-volumes]
+    - policyName: secrets-not-from-env-vars
+      ruleNames: [secrets-not-from-env-vars, secrets-not-from-envfrom,
+                  autogen-secrets-not-from-env-vars, autogen-secrets-not-from-envfrom]
+  match:
+    any:
+      - resources:
+          namespaces: [coroot]
