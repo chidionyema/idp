@@ -38,7 +38,6 @@ from harness import (
     HarnessTelemetry,
     PostgresApprovalStore,
     PostgresScratchpadStore,
-    WebhookHttpResponse,
 )
 
 # Singleton telemetry instance — one per server process.
