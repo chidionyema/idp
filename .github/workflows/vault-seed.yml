@@ -74,13 +74,12 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # The tofu state has the ESO vault OCID. Use it directly as the vault for vault-seed.
-          _vid="$(cd platform/oci && tofu output -raw vault_id 2>/dev/null)"
-          _kid="$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null)"
-          echo "tofu    vault_id: $_vid"
-          echo "tofu    vault_key_id: $_kid"
+          # Try to get vault+key OCID from tofu state (S3 backend).
+          # If the S3 credentials are in the ESO vault (readable), the tofu state has the vault OCID.
+          # If not, vault-write falls back to SOPS only (the ExternalSecret reads from ESO vault directly).
+          _vid="$(cd platform/oci && tofu output -raw vault_id 2>/dev/null)" || _vid=""
+          _kid="$(cd platform/oci && tofu output -raw vault_key_id 2>/dev/null)" || _kid=""
           if [ -n "$_vid" ] && [ -n "$_kid" ]; then
-            echo "Setting ESTATE_VAULT_OCID and ESTATE_VAULT_KEY_OCID from tofu state"
             export ESTATE_VAULT_OCID="$_vid" ESTATE_VAULT_KEY_OCID="$_kid"
           fi
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
@@ -177,12 +176,14 @@ jobs:
             _tok="sk-$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
             _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
             # Write to OCI Vault. --merge creates the entry if it does not yet exist.
-            # Check vault OCID before attempting vault-write (prevents set -e exit from vget failure).
-            source bin/idp-cloud 2>/dev/null
-            _vid=$(oci_vault_id 2>/dev/null) && _vid_ok=1 || _vid_ok=0
-            echo "vault OCID check: vid=$_vid ok=$_vid_ok ESTATE_VAULT_OCID=${ESTATE_VAULT_OCID:-unset}"
+            # Check vault OCID in a subshell so set -e does not exit the parent script on vget failure.
+            _vid_ok=0; _vid_resolved=""
+            if (set +e; source bin/idp-cloud 2>/dev/null; vid=$(oci_vault_id 2>/dev/null); [ -n "$vid" ]; then echo "$vid"; exit 0; else exit 1; fi) >/dev/null 2>&1; then
+              _vid_resolved=$( (set +e; source bin/idp-cloud 2>/dev/null; oci_vault_id 2>/dev/null) )
+              _vid_ok=1
+            fi
             # Attempt vault write only if vault OCID is resolvable.
-            if [ "$_vid_ok" = 1 ] && [ -n "$_vid" ]; then
+            if [ "$_vid_ok" = 1 ] && [ -n "$_vid_resolved" ]; then
               _vp_out=$(ESTATE_ENV_FILE="$_seed_f" bin/idp-vault-put --merge backstage-env MEMORY_SURFACE_TOKEN=SEED_VALUE 2>&1) && _vp_rc=0 || _vp_rc=$?
               [ -n "${_vp_rc:-}" ] && echo "vault-write exited $_vp_rc" || true
               case "${_vp_rc:-0}" in
@@ -191,7 +192,7 @@ jobs:
                 *) echo "WARN    backstage-env OCI write failed with exit $_vp_rc; SOPS backup is the fallback" ;;
               esac
             else
-              echo "WARN    vault OCID unresolved (${_vid:-empty}); skipping OCI vault-write, using SOPS backup only"
+              echo "WARN    vault OCID unresolved; skipping OCI vault-write, using SOPS backup only"
               _vp_rc=2
             fi
             # Step 2: write the SOPS-encrypted YAML directly so we control the age key.
