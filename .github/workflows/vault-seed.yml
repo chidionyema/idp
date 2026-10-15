@@ -74,10 +74,18 @@ jobs:
           set -euo pipefail
           bin/idp-oci-login --check
           (cd platform/oci && tofu init -input=false -reconfigure -no-color >/dev/null)
-          # Try to get the vault management endpoint from the vault OCID, then list keys
-          _mgmt_ep=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" --query 'data."management-endpoint"' --raw-output 2>/dev/null) && echo "ok      vault management endpoint: $_mgmt_ep" || echo "vault get failed (rc=$?)"
+          # Get vault management endpoint, capturing the actual error
+          _rc=0; _out=$(oci vault get --vault-id "$ESTATE_VAULT_OCID" 2>&1) || _rc=$?
+          if [ "$_rc" = 0 ]; then
+            _mgmt_ep=$(echo "$_out" | jq -r '.data."management-endpoint"' 2>/dev/null)
+            echo "ok      vault management endpoint: $_mgmt_ep"
+          else
+            echo "vault get failed (rc=$_rc): $_out"
+            _mgmt_ep=""
+          fi
           if [ -n "$_mgmt_ep" ]; then
-            _keys=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>/dev/null) && echo "keys: $(echo $_keys | jq -r '.[]' 2>/dev/null | tr '\n' ' ')" || echo "key-list failed (rc=$?)"
+            _rc=0; _out=$(oci kms management key list --endpoint "$_mgmt_ep" --compartment-id "$OCI_COMPARTMENT_OCID" --all --query 'data[?"lifecycle-state"=="ENABLED"].id' --output json 2>&1) || _rc=$?
+            if [ "$_rc" = 0 ]; then echo "keys: $(echo "$_out" | jq -r '.[]' 2>/dev/null | tr '\n' ' ')"; else echo "key-list failed (rc=$_rc): $_out"; fi
           fi
           # the operator env file bin/idp-vault-put expects, assembled from SEED_* in this process
           export ESTATE_ENV_FILE="$RUNNER_TEMP/seed.env"; umask 077
