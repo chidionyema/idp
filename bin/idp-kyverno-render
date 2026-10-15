@@ -466,7 +466,14 @@ res=()
 
 for plain in "$S"/plain-*.yaml; do
   [ -s "$plain" ] || continue
-  filter_unwatched "$plain"; [ -s "$plain" ] || continue
+  filter_unwatched "$plain"
+  if [ ! -s "$plain" ]; then
+    # Every directory this was asked about gets a line, including one whose resources are all
+    # filtered: a directory that prints nothing is indistinguishable from one never judged, and
+    # that is the failure whose whole shape is not being able to read the gate (2026-10-15).
+    echo "skip  plain    $(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g'): every resource is in a namespace Kyverno's resourceFilters exclude"
+    continue
+  fi
   _LABEL["$plain"]=$(basename "$plain" .yaml | sed 's/^plain-//; s/_/\//g')
   _KIND["$plain"]="plain   "
   res+=("$plain")
@@ -486,7 +493,11 @@ if [ -s "$S/prep-fail.txt" ]; then
 fi
 while read -r name ns npatch; do
   f="$S/$name.final.yaml"; [ -s "$f" ] || continue
-  filter_unwatched "$f"; [ -s "$f" ] || continue
+  filter_unwatched "$f"
+  if [ ! -s "$f" ]; then
+    echo "skip  render   $name ($ns, $npatch patches): every resource is in a namespace Kyverno's resourceFilters exclude"
+    continue
+  fi
   _LABEL["$f"]="$name ($ns, $npatch patches)"; _KIND["$f"]="render  "
   res+=("$f")
 done < "$S/releases.txt"
