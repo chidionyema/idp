@@ -7,6 +7,8 @@ digraph {
   "random_password.langfuse_user" [label="random_password\nlangfuse_user"];
   "random_password.clickhouse_admin" [label="random_password\nclickhouse_admin"];
   "oci_vault_secret.langfuse" [label="oci_vault_secret\nlangfuse"];
+  "oci_identity_dynamic_group.github_actions" [label="oci_identity_dynamic_group\ngithub_actions"];
+  "oci_identity_policy.github_actions_secret_create" [label="oci_identity_policy\ngithub_actions_secret_create"];
   "oci_objectstorage_bucket.drill_receipts" [label="oci_objectstorage_bucket\ndrill_receipts"];
   "oci_identity_policy.workers_write_receipts" [label="oci_identity_policy\nworkers_write_receipts"];
   "random_password.flux_webhook" [label="random_password\nflux_webhook"];
