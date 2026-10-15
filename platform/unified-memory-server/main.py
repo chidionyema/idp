@@ -34,9 +34,12 @@ from security_core import (
 )
 
 from harness import (
+    ActiveMemoryEngine,
     ApprovalWebhookHandler,
+    ExtractedFactCandidate,
     HarnessTelemetry,
     PostgresApprovalStore,
+    PostgresCortexAdapter,
     PostgresScratchpadStore,
 )
 
@@ -1050,11 +1053,6 @@ async def harness_memory_prefetch(
     Calls ActiveMemoryEngine.buildActiveContextBrief and returns the brief text.
     Wire this into do_recall in estate_memory.py as the first step of any
     agent session start."""
-    from harness import (
-        ActiveMemoryEngine,
-        PostgresCortexAdapter,
-    )
-
     tenant_id = auth["tenant_id"]
     cortex = PostgresCortexAdapter(conn)
     scratchpad = PostgresScratchpadStore()
@@ -1083,12 +1081,6 @@ async def harness_memory_consolidate(
     Calls ActiveMemoryEngine.consolidateTurnCandidates to gate ephemeral facts,
     enforce global-preference rules, and write bi-temporal facts to memories.
     Wire this into do_remember in estate_memory.py."""
-    from harness import (
-        ActiveMemoryEngine,
-        ExtractedFactCandidate,
-        PostgresCortexAdapter,
-    )
-
     tenant_id = auth["tenant_id"]
     cortex = PostgresCortexAdapter(conn)
     scratchpad = PostgresScratchpadStore()
@@ -1122,4 +1114,117 @@ async def harness_memory_consolidate(
 # Wire into existing memory endpoints for pre-fetch (brief) and
 # consolidation (remember). The full run loop lives here for now;
 # future work integrates it into the agent execution layer.
+# Wire into existing memory endpoints for pre-fetch (brief) and
+# consolidation (remember). The full run loop lives here for now;
+# future work integrates it into the agent execution layer.
+# ----------------------------------------------------------------------------
+
+
+@app.get(
+    "/harness/stats",
+    status_code=status.HTTP_200_OK,
+    summary="Active Runtime Harness telemetry snapshot (fleet view)",
+)
+async def harness_stats(
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+) -> Dict[str, Any]:
+    """Return the harness telemetry snapshot and harness table row counts.
+
+    Wire this into the /fleet view so the founder can watch Active Memory and
+    Active Focus operating in real time.
+    """
+    import asyncio
+
+    tenant_id = auth["tenant_id"]
+
+    # Read telemetry snapshot (sync; run in executor to avoid blocking the async path)
+    loop = asyncio.get_event_loop()
+    telemetry_snapshot = await loop.run_in_executor(
+        None, _harness_telemetry.get_snapshot
+    )
+
+    # Read harness table row counts (sync psycopg, wrapped in executor)
+    async with conn.cursor() as cur:
+        # Pending approval tickets
+        await cur.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM approval_tickets
+            WHERE tenant_id = %s AND status = 'pending' AND expires_at > NOW()
+            """,
+            (tenant_id,),
+        )
+        pending_approvals = (await cur.fetchone())["count"] or 0
+
+        # Active scratchpad runs (expires > now)
+        await cur.execute(
+            """
+            SELECT COUNT(DISTINCT run_id) AS count
+            FROM harness_scratchpad
+            WHERE tenant_id = %s AND expires_at > NOW()
+            """,
+            (tenant_id,),
+        )
+        active_runs = (await cur.fetchone())["count"] or 0
+
+        # Idempotency entries
+        await cur.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM harness_idempotency
+            WHERE tenant_id = %s
+            """,
+            (tenant_id,),
+        )
+        idempotency_entries = (await cur.fetchone())["count"] or 0
+
+    return {
+        "telemetry": {
+            "prefetch_count": telemetry_snapshot.prefetch_count,
+            "last_brief_tokens": telemetry_snapshot.last_brief_tokens,
+            "facts_promoted": telemetry_snapshot.facts_promoted,
+            "facts_ignored_ephemeral": telemetry_snapshot.facts_ignored_ephemeral,
+            "facts_blocked_stale_or_untrusted": (
+                telemetry_snapshot.facts_blocked_stale_or_untrusted
+            ),
+            "facts_archived": telemetry_snapshot.facts_archived,
+            "total_cost_usd": round(telemetry_snapshot.total_cost_usd, 4),
+            "circuit_breaker_trips": telemetry_snapshot.circuit_breaker_trips,
+            "strategy_pivots": telemetry_snapshot.strategy_pivots,
+            "attempts_by_outcome": telemetry_snapshot.attempts_by_outcome,
+            "approval_events": telemetry_snapshot.approval_events,
+        },
+        "store": {
+            "pending_approvals": pending_approvals,
+            "active_runs": active_runs,
+            "idempotency_entries": idempotency_entries,
+        },
+        "tenant_id": tenant_id,
+    }
+
+
+@app.get(
+    "/harness/scratchpad/{run_id}",
+    status_code=status.HTTP_200_OK,
+    summary="Active Runtime scratchpad for one agent run",
+)
+async def harness_scratchpad(
+    run_id: str,
+    auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
+    conn=Depends(get_db_conn),  # noqa: B008
+) -> Dict[str, Any]:
+    """Return the current scratchpad key-value pairs for one agent run."""
+    import asyncio
+
+    tenant_id = auth["tenant_id"]
+    scratchpad_store = PostgresScratchpadStore()
+    loop = asyncio.get_event_loop()
+    scratchpad = await loop.run_in_executor(
+        None,
+        lambda: scratchpad_store.get_working_scratchpad(conn, tenant_id, run_id),
+    )
+    return {"run_id": run_id, "tenant_id": tenant_id, "scratchpad": scratchpad}
+
+
 # ----------------------------------------------------------------------------

@@ -60,6 +60,7 @@ import hashlib
 import json
 import os
 import re
+import uuid
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -143,6 +144,52 @@ def call(
         return json.loads(raw), None
     except ValueError:
         return None, "memory store returned a body that is not JSON"
+
+
+def _harness_url(cfg: dict, route: str) -> str:
+    """Construct the harness endpoint URL from the memory server base URL."""
+    base = cfg["url"].rstrip("/")
+    return f"{base}{route}"
+
+
+def _harness_call(
+    cfg: dict,
+    route: str,
+    payload: "dict | None" = None,
+) -> "tuple[dict | None, str | None]":
+    """Call a harness endpoint on the unified-memory-server.
+
+    Gracefully degrades: a harness that is unavailable or returns non-JSON does not
+    make the memory operation fail. The harness is enrichment, not correctness.
+    """
+    url = _harness_url(cfg, route)
+    if not url.startswith(("http://", "https://")):
+        return None, "unified-memory server URL is not http(s)"
+    token = _token(cfg)
+    if not token:
+        return None, "no surface token"
+    headers = {"content-type": "application/json", "authorization": f"Bearer {token}"}
+    if cfg["host"]:
+        headers["host"] = cfg["host"]
+    request = urllib.request.Request(  # noqa: S310
+        url,
+        data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=cfg["timeout_s"]) as response:  # noqa: S310
+            raw = response.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError:
+        # Harness returns 4xx for missing params or unconfigured deps — not an error
+        return None, None
+    except (urllib.error.URLError, TimeoutError, OSError):
+        # Harness unavailable — degrade silently
+        return None, None
+    try:
+        return json.loads(raw), None
+    except ValueError:
+        return None, None
 
 
 def build_metadata(
@@ -272,6 +319,30 @@ def do_remember(
     body, error = call(cfg, "PUT", key, payload)
     if error:
         return {"written": False, "error": error, "metadata": metadata}
+
+    # Active Memory consolidation: feed the written fact to the harness so ephemeral
+    # facts are promoted to scratchpad, global preferences are gated, and bi-temporal
+    # history is updated. Degrades silently if the harness is unavailable.
+    run_id = f"mcp-{uuid.uuid4().hex[:12]}"  # unique per remember call
+    _harness_call(
+        cfg,
+        "/harness/memory/consolidate",
+        {
+            "run_id": run_id,
+            "project_id": subject or None,
+            "provenance": metadata.get("runtime", "mcp"),
+            "candidates": [
+                {
+                    "scope": "project_fact",
+                    "subject": subject,
+                    "predicate": "",
+                    "object": content.strip(),
+                    "explicit_permanence_intent": kind in ("decision", "incident"),
+                }
+            ],
+        },
+    )
+
     return {
         "written": True,
         "namespace": cfg["namespace"],
@@ -345,11 +416,33 @@ def do_recall(query: str, subject: str, kind: str, tags, limit: int, cfg=None) -
     kept = [
         {"text": m["text"], "metadata": m["metadata"]} for m in by_meaning + by_words
     ]
-    return {
+
+    # Active Memory pre-fetch: enrich the recall with the harness's active context brief.
+    # The brief synthesises the agent's recent scratchpad, project facts, and decisions
+    # relevant to this query. Degrades silently if the harness is unavailable.
+    brief_text = None
+    if query.strip():
+        run_id = f"mcp-recall-{uuid.uuid4().hex[:12]}"
+        bf, _ = _harness_call(
+            cfg,
+            "/harness/memory/prefetch",
+            {
+                "run_id": run_id,
+                "task": query.strip(),
+                "project_id": subject or None,
+            },
+        )
+        if bf and isinstance(bf, dict):
+            brief_text = bf.get("brief") or bf.get("context")
+
+    result = {
         "memories": fit_under_ceiling(kept[: max(1, limit)], cfg["byte_ceiling"]),
         "namespace": cfg["namespace"],
         "matched_by_meaning": min(len(by_meaning), max(1, limit)),
     }
+    if brief_text:
+        result["active_context_brief"] = brief_text
+    return result
 
 
 def do_brief(task: str, limit: int, cfg=None) -> dict:
