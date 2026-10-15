@@ -1117,11 +1117,10 @@ async def harness_memory_consolidate(
     )
     return {"memory_stats": stats}
 
-    # ---------------------------------------------------------------------
-    # Active Runtime Harness Endpoints
-    # Wire into existing memory endpoints for pre-fetch (brief) and
-    # consolidation (remember). The full run loop lives here for now;
-    # future work integrates it into the agent execution layer.
-    # ---------------------------------------------------------------------
 
-    return WebhookHttpResponse(400, {"ok": False, "error": "use Request object"})
+# ---------------------------------------------------------------------------
+# Active Runtime Harness Endpoints
+# Wire into existing memory endpoints for pre-fetch (brief) and
+# consolidation (remember). The full run loop lives here for now;
+# future work integrates it into the agent execution layer.
+# ----------------------------------------------------------------------------
