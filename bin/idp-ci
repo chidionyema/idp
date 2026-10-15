@@ -873,13 +873,16 @@ else say "FAIL  diagram  tests/test_estate_diagram.py"; printf '%s\n' "$out" | s
 #     has never been shown to refuse (LAW 38): the unbound fixture must fail
 #     with StepDefinitionNotFoundError -- not merely fail, or a typo in a
 #     feature path would satisfy the guard -- and the real suite must pass.
+# BDD_PY and XD are used by the face-route check (rung 8d) which runs after
+# this block, so they must be set unconditionally (not only when IDP_CI_SKIP_PYTEST=0).
+BDD_PY="$MPY"
+XD=""
 # crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
 # ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
 # them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
 if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
   say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
 else
-BDD_PY="$MPY"
 "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1 || BDD_PY=python3
 # crew#584 zero-bottleneck law (founder 2026-08-28: "zero bottleneck law optinise ruthlessly"): run
 # 33198380701 spent 106 s here and 73 s in 8b on one of the runner's four cores. pytest-xdist is
