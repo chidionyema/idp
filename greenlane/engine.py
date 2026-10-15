@@ -44,6 +44,7 @@ HEARTBEAT_EVERY_MIN = (
 REJUDGE_LIMIT = (
     8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
+RETIRE_AFTER_MIN = 1440  # 24 hours: a lane held this long without moving is parked; I4 keeps the branch
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Lane:
     stamped: float = (
         0.0  # backend clock (minutes) the engine last stamped this lane's claim
     )
+    arrived: float = 0.0  # backend clock (minutes) the engine first saw this lane; 0.0 = before this field
 
 
 @dataclass
@@ -166,12 +168,48 @@ class Engine:
                 f"refused hand-raised PR #{pr.get('number')} -> lane {pr.get('lane')}"
             )
         self._observe_lanes()
+        self._retire_stale_lanes()
         if self.s.batch is not None:
             self._judge_batch()
         if self.s.batch is None:
             self._start_batch()
         self._heartbeat_lanes()
         return self.s
+
+    def _retire_stale_lanes(self) -> None:
+        """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
+
+        The branch is kept -- the work is not the engine's to delete (I4) -- but the lane is
+        removed from state and from the queue, and the reason is reported once. The next tick
+        sees no such lane until the branch is re-pushed, which is a new claim with a new
+        `arrived`. Re-pushing is the only signal an agent has to say it is still working:
+        a lane held 24 hours without one is not being worked on.
+
+        Measured 2026-10-12 on refs/greenlane/state: 5 of the 10 PENDING lanes were 13-14
+        days old, and 19 RED/CONFLICT lanes were final and would never move. None of them
+        could land, and every one of them was in the queue a fresh push waited behind
+        -- some for 46 minutes, while successful ticks ran every ~80s.
+
+        Lanes loaded from a state file written before this field existed have
+        `arrived == 0.0`; they are migrated to the current tick so they too get a full
+        RETIRE_AFTER_MIN grace period, and a re-push is the only thing that skips retirement.
+        """
+        now = self.b.now()
+        for name in list(self.s.lanes):
+            lane = self.s.lanes[name]
+            if not lane.arrived:
+                lane.arrived = (
+                    now  # migration: lanes from before this field get a fresh timer
+                )
+                continue
+            age_min = now - lane.arrived
+            if age_min < RETIRE_AFTER_MIN:
+                continue
+            age_days = age_min / (60 * 24)
+            reason = f"refused: retired, this lane head is {age_days:.0f} days old"
+            self.b.report(name, lane.head, RED, reason)
+            del self.s.lanes[name]
+            self.log.append(f"retired {name}: {reason}")
 
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
@@ -192,11 +230,13 @@ class Engine:
                 )
             if lane is None:
                 self.s.seq += 1
-                self.s.lanes[name] = Lane(name, head, seq=self.s.seq)
+                self.s.lanes[name] = Lane(
+                    name, head, seq=self.s.seq, arrived=self.b.now()
+                )
             elif lane.head != head:
                 self.s.seq += 1
                 self.s.lanes[name] = Lane(
-                    name, head, seq=self.s.seq
+                    name, head, seq=self.s.seq, arrived=self.b.now()
                 )  # a new head is a new claim
         for name in list(self.s.lanes):
             if name not in heads:
