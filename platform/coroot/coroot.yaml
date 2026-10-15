@@ -54,6 +54,32 @@ metadata:
   namespace: coroot
 spec:
   interval: 10m
+  # Every Service this chart mints carries the catalogue entity the release belongs to, the way
+  # platform/identity/oauth2-proxy.yaml labels its own (backstage.io/kubernetes-id: founder-login).
+  # require-catalogue-entity (Enforce) refuses a Service outside the system namespaces that names no
+  # entity, and this release's seven Services -- the UI/API, the store, its headless twin, the
+  # collector, the Prometheus exporter and the two agents -- are the shape that policy exists to
+  # catch. A label and not a waiver: platform/edge/catalogue-entity-exception.yaml is the estate's
+  # home for the Services a chart mints at runtime that no postRenderer can reach, and it says so
+  # in as many words. The entity is backstage/platform/catalog-info.yaml's coroot.
+  #
+  # The placeholder name under `metadata` is not decoration and is not a rename: a strategic-merge
+  # patch with no name does not parse at all (`unable to parse SM or JSON patch`), and with it the
+  # target selects every Service while kustomize applies only the label -- measured 2026-10-15 on a
+  # synthetic pair of Services: both kept their own names and both got the label. It is the estate's
+  # existing shape (docs/policy/every-interface-is-a-door.md), used by platform/dns, platform/nats
+  # and the monitoring releases.
+  postRenderers:
+    - kustomize:
+        patches:
+          - target: { kind: Service }
+            patch: |
+              apiVersion: v1
+              kind: Service
+              metadata:
+                name: every-interface-is-a-door
+                labels:
+                  backstage.io/kubernetes-id: coroot
   chart:
     spec:
       chart: coroot
