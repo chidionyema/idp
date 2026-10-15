@@ -502,6 +502,13 @@ patches:
             # secrets-not-from-env-vars reason as FLEETVIEW_EXECUTOR_KEY_FILE above; the
             # volume is the fleetview-research op at the bottom of this file.
             - {name: FLEETVIEW_RESEARCH_TOKEN_FILE, value: /run/secrets/fleetview-research/RESEARCH_FEED_TOKEN}
+            # The unified-memory-server's surface token for the harness telemetry panel (#6227).
+            # The token is the estate's own surface token (vault entry unified-memory, key surface-token),
+            # extracted here into backstage-env so this sidecar can call /harness/stats without
+            # a separate secret. The volume is the fleetview-memory op at the bottom of this file.
+            - {name: ESTATE_MEMORY_URL, value: "http://unified-memory-server.unified-memory.svc.cluster.local:8000"}
+            - {name: ESTATE_MEMORY_HOST, value: "unified-memory.estate.internal"}
+            - {name: ESTATE_MEMORY_TOKEN_FILE, value: /run/secrets/fleetview-memory/MEMORY_SURFACE_TOKEN}
           volumeMounts:
             - {name: fleetview-data, mountPath: /data, readOnly: true}
             # WRITABLE -- the only mount on this container that is: the fleetview's own state
@@ -512,6 +519,7 @@ patches:
             - {name: backstage-github, mountPath: /run/secrets/backstage-github, readOnly: true}
             - {name: fleetview-voice-llm, mountPath: /run/secrets/fleetview-voice-llm, readOnly: true}
             - {name: fleetview-research, mountPath: /run/secrets/fleetview-research, readOnly: true}
+            - {name: fleetview-memory, mountPath: /run/secrets/fleetview-memory, readOnly: true}
           readinessProbe:
             httpGet: {path: /healthz, port: fv-executor}
             initialDelaySeconds: 3
@@ -573,4 +581,15 @@ patches:
             secretName: backstage-env
             items:
               - {key: RESEARCH_FEED_TOKEN, path: RESEARCH_FEED_TOKEN}
+            optional: true
+      # The memory server's surface token for /fleet's harness telemetry panel (#6227):
+      # one key of the backstage-env vault entry, projected into the sidecar only.
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: fleetview-memory
+          secret:
+            secretName: backstage-env
+            items:
+              - {key: MEMORY_SURFACE_TOKEN, path: MEMORY_SURFACE_TOKEN}
             optional: true
