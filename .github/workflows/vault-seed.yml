@@ -178,7 +178,7 @@ jobs:
             # Write to OCI Vault. --merge creates the entry if it does not yet exist.
             # Check vault OCID in a subshell so set -e does not exit the parent script on vget failure.
             _vid_ok=0; _vid_resolved=""
-            if (set +e; source bin/idp-cloud 2>/dev/null; vid=$(oci_vault_id 2>/dev/null); [ -n "$vid" ]; then echo "$vid"; exit 0; else exit 1; fi) >/dev/null 2>&1; then
+            if (set +e; source bin/idp-cloud 2>/dev/null; vid=$(oci_vault_id 2>/dev/null); [ -n "$vid" ]; echo "$vid"; exit 0; exit 1) >/dev/null 2>&1; then
               _vid_resolved=$( (set +e; source bin/idp-cloud 2>/dev/null; oci_vault_id 2>/dev/null) )
               _vid_ok=1
             fi
