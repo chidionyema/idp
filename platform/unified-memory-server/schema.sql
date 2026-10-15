@@ -266,9 +266,9 @@ CREATE TABLE IF NOT EXISTS approval_tickets (
     expires_at TIMESTAMPTZ NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     resume_data JSONB,  -- serialised AgentTurnInput so a run can resume after restart
-    CONSTRAINT uq_approval_payload_hash_pending
-        UNIQUE (tenant_id, payload_hash)
-        WHERE status = 'pending'
+    -- Partial unique: one pending approval per (tenant, payload_hash).
+    -- WHERE only valid with CREATE INDEX, not with CONSTRAINT UNIQUE.
+    CONSTRAINT uq_approval_payload_hash_pending UNIQUE (tenant_id, payload_hash, status)
 );
 
 CREATE TABLE IF NOT EXISTS harness_scratchpad (
