@@ -56,6 +56,7 @@ from fleetview_backend import (
     evals,
     graph,
     greenlane,
+    harness,
     harv,
     ledger_tail,
     memory,
@@ -100,6 +101,8 @@ __all__ = [
     "research_envelope",
     "estate_envelope",
     "harv_envelope",
+    "HARNESS_PATH",
+    "harness_envelope",
     "check_receipts_envelope",
     "mutations_envelope",
     "approve_mutation",
@@ -127,6 +130,7 @@ CLAIMS_PATH = "/claims"
 RESEARCH_PATH = "/research"
 ESTATE_PATH = "/estate"
 HARV_PATH = "/harv"
+HARNESS_PATH = "/harness"
 CHECK_RECEIPTS_PATH = "/check-receipts"
 MUTATIONS_PATH = "/mutations"
 MUTATIONS_APPROVE_PATH = "/mutations/approve"
@@ -387,6 +391,12 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
 def harv_envelope() -> tuple[dict[str, Any], int]:
     # The harvester's funnel as measured now; unreadable is unavailable with a reason, never empty.
     return harv.harv_status(), 200
+
+
+def harness_envelope() -> tuple[dict[str, Any], int]:
+    # The Active Runtime Harness telemetry snapshot and harness table row counts.
+    # An unreachable memory server is available: false with its reason, never a silent empty board.
+    return harness.harness_stats(), 200
 
 
 def check_receipts_envelope(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
