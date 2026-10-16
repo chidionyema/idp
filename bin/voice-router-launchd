@@ -14,6 +14,7 @@ the router still starts and /readyz answers 503 naming the 401, which bin/voice-
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import runpy
@@ -47,6 +48,38 @@ DOCKERFILES = [
     / "platform/voice-router/Dockerfile",
     Path(__file__).resolve().parent.parent / "platform/voice-router/Dockerfile",
 ]
+
+
+# The memory door's manifest, the one the Mac bridge (bin/estate-memory-mcp) reads, found as the
+# Dockerfile is: the synced tree first, then beside this checkout.
+MANIFESTS = [d.parents[1] / "estate/memory/runtimes.json" for d in DOCKERFILES]
+ESTATE_KEY_FILE = BINARY.parent / "estate-mcp.key"
+
+
+def estate_memory(
+    manifests: list[Path] = MANIFESTS, key_file: Path = ESTATE_KEY_FILE
+) -> bool:
+    """Point the router at unified estate memory (internal/estatemem), as the cluster's pod is (#6197).
+    The router reads its key from a file on every call, never from the environment, so the vault's
+    dev/MCP_GATEWAY_KEY is written to a 0600 file beside the binary. Without the key or the
+    manifest the router runs ungrounded, as before."""
+    manifest = next((m for m in manifests if m.is_file()), None)
+    if manifest is None:
+        return False
+    door = json.loads(manifest.read_text())["door"]
+    key = load_key(door["vault_entry"][1], door["key_env"], "estate memory key")
+    if not key:
+        return False
+    key_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp = key_file.with_suffix(".new")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(key)
+    os.chmod(tmp, 0o600)  # an existing .new keeps its old mode through O_CREAT
+    os.replace(tmp, key_file)
+    os.environ["ESTATE_MCP_URL"] = door["url"]
+    os.environ["ESTATE_MCP_KEY_FILE"] = str(key_file)
+    return True
 
 
 def pinned_models(dockerfile: Path | None = None) -> list[tuple[str, str]]:
@@ -128,6 +161,18 @@ def main() -> None:
         os.environ["LLM_API_KEY"] = key
     print(
         f"voice-router-launchd: router key {'loaded' if key else 'MISSING -- /readyz will answer 503'}",
+        file=sys.stderr,
+    )
+    try:
+        grounded = estate_memory()
+    except (OSError, ValueError, KeyError) as exc:
+        print(
+            f"voice-router-launchd: estate memory off ({type(exc).__name__})",
+            file=sys.stderr,
+        )
+        grounded = False
+    print(
+        f"voice-router-launchd: estate memory {'on' if grounded else 'off -- answers are not grounded'}",
         file=sys.stderr,
     )
     os.execv(str(BINARY), [str(BINARY)])  # noqa: S606 -- becomes the router binary

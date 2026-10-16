@@ -12,6 +12,10 @@
 // VOICE_INTENT_URL (the FleetView backend's POST /voice/intent; empty = off): an utterance that names a
 // committed, arg-free estate intent runs it; intent_result carries the result contract and its text is spoken.
 //
+// ESTATE_MCP_URL + ESTATE_MCP_KEY_FILE (the agentgateway's /estate/mcp and a file holding its key; either
+// empty = off): every brain answer is grounded in unified estate memory (brief, 800ms budget) and each
+// answered exchange is remembered there, runtime "fleetview-voice" (internal/estatemem).
+//
 // GET /voice/turns: the last turns (voice_turns fields) and their medians.
 //
 // VOICE_MODE=director runs the /fleet cinema director instead (director.go); no models load.
@@ -38,6 +42,7 @@ import (
 
 	"github.com/chidionyema/idp/platform/voice-router/internal/brain"
 	"github.com/chidionyema/idp/platform/voice-router/internal/engine"
+	"github.com/chidionyema/idp/platform/voice-router/internal/estatemem"
 	"github.com/chidionyema/idp/platform/voice-router/internal/intent"
 	"github.com/chidionyema/idp/platform/voice-router/internal/session"
 	"github.com/chidionyema/idp/platform/voice-router/internal/turnlog"
@@ -78,7 +83,9 @@ func main() {
 	if u := env("VOICE_INTENT_URL", ""); u != "" {
 		intents = intent.Hook{Client: &intent.Client{URL: u}, Log: log}
 	}
-	log.Info("voice.ready", "load_ms", time.Since(t0).Milliseconds(), "brain", b.BaseURL, "model", b.Model, "origins", origins, "tts_rate", tts.SampleRate(), "intent_url", env("VOICE_INTENT_URL", ""))
+	// Unified estate memory grounds the brain's answers: off unless ESTATE_MCP_URL and ESTATE_MCP_KEY_FILE are set.
+	mem := estatemem.FromEnv(log)
+	log.Info("voice.ready", "load_ms", time.Since(t0).Milliseconds(), "brain", b.BaseURL, "model", b.Model, "origins", origins, "tts_rate", tts.SampleRate(), "intent_url", env("VOICE_INTENT_URL", ""), "estate_memory", mem != nil)
 
 	turns, clock := turnlog.NewRing(envInt("VOICE_TURNS_KEPT", 200)), turnlog.NewClock()
 	var conns atomic.Uint64
@@ -105,6 +112,9 @@ func main() {
 			s.Record(turns, clock, id, "piper", voice)
 			if intents != nil {
 				s.SetIntents(intents)
+			}
+			if mem != nil {
+				s.SetMemory(mem)
 			}
 		})
 	})

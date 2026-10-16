@@ -624,3 +624,82 @@ func TestWithoutIntentsNothingChanges(t *testing.T) {
 		t.Fatalf("brain calls = %d, want 1", calls)
 	}
 }
+
+type fakeMemory struct {
+	brief string
+	delay time.Duration
+	mu    sync.Mutex
+	asked []string
+	kept  []string
+}
+
+func (m *fakeMemory) Brief(ctx context.Context, task string) string {
+	m.mu.Lock()
+	m.asked = append(m.asked, task)
+	m.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ""
+	case <-time.After(m.delay):
+		return m.brief
+	}
+}
+
+func (m *fakeMemory) Remember(content string, _ time.Duration) {
+	m.mu.Lock()
+	m.kept = append(m.kept, content)
+	m.mu.Unlock()
+}
+
+func TestMemoryGroundsTheBrainAndKeepsTheAnswer(t *testing.T) {
+	b := &fakeBrain{tokens: []string{"Three", " nodes."}}
+	s, r := newSession(&fakeASR{}, &fakeTTS{}, b)
+	m := &fakeMemory{brief: "- the estate runs three nodes"}
+	s.SetMemory(m)
+	s.Ask("how many nodes")
+	r.wait(t, "done", 1)
+
+	b.mu.Lock()
+	msgs := b.calls[0]
+	b.mu.Unlock()
+	if len(msgs) != 3 || msgs[0].Content != "you are the estate" || msgs[1].Role != "system" ||
+		!strings.Contains(msgs[1].Content, "three nodes") || msgs[2].Content != "how many nodes" {
+		t.Fatalf("brain got %+v", msgs)
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.kept) != 1 || !strings.Contains(m.kept[0], "how many nodes") || !strings.Contains(m.kept[0], "Three nodes.") {
+		t.Fatalf("remembered %q", m.kept)
+	}
+}
+
+func TestSlowMemoryCostsOnlyItsBudget(t *testing.T) {
+	b := &fakeBrain{tokens: []string{"Fine."}}
+	s, r := newSession(&fakeASR{}, &fakeTTS{}, b)
+	s.SetMemory(&fakeMemory{brief: "- never arrives", delay: time.Minute})
+	t0 := time.Now()
+	s.Ask("status")
+	r.wait(t, "done", 1)
+	if d := time.Since(t0); d > briefBudget+time.Second {
+		t.Fatalf("turn took %v with a stuck memory", d)
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if len(b.calls[0]) != 2 { // the prompt and the question: no grounding
+		t.Fatalf("brain got %+v", b.calls[0])
+	}
+}
+
+func TestIntentAnswersAreNotRemembered(t *testing.T) {
+	s, r := newSession(&fakeASR{}, &fakeTTS{}, &fakeBrain{})
+	m := &fakeMemory{}
+	s.SetMemory(m)
+	s.SetIntents(&fakeIntents{raw: json.RawMessage(`{}`), say: "Deployed.", ok: true})
+	s.Ask("deploy it")
+	r.wait(t, "done", 1)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.kept) != 0 || len(m.asked) != 0 {
+		t.Fatalf("intent turn touched memory: asked %q kept %q", m.asked, m.kept)
+	}
+}
