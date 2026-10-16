@@ -362,6 +362,17 @@ class Engine:
                 pass
             else:
                 continue
+            # A CONFLICT lane that expired on a different main tip: refresh its effective head
+            # against the current main before moving to PENDING. If the rebase succeeds the lane
+            # tests cleanly against the current main; if it fails the conflict is genuine and
+            # the rejudge counter will catch it on the next main move.
+            effective = self.b.rebase(lane.head, main)
+            if effective and effective != lane.head:
+                lane.head = effective
+                self.log.append(
+                    f"lane/{lane.name}: refreshed stale head {lane.head[:7]} -> "
+                    f"{effective[:7]} before retry"
+                )
             lane.status, lane.reason, lane.attempts = PENDING, "main moved; retrying", 0
 
     @staticmethod
@@ -539,24 +550,39 @@ class Engine:
         Without this, a lane judged on main-100 and then tested against main-200 will
         always fail the rebase check and accumulate rejudge counts, eventually parking
         permanently, even though it could land cleanly on the current main.
+
+        Called from _start_batch to refresh PENDING lanes that may have been force-pushed
+        by agents (new remote head, same lane name) or are stale against a newer main tip.
         """
         for lane in list(self.s.lanes.values()):
-            if lane.judged_on and lane.judged_on != base:
-                # Stale: was judged against a different main tip. Update the effective HEAD
-                # by rebasing the recorded HEAD onto the current base. If that succeeds, the
-                # lane now tests cleanly against main and the conflict check will pass.
-                effective = self.b.rebase(lane.head, base)
-                if effective and effective != lane.head:
-                    old = lane.head
-                    lane.head = effective
-                    lane.judged_on = base
-                    self.log.append(
-                        f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
-                        f"{effective[:7]} (was judged on {lane.judged_on[:7]}, "
-                        f"main is now {base[:7]})"
-                    )
-                    # Push the new HEAD so the remote stays in sync.
-                    self.b.push_head(lane.name, effective)
+            # Only refresh lanes that have been judged at least once (judged_on is a real sha).
+            # A lane with no judged_on has never been through a batch and has no "old main"
+            # to be stale against.
+            if not lane.judged_on or lane.judged_on == base:
+                continue
+            # Stale: was judged against a different main tip. Try to rebase onto current main.
+            # If that succeeds, the lane now tests cleanly against main.
+            effective = self.b.rebase(lane.head, base)
+            if not effective:
+                continue
+            # Refresh lane.head in memory so the next batch uses the effective sha.
+            # Only push to remote when the remote has actually moved (agent force-pushed),
+            # not for every stale judgment -- a lane that was judged against an old
+            # main has not changed on the remote, and the effective sha lives only
+            # in memory for the next batch to use.
+            heads = self.b.lanes()  # live remote heads
+            remote = heads.get(lane.name, "")
+            old = lane.head
+            lane.head = effective
+            lane.judged_on = base
+            if remote != old:
+                # Remote moved since last observation. Push the rebased head so
+                # the remote stays in sync with the lane record.
+                self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
+            self.log.append(
+                f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
+                f"{effective[:7]} (main moved; was {base[:7]}, now {base[:7]})"
+            )
 
     def _start_batch(self) -> None:
         base = self.b.main()
