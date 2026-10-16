@@ -39,7 +39,7 @@ concurrency:
   group: greenlane     # exactly one writer of main; a queued tick is never lost because a tick is idempotent
   cancel-in-progress: false
 jobs:
-  tick:
+  greenlane:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
