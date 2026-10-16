@@ -58,6 +58,7 @@ say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) t
 # fetch-depth 0, so one literal on an unmerged peer branch reddened every open PR
 # (2026-08-27 21:00Z, idp#479 #486-#492; crew#539 branch commit 3bf04ab). A branch
 # may only fail its own PR; a leak reaches main only through a PR whose HEAD holds it.
+check_secrets() {
 if command -v gitleaks >/dev/null; then
   if out=$(gitleaks detect --source . --log-opts=HEAD --redact --no-banner --exit-code 1 2>&1); then
     say "ok    secrets   gitleaks $(gitleaks version): no leaks in git history"
@@ -67,8 +68,10 @@ if command -v gitleaks >/dev/null; then
 else
   say "BLIND secrets   gitleaks not on PATH (brew install gitleaks)"; blind=1
 fi
+}
 
 # 2. dependencies: every requirements file, one pip-audit run each.
+check_deps() {
 PA=""
 if command -v pip-audit >/dev/null; then PA="pip-audit";
 elif command -v uvx >/dev/null; then PA="uvx pip-audit"; fi
@@ -151,8 +154,10 @@ $o"; fi
     say "FAIL  deps      pip-audit"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -15 | sed 's/^/      /'; fail=1
   fi
 fi
+}
 
 # 2b. Node dependencies: every tracked package-lock.json, npm audit at High+.
+check_npm() {
 locks=$(git ls-files | grep -E '(^|/)package-lock\.json$')
 if [ -z "$locks" ]; then
   say "ok    npm       no package-lock.json tracked"
@@ -258,8 +263,10 @@ print(" ".join(sorted(found - dismissed)) if found else "unread")')
   [ $nfail = 1 ] && fail=1
   [ $nfail = 0 ] && say "ok    npm       npm audit over $(echo "$locks" | wc -l | tr -d ' ') package-lock.json: no high or critical advisories${nig:+ beyond the recorded dismissals}"
 fi
+}
 
 # 3. policy: every control row on the security policy page names a proof that exists.
+check_policy() {
 if [ ! -x bin/security-policy-gate ]; then
   say "ok    policy    no bin/security-policy-gate in this repository (idp carries the estate policy)"
 elif out=$(python3 bin/security-policy-gate 2>&1); then
@@ -267,12 +274,14 @@ elif out=$(python3 bin/security-policy-gate 2>&1); then
 else
   say "FAIL  policy    security-policy-gate"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -10 | sed 's/^/      /'; fail=1
 fi
+}
 
 # 4. container images: Trivy Operator's own VulnerabilityReport CRDs (platform/trivy, crew#846),
 # read live -- there is nothing to lint in git, only a cluster to ask. bin/idp-kube is the one
 # door to the cluster (a repo hook refuses bare kubectl); it prints BLIND and exits 2 when no
 # cluster is reachable, which this folds into the same BLIND this check reports for a missing
 # CRD -- a guard that cannot reach its evidence reports BLIND, never a verdict (LAW 45).
+check_images() {
 if [ ! -x bin/idp-kube ]; then
   say "ok    images    no bin/idp-kube in this repository (idp carries the cluster)"
 else
@@ -326,6 +335,7 @@ print(f"{len(items)} {c} {h} {m} {l}")
     blind=1
   fi
 fi
+}
 
 # 5. manifests: `trivy config` over the Kubernetes YAML in this repository, before it reaches a
 # cluster. Check 4 above asks the cluster what is already running, which makes it exactly one
@@ -343,6 +353,7 @@ fi
 # .trivyignore.yaml is the accepted-risk register, not a mute button: every waiver names its
 # paths, says why the estate accepts the finding, and carries an expiry where the answer is "fix
 # it, not now". A finding that is not in that file fails this check and blocks the merge.
+check_manifests() {
 if ! command -v trivy >/dev/null 2>&1; then
   say "BLIND manifests trivy is not installed; nothing was measured"; blind=1
 else
@@ -430,6 +441,29 @@ if len(rows) > 20:
     fi
   fi
 fi
+}
+
+# The six checks run side by side (2026-10-14). They are independent reads of the same checkout,
+# and run one after another they were 185 s of the CI job -- gitleaks over the whole history 80 s,
+# pip-audit 69 s, trivy 30 s -- on the job the merge queue waits for last. Each check writes its
+# lines to a file of its own and its verdict to another, and the receipt replays them in the order
+# above, so it reads exactly as it did run serially. A check that dies without writing a verdict
+# is BLIND, never a pass.
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+checks="secrets deps npm policy images manifests"
+for c in $checks; do
+  ( fail=0; blind=0; "check_$c"; printf '%s %s\n' "$fail" "$blind" > "$work/$c.verdict" ) \
+    > "$work/$c.out" 2> "$work/$c.err" &
+done
+wait
+for c in $checks; do
+  cat "$work/$c.out"; cat "$work/$c.err" >&2
+  if read -r f b < "$work/$c.verdict" 2>/dev/null; then
+    [ "$f" = 1 ] && fail=1; [ "$b" = 1 ] && blind=1
+  else
+    say "BLIND $c the check exited before it gave a verdict"; blind=1
+  fi
+done
 
 if [ $fail = 1 ]; then say "SECURITY-SCAN FAIL commit=$(git rev-parse --short HEAD)"; exit 1; fi
 if [ $blind = 1 ]; then say "SECURITY-SCAN BLIND commit=$(git rev-parse --short HEAD)"; exit 3; fi

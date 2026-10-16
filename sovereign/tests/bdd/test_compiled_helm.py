@@ -17,6 +17,7 @@ The numbers below are read from that document, not from the files anyone edited.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -36,6 +37,12 @@ def compiled() -> dict:
     Rendering 31 charts takes minutes; doing it per scenario would make the gate too slow to run,
     and a gate that is too slow to run is a gate that gets skipped.
     """
+    # ci.yml's render shard compiles this same checkout one step earlier (it publishes the document
+    # for the Ops page) and names it here; compiling it twice was 36 s of the suite's slowest
+    # runner. Only a document the job itself just wrote is read -- never a file left lying around.
+    done = os.environ.get("IDP_COMPILED_HELM", "")
+    if done and Path(done).is_file():
+        return json.loads(Path(done).read_text())
     if not COMPILER.is_file():
         pytest.fail(f"{COMPILER} does not exist")
     out = ROOT / ".estate" / "compiled-helm.json"
