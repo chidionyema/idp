@@ -33,6 +33,9 @@ class Backend:
     def heartbeat(self, lane: str, head: str) -> None:
         self.heartbeats.append((lane, head))
 
+    def push_head(self, lane: str, sha: str) -> None:
+        pass  # test: no-op
+
     def now(self):
         return 0.0
 
@@ -43,7 +46,9 @@ class Backend:
         return dict(self.heads)
 
     def rebase(self, head, onto):
-        return f"{head}@{onto}"
+        # Return None when head == onto (no new commits to rebase), matching real
+        # git-cherry behaviour: nothing to land means nothing to return.
+        return None if head == onto else f"{head}@{onto}"
 
     def push_candidate(self, batch_id, tip):
         self.candidates.append(tip)
