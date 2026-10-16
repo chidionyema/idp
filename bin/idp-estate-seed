@@ -155,15 +155,21 @@ read_entry() { # <entry> -> JSON on stdout ("" when absent); exit 2 on a split/u
   printf '%s' "$out"
 }
 minted=0; kept=0
-_deleted_secret_recreate() { # <entry> -- delete a vault entry that is in OCI "pending deletion" so it can be recreated
-  # OCI keeps a deleted secret's name locked for the retention period (7 days). When the secret
-  # is in DELETED state, "name already exists" is thrown on create, and the content is gone anyway.
-  # Schedule deletion (no-op if already scheduled) and wait for OCI to release the name slot.
-  # In practice OCI usually releases within seconds; one retry is almost always sufficient.
-  local e=$1 rc=0
+_wait_oci_name_free() { # <entry> -- poll until the vault confirms the secret name is gone
+  # OCI holds a deleted secret's name for the retention period (7 days). After scheduling
+  # deletion, the name is still visible to list operations until OCI fully processes the deletion.
+  # Poll read_entry until it returns empty, with a short timeout.
+  local e=$1 waited=0
+  while sleep 3; do
+    [ "$(read_entry "$e")" != "" ] || return 0
+    waited=$((waited+3))
+    [ "$waited" -lt 30 ] || return 1
+  done
+}
+_deleted_secret_recreate() { # <entry> -- delete then wait for OCI to release the name
+  local e=$1
   "$CLOUD" secret delete "$e" >/dev/null 2>&1 || true
-  sleep 2
-  "$CLOUD" secret delete "$e" >/dev/null 2>&1 || true
+  _wait_oci_name_free "$e" || say "" "$e" "warning: OCI name still held after 30s; retrying anyway"
 }
 put_key() { # <entry> <key> <generator>
   local e=$1 k=$2 g=$3 cur have=""
