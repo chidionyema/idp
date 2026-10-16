@@ -490,9 +490,10 @@ class Engine:
             # Measured 2026-10-16: batches b2924/b2925 passed ci-success but land() was refused.
             if reason.startswith("land refused:"):
                 lane.status = PENDING
+                lane.attempts = 0  # reset: land refusals are not test failures
                 lane.reason = f"retry after: {reason}"
                 self.log.append(
-                    f"batch {b.id}: {name} land refused (not a test failure); re-queued without retry count"
+                    f"batch {b.id}: {name} land refused (not a test failure); attempts reset, re-queued"
                 )
             else:
                 lane.attempts += 1
