@@ -88,6 +88,9 @@ class State:
     seq: int = 0
     landed: int = 0
     candidates: int = 0
+    retired: dict[str, str] = field(
+        default_factory=dict
+    )  # lane name -> the head sha that was retired; a different head is a new claim (idp#5953)
 
     def dumps(self) -> str:
         d = asdict(self)
@@ -104,6 +107,7 @@ class State:
             candidates=d.get("candidates", 0),
         )
         st.lanes = {k: Lane(**v) for k, v in d.get("lanes", {}).items()}
+        st.retired = {str(k): str(v) for k, v in d.get("retired", {}).items()}
         st.queued = [list(x) for x in d.get("queued", [])]
         if d.get("batch"):
             b = d["batch"]
@@ -180,10 +184,20 @@ class Engine:
         """A lane held past RETIRE_AFTER_MIN without moving is parked (idp#5953).
 
         The branch is kept -- the work is not the engine's to delete (I4) -- but the lane is
-        removed from state and from the queue, and the reason is reported once. The next tick
-        sees no such lane until the branch is re-pushed, which is a new claim with a new
-        `arrived`. Re-pushing is the only signal an agent has to say it is still working:
-        a lane held 24 hours without one is not being worked on.
+        removed from state and from the queue, and the reason is reported once. The retirement is
+        durable: the head sha goes into `State.retired`, and `_observe_lanes` will not re-add a
+        lane whose head is already in it. Only a NEW head revives a parked lane -- a re-push is the
+        only signal an agent has to say it is still working, and a lane held 24 hours without one
+        is not being worked on. (Re-pushing the same sha is a no-op push and does not revive it;
+        the RED reason stays on the head, and that is what tells the agent its lane was parked.)
+
+        Ordering is NOT the fix. `tick` retires after it observes, and swapping those two lines
+        changes nothing: the tick after any retirement would re-add the lane with a fresh
+        `arrived`, overwriting the RED reason with `queued` and restarting the 24-hour timer.
+        Measured 2026-10-16 on refs/greenlane/state: every lane >=24h old was present with
+        `arrived` stamped seconds earlier, so the retirement lasted exactly one tick and the queue
+        never shortened. The record in `State.retired` is what makes it outlive the tick -- and it
+        has to survive the state file, because every tick is a fresh process reading it.
 
         Measured 2026-10-12 on refs/greenlane/state: 5 of the 10 PENDING lanes were 13-14
         days old, and 19 RED/CONFLICT lanes were final and would never move. None of them
@@ -207,6 +221,7 @@ class Engine:
                 continue
             age_days = age_min / (60 * 24)
             reason = f"refused: retired, this lane head is {age_days:.0f} days old"
+            self.s.retired[name] = lane.head
             self.b.report(name, lane.head, RED, reason)
             del self.s.lanes[name]
             self.log.append(f"retired {name}: {reason}")
@@ -214,6 +229,14 @@ class Engine:
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
         for name, head in heads.items():
+            if self.s.retired.get(name) == head:
+                # Parked (idp#5953). This exact head was retired and the branch was kept; it is
+                # not ours to work until a NEW head appears, which is a new claim. Re-adding it
+                # here was the defect: `arrived` was reset to now and the RED reason overwritten
+                # with `queued`, so a retirement lasted one tick and the timer restarted forever.
+                continue
+            if name in self.s.retired:
+                del self.s.retired[name]  # a different head is a new claim
             lane = self.s.lanes.get(name)
             if lane is None or lane.head != head:
                 # idp#5819: publish the lane before the work. This tick shares the single
