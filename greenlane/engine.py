@@ -369,6 +369,11 @@ class Engine:
             effective = self.b.rebase(lane.head, main)
             if effective and effective != lane.head:
                 lane.head = effective
+                # Push immediately: CI tests origin/<lane>, not the in-memory lane.head.
+                # Without this the lane is moved to PENDING with a refreshed head but the
+                # remote branch still carries the old commits, and CI fails.
+                if hasattr(self.b, "push_head"):
+                    self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
                 self.log.append(
                     f"lane/{lane.name}: refreshed stale head {lane.head[:7]} -> "
                     f"{effective[:7]} before retry"
@@ -565,20 +570,14 @@ class Engine:
             effective = self.b.rebase(lane.head, base)
             if not effective:
                 continue
-            # Refresh lane.head in memory so the next batch uses the effective sha.
-            # Only push to remote when the remote has actually moved (agent force-pushed),
-            # not for every stale judgment -- a lane that was judged against an old
-            # main has not changed on the remote, and the effective sha lives only
-            # in memory for the next batch to use.
-            heads = self.b.lanes()  # live remote heads
-            remote = heads.get(lane.name, "")
+            # Update lane.head and push the rebased head to remote. The push is always needed
+            # for a stale lane: the agent pushed the lane against an older main tip, so the
+            # remote HEAD is stale. Rebasing onto the current main produces a new remote HEAD
+            # that needs to be on the branch before CI can test it against the current main.
             old = lane.head
             lane.head = effective
             lane.judged_on = base
-            if remote != old:
-                # Remote moved since last observation. Push the rebased head so
-                # the remote stays in sync with the lane record.
-                self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
+            self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
             self.log.append(
                 f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
                 f"{effective[:7]} (main moved; was {base[:7]}, now {base[:7]})"
