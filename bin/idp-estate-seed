@@ -70,6 +70,8 @@ estate-db                 via-negativa-password      hex32
 estate-db                 research-reader-password   hex32
 # the memory layer (platform/unified-memory-server): its Postgres role, and the one surface
 # token the server registers at boot for the estate's agents (tenant estate).
+# MEMORY_SURFACE_TOKEN in backstage-env copies this same value so backstage can call
+# /harness/telemetry: one token, both sides use it.
 estate-db                 memory-password            hex32
 unified-memory            surface-token              urlsafe32
 # the evidence layer (decision 0028). Aevum's own Postgres role and its Ed25519 signing key.
@@ -83,7 +85,7 @@ backstage-env             BACKEND_SECRET              urlsafe32
 backstage-env             POSTGRES_PASSWORD           hex32
 backstage-env             PROVER_TOKEN                urlsafe32
 backstage-env             RESEARCH_FEED_TOKEN         urlsafe32
-backstage-env             MEMORY_SURFACE_TOKEN        sk
+backstage-env             MEMORY_SURFACE_TOKEN        copy:unified-memory.surface-token
 litellm-upstream          LITELLM_MASTER_KEY          sk
 prospector-store-api-env  Jwt__SigningKeyPem          rsa_pem_b64
 prospector-store-api-env  Store__InternalApiKey       hex32
