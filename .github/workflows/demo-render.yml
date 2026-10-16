@@ -4,6 +4,7 @@
 name: demo-render
 on:
   push:
+    branches: [main]
     paths:
       - 'demos/**'
       - 'bin/intent-compile'
