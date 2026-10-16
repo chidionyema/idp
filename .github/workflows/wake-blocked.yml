@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   wake-blocked:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: chidionyema/idp/.github/actions/wake-blocked@main
