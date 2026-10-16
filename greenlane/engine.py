@@ -91,6 +91,12 @@ class State:
     retired: dict[str, str] = field(
         default_factory=dict
     )  # lane name -> the head sha that was retired; a different head is a new claim (idp#5953)
+    timed: dict[str, dict[str, float]] = field(
+        default_factory=dict
+    )  # lane name -> {head sha: the instant this engine first timed it}. The 24 hours belong to
+    # the head, not to this state file: a lane record lost for one tick (the branch pruned as
+    # landed and pushed straight back, a state write that raced another tick) came back with
+    # `arrived = now`, so nothing ever reached RETIRE_AFTER_MIN (idp#5953).
 
     def dumps(self) -> str:
         d = asdict(self)
@@ -108,6 +114,10 @@ class State:
         )
         st.lanes = {k: Lane(**v) for k, v in d.get("lanes", {}).items()}
         st.retired = {str(k): str(v) for k, v in d.get("retired", {}).items()}
+        st.timed = {
+            str(k): {str(h): float(v) for h, v in (seen or {}).items()}
+            for k, seen in (d.get("timed") or {}).items()
+        }
         st.queued = [list(x) for x in d.get("queued", [])]
         if d.get("batch"):
             b = d["batch"]
@@ -212,9 +222,10 @@ class Engine:
         for name in list(self.s.lanes):
             lane = self.s.lanes[name]
             if not lane.arrived:
-                lane.arrived = (
-                    now  # migration: lanes from before this field get a fresh timer
-                )
+                # migration: lanes from before this field get a fresh timer -- and it is the
+                # instant this engine first timed this head, so a re-add keeps it (idp#5953)
+                lane.arrived = now
+                self.s.timed.setdefault(name, {}).setdefault(lane.head, now)
                 continue
             age_min = now - lane.arrived
             if age_min < RETIRE_AFTER_MIN:
@@ -225,6 +236,22 @@ class Engine:
             self.b.report(name, lane.head, RED, reason)
             del self.s.lanes[name]
             self.log.append(f"retired {name}: {reason}")
+
+    def _first_timed(self, name: str, head: str) -> float:
+        """The instant this engine first timed (name, head), or now, and remember it.
+
+        The 24 hours belong to the head, not to the lane record (idp#5953). A record can be lost
+        for a tick -- `lanes()` prunes the branch of a lane whose work is already on main and
+        `adopted_prs()` pushes it straight back, and a state write can race another tick -- and
+        re-adding it with `arrived = now` restarted the clock, so nothing ever reached
+        RETIRE_AFTER_MIN and `retired` stayed empty. Measured 2026-10-16 on refs/greenlane/state:
+        45 lanes, none older than about nine hours, 33 of them carrying heads from 2026-10-01/04
+        that had all been re-created in one pass at 01:10Z. Only a NEW head is a new claim.
+        """
+        seen = self.s.timed.setdefault(name, {})
+        if head not in seen:
+            seen[head] = self.b.now()
+        return seen[head]
 
     def _observe_lanes(self) -> None:
         heads = self.b.lanes()
@@ -254,16 +281,36 @@ class Engine:
             if lane is None:
                 self.s.seq += 1
                 self.s.lanes[name] = Lane(
-                    name, head, seq=self.s.seq, arrived=self.b.now()
+                    name, head, seq=self.s.seq, arrived=self._first_timed(name, head)
                 )
             elif lane.head != head:
                 self.s.seq += 1
                 self.s.lanes[name] = Lane(
-                    name, head, seq=self.s.seq, arrived=self.b.now()
+                    name, head, seq=self.s.seq, arrived=self._first_timed(name, head)
                 )  # a new head is a new claim
+            else:
+                # The lane is already here, so the arrival this engine has been carrying is the
+                # clock it has been given. Handing it over is what makes a state file written
+                # before `timed` existed safe from a wipe (idp#5953); a lane from before `arrived`
+                # existed (0.0) is migrated by _retire_stale_lanes, the one place that reads the
+                # clock, and is not timed here.
+                if lane.arrived:
+                    self.s.timed.setdefault(name, {}).setdefault(head, lane.arrived)
         for name in list(self.s.lanes):
             if name not in heads:
                 del self.s.lanes[name]  # branch gone: nothing to prove
+        for name in list(self.s.timed):
+            seen = self.s.timed[name]
+            if not seen:
+                del self.s.timed[name]
+                continue
+            newest = max(seen.items(), key=lambda kv: kv[1])
+            keep = {newest[0]: newest[1]}
+            if name in self.s.retired and self.s.retired[name] in seen:
+                keep[self.s.retired[name]] = seen[self.s.retired[name]]
+            # the head the lane is on, and the retired head it may come back on: bounded, so a
+            # lane that never returns cannot grow the state file without bound.
+            self.s.timed[name] = keep
         self.s.queued = [[n for n in grp if n in self.s.lanes] for grp in self.s.queued]
         self.s.queued = [g for g in self.s.queued if g]
         main = self.b.main()

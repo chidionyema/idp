@@ -10,8 +10,11 @@ queue itself was the parking lot.
 The fix: a lane held past RETIRE_AFTER_MIN (24 hours) without moving is retired. The branch is
 kept (I4: the work is not the engine's to delete), but the lane is removed from state and from
 the queue, and the reason is reported once. The next tick sees no such lane until the branch
-is re-pushed, which is a new claim with a new `arrived`. A re-push is the only signal an agent
-has to say it is still working: a lane held 24 hours without one is not being worked on.
+is re-pushed: a re-push is the only signal an agent has to say it is still working, and a lane
+held 24 hours without one is not being worked on. A re-push of a DIFFERENT head is a new claim
+with a new `arrived`; the SAME head coming back -- the branch pruned as landed and pushed straight
+back, or a state write that raced another tick -- is the same claim and keeps the clock it had
+(`State.timed`).
 
 Each test below fails on the pre-change engine: the first four because `_observe_lanes` never
 deleted a lane for being old, the next because every `tick` left an unworked lane in state,
@@ -28,6 +31,14 @@ The four tests after `test_a_re_pushed_lane_resets_its_retirement_timer` are tha
 the measured blast radius was wider than a wasted queue slot: with the test backend's green
 verdict the resurrected lane was batched and then LANDED, so a lane whose agent had walked away
 could still put its candidate on main, which is the thing the 24-hour rule exists to stop.
+
+AND THE CLOCK ITSELF WAS NOT DURABLE (measured 2026-10-16). `State.retired` made a retirement
+outlive its tick, but the timer it reads did not outlive a state wipe: a lane record lost for one
+tick came back with `arrived = now`. refs/greenlane/state at 10:11Z held 45 lanes, not one older
+than about nine hours, and 33 of them carried heads from 2026-10-01/04, all re-created in a single
+pass at 01:10Z (`seq` 1829-1845, contiguous). So `State.timed` records the instant each head was
+first timed, and a re-add of a head this engine has already timed keeps that instant: only a NEW
+head is a new claim.
 """
 
 from __future__ import annotations
@@ -335,4 +346,55 @@ def test_a_retired_lane_does_not_block_a_fresh_push_from_running():
     )
     assert "lane/old" not in batch_lanes, (
         f"the stale lane was in the batch: members={batch_lanes}"
+    )
+
+
+def test_a_lane_that_loses_its_record_and_returns_keeps_its_clock():
+    """The 24 hours belong to the head, not to the state file (measured 2026-10-16).
+
+    refs/greenlane/state at 10:11Z held 45 lanes and not one of them older than about nine hours,
+    while 33 carried heads from 2026-10-01/04: every one of the 33 was re-created in a single pass
+    at 01:10Z, so the clock restarted on all of them at once. A lane record is lost for a tick
+    whenever `lanes()` prunes the branch of work already on main and `adopted_prs()` pushes it
+    back, or two ticks race the state ref -- and the re-add handed the head a brand-new timer,
+    which is why `retired` was still empty with a 15-day-old lane in the queue. The state file
+    cannot be the clock, or the queue the fresh push waits in is never shortened.
+    """
+    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN - 30)
+    eng = _engine(be, st)
+    eng.tick()
+    assert "lane/old" in eng.s.lanes, f"the lane was retired early: {eng.s.lanes}"
+    # The record is lost for one tick -- exactly what the wholesale re-add on 2026-10-16 did --
+    # and the branch is back on the next tick with the same head.
+    be.heads.clear()
+    be.minute += 5
+    eng.tick()
+    assert "lane/old" not in eng.s.lanes, (
+        f"a lane whose branch is absent stayed in state: {eng.s.lanes}"
+    )
+    assert eng.s.timed["lane/old"]["ho"] == 1_000.0, (
+        f"the instant that head was first timed was not kept: {eng.s.timed}"
+    )
+    be.heads["lane/old"] = "ho"
+    be.minute += 10
+    eng.tick()
+    assert "lane/old" in eng.s.lanes, f"the re-added lane was retired: {eng.s.lanes}"
+    assert eng.s.lanes["lane/old"].arrived == 1_000.0, (
+        f"the clock restarted when the same head came back: {eng.s.lanes['lane/old']}"
+    )
+    be.minute += E.RETIRE_AFTER_MIN  # the head has now been held well past 24 hours
+    eng.tick()
+    assert "lane/old" not in eng.s.lanes, (
+        f"a head held past RETIRE_AFTER_MIN was never retired: {eng.s.lanes}"
+    )
+
+
+def test_the_clock_survives_the_state_file():
+    """Every tick is a fresh process, so the clock has to be in the file (idp#5953)."""
+    st = E.State()
+    st.timed["lane/x"] = {"h1": 123.0}
+    again = E.State.loads(st.dumps())
+    assert again.timed == {"lane/x": {"h1": 123.0}}, (
+        f"timed did not round-trip through the state file: {again.timed}"
     )
