@@ -295,6 +295,16 @@ class GitHubBackend:
         finally:
             os.unlink(f.name)
 
+    def push_head(self, lane: str, sha: str) -> None:
+        """Force-push the given sha as the lane's HEAD on origin."""
+        self.git(
+            "push",
+            "-q",
+            "-f",
+            "origin",
+            f"{sha}:refs/heads/{lane}",
+        )
+
     def rebase(self, head: str, onto: str) -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         mb = self.git("merge-base", onto, head)

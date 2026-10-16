@@ -129,6 +129,9 @@ class ChaosBackend:
     def lanes(self) -> dict[str, str]:
         return dict(self.lane_heads)
 
+    def push_head(self, lane: str, sha: str) -> None:
+        pass  # simulation: no remote push needed
+
     def rebase(self, head: str, onto: str) -> Optional[str]:
         mine = self.changes_since(head, onto)
         theirs = self.changes_since(onto, head)
