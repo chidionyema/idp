@@ -35,7 +35,7 @@ permissions:
   contents: write
   pull-requests: write
   statuses: write
-  checks: read
+  checks: write
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

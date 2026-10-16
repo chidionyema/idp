@@ -726,7 +726,9 @@ class GitHubBackend:
         else:
             self.gh(f"statuses/{sha}", "POST", fields)
 
-    def _update_check_run(self, sha: str, status: str, conclusion: str, reason: str) -> None:
+    def _update_check_run(
+        self, sha: str, status: str, conclusion: str, reason: str
+    ) -> None:
         """Update (or create) a check run named 'greenlane' on sha to completed/conclusion.
 
         The greenlane.yml workflow creates a check run named 'greenlane' when it fires on a lane
@@ -734,7 +736,11 @@ class GitHubBackend:
         engine is ready to merge, the check run must be marked completed before GitHub allows the
         merge.
         """
-        state_map = {"success": "completed", "failure": "completed", "pending": "in_progress"}
+        state_map = {
+            "success": "completed",
+            "failure": "completed",
+            "pending": "in_progress",
+        }
         check_run_state = state_map.get(status, "in_progress")
         # Find the latest greenlane check run for this sha
         runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
@@ -745,13 +751,22 @@ class GitHubBackend:
                     check_run = r
         if check_run is None:
             # No check run found; nothing to update. Post a status as fallback.
-            self._status(sha, {"state": status, "context": "greenlane", "description": (reason or status)[:140]})
+            self._status(
+                sha,
+                {
+                    "state": status,
+                    "context": "greenlane",
+                    "description": (reason or status)[:140],
+                },
+            )
             return
         cr_id = check_run["id"]
         payload = {
             "status": check_run_state,
             "conclusion": conclusion if check_run_state == "completed" else None,
-            "completed_at": datetime.now(timezone.utc).isoformat() if check_run_state == "completed" else None,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+            if check_run_state == "completed"
+            else None,
             "output": {
                 "title": "greenlane",
                 "summary": (reason or status)[:140],
@@ -760,13 +775,21 @@ class GitHubBackend:
         try:
             self.gh(f"check-runs/{cr_id}", "PATCH", payload)
         except RuntimeError as e:
-            print(f"WARN    greenlane  check-run update failed for {sha}: {e}", file=sys.stderr)
+            print(
+                f"WARN    greenlane  check-run update failed for {sha}: {e}",
+                file=sys.stderr,
+            )
 
     def report_check_run_completed(self, sha: str, status: str, reason: str) -> None:
-        """Update the greenlane check run on sha to completed/success.
+        """Mark the greenlane check run on sha as completed.
 
-        Called just before land() to mark the check run done. The greenlane.yml workflow creates
-        a check run on the batch tip commit; this completes it so GitHub allows the merge.
+        Called just before land() to mark the check run done. GitHub evaluates required checks
+        on the batch tip (the commit main is fast-forwarded to). The lane head's check run
+        (from ci.yml) is not visible there. We must create or update a check run on the
+        batch tip so GitHub sees the required check satisfied.
+
+        The workflow now has checks:write permission, and GH_TOKEN is the App token which
+        has check-run write permission.
         """
         conclusion = {
             TESTING: None,
@@ -774,7 +797,41 @@ class GitHubBackend:
             RED: "failure",
             CONFLICT: "failure",
         }.get(status, "pending")
+        # First: try to find and update an existing check run
         self._update_check_run(sha, status, conclusion, reason)
+        # If no existing check run was found, create one on sha (the batch tip)
+        # This happens when greenlane.yml does not create a check run on the batch tip
+        # (it only fires on lane/ branches, not queue/ branches).
+        runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
+        existing = any(
+            r.get("name") == "greenlane" for r in runs.get("check_runs", [])
+        )
+        if existing:
+            return  # Updated successfully in _update_check_run above
+        # No existing check run: create one
+        check_run_state = "completed" if conclusion else "in_progress"
+        payload = {
+            "name": "greenlane",
+            "head_sha": sha,
+            "status": check_run_state,
+            "conclusion": conclusion,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+            if check_run_state == "completed"
+            else None,
+            "output": {
+                "title": "greenlane",
+                "summary": (reason or status)[:140],
+            },
+        }
+        if self.run_url:
+            payload["output"]["text"] = f"{self.run_url}\n{(reason or status)[:140]}"
+        try:
+            self.gh("check-runs", "POST", payload)
+        except RuntimeError as e:
+            print(
+                f"WARN    greenlane  check-run create failed for {sha}: {e}",
+                file=sys.stderr,
+            )
 
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         state = {
