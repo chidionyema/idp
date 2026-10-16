@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib.machinery
 import importlib.util
+import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -206,6 +207,108 @@ def test_with_no_pr_number_the_snapshot_still_speaks(monkeypatch):
     monkeypatch.delenv("PR_NUMBER", raising=False)
     monkeypatch.setenv("PR_BODY", "Claim: Mumchimp/idp#1\nAgent: a\n")
     assert "Claim: Mumchimp/idp#1" in _gate().live_body("Mumchimp/idp")
+
+
+def test_the_lane_stage_asks_which_pull_request_the_head_is(monkeypatch):
+    """The Greenlane runs this gate one stage before CI, on a LANE, and exports none of the pull
+    request context ci.yml exports (greenlane/github.py::unclaimed). A lane whose two trailers
+    live in its pull request body -- allowed by AGENTS.md §5 rule 5 and read by judge() -- was
+    held with `no live claim`, measured 2026-10-15 on #6202 and #6198 (both green, both
+    mergeable). With nothing in the environment the gate now asks GitHub; it must not guess."""
+    g = _gate()
+    monkeypatch.delenv("PR_NUMBER", raising=False)
+    monkeypatch.delenv("PR_AUTHOR", raising=False)
+    asked: list[tuple[str, str]] = []
+
+    def fake(repo, head):
+        asked.append((repo, head))
+        return "6202", "otto"
+
+    monkeypatch.setattr(g, "pr_of_head", fake)
+    assert g.pr_context("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
+    assert asked == [("chidionyema/idp", "d4ed1c50f")]
+
+
+def test_ci_pays_nothing_for_the_lane_stages_lookup(monkeypatch):
+    """ci.yml sets both variables, so a pull request run must not go to the network at all."""
+    g = _gate()
+    monkeypatch.setenv("PR_NUMBER", "6202")
+    monkeypatch.setenv("PR_AUTHOR", "otto")
+    monkeypatch.setattr(
+        g,
+        "pr_of_head",
+        lambda repo, head: (_ for _ in ()).throw(AssertionError("asked the network")),
+    )
+    assert g.pr_context("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
+
+
+def test_only_the_open_pull_request_supplies_the_body(monkeypatch):
+    import subprocess as sp
+
+    g = _gate()
+    monkeypatch.setattr(
+        g.subprocess,
+        "run",
+        lambda argv, **kw: sp.CompletedProcess(
+            argv,
+            0,
+            json.dumps(
+                [
+                    {"number": 1, "state": "closed", "user": {"login": "a"}},
+                    {"number": 6202, "state": "open", "user": {"login": "otto"}},
+                ]
+            ),
+            "",
+        ),
+    )
+    assert g.pr_of_head("chidionyema/idp", "d4ed1c50f") == ("6202", "otto")
+
+
+def test_a_lookup_that_cannot_run_supplies_nothing(monkeypatch):
+    import subprocess as sp
+
+    g = _gate()
+    monkeypatch.setattr(
+        g.subprocess,
+        "run",
+        lambda argv, **kw: sp.CompletedProcess(argv, 1, "", "gh: boom"),
+    )
+    assert g.pr_of_head("chidionyema/idp", "d4ed1c50f") == ("", "")
+
+
+def test_a_landed_lane_reads_the_body_of_its_pull_request(monkeypatch):
+    """judge()'s lane path reads the lane branch's commit messages, so a body-declared lane was
+    refused one stage later, inside the batch. The batch commit names the lane head; the body of
+    the pull request that head belongs to is part of the declaration."""
+    g = _gate()
+    monkeypatch.setattr(g, "pr_of_head", lambda repo, sha: ("6202", "otto"))
+    monkeypatch.setattr(g, "live_body", lambda repo, num="": "Claim: #6228\nAgent: otto\n")
+    assert (
+        g.lane_body("chidionyema/idp", "d4ed1c50f", "abc1234")
+        == "Claim: #6228\nAgent: otto\n"
+    )
+
+
+def test_runner_pin_only_passes_without_a_claim(tmp_path, monkeypatch):
+    # GitHub retires ubuntu-latest; pinning to ubuntu-NN.NN is mechanical infrastructure
+    # hygiene that does not belong to any agent. A commit that only changes runs-on in
+    # workflow files passes without Claim:/Agent:.
+    _sh(tmp_path, "init", "-q", "-b", "main")
+    _sh(tmp_path, "config", "user.email", "t@t")
+    _sh(tmp_path, "config", "user.name", "t")
+    _sh(tmp_path, "commit", "-q", "--allow-empty", "-m", "base")
+    base = _sh(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / ".github").mkdir()
+    (tmp_path / ".github/workflows").mkdir()
+    (tmp_path / ".github/workflows/ci.yml").write_text(
+        "name: ci\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu-24.04\n    steps:\n      - run: echo hi\n"
+    )
+    _sh(tmp_path, "add", "-A")
+    _sh(tmp_path, "commit", "-q", "-m", "fix(ci): pin ubuntu runner")
+    head = _sh(tmp_path, "rev-parse", "HEAD")
+    monkeypatch.chdir(tmp_path)
+    g = _gate()
+    assert g.judge(base, head, "Mumchimp/idp", lambda r, n: _issue(), NOW, "", "") == []
 
 
 def test_a_failed_fetch_falls_back_to_the_snapshot(monkeypatch):

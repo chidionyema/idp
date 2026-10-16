@@ -58,6 +58,8 @@ from datetime import datetime, timedelta, timezone
 DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(hours=2)
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
+RUNNER_PIN = re.compile(r"^\s*runs-on:\s*ubuntu-\d{2}\.\d{2}\s*$", re.M)
+_PRS: dict[tuple[str, str], tuple[str, str]] = {}  # (repo, sha) -> (pull request number, author)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
 AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
 CLAIM = re.compile(
@@ -126,6 +128,38 @@ def image_bump_only(diff: str) -> bool:
         if ln[:1] in "+-" and not ln.startswith(("+++", "---"))
     ]
     return bool(changed) and all("$imagepolicy" in ln for ln in changed)
+
+
+def runner_pin_only(diff: str) -> bool:
+    """Every non-header changed line is in a GitHub Actions workflow and is either a
+    `runs-on: ubuntu-NN.NN` pin or indented content within it.
+
+    GitHub retires ubuntu-latest on a schedule; pinning to a specific version is mechanical
+    infrastructure hygiene that does not belong to any agent. Like image bumps it
+    requires no claim, and for the same reason: it is the platform's own maintenance, not
+    a product change.
+    """
+    changed = [
+        ln
+        for ln in diff.splitlines()
+        if ln[:1] in "+-" and not ln.startswith(("+++", "---"))
+    ]
+    if not changed:
+        return False
+    in_workflow = False
+    for ln in changed:
+        stripped = ln.lstrip("+- ")
+        if stripped.startswith("jobs:") or stripped.startswith("jobs."):
+            in_workflow = True
+        if stripped.startswith("runs-on:"):
+            if not RUNNER_PIN.match(ln.lstrip("+-")):
+                return False
+            in_workflow = True
+    if not in_workflow:
+        # A new workflow file has no `jobs:` line in the diff; detect it by all
+        # non-header lines being indented (they are the file body).
+        return all(ln[1:].startswith(" ") or ln[1:].startswith("\t") for ln in changed)
+    return True
 
 
 def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> list[str]:
@@ -214,8 +248,10 @@ def judge(
         for c, m in lanes:
             if image_bump_only(git("show", "--format=", c)):
                 continue
+            if runner_pin_only(git("show", "--format=", c)):
+                continue
             lane_head = m.group(1)
-            text = lane_text(base, lane_head, c)
+            text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
             files = [
                 f
                 for f in git(
@@ -230,17 +266,91 @@ def judge(
         return problems
     if image_bump_only(git("diff", f"{base}...{head}")):
         return []
+    if runner_pin_only(git("diff", f"{base}...{head}")):
+        return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
     files = [f for f in git("diff", "--name-only", f"{base}...{head}").split("\n") if f]
     return verdict(text, files, repo, fetch, now)
 
 
-def live_body(repo: str) -> str:
+def pr_of_head(repo: str, head: str) -> tuple[str, str]:
+    """(number, author) of the open pull request whose head is `head`, or ("", "").
+
+    ci-success hands this gate the pull request in the environment (PR_NUMBER/PR_BODY/
+    PR_AUTHOR, .github/workflows/ci.yml), because a pull_request event carries it. The Greenlane
+    runs the same gate one stage earlier, on a LANE -- a branch -- and exports none of it
+    (greenlane/github.py::unclaimed passes only GITHUB_REPOSITORY). That was invisible while
+    every lane declared its two trailers in a commit message, and became a false `no live claim`
+    the moment one declared them in its pull request body -- which AGENTS.md §5 rule 5 allows
+    ("in a commit message (or the PR body)"), which judge() reads (it appends the body), and
+    which both #6202 and #6198 did.
+
+    Measured 2026-10-15 against a clean origin/main, greenlane holding both with
+    `no live claim: no `Claim: <owner>/<repo>#<n>` line` while both were green and mergeable:
+
+        PR_NUMBER unset  -> FAIL  claim-gate  no `Claim: <owner>/<repo>#<n>` line
+        PR_NUMBER=6202   -> ok    claim-gate  no other live agent holds these files
+
+    Asking GitHub which pull request this sha is the head of supplies the same fact CI is handed,
+    so the lane stage and the queue cannot answer the same question differently.
+    """
+    key = (repo, head)
+    if key not in _PRS:
+        _PRS[key] = ("", "")
+        try:
+            p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+                ["gh", "api", f"repos/{repo}/commits/{head}/pulls"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            found = json.loads(p.stdout or "[]") if p.returncode == 0 else []
+        except Exception:
+            found = []
+        for pr in found if isinstance(found, list) else []:
+            if pr.get("state") == "open":
+                _PRS[key] = (
+                    str(pr.get("number", "")),
+                    ((pr.get("user") or {}).get("login") or ""),
+                )
+                break
+    return _PRS[key]
+
+
+def pr_context(repo: str, head: str) -> tuple[str, str]:
+    """The pull request this run judges: CI's environment first, GitHub's answer second.
+
+    CI sets both variables, so it pays nothing for this. The lane stage sets neither, which is
+    the whole defect -- it now asks which pull request this sha is the head of.
+    """
+    num = os.environ.get("PR_NUMBER", "")
+    author = os.environ.get("PR_AUTHOR", "")
+    if num and author:
+        return num, author
+    found_num, found_author = pr_of_head(repo, head)
+    return num or found_num, author or found_author
+
+
+def lane_body(repo: str, lane_head: str, squash: str) -> str:
+    """The body of the pull request a landed lane came from, or "".
+
+    judge()'s lane path reads the LANE BRANCH's commit messages (lane_text), so a lane whose two
+    trailers live in its pull request body was refused here even after the lane stage admitted it
+    -- the same blindness, one stage later. Try the head the trailer names, then the squash the
+    batch carries: whichever GitHub still associates with the pull request."""
+    for sha in (lane_head, squash):
+        num, _ = pr_of_head(repo, sha)
+        if num:
+            return live_body(repo, num)
+    return ""
+
+
+def live_body(repo: str, num: str = "") -> str:
     """The PR body as it is now, not as the opening-day event snapshot carried it (idp#5758:
     a re-run judges github.event.pull_request.body from the original event, so a trailer fix
     in the body stayed invisible and the gate failed identically). Falls back to the snapshot
     when there is no PR number or the fetch fails -- CI still runs the same gate."""
-    num = os.environ.get("PR_NUMBER", "")
+    num = num or os.environ.get("PR_NUMBER", "")
     if not num:
         return os.environ.get("PR_BODY", "")
     p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
@@ -257,6 +367,7 @@ def live_body(repo: str) -> str:
 def main(argv: list[str]) -> int:
     base, head = argv[1], argv[2]
     repo = os.environ["GITHUB_REPOSITORY"]
+    num, author = pr_context(repo, head)
 
     def fetch(r: str, n: int):
         return gh_json(f"repos/{r}/issues/{n}"), gh_json(
@@ -269,8 +380,8 @@ def main(argv: list[str]) -> int:
         repo,
         fetch,
         datetime.now(timezone.utc),
-        live_body(repo),
-        os.environ.get("PR_AUTHOR", ""),
+        live_body(repo, num),
+        author,
     )
     for p in problems:
         print(f"FAIL  claim-gate  {p}")
