@@ -25,7 +25,7 @@ concurrency:
 jobs:
   build:
     if: github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     env:
       ARTIFACT: oci://ghcr.io/${{ github.repository }}/estate-state:latest
@@ -241,7 +241,7 @@ jobs:
   publish-reports:
     if: github.event_name != 'pull_request'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write

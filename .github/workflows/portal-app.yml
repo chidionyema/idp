@@ -45,7 +45,7 @@ jobs:
     # landed with this red. With the browser cache (#5564) it takes 4-6 min against ci's 3.5-5.5,
     # and only installs when backstage/ changed, so other lanes get an instant green job.
     needs: [gate, verify]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # `repo lint --since origin/main` and `repo test` diff the base
@@ -125,7 +125,7 @@ jobs:
       # `TypeError: Cannot read properties of undefined (reading 'toFixed')` while rendering the
       # efficiency frame, unmounting the Reactor before its mic control mounted -- 0 canvases,
       # getUserMedia never called. An earlier `GET /fleet` 302 to the Oracle login wall was a
-      # separate symptom, already fixed. ubuntu-latest is the one place this can run: Playwright
+      # separate symptom, already fixed. ubuntu-24.04 is the one place this can run: Playwright
       # ships no WebKit or Chromium for macOS 13 (`ERROR: Playwright does not support webkit on
       # mac13`, from the installer, on the founder's laptop). WebKit is the founder's iPhone engine;
       # Chromium stands in for Android. The step is not skippable -- a silently skipped mobile check

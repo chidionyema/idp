@@ -52,7 +52,7 @@ jobs:
   # merge-base beside the head, and `judge` fails the PR only for a failure the base does not
   # show. A base run that is missing or BLIND excuses nothing (bin/idp-shadow judge).
   scope:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       dirs: ${{ steps.scope.outputs.dirs }}
       head: ${{ steps.scope.outputs.head }}
@@ -94,7 +94,7 @@ jobs:
     needs: scope
     if: needs.scope.outputs.dirs != ''
     name: shadow-run (${{ matrix.side }})
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -202,7 +202,7 @@ jobs:
   shadow-verify:
     needs: [scope, run]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
         with:

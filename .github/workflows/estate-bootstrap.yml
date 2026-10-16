@@ -74,7 +74,7 @@ jobs:
   # docs/reference/policy/root-trust.md. A red preflight is also the gate before a live run.
   preflight:
     if: ${{ inputs.mode == 'preflight' || inputs.mode == 'live' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # The three states, kept as three (crew#656): 0 ok, 1 FAIL, 2 BLIND. A job's result is only
     # pass or fail, which collapses BLIND into FAIL and lets "could not measure" block work that
@@ -146,7 +146,7 @@ jobs:
   live:
     needs: [preflight]
     if: ${{ inputs.mode == 'live' && inputs.scope == 'estate-seed' && needs.preflight.result == 'success' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4.4.0
@@ -194,7 +194,7 @@ jobs:
     # it, and the bootstrapper below re-checks the vault itself and exits BLIND on its own if it
     # really cannot reach it. Nothing is minted on an unmeasured vault either way.
     if: ${{ always() && inputs.mode == 'live' && inputs.scope == 'cloudflare' && needs.preflight.outputs.rc != '1' && needs.preflight.result != 'cancelled' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # The three states, kept as three (crew#656): 0 ok, 1 FAIL, 2 BLIND. A job's result is only
     # pass or fail, which collapses BLIND into FAIL and lets "could not measure" block work that
@@ -244,7 +244,7 @@ jobs:
   live-vendor-refused:
     needs: [preflight]
     if: ${{ inputs.mode == 'live' && inputs.scope != 'estate-seed' && inputs.scope != 'cloudflare' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: refuse and point the operator at the laptop runbook

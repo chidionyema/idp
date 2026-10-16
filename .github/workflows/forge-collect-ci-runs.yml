@@ -38,7 +38,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   collect:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 150
     env:
       OUTPUT: forge/datasets/ci-flake-triage.jsonl
