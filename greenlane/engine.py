@@ -458,7 +458,9 @@ class Engine:
             # GitHub refuses the merge with "Required status check 'greenlane' is pending".
             # Reported 2026-10-16: batch b2924 passed ci-success but land() was refused.
             for name, head, _ in b.members:
-                self.b.report(name, head, LANDED, f"greenlane check updated before land in {b.id}")
+                self.b.report(
+                    name, head, LANDED, f"greenlane check updated before land in {b.id}"
+                )
             try:
                 self.b.land(b.members, b.tip)
             except RuntimeError as e:
@@ -482,28 +484,39 @@ class Engine:
         if len(b.members) == 1:
             name, head, _ = b.members[0]
             lane = self.s.lanes[name]
-            lane.attempts += 1
-            if lane.attempts <= self.retries:
-                # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
-                # and `_start_batch` serves `queued` before the pending list -- so a lane that
-                # had already spent a full check suite ran as a ONE-lane batch in front of lanes
-                # that had never been tested at all. Measured 2026-10-11: refs/greenlane/state
-                # held 12 red lanes against 11 pending, and a lane pushed 14:29:58 waited 46 min
-                # for its first batch while successful ticks ran every ~80s. The lane is set
-                # PENDING either way, and its `seq` is unchanged, so plain `seq` order already
-                # puts it near the front: the group bought it a place ahead of newer work and a
-                # suite of its own, and nothing else.
+            # A land refusal is not a test failure. It does not count against the retry budget.
+            # The lane passed all tests; the refusal is a race with GitHub's required-check
+            # propagation. Re-queue without incrementing attempts.
+            # Measured 2026-10-16: batches b2924/b2925 passed ci-success but land() was refused.
+            if reason.startswith("land refused:"):
                 lane.status = PENDING
                 lane.reason = f"retry after: {reason}"
+                self.log.append(
+                    f"batch {b.id}: {name} land refused (not a test failure); re-queued without retry count"
+                )
             else:
-                lane.status, lane.reason = RED, reason
-                # main red under it: the verdict says nothing about the lane (2026-09-30)
-                if self.b.main_red(b.base):
-                    lane.judged_on = b.base
-                self.b.report(name, head, RED, reason)
-            self.log.append(
-                f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
-            )
+                lane.attempts += 1
+                if lane.attempts <= self.retries:
+                    # A retry is not a priority. This used to be `self.s.queued.insert(0, [name])`,
+                    # and `_start_batch` serves `queued` before the pending list -- so a lane that
+                    # had already spent a full check suite ran as a ONE-lane batch in front of lanes
+                    # that had never been tested at all. Measured 2026-10-11: refs/greenlane/state
+                    # held 12 red lanes against 11 pending, and a lane pushed 14:29:58 waited 46 min
+                    # for its first batch while successful ticks ran every ~80s. The lane is set
+                    # PENDING either way, and its `seq` is unchanged, so plain `seq` order already
+                    # puts it near the front: the group bought it a place ahead of newer work and a
+                    # suite of its own, and nothing else.
+                    lane.status = PENDING
+                    lane.reason = f"retry after: {reason}"
+                else:
+                    lane.status, lane.reason = RED, reason
+                    # main red under it: the verdict says nothing about the lane (2026-09-30)
+                    if self.b.main_red(b.base):
+                        lane.judged_on = b.base
+                    self.b.report(name, head, RED, reason)
+                self.log.append(
+                    f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
+                )
         else:
             half = len(b.members) // 2
             first, second = (
