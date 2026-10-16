@@ -155,6 +155,16 @@ read_entry() { # <entry> -> JSON on stdout ("" when absent); exit 2 on a split/u
   printf '%s' "$out"
 }
 minted=0; kept=0
+_deleted_secret_recreate() { # <entry> -- delete a vault entry that is in OCI "pending deletion" so it can be recreated
+  # OCI keeps a deleted secret's name locked for the retention period (7 days). When the secret
+  # is in DELETED state, "name already exists" is thrown on create, and the content is gone anyway.
+  # Schedule deletion (no-op if already scheduled) and wait for OCI to release the name slot.
+  # In practice OCI usually releases within seconds; one retry is almost always sufficient.
+  local e=$1 rc=0
+  "$CLOUD" secret delete "$e" >/dev/null 2>&1 || true
+  sleep 2
+  "$CLOUD" secret delete "$e" >/dev/null 2>&1 || true
+}
 put_key() { # <entry> <key> <generator>
   local e=$1 k=$2 g=$3 cur have=""
   cur=$(read_entry "$e")
@@ -166,7 +176,19 @@ put_key() { # <entry> <key> <generator>
   local v; v=$(gen "$g") || fail "$e" "generator $g unknown"
   [ -n "$v" ] || fail "$e" "$k: generator ${g%%:*} produced nothing (a copy: source is not minted yet?)"
   local f; f=$(mktemp); umask 077; printf 'SEED_VALUE=%s\n' "$v" > "$f"; unset v
-  ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$e" "$k=SEED_VALUE" >/dev/null || { rm -f "$f"; fail "$e" "vault write of $k refused"; }
+  local err
+  err=$(ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$e" "$k=SEED_VALUE" 2>&1) || {
+    rm -f "$f"
+    if [[ "$err" == *"name already exists"* ]]; then
+      say "" "$e" "secret in OCI pending-deletion; recreating"
+      _deleted_secret_recreate "$e"
+      f=$(mktemp); umask 077; printf 'SEED_VALUE=%s\n' "$(gen "$g")" > "$f"
+      ESTATE_ENV_FILE="$f" "$VAULT_PUT" --merge "$e" "$k=SEED_VALUE" >/dev/null || { rm -f "$f"; fail "$e" "vault write of $k refused after recreate"; }
+      rm -f "$f"
+      say ok "$e" "$k minted (${g%%:*}) and written (recreated)"; minted=$((minted+1)); return
+    fi
+    fail "$e" "vault write of $k refused: $err"
+  }
   rm -f "$f"
   say ok "$e" "$k minted (${g%%:*}) and written"; minted=$((minted+1))
 }
@@ -182,7 +204,18 @@ put_raw() { # <entry> <generator>: the whole secret is the value
   # print() adds a trailing \n which tr here strips, else the ExternalSecret writes the \n into a
   # single-line config value (crew#575: oauth2-proxy crashed reading cookie_secret with an embedded
   # newline: "toml: basic strings cannot have new lines").
-  "$CLOUD" secret put "$e" --file "$f" >/dev/null || { rm -f "$f"; fail "$e" "vault write refused"; }
+  local err; err=$("$CLOUD" secret put "$e" --file "$f" 2>&1) || {
+    rm -f "$f"
+    if [[ "$err" == *"name already exists"* ]]; then
+      say "" "$e" "secret in OCI pending-deletion; recreating"
+      _deleted_secret_recreate "$e"
+      f=$(mktemp); umask 077; gen "$g" | tr -d '\n' > "$f"
+      "$CLOUD" secret put "$e" --file "$f" >/dev/null || { rm -f "$f"; fail "$e" "vault write refused after recreate"; }
+      rm -f "$f"
+      say ok "$e" "minted ($g) and written (raw, recreated)"; minted=$((minted+1)); return
+    fi
+    fail "$e" "vault write refused: $err"
+  }
   rm -f "$f"
   say ok "$e" "minted ($g) and written (raw)"; minted=$((minted+1))
 }
