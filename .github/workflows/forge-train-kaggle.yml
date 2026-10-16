@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: true   # a Kaggle dry-run is free; a stale one can be cancelled
 jobs:
   train-kaggle:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}

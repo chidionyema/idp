@@ -48,7 +48,7 @@ jobs:
     # the job fails at the credentials step (run 32979902578, PR #113). The plan is graded on the
     # next human pull request; the scheduled run grades drift either way.
     if: github.actor != 'dependabot[bot]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # 25 for check/apply; surge-node waits up to ~65 min for the new node to be ACTIVE then Ready in the receipt (crew#516)
     timeout-minutes: ${{ inputs.mode == 'surge-node' && 90 || inputs.mode == 'break-glass' && 45 || 25 }}
     steps:
