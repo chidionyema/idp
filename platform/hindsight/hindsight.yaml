@@ -86,7 +86,7 @@ spec:
       # along and bin/idp-image-only-diff refuses the bump as not a plain image change (#6114).
       image:
         repository: ghcr.io/chidionyema/hindsight-api
-        tag: "main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b" # {"$imagepolicy": "flux-system:hindsight-api:tag"}
+        tag: "main-14533-97cdf31b3f381fff6962c74f180ec2125a4306a3" # {"$imagepolicy": "flux-system:hindsight-api:tag"}
       # No PVC for the model cache: the models are on the image, the cache held 217M, and OCI
       # rounds every block volume up to 50GB against an account volume limit that refused
       # agent-workforce-data (2026-10-13). An emptyDir keeps the path writable under the read-only

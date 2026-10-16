@@ -47,7 +47,7 @@ spec:
       securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
       initContainers:
         - name: migrate
-          image: ghcr.io/chidionyema/quad-ledger:main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b # {"$imagepolicy": "flux-system:quad-ledger"}
+          image: ghcr.io/chidionyema/quad-ledger:main-14533-97cdf31b3f381fff6962c74f180ec2125a4306a3 # {"$imagepolicy": "flux-system:quad-ledger"}
           args: ["migrate"]
           env: [{name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL}]
           volumeMounts: [{name: env, mountPath: /run/secrets/quad-ledger, readOnly: true}]
@@ -55,7 +55,7 @@ spec:
           resources: {requests: {cpu: 20m, memory: 32Mi}, limits: {memory: 64Mi}}
       containers:
         - name: consume
-          image: ghcr.io/chidionyema/quad-ledger:main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b # {"$imagepolicy": "flux-system:quad-ledger"}
+          image: ghcr.io/chidionyema/quad-ledger:main-14533-97cdf31b3f381fff6962c74f180ec2125a4306a3 # {"$imagepolicy": "flux-system:quad-ledger"}
           args: ["consume"]
           env:
             - {name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL}
@@ -87,7 +87,7 @@ spec:
           securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
           containers:
             - name: anchor
-              image: ghcr.io/chidionyema/quad-ledger:main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b # {"$imagepolicy": "flux-system:quad-ledger"}
+              image: ghcr.io/chidionyema/quad-ledger:main-14533-97cdf31b3f381fff6962c74f180ec2125a4306a3 # {"$imagepolicy": "flux-system:quad-ledger"}
               args: ["anchor"]
               env:
                 - {name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL}
@@ -121,7 +121,7 @@ spec:
           securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
           containers:
             - name: verify
-              image: ghcr.io/chidionyema/quad-ledger:main-14434-10d5e1613ba9b7b014c371ddc6e132415c76474b # {"$imagepolicy": "flux-system:quad-ledger"}
+              image: ghcr.io/chidionyema/quad-ledger:main-14533-97cdf31b3f381fff6962c74f180ec2125a4306a3 # {"$imagepolicy": "flux-system:quad-ledger"}
               args: ["verify"]
               env:
                 - {name: DATABASE_URL_FILE, value: /run/secrets/quad-ledger/DATABASE_URL}
