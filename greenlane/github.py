@@ -668,6 +668,18 @@ class GitHubBackend:
                     )
                     break
                 except RuntimeError as e:
+                    # Retry on two specific GitHub API errors:
+                    # 1. HTTP 405: PR not mergeable yet (still computing mergeability)
+                    # 2. "Head branch was updated": PR head changed between fetch and merge call
+                    #    (another process pushed to the branch). Re-fetch the PR head and retry.
+                    if "Head branch was updated" in str(e):
+                        # PR head changed: re-fetch and retry with the current head
+                        fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
+                        fresh_head = fresh_pr.get("head", {}).get("sha", "")
+                        if fresh_head and fresh_head != merge_sha:
+                            merge_sha = fresh_head
+                            subject = self.git("log", "-1", "--format=%s", merge_sha)
+                            continue  # retry with the new merge_sha
                     if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
                         raise
                     time.sleep(self.LAND_RETRY_S)
