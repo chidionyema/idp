@@ -40,7 +40,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   salvage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # Every kubectl step below auths to the OKE API through the oci exec plugin (the kubeconfig
     # bin/idp-cloud minted carries `command: oci`), so OCI_CLI_AUTH and the session-token

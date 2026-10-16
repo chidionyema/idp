@@ -26,7 +26,7 @@ permissions:
 jobs:
   ledger:
     name: ${{ github.event.action }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
       # The dedupe key. A message with the object names, addresses, durations and revisions taken

@@ -64,7 +64,7 @@ jobs:
   offline-gate:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # bin/law32-gate diffs the PR against origin/main
@@ -141,7 +141,7 @@ jobs:
   security-scan:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs
@@ -149,7 +149,7 @@ jobs:
   bdd-suites:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # crew#584, 2026-08-28: run 33203670180 measured this job at 2m13s, of which the acceptance
     # suite was 54 s and the root pytest suite 57 s -- back to back on one runner. GitHub's own
     # matrix runs them as two jobs side by side, so the job's wall-clock is the slower suite plus
@@ -314,7 +314,7 @@ jobs:
   messaging-demo:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # crew#639 CP9, founder 2026-08-30: the messaging demos run on every push, both of them, against
     # an embedded nats-server (the chart's version) and an embedded Postgres. No cluster, no Docker:
     # a red here means the outbox, the duplicate window, the idempotent consumer, the DLQ or the
@@ -346,7 +346,7 @@ jobs:
   migrate-domain:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -378,7 +378,7 @@ jobs:
   # migrate_by date in consumers.json has passed), type-checks, and builds the gallery.
   ui-kit:
     needs: [fast-gate]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -422,7 +422,7 @@ jobs:
   bdd:
     needs: bdd-suites
     if: always()   # a red leg must report a red `bdd`, not a skipped one the rule would wait on forever
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: every bdd suite passed
         run: |
@@ -458,7 +458,7 @@ jobs:
   # rather than failing every unrelated pull request on a script that is not there yet.
   feature-request-plan:
     if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/heads/queue/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }   # need the base sha to diff requests.yaml
@@ -502,7 +502,7 @@ jobs:
 
   executes-gate:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with: { fetch-depth: 0 }
@@ -531,7 +531,7 @@ jobs:
   claim-gate:
     # queue/ too: the Greenlane lands work by pushing queue/<batch>, the same trigger executes-gate uses
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group' || startsWith(github.ref, 'refs/heads/queue/')
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions: { contents: read, issues: read }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -563,7 +563,7 @@ jobs:
     # queue only) and `skipped` is a pass in the loop below, the same case as the `bdd` leg, so a
     # PR that cannot run the scan is never refused for not running it.
     needs: [fast-gate, bdd, executes-gate, feature-request-plan, ui-kit, claim-gate, security-scan]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: every required job in this workflow is success or skipped
         env:
@@ -586,7 +586,7 @@ jobs:
   # not the Claude API. Any future model the proxy routes to automatically benefits.
   estate-graph-sync:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: dispatch sync to estate-graph repo
         continue-on-error: true   # 404 when estate-graph repo is absent; notification, not a gate

@@ -28,7 +28,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   reconcile:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       OCI_CLI_AUTH: security_token

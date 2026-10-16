@@ -34,7 +34,7 @@ env:
 
 jobs:
   want:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       rows: ${{ steps.select.outputs.rows }}
     steps:
@@ -63,7 +63,7 @@ jobs:
     # materialises every row of a static `include` before evaluating it, so a dispatch naming two
     # models ran all seven -- TWICE, which is how this was found.
     needs: want
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
       fail-fast: false

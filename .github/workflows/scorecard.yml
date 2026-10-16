@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   analysis:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       security-events: write   # to upload SARIF results to the Security tab
       id-token: write          # to publish results and get a badge (OSSF publish flag below)

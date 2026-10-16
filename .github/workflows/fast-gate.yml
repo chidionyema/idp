@@ -9,7 +9,7 @@ on:
   workflow_call:
 jobs:
   fast-gate:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -44,7 +44,7 @@ jobs:
         # installed `-r sovereign/requirements.txt` for this same rung since the day it was written
         # (ci.yml:436, "the generator's Python (numpy), or the avatar check is a traceback"). Same
         # rung, same dependency: install it here too.
-        run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 -r sovereign/requirements.txt   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-latest; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written; numpy (via requirements.txt): the face-avatar rung
+        run: pip install -q ruff==0.15.18 pyyaml yamllint==1.37.1 -r sovereign/requirements.txt   # pyyaml: the hardcode and pipeverdict rungs; ruff: the pin ci.yml's bdd job uses; shellcheck ships on ubuntu-24.04; yamllint: bin/idp-ci --check gates its YAML rung on `command -v yamllint`, which was never installed here or on any laptop -- the rung has been silently a no-op since it was written; numpy (via requirements.txt): the face-avatar rung
       - if: steps.actor.outputs.bot != '1'
         run: IDP_CI_FAST=1 bin/idp-ci
       - name: python-strict (estate standard, one copy)

@@ -42,7 +42,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   battery:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     outputs:
       outcome: ${{ steps.verdict.outputs.outcome }}
@@ -184,7 +184,7 @@ jobs:
   rollback:
     needs: battery
     if: failure() && needs.battery.outputs.dispatched == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - name: revert the image tag through a lane (never a hand-raised PR)

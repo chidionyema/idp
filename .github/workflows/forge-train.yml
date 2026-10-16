@@ -32,7 +32,7 @@ concurrency:
   cancel-in-progress: false   # a training run is paid for; never cancel one to start another
 jobs:
   train:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}

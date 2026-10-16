@@ -60,7 +60,7 @@ jobs:
     uses: ./.github/workflows/verifier.yml
   discover:
     needs: fast-gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       dockerfiles: ${{ steps.find.outputs.list }}
     steps:
@@ -195,7 +195,7 @@ jobs:
     # fails its own row and only its own row.
     if: |
       always() && github.event_name != 'pull_request' && needs.discover.outputs.dockerfiles != '[]'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # id-token is what makes the signature keyless. Cosign exchanges this run's
     # OIDC token for a short-lived Fulcio certificate, so there is no signing
     # key to store, rotate or leak -- the identity in the certificate is this
