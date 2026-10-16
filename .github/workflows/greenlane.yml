@@ -42,8 +42,8 @@ permissions:
   checks: read
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 concurrency:
-  group: greenlane     # exactly one writer of main; a queued tick is never lost because a tick is idempotent
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   greenlane:
     # The schedule trigger fires on every branch that has this file. Skip the tick on
