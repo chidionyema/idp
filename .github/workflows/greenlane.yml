@@ -30,7 +30,12 @@ on:
   #   workflows: [guarded-paths, factory-ci, portal-app]
   #   types: [completed]
   schedule:
-    - cron: '*/15 * * * *'  # backstop: 15 min avoids cancelling push-event runs; GitHub drops scheduled runs under load; nothing depends on it
+    # NOTE: this fires on every branch that has the workflow file, including lane/**.
+    # A job-level if-condition filters to main below. Without it, the tick fires on lane/**
+    # at the same time as the push-event tick, shares the greenlane concurrency group,
+    # and cancels the push-event run (even with cancel-in-progress: false on GitHub Actions
+    # the queued run is dropped when a newer run is queued -- measured 2026-10-16).
+    - cron: '*/15 * * * *'  # backstop: GitHub drops scheduled runs under load; nothing depends on it
   workflow_dispatch:
 permissions:
   contents: write
@@ -43,6 +48,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   greenlane:
+    # The schedule trigger fires on every branch that has this file. Skip the tick on
+    # lane/** branches: the push-event tick handles those. Only main needs the backstop.
+    if: github.ref == 'refs/heads/main' || github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
