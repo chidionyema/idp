@@ -9,6 +9,10 @@ on:
       - 'platform/oci/**'
       - '.github/workflows/estate-dag-gen.yml'
       - 'bin/estate-dag-gen'
+    paths-ignore:
+      # crew#6227: platform/oci/github-actions.tf is managed by the vault-seed IAM fix;
+      # estate-dag-gen must not push commits to lanes that only touch this file.
+      - 'platform/oci/github-actions.tf'
   workflow_dispatch:
 
 jobs:
