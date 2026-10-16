@@ -171,7 +171,9 @@ jobs:
             # bin/idp-cloud secret get returns JSON: {"surface-token": "QbH...", ...}
             _tok=$(bin/idp-cloud secret get unified-memory | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["surface-token"])')
             echo "::add-mask::$_tok"
-            _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
+            # bin/idp-vault-put --merge reads kv[SEED_VALUE] from the env file.
+            # Write SEED_VALUE=<token> so the put writes backstage-env/MEMORY_SURFACE_TOKEN=<token>.
+            _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'SEED_VALUE=%s\n' "$_tok" > "$_seed_f"
             # Write to OCI Vault. --merge creates the entry if it does not yet exist;
             # exit 1 (NotFound) is expected on first delivery and is handled fine.
             # Exit 2 (real failure) surfaces as a step failure and stops the run.
