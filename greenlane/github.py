@@ -406,13 +406,19 @@ class GitHubBackend:
 
     def checks(self, tip: str) -> tuple[str, str]:
         # filter=latest: one run per check name, the newest, so a re-run supersedes its predecessor
-        page = self.gh(f"commits/{tip}/check-runs?per_page=100&filter=latest") or {}
-        runs = page.get("check_runs", [])
+        # 210 check-runs on main; paginate until all pages are read (pages 1-3 at 100/page).
         latest: dict[str, dict] = {}
-        for r in runs:
-            name = r.get("name", "")
-            if name not in latest or (r.get("id") or 0) > (latest[name].get("id") or 0):
-                latest[name] = r
+        page_num = 1
+        while True:
+            page = self.gh(f"commits/{tip}/check-runs?per_page=100&filter=latest&page={page_num}") or {}
+            runs = page.get("check_runs", [])
+            for r in runs:
+                name = r.get("name", "")
+                if name not in latest or (r.get("id") or 0) > (latest[name].get("id") or 0):
+                    latest[name] = r
+            if len(runs) < 100:
+                break  # last page
+            page_num += 1
         pending, red = [], []
         for ctx in self.required:
             r = latest.get(ctx)
