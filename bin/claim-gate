@@ -226,7 +226,11 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
             continue
         globs = [g for g in c["paths"].split(",") if g]
         covered |= {f for f in files if any(fnmatch.fnmatch(f, g) for g in globs)}
-    outside = [f for f in files if f not in covered]
+    # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
+    # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
+    # claim. Like runner-pins they require no claim: they are the platform's own housekeeping.
+    DEMOS_EXEMPT = re.compile(r"^docs/demos/[^/]+$")
+    outside = [f for f in files if f not in covered and not DEMOS_EXEMPT.match(f)]
     if not problems and outside:
         problems.append(
             f"{len(outside)} file(s) outside every claim's paths: {', '.join(outside[:10])}"
@@ -294,12 +298,21 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
     Asking GitHub which pull request this sha is the head of supplies the same fact CI is handed,
     so the lane stage and the queue cannot answer the same question differently.
     """
-    key = (repo, head)
+    # Resolve a ref name to a sha before asking GitHub (GitHub needs a sha).
+    resolved = (
+        subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+            ["git", "rev-parse", head],
+            capture_output=True, text=True,
+        ).stdout.strip()
+        if not re.match(r"^[0-9a-f]{7,40}$", head)
+        else head
+    )
+    key = (repo, resolved)
     if key not in _PRS:
         _PRS[key] = ("", "")
         try:
             p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
-                ["gh", "api", f"repos/{repo}/commits/{head}/pulls"],
+                ["gh", "api", f"repos/{repo}/commits/{resolved}/pulls"],
                 capture_output=True,
                 text=True,
                 timeout=30,
