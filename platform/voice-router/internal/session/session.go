@@ -45,6 +45,14 @@ type Intents interface {
 	Resolve(ctx context.Context, text, sessionID string) (raw json.RawMessage, say string, matched bool)
 }
 
+// Memory is estate memory. What it holds grounds a brain answer, and an
+// answered exchange is kept in it. Both are best effort: Brief returns "" on
+// any failure, and Remember never blocks.
+type Memory interface {
+	Brief(ctx context.Context, task string) string
+	Remember(content string, timeout time.Duration)
+}
+
 // Out is the client connection. JSON sends a control event; Binary sends an
 // audio frame: 4-byte little-endian turn id, then int16 little-endian PCM.
 type Out interface {
@@ -69,6 +77,13 @@ const maxHistory = 12
 // whole sentence. Once the listener has heard the agent, they are replying.
 const continueWindow = 3 * time.Second
 
+// briefBudget is all a spoken answer waits for estate memory. Past it the
+// brain answers without grounding; the listener hears no difference but the facts.
+const briefBudget = 800 * time.Millisecond
+
+// rememberBudget bounds keeping one exchange; it runs after the answer is spoken.
+const rememberBudget = 5 * time.Second
+
 // fillers are what a recognizer makes of a cough or a breath. They never
 // interrupt the agent; only real words do.
 var fillers = map[string]bool{"uh": true, "um": true, "hmm": true, "mm": true, "ah": true, "oh": true, "er": true, "huh": true, "mhm": true}
@@ -79,6 +94,7 @@ type Session struct {
 	tts     TTS
 	brain   Brain
 	intents Intents // nil: every utterance goes to the brain
+	memory  Memory  // nil: answers are not grounded in estate memory
 	out     Out
 	log     *slog.Logger
 	root    context.Context
@@ -126,6 +142,9 @@ func (s *Session) SetSystem(p string) {
 
 // SetIntents routes utterances that name an estate intent to it before the brain.
 func (s *Session) SetIntents(i Intents) { s.mu.Lock(); s.intents = i; s.mu.Unlock() }
+
+// SetMemory grounds brain answers in estate memory and keeps what was answered.
+func (s *Session) SetMemory(m Memory) { s.mu.Lock(); s.memory = m; s.mu.Unlock() }
 
 // OnAudio takes int16 little-endian PCM at 16 kHz.
 func (s *Session) OnAudio(pcm []byte) {
@@ -201,7 +220,7 @@ func (s *Session) Say(text string) {
 	s.heardAt = time.Time{} // nothing was asked: speech before its audio is a new question
 	s.mu.Unlock()
 	t := s.newTurn("say", text, 0)
-	go s.run(ctx, id, &t, func(_ context.Context, on func(string)) error { on(text); return nil }, done)
+	go s.run(ctx, id, &t, func(_ context.Context, on func(string)) error { on(text); return nil }, nil, done)
 }
 
 // begin ends the live turn and starts the next one. It returns holding s.mu.
@@ -259,7 +278,7 @@ func (s *Session) ask(text string, cont bool, asrWait time.Duration) {
 		msgs = append(msgs, brain.Message{Role: "system", Content: s.system})
 	}
 	msgs = append(msgs, s.history...)
-	in, sid := s.intents, s.id
+	in, mem, sid := s.intents, s.memory, s.id
 	s.mu.Unlock()
 
 	_ = s.out.JSON(Event{Type: "final", Turn: id, Text: text})
@@ -275,13 +294,44 @@ func (s *Session) ask(text string, cont bool, asrWait time.Duration) {
 				return nil
 			}
 		}
+		// Grounding is fetched inside the turn too, under its own budget: a slow memory
+		// costs at most briefBudget, and a barge-in cancels it like everything else.
+		if mem != nil {
+			bctx, cancel := context.WithTimeout(ctx, briefBudget)
+			g := mem.Brief(bctx, text)
+			cancel()
+			if g != "" {
+				msgs = ground(msgs, g)
+			}
+		}
 		return s.brain.Stream(ctx, msgs, on)
+	}, func(answer string) {
+		// Only what the brain answered is kept; an intent's result is the estate's own record already.
+		if mem != nil && t.Kind == "ask" {
+			mem.Remember("Asked by voice: "+text+"\nAnswered: "+answer, rememberBudget)
+		}
 	}, done)
 }
 
+// ground adds what estate memory holds as a system message after the prompt,
+// before the conversation, so the brain answers from it rather than inventing.
+func ground(msgs []brain.Message, facts string) []brain.Message {
+	m := brain.Message{Role: "system", Content: "What estate memory holds that may bear on this question. " +
+		"Use it when it answers the question; never read it out as a list:\n" + facts}
+	i := 0
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		i = 1
+	}
+	out := make([]brain.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:i]...)
+	out = append(out, m)
+	return append(out, msgs[i:]...)
+}
+
 // run speaks one turn: stream yields the words, which are chunked into
-// phrases and synthesised as they arrive.
-func (s *Session) run(ctx context.Context, id uint32, t *turnlog.Turn, stream func(context.Context, func(string)) error, done chan struct{}) {
+// phrases and synthesised as they arrive. answered, when set, is handed what
+// was said once the turn has finished cleanly.
+func (s *Session) run(ctx context.Context, id uint32, t *turnlog.Turn, stream func(context.Context, func(string)) error, answered func(string), done chan struct{}) {
 	defer close(done)
 	t0 := time.Now()
 	var firstPhrase, firstAudio, brainDone, synth time.Duration
@@ -378,6 +428,9 @@ func (s *Session) run(ctx context.Context, id uint32, t *turnlog.Turn, stream fu
 		_ = s.out.JSON(Event{Type: "error", Turn: id, Text: "the brain did not answer"})
 	default:
 		t.Outcome = "ok"
+		if answered != nil {
+			answered(strings.Join(said, " "))
+		}
 		_ = s.out.JSON(Event{Type: "done", Turn: id})
 	}
 	t.LLMFirstS, t.LLMTotalS, t.TTSS, t.FirstAudio = firstPhrase.Seconds(), brainDone.Seconds(), synth.Seconds(), firstAudio.Seconds()
