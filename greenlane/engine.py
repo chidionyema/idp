@@ -453,6 +453,12 @@ class Engine:
             else:
                 return
         if verdict == "green":
+            # Update the greenlane check to success BEFORE merging. GitHub requires all required
+            # checks to be green before merging. If we call land() before updating the check,
+            # GitHub refuses the merge with "Required status check 'greenlane' is pending".
+            # Reported 2026-10-16: batch b2924 passed ci-success but land() was refused.
+            for name, head, _ in b.members:
+                self.b.report(name, head, LANDED, f"greenlane check updated before land in {b.id}")
             try:
                 self.b.land(b.members, b.tip)
             except RuntimeError as e:
