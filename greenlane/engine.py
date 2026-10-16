@@ -457,9 +457,15 @@ class Engine:
             # checks to be green before merging. If we call land() before updating the check,
             # GitHub refuses the merge with "Required status check 'greenlane' is pending".
             # Reported 2026-10-16: batch b2924 passed ci-success but land() was refused.
+            #
+            # The check run (greenlane.yml) is created on the batch tip, not the lane head.
+            # greenlane.yml checks out main (which is at batch.base), then runs engine code that
+            # pushes b.tip. The workflow fires on that push and creates a check run on b.tip.
+            # We update the check run on b.tip so the required check is satisfied immediately.
+            self.b.report_check_run_completed(b.tip, LANDED, f"pre-land check update for {b.id}")
             for name, head, _ in b.members:
                 self.b.report(
-                    name, head, LANDED, f"greenlane check updated before land in {b.id}"
+                    name, head, LANDED, f"pre-land check update for {b.id}"
                 )
             try:
                 self.b.land(b.members, b.tip)

@@ -726,6 +726,56 @@ class GitHubBackend:
         else:
             self.gh(f"statuses/{sha}", "POST", fields)
 
+    def _update_check_run(self, sha: str, status: str, conclusion: str, reason: str) -> None:
+        """Update (or create) a check run named 'greenlane' on sha to completed/conclusion.
+
+        The greenlane.yml workflow creates a check run named 'greenlane' when it fires on a lane
+        push. The check run stays in_progress while the workflow runs. When CI passes and the
+        engine is ready to merge, the check run must be marked completed before GitHub allows the
+        merge.
+        """
+        state_map = {"success": "completed", "failure": "completed", "pending": "in_progress"}
+        check_run_state = state_map.get(status, "in_progress")
+        # Find the latest greenlane check run for this sha
+        runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
+        check_run = None
+        for r in runs.get("check_runs", []):
+            if r.get("name") == "greenlane":
+                if check_run is None or (r.get("id", 0) > check_run.get("id", 0)):
+                    check_run = r
+        if check_run is None:
+            # No check run found; nothing to update. Post a status as fallback.
+            self._status(sha, {"state": status, "context": "greenlane", "description": (reason or status)[:140]})
+            return
+        cr_id = check_run["id"]
+        payload = {
+            "status": check_run_state,
+            "conclusion": conclusion if check_run_state == "completed" else None,
+            "completed_at": datetime.now(timezone.utc).isoformat() if check_run_state == "completed" else None,
+            "output": {
+                "title": "greenlane",
+                "summary": (reason or status)[:140],
+            },
+        }
+        try:
+            self.gh(f"check-runs/{cr_id}", "PATCH", payload)
+        except RuntimeError as e:
+            print(f"WARN    greenlane  check-run update failed for {sha}: {e}", file=sys.stderr)
+
+    def report_check_run_completed(self, sha: str, status: str, reason: str) -> None:
+        """Update the greenlane check run on sha to completed/success.
+
+        Called just before land() to mark the check run done. The greenlane.yml workflow creates
+        a check run on the batch tip commit; this completes it so GitHub allows the merge.
+        """
+        conclusion = {
+            TESTING: None,
+            LANDED: "success",
+            RED: "failure",
+            CONFLICT: "failure",
+        }.get(status, "pending")
+        self._update_check_run(sha, status, conclusion, reason)
+
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         state = {
             TESTING: "pending",
