@@ -632,6 +632,13 @@ class GitHubBackend:
                 raise RuntimeError(
                     f"land: no pull request for {lane}; cannot move main"
                 )
+            # Re-fetch the PR to get its current head. The lane branch may have been updated
+            # since the batch was formed (_start_batch pushes b.tip to the lane branch), so
+            # the PR's head might differ from the `rebased` SHA we pushed. Use the current head
+            # to avoid "Head branch was updated" refusals from gh pr merge.
+            current_pr = self.gh(f"pulls/{pr['number']}") or {}
+            current_head = current_pr.get("head", {}).get("sha", "")
+            merge_sha = current_head if current_head else rebased
             # THE GREENLANE VOUCHES FOR THE SHA IT MERGES (2026-10-10). `greenlane` is a required
             # check on main (ruleset.idp.required-checks.json), pinned to the Actions app, and
             # this is the only place it is ever written as success -- so a pull request raised
@@ -647,7 +654,7 @@ class GitHubBackend:
                     **({"target_url": self.run_url} if self.run_url else {}),
                 },
             )
-            subject = self.git("log", "-1", "--format=%s", rebased)
+            subject = self.git("log", "-1", "--format=%s", merge_sha)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
                     self.gh(
@@ -655,7 +662,7 @@ class GitHubBackend:
                         "PUT",
                         {
                             "merge_method": "squash",
-                            "sha": rebased,
+                            "sha": merge_sha,
                             "commit_title": f"{subject} (#{pr['number']})",
                         },
                     )

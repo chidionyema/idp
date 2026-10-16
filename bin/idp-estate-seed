@@ -166,10 +166,9 @@ _wait_oci_name_free() { # <entry> -- poll until the vault confirms the secret na
     [ "$waited" -lt 30 ] || return 1
   done
 }
-_deleted_secret_recreate() { # <entry> -- delete then wait for OCI to release the name
+_deleted_secret_recreate() { # <entry> -- cancel pending deletion so the secret returns to ACTIVE
   local e=$1
-  "$CLOUD" secret delete "$e" >/dev/null 2>&1 || true
-  _wait_oci_name_free "$e" || say "" "$e" "warning: OCI name still held after 30s; retrying anyway"
+  "$CLOUD" secret cancel-deletion "$e" >/dev/null 2>&1 || true
 }
 put_key() { # <entry> <key> <generator>
   local e=$1 k=$2 g=$3 cur have=""
