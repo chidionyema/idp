@@ -137,6 +137,9 @@ class Backend(Protocol):
     def now(self) -> float: ...  # minutes
     def main(self) -> str: ...  # sha main points to
     def lanes(self) -> dict[str, str]: ...  # lane name -> head sha
+    def push_head(
+        self, lane: str, sha: str
+    ) -> None: ...  # force-push lane head to origin
     def rebase(
         self, head: str, onto: str
     ) -> Optional[str]: ...  # new sha, or None on conflict
@@ -520,8 +523,47 @@ class Engine:
             self.b.report(lane.name, lane.head, RED, why)
         return True
 
+    def _refresh_stale_lanes(self, base: str) -> None:
+        """Update lanes whose base is stale against the current main.
+
+        A lane is stale when it was judged against an older main tip but main has since
+        moved on. The lane's HEAD sha is still correct for the old base, but fails against
+        the current main because the base part of the diff is now on main. Git cannot
+        apply the same commit twice.
+
+        This is distinct from a genuine conflict (the diff itself does not apply to main
+        at all). A stale lane CAN apply to main -- it just needs to be rebased.
+        rebase() does exactly this: it uses git cherry to find only the commits not
+        already on main, and applies those. We use that result as the effective HEAD.
+
+        Without this, a lane judged on main-100 and then tested against main-200 will
+        always fail the rebase check and accumulate rejudge counts, eventually parking
+        permanently, even though it could land cleanly on the current main.
+        """
+        for lane in list(self.s.lanes.values()):
+            if lane.judged_on and lane.judged_on != base:
+                # Stale: was judged against a different main tip. Update the effective HEAD
+                # by rebasing the recorded HEAD onto the current base. If that succeeds, the
+                # lane now tests cleanly against main and the conflict check will pass.
+                effective = self.b.rebase(lane.head, base)
+                if effective and effective != lane.head:
+                    old = lane.head
+                    lane.head = effective
+                    lane.judged_on = base
+                    self.log.append(
+                        f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
+                        f"{effective[:7]} (was judged on {lane.judged_on[:7]}, "
+                        f"main is now {base[:7]})"
+                    )
+                    # Push the new HEAD so the remote stays in sync.
+                    self.b.push_head(lane.name, effective)
+
     def _start_batch(self) -> None:
         base = self.b.main()
+        # Refresh stale lanes before testing: a lane judged against an older main tip
+        # will fail the rebase check against the current main even though it could land
+        # cleanly. Re-computing the effective HEAD fixes this.
+        self._refresh_stale_lanes(base)
         if self.s.queued:
             names = self.s.queued.pop(
                 0
