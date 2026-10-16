@@ -76,7 +76,7 @@ concurrency:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
       MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
