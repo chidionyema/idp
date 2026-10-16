@@ -880,6 +880,9 @@ XD=""
 # crew#584, measured on run 33202098401: these two suites took 132 of offline-gate's 211 s, and
 # ci.yml's bdd job ran the same two suites again, strictly, in parallel. In CI the bdd job owns
 # them and offline-gate sets IDP_CI_SKIP_PYTEST=1; locally (pre-push, bin/idp-ci by hand) they run.
+# Chosen before the skip, not inside it: 8d below runs in both modes, and with IDP_CI_SKIP_PYTEST=1
+# (offline-gate in CI) it read BDD_PY unset and set -u killed the gate before 8d (2026-10-14).
+BDD_PY="$MPY"
 if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
   say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
 else
@@ -888,6 +891,9 @@ else
 # 33198380701 spent 106 s here and 73 s in 8b on one of the runner's four cores. pytest-xdist is
 # already a dev dependency; when it imports, both rungs fan out. Missing xdist is serial, never a skip.
 XD=""; "$BDD_PY" -c 'import xdist' >/dev/null 2>&1 && XD="-n auto"
+if [ "${IDP_CI_SKIP_PYTEST:-0}" = 1 ]; then
+  say "skip  bdd+incident: run once, by the ci bdd job (IDP_CI_SKIP_PYTEST=1)"
+else
 if ! "$BDD_PY" -c 'import pytest_bdd' >/dev/null 2>&1; then
   say "FAIL  bdd      pytest-bdd is not installed: pip install -r sovereign/requirements-dev.txt"; fail=1
 else
@@ -1118,7 +1124,9 @@ fi
 # Local evidence chain: developer-local, only meaningful outside CI. Skip when IDP_CI_BASE
 # is set (the runner has no agent session; the file would be whatever a developer's local wrote,
 # and rebases routinely break the chain -- measured on 2026-09-22, offline-gate on run 35751378908).
-if [ -z "${IDP_CI_BASE:-}" ]; then
+# GITHUB_ACTIONS too: ci.yml never sets IDP_CI_BASE, so a push to main graded the committed (empty)
+# .aevum/local.jsonl and failed -- unseen until 2026-10-14, when the gate first ran this far on main.
+if [ -z "${IDP_CI_BASE:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
   if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
     say "ok    local-evidence chain present and intact"
   else
@@ -1142,9 +1150,11 @@ fi
 # silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
 # actually applied rather than sitting in the tree unreferenced, and (2) it never configures the
 # in-memory store, which reports a valid empty chain after every restart. A gate that graded only
-# its own fixtures would never see either.
+# its own fixtures would never see either. (2) is graded on the entrypoint that selects that store,
+# `python -m aevum.server`, not on the word: the manifest's own prose and its refusal message name
+# the in-memory store to forbid it, and a bare `grep in-memory` failed on them (2026-10-14).
 if grep -q '^  - aevum.yaml$' "$IDP/platform/observability/kustomization.yaml" \
-   && ! grep -q 'in-memory' "$IDP/platform/observability/aevum.yaml" \
+   && ! grep -vE '^[[:space:]]*#' "$IDP/platform/observability/aevum.yaml" | grep -qE 'python[" ,]+-m[" ,]+aevum\.server([" ,]|$)' \
    && grep -q 'initialize_ledger_schema' "$IDP/platform/observability/aevum.yaml" \
    && grep -q 'sigchain=sigchain' "$IDP/platform/observability/aevum.yaml" \
    && python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/good/chain.json" >/dev/null 2>&1 \
