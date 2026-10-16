@@ -50,7 +50,8 @@ jobs:
   greenlane:
     # The schedule trigger fires on every branch that has this file. Skip the tick on
     # lane/** branches: the push-event tick handles those. Only main needs the backstop.
-    if: github.ref == 'refs/heads/main' || github.event_name != 'schedule'
+    # Skip schedule events on lane/** branches: push-event tick handles those; schedule only runs on main.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
