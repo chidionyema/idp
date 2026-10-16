@@ -803,9 +803,7 @@ class GitHubBackend:
         # This happens when greenlane.yml does not create a check run on the batch tip
         # (it only fires on lane/ branches, not queue/ branches).
         runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
-        existing = any(
-            r.get("name") == "greenlane" for r in runs.get("check_runs", [])
-        )
+        existing = any(r.get("name") == "greenlane" for r in runs.get("check_runs", []))
         if existing:
             return  # Updated successfully in _update_check_run above
         # No existing check run: create one

@@ -79,4 +79,10 @@ jobs:
           set -euo pipefail
           # pushes must carry the App's token so they start workflows on the refs they write
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          # For lane-branch pushes: run the engine from the lane's commit (not main's), so that
+          # lane-specific engine fixes take effect before the lane lands on main.
+          # For main/schedule dispatches: github.ref == refs/heads/main, skip the reset.
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            git reset --hard "${{ github.sha }}"
+          fi
           python3 bin/idp-greenlane tick
