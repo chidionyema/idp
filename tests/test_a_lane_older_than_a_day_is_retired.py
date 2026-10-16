@@ -16,6 +16,18 @@ has to say it is still working: a lane held 24 hours without one is not being wo
 Each test below fails on the pre-change engine: the first four because `_observe_lanes` never
 deleted a lane for being old, the next because every `tick` left an unworked lane in state,
 and the last because a re-push on a held lane did not reset the timer (there was no timer).
+
+THE HALF THAT LANDED FIRST WAS NOT ENOUGH (measured 2026-10-16). The retirement itself was one
+tick long: `tick` observed the lanes before it retired them, and `_observe_lanes` re-added any
+lane whose branch was still on origin with `arrived = now`, overwriting the RED reason with
+`queued`. refs/greenlane/state that day held both lanes >=24h old, each with `arrived` stamped
+seconds earlier -- so the 24-hour timer restarted on every tick and the queue never shortened.
+Swapping those two lines would not have fixed it either (the tick after any retirement re-adds
+the lane), so `State.retired` records the retired head and `_observe_lanes` leaves it parked.
+The four tests after `test_a_re_pushed_lane_resets_its_retirement_timer` are that half -- and
+the measured blast radius was wider than a wasted queue slot: with the test backend's green
+verdict the resurrected lane was batched and then LANDED, so a lane whose agent had walked away
+could still put its candidate on main, which is the thing the 24-hour rule exists to stop.
 """
 
 from __future__ import annotations
@@ -198,6 +210,90 @@ def test_a_re_pushed_lane_resets_its_retirement_timer():
     assert eng.s.lanes["lane/x"].arrived == be.minute, (
         f"a re-pushed lane did not reset its arrived field: "
         f"arrived={eng.s.lanes['lane/x'].arrived!r}, expected {be.minute!r}"
+    )
+
+
+def test_a_retired_lane_is_not_resurrected_by_the_tick_after_it():
+    """Retirement must outlive the tick that made it, or it is not a retirement (2026-10-16).
+
+    The landed half deleted the lane from state; the tick after put it back -- `arrived` reset
+    to now, status back to `queued` -- so the 24-hour timer restarted forever and the queue the
+    fresh push waits in never shortened. refs/greenlane/state that day: both lanes >=24h old
+    were present, each `arrived` stamped about five minutes earlier.
+    """
+    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
+    eng = _engine(be, st)
+    eng.tick()
+    assert "lane/old" not in eng.s.lanes
+    for _ in range(3):
+        be.minute += 5
+        eng.tick()
+        assert "lane/old" not in eng.s.lanes, (
+            f"a retired lane came back on a later tick: {eng.s.lanes['lane/old']}"
+        )
+
+
+def test_the_retired_verdict_is_not_overwritten_by_a_later_tick():
+    """The agent's last word on that head is the retirement, not a `queued` line (2026-10-16).
+
+    The retirement reason is the only place an agent learns its lane was parked rather than
+    queued, and the resurrecting tick overwrote it about 80 seconds later. The status on the
+    head has to keep saying it.
+    """
+    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
+    eng = _engine(be, st)
+    eng.tick()
+    for _ in range(3):
+        be.minute += 5
+        eng.tick()
+    verdicts = [r for r in be.reported if r[0] == "lane/old" and r[1] == "ho"]
+    assert verdicts, "the retirement was never reported"
+    lane, head, status, reason = verdicts[-1]
+    assert status == E.RED and "retired" in reason, (
+        f"the last word on this head is {status} {reason!r}; a retired lane must stay retired"
+    )
+
+
+def test_a_new_head_on_a_parked_lane_is_a_new_claim():
+    """A new head is the one thing that revives a parked lane -- and it gets a full timer."""
+    st = E.State(lanes={"lane/x": E.Lane("lane/x", "h1", seq=1, arrived=1_000.0)})
+    be = Clock({"lane/x": "h1"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
+    eng = _engine(be, st)
+    eng.tick()
+    assert "lane/x" not in eng.s.lanes, "the lane was not retired, so nothing is being proved"
+    # The agent re-pushed its branch with a new commit.
+    be.heads["lane/x"] = "h2"
+    be.minute += 60
+    eng.tick()
+    assert "lane/x" in eng.s.lanes, "a new head on a parked lane was not taken as a new claim"
+    assert eng.s.lanes["lane/x"].head == "h2"
+    assert eng.s.lanes["lane/x"].arrived == be.minute, (
+        f"a revived lane did not get a fresh timer: {eng.s.lanes['lane/x']}"
+    )
+    assert eng.s.retired.get("lane/x") != "h2", "the parked head was not cleared"
+
+
+def test_the_retirement_outlives_the_state_file():
+    """Every tick is a fresh process reading refs/greenlane/state, so the record must serialise.
+
+    A retirement held only in memory would come straight back on the next tick, which reads the
+    state file -- the same defect, one layer down.
+    """
+    st = E.State(lanes={"lane/old": E.Lane("lane/old", "ho", seq=1, arrived=1_000.0)})
+    be = Clock({"lane/old": "ho"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
+    eng = _engine(be, st)
+    eng.tick()
+    reloaded = E.State.loads(eng.s.dumps())
+    assert reloaded.retired.get("lane/old") == "ho", (
+        f"the retired head did not survive the state file: {reloaded.retired}"
+    )
+    be.minute += 5
+    eng2 = _engine(be, reloaded)
+    eng2.tick()
+    assert "lane/old" not in eng2.s.lanes, (
+        f"the next process re-added the retired lane: {eng2.s.lanes}"
     )
 
 
