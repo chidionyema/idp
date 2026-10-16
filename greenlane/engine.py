@@ -458,15 +458,17 @@ class Engine:
             # GitHub refuses the merge with "Required status check 'greenlane' is pending".
             # Reported 2026-10-16: batch b2924 passed ci-success but land() was refused.
             #
-            # The check run (greenlane.yml) is created on the batch tip, not the lane head.
-            # greenlane.yml checks out main (which is at batch.base), then runs engine code that
-            # pushes b.tip. The workflow fires on that push and creates a check run on b.tip.
-            # We update the check run on b.tip so the required check is satisfied immediately.
-            self.b.report_check_run_completed(b.tip, LANDED, f"pre-land check update for {b.id}")
+            # The greenlane.yml workflow fires on a push to lane/<name>. That push updates the
+            # lane branch to the batch tip (b.tip). The workflow checks out main and pushes b.tip.
+            # The push to the lane branch creates a check run on the lane head (b.members[i].head
+            # -- the lane's HEAD at the time of the push, which is the batch tip). We update the
+            # check run on each member's original HEAD (b.members[i].head), which equals the lane
+            # branch SHA at the time of the push, matching where the check run was created.
             for name, head, _ in b.members:
-                self.b.report(
-                    name, head, LANDED, f"pre-land check update for {b.id}"
+                self.b.report_check_run_completed(
+                    head, LANDED, f"pre-land check update for {b.id}"
                 )
+                self.b.report(name, head, LANDED, f"pre-land check update for {b.id}")
             try:
                 self.b.land(b.members, b.tip)
             except RuntimeError as e:
