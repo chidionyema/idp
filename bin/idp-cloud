@@ -9,6 +9,7 @@
 #   bin/idp-cloud secret get  NAME                    decoded secret content; exit 1 NotFound, 3 Split (ACTIVE in more than one vault), 4 Unreadable
 #   bin/idp-cloud secret put  NAME --file F           create or update; content is the file, never argv
 #   bin/idp-cloud secret delete NAME                  schedule deletion; absent is exit 0
+#   bin/idp-cloud secret cancel-deletion NAME        cancel a PENDING_DELETION, restoring ACTIVE; absent is exit 0
 #   bin/idp-cloud secret describe NAME                JSON {"id","vault-id","key-id"} of the ACTIVE secret in the compartment; exit 1 NotFound, 3 Split
 #   bin/idp-cloud secret list [--vault VAULT_ID]      one ACTIVE secret name per line; --vault restricts to that vault only
 #   bin/idp-cloud vault list                         one ACTIVE vault per line as "<display-name> <id>", sorted by name
@@ -369,6 +370,34 @@ print(json.dumps({"last-modified": format_datetime(datetime.fromtimestamp(mtime,
             if [ -z "$sid" ] || [ "$sid" = null ]; then printf '%s' absent; exit 0; fi
             oci vault secret schedule-secret-deletion --secret-id "$sid" >/dev/null
             printf '%s' scheduled
+            ;;
+          *) blind "unknown backend $BACKEND";;
+        esac
+        ;;
+      cancel-deletion)
+        case "$BACKEND" in
+          file)
+            # nothing to cancel on file backend
+            exit 0
+            ;;
+          oci)
+            command -v oci >/dev/null || blind "oci CLI is not installed"
+            MAIN=$(dirname "$(git -C "$IDP" rev-parse --path-format=absolute --git-common-dir)")
+            if [ -z "${OCI_CLI_PROFILE:-}" ]; then
+              # shellcheck source=idp-oci-whoami
+              source "$IDP/bin/idp-oci-whoami" >&2 || exit 2
+            fi
+            export OCI_CLI_AUTH=${OCI_CLI_AUTH:-security_token}
+            export SOPS_AGE_KEY_FILE=${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt} SUPPRESS_LABEL_WARNING=True
+            C=${OCI_COMPARTMENT_OCID:-$(sops -d --extract '["OCI_COMPARTMENT_OCID"]' "${ESTATE_SECRETS:-${ESTATE_CODE:-$MAIN/..}/estate-secrets}/secrets/dev/OCI_COMPARTMENT_OCID.yaml")}
+            # Find secret in PENDING_DELETION (not ACTIVE) -- list does not include it by default
+            ids=$(oci vault secret list --compartment-id "$C" --name "$NAME" --all \
+              --query "data[?\"lifecycle-state\"=='PENDING_DELETION'].id" --output json 2>/dev/null \
+              | python3 -c 'import json,sys; [print(i) for i in json.load(sys.stdin)]' 2>/dev/null) || ids=""
+            sid=$(printf '%s\n' "$ids" | head -1)
+            [ -n "$sid" ] && [ "$sid" != null ] || { printf '%s' absent; exit 0; }
+            oci vault secret cancel-secret-deletion --secret-id "$sid" >/dev/null 2>&1 || true
+            printf '%s' cancelled
             ;;
           *) blind "unknown backend $BACKEND";;
         esac
