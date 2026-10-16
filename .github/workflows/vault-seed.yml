@@ -160,11 +160,17 @@ jobs:
             # backstage-env here directly using the workflow's OCI session (crew#66 root trust:
             # backstage-env is an estate-born entry, crew#248: the machine identity writes it).
             #
-            # Step 1: mint the token and write it into the OCI vault as backstage-env.
-            # Step 2: deliver it into estate-secrets as a SOPS-encrypted YAML.
+            # The token MUST match what unified-memory-server registered at boot. unified-memory
+            # uses the same surface-token (urlsafe32) that this workflow now copies to backstage.
+            # Step 1: read unified-memory surface-token from the OCI vault.
+            # Step 2: write it into the OCI vault as backstage-env/MEMORY_SURFACE_TOKEN.
+            # Step 3: deliver it into estate-secrets as a SOPS-encrypted YAML.
             export SOPS_AGE_KEY_FILE="$RUNNER_TEMP/age-key.txt"
             mkdir -p "$(dirname "$SOPS_AGE_KEY_FILE")" && umask 077 && printf '%s\n' "$SOPS_AGE_KEY" > "$SOPS_AGE_KEY_FILE"
-            _tok="sk-$(python3 -c 'import secrets; print(secrets.token_hex(24))')"
+            # Read the existing token that unified-memory-server registered at boot.
+            # bin/idp-cloud secret get returns JSON: {"surface-token": "QbH...", ...}
+            _tok=$(bin/idp-cloud secret get unified-memory | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["surface-token"])')
+            echo "::add-mask::$_tok"
             _seed_f="$RUNNER_TEMP/backstage-env-seed" && printf 'MEMORY_SURFACE_TOKEN=%s\n' "$_tok" > "$_seed_f"
             # Write to OCI Vault. --merge creates the entry if it does not yet exist;
             # exit 1 (NotFound) is expected on first delivery and is handled fine.
