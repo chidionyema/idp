@@ -131,7 +131,7 @@ export default function KeySync({
   return (
     // See ConciergeTasks: the right rail is one 40px-pitch coordinate system (96/136/176/216).
     // This was `top-48` (192px), inside the concierge chip's band.
-    <div className="absolute top-[13.5rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}

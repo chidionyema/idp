@@ -41,6 +41,7 @@
 {"alias": "net-triage", "entity": "component/net-triage", "type": "COMPONENT"}
 {"alias": "ns-fences", "entity": "component/ns-fences", "type": "COMPONENT"}
 {"alias": "Optimizer", "entity": "component/optimizer", "type": "COMPONENT"}
+{"alias": "Otto numun", "entity": "component/otto-numun", "type": "COMPONENT"}
 {"alias": "Parallel Agent Stack", "entity": "component/parallel-agent-stack", "type": "COMPONENT"}
 {"alias": "ParallelExecutionStack", "entity": "component/parallelexecutionstack", "type": "COMPONENT"}
 {"alias": "pi-cache-guardian", "entity": "component/pi-cache-guardian", "type": "COMPONENT"}
@@ -63,6 +64,7 @@
 {"alias": "Fingerprint", "entity": "concept/fingerprint", "type": "CONCEPT"}
 {"alias": "fleetview outbox import fix 2026-09-22", "entity": "concept/fleetview-outbox-import-fix-2026-09-22", "type": "CONCEPT"}
 {"alias": "hypotheses-race", "entity": "concept/hypotheses-race", "type": "CONCEPT"}
+{"alias": "lane/memory-plane-cortex-engine 2048 migration", "entity": "concept/lane-memory-plane-cortex-engine-2048-migration", "type": "CONCEPT"}
 {"alias": "ParEval", "entity": "concept/pareval", "type": "CONCEPT"}
 {"alias": "R38", "entity": "concept/r38", "type": "CONCEPT"}
 {"alias": "Three-Role Model", "entity": "concept/three-role-model", "type": "CONCEPT"}
@@ -92,6 +94,7 @@
 {"alias": "Pi Agent Token Efficiency", "entity": "feature/pi-agent-token-efficiency", "type": "FEATURE"}
 {"alias": "voice_clarify_handshake", "entity": "feature/voice-clarify-handshake", "type": "FEATURE"}
 {"alias": "voice_speculate_endpoint", "entity": "feature/voice-speculate-endpoint", "type": "FEATURE"}
+{"alias": "Cortex memory plane embed write path", "entity": "gotcha/cortex-memory-plane-embed-write-path", "type": "GOTCHA"}
 {"alias": "TRAP duplicate fleet_summary", "entity": "gotcha/trap-duplicate-fleet-summary", "type": "GOTCHA"}
 {"alias": "TRAP launchd Background throttles voice", "entity": "gotcha/trap-launchd-background-throttles-voice", "type": "GOTCHA"}
 {"alias": "TRAP memory MCP dead", "entity": "gotcha/trap-memory-mcp-dead", "type": "GOTCHA"}

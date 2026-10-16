@@ -220,7 +220,7 @@ export default function GreenlaneHud({
   const label = laneLabel(lane, err);
 
   return (
-    <div className="absolute top-[18.5rem] right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}

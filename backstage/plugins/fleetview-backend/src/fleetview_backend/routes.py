@@ -377,7 +377,7 @@ def estate_envelope() -> tuple[dict[str, Any], int]:
 
     body: dict[str, Any] = {
         "generated_at": _now(),
-        "green": _soft(greenlane.greenlane_status),
+        "green": _soft(greenlane.greenlane_status_nowait),
         "burn": _soft(spend.spend_total),
         "research": _soft(research_feed.research_claims),
     }

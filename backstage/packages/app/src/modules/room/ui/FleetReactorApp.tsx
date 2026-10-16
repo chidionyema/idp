@@ -2816,10 +2816,6 @@ export default function FleetReactorApp() {
         </div>
       </div>
 
-      {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
-      <Delivery />
-
-
       <NewsDesk
         rundown={rundown}
         channel={newsChannel}
@@ -2828,72 +2824,103 @@ export default function FleetReactorApp() {
         summoned={newsSummoned}
       />
 
-      {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
-          the discovery proxy like every remote-capable call here, so it works from the phone. */}
-      <AgentJobs
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/agent-jobs`, init);
-        }}
-      />
+      {/* THE RIGHT-HAND STATUS RAIL. Every status pill in one column under the voice picker, in a
+          fixed order, so none of them owns a coordinate. Each used to be placed on its own
+          `top-[..rem]`, and three of those offsets had no rule in styles.css, so research, green
+          lane and claims all computed to top:0 and stacked on the sonar and the voice picker; the
+          laptop pill sat on the safeguards panel and opened its list below the screen. Here an
+          opened panel pushes the rest down instead of covering them. */}
+      <div
+        data-testid="status-rail"
+        className="absolute right-6 z-40 flex flex-col items-end gap-2 pointer-events-none"
+        style={{ top: 128 }}
+      >
+        {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
+        <ErrorBoundary componentName="Delivery">
+          <Delivery />
+        </ErrorBoundary>
 
-      {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
-      <HarvPanel
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/harv`, init);
-        }}
-      />
+        {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
+            the discovery proxy like every remote-capable call here, so it works from the phone. */}
+        <ErrorBoundary componentName="AgentJobs">
+        <AgentJobs
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/agent-jobs`, init);
+          }}
+        />
+        </ErrorBoundary>
 
-      {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
-          (fleetview_backend/concierge_tasks.py). */}
-      <ConciergeTasks
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/concierge-tasks`, init);
-        }}
-      />
+        {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
+        <ErrorBoundary componentName="HarvPanel">
+        <HarvPanel
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/harv`, init);
+          }}
+        />
+        </ErrorBoundary>
 
-      {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
-          Names and states only; a missing key shows the exact name to create. */}
-      <KeySync
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/key-sync`, init);
-        }}
-      />
+        {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
+            (fleetview_backend/concierge_tasks.py). */}
+        <ErrorBoundary componentName="ConciergeTasks">
+        <ConciergeTasks
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/concierge-tasks`, init);
+          }}
+        />
+        </ErrorBoundary>
 
-      {/* What the research department verified, newest first (idp#5714). This one is NOT behind
-          the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
-          middleware's plugin:// translation directly. */}
-      <ResearchFindings
-        call={(init) => api.fetch('plugin://research-output/claims', init)}
-      />
+        {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
+            Names and states only; a missing key shows the exact name to create. */}
+        <ErrorBoundary componentName="KeySync">
+        <KeySync
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/key-sync`, init);
+          }}
+        />
+        </ErrorBoundary>
 
-      {/* Is main green on the commit it is at, and what did the tick decide about every lane
-          (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
-          engine's own; this only refuses to draw a green main it could not read. */}
-      <GreenlaneHud
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/greenlane`, init);
-        }}
-      />
+        {/* What the research department verified, newest first (idp#5714). This one is NOT behind
+            the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
+            middleware's plugin:// translation directly. */}
+        <ErrorBoundary componentName="ResearchFindings">
+        <ResearchFindings
+          call={(init) => api.fetch('plugin://research-output/claims', init)}
+        />
+        </ErrorBoundary>
 
-      {/* Who is holding which paths right now, and how stale their heartbeat is
-          (fleetview_backend/claims.py, AGENTS.md section 5). */}
-      <ClaimsPanel
-        call={(init) => {
-          const base = baseUrlRef.current;
-          if (!base) return Promise.reject(new Error('discovery not ready'));
-          return api.fetch(`${base}/fleetview/claims`, init);
-        }}
-      />
+        {/* Is main green on the commit it is at, and what did the tick decide about every lane
+            (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
+            engine's own; this only refuses to draw a green main it could not read. */}
+        <ErrorBoundary componentName="GreenlaneHud">
+        <GreenlaneHud
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/greenlane`, init);
+          }}
+        />
+        </ErrorBoundary>
+
+        {/* Who is holding which paths right now, and how stale their heartbeat is
+            (fleetview_backend/claims.py, AGENTS.md section 5). */}
+        <ErrorBoundary componentName="ClaimsPanel">
+        <ClaimsPanel
+          call={(init) => {
+            const base = baseUrlRef.current;
+            if (!base) return Promise.reject(new Error('discovery not ready'));
+            return api.fetch(`${base}/fleetview/claims`, init);
+          }}
+        />
+        </ErrorBoundary>
+      </div>
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}
       <div className="absolute inset-0 pointer-events-none opacity-[0.03] mix-blend-overlay z-50 bg-[repeating-linear-gradient(transparent,transparent_2px,#000_2px,#000_4px)]"></div>

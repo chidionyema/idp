@@ -48,12 +48,16 @@ export type ClaimsIo = {
     password: string;
     connectionTimeoutMillis: number;
     statement_timeout: number;
-  }) => { query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>; end: () => Promise<void> };
+  }) => {
+    connect: () => Promise<void>;
+    query: (sql: string, values: unknown[]) => Promise<{ rows: any[] }>;
+    end: () => Promise<void>;
+  };
 };
 
 export const productionIo: ClaimsIo = {
   readSecret: path => fs.readFile(path, 'utf-8'),
-  // pg's Client satisfies the seam structurally: query(sql, values) and end().
+  // pg's Client satisfies the seam structurally: connect(), query(sql, values) and end().
   connect: config => new Client(config),
 };
 
@@ -63,6 +67,7 @@ export const fetchClaims = async (
     secretFile: string;
     host: string;
     limit: number;
+    port?: number;
     database?: string;
     user?: string;
   },
@@ -74,7 +79,7 @@ export const fetchClaims = async (
   }
   const client = io.connect({
     host: opts.host,
-    port: 5432,
+    port: opts.port ?? 5432,
     database: opts.database ?? 'research',
     user: opts.user ?? 'research',
     password,
@@ -82,6 +87,11 @@ export const fetchClaims = async (
     statement_timeout: STATEMENT_TIMEOUT_MS,
   });
   try {
+    // connect() first, and awaited. pg queues a query issued on an unconnected Client and never
+    // runs it, and connectionTimeoutMillis only starts counting inside connect() -- the version of
+    // this file without it held every request open forever (measured live 2026-10-13: the guest
+    // call to /claims never answered, and /fleet's research pill never left "unreachable").
+    await client.connect();
     // Only columns measured to exist on the claims table (psql, 2026-10-10); newest first.
     const result = await client.query(
       'SELECT created_at, status, statement FROM claims ORDER BY created_at DESC LIMIT $1',
@@ -98,7 +108,7 @@ export const fetchClaims = async (
 export const claimsEnvelope = async (
   io: ClaimsIo,
   rawLimit: string | undefined,
-  opts: { secretFile: string; host: string },
+  opts: { secretFile: string; host: string; port?: number; user?: string },
 ): Promise<{ body: Record<string, unknown>; status: number }> => {
   const limit = rawLimit ? parseInt(rawLimit, 10) : DEFAULT_LIMIT;
   try {
@@ -136,10 +146,14 @@ export const researchOutputPlugin = createBackendPlugin({
 
         router.get(CLAIMS_PATH, async (req, res) => {
           const { body, status } = await claimsEnvelope(productionIo, req.query.limit as string, {
-            // Both overridable so a dev machine can point at a tunnel without editing code;
-            // in-cluster the defaults are the names the engine itself uses.
+            // All overridable so a dev machine can point at a tunnel without editing code;
+            // in-cluster the defaults are the names the engine itself uses. The laptop's
+            // /fleet sets them in bin/fleetview-frontend-launchd: bin/idp-research-tunnel's
+            // port-forward, as research_reader -- a role that cannot write a claim.
             secretFile: process.env.RESEARCH_DB_PASSWORD_FILE ?? DEFAULT_SECRET_FILE,
             host: process.env.RESEARCH_DB_HOST ?? DEFAULT_HOST,
+            port: process.env.RESEARCH_DB_PORT ? Number(process.env.RESEARCH_DB_PORT) : undefined,
+            user: process.env.RESEARCH_DB_USER || undefined,
           });
           if (status !== 200) {
             logger.warn(String(body.error));

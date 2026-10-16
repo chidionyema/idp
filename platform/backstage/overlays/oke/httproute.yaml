@@ -95,8 +95,14 @@ spec:
     # real vendors, after every deploy). Same doctrine as /api/catalog/ above: the header match
     # means a browser never takes this rule, and Backstage grades the token itself
     # (backend.auth.externalAccess) -- the route only decides who ASKS, never who ENTERS.
+    # /api/research-output/ rides the same rule: /fleet's research pill calls it through fetchApi
+    # with the guest Bearer, and without this match it fell to the door rule below, where
+    # oauth2-proxy answered a plain-text 401 to every guest (measured live: research · unreachable).
     - matches:
         - path: { type: PathPrefix, value: /api/proxy/fleetview/ }
+          headers:
+            - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
+        - path: { type: PathPrefix, value: /api/research-output/ }
           headers:
             - { type: RegularExpression, name: Authorization, value: "^Bearer .+" }
       filters:

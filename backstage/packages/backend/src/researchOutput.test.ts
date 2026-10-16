@@ -19,6 +19,7 @@ function fakeIo(rows: Array<{ created_at: string; status: string; statement: str
     },
     connect: config => {
       const client = {
+        connect: async () => {},
         query: async (sql: string, values: unknown[]) => {
           calls.push({ sql, values, config: config as Record<string, unknown> });
           return { rows };
@@ -51,6 +52,23 @@ describe('fetchClaims', () => {
     expect(calls[0].config.user).toBe('research');
     expect(calls[0].config.host).toBe('estate-rw.estate-db.svc.cluster.local');
     expect(calls[0].config.statement_timeout).toBeGreaterThan(0);
+    expect(calls[0].config.port).toBe(5432);
+  });
+
+  it('connects where a dev tunnel says, as the role it names', async () => {
+    // The laptop's /fleet reaches estate-rw through bin/idp-research-tunnel as research_reader.
+    const { io, calls } = fakeIo(ROWS);
+    const { status } = await claimsEnvelope(io, '3', {
+      secretFile: '/x',
+      host: '127.0.0.1',
+      port: 15432,
+      user: 'research_reader',
+    });
+    expect(status).toBe(200);
+    expect(calls[0].config.host).toBe('127.0.0.1');
+    expect(calls[0].config.port).toBe(15432);
+    expect(calls[0].config.user).toBe('research_reader');
+    expect(calls[0].values).toEqual([3]);
   });
 
   it('clamps the limit into 1..50', async () => {
@@ -127,4 +145,20 @@ describe('productionIo', () => {
     const password = await productionIo.readSecret(file);
     expect(password).toBe('fixture-password-not-a-real-credential\n');
   });
+
+  it('answers 503 from a real pg Client when nothing listens, instead of hanging', async () => {
+    // The real Client, the real socket: port 1 on loopback refuses at once. pg queues a query on
+    // a Client that was never connected and never runs it, so this is the test that catches a
+    // missing connect() -- the fake io above cannot, because its query needs no connection.
+    const dir = await mkdtemp(path.join(tmpdir(), 'research-output-'));
+    const file = path.join(dir, 'POSTGRES_PASSWORD');
+    await writeFile(file, 'fixture-password-not-a-real-credential\n');
+    const { body, status } = await claimsEnvelope(productionIo, undefined, {
+      secretFile: file,
+      host: '127.0.0.1',
+      port: 1,
+    });
+    expect(status).toBe(503);
+    expect(String(body.error)).toContain('ECONNREFUSED');
+  }, 10_000);
 });

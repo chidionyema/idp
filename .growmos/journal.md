@@ -4892,3 +4892,35 @@ net-crossnode 2026-09-26: net-flannel-unmasq removed FLANNEL-POSTRTG on both nod
 ### 2026-10-01T00:37:28Z · agent
 
 2026-10-01 crew#694: lane/front-end-kit-intents landed (ui.scaffold path fix, ui.review gzip budget + kit resolution, scaffold without the Cloudflare adapter). Both lanes of the session are on main. Next: crew#700 CP1 and crew#690 on the kit; founder's word on crew#694 CP1.
+
+### 2026-10-12T17:52:12Z · agent
+
+2026-10-12 otto RCA: otto-gateway sidecar tailscale crash-looped 'node quota reached' because the 45m GithubAccessToken mint in hermes-agent-env made Reloader roll the pod (36 RS/21h) and each roll registered a non-ephemeral tailnet node (emptyDir state). Fix on lane/otto-stop-token-roll (issue #5894): reloader ignore on the minted Secret + ephemeral=true authkey. Stale offline otto-pod nodes still need clearing in the Tailscale admin console. Open: SigNoz collector has zero endpoints so the reconciler's OTLP push ends BLIND (exit 1 by design); concierge-deploy fails at 'sync human-twilio' and cluster human-twilio/human-card-key are SecretSyncedError until the founder adds GUARDIAN_PHONE_NUMBER, MOM_PHONE_NUMBER, PUBLIC_SERVER_URL, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, CONCIERGE_CARD_KEY to Bitwarden.
+
+### 2026-10-12T19:17:05Z · agent
+
+2026-10-12 lane/otto-stop-token-roll (claim #5894) now holds 3 fixes, pushed 495f7cf13, no PR: reloader-ignore + ephemeral tailnet keys; vendor-bridge optional targets as Merge ExternalSecrets (PUBLIC_SERVER_URL is born by concierge-deploy, must not be required); seed auxiliary.free_only in /data/config.yaml (no paid gemini-3.6-flash). Founder-only: TWILIO_AUTH_TOKEN + CONCIERGE_CARD_KEY in Bitwarden project 18e57b2f; delete stale offline otto-pod nodes in Tailscale console (estate OAuth client has no devices scope); Grafana Cloud account+token for OTLP (SigNoz dead); concierge-deploy.yml:342 Modal secret names human-twilio/concierge-tunnel mismatch.
+
+### 2026-10-12T19:50:19Z · agent
+
+2026-10-12 re-landed closed #4591 (SigNoz out, Alloy -> Grafana Cloud) as lane/signoz-out-grafana-cloud, claim #5935, worktree ../idp-wt-obs, fast-gate green, tests 20 pass. Needs GRAFANA_CLOUD_OTLP_ENDPOINT/INSTANCE_ID/API_TOKEN in Bitwarden 18e57b2f (unverified: classifier denied my bws read of the cluster token twice). #5919 and #5928 merged.
+
+### 2026-10-12T22:42:16Z · agent
+
+2026-10-12 vendor-bridge HelmRelease had been hand-suspended since 2026-10-03 (field manager flux CLI, not in git); resumed. Root: Helm wait on ExternalSecrets for absent vault keys -> timeout -> retries -> stall. Fix lane/vendor-bridge-no-helm-wait claim #5957 (disableWait; replaced 3 seed tests orphaned by #5336). TWILIO_AUTH_TOKEN duplicated in Bitwarden with identical values (ids 848a498b, 83de3023); delete of the newer one blocked by classifier, founder runs it. No Grafana Cloud creds found anywhere: bitwarden, gh secrets on all repos, cluster, keychain, chrome history, other repos.
+
+### 2026-10-12T23:21:12Z · agent
+
+2026-10-13 root of vendor-bridge stall: c96359f4 dropped human-vault/concierge/human-vault-bridge Flux rows; objects orphaned. Restore lane/flux-rows-human-vault-back. Also #5928 Merge design refused by ESO (secret owned by another ES); fix lane/vendor-bridge-optional-owns-its-secret claim #5961. #5959 merged. Duplicate TWILIO_AUTH_TOKEN deleted by founder; human-twilio synced.
+
+### 2026-10-13T00:03:38Z · agent
+
+2026-10-13 Grafana Cloud seeded: stack redlasagna2395 (instance 1813563, prod-gb-south-1), token estate-alloy on existing policy kubernetes-instrumentation-redlasagna2395; GRAFANA_CLOUD_{OTLP_ENDPOINT,INSTANCE_ID,API_TOKEN} in BW project 18e57b2f; gateway verify 200. Lands on cluster when lane/signoz-out-grafana-cloud merges.
+
+### 2026-10-13T00:06:50Z · agent
+
+2026-10-13 BW dupes removed (founder-approved): leaked CONCIERGE_CARD_KEY dbd680a0 and dead GRAFANA_CLOUD_API_TOKEN 527c2a77 (401). human-card-key re-synced on clean key 4142f9d2. #5986 + #5964 merged; human-vault/concierge/human-vault-bridge rows live; vendor-bridge v1314 green; optional twilio numbers synced. public-server-url ES waits on concierge cutover by design.
+
+### 2026-10-13T08:22:53Z · agent
+
+Cortex status: found install never started past docs/manifests; embed fix stranded on lane/memory-plane-cortex-engine and obsoleted in part by #5550. Ported write-path embedding to main at 1536 in worktree ../idp-memory-embed, claim #6023, pushing lane/memory-embed-write-path. Remaining: query-side semantic recall in estate_memory.py, backfill of NULL vectors, vendor Cortex (spec step 0/1), delete Hindsight + otto-memory-store, /fleet panel. Do not land the 2048 migration.

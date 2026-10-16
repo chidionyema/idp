@@ -195,7 +195,7 @@ export default function AgentJobs({
   const running = (jobs || []).filter(j => j.state === 'running').length;
 
   return (
-    <div className="absolute top-24 right-6 z-40 pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
+    <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
