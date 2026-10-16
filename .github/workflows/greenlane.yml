@@ -23,13 +23,11 @@ on:
     branches: [lane/**, flux/image-updates]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
+  schedule:
+    - cron: "*/15 * * * *"  # every 15 minutes: judge queue batches when CI completes
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that
   # queue and cancel push-event and scheduled-tick greenlane runs. CI completions on lane/** are
-  # covered by the lane push trigger. CI completions on queue/** are picked up by the schedule trigger.
-  # schedule removed: the trigger fires on every branch. A tick on lane/** fires
-  # simultaneously with the push-event tick, shares the greenlane concurrency group, and
-  # cancels the queued push-event run (measured 2026-10-16: queued runs are dropped when a
-  # newer run is queued even with cancel-in-progress: false). Push handles all work.
+  # covered by the lane push trigger. CI completions on queue/** need the schedule trigger.
   workflow_dispatch:
 permissions:
   contents: write
