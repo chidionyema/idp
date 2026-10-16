@@ -58,7 +58,7 @@ jobs:
     # no job permissions here: a called workflow may not ask for more than its caller grants, and
     # ci.yml grants contents+pull-requests only. founder-word.yml (the caller that fires this job)
     # grants actions: write at the top level.
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: rerun the gate on the pull request head
         env:
@@ -71,7 +71,7 @@ jobs:
           gh run rerun "$run" --repo "$GITHUB_REPOSITORY" --failed && echo "rerun $run for #$PR at $sha"
   operating-model-gate:
     if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions: { contents: read, pull-requests: write }
     steps:
       - name: the caller repo, so gh reads the caller's pull request
