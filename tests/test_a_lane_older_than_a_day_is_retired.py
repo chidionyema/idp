@@ -262,12 +262,16 @@ def test_a_new_head_on_a_parked_lane_is_a_new_claim():
     be = Clock({"lane/x": "h1"}, minute=1_000.0 + E.RETIRE_AFTER_MIN + 1)
     eng = _engine(be, st)
     eng.tick()
-    assert "lane/x" not in eng.s.lanes, "the lane was not retired, so nothing is being proved"
+    assert "lane/x" not in eng.s.lanes, (
+        "the lane was not retired, so nothing is being proved"
+    )
     # The agent re-pushed its branch with a new commit.
     be.heads["lane/x"] = "h2"
     be.minute += 60
     eng.tick()
-    assert "lane/x" in eng.s.lanes, "a new head on a parked lane was not taken as a new claim"
+    assert "lane/x" in eng.s.lanes, (
+        "a new head on a parked lane was not taken as a new claim"
+    )
     assert eng.s.lanes["lane/x"].head == "h2"
     assert eng.s.lanes["lane/x"].arrived == be.minute, (
         f"a revived lane did not get a fresh timer: {eng.s.lanes['lane/x']}"
