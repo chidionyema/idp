@@ -437,11 +437,18 @@ class GitHubBackend:
         latest: dict[str, dict] = {}
         page_num = 1
         while True:
-            page = self.gh(f"commits/{tip}/check-runs?per_page=100&filter=latest&page={page_num}") or {}
+            page = (
+                self.gh(
+                    f"commits/{tip}/check-runs?per_page=100&filter=latest&page={page_num}"
+                )
+                or {}
+            )
             runs = page.get("check_runs", [])
             for r in runs:
                 name = r.get("name", "")
-                if name not in latest or (r.get("id") or 0) > (latest[name].get("id") or 0):
+                if name not in latest or (r.get("id") or 0) > (
+                    latest[name].get("id") or 0
+                ):
                     latest[name] = r
             if len(runs) < 100:
                 break  # last page
