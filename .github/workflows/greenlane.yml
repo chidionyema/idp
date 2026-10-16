@@ -26,11 +26,10 @@ on:
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that
   # queue and cancel push-event and scheduled-tick greenlane runs. CI completions on lane/** are
   # covered by the lane push trigger. CI completions on queue/** are picked up by the schedule trigger.
-  # workflow_run:
-  #   workflows: [guarded-paths, factory-ci, portal-app]
-  #   types: [completed]
-  schedule:
-    - cron: '*/15 * * * *'  # backstop: 15 min avoids cancelling push-event runs; GitHub drops scheduled runs under load; nothing depends on it
+  # schedule removed: the trigger fires on every branch. A tick on lane/** fires
+  # simultaneously with the push-event tick, shares the greenlane concurrency group, and
+  # cancels the queued push-event run (measured 2026-10-16: queued runs are dropped when a
+  # newer run is queued even with cancel-in-progress: false). Push handles all work.
   workflow_dispatch:
 permissions:
   contents: write
@@ -39,8 +38,8 @@ permissions:
   checks: read
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 concurrency:
-  group: greenlane     # exactly one writer of main; a queued tick is never lost because a tick is idempotent
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   greenlane:
     runs-on: ubuntu-24.04

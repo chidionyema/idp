@@ -634,6 +634,15 @@ class Engine:
             #                                 already ahead of it. That is a batch-order collision,
             #                                 not a conflict with main: leave it PENDING so it gets
             #                                 its own batch, and it lands on the next tick.
+            # If the lane's HEAD is already at main, there is nothing to land.
+            # This can happen when a lane was force-pushed to a commit that is already main,
+            # or when a merge commit's ancestors are all already on main (no net new changes).
+            # Treated as LANDED rather than CONFLICT so the lane does not accumulate retry counts.
+            if lane.head == base:
+                lane.status = LANDED
+                lane.reason = "nothing to land: lane head equals main"
+                self.b.report(n, lane.head, LANDED, lane.reason)
+                continue
             if self.b.rebase(lane.head, base) is None:
                 # Genuine conflict with main. Charge the retry HERE, where the grade actually
                 # failed, so the count is consecutive failures against successive mains and not
