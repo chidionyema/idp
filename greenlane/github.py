@@ -112,6 +112,7 @@ class GitHubBackend:
         self.owner = repo.split("/")[0]
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
         self._work_age_cache: Optional[dict[str, float]] = None
+        self._state_lease = ""  # remote state sha seen at load; CAS anchor for save
 
     # -- plumbing ----------------------------------------------------------------------------
     def git(self, *args: str, check: bool = True) -> str:
@@ -175,6 +176,18 @@ class GitHubBackend:
         # live trunk. Distinguish the two.
         if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
             return ""
+        # The lease for compare-and-swap on save: the remote sha this load observed. Two ticks
+        # on different refs (a lane push and a main dispatch sit in different concurrency groups
+        # and run concurrently) used to both load here, both act, and both force-push -- last
+        # writer won, and the loser's batch vanished from the state while its queue branch sat
+        # green forever (measured 2026-10-17: b2953 and b2954 both stranded this way, lanes
+        # re-marked CONFLICT by a tick running on a pre-batch snapshot). The save leases on
+        # this sha and refuses to overwrite a state it never saw.
+        self._state_lease = self._remote_state()
+        if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
+            raise RuntimeError(
+                f"{STATE_REF} exists on origin ({self._state_lease[:12]}) but not locally"
+            )
         text = self.git("show", f"{STATE_REF}:state.json", check=False)
         if not text:
             raise RuntimeError(f"{STATE_REF} exists but carries no state.json")
@@ -185,7 +198,18 @@ class GitHubBackend:
         tree = _run("git", "mktree", input=f"100644 blob {blob}\tstate.json\n")
         commit = _run("git", "commit-tree", tree, "-m", "greenlane state")
         self.git("update-ref", STATE_REF, commit)
-        self.git("push", "-q", "-f", "origin", f"{commit}:{STATE_REF}")
+        # Compare-and-swap, not a blind force push: fail if origin moved since load_state_text()
+        # captured the lease. An empty lease means the ref must not exist yet (first tick).
+        # A rejected save raises; the tick dies visibly and the next dispatch re-reads and
+        # re-derives everything. Losing a tick is cheap; silently dropping a green batch (the
+        # b2953/b2954 stranding) is not.
+        self.git(
+            "push",
+            "-q",
+            f"--force-with-lease={STATE_REF}:{self._state_lease}",
+            "origin",
+            f"{commit}:{STATE_REF}",
+        )
 
     # -- Backend protocol ----------------------------------------------------------------------
     def now(self) -> float:
