@@ -570,6 +570,10 @@ class Engine:
         if names:
             self.s.queued.insert(0, names)
 
+    def _held_reason(self, lane: Lane, base: str) -> str:
+        """Returns the reason a lane is held (claim-gate failure), or "" if not held."""
+        return self.b.unclaimed(lane.head, base)
+
     def _held(self, lane: Lane, base: str) -> bool:
         """A lane that does not land on a live claim waits outside the batch (idp#5612).
 
@@ -578,7 +582,7 @@ class Engine:
         the CLAIM comment that fixes it is enough -- the next tick admits it, no re-push. The
         reason is reported once, not every tick.
         """
-        why = self.b.unclaimed(lane.head, base)
+        why = self._held_reason(lane, base)
         if not why:
             return False
         if lane.reason != why:
@@ -651,7 +655,13 @@ class Engine:
             for l in pend:
                 if len(names) == self.batch_size:
                     break
-                if not self._held(l, base):
+                held_reason = self._held_reason(l, base)
+                is_held = held_reason is not None
+                self.log.append(
+                    f"DEBUG pend: {l.name} seq={l.seq} held={is_held} "
+                    f"reason={held_reason[:40] if held_reason else ''}"
+                )
+                if not is_held:
                     names.append(l.name)
         # 2026-10-16: also include CONFLICT lanes that can rebase cleanly.
         # A lane goes CONFLICT when a concurrent lane lands and moves main forward while
@@ -666,6 +676,7 @@ class Engine:
             held = self._held(lane, base)
             if rb is not None and not held:
                 extra.append(n)
+                self.log.append(f"DEBUG extra ok: {n} seq={lane.seq}")
             else:
                 self.log.append(
                     f"DEBUG extra: {n} rebase={'ok' if rb else 'None'} held={held}"
@@ -673,6 +684,7 @@ class Engine:
         names = [
             n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
         ] + extra
+        self.log.append(f"DEBUG batch: base={base[:8]} names={names} extra={extra}")
         if not names:
             self.log.append(f"DEBUG _start_batch: no batch, extra={extra}")
             return

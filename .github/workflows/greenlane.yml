@@ -84,5 +84,12 @@ jobs:
           # For main/schedule dispatches: github.ref == refs/heads/main, skip the reset.
           if [ "${{ github.ref }}" != "refs/heads/main" ]; then
             git reset --hard "${{ github.sha }}"
+            # Fetch the state from the lane branch's state ref. The bare refs/greenlane/state
+            # may be stale (last pushed by a different lane). The lane branch carries the freshest
+            # state. Fetch it explicitly by constructing the branch-nested ref path.
+            lane_name="${GITHUB_REF#refs/heads/}"
+            git fetch -q origin \
+              "+refs/heads/${lane_name}/refs/greenlane/state:refs/greenlane/state" \
+              "+refs/greenlane/state:refs/greenlane/state" 2>/dev/null || true
           fi
           python3 bin/idp-greenlane tick
