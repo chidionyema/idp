@@ -69,6 +69,20 @@ CLAIM = re.compile(
 )
 
 
+def covered_by(path: str, pattern: str) -> bool:
+    """Does one `paths=` entry of a claim cover this file?
+
+    A claimant may name a file literally, and a Next.js dynamic route's literal path carries glob
+    metacharacters: `web/app/writing/[slug]/page.tsx`. `claim-open` posts the changed files as
+    literals, so a claim routinely holds that exact string -- and `fnmatch` reads `[slug]` as a
+    character class, so the file matched nothing and could not satisfy its own claim (measured
+    2026-10-17: `FAIL claim-gate 1 file(s) outside every claim's paths:
+    web/app/writing/[slug]/page.tsx`). Equality first: a claimant who names a file has claimed
+    that file. The glob stays, because `paths=web/**` is how a lane claims a tree.
+    """
+    return path == pattern or fnmatch.fnmatch(path, pattern)
+
+
 def git(*a: str) -> str:
     return subprocess.run(  # noqa: S603 -- fixed argv, no shell
         ["git", *a],  # noqa: S607
@@ -225,7 +239,7 @@ def verdict(text: str, files: list[str], repo: str, fetch, now: datetime) -> lis
             problems.append(f"{where} heartbeat {c['hb']!r} is in the future")
             continue
         globs = [g for g in c["paths"].split(",") if g]
-        covered |= {f for f in files if any(fnmatch.fnmatch(f, g) for g in globs)}
+        covered |= {f for f in files if any(covered_by(f, g) for g in globs)}
     # demo-render pushes updated demo GIFs onto every lane branch whenever main advances.
     # They are auto-generated infrastructure, not product changes, and do not belong to any agent's
     # claim. Like runner-pins they require no claim: they are the platform's own housekeeping.

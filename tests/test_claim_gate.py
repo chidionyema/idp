@@ -127,6 +127,31 @@ def test_files_outside_the_claim_are_refused():
     assert "outside every claim's paths: platform/llm/config.yaml" in out[0]
 
 
+def test_a_claim_names_a_dynamic_route_literally_and_covers_it():
+    # A Next.js dynamic route's literal path carries glob metacharacters:
+    # `web/app/writing/[slug]/page.tsx`. `claim-open` posts the changed files as literals, so the
+    # claim holds that exact string -- and fnmatch read `[slug]` as a character class, so the file
+    # matched no claim at all and could not satisfy its own (measured 2026-10-17: `FAIL claim-gate
+    # 1 file(s) outside every claim's paths: web/app/writing/[slug]/page.tsx`). A claimant who
+    # names a file has claimed that file.
+    route = "web/app/writing/[slug]/page.tsx"
+    assert run(files=[route], issue=_issue(claim=_claim(paths=route))) == []
+
+
+def test_a_glob_in_a_claim_still_covers_many_files():
+    # The literal comparison must not be the only one: `paths=web/**` covers a tree.
+    files = ["web/app/page.tsx", "web/app/layout.tsx"]
+    assert run(files=files, issue=_issue(claim=_claim(paths="web/**"))) == []
+
+
+def test_a_claim_naming_one_bracketed_route_does_not_cover_its_siblings():
+    # The fix widens coverage to the file named, not to anything containing brackets.
+    named = "web/app/writing/[slug]/page.tsx"
+    sibling = "web/app/writing/other/page.tsx"
+    out = run(files=[named, sibling], issue=_issue(claim=_claim(paths=named)))
+    assert f"outside every claim's paths: {sibling}" in out[0]
+
+
 def test_an_issue_with_no_claim_comment_is_refused():
     assert "no CLAIM comment" in run(issue=_issue())[0]
 
