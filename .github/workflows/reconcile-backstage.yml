@@ -1,0 +1,36 @@
+name: reconcile-backstage
+on:
+  workflow_dispatch:
+jobs:
+  reconcile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: fluxcd/flux2/action@5350425cdcd5fa015337e09fa502153c0275bd4b # v2.4.0
+      - name: OCI session token
+        uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+      - name: reconcile backstage (ExternalSecret refresh)
+        run: |
+          set -euo pipefail
+          # Get kubeconfig via OCI session
+          mkdir -p ~/.kube
+          oci ce cluster create-kubeconfig \
+            --auth security_token \
+            --cluster-id "$OCI_CLI_REGION" \
+            --file ~/.kube/config \
+            --region "$OCI_CLI_REGION" \
+            --token-version 2.0.0 \
+            --kube-endpoint PUBLIC_ENDPOINT
+          chmod 600 ~/.kube/config
+          # Flux reconcile with source (refreshes ExternalSecret from vault)
+          flux reconcile kustomization backstage --with-source --timeout 5m
+          echo "Flux reconciled backstage"
