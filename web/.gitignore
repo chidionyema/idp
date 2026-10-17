@@ -1,0 +1,20 @@
+# Next.js build output
+.next/
+out/
+build/
+
+# TypeScript incremental state
+*.tsbuildinfo
+
+# Dependencies
+node_modules/
+
+# Local env — never commit real values, only names in .env.example
+.env
+.env*.local
+
+# Vercel
+.vercel/
+
+# Test output
+coverage/
