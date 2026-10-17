@@ -60,7 +60,35 @@ def repo() -> str:
     )
 
 
+STALE_ATTEMPTS = 3  # one live attempt, then two reload-and-retry cycles
+
+
 def tick() -> int:
+    """One tick, tolerant of losing the state race (2026-10-17).
+
+    Ticks overlap (lane push runs and main dispatches sit in different concurrency groups)
+    and the save is a compare-and-swap: whoever saves second refuses to clobber and dies.
+    Dying is correct -- silently overwriting is the b2953/b2954 defect -- but a lost race
+    is not something an agent should have to re-trigger, and a tick is idempotent by
+    design: the state is re-read from the ref and everything is re-derived. So a
+    stale-lease refusal reloads and retries, bounded; a refusal that survives the bound is
+    real contention and stays loud.
+    """
+    for attempt in range(1, STALE_ATTEMPTS + 1):
+        try:
+            return _tick_once()
+        except RuntimeError as e:
+            if attempt == STALE_ATTEMPTS or "stale info" not in str(e):
+                raise
+            print(
+                f"ok      greenlane  state moved under the tick (lease stale); "
+                f"reload and retry {attempt + 1}/{STALE_ATTEMPTS}",
+                flush=True,
+            )
+    raise AssertionError("unreachable")  # the loop returns or raises
+
+
+def _tick_once() -> int:
     b = GitHubBackend(
         repo(),
         required_contexts(),
@@ -222,6 +250,7 @@ def status() -> int:
         {"number": p["number"], "user": p["user"]["login"], "head": p["head"]["ref"]}
         for p in prs
     ]
+
     def required_read(context: str) -> str:
         """The newest check run with this exact name on main's tip (2026-10-11).
 
@@ -246,7 +275,9 @@ def status() -> int:
         runs = [c for c in (d.get("check_runs") or []) if c.get("name") == context]
         if not runs:
             return "absent"
-        newest = max(runs, key=lambda c: c.get("completed_at") or c.get("started_at") or "")
+        newest = max(
+            runs, key=lambda c: c.get("completed_at") or c.get("started_at") or ""
+        )
         return newest.get("conclusion") or newest.get("status") or "absent"
 
     required = required_contexts()

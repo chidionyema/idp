@@ -119,3 +119,104 @@ def test_a_first_tick_save_refuses_when_the_ref_appeared_under_it(repo):
     with pytest.raises(RuntimeError, match="stale info"):
         a.save_state_text('{"lanes": {}, "landed": 2}')
     assert _remote_state_sha(repo)  # and the winner's state is still there
+
+
+def _mod():
+    import importlib.machinery
+    import importlib.util
+
+    loader = importlib.machinery.SourceFileLoader(
+        "idp_greenlane_state_cas", str(ROOT / "bin/idp-greenlane")
+    )
+    mod = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader("idp_greenlane_state_cas", loader)
+    )
+    loader.exec_module(mod)
+    return mod
+
+
+class _Flaky:
+    """A backend whose first save loses the state race; the second lands."""
+
+    def __init__(self):
+        self.saves = 0
+
+    def save_state_text(self, text):
+        self.saves += 1
+        if self.saves == 1:
+            raise RuntimeError(
+                "git push -q: rc=1 To github.com:o/idp.git\n"
+                " ! [rejected]        abc -> refs/greenlane/state (stale info)"
+            )
+
+
+class _Lost:
+    """A backend that loses the race every time: contention, not flake."""
+
+    def save_state_text(self, text):
+        raise RuntimeError(
+            "git push -q: rc=1 To github.com:o/idp.git\n"
+            " ! [rejected]        abc -> refs/greenlane/state (stale info)"
+        )
+
+
+def test_a_tick_that_loses_the_state_race_reloads_and_retries(capsys):
+    """Measured 2026-10-17: main dispatches every ~2 min re-armed inside every ~80s tick's
+    window, so the CAS refused each formation and no batch could form at all. A lost race
+    is a reload, not a red run: the tick is idempotent, bounded retries converge."""
+    mod = _mod()
+    b = _Flaky()
+
+    def fake_tick_once():
+        try:
+            b.save_state_text("{}")
+        finally:
+            pass
+        return 0
+
+    saved = mod._tick_once
+    mod._tick_once = fake_tick_once
+    try:
+        assert mod.tick() == 0
+    finally:
+        mod._tick_once = saved
+    assert b.saves == 2  # refused once, landed on the retry
+    out = capsys.readouterr().out
+    assert "lease stale" in out and "2/3" in out
+
+
+def test_a_tick_that_loses_every_race_stays_loud_after_the_bound():
+    """A retry bound that silently swallowed real contention would be a gate that cannot
+    fail. After the bound the refusal propagates."""
+    mod = _mod()
+
+    def fake_tick_once():
+        b = _Lost()
+        b.save_state_text("{}")
+
+    saved = mod._tick_once
+    mod._tick_once = fake_tick_once
+    try:
+        with pytest.raises(RuntimeError, match="stale info"):
+            mod.tick()
+    finally:
+        mod._tick_once = saved
+
+
+def test_a_tick_that_fails_for_another_reason_is_not_retried():
+    """Only the stale-lease refusal reloads; a network or GitHub failure stays a failure."""
+    mod = _mod()
+    calls = {"n": 0}
+
+    def fake_tick_once():
+        calls["n"] += 1
+        raise RuntimeError("git push -q: rc=128 could not read from remote repository")
+
+    saved = mod._tick_once
+    mod._tick_once = fake_tick_once
+    try:
+        with pytest.raises(RuntimeError, match="rc=128"):
+            mod.tick()
+    finally:
+        mod._tick_once = saved
+    assert calls["n"] == 1
