@@ -23,23 +23,35 @@ on:
     branches: [lane/**, flux/image-updates]
   pull_request_target:
     types: [opened, reopened, ready_for_review]
+  schedule:
+    - cron: "*/15 * * * *"  # every 15 minutes: judge queue batches when CI completes
   # workflow_run removed: guarded-paths fires on every main push, creating workflow_run events that
   # queue and cancel push-event and scheduled-tick greenlane runs. CI completions on lane/** are
-  # covered by the lane push trigger. CI completions on queue/** are picked up by the schedule trigger.
-  # workflow_run:
-  #   workflows: [guarded-paths, factory-ci, portal-app]
-  #   types: [completed]
-  schedule:
-    - cron: '*/15 * * * *'  # backstop: 15 min avoids cancelling push-event runs; GitHub drops scheduled runs under load; nothing depends on it
+  # covered by the lane push trigger. CI completions on queue/** need the schedule trigger.
   workflow_dispatch:
 permissions:
   contents: write
   pull-requests: write
   statuses: write
-  checks: read
+  checks: write
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 concurrency:
-  group: greenlane     # exactly one writer of main; a queued tick is never lost because a tick is idempotent
+  # ONE group, global. The per-event split (workflow-ref-event) measured 2026-10-17: it never
+  # serialised anything -- schedule, dispatch and lane-push runs each got their own group and
+  # ran concurrently, two ticks at a time racing the state CAS (b3010..b3012: every batch
+  # re-formed on a different candidate sha). cancel-in-progress: false below means nothing is
+  # cancelled; a single group only QUEUES ticks, GitHub keeps at most one pending run per
+  # group, and the state's CAS + member leases make even overlapping ticks safe.
+  group: greenlane
+  # NEVER cancel in progress (2026-10-17). Measured that day: the engine pushes the batch
+  # tip onto the lane branch, the push run starts testing it (the `greenlane` required
+  # check), and the engine's next push -- ~2 min later, on the same branch, same group --
+  # cancels that run mid-CI. The judge then reads `pending` until the 90-minute timeout,
+  # requeues, re-forms, and the next candidate is cancelled the same way: landed_total
+  # froze at 451 from 11:12 to 14:45 while batches b2961..b2968 churned. Same for main
+  # dispatches (14:44:50 cancelled by 14:45:31). Queued, not cancelled: concurrency keeps
+  # at most one pending run per group, so the pile-up is bounded, and the state's CAS +
+  # member leases already make overlapping ticks safe.
   cancel-in-progress: false
 jobs:
   greenlane:
@@ -80,4 +92,17 @@ jobs:
           set -euo pipefail
           # pushes must carry the App's token so they start workflows on the refs they write
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GH_REPO}.git"
+          # For lane-branch pushes: run the engine from the lane's commit (not main's), so that
+          # lane-specific engine fixes take effect before the lane lands on main.
+          # For main/schedule dispatches: github.ref == refs/heads/main, skip the reset.
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            git reset --hard "${{ github.sha }}"
+            # Fetch the state from the lane branch's state ref. The bare refs/greenlane/state
+            # may be stale (last pushed by a different lane). The lane branch carries the freshest
+            # state. Fetch it explicitly by constructing the branch-nested ref path.
+            lane_name="${GITHUB_REF#refs/heads/}"
+            git fetch -q origin \
+              "+refs/heads/${lane_name}/refs/greenlane/state:refs/greenlane/state" \
+              "+refs/greenlane/state:refs/greenlane/state" 2>/dev/null || true
+          fi
           python3 bin/idp-greenlane tick
