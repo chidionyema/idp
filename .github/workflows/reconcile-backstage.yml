@@ -9,6 +9,17 @@ jobs:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/requirements
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@v7 # 5fda3b95a4ea
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: .github/requirements/oci-cli.txt
+      - name: oci cli
+        run: pip install -q -r .github/requirements/oci-cli.txt
       - name: OCI session token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -28,6 +39,9 @@ jobs:
           "$HOME/bin/flux" --version
           echo "$HOME/bin:$PATH" >> "$GITHUB_PATH"
       - name: reconcile backstage (ExternalSecret refresh)
+        env:
+          OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
+          OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
           set -euo pipefail
           # Get OKE cluster OCID
