@@ -469,6 +469,19 @@ class Engine:
                     head, LANDED, f"pre-land check update for {b.id}"
                 )
                 self.b.report(name, head, LANDED, f"pre-land check update for {b.id}")
+            # 2026-10-16: mark lanes LANDED in state BEFORE land(), so a concurrent lane
+            # that lands and pushes main forward cannot rejudge these as CONFLICT. The land()
+            # call moves main forward -- if Otto's lane lands between the land() call and the
+            # state save, a subsequent tick calls main() and finds main has moved. Without
+            # pre-marking, the lane is still PENDING in state and is rejudged as CONFLICT.
+            # With pre-marking, the lane is already LANDED and is skipped.
+            for name, head, _ in b.members:
+                self.s.lanes[name].status = LANDED
+                self.s.lanes[name].reason = f"landed in {b.id}"
+                self.s.landed += 1
+            self.log.append(
+                f"batch {b.id}: landed {len(b.members)} lane(s) -> main {b.tip}"
+            )
             try:
                 self.b.land(b.members, b.tip)
             except RuntimeError as e:
@@ -476,16 +489,22 @@ class Engine:
                 # the tick, and the next tick saw the lane head moved (land had pushed the squash
                 # over it) and requeued it as new work, uncounted, squashing the squash. A
                 # refused land is a red verdict on this batch: it counts against the retries.
+                # NOTE: the lane is already LANDED in state. Undo the pre-mark since land refused.
                 verdict, reason = "red", f"land refused: {e}"
+                for name, head, _ in b.members:
+                    self.s.lanes[name].status = PENDING
+                    self.s.lanes[
+                        name
+                    ].attempts = 0  # reset: land refusals are not test failures
+                    self.s.lanes[name].reason = f"retry after: {reason}"
+                    self.s.landed -= 1
+                self.log.append(
+                    f"batch {b.id}: {name} land refused (not a test failure); "
+                    f"attempts reset, re-queued"
+                )
         if verdict == "green":
             for name, head, _ in b.members:
-                self.s.lanes[name].status = LANDED
-                self.s.lanes[name].reason = f"landed in {b.id}"
                 self.b.report(name, head, LANDED, f"landed in {b.id}")
-                self.s.landed += 1
-            self.log.append(
-                f"batch {b.id}: landed {len(b.members)} lane(s) -> main {b.tip}"
-            )
             self.s.batch = None
             return
         # red
