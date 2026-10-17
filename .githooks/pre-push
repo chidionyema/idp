@@ -53,6 +53,7 @@ _claim_guard() {
     # Greenlane's own pushes, judged per lane in CI.
     case "$remote_ref" in refs/heads/main | refs/heads/queue/*) continue ;; refs/heads/*) ;; *) continue ;; esac
     [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+    lane_branch="${remote_ref#refs/heads/}"
     base="$(git merge-base origin/main "$local_sha" 2>/dev/null)" || {
       echo "BLIND claim-gate: no origin/main to judge ${remote_ref#refs/heads/} against"
       continue
@@ -84,6 +85,7 @@ EOF
   done <<<"$push_refs"
 }
 
+lane_branch=""
 if ! _claim_guard; then
   exit 1
 fi
@@ -208,7 +210,7 @@ if [ -n "$remote_main" ] && [ "$local_head" = "$remote_main" ]; then
   echo "ok    idp-fast-gate: no diff from origin/main (worktree at same commit); gate skipped"
 elif [ -n "$base" ]; then
   echo "🛡️  idp-fast-gate: running IDP_CI_FAST=1 IDP_CI_BASE=${base:0:12} bin/idp-ci ..."
-  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" "$repo_root/bin/idp-ci"; then
+  if ! IDP_CI_FAST=1 IDP_CI_BASE="$base" GITHUB_HEAD_REF="${lane_branch:-}" "$repo_root/bin/idp-ci"; then
   cat <<'EOF' >&2
 
 ❌ pre-push REFUSED: idp-fast-gate caught errors.

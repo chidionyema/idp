@@ -161,6 +161,12 @@ class Moving:
     def main(self):
         return self.main_sha
 
+    def rebase(self, head, base):
+        # engine.py:369 re-judges a lane whose conflict record went missing by
+        # rebasing it onto current main (added with #6337); the fake must accept
+        # that call or the retry strand is untestable.
+        return head
+
     def lanes(self):
         return {"lane/old": "h1"}
 

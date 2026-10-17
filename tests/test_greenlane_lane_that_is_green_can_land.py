@@ -59,8 +59,8 @@ class FakeBackend:
         # same single lane keeps the lane alive across _observe_lanes calls
         return {"lane/x": "head1"}
 
-    def rebase(self, lane: str, head: str, onto: str):
-        return (f"rebased-{head}", "")
+    def rebase(self, head: str, onto: str):
+        return f"rebased-{head}"
 
     def checks(self, tip: str):
         return ("green", "ok")
@@ -73,6 +73,9 @@ class FakeBackend:
 
     def heartbeat(self, lane: str, head: str) -> None:
         self.heartbeats.append((lane, head))
+
+    def now(self) -> float:
+        return 0.0
 
     def adopted_prs(self):  # pragma: no cover - unused here
         return []

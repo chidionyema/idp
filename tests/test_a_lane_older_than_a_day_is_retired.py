@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Optional
 
 import pytest
 
@@ -61,6 +62,11 @@ class Clock:
     def __init__(self, heads: dict[str, str], minute: float = 1_000.0):
         self.heads = dict(heads)
         self.minute = minute
+        # Authored-at, in minutes (idp#5953): heads the Clock is BORN with are old work --
+        # the lanes the issue is about were pushed long before the engine noticed them --
+        # so they are authored at the engine's t0. A head that appears later is a new
+        # commit, authored when first served.
+        self.authored: dict[str, float] = {h: 1_000.0 for h in self.heads.values()}
         self.reported: list[tuple[str, str, str, str]] = []
         self.heartbeats: list[tuple[str, str]] = []
         self.candidates: list[str] = []
@@ -79,7 +85,12 @@ class Clock:
         return []
 
     def lanes(self) -> dict[str, str]:
+        for h in self.heads.values():
+            self.authored.setdefault(h, self.minute)
         return dict(self.heads)
+
+    def work_age(self, sha: str) -> Optional[float]:
+        return self.minute - self.authored.get(sha, self.minute)
 
     def rebase(self, head: str, onto: str):
         return f"{head}@{onto}"

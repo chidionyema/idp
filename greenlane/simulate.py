@@ -93,6 +93,9 @@ class ChaosBackend:
         self.hand_prs = self.hand_prs_refused = 0
         self.landed_changes: set[str] = set()
         self.heartbeats: list[tuple[str, str]] = []
+        self._created: dict[
+            str, float
+        ] = {}  # sha -> clock minutes when it was committed
 
     # -- the world -------------------------------------------------------------------------
     def tree(self, sha: str) -> frozenset:
@@ -113,6 +116,7 @@ class ChaosBackend:
     def commit(self, parent: str, change: str) -> str:
         sha = _sha(parent, change)
         self.commits.setdefault(sha, Commit(sha, parent, change))
+        self._created.setdefault(sha, self.clock)
         return sha
 
     def changes_since(self, sha: str, base: str) -> list[str]:
@@ -203,6 +207,10 @@ class ChaosBackend:
 
     def unclaimed(self, head: str, base: str) -> str:
         return ""  # every simulated lane is claimed; the claim rule is pinned in its own test
+
+    def work_age(self, sha: str) -> Optional[float]:
+        age = self._created.get(sha)
+        return (self.clock - age) if age is not None else None
 
     def heartbeat(self, lane: str, head: str) -> None:
         self.heartbeats.append((lane, head))  # the tick stamps; the simulation records

@@ -111,6 +111,8 @@ class GitHubBackend:
         self.status_token = status_token
         self.owner = repo.split("/")[0]
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
+        self._work_age_cache: Optional[dict[str, float]] = None
+        self._state_lease = ""  # remote state sha seen at load; CAS anchor for save
 
     # -- plumbing ----------------------------------------------------------------------------
     def git(self, *args: str, check: bool = True) -> str:
@@ -174,6 +176,18 @@ class GitHubBackend:
         # live trunk. Distinguish the two.
         if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
             return ""
+        # The lease for compare-and-swap on save: the remote sha this load observed. Two ticks
+        # on different refs (a lane push and a main dispatch sit in different concurrency groups
+        # and run concurrently) used to both load here, both act, and both force-push -- last
+        # writer won, and the loser's batch vanished from the state while its queue branch sat
+        # green forever (measured 2026-10-17: b2953 and b2954 both stranded this way, lanes
+        # re-marked CONFLICT by a tick running on a pre-batch snapshot). The save leases on
+        # this sha and refuses to overwrite a state it never saw.
+        self._state_lease = self._remote_state()
+        if not self.git("rev-parse", "--verify", "-q", STATE_REF, check=False):
+            raise RuntimeError(
+                f"{STATE_REF} exists on origin ({self._state_lease[:12]}) but not locally"
+            )
         text = self.git("show", f"{STATE_REF}:state.json", check=False)
         if not text:
             raise RuntimeError(f"{STATE_REF} exists but carries no state.json")
@@ -184,7 +198,18 @@ class GitHubBackend:
         tree = _run("git", "mktree", input=f"100644 blob {blob}\tstate.json\n")
         commit = _run("git", "commit-tree", tree, "-m", "greenlane state")
         self.git("update-ref", STATE_REF, commit)
-        self.git("push", "-q", "-f", "origin", f"{commit}:{STATE_REF}")
+        # Compare-and-swap, not a blind force push: fail if origin moved since load_state_text()
+        # captured the lease. An empty lease means the ref must not exist yet (first tick).
+        # A rejected save raises; the tick dies visibly and the next dispatch re-reads and
+        # re-derives everything. Losing a tick is cheap; silently dropping a green batch (the
+        # b2953/b2954 stranding) is not.
+        self.git(
+            "push",
+            "-q",
+            f"--force-with-lease={STATE_REF}:{self._state_lease}",
+            "origin",
+            f"{commit}:{STATE_REF}",
+        )
 
     # -- Backend protocol ----------------------------------------------------------------------
     def now(self) -> float:
@@ -308,6 +333,15 @@ class GitHubBackend:
     def rebase(self, head: str, onto: str) -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         mb = self.git("merge-base", onto, head)
+        new = [
+            line.split()[1]
+            for line in self.git("cherry", onto, head, mb).splitlines()
+            if line.startswith("+")
+        ]
+        print(
+            f"DEBUG rebase({head[:8]}, {onto[:8]}): mb={mb[:8]} new={new[:2]}",
+            flush=True,
+        )
         wt = tempfile.mkdtemp(prefix="greenlane-")
         try:
             self.git("worktree", "add", "-q", "--detach", wt, onto)
@@ -424,7 +458,42 @@ class GitHubBackend:
     QUEUE_DELETE_CHUNK = 200
 
     def push_candidate(self, batch_id: str, tip: str) -> None:
-        self.git("push", "-q", "-f", "origin", f"{tip}:refs/heads/queue/{batch_id}")
+        # A force-push that leaves the ref at the sha it already had still emits a push
+        # event, with before == after -- and a content-identical rebase (main moved, the
+        # candidate rebased to the same tree under a new sha) is the same zero-delta
+        # push under a new sha. The verifier grades the push as `git diff <before>...HEAD`,
+        # sees an empty diff and refuses ("BLIND verifier: empty diff"), reding the
+        # required portal-app and ci contexts -- the green batch requeues, the next
+        # formation re-pushes the same content, forever. Measured 2026-10-17:
+        # queue/b2991 16:55Z before == HEAD == 08455b9b7; queue/b2993 17:11Z
+        # before=4e24a6cfd, tip moved to cd172ce55, portal-app+ci red on the empty-diff
+        # guard while every required check on the content was green. Skip when origin
+        # already sits at the tip, or at a different sha with the same tree: the runs
+        # already on that content stay the ones that judge it.
+        want = f"refs/heads/queue/{batch_id}"
+        out = self.git("ls-remote", "-q", "origin", want)
+        at = out.split()[0] if out.strip() else ""
+        if at == tip:
+            return
+        if at:
+            try:
+                old_tree = self.git("rev-parse", f"{at}^{{tree}}").strip()
+                new_tree = self.git("rev-parse", f"{tip}^{{tree}}").strip()
+                if old_tree == new_tree:
+                    return
+            except Exception:
+                pass  # old sha not resolvable locally -- fall through and push
+            # New content on a ref that already exists: the push event carries
+            # before=<old candidate>, and the verifier grades
+            # `git diff <before>...HEAD` -- the delta between two queue
+            # candidates, which is not the change main would take. Measured on
+            # queue/b2999 (2026-10-17 17:47Z: before=61929e54, tip e825e4ab, the
+            # gauntlet graded old-candidate...new-candidate and refused a diff
+            # that VERIFIES clean against main locally). Delete the ref first:
+            # the create-push then has before=zeros and the verifier grades
+            # origin/main...HEAD, the same grade a fresh branch would get.
+            self.git("push", "-q", "origin", f":{want}", check=False)
+        self.git("push", "-q", "-f", "origin", f"{tip}:{want}")
         # Nothing deleted a finished candidate (2026-10-09, #5603): 1,680 queue/* refs, all under
         # the branch archive's 14 days. The engine holds one batch at a time, so once this one is
         # pushed every other queue ref is finished -- a landed batch is on main, a red one's work
@@ -509,6 +578,25 @@ class GitHubBackend:
         ]
         return f"no live claim: {'; '.join(fails)}" if p.returncode and fails else ""
 
+    def work_age(self, sha: str) -> Optional[float]:
+        """Minutes since `sha` was authored (git author date), or None if unreadable."""
+        if self._work_age_cache is None:
+            self._work_age_cache = {}
+            try:
+                out = self.git(
+                    "for-each-ref",
+                    "--format=%(objectname) %(authordate:unix)",
+                    "refs/remotes/origin/lane/",
+                    check=True,
+                )
+                now = time.time() / 60.0
+                for line in out.splitlines():
+                    obj, ts = line.split()
+                    self._work_age_cache[obj] = now - float(ts) / 60.0
+            except OSError:
+                pass  # fetch failed; cache stays empty
+        return self._work_age_cache.get(sha)
+
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         try:
             self._land(members, tip)
@@ -530,6 +618,20 @@ class GitHubBackend:
                     check=False,
                 )
             raise
+
+    def _await_green(self, sha: str, deadline: float) -> None:
+        """Block until every required check on sha is green; raise red or slow on anything else."""
+        while True:
+            verdict, why = self.checks(sha)
+            if verdict == "green":
+                return
+            if verdict == "red":
+                raise RuntimeError(f"land: {sha[:12]} went red after the push: {why}")
+            if time.time() > deadline:
+                raise RuntimeError(
+                    f"land: {sha[:12]} still {why} {self.LAND_WAIT_S}s after the push"
+                )
+            time.sleep(self.LAND_POLL_S)
 
     def _land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
@@ -612,19 +714,7 @@ class GitHubBackend:
         time.sleep(self.LAND_SETTLE_S)
         deadline = time.time() + self.LAND_WAIT_S
         for _lane, _head, rebased, _pr in resolved:
-            while True:
-                verdict, why = self.checks(rebased)
-                if verdict == "green":
-                    break
-                if verdict == "red":
-                    raise RuntimeError(
-                        f"land: {rebased[:12]} went red after the push: {why}"
-                    )
-                if time.time() > deadline:
-                    raise RuntimeError(
-                        f"land: {rebased[:12]} still {why} {self.LAND_WAIT_S}s after the push"
-                    )
-                time.sleep(self.LAND_POLL_S)
+            self._await_green(rebased, deadline)
         for lane, _head, rebased, pr in resolved:
             if not pr:
                 pr = self._pr_for(lane)
@@ -632,34 +722,91 @@ class GitHubBackend:
                 raise RuntimeError(
                     f"land: no pull request for {lane}; cannot move main"
                 )
+            # Re-fetch the PR to get its current head. The lane branch may have been updated
+            # since the batch was formed (_start_batch pushes b.tip to the lane branch), so
+            # the PR's head might differ from the `rebased` SHA we pushed. Use the current head
+            # to avoid "Head branch was updated" refusals from gh pr merge.
+            current_pr = self.gh(f"pulls/{pr['number']}") or {}
+            current_head = current_pr.get("head", {}).get("sha", "")
+            merge_sha = current_head if current_head else rebased
+            # THE HEAD WE MERGE IS THE HEAD WE PROVE (2026-10-17). current_head can differ
+            # from rebased (the batch or a refresh moved the lane branch after the wait
+            # above), and the ruleset evaluates the PR head: a merge that pins a sha whose
+            # checks were never awaited answers 405 "greenlane is pending" no matter how
+            # long we retry. Measured on b2961..b2964: two lands of PR #6375 refused this
+            # way, both after checks(rebased) had gone green.
+            if merge_sha != rebased:
+                self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
             # THE GREENLANE VOUCHES FOR THE SHA IT MERGES (2026-10-10). `greenlane` is a required
             # check on main (ruleset.idp.required-checks.json), pinned to the Actions app, and
             # this is the only place it is ever written as success -- so a pull request raised
             # and merged by hand, which on 2026-10-10 was #5695, #5680, #5672, #5663 and #5646,
             # can no longer reach main without the engine having proven it. Not swallowed like
             # report(): without the vouch the merge below is refused, so say why here instead.
-            self._status(
-                rebased,
-                {
-                    "state": "success",
-                    "context": "greenlane",
-                    "description": f"proven on candidate {tip[:12]}",
-                    **({"target_url": self.run_url} if self.run_url else {}),
-                },
+            # THE VOUCH MUST BE A CHECK-RUN ON THE SHA THE MERGE EVALUATES (2026-10-17).
+            # The ruleset's required `greenlane` is a check-run (integration 15368): a commit
+            # status is invisible to it, and the ruleset evaluates the PR HEAD -- which is
+            # merge_sha, not rebased. Measured on PR #6402 (b2977): vouch posted as a status
+            # on rebased, merge pinned at merge_sha, refused with "Repository rule
+            # violations found: Required status check greenlane is ...". PATCH the check-run
+            # the lane push itself created (the workflow fires on the lane-branch push of
+            # merge_sha, so the run exists and is in_progress) to completed/success on the
+            # sha actually merged. The check-run creation fallback in _update_check_run
+            # covers a head the workflow has not reached yet.
+            self._update_check_run(
+                merge_sha,
+                "success",
+                "success",
+                f"proven on candidate {tip[:12]}",
             )
-            subject = self.git("log", "-1", "--format=%s", rebased)
+            subject = self.git("log", "-1", "--format=%s", merge_sha)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
-                    self.gh(
+                    result = self.gh(
                         f"pulls/{pr['number']}/merge",
                         "PUT",
                         {
                             "merge_method": "squash",
-                            "sha": rebased,
+                            "sha": merge_sha,
                             "commit_title": f"{subject} (#{pr['number']})",
                         },
                     )
-                    break
+                    # gh returns a dict even on error (HTTP 4xx). Check for merge failure.
+                    merge_error = (
+                        result.get("message", "") if isinstance(result, dict) else ""
+                    )
+                    if not merge_error:
+                        break  # merge succeeded
+                    # GitHub refused: "Head branch was updated" or "PR not mergeable".
+                    # Retry "Head branch was updated" with a fresh PR head.
+                    if "Head branch was updated" in merge_error:
+                        fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
+                        fresh_head = fresh_pr.get("head", {}).get("sha", "")
+                        if fresh_head and fresh_head != merge_sha:
+                            merge_sha = fresh_head
+                            subject = self.git("log", "-1", "--format=%s", merge_sha)
+                            self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                            continue  # retry with the new, proven merge_sha
+                    # HTTP 405 "PR not mergeable": retry with backoff, but re-prove the
+                    # head first -- a 405 naming a pending check on a head we have not
+                    # awaited only clears once that head's checks do. And the re-prove is a
+                    # FULL await (2026-10-17, PR #6402 b2987): right after the lane push the
+                    # synchronize's new runs have not registered yet, so checks() still sees
+                    # the PREVIOUS push's completed runs and answers green instantly; the
+                    # merge then races the fresh runs with 4 x 20s of retries against their
+                    # ~3-4 min runtime and loses. Measured: refused at 16:43, all required
+                    # checks success on the same sha by 16:47. Await again, budget and all.
+                    if "HTTP 405" not in merge_error or (
+                        attempt == self.LAND_MERGE_TRIES - 1
+                    ):
+                        raise RuntimeError(merge_error)
+                    fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
+                    fresh_head = fresh_pr.get("head", {}).get("sha", "")
+                    if fresh_head and fresh_head != merge_sha:
+                        merge_sha = fresh_head
+                        subject = self.git("log", "-1", "--format=%s", merge_sha)
+                    self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                    continue
                 except RuntimeError as e:
                     if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
                         raise
@@ -725,6 +872,111 @@ class GitHubBackend:
             )
         else:
             self.gh(f"statuses/{sha}", "POST", fields)
+
+    def _update_check_run(
+        self, sha: str, status: str, conclusion: str, reason: str
+    ) -> None:
+        """Update (or create) a check run named 'greenlane' on sha to completed/conclusion.
+
+        The greenlane.yml workflow creates a check run named 'greenlane' when it fires on a lane
+        push. The check run stays in_progress while the workflow runs. When CI passes and the
+        engine is ready to merge, the check run must be marked completed before GitHub allows the
+        merge.
+        """
+        state_map = {
+            "success": "completed",
+            "failure": "completed",
+            "pending": "in_progress",
+        }
+        check_run_state = state_map.get(status, "in_progress")
+        # Find the latest greenlane check run for this sha
+        runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
+        check_run = None
+        for r in runs.get("check_runs", []):
+            if r.get("name") == "greenlane":
+                if check_run is None or (r.get("id", 0) > check_run.get("id", 0)):
+                    check_run = r
+        if check_run is None:
+            # No check run found; nothing to update. Post a status as fallback.
+            self._status(
+                sha,
+                {
+                    "state": status,
+                    "context": "greenlane",
+                    "description": (reason or status)[:140],
+                },
+            )
+            return
+        cr_id = check_run["id"]
+        payload = {
+            "status": check_run_state,
+            "conclusion": conclusion if check_run_state == "completed" else None,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+            if check_run_state == "completed"
+            else None,
+            "output": {
+                "title": "greenlane",
+                "summary": (reason or status)[:140],
+            },
+        }
+        try:
+            self.gh(f"check-runs/{cr_id}", "PATCH", payload)
+        except RuntimeError as e:
+            print(
+                f"WARN    greenlane  check-run update failed for {sha}: {e}",
+                file=sys.stderr,
+            )
+
+    def report_check_run_completed(self, sha: str, status: str, reason: str) -> None:
+        """Mark the greenlane check run on sha as completed.
+
+        Called just before land() to mark the check run done. GitHub evaluates required checks
+        on the batch tip (the commit main is fast-forwarded to). The lane head's check run
+        (from ci.yml) is not visible there. We must create or update a check run on the
+        batch tip so GitHub sees the required check satisfied.
+
+        The workflow now has checks:write permission, and GH_TOKEN is the App token which
+        has check-run write permission.
+        """
+        conclusion = {
+            TESTING: None,
+            LANDED: "success",
+            RED: "failure",
+            CONFLICT: "failure",
+        }.get(status, "pending")
+        # First: try to find and update an existing check run
+        self._update_check_run(sha, status, conclusion, reason)
+        # If no existing check run was found, create one on sha (the batch tip)
+        # This happens when greenlane.yml does not create a check run on the batch tip
+        # (it only fires on lane/ branches, not queue/ branches).
+        runs = self.gh(f"commits/{sha}/check-runs?per_page=100") or {}
+        existing = any(r.get("name") == "greenlane" for r in runs.get("check_runs", []))
+        if existing:
+            return  # Updated successfully in _update_check_run above
+        # No existing check run: create one
+        check_run_state = "completed" if conclusion else "in_progress"
+        payload = {
+            "name": "greenlane",
+            "head_sha": sha,
+            "status": check_run_state,
+            "conclusion": conclusion,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+            if check_run_state == "completed"
+            else None,
+            "output": {
+                "title": "greenlane",
+                "summary": (reason or status)[:140],
+            },
+        }
+        if self.run_url:
+            payload["output"]["text"] = f"{self.run_url}\n{(reason or status)[:140]}"
+        try:
+            self.gh("check-runs", "POST", payload)
+        except RuntimeError as e:
+            print(
+                f"WARN    greenlane  check-run create failed for {sha}: {e}",
+                file=sys.stderr,
+            )
 
     def report(self, lane: str, head: str, status: str, reason: str) -> None:
         state = {
