@@ -36,7 +36,9 @@ permissions:
   checks: write
   id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # Separate groups for schedule vs push vs workflow_dispatch so they don't cancel each other.
+  # Schedule runs (cron) use old main code and must not cancel lane push runs (which use lane code).
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 jobs:
   greenlane:
