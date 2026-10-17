@@ -670,26 +670,27 @@ class GitHubBackend:
                     merge_error = (
                         result.get("message", "") if isinstance(result, dict) else ""
                     )
-                    if merge_error:
-                        # GitHub refused: "Head branch was updated" or "PR not mergeable".
-                        # Retry "Head branch was updated" with a fresh PR head.
-                        if "Head branch was updated" in merge_error:
-                            fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
-                            fresh_head = fresh_pr.get("head", {}).get("sha", "")
-                            if fresh_head and fresh_head != merge_sha:
-                                merge_sha = fresh_head
-                                subject = self.git(
-                                    "log", "-1", "--format=%s", merge_sha
-                                )
-                                continue  # retry with the new merge_sha
-                        # HTTP 405 "PR not mergeable": retry with backoff
-                        if "HTTP 405" not in merge_error or (
-                            attempt == self.LAND_MERGE_TRIES - 1
-                        ):
-                            raise RuntimeError(merge_error)
-                        time.sleep(self.LAND_RETRY_S)
-                        continue
-                    break
+                    if not merge_error:
+                        break  # merge succeeded
+                    # GitHub refused: "Head branch was updated" or "PR not mergeable".
+                    # Retry "Head branch was updated" with a fresh PR head.
+                    if "Head branch was updated" in merge_error:
+                        fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
+                        fresh_head = fresh_pr.get("head", {}).get("sha", "")
+                        if fresh_head and fresh_head != merge_sha:
+                            merge_sha = fresh_head
+                            subject = self.git("log", "-1", "--format=%s", merge_sha)
+                            continue  # retry with the new merge_sha
+                    # HTTP 405 "PR not mergeable": retry with backoff
+                    if "HTTP 405" not in merge_error or (
+                        attempt == self.LAND_MERGE_TRIES - 1
+                    ):
+                        raise RuntimeError(merge_error)
+                    time.sleep(self.LAND_RETRY_S)
+                except RuntimeError as e:
+                    if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
+                        raise
+                    time.sleep(self.LAND_RETRY_S)
         for lane, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
         # MAIN MOVED THROUGH THE API, SO origin/main IS STALE (2026-10-13). main() reads the
