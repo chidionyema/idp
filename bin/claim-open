@@ -171,13 +171,19 @@ def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
     ap.add_argument("--title", help="open (or reuse) an issue with this title")
-    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", "otto"))
+    ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""),
+                    help="claiming agent; default: $ESTATE_AGENT, else refuse")
     ap.add_argument("--base", default="origin/main", help="the range the claim covers")
     ap.add_argument("--check-only", action="store_true",
                     help="write nothing; only run claim-gate over this range")
     a = ap.parse_args()
     if not a.issue and not a.title:
         ap.error("one of --issue or --title is required")
+    # Fail closed on identity (#6407): the old default was the literal string
+    # "otto", so every agent that skipped --agent/ESTATE_AGENT claimed as otto
+    # and claim-gate could not tell agents apart. No default is honest — refuse.
+    if not a.agent:
+        sys.exit("FAIL    claim-open  no agent identity: pass --agent <name> or set ESTATE_AGENT")
 
     if not os.path.exists(GATE):
         sys.exit(f"FAIL    claim-open  no bin/claim-gate at {GATE}: cannot prove the claim here")
