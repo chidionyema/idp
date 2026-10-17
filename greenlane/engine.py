@@ -609,8 +609,10 @@ class Engine:
         for lane in list(self.s.lanes.values()):
             # Only refresh lanes that have been judged at least once (judged_on is a real sha).
             # A lane with no judged_on has never been through a batch and has no "old main"
-            # to be stale against.
-            if not lane.judged_on or lane.judged_on == base:
+            # to be stale against. Also refresh CONFLICT lanes so they can be retried.
+            if not lane.judged_on or (
+                lane.judged_on == base and lane.status != CONFLICT
+            ):
                 continue
             # Stale: was judged against a different main tip. Try to rebase onto current main.
             # If that succeeds, the lane now tests cleanly against main.
@@ -651,20 +653,28 @@ class Engine:
                     break
                 if not self._held(l, base):
                     names.append(l.name)
-        # 2026-10-16: also include CONFLICT lanes whose base matches the current main.
+        # 2026-10-16: also include CONFLICT lanes that can rebase cleanly.
         # A lane goes CONFLICT when a concurrent lane lands and moves main forward while
         # this lane was trying to land (pre-mark fix prevents this). Without this, a CONFLICT
         # lane is stuck forever -- only PENDING lanes are admitted to a batch. A CONFLICT lane
-        # whose base is the current main can rebase cleanly and should be retried.
-        extra = [
-            n
-            for n, lane in self.s.lanes.items()
-            if lane.status == CONFLICT and self.b.rebase(lane.head, base) is not None
-        ]
+        # that can rebase cleanly should be retried. Exclude held lanes (no live claim).
+        extra: list[str] = []
+        for n, lane in self.s.lanes.items():
+            if lane.status != CONFLICT:
+                continue
+            rb = self.b.rebase(lane.head, base)
+            held = self._held(lane, base)
+            if rb is not None and not held:
+                extra.append(n)
+            else:
+                self.log.append(
+                    f"DEBUG extra: {n} rebase={'ok' if rb else 'None'} held={held}"
+                )
         names = [
             n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
         ] + extra
         if not names:
+            self.log.append(f"DEBUG _start_batch: no batch, extra={extra}")
             return
         tip, members = base, []
         for n in names:
