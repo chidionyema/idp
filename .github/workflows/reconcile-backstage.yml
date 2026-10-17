@@ -9,13 +9,6 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: platform/oci
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-python@5fda3b95a4ea91299e34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.12"
       - name: OCI session token
         uses: gtrevorrow/oci-token-exchange-action@e8b0200e63131e48bc425ea4abf99135201b1e40 # v2
         with:
@@ -23,13 +16,17 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: install Flux and deps
+      - name: install Flux CLI
         run: |
-          pip install -q fluxcd
-          command -v flux >/dev/null || { \
-            curl -LO https://github.com/fluxcd/flux2/releases/latest/download/flux-linux-arm64.tar.gz && \
-            mkdir -p ~/bin && tar -xzf flux-linux-arm64.tar.gz -C ~/bin && chmod +x ~/bin/flux && \
-            echo "~/bin:$PATH" >> "$GITHUB_PATH"; }
+          set -euo pipefail
+          mkdir -p ~/bin
+          curl -fsSL https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz \
+            -o /tmp/flux.tar.gz
+          tar -xzf /tmp/flux.tar.gz -C ~/bin
+          chmod +x ~/bin/flux
+          rm /tmp/flux.tar.gz
+          flux --version
+          echo "$HOME/bin:$PATH" >> "$GITHUB_PATH"
       - name: reconcile backstage (ExternalSecret refresh)
         run: |
           set -euo pipefail
@@ -39,8 +36,8 @@ jobs:
             --lifecycle-state ACTIVE \
             --query "data[?contains(name,'estate')].id | [0]" \
             --raw-output)
-          [ -n "$CID" ] || { echo "no active estate cluster found"; exit 1; }
-          echo "cluster: $CID"
+          [ -n "$CID" ] || { echo "error: no active estate cluster found"; exit 1; }
+          echo "cluster_id: $CID"
           # Create kubeconfig
           mkdir -p ~/.kube
           oci ce cluster create-kubeconfig \
@@ -51,6 +48,7 @@ jobs:
             --token-version 2.0.0 \
             --kube-endpoint PUBLIC_ENDPOINT
           chmod 600 ~/.kube/config
-          # Flux reconcile with source (refreshes ExternalSecret from vault)
+          kubectl version --client
+          # Force Flux to reconcile the backstage kustomization
           flux reconcile kustomization backstage -n flux-system --with-source --timeout 5m
-          echo "Flux reconciled backstage"
+          echo "done: Flux reconciled backstage"
