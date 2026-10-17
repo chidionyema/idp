@@ -630,7 +630,8 @@ class Engine:
             old = lane.head
             lane.head = effective
             lane.judged_on = base
-            self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
+            if hasattr(self.b, "push_head"):
+                self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
             self.log.append(
                 f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
                 f"{effective[:7]} (main moved; was {base[:7]}, now {base[:7]})"
@@ -656,7 +657,9 @@ class Engine:
                 if len(names) == self.batch_size:
                     break
                 held_reason = self._held_reason(l, base)
-                is_held = held_reason is not None
+                is_held = bool(
+                    held_reason
+                )  # "" from unclaimed() means a live claim, not held
                 self.log.append(
                     f"DEBUG pend: {l.name} seq={l.seq} held={is_held} "
                     f"reason={held_reason[:40] if held_reason else ''}"
