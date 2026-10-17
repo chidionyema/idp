@@ -25,7 +25,7 @@ jobs:
           tar -xzf /tmp/flux.tar.gz -C ~/bin
           chmod +x ~/bin/flux
           rm /tmp/flux.tar.gz
-          flux --version
+          "$HOME/bin/flux" --version
           echo "$HOME/bin:$PATH" >> "$GITHUB_PATH"
       - name: reconcile backstage (ExternalSecret refresh)
         run: |
