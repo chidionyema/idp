@@ -1,0 +1,79 @@
+name: web
+
+# Gates the Next.js site the way the estate gates everything else: the build is the
+# verdict, and the voice rules are part of it (they run inside `npm run build`).
+#
+# Deliberately pull_request-scoped. main is written by the greenlane, which replays
+# this workflow on top of current main before fast-forwarding, so a push: main
+# trigger here would only double-run the same checks.
+on:
+  pull_request:
+    paths:
+      - "web/**"
+      - ".github/workflows/web.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: web
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Voice rules
+        run: npm run voice
+
+      - name: Prove the voice gate can fail
+        run: npm run voice:self-test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Smoke test
+        run: npm run test:smoke
+
+  # Contact delivery is configured by name, never by value. This job fails the PR
+  # that adds the form to a deployment without a destination, instead of letting a
+  # lead disappear into a 503 nobody reads.
+  delivery-configured:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: CONTACT_WEBHOOK_URL is set for this repository
+        run: |
+          if [ -z "${CONTACT_WEBHOOK_URL}" ]; then
+            echo "::error::CONTACT_WEBHOOK_URL is not configured. The contact form will return 503 and refuse submissions."
+            exit 1
+          fi
+          echo "configured"
+        env:
+          CONTACT_WEBHOOK_URL: ${{ secrets.CONTACT_WEBHOOK_URL }}
