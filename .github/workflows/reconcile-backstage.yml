@@ -4,7 +4,7 @@ on:
 jobs:
   reconcile:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       id-token: write
       contents: read
@@ -65,5 +65,5 @@ jobs:
           chmod 600 ~/.kube/config
           kubectl version --client
           # Force Flux to reconcile the backstage kustomization
-          flux reconcile kustomization backstage -n flux-system --with-source --timeout 5m
+          flux reconcile kustomization backstage -n flux-system --with-source --timeout 10m
           echo "done: Flux reconciled backstage"
