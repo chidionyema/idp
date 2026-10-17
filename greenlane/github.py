@@ -657,7 +657,7 @@ class GitHubBackend:
             subject = self.git("log", "-1", "--format=%s", merge_sha)
             for attempt in range(self.LAND_MERGE_TRIES):
                 try:
-                    self.gh(
+                    result = self.gh(
                         f"pulls/{pr['number']}/merge",
                         "PUT",
                         {
@@ -666,23 +666,30 @@ class GitHubBackend:
                             "commit_title": f"{subject} (#{pr['number']})",
                         },
                     )
+                    # gh returns a dict even on error (HTTP 4xx). Check for merge failure.
+                    merge_error = (
+                        result.get("message", "") if isinstance(result, dict) else ""
+                    )
+                    if merge_error:
+                        # GitHub refused: "Head branch was updated" or "PR not mergeable".
+                        # Retry "Head branch was updated" with a fresh PR head.
+                        if "Head branch was updated" in merge_error:
+                            fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
+                            fresh_head = fresh_pr.get("head", {}).get("sha", "")
+                            if fresh_head and fresh_head != merge_sha:
+                                merge_sha = fresh_head
+                                subject = self.git(
+                                    "log", "-1", "--format=%s", merge_sha
+                                )
+                                continue  # retry with the new merge_sha
+                        # HTTP 405 "PR not mergeable": retry with backoff
+                        if "HTTP 405" not in merge_error or (
+                            attempt == self.LAND_MERGE_TRIES - 1
+                        ):
+                            raise RuntimeError(merge_error)
+                        time.sleep(self.LAND_RETRY_S)
+                        continue
                     break
-                except RuntimeError as e:
-                    # Retry on two specific GitHub API errors:
-                    # 1. HTTP 405: PR not mergeable yet (still computing mergeability)
-                    # 2. "Head branch was updated": PR head changed between fetch and merge call
-                    #    (another process pushed to the branch). Re-fetch the PR head and retry.
-                    if "Head branch was updated" in str(e):
-                        # PR head changed: re-fetch and retry with the current head
-                        fresh_pr = self.gh(f"pulls/{pr['number']}") or {}
-                        fresh_head = fresh_pr.get("head", {}).get("sha", "")
-                        if fresh_head and fresh_head != merge_sha:
-                            merge_sha = fresh_head
-                            subject = self.git("log", "-1", "--format=%s", merge_sha)
-                            continue  # retry with the new merge_sha
-                    if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
-                        raise
-                    time.sleep(self.LAND_RETRY_S)
         for lane, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
         # MAIN MOVED THROUGH THE API, SO origin/main IS STALE (2026-10-13). main() reads the
