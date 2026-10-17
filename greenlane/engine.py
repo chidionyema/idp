@@ -475,7 +475,7 @@ class Engine:
             # state save, a subsequent tick calls main() and finds main has moved. Without
             # pre-marking, the lane is still PENDING in state and is rejudged as CONFLICT.
             # With pre-marking, the lane is already LANDED and is skipped.
-            for name, head, _ in b.members:
+            for name, _head, _ in b.members:
                 self.s.lanes[name].status = LANDED
                 self.s.lanes[name].reason = f"landed in {b.id}"
                 self.s.landed += 1
@@ -491,7 +491,7 @@ class Engine:
                 # refused land is a red verdict on this batch: it counts against the retries.
                 # NOTE: the lane is already LANDED in state. Undo the pre-mark since land refused.
                 verdict, reason = "red", f"land refused: {e}"
-                for name, head, _ in b.members:
+                for name, _head, _ in b.members:
                     self.s.lanes[name].status = PENDING
                     self.s.lanes[
                         name

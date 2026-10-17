@@ -15,6 +15,7 @@ Exit codes:
   1  refused -- missing block, unparseable, or the run is not on this head
   2  the input could not be read at all (BLIND, never a pass)
 """
+
 from __future__ import annotations
 
 import json
@@ -39,7 +40,9 @@ PASS_PATTERNS = [
     # cucumber family summaries
     re.compile(r"\b\d+\s+scenarios?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
     re.compile(r"\b\d+\s+features?\b[^\n]{0,40}\b\d+\s+passed\b", re.I),
-    re.compile(r"\b\d+\s+failed\b", re.I) if False else re.compile(r"\b0\s+failed\b", re.I),
+    re.compile(r"\b\d+\s+failed\b", re.I)
+    if False
+    else re.compile(r"\b0\s+failed\b", re.I),
     # jest / vitest
     re.compile(r"Tests:\s*\d+\s+passed", re.I),
     re.compile(r"\b\d+\s+passed,\s*\d+\s+total\b", re.I),
@@ -61,7 +64,9 @@ PROSE_ONLY = re.compile(
 def extract_block(body: str) -> str | None:
     """The first BDD-PROOF ... END-BDD-PROOF block, or None."""
     m = re.search(
-        rf"{BEGIN}(.*?){END}", body, re.S | re.I,
+        rf"{BEGIN}(.*?){END}",
+        body,
+        re.S | re.I,
     )
     return m.group(1) if m else None
 
@@ -105,9 +110,10 @@ def live_pr() -> dict:
             ev = json.loads(Path(ev_path).read_text())
             pr_number = (ev.get("pull_request") or {}).get("number")
             if not pr_number:
-                head = ((ev.get("merge_group") or {}).get("head_ref") or "")
+                head = (ev.get("merge_group") or {}).get("head_ref") or ""
                 # refs/heads/gh-readonly-queue/main/pr-3702-abc123...
                 import re
+
                 m = re.search(r"/pr-(\d+)-", head)
                 if m:
                     pr_number = int(m.group(1))
@@ -116,21 +122,74 @@ def live_pr() -> dict:
 
     if pr_number:
         out = subprocess.run(
-            ["gh", "pr", "view", str(pr_number),
-             "--json", "number,title,body,headRefOid"],
-            cwd=root, capture_output=True, text=True, timeout=120,
+            [
+                "gh",
+                "pr",
+                "view",
+                str(pr_number),
+                "--json",
+                "number,title,body,headRefOid",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=120,
         )
         if out.returncode != 0:
-            raise RuntimeError(f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}")
+            raise RuntimeError(
+                f"gh could not view PR #{pr_number}: {out.stderr.strip()[:200]}"
+            )
         return json.loads(out.stdout)
 
+    # GITHUB_HEAD_REF is set by the pre-push hook for lane/* branches. Use it to find
+    # the correct PR for the branch being pushed, instead of the global newest PR.
+    head_ref = os.environ.get("GITHUB_HEAD_REF", "")
+    if head_ref:
+        out = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "list",
+                "--head",
+                head_ref,
+                "--state",
+                "all",
+                "--limit",
+                "1",
+                "--json",
+                "number,title,body,headRefOid",
+            ],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        if out.returncode == 0:
+            rows = json.loads(out.stdout or "[]")
+            if rows:
+                return rows[0]
+
     out = subprocess.run(
-        ["gh", "pr", "list", "--state", "all", "--limit", "1",
-         "--json", "number,title,body,headRefOid"],
-        cwd=root, capture_output=True, text=True, timeout=120,
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "all",
+            "--limit",
+            "1",
+            "--json",
+            "number,title,body,headRefOid",
+        ],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
     if out.returncode != 0:
-        raise RuntimeError(f"gh could not list pull requests: {out.stderr.strip()[:200]}")
+        raise RuntimeError(
+            f"gh could not list pull requests: {out.stderr.strip()[:200]}"
+        )
     rows = json.loads(out.stdout or "[]")
     if not rows:
         raise RuntimeError("no pull request exists on this repository to grade")
@@ -146,31 +205,46 @@ def _self_test() -> int:
     --live is passed with a real GHA event.
     """
     good = "BDD-PROOF\nhead: abc1234\n142 passed in 4.51s\nEND-BDD-PROOF"
-    bad_prose = "BDD-PROOF\nhead: abc1234\ni ran the tests and they passed\nEND-BDD-PROOF"
+    bad_prose = (
+        "BDD-PROOF\nhead: abc1234\ni ran the tests and they passed\nEND-BDD-PROOF"
+    )
     bad_none = "no proof block at all here"
     assert extract_block(good) is not None, "extractor missed a real block"
     assert extract_block(bad_none) is None, "extractor invented a block"
     assert head_from_block(extract_block(good)) == "abc1234", "head parser wrong"
-    assert looks_like_a_pass(extract_block(good)) is True, "counts pattern refused a real pass"
-    assert looks_like_a_pass(extract_block(bad_prose)) is False, "prose accepted as pass"
+    assert looks_like_a_pass(extract_block(good)) is True, (
+        "counts pattern refused a real pass"
+    )
+    assert looks_like_a_pass(extract_block(bad_prose)) is False, (
+        "prose accepted as pass"
+    )
     print("ok bdd-proof-gate --self-test: extractor + counts predicate both ways")
     return 0
 
 
 def main() -> int:
     if "--self-test" in sys.argv or "-h" in sys.argv or "--help" in sys.argv:
-        return _self_test() if "--self-test" in sys.argv else (print(__doc__ or "bdd-proof-gate") or 0)
+        return (
+            _self_test()
+            if "--self-test" in sys.argv
+            else (print(__doc__ or "bdd-proof-gate") or 0)
+        )
     if "--live" in sys.argv:
         try:
             pr = live_pr()
         except Exception as e:
-            print(f"bdd-proof-gate: BLIND, cannot read a pull request: {e}", file=sys.stderr)
+            print(
+                f"bdd-proof-gate: BLIND, cannot read a pull request: {e}",
+                file=sys.stderr,
+            )
             return 2
         body = pr.get("body") or ""
         if extract_block(body) is None:
             # Named, not silently green: the last PR carries no proof, and the rule says so.
-            print(f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
-                  file=sys.stderr)
+            print(
+                f"refused: PR #{pr.get('number')} carries no {BEGIN} ... {END} block",
+                file=sys.stderr,
+            )
             return 1
         print(f"ok: PR #{pr.get('number')} carries a {BEGIN} block")
         return 0
