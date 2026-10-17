@@ -651,9 +651,19 @@ class Engine:
                     break
                 if not self._held(l, base):
                     names.append(l.name)
+        # 2026-10-16: also include CONFLICT lanes whose base matches the current main.
+        # A lane goes CONFLICT when a concurrent lane lands and moves main forward while
+        # this lane was trying to land (pre-mark fix prevents this). Without this, a CONFLICT
+        # lane is stuck forever -- only PENDING lanes are admitted to a batch. A CONFLICT lane
+        # whose base is the current main can rebase cleanly and should be retried.
+        extra = [
+            n
+            for n, lane in self.s.lanes.items()
+            if lane.status == CONFLICT and self.b.rebase(lane.head, base) is not None
+        ]
         names = [
             n for n in names if n in self.s.lanes and self.s.lanes[n].status == PENDING
-        ]
+        ] + extra
         if not names:
             return
         tip, members = base, []
