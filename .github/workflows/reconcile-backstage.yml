@@ -16,10 +16,18 @@ jobs:
           domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
           oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
           oci_region: ${{ vars.OCI_REGION }}
-      - name: install Flux
+      - name: install Flux CLI
         run: |
-          curl -fsSL https://fluxcd.io/install.sh | sh
-          echo "$HOME/.fluxcd/bin:$PATH" >> "$GITHUB_PATH"
+          set -euo pipefail
+          mkdir -p ~/bin
+          # Download the Flux binary directly (v2.4.0)
+          curl -fsSL https://github.com/fluxcd/flux2/releases/download/v2.4.0/flux_2.4.0_linux_amd64.tar.gz \
+            -o /tmp/flux.tar.gz
+          tar -xzf /tmp/flux.tar.gz -C ~/bin
+          chmod +x ~/bin/flux
+          rm /tmp/flux.tar.gz
+          flux --version
+          echo "$HOME/bin:$PATH" >> "$GITHUB_PATH"
       - name: reconcile backstage (ExternalSecret refresh)
         run: |
           set -euo pipefail
@@ -29,8 +37,8 @@ jobs:
             --lifecycle-state ACTIVE \
             --query "data[?contains(name,'estate')].id | [0]" \
             --raw-output)
-          [ -n "$CID" ] || { echo "no active estate cluster found"; exit 1; }
-          echo "cluster: $CID"
+          [ -n "$CID" ] || { echo "error: no active estate cluster found"; exit 1; }
+          echo "cluster_id: $CID"
           # Create kubeconfig
           mkdir -p ~/.kube
           oci ce cluster create-kubeconfig \
@@ -41,6 +49,7 @@ jobs:
             --token-version 2.0.0 \
             --kube-endpoint PUBLIC_ENDPOINT
           chmod 600 ~/.kube/config
-          # Flux reconcile with source (refreshes ExternalSecret from vault)
+          kubectl version --client
+          # Force Flux to reconcile the backstage kustomization
           flux reconcile kustomization backstage -n flux-system --with-source --timeout 5m
-          echo "Flux reconciled backstage"
+          echo "done: Flux reconciled backstage"
