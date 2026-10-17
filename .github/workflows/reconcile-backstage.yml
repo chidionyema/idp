@@ -40,6 +40,7 @@ jobs:
           echo "$HOME/bin:$PATH" >> "$GITHUB_PATH"
       - name: reconcile backstage (ExternalSecret refresh)
         env:
+          OCI_CLI_AUTH: security_token   # every oci call uses the exchanged session token
           OCI_COMPARTMENT_OCID: ${{ vars.OCI_COMPARTMENT_OCID }}
           OCI_REGION: ${{ vars.OCI_REGION }}
         run: |
