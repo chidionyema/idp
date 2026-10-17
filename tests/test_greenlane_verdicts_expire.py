@@ -67,6 +67,12 @@ class Backend:
     def relane(self, pr):
         pass
 
+    def report_check_run_completed(self, sha, status, conclusion):
+        pass  # test backend: nothing to report to GitHub
+
+    def work_age(self, sha):
+        return None  # test backend: no git history, age unknown -> never retire
+
 
 def _settle(e, ticks=10):
     for _ in range(ticks):

@@ -362,22 +362,15 @@ class Engine:
                 pass
             else:
                 continue
-            # A CONFLICT lane that expired on a different main tip: refresh its effective head
-            # against the current main before moving to PENDING. If the rebase succeeds the lane
-            # tests cleanly against the current main; if it fails the conflict is genuine and
-            # the rejudge counter will catch it on the next main move.
-            effective = self.b.rebase(lane.head, main)
-            if effective and effective != lane.head:
-                lane.head = effective
-                # Push immediately: CI tests origin/<lane>, not the in-memory lane.head.
-                # Without this the lane is moved to PENDING with a refreshed head but the
-                # remote branch still carries the old commits, and CI fails.
-                if hasattr(self.b, "push_head"):
-                    self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
-                self.log.append(
-                    f"lane/{lane.name}: refreshed stale head {lane.head[:7]} -> "
-                    f"{effective[:7]} before retry"
-                )
+            # The head is NOT rewritten here. _start_batch rebases lane.head onto main when it
+            # builds the batch (rebase(head, base) is the first question it asks), so a refreshed
+            # head is not needed to test cleanly -- and rewriting it here made _observe_lanes see
+            # the lane's own refreshed head as "a new claim" on the next tick: a fresh PENDING
+            # lane, verdict gone, re-tested even though main had only moved red->red (measured
+            # on this suite: 3 extra candidates per main move while main stayed red).
+            # judged_on is stamped with the new main so the stale-refresh in _refresh_stale_lanes
+            # does not double-fire on a lane that is only now queued for its re-judge.
+            lane.judged_on = main
             lane.status, lane.reason, lane.attempts = PENDING, "main moved; retrying", 0
 
     @staticmethod
@@ -611,9 +604,17 @@ class Engine:
         by agents (new remote head, same lane name) or are stale against a newer main tip.
         """
         for lane in list(self.s.lanes.values()):
-            # Only refresh lanes that have been judged at least once (judged_on is a real sha).
-            # A lane with no judged_on has never been through a batch and has no "old main"
-            # to be stale against. Also refresh CONFLICT lanes so they can be retried.
+            # Only PENDING and CONFLICT lanes are refreshed: they are the statuses that will
+            # face a batch again. A RED lane keeps its verdict and its head -- rewriting the
+            # head made _observe_lanes read the rewrite as a new claim (fresh PENDING lane,
+            # verdict gone) on the next tick; when its verdict expires the expiry path re-opens
+            # it and _start_batch rebases the original head itself. A LANDED lane is the record
+            # of what landed -- rewriting it manufactured a phantom second landing (measured on
+            # this suite: main walked h1@m2 -> h1@h1@m2 within one tick of the first land).
+            # A TESTING lane is mid-batch; rewriting it corrupts the verdict the batch is about
+            # to deliver.
+            if lane.status not in (PENDING, CONFLICT):
+                continue
             if not lane.judged_on or (
                 lane.judged_on == base and lane.status != CONFLICT
             ):
@@ -656,13 +657,13 @@ class Engine:
             for l in pend:
                 if len(names) == self.batch_size:
                     break
-                held_reason = self._held_reason(l, base)
-                is_held = bool(
-                    held_reason
-                )  # "" from unclaimed() means a live claim, not held
+                # _held, not _held_reason: the held reason must be stamped on the lane and
+                # reported once (idp#5612), not merely excluded -- an earlier inline of
+                # _held_reason here kept the exclusion but lost the stamp and the report.
+                is_held = self._held(l, base)
                 self.log.append(
                     f"DEBUG pend: {l.name} seq={l.seq} held={is_held} "
-                    f"reason={held_reason[:40] if held_reason else ''}"
+                    f"reason={l.reason[:40] if is_held else ''}"
                 )
                 if not is_held:
                     names.append(l.name)
