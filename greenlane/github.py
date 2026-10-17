@@ -111,6 +111,7 @@ class GitHubBackend:
         self.status_token = status_token
         self.owner = repo.split("/")[0]
         self.refused: dict[str, str] = {}  # lane -> why it is not a lane this tick
+        self._work_age_cache: Optional[dict[str, float]] = None
 
     # -- plumbing ----------------------------------------------------------------------------
     def git(self, *args: str, check: bool = True) -> str:
@@ -308,6 +309,15 @@ class GitHubBackend:
     def rebase(self, head: str, onto: str) -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         mb = self.git("merge-base", onto, head)
+        new = [
+            line.split()[1]
+            for line in self.git("cherry", onto, head, mb).splitlines()
+            if line.startswith("+")
+        ]
+        print(
+            f"DEBUG rebase({head[:8]}, {onto[:8]}): mb={mb[:8]} new={new[:2]}",
+            flush=True,
+        )
         wt = tempfile.mkdtemp(prefix="greenlane-")
         try:
             self.git("worktree", "add", "-q", "--detach", wt, onto)
@@ -508,6 +518,25 @@ class GitHubBackend:
             if ln.startswith("FAIL  claim-gate  ")
         ]
         return f"no live claim: {'; '.join(fails)}" if p.returncode and fails else ""
+
+    def work_age(self, sha: str) -> Optional[float]:
+        """Minutes since `sha` was authored (git author date), or None if unreadable."""
+        if self._work_age_cache is None:
+            self._work_age_cache = {}
+            try:
+                out = self.git(
+                    "for-each-ref",
+                    "--format=%(objectname) %(authordate:unix)",
+                    "refs/remotes/origin/lane/",
+                    check=True,
+                )
+                now = time.time() / 60.0
+                for line in out.splitlines():
+                    obj, ts = line.split()
+                    self._work_age_cache[obj] = now - float(ts) / 60.0
+            except OSError:
+                pass  # fetch failed; cache stays empty
+        return self._work_age_cache.get(sha)
 
     def land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         try:
