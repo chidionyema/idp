@@ -52,11 +52,20 @@ jobs:
           # A push that creates a branch has no previous commit: before is forty zeros,
           # and "0000…...HEAD" is git exit 128 -- the red on every flux/image-updates
           # push. That push grades against main, like a PR from the same branch would.
+          # A re-pushed queue candidate's before is the queue ref's previous
+          # content -- another candidate, not the change main would take. Measured
+          # on queue/b2999..b3002 (2026-10-17): a stale-state re-push carries the
+          # old candidate in before, the gauntlet grades old-candidate...HEAD (or
+          # an empty diff when the tip is unchanged) and reds the required ci
+          # context, requeueing a batch that verifies clean against main. Queue
+          # pushes always grade against main, like a fresh branch would.
           before="${{ github.event.before }}"
           case "${{ github.event_name }}" in
             pull_request) base="origin/${{ github.base_ref }}" ;;
-            push)         base="$before"
-                          case "$before" in ''|*[!0]*) ;; *) base="origin/main" ;; esac ;;
+            push)         case "$GITHUB_REF" in refs/heads/queue/*) base="origin/main" ;;
+                          *) base="$before"
+                             case "$before" in ''|*[!0]*) ;; *) base="origin/main" ;; esac ;;
+                          esac ;;
             *)            base="origin/main" ;;
           esac
           diff_out=$(git diff "$base"...HEAD)
