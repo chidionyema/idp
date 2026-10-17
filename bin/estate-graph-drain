@@ -38,10 +38,23 @@ STAGE="$HOME/.estate/litellm-local"
 key="$(SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}" \
 	"$STAGE/sops" -d --extract '["LITELLM_API_KEY"]' "$STAGE/caller/LITELLM_LAPTOP_KEY.yaml" 2>/dev/null)"
 [ -n "$key" ] || { say "moved=$moved ingest=BLOCKED no local caller key"; exit 1; }
-out="$(cd "$ROOT" && GROWMOS_PROVIDER=openai GROWMOS_BASE_URL=http://127.0.0.1:4000/v1 \
-	GROWMOS_API_KEY="$key" GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
-	growmos --root "$ROOT" ingest --limit "$LIMIT" 2>&1)"
-rc=$?
+# Failure mode (2026-10-17, #6403): the groq lane times out or returns malformed JSON
+# in most runs (socket.timeout / JSONDecodeError); failed sources stay `pending`, so a
+# bounded retry of the same ingest pass recovers them. Attempts and backoff are env-tunable.
+ATTEMPTS="${ESTATE_GRAPH_INGEST_ATTEMPTS:-3}"
+BACKOFF_S="${ESTATE_GRAPH_RETRY_BACKOFF_S:-20}"
+rc=1
+attempt=1
+out=""
+while [ "$attempt" -le "$ATTEMPTS" ]; do
+	out="$(cd "$ROOT" && GROWMOS_PROVIDER=openai GROWMOS_BASE_URL=http://127.0.0.1:4000/v1 \
+		GROWMOS_API_KEY="$key" GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
+		growmos --root "$ROOT" ingest --limit "$LIMIT" 2>&1)"
+	rc=$?
+	[ "$rc" -eq 0 ] && break
+	[ "$attempt" -lt "$ATTEMPTS" ] && sleep "$BACKOFF_S"
+	attempt=$((attempt + 1))
+done
 entities=$(wc -l <"$ROOT/.growmos/entities.jsonl" | tr -d ' ')
 
 if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
@@ -49,4 +62,4 @@ if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
 		git -C "$ROOT" commit -q -m "graph-drain: $moved session(s) spooled by the router" &&
 		{ git -C "$ROOT" push -q origin HEAD 2>/dev/null || say "push failed (kept locally)"; }
 fi
-say "moved=$moved entities=$entities ingest_rc=$rc $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-300)"
+say "moved=$moved entities=$entities ingest_rc=$rc attempts=$attempt $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-300)"
