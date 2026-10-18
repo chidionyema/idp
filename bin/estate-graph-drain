@@ -11,7 +11,11 @@
 # chidionyema/estate-graph that ~/Documents/code/estate-graph points at). The result is committed
 # and pushed there. One line per run in ~/.estate/graph-drain.log.
 set -uo pipefail
-export PATH="$HOME/Library/Python/3.9/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+# ~/.local/bin first: the canonical growmos is the uv tool installed from the estate fork
+# (chidionyema/growmos). A stale pip copy sits in ~/Library/Python/3.9/bin; without this
+# ordering launchd silently ran the pre-fork growmos (fixed 180s ceiling, no retries on
+# socket.timeout) while manual shells tested the fork.
+export PATH="$HOME/.local/bin:$HOME/Library/Python/3.9/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 ROOT="${ESTATE_GRAPH_ROOT:-$HOME/.estate/graph/estate-graph}"
 SPOOL="${ESTATE_GRAPH_SPOOL:-$HOME/.estate/graph-spool}"
 IDLE_MIN="${ESTATE_GRAPH_IDLE_MIN:-10}"
@@ -22,6 +26,14 @@ say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
 
 [ -d "$ROOT/.growmos" ] || { say "BLIND no graph at $ROOT"; exit 1; }
 mkdir -p "$SPOOL" "$ROOT/sessions"
+
+# Single instance: launchd fires every 600s and a 420s call ceiling (GROWMOS_CALL_TIMEOUT)
+# makes runs routinely outlive that. shlock rejects a lock whose pid is dead, so a killed
+# run never wedges the next one.
+if ! shlock -p $$ -f "$HOME/.estate/graph-drain.lock" 2>/dev/null; then
+	say "skipped: another drain holds the lock"
+	exit 0
+fi
 
 moved=0
 agents=""
