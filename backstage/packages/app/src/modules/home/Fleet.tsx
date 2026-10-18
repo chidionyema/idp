@@ -40,6 +40,7 @@ import { GatesPanel } from './GatesPanel';
 import { openSse, type SseHandle } from './sse';
 import { EstateMap } from './EstateMap';
 import { EstateMemory } from './EstateMemory';
+import { EstateHarness } from './EstateHarness';
 import {
   attentionReason,
   capabilityLabel,
@@ -474,6 +475,9 @@ export function Fleet() {
       </Section>
       <Section title="Estate memory">
         <EstateMemory />
+      </Section>
+      <Section title="Active focus">
+        <EstateHarness />
       </Section>
       <Section title="Token efficiency (live)">
         <EfficiencyPanel />

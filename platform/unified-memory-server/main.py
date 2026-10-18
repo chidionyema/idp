@@ -1213,6 +1213,32 @@ async def harness_stats(
         )
         idempotency_entries = (await cur.fetchone())["count"] or 0
 
+        # Active Focus, live: the tickets the focus controller is actually sitting on --
+        # who (agent), what (tool on which target), until when. A count alone cannot show
+        # the founder a decision happening; these rows are the decisions.
+        await cur.execute(
+            """
+            SELECT ticket_id::text, agent_id, tool_name, target_resource,
+                   created_at, expires_at
+            FROM approval_tickets
+            WHERE tenant_id = %s AND status = 'pending' AND expires_at > NOW()
+            ORDER BY created_at
+            LIMIT 20
+            """,
+            (tenant_id,),
+        )
+        pending_ticket_details = [
+            {
+                "ticket_id": r["ticket_id"],
+                "agent": r["agent_id"],
+                "tool": r["tool_name"],
+                "target": r["target_resource"],
+                "created_at": r["created_at"].isoformat(),
+                "expires_at": r["expires_at"].isoformat(),
+            }
+            for r in await cur.fetchall()
+        ]
+
         # Per-agent attribution (claim #6228): every remember carries the writing agent in
         # provenance.agent (mcp/plugins/estate_memory.py stamps ESTATE_AGENT). Memories written
         # before the stamp, or by callers that set none, group under null -- rendered as
@@ -1249,6 +1275,7 @@ async def harness_stats(
         },
         "store": {
             "pending_approvals": pending_approvals,
+            "pending_ticket_details": pending_ticket_details,
             "active_runs": active_runs,
             "idempotency_entries": idempotency_entries,
             "memories_by_agent": memories_by_agent,
