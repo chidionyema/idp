@@ -209,6 +209,12 @@ def build_metadata(
         meta["tags"] = ",".join(clean_tags)
     if runtime.strip():
         meta["runtime"] = runtime.strip().lower()
+    # Per-agent attribution (claim #6228): `runtime` names the tool, `agent` names who was
+    # driving it. The estate's canonical identity env -- the same one claim-open reads --
+    # so any agent that can claim work can attribute its memories, with no new config.
+    agent = os.environ.get("ESTATE_AGENT", "").strip()
+    if agent:
+        meta["agent"] = agent
     return meta
 
 

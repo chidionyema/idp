@@ -80,8 +80,14 @@ done
 entities=$(wc -l <"$ROOT/.growmos/entities.jsonl" | tr -d ' ')
 
 if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
+	# Name the agents in the graph itself (claim #6228): journal text is what growmos extracts,
+	# so a drain that says only "the router" is why every actor node was the generic "agent".
+	if [ -n "$agents" ] && [ "$moved" -gt 0 ]; then
+		agents_csv=$(printf '%s\n' $agents | sort -u | tr '\n' ',' | sed 's/,$//')
+		(cd "$ROOT" && growmos journal "graph-drain moved $moved router-captured session(s); spooled by agents: $agents_csv" >/dev/null 2>&1 || true)
+	fi
 	git -C "$ROOT" add -A &&
-		git -C "$ROOT" commit -q -m "graph-drain: $moved session(s) spooled by the router" &&
+		git -C "$ROOT" commit -q -m "graph-drain: $moved session(s) from agents: ${agents_csv:-unknown}" &&
 		{ git -C "$ROOT" push -q origin HEAD 2>/dev/null || say "push failed (kept locally)"; }
 fi
 agent_list=""

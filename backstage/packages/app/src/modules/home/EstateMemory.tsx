@@ -51,19 +51,38 @@ export function EstateMemory() {
   if (error) return <Chip>memory unavailable: {error}</Chip>;
   const s = memory?.spool;
   const g = memory?.graph;
+  // Per-agent attribution (claim #6228): who the captures and the drain's learning are
+  // attributable to, straight from the agent= stamps -- 'unattributed' shown as-is so a
+  // router running pre-stamp code is visible, never smoothed over.
+  const byAgent = (a?: Record<string, number>) =>
+    a && Object.keys(a).length
+      ? Object.entries(a)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(' ')
+      : undefined;
+  const spoolAgents = byAgent(s?.exchanges_by_agent as Record<string, number> | undefined);
+  const drainPart = memory?.drain;
+  const drainAgents =
+    Array.isArray(drainPart?.agents) && drainPart.agents.length
+      ? ` from ${(drainPart.agents as string[]).join(', ')}`
+      : '';
   return (
     <div>
       <Row
         label="captured"
         part={s}
-        show={`${s?.exchanges_waiting} exchanges in ${s?.sessions_waiting} sessions waiting, last ${s?.last_capture_at ?? 'never'}`}
+        show={`${s?.exchanges_waiting} exchanges in ${s?.sessions_waiting} sessions waiting, last ${s?.last_capture_at ?? 'never'}${spoolAgents ? ` — ${spoolAgents}` : ''}`}
       />
       <Row
         label="graph"
         part={g}
         show={`${g?.entities} entities, ${g?.relations} relations, ${g?.sessions_ingested} sessions ingested, updated ${g?.updated_at}`}
       />
-      <Row label="drain" part={memory?.drain} show={String(memory?.drain?.last_run ?? '')} />
+      <Row
+        label="drain"
+        part={drainPart}
+        show={`${String(drainPart?.last_run ?? '')}${drainAgents}`}
+      />
     </div>
   );
 }

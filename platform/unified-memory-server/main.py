@@ -1213,6 +1213,24 @@ async def harness_stats(
         )
         idempotency_entries = (await cur.fetchone())["count"] or 0
 
+        # Per-agent attribution (claim #6228): every remember carries the writing agent in
+        # provenance.agent (mcp/plugins/estate_memory.py stamps ESTATE_AGENT). Memories written
+        # before the stamp, or by callers that set none, group under null -- rendered as
+        # "unattributed" so the road to full attribution stays measurable, not implied.
+        await cur.execute(
+            """
+            SELECT COALESCE(provenance->>'agent', '') AS agent, COUNT(*) AS count
+            FROM memories
+            WHERE tenant_id = %s AND status = 'active'
+            GROUP BY 1 ORDER BY 2 DESC
+            """,
+            (tenant_id,),
+        )
+        memories_by_agent = {
+            (row["agent"] or "unattributed"): row["count"]
+            for row in await cur.fetchall()
+        }
+
     return {
         "telemetry": {
             "prefetch_count": telemetry_snapshot.prefetch_count,
@@ -1233,6 +1251,7 @@ async def harness_stats(
             "pending_approvals": pending_approvals,
             "active_runs": active_runs,
             "idempotency_entries": idempotency_entries,
+            "memories_by_agent": memories_by_agent,
         },
         "tenant_id": tenant_id,
     }
