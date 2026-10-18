@@ -178,7 +178,21 @@ class Engine:
         self.log: list[str] = []
 
     # -- one tick: observe, judge, act; safe to run again at any moment ---------------------
-    def tick(self) -> State:
+    def tick(self, judge_only: bool = False) -> State:
+        if judge_only:
+            # The collecting half of the tick, in its own concurrency group (idp#6520).
+            # Measured 2026-10-18: candidates b3129/b3120/b2967 sat green on their shas for
+            # 3h40m, 4h45m and ~20h while the single `greenlane` slot churned ~90-second
+            # ticks -- the judge kept losing the slot it shares with batch formation. But
+            # collecting is read-only over the world and CAS-atomic over the state ref, so
+            # it can run whenever a check completion says a proof is done. A judge tick
+            # never observes, forms, retires, heartbeats or relanes: the 2026-10-17 defect
+            # (per-event groups letting two ticks race the batch formation, b3010..b3012
+            # re-forming on different shas) cannot happen here -- a judge tick forms nothing.
+            if self.s.batch is None:
+                return self.s
+            self._judge_batch()
+            return self.s
         for pr in self.b.foreign_prs():
             self.b.relane(pr)
             self.log.append(
