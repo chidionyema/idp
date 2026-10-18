@@ -6,4 +6,4 @@ args:
 halt_on_failure: true
 steps:
   - name: lanes
-    cmd: python3 ~/.estate/libexec/router-lane-health.py --minutes {{minutes}} --lane "{{lane}}"
+    cmd: l={{lane}}; python3 ~/.estate/libexec/router-lane-health.py --minutes {{minutes}} ${l:+--lane "$l"}

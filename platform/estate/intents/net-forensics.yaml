@@ -14,4 +14,4 @@ steps:
   - name: node-net-forensics
     timeout: 600
     cmd: >
-      bash ~/.estate/libexec/net-forensics.sh "{{node}}" "{{probe}}"
+      bash ~/.estate/libexec/net-forensics.sh "{{node}}" {{probe}}
