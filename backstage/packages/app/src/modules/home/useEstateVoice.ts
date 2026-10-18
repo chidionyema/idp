@@ -103,7 +103,40 @@ export const DEFAULT_VOICE = 'hannah';
 export const FALLBACK_KOKORO_VOICE = 'af_heart';
 
 /** How long a pod that failed to speak is left alone before a clause asks it again. */
-const POD_VOICE_REST_MS = 10 * 60 * 1000;
+// A failed clause used to rest the pod voice for ten minutes -- measured cost: one hiccup
+// (one timeout, one 502) and the founder got ten minutes of the device voice or silence. The
+// rest exists so the next clause does not wait out the same failure; a minute covers that and
+// returns the real voice promptly (2026-10-16, with the say bound below).
+export const POD_VOICE_REST_MS = 60 * 1000;
+// The client's half of the say bound: the server's lanes time out at 3.5s each, macOS fallback
+// ~1s, so a healthy answer is well inside 4s -- anything longer is a hung lane chain, and the
+// clause degrades to the device voice at once instead of hanging the answer's schedule.
+export const SAY_TIMEOUT_MS = 4000;
+
+/**
+ * fetch, bounded: rejects within timeoutMs even when nobody aborts (2026-10-16).
+ *
+ * The turn's abort signal alone never fires when the founder is simply waiting, so a hung
+ * /voice/say held each clause open for as long as the server felt like taking. The turn's abort
+ * still wins if the founder barges in mid-fetch.
+ */
+export async function fetchBounded(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  fetchImpl: (url: string, i: RequestInit) => Promise<Response>,
+): Promise<Response> {
+  const bound = new AbortController();
+  const onAbort = () => bound.abort();
+  init.signal?.addEventListener('abort', onAbort);
+  const timer = setTimeout(() => bound.abort(), timeoutMs);
+  try {
+    return await fetchImpl(url, { ...init, signal: bound.signal });
+  } finally {
+    clearTimeout(timer);
+    init.signal?.removeEventListener('abort', onAbort);
+  }
+}
 
 /** The FleetView backend, through the Backstage proxy. See the header: never a bare path. */
 const FLEETVIEW = 'plugin://proxy/fleetview';
@@ -349,6 +382,16 @@ export interface ClauseSink {
 let clauseSink: ClauseSink | null = null;
 export function setClauseSink(sink: ClauseSink | null): void {
   clauseSink = sink;
+}
+
+/**
+ * Who currently owns clause playback, for the other voice path. useVoiceRouter streams audio
+ * itself and must hand frames to the face when one is mounted (the mouth), but importing the
+ * whole useEstateVoice hook for that would mount a second microphone stack. A reader of the same
+ * module variable keeps one sink, one owner, and no duplicate hook.
+ */
+export function getClauseSink(): ClauseSink | null {
+  return clauseSink;
 }
 
 // Utterances still sounding, held so the browser cannot garbage-collect them mid-speech.
@@ -740,12 +783,17 @@ export function useEstateVoice(): EstateVoice {
       }
       if (Date.now() >= podVoiceRestsUntil.current) {
         try {
-          const res = await fetchApi.fetch(`${FLEETVIEW}/voice/say`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text }),
-            signal,
-          });
+          const res = await fetchBounded(
+            `${FLEETVIEW}/voice/say`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+              signal,
+            },
+            SAY_TIMEOUT_MS,
+            (u, i) => fetchApi.fetch(u, i),
+          );
           const buf = res.ok ? await res.arrayBuffer() : null;
           if (buf && buf.byteLength) return buf;
         } catch (e) {

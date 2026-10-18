@@ -678,7 +678,11 @@ async def _router_synthesise(
         )
         try:
             host, headers = _router()
-            async with httpx.AsyncClient(timeout=8) as c:
+            # 3.5s, not 8s (2026-10-16): two hung lanes at 8s each was every clause of a turn
+            # waiting ~16s for the macOS fallback -- the measured 20s first clause, 1.35s after
+            # the backoffs armed. A lane that has not answered in 3.5s is not about to; the
+            # founder's first audio must not wait behind a dead upstream.
+            async with httpx.AsyncClient(timeout=3.5) as c:
                 r = await c.post(
                     f"{host}/v1/audio/speech",
                     headers=headers,
@@ -873,6 +877,33 @@ async def _publish_without_waiting(session_id: str, **row: Any) -> dict[str, Any
         "published": None,
         "reason": f"the bus did not answer within {BUS_WAIT_S}s; the row is still being published and the reply did not wait",
     }
+
+
+async def warm_voice() -> None:
+    """Warm the voice at startup, so the first clause of the session is not the cold one.
+
+    Measured 2026-10-16 on the live face: a restart happened long before the founder spoke, and
+    the first /voice/say still paid ~20s -- the lazy `sovereign.voice` import, the resampler and
+    the first subprocess spawn all landing on the founder's first words. Warmed here they land on
+    nobody. No router lane is spent (those cost quota on the on_demand tier, 100 requests a day);
+    one free local `say` clause exercises the audio pipeline end to end, and the router lanes
+    stay cold only until their first real call, which the 3.5s lane timeout now bounds.
+    """
+    started = time.time()
+    try:
+        engine, _turnlog, _catalogue = _voice_package()  # noqa: F841 -- the import IS the warm
+    except Exception as exc:  # noqa: BLE001 -- a warm that cannot run must never block serve
+        print(
+            f"voice.warm import failed: {type(exc).__name__}: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, _macos_say, "ready", engine.TTS_SAMPLE_RATE, None)
+    print(
+        f"voice.warm seconds={time.time() - started:.2f}", file=sys.stderr, flush=True
+    )
 
 
 async def say(text: str) -> tuple[bytes | None, str | None]:
