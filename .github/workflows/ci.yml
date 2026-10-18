@@ -154,10 +154,20 @@ jobs:
     # suite was 54 s and the root pytest suite 57 s -- back to back on one runner. GitHub's own
     # matrix runs them as two jobs side by side, so the job's wall-clock is the slower suite plus
     # setup, not the sum. No script: the split is the platform's matrix, the steps are unchanged.
+    #
+    # 2026-10-14: the acceptance leg became the long pole the same way -- 4m31s on run 38543347597,
+    # 2m39s of it the suite on four xdist workers -- so it is three runners now (SB_BDD_SHARD,
+    # sovereign/tests/bdd/conftest.py): `render` takes the files that drive the Helm compiler and
+    # the Kyverno renderer, the slow ones, on the runner that compiles the estate; 1/2 and 2/2
+    # split everything else. tests/bdd/test_bdd_shards.py fails if a share is missing from here.
     strategy:
       fail-fast: false
       matrix:
-        suite: [acceptance, tests]
+        include:
+          - { suite: acceptance, shard: render }
+          - { suite: acceptance, shard: 1/2 }
+          - { suite: acceptance, shard: 2/2 }
+          - { suite: tests, shard: all }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # crew#539, 2026-08-28: bin/idp-kyverno-render judges renders against this estate's
@@ -200,19 +210,29 @@ jobs:
           cache-dependency-path: sovereign/requirements*.txt
       - name: tools
         run: |
-          pip install -q -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
+          # uv, not pip, since 2026-10-14: this step was 47 s of every leg, and it resolves the
+          # same pins twice (here and in sovereign/.venv below). uv is installed to a directory of
+          # its own, NOT on PATH: bin/sb takes a different branch (`uv venv --python 3.10`) when
+          # it finds uv, and the venv the suite runs in must stay the one bin/sb builds without it.
+          python -m pip install -q --target "$RUNNER_TEMP/uv" uv==0.10.2
+          uv="$RUNNER_TEMP/uv/bin/uv"
+          "$uv" pip install -q --system -r sovereign/requirements.txt -r sovereign/requirements-dev.txt
           # crew#832 CP3: tests/test_warden_job.py::TestSchedulerRow reloads
           # scheduler/estate_scheduler/definitions.py, which imports the real dagster package
           # (DagsterRunStatus et al.) -- offline-gate installs dagster for its own leg, but this
           # job's tests leg never did, so the import fell through to the empty PEP 420 namespace
           # package platform/dagster/ (a directory with no .py files) or ModuleNotFoundError,
           # never the real thing. dagster-webserver is not needed here, only the core package.
-          pip install -q dagster
+          "$uv" pip install -q --system dagster
           # bin/sb builds sovereign/.venv on first use and skips the install when the directory
           # already exists. Under `pytest -n auto` several xdist workers reach that check at the
           # same moment: the first creates the venv, the others see it and exec straight into a
           # python whose pip install is still running, so `import temporalio` fails. Building it
-          # once here, serially, is the fix -- the workers then all find a complete venv.
+          # once here, serially, is the fix -- the workers then all find a complete venv. It is
+          # built the way bin/sb's no-uv branch builds it (`python -m venv`, then
+          # requirements.txt), with uv doing the install.
+          python -m venv sovereign/.venv
+          "$uv" pip install -q --python sovereign/.venv/bin/python -r sovereign/requirements.txt
           bin/sb --help >/dev/null 2>&1 || true
       - uses: ./.github/actions/estate-tools
       # 2026-09-12: compile the estate's Helm releases from git and grade the numbers they render.
@@ -226,7 +246,7 @@ jobs:
       # helm is installed here because the manifests are what is under test, not the operator's
       # machine: a runner that has never run `helm repo add` must still produce the same document.
       - name: helm (the compiler renders every chart from git)
-        if: matrix.suite == 'acceptance'
+        if: matrix.suite == 'acceptance'   # every shard: a scenario may call helm itself
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
           # 4.x, not 3.x. The langfuse chart calls `fromToml`, which 3.16 does not have, so a
@@ -235,7 +255,7 @@ jobs:
           # the silent disagreement this gate exists to remove. The pin moves with the charts.
           version: v4.2.4
       - name: compile the estate's Helm releases (a comment is not a value)
-        if: matrix.suite == 'acceptance'
+        if: matrix.shard == 'render'
         run: |
           set -uo pipefail
           bin/idp-compile-helm --out "$RUNNER_TEMP/compiled-helm.json"
@@ -247,7 +267,7 @@ jobs:
           if [ "$rc" != 0 ]; then echo "FAIL compiled-helm: a release did not render; see above"; exit 1; fi
           echo "ok    compiled-helm $(jq -r '.summary.rendered' "$RUNNER_TEMP/compiled-helm.json") release(s), $(jq -r '.summary.objects' "$RUNNER_TEMP/compiled-helm.json") object(s)" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: upload the compiled estate (the Ops page reads it)
-        if: matrix.suite == 'acceptance'
+        if: matrix.shard == 'render'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v5.0.1
         with:
           name: compiled-helm
@@ -256,6 +276,10 @@ jobs:
       - name: acceptance suite (strict on PRs to main)
         if: matrix.suite == 'acceptance'
         env:
+          # This runner's share of the suite (sovereign/tests/bdd/conftest.py, SB_BDD_SHARD), and
+          # on the render shard the estate the step above compiled from this same checkout.
+          SB_BDD_SHARD: ${{ matrix.shard }}
+          IDP_COMPILED_HELM: ${{ runner.temp }}/compiled-helm.json
           # A queued entry carries no base_ref -- a merge queue's ref is
           # refs/heads/gh-readonly-queue/main/... and the branch it is going into is named in the
           # merge_group payload instead. Reading base_ref alone would run this suite permissively
@@ -277,7 +301,7 @@ jobs:
         # Proves each rescue lane's gate is wired to actual platform/ manifests and code.
         # Not a test of gate logic (BDD does that) — proves the mechanism exists in the repo
         # that Flux deploys. BLIND (missing dep) exits 2 and writes a note; not a FAIL.
-        if: matrix.suite == 'acceptance'
+        if: matrix.shard == 'render'   # once per run, not once per shard
         run: |
           python3 bin/idp-lane-receipts | tee -a "$GITHUB_STEP_SUMMARY"
           rc=${PIPESTATUS[0]}

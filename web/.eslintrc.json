@@ -1,9 +1,0 @@
-{
-  "root": true,
-  "extends": ["next/core-web-vitals"],
-  "ignorePatterns": [".next/", "node_modules/", "scripts/*.mjs", "tests/*.mjs"],
-  "rules": {
-    "react/no-unescaped-entities": "error",
-    "@next/next/no-html-link-for-pages": "error"
-  }
-}

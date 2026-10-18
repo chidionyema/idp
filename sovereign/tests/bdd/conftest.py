@@ -137,9 +137,62 @@ def pending_verdict(mark: pytest.Mark, strict: bool) -> tuple[str, str]:
     )
 
 
+# ---------------------------------------------------------------------------
+# Shards: one suite, several runners. ci.yml's acceptance leg was the merge queue's long pole
+# (run 38543347597, 2026-10-14: 4m31s, the suite alone 2m39s on four xdist workers), so it runs
+# as a matrix of shards side by side. SB_BDD_SHARD picks one; unset, every test runs, as before.
+#
+#   render  every file that drives bin/idp-compile-helm or bin/idp-kyverno-render. Those are the
+#           slow ones (35-42 s a scenario) and the only ones that need helm and the compiled
+#           estate, so they share the runner that has both.
+#   k/n     the k-th of n even shares of everything else.
+#
+# The split is by FILE, never by test, so a module-scoped fixture (the compiled estate is one)
+# is still built once. Shares are filled largest file first by test count, a deterministic
+# function of the tree, so every xdist worker deselects the same tests and every test lands in
+# exactly one shard.
+# ---------------------------------------------------------------------------
+
+SHARD_ENV = "SB_BDD_SHARD"
+_RENDERERS = ("idp-compile-helm", "idp-kyverno-render")
+
+
+def shard_of(counts: dict[str, int], texts: dict[str, str], n: int) -> dict[str, str]:
+    """{file: "render" | "1".."n"} for every file. Pure, so it is tested without a run."""
+    out = {
+        f: "render" for f in counts if any(r in texts.get(f, "") for r in _RENDERERS)
+    }
+    load = [0] * n
+    for f in sorted((f for f in counts if f not in out), key=lambda f: (-counts[f], f)):
+        k = min(range(n), key=lambda i: (load[i], i))
+        load[k] += counts[f]
+        out[f] = str(k + 1)
+    return out
+
+
+def _select_shard(config: pytest.Config, items: list[pytest.Item]) -> list[pytest.Item]:
+    spec = os.environ.get(SHARD_ENV, "").strip()
+    if not spec:
+        return items
+    want, n = (
+        (spec, 1) if spec == "render" else (spec.split("/")[0], int(spec.split("/")[1]))
+    )
+    counts: dict[str, int] = {}
+    for item in items:
+        counts[str(item.path)] = counts.get(str(item.path), 0) + 1
+    texts = {f: Path(f).read_text(errors="replace") for f in counts}
+    shard = shard_of(counts, texts, n)
+    keep = [i for i in items if shard[str(i.path)] == want]
+    drop = [i for i in items if shard[str(i.path)] != want]
+    if drop:
+        config.hook.pytest_deselected(items=drop)
+    return keep
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
+    items[:] = _select_shard(config, items)
     pending: dict[str, str] = {}
     strict = strict_branch_policy()
     for item in items:
