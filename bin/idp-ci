@@ -1118,7 +1118,12 @@ fi
 # Local evidence chain: developer-local, only meaningful outside CI. Skip when IDP_CI_BASE
 # is set (the runner has no agent session; the file would be whatever a developer's local wrote,
 # and rebases routinely break the chain -- measured on 2026-09-22, offline-gate on run 35751378908).
-if [ -z "${IDP_CI_BASE:-}" ]; then
+# GITHUB_ACTIONS too: ci.yml never sets IDP_CI_BASE, so a push to main graded the committed
+# .aevum/local.jsonl on a runner that has no agent session -- and the ledger is appended to by a
+# laptop's pre-commit hook, so a git text-merge of two branches staples two chains into one file
+# (measured 2026-10-16: record 373 carries seq=125, the 14-record tail of a second chain).
+# Offline-gate on run 38793677426 refused a developer's ledger on the runner; #6281 is that class.
+if [ -z "${IDP_CI_BASE:-}" ] && [ -z "${GITHUB_ACTIONS:-}" ]; then
   if python3 "$IDP/bin/idp-local-evidence-gate" "$IDP/.aevum/local.jsonl" >/dev/null 2>&1; then
     say "ok    local-evidence chain present and intact"
   else
@@ -1142,9 +1147,12 @@ fi
 # silent: (1) aevum.yaml is wired into the observability kustomization, so the Deployment is
 # actually applied rather than sitting in the tree unreferenced, and (2) it never configures the
 # in-memory store, which reports a valid empty chain after every restart. A gate that graded only
-# its own fixtures would never see either.
+# its own fixtures would never see either. (2) is graded on the entrypoint that SELECTS that store,
+# `python -m aevum.server`, not on the word "in-memory": the manifest's own prose and its refusal
+# message name the in-memory store in order to forbid it, and a bare `grep -q in-memory` refused
+# them (measured 2026-10-16 on main: rung `evidence` failed on a manifest that is correct).
 if grep -q '^  - aevum.yaml$' "$IDP/platform/observability/kustomization.yaml" \
-   && ! grep -q 'in-memory' "$IDP/platform/observability/aevum.yaml" \
+   && ! grep -vE '^[[:space:]]*#' "$IDP/platform/observability/aevum.yaml" | grep -qE 'python[" ,]+-m[" ,]+aevum\.server([" ,]|$)' \
    && grep -q 'initialize_ledger_schema' "$IDP/platform/observability/aevum.yaml" \
    && grep -q 'sigchain=sigchain' "$IDP/platform/observability/aevum.yaml" \
    && python3 "$IDP/bin/idp-evidence-gate" "$IDP/tests/fixtures/aevum-evidence/good/chain.json" >/dev/null 2>&1 \
