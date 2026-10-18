@@ -53,9 +53,14 @@ jobs:
         id: touched
         run: |
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          # a first push to a branch reports an all-zero before-sha; grade the whole thing then
+          # 2026-10-14: every queue/<batch> push CREATES its branch, so `before` was all zeros on
+          # every candidate and the "instant green job" above never happened where it matters: 14
+          # of 14 batches since 10-12 ran the whole install (median 6.5 min, the batch's long pole)
+          # whatever they changed. A candidate is built on main, so main is its base.
+          case "$GITHUB_REF" in refs/heads/queue/*) base=$(git merge-base origin/main HEAD 2>/dev/null || true) ;; esac
+          # a first push to any other branch reports an all-zero before-sha; grade the whole thing then
           case "$base" in ''|0000000000000000000000000000000000000000) echo "yes=true" >> "$GITHUB_OUTPUT"; exit 0;; esac
-          if git diff --name-only "$base"...HEAD -- backstage/ | grep -q .; then
+          if git diff --name-only "$base"...HEAD -- backstage/ .github/workflows/portal-app.yml sovereign/requirements.txt | grep -q .; then
             echo "yes=true" >> "$GITHUB_OUTPUT"
           else
             echo "yes=false" >> "$GITHUB_OUTPUT"
