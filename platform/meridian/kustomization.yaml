@@ -6,6 +6,8 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - public-door.yaml
+  # The image is private, so the kubelet needs creds in this namespace before it can pull it.
+  - pull-secret.yaml
   - deployment.yaml
 images:
   # Set by Flux image automation, exactly as backstage, jit, cyrus and the rest are. A tag

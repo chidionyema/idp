@@ -80,6 +80,10 @@ spec:
         app.kubernetes.io/name: meridian
         backstage.io/kubernetes-id: meridian
     spec:
+      # The package is private (build-multiarch.yml sets no visibility), so every pull needs this
+      # Secret. It is created in this namespace by pull-secret.yaml from the ghcr-pull store.
+      imagePullSecrets:
+        - name: ghcr-pull
       # Two replicas on one node are one replica. DoNotSchedule rather than ScheduleAnyway: a
       # spread that is allowed to fail is not a spread, and the estate has a second node to put
       # the spare on.
