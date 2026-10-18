@@ -2351,3 +2351,24 @@ spec:
   definition: |
     # Not published. weave-gitops answers at catalogue.${ESTATE_ZONE}; this entity
     # exists so the catalogue records that the interface is reachable and who owns it.
+---
+# Meridian is the site clients are sent to by name (platform/meridian, clusters/oke/meridian.yaml):
+# one always-on Next.js server behind the edge, its contact form delivered through the vault.
+# Its Service and HTTPRoute carry backstage.io/kubernetes-id=meridian, and require-catalogue-entity
+# (Enforce) refuses a Service that names an entity the catalogue does not hold -- so this entity is
+# what makes that label true rather than a shape that satisfies a regex (the coroot entry above is
+# the same doctrine).
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: meridian
+  title: 'Meridian (the intelligence site)'
+  description: >-
+    The founder-facing site: every page a client is shown, and the contact form that turns a
+    visit into a conversation, answered by one always-on Next.js server behind the edge.
+  tags: [platform]
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform
+  system: products

@@ -16,6 +16,11 @@ metadata:
   namespace: meridian
   labels:
     app.kubernetes.io/name: meridian
+    # require-catalogue-entity (Enforce) refuses a Service that serves a port without naming
+    # its catalogue entity; the pod template and HTTPRoute already carried it, the Service
+    # was the one object that slipped through -- main shipped this unpoliced because the
+    # offline gate that runs kyverno admission was not on ci-success until offline-gate-rungs.
+    backstage.io/kubernetes-id: meridian
 spec:
   selector:
     app.kubernetes.io/name: meridian
