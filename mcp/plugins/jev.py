@@ -31,12 +31,23 @@ FALLBACK: When Jev is unavailable, each tool returns {escalated: true, _fallback
   The estate MCP door (BLIND mode) also routes here when MCP_GATEWAY_KEY is unset.
 """
 
+# THE ANNOTATIONS BELOW ARE PEP 604 (`str | None`), WHICH PYTHON 3.9 CANNOT EVALUATE. 3.9.6 is the
+# only python3 on the laptop (`/usr/bin/python3`), so on 2026-10-18 `bin/idp-affected` and
+# `bin/idp-pr-risk` both died inside `_load_jev()` before making a single decision, and
+# `sovereign/tests/bdd/test_jev_layer.py` could not even be collected. CI stayed green because its
+# runners are 3.12. Do NOT fix that with `from __future__ import annotations`: datasette execs a
+# plugin into a module it never registers in `sys.modules`, and under PEP 563 every annotation is
+# a string, so `@dataclass` resolves `cls.__module__` to None and raises AttributeError at import
+# (tests/test_mcp_plugins_load_like_datasette.py, and the estate-mcp crashloop it was written
+# for). Keep every annotation a real object 3.9 can evaluate: Optional/Union, never `X | None`.
+
 import json
 import os
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
+from typing import Any, Optional, Union
 
 try:
     from datasette import hookimpl
@@ -47,10 +58,27 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
 
 
 TYPESAFE_API_KEY = os.environ.get("TYPESAFE_API_KEY", "")
+
+#: The Fleet page's database (bin/serve-fleetview line 42: `${ESTATE_DB:=$IDP/catalog/estate.db}`).
+#: A Jev row that lands anywhere else is invisible to the founder, which is indistinguishable from
+#: a Jev row that was never written.
+_FLEET_DB = (
+    Path(os.environ.get("IDP") or Path(__file__).resolve().parents[2])
+    / "catalog"
+    / "estate.db"
+)
+
 # ESTATE_DB is what the Fleet page reads (bin/serve-fleetview); falling back to it puts Jev's rows on
-# the board. /data does not exist on the laptop, so without it every write was dropped (2026-09-26).
-ESTATE_DB_PATH = os.environ.get("ESTATE_DB_PATH") or os.environ.get(
-    "ESTATE_DB", "/data/estate.db"
+# the board. `/data/estate.db` does not exist on the laptop and `/data` is not writable here, so with
+# it as the default every `_upsert` hit its BLIND except and the row was DROPPED -- measured
+# 2026-10-18: `jev_decisions` was absent from ~/.estate/estate.db and empty in catalog/estate.db,
+# which is exactly the "no evidence of use" the founder saw. Env still wins; the default is now a
+# path that exists on the machine.
+ESTATE_DB_PATH = (
+    os.environ.get("ESTATE_DB_PATH")
+    or os.environ.get("ESTATE_DB")
+    # /data/estate.db is the MCP pod's mount and is right there; it does not exist on the laptop.
+    or ("/data/estate.db" if os.path.exists("/data/estate.db") else str(_FLEET_DB))
 )
 JEVD = os.environ.get("JEV_MODEL", "jev-1.13.0")
 DEFAULT_FLOOR = float(os.environ.get("JEV_DEFAULT_CONFIDENCE_FLOOR", "0.7"))
@@ -89,11 +117,11 @@ class JevDecision:
     layer: str
     decision_id: str
     question: str
-    answer: str | None
-    confidence: float | None
-    probabilities: str | None  # JSON
+    answer: Optional[str]
+    confidence: Optional[float]
+    probabilities: Optional[str]  # JSON
     escalated: bool
-    latency_ms: float | None
+    latency_ms: Optional[float]
     created_at: str
 
     def to_row(self) -> dict[str, Any]:
@@ -218,7 +246,7 @@ def _call_jev(
     state: JevState,
     question: str,
     question_type: str,
-    options: dict[str, Any] | list[str] | None = None,
+    options: Optional[Union[dict[str, Any], list[str]]] = None,
     required_confidence: float = DEFAULT_FLOOR,
     timeout_ms: int = TIMEOUT_MS,
 ) -> dict[str, Any]:
@@ -291,7 +319,7 @@ def _call_jev(
 
 
 def _build_questions(
-    question: str, qtype: str, options: dict[str, Any] | list[str] | None
+    question: str, qtype: str, options: Optional[Union[dict[str, Any], list[str]]]
 ) -> dict[str, dict[str, Any]]:
     """Build the questions dict for the TypeSafe API."""
     if qtype == "choice":
@@ -484,7 +512,7 @@ AFFECTED_SKIP_BELOW = float(os.environ.get("JEV_AFFECTED_SKIP_BELOW", "0.3"))
 AFFECTED_CONFIG = os.environ.get("JEV_AFFECTED_CONFIG", "jev-affected.yml")
 
 
-def _affected_config(repo: str) -> tuple[dict[str, Any], str | None]:
+def _affected_config(repo: str) -> tuple[dict[str, Any], Optional[str]]:
     """Load `<repo>/jev-affected.yml`. Returns (config, reason-on-failure).
 
     A missing or unreadable config returns an EMPTY task list and a reason, never an
@@ -503,7 +531,7 @@ def _affected_config(repo: str) -> tuple[dict[str, Any], str | None]:
         return {}, f"{type(exc).__name__}: {exc}"
 
 
-def _changed_lines(repo: str, base: str) -> tuple[str, str | None]:
+def _changed_lines(repo: str, base: str) -> tuple[str, Optional[str]]:
     """The diff a task's condition is evaluated against: base...HEAD, unified.
 
     Read-only. A repo that cannot produce a diff gets an empty one and a reason -- and an
@@ -530,7 +558,7 @@ def _changed_lines(repo: str, base: str) -> tuple[str, str | None]:
 def jev_affected(
     repo: str,
     base: str = "main",
-    skip_below: float | None = None,
+    skip_below: Optional[float] = None,
 ) -> dict[str, Any]:
     """Which tasks a diff requires, decided by Jev from NATURAL-LANGUAGE conditions.
 
@@ -681,7 +709,7 @@ PR_RISK_CONFIG = os.environ.get("JEV_PR_RISK_CONFIG", "jev-pr-risk.yml")
 PR_RISK_BLOCK_TIER = os.environ.get("JEV_PR_RISK_BLOCK_TIER", "high")
 
 
-def _risk_config(repo: str) -> tuple[dict[str, Any], str | None]:
+def _risk_config(repo: str) -> tuple[dict[str, Any], Optional[str]]:
     """Load `<repo>/jev-pr-risk.yml`. Returns (config, reason-on-failure).
 
     Missing or unreadable returns an empty condition set and a reason, never an exception:
@@ -703,7 +731,7 @@ def _risk_config(repo: str) -> tuple[dict[str, Any], str | None]:
 def jev_pr_risk(
     repo: str,
     base: str = "origin/main",
-    diff: str | None = None,
+    diff: Optional[str] = None,
 ) -> dict[str, Any]:
     """Pre-submission PR risk: score a diff against declared conditions, BEFORE the push.
 
@@ -764,7 +792,7 @@ def jev_pr_risk(
         total_weight += weight
 
         likely = True
-        probability: float | None = None
+        probability: Optional[float] = None
         try:
             result = jev_score(
                 repo=repo,
@@ -904,14 +932,14 @@ def register_mcp_tools(datasette, mcp) -> None:  # pragma: no cover - estate MCP
     async def _jev_affected(
         repo: str,
         base: str = "main",
-        skip_below: float | None = None,
+        skip_below: Optional[float] = None,
     ) -> dict[str, Any]:
         return jev_affected(repo, base, skip_below)
 
     async def _jev_pr_risk(
         repo: str,
         base: str = "origin/main",
-        diff: str | None = None,
+        diff: Optional[str] = None,
     ) -> dict[str, Any]:
         return jev_pr_risk(repo, base, diff)
 

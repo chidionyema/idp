@@ -32,6 +32,7 @@ import inspect
 import json
 import os
 import sqlite3
+from pathlib import Path
 
 try:
     from datasette import hookimpl
@@ -42,7 +43,20 @@ except ImportError:  # the offline CI venv has no datasette; parsing must still 
 
 
 def _db_path() -> str:
-    return os.environ.get("ESTATE_DB", "/data/estate.db")
+    """The catalogue database: env, then /data (in-cluster), then this repo's catalog.
+
+    `/data/estate.db` is the pod's mount and is right on the cluster. It does not exist on the
+    laptop, and the fallback used to be unconditional -- so every reader here (including
+    bin/estate-planes-snapshot's Ring 1, the Jev ring) reported an EMPTY board on the machine the
+    founder uses, which looks exactly like a decision layer that never decides (measured
+    2026-10-18: jev_decisions had rows in catalog/estate.db and the ring showed none of them).
+    """
+    explicit = os.environ.get("ESTATE_DB")
+    if explicit:
+        return explicit
+    if os.path.exists("/data/estate.db"):
+        return "/data/estate.db"
+    return str(Path(__file__).resolve().parents[2] / "catalog" / "estate.db")
 
 
 def build_envelope(
