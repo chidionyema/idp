@@ -98,6 +98,14 @@ input[type="range"].cost-range::-webkit-slider-thumb { -webkit-appearance: none;
 .footer-link-muted:hover { color: rgba(255,255,255,0.85); }
 /* === Print === */
 @media print { .no-print { display: none !important; } }
-/* === Hidden === */
-@media (max-width: 768px) { .md\\:flex { display: none !important; } }
-@media (min-width: 769px) { .md\\\\:hidden { display: none !important; } }
+/* === Responsive nav === */
+/* The full link row on desktop, the toggle and its drawer below 768px. Written as real
+   classes: every other rule in this file is hand-written against the tokens above, and the
+   two Tailwind utilities that used to live here (as double-escaped selectors that never
+   matched) were the only thing a class framework did for this site. */
+.nav-links { display: flex; }
+.nav-mobile { display: none; }
+@media (max-width: 768px) {
+  .nav-links { display: none !important; }
+  .nav-mobile { display: block; }
+}
