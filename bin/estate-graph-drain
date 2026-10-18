@@ -59,6 +59,7 @@ while [ "$attempt" -lt "$ATTEMPTS" ]; do
 	attempt=$((attempt + 1))
 	out="$(cd "$ROOT" && GROWMOS_PROVIDER=openai GROWMOS_BASE_URL=http://127.0.0.1:4000/v1 \
 		GROWMOS_API_KEY="$key" GROWMOS_EXTRACT_MODEL="$MODEL" GROWMOS_REASON_MODEL="$MODEL" \
+		GROWMOS_CALL_TIMEOUT="${ESTATE_GRAPH_CALL_TIMEOUT:-420}" \
 		growmos --root "$ROOT" ingest --limit "$LIMIT" 2>&1)"
 	rc=$?
 	[ "$rc" -eq 0 ] && break
