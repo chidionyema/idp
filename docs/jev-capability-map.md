@@ -315,3 +315,39 @@ def jev_noul(state: dict, question: str, threshold: float = 0.7) -> tuple[bool, 
 4. **Confidence threshold**: Per-decision configurable, default 0.7
 5. **Escalation path**: Low-confidence decisions route to human review or deeper analysis
 6. **Logging**: Every Jev call logged with `{decision, confidence, latency, api_key_scope}`
+
+---
+
+## The door: `jev.decide` (2026-10-18)
+
+This map lists where the layer *should* be consulted. Until now there was no way for an agent to
+consult it: the executor is intents-only, and the layer lives in `mcp/plugins/jev.py`. The three
+call sites that existed (`bin/idp-affected`, `bin/idp-pr-risk`, `.githooks/pre-push`) were binaries,
+not doors.
+
+    estate_invoke jev.decide {question, id, kind, layer, context}
+
+- `kind`: `noul` (probability of a proposition) | `choice` (pick one of `options`) |
+  `score` (a level out of `levels`) — the three MCP tools ADR 0030 names.
+- `layer`: who is asking — `agent`, `guard`, `hook`, `consensus`, `verifier`, `pr-risk`,
+  `test-impact`. It is the column you filter `/fleet` and `estate.db` by.
+- `id`: a stable decision id (`risk:credentials`, `affected:mcp`, `fleet.jev-live`), so repeats
+  UPSERT onto one row instead of piling up.
+- `threshold`: the confidence floor for *this* decision (default `JEV_DEFAULT_CONFIDENCE_FLOOR`,
+  0.7). Below it the answer comes back `escalated: true` and the caller must not treat it as a
+  decision.
+
+Fails open, on purpose: with no `TYPESAFE_API_KEY` (or a non-200) every call returns
+`_fallback: jev_unavailable` and **still writes its row**, so a consult is always visible on
+`/fleet` Ring 1 and in `jev_decisions`. A down layer is an outage to report, never enforcement
+(bin/idp-pr-risk-gate refuses only when at least one real probability exists — LAW 38).
+
+Wiring, in the order it pays:
+
+1. `.githooks/pre-push` — advisory risk band on every push (never refuses; refusal stays with
+   `bin/idp-pr-risk-gate`). **live**
+2. `bin/idp-pr-risk` — the PR risk gate's probabilities. **live**
+3. `bin/idp-affected` — which test tiers a diff needs. **live**
+4. `jev.decide` — every agent, from the governed door. **live (this intent)**
+5. `sovereign/policy.py` [jev] `force_on_decisions` — the Stop-hook debt: it is read by nothing
+   yet. Still open.

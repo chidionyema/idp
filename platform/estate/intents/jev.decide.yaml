@@ -1,0 +1,48 @@
+name: jev.decide
+description: >
+  Ask the estate's ONE decision layer (ADR 0030) a bounded question, and get back a typed answer
+  with a confidence instead of a yes/no with none. Use it wherever a turn would otherwise pick an
+  option, rate something, or assume a boolean: which lane a task belongs in, whether a change is
+  inside the claim, whether a failure is the kind already seen, whether a diff needs the full
+  suite. It returns {answer, confidence, escalated} and records the decision in estate.db
+  jev_decisions, which is what the Fleet page reads.
+
+  SOURCES OF TRUTH. `sovereign/policy.py` [jev]: default_confidence_floor (0.7), timeout_ms
+  (2000), escalate_on_timeout (true), force_on_decisions (true). The floor is one value for the
+  estate; pass --threshold only to argue with it for one call, not to fork it.
+
+  AN ESCALATION IS NOT A NO. `escalated=true` (or `_fallback=jev_unavailable`, confidence null)
+  means the layer was consulted and could not answer. Route it to human review or a deeper check
+  per ADR 0030's escalation table; never read it as evidence for either side.
+
+  This intent never refuses and never exits non-zero on a decision. Exit 2 is a usage error.
+args:
+  question:    {type: string, required: true,  description: "The bounded question, in plain language."}
+  id:          {type: string, required: true,  description: "Names the decision, e.g. greenlane.land."}
+  kind:        {type: string, default: "noul", description: "noul (true/false) | choice | score."}
+  options:     {type: string, default: "",     description: "Comma-separated, for kind=choice."}
+  levels:      {type: string, default: "",     description: "Comma-separated, for kind=score."}
+  layer:       {type: string, default: "agent", description: "guard|agent|hook|consensus|verifier."}
+  context:     {type: string, default: "{}",   description: "JSON object of evidence. Never secrets."}
+  threshold:   {type: string, default: "",     description: "Escalate below this confidence; default is policy [jev]."}
+  repo:        {type: string, default: "~/Documents/code/idp", description: "Repo holding mcp/plugins/jev.py."}
+# A call is one HTTP round trip bounded by policy [jev] timeout_ms (2000) -- a door of 30 leaves
+# room for process start and a slow filesystem without offering a verb the door cannot fit.
+door_s: 30
+halt_on_failure: false
+steps:
+  - name: decide
+    # The executor SHELL-QUOTES every {{arg}} it substitutes (an empty arg arrives as ''), so the
+    # template must not quote them again -- doing so turned `estate's` into an unterminated quote
+    # and the whole step died on line 4 (measured 2026-10-18). Unquoted here, and assigned to a
+    # shell variable before the emptiness test so `set -u` and `set -e` are both honest.
+    cmd: |
+      set -euo pipefail
+      thr={{threshold}}
+      opts={{options}}
+      lvls={{levels}}
+      args=(--question {{question}} --id {{id}} --kind {{kind}} --layer {{layer}} --context {{context}} --repo {{repo}})
+      if [ -n "$opts" ]; then args+=(--options "$opts"); fi
+      if [ -n "$lvls" ]; then args+=(--levels "$lvls"); fi
+      if [ -n "$thr" ]; then args+=(--threshold "$thr"); fi
+      python3 ~/.estate/libexec/jev-decide.py "${args[@]}"

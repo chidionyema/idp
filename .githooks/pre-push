@@ -238,6 +238,25 @@ fi
 echo "✅ idp-fast-gate: green"
 
 # ---------------------------------------------------------------------------
+# JEV ADVISORY (advice, never a refusal).
+#
+# `bin/idp-pr-risk` scores the pushed diff against the natural-language conditions in
+# `jev-pr-risk.yml`, and `bin/idp-pr-risk-gate` is the one place allowed to refuse (at the `high`
+# tier, and only when the layer actually answered). NOTHING CALLED EITHER OF THEM: measured
+# 2026-10-18, `rg -n pr-risk-gate .githooks/ scripts/` found nothing, so the estate's single
+# decision layer had never seen a push leave the laptop -- the founder's "I don't see evidence of
+# use". `--advise` cannot refuse, so this records a decision on every push without adding a new
+# way for a correct push to fail (a layer that is unreachable prints its reason and passes).
+if [ -x "$repo_root/bin/idp-pr-risk-gate" ]; then
+  case "$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)" in
+  main) ;;
+  *)
+    timeout 20 "$repo_root/bin/idp-pr-risk-gate" --advise 2>&1 | sed 's/^/jev   /' || true
+    ;;
+  esac
+fi
+
+# ---------------------------------------------------------------------------
 # TRUNK ROUTING (advice, never a refusal).
 #
 # The dual-trunk model puts agent work on `agent-trunk`, which needs no PR, and leaves
