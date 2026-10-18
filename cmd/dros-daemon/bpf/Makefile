@@ -1,4 +1,4 @@
-# bpf/Makefile
+# cmd/dros-daemon/bpf/Makefile
 # Compile BPF bytecode for DROS enforcement engine.
 # Run on a node with linux-libc-dev installed.
 #
