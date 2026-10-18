@@ -47,7 +47,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -92,7 +91,7 @@ class Clock:
     def work_age(self, sha: str) -> Optional[float]:
         return self.minute - self.authored.get(sha, self.minute)
 
-    def rebase(self, head: str, onto: str):
+    def rebase(self, head: str, onto: str, lane: str = ""):
         return f"{head}@{onto}"
 
     def unclaimed(self, head: str, base: str) -> str:

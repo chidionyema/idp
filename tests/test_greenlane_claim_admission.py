@@ -45,7 +45,7 @@ class Backend:
     def lanes(self):
         return dict(self.heads)
 
-    def rebase(self, head, onto):
+    def rebase(self, head, onto, lane=""):
         # Return None when head == onto (no new commits to rebase), matching real
         # git-cherry behaviour: nothing to land means nothing to return.
         return None if head == onto else f"{head}@{onto}"

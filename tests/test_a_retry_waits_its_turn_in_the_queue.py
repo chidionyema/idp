@@ -39,7 +39,7 @@ class Red:
     def main_red(self, sha: str) -> bool:
         return False
 
-    def rebase(self, head: str, onto: str):
+    def rebase(self, head: str, onto: str, lane: str = ""):
         return f"{head}@{onto}"
 
     def push_candidate(self, batch_id: str, tip: str) -> None:

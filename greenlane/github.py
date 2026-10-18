@@ -333,7 +333,7 @@ class GitHubBackend:
             f"{sha}:refs/heads/{lane}",
         )
 
-    def rebase(self, head: str, onto: str) -> Optional[str]:
+    def rebase(self, head: str, onto: str, lane: str = "") -> Optional[str]:
         """One squashed commit of the lane's work on top of `onto`, or None when it does not apply."""
         mb = self.git("merge-base", onto, head)
         new = [
@@ -370,6 +370,17 @@ class GitHubBackend:
             ]
             if not new:
                 return None  # nothing to land
+            # Generated lanes (flux/*) resolve overlaps by taking the lane's side. The
+            # image automation rewrites the same `newTag:` lines on every build, so the
+            # previous image-update landing guarantees the next lane conflicts textually
+            # -- main moved the line the lane is moving. The lane's side is always the
+            # newest truth (the newest build's tags), so the conflict is mechanical, not
+            # a real divergence. Measured 2026-10-18: flux/image-updates sat "does not
+            # rebase onto main" through consecutive builds, painting the PRs page red
+            # between every rewrite, for exactly this shape. A human or agent lane is
+            # never named flux/* and keeps the strict conflict -> None. The lane NAME
+            # carries the class -- a head is a sha and says nothing about its branch.
+            strategy = ["-X", "theirs"] if lane.startswith("flux/") else []
             pick = subprocess.run(  # noqa: S603 -- fixed argv, no shell
                 [  # noqa: S607
                     "git",
@@ -378,6 +389,7 @@ class GitHubBackend:
                     "cherry-pick",
                     "--no-commit",
                     "--allow-empty",
+                    *strategy,
                     *new,
                 ],
                 capture_output=True,
@@ -485,7 +497,7 @@ class GitHubBackend:
                 if old_tree == new_tree:
                     return
             except Exception:
-                pass  # old sha not resolvable locally -- fall through and push
+                pass  # noqa: S110 -- old sha not resolvable locally; fall through and push
             # New content on a ref that already exists: the push event carries
             # before=<old candidate>, and the verifier grades
             # `git diff <before>...HEAD` -- the delta between two queue
@@ -731,7 +743,7 @@ class GitHubBackend:
         deadline = time.time() + self.LAND_WAIT_S
         for _lane, _head, rebased, _pr, _ in resolved:
             self._await_green(rebased, deadline)
-        for lane, _head, rebased, pr, orphan in resolved:
+        for lane, _head, rebased, pr, _orphan in resolved:
             if not pr:
                 pr = self._pr_for(lane)
             if not pr:

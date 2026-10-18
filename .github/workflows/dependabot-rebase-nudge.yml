@@ -1,0 +1,46 @@
+# Every 30 minutes: a dependabot branch goes DIRTY whenever main moves under it, and
+# dependabot's own rebase schedule lags hours behind. Measured 2026-10-18: #6238 (vitest 4)
+# sat CONFLICTING for most of a day while main advanced past it four times, red on the PRs
+# page the whole time. dependabot honors an "@dependabot rebase" comment within minutes; this
+# job posts exactly that, marked with the head sha it was posted for so a PR that cannot
+# rebase is asked once per head, not every half hour.
+name: dependabot-rebase-nudge
+on:
+  schedule:
+    - cron: "22-59/30 * * * *"
+  workflow_dispatch:
+permissions:
+  pull-requests: write
+concurrency:
+  group: dependabot-rebase-nudge
+  cancel-in-progress: false
+jobs:
+  nudge:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh pr list --repo "$REPO" --state open --limit 100 \
+            --json number,headRefOid,mergeStateStatus,author | jq -c '.[]' |
+          while read -r pr; do
+            n=$(jq -r '.number' <<<"$pr")
+            head=$(jq -r '.headRefOid' <<<"$pr")
+            state=$(jq -r '.mergeStateStatus' <<<"$pr")
+            [ "$(jq -r '.author.login' <<<"$pr")" = "dependabot[bot]" ] || continue
+            [ "$state" = "DIRTY" ] || continue
+            if gh api "repos/$REPO/issues/$n/comments" --jq '
+                .[] | select(.user.login == "github-actions[bot]")
+                | select(.body | contains("rebase-nudged: '"$head"'")) | .id' \
+                | grep -q .; then
+              echo "#$n already nudged at ${head:0:9}"
+              continue
+            fi
+            gh pr comment "$n" --repo "$REPO" --body \
+              "@dependabot rebase
+          rebase-nudged: $head" >/dev/null
+            echo "#$n nudged at ${head:0:9} (was $state)"
+          done

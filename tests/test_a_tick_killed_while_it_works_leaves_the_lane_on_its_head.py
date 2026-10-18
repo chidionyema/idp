@@ -64,7 +64,7 @@ class Killed:
     def lanes(self) -> dict[str, str]:
         return dict(self.heads)
 
-    def rebase(self, head: str, onto: str):
+    def rebase(self, head: str, onto: str, lane: str = ""):
         return f"{head}@{onto}"
 
     def unclaimed(self, head: str, base: str) -> str:
