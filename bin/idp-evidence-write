@@ -9,7 +9,20 @@ SHA-256 so any retrospective edit breaks the chain.
 FAILS OPEN (exit 0, warning to stderr) on any error — LAW 38: a gate that
 refuses correct work is an outage. Evidence recording must not block commits.
 
-Usage: python3 bin/idp-evidence-write [--event EVENT]
+The file is appended to on every branch and text-merged by git, which staples two
+chains into one (measured 2026-10-16 on main: record 373 carries seq=125, the
+14-record tail of a second chain). Every payload in a stapled file is intact; only
+the counter and the back-link of the tail are wrong. So this writer heals before it
+appends, and `--repair` does it on demand: it renumbers `seq` and re-links
+`prior_hash` and touches no payload byte, then lets the grader decide. A payload that
+was actually altered still fails the grader afterwards and the file is left as it was.
+
+Usage:
+  python3 bin/idp-evidence-write [--event EVENT]   # append one record (heals first)
+  python3 bin/idp-evidence-write --check [PATH]    # does the chain verify?
+  python3 bin/idp-evidence-write --repair [PATH]   # re-link a chain a merge stapled
+
+IDP_EVIDENCE_FILE overrides the default .aevum/local.jsonl (used by the incident test).
 """
 from __future__ import annotations
 
@@ -21,9 +34,13 @@ import sys
 import time
 from pathlib import Path
 
-EVIDENCE_FILE = Path(__file__).resolve().parent.parent / ".aevum" / "local.jsonl"
+EVIDENCE_FILE = Path(
+    os.environ.get("IDP_EVIDENCE_FILE")
+    or Path(__file__).resolve().parent.parent / ".aevum" / "local.jsonl"
+)
 GENESIS_HASH = "0000000000000000000000000000000000000000000000000000000000000000"
 DEFAULT_EVENT = "commit.staged"
+GRADER = Path(__file__).resolve().parent / "idp-local-evidence-gate"
 
 
 def _warn(msg: str) -> None:
@@ -41,6 +58,53 @@ def _git(*args: str, cwd: Path) -> str:
     return r.stdout.strip()
 
 
+def _verifies(path: Path) -> tuple[bool, str]:
+    """Ask the grader; never keep a second copy of its rules (LAW 38, one authority).
+
+    bin/idp-local-evidence-gate is the one authority on whether a chain verifies -- it
+    owns the payload-key contract and the back-link rule. This writer only asks it.
+    """
+    r = subprocess.run(
+        [sys.executable, str(GRADER), str(path)], capture_output=True, text=True
+    )
+    return r.returncode == 0, (r.stderr or r.stdout).strip()
+
+
+def _relink(path: Path) -> tuple[bool, str]:
+    """Renumber `seq` and re-link `prior_hash`; never touch a payload byte.
+
+    Refuses unless the grader accepts the result on a temp file first, so a chain whose
+    PAYLOAD was altered cannot be laundered into a passing one: the grader still refuses
+    it after the rewrite, and the original is left exactly as it was.
+    """
+    lines = [l for l in path.read_text().splitlines() if l.strip()]
+    if not lines:
+        return False, f"refused: {path.name} is empty; there is no chain to re-link"
+    out_lines: list[str] = []
+    prior, changed = GENESIS_HASH, 0
+    for i, line in enumerate(lines):
+        rec = json.loads(line)
+        if rec.get("seq") == i and rec.get("prior_hash") == prior:
+            new = line  # untouched: keep the bytes the chain hashes
+        else:
+            rec["seq"], rec["prior_hash"] = i, prior
+            new = json.dumps(rec, separators=(",", ":"))
+            changed += 1
+        out_lines.append(new)
+        prior = _sha256(new)
+    tmp = path.with_name(path.name + ".relink")
+    tmp.write_text("".join(l + "\n" for l in out_lines))
+    ok, why = _verifies(tmp)
+    if not ok:
+        tmp.unlink(missing_ok=True)
+        return False, f"refused: re-linking {path.name} still does not verify ({why})"
+    os.replace(tmp, path)
+    return True, (
+        f"re-linked {path.name}: {changed} of {len(out_lines)} record(s) renumbered "
+        f"and re-chained, {len(out_lines)} payload(s) untouched"
+    )
+
+
 def _prior_hash(path: Path) -> tuple[int, str]:
     if not path.exists() or path.stat().st_size == 0:
         return 0, GENESIS_HASH
@@ -55,6 +119,19 @@ def _prior_hash(path: Path) -> tuple[int, str]:
 def main() -> int:
     event = DEFAULT_EVENT
     args = sys.argv[1:]
+    if args and args[0] in ("--check", "--repair"):
+        verb, rest = args[0], args[1:]
+        path = Path(rest[0]) if rest else EVIDENCE_FILE
+        ok, why = _verifies(path)
+        if verb == "--check":
+            print(why)
+            return 0 if ok else 1
+        if ok:
+            print(f"ok    evidence {path.name} already verifies; nothing to re-link")
+            return 0
+        good, msg = _relink(path)
+        print(("ok    evidence " if good else "FAIL  evidence ") + msg)
+        return 0 if good else 1
     if "--event" in args:
         idx = args.index("--event")
         event = args[idx + 1] if idx + 1 < len(args) else DEFAULT_EVENT
@@ -67,6 +144,14 @@ def main() -> int:
         tree = _git("write-tree", cwd=root)
         staged = _git("diff", "--cached", "--name-only", "--diff-filter=ACMR", cwd=root).splitlines()
         author = _git("config", "user.email", cwd=root) or os.environ.get("GIT_AUTHOR_EMAIL", "unknown")
+
+        # Heal first: a merge can staple two chains into one, and appending to a broken
+        # chain can only make a longer broken one. If the repair refuses (a payload was
+        # altered), the warning is the record and the grader keeps refusing the file --
+        # this never launders a tamper into a passing chain.
+        if EVIDENCE_FILE.exists() and not _verifies(EVIDENCE_FILE)[0]:
+            healed, msg = _relink(EVIDENCE_FILE)
+            _warn(msg if healed else f"chain does not verify and was left alone: {msg}")
 
         seq, prior = _prior_hash(EVIDENCE_FILE)
 
