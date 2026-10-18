@@ -1,8 +1,8 @@
 # Flux: what is applied
 
-Read from the cluster receipt taken at 2026-10-17T22:45:14Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
+Read from the cluster receipt taken at 2026-10-18T00:45:44Z. Every Kustomization and HelmRelease, with the revision Flux last applied. **Suspended** is a switch somebody turned off on purpose (temporal, commerce, commerce-data, event-bus), not a defect; **Unknown** is a row Flux has never graded.
 
-**78 objects: 70 ready, 6 not ready, 0 unknown, 2 suspended.**
+**78 objects: 69 ready, 7 not ready, 0 unknown, 2 suspended.**
 
 ## Not ready right now
 
@@ -12,6 +12,7 @@ Read from the cluster receipt taken at 2026-10-17T22:45:14Z. Every Kustomization
 - **HelmRelease dagster/dagster** since 2026-09-29T06:21:51Z: Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded
 - **HelmRelease observability/langfuse** since 2026-09-25T10:40:26Z: dependency 'observability/signoz' is not ready
 - **HelmRelease spire-mgmt/spire** since 2026-09-26T20:11:52Z: Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deployment/spire-mgmt/spire-spiffe-oidc-discovery-provider status: 'InProgress']
+- **Kustomization flux-system/llm** since 2026-10-18T00:44:59Z: Reconciliation in progress
 
 ## Every row
 
@@ -23,6 +24,7 @@ Read from the cluster receipt taken at 2026-10-17T22:45:14Z. Every Kustomization
 | HelmRelease | dagster | dagster | Not ready | 1.13.19 | 2026-09-29T06:21:51Z | Helm rollback to previous release dagster/dagster.v250 with chart dagster@1.13.19 succeeded |
 | HelmRelease | observability | langfuse | Not ready | 2.0.2 | 2026-09-25T10:40:26Z | dependency 'observability/signoz' is not ready |
 | HelmRelease | spire-mgmt | spire | Not ready | 0.30.1 | 2026-09-26T20:11:52Z | Helm upgrade failed for release spire-mgmt/spire with chart spire@0.30.1: timeout waiting for: [DaemonSet/spire-mgmt/spire-agent status: 'InProgress', Deploymen |
+| Kustomization | flux-system | llm | Not ready | main@2f3cbc3 | 2026-10-18T00:44:59Z | Reconciliation in progress |
 | HelmRelease | observability | signoz | Suspended | 0.138.0 | 2026-09-26T16:24:12Z |  |
 | HelmRelease | tigera-operator | tigera-operator | Suspended | v3.32.2 | 2026-09-06T19:38:02Z |  |
 | HelmRelease | cert-manager | cert-manager | Ready | v1.21.1 | 2026-09-30T23:26:48Z |  |
@@ -49,49 +51,48 @@ Read from the cluster receipt taken at 2026-10-17T22:45:14Z. Every Kustomization
 | HelmRelease | temporal | temporal | Ready | 1.6.0 | 2026-10-17T12:09:58Z |  |
 | HelmRelease | trivy-system | trivy-operator | Ready | 0.36.0 | 2026-09-26T18:25:31Z |  |
 | HelmRelease | weave-gitops | weave-gitops | Ready | 4.0.36 | 2026-09-26T09:48:27Z |  |
-| Kustomization | flux-system | agent-workforce | Ready | main@2f3cbc3 | 2026-10-17T22:43:16Z |  |
-| Kustomization | flux-system | backstage | Ready | main@2f3cbc3 | 2026-10-17T22:38:21Z |  |
-| Kustomization | flux-system | backstage-namespace | Ready | main@2f3cbc3 | 2026-10-17T22:44:24Z |  |
-| Kustomization | flux-system | concierge | Ready | main@2f3cbc3 | 2026-10-17T22:40:44Z |  |
-| Kustomization | flux-system | dns | Ready | main@2f3cbc3 | 2026-10-17T22:43:45Z |  |
-| Kustomization | flux-system | edge | Ready | main@2f3cbc3 | 2026-10-17T22:36:13Z |  |
-| Kustomization | flux-system | epistemic-fabric | Ready | main@2f3cbc3 | 2026-10-17T22:40:49Z |  |
-| Kustomization | flux-system | estate-db | Ready | main@2f3cbc3 | 2026-10-17T22:39:37Z |  |
-| Kustomization | flux-system | estate-db-migrate | Ready | main@2f3cbc3 | 2026-10-17T22:41:33Z |  |
-| Kustomization | flux-system | estate-db-operator | Ready | main@2f3cbc3 | 2026-10-17T22:35:39Z |  |
-| Kustomization | flux-system | event-bus | Ready | main@2f3cbc3 | 2026-10-17T22:36:36Z |  |
-| Kustomization | flux-system | external-secrets | Ready | main@2f3cbc3 | 2026-10-17T22:36:58Z |  |
-| Kustomization | flux-system | flannel | Ready | main@2f3cbc3 | 2026-10-17T22:35:35Z |  |
-| Kustomization | flux-system | flux-system | Ready | main@2f3cbc3 | 2026-10-17T22:35:51Z |  |
-| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-17T22:40:21Z |  |
-| Kustomization | flux-system | github-app-creds | Ready | main@2f3cbc3 | 2026-10-17T22:39:57Z |  |
-| Kustomization | flux-system | hermes-agent | Ready | main@2f3cbc3 | 2026-10-17T22:45:03Z |  |
-| Kustomization | flux-system | hindsight | Ready | main@2f3cbc3 | 2026-10-17T22:41:55Z |  |
-| Kustomization | flux-system | human-vault | Ready | main@2f3cbc3 | 2026-10-17T22:38:21Z |  |
-| Kustomization | flux-system | human-vault-bridge | Ready | main@2f3cbc3 | 2026-10-17T22:39:47Z |  |
-| Kustomization | flux-system | identity | Ready | main@2f3cbc3 | 2026-10-17T22:38:13Z |  |
-| Kustomization | flux-system | image-automation | Ready | main@2f3cbc3 | 2026-10-17T22:37:53Z |  |
-| Kustomization | flux-system | jit | Ready | main@2f3cbc3 | 2026-10-17T22:38:54Z |  |
-| Kustomization | flux-system | kyverno | Ready | main@2f3cbc3 | 2026-10-17T22:42:59Z |  |
-| Kustomization | flux-system | llm | Ready | main@2f3cbc3 | 2026-10-17T22:41:33Z |  |
-| Kustomization | flux-system | local-path | Ready | main@2f3cbc3 | 2026-10-17T22:43:45Z |  |
-| Kustomization | flux-system | mcp | Ready | main@2f3cbc3 | 2026-10-17T22:38:41Z |  |
-| Kustomization | flux-system | monitoring | Ready | main@2f3cbc3 | 2026-10-17T22:45:02Z |  |
-| Kustomization | flux-system | monitoring-rules | Ready | main@2f3cbc3 | 2026-10-17T22:41:41Z |  |
-| Kustomization | flux-system | ns-fences | Ready | main@2f3cbc3 | 2026-10-17T22:40:28Z |  |
-| Kustomization | flux-system | otto-gateway | Ready | main@2f3cbc3 | 2026-10-17T22:37:50Z |  |
-| Kustomization | flux-system | otto-golden | Ready | main@2f3cbc3 | 2026-10-17T22:39:42Z |  |
-| Kustomization | flux-system | otto-golden-secret | Ready | main@2f3cbc3 | 2026-10-17T22:39:04Z |  |
-| Kustomization | flux-system | priority-classes | Ready | main@2f3cbc3 | 2026-10-17T22:36:08Z |  |
-| Kustomization | flux-system | quad-ledger | Ready | main@2f3cbc3 | 2026-10-17T22:39:13Z |  |
-| Kustomization | flux-system | quad-ledger-exception | Ready | main@2f3cbc3 | 2026-10-17T22:44:26Z |  |
-| Kustomization | flux-system | rbac-floor | Ready | main@2f3cbc3 | 2026-10-17T22:45:02Z |  |
-| Kustomization | flux-system | reloader | Ready | main@2f3cbc3 | 2026-10-17T22:36:03Z |  |
-| Kustomization | flux-system | research-engine | Ready | main@2f3cbc3 | 2026-10-17T22:42:04Z |  |
-| Kustomization | flux-system | router-events | Ready | main@2f3cbc3 | 2026-10-17T22:40:45Z |  |
-| Kustomization | flux-system | searxng | Ready | main@2f3cbc3 | 2026-10-17T22:44:28Z |  |
-| Kustomization | flux-system | secret-store | Ready | main@2f3cbc3 | 2026-10-17T22:36:50Z |  |
-| Kustomization | flux-system | tailscale | Ready | main@2f3cbc3 | 2026-10-17T22:40:30Z |  |
-| Kustomization | flux-system | temporal | Ready | main@2f3cbc3 | 2026-10-17T22:38:13Z |  |
-| Kustomization | flux-system | unified-memory | Ready | main@2f3cbc3 | 2026-10-17T22:41:33Z |  |
-| Kustomization | flux-system | voice-router | Ready | main@2f3cbc3 | 2026-10-17T22:43:09Z |  |
+| Kustomization | flux-system | agent-workforce | Ready | main@2f3cbc3 | 2026-10-18T00:35:27Z |  |
+| Kustomization | flux-system | backstage | Ready | main@2f3cbc3 | 2026-10-18T00:44:21Z |  |
+| Kustomization | flux-system | backstage-namespace | Ready | main@2f3cbc3 | 2026-10-18T00:35:56Z |  |
+| Kustomization | flux-system | concierge | Ready | main@2f3cbc3 | 2026-10-18T00:41:23Z |  |
+| Kustomization | flux-system | dns | Ready | main@2f3cbc3 | 2026-10-18T00:36:31Z |  |
+| Kustomization | flux-system | edge | Ready | main@2f3cbc3 | 2026-10-18T00:37:48Z |  |
+| Kustomization | flux-system | epistemic-fabric | Ready | main@2f3cbc3 | 2026-10-18T00:43:54Z |  |
+| Kustomization | flux-system | estate-db | Ready | main@2f3cbc3 | 2026-10-18T00:43:56Z |  |
+| Kustomization | flux-system | estate-db-migrate | Ready | main@2f3cbc3 | 2026-10-18T00:42:36Z |  |
+| Kustomization | flux-system | estate-db-operator | Ready | main@2f3cbc3 | 2026-10-18T00:35:41Z |  |
+| Kustomization | flux-system | event-bus | Ready | main@2f3cbc3 | 2026-10-18T00:38:44Z |  |
+| Kustomization | flux-system | external-secrets | Ready | main@2f3cbc3 | 2026-10-18T00:36:43Z |  |
+| Kustomization | flux-system | flannel | Ready | main@2f3cbc3 | 2026-10-18T00:38:43Z |  |
+| Kustomization | flux-system | flux-system | Ready | main@2f3cbc3 | 2026-10-18T00:37:19Z |  |
+| Kustomization | flux-system | gateway-api-crds | Ready | v1.5.1@e7677b7 | 2026-10-18T00:40:49Z |  |
+| Kustomization | flux-system | github-app-creds | Ready | main@2f3cbc3 | 2026-10-18T00:41:35Z |  |
+| Kustomization | flux-system | hermes-agent | Ready | main@2f3cbc3 | 2026-10-18T00:39:27Z |  |
+| Kustomization | flux-system | hindsight | Ready | main@2f3cbc3 | 2026-10-18T00:35:33Z |  |
+| Kustomization | flux-system | human-vault | Ready | main@2f3cbc3 | 2026-10-18T00:39:56Z |  |
+| Kustomization | flux-system | human-vault-bridge | Ready | main@2f3cbc3 | 2026-10-18T00:43:38Z |  |
+| Kustomization | flux-system | identity | Ready | main@2f3cbc3 | 2026-10-18T00:39:56Z |  |
+| Kustomization | flux-system | image-automation | Ready | main@2f3cbc3 | 2026-10-18T00:39:27Z |  |
+| Kustomization | flux-system | jit | Ready | main@2f3cbc3 | 2026-10-18T00:43:49Z |  |
+| Kustomization | flux-system | kyverno | Ready | main@2f3cbc3 | 2026-10-18T00:44:18Z |  |
+| Kustomization | flux-system | local-path | Ready | main@2f3cbc3 | 2026-10-18T00:45:09Z |  |
+| Kustomization | flux-system | mcp | Ready | main@2f3cbc3 | 2026-10-18T00:42:14Z |  |
+| Kustomization | flux-system | monitoring | Ready | main@2f3cbc3 | 2026-10-18T00:37:11Z |  |
+| Kustomization | flux-system | monitoring-rules | Ready | main@2f3cbc3 | 2026-10-18T00:41:24Z |  |
+| Kustomization | flux-system | ns-fences | Ready | main@2f3cbc3 | 2026-10-18T00:44:42Z |  |
+| Kustomization | flux-system | otto-gateway | Ready | main@2f3cbc3 | 2026-10-18T00:39:29Z |  |
+| Kustomization | flux-system | otto-golden | Ready | main@2f3cbc3 | 2026-10-18T00:43:02Z |  |
+| Kustomization | flux-system | otto-golden-secret | Ready | main@2f3cbc3 | 2026-10-18T00:40:46Z |  |
+| Kustomization | flux-system | priority-classes | Ready | main@2f3cbc3 | 2026-10-18T00:37:55Z |  |
+| Kustomization | flux-system | quad-ledger | Ready | main@2f3cbc3 | 2026-10-18T00:44:41Z |  |
+| Kustomization | flux-system | quad-ledger-exception | Ready | main@2f3cbc3 | 2026-10-18T00:37:00Z |  |
+| Kustomization | flux-system | rbac-floor | Ready | main@2f3cbc3 | 2026-10-18T00:36:43Z |  |
+| Kustomization | flux-system | reloader | Ready | main@2f3cbc3 | 2026-10-18T00:38:52Z |  |
+| Kustomization | flux-system | research-engine | Ready | main@2f3cbc3 | 2026-10-18T00:44:42Z |  |
+| Kustomization | flux-system | router-events | Ready | main@2f3cbc3 | 2026-10-18T00:44:51Z |  |
+| Kustomization | flux-system | searxng | Ready | main@2f3cbc3 | 2026-10-18T00:35:10Z |  |
+| Kustomization | flux-system | secret-store | Ready | main@2f3cbc3 | 2026-10-18T00:38:46Z |  |
+| Kustomization | flux-system | tailscale | Ready | main@2f3cbc3 | 2026-10-18T00:43:58Z |  |
+| Kustomization | flux-system | temporal | Ready | main@2f3cbc3 | 2026-10-18T00:40:02Z |  |
+| Kustomization | flux-system | unified-memory | Ready | main@2f3cbc3 | 2026-10-18T00:44:55Z |  |
+| Kustomization | flux-system | voice-router | Ready | main@2f3cbc3 | 2026-10-18T00:45:00Z |  |
