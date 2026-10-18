@@ -68,6 +68,16 @@ spec:
         kind: HelmRepository
         name: external-dns
   values:
+    # Declared, because the alternative is a hostname nobody writes. Measured 2026-10-18: the
+    # Deployment sat at 0/0 replicas, the chart's own default is 1, and nothing declared the 0 --
+    # no KEDA ScaledObject, no HPA, no row in scheduler/schedule.yml. So DNS converged only on the
+    # runs that happened to exist, and the next new hostname silently did not resolve:
+    # catalogue.<zone> answered 193.123.184.22 while meridian.<zone> was NXDOMAIN, with the only
+    # difference between them being when someone last ran this controller by hand. A reconciler
+    # that runs on a human's memory is not a controller; git is the only writer of this cluster, so
+    # the replica count is declared here and drift has nothing to argue with. Cost: 10m CPU / 32Mi
+    # below, on a node whose requests sit near 3.4 of 5.8 cores.
+    replicaCount: 1
     # registry.k8s.io blobs return HTTP 400 from the OKE node (CDN redirect); this is the
     # upstream multi-arch image copied verbatim with `crane copy`, pinned by digest.
     image:
