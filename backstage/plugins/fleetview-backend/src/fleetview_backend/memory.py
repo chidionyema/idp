@@ -14,6 +14,7 @@ spool and an unreadable one are different facts.
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,13 +42,24 @@ def spool_status() -> dict[str, Any]:
         }
     files = list(d.glob("*.md"))
     exchanges = 0
+    agents: dict[str, int] = {}
     for f in files:
-        exchanges += f.read_text(encoding="utf-8", errors="replace").count("\n## ")
+        text = f.read_text(encoding="utf-8", errors="replace")
+        exchanges += text.count("\n## ")
+        # Per-agent attribution (claim #6228): graph_capture stamps every exchange header
+        # `agent=<name>`. Headers without a stamp mean the running router predates the
+        # stamping code -- count them so the gap is visible instead of silently zero.
+        for ln in text.splitlines():
+            if ln.startswith("## "):
+                m = re.search(r"\bagent=([A-Za-z0-9_.-]+)", ln)
+                key = m.group(1) if m else "unattributed"
+                agents[key] = agents.get(key, 0) + 1
     newest = max((f.stat().st_mtime for f in files), default=None)
     return {
         "available": True,
         "sessions_waiting": len(files),
         "exchanges_waiting": exchanges,
+        "exchanges_by_agent": agents,
         "last_capture_at": _at(newest) if newest else None,
     }
 
@@ -78,7 +90,15 @@ def drain_status() -> dict[str, Any]:
             last = [ln.strip() for ln in f if ln.strip()][-1:]
     except OSError as exc:
         return {"available": False, "error": f"drain has never run: {exc}"}
-    return {"available": bool(last), "last_run": last[0] if last else None}
+    # The drain logs `agents=a,b` (harvested from the agent= stamps of the sessions it moved);
+    # surface it so /fleet shows who the graph is learning from, not just that it ran.
+    m = re.search(r"\bagents=([A-Za-z0-9_.,-]+)", last[0]) if last else None
+    agents = [a for a in m.group(1).split(",") if a] if m else []
+    return {
+        "available": bool(last),
+        "last_run": last[0] if last else None,
+        "agents": agents,
+    }
 
 
 def memory_status() -> dict[str, Any]:
