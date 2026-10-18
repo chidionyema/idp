@@ -127,6 +127,9 @@ spec:
           kubernetes.io/metadata.name: mcp
     - namespaceSelector:
         matchLabels:
+          kubernetes.io/metadata.name: meridian
+    - namespaceSelector:
+        matchLabels:
           kubernetes.io/metadata.name: monitoring
     - namespaceSelector:
         matchLabels:

@@ -21,4 +21,4 @@ spec:
   hard:
     requests.cpu: 2700m
     requests.memory: 5120Mi
-    pods: '15'
+    pods: '40'
