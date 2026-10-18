@@ -1057,8 +1057,17 @@ async def harness_telemetry(
 # ---------------------------------------------------------------------------
 
 
-def _harness_sync_conn():
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+def _harness_sync_conn(tenant_id: Optional[str] = None):
+    conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+    if tenant_id:
+        # The harness tables are FORCE ROW LEVEL SECURITY on app.tenant_id (schema.sql),
+        # and a policy with USING alone is also the INSERT's WITH CHECK. Without the
+        # GUC set, current_setting returns NULL and every write is rejected -- seen in
+        # production 2026-10-19: POST /harness/memory/consolidate -> 500 with
+        # psycopg.errors.InsufficientPrivilege on preference_recurrence.
+        with conn.cursor() as cur:
+            cur.execute("SELECT set_config('app.tenant_id', %s, true);", (tenant_id,))
+    return conn
 
 
 @app.post(
@@ -1077,7 +1086,7 @@ async def harness_memory_prefetch(
     Wire this into do_recall in estate_memory.py as the first step of any
     agent session start."""
     tenant_id = auth["tenant_id"]
-    sync_conn = _harness_sync_conn()
+    sync_conn = _harness_sync_conn(tenant_id)
     try:
         cortex = PostgresCortexAdapter(sync_conn)
         scratchpad = PostgresScratchpadStore()
@@ -1109,7 +1118,7 @@ async def harness_memory_consolidate(
     enforce global-preference rules, and write bi-temporal facts to memories.
     Wire this into do_remember in estate_memory.py."""
     tenant_id = auth["tenant_id"]
-    sync_conn = _harness_sync_conn()
+    sync_conn = _harness_sync_conn(tenant_id)
     try:
         cortex = PostgresCortexAdapter(sync_conn)
         scratchpad = PostgresScratchpadStore()
@@ -1251,7 +1260,7 @@ async def harness_scratchpad(
     """Return the current scratchpad key-value pairs for one agent run."""
     tenant_id = auth["tenant_id"]
     scratchpad_store = PostgresScratchpadStore()
-    sync_conn = _harness_sync_conn()
+    sync_conn = _harness_sync_conn(tenant_id)
     try:
         scratchpad = scratchpad_store.get_working_scratchpad(
             sync_conn, tenant_id, run_id
