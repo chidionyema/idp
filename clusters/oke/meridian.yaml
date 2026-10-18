@@ -1,0 +1,30 @@
+# The Meridian Intelligence site: platform/meridian (namespace, Deployment, Service, HTTPRoute).
+#
+# Flux converges it like every other row: the image tag comes from the ImagePolicy in
+# platform/image-automation/meridian.yaml, and ${ESTATE_ZONE} is substituted here rather than in
+# the route, from the one ConfigMap that holds it (clusters/oke/estate-config.yaml). No literal
+# hostname is written down anywhere on this path -- bin/estate-zone-gate refuses one.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    # A site that is asked for by name must be up. Always-on rather than scale-to-zero: the
+    # founder sends clients here, so a cold start is a first impression, and the pod's own
+    # request (60m) is small enough that the node does not notice it.
+    idp.estate.io/runtime: always-on
+  name: meridian
+  namespace: flux-system
+spec:
+  interval: 30s
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/meridian
+  prune: true
+  wait: true
+  timeout: 2m
+  postBuild:
+    substituteFrom:
+      - kind: ConfigMap
+        name: estate-config

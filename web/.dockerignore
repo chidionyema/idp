@@ -1,0 +1,11 @@
+# What the image build must not receive. Without this the context the runner uploads is the
+# whole of web/ -- 171MB, measured 2026-10-17, almost all of it node_modules and .next -- and
+# the local node_modules then overwrites the ones `npm ci` installed inside the deps stage,
+# which is how a build passes on a laptop and fails on the arm64 runner.
+node_modules
+.next
+tsconfig.tsbuildinfo
+npm-debug.log*
+*.log
+.DS_Store
+tests

@@ -27,6 +27,9 @@ const securityHeaders = [
 
 const nextConfig = {
   poweredByHeader: false,
+  // What web/meridian.Dockerfile copies: Next traces the modules the server imports and
+  // emits .next/standalone/server.js, so the image carries no node_modules and no toolchain.
+  output: "standalone",
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" },

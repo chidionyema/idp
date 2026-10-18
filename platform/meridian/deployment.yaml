@@ -1,0 +1,121 @@
+# The site itself: one Next.js server, one replica, no state to lose.
+#
+# One replica on purpose. The contact endpoint's rate limiter counts in process memory
+# (web/lib/contact.ts, RateLimiter) and its caveat is documented there: a second replica would
+# give a sender a second budget by landing on a different pod, so the limit would be 5 per
+# replica per 10 minutes rather than 5 per sender. The cost of one replica is a restart losing
+# the counters, which is the correct direction to fail -- a lost counter costs a few extra
+# accepted submissions, whereas a shared cache would be a second place the limit lives.
+#
+# Nothing here holds a credential. The only secret is the contact form's delivery target, and
+# it arrives as a mounted file rather than an env var, because kyverno refuses the latter.
+apiVersion: v1
+kind: Service
+metadata:
+  name: meridian
+  namespace: meridian
+  labels:
+    app.kubernetes.io/name: meridian
+spec:
+  selector:
+    app.kubernetes.io/name: meridian
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Until the vault entry `meridian` exists this ExternalSecret reports an error and creates
+# nothing. That is the honest state, not a misconfiguration: the Deployment mounts the Secret
+# optionally, so the site serves every page and answers the contact form with 503
+# `delivery_not_configured` -- a submission is refused rather than accepted and silently
+# dropped. Seeding the entry with `url` (and optionally `token`) is the single step that turns
+# delivery on; nothing in git changes.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: meridian-contact
+  namespace: meridian
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {kind: ClusterSecretStore, name: estate-vault}
+  target:
+    name: meridian-contact
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        CONTACT_WEBHOOK_URL: "{{ .url }}"
+        CONTACT_WEBHOOK_TOKEN: "{{ .token }}"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: meridian
+  namespace: meridian
+  labels:
+    app.kubernetes.io/name: meridian
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: meridian
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: meridian
+        backstage.io/kubernetes-id: meridian
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        fsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: web
+          image: ghcr.io/chidionyema/meridian
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            # The directory the Secret is mounted at, read by app/api/contact/route.ts.
+            - {name: MERIDIAN_SECRETS_DIR, value: /etc/meridian-secrets}
+            # The estate's one collector (LAW 50). Unset on a laptop, where there is none.
+            - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318"}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          # GET / is the homepage, server-rendered by this process. A probe on a page rather
+          # than a dedicated /health route is deliberate: it fails when the thing the founder
+          # actually asks for fails, instead of staying green while the site is broken.
+          readinessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 20
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: {path: /, port: http}
+            periodSeconds: 60
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          # 60m/160Mi requested: the founder-facing tier's floor, and the measured cost of an
+          # idle Next standalone server. The limit leaves room for the first request to a cold
+          # page (the site is 22 statically-rendered pages, so this is not a render farm).
+          resources:
+            requests: {cpu: 60m, memory: 160Mi}
+            limits: {cpu: 300m, memory: 384Mi}
+          volumeMounts:
+            # The delivery target. optional: the site runs before the vault entry exists.
+            - {name: contact, mountPath: /etc/meridian-secrets, readOnly: true}
+            # readOnlyRootFilesystem: true, so every path the server writes goes here. Next
+            # writes optimized images to .next/cache when a page uses next/image.
+            - {name: cache, mountPath: /app/.next/cache}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: contact
+          secret:
+            secretName: meridian-contact
+            optional: true
+        - name: cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

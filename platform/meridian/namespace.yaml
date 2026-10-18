@@ -1,0 +1,21 @@
+# The Meridian Intelligence site: the marketing surface the founder can point a client at.
+#
+# The label matters as much as the name. The shared Gateway lives in the prospector repository
+# and each of its HTTPS listeners carries exactly one hostname and one certificate
+# (deploy/k8s/base/edge.yaml, and platform/meridian/public-door.yaml names the listener this
+# attaches to). A listener that allows routes only `from: Same` cannot be reached from here,
+# so every estate namespace that publishes a hostname carries idp.estate/edge-attach and the
+# listener selects on it -- the same pair catalogue, guacamole and llm use.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace dropped from git stays, with everything in
+    # it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: meridian
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    # founder-facing: the founder reads this site, and a client may be sent to it.
+    availability.idp/tier: founder-facing
+    idp.estate/edge-attach: "true"

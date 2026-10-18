@@ -1,14 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   RateLimiter,
   deliveryPayload,
   deliveryTarget,
   clientKey,
   validateContact,
+  type SecretReader,
 } from "@/lib/contact";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+// Where platform/meridian/deployment.yaml mounts the delivery Secret: one file per key.
+const SECRETS_DIR = process.env.MERIDIAN_SECRETS_DIR ?? "/etc/meridian-secrets";
+
+/** A missing directory or file is "this deployment has no destination", not an error. */
+const readSecret: SecretReader = (name) => {
+  try {
+    return readFileSync(join(SECRETS_DIR, name), "utf8");
+  } catch {
+    return undefined;
+  }
+};
 
 // Shared across requests in this process. See the caveat on RateLimiter.
 const limiter = new RateLimiter(5, 10 * 60 * 1000);
@@ -64,7 +79,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_input", errors: result.errors }, { status: 400 });
   }
 
-  const target = deliveryTarget(process.env);
+  const target = deliveryTarget(process.env, readSecret);
   if (!target) {
     // Refuse loudly rather than accept a lead and drop it. An unconfigured
     // deployment should look broken, not successful.

@@ -12,6 +12,7 @@ resources:
   - lago-front.yaml
   - aevum.yaml
   - jit.yaml
+  - meridian.yaml
   - controller.yaml
   - runsc.yaml
   - epistemic-ingest.yaml
