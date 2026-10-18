@@ -1,0 +1,42 @@
+#!/bin/bash
+# Keep a laptop-local road to the unified-memory-server open, and the surface token fresh.
+#
+# WHY. FleetView's /harness panel (backstage/plugins/fleetview-backend/src/fleetview_backend/
+# harness.py) reads the unified-memory-server through ESTATE_MEMORY_URL, but the server is a
+# ClusterIP inside the cluster (clusters/oke/unified-memory.yaml) -- no ingress, so from the
+# laptop the only road is a port-forward. This keeps it up and refreshes the surface token
+# (vault entry unified-memory, key surface-token, read from the cluster secret the
+# ExternalSecret already syncs) into a 0600 file harness.py re-reads on every call, so a
+# rotation lands without restarting FleetView. The token is never printed.
+#
+# Deployed to ~/.estate/bin: launchd cannot run /bin/sh under ~/Documents (TCC), the same
+# reason bin/estate-graph-drain lives there. Paired template: launchd/ai.estate.memory-forward.
+set -u
+PORT="${ESTATE_MEMORY_FORWARD_PORT:-18000}"
+TOKEN_DIR="${HOME}/.estate/unified-memory"
+TOKEN_FILE="${TOKEN_DIR}/surface-token"
+LOG="${HOME}/.estate/memory-forward.log"
+say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
+
+fetch_token() {
+	local tok
+	tok="$(kubectl -n unified-memory get secret unified-memory \
+		-o 'jsonpath={.data.surface-token}' 2>/dev/null | base64 -d 2>/dev/null)"
+	[ -n "$tok" ] || { say "token: kubectl read failed (kept previous)"; return 1; }
+	mkdir -p "$TOKEN_DIR"
+	umask 077
+	printf '%s' "$tok" >"$TOKEN_FILE"
+	return 0
+}
+
+# Refresh the token every five minutes for as long as this job lives.
+( while :; do fetch_token || true; sleep 300; done ) &
+
+fetch_token || true
+say "forward: starting on 127.0.0.1:${PORT} -> unified-memory-server:8000"
+while :; do
+	kubectl -n unified-memory port-forward --address 127.0.0.1 \
+		svc/unified-memory-server "${PORT}:8000" >>"$LOG" 2>&1
+	say "forward exited; retrying in 5s"
+	sleep 5
+done

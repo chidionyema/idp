@@ -87,3 +87,47 @@ def test_a_failure_inside_capture_never_reaches_the_request(tmp_path, monkeypatc
             _call(), {"content": "hi"}, 0, 0
         )
     )
+
+
+def _attributed(headers=None, metadata=None, ua="claude-cli/2.1"):
+    call = _call(ua=ua)
+    if headers:
+        call["litellm_params"]["proxy_server_request"]["headers"].update(headers)
+    if metadata is not None:
+        call["litellm_params"]["metadata"] = metadata
+    return call
+
+
+def test_identity_precedence_header_then_metadata_then_alias(tmp_path, monkeypatch):
+    g = _load(tmp_path, monkeypatch)
+    call = _attributed(
+        headers={"x-estate-agent": "header-agent"},
+        metadata={"agent": "meta-agent", "user_api_key_alias": "key-agent"},
+    )
+    assert g._agent(call) == "header-agent"
+    del call["litellm_params"]["proxy_server_request"]["headers"]["x-estate-agent"]
+    assert g._agent(call) == "meta-agent"
+    del call["litellm_params"]["metadata"]["agent"]
+    assert g._agent(call) == "key-agent"
+
+
+def test_a_named_agent_header_lands_in_the_spool_line_sanitized(tmp_path, monkeypatch):
+    g = _load(tmp_path, monkeypatch)
+    path = g.capture(
+        _attributed(headers={"x-estate-agent": "Nova/Prime!"}),
+        {"content": [{"type": "text", "text": "ok"}]},
+    )
+    assert "agent=Nova_Prime" in open(path, encoding="utf-8").read()
+
+
+def test_the_harness_user_agent_is_the_fallback_and_nothing_is_invented(
+    tmp_path, monkeypatch
+):
+    g = _load(tmp_path, monkeypatch)
+    path = g.capture(
+        _attributed(ua="fleetview-backend/1.2"),
+        {"content": [{"type": "text", "text": "ok"}]},
+    )
+    assert "agent=fleetview-backend" in open(path, encoding="utf-8").read()
+    path = g.capture(_attributed(ua=""), {"content": [{"type": "text", "text": "ok"}]})
+    assert "agent=unknown" in open(path, encoding="utf-8").read()

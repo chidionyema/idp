@@ -19,6 +19,10 @@
     <key>LITELLM_HOST</key><string>http://127.0.0.1:4000</string>
     <key>VOICE_ROUTER_MODEL</key><string>voice</string>
     <key>NATS_URL</key><string>nats://127.0.0.1:4222</string>
+    <!-- unified-memory-server is a ClusterIP; ai.estate.memory-forward keeps 127.0.0.1:18000
+         on it and refreshes the surface token harness.py re-reads per call. -->
+    <key>ESTATE_MEMORY_URL</key><string>http://127.0.0.1:18000</string>
+    <key>ESTATE_MEMORY_TOKEN_FILE</key><string>${HOME}/.estate/unified-memory/surface-token</string>
   </dict>
   <key>WorkingDirectory</key><string>${IDP}</string>
   <key>RunAtLoad</key><true/>
