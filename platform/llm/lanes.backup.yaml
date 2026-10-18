@@ -199,6 +199,10 @@ model_list:
       model: openai/MiniMax-M3
       api_base: https://api.minimax.io/v1
       api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: voice
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
   - model_name: voice-asr
     litellm_params:
       model: groq/whisper-large-v3-turbo
