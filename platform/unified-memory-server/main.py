@@ -1037,6 +1037,21 @@ async def harness_telemetry(
     }
 
 
+# ---------------------------------------------------------------------------
+# Active Runtime Harness: sync connection
+#
+# harness.py is deliberately synchronous and speaks the sync psycopg3 protocol
+# (`with conn.cursor()`); the DI pool above yields an AsyncConnection, which
+# raises TypeError under that protocol. Every route that calls an engine or
+# store method takes a short-lived sync connection from here instead of the
+# pooled async one, commits, and closes it before returning.
+# ---------------------------------------------------------------------------
+
+
+def _harness_sync_conn():
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row)
+
+
 @app.post(
     "/harness/memory/prefetch",
     status_code=status.HTTP_200_OK,
@@ -1047,20 +1062,24 @@ async def harness_memory_prefetch(
     task: str,
     project_id: Optional[str] = None,
     auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
-    conn=Depends(get_db_conn),  # noqa: B008
 ) -> Dict[str, Any]:
     """Pre-fetch hook: called before an agent run starts.
     Calls ActiveMemoryEngine.buildActiveContextBrief and returns the brief text.
     Wire this into do_recall in estate_memory.py as the first step of any
     agent session start."""
     tenant_id = auth["tenant_id"]
-    cortex = PostgresCortexAdapter(conn)
-    scratchpad = PostgresScratchpadStore()
-    engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
+    sync_conn = _harness_sync_conn()
+    try:
+        cortex = PostgresCortexAdapter(sync_conn)
+        scratchpad = PostgresScratchpadStore()
+        engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
 
-    brief, tokens = engine.build_active_context_brief(
-        conn, tenant_id, project_id, run_id, task
-    )
+        brief, tokens = engine.build_active_context_brief(
+            sync_conn, tenant_id, project_id, run_id, task
+        )
+        sync_conn.commit()
+    finally:
+        sync_conn.close()
     return {"brief": brief, "estimated_tokens": tokens}
 
 
@@ -1075,37 +1094,43 @@ async def harness_memory_consolidate(
     provenance: str = "user_direct",
     candidates: Optional[List[Dict[str, Any]]] = None,
     auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
-    conn=Depends(get_db_conn),  # noqa: B008
 ) -> Dict[str, Any]:
     """Post-write hook: called after an agent run finishes a turn.
     Calls ActiveMemoryEngine.consolidateTurnCandidates to gate ephemeral facts,
     enforce global-preference rules, and write bi-temporal facts to memories.
     Wire this into do_remember in estate_memory.py."""
     tenant_id = auth["tenant_id"]
-    cortex = PostgresCortexAdapter(conn)
-    scratchpad = PostgresScratchpadStore()
-    engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
+    sync_conn = _harness_sync_conn()
+    try:
+        cortex = PostgresCortexAdapter(sync_conn)
+        scratchpad = PostgresScratchpadStore()
+        engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
 
-    parsed_candidates = []
-    if candidates:
-        for c in candidates:
-            parsed_candidates.append(
-                ExtractedFactCandidate(
-                    scope=c.get("scope", "ephemeral_turn"),
-                    subject=c.get("subject", ""),
-                    predicate=c.get("predicate", ""),
-                    object=c.get("object", ""),
-                    artifact_uri=c.get("artifactUri"),
-                    artifact_version_hash=c.get("artifactVersionHash"),
-                    source_event_timestamp_iso=c.get("sourceEventTimestampIso"),
-                    explicit_permanence_intent=c.get("explicitPermanenceIntent", False),
-                    confidence=c.get("confidence", 1.0),
+        parsed_candidates = []
+        if candidates:
+            for c in candidates:
+                parsed_candidates.append(
+                    ExtractedFactCandidate(
+                        scope=c.get("scope", "ephemeral_turn"),
+                        subject=c.get("subject", ""),
+                        predicate=c.get("predicate", ""),
+                        object=c.get("object", ""),
+                        artifact_uri=c.get("artifactUri"),
+                        artifact_version_hash=c.get("artifactVersionHash"),
+                        source_event_timestamp_iso=c.get("sourceEventTimestampIso"),
+                        explicit_permanence_intent=c.get(
+                            "explicitPermanenceIntent", False
+                        ),
+                        confidence=c.get("confidence", 1.0),
+                    )
                 )
-            )
 
-    stats = engine.consolidate_turn_candidates(
-        conn, tenant_id, project_id, run_id, provenance, parsed_candidates
-    )
+        stats = engine.consolidate_turn_candidates(
+            sync_conn, tenant_id, project_id, run_id, provenance, parsed_candidates
+        )
+        sync_conn.commit()
+    finally:
+        sync_conn.close()
     return {"memory_stats": stats}
 
 
@@ -1215,15 +1240,16 @@ async def harness_scratchpad(
     conn=Depends(get_db_conn),  # noqa: B008
 ) -> Dict[str, Any]:
     """Return the current scratchpad key-value pairs for one agent run."""
-    import asyncio
-
     tenant_id = auth["tenant_id"]
     scratchpad_store = PostgresScratchpadStore()
-    loop = asyncio.get_event_loop()
-    scratchpad = await loop.run_in_executor(
-        None,
-        lambda: scratchpad_store.get_working_scratchpad(conn, tenant_id, run_id),
-    )
+    sync_conn = _harness_sync_conn()
+    try:
+        scratchpad = scratchpad_store.get_working_scratchpad(
+            sync_conn, tenant_id, run_id
+        )
+        sync_conn.commit()
+    finally:
+        sync_conn.close()
     return {"run_id": run_id, "tenant_id": tenant_id, "scratchpad": scratchpad}
 
 
