@@ -741,8 +741,10 @@ class GitHubBackend:
         # GitHub keeps returning for a few seconds while it recomputes mergeability.
         time.sleep(self.LAND_SETTLE_S)
         deadline = time.time() + self.LAND_WAIT_S
+        awaited: set[str] = set()  # shas this land call has already proven; await-once per land
         for _lane, _head, rebased, _pr, _ in resolved:
             self._await_green(rebased, deadline)
+            awaited.add(rebased)
         for lane, _head, rebased, pr, _orphan in resolved:
             if not pr:
                 pr = self._pr_for(lane)
@@ -765,6 +767,7 @@ class GitHubBackend:
             # way, both after checks(rebased) had gone green.
             if merge_sha != rebased:
                 self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                awaited.add(merge_sha)
             # THE GREENLANE VOUCHES FOR THE SHA IT MERGES (2026-10-10). `greenlane` is a required
             # check on main (ruleset.idp.required-checks.json), pinned to the Actions app, and
             # this is the only place it is ever written as success -- so a pull request raised
@@ -813,17 +816,28 @@ class GitHubBackend:
                         if fresh_head and fresh_head != merge_sha:
                             merge_sha = fresh_head
                             subject = self.git("log", "-1", "--format=%s", merge_sha)
-                            self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                            if merge_sha not in awaited:  # a genuinely new head needs its own proof
+                                self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                                awaited.add(merge_sha)
                             continue  # retry with the new, proven merge_sha
                     # HTTP 405 "PR not mergeable": retry with backoff, but re-prove the
                     # head first -- a 405 naming a pending check on a head we have not
-                    # awaited only clears once that head's checks do. And the re-prove is a
+                    # awaited only clears once that head's checks do. The re-prove is a
                     # FULL await (2026-10-17, PR #6402 b2987): right after the lane push the
                     # synchronize's new runs have not registered yet, so checks() still sees
                     # the PREVIOUS push's completed runs and answers green instantly; the
                     # merge then races the fresh runs with 4 x 20s of retries against their
                     # ~3-4 min runtime and loses. Measured: refused at 16:43, all required
-                    # checks success on the same sha by 16:47. Await again, budget and all.
+                    # checks success on the same sha by 16:47.
+                    # Await once per sha (2026-10-18): a second full await on a sha this
+                    # land call already awaited waits on nothing new -- the first one spent
+                    # the whole LAND_WAIT_S budget on precisely these runs, and the suite
+                    # pins that as the contract ("no second wait when the head is the
+                    # proven candidate"). The honest limit: checks() cannot tell a green
+                    # answered by the previous push's completed runs from one answered by
+                    # current ones; when the first green was stale the retries below can
+                    # still lose the race b2987 measured, and the retry budget is what
+                    # remains.
                     if "HTTP 405" not in merge_error or (
                         attempt == self.LAND_MERGE_TRIES - 1
                     ):
@@ -833,7 +847,9 @@ class GitHubBackend:
                     if fresh_head and fresh_head != merge_sha:
                         merge_sha = fresh_head
                         subject = self.git("log", "-1", "--format=%s", merge_sha)
-                    self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                    if merge_sha not in awaited:
+                        self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                        awaited.add(merge_sha)
                     continue
                 except RuntimeError as e:
                     if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
