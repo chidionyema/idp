@@ -8,7 +8,7 @@
 # stage that has no spire-agent, and amd64 was hard-coded. Now: one stage fetches the SPIRE musl
 # release for $TARGETARCH (a static Go binary, it runs on glibc), one cross-compiles the
 # bootstrapper, and the runtime stage joins them.
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.23.5-alpine3.21 AS builder
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.3-alpine AS builder
 ARG TARGETARCH
 RUN apk add --no-cache ca-certificates
 WORKDIR /builder
