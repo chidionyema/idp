@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Laptop road to the in-cluster unified-memory-server: FleetView's /harness panel reads it
+     through ESTATE_MEMORY_URL (fleetview_backend/harness.py). bin/memory-forward-launchd is
+     copied to ~/.estate/bin -- launchd cannot run /bin/sh under ~/Documents (TCC), the same
+     reason bin/estate-graph-drain lives there. -->
+<plist version="1.0"><dict>
+  <key>Label</key><string>ai.estate.memory-forward</string>
+  <key>ProgramArguments</key><array>
+    <string>/bin/bash</string>
+    <string>${HOME}/.estate/bin/memory-forward-launchd</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>30</integer>
+  <key>StandardOutPath</key><string>${HOME}/.estate/memory-forward.out.log</string>
+  <key>StandardErrorPath</key><string>${HOME}/.estate/memory-forward.err.log</string>
+</dict></plist>

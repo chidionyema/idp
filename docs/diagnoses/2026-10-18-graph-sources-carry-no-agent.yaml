@@ -1,0 +1,100 @@
+description: 'Drained graph sources carry no per-agent attribution: sources.jsonl
+  has no agent field and journal nodes label every actor with the generic "agent",
+  so per-agent memory proof is impossible from the graph store (measured 2026-10-18).
+  Question: where in the capture-to-graph path is the acting agent''s identity lost
+  -- never written by the router''s spooler, dropped by the drain, or present in the
+  source text but not surfaced by growmos extraction. Measured against the router
+  spool (~/.estate/graph-spool), the drain run lines (~/.estate/graph-drain.log) and
+  the graph store on main before any fix.
+
+  '
+hypotheses:
+- name: H1
+  description: graph_capture never writes the acting agent into the spool -- identity
+    is absent at the source
+  prior: 0.55
+- name: H2
+  description: capture writes it, but the drain loses it (rename/rename or ingest
+    path) before it reaches the graph
+  prior: 0.1
+- name: H3
+  description: capture and drain both carry it in session text, but growmos extraction
+    does not surface it as an agent field or node
+  prior: 0.25
+- name: H4
+  description: the drain is not moving sessions at all, so there is nothing to attribute
+  prior: 0.1
+evidence:
+- name: spool exchange header lines carrying an agent= stamp (of headers sampled this
+    session)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.05
+      absent: 0.95
+    H2:
+      present: 0.9
+      absent: 0.1
+    H3:
+      present: 0.95
+      absent: 0.05
+    H4:
+      present: 0.5
+      absent: 0.5
+- name: drain log run lines with moved>=1 in the last 7 days (of run lines)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.95
+      absent: 0.05
+    H3:
+      present: 0.95
+      absent: 0.05
+    H4:
+      present: 0.05
+      absent: 0.95
+- name: sources.jsonl rows in the graph store carrying an actor/agent field (of rows)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.1
+      absent: 0.9
+    H2:
+      present: 0.2
+      absent: 0.8
+    H3:
+      present: 0.25
+      absent: 0.75
+    H4:
+      present: 0.4
+      absent: 0.6
+- name: recent journal/entity nodes naming the acting agent (of nodes; every label
+    is the generic "agent")
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.15
+      absent: 0.85
+    H2:
+      present: 0.4
+      absent: 0.6
+    H3:
+      present: 0.5
+      absent: 0.5
+    H4:
+      present: 0.5
+      absent: 0.5
+posteriors:
+  H1: 0.974933567
+  H2: 0.0117076177
+  H3: 0.0114332204
+  H4: 0.001925595
+winner: H1
+computed_at: '2026-10-18T01:44:16Z'

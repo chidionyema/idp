@@ -99,6 +99,32 @@ def _is_drain(kwargs: dict) -> bool:
     return ua.startswith("Python-urllib")
 
 
+def _agent(kwargs: dict) -> str:
+    """The agent this exchange belongs to, by what the request itself carries.
+
+    Named identity wins: the x-estate-agent header, request metadata, or the caller's
+    virtual-key alias -- the same explicit identity rule bin/claim-open enforces since
+    #6407 (ESTATE_AGENT, no defaults). The harness User-Agent is the measured fallback
+    (which surface sent this), and "unknown" is the honest floor: attribution is never
+    invented, because a defaulted name is exactly the mis-attribution #6407 closed.
+    """
+    lp = kwargs.get("litellm_params") or {}
+    req = lp.get("proxy_server_request") or {}
+    headers = {str(k).lower(): v for k, v in (req.get("headers") or {}).items()}
+    meta = lp.get("metadata") or {}
+    for candidate in (
+        headers.get("x-estate-agent"),
+        meta.get("agent"),
+        meta.get("user_api_key_alias"),
+    ):
+        c = str(candidate or "").strip()
+        if c:
+            return re.sub(r"[^A-Za-z0-9_.-]", "_", c)[:40]
+    ua = str(headers.get("user-agent", ""))
+    harness = re.split(r"[/\s]", ua, maxsplit=1)[0].strip().lower() if ua else ""
+    return harness or "unknown"
+
+
 def capture(kwargs: dict, response_obj: Any) -> str | None:
     """Append this exchange to its session's spool file; return the path, or None if skipped."""
     if _is_drain(kwargs):
@@ -123,7 +149,7 @@ def capture(kwargs: dict, response_obj: Any) -> str | None:
     path = os.path.join(d, _session(kwargs) + ".md")
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     with open(path, "a", encoding="utf-8") as f:
-        f.write(f"\n## {stamp} {kwargs.get('model', '')}\n")
+        f.write(f"\n## {stamp} {kwargs.get('model', '')} agent={_agent(kwargs)}\n")
         if user:
             f.write(f"\n**asked:** {user}\n")
         if reply:

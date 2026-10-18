@@ -24,10 +24,19 @@ say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
 mkdir -p "$SPOOL" "$ROOT/sessions"
 
 moved=0
+agents=""
 while IFS= read -r f; do
 	[ -n "$f" ] || continue
 	dst="$ROOT/sessions/$(date -u +%Y%m%dT%H%M%SZ)-$(basename "$f")"
-	mv "$f" "$dst" && growmos --root "$ROOT" add "$dst" >/dev/null 2>&1 && moved=$((moved + 1))
+	mv "$f" "$dst" && growmos --root "$ROOT" add "$dst" >/dev/null 2>&1 && {
+		moved=$((moved + 1))
+		# Per-agent attribution: graph_capture stamps every exchange `agent=<name>`
+		# (x-estate-agent / metadata / virtual-key alias / harness UA, never invented),
+		# so the drained source itself carries who owned it.
+		for a in $(rg -o 'agent=[A-Za-z0-9_.-]+' "$dst" 2>/dev/null | sort -u); do
+			agents="$agents ${a#agent=}"
+		done
+	}
 done <<EOF
 $(find "$SPOOL" -maxdepth 1 -name '*.md' -mmin +"$IDLE_MIN" 2>/dev/null)
 EOF
@@ -62,4 +71,6 @@ if [ -n "$(git -C "$ROOT" status --porcelain)" ]; then
 		git -C "$ROOT" commit -q -m "graph-drain: $moved session(s) spooled by the router" &&
 		{ git -C "$ROOT" push -q origin HEAD 2>/dev/null || say "push failed (kept locally)"; }
 fi
-say "moved=$moved entities=$entities ingest_rc=$rc attempts=$attempt $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-300)"
+agent_list=""
+[ -n "$agents" ] && agent_list=" agents=$(printf '%s\n' $agents | sort -u | tr '\n' ',' | sed 's/,$//')"
+say "moved=$moved entities=$entities ingest_rc=$rc attempts=$attempt$agent_list $(printf '%s' "$out" | tail -2 | tr '\n' ' ' | cut -c1-300)"
