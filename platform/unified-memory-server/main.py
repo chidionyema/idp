@@ -257,6 +257,15 @@ app = FastAPI(title="Unified Model-Agnostic Agentic Memory Server", lifespan=lif
 async def get_db_conn():
     async with pool.connection() as conn:
         yield conn
+        # autocommit=False means every statement opens an implicit transaction that stays open
+        # until an explicit commit; authenticate_surface commits once after rate limiting, then
+        # its tenant SELECT opens a fresh one, so a handler's `async with conn.transaction()`
+        # is only a savepoint inside that. psycopg_pool rolls the connection back on release,
+        # which silently discarded every write while the handler still returned 200 CREATED
+        # (verified in production 2026-10-18: PUT -> CREATED, row count 0). Commit what the
+        # request left open; if an exception aborted the transaction this is a rollback, which
+        # is exactly what a failed request should do.
+        await conn.commit()
 
 
 async def authenticate_surface(
