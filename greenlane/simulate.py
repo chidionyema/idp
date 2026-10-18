@@ -136,16 +136,21 @@ class ChaosBackend:
     def push_head(self, lane: str, sha: str) -> None:
         pass  # simulation: no remote push needed
 
-    def rebase(self, head: str, onto: str) -> Optional[str]:
+    def rebase(self, head: str, onto: str, lane: str = "") -> Optional[str]:
         mine = self.changes_since(head, onto)
         theirs = self.changes_since(onto, head)
         touched = (
             set().union(*(self.changes[c].files for c in theirs)) if theirs else set()
         )
+        # mirror of GitHubBackend.rebase: a flux/* lane takes its own side on overlap,
+        # because its content is the newest machine-derived truth; every other lane
+        # conflicts deterministically on a third of overlapping files. The lane NAME
+        # carries the class -- a head is a sha and says nothing about its branch.
+        generated = lane.startswith("flux/")
         for c in mine:
             for f in self.changes[c].files & touched:
                 # same file is not always the same hunk: a deterministic third of overlaps conflict
-                if int(_sha(c, f)[:4], 16) % 3 == 0:
+                if not generated and int(_sha(c, f)[:4], 16) % 3 == 0:
                     return None
         tip = onto
         for c in reversed(mine):

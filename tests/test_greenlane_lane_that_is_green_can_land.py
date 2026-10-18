@@ -59,7 +59,7 @@ class FakeBackend:
         # same single lane keeps the lane alive across _observe_lanes calls
         return {"lane/x": "head1"}
 
-    def rebase(self, head: str, onto: str):
+    def rebase(self, head: str, onto: str, lane: str = ""):
         return f"rebased-{head}"
 
     def checks(self, tip: str):

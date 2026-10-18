@@ -37,8 +37,22 @@ class Backend:
     def lanes(self):
         return dict(self.heads)
 
-    def rebase(self, head, onto):
-        return None if self.conflict else f"{head}@{onto}"
+    def rebase(self, head, onto, lane=""):
+        # Real rebase is idempotent: cherry-picking a head that is already based on `onto`
+        # yields the same head. The stale-refresh rebase and the batch rebase can both run
+        # on the same base in one tick, so a composing fake produced h1@m2@m2 candidates
+        # and landed a tip no real git would ever build.
+        if self.conflict:
+            return None
+        return head if head.endswith(f"@{onto}") else f"{head}@{onto}"
+
+    def push_head(self, lane, head):
+        # The engine's stale-refresh pushes the rebased head to origin; a real remote's
+        # lanes() then reports that sha. The fake must do the same -- if heads() keeps the
+        # old sha, _observe_lanes reads the engine's own push as an external force-push,
+        # resets the lane to PENDING with judged_on cleared, and re-tests the stale head
+        # forever (the 6==3 failure this file carried on main, unnoticed, to 2026-10-18).
+        self.heads[lane] = head
 
     def push_candidate(self, batch_id, tip):
         self.candidates.append(tip)

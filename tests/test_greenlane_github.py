@@ -478,6 +478,32 @@ def test_a_lane_squashes_onto_main_or_is_refused_as_a_conflict(repo):
     assert _git(repo, "worktree", "list").count("\n") == 0
 
 
+def test_a_generated_flux_lane_takes_its_own_side_on_a_conflict(repo):
+    # The image automation rewrites the same `newTag:` lines on every build, so the
+    # previous image-update landing guarantees the next flux/image-updates lane
+    # conflicts textually with main -- and the lane's side is always the newest
+    # truth (the newest build's tags). Measured 2026-10-18: the lane sat "does not
+    # rebase onto main" through consecutive builds, red on the PRs page between
+    # every rewrite. The strict refusal above still holds for every non-flux lane.
+    _git(repo, "checkout", "-q", "-b", "flux/image-updates", "main")
+    (repo / "a.txt").write_text("tag-14612\n")
+    _git(repo, "commit", "-q", "-am", "platform: image update -> main-14612")
+    head = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "checkout", "-q", "main")
+    (repo / "a.txt").write_text("tag-14608\n")
+    _git(repo, "commit", "-q", "-am", "main lands the previous image update")
+    onto = _git(repo, "rev-parse", "HEAD")
+    b = Recorded({})
+    new = b.rebase(head, onto, "flux/image-updates")
+    assert new, "a generated lane must rebase by taking its own side"
+    assert _git(repo, "log", "-1", "--format=%s", new) == (
+        "platform: image update -> main-14612"
+    )
+    assert _git(repo, "show", f"{new}:a.txt") == "tag-14612"
+    assert _git(repo, "rev-parse", f"{new}^") == onto
+    assert _git(repo, "worktree", "list").count("\n") == 0
+
+
 def test_a_lane_brought_up_to_date_by_update_branch_keeps_its_own_message(repo):
     # PUT update-branch leaves the lane head a bot "Merge branch 'main'" commit with no
     # trailers. The candidate used to take its subject, author and trailers from that merge,

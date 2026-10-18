@@ -141,7 +141,7 @@ class Backend(Protocol):
         self, lane: str, sha: str
     ) -> None: ...  # force-push lane head to origin
     def rebase(
-        self, head: str, onto: str
+        self, head: str, onto: str, lane: str = ""
     ) -> Optional[str]: ...  # new sha, or None on conflict
     def push_candidate(
         self, batch_id: str, tip: str
@@ -380,7 +380,7 @@ class Engine:
             # against the current main before moving to PENDING. If the rebase succeeds the lane
             # tests cleanly against the current main; if it fails the conflict is genuine and
             # the rejudge counter will catch it on the next main move.
-            effective = self.b.rebase(lane.head, main)
+            effective = self.b.rebase(lane.head, main, lane.name)
             if effective and effective != lane.head:
                 lane.head = effective
                 # Push immediately: CI tests origin/<lane>, not the in-memory lane.head.
@@ -581,7 +581,7 @@ class Engine:
                 continue
             # Stale: was judged against a different main tip. Try to rebase onto current main.
             # If that succeeds, the lane now tests cleanly against main.
-            effective = self.b.rebase(lane.head, base)
+            effective = self.b.rebase(lane.head, base, lane.name)
             if not effective:
                 continue
             # Update lane.head and push the rebased head to remote. The push is always needed
