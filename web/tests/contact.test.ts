@@ -117,6 +117,30 @@ test("delivery target is absent until configured", () => {
   assert.equal(deliveryTarget({ CONTACT_WEBHOOK_URL: "   " }), null);
 });
 
+// The cluster mounting the Secret as files instead of env vars is a shape this site must be
+// able to run in: kyverno's secrets-not-from-env-vars refuses the other one. If this read did
+// not work, the deployed site would answer 503 forever while every test here stayed green.
+test("delivery target reads the mounted files when the env is empty", () => {
+  const files: Record<string, string> = {
+    CONTACT_WEBHOOK_URL: " https://hooks.example.com/deploy\n",
+    CONTACT_WEBHOOK_TOKEN: "s3cret\n",
+  };
+  const readSecret = (name: string) => files[name];
+  const target = deliveryTarget({}, readSecret);
+  assert.equal(target?.url, "https://hooks.example.com/deploy");
+  assert.equal(target?.token, "s3cret");
+});
+
+test("an absent secret file is still an unconfigured deployment", () => {
+  assert.equal(deliveryTarget({}, () => undefined), null);
+});
+
+test("the environment still wins over the files", () => {
+  const readSecret = () => "https://from-file.example/hook";
+  assert.equal(deliveryTarget({ CONTACT_WEBHOOK_URL: "https://from-env.example/hook" }, readSecret)?.url,
+    "https://from-env.example/hook");
+});
+
 test("delivery target rejects anything that is not an https URL", () => {
   assert.equal(deliveryTarget({ CONTACT_WEBHOOK_URL: "http://insecure.example/hook" }), null);
   assert.equal(deliveryTarget({ CONTACT_WEBHOOK_URL: "not a url" }), null);

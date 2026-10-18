@@ -1,0 +1,33 @@
+# The site's image. build-multiarch discovers web/meridian.Dockerfile on its own -- bin/dockerfiles
+# names a `<name>.Dockerfile` by its stem, so the image is `meridian` with context `web/` -- and
+# pushes `main-<run>-<sha>` like every other estate image. This row is what moves
+# platform/meridian/kustomization.yaml onto each new one.
+#
+# No tag is typed anywhere: the deployment's kustomization carries the `$imagepolicy` marker and
+# Flux writes the tag. A hand-typed tag is how cyrus came to sit in ImagePullBackOff for a
+# `:main` tag that was never pushed.
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImageRepository
+metadata:
+  name: meridian
+  namespace: flux-system
+spec:
+  image: ghcr.io/chidionyema/meridian
+  interval: 5m
+  secretRef:
+    name: ghcr-pull
+---
+apiVersion: image.toolkit.fluxcd.io/v1
+kind: ImagePolicy
+metadata:
+  name: meridian
+  namespace: flux-system
+spec:
+  imageRepositoryRef:
+    name: meridian
+  filterTags:
+    pattern: '^main-(?P<run>[0-9]+)-[0-9a-f]{40}$'
+    extract: '$run'
+  policy:
+    numerical:
+      order: asc

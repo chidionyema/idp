@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# The namespace transform is explicit here rather than top-level: the HTTPRoute names a parent
+# in another namespace and the ExternalSecret names a cluster-scoped store, so the few objects
+# that do not live in `meridian` are named by their own files and left alone.
+resources:
+  - namespace.yaml
+  - public-door.yaml
+  - deployment.yaml
+images:
+  # Set by Flux image automation, exactly as backstage, jit, cyrus and the rest are. A tag
+  # typed by hand rots: cyrus sat in ImagePullBackOff from the day it was applied because its
+  # deployment asked for a `:main` tag that was never pushed
+  # (platform/image-automation/cyrus.yaml).
+  - name: ghcr.io/chidionyema/meridian
+    newTag: main-0-bootstrap # {"$imagepolicy": "flux-system:meridian:tag"}

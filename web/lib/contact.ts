@@ -126,13 +126,27 @@ export interface DeliveryTarget {
 }
 
 /**
+ * Reads one named secret. Env is the laptop shape; a mounted file is the cluster shape.
+ *
+ * The cluster shape exists because kyverno's `secrets-not-from-env-vars` refuses a Pod that
+ * takes a credential through its environment: a value in an env var is printed by every crash
+ * dump, by `kubectl describe pod`, and by any library that logs its environment on start. So
+ * platform/meridian/ mounts the Secret as files and this reads them; nothing about the site's
+ * behaviour changes, and the value never enters a process's environment block.
+ */
+export type SecretReader = (name: string) => string | undefined;
+
+/**
  * Delivery is provider-agnostic by design: the site posts JSON to whatever URL the
  * deployment supplies through CONTACT_WEBHOOK_URL (with an optional bearer token in
  * CONTACT_WEBHOOK_TOKEN). Referencing the variable by name only keeps the secret out
  * of the repo, and naming no vendor keeps this file from making a purchasing decision.
  */
-export function deliveryTarget(env: Record<string, string | undefined>): DeliveryTarget | null {
-  const url = env.CONTACT_WEBHOOK_URL?.trim();
+export function deliveryTarget(
+  env: Record<string, string | undefined>,
+  readSecret?: SecretReader,
+): DeliveryTarget | null {
+  const url = (env.CONTACT_WEBHOOK_URL ?? readSecret?.("CONTACT_WEBHOOK_URL"))?.trim();
   if (!url) return null;
   try {
     const parsed = new URL(url);
@@ -140,7 +154,8 @@ export function deliveryTarget(env: Record<string, string | undefined>): Deliver
   } catch {
     return null;
   }
-  return { url, token: env.CONTACT_WEBHOOK_TOKEN?.trim() || undefined };
+  const token = (env.CONTACT_WEBHOOK_TOKEN ?? readSecret?.("CONTACT_WEBHOOK_TOKEN"))?.trim();
+  return { url, token: token || undefined };
 }
 
 export function deliveryPayload(value: NonNullable<ValidationResult["value"]>, receivedAt: string) {

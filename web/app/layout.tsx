@@ -9,10 +9,14 @@ const dmSans = DM_Sans({ subsets: ["latin"], variable: "--sans", display: "swap"
 const dmMono = DM_Mono({ subsets: ["latin"], variable: "--mono", weight: ["300", "400", "500"], display: "swap" });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://meridian.ai"),
+  // The host the site is actually served on (platform/meridian/public-door.yaml), not a domain
+  // the estate does not own: these URLs become the canonical link, the OpenGraph url and the
+  // base every relative OG image resolves against, so a wrong host here is a wrong canonical
+  // on every page.
+  metadataBase: new URL("https://meridian.mumchimp.com"),
   title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
   description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
-  openGraph: { type: "website", locale: "en_US", url: "https://meridian.ai", siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+  openGraph: { type: "website", locale: "en_US", url: "https://meridian.mumchimp.com", siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
   twitter: { card: "summary_large_image", creator: "@meridianai" },
   robots: { index: true, follow: true },
 };

@@ -1,0 +1,37 @@
+# The site's address from anywhere.
+#
+# A hostname of its own, not a path on someone else's: this is a surface the founder sends a
+# client to, and the copy inside it is written for a reader who was told the name. It is
+# meridian.<ESTATE_ZONE>, substituted at reconcile time from clusters/oke/estate-config.yaml,
+# so no literal hostname is written down here (bin/estate-zone-gate refuses one).
+#
+# The listener is prospector's https-meridian (deploy/k8s/base/edge.yaml). That listener is
+# what puts meridian.<zone> on the shared Let's Encrypt certificate: cert-manager issues one
+# certificate whose SANs are the hostnames of the listeners naming prospector-edge-tls, so a
+# new hostname costs a listener and no new certificate. This route is what attaches to it,
+# which is why the namespace carries idp.estate/edge-attach.
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: meridian
+  namespace: meridian
+  labels:
+    backstage.io/kubernetes-id: meridian
+spec:
+  parentRefs:
+    - name: prospector-edge
+      namespace: prospector
+      sectionName: https-meridian
+  hostnames:
+    - "meridian.${ESTATE_ZONE}"
+  rules:
+    # Everything. This is one application serving its own pages, /api/contact and /_next/**
+    # assets out of one process; a path list here would be a second copy of the app's routing
+    # table, and every page added to the site would need this file reopened.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: meridian
+          port: 80
