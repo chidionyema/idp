@@ -128,6 +128,14 @@ backend:
   csp:
     connect-src: ["'self'", 'http:', 'https:', 'blob:']
     img-src: ["'self'", 'data:', 'blob:']
+    # The face (/face) is a talking head: DRACO decodes the .glb model in blob: workers,
+    # the lip-sync playback runs in an AudioWorklet, and spoken replies play from blob:
+    # URLs. Helmet's defaults leave worker-src and media-src unset, so they fall back to
+    # script-src and default-src and refuse all three -- measured 2026-10-18 as the
+    # founder's "not allowed by csp" errors on the face.
+    worker-src: ["'self'", 'blob:']
+    media-src: ["'self'", 'blob:']
+    script-src: ["'self'", "'unsafe-eval'", 'blob:']
     # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference
     # Default Helmet Content-Security-Policy values can be removed by setting the key to false
   cors:
