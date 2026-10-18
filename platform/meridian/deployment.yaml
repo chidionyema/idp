@@ -51,6 +51,13 @@ spec:
       data:
         CONTACT_WEBHOOK_URL: "{{ .url }}"
         CONTACT_WEBHOOK_TOKEN: "{{ .token }}"
+  # Which vault entry to read. Without data/dataFrom the API server refuses the object outright --
+  # `either data or dataFrom should be specified` -- so the template above named keys the
+  # ExternalSecret never asked for, and the whole Kustomization failed on it. `extract` takes the
+  # entry whole, so the template's `.url` and `.token` are properties of `meridian`, which is the
+  # entry the comment above already names.
+  dataFrom:
+    - extract: {key: meridian}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -60,7 +67,10 @@ metadata:
   labels:
     app.kubernetes.io/name: meridian
 spec:
-  replicas: 1
+  # crew#555: a founder-facing Deployment runs at least 2, and they must not share a node -- one
+  # pod is one node event away from a 503 (the catalogue outage of 2026-08-28 06:20Z). Two pods at
+  # 60m each is 120m of the node's 1.8 CPU budget.
+  replicas: 2
   selector:
     matchLabels:
       app.kubernetes.io/name: meridian
@@ -70,6 +80,16 @@ spec:
         app.kubernetes.io/name: meridian
         backstage.io/kubernetes-id: meridian
     spec:
+      # Two replicas on one node are one replica. DoNotSchedule rather than ScheduleAnyway: a
+      # spread that is allowed to fail is not a spread, and the estate has a second node to put
+      # the spare on.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: meridian
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532
