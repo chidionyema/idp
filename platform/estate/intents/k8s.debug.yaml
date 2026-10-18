@@ -15,4 +15,4 @@ steps:
   - name: cluster-diagnostic
     cmd: >
       bash ~/.estate/libexec/k8s-debug.sh
-        "{{namespace}}" "{{focus}}" "{{depth}}" "{{since}}" {{log_lines}}
+        {{namespace}} {{focus}} "{{depth}}" "{{since}}" {{log_lines}}

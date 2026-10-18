@@ -42,7 +42,7 @@ steps:
     timeout: 110
     cmd: >
       python3 ~/.estate/libexec/site-onboard.py {{mode}}
-      --name "{{name}}" --hostname "{{hostname}}" --kind "{{kind}}" --port "{{port}}"
-      --image "{{image}}" --replicas "{{replicas}}" --tier "{{tier}}"
-      --health-path "{{health_path}}" --secret-entry "{{secret_entry}}"
-      --runtime "{{runtime}}" --repo "{{repo}}" --force "{{force}}"
+      --name {{name}} --hostname {{hostname}} --kind {{kind}} --port {{port}}
+      --image {{image}} --replicas {{replicas}} --tier {{tier}}
+      --health-path {{health_path}} --secret-entry {{secret_entry}}
+      --runtime {{runtime}} --repo {{repo}} --force {{force}}

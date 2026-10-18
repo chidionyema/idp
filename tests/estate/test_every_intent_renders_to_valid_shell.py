@@ -48,3 +48,31 @@ def test_intent_steps_render_to_valid_shell(path):
         assert r.returncode == 0, (
             f"{path.name} step {step.get('name')}: {r.stderr}\n{cmd}"
         )
+
+
+@pytest.mark.parametrize("path", INTENTS, ids=lambda p: p.stem)
+def test_empty_default_is_not_wrapped_in_shell_quotes(path):
+    """`"{{arg}}"` on an arg that defaults to empty passes the two characters '' to the command.
+
+    2026-10-18: site-onboard rendered `--image "''"` and refused "give a full repository path"
+    on its own default, so the intent was dead at every door while its unit tests were green --
+    interpolate() already shell-quotes, and a second pair of quotes around an empty value is
+    literal text, not an empty argument. Only empty defaults are graded: the 18 older intents
+    that quote a required argument pass a value that has no quotes in it, and re-templating them
+    is a separate change (AGENTS.md 10, only the change that was asked for).
+    """
+    intent = yaml.safe_load(path.read_text())
+    empty = [
+        k
+        for k, v in (intent.get("args") or {}).items()
+        if isinstance(v, dict) and str((v or {}).get("default", "")) == ""
+    ]
+    for step in intent.get("steps") or []:
+        cmd = step.get("cmd") or ""
+        for name in empty:
+            for quoted in (f'"{{{{{name}}}}}"', f"'{{{{{name}}}}}'"):
+                assert quoted not in cmd, (
+                    f"{path.name} step {step.get('name')}: --{name} defaults to empty and is "
+                    "wrapped in shell quotes, so the command receives '' not "
+                    f"{quoted} -> drop the quotes; interpolate() quotes for you"
+                )

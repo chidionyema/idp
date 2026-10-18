@@ -14,7 +14,7 @@ steps:
       git checkout main
       git pull --ff-only origin main
       git checkout -B "$BR" origin/main
-      [ -n "{{files}}" ] && git add {{files}} || git add -A
+      [ -n {{files}} ] && git add {{files}} || git add -A
       git commit -m "{{message}}" || echo "nothing to commit"
       git push -u origin "$BR" 2>&1 | tail -3
       gh pr create --fill 2>&1 | tail -2
