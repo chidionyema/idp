@@ -1,0 +1,48 @@
+name: site-onboard
+description: >
+  One parameterised path from "serve <label>.<zone>" to every declaration Flux needs, so a new
+  site or backend costs one command instead of four merged fixes after the application is already
+  written. It derives, from a name:
+  the namespace (restricted, prune-disabled, edge-attach), the Service and Deployment (2 replicas
+  spread across nodes, pull secret from the cluster store, probes on the real page), the HTTPRoute
+  on the tokenised ${ESTATE_ZONE} hostname, the Gateway listener that claims that hostname on the
+  shared certificate, BOTH halves of the edge<->site allowance (flows.edge.egress and
+  flows.<name>.ingress_from -- one half alone is a request that hangs after a completed TLS
+  handshake), the regenerated NetworkPolicy, the Flux row, the image-automation row and the
+  catalogue entity.
+
+  Modes: plan (the default) prints every CREATE and EDIT and writes nothing; write writes them into
+  the worktree and regenerates the fences; verify is a read-only gate that prints one line per
+  declaration and exits 1 for each one missing, graded in the tree rather than from these arguments
+  so it can fail on the defect it exists to prevent.
+
+  It never talks to the cluster. Flux is the only writer (AGENTS.md 2), so after `write` the path to
+  production is `lane-submit`, and a real production log line is the only "done".
+class: mutate
+args:
+  mode:         {type: string, default: "plan"}
+  name:         {type: string, default: ""}
+  hostname:     {type: string, default: "", description: "label only; ${ESTATE_ZONE} is appended"}
+  kind:         {type: string, default: "website"}
+  port:         {type: string, default: "8080"}
+  image:        {type: string, default: "", description: "default ghcr.io/chidionyema/<name>"}
+  replicas:     {type: string, default: "2"}
+  tier:         {type: string, default: "founder-facing"}
+  health_path:  {type: string, default: ""}
+  secret_entry: {type: string, default: "", description: "vault entry; omit for none"}
+  runtime:      {type: string, default: "always-on"}
+  repo:         {type: string, default: "", description: "idp checkout; found if empty"}
+  force:        {type: bool, default: false}
+door_s: 120
+halt_on_failure: true
+steps:
+  - name: derive and write the declarations
+    # plan and verify are read-only and finish in a second. write also regenerates every fence
+    # (bin/idp-ns-fence-gen), which is the slow part; both stay well inside the 120s door.
+    timeout: 110
+    cmd: >
+      python3 ~/.estate/libexec/site-onboard.py {{mode}}
+      --name "{{name}}" --hostname "{{hostname}}" --kind "{{kind}}" --port "{{port}}"
+      --image "{{image}}" --replicas "{{replicas}}" --tier "{{tier}}"
+      --health-path "{{health_path}}" --secret-entry "{{secret_entry}}"
+      --runtime "{{runtime}}" --repo "{{repo}}" --force "{{force}}"
