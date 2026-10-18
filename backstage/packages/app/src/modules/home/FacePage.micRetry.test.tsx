@@ -19,10 +19,17 @@
 // with @swc/jest, whose jest pass hoists `jest.mock(...)` above the imports only when it sees the
 // bare global; with `jest` imported the call stays AFTER the require, the real module is already
 // loaded, and the factory mocks nothing (measured 2026-09-22).
-import { describe, it, expect, afterEach } from '@jest/globals';
+import { describe, it, expect, beforeEach, afterEach } from '@jest/globals';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { FacePage } from './FacePage';
+
+// This suite pins the LEGACY voice path's button mapping (useEstateVoice). FacePage's default
+// path is the router (useVoiceRouter, 2026-10-16); the flag is read per render, so the suite
+// routes itself to the path it tests before each render.
+beforeEach(() => {
+  window.localStorage.setItem('estate.face.voice', 'legacy');
+});
 
 // The hook's state union, spelled out rather than imported: this suite runs through the app's
 // babel transform, which does not accept `import type`. The string set is the contract either way.

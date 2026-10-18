@@ -102,6 +102,12 @@ async def lifespan(app: FastAPI):
     if sessions_url:
         # Warm the voice's fleet snapshot so the first spoken turn does not pay the relay either.
         _refresh_in_background(sessions_url)
+    # The face's voice is warm before anyone asks (2026-10-16): after a restart the first clause
+    # paid the lazy engine import and the first subprocess spawn itself -- ~20s on the founder's
+    # first words. Off the critical path: warm_voice logs its own failures and never blocks serve.
+    from fleetview_backend import voice_media
+
+    asyncio.create_task(voice_media.warm_voice())
     yield
     if nats_url:
         from fleetview_backend import outbox

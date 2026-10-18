@@ -17,13 +17,31 @@
  * over it as a glass pill near the bottom, so the model is framed once by the camera, never by the
  * button.
  */
+import type { CSSProperties } from 'react';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import EstateFace from './EstateFace';
 import FleetBackdrop from './FleetBackdrop';
 import { useResearch } from './useResearch';
 import { useEstateVoice } from './useEstateVoice';
+import { useVoiceRouter } from './useVoiceRouter';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
+
+// THE FACE'S VOICE PATH, BEHIND A FLAG (2026-10-16). The face now speaks through useVoiceRouter
+// -- the streaming socket (partials while you speak, first audio median 2.26s against the old
+// path's 3.0-3.8s, and the lip-synced mouth, which the old path's /voice/say loop had and this
+// one never did). `estate.face.voice = legacy` in localStorage puts the old useEstateVoice loop
+// back without a deploy, until the old path is deleted outright. Both hooks mount (their rules
+// of hooks must not branch); only the chosen one's handlers are wired to the page. The flag is
+// read per render, not at module load, so a test can set it before rendering -- for a person it
+// cannot change between renders without a reload, which is exactly the semantics it needs.
+function faceVoicePrefersLegacy(): boolean {
+  try {
+    return window.localStorage.getItem('estate.face.voice') === 'legacy';
+  } catch {
+    return false;
+  }
+}
 
 const LABEL: Record<string, string> = {
   off: 'Tap to talk',
@@ -116,8 +134,23 @@ export function FaceEstateLine() {
   );
 }
 
+const clamp = (lines: number): CSSProperties => ({
+  display: '-webkit-box',
+  WebkitLineClamp: lines,
+  WebkitBoxOrient: 'vertical',
+  overflow: 'hidden',
+});
+
 export function FacePage() {
-  const voice = useEstateVoice();
+  const legacy = useEstateVoice();
+  const router = useVoiceRouter();
+  const chosen = faceVoicePrefersLegacy() ? legacy : router;
+  const voice = {
+    ...chosen,
+    // Only the router hook streams partials; reading it off the union's common shape keeps the
+    // page one type.
+    partial: (chosen as { partial?: string }).partial,
+  };
   // Milestones spoken through the SAME voice engine as everything else (idp#5737 item 3). The
   // gate lives in milestoneSpeech.ts; this only joins the news stream to the mouth. Off by
   // default: the face does not start narrating unasked.
@@ -208,11 +241,16 @@ export function FacePage() {
           pointerEvents: 'none',
         }}
       >
-        {voice.heard && (
-          <div style={{ opacity: 0.65, fontSize: 14 }}>You: {voice.heard}</div>
+        {/* CAPTIONS ARE BOUND, NOT UNBOUNDED (2026-10-16, "caption text covers the face"): a long
+            answer used to grow this pill upward over the avatar's chest and mouth. The words are
+            capped where the pill is wide, and the full text lives in the DOM for screen readers. */}
+        {(voice.partial || voice.heard) && (
+          <div style={{ ...clamp(1), opacity: 0.65, fontSize: 14 }}>
+            You: {voice.partial || voice.heard}
+          </div>
         )}
         {voice.reply && (
-          <div style={{ fontSize: 17, lineHeight: 1.45 }}>{voice.reply}</div>
+          <div style={{ ...clamp(3), fontSize: 17, lineHeight: 1.45 }}>{voice.reply}</div>
         )}
         {voice.detail && (
           <div style={{ opacity: 0.55, fontSize: 12 }}>{voice.detail}</div>
