@@ -167,7 +167,7 @@ def test_a_tick_that_loses_the_state_race_reloads_and_retries(capsys):
     mod = _mod()
     b = _Flaky()
 
-    def fake_tick_once():
+    def fake_tick_once(judge_only=False):  # signature mirrors bin/idp-greenlane._tick_once (idp#6520)
         try:
             b.save_state_text("{}")
         finally:
@@ -190,7 +190,7 @@ def test_a_tick_that_loses_every_race_stays_loud_after_the_bound():
     fail. After the bound the refusal propagates."""
     mod = _mod()
 
-    def fake_tick_once():
+    def fake_tick_once(judge_only=False):  # signature mirrors bin/idp-greenlane._tick_once (idp#6520)
         b = _Lost()
         b.save_state_text("{}")
 
@@ -208,7 +208,7 @@ def test_a_tick_that_fails_for_another_reason_is_not_retried():
     mod = _mod()
     calls = {"n": 0}
 
-    def fake_tick_once():
+    def fake_tick_once(judge_only=False):  # signature mirrors bin/idp-greenlane._tick_once (idp#6520)
         calls["n"] += 1
         raise RuntimeError("git push -q: rc=128 could not read from remote repository")
 
