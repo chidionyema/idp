@@ -114,6 +114,18 @@ overrides:
       requests.storage: 20Gi
       pods: "20"
       services.loadbalancers: "0"   # the money layer is reached through the shared Gateway or not at all
+  prospector:
+    # The shared Gateway's data plane and every ACME solver live here, so a certificate renewal fans
+    # out one solver pod per hostname on top of the storefront's own pods. Measured 2026-10-18: the
+    # derived 15-pod ceiling was fully consumed by stale solvers and every retry was refused with
+    #   pods "cm-acme-http-solver-ghsxv" is forbidden: exceeded quota: ns-ceiling,
+    #   requested: pods=1, used: pods=15, limited: pods=15
+    # so the HTTP-01 challenge route pointed at a service with no endpoint and every certificate in
+    # the estate stayed pending with nothing but a self-check timeout to show for it. Sized for the
+    # fan-out: the apex certificate alone carries 13 SANs, and a reissue may hold one solver per SAN
+    # while Traefik and the storefront keep running. CPU and memory stay derived.
+    hard:
+      pods: "40"
 
 # Declared cross-namespace traffic. Derived from a scan of every manifest in platform/ for
 # <service>.<namespace>.svc references, then extended by hand where a flow does not appear as a
@@ -597,7 +609,15 @@ flows:
              # idp-agent admits edge for the same reason demo-sandbox does: the GitHub/Flux
              # webhook route into platform/idp_agent/gateway.py's /webhook/github and
              # /webhook/flux crosses this namespace, so edge must name the return path back.
-             demo-sandbox, idp-agent]
+             demo-sandbox, idp-agent,
+             # meridian: meridian.${ESTATE_ZONE} is served by an HTTPRoute in the meridian
+             # namespace, and meridian has no fence of its own, so the only thing that can cut
+             # this path is this side. Found live 2026-10-18: the route was Accepted, the service
+             # answered 200 from a pod in the namespace, and the public request hung after a
+             # completed TLS handshake -- a dropped packet, not a 502, because Traefik's SYN
+             # never reached the pod and nothing sent a reset. Same one-direction-only shape as
+             # cyrus and demo-sandbox above.
+             meridian]
     # The public listeners (traefik containerPorts web 8000 and websecure 8443, behind the OCI
     # load balancer with externalTrafficPolicy Local, so the source address is the client's).
     # The traefik pods still held flannel addresses when Calico started enforcing on 2026-09-06,
