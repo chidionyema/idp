@@ -54,6 +54,12 @@ spec:
               value: /var/run/secrets/newsroom-llm/key
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://signoz-otel-collector.observability.svc:4318"
+            # Unified estate memory (external-secret.yaml, voice-router-mcp). internal/estatemem:
+            # unset or unreadable is a no-op, and the brief is bounded on the spoken path.
+            - name: ESTATE_MCP_URL
+              value: "http://agentgateway.mcp.svc.cluster.local:3000/estate/mcp"
+            - name: ESTATE_MCP_KEY_FILE
+              value: /run/secrets/voice-router-mcp/ESTATE_MCP_KEY
           ports:
             - name: http
               containerPort: 8080
@@ -86,6 +92,8 @@ spec:
               mountPath: /tmp
             - name: newsroom-llm
               mountPath: /var/run/secrets/newsroom-llm
+            - name: mcp-key
+              mountPath: /run/secrets/voice-router-mcp
               readOnly: true
       volumes:
         - name: tmp
@@ -94,3 +102,6 @@ spec:
           secret:
             secretName: newsroom-llm
             optional: true
+        # Optional: the director starts before ESO has written it, and runs without memory.
+        - name: mcp-key
+          secret: { secretName: voice-router-mcp, optional: true }
