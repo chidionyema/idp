@@ -579,6 +579,16 @@ class Engine:
             # to be stale against.
             if not lane.judged_on or lane.judged_on == base:
                 continue
+            # ... and only lanes that will be tested again: PENDING and CONFLICT. Refreshing a
+            # RED lane stamps `judged_on` with a main that never judged it and moves the state
+            # head to the rebased sha while the remote branch still carries the old one --
+            # _observe_lanes then reads the mismatch as a NEW head, a new claim, and re-queues
+            # a lane whose verdict should stand (2026-10-18: three candidate pushes of a red
+            # lane against a still-red main, b4..b6 in the suite trace). A RED lane is
+            # re-tested through the expiry path, which refreshes the head with its own guarded
+            # push; a LANDED lane is out of the pipeline for good.
+            if lane.status not in (PENDING, CONFLICT):
+                continue
             # Stale: was judged against a different main tip. Try to rebase onto current main.
             # If that succeeds, the lane now tests cleanly against main.
             effective = self.b.rebase(lane.head, base)
@@ -591,7 +601,11 @@ class Engine:
             old = lane.head
             lane.head = effective
             lane.judged_on = base
-            self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
+            # push_head is optional on the Backend protocol (the :389 pattern): an
+            # in-memory backend has no remote to push. The refreshed head still lands in
+            # state; the GitHub backend pushes it so CI tests the rebased head.
+            if hasattr(self.b, "push_head"):
+                self.b.push_head(lane.name, effective)  # type: ignore[attr-defined]
             self.log.append(
                 f"lane/{lane.name}: refreshed stale head {old[:7]} -> "
                 f"{effective[:7]} (main moved; was {base[:7]}, now {base[:7]})"
