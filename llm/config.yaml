@@ -433,6 +433,17 @@ model_list:
       input_cost_per_token: 0.0000003
     model_info:
       max_input_tokens: 131072
+  # deepseek-chat: the voice pool's second deployment (2026-10-18). The single MiniMax-M3 row above stalls in multi-minute windows -- the laptop watch (voice-watch.log) caught readyz brain probes dying at 30s in bursts at 11:02, 11:09, 11:28, 11:37-11:40, 11:48 and 11:57-12:01Z -- and every rung below it in the chain was dead or slower the same morning: narrate's qwen went exhausted(rate) at 12:19Z and the gpt-oss rungs answer 403 from this network or ~14s to first content. Measured this hour through the live router with the laptop caller key: MiniMax-M3 answered the brain's one-word probe in 4.8s after 17 hidden-reasoning tokens; deepseek/deepseek-chat answered 'ok' finish=stop in 2.4s. A pool of two self-heals the same way the groq and default pools do: cooldown drops MiniMax for its bad window, cost-based routing picks this row (true prices, $0.14/M in and $0.28/M out -- ~$0.0006 at the 4k-token voice prompt, inside the $3/day litellm budget), and MiniMax rejoins on its own the moment it answers again.
+  - model_name: voice
+    litellm_params:
+      model: deepseek/deepseek-chat
+      api_key: os.environ/DEEPSEEK_API_KEY
+      timeout: 8
+      max_tokens: 96
+      input_cost_per_token: 0.00000014
+      output_cost_per_token: 0.00000028
+    model_info:
+      max_input_tokens: 65536
   # narrate: the film director and the newsroom anchor (voice-router LLM_NARRATE_MODEL=narrate). A
   # non-reasoning instruct model: a reasoning model spends 48 tokens thinking and answers with nothing.
   # Measured 2026-10-09 from inside the litellm pod: Llama 3.1 8B is retired at all three vendors this
