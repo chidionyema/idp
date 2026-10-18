@@ -3,6 +3,12 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - traefik.yaml
+  # The cluster's one edge Gateway, and every hostname listener on it. It was applied for 54 days by
+  # a Flux Kustomization named `prospector` that no longer exists; nothing in flux-system owned it,
+  # so the object was live and unreconciled. Git is the only writer of this cluster (flux-only-writes
+  # below), so the orphan is held here, on the edge row, verbatim as it runs plus the
+  # `https-meridian` listener that puts meridian.mumchimp.com on the shared certificate.
+  - prospector-gateway.yaml
   - status-page.yaml
   - require-catalogue-entity.yaml
   # OTel endpoint: mutation injects OTEL_EXPORTER_OTLP_ENDPOINT at admission (add-if-absent);

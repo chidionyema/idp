@@ -1,0 +1,277 @@
+# The cluster's one edge Gateway. Traefik implements GatewayClass `traefik`
+# (platform/edge/traefik.yaml); every product attaches a hostname here as a listener and routes to
+# it cross-namespace (otto: https-otto, catalogue: https-catalogue, meridian: https-meridian).
+#
+# Provenance, measured 2026-10-18: this object was applied 54d ago by a Flux Kustomization named
+# `prospector` (label kustomize.toolkit.fluxcd.io/name=prospector, manager kustomize-controller).
+# That Kustomization no longer exists, flux-system holds no `prospector` GitRepository, and the
+# source it read (prospector/deploy/k8s/base/edge.yaml) is reconciled by nothing in this cluster --
+# so the live object was an orphan: programmed, serving 14 hostnames, owned by no source. The
+# `concierge` Kustomization that was meant to cover that repo points at ./platform/concierge, a
+# path absent from mums-concierge origin/main, so it applies nothing.
+#
+# git is the only writer of this cluster (platform/edge/flux-only-writes.yaml, founder lockdown
+# 2026-09-03), so the orphan is repaired here, on the edge row, rather than by hand: the object is
+# exactly the live spec (every listener, port, allowedRoutes and certificateRef captured from the
+# running Gateway) plus the `https-meridian` listener that adds meridian.mumchimp.com. Flux now owns
+# what nothing owned; it will never be amended by hand again.
+#
+# Certificate: cert-manager's gateway shim owns the Certificate named by a listener's
+# certificateRef and builds its SANs from the listeners that name it (ownerRef -> this Gateway).
+# Adding https-meridian is therefore what puts meridian.mumchimp.com on prospector-edge-tls; no
+# Certificate is written by hand here.
+#
+# Prune is disabled deliberately: this object carries every founder-facing hostname in the zone, so
+# a file moved between Kustomization rows (or dropped from git by mistake) must not garbage-collect
+# the Gateway and take all of them down. Same reasoning as platform/prospector/namespace.yaml.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: prospector-edge
+  namespace: prospector
+  annotations:
+    cert-manager.io/cluster-issuer: prospector-letsencrypt
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    app.kubernetes.io/name: prospector-edge
+    app.kubernetes.io/part-of: prospector
+spec:
+  gatewayClassName: traefik
+  listeners:
+    - name: http
+      port: 8000
+      protocol: HTTP
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https-apex
+      hostname: ${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-www
+      hostname: www.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-api
+      hostname: api.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Same
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-catalogue
+      hostname: catalogue.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-auth
+      hostname: auth.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-llm
+      hostname: llm.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-langfuse
+      hostname: langfuse.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-superset
+      hostname: superset.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-signoz
+      hostname: signoz.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-mcp
+      hostname: mcp.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-otto
+      hostname: otto.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-hc
+      hostname: hc.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-meridian
+      hostname: meridian.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-tls
+    - name: https-cyrus
+      hostname: cyrus.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-cyrus-tls
+    - name: https-sandbox
+      hostname: sandbox.${ESTATE_ZONE}
+      port: 8443
+      protocol: HTTPS
+      allowedRoutes:
+        namespaces:
+          from: Selector
+          selector:
+            matchLabels:
+              idp.estate/edge-attach: "true"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - group: ""
+            kind: Secret
+            name: prospector-edge-sandbox-tls

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -21,18 +22,30 @@ const dmMono = localFont({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  // The host the site is actually served on (platform/meridian/public-door.yaml), not a domain
-  // the estate does not own: these URLs become the canonical link, the OpenGraph url and the
-  // base every relative OG image resolves against, so a wrong host here is a wrong canonical
-  // on every page.
-  metadataBase: new URL("https://meridian.mumchimp.com"),
-  title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
-  description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
-  openGraph: { type: "website", locale: "en_US", url: "https://meridian.mumchimp.com", siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
-  twitter: { card: "summary_large_image", creator: "@meridianai" },
-  robots: { index: true, follow: true },
-};
+// The host the site is actually served on (platform/meridian/public-door.yaml) is read off the
+// request, not written here: the estate writes its zone once (LAW 46 -- bin/estate-zone-gate
+// refuses a literal anywhere on main), and which zone this cluster answers on is a property of the
+// cluster row, not of the source. These URLs become the canonical link, the OpenGraph url and the
+// base every relative OG image resolves against, so a wrong host here is a wrong canonical on
+// every page; taking it from the request keeps it right on whatever host the edge routes.
+async function servedFrom(): Promise<URL> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
+  return new URL(`${proto}://${host}`);
+}
+
+export async function generateMetadata(): Promise<Metadata> {
+  const base = await servedFrom();
+  return {
+    metadataBase: base,
+    title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },
+    description: "We build the routing, tracing, workload identity and eval layers that put LLM features into production. Twelve deployments, with the numbers.",
+    openGraph: { type: "website", locale: "en_US", url: base.href, siteName: "Meridian Intelligence", images: [{ url: "/opengraph-image", width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", creator: "@meridianai" },
+    robots: { index: true, follow: true },
+  };
+}
 
 const jsonLd = {
   "@context": "https://schema.org", "@type": "Organization",
