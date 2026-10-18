@@ -168,6 +168,10 @@ spec:
                 - { name: LITELLM_API_KEY_FILE, value: /run/secrets/agent-workforce/LITELLM_API_KEY }
                 - { name: LANGFUSE_PUBLIC_KEY_FILE, value: /run/secrets/agent-workforce/LANGFUSE_PUBLIC_KEY }
                 - { name: LANGFUSE_SECRET_KEY_FILE, value: /run/secrets/agent-workforce/LANGFUSE_SECRET_KEY }
+                # Unified estate memory: the crew briefs from it at run start and remembers the outcome
+                # at the end. Unset URL or an unreadable key file and the crew runs exactly as before.
+                - { name: ESTATE_MCP_URL, value: "http://agentgateway.mcp.svc.cluster.local:3000/estate/mcp" }
+                - { name: ESTATE_MCP_KEY_FILE, value: /run/secrets/agent-workforce/ESTATE_MCP_KEY }
               volumeMounts:
                 - { name: laws, mountPath: /laws, readOnly: true }
                 - { name: data, mountPath: /var/lib/agent-workforce }
@@ -192,8 +196,9 @@ spec:
             - name: data
               persistentVolumeClaim:
                 claimName: agent-workforce-memory
-            # One directory, three Secrets: the App token the generator mints, the Langfuse pair
-            # and the router key. A projected volume, the same shape as hermes-agent's env dir.
+            # One directory, four Secrets: the App token the generator mints, the Langfuse pair,
+            # the router key and the estate memory key. A projected volume, the same shape as
+            # hermes-agent's env dir. The memory key is optional: a run never waits on it.
             - name: secrets
               projected:
                 defaultMode: 0440
@@ -201,3 +206,4 @@ spec:
                   - secret: { name: agent-workforce-github }
                   - secret: { name: agent-workforce-langfuse }
                   - secret: { name: agent-workforce-router }
+                  - secret: { name: agent-workforce-mcp, optional: true }

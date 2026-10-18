@@ -11,6 +11,7 @@ resources:
   - network-policy.yaml
   - telegram-secret.yaml
   - router-key.yaml
+  - mcp-key.yaml
   - config.yaml
   - router-lanes.yaml
   - deployment.yaml
