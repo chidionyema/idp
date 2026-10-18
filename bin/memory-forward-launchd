@@ -12,16 +12,26 @@
 # Deployed to ~/.estate/bin: launchd cannot run /bin/sh under ~/Documents (TCC), the same
 # reason bin/estate-graph-drain lives there. Paired template: launchd/ai.estate.memory-forward.
 set -u
+# launchd's PATH is /usr/bin:/bin:/usr/sbin:/sbin only; kubectl lives in ~/.rd/bin (Rancher
+# Desktop) and the OKE kubeconfig execs ~/.local/bin/oci as its credential plugin.
+export PATH="$HOME/.rd/bin:$HOME/.local/bin:/usr/local/bin:/opt/homebrew/bin:$PATH"
 PORT="${ESTATE_MEMORY_FORWARD_PORT:-18000}"
 TOKEN_DIR="${HOME}/.estate/unified-memory"
 TOKEN_FILE="${TOKEN_DIR}/surface-token"
 LOG="${HOME}/.estate/memory-forward.log"
 say() { echo "$(date -u +%FT%TZ) $*" >>"$LOG"; }
 
+# launchd's PATH has no kubectl (Rancher Desktop keeps it in ~/.rd/bin), so resolve it once.
+KUBECTL="$(command -v kubectl 2>/dev/null || true)"
+[ -n "$KUBECTL" ] || for c in "$HOME/.rd/bin/kubectl" /usr/local/bin/kubectl /opt/homebrew/bin/kubectl; do
+	[ -x "$c" ] && KUBECTL="$c" && break
+done
+[ -n "$KUBECTL" ] || { say "fatal: kubectl not found (looked in PATH, ~/.rd/bin, /usr/local/bin, /opt/homebrew/bin)"; exit 1; }
+
 fetch_token() {
 	local tok
-	tok="$(kubectl -n unified-memory get secret unified-memory \
-		-o 'jsonpath={.data.surface-token}' 2>/dev/null | base64 -d 2>/dev/null)"
+	tok="$("$KUBECTL" -n unified-memory get secret unified-memory \
+		-o 'jsonpath={.data.MEMORY_SURFACE_TOKEN}' 2>/dev/null | base64 -d 2>/dev/null)"
 	[ -n "$tok" ] || { say "token: kubectl read failed (kept previous)"; return 1; }
 	mkdir -p "$TOKEN_DIR"
 	umask 077
@@ -35,7 +45,7 @@ fetch_token() {
 fetch_token || true
 say "forward: starting on 127.0.0.1:${PORT} -> unified-memory-server:8000"
 while :; do
-	kubectl -n unified-memory port-forward --address 127.0.0.1 \
+	"$KUBECTL" -n unified-memory port-forward --address 127.0.0.1 \
 		svc/unified-memory-server "${PORT}:8000" >>"$LOG" 2>&1
 	say "forward exited; retrying in 5s"
 	sleep 5
