@@ -22,6 +22,7 @@
 // silence the agent at once, even with frames still in flight.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
+import { getClauseSink } from './useEstateVoice';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
 // Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
@@ -121,6 +122,8 @@ interface Live {
   nextStart: number;
   playing: AudioBufferSourceNode[];
   barged: number;
+  /** Clauses handed to the face's sink and not yet resolved. */
+  sinkBusy: number;
 }
 
 export interface VoiceRouter extends EstateVoice {
@@ -128,6 +131,10 @@ export interface VoiceRouter extends EstateVoice {
   partial: string;
   /** The router answered its last turns read; false until it has, and after it stops. */
   reachable: boolean;
+  /** True from mount until the first /voice/turns probe settles: the face shows "Connecting…". */
+  checking: boolean;
+  /** Set only on the one refusal that cannot clear by tapping again (iOS home-screen icon). */
+  micRecoveryUrl?: string;
 }
 
 export interface VoiceRouterOptions {
@@ -151,6 +158,14 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
   onIntentRef.current = opts.onIntentResult;
   const finalAt = useRef(0);
   const [reachable, setReachable] = useState(false);
+  // FacePage renders "Connecting…" while this is true: from mount until the first /voice/turns
+  // probe settles (useEstateVoice's `checking`, which the router hook never had -- it was the one
+  // shape gap that kept the face on the slow path).
+  const [checking, setChecking] = useState(true);
+  const [micRecoveryUrl, setMicRecoveryUrl] = useState<string | undefined>(undefined);
+  // Phrases arrive as text messages just before (or after) their binary audio frame; the queue
+  // pairs them so the face's lip-sync gets the words the audio actually carries.
+  const pendingPhrases = useRef<string[]>([]);
   const [panel, setPanel] = useState<{ voiceStats: any; voiceLog: any[] }>({ voiceStats: {}, voiceLog: [] });
 
   // The turn record, every 3s: the panel's metrics, and the proof the router is there at all.
@@ -164,9 +179,13 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
         if (live) {
           setPanel(p);
           setReachable(true);
+          setChecking(false);
         }
       } catch {
-        if (live) setReachable(false);
+        if (live) {
+          setReachable(false);
+          setChecking(false);
+        }
       }
     };
     void read();
@@ -179,6 +198,9 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
 
   const silence = useCallback(() => {
     const l = liveRef.current;
+    // The face's sink queues clauses on its own clock; a barge must clear those too, or the face
+    // keeps talking (and the lip-sync keeps running) after the interruption silenced the socket.
+    getClauseSink()?.stop();
     if (!l) return;
     l.playing.forEach((s) => {
       try {
@@ -195,6 +217,24 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     const l = liveRef.current;
     const f = l && decodeFrame(data);
     if (!l || !f || f.turn <= l.barged) return;
+    const text = pendingPhrases.current.shift() ?? '';
+    // THE FACE PLAYS, THE LIPS MOVE. EstateFace mounts a clause sink (faceEngine's speak plays
+    // the audio through TalkingHead with exact word timings); until 2026-10-16 this hook never
+    // called it, so on /face the founder heard the router and watched a still mouth -- the old
+    // useEstateVoice path was the only one wired to the sink. With a sink mounted it owns the
+    // audio outright (double-scheduling would sound twice); without one, the raw path below.
+    const sink = getClauseSink();
+    if (sink) {
+      l.sinkBusy += 1;
+      void sink
+        .speak(f.pcm.buffer.slice(f.pcm.byteOffset, f.pcm.byteOffset + f.pcm.byteLength), text)
+        .then(() => {
+          l.sinkBusy -= 1;
+          if (l.sinkBusy <= 0) setState((s) => (s === 'speaking' ? 'listening' : s));
+        });
+      setState('speaking');
+      return;
+    }
     const buf = l.audio.createBuffer(1, f.pcm.length, l.rate);
     buf.copyToChannel(f.pcm, 0);
     const src = l.audio.createBufferSource();
@@ -241,6 +281,7 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
   const start = useCallback(async () => {
     if (liveRef.current) return;
     setDetail('');
+    setMicRecoveryUrl(undefined);
     let audio: AudioContext | null = null;
     let mic: MediaStream | null = null;
     try {
@@ -259,7 +300,7 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
         ws.onopen = () => resolve();
         ws.onerror = () => reject(new Error('voice-router is not reachable at /voice/ws'));
       });
-      const l: Live = { ws, audio, mic, node, rate: 22050, nextStart: 0, playing: [], barged: 0 };
+      const l: Live = { ws, audio, mic, node, rate: 22050, nextStart: 0, playing: [], barged: 0, sinkBusy: 0 };
       liveRef.current = l;
       node.port.onmessage = (e) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(e.data as ArrayBuffer);
@@ -288,6 +329,9 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
             break;
           case 'phrase':
             setReply((r) => (r ? `${r} ${m.text}` : m.text));
+            // The words travel separately from the audio frame the face will speak; queued so
+            // the next binary frame pairs with the phrase it belongs to.
+            pendingPhrases.current.push(m.text);
             break;
           case 'intent_result': {
             const r = parseIntentResult(m.intent);
@@ -318,7 +362,19 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
       void audio?.close();
       liveRef.current = null;
       setState('error');
-      setDetail(String(err?.message ?? err));
+      const msg = String(err?.message ?? err);
+      const name = String(err?.name ?? '');
+      // The one refusal a tap cannot clear (iOS home-screen icon; useEstateVoice's finding,
+      // bugs.webkit.org 185448): answered with the one-tap escape to a real Safari tab, exactly
+      // as the old path does, so the shape FacePage renders never depends on which path is live.
+      const refused =
+        /notallowed|security/i.test(name) || /permission|denied|notallowed/i.test(msg);
+      if (refused && (navigator as any).standalone === true) {
+        setMicRecoveryUrl(window.location.href);
+        setDetail('the home-screen icon cannot keep microphone access on iOS — open in Safari below');
+      } else {
+        setDetail(msg);
+      }
       throw err;
     }
   }, [play, silence, stop]);
@@ -350,6 +406,8 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     heard,
     reply,
     detail,
+    checking,
+    micRecoveryUrl,
     available: typeof window !== 'undefined' && 'AudioWorkletNode' in window,
     reachable,
     start,

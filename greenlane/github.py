@@ -32,6 +32,9 @@ BOT_LANE = "flux/image-updates"
 STATE_REF = "refs/greenlane/state"
 MARKER = "Greenlane-Batch:"
 ADOPTED = "Greenlane-Lane:"  # in a hand-raised PR's body once the engine has adopted it
+DEPENDABOT = (
+    "dependabot[bot]"  # exempt from claims BY NAME in bin/claim-gate, so adoptable here
+)
 AGENT_DECLARATION = re.compile(r"^(Claim|Agent):", re.M)
 AGENT_TRAILER = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:[\w.-]+/[\w.-]+)?#(\d+)\s*$", re.M)
@@ -635,7 +638,7 @@ class GitHubBackend:
 
     def _land(self, members: list[tuple[str, str, str]], tip: str) -> None:
         adopted = {pr["lane"]: pr for pr in self.adopted_prs()}
-        resolved: list[tuple[str, str, str, dict]] = []
+        resolved: list[tuple[str, str, str, dict, Optional[int]]] = []
         for lane, head, rebased in members:
             # leased to the head the batch tested: a lane its author has moved since is new work,
             # and landing the old squash over it would erase the push. Refused, it raises, and
@@ -648,6 +651,7 @@ class GitHubBackend:
                 f"{rebased}:refs/heads/{lane}",
             )
             pr = adopted.get(lane)
+            orphan: Optional[int] = None
             if pr and pr["branch"] != lane:
                 # the PR's own branch takes the landed sha, so GitHub marks the PR merged
                 # when main fast-forwards over it; the branch's old commits stay reachable
@@ -660,10 +664,22 @@ class GitHubBackend:
                     f"{rebased}:refs/heads/{pr['branch']}",
                     check=False,
                 )
+                if self._ref(pr["branch"]) != rebased:
+                    # The branch refused the push -- dependabot owns its branches, and under
+                    # check=False the refusal was silent. The land then pinned a head nobody
+                    # proved and every merge PUT was refused: #6128's content reached main
+                    # through #6457 while #6128 itself sat open for days (measured 2026-10-18).
+                    # Land through the lane's own pull request instead and close the adopted
+                    # one once main has moved: GitHub can never mark it merged, and a close
+                    # that names the landing beats a pull request that lies open forever.
+                    number = self._ensure_pr(lane, head, rebased, tip)
+                    if number:
+                        orphan = pr["number"]
+                        pr = {"number": number, "branch": lane}
             if not pr:
                 number = self._ensure_pr(lane, head, rebased, tip)
                 pr = {"number": number, "branch": lane} if number else None
-            resolved.append((lane, head, rebased, pr))
+            resolved.append((lane, head, rebased, pr, orphan))
         # MAIN MOVES THROUGH THE PULL REQUEST, NOT BY A DIRECT PUSH (2026-10-06).
         #
         # This used to be `git push tip:refs/heads/main`. On 2026-10-06 that was refused:
@@ -713,9 +729,9 @@ class GitHubBackend:
         # GitHub keeps returning for a few seconds while it recomputes mergeability.
         time.sleep(self.LAND_SETTLE_S)
         deadline = time.time() + self.LAND_WAIT_S
-        for _lane, _head, rebased, _pr in resolved:
+        for _lane, _head, rebased, _pr, _ in resolved:
             self._await_green(rebased, deadline)
-        for lane, _head, rebased, pr in resolved:
+        for lane, _head, rebased, pr, orphan in resolved:
             if not pr:
                 pr = self._pr_for(lane)
             if not pr:
@@ -811,8 +827,27 @@ class GitHubBackend:
                     if "HTTP 405" not in str(e) or attempt == self.LAND_MERGE_TRIES - 1:
                         raise
                     time.sleep(self.LAND_RETRY_S)
-        for lane, _, _, _ in resolved:
+        for lane, _, _, _, _ in resolved:
             self.git("push", "-q", "origin", f":refs/heads/{lane}", check=False)
+        # The adopted pull requests whose branches refused the engine's push (see the orphan
+        # fallback above) are closed here, AFTER the merge loop -- so a refused merge raises
+        # and the lane goes back on its own head (I4) with no PR closed for nothing.
+        for _lane, _head, rebased, pr, orphan in resolved:
+            if not orphan or not pr:
+                continue
+            self.gh(f"pulls/{orphan}", "PATCH", {"state": "closed"})
+            self.gh(
+                f"issues/{orphan}/comments",
+                "POST",
+                {
+                    "body": (
+                        f"Landed on main as {rebased[:12]} through the lane's own pull request "
+                        f"(#{pr['number']}): this branch belongs to its bot and refuses the "
+                        f"engine's push, so GitHub cannot mark this pull request merged. The "
+                        f"work is proven and on main; closing rather than lying open."
+                    )
+                },
+            )
         # MAIN MOVED THROUGH THE API, SO origin/main IS STALE (2026-10-13). main() reads the
         # remote-tracking ref fetched at the top of the tick, and tick() starts the next batch
         # straight after this landing -- on the main from before it. The next tick then voids
@@ -1055,9 +1090,16 @@ class GitHubBackend:
         return out
 
     def declared(self, pr: dict) -> bool:
-        """Does this pull request say an agent raised it? A `Claim:`/`Agent:` line in the body
-        or the head commit message (AGENTS.md §5 rule 5). The pulls listing carries no commit
-        messages, so the head commit is fetched only when the body is silent."""
+        """Is this pull request the engine's to drive: a dependency bot's, or one that says an
+        agent raised it (a `Claim:`/`Agent:` line in the body or the head commit message,
+        AGENTS.md §5 rule 5)? The pulls listing carries no commit messages, so the head commit
+        is fetched only when the body is silent."""
+        # dependabot cannot declare: its pull requests are machine-raised, and claim-gate
+        # exempts dependabot[bot] from claims by name -- the same authority, mirrored here.
+        # Treating it as undeclared founder work left every dependabot bump invisible to the
+        # engine: #6238, the repo's oldest open PR, sat unadopted for days (measured 2026-10-18).
+        if pr.get("user", {}).get("login") == DEPENDABOT:
+            return True
         if AGENT_DECLARATION.search(pr.get("body") or ""):
             return True
         c = self.gh(f"commits/{pr.get('head', {}).get('sha', '')}") or {}
@@ -1095,13 +1137,28 @@ class GitHubBackend:
             hb = datetime.fromisoformat(c["hb"].replace("Z", "+00:00"))
             if datetime.now(timezone.utc) - hb <= STAMP_AFTER:
                 return
+            # The restamp re-posts the paths, and claim-gate judges the LAST claim comment --
+            # so a restamp copied from the last comment alone silently amputated every widening
+            # posted in an earlier one: bpf/** was dropped from claim #6449 this way and
+            # dockerfile-rot's b3075 was refused on files its claim used to cover (measured
+            # 2026-10-18). Stamp the union of every claim comment this agent posted, so a
+            # widening survives the machine's own stamping.
+            paths = ",".join(
+                dict.fromkeys(
+                    p
+                    for c2 in claims
+                    if c2["agent"] == c["agent"]
+                    for p in (c2["paths"].split(",") if c2["paths"] else [])
+                    if p
+                )
+            )
             model = f" model={c['model']}" if c["model"] else ""
             self.gh(
                 f"issues/{m.group(1)}/comments",
                 "POST",
                 {
                     "body": (
-                        f"CLAIM agent={c['agent']}{model} paths={c['paths']} "
+                        f"CLAIM agent={c['agent']}{model} paths={paths} "
                         f"heartbeat={datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}\n\n"
                         f"Heartbeat refreshed by the Greenlane: lane `{lane}` is held and still "
                         f"proving this claim's work (idp#5758 -- the machine keeps the claim "
@@ -1131,11 +1188,18 @@ class GitHubBackend:
             self.git(
                 "push", "-q", "-f", "origin", f"{sha}:refs/heads/{lane}", check=False
             )
-        body = (self.gh(f"pulls/{n}") or {}).get("body") or ""
+        cur = self.gh(f"pulls/{n}") or {}
+        body = cur.get("body") or ""
+        patch = {"body": f"{ADOPTED} {lane}\n\n{body}"}
+        if cur.get("draft"):
+            # A draft cannot be landed: #6366's green lane was refused with "Pull Request is
+            # still a draft" until the flag was flipped by hand (2026-10-18). Adoption is the
+            # engine saying it will land this work; un-draft it here, not at land time.
+            patch["draft"] = False
         self.gh(
             f"pulls/{n}",
             "PATCH",
-            {"body": f"{ADOPTED} {lane}\n\n{body}"},
+            patch,
         )
         self.gh(
             f"issues/{n}/comments",

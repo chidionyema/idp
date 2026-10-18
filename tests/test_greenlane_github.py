@@ -271,7 +271,17 @@ def test_landing_marks_an_adopted_pull_request_merged_and_raises_none_for_it():
         )
     )
     pushed = []
-    b.git = lambda *a, check=True: pushed.append(a) or ""
+
+    def git(*a, check=True):
+        if a[0] == "ls-remote":
+            # a pushable branch: _ref sees the sha the land just pushed, so the adoption
+            # takes the merge through the PR's own branch as before
+            ref = a[-1].split("refs/heads/", 1)[-1]
+            return f"r1\trefs/heads/{ref}" if ref == "feat/a" else ""
+        pushed.append(a)
+        return ""
+
+    b.git = git
     b.land([("lane/feat/a", "a1", "r1"), ("lane/feat/b", "b1", "r2")], "tip")
     refs = [a[-1] for a in pushed if a[0] == "push"]
     # adopted lane: lane ref AND the PR's own branch take the landed sha
@@ -841,10 +851,11 @@ def test_every_required_check_on_main_is_produced_by_a_workflow_that_runs_on_mai
             produced.setdefault(name, reaches_main)
             produced.setdefault(f"{name} / {name}", reaches_main)
 
-    # `greenlane` is no job: it is the commit status the engine writes on the pull request's head
-    # just before it merges (GitHubBackend._land), and the ruleset judges it there.
+    # `greenlane` is no job: it is the check-run the engine vouches with on the sha the merge
+    # evaluates (GitHubBackend._land, 2026-10-17 -- a commit status is invisible to the
+    # ruleset's check-run requirement), and the ruleset judges it there.
     produced["greenlane"] = (
-        "self._status(\n                rebased,"
+        "self._update_check_run(\n                merge_sha,"
         in (ROOT / "greenlane/github.py").read_text()
     )
     missing = [c for c in _ruleset_required_contexts() if not produced.get(c, False)]
@@ -1023,3 +1034,129 @@ def test_the_deploy_lane_is_graded_on_the_commit_that_would_land(tmp_path, repo)
     _git(repo, "add", "other.txt")
     _git(repo, "commit", "-q", "-m", "not a tag")
     assert not b._image_only(_git(repo, "rev-parse", "HEAD"), main)
+
+
+def test_a_dependabot_pull_request_is_foreign_not_founder_work():
+    """claim-gate exempts dependabot[bot] from claims by name; foreign_prs() treated the same
+    pull request as the founder's hand work and skipped it, so #6238 -- the repo's oldest open
+    PR -- sat invisible to the engine for days (measured 2026-10-18). Bot-raised dependency
+    work is adoptable; only an undeclared HUMAN pull request is founder hand work."""
+    prs = [
+        {
+            "number": 11,
+            "user": {"login": "dependabot[bot]"},
+            "body": "Bump vitest from 2.1.8 to 4.1.11",
+            "head": {"ref": "dependabot/npm_and_yarn/vitest", "sha": "s11"},
+        },
+        {
+            "number": 12,
+            "user": {"login": "someone"},
+            "body": "no declaration anywhere",
+            "head": {"ref": "feat/human", "sha": "s12"},
+        },
+    ]
+    b = Recorded({"pulls": prs})
+    assert [p["number"] for p in b.foreign_prs()] == [11]
+
+
+def test_the_heartbeat_stamps_the_union_of_the_holders_paths(tmp_path, repo):
+    """The restamp re-posts the paths, and claim-gate judges the LAST claim comment: restamping
+    from that comment alone amputated bpf/** from claim #6449, and dockerfile-rot's b3075 was
+    refused on files its claim used to cover (measured 2026-10-18). The machine's stamp carries
+    every path the holder ever declared."""
+    head = _lane_with_origin(
+        tmp_path, repo, "Claim: chidionyema/idp#5616\nAgent: opencode"
+    )
+    b = Recorded(
+        {
+            "issues/5616/comments": [
+                _stale_claim("opencode"),
+                {
+                    "body": "CLAIM agent=opencode paths=bin/**,bpf/** heartbeat=2020-01-01T00:00:00Z"
+                },
+                {
+                    "body": "CLAIM agent=opencode paths=bin/** heartbeat=2020-01-01T00:00:00Z"
+                },
+            ]
+        }
+    )
+    b.heartbeat("lane/test/claim", head)
+    stamps = _stamps(b)
+    assert len(stamps) == 1, "the lane's own claim was not refreshed"
+    assert stamps[0][2]["body"].startswith(
+        "CLAIM agent=opencode paths=greenlane/**,bin/**,bpf/** "
+    ), "the restamp dropped a path widening posted in an earlier claim comment"
+
+
+def test_relane_un_drafts_a_draft_pull_request(repo):
+    """Adoption un-drafts: #6366's green lane was refused with "Pull Request is still a draft"
+    until the flag was flipped by hand (2026-10-18). Adoption is the engine saying it will land
+    this work, and a draft cannot be landed."""
+    b = Recorded({"pulls/7": {"body": "original body", "draft": True}})
+    b.git = lambda *a, check=True: ""
+    b.relane({"number": 7, "lane": "feat/x", "head": "deadbeef", "user": "someone"})
+    patch = b.writes[0]
+    assert patch[:2] == ("PATCH", "pulls/7")
+    assert patch[2]["draft"] is False
+    assert patch[2]["body"].startswith(f"{ADOPTED} lane/feat/x\n")
+
+
+class _CreatesLanePr(Recorded):
+    """Answers a PR create with a stable number (Recorded's own convention, pinned) so the test
+    below can serve pulls/901 for the merge loop's re-fetch."""
+
+    def gh(self, path, method="GET", fields=None):
+        if method == "POST" and path == "pulls":
+            self.writes.append((method, path, fields))
+            return {"number": 901}
+        return super().gh(path, method, fields)
+
+
+def test_landing_an_adopted_pr_whose_branch_refuses_pushes_lands_via_the_lane_pr():
+    """A dependabot branch refuses the engine's push, silently (check=False). The land then
+    pinned the PR's stale head and every merge PUT was refused: #6128's content reached main
+    through #6457 while #6128 itself sat open for days (measured 2026-10-18). The land falls
+    back to the lane's own pull request and closes the adopted one, naming the landing."""
+    b = _fast(
+        _CreatesLanePr(
+            {
+                "pulls": [
+                    {
+                        "number": 5,
+                        "user": {"login": "someone"},
+                        "body": f"{ADOPTED} lane/feat/a",
+                        "head": {"ref": "dependabot/npm_and_yarn/vitest", "sha": "a1"},
+                    }
+                ],
+                "pulls/901": {"head": {"sha": "r1"}},
+                **_green("r1"),
+            }
+        )
+    )
+
+    def git(*a, check=True):
+        if a[0] == "ls-remote":
+            return (
+                "a1\trefs/heads/dependabot/npm_and_yarn/vitest"  # the push did not take
+            )
+        return ""
+
+    b.git = git
+    b.land([("lane/feat/a", "a1", "r1")], "tip")
+    created = [w for w in b.writes if w[0] == "POST" and w[1] == "pulls"]
+    assert created and created[0][2]["head"] == "lane/feat/a", (
+        "the unpushable branch must fall back to the lane's own pull request"
+    )
+    merges = [w[1] for w in b.writes if w[0] == "PUT" and "/merge" in w[1]]
+    assert merges == ["pulls/901/merge"], (
+        "the merge must go through the lane PR, not pin the stale dependabot head"
+    )
+    closes = [w for w in b.writes if w[0] == "PATCH" and w[1] == "pulls/5"]
+    assert closes and closes[0][2] == {"state": "closed"}, (
+        "the adopted PR that can never be marked merged is closed, not left open"
+    )
+    comment = [w for w in b.writes if w[0] == "POST" and w[1] == "issues/5/comments"]
+    assert comment and "r1" in comment[0][2]["body"], "the close names the landing sha"
+    assert not any(
+        w[2].get("state") == "closed" for w in b.writes if w[1] == "pulls/901"
+    ), "the lane PR that carried the land is merged, not closed"
