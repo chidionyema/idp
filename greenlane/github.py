@@ -741,7 +741,9 @@ class GitHubBackend:
         # GitHub keeps returning for a few seconds while it recomputes mergeability.
         time.sleep(self.LAND_SETTLE_S)
         deadline = time.time() + self.LAND_WAIT_S
-        awaited: set[str] = set()  # shas this land call has already proven; await-once per land
+        awaited: set[str] = (
+            set()
+        )  # shas this land call has already proven; await-once per land
         for _lane, _head, rebased, _pr, _ in resolved:
             self._await_green(rebased, deadline)
             awaited.add(rebased)
@@ -816,8 +818,12 @@ class GitHubBackend:
                         if fresh_head and fresh_head != merge_sha:
                             merge_sha = fresh_head
                             subject = self.git("log", "-1", "--format=%s", merge_sha)
-                            if merge_sha not in awaited:  # a genuinely new head needs its own proof
-                                self._await_green(merge_sha, time.time() + self.LAND_WAIT_S)
+                            if (
+                                merge_sha not in awaited
+                            ):  # a genuinely new head needs its own proof
+                                self._await_green(
+                                    merge_sha, time.time() + self.LAND_WAIT_S
+                                )
                                 awaited.add(merge_sha)
                             continue  # retry with the new, proven merge_sha
                     # HTTP 405 "PR not mergeable": retry with backoff, but re-prove the
