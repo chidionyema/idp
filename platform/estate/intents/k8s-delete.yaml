@@ -1,0 +1,41 @@
+name: k8s-delete
+description: >
+  Deletes exactly ONE named cluster object. Dry run by default: the default call runs
+  `kubectl delete --dry-run=server`, which proves the object exists and that the kubeconfig is
+  allowed to delete it, and deletes nothing. A real delete needs both dry_run=false and
+  confirm=<the object's own name>, so a stray flag cannot remove something you did not name.
+
+  There is no selector, no --all and no list form, on purpose: this door exists for a single
+  transient object a *controller* will re-create on its next reconcile (a stale
+  CertificateRequest/Order, a wedged Job). It is not a way to change the estate: anything Flux
+  reconciles is changed in git and converged (AGENTS.md 2), and kube-system is refused outright.
+  It exists because before it, a cluster object that had gone stale could not be cleared at all --
+  the kubectl door was get-only and k8s-apply was apply-only, so a stuck CertificateRequest held
+  meridian.mumchimp.com's HTTPS down with no governed way to remove it (2026-10-18).
+args:
+  resource:   {type: string, description: "kind, e.g. certificaterequest (no 'kind/name' form)"}
+  name:       {type: string, description: "the object's name"}
+  namespace:  {type: string, default: "", description: "namespace; empty for cluster-scoped"}
+  dry_run:    {type: bool, default: true}
+  confirm:    {type: string, default: "", description: "must equal name when dry_run=false"}
+  kubeconfig: {type: string, default: ""}
+steps:
+  - name: delete
+    # Plain shell, not {{if(...)}}: interpolate() only substitutes {{var}} and already shlex-quotes
+    # it -- so never wrap {{var}} in quotes here (an empty default would become the literal '').
+    # Every optional flag is expanded through ${x:+...} so an empty value adds no argument at all.
+    cmd: >
+      res={{resource}}; nm={{name}}; ns={{namespace}}; dr={{dry_run}}; cf={{confirm}};
+      kc={{kubeconfig}};
+      [ -n "$res" ] || { echo "REFUSED: resource is required (e.g. certificaterequest)"; exit 2; };
+      [ -n "$nm" ] || { echo "REFUSED: name is required -- this door deletes one named object, never a selector"; exit 2; };
+      [ "$ns" != kube-system ] || { echo "REFUSED: kube-system is out of bounds for this door"; exit 2; };
+      case "$res$nm" in *[!A-Za-z0-9._/-]*) echo "REFUSED: resource and name are kinds and names, not arguments"; exit 2;; esac;
+      case "$dr" in True|true) mode=plan;; *) mode=delete;; esac;
+      if [ "$mode" = delete ] && [ "$cf" != "$nm" ]; then
+        echo "REFUSED: a real delete needs confirm=$nm (got '${cf}')"; exit 2;
+      fi;
+      if [ "$mode" = plan ]; then set -- --dry-run=server; else set -- ; fi;
+      echo "mode=$mode ${ns:+ns=$ns }${res}/$nm";
+      ${kc:+env KUBECONFIG="$kc"} kubectl --request-timeout=30s ${ns:+-n "$ns"}
+      delete "$res" "$nm" "$@" --wait=false 2>&1
