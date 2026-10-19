@@ -1,8 +1,9 @@
 """The executor door's edge cases, graded offline with no daemon and no shell.
 
 Order (founder, 2026-09-13): "nake syre evry agennt sessionns is wre" -- make sure every agent
-session is aware -- and "60 secsos is the nnax". So the grades here are the ceiling's own boundary
-and the refusals that keep a command from parking an agent.
+session is aware -- and "60 secsos is the nnax". The ceiling itself was re-ruled 2026-10-19:
+"100s as default instead of 60" (#6610), so the grades here are the ceiling's own boundary at
+its current value and the refusals that keep a command from parking an agent.
 
 Every test injects an `Executor` stub (the plugin's `executor=` parameter). Nothing here spawns a
 process, so the suite is fast and cannot itself block -- a test that can hang would be the defect
@@ -59,21 +60,21 @@ def executor():
     return ex.LocalExecutor()
 
 
-# --- THE CEILING: 60 is the max, and it is not expressible above in any spelling ---
+# --- THE CEILING: 100 is the max, and it is not expressible above in any spelling ---
 
 
 def test_a_plain_command_is_accepted_at_the_ceiling(executor):
     out = ex.execute_command("git status --short", executor=executor)
     assert out["accepted"] is True
-    assert out["ceiling_sec"] == ex.CEILING_SEC == 60
+    assert out["ceiling_sec"] == ex.CEILING_SEC == 100
     assert out["job_id"]
 
 
 @pytest.mark.parametrize(
     "command",
     [
-        "timeout 61 git push",
-        "timeout 90 pytest -q",
+        "timeout 101 git push",
+        "timeout 110 pytest -q",
         "timeout 150 bin/idp-ci",
         "timeout 2m bin/idp-ci",
         "timeout 150s bin/idp-ci",
@@ -82,21 +83,21 @@ def test_a_plain_command_is_accepted_at_the_ceiling(executor):
         "timeout --kill-after=10 300 bin/idp-ci",
     ],
 )
-def test_a_ceiling_above_sixty_is_refused_in_every_spelling(command, executor):
+def test_a_ceiling_above_the_cap_is_refused_in_every_spelling(command, executor):
     """The breach the founder watched six times: a number above the cap got through because the
     check read one spelling. Every spelling is now read, including the grace period that hid it."""
     out = ex.execute_command(command, executor=executor)
     assert out["accepted"] is False, f"{command!r} was accepted -- the cap is breached"
-    assert "60" in out["error"]
+    assert "100" in out["error"]
     assert executor.get(out.get("job_id") or "none") is None  # nothing was queued
 
 
 @pytest.mark.parametrize(
     "command",
-    ["timeout 60 bin/idp-ci", "timeout 55 pytest -q", "gtimeout -k 5 60 make"],
+    ["timeout 100 bin/idp-ci", "timeout 55 pytest -q", "gtimeout -k 5 100 make"],
 )
-def test_a_ceiling_at_or_below_sixty_is_allowed(command, executor):
-    """R38: a guard that refuses correct work is an outage. 60 itself is correct work."""
+def test_a_ceiling_at_or_below_the_cap_is_allowed(command, executor):
+    """R38: a guard that refuses correct work is an outage. The cap itself is correct work."""
     out = ex.execute_command(command, executor=executor)
     assert out["accepted"] is True
 
@@ -107,7 +108,7 @@ def test_a_requested_ceiling_above_the_cap_is_clamped_not_refused(executor):
     150 is a claim about how long it needs."""
     out = ex.execute_command("pytest -q", ceiling_sec=900, executor=executor)
     assert out["accepted"] is True
-    assert out["ceiling_sec"] == 60
+    assert out["ceiling_sec"] == 100
 
 
 def test_a_requested_ceiling_of_zero_is_lifted_to_the_floor(executor):

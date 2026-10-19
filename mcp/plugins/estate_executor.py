@@ -53,10 +53,13 @@ except ImportError:  # pragma: no cover - datasette-less CI venv
         return fn
 
 
-# THE CEILING. Founder, 2026-09-13: "60 secsos is the nnax". Not 61, not 90, not 150, and not
-# expressible in a unit that hides it. Enforced by the EXECUTOR, on the far side of the message,
-# so a caller that forgets it does not remove it.
-CEILING_SEC = 60
+# THE CEILING. Founder, 2026-10-19: "100s as default instead of 60" — the standing value.
+# Supersedes the 2026-09-13 "60 secsos is the max" ruling, which held the door at 60 for five
+# weeks and was itself a reaction to runaway jobs. Not expressible in a unit that hides it, and
+# still enforced by the EXECUTOR, on the far side of the message, so a caller that forgets it
+# does not remove it. Per-job ceilings clamp to this (min(requested, CEILING_SEC)); nothing a
+# caller sends can exceed the door.
+CEILING_SEC = 100
 
 # A floor under the ceiling for the one case where a caller asks for less: a command bounded to
 # zero seconds never runs, which would be a guard that refuses correct work (R38).
