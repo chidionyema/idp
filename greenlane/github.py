@@ -804,9 +804,18 @@ class GitHubBackend:
                             "commit_title": f"{subject} (#{pr['number']})",
                         },
                     )
-                    # gh returns a dict even on error (HTTP 4xx). Check for merge failure.
+                    # GitHub's SUCCESS carries a message too (2026-10-19): the 200 body is
+                    # {"sha", "merged": true, "message": "Pull Request successfully merged"}.
+                    # Reading any message as a refusal raised on every merge that worked since
+                    # 5289b06b0: 31 of 51 single-lane reds in 30 h of ticks were "land refused:
+                    # Pull Request successfully merged", landed_total sat at 460, each landed lane
+                    # was put back on its old head and re-queued, and the origin/main refresh
+                    # below was skipped, so the next batch was voided as "main moved" (32 times).
+                    # `merged: true` is the verdict; a message without it is the refusal.
                     merge_error = (
-                        result.get("message", "") if isinstance(result, dict) else ""
+                        result.get("message", "")
+                        if isinstance(result, dict) and not result.get("merged")
+                        else ""
                     )
                     if not merge_error:
                         break  # merge succeeded
