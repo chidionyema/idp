@@ -27,7 +27,7 @@ from urllib.parse import quote
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from greenlane.engine import LANDED, Engine, State  # noqa: E402
+from greenlane.engine import LANDED, Engine, State, latency  # noqa: E402
 from greenlane.github import STATE_REF, GitHubBackend  # noqa: E402
 
 RULESET = ROOT / "platform/github/ruleset.idp.required-checks.json"
@@ -255,6 +255,9 @@ def status() -> int:
             k: {"status": v.status, "reason": v.reason, "head": v.head[:12]}
             for k, v in st.lanes.items()
         },
+        # where push-to-land time goes (minutes), from the engine's own bounded records
+        "latency": latency(st),
+        "recent": st.history[-10:],
     }
     prs = gh("pulls?state=open&per_page=100") or []
     out["open_prs"] = [
