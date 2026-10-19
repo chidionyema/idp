@@ -122,7 +122,7 @@ async function runThroughDoor(
   const exitPath = path.join(RUNS, `${jobId}.exit`);
   const logPath = path.join(RUNS, `${jobId}.log`);
   const pidPath = path.join(RUNS, `${jobId}.pid`);
-  const deadline = Date.now() + (opts.ceiling ?? 60) * 1000 + 5000;
+  const deadline = Date.now() + (opts.ceiling ?? 100) * 1000 + 5000;
   while (Date.now() < deadline) {
     if (existsSync(exitPath)) {
       const exit = parseInt(readFileSync(exitPath, "utf8").trim() || "0", 10);
@@ -310,7 +310,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
           details: { ok: false, missing: script },
         };
       }
-      const r = await runThroughDoor(`${script}`, { cwd: params.repo, ceiling: 60 });
+      const r = await runThroughDoor(`${script}`, { cwd: params.repo, ceiling: 100 });
       return present(r, `bin/${gate} in ${params.repo}`);
     },
   });
@@ -358,7 +358,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
         : "python3";
       const r = await runThroughDoor(`${python} -m pytest ${params.target} -q`, {
         cwd: params.repo,
-        ceiling: 60,
+        ceiling: 100,
       });
       return present(r, `pytest ${params.target}`);
     },
@@ -410,17 +410,17 @@ export default function estateCapabilities(pi: ExtensionAPI) {
     name: "estate_execute",
     label: "Estate Execute",
     description:
-      "Run a command through the estate executor daemon. The daemon applies the 60s ceiling and records the job.",
+      "Run a command through the estate executor daemon. The daemon applies the 100s ceiling and records the job.",
     promptSnippet: "Run a command through the estate executor",
     promptGuidelines: [
-      "Use estate_execute to run any command through the governed door. The ceiling is 60s; the daemon enforces it.",
+      "Use estate_execute to run any command through the governed door. The ceiling is 100s; the daemon enforces it.",
     ],
     parameters: Type.Object({
       command: Type.String({ description: "The command to run." }),
       cwd: Type.String({ description: "Absolute working directory." }),
     }),
     async execute(_id, params) {
-      const r = await runThroughDoor(params.command, { cwd: params.cwd, ceiling: 60 });
+      const r = await runThroughDoor(params.command, { cwd: params.cwd, ceiling: 100 });
       return present(r, `execute: ${params.command}`);
     },
   });
@@ -494,7 +494,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
       }`;
       const r = await runThroughDoor(command, {
         cwd: params.repo,
-        ceiling: params.background ? 1800 : 60,
+        ceiling: params.background ? 1800 : 100,
       });
       return present(r, `${chosen.file}${chosen.extra.length ? " " + chosen.extra.join(" ") : ""}`);
     },
@@ -524,7 +524,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
       "Submit a session to the fleet-scale work plane via the estate's own sovereign bus (`sb start` → Temporal SessionWorkflow). For long-running, budgeted, approval-gated agent work -- not a replacement for the executor door, which stays laptop-local.",
     promptSnippet: "Start a fleet-scale work session via sb start",
     promptGuidelines: [
-      "Use estate_session_start for fleet-scale, budgeted, approval-gated work (Temporal SessionWorkflow). Use estate_execute for bounded laptop-local executor verbs. Two different planes for two different kinds of work -- do not route arbitrary verbs through the workflow plane, and do not route long-running sessions through the 60s executor door.",
+      "Use estate_session_start for fleet-scale, budgeted, approval-gated work (Temporal SessionWorkflow). Use estate_execute for bounded laptop-local executor verbs. Two different planes for two different kinds of work -- do not route arbitrary verbs through the workflow plane, and do not route long-running sessions through the 100s executor door.",
       "The runner must be a name in the existing registry (echo | sleep | ask | claude | llm); the capability refuses anything else rather than invent a vendor.",
     ],
     parameters: Type.Object({
@@ -603,7 +603,7 @@ export default function estateCapabilities(pi: ExtensionAPI) {
       if (params.budget !== undefined) parts.push("--budget", String(params.budget));
       if (params.critical) parts.push("--critical");
       const cwd = params.repo ?? HOME;
-      const r = await runThroughDoor(`sb start ${parts.join(" ")}`, { cwd, ceiling: 60 });
+      const r = await runThroughDoor(`sb start ${parts.join(" ")}`, { cwd, ceiling: 100 });
       return present(r, `sb start ${params.task}`);
     },
   });
