@@ -49,6 +49,9 @@ RETIRE_AFTER_MIN = 1440  # 24 hours: a lane held this long without moving is par
 HISTORY_KEEP = (
     200  # batch verdicts and landings kept for the latency read; the state is one blob
 )
+IMAGE_LANE = (
+    "flux/image-updates"  # Flux's image bump: the deploy leg, so it forms batches first
+)
 
 
 @dataclass
@@ -721,9 +724,14 @@ class Engine:
                 0
             )  # bisection halves were admitted with their batch
         else:
+            # The image bump goes first (2026-10-19): it is the deploy leg of every landing
+            # before it -- code that landed is not live until its image tag reaches main -- so a
+            # bump waiting behind agent lanes adds a whole queue wait to work that has already
+            # waited once. It is still proven like any lane (I1, I2 unchanged); only its place
+            # in the batch moves, and a batch takes at most one of it.
             pend = sorted(
                 (l for l in self.s.lanes.values() if l.status == PENDING),
-                key=lambda l: l.seq,
+                key=lambda l: (l.name != IMAGE_LANE, l.seq),
             )
             names = []
             for l in pend:
