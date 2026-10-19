@@ -155,7 +155,7 @@ def _harness_url(cfg: dict, route: str) -> str:
 def _harness_call(
     cfg: dict,
     route: str,
-    payload: "dict | None" = None,
+    payload: "dict | list | None" = None,
 ) -> "tuple[dict | None, str | None]":
     """Call a harness endpoint on the unified-memory-server.
 
@@ -324,23 +324,27 @@ def do_remember(
     # facts are promoted to scratchpad, global preferences are gated, and bi-temporal
     # history is updated. Degrades silently if the harness is unavailable.
     run_id = f"mcp-{uuid.uuid4().hex[:12]}"  # unique per remember call
+    # The server takes run_id/project_id/provenance from the query string and the
+    # body as the bare candidate list (main.py harness_memory_consolidate: scalars
+    # are query params, the List[Dict] is the whole body). An object body 422s and
+    # _harness_call swallows 4xx as a silent degrade, so the shape is load-bearing:
+    # tests/test_estate_memory_consolidate_body.py pins it.
+    route = "/harness/memory/consolidate?run_id=" + urllib.parse.quote(run_id)
+    if subject:
+        route += "&project_id=" + urllib.parse.quote(subject)
+    route += "&provenance=" + urllib.parse.quote(metadata.get("runtime", "mcp"))
     _harness_call(
         cfg,
-        "/harness/memory/consolidate",
-        {
-            "run_id": run_id,
-            "project_id": subject or None,
-            "provenance": metadata.get("runtime", "mcp"),
-            "candidates": [
-                {
-                    "scope": "project_fact",
-                    "subject": subject,
-                    "predicate": "",
-                    "object": content.strip(),
-                    "explicit_permanence_intent": kind in ("decision", "incident"),
-                }
-            ],
-        },
+        route,
+        [
+            {
+                "scope": "project_fact",
+                "subject": subject,
+                "predicate": "",
+                "object": content.strip(),
+                "explicit_permanence_intent": kind in ("decision", "incident"),
+            }
+        ],
     )
 
     return {
