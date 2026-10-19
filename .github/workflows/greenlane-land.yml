@@ -19,7 +19,7 @@ jobs:
     permissions:
       id-token: write   # needed for gtrevorrow/oci-token-exchange-action to mint an OIDC token
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # Checkout the LANE so the engine uses the lane's code (pagination fix)
           ref: ${{ inputs.lane }}
