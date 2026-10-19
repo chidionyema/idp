@@ -22,7 +22,26 @@ import { defineConfig, devices } from '@playwright/test';
 
 const BASE = process.env.PLAYWRIGHT_URL ?? 'https://catalogue.mumchimp.com';
 
+// Grade THE CANDIDATE, not production (idp#6577 deadlock, 2026-10-19): when the CI sets
+// PLAYWRIGHT_UPSTREAM, a freshly built dist/ is served on BASE with the backend doors
+// (/api, /voice) forwarded to the live estate. Without it the config is unchanged and
+// still tests whatever is deployed — the local default above.
+const webServer = process.env.PLAYWRIGHT_UPSTREAM
+  ? {
+      command: 'node scripts/serve-candidate.mjs',
+      url: `${BASE}/face/`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 30_000,
+      env: {
+        UPSTREAM: process.env.PLAYWRIGHT_UPSTREAM,
+        PORT: String(new URL(BASE).port || 80),
+        DIST: 'packages/app/dist',
+      },
+    }
+  : undefined;
+
 export default defineConfig({
+  webServer,
   testDir: './packages/app/e2e-tests',
   testMatch: /mobile-.*\.test\.ts$/,
   timeout: 120_000,

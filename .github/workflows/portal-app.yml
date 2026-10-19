@@ -154,12 +154,21 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         run: yarn playwright install --with-deps webkit chromium
-      - name: a phone is served the app, reaches the microphone, and a spoken question is heard and answered
+      - name: a phone is served the candidate, not production
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         env:
-          PLAYWRIGHT_URL: https://catalogue.mumchimp.com
-        run: yarn playwright test --config playwright.mobile.config.ts
+          # 2026-10-19 (idp#6577): this step graded https://catalogue.mumchimp.com — the
+          # DEPLOYED app. A lane changing backstage/ was therefore judged by code that does
+          # not contain the change: the check could only pass on yesterday's build, and once
+          # the deployed face went red every portal-touching lane went red with it
+          # (b3186..b3208). The candidate is built here, served locally, and the backend
+          # doors are forwarded to the live estate, so the phone drives the code under test.
+          PLAYWRIGHT_URL: http://localhost:4173
+          PLAYWRIGHT_UPSTREAM: https://catalogue.mumchimp.com
+        run: |
+          yarn workspace app build
+          yarn playwright test --config playwright.mobile.config.ts
       # A red phone run with no trace can only be guessed at: the runner's engine is not the one on a
       # laptop (2026-10-09: Pixel passed on macOS Chrome and failed on the runner's Linux Chromium).
       - name: the phone run's report and traces, when it fails
