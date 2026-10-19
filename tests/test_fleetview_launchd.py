@@ -34,3 +34,35 @@ def test_a_vault_that_cannot_answer_starts_the_board_without_voice(
     fake.write_text("echo 'sops: cannot decrypt' >&2; exit 1\n")
     assert load(monkeypatch, fake).load_key() == ""
     assert "exit 1" in capsys.readouterr().err
+
+
+def test_intent_key_prefers_the_dedicated_vault_entry(tmp_path, monkeypatch):
+    fake = tmp_path / "secret-load"
+    fake.write_text(
+        '[ "$2" = "ESTATE_AGENT_KEY" ] && printf sk-agent\n[ "$2" = "LITELLM_LAPTOP_KEY" ] && printf sk-router\nexit 0\n'
+    )
+    monkeypatch.delenv("ESTATE_AGENT_KEY", raising=False)
+    mod = load(monkeypatch, fake)
+    assert mod.agent_key("sk-router") == ("sk-agent", "dedicated vault entry")
+
+
+def test_intent_key_falls_back_to_the_router_key_silently(
+    tmp_path, monkeypatch, capsys
+):
+    fake = tmp_path / "secret-load"
+    fake.write_text("echo 'no such entry' >&2; exit 1\n")
+    monkeypatch.delenv("ESTATE_AGENT_KEY", raising=False)
+    mod = load(monkeypatch, fake)
+    key, why = mod.agent_key("sk-router")
+    assert key == "sk-router" and "router key" in why
+    assert (
+        "not loaded" not in capsys.readouterr().err
+    )  # an absent entry is expected, not an error
+
+
+def test_intent_key_missing_says_so(tmp_path, monkeypatch):
+    fake = tmp_path / "secret-load"
+    fake.write_text("exit 1\n")
+    monkeypatch.delenv("ESTATE_AGENT_KEY", raising=False)
+    key, why = load(monkeypatch, fake).agent_key("")
+    assert key == "" and "MISSING" in why

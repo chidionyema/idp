@@ -29,6 +29,7 @@ def load_key(
     entry: str = "LITELLM_LAPTOP_KEY",
     name: str = "LITELLM_API_KEY",
     what: str = "router key",
+    quiet: bool = False,
 ) -> str:
     """The vault's dev/<entry>, or <name> if the environment already holds it. bin/voice-router-launchd
     loads the estate memory key (dev/MCP_GATEWAY_KEY) through this same door."""
@@ -58,12 +59,16 @@ def load_key(
             env=env,
         )
     except (OSError, subprocess.SubprocessError) as exc:
+        if quiet:
+            return ""
         print(
             f"fleetview-launchd: {what} not loaded: {type(exc).__name__}",
             file=sys.stderr,
         )
         return ""
     if r.returncode != 0 or not r.stdout.strip():
+        if quiet:
+            return ""
         # stderr is sops's, which names files, never values; the last line says why.
         why = (r.stderr.strip().splitlines() or ["no output"])[-1][:200]
         print(
@@ -74,10 +79,34 @@ def load_key(
     return r.stdout.strip()
 
 
+def agent_key(router_key: str) -> tuple[str, str]:
+    """The key spoken intents curl the router with (`Bearer $ESTATE_AGENT_KEY`: router-status,
+    cost-today, ledger-verify), and where it came from.
+
+    WHY. estate-execute reads ESTATE_AGENT_KEY from its inherited environment and nothing set it,
+    so every one of those intents sent an empty bearer and the router answered 401 (measured
+    2026-10-19: no key 401, the laptop key 200). A dedicated dev/ESTATE_AGENT_KEY vault entry wins
+    when it exists -- the narrower credential this variable's name promises. Until someone mints
+    one, the router key this process already holds is the fallback: the intents run on this
+    laptop, against the router it is already trusted to call."""
+    dedicated = load_key(
+        "ESTATE_AGENT_KEY", "ESTATE_AGENT_KEY", "agent key", quiet=True
+    )
+    if dedicated:
+        return dedicated, "dedicated vault entry"
+    if router_key:
+        return router_key, "router key (no dev/ESTATE_AGENT_KEY entry)"
+    return "", "MISSING -- router intents will answer 401"
+
+
 def main() -> None:
     key = load_key()
     if key:
         os.environ["LITELLM_API_KEY"] = key
+    intent_key, intent_key_from = agent_key(key)
+    if intent_key:
+        os.environ["ESTATE_AGENT_KEY"] = intent_key
+    print(f"fleetview-launchd: intent key {intent_key_from}", file=sys.stderr)
     # The server inherits launchd's PATH too, and agent_jobs shells out to `gh auth token` when no
     # token file is set. With /usr/bin:/bin only, gh (in ~/.local/bin or Homebrew) was not found and
     # /agent-jobs answered 503 "Fleet has no GitHub credential" with gh logged in (2026-10-09).
