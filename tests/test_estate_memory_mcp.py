@@ -83,7 +83,9 @@ class Store:
                 )
 
             def do_POST(self):  # noqa: N802
-                body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+                # the harness prefetch is a bodyless POST: all of it rides the query string
+                raw = self.rfile.read(int(self.headers.get("content-length") or 0))
+                body = json.loads(raw) if raw else None
                 if not self._record(body):
                     return self._answer(
                         403, {"detail": "Access token invalid or revoked"}

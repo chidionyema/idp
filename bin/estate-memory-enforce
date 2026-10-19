@@ -172,8 +172,8 @@ def focus_verdict(path: str, rows, agent: str):
         )
     return False, (
         f"no live claim{who} covers {rel}. Declare the work first: "
-        'bin/claim-open --title "<what you are building>" (or --issue N to refresh a '
-        "lapsed heartbeat). The claim is the focus (AGENTS.md section 5)."
+        f'bin/claim-open --title "<what you are building>" --paths {rel} (or --issue N to '
+        "extend or refresh a claim). The claim is the focus (AGENTS.md section 5)."
     )
 
 
@@ -209,9 +209,14 @@ def pre(data: dict) -> int:
         record("pre", "refuse", "not briefed", session=sid, tool=tool, path=path)
         deny_pre(reason)
         return 0
-    verdict, why = focus_verdict(
-        path, focus.live_focus(), os.environ.get("ESTATE_AGENT", "")
-    )
+    agent = os.environ.get("ESTATE_AGENT", "")
+    rows = focus.live_focus()
+    verdict, why = focus_verdict(path, rows, agent)
+    if verdict is False and rows is not None:
+        # The register lags a claim posted minutes ago; read the noted ones directly first.
+        noted = focus.noted_rows()
+        if noted:
+            verdict, why = focus_verdict(path, focus.merge_rows(rows, noted), agent)
     if verdict is False:
         record("pre", "refuse", why, session=sid, tool=tool, path=path)
         deny_pre(f"No active focus for this change. {why}")
