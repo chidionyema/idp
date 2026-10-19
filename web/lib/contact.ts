@@ -158,6 +158,56 @@ export function deliveryTarget(
   return { url, token: token || undefined };
 }
 
+/**
+ * Telegram delivery: the same two named secrets, read the same way (env, then mounted file), for
+ * a deployment whose destination is a chat rather than a webhook. `TELEGRAM_BOT_TOKEN` and
+ * `TELEGRAM_CHAT_ID` are the names the vault entry's properties are mounted under. The token is
+ * shape-checked before it is spliced into the API path, so a malformed value is "not configured"
+ * (503) instead of a request to an attacker-shaped URL. The returned url carries the token: it is
+ * never logged, and callers log a status code or error name only.
+ */
+export interface TelegramTarget {
+  url: string;
+  chatId: string;
+}
+
+export function telegramTarget(
+  env: Record<string, string | undefined>,
+  readSecret?: SecretReader,
+): TelegramTarget | null {
+  const token = (env.TELEGRAM_BOT_TOKEN ?? readSecret?.("TELEGRAM_BOT_TOKEN"))?.trim();
+  const chatId = (env.TELEGRAM_CHAT_ID ?? readSecret?.("TELEGRAM_CHAT_ID"))?.trim();
+  if (!token || !chatId) return null;
+  if (!/^\d{5,}:[A-Za-z0-9_-]{20,}$/.test(token)) return null;
+  if (!/^-?\d+$|^@[A-Za-z0-9_]{5,}$/.test(chatId)) return null;
+  return { url: `https://api.telegram.org/bot${token}/sendMessage`, chatId };
+}
+
+/** Telegram refuses a message over 4096 characters; the form's own limits sit well inside it. */
+const TELEGRAM_MAX = 4096;
+
+export function telegramPayload(
+  chatId: string,
+  value: NonNullable<ValidationResult["value"]>,
+  receivedAt: string,
+) {
+  const lines = [
+    "New enquiry via meridian.ai/contact",
+    `Name: ${value.name}`,
+    `Email: ${value.email}`,
+    ...(value.company ? [`Company: ${value.company}`] : []),
+    `Received: ${receivedAt}`,
+    "",
+    value.message,
+  ];
+  // Plain text, no parse_mode: visitor-supplied text is never interpreted as markup.
+  return {
+    chat_id: chatId,
+    text: lines.join("\n").slice(0, TELEGRAM_MAX),
+    disable_web_page_preview: true,
+  };
+}
+
 export function deliveryPayload(value: NonNullable<ValidationResult["value"]>, receivedAt: string) {
   return {
     source: "meridian.ai/contact",

@@ -5,6 +5,8 @@ import {
   RateLimiter,
   deliveryPayload,
   deliveryTarget,
+  telegramPayload,
+  telegramTarget,
   clientKey,
   validateContact,
   type SecretReader,
@@ -79,24 +81,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "invalid_input", errors: result.errors }, { status: 400 });
   }
 
-  const target = deliveryTarget(process.env, readSecret);
-  if (!target) {
+  // An explicit webhook wins; otherwise Telegram. Either is "a delivery path", and with neither
+  // the submission is refused rather than accepted and dropped.
+  const webhook = deliveryTarget(process.env, readSecret);
+  const telegram = webhook ? null : telegramTarget(process.env, readSecret);
+  if (!webhook && !telegram) {
     // Refuse loudly rather than accept a lead and drop it. An unconfigured
     // deployment should look broken, not successful.
-    console.error("[contact] CONTACT_WEBHOOK_URL is not set; refusing to accept a submission without a delivery path");
+    console.error("[contact] no delivery path (CONTACT_WEBHOOK_URL or TELEGRAM_BOT_TOKEN+TELEGRAM_CHAT_ID); refusing the submission");
     return NextResponse.json({ ok: false, error: "delivery_not_configured" }, { status: 503 });
   }
 
-  const payload = deliveryPayload(result.value, new Date(now).toISOString());
+  const receivedAt = new Date(now).toISOString();
+  const request = webhook
+    ? {
+        url: webhook.url,
+        headers: {
+          "content-type": "application/json",
+          ...(webhook.token ? { authorization: `Bearer ${webhook.token}` } : {}),
+        },
+        body: JSON.stringify(deliveryPayload(result.value, receivedAt)),
+      }
+    : {
+        url: telegram!.url,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(telegramPayload(telegram!.chatId, result.value, receivedAt)),
+      };
 
   try {
-    const res = await fetch(target.url, {
+    const res = await fetch(request.url, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        ...(target.token ? { authorization: `Bearer ${target.token}` } : {}),
-      },
-      body: JSON.stringify(payload),
+      headers: request.headers,
+      body: request.body,
       signal: AbortSignal.timeout(8000),
     });
 

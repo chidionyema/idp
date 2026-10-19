@@ -6,6 +6,8 @@ import {
   deliveryPayload,
   deliveryTarget,
   scrub,
+  telegramPayload,
+  telegramTarget,
   validateContact,
 } from "../lib/contact.ts";
 
@@ -171,4 +173,36 @@ test("delivery payload is the validated value plus provenance", () => {
     company: "",
     message: "hello there friend",
   });
+});
+
+// Telegram delivery. Fake token: right shape, not a credential.
+const TOKEN = "123456789:AAFakeFakeFakeFakeFakeFakeFakeFake_x";
+
+test("telegram target is absent unless both the token and the chat are set", () => {
+  assert.equal(telegramTarget({}), null);
+  assert.equal(telegramTarget({ TELEGRAM_BOT_TOKEN: TOKEN }), null);
+  assert.equal(telegramTarget({ TELEGRAM_CHAT_ID: "42" }), null);
+});
+
+test("telegram target reads the mounted files and builds the sendMessage url", () => {
+  const files: Record<string, string> = { TELEGRAM_BOT_TOKEN: ` ${TOKEN}\n`, TELEGRAM_CHAT_ID: "-1001234567890\n" };
+  const target = telegramTarget({}, (n) => files[n]);
+  assert.equal(target?.url, `https://api.telegram.org/bot${TOKEN}/sendMessage`);
+  assert.equal(target?.chatId, "-1001234567890");
+});
+
+test("telegram target refuses a malformed token or chat id rather than building a url from it", () => {
+  assert.equal(telegramTarget({ TELEGRAM_BOT_TOKEN: "x/../evil", TELEGRAM_CHAT_ID: "42" }), null);
+  assert.equal(telegramTarget({ TELEGRAM_BOT_TOKEN: `${TOKEN}/../x`, TELEGRAM_CHAT_ID: "42" }), null);
+  assert.equal(telegramTarget({ TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_CHAT_ID: "42 OR 1" }), null);
+});
+
+test("telegram payload is plain text, carries the enquiry, and stays inside Telegram's limit", () => {
+  const body = telegramPayload("42", { name: "Ada", email: "ada@example.com", company: "Acme", message: "*hi* <b>x</b>" },
+    "2026-10-19T17:00:00.000Z");
+  assert.equal(body.chat_id, "42");
+  assert.ok(body.text.includes("ada@example.com") && body.text.includes("Acme") && body.text.includes("*hi* <b>x</b>"));
+  assert.equal("parse_mode" in body, false);
+  const long = telegramPayload("42", { name: "A", email: "a@b.co", message: "x".repeat(10_000) }, "t");
+  assert.ok(long.text.length <= 4096);
 });
