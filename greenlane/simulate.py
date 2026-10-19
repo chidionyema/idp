@@ -24,7 +24,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Optional
 
-from .engine import CONFLICT, LANDED, RED, Engine, State
+from .engine import CONFLICT, LANDED, RED, Engine, State, latency
 
 
 def _sha(*parts: str) -> str:
@@ -66,6 +66,7 @@ class Report:
     good_lanes_not_landed: int
     broken_lanes_landed: int
     log_tail: list = field(default_factory=list)
+    latency: dict = field(default_factory=dict)  # engine.latency over the run, in ticks
 
 
 class ChaosBackend:
@@ -448,6 +449,7 @@ def run(
         good_lanes_not_landed=good_not_landed,
         broken_lanes_landed=broken_landed,
         log_tail=eng.log[-5:],
+        latency=latency(st),
     )
 
 

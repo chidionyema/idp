@@ -18,6 +18,7 @@ The state is small and serialisable (`State`), because every GitHub tick is a fr
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from typing import Optional, Protocol
 
@@ -45,6 +46,9 @@ REJUDGE_LIMIT = (
     8  # consecutive main moves a CONFLICT lane is re-queued across before it is parked
 )
 RETIRE_AFTER_MIN = 1440  # 24 hours: a lane held this long without moving is parked; I4 keeps the branch
+HISTORY_KEEP = (
+    200  # batch verdicts and landings kept for the latency read; the state is one blob
+)
 
 
 @dataclass
@@ -97,6 +101,18 @@ class State:
     # the head, not to this state file: a lane record lost for one tick (the branch pruned as
     # landed and pushed straight back, a state write that raced another tick) came back with
     # `arrived = now`, so nothing ever reached RETIRE_AFTER_MIN (idp#5953).
+    history: list[dict] = field(
+        default_factory=list
+    )  # one record per batch verdict, oldest first, the last HISTORY_KEEP. 2026-10-19: push to
+    # live was a 19 min median with a 4 h tail, and the state could not say why -- it held the
+    # batch in flight and nothing about the ones before it, and the ref keeps no history (every
+    # tick rewrites its one commit). Where the time goes is read from here, not dug out of logs.
+    landings: list[dict] = field(
+        default_factory=list
+    )  # one record per landed lane: queued (the head's arrival), landed, batch; last HISTORY_KEEP
+    conflicts: int = (
+        0  # lanes found not to rebase onto main at batch formation, all time
+    )
 
     def dumps(self) -> str:
         d = asdict(self)
@@ -111,6 +127,7 @@ class State:
             seq=d.get("seq", 0),
             landed=d.get("landed", 0),
             candidates=d.get("candidates", 0),
+            conflicts=d.get("conflicts", 0),
         )
         st.lanes = {k: Lane(**v) for k, v in d.get("lanes", {}).items()}
         st.retired = {str(k): str(v) for k, v in d.get("retired", {}).items()}
@@ -119,6 +136,9 @@ class State:
             for k, seen in (d.get("timed") or {}).items()
         }
         st.queued = [list(x) for x in d.get("queued", [])]
+        # a state written before these fields existed has neither: it loads with empty history
+        st.history = [dict(r) for r in d.get("history") or []][-HISTORY_KEEP:]
+        st.landings = [dict(r) for r in d.get("landings") or []][-HISTORY_KEEP:]
         if d.get("batch"):
             b = d["batch"]
             st.batch = Batch(
@@ -129,6 +149,45 @@ class State:
                 b["started"],
             )
         return st
+
+
+def _pct(xs: list[float], p: float) -> Optional[float]:
+    """Nearest-rank percentile, or None for no samples."""
+    if not xs:
+        return None
+    xs = sorted(xs)
+    return round(xs[min(len(xs), max(1, math.ceil(p * len(xs)))) - 1], 1)
+
+
+def latency(st: State) -> dict:
+    """Where push-to-land time goes, from the records the engine keeps (minutes).
+
+    queue_to_land: a landed lane's head first seen -> the tick that landed it.
+    batch_cycle:   a candidate pushed -> its verdict collected, for every batch, whatever it was.
+    outcomes:      how batches ended; anything but `landed` is a cycle its lanes run again.
+    """
+    waits = [
+        r["landed"] - r["queued"] for r in st.landings if r.get("queued") is not None
+    ]
+    cycles = [r["verdict_at"] - r["started"] for r in st.history]
+    outcomes: dict[str, int] = {}
+    for r in st.history:
+        k = r["outcome"] + (f"/{r['action']}" if r.get("action") else "")
+        outcomes[k] = outcomes.get(k, 0) + 1
+    return {
+        "queue_to_land_min": {
+            "n": len(waits),
+            "p50": _pct(waits, 0.5),
+            "p90": _pct(waits, 0.9),
+        },
+        "batch_cycle_min": {
+            "n": len(cycles),
+            "p50": _pct(cycles, 0.5),
+            "p90": _pct(cycles, 0.9),
+        },
+        "outcomes": outcomes,
+        "conflicts_total": st.conflicts,
+    }
 
 
 class Backend(Protocol):
@@ -450,6 +509,7 @@ class Engine:
             # I2 says this cannot happen; if it does, the candidate no longer sits on main and
             # nothing it proved is worth anything. Re-queue, never land.
             self.log.append(f"batch {b.id}: main moved under it; requeued")
+            self._record(b, "main-moved")
             self._requeue([m[0] for m in live])
             self.s.batch = None
             return
@@ -457,13 +517,16 @@ class Engine:
             # a member was re-pushed or withdrawn mid-test: the candidate no longer represents
             # the lanes, so its verdict is void for all of them.
             self.log.append(f"batch {b.id}: member changed under test; requeued")
+            self._record(b, "member-changed")
             self._requeue([m[0] for m in live])
             self.s.batch = None
             return
         verdict, reason = self.b.checks(b.tip)
+        outcome = "red"
         if verdict == "pending":
             if self.b.now() - b.started > self.timeout:
                 verdict, reason = "red", f"no verdict after {self.timeout:g} min"
+                outcome = "timeout"
             else:
                 return
         if verdict == "green":
@@ -475,15 +538,29 @@ class Engine:
                 # over it) and requeued it as new work, uncounted, squashing the squash. A
                 # refused land is a red verdict on this batch: it counts against the retries.
                 verdict, reason = "red", f"land refused: {e}"
+                outcome = "land-refused"
         if verdict == "green":
+            now = self.b.now()
             for name, head, _ in b.members:
-                self.s.lanes[name].status = LANDED
-                self.s.lanes[name].reason = f"landed in {b.id}"
+                lane = self.s.lanes[name]
+                lane.status = LANDED
+                lane.reason = f"landed in {b.id}"
                 self.b.report(name, head, LANDED, f"landed in {b.id}")
                 self.s.landed += 1
+                self.s.landings.append(
+                    {
+                        "lane": name,
+                        # 0.0 is a lane from before `arrived` existed: its wait is unknown
+                        "queued": round(lane.arrived, 2) if lane.arrived else None,
+                        "landed": round(now, 2),
+                        "batch": b.id,
+                    }
+                )
+            del self.s.landings[:-HISTORY_KEEP]
             self.log.append(
                 f"batch {b.id}: landed {len(b.members)} lane(s) -> main {b.tip}"
             )
+            self._record(b, "landed")
             self.s.batch = None
             return
         # red
@@ -503,12 +580,14 @@ class Engine:
                 # suite of its own, and nothing else.
                 lane.status = PENDING
                 lane.reason = f"retry after: {reason}"
+                self._record(b, outcome, "retried", reason)
             else:
                 lane.status, lane.reason = RED, reason
                 # main red under it: the verdict says nothing about the lane (2026-09-30)
                 if self.b.main_red(b.base):
                     lane.judged_on = b.base
                 self.b.report(name, head, RED, reason)
+                self._record(b, outcome, "parked", reason)
             self.log.append(
                 f"batch {b.id}: {name} red ({reason}); attempts={lane.attempts}"
             )
@@ -524,7 +603,27 @@ class Engine:
             self.log.append(
                 f"batch {b.id}: red, bisected into {len(first)}+{len(second)}"
             )
+            self._record(b, outcome, "bisected", reason)
         self.s.batch = None
+
+    def _record(
+        self, b: Batch, outcome: str, action: str = "", reason: str = ""
+    ) -> None:
+        """Keep one record of how this batch ended, for `latency` (bounded: HISTORY_KEEP)."""
+        r = {
+            "id": b.id,
+            "base": b.base[:12],
+            "members": [m[0] for m in b.members],
+            "started": round(b.started, 2),
+            "verdict_at": round(self.b.now(), 2),
+            "outcome": outcome,
+        }
+        if action:
+            r["action"] = action
+        if reason:
+            r["reason"] = reason[:160]
+        self.s.history.append(r)
+        del self.s.history[:-HISTORY_KEEP]
 
     def _requeue(self, names: list[str]) -> None:
         for n in names:
@@ -673,6 +772,9 @@ class Engine:
                 )
                 lane.judged_on = base
                 self.b.report(n, lane.head, CONFLICT, lane.reason)
+                # counted, not recorded: no candidate ran, and a lane re-judged on every main
+                # move would fill the ring (167 of 200 records in a 500-lane simulation)
+                self.s.conflicts += 1
                 continue
             new = self.b.rebase(lane.head, tip)
             if new is None:
