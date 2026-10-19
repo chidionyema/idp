@@ -109,7 +109,15 @@ jobs:
           IDP_KYVERNO_POLICIES: ${{ runner.temp }}/kyverno-policies/deploy/k8s/policies
           # crew#584 zero-bottleneck law: on a PR the kyverno rung judges the platform dirs the
           # diff touches (fetch-depth 0 above makes the three-dot diff real); empty on main = every dir
-          IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+          #
+          # idp#6604: this job is skipped on pull requests, so `github.base_ref` was never set
+          # where it runs, and the scoping above never fired. Every Greenlane candidate (queue/**)
+          # judged all 62 platform dirs: kyverno was 268 of bin/idp-ci's 367 s and offline-gate the
+          # long pole of every batch (run 39298091203, 485 of 492 s). A candidate is main plus its
+          # lanes, so it is graded on that diff, as a pull request is; `...` diffs from the merge
+          # base, which is the candidate's own base even if main moved meanwhile. The push to main
+          # stays unscoped: the merged state still gets the full sweep.
+          IDP_CI_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || (startsWith(github.ref, 'refs/heads/queue/') && 'origin/main' || '') }}
           MIGRATE_HEALTH_WAIT: "240"
           # 2026-09-13: bin/idp-rules runs the bdd-proof row on this plane, and that row's argv is
           # the gate BARE -- no --live flag, because the registry cannot know which plane is
