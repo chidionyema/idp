@@ -128,6 +128,14 @@ backend:
   csp:
     connect-src: ["'self'", 'http:', 'https:', 'blob:']
     img-src: ["'self'", 'data:', 'blob:']
+    # 2026-10-19: Safari iOS blocks audioWorklet.addModule(blobUrl) without worker-src blob:,
+    # throwing "NotAllowedError: Not allowed by CSP" when tapping the mic on /face and /fleet.
+    # media-src 'self' makes microphone permission explicit (falls back to default-src 'self'
+    # without it, but some Safari versions require it). gstatic.com is the Draco decoder CDN
+    # path TalkingHead carries; dracoEnabled is false so it is never fetched, but the directive
+    # is harmless and documents the dependency.
+    worker-src: ["'self'", 'blob:']
+    media-src: ["'self'", 'https://www.gstatic.com']
     # Content-Security-Policy directives follow the Helmet format: https://helmetjs.github.io/#reference
     # Default Helmet Content-Security-Policy values can be removed by setting the key to false
   cors:
