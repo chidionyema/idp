@@ -146,3 +146,58 @@ spec:
     port: 8000
   replicas: { min: 1, max: 1 }
   scaledownPeriod: 300
+---
+# Scheduled housekeeping (consolidation.py): expired scratchpad rows and aged preference counters.
+# Per-turn consolidation needs no schedule -- every `remember` already posts to
+# /harness/memory/consolidate. The pod labels deliberately do NOT carry the server's
+# app.kubernetes.io/name, or the Service would route requests to a pod that listens on nothing.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: unified-memory-consolidate
+  namespace: unified-memory
+  labels: { app.kubernetes.io/name: unified-memory-consolidate, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
+spec:
+  schedule: "17 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: unified-memory-consolidate, app.kubernetes.io/part-of: idp, backstage.io/kubernetes-id: unified-memory }
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            fsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: consolidate
+              image: ghcr.io/chidionyema/unified-memory-server
+              command: ["python", "consolidation.py"]
+              env:
+                - { name: HOME, value: /tmp }
+                - { name: PYTHONDONTWRITEBYTECODE, value: "1" }
+                - { name: DATABASE_URL_FILE, value: /var/run/memory/DATABASE_URL }
+              resources:
+                requests: { cpu: 20m, memory: 64Mi }
+                limits: { cpu: 200m, memory: 128Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: tmp, mountPath: /tmp }
+                - { name: secret, mountPath: /var/run/memory, readOnly: true }
+          volumes:
+            - { name: tmp, emptyDir: {} }
+            - name: secret
+              secret: { secretName: unified-memory, defaultMode: 256 }

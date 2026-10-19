@@ -12,6 +12,13 @@
   "tools": ["brief", "recall", "remember"],
   "bridge": "bin/estate-memory-mcp",
   "session_start": "bin/estate-brief",
+  "enforce": {
+    "bin": "bin/estate-memory-enforce",
+    "hooks": [
+      {"event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit", "arg": "pre"},
+      {"event": "Stop", "arg": "stop"}
+    ]
+  },
   "runtimes": {
     "claude-code": {
       "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},

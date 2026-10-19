@@ -27,6 +27,7 @@ sys.path.insert(
     ),
 )
 import door  # noqa: E402
+import focus  # noqa: E402
 
 TOOLS = set(door.MANIFEST["tools"])
 TIMEOUT_S = 30
@@ -83,11 +84,53 @@ class Bridge:
             )
         if reply is None:
             return refuse(mid, "memory door gave no reply")
+        if method == "tools/call" and "result" in reply:
+            name = msg.get("params", {}).get("name")
+            if name in ("brief", "recall"):
+                self.retire_ghosts(name, reply["result"])
         if method == "tools/list" and "result" in reply:
             reply["result"]["tools"] = [
                 t for t in reply["result"].get("tools", []) if t["name"] in TOOLS
             ]
         return reply
+
+    def retire_ghosts(self, tool: str, result: dict) -> None:
+        """Drop focus facts whose claim has closed from a brief/recall result, and give `brief`
+        the live focus register. This is the root-cause fix for idp#6543: the session-start hook
+        retired ghosts but the tools agents call mid-session did not, so a dead "ACTIVE FOCUS"
+        fact kept being served. Every runtime passes this bridge, so it is fixed once, here.
+        Never raises: a result we cannot parse is returned as the door sent it."""
+        try:
+            register = focus.live_focus() if tool == "brief" else None
+            dropped = []
+            payloads = []
+            if isinstance(result.get("structuredContent"), dict):
+                payloads.append((result["structuredContent"], None))
+            for block in result.get("content", []):
+                if block.get("type") == "text":
+                    try:
+                        parsed = json.loads(block.get("text", ""))
+                    except (ValueError, TypeError):
+                        continue
+                    if isinstance(parsed, dict):
+                        payloads.append((parsed, block))
+            for payload, block in payloads:
+                dropped += focus.scrub(tool, payload)
+                if register is not None:
+                    payload["active_focus"] = register
+                if block is not None:
+                    block["text"] = json.dumps(payload)
+            if dropped:
+                names = ", ".join(sorted({d["text"].strip()[:60] for d in dropped}))
+                print(
+                    f"estate-memory: dropped {len(dropped)} stale focus fact(s) from {tool}: {names}",
+                    file=sys.stderr,
+                )
+        except Exception as e:  # a filter must never cost an agent its memory
+            print(
+                f"estate-memory: focus filter skipped ({type(e).__name__})",
+                file=sys.stderr,
+            )
 
 
 def ok(mid, result: dict) -> dict:

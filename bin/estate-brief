@@ -12,13 +12,8 @@ line on stderr saying why. The key is read by name (MCP_GATEWAY_KEY, then the va
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
-import shutil
-import subprocess
 import sys
-import time
 
 sys.path.insert(
     0,
@@ -31,119 +26,26 @@ sys.path.insert(
     ),
 )
 import door  # noqa: E402
+import focus  # noqa: E402
 
 ITEM_CHARS = 400
 
-# A fact that starts like this is an agent's hand-written focus marker, and the claim
-# it names is checked: a CLOSED claim's focus fact is a ghost, and sessions briefed with
-# it start on work that landed or was abandoned (idp#6543, after Meta Muse's Active Focus).
-FOCUS_CLAIM_RE = re.compile(
-    r"^\s*ACTIVE FOCUS claim\s+([A-Za-z]*)#?(\d+)\b", re.IGNORECASE
-)
-CLAIM_REPOS = {"idp": "chidionyema/idp"}  # the marker names the repo by its prefix
-CLAIM_TTL_S = 3600.0  # an hour of cache: session starts stay off the network
-CLAIM_TIMEOUT_S = 2.0  # gh stalls are a known flaky path; the brief never waits on one
+# The focus rules live in platform/estate/memory/focus.py, shared with bin/estate-memory-mcp:
+# the hook alone retired ghosts and the tools agents call mid-session did not (idp#6543).
+FOCUS_CLAIM_RE = focus.FOCUS_CLAIM_RE
+CLAIM_REPOS = focus.CLAIM_REPOS
 
 
-def _cache_path() -> str:
-    home = os.environ.get("ESTATE_MEMORY_HOME") or os.path.join(
-        os.path.expanduser("~"), ".estate", "memory"
-    )
-    return os.path.join(home, "focus-claims.json")
-
-
-def _load_cache(path: str) -> dict:
-    try:
-        with open(path) as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
-def _save_cache(path: str, cache: dict) -> None:
-    try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as f:
-            json.dump(cache, f)
-    except Exception:
-        pass  # the cache is an optimisation, never a dependency
-
-
-def claim_state(num: int, prefix: str, cache: dict, cache_path: str) -> str | None:
-    """OPEN or CLOSED from GitHub through gh, cached CLAIM_TTL_S; None is unknown.
-
-    None keeps the fact: a flaky network, a missing gh or a slow answer must never
-    cost a session its memory -- the brief fails open, always.
-    """
-    key = str(num)
-    now = time.time()
-
-    def ok(h):
-        return (
-            isinstance(h, dict)
-            and now - h.get("at", 0) < CLAIM_TTL_S
-            and h.get("state") in ("OPEN", "CLOSED")
-        )
-
-    hit = cache.get(key)
-    if not ok(hit):
-        disk = _load_cache(
-            cache_path
-        )  # another list (or another session) may have answered
-        if ok(disk.get(key)):
-            cache[key] = disk[key]
-            hit = cache[key]
-    if ok(hit):
-        return hit["state"]
-    gh = shutil.which("gh")
-    repo = CLAIM_REPOS.get(prefix.lower())
-    state = None
-    if gh and repo:
-        try:
-            r = subprocess.run(
-                [
-                    gh,
-                    "issue",
-                    "view",
-                    key,
-                    "--repo",
-                    repo,
-                    "--json",
-                    "state",
-                    "-q",
-                    ".state",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=CLAIM_TIMEOUT_S,
-            )
-            if r.returncode == 0 and r.stdout.strip() in ("OPEN", "CLOSED"):
-                state = r.stdout.strip()
-        except Exception:
-            state = None
-    if state:
-        cache[key] = {"state": state, "at": now}
-        _save_cache(cache_path, cache)
-    return state
+def claim_state(num: int, prefix: str, cache: dict, cache_path: str):
+    return focus.claim_state(num, prefix, cache, cache_path)
 
 
 def drop_stale_focus(items: list, cache_path: str | None = None):
     """Return (kept, dropped) with CLOSED-claim focus facts out, and say so once on stderr."""
-    if not items:
-        return items, []
-    cache_path = cache_path or _cache_path()
-    cache = _load_cache(cache_path)
-    kept, dropped = [], []
-    for it in items:
-        m = FOCUS_CLAIM_RE.match(it.get("text", "")) if isinstance(it, dict) else None
-        if (
-            m
-            and claim_state(int(m.group(2)), m.group(1), cache, cache_path) == "CLOSED"
-        ):
-            dropped.append(it)
-        else:
-            kept.append(it)
+    # claim_state is looked up here, in this module, so a test can stand in for GitHub.
+    kept, dropped = focus.drop_stale(
+        items, lambda n, p, c, path: claim_state(n, p, c, path), cache_path or ""
+    )
     if dropped:
         names = ", ".join(sorted({d["text"].strip()[:60] for d in dropped}))
         print(
@@ -158,7 +60,8 @@ def render(brief: dict) -> str:
         return [f"- {' '.join(i['text'].split())[:ITEM_CHARS]}" for i in items]
 
     recent, relevant = lines(brief.get("recent", [])), lines(brief.get("relevant", []))
-    if not recent and not relevant:
+    register = focus.render_register(brief.get("active_focus"))
+    if not recent and not relevant and not register:
         return ""
     out = [
         "<estate-memory>",
@@ -169,6 +72,8 @@ def render(brief: dict) -> str:
         out += ["Recent decisions and incidents:", *recent]
     if relevant:
         out += ["Nearest to this task:", *relevant]
+    if register:
+        out.append(register)
     return "\n".join([*out, "</estate-memory>"])
 
 
@@ -198,6 +103,7 @@ def main(argv: list[str]) -> int:
         return 0
     brief["recent"], _ = drop_stale_focus(brief.get("recent", []))
     brief["relevant"], _ = drop_stale_focus(brief.get("relevant", []))
+    brief["active_focus"] = focus.live_focus()
     text = render(brief)
     if text:
         print(text)

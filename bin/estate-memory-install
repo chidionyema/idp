@@ -88,7 +88,9 @@ def home_files() -> list[str]:
     return [
         MANIFEST["bridge"],
         MANIFEST["session_start"],
+        MANIFEST["enforce"]["bin"],
         f"{memory}/door.py",
+        f"{memory}/focus.py",
         f"{memory}/runtimes.json",
         *links,
     ]
@@ -111,6 +113,46 @@ def plan_home(root: Path) -> list[tuple[str, Path, object]]:
             os.replace(tmp, dest)
 
         changes.append(("copy", dest, copy))
+    return changes
+
+
+def enforce_command(root: Path, arg: str) -> str:
+    return f"python3 {root / MANIFEST['enforce']['bin']} {arg}"
+
+
+def plan_enforce(path: Path, root: Path) -> list[tuple[str, Path, object]]:
+    """The memory/focus enforcement hooks (PreToolUse, Stop) a settings runtime must carry.
+
+    Each is matched by its command, so a reinstall replaces the estate's own entry and leaves
+    every other hook in the file alone."""
+    marker = MANIFEST["enforce"]["bin"]
+    changes = []
+    for spec in MANIFEST["enforce"]["hooks"]:
+        event, cmd = spec["event"], enforce_command(root, spec["arg"])
+        groups = load(path).get("hooks", {}).get(event, [])
+        mine = [
+            (g.get("matcher"), h.get("command"))
+            for g in groups
+            for h in g.get("hooks", [])
+            if marker in h.get("command", "")
+        ]
+        if mine == [(spec.get("matcher"), cmd)]:
+            continue
+
+        def put(path=path, event=event, cmd=cmd, spec=spec):
+            data = load(path)
+            kept = [
+                g
+                for g in data.setdefault("hooks", {}).get(event, [])
+                if not any(marker in h.get("command", "") for h in g.get("hooks", []))
+            ]
+            group = {"hooks": [{"type": "command", "command": cmd, "timeout": 15}]}
+            if spec.get("matcher"):
+                group["matcher"] = spec["matcher"]
+            data["hooks"][event] = [*kept, group]
+            save(path, data)
+
+        changes.append(("hook", path, put))
     return changes
 
 
@@ -161,6 +203,7 @@ def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
                 save(path, data)
 
             changes.append(("hook", path, put_hook))
+        changes += plan_enforce(path, root)
     elif hook and hook["kind"] == "link":
         dest, source = expand(hook["dest"], rt), root / hook["source"]
         if dest.is_symlink() and Path(os.readlink(dest)) == source:

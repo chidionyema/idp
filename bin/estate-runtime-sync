@@ -17,6 +17,8 @@ EACH RUN
      deleted -- an extra is reported), and the launchers voice needs into ~/.estate/bin
   3. voice-router changed -> rebuild ~/.estate/voice-router/voice-router and restart it; wait for /readyz
   4. the fleetview backend's code changed -> restart it; wait for /healthz
+  4a. estate memory: bin/estate-memory-install from the tree, which writes only what drifted (the
+     brief, the bridge, the enforcement hooks, each runtime's config); a refusal is reported
   4b. the laptop router's config (llm/config.yaml) or modules (bin/litellm-local's MODULES) differ
      from what it runs -> copy them in, restart it, and keep them only if the router comes back AND
      voice's /readyz is at least as ready as before; otherwise put the previous bytes back. Its
@@ -269,6 +271,33 @@ def sync_watchdog() -> list[str]:
     return ["router watchdog.py staged"]
 
 
+def sync_memory() -> list[str]:
+    # Estate memory reached each runtime only when someone ran bin/estate-memory-install by hand,
+    # so a fix to the brief, the bridge or the enforcement hooks merged and then waited on that
+    # (2026-10-19: the hooks ran from an unlanded worktree until a person re-ran the installer).
+    # The installer is idempotent and writes only what drifted, so it runs from main every tick.
+    installer = TREE / "bin/estate-memory-install"
+    if not installer.is_file():
+        return []
+    try:
+        r = subprocess.run(  # noqa: S603 - fixed argv: this interpreter, main's own installer
+            [sys.executable, str(installer)],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return [f"memory install failed: {exc}"]
+    wrote = [ln.split()[1] for ln in r.stdout.splitlines() if ln.startswith("wrote")]
+    notes = [f"memory +{len(wrote)} ({', '.join(sorted(set(wrote)))})"] if wrote else []
+    if r.returncode != 0:
+        # a refusal (a hand-edited config it will not rewrite) is the founder's call, not a rollback
+        notes.append(
+            f"memory install exit {r.returncode}: {(r.stdout + r.stderr).strip()[-200:]}"
+        )
+    return notes
+
+
 def restart_router() -> bool:
     """Put the staged router into service. False only when it never answered.
 
@@ -502,6 +531,7 @@ def main() -> int:
         notes.append(f"ROLLED BACK to {before[:8]}")
     elif broke:
         alert(f"runtime sync: {', '.join(broke)} did not come back")
+    notes += sync_memory()
     try:
         notes += sync_router()
     except (OSError, subprocess.SubprocessError) as exc:
