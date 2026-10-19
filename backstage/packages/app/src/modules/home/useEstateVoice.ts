@@ -269,8 +269,14 @@ function osRefusalFix(): string {
  * (mediaDevices does not even exist) and the only fix is the URL.
  *
  * Returns null when nothing is wrong; the caller proceeds with the mic.
+ *
+ * EXPORTED (2026-10-19): useVoiceRouter.start() runs the same pre-flight. Since the face's
+ * default voice path moved to the router (910850825), a missing `navigator.mediaDevices` on
+ * /face reached `getUserMedia` unguarded and the raw TypeError -- with no mic word in it -- was
+ * pasted into `detail` (measured: portal-app's phone run on queue/b3186-88, 12/12 red on
+ * `/face names a fix this device can follow`). One wording, one owner: both paths read these.
  */
-async function micBlocker(): Promise<string | null> {
+export async function micBlocker(): Promise<string | null> {
   // TWO DIFFERENT BLOCKERS, TWO DIFFERENT FIXES -- do not collapse them into one message.
   //
   // Measured on LIVE production 2026-10-04 with an iPhone and a Pixel user-agent: this function
@@ -346,7 +352,7 @@ async function micRefusalDetail(): Promise<string> {
  * person can act on and is passed through untouched; `detail` is never allowed to be an exception
  * string.
  */
-async function refusalDetail(e: any, msg: string): Promise<string> {
+export async function refusalDetail(e: any, msg: string): Promise<string> {
   const name = String(e?.name || '');
   // Raised by useVoiceRouter (MicRefusal), already worded for the person.
   if (name === 'MicRefusal') return msg;

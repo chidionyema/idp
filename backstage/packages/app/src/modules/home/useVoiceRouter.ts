@@ -22,7 +22,7 @@
 // silence the agent at once, even with frames still in flight.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
-import { getClauseSink } from './useEstateVoice';
+import { getClauseSink, micBlocker, refusalDetail } from './useEstateVoice';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
 // Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
@@ -284,6 +284,17 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     setMicRecoveryUrl(undefined);
     let audio: AudioContext | null = null;
     let mic: MediaStream | null = null;
+    // THE PRE-FLIGHT THE ROUTER PATH WAS MISSING (2026-10-19). The face's default voice moved
+    // here (910850825) without the guard the legacy path has always run first: a phone Safari
+    // that will not expose `navigator.mediaDevices` reached getUserMedia unguarded, and the raw
+    // engine text -- "undefined is not an object (evaluating 'navigator.mediaDevices...')" --
+    // landed in `detail` where a fix belonged. Same probe, same words, one owner: micBlocker.
+    const blocked = await micBlocker();
+    if (blocked) {
+      setState('error');
+      setDetail(blocked);
+      return;
+    }
     try {
       mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
@@ -373,7 +384,11 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
         setMicRecoveryUrl(window.location.href);
         setDetail('the home-screen icon cannot keep microphone access on iOS — open in Safari below');
       } else {
-        setDetail(msg);
+        // THE REFUSAL IS WORDED, NEVER AN EXCEPTION STRING. refusalDetail classifies by the
+        // browser-set error name and ends in a sentence that names the microphone and a fix
+        // this device can follow -- the contract useEstateVoice has enforced since 2026-10-03
+        // and the phone e2e (mobile-shell.test.ts) holds both paths to.
+        setDetail(await refusalDetail(err, msg));
       }
       throw err;
     }

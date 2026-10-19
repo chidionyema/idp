@@ -26,6 +26,10 @@ jest.mock('./useEstateVoice', () => ({
   useEstateVoice: jest.fn(),
   getClauseSink: () => null,
   setClauseSink: () => undefined,
+  // useVoiceRouter's module reads these for its mic pre-flight and refusal wording; the tests
+  // here never drive a real start(), but the mock must shape the module the import sees.
+  micBlocker: async () => null,
+  refusalDetail: async (_e: unknown, msg: string) => msg,
 }));
 jest.mock('@backstage/frontend-plugin-api', () => ({
   configApiRef: { id: 'core.config' },

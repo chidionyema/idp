@@ -1,4 +1,11 @@
-import { CAPTURE_WORKLET, decodeFrame, toPanel, voiceRouterUrl } from './useVoiceRouter';
+import { renderHook, act } from '@testing-library/react';
+import {
+  CAPTURE_WORKLET,
+  decodeFrame,
+  toPanel,
+  useVoiceRouter,
+  voiceRouterUrl,
+} from './useVoiceRouter';
 
 // The capture worklet runs in the browser's audio thread, which jest does not have. It is plain
 // JavaScript, so it is executed here against a stub of the two globals that thread provides.
@@ -108,5 +115,72 @@ describe('the turn record, as the /fleet voice panel reads it', () => {
   it('is empty, not broken, before the router has answered', () => {
     expect(toPanel(undefined)).toEqual({ voiceStats: { turns: 0, empty: 0, empty_rate: 0,
       asr_median_s: undefined, first_clause_median_s: undefined }, voiceLog: [] });
+  });
+});
+
+// THE MIC REFUSAL NAMES THE MICROPHONE (2026-10-19, chidionyema/idp#6577).
+//
+// The face's default voice path moved to this hook (910850825) without the pre-flight and
+// refusal wording the legacy path has always run, so a phone whose `navigator.mediaDevices`
+// was absent reached getUserMedia unguarded and the raw engine text -- "undefined is not an
+// object (evaluating 'navigator.mediaDevices.getUserMedia')" -- was pasted into `detail`,
+// where a fix belonged. Measured live: portal-app's phone run went 12/12 red on
+// `/face names a fix this device can follow` (queue/b3186, b3187, b3188), blocking every lane.
+// These pin the contract mobile-shell.test.ts holds the PAGE to, at the hook, where it is
+// cheap: whatever the failure, `detail` ends in a sentence that names the microphone and a
+// fix this device can follow -- never the engine's own words.
+describe('the router voice refusal', () => {
+  // jsdom reports http://localhost, whose isSecureContext is false -- that would answer the
+  // secure-page branch of micBlocker and mask the branch under test. The page under test is
+  // served over https by construction; say so the way the browser would.
+  beforeEach(() => {
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true,
+    });
+  });
+
+  afterEach(() => {
+    delete (window as any).isSecureContext;
+    delete (navigator as any).mediaDevices;
+  });
+
+  it('when the device exposes no mediaDevices, says the browser cannot reach the microphone', async () => {
+    // What Safari on iOS does to a page it will not grant: mediaDevices is simply undefined.
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      get: () => undefined,
+    });
+    const { result } = renderHook(() => useVoiceRouter());
+    await act(async () => {
+      await result.current.start();
+    });
+    expect(result.current.state).toBe('error');
+    expect(result.current.detail).toBe(
+      'this browser cannot reach the microphone — open the page in Safari or Chrome',
+    );
+  });
+
+  it('when the browser refuses the mic, the refusal names the microphone, not the engine text', async () => {
+    // Safari's own refusal (name is what classifies it; the text is prose we must never paste).
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          const e = new Error(
+            'The request is not allowed by the user agent or the platform in the current context.',
+          );
+          e.name = 'NotAllowedError';
+          throw e;
+        },
+      },
+    });
+    const { result } = renderHook(() => useVoiceRouter());
+    await act(async () => {
+      await result.current.start().catch(() => undefined); // start rethrows; the page's wording is the product
+    });
+    expect(result.current.state).toBe('error');
+    expect(result.current.detail).toMatch(/microphone/i);
+    expect(result.current.detail).not.toMatch(/user agent|not an object/i);
   });
 });
