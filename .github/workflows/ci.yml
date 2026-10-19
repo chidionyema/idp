@@ -150,6 +150,10 @@ jobs:
     if: github.event_name != 'pull_request'
     needs: [fast-gate, verifier]
     runs-on: ubuntu-24.04
+    # idp#6606: a Greenlane candidate's gitleaks walk covers the commits it adds to main; every
+    # older commit was scanned in the candidate that landed it. The push to main walks it all.
+    env:
+      ESTATE_SCAN_BASE: ${{ startsWith(github.ref, 'refs/heads/queue/') && 'origin/main' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/security-scan   # the steps every active estate repo runs

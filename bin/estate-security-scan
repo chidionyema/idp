@@ -58,10 +58,24 @@ say "SECURITY-SCAN $(date -u +%Y-%m-%dT%H:%M:%SZ) commit=$(git rev-parse HEAD) t
 # fetch-depth 0, so one literal on an unmerged peer branch reddened every open PR
 # (2026-08-27 21:00Z, idp#479 #486-#492; crew#539 branch commit 3bf04ab). A branch
 # may only fail its own PR; a leak reaches main only through a PR whose HEAD holds it.
+#
+# idp#6606: ESTATE_SCAN_BASE=<ref> scans only <ref>..HEAD -- the commits this checkout adds. A
+# Greenlane candidate is main plus its lanes, and every commit already on main was scanned in the
+# candidate that landed it, so walking all of history again was 129 of this job's 191 s on every
+# batch (run 39298091203). The push to main sets no base and keeps the full walk. A base that does
+# not resolve is not a reason to scan less: it falls back to the full history, and says so.
 check_secrets() {
 if command -v gitleaks >/dev/null; then
-  if out=$(gitleaks detect --source . --log-opts=HEAD --redact --no-banner --exit-code 1 2>&1); then
-    say "ok    secrets   gitleaks $(gitleaks version): no leaks in git history"
+  local range=HEAD scope="git history"
+  if [ -n "${ESTATE_SCAN_BASE:-}" ]; then
+    if git rev-parse -q --verify "${ESTATE_SCAN_BASE}^{commit}" >/dev/null; then
+      range="${ESTATE_SCAN_BASE}..HEAD"; scope="the $(git rev-list --count "$range") commit(s) $ESTATE_SCAN_BASE..HEAD adds"
+    else
+      scope="git history (base $ESTATE_SCAN_BASE does not resolve here; scanned everything)"
+    fi
+  fi
+  if out=$(gitleaks detect --source . --log-opts="$range" --redact --no-banner --exit-code 1 2>&1); then
+    say "ok    secrets   gitleaks $(gitleaks version): no leaks in $scope"
   else
     say "FAIL  secrets   gitleaks found leaks in git history"; [ $quiet = 1 ] || printf '%s\n' "$out" | tail -20 | sed 's/^/      /'; fail=1
   fi
