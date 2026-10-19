@@ -1,0 +1,23 @@
+# Cloudflare API token for cert-manager's DNS-01 solver, pulled from OCI Vault by the node's
+# instance principal (ClusterSecretStore estate-vault, platform/secret-store) -- the same vault
+# row external-dns reads (platform/dns/cloudflare-external-secret.yaml). No new credential: the
+# token already writes this zone's records for external-dns, and DNS-01 needs exactly that
+# permission. Secrets are namespaced and the solver reads from cert-manager's own namespace, so
+# the edge row carries this second ExternalSecret rather than reaching across namespaces.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: cloudflare-api-token
+  namespace: cert-manager
+spec:
+  refreshInterval: 10m
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: estate-vault
+  target:
+    name: cloudflare-api-token
+    creationPolicy: Owner
+  data:
+    - secretKey: CF_API_TOKEN
+      remoteRef:
+        key: cloudflare-api-token

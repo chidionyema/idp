@@ -24,6 +24,14 @@ resources:
   - require-auto-reload.yaml
   - catalogue-entity-exception.yaml
   - cert-manager.yaml
+  # The edge issuer, adopted from the same dead `prospector` Kustomization as the Gateway above,
+  # plus the DNS-01 solver that ends the HTTP-01 self-check outage (2026-10-19): the in-cluster
+  # self-check to the LB VIP times out no matter what the fences allow, so issuance moves to the
+  # Cloudflare API. Provenance and the failed HTTP-01 premises are in the file's header.
+  - prospector-clusterissuer.yaml
+  # The Cloudflare token the DNS-01 solver reads: the same vault row external-dns uses, mirrored
+  # into cert-manager's namespace because Secrets do not cross namespaces.
+  - cert-manager-cloudflare-token.yaml
   - langfuse-exception.yaml
   - k8s-infra-namespace.yaml
   - k8s-infra-exception.yaml
