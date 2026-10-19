@@ -1,0 +1,62 @@
+# The edge certificate issuer. Provenance, measured 2026-10-19: the live object was applied by a
+# Flux Kustomization named `prospector` (its label still reads
+# kustomize.toolkit.fluxcd.io/name=prospector) whose Kustomization and GitRepository both no
+# longer exist -- so the ClusterIssuer, like the Gateway before it (prospector-gateway.yaml), was
+# an orphan: issuing, and owned by no source. Held here on the edge row, spec verbatim as it
+# runs, so Flux owns what nothing owned and it is never amended by hand again.
+#
+# Solvers: DNS-01 through Cloudflare for every name under the estate zone, HTTP-01 through the
+# gateway's http listener kept as the fallback for anything outside it. DNS-01 was deliberately
+# not used when this issuer was written -- the prospector repo comment records three premises:
+# a new credential, a new blast radius, and wildcards the shop did not need. All three have
+# since failed. The credential is no longer new: the same vault entry (cloudflare-api-token)
+# already runs external-dns's writes to this zone. The shop is thirteen names, not three. And
+# HTTP-01's premise -- port 80 reachable -- now fails on exactly the path that matters:
+# cert-manager's self-check GET runs from INSIDE the cluster back through the OCI LB VIP, and
+# that hairpin times out. Found live 2026-10-18/19: every ACME HTTP-01 challenge in the estate
+# pending for 12h while the same URL answered 200 from the laptop; the Calico fences were
+# opened for it the same day (cert-manager ingress_from edge, egress 80/443, live on the
+# cluster as allow-declared-ingress/allow-internet-egress) and a freshly recreated
+# CertificateRequest still timed out -- so the block is the LB hairpin itself, outside the
+# cluster's reach and outside every fence. DNS-01 walks none of that path: cert-manager writes
+# the _acme-challenge TXT through the Cloudflare API (egress 443, already allowed) and Let's
+# Encrypt validates from the internet, where the estate edge is reachable.
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: prospector-letsencrypt
+  annotations:
+    # Same reasoning as the Gateway beside this file: this object issues every founder-facing
+    # certificate in the zone, so a file dropped from git must not prune it away.
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  labels:
+    app.kubernetes.io/name: prospector-edge
+    app.kubernetes.io/part-of: prospector
+    prospector.estate/environment: production
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Where Let's Encrypt sends expiry warnings. Already the account's registered address;
+    # unchanged, so no re-registration.
+    email: chidionyema@gmail.com
+    privateKeySecretRef:
+      # The ACME ACCOUNT key, created by cert-manager on first use. Unchanged by this row.
+      name: prospector-letsencrypt-account
+    solvers:
+      # DNS-01 for the estate zone: cert-manager writes the challenge TXT with the vault token
+      # (the ExternalSecret beside this file) and no packet touches the LB.
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: CF_API_TOKEN
+        selector:
+          dnsZones:
+            - ${ESTATE_ZONE}
+      - http01:
+          gatewayHTTPRoute:
+            parentRefs:
+              - name: prospector-edge
+                namespace: prospector
+                kind: Gateway
+                sectionName: http
