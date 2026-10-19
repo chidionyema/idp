@@ -94,8 +94,8 @@ plain-text `sendMessage`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. A generic
 route answers 503 `delivery_not_configured` instead of accepting a lead it would drop.
 
 For a new site, pass `secret_entry=<name>` to `site-onboard` and seed the vault entry with the
-properties `bot_token` and `chat_id`; meridian's `platform/meridian/deployment.yaml` shows the
-ExternalSecret template that maps them to the two file names. A namespace with its own fence also
+properties `bot_token` and `chat_id`, or point `data:` at entries that already exist, as
+`platform/meridian/deployment.yaml` does (Otto numun's token and the founder's chat, no new secret). A namespace with its own fence also
 needs `egress_internet: [443]` to reach `api.telegram.org`; meridian has no fence of its own.
 
 ## If the certificate is the thing that is stuck
