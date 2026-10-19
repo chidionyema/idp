@@ -657,21 +657,30 @@ flows:
     # ipBlock names it. Omit this and the webhook is unreachable; a fail-closed one then
     # refuses every write to the cluster (found live 2026-09-08, kyverno, Flux 0/80).
     ingress_apiserver: [9402, 10250]
-    # Registering an ACME account and running Let's Encrypt challenges (http01 through the
-    # gateway) requires outbound HTTPS to acme-v02.api.letsencrypt.org / acme-staging-v02.
-    # default-deny drops this otherwise, and found live 2026-09-08 the prospector-letsencrypt
-    # ClusterIssuer could not register (dial tcp ...:443: i/o timeout) so new/rotated certs
-    # never issued. allow-dns-egress already covers name resolution; open 443 for ACME.
+    # Registering an ACME account and running Let's Encrypt challenges requires outbound
+    # HTTPS to acme-v02.api.letsencrypt.org / acme-staging-v02. default-deny drops this
+    # otherwise, and found live 2026-09-08 the prospector-letsencrypt ClusterIssuer could
+    # not register (dial tcp ...:443: i/o timeout) so new/rotated certs never issued.
+    # allow-dns-egress already covers name resolution; open 443 for ACME.
     #
     # 80 as well, and it is not optional: 443 only ever covered registration. The HTTP-01
-    # self-check is an `http://<host>/.well-known/acme-challenge/<token>` GET -- plain port 80 to
-    # the estate's own edge VIP -- and cert-manager will not submit a challenge to the ACME
+    # self-check is an `http://<host>/.well-known/acme-challenge/<token>` GET -- plain port 80
+    # to the estate's own edge VIP -- and cert-manager will not submit a challenge to the ACME
     # server until it can read that URL back itself. With 443 alone the GET is silently dropped
     # and the only symptom is `Waiting for HTTP-01 challenge propagation: ... context deadline
     # exceeded`. Found live 2026-10-18: every challenge in the estate pending, the path itself
     # answering 200 from a pod, and the whole lake unable to renew -- masked for 39 days because
     # upsert-only certs keep serving until they expire. A cert that cannot renew is not issued.
-    egress_internet: [80, 443]
+    #
+    # 53 as well, and it is not optional either: 80/443 only ever covered the HTTP-01 path.
+    # The DNS-01 propagation check dials the zone's AUTHORITATIVE nameservers directly on
+    # TCP 53 (kube-dns only answers for recursion; allow-dns-egress above stops at
+    # 10.96.0.10). Found live 2026-10-19, the hour DNS-01 went live for mumchimp.com:
+    # `Waiting for DNS-01 challenge propagation: dial tcp 108.162.193.240:53: i/o timeout`
+    # on all 13 challenges -- the same fence-defect class as the 80 above, third instance:
+    # each ACME transport needs its own port declared, and the symptom is always a
+    # propagation wait that never ends. The generator emits egress_internet ports as TCP.
+    egress_internet: [53, 80, 443]
     # The HTTP-01 self-check returns through the gateway. The cert-manager controller opens
     # a TCP connection to the LB on 80/443 (egress_internet above), kube-proxy rewrites the
     # destination to a Traefik pod in `edge` via the LB's NodePort rules, and the SYN-ACK
