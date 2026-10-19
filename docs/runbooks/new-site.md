@@ -85,6 +85,19 @@ written; a second write changes nothing.
   drop. Creating the entry is a founder/vault action (`estate-secrets`).
 - **The cluster**: Flux is the only writer.
 
+## A contact form that delivers to Telegram
+
+`web/lib/contact.ts` is the reusable piece for any site whose form should reach the founder. It
+reads two named secrets (env first, then the file mounted from the vault entry) and sends a
+plain-text `sendMessage`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. A generic
+`CONTACT_WEBHOOK_URL` (+ `CONTACT_WEBHOOK_TOKEN`) still works and wins when set. With neither, the
+route answers 503 `delivery_not_configured` instead of accepting a lead it would drop.
+
+For a new site, pass `secret_entry=<name>` to `site-onboard` and seed the vault entry with the
+properties `bot_token` and `chat_id`; meridian's `platform/meridian/deployment.yaml` shows the
+ExternalSecret template that maps them to the two file names. A namespace with its own fence also
+needs `egress_internet: [443]` to reach `api.telegram.org`; meridian has no fence of its own.
+
 ## If the certificate is the thing that is stuck
 
 `mode=verify` grades the tree, not the cluster. When the tree is green and the padlock is not, the

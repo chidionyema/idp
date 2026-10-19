@@ -33,8 +33,9 @@ spec:
 # nothing. That is the honest state, not a misconfiguration: the Deployment mounts the Secret
 # optionally, so the site serves every page and answers the contact form with 503
 # `delivery_not_configured` -- a submission is refused rather than accepted and silently
-# dropped. Seeding the entry with `url` (and optionally `token`) is the single step that turns
-# delivery on; nothing in git changes.
+# dropped. Seeding the entry with `bot_token` and `chat_id` (a Telegram bot and the chat it posts to)
+# is the single step that turns delivery on; nothing in git changes. The app also accepts a generic
+# CONTACT_WEBHOOK_URL (+ _TOKEN) and prefers it when present (web/lib/contact.ts).
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -49,12 +50,12 @@ spec:
     template:
       engineVersion: v2
       data:
-        CONTACT_WEBHOOK_URL: "{{ .url }}"
-        CONTACT_WEBHOOK_TOKEN: "{{ .token }}"
+        TELEGRAM_BOT_TOKEN: "{{ .bot_token }}"
+        TELEGRAM_CHAT_ID: "{{ .chat_id }}"
   # Which vault entry to read. Without data/dataFrom the API server refuses the object outright --
   # `either data or dataFrom should be specified` -- so the template above named keys the
   # ExternalSecret never asked for, and the whole Kustomization failed on it. `extract` takes the
-  # entry whole, so the template's `.url` and `.token` are properties of `meridian`, which is the
+  # entry whole, so the template's `.bot_token` and `.chat_id` are properties of `meridian`, which is the
   # entry the comment above already names.
   dataFrom:
     - extract: {key: meridian}
