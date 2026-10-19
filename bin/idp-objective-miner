@@ -1,0 +1,183 @@
+#!/usr/bin/env python3
+"""bin/idp-objective-miner -- turn the estate's own measured problems into research objectives.
+
+Founder, 2026-10-19: "this engine is useless and not researching anything worthwhile", "we need
+a way to give it objectives", "a clever way to drive research objectives". The research engine
+used to read five subjects somebody typed into a ConfigMap. A typed subject has no baseline, so
+nothing can show it was answered. This reads what the lane already measures about itself and
+files one objective per problem that is non-zero right now: the signal, the baseline measured in
+this run, the target, a USD cap and a deadline. A signal with no baseline is refused, not filed.
+
+An objective is a GitHub issue labelled `objective` (docs/specs/2026-10-19-research-objectives-and-
+experiments.md): the issue is already the estate's claim of record, so there is no second queue.
+The hidden marker `<!-- objective key=... -->` is the identity; a key with an open issue is not
+filed twice, and a closed one is refiled only if the signal is non-zero again.
+
+Pain is count x minutes each. The minutes are declared constants below (MINUTES_EACH), not
+measurements; the count and the baseline are measured. Ranking is pain per USD of cap, so nobody
+types a priority. Deterministic, no model call: it runs on the free rung (AGENTS.md section 8).
+
+Usage: bin/idp-objective-miner [--greenlane FILE] [--repo chidionyema/idp] [--act]
+       --greenlane FILE: a saved `bin/idp-greenlane status` JSON (test injection); default runs it.
+"""
+from __future__ import annotations
+
+import argparse
+import dataclasses
+import datetime as dt
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+HERE = pathlib.Path(__file__).resolve().parent
+OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
+LABEL = "objective"
+# Minutes an operator loses to one occurrence. Declared, not measured: change them here, in review.
+MINUTES_EACH = {"main-red": 240, "red-lane": 45, "work-lost": 120, "red-open-pr": 30}
+BUDGET_USD = 5.0     # cap for one objective's research and experiments (sovereign/engine/budget.py)
+DEADLINE_DAYS = 14
+
+
+@dataclasses.dataclass
+class Objective:
+    key: str
+    title: str
+    metric: str
+    baseline: float | None
+    target: float
+    count: int
+    minutes_each: int
+    evidence: list[str]
+    budget_usd: float = BUDGET_USD
+
+    @property
+    def pain(self) -> int:
+        return self.count * self.minutes_each
+
+    @property
+    def rank(self) -> float:
+        return self.pain / self.budget_usd
+
+
+def mine_greenlane(status: dict) -> list[Objective]:
+    """One objective per non-zero signal in the Greenlane's status JSON (bin/idp-greenlane status)."""
+    out: list[Objective] = []
+    main = status.get("main") or {}
+    if main and main.get("green") is False:
+        bad = sorted(k for k, v in (main.get("required") or {}).items() if v != "success")
+        out.append(Objective("main-red", "main is not green: " + ", ".join(bad or ["unknown check"]),
+                             "required_checks_not_success_on_main", float(len(bad) or 1), 0.0, 1,
+                             MINUTES_EACH["main-red"], [f"main {str(main.get('sha'))[:12]}: {bad}"]))
+    lanes = (status.get("state") or {}).get("lanes") or {}
+    red = {n: v for n, v in lanes.items() if (v or {}).get("status") in ("red", "conflict")}
+    if red:
+        out.append(Objective("red-lane", f"{len(red)} lane(s) stuck red or in conflict",
+                             "lanes_red_or_conflict", float(len(red)), 0.0, len(red),
+                             MINUTES_EACH["red-lane"],
+                             [f"{n}: {v.get('status')} {v.get('reason') or ''}".strip() for n, v in sorted(red.items())]))
+    lost = status.get("work_lost") or []
+    if lost:
+        out.append(Objective("work-lost", f"{len(lost)} closed-unmerged pull request(s) lost work",
+                             "work_lost_prs", float(len(lost)), 0.0, len(lost), MINUTES_EACH["work-lost"],
+                             [f"#{w.get('number')} {w.get('branch')}" for w in lost]))
+    red_prs = (status.get("invariants") or {}).get("red_open_prs") or []
+    if red_prs:
+        out.append(Objective("red-open-pr", f"{len(red_prs)} open pull request(s) are red",
+                             "red_open_prs", float(len(red_prs)), 0.0, len(red_prs),
+                             MINUTES_EACH["red-open-pr"], [str(p) for p in red_prs]))
+    return out
+
+
+def admit(objs: list[Objective]) -> tuple[list[Objective], list[tuple[Objective, str]]]:
+    """No baseline, no objective. Returns (admitted, most painful per USD first; refused with reason)."""
+    ok, refused = [], []
+    for o in objs:
+        if o.baseline is None:
+            refused.append((o, "no baseline measured at intake"))
+        elif o.baseline <= o.target:
+            refused.append((o, "baseline already meets the target"))
+        else:
+            ok.append(o)
+    return sorted(ok, key=lambda o: -o.rank), refused
+
+
+def marker(key: str) -> str:
+    return f"<!-- objective key={key} -->"
+
+
+def body(o: Objective, today: dt.date) -> str:
+    deadline = today + dt.timedelta(days=DEADLINE_DAYS)
+    ev = "\n".join(f"- {e}" for e in o.evidence)
+    return (f"{marker(o.key)}\n"
+            f"**Signal:** `{o.metric}` | **baseline (measured {today}):** {o.baseline:g} | "
+            f"**target:** {o.target:g} | **cap:** ${o.budget_usd:g} | **deadline:** {deadline}\n\n"
+            f"**Pain:** {o.count} x {o.minutes_each} min = {o.pain} min; rank {o.rank:.1f} min per USD.\n\n"
+            f"**Evidence**\n{ev}\n\n"
+            "Closes when the metric, re-measured by this miner on the real path, is at or below the "
+            "target. Hypotheses carry a pre-registered gate before any arm runs (crew/EXPERIMENTS.md).\n")
+
+
+def gh(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)  # noqa: S603,S607
+
+
+def open_keys(repo: str) -> set[str]:
+    p = gh("issue", "list", "-R", repo, "--label", LABEL, "--state", "open", "--limit", "200",
+           "--json", "body")
+    if p.returncode != 0:
+        raise RuntimeError(p.stderr.strip())
+    keys = set()
+    for i in json.loads(p.stdout):
+        b = i.get("body") or ""
+        if "<!-- objective key=" in b:
+            keys.add(b.split("<!-- objective key=", 1)[1].split(" -->", 1)[0])
+    return keys
+
+
+def file_all(repo: str, objs: list[Objective], today: dt.date) -> list[str]:
+    gh("label", "create", LABEL, "-R", repo, "--color", "0E8A16",
+       "--description", "A measured problem the research engine and experiments work on")
+    have = open_keys(repo)
+    said = []
+    for o in objs:
+        if o.key in have:
+            said.append(f"{o.key}: already open")
+            continue
+        p = gh("issue", "create", "-R", repo, "--label", LABEL, "--title", f"objective: {o.title}",
+               "--body", body(o, today))
+        said.append(f"{o.key}: {'filed ' + p.stdout.strip() if p.returncode == 0 else 'FAILED ' + p.stderr.strip()}")
+    return said
+
+
+def greenlane_status() -> dict:
+    cmd = [str(HERE / "idp-greenlane"), "status"]
+    p = subprocess.run(cmd, capture_output=True, text=True, timeout=120)  # noqa: S603
+    if p.returncode != 0 or not p.stdout.strip():
+        raise RuntimeError(f"idp-greenlane status failed: {p.stderr.strip()[:200]}")
+    return json.loads(p.stdout)
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--greenlane", help="saved `idp-greenlane status` JSON (test injection)")
+    ap.add_argument("--repo", default=f"{OWNER}/idp")
+    ap.add_argument("--act", action="store_true", help="file the admitted objectives as issues")
+    a = ap.parse_args(argv)
+    status = json.loads(pathlib.Path(a.greenlane).read_text()) if a.greenlane else greenlane_status()
+    ok, refused = admit(mine_greenlane(status))
+    for o in ok:
+        print(f"{o.rank:8.1f} min/USD  {o.key:12} baseline={o.baseline:g} -> {o.target:g}  {o.title}")
+    for o, why in refused:
+        print(f"refused      {o.key:12} {why}")
+    if not ok:
+        print("no objective: every measured signal is at its target")
+    if a.act:
+        for line in file_all(a.repo, ok, dt.datetime.now(dt.timezone.utc).date()):
+            print(line)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

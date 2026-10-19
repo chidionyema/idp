@@ -1,0 +1,35 @@
+# button: Find what to improve
+# founder: Reads the lane's own measured problems and files each as an objective the research engine and experiments work on.
+# Founder, 2026-10-19: "we need a way to give it objectives", "a clever way to drive research
+# objectives". Hourly, matching the research engine's cron, so an objective filed here is read by
+# the engine's next run (idp#6603). Deterministic and free: no model call.
+name: objective-miner
+on:
+  schedule:
+    - cron: "11 * * * *"
+  workflow_dispatch: {}
+permissions:
+  contents: read
+  issues: write
+  id-token: write   # traded for the OCI session that reads the App key (.github/actions/github-app-token)
+concurrency:
+  group: objective-miner
+  cancel-in-progress: false
+jobs:
+  mine:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: app
+        uses: ./.github/actions/github-app-token
+        with:
+          oidc_client_identifier: ${{ secrets.OIDC_CLIENT_IDENTIFIER }}
+          domain_base_url: ${{ vars.DOMAIN_BASE_URL }}
+          oci_tenancy: ${{ secrets.OCI_TENANCY_OCID }}
+          oci_region: ${{ vars.OCI_REGION }}
+          oci_compartment: ${{ vars.OCI_COMPARTMENT_OCID }}
+      - name: file one objective per measured problem
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: bin/idp-objective-miner --act

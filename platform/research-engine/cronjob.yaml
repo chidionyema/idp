@@ -79,7 +79,7 @@ spec:
               # estimate tried to download the encoding file from OpenAI's public blob on every
               # run, which this namespace has no internet egress to -> ConnectTimeout -> None ->
               # no question answered. Index amd64+arm64.
-              image: ghcr.io/chidionyema/research-engine:sha-3e3527b7acd49787469e79ff67a808d89cad9a18
+              image: ghcr.io/chidionyema/research-engine:sha-ddad623adf237520f96bd07b1b71d4f3e530739a
               command: ["/bin/sh", "-c"]
               args:
                 - |
