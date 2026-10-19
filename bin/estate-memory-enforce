@@ -1,0 +1,279 @@
+#!/usr/bin/env python3
+"""Enforce that an agent uses estate memory AND declares its focus (Claude Code hook).
+
+    estate-memory-enforce pre     PreToolUse on Edit|Write|MultiEdit|NotebookEdit
+    estate-memory-enforce stop    Stop
+
+Why (idp#6543 follow-on, 2026-10-19). Memory and focus were advice in a CLAUDE.md: an agent that
+never called `brief` and never claimed work lost nothing, and the estate learned of it from a
+duplicated change days later. AGENTS.md says enforcement is in the hooks, which refuse. So:
+
+  pre   Refuse the first durable file change of a session until
+          (memory) the transcript shows the session was briefed -- the SessionStart brief or a
+                   `brief` tool call; and
+          (focus)  for a file inside the idp checkout, a LIVE claim (heartbeat under 2h, issue
+                   open) covers that file's path, and is the agent's own when ESTATE_AGENT is set.
+        This is claim-gate's rule moved from merge time to edit time: the overlap is stopped
+        before the work is done, not after it is rejected.
+  stop  Once per turn, if the session changed durable files and never wrote anything back
+        (`remember`, or `growmos remember|journal`), refuse to stop and say what to write.
+        A later session cannot use what this one did not record.
+
+Both fail OPEN on anything that is not a clear violation: no transcript, no gh, a slow ledger or an
+unreadable claim lets the call through and the ledger says why. A hook may refuse an agent; it may
+not take a session down. ESTATE_MEMORY_ENFORCE=0 opts out and the opt-out is ledgered too.
+
+Every decision lands in ~/.estate/memory/enforce-ledger.jsonl (pass / refuse / unknown) so the
+refusals can be watched, not trusted.
+"""
+
+from __future__ import annotations
+
+import fnmatch
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "..",
+        "platform",
+        "estate",
+        "memory",
+    ),
+)
+import focus  # noqa: E402
+
+EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+BRIEFED = re.compile(
+    r'"name"\s*:\s*"(?:mcp__estate-memory__)?brief"'
+    r"|<estate-memory>\\?n?Context the estate's agents wrote"
+)
+WROTE_BACK = re.compile(
+    r'"name"\s*:\s*"mcp__estate-memory__remember"'
+    r"|growmos(?: --root \S+)? (?:remember|journal)\b"
+    r"|bin/estate-memory-remember"
+)
+
+
+def ledger_path() -> str:
+    return os.path.join(focus._home(), "enforce-ledger.jsonl")
+
+
+def record(event: str, decision: str, reason: str, **extra) -> None:
+    try:
+        os.makedirs(os.path.dirname(ledger_path()), exist_ok=True)
+        with open(ledger_path(), "a") as f:
+            f.write(
+                json.dumps(
+                    {
+                        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "event": event,
+                        "decision": decision,
+                        "reason": reason,
+                        **extra,
+                    }
+                )
+                + "\n"
+            )
+    except Exception:  # noqa: S110 - the ledger is evidence, never a dependency
+        pass
+
+
+def transcript_text(data: dict):
+    path = data.get("transcript_path") or ""
+    try:
+        with open(path, errors="replace") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def durable(path: str) -> bool:
+    """Estate work is whatever lands in an idp checkout, wherever it sits.
+
+    Not by location: agents build lanes in /tmp worktrees, so a scratch-prefix rule let them
+    pass ungated. And never outside idp: these hooks live in the machine-wide Claude Code
+    settings, and a brief about the estate is no precondition for editing another project.
+    """
+    return bool(path) and git_root_if_idp(path) is not None
+
+
+def edited_paths(text: str) -> list:
+    """File paths the session's Edit/Write tool calls targeted, from the transcript."""
+    paths = []
+    for line in text.splitlines():
+        if '"tool_use"' not in line:
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        content = (msg.get("message") or {}).get("content")
+        for block in content if isinstance(content, list) else []:
+            if block.get("type") == "tool_use" and block.get("name") in EDIT_TOOLS:
+                inp = block.get("input") or {}
+                p = inp.get("file_path") or inp.get("notebook_path") or ""
+                if durable(p):
+                    paths.append(p)
+    return paths
+
+
+def git_root_if_idp(path: str):
+    """The checkout root when `path` lives in the idp repo, else None."""
+    d = os.path.dirname(path)
+    while d and not os.path.isdir(d):
+        d = os.path.dirname(d)
+    try:
+        top = subprocess.run(  # noqa: S603 - fixed argv
+            [focus.GIT, "-C", d, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout.strip()
+        url = subprocess.run(  # noqa: S603 - fixed argv
+            [focus.GIT, "-C", top, "remote", "get-url", "origin"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+    except Exception:
+        return None
+    return top if top and "chidionyema/idp" in url else None
+
+
+def covers(row: dict, rel: str) -> bool:
+    return any(
+        fnmatch.fnmatch(rel, g.strip()) for g in row["paths"].split(",") if g.strip()
+    )
+
+
+def focus_verdict(path: str, rows, agent: str):
+    """(ok, reason): is there a live claim covering `path`? ok=None means unknown."""
+    root = git_root_if_idp(path)
+    if root is None:
+        return True, "not in the idp checkout"
+    if rows is None:
+        return None, "claim ledger unreadable"
+    rel = os.path.relpath(path, root)
+    mine = [r for r in rows if r["live"] and (not agent or r["agent"] == agent)]
+    if any(covers(r, rel) for r in mine):
+        return True, "covered by a live claim"
+    who = f" by agent {agent}" if agent else ""
+    if any(covers(r, rel) for r in rows if r["live"]):
+        return False, (
+            f"{rel} is claimed, but not{who}. Another agent holds it: comment on its "
+            "issue and pick other work (AGENTS.md section 5.3)."
+        )
+    return False, (
+        f"no live claim{who} covers {rel}. Declare the work first: "
+        'bin/claim-open --title "<what you are building>" (or --issue N to refresh a '
+        "lapsed heartbeat). The claim is the focus (AGENTS.md section 5)."
+    )
+
+
+def deny_pre(reason: str) -> None:
+    print(
+        json.dumps(
+            {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason,
+                }
+            }
+        )
+    )
+
+
+def pre(data: dict) -> int:
+    tool = data.get("tool_name", "")
+    inp = data.get("tool_input") or {}
+    path = inp.get("file_path") or inp.get("notebook_path") or ""
+    sid = data.get("session_id", "")
+    if tool not in EDIT_TOOLS or not durable(path):
+        return 0
+    text = transcript_text(data)
+    if text is not None and not BRIEFED.search(text):
+        reason = (
+            "Estate memory has not been read this session. Call the estate-memory `brief` tool "
+            "(task = what you are about to do) and `recall` before deciding, then retry. "
+            "What the estate already knows is the cheapest thing to check "
+            "(AGENTS.md section 1)."
+        )
+        record("pre", "refuse", "not briefed", session=sid, tool=tool, path=path)
+        deny_pre(reason)
+        return 0
+    verdict, why = focus_verdict(
+        path, focus.live_focus(), os.environ.get("ESTATE_AGENT", "")
+    )
+    if verdict is False:
+        record("pre", "refuse", why, session=sid, tool=tool, path=path)
+        deny_pre(f"No active focus for this change. {why}")
+        return 0
+    record(
+        "pre",
+        "pass" if verdict else "unknown",
+        why if text is not None else why + "; transcript unreadable",
+        session=sid,
+        tool=tool,
+        path=path,
+    )
+    return 0
+
+
+def stop(data: dict) -> int:
+    sid = data.get("session_id", "")
+    if data.get("stop_hook_active"):
+        return 0  # already refused once this turn: never loop a session
+    text = transcript_text(data)
+    if text is None:
+        record("stop", "unknown", "transcript unreadable", session=sid)
+        return 0
+    paths = edited_paths(text)
+    if not paths:
+        return 0
+    if WROTE_BACK.search(text):
+        record("stop", "pass", "wrote back", session=sid, edited=len(paths))
+        return 0
+    record("stop", "refuse", "changed files, wrote nothing back", session=sid)
+    print(
+        json.dumps(
+            {
+                "decision": "block",
+                "reason": (
+                    f"This session changed {len(paths)} file change(s) and wrote nothing back "
+                    "to memory. Call the estate-memory `remember` tool with the one durable "
+                    "thing a later session must know (a decision, a gotcha, what is now true "
+                    "and where), and update the claim's heartbeat/proof comment. Then finish."
+                ),
+            }
+        )
+    )
+    return 0
+
+
+def main(argv: list) -> int:
+    if len(argv) != 1 or argv[0] not in ("pre", "stop"):
+        print(__doc__.split("\n")[0], file=sys.stderr)
+        return 2
+    if os.environ.get("ESTATE_MEMORY_ENFORCE") == "0":
+        record(argv[0], "optout", "ESTATE_MEMORY_ENFORCE=0")
+        return 0
+    try:
+        data = json.load(sys.stdin)
+        if not isinstance(data, dict):
+            return 0
+        return pre(data) if argv[0] == "pre" else stop(data)
+    except Exception as e:  # a hook may refuse an agent; it may not take a session down
+        record(argv[0], "unknown", f"{type(e).__name__}: {str(e)[:120]}")
+        return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

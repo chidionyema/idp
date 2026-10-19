@@ -91,29 +91,29 @@ def test_the_state_lookup_is_cached_for_the_ttl(mod, tmp_path, monkeypatch):
 
         return R()
 
-    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/gh")
-    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    monkeypatch.setattr(mod.focus.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(mod.focus.subprocess, "run", fake_run)
     cache_path = str(tmp_path / "c.json")
     assert mod.claim_state(6525, "idp", {}, cache_path) == "CLOSED"
     assert mod.claim_state(6525, "idp", {}, cache_path) == "CLOSED"
     assert len(calls) == 1  # second answer came from the cache, not the network
-    assert mod._load_cache(cache_path)["6525"]["state"] == "CLOSED"
+    assert mod.focus.load_json(cache_path)["6525"]["state"] == "CLOSED"
 
 
 def test_a_stalled_or_missing_gh_fails_open(mod, tmp_path, monkeypatch):
-    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(mod.focus.shutil, "which", lambda name: "/usr/bin/gh")
 
     def stall(*a, **k):
-        raise mod.subprocess.TimeoutExpired(cmd="gh", timeout=2)
+        raise mod.focus.subprocess.TimeoutExpired(cmd="gh", timeout=2)
 
-    monkeypatch.setattr(mod.subprocess, "run", stall)
+    monkeypatch.setattr(mod.focus.subprocess, "run", stall)
     assert mod.claim_state(6525, "idp", {}, str(tmp_path / "c.json")) is None
-    monkeypatch.setattr(mod.shutil, "which", lambda name: None)
+    monkeypatch.setattr(mod.focus.shutil, "which", lambda name: None)
     assert mod.claim_state(6525, "idp", {}, str(tmp_path / "c2.json")) is None
 
 
 def test_an_unknown_repo_prefix_fails_open(mod, tmp_path, monkeypatch):
-    monkeypatch.setattr(mod.shutil, "which", lambda name: "/usr/bin/gh")
+    monkeypatch.setattr(mod.focus.shutil, "which", lambda name: "/usr/bin/gh")
     assert mod.claim_state(7, "other", {}, str(tmp_path / "c.json")) is None
 
 

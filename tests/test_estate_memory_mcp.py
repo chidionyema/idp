@@ -170,8 +170,14 @@ def test_one_namespace_serves_every_surface_with_the_host_and_token_it_needs(
         "a thing happened", "otto", "fact", [], "mcp", cfg=cfg_for(s.url)
     )
     memory.do_recall("thing", "", "", [], 5, cfg=cfg_for(s.url))
-    # recall asks for meaning (POST) and then lists (GET): the words are the floor under it
-    (m1, p1, h1, _), (m2, p2, h2, _), (m3, p3, h3, _) = s.seen
+    # recall asks for meaning (POST) and then lists (GET): the words are the floor under it.
+    # remember and recall also each make a best-effort call to the harness (#6254, #6581); those
+    # are the active-memory side channel and are pinned in test_estate_memory_consolidate_body.py.
+    harness = [r for r in s.seen if r[1].startswith("/harness/")]
+    assert len(harness) == 2 and all(r[0] == "POST" for r in harness)
+    (m1, p1, h1, _), (m2, p2, h2, _), (m3, p3, h3, _) = [
+        r for r in s.seen if not r[1].startswith("/harness/")
+    ]
     assert (m1, m2, m3) == ("PUT", "POST", "GET")
     assert p1.startswith("/memories/estate/fact.otto.")
     assert (p2, p3) == ("/memories/recall", "/memories/estate")
@@ -301,7 +307,7 @@ def test_recall_asks_the_server_to_search_by_meaning_and_returns_its_hits_first(
         hit("k-meaning", "the database ran out of space", subject="pg", kind="incident")
     ]
     out = memory.do_recall("where is the data kept", "", "", [], 5, cfg_for(s.url))
-    posts = [r for r in s.seen if r[0] == "POST"]
+    posts = [r for r in s.seen if r[0] == "POST" and not r[1].startswith("/harness/")]
     assert posts and posts[0][1] == "/memories/recall"
     assert posts[0][3]["query"] == "where is the data kept"
     assert posts[0][3]["namespace"] == "estate"

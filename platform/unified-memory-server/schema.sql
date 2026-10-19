@@ -130,6 +130,22 @@ BEFORE UPDATE OF superseded_by ON memories
 FOR EACH ROW
 EXECUTE FUNCTION fn_enforce_anti_ouroboros();
 
+-- 6b. Retrieval reinforcement (ranking.py). Its own table, never a column on memories: every UPDATE
+-- of memories fires fn_bump_memory_version, so counting a read there would bump the version and
+-- reset updated_at -- rewriting history and the very recency the count is meant to be ranked with.
+CREATE TABLE IF NOT EXISTS memory_access (
+    memory_id UUID PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    tenant_id UUID NOT NULL,
+    access_count BIGINT NOT NULL DEFAULT 0,
+    last_accessed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+ALTER TABLE memory_access ENABLE ROW LEVEL SECURITY;
+ALTER TABLE memory_access FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON memory_access;
+CREATE POLICY tenant_isolation ON memory_access
+    FOR ALL TO PUBLIC
+    USING (tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid);
+
 -- 7. Distributed Rate Limiting (Single Upsert per Hit)
 CREATE TABLE IF NOT EXISTS rate_limits (
     surface_id TEXT NOT NULL,

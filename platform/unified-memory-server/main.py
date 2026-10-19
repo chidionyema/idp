@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import json
 import hashlib
@@ -26,6 +27,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
+import ranking
 from security_core import (
     OWASPWriteGuard,
     MAPLEGuard,
@@ -546,7 +548,9 @@ async def _ranked(
         SELECT
             id, namespace, key, content, trust_tier, version, provenance, updated_at,
             relevance_rho, truthfulness_tau, harm_h, taint_level, scope_risk,
-            1 - (embedding <=> %s::vector) AS cosine_sim
+            1 - (embedding <=> %s::vector) AS cosine_sim,
+            COALESCE((SELECT a.access_count FROM memory_access a
+                      WHERE a.memory_id = memories.id), 0) AS access_count
         FROM memories
         WHERE namespace = %s AND is_quarantined = FALSE AND embedding IS NOT NULL
         ORDER BY embedding <=> %s::vector
@@ -586,12 +590,41 @@ async def _ranked(
                     "recorded_at": c["updated_at"].isoformat(),
                     "maple_score": round(final_score, 4),
                     "cosine_sim": round(sim, 4),
+                    "access_count": c["access_count"],
                 }
             )
 
-    # Re-sort based on the multi-factor MAPLE equation and truncate to requested limit
-    scored_results.sort(key=lambda x: x["maple_score"], reverse=True)
-    return scored_results[:limit]
+    # Order what the gate admitted by MAPLE score plus recency and frequency (ranking.py). The
+    # boost orders; it never admits, because the gate above ran on the unboosted score.
+    return ranking.rank(scored_results)[:limit]
+
+
+async def _record_access(cur, results: list) -> None:
+    """Count one retrieval for each returned fact (ranking.py's frequency term).
+
+    Best effort: a failure here must never cost the caller the answer it already has, so it runs
+    in a savepoint and is swallowed. The tenant comes from the memory row (RLS has already
+    filtered to the caller's), so no tenant id is threaded through the ranking call.
+    """
+    ids = [r["id"] for r in results if r.get("id")]
+    if not ids:
+        return
+    try:
+        async with cur.connection.transaction():
+            await cur.execute(
+                """
+                INSERT INTO memory_access (memory_id, tenant_id, access_count, last_accessed_at)
+                SELECT id, tenant_id, 1, CURRENT_TIMESTAMP FROM memories WHERE id = ANY(%s::uuid[])
+                ON CONFLICT (memory_id) DO UPDATE
+                SET access_count = memory_access.access_count + 1,
+                    last_accessed_at = CURRENT_TIMESTAMP;
+                """,
+                (ids,),
+            )
+    except Exception:  # noqa: BLE001 -- reinforcement is never worth failing a recall
+        logging.getLogger(__name__).warning(
+            "recall reinforcement skipped", exc_info=True
+        )
 
 
 @app.post("/memories/search", status_code=status.HTTP_200_OK)
@@ -636,11 +669,11 @@ async def memory_recall(
             detail="embed lane unavailable: cannot search by meaning right now",
         )
     async with conn.cursor() as cur:
-        return {
-            "results": await _ranked(
-                cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
-            )
-        }
+        results = await _ranked(
+            cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
+        )
+        await _record_access(cur, results)
+        return {"results": results}
 
 
 # The kinds a session should hear about whatever its task: what was decided, and what broke.
@@ -672,6 +705,7 @@ async def memory_brief(
             relevant = await _ranked(
                 cur, vec, payload.namespace, payload.limit, RECALL_MIN_COSINE
             )
+            await _record_access(cur, relevant)
         seen = [r["key"] for r in relevant]
         await cur.execute(
             """
