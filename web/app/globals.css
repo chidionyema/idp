@@ -3,6 +3,7 @@
   --bg: #FAFAF8; --white: #FFFFFF; --ink: #0D0D0A; --ink-2: #2A2A28; --ink-3: #6B6B68;
   --ink-muted: #6B6B68; --on-ink-muted: rgba(255,255,255,0.6); --on-ink-border: rgba(255,255,255,0.1);
   --rule: #E2E2DC; --rule-2: #EDEDE8; --accent: #1A56DB; --accent-dk: #1446B8;
+  --accent-on-ink: #7FA6F8; /* the accent, lifted for the ink footer: #1A56DB goes to mud on #0D0D0A */
   --signal: #DC2626; --ok: #059669; --panel: #F4F4F0;
   --serif: 'Playfair Display', Georgia, serif; --sans: 'DM Sans', system-ui, sans-serif;
   --mono: 'DM Mono', 'Courier New', monospace;
@@ -90,7 +91,18 @@ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; ove
 input[type="range"].cost-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; background: var(--rule); border-radius: 2px; outline: none; cursor: pointer; }
 input[type="range"].cost-range::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; background: var(--accent); border-radius: 50%; cursor: pointer; border: 2px solid var(--white); box-shadow: 0 0 0 1px var(--accent); }
 /* === Footer === */
-.footer-logo { font-family: var(--mono); font-size: 14px; font-weight: 500; color: #fff; text-decoration: none; letter-spacing: -0.01em; }
+/* === Logo === */
+/* The lockup: mark, wordmark, period (see components/Logo.tsx for why the mark is a meridian).
+   Colour is inherited and the accent lives in two places that rhyme -- the bead and the
+   period -- so hovering recolours the whole lockup in one transition, like every other link. */
+.logo { display: inline-flex; align-items: center; gap: 9px; color: var(--ink); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+.logo:hover { color: var(--accent); }
+.logo-mark { display: block; flex: none; }
+.logo-word { font-family: var(--mono); font-size: 15px; font-weight: 500; letter-spacing: -0.01em; line-height: 1; }
+.logo-dot { color: var(--accent); }
+.logo-light { color: #fff; }
+.logo-light:hover { color: var(--accent-on-ink); }
+.logo-light .logo-dot { color: var(--accent-on-ink); }
 .footer-heading { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.62); }
 .footer-link { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.75); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
 .footer-link:hover { color: #fff; }

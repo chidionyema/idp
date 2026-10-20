@@ -3,6 +3,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { site } from "@/content/site";
+import { Logo } from "@/components/Logo";
 
 export function Nav() {
   const pathname = usePathname();
@@ -10,9 +11,7 @@ export function Nav() {
   return (
     <header style={{ position: "sticky", top: 0, zIndex: 50, borderBottom: "1px solid var(--rule)", background: "rgba(250,250,248,0.95)", backdropFilter: "blur(8px)" }}>
       <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", maxWidth: "1152px", margin: "0 auto", padding: "16px 24px" }}>
-        <Link href="/" style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 500, letterSpacing: "-0.01em", color: "var(--ink)", textDecoration: "none" }}>
-          Meridian<span style={{ color: "var(--accent)" }}>.</span>
-        </Link>
+        <Logo />
         <ul style={{ display: "flex", alignItems: "center", gap: "32px", listStyle: "none" }} className="nav-links">
           {site.nav.map((item) => (
             <li key={item.href}>
