@@ -88,18 +88,19 @@ def changed_files(base: str) -> list[str]:
     return [f for f in out.splitlines() if f.strip()]
 
 
-def globs_for(files: list[str]) -> list[str]:
-    """One glob per file, plus a directory glob when a directory is entirely new.
+def globs_for(files: list[str], declared: list[str] = ()) -> list[str]:
+    """One glob per file, plus the paths declared ahead of the change.
 
     claim-gate matches with fnmatch, so a plain path is already a valid glob. Globbing a whole
     directory would over-cover: it would let a later commit to a neighbouring file land on this
-    claim without being declared. So each file is named exactly, and the directory glob is added
-    only when the file is the sole thing under it, which keeps `paths=` equal to the change.
+    claim without being declared. So each file is named exactly, which keeps `paths=` equal to the
+    change. `declared` is the focus stated before the file exists: bin/estate-memory-enforce
+    refuses to create a file no claim covers, so a new file has to be declared first.
     """
-    globs = sorted(set(files))
+    globs = sorted(set(files) | {d.strip() for d in declared if d.strip()})
     if not globs:
         sys.exit(
-            "FAIL    claim-open  no changed files against origin/main: is this branch empty?\n"
+            "FAIL    claim-open  no changed files against origin/main and no --paths:\n"
             "                    a claim covers a change, so there is nothing to declare"
         )
     return globs
@@ -167,6 +168,21 @@ def stamp_trailers(num: int, agent: str) -> None:
     print(f"ok      claim-open  stamped Claim: #{num} and Agent: {agent} into the commit")
 
 
+def note_claim(num: int) -> None:
+    """Tell this machine's focus register the claim exists now, not at the next ledger poll.
+
+    The ledger is read through gh and cached; without the note, bin/estate-memory-enforce
+    refuses the first edit after claim-open as unclaimed. A failed note costs only that delay.
+    """
+    sys.path.insert(0, os.path.join(IDP, "platform", "estate", "memory"))
+    try:
+        import focus  # noqa: PLC0415 -- optional: a checkout without it still claims
+
+        focus.note_claim(num)
+    except (ImportError, OSError) as e:
+        print(f"warn    claim-open  focus note not written ({e}): the hook sees it next poll")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="claim-open", description=__doc__.split("\n")[0])
     ap.add_argument("--issue", type=int, help="claim an existing issue")
@@ -174,6 +190,8 @@ def main() -> int:
     ap.add_argument("--agent", default=os.environ.get("ESTATE_AGENT", ""),
                     help="claiming agent; default: $ESTATE_AGENT, else refuse")
     ap.add_argument("--base", default="origin/main", help="the range the claim covers")
+    ap.add_argument("--paths", default="",
+                    help="comma-separated paths to declare before they change (new files)")
     ap.add_argument("--check-only", action="store_true",
                     help="write nothing; only run claim-gate over this range")
     a = ap.parse_args()
@@ -190,7 +208,7 @@ def main() -> int:
 
     base = git("merge-base", a.base, "HEAD").strip()
     files = changed_files(base)
-    paths = globs_for(files)
+    paths = globs_for(files, a.paths.split(","))
     print(f"      claim-open  change touches {len(files)} file(s): {', '.join(files[:5])}"
           + (f" (+{len(files)-5} more)" if len(files) > 5 else ""))
 
@@ -198,7 +216,10 @@ def main() -> int:
         num = find_issue(a.title, a.issue)
         ensure_open(num)
         post_claim(num, a.agent, paths)
-        stamp_trailers(num, a.agent)
+        # With nothing committed yet, HEAD is main's commit: there is no commit of ours to stamp.
+        if files:
+            stamp_trailers(num, a.agent)
+        note_claim(num)
 
     repo_slug = repo()
     env = {**os.environ, "GITHUB_REPOSITORY": repo_slug}
