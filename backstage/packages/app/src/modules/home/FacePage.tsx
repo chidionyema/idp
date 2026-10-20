@@ -26,6 +26,7 @@ import { useEstateVoice } from './useEstateVoice';
 import { useVoiceRouter } from './useVoiceRouter';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
+import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
 
 // THE FACE'S VOICE PATH, BEHIND A FLAG (2026-10-16). The face now speaks through useVoiceRouter
 // -- the streaming socket (partials while you speak, first audio median 2.26s against the old
@@ -141,6 +142,50 @@ const clamp = (lines: number): CSSProperties => ({
   overflow: 'hidden',
 });
 
+// THE AGENTS THE FACE SENT (voice: "give an agent a job ..."). Up to three of the newest jobs, one
+// line each: running ones first so a launched job is visible the moment it exists. Silent while
+// loading and while nothing has run; an unreadable board says so rather than showing an empty one.
+export function FaceAgentJobs({ loaded }: { loaded: LoadedJobs }) {
+  if (loaded.state === 'loading') return null;
+  const box: CSSProperties = {
+    position: 'absolute',
+    top: 'calc(env(safe-area-inset-top, 0px) + 92px)',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    width: 'min(680px, calc(100% - 32px))',
+    display: 'grid',
+    gap: 4,
+    textAlign: 'center',
+    fontSize: 12,
+    lineHeight: 1.4,
+    color: 'rgba(232,237,245,0.7)',
+    textShadow: '0 1px 8px rgba(11,14,20,0.8)',
+    pointerEvents: 'none',
+  };
+  if (loaded.state === 'unavailable') {
+    return (
+      <div data-testid="face-agent-jobs" data-state="unavailable" style={box}>
+        <span style={{ opacity: 0.55 }}>Agent jobs unavailable: {loaded.error}</span>
+      </div>
+    );
+  }
+  const jobs = [...loaded.jobs]
+    .sort((a, b) => Number(b.state === 'running') - Number(a.state === 'running'))
+    .slice(0, 3);
+  if (jobs.length === 0) return null;
+  const mark = { running: '●', done: '✓', failed: '✕' } as const;
+  return (
+    <div data-testid="face-agent-jobs" data-state="ready" style={box}>
+      {jobs.map((j) => (
+        <div key={j.run_id} style={{ ...clamp(1), opacity: j.state === 'running' ? 1 : 0.6 }}>
+          {mark[j.state]} {j.task} — {j.state === 'running' ? j.stage : j.state}
+          {j.state === 'failed' && j.reason ? `: ${j.reason}` : ''}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function FacePage() {
   const legacy = useEstateVoice();
   const router = useVoiceRouter();
@@ -155,6 +200,8 @@ export function FacePage() {
   // gate lives in milestoneSpeech.ts; this only joins the news stream to the mouth. Off by
   // default: the face does not start narrating unasked.
   const milestones = useMilestones(voice.speak);
+  // The agents launched by voice, followed to their end and announced through the same mouth.
+  const agentJobs = useAgentJobs(voice.speak);
   // A FAILED MICROPHONE MUST BE RE-ASKABLE -- and the tap must not depend on a state comparison
   // that has to be kept in step with the label below.
   //
@@ -197,6 +244,7 @@ export function FacePage() {
           through to the face. */}
       <FaceFindingsStrip />
       <FaceEstateLine />
+      <FaceAgentJobs loaded={agentJobs} />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />
