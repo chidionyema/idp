@@ -1,22 +1,8 @@
-# The estate's intake for the research engine: one `lane: subject` per line, in git.
-# The lane is a profile in the engine's own repository (research-engine profiles/*.yaml)
-# and it holds the questions; a line here only says which lane asks and about what. The
-# founder or any session changes a line and the next hour asks it. A queue, an API and a
-# priority floor are the spec's later checkpoints; a file the estate can edit is what makes
-# the engine run today rather than after them.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: research-questions
-  namespace: research
-data:
-  subjects: |
-    market-demand: a hosted service catalogue for companies of fewer than ten people
-    market-demand: model-routing gateways sold with per-key lane scoping
-    market-demand: evidence-cited research delivered as a subscription
-    estate-guards: fail-closed admission policy for autonomous agent workloads
-    incident-postmortem: a required status check whose action no longer exists
----
+# The engine's intake is the estate's open `objective` issues, not a list of typed subjects.
+# Until 2026-10-19 this file held five `lane: subject` lines rotated by the hour; none had a
+# baseline, so no run could show it had answered anything (founder: "researches nothing
+# worthwhile"). bin/idp-objective-miner now files each measured problem as an objective, and
+# objective-adapter.py picks which one a run researches and posts the report on its issue.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -24,9 +10,10 @@ metadata:
   namespace: research
 automountServiceAccountToken: false
 ---
-# The hourly pass. One lane and one subject per run, chosen by the hour so the intake
-# rotates without a scheduler holding state. `run` writes the ledger; the delivery and the
-# row counts go to the pod log, which is where the estate collector reads them.
+# The hourly pass. One objective per run: the highest-ranked one that is new or whose last
+# report has Continue ticked (objective-adapter.py). `run` writes the ledger; the delivery and
+# the row counts go to the pod log, which is where the estate collector reads them, and the
+# admitted claims go to the objective's issue as a report ending in Continue / Park.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -79,7 +66,9 @@ spec:
               # estimate tried to download the encoding file from OpenAI's public blob on every
               # run, which this namespace has no internet egress to -> ConnectTimeout -> None ->
               # no question answered. Index amd64+arm64.
-              image: ghcr.io/chidionyema/research-engine:sha-ddad623adf237520f96bd07b1b71d4f3e530739a
+              # 2026-10-19: ddad623 fixed the source_index crash that kept every claim ungraded
+              # (research-engine#12); e73d76f adds the `objective` lane this job runs (#13).
+              image: ghcr.io/chidionyema/research-engine:sha-e73d76f72326ff4f1cae0d023e885765823b4044
               command: ["/bin/sh", "-c"]
               args:
                 - |
@@ -95,20 +84,18 @@ spec:
                   PG="postgresql://research:$(cat /secrets/db/POSTGRES_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432"
                   RESEARCH_PG_DSN="${PG}/research"
                   export LITELLM_API_KEY RESEARCH_PG_DSN
-                  # One line per hour, rotating through the intake without a scheduler
-                  # holding state. Each line is `lane: subject`: the lane names a profile
-                  # in the engine, and the profile holds the questions it asks (SPEC-v1 §8),
-                  # so changing what a lane asks is a change in the engine's repository and
-                  # changing what it asks about is a change here.
-                  n=$(grep -c . /questions/subjects)
-                  # Rotate by the hour from the integer epoch (no octal trap): dash's $(( ))
-                  # reads "08"/"09" as invalid octal, so a day/hour string failed the whole
-                  # run on the hours that start with 0 (measured 2026-09-09, UTC 08/09).
-                  i=$(( ( ($(date -u +%s) / 3600) % n ) + 1 ))
-                  line=$(sed -n "${i}p" /questions/subjects)
-                  lane=${line%%:*}
-                  subject=${line#*: }
-                  echo "research-engine running lane ${lane} on subject ${i} of ${n}"
+                  # Which objective this hour researches. The adapter prints its issue number
+                  # and research subject, or nothing: an objective is researched once and
+                  # again only when its report has Continue ticked (founder, 2026-10-19), so
+                  # an hour with nothing new and nothing ticked spends nothing.
+                  picked=$(python /adapter/objective-adapter.py pick)
+                  if [ -z "$picked" ]; then
+                    echo "research-engine: no objective awaiting research (none new, none ticked Continue)"
+                    exit 0
+                  fi
+                  issue=$(printf '%s\n' "$picked" | sed -n 1p)
+                  subject=$(printf '%s\n' "$picked" | sed -n 2p)
+                  echo "research-engine researching objective idp#${issue}: ${subject}"
                   # Tiktoken's estimator (costs.py) needs a writable cache dir: the image bakes the
                   # encoding files under /app/tiktoken_cache but the root fs is readOnlyRootFilesystem,
                   # and tiktoken writes a lazy-download .tmp file there -> [Errno 30] Read-only file
@@ -119,7 +106,15 @@ spec:
                   mkdir -p /state/tiktoken
                   cp -f /app/tiktoken_cache/* /state/tiktoken/ 2>/dev/null || true
                   export TIKTOKEN_CACHE_DIR=/state/tiktoken
-                  exec python -m engine.cli run --profile "$lane" --subject "$subject" --out /state
+                  # The requester is the objective, so its claims join back to its issue.
+                  # dash has no pipefail, so the run's status is kept here rather than lost
+                  # behind a pipe; a failed run posts no report and the job goes red.
+                  rc=0
+                  python -m engine.cli run --profile objective --requester "idp#${issue}" \
+                    --subject "$subject" --out /state > /state/run.log 2>&1 || rc=$?
+                  cat /state/run.log
+                  [ "$rc" = 0 ] || exit "$rc"
+                  python /adapter/objective-adapter.py report "$issue" /state/run.log
               env:
                 # Nothing here is a secret and nothing here is a default in the image: the
                 # engine hardcodes no host, no port and no model name (LAW 46).
@@ -137,7 +132,8 @@ spec:
               volumeMounts:
                 - { name: router, mountPath: /secrets/router, readOnly: true }
                 - { name: db, mountPath: /secrets/db, readOnly: true }
-                - { name: questions, mountPath: /questions, readOnly: true }
+                - { name: github-app, mountPath: /secrets/github-app, readOnly: true }
+                - { name: adapter, mountPath: /adapter, readOnly: true }
                 - { name: state, mountPath: /state }
                 - { name: tmp, mountPath: /tmp }
               resources:
@@ -152,8 +148,10 @@ spec:
               secret: { secretName: research-router }
             - name: db
               secret: { secretName: research-db }
-            - name: questions
-              configMap: { name: research-questions }
+            - name: github-app
+              secret: { secretName: research-github-app }
+            - name: adapter
+              configMap: { name: research-objective-adapter }
             - name: state
               emptyDir: {}
             - name: tmp

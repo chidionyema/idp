@@ -9,4 +9,11 @@ resources:
   - namespace.yaml
   - secrets.yaml
   - pull-secret.yaml
+  - github-app.yaml
   - cronjob.yaml
+# The idp side of the engine (SPEC-v1 §8: a consumer's adapter is code in the consumer's repo):
+# which objective the hour researches, and the report it posts back (idp#6603).
+configMapGenerator:
+  - name: research-objective-adapter
+    files:
+      - objective-adapter.py
