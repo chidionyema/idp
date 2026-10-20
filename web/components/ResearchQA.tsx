@@ -56,7 +56,7 @@ export function ResearchQA() {
             {SUGGESTIONS.map((s) => (
               <button key={s} onClick={() => { setQuery(s); inputRef.current?.focus(); }}
                 style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "10px 12px", fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-2)", cursor: "pointer", textAlign: "left", transition: "all 120ms ease" }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(26,86,219,0.3)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(26,86,219,0.03)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "rgba(14,110,98,0.4)"; (e.currentTarget as HTMLButtonElement).style.background = "rgba(14,110,98,0.04)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--accent)"; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--rule)"; (e.currentTarget as HTMLButtonElement).style.background = "var(--white)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--ink-2)"; }}>
                 {s}
               </button>
@@ -104,7 +104,7 @@ export function ResearchQA() {
           <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "16px", borderBottom: "1px solid var(--rule)" }}>
               <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Answer</span>
-              <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: result.mode === "gpt-enhanced" ? "var(--ok)" : "var(--accent)" }}>● {result.mode === "gpt-enhanced" ? "GPT-4o Mini enhanced" : "Research corpus"}</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: result.mode === "gpt-enhanced" ? "var(--ok-text)" : "var(--accent)" }}>● {result.mode === "gpt-enhanced" ? "GPT-4o Mini enhanced" : "Research corpus"}</span>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {result.answer.split("\n\n").map((para, i) => <p key={i} style={{ fontSize: "14px", lineHeight: 1.75, color: "var(--ink-2)" }}>{para}</p>)}

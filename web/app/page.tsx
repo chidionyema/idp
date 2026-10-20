@@ -108,7 +108,7 @@ export default function HomePage() {
       {/* Case Studies teaser */}
       <section className="section" style={{ background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
+          <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent-ink" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "24px" }}>
             {[
               { industry: "Fintech", result: "73% bill reduction", detail: "$1.1M a month down to $297K. LiteLLM routing and SPIFFE identity across three regions." },
@@ -119,7 +119,7 @@ export default function HomePage() {
                 <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", padding: "24px" }}>
                   <span style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{c.industry}</span>
                   <p style={{ fontFamily: "var(--serif)", fontSize: "1.4rem", fontWeight: 500, color: "#fff", marginTop: "12px" }}>{c.result}</p>
-                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "rgba(255,255,255,0.7)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
+                  <p style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--on-ink)", marginTop: "8px", lineHeight: 1.6, maxWidth: "none" }}>{c.detail}</p>
                 </div>
               </Reveal>
             ))}

@@ -80,13 +80,13 @@ export function CostCalculator() {
           {[{ label: "Per request", value: costPerReq, hint: `${fmtNum(inputTokens + outputTokens)} tokens` }, { label: "Per day", value: costPerDay, hint: `${fmtNum(dailyRequests)} reqs` }, { label: "Per month", value: costPerMonth, hint: `${fmtNum(dailyRequests * 30)} reqs` }].map((t) => (
             <div key={t.label} style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "16px", textAlign: "center" }}>
               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{t.label}</p>
-              <p style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 600, color: model.inputPer1M === 0 ? "var(--ok)" : "var(--accent)", marginTop: "8px" }}>{model.inputPer1M === 0 ? "Free" : fmtUsd(t.value)}</p>
+              <p style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 600, color: model.inputPer1M === 0 ? "var(--ok-text)" : "var(--accent)", marginTop: "8px" }}>{model.inputPer1M === 0 ? "Free" : fmtUsd(t.value)}</p>
               <p style={{ fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", marginTop: "4px" }}>{t.hint}</p>
             </div>
           ))}
         </div>
         {model.inputPer1M > 0 && (
-          <div style={{ border: "1px solid rgba(26,86,219,0.2)", background: "rgba(26,86,219,0.03)", padding: "16px" }}>
+          <div style={{ border: "1px solid rgba(14,110,98,0.22)", background: "rgba(14,110,98,0.04)", padding: "16px" }}>
             <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Annual projection</p>
             <p style={{ fontFamily: "var(--mono)", fontSize: "24px", fontWeight: 600, color: "var(--accent)", marginTop: "4px" }}>{fmtUsd(costPerYear)}</p>
             <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "4px" }}>{fmtNum(dailyRequests * 365)} requests / year</p>

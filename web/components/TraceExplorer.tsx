@@ -51,10 +51,10 @@ function flattenSpans(span: Span, depth = 0): (Span & { depth: number })[] {
 function SpanRow({ span, maxDuration, depth, selected, onClick, onToggle }: { span: Span; maxDuration: number; depth: number; selected: boolean; onClick: () => void; onToggle: () => void }) {
   const hasChildren = (span.children?.length ?? 0) > 0;
   const widthPct = (span.duration / maxDuration) * 100;
-  const kindBg: Record<string, string> = { server: "rgba(26,86,219,0.1)", client: "rgba(217,119,6,0.1)", internal: "rgba(138,138,131,0.1)" };
+  const kindBg: Record<string, string> = { server: "rgba(14,110,98,0.12)", client: "rgba(13,13,10,0.08)", internal: "rgba(138,138,131,0.1)" };
   return (
     <>
-      <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingTop: "8px", paddingBottom: "8px", paddingRight: "16px", cursor: "pointer", background: selected ? "rgba(26,86,219,0.03)" : "transparent", paddingLeft: `${depth * 24 + 16}px` }}>
+      <div onClick={onClick} style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingTop: "8px", paddingBottom: "8px", paddingRight: "16px", cursor: "pointer", background: selected ? "rgba(14,110,98,0.04)" : "transparent", paddingLeft: `${depth * 24 + 16}px` }}>
         <button onClick={(e) => { e.stopPropagation(); onToggle(); }} style={{ width: "16px", fontSize: "10px", background: "none", border: "none", cursor: hasChildren ? "pointer" : "default", color: "var(--ink-3)", flexShrink: 0, padding: 0 }}>
           {hasChildren ? "▸" : ""}
         </button>
@@ -65,8 +65,8 @@ function SpanRow({ span, maxDuration, depth, selected, onClick, onToggle }: { sp
           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.max(widthPct, 1)}%`, background: span.color + "25" }} />
           <div style={{ position: "absolute", left: 0, top: 0, height: "100%", width: `${Math.max(widthPct * 0.75, 1)}%`, background: span.color }} />
         </div>
-        <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: span.color, textAlign: "right", flexShrink: 0 }}>{span.duration}ms</span>
-        <span style={{ width: "32px", fontFamily: "var(--mono)", fontSize: "11px", color: span.status === "ok" ? "var(--ok)" : "#DC2626", textAlign: "center", flexShrink: 0 }}>{span.status === "ok" ? "✓" : "✗"}</span>
+        <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 600, color: "var(--ink)", textAlign: "right", flexShrink: 0 }}>{span.duration}ms</span>
+        <span style={{ width: "40px", fontFamily: "var(--mono)", fontSize: "11px", color: span.status === "ok" ? "var(--ok-text)" : "var(--signal)", textAlign: "center", flexShrink: 0 }}>{span.status === "ok" ? "✓" : "✗"}</span>
       </div>
     </>
   );
@@ -111,21 +111,28 @@ export function TraceExplorer() {
           </button>
         ))}
       </div>
-      <div style={{ display: "grid", gap: "24px", gridTemplateColumns: "2fr 1fr" }}>
+      <div className="trace-split">
         <div>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
             <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>Trace {trace.id} — {totalDuration}ms total</span>
-            <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ok)" }}>● ok</span>
+            <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ok-text)" }}>● ok</span>
           </div>
+          {/* The span table has fixed columns (208/64/1fr/64/40) that cannot compress below ~520px,
+              so on a phone it scrolled the whole page 349px sideways (audit, 390px, 2026-10-20).
+              Give the table its own horizontal scroll instead of the document. */}
+          <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: "520px" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)", paddingBottom: "8px", marginBottom: "4px" }}>
             <span style={{ width: "16px" }} /><span style={{ width: "8px" }} /><span style={{ width: "208px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Span</span>
             <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Kind</span>
             <span style={{ flex: 1, fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)" }}>Duration</span>
             <span style={{ width: "64px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "right" }}>ms</span>
-            <span style={{ width: "32px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "center" }}>Status</span>
+            <span style={{ width: "40px", fontFamily: "var(--mono)", fontSize: "10px", color: "var(--ink-3)", textAlign: "center" }}>Status</span>
           </div>
           <div style={{ maxHeight: "420px", overflowY: "auto" }}>
             {renderSpans(trace, 0)}
+          </div>
+          </div>
           </div>
         </div>
         <div>
@@ -135,7 +142,7 @@ export function TraceExplorer() {
               <p style={{ fontFamily: "var(--mono)", fontSize: "13px", fontWeight: 600, color: selectedSpan.color, marginTop: "8px" }}>{selectedSpan.name}</p>
               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "4px" }}>{selectedSpan.service}</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "24px" }}>
-                {[{ label: "Duration", value: `${selectedSpan.duration}ms` }, { label: "Kind", value: selectedSpan.kind }, { label: "Status", value: selectedSpan.status, color: selectedSpan.status === "ok" ? "var(--ok)" : "#DC2626" }].map((r) => (
+                {[{ label: "Duration", value: `${selectedSpan.duration}ms` }, { label: "Kind", value: selectedSpan.kind }, { label: "Status", value: selectedSpan.status, color: selectedSpan.status === "ok" ? "var(--ok-text)" : "var(--signal)" }].map((r) => (
                   <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: "11px" }}>
                     <span style={{ color: "var(--ink-3)" }}>{r.label}</span><span style={{ color: r.color ?? "var(--ink)", fontWeight: 500 }}>{r.value}</span>
                   </div>
@@ -157,7 +164,7 @@ export function TraceExplorer() {
             <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "20px" }}>
               <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Trace overview</p>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "16px" }}>
-                {[{ label: "Trace ID", value: trace.id }, { label: "Total duration", value: `${totalDuration}ms`, color: "var(--accent)" }, { label: "Spans", value: String(flat.length) }, { label: "Status", value: "✓ ok", color: "var(--ok)" }].map((r) => (
+                {[{ label: "Trace ID", value: trace.id }, { label: "Total duration", value: `${totalDuration}ms`, color: "var(--accent)" }, { label: "Spans", value: String(flat.length) }, { label: "Status", value: "✓ ok", color: "var(--ok-text)" }].map((r) => (
                   <div key={r.label} style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: "11px", paddingBottom: "8px", borderBottom: "1px solid rgba(226,226,220,0.5)" }}>
                     <span style={{ color: "var(--ink-3)" }}>{r.label}</span><span style={{ color: r.color ?? "var(--ink)", fontWeight: 500 }}>{r.value}</span>
                   </div>
