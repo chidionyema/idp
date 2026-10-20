@@ -1,0 +1,23 @@
+# The estate's GitHub App, for the objective adapter (objective-adapter.py): it reads the open
+# `objective` issues and posts each research report on its issue (idp#6603). Same vault entry
+# and same shape as platform/alerts-github/github-app.yaml; the adapter mints a one-hour
+# installation token from these three files at run time and never writes it down.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: research-github-app
+  namespace: research
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: research-github-app
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        app_id: "{{ .app_id }}"
+        installation_id: "{{ .installation_id }}"
+        private_key: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }

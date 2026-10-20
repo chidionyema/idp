@@ -38,6 +38,14 @@ LABEL = "objective"
 MINUTES_EACH = {"main-red": 240, "red-lane": 45, "work-lost": 120, "red-open-pr": 30}
 BUDGET_USD = 5.0     # cap for one objective's research and experiments (sovereign/engine/budget.py)
 DEADLINE_DAYS = 14
+# What the research engine searches for, per key: the problem in general words. The title
+# carries this run's counts, which make a poor search; the engine's objective lane reads this.
+RESEARCH_SUBJECT = {
+    "main-red": "required CI checks failing on the main branch of a monorepo",
+    "red-lane": "branches stuck failing CI or in merge conflict in a merge queue",
+    "work-lost": "pull requests closed without merging, losing the work in them",
+    "red-open-pr": "open pull requests left with failing CI checks",
+}
 
 
 @dataclasses.dataclass
@@ -114,6 +122,7 @@ def body(o: Objective, today: dt.date) -> str:
             f"**Signal:** `{o.metric}` | **baseline (measured {today}):** {o.baseline:g} | "
             f"**target:** {o.target:g} | **cap:** ${o.budget_usd:g} | **deadline:** {deadline}\n\n"
             f"**Pain:** {o.count} x {o.minutes_each} min = {o.pain} min; rank {o.rank:.1f} min per USD.\n\n"
+            f"**Research subject:** {RESEARCH_SUBJECT.get(o.key, o.title)}\n\n"
             f"**Evidence**\n{ev}\n\n"
             "Closes when the metric, re-measured by this miner on the real path, is at or below the "
             "target. Hypotheses carry a pre-registered gate before any arm runs (crew/EXPERIMENTS.md).\n")
