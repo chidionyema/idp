@@ -23,12 +23,18 @@ sys.modules["idp_objective_miner"] = miner  # a dataclass resolves its own modul
 _loader.exec_module(miner)
 
 STATUS = {
-    "main": {"sha": "a" * 40, "required": {"tests": "success", "portal-app": "failure"}, "green": False},
-    "state": {"lanes": {
-        "lane/a": {"status": "red", "reason": "tests"},
-        "lane/b": {"status": "landed"},
-        "lane/c": {"status": "conflict"},
-    }},
+    "main": {
+        "sha": "a" * 40,
+        "required": {"tests": "success", "portal-app": "failure"},
+        "green": False,
+    },
+    "state": {
+        "lanes": {
+            "lane/a": {"status": "red", "reason": "tests"},
+            "lane/b": {"status": "landed"},
+            "lane/c": {"status": "conflict"},
+        }
+    },
     "work_lost": [{"number": 7, "branch": "lane/x", "head": "b" * 12}],
     "invariants": {"red_open_prs": []},
 }
@@ -43,8 +49,12 @@ def test_every_non_zero_signal_becomes_an_objective_with_a_measured_baseline():
 
 
 def test_a_green_estate_files_nothing():
-    green = {"main": {"green": True, "required": {}}, "state": {"lanes": {}}, "work_lost": [],
-             "invariants": {"red_open_prs": []}}
+    green = {
+        "main": {"green": True, "required": {}},
+        "state": {"lanes": {}},
+        "work_lost": [],
+        "invariants": {"red_open_prs": []},
+    }
     assert miner.mine_greenlane(green) == []
 
 
@@ -62,14 +72,21 @@ def test_a_baseline_that_already_meets_the_target_is_refused():
 
 def test_ranking_is_pain_per_usd_most_painful_first():
     ok, _ = miner.admit(miner.mine_greenlane(STATUS))
-    assert [o.key for o in ok] == ["main-red", "work-lost", "red-lane"]  # 240, 120, 2x45=90 min
+    assert [o.key for o in ok] == [
+        "main-red",
+        "work-lost",
+        "red-lane",
+    ]  # 240, 120, 2x45=90 min
 
 
 def test_the_body_carries_the_identity_marker_and_the_numbers():
     ok, _ = miner.admit(miner.mine_greenlane(STATUS))
     text = miner.body(ok[0], dt.date(2026, 10, 19))
     assert text.startswith("<!-- objective key=main-red -->")
-    assert "baseline (measured 2026-10-19):** 1" in text and "deadline:** 2026-11-02" in text
+    assert (
+        "baseline (measured 2026-10-19):** 1" in text
+        and "deadline:** 2026-11-02" in text
+    )
 
 
 def test_an_open_objective_is_not_filed_twice(monkeypatch):
@@ -77,10 +94,12 @@ def test_an_open_objective_is_not_filed_twice(monkeypatch):
 
     def fake_gh(*args):
         calls.append(args)
+
         class P:  # noqa: D106
             returncode = 0
             stdout = "https://example/issues/1\n"
             stderr = ""
+
         return P()
 
     monkeypatch.setattr(miner, "gh", fake_gh)
