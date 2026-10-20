@@ -730,6 +730,42 @@ def test_chrome_clones_nobody_holds_go_and_the_running_one_stays(tmp_path):
     )
 
 
+def test_a_held_clone_reached_through_a_symlink_is_still_held(tmp_path):
+    # $TMPDIR says /var/folders, a symlink to /private/var/folders, and lsof prints the physical
+    # path: matched unresolved, the running Chrome's clone would read as nobody's and be deleted.
+    home, clones = _clones_home(tmp_path)
+    link = tmp_path / "via-link"
+    link.symlink_to(clones)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "none"),
+        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        "DISK_CLEANUP_CHROME_CLONES": str(link),
+    }
+    with open(clones / "code_sign_clone.held/Contents/blob", "rb"):
+        p = subprocess.run(
+            ["bash", str(SCRIPT), "true"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert (clones / "code_sign_clone.held").exists(), p.stdout
+    assert not (clones / "code_sign_clone.old").exists(), p.stdout
+
+
+def test_held_clones_are_found_without_walking_the_tree():
+    # 2026-10-20: `lsof +D` over 15G of clones ran past its 60s cut-off on nearly every run,
+    # went BLIND, kept every clone, and the volume refilled to 0G.
+    src = SCRIPT.read_text()
+    assert "lsof -Fn +D" not in src
+    assert "tmo 60 lsof -nPw -Fn" in src
+
+
 def test_no_tmpdir_means_the_real_chrome_clones_are_never_reached():
     src = SCRIPT.read_text()
     assert 'CLONES="${DISK_CLEANUP_CHROME_CLONES-${TMP_ROOT:+' in src
