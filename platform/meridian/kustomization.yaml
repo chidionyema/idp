@@ -15,4 +15,4 @@ images:
   # deployment asked for a `:main` tag that was never pushed
   # (platform/image-automation/cyrus.yaml).
   - name: ghcr.io/chidionyema/meridian
-    newTag: main-14635-68e38453b4d081b706ff4fd2e1ea4eb3600964d7 # {"$imagepolicy": "flux-system:meridian:tag"}
+    newTag: main-14671-623cc2bae246fb598b18447082d2f33a0294efee # {"$imagepolicy": "flux-system:meridian:tag"}
