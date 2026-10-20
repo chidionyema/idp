@@ -15,7 +15,7 @@ export default function ToolingPage() {
       <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
         {site.tooling.map((t) => (
           <Reveal key={t.name}>
-            <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "32px" }}>
+            <div key={t.name} id={t.name} style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "32px", scrollMarginTop: "96px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>

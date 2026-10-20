@@ -98,7 +98,7 @@ export default function HomePage() {
                     <span className={`tag ${t.status === "stable" ? "tag-ok" : t.status === "beta" ? "tag-beta" : ""}`}>{t.status}</span>
                   </div>
                   <p style={{ fontSize: "14px", color: "var(--ink-3)", flex: 1, minWidth: "200px" }}>{t.desc}</p>
-                  <Link href="/tooling" style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--accent)", textDecoration: "none" }}>Details →</Link>
+                  <Link href={`/tooling#${t.name}`} style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--accent)", textDecoration: "none" }}>Details →</Link>
                 </div>
               </Reveal>
             ))}
