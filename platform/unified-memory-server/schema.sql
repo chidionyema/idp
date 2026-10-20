@@ -250,6 +250,10 @@ END $$;
 GRANT USAGE ON SCHEMA public TO memory_app;
 GRANT SELECT ON tenants, surface_tokens TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON memories TO memory_app;
+-- Read by every ranked recall and brief, upserted by the reinforcement after it (main.py
+-- _ranked). Missing from 2026-10-20's first rollout: every brief that searched by meaning
+-- answered 500 with "permission denied for table memory_access".
+GRANT SELECT, INSERT, UPDATE ON memory_access TO memory_app;
 GRANT SELECT, INSERT ON memory_versions TO memory_app;
 GRANT USAGE ON SEQUENCE memory_versions_version_id_seq TO memory_app;
 GRANT SELECT, INSERT, UPDATE ON rate_limits TO memory_app;
