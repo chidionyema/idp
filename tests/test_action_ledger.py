@@ -143,3 +143,12 @@ def test_a_request_carrying_a_datetime_is_still_recorded(estate):
     row = al.record(call, {"content": [{"type": "text", "text": "a"}]})
     assert row is not None
     assert al.verify()[0] == 1
+
+
+def test_a_stdlib_caller_that_names_itself_is_recorded(estate):
+    # urllib alone is not the drain: fleetview-voice sends it with its own virtual-key alias
+    call = _call(ua="Python-urllib/3.12")
+    call["litellm_params"]["metadata"] = {
+        "user_api_key_alias": "fleetview-voice-20261008T193433Z"
+    }
+    assert al.record(call, {}) is not None

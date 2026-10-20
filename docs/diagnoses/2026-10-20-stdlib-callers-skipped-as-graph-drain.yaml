@@ -1,0 +1,108 @@
+description: 'The busiest agent on the cluster router, fleetview-voice (key fleetview-voice-20261008T193433Z,
+  last_active 2026-10-20T05:40:46Z, the only key with spend), has never produced an
+  active_memory line since the callback shipped (#6651): not injected, not unreadable,
+  not skipped. Question: why does a live, keyed agent get no Active Memory -- is the
+  callback mistaking it for the graph drain by User-Agent, are its calls not chat
+  calls, is the callback not running for them, or does it run and inject nothing.
+  Measured against the cluster router (litellm-6d964ffbf7-6z6zt), its /key/list, and
+  fleetview-backend voice.py on main, before any fix.
+
+  '
+hypotheses:
+- name: H1
+  description: skip_reason's graph-drain rule (User-Agent starts with Python-urllib)
+    matches every stdlib-Python caller, so a named, keyed urllib agent is skipped
+    as the drain
+  prior: 0.4
+- name: H2
+  description: fleetview-voice's router calls are not chat calls (embeddings, speech),
+    so they are skipped on call_type, correctly
+  prior: 0.25
+- name: H3
+  description: the callback is not loaded or not invoked for these calls (config or
+    wiring), so nothing runs at all
+  prior: 0.15
+- name: H4
+  description: the callback runs, but the call carries no last human text or the block
+    renders empty, so it returns without injecting or logging
+  prior: 0.2
+evidence:
+- name: controlled pair on the cluster router, 2026-10-20 05:13-05:15Z -- the same
+    fast-lane chat call with x-estate-agent=active-memory-proof logged nothing under
+    User-Agent Python-urllib and logged `active_memory injected agent=active-memory-proof
+    chars=2067` under User-Agent active-memory-proof/1.0 (does flipping only the User-Agent
+    flip skip to inject)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.05
+      absent: 0.95
+    H4:
+      present: 0.1
+      absent: 0.9
+- name: fleetview-backend voice.py builds its router request with urllib.request.Request
+    and sets no User-Agent header (so it sends Python-urllib/3.x)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.5
+      absent: 0.5
+    H3:
+      present: 0.5
+      absent: 0.5
+    H4:
+      present: 0.5
+      absent: 0.5
+- name: voice.py posts to /v1/chat/completions with a user-role QUESTION message (a
+    chat call carrying human text)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.9
+      absent: 0.1
+    H4:
+      present: 0.2
+      absent: 0.8
+- name: 'active_memory WARNING lines (injected / unreadable / exception) naming fleetview-voice
+    on the router pods since PR 6651, while its key was active at 05:40:46Z. Weak:
+    a skip reason logs at DEBUG, so every hypothesis predicts silence'
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.05
+      absent: 0.95
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.02
+      absent: 0.98
+    H4:
+      present: 0.05
+      absent: 0.95
+posteriors:
+  H1: 0.9824790363
+  H2: 0.0009449821
+  H3: 0.0105280958
+  H4: 0.0060478857
+winner: H1
+computed_at: '2026-10-20T05:56:14Z'
