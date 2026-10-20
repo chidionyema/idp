@@ -1113,16 +1113,26 @@ async def harness_memory_prefetch(
     run_id: str,
     task: str,
     project_id: Optional[str] = None,
+    namespace: str = "default",
     auth: Dict[str, Any] = Depends(authenticate_surface),  # noqa: B008
 ) -> Dict[str, Any]:
     """Pre-fetch hook: called before an agent run starts.
     Calls ActiveMemoryEngine.buildActiveContextBrief and returns the brief text.
     Wire this into do_recall in estate_memory.py as the first step of any
-    agent session start."""
+    agent session start.
+
+    Every field is a query param (no body). Until 2026-10-19 the MCP posted them as a JSON
+    object: all 5 prefetches in the pod's 18h log were 422, swallowed as a silent degrade, so
+    no recall ever carried a brief. tests/test_estate_memory_prefetch_shape.py pins the shape."""
     tenant_id = auth["tenant_id"]
     sync_conn = _harness_sync_conn(tenant_id)
     try:
-        cortex = PostgresCortexAdapter(sync_conn)
+        cortex = PostgresCortexAdapter(
+            sync_conn,
+            embed=lambda text: _embed(text, EMBED_QUERY_MODEL),
+            namespace=namespace,
+            min_cosine=RECALL_MIN_COSINE,
+        )
         scratchpad = PostgresScratchpadStore()
         engine = ActiveMemoryEngine(cortex, scratchpad, _harness_telemetry)
 

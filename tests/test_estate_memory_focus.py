@@ -522,3 +522,72 @@ def test_the_installer_writes_the_enforcement_hooks_once(tmp_path):
         run("--check").returncode == 0
     )  # idempotent: a second run finds nothing to change
     assert (tmp_path / "home" / "platform/estate/memory/focus.py").exists()
+
+
+# --- a claim posted minutes ago, before the search index has it ----------------------------------
+
+
+def claim_issue(num, agent, paths, age_s, state="OPEN"):
+    body = f"CLAIM agent={agent} paths={paths} heartbeat={iso(age_s)}"
+    return {
+        "number": num,
+        "title": "t",
+        "state": state,
+        "comments": [{"body": body, "createdAt": iso(age_s)}],
+    }
+
+
+def test_a_noted_claim_is_read_from_its_issue_not_the_search(tmp_path):
+    path = str(tmp_path / "noted.json")
+    focus.note_claim(6597, now=NOW - 60, path=path)
+    focus.note_claim(42, now=NOW - focus.LAPSE_S - 1, path=path)  # outside the window
+    seen = []
+
+    def view(num):
+        seen.append(num)
+        return claim_issue(num, "claude", "bin/*", 60)
+
+    rows = focus.noted_rows(now=NOW, path=path, view_fn=view)
+    assert seen == [6597]
+    assert [(r["claim"], r["live"]) for r in rows] == [("idp#6597", True)]
+
+
+def test_a_noted_claim_on_a_closed_issue_covers_nothing(monkeypatch):
+    monkeypatch.setattr(
+        focus,
+        "_gh",
+        lambda a, t: json.dumps(claim_issue(7, "claude", "bin/*", 60, "CLOSED")),
+    )
+    assert focus._view_issue(7) is None
+
+
+def test_the_hook_passes_a_claim_the_register_has_not_indexed_yet(
+    enforce, capsys, tmp_path, monkeypatch
+):
+    # The register (search) lags: it knows only an unrelated claim. The noted issue has ours.
+    monkeypatch.setattr(enforce.focus, "live_focus", lambda: [live_row(paths="docs/*")])
+    monkeypatch.setattr(
+        enforce.focus, "_view_issue", lambda n: claim_issue(n, "me", "bin/*", 30)
+    )
+    enforce.focus.note_claim(6597)
+    monkeypatch.setattr(enforce, "git_root_if_idp", lambda p: "/repo")
+    assert pre_call(enforce, capsys, transcript(tmp_path, BRIEF_CALL)) is None
+    cached = enforce.focus.load_json(enforce.focus.focus_cache_path())["rows"]
+    assert {r["claim"] for r in cached} == {
+        "idp#1",
+        "idp#6597",
+    }  # the next edit reads no gh
+
+
+def test_a_noted_claim_does_not_cover_paths_it_never_named(
+    enforce, capsys, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(enforce.focus, "live_focus", lambda: [])
+    monkeypatch.setattr(
+        enforce.focus, "_view_issue", lambda n: claim_issue(n, "me", "docs/*", 30)
+    )
+    enforce.focus.note_claim(6597)
+    monkeypatch.setattr(enforce, "git_root_if_idp", lambda p: "/repo")
+    out = pre_call(enforce, capsys, transcript(tmp_path, BRIEF_CALL))
+    assert out["permissionDecision"] == "deny"
+    assert "--paths bin/x" in out["permissionDecisionReason"]

@@ -426,15 +426,18 @@ def do_recall(query: str, subject: str, kind: str, tags, limit: int, cfg=None) -
     # relevant to this query. Degrades silently if the harness is unavailable.
     brief_text = None
     if query.strip():
-        run_id = f"mcp-recall-{uuid.uuid4().hex[:12]}"
+        # harness_memory_prefetch takes every field from the query string and no body; an
+        # object body 422s and is swallowed (all 5 in the pod's log, 2026-10-19), exactly as
+        # consolidate did. tests/test_estate_memory_prefetch_shape.py pins it.
+        params = {
+            "run_id": f"mcp-recall-{uuid.uuid4().hex[:12]}",
+            "task": query.strip(),
+            "namespace": cfg["namespace"],
+        }
+        if subject:
+            params["project_id"] = subject
         bf, _ = _harness_call(
-            cfg,
-            "/harness/memory/prefetch",
-            {
-                "run_id": run_id,
-                "task": query.strip(),
-                "project_id": subject or None,
-            },
+            cfg, "/harness/memory/prefetch?" + urllib.parse.urlencode(params)
         )
         if bf and isinstance(bf, dict):
             brief_text = bf.get("brief") or bf.get("context")

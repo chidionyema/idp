@@ -71,6 +71,10 @@ def focus_cache_path() -> str:
     return os.path.join(_home(), "focus-register.json")
 
 
+def noted_claims_path() -> str:
+    return os.path.join(_home(), "claims-noted.json")
+
+
 def load_json(path: str) -> dict:
     try:
         with open(path) as f:
@@ -288,6 +292,74 @@ def live_focus(path: str = "", now: float = 0.0):
         return None
     save_json(path, {"at": now, "rows": rows})
     return rows
+
+
+# --- claims this machine just posted
+#
+# 2026-10-19: the edit hook refused a claim posted one minute earlier, and its advice was to post
+# the claim. Two lags stacked: the register is cached FOCUS_TTL_S, and GitHub's `in:comments`
+# search index trails a new comment by minutes. So whoever posts a claim notes the issue number
+# here, and a refusal first reads those issues directly (`gh issue view`, no search index). The
+# note is only a pointer: the claim still has to be on GitHub, open, with a fresh heartbeat.
+
+NOTED_MAX = 5
+
+
+def note_claim(num: int, now: float = 0.0, path: str = "") -> None:
+    path = path or noted_claims_path()
+    now = now or time.time()
+    noted = {k: v for k, v in load_json(path).items() if now - v < LAPSE_S}
+    noted[str(int(num))] = now
+    save_json(path, noted)
+
+
+def noted_rows(now: float = 0.0, path: str = "", view_fn=None):
+    """Register rows for the claims noted inside the lapse window, read from each issue itself."""
+    path = path or noted_claims_path()
+    now = now or time.time()
+    view_fn = view_fn or _view_issue
+    noted = sorted(
+        (v, k) for k, v in load_json(path).items() if now - v < LAPSE_S and k.isdigit()
+    )
+    issues = [i for _, k in noted[-NOTED_MAX:] if (i := view_fn(int(k)))]
+    return mark_stuck(register_from_issues(issues, now), now=now)
+
+
+def _view_issue(num: int):
+    out = _gh(
+        [
+            "issue",
+            "view",
+            str(num),
+            "--repo",
+            DEFAULT_REPO,
+            "--json",
+            "number,title,state,comments",
+        ],
+        STATE_TIMEOUT_S,
+    )
+    try:
+        issue = json.loads(out) if out else None
+    except Exception:
+        return None
+    return issue if issue and issue.get("state") == "OPEN" else None
+
+
+def merge_rows(rows: list, extra: list, now: float = 0.0, path: str = "") -> list:
+    """`rows` with `extra` folded in (a claim's newer heartbeat wins), written back to the cache
+    so the next edit does not pay for the same read."""
+    by_claim = {r["claim"]: r for r in rows}
+    for r in extra:
+        old = by_claim.get(r["claim"])
+        if old is None or (r["heartbeat_age_s"] or 10**9) < (
+            old["heartbeat_age_s"] or 10**9
+        ):
+            by_claim[r["claim"]] = r
+    merged = sorted(
+        by_claim.values(), key=lambda r: (not r["live"], r["heartbeat_age_s"] or 10**9)
+    )
+    save_json(path or focus_cache_path(), {"at": now or time.time(), "rows": merged})
+    return merged
 
 
 MAX_RENDERED = 8
