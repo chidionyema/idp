@@ -37,7 +37,24 @@ const nextConfig = {
     ],
   },
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // The root layout awaits headers() to build the canonical host (LAW 46: the zone lives in
+      // the cluster row, not in source), and that await makes every page a dynamic render -- so
+      // Next sent `private, no-cache, no-store` on HTML that only changes when a commit lands.
+      // Measured 2026-10-20 from the laptop: a first visit to / took 8.6s wall (7.2s of it before
+      // the first byte on a lossy uplink) while a second page on the same warm connection took
+      // 0.66s; a plain repeat navigation still paid a full round trip because nothing was
+      // cacheable. These pages are static content, so they may be stored: five minutes fresh (a
+      // deploy is never five minutes old and unseen), a day of stale served while revalidating,
+      // and stale served outright when the network fails -- which is the founder's case.
+      {
+        source: "/:path((?!api/|_next/|opengraph-image|favicon).*)",
+        headers: [
+          { key: "Cache-Control", value: "public, max-age=300, stale-while-revalidate=86400, stale-if-error=86400" },
+        ],
+      },
+    ];
   },
 };
 export default nextConfig;
