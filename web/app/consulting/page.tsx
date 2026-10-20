@@ -19,7 +19,7 @@ export default function ConsultingPage() {
               <span style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, color: "var(--accent)" }}>0{i + 1}</span>
               <h3 style={{ fontSize: "1.3rem" }}>{c.title}</h3>
               <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.75, flex: 1 }}>{c.desc}</p>
-              <Link href="/contact" style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--accent)", textDecoration: "none" }}>Discuss this →</Link>
+              <Link href="/contact" className="text-link">Discuss this →</Link>
             </div>
           </Reveal>
         ))}

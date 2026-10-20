@@ -19,7 +19,7 @@ export default function ToolingPage() {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "24px", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "16px", flex: 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                    <code style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 500, color: "var(--accent)" }}>{t.name}</code>
+                    <code style={{ fontFamily: "var(--mono)", fontSize: "18px", fontWeight: 500, color: "var(--ink)" }}>{t.name}</code>
                     <span className={`tag ${t.status === "stable" ? "tag-ok" : t.status === "beta" ? "tag-beta" : ""}`}>{t.status}</span>
                   </div>
                   <p style={{ fontSize: "15px", color: "var(--ink-3)", lineHeight: 1.75, maxWidth: "60ch" }}>{t.desc}</p>

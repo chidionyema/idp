@@ -106,7 +106,7 @@ export function TraceExplorer() {
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
         {TRACES.map((t, i) => (
           <button key={t.label} onClick={() => { setSelectedTrace(i); setSelectedSpanId(null); setExpandedIds(new Set(["abc123", "xyz789", "d1", "d2", "d3", "d4", "z1"])); }}
-            style={{ padding: "8px 16px", border: `1px solid ${selectedTrace === i ? "var(--accent)" : "var(--rule)"}`, background: selectedTrace === i ? "rgba(26,86,219,0.05)" : "transparent", color: selectedTrace === i ? "var(--accent)" : "var(--ink-3)", fontFamily: "var(--mono)", fontSize: "11px", cursor: "pointer", fontWeight: selectedTrace === i ? 500 : 400 }}>
+            style={{ padding: "8px 16px", border: `1px solid ${selectedTrace === i ? "var(--accent)" : "var(--rule)"}`, background: selectedTrace === i ? "rgba(14,110,98,0.06)" : "transparent", color: selectedTrace === i ? "var(--accent)" : "var(--ink-3)", fontFamily: "var(--mono)", fontSize: "11px", cursor: "pointer", fontWeight: selectedTrace === i ? 500 : 400 }}>
             {t.label}
           </button>
         ))}
