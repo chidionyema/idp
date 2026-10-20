@@ -30,6 +30,7 @@ args:
   tier:         {type: string, default: "founder-facing"}
   health_path:  {type: string, default: ""}
   secret_entry: {type: string, default: "", description: "vault entry; omit for none"}
+  contact:      {type: string, default: "", description: "telegram: contact form delivers via Otto numun; omit for none"}
   runtime:      {type: string, default: "always-on"}
   repo:         {type: string, default: "", description: "idp checkout; found if empty"}
   force:        {type: bool, default: false}
@@ -44,5 +45,5 @@ steps:
       python3 ~/.estate/libexec/site-onboard.py {{mode}}
       --name {{name}} --hostname {{hostname}} --kind {{kind}} --port {{port}}
       --image {{image}} --replicas {{replicas}} --tier {{tier}}
-      --health-path {{health_path}} --secret-entry {{secret_entry}}
+      --health-path {{health_path}} --secret-entry {{secret_entry}} --contact {{contact}}
       --runtime {{runtime}} --repo {{repo}} --force {{force}}
