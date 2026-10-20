@@ -51,7 +51,15 @@ metadata:
 spec:
   # Below the minted token's 60-minute life; each refresh mints a fresh installation token.
   refreshInterval: 10m
-  target: { name: research-github-app, creationPolicy: Owner }
+  # The adapter reads the token file once per run (a CronJob pod), never at boot, so a mint must
+  # not roll anything (Kyverno require-auto-reload).
+  target:
+    name: research-github-app
+    creationPolicy: Owner
+    template:
+      metadata:
+        annotations:
+          reloader.stakater.com/ignore: "true"
   dataFrom:
     - sourceRef:
         generatorRef:
