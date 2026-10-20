@@ -110,6 +110,13 @@ spec:
             # 2s timeout proceeds unoptimized rather than failing. In-namespace, so the
             # llm fence carries it on allow-same-namespace and no new hop is declared.
             - { name: ZEROEDGE_URL, value: "http://zeroedge.llm.svc.cluster.local:8757" }
+            # Active Memory on every chat call (active_memory.py, in the request-ceiling
+            # ConfigMap). The same three names and values the fleetview sidecar uses for the
+            # same server. Unreachable is safe: the callback fails open on every error and
+            # the call goes on without the brief.
+            - { name: ESTATE_MEMORY_URL, value: "http://unified-memory-server.unified-memory.svc.cluster.local:8000" }
+            - { name: ESTATE_MEMORY_HOST, value: "unified-memory.estate.internal" }
+            - { name: ESTATE_MEMORY_TOKEN_FILE, value: /run/secrets/estate-memory/MEMORY_SURFACE_TOKEN }
             - { name: GENERIC_USER_ID_ATTRIBUTE, value: email }
             - { name: GENERIC_USER_EMAIL_ATTRIBUTE, value: email }
             - { name: PROXY_BASE_URL, value: "https://llm.${ESTATE_ZONE}" }
@@ -132,6 +139,8 @@ spec:
             - { name: request-ceiling, mountPath: /etc/litellm/ceilings, readOnly: true }
             - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }
             - { name: langfuse, mountPath: /run/secrets/litellm/langfuse, readOnly: true }
+            # Outside /run/secrets/litellm/*/*: read as a file per call, never exported to env.
+            - { name: estate-memory, mountPath: /run/secrets/estate-memory, readOnly: true }
             - { name: sso, mountPath: /run/secrets/litellm/sso, readOnly: true }
             - { name: cache, mountPath: /run/secrets/litellm/cache, readOnly: true }
             - { name: human-minimax, mountPath: /run/secrets/human/minimax, readOnly: true }
@@ -208,6 +217,10 @@ spec:
           secret: { secretName: litellm-upstream }
         - name: langfuse
           secret: { secretName: litellm-langfuse }
+        # optional: a router whose memory token has not synced yet still serves every call,
+        # just without the brief -- memory is never a reason for the router not to start.
+        - name: estate-memory
+          secret: { secretName: litellm-estate-memory, optional: true }
         - name: sso
           secret: { secretName: litellm-sso }   # crew#408: OIDC client for llm.<zone>/ui, written by tofu
         - name: cache

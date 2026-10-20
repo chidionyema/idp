@@ -274,7 +274,12 @@ flows:
     # trigger still fires, the publisher still starts, and the notification is dropped at the
     # fence -- so the estate believes it has a live feed while nothing ever arrives. The same
     # shape as the estate-db row above, and the same reason it is written out rather than assumed.
-    egress: [observability, estate-db, notify, event-bus]
+    # unified-memory: every chat call through the router carries the estate's Active Memory
+    # brief (platform/llm/active_memory.py posts /memories/brief before the call and the turn to
+    # /harness/memory/consolidate after it). Undeclared, the callback's read times out at the
+    # fence and every agent answers without memory -- fail-open, so silently. Declared on
+    # unified-memory's ingress_from too.
+    egress: [observability, estate-db, notify, event-bus, unified-memory]
     # The router's whole job is calling a model vendor's API; declared here so the fence
     # still says yes on the day this cluster runs a CNI that enforces it.
     egress_internet: [443]
@@ -736,8 +741,11 @@ flows:
     # is the `embed` lane of the router -- every fact stored is embedded on write, and every
     # recall query is embedded before the vector search. Measured 2026-10-13: without this the
     # /embeddings/backfill calls failed every time on the 20s timeout.
+    # llm (ingress): the router's active_memory callback reads /memories/brief for every chat
+    # call and writes each turn to working memory -- the one place every agent's model calls
+    # meet memory. Declared on llm's egress too.
     egress: [estate-db, llm]
-    ingress_from: [backstage, keda, mcp]
+    ingress_from: [backstage, keda, mcp, llm]
   sovereign-system:
     # The sovereign verifier and LangGraph orchestrator (sovereign/deploy/telegram-bot-final.yaml).
     # All LLM calls must go through the estate proxy in llm; no direct vendor egress is declared

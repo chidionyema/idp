@@ -591,3 +591,36 @@ def test_a_noted_claim_does_not_cover_paths_it_never_named(
     out = pre_call(enforce, capsys, transcript(tmp_path, BRIEF_CALL))
     assert out["permissionDecision"] == "deny"
     assert "--paths bin/x" in out["permissionDecisionReason"]
+
+
+# --- claim-open notes its claim, so the enforce hook sees it before the next ledger poll
+
+
+def test_claim_open_notes_the_claim_it_posted(monkeypatch, tmp_path):
+    monkeypatch.setenv("ESTATE_MEMORY_HOME", str(tmp_path))
+    loader = importlib.machinery.SourceFileLoader(
+        "claim_open", os.path.join(ROOT, "bin", "claim-open")
+    )
+    spec = importlib.util.spec_from_loader("claim_open", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    mod.note_claim(6597)
+    assert "6597" in json.loads((tmp_path / "claims-noted.json").read_text())
+
+
+def test_claim_open_declares_a_file_before_it_exists():
+    # The enforce hook refuses to create a file no claim covers and tells the agent to run
+    # `claim-open --paths <file>`; claim-open has to accept that, or no new file can be written.
+    loader = importlib.machinery.SourceFileLoader(
+        "claim_open", os.path.join(ROOT, "bin", "claim-open")
+    )
+    spec = importlib.util.spec_from_loader("claim_open", loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    assert mod.globs_for([], ["docs/new.yaml"]) == ["docs/new.yaml"]
+    assert mod.globs_for(["bin/x"], ["docs/new.yaml", " "]) == [
+        "bin/x",
+        "docs/new.yaml",
+    ]
+    with pytest.raises(SystemExit):
+        mod.globs_for([], [""])

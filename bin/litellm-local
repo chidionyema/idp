@@ -47,7 +47,7 @@ VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT="${LITELLM_LOCAL_PORT:-4001}"   # a slot's agent sets 4001 or 4002; a canary sets its own
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py active_memory.py"
 
 live() { curl -sf -m 5 "http://127.0.0.1:${1:-$FRONT_PORT}/health/liveliness" >/dev/null; }
 slot_label() { echo "com.estate.litellm-local-$1"; }
@@ -88,8 +88,10 @@ EOF
 run() {
   if [ -f "$HERE/config.yaml" ]; then
     CFG="$HERE/config.yaml"; MODDIR="$HERE/modules"          # staged copy (launchd)
+    MEMLIB="$HERE/memory"
   else
     CFG="$HERE/../llm/config.yaml"; MODDIR="$HERE/../platform/llm"   # repo checkout
+    MEMLIB="$HERE/../platform/estate/memory"
   fi
 
   # A lane without api_key falls back to ANTHROPIC_API_KEY from the environment -- i.e. an
@@ -167,6 +169,18 @@ print("echo " + shlex.quote("keys   bitwarden: %d %s" % (len(names), ",".join(so
     export ESTATE_LOCAL_CALLER_KEY
   fi
   [ -n "${ESTATE_LOCAL_CALLER_KEY:-}" ] || echo "warn  no local caller key: keyed lanes refuse every caller"
+  # Active Memory (platform/llm/active_memory.py): every call through this router carries the
+  # estate brief and the live claims, read the way bin/estate-brief reads them -- the MCP door
+  # and the claim ledger, from the staged platform/estate/memory. The door key is decrypted here
+  # because launchd cannot run the vault loader under ~/Documents; it lives in this process only.
+  export ESTATE_MEMORY_DOOR=mcp ESTATE_MEMORY_LIB="$MEMLIB"
+  # The door is a round trip to the cluster edge; 1.5 s is the in-cluster budget.
+  export ACTIVE_MEMORY_BUDGET_S="${ACTIVE_MEMORY_BUDGET_S:-3}"
+  if [ -z "${MCP_GATEWAY_KEY:-}" ] && [ -x "$HERE/sops" ] && [ -f "$HERE/caller/MCP_GATEWAY_KEY.yaml" ]; then
+    MCP_GATEWAY_KEY="$("$HERE/sops" -d --extract '["MCP_GATEWAY_KEY"]' "$HERE/caller/MCP_GATEWAY_KEY.yaml" 2>/dev/null)" || true
+    export MCP_GATEWAY_KEY
+  fi
+  [ -n "${MCP_GATEWAY_KEY:-}" ] || echo "warn  no MCP_GATEWAY_KEY: calls carry Active Focus but no Active Memory brief"
 
   # A lane whose key is absent can only fail, cool down and retry on every request -- that is
   # flake, not redundancy. Serve only the lanes this process can actually call.
@@ -258,6 +272,10 @@ if "graph_capture.proxy_handler_instance" not in ls["callbacks"]:
 # Laptop only: every call signed and chained (platform/llm/action_ledger.py, crew#983).
 if "action_ledger.proxy_handler_instance" not in ls["callbacks"]:
     ls["callbacks"].append("action_ledger.proxy_handler_instance")
+# Every call carries the estate brief and live claims (platform/llm/active_memory.py); the
+# cluster config names it in config.base.yaml, this one is rendered here.
+if "active_memory.proxy_handler_instance" not in ls["callbacks"]:
+    ls["callbacks"].append("active_memory.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 print(f"lanes  dropped {len(dropped)} with no key on this machine")
@@ -292,6 +310,10 @@ install() {
   cp "$ESTATE_SECRETS"/secrets/dev/*_API_KEY*.yaml "$STAGE/secrets/" 2>/dev/null || true
   rm -rf "$STAGE/caller"; mkdir -p "$STAGE/caller"
   cp "$ESTATE_SECRETS"/secrets/dev/LITELLM_LAPTOP_KEY.yaml "$STAGE/caller/" 2>/dev/null || true
+  cp "$ESTATE_SECRETS"/secrets/dev/MCP_GATEWAY_KEY.yaml "$STAGE/caller/" 2>/dev/null || true
+  # active_memory.py imports the door and the focus rules from here (ESTATE_MEMORY_LIB).
+  rm -rf "$STAGE/memory"; mkdir -p "$STAGE/memory"
+  for m in door.py focus.py runtimes.json; do cp "$idp/platform/estate/memory/$m" "$STAGE/memory/$m"; done
   local sops; sops="$(command -v sops || echo "$HOME/.cache/estate-tools/sops")"
   [ -x "$sops" ] && cp "$sops" "$STAGE/sops"
   cp "$idp/platform/llm/front.py" "$STAGE/front.py"

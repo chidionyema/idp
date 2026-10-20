@@ -1,0 +1,74 @@
+description: 'Only Claude Code reads the unified memory; Otto, face, fleet and jev
+  answer without it (measured 2026-10-20). Question: is the gap that no other agent
+  has a path to the memory at all (so the fix is one shared path, in the router every
+  agent already calls), that agents are wired but their calls fail, or that they do
+  use it and the reading is a measurement artifact. Measured live on 2026-10-20 against
+  the cluster''s workload specs, platform/ns-fences/allowances.yaml on origin/main,
+  and the unified-memory-server pod log since it started (01:30:34Z, image main-14651).
+
+  '
+hypotheses:
+- name: H1
+  description: no agent but Claude Code has any call path to the unified memory --
+    no memory address in its config and no fence opening to the memory door
+  prior: 0.34
+- name: H2
+  description: agents are wired to the unified memory and call it, but the server
+    rejects or fails their calls (401/5xx), so they answer without it
+  prior: 0.33
+- name: H3
+  description: agents are wired and call it successfully; "unused" is an artifact
+    of attributing the calls (hidden behind the interceptor or probe noise)
+  prior: 0.33
+evidence:
+- name: in-cluster agent workloads (hermes-agent, otto-gateway, otto-golden, voice-router,
+    fleetview) whose container env carries a unified-memory address (of 5; otto and
+    hermes carry hindsight-api only, face and fleet carry no memory env)
+  observed:
+    absent: 5
+  likelihoods:
+    H1:
+      present: 0.05
+      absent: 0.95
+    H2:
+      present: 0.9
+      absent: 0.1
+    H3:
+      present: 0.9
+      absent: 0.1
+- name: agent namespaces (otto-gateway, hermes-agent, voice-router, llm) admitted
+    by keda's ingress_from, the only fence in front of the memory door (of 4; it admits
+    backstage and mcp only)
+  observed:
+    absent: 4
+  likelihoods:
+    H1:
+      present: 0.1
+      absent: 0.9
+    H2:
+      present: 0.85
+      absent: 0.15
+    H3:
+      present: 0.9
+      absent: 0.1
+- name: memory POSTs from in-cluster callers since the pod started, by response (6
+    brief, 1 consolidate tagged provenance=mcp; the two 500s came from this session's
+    own 127.0.0.1 probes and are excluded)
+  observed:
+    ok: 7
+  likelihoods:
+    H1:
+      ok: 0.9
+      error: 0.1
+    H2:
+      ok: 0.15
+      error: 0.85
+    H3:
+      ok: 0.9
+      error: 0.1
+posteriors:
+  H1: 0.9999999981
+  H2: 0.0
+  H3: 1.9e-09
+winner: H1
+computed_at: '2026-10-20T02:21:29Z'
