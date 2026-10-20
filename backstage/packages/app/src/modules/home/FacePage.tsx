@@ -24,6 +24,7 @@ import FleetBackdrop from './FleetBackdrop';
 import { useResearch } from './useResearch';
 import { useEstateVoice } from './useEstateVoice';
 import { useVoiceRouter } from './useVoiceRouter';
+import { useFaceVoiceEngine } from './faceVoiceEngine';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
 import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
@@ -189,7 +190,10 @@ export function FaceAgentJobs({ loaded }: { loaded: LoadedJobs }) {
 export function FacePage() {
   const legacy = useEstateVoice();
   const router = useVoiceRouter();
-  const chosen = faceVoicePrefersLegacy() ? legacy : router;
+  // Production has no voice router behind /voice/*; a router that probes unreachable hands the
+  // face to the legacy engine (faceVoiceEngine.ts) instead of leaving a dead button.
+  const engine = useFaceVoiceEngine(faceVoicePrefersLegacy(), router);
+  const chosen = engine === 'legacy' ? legacy : router;
   const voice = {
     ...chosen,
     // Only the router hook streams partials; reading it off the union's common shape keeps the

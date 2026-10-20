@@ -147,4 +147,14 @@ describe('FacePage on the router voice path', () => {
     const router = routerHook.mock.results[0].value;
     expect(router.start).not.toHaveBeenCalled();
   });
+
+  it('falls back to the legacy hook when the router probes unreachable (production has none)', () => {
+    const start = jest.fn();
+    routerHook.mockReturnValue(routerIn({ checking: false, reachable: false }));
+    legacyHook.mockReturnValue({ ...legacyIdle(), start });
+    render(<FacePage />);
+    fireEvent.click(screen.getByTestId('face-mic'));
+    expect(start).toHaveBeenCalledTimes(1);
+    expect(routerHook.mock.results[0].value.start).not.toHaveBeenCalled();
+  });
 });
