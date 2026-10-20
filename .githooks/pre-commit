@@ -48,12 +48,22 @@ done <<<"$staged_all"
 staged_sh=$(printf '%s\n' "$staged_sh" | grep -v '^$' || true)
 staged_yaml=$(printf '%s\n' "$staged_all" | grep -E '\.(yaml|yml)$' || true)
 
-# 1. ruff format --check on staged .py
+# 1. ruff format on staged .py -- APPLIED, not just checked. A check that fails and prints the
+#    fix made every agent pay a failed commit and a retry for a change the hook already knew how
+#    to make. A file staged whole is formatted and re-staged, so the commit lands formatted. A
+#    file with unstaged edits too is left alone and refused as before: re-staging it would sweep
+#    those edits into the commit unseen. pre-push (bin/idp-ci) and CI still --check as backstop.
 if [ -n "$staged_py" ]; then
   if command -v python3 >/dev/null 2>&1 && python3 -m ruff --version >/dev/null 2>&1; then
-    echo "  ruff format --check: $(echo "$staged_py" | tr '\n' ' ')"
+    echo "  ruff format: $(echo "$staged_py" | tr '\n' ' ')"
+    partial=$(echo "$staged_py" | xargs git diff --name-only -- || true)
+    whole=$(printf '%s\n' "$staged_py" | grep -vxF -f <(printf '%s\n' "$partial") || true)
+    if [ -n "$whole" ]; then
+      echo "$whole" | xargs python3 -m ruff format --quiet
+      echo "$whole" | xargs git add --
+    fi
     echo "$staged_py" | xargs python3 -m ruff format --check --quiet || {
-      echo "pre-commit: ruff format failed. fix: python3 -m ruff format $staged_py" >&2
+      echo "pre-commit: ruff format failed on a partly staged file. fix: python3 -m ruff format $partial" >&2
       exit 1
     }
   else
