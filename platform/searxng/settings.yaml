@@ -52,16 +52,20 @@ data:
       pool_connections: 100
       pool_maxsize: 20
 
-    # Keyless engines. bing and wikipedia are the two that answered from a datacenter; the other
-    # three stay declared because they cost nothing when they fail fast and they work from a laptop.
+    # Keyless engines, re-measured 2026-10-20 from inside this pod on the research engine's own
+    # sub-queries (idp#6632; estate memory measurement.platform-searxng.9c627d86fdcc240d):
+    #
+    #   google cse   9/9 queries, 20 relevant results each in 0.3-0.6s (uber, atlassian, trunk.io,
+    #                datadog, nx.dev, arxiv) -- enabled by SearXNG's defaults, nothing to declare
+    #   bing         answers, but matches on the first word or two: "flaky ..." -> dictionaries,
+    #                "merge queue ..." -> PDF-merge tools, "monorepo flaky tests" -> Outlook forum
+    #   brave        "Suspended: too many requests"; duckduckgo, startpage: CAPTCHA; mojeek: 0
+    #
+    # bing's junk was what the engine embedded and wrote claims from, so it is switched off: an
+    # empty answer makes the researcher say "no context", a dictionary page makes it say something
+    # false. duckduckgo, brave and mojeek are left at SearXNG's default rather than forced on.
     engines:
-      - name: duckduckgo
-        disabled: false
       - name: bing
-        disabled: false
-      - name: brave
-        disabled: false
+        disabled: true
       - name: wikipedia
-        disabled: false
-      - name: mojeek
         disabled: false
