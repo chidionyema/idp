@@ -16,7 +16,7 @@ export default function DemoPage() {
       <Reveal><div style={{ marginBottom: "48px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>LLM Playground</span>
         <h1>LLM Routing Playground</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Compare responses, latency, and token costs across four models. Running in demo mode — set LITELLM_PROXY_URL to connect to a live model fleet.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Compare responses, latency, and token costs across four models. Running in demo mode: set LITELLM_PROXY_URL to connect to a live model fleet.</p>
       </div></Reveal>
       <div style={{ display: "grid", gap: "48px", gridTemplateColumns: "3fr 2fr", alignItems: "start" }}>
         <Reveal>
