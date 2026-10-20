@@ -242,3 +242,17 @@ def test_the_cronjob_is_scheduled_bounded_and_cannot_receive_service_traffic():
     assert {"name": "DATABASE_URL_FILE", "value": "/var/run/memory/DATABASE_URL"} in c[
         "env"
     ]
+
+
+def test_every_table_is_granted_to_the_role_requests_run_as():
+    """Every request drops to memory_app (schema.sql section 9), so a table it is not granted is a
+    500 on whichever route touches it -- measured 2026-10-20: memory_access shipped without one
+    and every brief that searched by meaning failed with "permission denied"."""
+    import re
+
+    sql = (HERE / "schema.sql").read_text()
+    tables = re.findall(r"CREATE TABLE IF NOT EXISTS (\w+)", sql)
+    granted = set()
+    for m in re.finditer(r"GRANT [^;]*? ON (?:TABLE )?([\w, ]+?) TO memory_app", sql):
+        granted |= {t.strip() for t in m.group(1).split(",")}
+    assert tables and not [t for t in tables if t not in granted]
