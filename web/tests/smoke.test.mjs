@@ -188,3 +188,43 @@ test("the endpoint rate-limits a caller that keeps posting", async () => {
   }
   assert.ok(saw429, "expected the limiter to engage within 8 attempts");
 });
+
+test("every internal link goes somewhere, and every anchor exists", async () => {
+  // 2026-10-20. A reviewer clicked "Details ->" on all three tools and reached nothing: the cards
+  // all linked to /tooling, which has no per-tool section, and the research page derived anchors
+  // from a title ("#agentic-routing-for-enterprise") that no element carried. Both return 200, so
+  // a status check alone would have called them fine. This walks every internal href on every
+  // page, then every fragment, and requires an element with that id to exist on the target.
+  //
+  // Only internal links: a route that fails because github.com is slow is not this site's bug,
+  // and a gate that goes red for the internet gets switched off.
+  const pages = ["/", ...ROUTES.filter((r) => !/\.(xml|txt)$/.test(r))];
+  const seen = new Map();
+  const broken = [];
+
+  for (const page of pages) {
+    const res = await fetch(`${BASE}${page}`);
+    const html = await res.text();
+    for (const match of html.matchAll(/href="(\/[^"]*)"/g)) {
+      const href = match[1];
+      if (href.startsWith("/_next/")) continue;
+      const [path, fragment] = href.split("#");
+      const target = path || page;
+      const key = `${target}#${fragment ?? ""}`;
+      if (!seen.has(key)) {
+        const targetRes = await fetch(`${BASE}${target}`);
+        const body = targetRes.ok ? await targetRes.text() : "";
+        seen.set(key, { status: targetRes.status, body });
+      }
+      const { status, body } = seen.get(key);
+      if (status !== 200) broken.push(`${page} -> ${target} answered ${status}`);
+      else if (fragment && !body.includes(`id="${fragment}"`)) broken.push(`${page} -> ${key} (nothing carries that id)`);
+    }
+  }
+
+  assert.deepEqual(broken, [], `broken internal links:\n${broken.join("\n")}`);
+  // 18 distinct targets on this site today: the ten routes, the three tool anchors, and a few
+  // fragments. The bound is a floor, not a target -- it fails if the crawl stopped finding links
+  // at all, which is the failure mode of a crawler that silently matches nothing.
+  assert.ok(seen.size >= 15, `expected the pages to link to each other, found ${seen.size} distinct links`);
+});

@@ -14,12 +14,17 @@ export const site = {
       title: "Agentic Routing for Enterprise",
       year: "2025",
       kind: "Framework",
+      // href is the post that actually covers this work. A card without one gets no Read button:
+      // a CTA that lands on a page where the piece does not exist is worse than no CTA (founder,
+      // 2026-10-20, after a reviewer clicked all three and reached nothing).
+      href: "/writing/agentic-routing-for-enterprise",
       blurb: "Your traffic isn't one shape. Most requests are classification or extraction that a cheap model handles at a fraction of the price. Route on that difference and spend drops by 60–80% with no movement in your quality metric. Here's the architecture, including the two failure modes we hit first.",
     },
     {
       title: "SPIFFE/SPIRE in AI Workload Identity",
       year: "2025",
       kind: "Security",
+      href: "/writing/spiffe-for-ai-workloads",
       blurb: "An inference server might live ninety seconds before it's replaced. You can't hand it a certificate. SPIFFE/SPIRE gives it a cryptographic identity it can prove in that window, and it works with vLLM and LiteLLM without touching your application code.",
     },
     {

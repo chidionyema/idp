@@ -23,9 +23,11 @@ export default function ResearchPage() {
               </div>
               <h3 style={{ fontSize: "1.3rem" }}>{r.title}</h3>
               <p style={{ fontSize: "14px", color: "var(--ink-3)", lineHeight: 1.75, flex: 1 }}>{r.blurb}</p>
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                <Link href={`/writing#${r.title.toLowerCase().replace(/\s+/g, "-")}`} className="btn-secondary" style={{ padding: "8px 16px", fontSize: "11px" }}>Read →</Link>
-              </div>
+              {r.href && (
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                  <Link href={r.href} className="btn-secondary" style={{ padding: "8px 16px", fontSize: "11px" }}>Read →</Link>
+                </div>
+              )}
             </div>
           </Reveal>
         ))}
