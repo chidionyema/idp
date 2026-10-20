@@ -9,6 +9,7 @@
 
 import { useEffect, useState } from 'react';
 import { fetchApiRef, discoveryApiRef, useApi } from '@backstage/core-plugin-api';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 const POLL_MS = 10000;
 
@@ -124,7 +125,28 @@ function prChips(prs: readonly (string | number)[] | null | undefined): string[]
   });
 }
 
-export default function Delivery(): JSX.Element | null {
+/** The rail's view: the converger's own red/amber alerts, and an unreachable plane. */
+export function deliverySignal(data: DeliveryPayload | null, unreachable: boolean): Signal {
+  if (unreachable) return unreadable('laptop');
+  const alerts = data?.alerts ?? [];
+  const red = alerts.find(a => a.level === 'red');
+  const amber = alerts.find(a => a.level === 'amber');
+  const a = red || amber;
+  if (!a) return clear('laptop');
+  const n = alerts.length;
+  return {
+    source: 'laptop',
+    tier: red ? 'warning' : 'caution',
+    summary: `laptop · ${a.text || a.code}${n > 1 ? ` (+${n - 1})` : ''}`,
+  };
+}
+
+export default function Delivery({
+  onSignal,
+}: {
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
+} = {}): JSX.Element | null {
   const fetchApi = useApi(fetchApiRef);
   const discovery = useApi(discoveryApiRef);
 
@@ -202,6 +224,8 @@ export default function Delivery(): JSX.Element | null {
   jobs.forEach(j => {
     healthCounts[j.health] += 1;
   });
+
+  useSignal(onSignal, deliverySignal(data, unreachable));
 
   return (
     <div data-testid="delivery" className="pointer-events-auto font-mono text-[12px]">

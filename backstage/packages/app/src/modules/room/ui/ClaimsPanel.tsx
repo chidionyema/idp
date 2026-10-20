@@ -15,6 +15,7 @@
  * it cannot see.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -76,6 +77,17 @@ export function claimLabel(data: Claims | null, err: string | null): string {
   return `claims · ${live} live${stalePart}`;
 }
 
+/** The rail's view: a stale heartbeat is work someone abandoned mid-claim. */
+export function claimsSignal(data: Claims | null, err: string | null): Signal {
+  if (err) return unreadable('claims');
+  if (!data) return clear('claims');
+  if (!data.available) return unreadable('claims', 'unreadable');
+  const stale = data.counts?.stale ?? 0;
+  return stale
+    ? { source: 'claims', tier: 'caution', summary: `claims · ${stale} stale heartbeat${stale === 1 ? '' : 's'}` }
+    : clear('claims');
+}
+
 export function claimToneFor(data: Claims | null, err: string | null): string {
   if (err || (data && !data.available)) return 'text-rose-300 border-rose-400/40';
   if (data?.counts?.stale) return 'text-amber-200 border-amber-400/40';
@@ -126,9 +138,12 @@ function BoardBody({ data, err }: { data: Claims | null; err: string | null }) {
 
 export default function ClaimsPanel({
   call,
+  onSignal,
   pollMs = 30_000,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
 }) {
   const [open, setOpen] = useState(false);
@@ -162,6 +177,8 @@ export default function ClaimsPanel({
   }, [pollMs, refresh]);
 
   const label = claimLabel(data, err);
+
+  useSignal(onSignal, claimsSignal(data, err));
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">

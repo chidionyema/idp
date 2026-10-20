@@ -8,6 +8,7 @@
  * "no rows" would claim no key is expected when the truth is that nobody could look.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -66,12 +67,27 @@ export function summary(b: Board | null, err: string | null): string {
   return `keys · ${bad} of ${total} not syncing${b.alerts?.length ? ' · router' : ''}`;
 }
 
+/** The rail's view: a key that is not in Bitwarden stops a service; a failing bridge will. */
+export function keysSignal(b: Board | null, err: string | null): Signal {
+  if (err) return unreadable('keys');
+  if (!b) return clear('keys');
+  if (!b.available) return unreadable('keys', 'unreadable');
+  const c = b.counts || {};
+  const hard = (c.missing || 0) + (c.stopped || 0);
+  const soft = (c.failing || 0) + (c.unreachable || 0);
+  if (!hard && !soft) return clear('keys');
+  return { source: 'keys', tier: hard ? 'warning' : 'caution', summary: summary(b, err) };
+}
+
 export default function KeySync({
   call,
+  onSignal,
   pollMs = 30_000,
   now = () => Date.now() / 1000,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   now?: () => number;
 }) {
@@ -127,6 +143,8 @@ export default function KeySync({
       : bad
         ? 'text-amber-200 border-amber-400/40'
         : 'text-white/80 border-white/15';
+
+  useSignal(onSignal, keysSignal(board, err));
 
   return (
     // See ConciergeTasks: the right rail is one 40px-pitch coordinate system (96/136/176/216).
