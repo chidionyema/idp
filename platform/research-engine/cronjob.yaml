@@ -20,6 +20,10 @@ metadata:
   name: research-engine
   namespace: research
   labels: { app.kubernetes.io/name: research-engine, app.kubernetes.io/part-of: idp }
+  # The row substitutes the App ids into github-app.yaml; this script's `${issue}`, `${PG}` and
+  # the rest are the shell's, and strict envsubst would fail the whole row on them.
+  annotations:
+    kustomize.toolkit.fluxcd.io/substitute: disabled
 spec:
   # A CronJob without `schedule` is schema-invalid (batch/v1 requires it), and Kubectl's
   # `--from=cronjob` needs a valid CronJob to clone. Dagster owns the actual cadence; this

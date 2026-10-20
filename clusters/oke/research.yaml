@@ -40,6 +40,8 @@ spec:
     - name: llm
     - name: searxng
     - name: estate-db
+    # The App ids the GithubAccessToken generator needs come from the github-app Secret below.
+    - name: github-app-creds
   sourceRef:
     kind: GitRepository
     name: flux-system
@@ -47,6 +49,13 @@ spec:
   prune: false
   wait: false
   timeout: 2m
+  # platform/research-engine/github-app.yaml: the objective adapter's token is minted in-cluster
+  # from these ids (idp#6603), same road as the mcp row. The CronJob and the adapter ConfigMap
+  # opt out per object, since their `${...}` belong to the shell and to Python.
+  postBuild:
+    substituteFrom:
+      - kind: Secret
+        name: github-app
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization

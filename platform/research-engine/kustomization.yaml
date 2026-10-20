@@ -17,3 +17,8 @@ configMapGenerator:
   - name: research-objective-adapter
     files:
       - objective-adapter.py
+    # The row substitutes the App ids into github-app.yaml; the adapter's f-strings carry `${`
+    # (a dollar amount), which strict envsubst must not touch.
+    options:
+      annotations:
+        kustomize.toolkit.fluxcd.io/substitute: disabled

@@ -15,63 +15,35 @@ with two task-list boxes, Continue and Park. The next pass happens only when Con
 Park stops it, and an unticked report waits. A pass also stops once the passes already reported
 have spent the objective's USD cap, ticked or not.
 
-GitHub is reached as the estate's App (vault entry `github-app`, the same entry nine other
-namespaces read), with an installation token minted here and never written to disk.
+GitHub is reached as the estate's App: the installation token is minted in-cluster by the
+GithubAccessToken generator (github-app.yaml) and mounted here as a file, refreshed every 10m.
 """
 
 from __future__ import annotations
 
-import base64
 import json
 import os
 import re
 import sys
-import time
 import urllib.request
 
 API = "https://api.github.com"
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
 REPO = os.environ.get("OBJECTIVE_REPO", f"{OWNER}/idp")
-APP_DIR = os.environ.get("GITHUB_APP_DIR", "/secrets/github-app")
+TOKEN_FILE = os.environ.get("GITHUB_TOKEN_FILE", "/secrets/github-app/token")
 LABEL = "objective"
 REPORT = re.compile(r"<!-- research-report request=(\S+) cost=([0-9.]+) -->")
 CONTINUE = re.compile(r"^- \[[xX]\] Continue researching", re.M)
 PARK = re.compile(r"^- \[[xX]\] Park this research", re.M)
 
 
-def _b64url(b: bytes) -> str:
-    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
-
-
-def app_jwt(app_id: str, pem: bytes, now: int | None = None) -> str:
-    """RS256 JWT for the App, signed with `cryptography` (already in the engine image)."""
-    from cryptography.hazmat.primitives import hashes, serialization
-    from cryptography.hazmat.primitives.asymmetric import padding
-
-    now = int(now if now is not None else time.time())
-    head = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
-    body = _b64url(
-        json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode()
-    )
-    key = serialization.load_pem_private_key(pem, password=None)
-    sig = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
-    return f"{head}.{body}.{_b64url(sig)}"
-
-
-def _read(name: str) -> bytes:
-    with open(os.path.join(APP_DIR, name), "rb") as f:
-        return f.read().strip()
-
-
-def _call(
-    method: str, path: str, token: str, scheme: str = "token", data: dict | None = None
-):
+def _call(method: str, path: str, token: str, data: dict | None = None):
     req = urllib.request.Request(
         API + path,
         method=method,
         data=json.dumps(data).encode() if data is not None else None,
         headers={
-            "Authorization": f"{scheme} {token}",
+            "Authorization": f"token {token}",
             "Accept": "application/vnd.github+json",
             "X-GitHub-Api-Version": "2022-11-28",
             "User-Agent": "research-engine-adapter",
@@ -82,11 +54,8 @@ def _call(
 
 
 def installation_token() -> str:
-    jwt = app_jwt(_read("app_id").decode(), _read("private_key"))
-    inst = _read("installation_id").decode()
-    return _call(
-        "POST", f"/app/installations/{inst}/access_tokens", jwt, scheme="Bearer"
-    )["token"]
+    with open(TOKEN_FILE, encoding="utf-8") as f:
+        return f.read().strip()
 
 
 def rank(body: str) -> float:
