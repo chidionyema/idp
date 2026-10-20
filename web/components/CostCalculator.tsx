@@ -62,7 +62,7 @@ export function CostCalculator() {
               const c = costFor(m, inputTokens, outputTokens);
               const sel = selectedModel === m.key;
               return (
-                <button key={m.key} onClick={() => setSelectedModel(m.key)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", border: `1px solid ${sel ? "var(--accent)" : "var(--rule)"}`, background: sel ? "rgba(26,86,219,0.05)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit", fontSize: "13px", color: sel ? "var(--ink)" : "var(--ink-2)", fontWeight: sel ? 500 : 400, transition: "all 120ms ease" }}>
+                <button key={m.key} onClick={() => setSelectedModel(m.key)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px", border: `1px solid ${sel ? "var(--accent)" : "var(--rule)"}`, background: sel ? "rgba(14,110,98,0.06)" : "transparent", cursor: "pointer", textAlign: "left", fontFamily: "inherit", fontSize: "13px", color: sel ? "var(--ink)" : "var(--ink-2)", fontWeight: sel ? 500 : 400, transition: "all 120ms ease" }}>
                   <span style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: m.color, flexShrink: 0 }} />
                     <span style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)" }}>{m.provider}</span>

@@ -29,7 +29,7 @@ export default function HomePage() {
         </div>
       </section>
       {/* Stats */}
-      <section style={{ background: "var(--ink)", padding: "48px 0" }}>
+      <section style={{ background: "var(--ink)", padding: "28px 0" }}>
         <div className="container" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "32px" }}>
           {[
             { value: "12", label: "deployments" },
@@ -94,11 +94,11 @@ export default function HomePage() {
               <Reveal key={t.name}>
                 <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "20px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-                    <code style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 500, color: "var(--accent)" }}>{t.name}</code>
+                    <code style={{ fontFamily: "var(--mono)", fontSize: "14px", fontWeight: 500, color: "var(--ink)" }}>{t.name}</code>
                     <span className={`tag ${t.status === "stable" ? "tag-ok" : t.status === "beta" ? "tag-beta" : ""}`}>{t.status}</span>
                   </div>
                   <p style={{ fontSize: "14px", color: "var(--ink-3)", flex: 1, minWidth: "200px" }}>{t.desc}</p>
-                  <Link href={`/tooling#${t.name}`} style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--accent)", textDecoration: "none" }}>Details →</Link>
+                  <Link href={`/tooling#${t.name}`} className="text-link">Details →</Link>
                 </div>
               </Reveal>
             ))}
