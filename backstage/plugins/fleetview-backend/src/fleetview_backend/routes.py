@@ -347,6 +347,17 @@ def greenlane_envelope() -> tuple[dict[str, Any], int]:
     return greenlane.greenlane_status(), 200
 
 
+# ── the Greenlane as it moves (greenlane_live.py): batch checks, lane ages, outcomes, timings ──
+GREENLANE_LIVE_PATH = "/greenlane/live"
+
+
+def greenlane_live_envelope() -> tuple[dict[str, Any], int]:
+    # One state read and one check-runs read, cached 10s; unreadable is unavailable with a reason.
+    from fleetview_backend import greenlane_live
+
+    return greenlane_live.live(), 200
+
+
 def claims_envelope() -> tuple[dict[str, Any], int]:
     # The live agent claims as measured now -- who, what, which paths, and heartbeat age
     # (AGENTS.md section 5). Unreadable is `available: false` with its reason; an empty list

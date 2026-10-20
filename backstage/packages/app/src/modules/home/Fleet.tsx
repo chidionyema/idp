@@ -35,6 +35,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import { Chip, EstatePage, Fold, Section, Sheet, Summary } from '../shell';
 import { EfficiencyPanel } from './EfficiencyPanel';
+import { GreenlanePanel } from './GreenlanePanel';
 import { EstateStrip } from './EstateStrip';
 import { GatesPanel } from './GatesPanel';
 import { openSse, type SseHandle } from './sse';
@@ -474,6 +475,9 @@ export function Fleet() {
       </Section>
       <Section title="Estate memory">
         <EstateMemory />
+      </Section>
+      <Section title="Greenlane (live)">
+        <GreenlanePanel />
       </Section>
       <Section title="Token efficiency (live)">
         <EfficiencyPanel />

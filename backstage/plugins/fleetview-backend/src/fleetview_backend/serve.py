@@ -426,6 +426,13 @@ def build_app() -> FastAPI:
         body, status = routes.greenlane_envelope()
         return JSONResponse(content=body, status_code=status)
 
+    @app.get(routes.GREENLANE_LIVE_PATH)
+    async def greenlane_live():
+        # GitHub reads, up to a 10s timeout each: off the event loop, like /agent-jobs.
+        loop = asyncio.get_running_loop()
+        body, status = await loop.run_in_executor(None, routes.greenlane_live_envelope)
+        return JSONResponse(content=body, status_code=status)
+
     @app.get(routes.CLAIMS_PATH)
     def claims():
         # The live agent claims (routes.claims_envelope, fleetview_backend/claims.py): who holds

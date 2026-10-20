@@ -17,7 +17,7 @@
  * over it as a glass pill near the bottom, so the model is framed once by the camera, never by the
  * button.
  */
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import EstateFace from './EstateFace';
 import FleetBackdrop from './FleetBackdrop';
@@ -28,6 +28,11 @@ import { useFaceVoiceEngine } from './faceVoiceEngine';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
 import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
+import { useGreenlaneLive } from './useGreenlaneLive';
+
+// How long a Greenlane caption stays over the face. The face is not a dashboard: news appears,
+// is read (or heard), and goes; the standing view lives on /fleet.
+export const GREENLANE_NEWS_MS = 12_000;
 
 // THE FACE'S VOICE PATH, BEHIND A FLAG (2026-10-16). The face now speaks through useVoiceRouter
 // -- the streaming socket (partials while you speak, first audio median 2.26s against the old
@@ -187,6 +192,33 @@ export function FaceAgentJobs({ loaded }: { loaded: LoadedJobs }) {
   );
 }
 
+// THE GREENLANE'S NEWS (voice: "how's the Greenlane?" answers on demand). A lane that landed or
+// went red, one muted line under the agent jobs, gone after GREENLANE_NEWS_MS.
+export function FaceGreenlaneNews({ text }: { text: string | null }) {
+  if (!text) return null;
+  return (
+    <div
+      data-testid="face-greenlane-news"
+      style={{
+        position: 'absolute',
+        top: 'calc(env(safe-area-inset-top, 0px) + 116px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        width: 'min(680px, calc(100% - 32px))',
+        ...clamp(2),
+        textAlign: 'center',
+        fontSize: 12,
+        lineHeight: 1.4,
+        color: '#7fd1b9',
+        textShadow: '0 1px 8px rgba(11,14,20,0.8)',
+        pointerEvents: 'none',
+      }}
+    >
+      {text}
+    </div>
+  );
+}
+
 export function FacePage() {
   const legacy = useEstateVoice();
   const router = useVoiceRouter();
@@ -206,6 +238,17 @@ export function FacePage() {
   const milestones = useMilestones(voice.speak);
   // The agents launched by voice, followed to their end and announced through the same mouth.
   const agentJobs = useAgentJobs(voice.speak);
+  // The Greenlane's changes: always captioned, spoken only under the same milestone switch -- the
+  // face does not start narrating merges unasked.
+  const [laneNews, setLaneNews] = useState<string | null>(null);
+  useGreenlaneLive(milestones.prefs.enabled ? voice.speak : undefined, lines =>
+    setLaneNews(lines.join(' ')),
+  );
+  useEffect(() => {
+    if (!laneNews) return undefined;
+    const t = setTimeout(() => setLaneNews(null), GREENLANE_NEWS_MS);
+    return () => clearTimeout(t);
+  }, [laneNews]);
   // A FAILED MICROPHONE MUST BE RE-ASKABLE -- and the tap must not depend on a state comparison
   // that has to be kept in step with the label below.
   //
@@ -249,6 +292,7 @@ export function FacePage() {
       <FaceFindingsStrip />
       <FaceEstateLine />
       <FaceAgentJobs loaded={agentJobs} />
+      <FaceGreenlaneNews text={laneNews} />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />

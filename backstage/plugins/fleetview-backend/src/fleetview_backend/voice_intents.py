@@ -67,6 +67,30 @@ _CONCIERGE_PHRASE = re.compile(
 )
 
 
+# "How's the Greenlane?" / "what's landing" -> greenlane_live.live()'s one spoken line. Read-only,
+# so it answers on the first utterance; unreadable is said as unreadable, never as quiet.
+GREENLANE_LIVE = "greenlane-live"
+_GREENLANE_PHRASE = re.compile(
+    r"\b(?:green\s*lane|what(?:'s|\s+is)\s+landing|merge\s+queue)\b",
+    re.I,
+)
+
+
+def _greenlane_live(session_id: str, text: str) -> dict:
+    from fleetview_backend import greenlane_live
+
+    view = greenlane_live.live()
+    if not view.get("available"):
+        _audit(session_id, text, GREENLANE_LIVE, "error", None, 0)
+        return result(
+            GREENLANE_LIVE,
+            "error",
+            f"I can't read the Greenlane: {view.get('error', 'unknown')}.",
+        )
+    _audit(session_id, text, GREENLANE_LIVE, "ok", None, 0)
+    return result(GREENLANE_LIVE, "ok", view["sentence"])
+
+
 def concierge_task(text: str) -> str | None:
     """The task in a concierge utterance ("" when the word came alone), None when it is not one."""
     m = _CONCIERGE_PHRASE.match(text or "")
@@ -458,6 +482,8 @@ def handle(text: str, session_id: str) -> dict | None:
     task = concierge_task(text)
     if task is not None:
         return _concierge(session_id, text, task, now)
+    if _GREENLANE_PHRASE.search(text or ""):
+        return _greenlane_live(session_id, text)
 
     name = match(text, load_catalog())
     if name is None:
