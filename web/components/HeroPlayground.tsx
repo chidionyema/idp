@@ -59,7 +59,7 @@ export function HeroPlayground() {
                 style={{
                   display: "flex", justifyContent: "space-between", alignItems: "center",
                   padding: "10px 12px", border: `1px solid ${selected === m.key ? "var(--accent)" : "var(--rule)"}`,
-                  background: selected === m.key ? "rgba(26,86,219,0.05)" : "transparent",
+                  background: selected === m.key ? "rgba(14,110,98,0.06)" : "transparent",
                   color: selected === m.key ? "var(--accent)" : "var(--ink-3)", fontWeight: selected === m.key ? 500 : 400,
                   cursor: "pointer", fontSize: "12px", fontFamily: "var(--mono)", textAlign: "left",
                   transition: "all 120ms ease",

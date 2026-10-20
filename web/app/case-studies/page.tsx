@@ -28,7 +28,7 @@ export default function CaseStudiesPage() {
                   {cs.metrics.map((m) => (
                     <div key={m.label} style={{ border: "1px solid var(--rule)", background: "var(--panel)", padding: "20px" }}>
                       <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: "8px" }}>{m.label}</p>
-                      <p style={{ fontFamily: "var(--mono)", fontSize: "28px", fontWeight: 600, color: m.value === "✓" ? "var(--ok)" : "var(--accent)", lineHeight: 1 }}>{m.value}</p>
+                      <p style={{ fontFamily: "var(--mono)", fontSize: "28px", fontWeight: 600, color: m.value === "✓" ? "var(--ok-text)" : "var(--accent)", lineHeight: 1 }}>{m.value}</p>
                       <p style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--ink-3)", marginTop: "6px" }}>{m.detail}</p>
                     </div>
                   ))}

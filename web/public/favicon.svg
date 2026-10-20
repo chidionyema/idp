@@ -6,5 +6,5 @@
   <rect width="32" height="32" rx="6" fill="#0D0D0A"/>
   <circle cx="16" cy="16" r="11.47" stroke="#FAFAF8" stroke-width="2"/>
   <ellipse cx="16" cy="16" rx="5.07" ry="11.47" stroke="#FAFAF8" stroke-width="2"/>
-  <circle cx="16" cy="4.53" r="2.27" fill="#7FA6F8"/>
+  <circle cx="16" cy="4.53" r="2.27" fill="#6FD3C2"/>
 </svg>
