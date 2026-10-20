@@ -11,7 +11,7 @@ export default function ResearchPage() {
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Research</span>
         <h1>What we’ve actually shipped</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Frameworks, architectures, and operational playbooks — tested against real production traffic.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Frameworks, architectures and operational playbooks, tested against production traffic.</p>
       </div></Reveal>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", marginBottom: "80px" }}>
         {site.research.map((r) => (

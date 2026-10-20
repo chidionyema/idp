@@ -10,7 +10,7 @@ export default function CaseStudiesPage() {
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Case Studies</span>
         <h1>What we’ve shipped</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Three engagements. Names anonymized; the numbers are real.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>The problem, what we changed, what it cost, and what broke on the way.</p>
       </div></Reveal>
       <div style={{ display: "flex", flexDirection: "column", gap: "48px" }}>
         {caseStudies.map((cs) => (

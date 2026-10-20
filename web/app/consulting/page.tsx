@@ -10,7 +10,7 @@ export default function ConsultingPage() {
       <Reveal><div style={{ marginBottom: "64px" }}>
         <span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Consulting</span>
         <h1>What we do</h1>
-        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>Three practice areas. A team of two or three who’ve done this before, working alongside your engineers.</p>
+        <p style={{ marginTop: "16px", color: "var(--ink-3)", fontSize: "18px", maxWidth: "60ch" }}>A team of two or three who’ve done this before, working alongside your engineers.</p>
       </div></Reveal>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px", marginBottom: "64px" }}>
         {site.consulting.map((c, i) => (

@@ -47,7 +47,7 @@ export default function HomePage() {
       {/* Research */}
       <section className="section">
         <div className="container">
-          <Reveal><div style={{ marginBottom: "48px" }}><h2>Research</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Written from engagements, not from conference talks.</p></div></Reveal>
+          <Reveal><div style={{ marginBottom: "48px" }}><h2>Research</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Written from our engagements.</p></div></Reveal>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: "24px" }}>
             {site.research.map((r) => (
               <Reveal key={r.title}>
