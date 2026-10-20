@@ -18,6 +18,7 @@ have spent the objective's USD cap, ticked or not.
 GitHub is reached as the estate's App (vault entry `github-app`, the same entry nine other
 namespaces read), with an installation token minted here and never written to disk.
 """
+
 from __future__ import annotations
 
 import base64
@@ -49,7 +50,9 @@ def app_jwt(app_id: str, pem: bytes, now: int | None = None) -> str:
 
     now = int(now if now is not None else time.time())
     head = _b64url(json.dumps({"alg": "RS256", "typ": "JWT"}).encode())
-    body = _b64url(json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode())
+    body = _b64url(
+        json.dumps({"iat": now - 60, "exp": now + 540, "iss": app_id}).encode()
+    )
     key = serialization.load_pem_private_key(pem, password=None)
     sig = key.sign(f"{head}.{body}".encode(), padding.PKCS1v15(), hashes.SHA256())
     return f"{head}.{body}.{_b64url(sig)}"
@@ -60,11 +63,20 @@ def _read(name: str) -> bytes:
         return f.read().strip()
 
 
-def _call(method: str, path: str, token: str, scheme: str = "token", data: dict | None = None):
+def _call(
+    method: str, path: str, token: str, scheme: str = "token", data: dict | None = None
+):
     req = urllib.request.Request(
-        API + path, method=method, data=json.dumps(data).encode() if data is not None else None,
-        headers={"Authorization": f"{scheme} {token}", "Accept": "application/vnd.github+json",
-                 "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "research-engine-adapter"})
+        API + path,
+        method=method,
+        data=json.dumps(data).encode() if data is not None else None,
+        headers={
+            "Authorization": f"{scheme} {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "research-engine-adapter",
+        },
+    )
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 
@@ -72,7 +84,9 @@ def _call(method: str, path: str, token: str, scheme: str = "token", data: dict 
 def installation_token() -> str:
     jwt = app_jwt(_read("app_id").decode(), _read("private_key"))
     inst = _read("installation_id").decode()
-    return _call("POST", f"/app/installations/{inst}/access_tokens", jwt, scheme="Bearer")["token"]
+    return _call(
+        "POST", f"/app/installations/{inst}/access_tokens", jwt, scheme="Bearer"
+    )["token"]
 
 
 def rank(body: str) -> float:
@@ -110,14 +124,31 @@ def decision(issue: dict, comments: list[dict]) -> tuple[str, float]:
 def choose(candidates: list[tuple[dict, list[dict]]]) -> dict | None:
     """The highest-ranked objective whose state lets it run now."""
     ready = [i for i, cs in candidates if decision(i, cs)[0] in ("new", "continue")]
-    return max(ready, key=lambda i: (rank(i.get("body") or ""), -int(i["number"])), default=None)
+    return max(
+        ready,
+        key=lambda i: (rank(i.get("body") or ""), -int(i["number"])),
+        default=None,
+    )
 
 
 def pick(token: str) -> dict | None:
-    issues = _call("GET", f"/repos/{REPO}/issues?labels={LABEL}&state=open&per_page=100", token)
+    issues = _call(
+        "GET", f"/repos/{REPO}/issues?labels={LABEL}&state=open&per_page=100", token
+    )
     issues = [i for i in issues if "pull_request" not in i]
-    return choose([(i, _call("GET", f"/repos/{REPO}/issues/{i['number']}/comments?per_page=100", token))
-                   for i in issues])
+    return choose(
+        [
+            (
+                i,
+                _call(
+                    "GET",
+                    f"/repos/{REPO}/issues/{i['number']}/comments?per_page=100",
+                    token,
+                ),
+            )
+            for i in issues
+        ]
+    )
 
 
 def claims_for(dsn: str, request_id: str) -> tuple[list[dict], dict[str, int]]:
@@ -128,30 +159,48 @@ def claims_for(dsn: str, request_id: str) -> tuple[list[dict], dict[str, int]]:
         cur.execute(
             "SELECT q.text, c.statement, c.confidence, c.sources, c.status, c.rejection_reason "
             "FROM claims c JOIN questions q ON q.id = c.question_id WHERE q.request_id = %s "
-            "ORDER BY q.id, c.created_at", (request_id,))
+            "ORDER BY q.id, c.created_at",
+            (request_id,),
+        )
         rows = cur.fetchall()
     admitted, rejected = [], {}
     for qtext, stmt, conf, sources, status, reason in rows:
         if status == "admitted":
             src = sources if isinstance(sources, list) else json.loads(sources or "[]")
-            admitted.append({"question": qtext, "statement": stmt, "confidence": conf,
-                             "url": (src[0] or {}).get("url") if src else None})
+            admitted.append(
+                {
+                    "question": qtext,
+                    "statement": stmt,
+                    "confidence": conf,
+                    "url": (src[0] or {}).get("url") if src else None,
+                }
+            )
         else:
             rejected[reason or "unknown"] = rejected.get(reason or "unknown", 0) + 1
     return admitted, rejected
 
 
-def report_body(run: dict, admitted: list[dict], rejected: dict[str, int], spent_before: float,
-                cap: float) -> str:
+def report_body(
+    run: dict,
+    admitted: list[dict],
+    rejected: dict[str, int],
+    spent_before: float,
+    cap: float,
+) -> str:
     delivery = run.get("delivery") or {}
     cost = float((run.get("worker") or {}).get("cost_usd") or 0.0)
-    lines = [f"<!-- research-report request={run.get('request_id')} cost={cost:.4f} -->",
-             f"### Research report: {len(admitted)} admitted claim(s)",
-             f"Lane `objective`, request `{run.get('request_id')}`, status `{delivery.get('status')}`, "
-             f"cost ${cost:.2f} (spent ${spent_before + cost:.2f} of the ${cap:g} cap).", ""]
+    lines = [
+        f"<!-- research-report request={run.get('request_id')} cost={cost:.4f} -->",
+        f"### Research report: {len(admitted)} admitted claim(s)",
+        f"Lane `objective`, request `{run.get('request_id')}`, status `{delivery.get('status')}`, "
+        f"cost ${cost:.2f} (spent ${spent_before + cost:.2f} of the ${cap:g} cap).",
+        "",
+    ]
     if admitted:
-        lines.append("Each claim cites a snapshotted source and was checked by a model from a "
-                     "different provider than the one that wrote it.\n")
+        lines.append(
+            "Each claim cites a snapshotted source and was checked by a model from a "
+            "different provider than the one that wrote it.\n"
+        )
         q = None
         for c in admitted:
             if c["question"] != q:
@@ -161,23 +210,39 @@ def report_body(run: dict, admitted: list[dict], rejected: dict[str, int], spent
             lines.append(f"- {c['statement']} _{c['confidence']}_{src}")
         lines.append("")
     else:
-        lines.append("No claim survived citation and cross-provider verification on this pass.\n")
+        lines.append(
+            "No claim survived citation and cross-provider verification on this pass.\n"
+        )
     if rejected:
-        lines.append("Rejected: " + ", ".join(f"{n} {r}" for r, n in sorted(rejected.items())) + ".")
+        lines.append(
+            "Rejected: "
+            + ", ".join(f"{n} {r}" for r, n in sorted(rejected.items()))
+            + "."
+        )
     if delivery.get("unanswered"):
         lines.append(f"Unanswered: {len(delivery['unanswered'])} question(s).")
-    lines += ["", "**What next?** Tick one. The engine reads this on its next run; with neither "
-              "ticked, it waits.", "- [ ] Continue researching", "- [ ] Park this research", ""]
+    lines += [
+        "",
+        "**What next?** Tick one. The engine reads this on its next run; with neither "
+        "ticked, it waits.",
+        "- [ ] Continue researching",
+        "- [ ] Park this research",
+        "",
+    ]
     return "\n".join(lines)
 
 
 def report(token: str, number: int, run: dict, dsn: str) -> str:
     issue = _call("GET", f"/repos/{REPO}/issues/{number}", token)
-    comments = _call("GET", f"/repos/{REPO}/issues/{number}/comments?per_page=100", token)
+    comments = _call(
+        "GET", f"/repos/{REPO}/issues/{number}/comments?per_page=100", token
+    )
     _, spent = decision(issue, comments)
     admitted, rejected = claims_for(dsn, run["request_id"])
     body = report_body(run, admitted, rejected, spent, cap_usd(issue.get("body") or ""))
-    return _call("POST", f"/repos/{REPO}/issues/{number}/comments", token, data={"body": body})["html_url"]
+    return _call(
+        "POST", f"/repos/{REPO}/issues/{number}/comments", token, data={"body": body}
+    )["html_url"]
 
 
 def load_run(text: str) -> dict:
@@ -201,7 +266,11 @@ def main(argv: list[str]) -> int:
     if len(argv) == 3 and argv[0] == "report":
         with open(argv[2], encoding="utf-8") as f:
             run = load_run(f.read())
-        print(report(installation_token(), int(argv[1]), run, os.environ["RESEARCH_PG_DSN"]))
+        print(
+            report(
+                installation_token(), int(argv[1]), run, os.environ["RESEARCH_PG_DSN"]
+            )
+        )
         return 0
     print(__doc__, file=sys.stderr)
     return 2

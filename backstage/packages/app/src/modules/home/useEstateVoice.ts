@@ -270,7 +270,7 @@ function osRefusalFix(): string {
  *
  * Returns null when nothing is wrong; the caller proceeds with the mic.
  */
-async function micBlocker(): Promise<string | null> {
+export async function micBlocker(): Promise<string | null> {
   // TWO DIFFERENT BLOCKERS, TWO DIFFERENT FIXES -- do not collapse them into one message.
   //
   // Measured on LIVE production 2026-10-04 with an iPhone and a Pixel user-agent: this function
