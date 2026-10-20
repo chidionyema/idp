@@ -131,3 +131,15 @@ def test_the_harness_user_agent_is_the_fallback_and_nothing_is_invented(
     assert "agent=fleetview-backend" in open(path, encoding="utf-8").read()
     path = g.capture(_attributed(ua=""), {"content": [{"type": "text", "text": "ok"}]})
     assert "agent=unknown" in open(path, encoding="utf-8").read()
+
+
+def test_a_stdlib_caller_that_names_itself_is_captured(tmp_path, monkeypatch):
+    # urllib alone is not the drain: fleetview-voice sends it with its own virtual-key alias
+    g = _load(tmp_path, monkeypatch)
+    call = _attributed(
+        metadata={"user_api_key_alias": "fleetview-voice-20261008T193433Z"},
+        ua="Python-urllib/3.12",
+    )
+    path = g.capture(call, {"content": [{"type": "text", "text": "x"}]})
+    assert path is not None
+    assert g._agent(call) == "fleetview-voice-20261008T193433Z"

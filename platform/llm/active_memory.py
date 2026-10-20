@@ -158,7 +158,22 @@ def agent(data: dict, user_api_key_dict: Any = None) -> str:
     return harness or "unknown"
 
 
-def skip_reason(data: dict, call_type: Any) -> str:
+def _named(data: dict, user_api_key_dict: Any = None) -> bool:
+    """Whether the caller names itself (header, metadata, virtual-key alias)."""
+    hdrs = _headers(data)
+    meta = data.get("metadata") or {}
+    return any(
+        str(c or "").strip()
+        for c in (
+            hdrs.get("x-estate-agent"),
+            meta.get("agent") if isinstance(meta, dict) else None,
+            meta.get("user_api_key_alias") if isinstance(meta, dict) else None,
+            getattr(user_api_key_dict, "key_alias", None),
+        )
+    )
+
+
+def skip_reason(data: dict, call_type: Any, user_api_key_dict: Any = None) -> str:
     """Why this call gets no memory, or "" when it does."""
     ct = str(getattr(call_type, "value", call_type) or "")
     if ct and ct not in CHAT_CALLS:
@@ -171,7 +186,12 @@ def skip_reason(data: dict, call_type: Any) -> str:
         "x-estate-internal"
     ) == INTERNAL:
         return "internal"
-    if str(hdrs.get("user-agent", "")).startswith("Python-urllib"):
+    # The drain is the urllib caller that names nobody (growmos cannot set a header; the laptop
+    # router has no virtual keys). The UA alone also matched fleetview-voice, keyed and named,
+    # which then never got memory (docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml).
+    if str(hdrs.get("user-agent", "")).startswith("Python-urllib") and not _named(
+        data, user_api_key_dict
+    ):
         return "graph drain"
     if str(hdrs.get("x-estate-memory", "")).lower() == "off":
         return "caller opted out"
@@ -446,7 +466,7 @@ class ActiveMemory(CustomLogger):
         self, user_api_key_dict: Any, cache: Any, data: dict, call_type: Any
     ):
         try:
-            why = skip_reason(data, call_type)
+            why = skip_reason(data, call_type, user_api_key_dict)
             if why or carries_block(data["messages"]):
                 log.debug("active_memory skip: %s", why or "already carries a brief")
                 return data

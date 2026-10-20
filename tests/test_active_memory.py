@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import time
+import types
 
 import yaml
 
@@ -431,3 +432,27 @@ def test_the_fence_lets_the_router_reach_the_memory_server_both_ways():
         os.path.join(ROOT, "platform", "ns-fences", "network", "llm.yaml")
     ).read()
     assert "kubernetes.io/metadata.name: unified-memory" in fence
+
+
+def test_a_stdlib_caller_that_names_itself_is_not_the_graph_drain(
+    monkeypatch, tmp_path
+):
+    # fleetview-voice calls the cluster router with urllib and its own virtual key: it is an
+    # agent, not the drain (docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml)
+    mod = _load(monkeypatch, tmp_path)
+    by_alias = _call("x", ua="Python-urllib/3.12")
+    by_alias["metadata"] = {"user_api_key_alias": "fleetview-voice-20261008T193433Z"}
+    assert mod.skip_reason(by_alias, "acompletion") == ""
+    by_header = _call("x", ua="Python-urllib/3.12")
+    by_header["proxy_server_request"]["headers"]["x-estate-agent"] = "newsroom"
+    assert mod.skip_reason(by_header, "acompletion") == ""
+    by_key = types.SimpleNamespace(key_alias="fleetview-voice-20261008T193433Z")
+    assert (
+        mod.skip_reason(_call("x", ua="Python-urllib/3.12"), "acompletion", by_key)
+        == ""
+    )
+    # the drain itself (keyless laptop router, growmos cannot set a header) is still left alone
+    assert (
+        mod.skip_reason(_call("x", ua="Python-urllib/3.9"), "acompletion", None)
+        == "graph drain"
+    )
