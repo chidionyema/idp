@@ -22,7 +22,7 @@
 // silence the agent at once, even with frames still in flight.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
-import { getClauseSink } from './useEstateVoice';
+import { getClauseSink, micBlocker } from './useEstateVoice';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
 // Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
@@ -282,6 +282,17 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
     if (liveRef.current) return;
     setDetail('');
     setMicRecoveryUrl(undefined);
+    // A page with no getUserMedia (an http origin, or a phone that withholds the API) answered
+    // the tap with the raw "undefined is not an object (evaluating
+    // 'navigator.mediaDevices.getUserMedia')" -- the phone e2e caught it on every backstage lane.
+    // The legacy path already names this fault through micBlocker; the router path must say the
+    // same words, since FacePage renders whichever path is live.
+    if (!navigator.mediaDevices?.getUserMedia) {
+      const blocked = await micBlocker();
+      setState('error');
+      setDetail(blocked ?? 'this browser cannot reach the microphone — open the page in Safari or Chrome');
+      return;
+    }
     let audio: AudioContext | null = null;
     let mic: MediaStream | null = null;
     try {
