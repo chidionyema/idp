@@ -1,23 +1,62 @@
 # The estate's GitHub App, for the objective adapter (objective-adapter.py): it reads the open
-# `objective` issues and posts each research report on its issue (idp#6603). Same vault entry
-# and same shape as platform/alerts-github/github-app.yaml; the adapter mints a one-hour
-# installation token from these three files at run time and never writes it down.
+# `objective` issues and posts each research report on its issue (idp#6603). Same day-0 shape as
+# platform/mcp/external-secret.yaml: the installation token is minted in-cluster by the
+# GithubAccessToken generator on every refresh, and the adapter reads it as a file.
+#
+# Measured 2026-10-20: a template reading `.installation_id` straight off the `github-app` vault
+# entry fails ("map has no entry for key installation_id"; flux-system/github-app and llm fail the
+# same way). The ids reach the generator from the flux-system/github-app Secret by Flux's strict
+# envsubst (LAW 46: never a literal in git), so clusters/oke/research.yaml substitutes from it.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: research-github-app-pem
+  namespace: research
+spec:
+  refreshInterval: 10m
+  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
+  target:
+    name: github-app-pem
+    creationPolicy: Owner
+    template:
+      engineVersion: v2
+      data:
+        key: "{{ .pem_b64 | b64dec }}"
+  dataFrom:
+    - extract: { key: github-app }
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: GithubAccessToken
+metadata:
+  name: research-github
+  namespace: research
+spec:
+  appID: ${githubAppIDQuoted}
+  installID: ${githubAppInstallationIDQuoted}
+  # Read the objectives, post the report. Nothing else.
+  permissions:
+    metadata: read
+    issues: write
+  auth:
+    privateKey:
+      secretRef:
+        name: github-app-pem
+        key: key
+---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   name: research-github-app
   namespace: research
 spec:
+  # Below the minted token's 60-minute life; each refresh mints a fresh installation token.
   refreshInterval: 10m
-  secretStoreRef: { kind: ClusterSecretStore, name: estate-vault }
-  target:
-    name: research-github-app
-    creationPolicy: Owner
-    template:
-      engineVersion: v2
-      data:
-        app_id: "{{ .app_id }}"
-        installation_id: "{{ .installation_id }}"
-        private_key: "{{ .pem_b64 | b64dec }}"
+  target: { name: research-github-app, creationPolicy: Owner }
   dataFrom:
-    - extract: { key: github-app }
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: GithubAccessToken
+          name: research-github
+      rewrite:
+        - transform: { template: "token" }
