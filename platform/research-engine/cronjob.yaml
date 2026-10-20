@@ -72,7 +72,10 @@ spec:
               # no question answered. Index amd64+arm64.
               # 2026-10-19: ddad623 fixed the source_index crash that kept every claim ungraded
               # (research-engine#12); e73d76f adds the `objective` lane this job runs (#13).
-              image: ghcr.io/chidionyema/research-engine:sha-e73d76f72326ff4f1cae0d023e885765823b4044
+              # 2026-10-20: 6415760 cuts pages into 6,000-token pieces before embedding (#14).
+              # At langchain's 8,191 the router's embed model counted 8,197 and refused with 400
+              # "exceeds maximum allowed token size 8192", discarding that sub-query's context.
+              image: ghcr.io/chidionyema/research-engine:sha-64157601fe73ef9a06dc04ea8dee6124f2b416d1
               command: ["/bin/sh", "-c"]
               args:
                 - |
