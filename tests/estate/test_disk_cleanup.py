@@ -63,6 +63,7 @@ def _run(home: Path, *args: str) -> subprocess.CompletedProcess:
         "DISK_GUARD_PATH": str(home),
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
         "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
     }
     return subprocess.run(
         ["bash", str(SCRIPT), *args],
@@ -228,6 +229,7 @@ def _run_wt(
         "DISK_CLEANUP_WT_IDLE_MIN": idle,
         "DISK_CLEANUP_WT_FRESH_MIN": "0",
         "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
         **{f"DISK_CLEANUP_{k.upper()}": v for k, v in extra.items()},
     }
     return subprocess.run(
@@ -522,6 +524,7 @@ def _run_env(home: Path, extra: dict, *args: str) -> subprocess.CompletedProcess
         "DISK_GUARD_PATH": str(home),
         "DISK_CLEANUP_RUST_ROOTS": str(home / "Documents/code"),
         "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
         **extra,
     }
     return subprocess.run(
@@ -664,3 +667,164 @@ def test_with_no_resolvable_tmp_root_an_outside_worktree_is_kept(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     assert outside.exists(), r.stdout
     assert f"{outside}  (not under HOME, /tmp or $TMPDIR)" in r.stdout, r.stdout
+
+
+# --- Chrome code-sign clones, the 2h worktree idle, and the "where the space is" report ---------
+
+
+def _clones_home(tmp_path: Path) -> tuple[Path, Path]:
+    home = _home(tmp_path)
+    clones = tmp_path / "X/com.google.Chrome.code_sign_clone"
+    for name in (
+        "code_sign_clone.held",
+        "code_sign_clone.old",
+        "code_sign_clone.fresh",
+    ):
+        (clones / name / "Contents").mkdir(parents=True)
+        (clones / name / "Contents/blob").write_bytes(os.urandom(1024 * 1024))
+    old = 1_000_000_000  # 2001: well past any fresh floor
+    for name in ("code_sign_clone.held", "code_sign_clone.old"):
+        for d, _, files in os.walk(clones / name):
+            for f in files:
+                os.utime(Path(d) / f, (old, old))
+            os.utime(d, (old, old))
+    return home, clones
+
+
+def test_chrome_clones_nobody_holds_go_and_the_running_one_stays(tmp_path):
+    home, clones = _clones_home(tmp_path)
+    env = {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "none"),
+        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        "DISK_CLEANUP_CHROME_CLONES": str(clones),
+    }
+    # the running Chrome holds a file in its own clone open for the whole run
+    with open(clones / "code_sign_clone.held/Contents/blob", "rb"):
+        dry = subprocess.run(
+            ["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=120
+        )
+        assert (
+            "would  chrome-clone" in dry.stdout
+            and (clones / "code_sign_clone.old").exists()
+        )
+        p = subprocess.run(
+            ["bash", str(SCRIPT), "true"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert not (clones / "code_sign_clone.old").exists(), p.stdout
+    assert "freed  chrome-clone" in p.stdout
+    assert (clones / "code_sign_clone.held").exists(), (
+        "the clone a process holds open was deleted"
+    )
+    assert "held open" in p.stdout
+    assert (clones / "code_sign_clone.fresh").exists(), (
+        "a clone made minutes ago was deleted"
+    )
+
+
+def test_no_tmpdir_means_the_real_chrome_clones_are_never_reached():
+    src = SCRIPT.read_text()
+    assert 'CLONES="${DISK_CLEANUP_CHROME_CLONES-${TMP_ROOT:+' in src
+
+
+def test_worktrees_idle_two_hours_are_settled_by_default():
+    src = SCRIPT.read_text()
+    assert 'WT_IDLE_MIN="${DISK_CLEANUP_WT_IDLE_MIN:-120}"' in src
+
+
+def _scan_env(home: Path, **extra: str) -> dict:
+    return {
+        **os.environ,
+        "HOME": str(home),
+        "DISK_GUARD_PATH": str(home),
+        "DISK_CLEANUP_RUST_ROOTS": str(home / "none"),
+        "DISK_CLEANUP_TMP_ROOT": "",
+        "DISK_CLEANUP_SYSTEM_SPOTS": "",
+        "DISK_CLEANUP_BIG_FILE_MB": "1",
+        **extra,
+    }
+
+
+def test_under_the_floor_the_log_names_where_the_space_actually_is(tmp_path):
+    home = _home(tmp_path)
+    big = home / "Library/Application Support/SomeApp"
+    big.mkdir(parents=True)
+    (big / "store").write_bytes(os.urandom(6 * 1024 * 1024))
+    (home / ".estate").mkdir()
+    (home / ".estate/fleetview-backend.err.log").write_bytes(b"x" * (3 * 1024 * 1024))
+    p = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false", str(10**9)],
+        env=_scan_env(home),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    out = p.stdout
+    assert "where the space is" in out, out
+    assert re.search(r"\d+M  .*/Library/Application Support\n", out), out
+    assert re.search(r"\d+M  .*/\.estate/fleetview-backend\.err\.log", out), out
+    # the report measures; it never deletes
+    assert (big / "store").exists() and (
+        home / ".estate/fleetview-backend.err.log"
+    ).exists()
+
+
+def test_the_scan_is_reprinted_not_rerun_inside_its_interval(tmp_path):
+    home = _home(tmp_path)
+    args = ["bash", str(SCRIPT), "true", "false", str(10**9)]
+    first = subprocess.run(
+        args, env=_scan_env(home), capture_output=True, text=True, timeout=120
+    )
+    stamp = re.search(r"measured (\S+)", first.stdout).group(1)
+    (home / "late").mkdir()
+    (home / "late/blob").write_bytes(os.urandom(4 * 1024 * 1024))
+    second = subprocess.run(
+        args, env=_scan_env(home), capture_output=True, text=True, timeout=120
+    )
+    assert f"measured {stamp}" in second.stdout
+    assert "/late" not in second.stdout.split("where the space is")[1]
+    third = subprocess.run(
+        args,
+        env=_scan_env(home, DISK_CLEANUP_SCAN_EVERY_MIN="0"),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert "/late" in third.stdout.split("where the space is")[1]
+
+
+def test_a_healthy_disk_is_not_scanned(tmp_path):
+    home = _home(tmp_path)
+    p = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false", "1"],
+        env=_scan_env(home),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert "where the space is" not in p.stdout
+
+
+def test_system_spots_print_megabytes_or_unreadable(tmp_path):
+    home = _home(tmp_path)
+    spot = tmp_path / "Update"
+    spot.mkdir()
+    (spot / "blob").write_bytes(os.urandom(3 * 1024 * 1024))
+    p = subprocess.run(
+        ["bash", str(SCRIPT), "true", "false", str(10**9)],
+        env=_scan_env(home, DISK_CLEANUP_SYSTEM_SPOTS=str(spot)),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert re.search(r"  system  \d+M  " + re.escape(str(spot)) + r"\n", p.stdout), (
+        p.stdout
+    )

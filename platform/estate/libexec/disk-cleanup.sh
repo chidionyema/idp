@@ -18,6 +18,9 @@
 # Opt-in: trash=true empties ~/.Trash -- the user's, so never by default.
 # Never touched, only reported: ~/.cache/estate-tools (live tooling: litellm venv, whisper, flux,
 # helm), ~/Documents, sibling repo worktrees (other agents'), ~/.nvm, ~/.ollama, app caches.
+# Chrome's code-sign clones (beside $TMPDIR, in X/): only those no process holds open.
+# Under the floor, the log ends with WHERE the space is (largest dirs, big files, system spots),
+# measured, not a fixed list -- see "where the space is" below.
 #
 # Exit: 0 ok, 3 a target that should be gone is not (verify failed), 1 refused.
 set -uo pipefail
@@ -26,7 +29,7 @@ APPLY="${1:-false}"; TRASH="${2:-false}"; ONLY_BELOW_MB="${3:-0}"; WORKTREES="${
 VOL="${DISK_GUARD_PATH:-/System/Volumes/Data}"   # the writable volume, as bin/idp-disk-guard
 RUST_ROOTS="${DISK_CLEANUP_RUST_ROOTS:-$HOME/Documents/code/idp}"
 WT_REPOS="${DISK_CLEANUP_WT_REPOS:-$HOME/Documents/code/idp}"
-WT_IDLE_MIN="${DISK_CLEANUP_WT_IDLE_MIN:-360}"
+WT_IDLE_MIN="${DISK_CLEANUP_WT_IDLE_MIN:-120}"
 WT_FRESH_MIN="${DISK_CLEANUP_WT_FRESH_MIN:-60}"
 WT_STALE_MIN="${DISK_CLEANUP_WT_STALE_MIN:-4320}"
 WT_ARCHIVE_MAX_MB="${DISK_CLEANUP_WT_ARCHIVE_MAX_MB:-64}"
@@ -34,11 +37,19 @@ WT_QUARANTINE_DAYS="${DISK_CLEANUP_WT_QUARANTINE_DAYS:-30}"
 QUAR="${DISK_CLEANUP_QUARANTINE:-$HOME/.estate/quarantine/worktrees}"
 TMP_ROOT="${DISK_CLEANUP_TMP_ROOT-$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)}"
 TMP_IDLE_MIN="${DISK_CLEANUP_TMP_IDLE_MIN:-360}"
+CLONE_FRESH_MIN="${DISK_CLEANUP_CLONE_FRESH_MIN:-60}"
+SCAN_EVERY_MIN="${DISK_CLEANUP_SCAN_EVERY_MIN:-60}"
+SCAN_TOP="${DISK_CLEANUP_SCAN_TOP:-15}"
+BIG_FILE_MB="${DISK_CLEANUP_BIG_FILE_MB:-200}"
+T_SCAN="${DISK_CLEANUP_SCAN_TIMEOUT:-300}"
+SYSTEM_SPOTS="${DISK_CLEANUP_SYSTEM_SPOTS-/System/Volumes/Update /private/var/vm}"
+SCAN_FILE="${DISK_CLEANUP_SCAN_FILE:-$HOME/.estate/disk-cleanup.last-scan}"
 [ -n "${HOME:-}" ] && [ "$HOME" != / ] || { echo "REFUSED HOME is unset or /"; exit 1; }
 case "$APPLY" in True|true) APPLY=1;; *) APPLY=0;; esac
 case "$TRASH" in True|true) TRASH=1;; *) TRASH=0;; esac
 case "$WORKTREES" in True|true) WORKTREES=1;; *) WORKTREES=0;; esac
-for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN; do
+for v in WT_IDLE_MIN WT_FRESH_MIN WT_STALE_MIN WT_ARCHIVE_MAX_MB WT_QUARANTINE_DAYS TMP_IDLE_MIN \
+         CLONE_FRESH_MIN SCAN_EVERY_MIN SCAN_TOP BIG_FILE_MB T_SCAN; do
   case "${!v}" in ''|*[!0-9]*) echo "REFUSED DISK_CLEANUP_$v=${!v} is not a number"; exit 1;; esac
 done
 case "$ONLY_BELOW_MB" in ''|*[!0-9]*) echo "REFUSED only_below_mb=$ONLY_BELOW_MB is not a number"; exit 1;; esac
@@ -47,6 +58,9 @@ if [ -n "$TMP_ROOT" ] && [ -d "$TMP_ROOT" ]; then
   TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
   case "$TMP_ROOT" in /private/var/folders/?*|/private/tmp/?*|/tmp/?*|"$HOME"/?*) ;; *) TMP_ROOT=;; esac
 else TMP_ROOT=; fi
+# Chrome's code-sign clones live beside $TMPDIR: <per-user>/T is the temp dir, <per-user>/X holds
+# them. No $TMPDIR (a test sets it empty), no clones -- so no test ever reaches the real ones.
+CLONES="${DISK_CLEANUP_CHROME_CLONES-${TMP_ROOT:+${TMP_ROOT%/T}/X/com.google.Chrome.code_sign_clone}}"
 
 free_k() { df -k "$VOL" 2>/dev/null | awk 'NR==2 {print $4}'; }
 # A bounded call: after $1 seconds its whole process group is killed (exit 142). The group, not
@@ -342,6 +356,33 @@ EOF
   fi
 fi
 
+# Chrome code-sign clones. Measured 2026-10-19: 6.3G in three 2.1G clones of Chrome.app under
+# $TMPDIR/../X/com.google.Chrome.code_sign_clone, one held by the running Chrome, two left by
+# earlier launches -- the largest single thing on the volume this script could not see, while its
+# log said every target was empty and the volume sat at 249M free. Chrome makes a fresh clone at
+# launch and only ever opens its own, so a clone no process holds open is a leftover. Kept: any
+# clone a process has open, any touched in the last CLONE_FRESH_MIN (a launch mid-copy), and all of
+# them when lsof cannot answer (a guess is not a verdict).
+if [ -n "$CLONES" ] && [ -d "$CLONES" ]; then
+  held=$(tmo 60 lsof -Fn +D "$CLONES" 2>/dev/null); rc=$?
+  if [ "$rc" -gt 1 ]; then
+    echo "  BLIND  chrome-clones  lsof could not answer (exit $rc): all kept"; fails=$((fails + 1))
+  else
+    for c in "$CLONES"/code_sign_clone.*; do
+      [ -d "$c" ] || continue
+      m=$(size_m "$c")
+      if printf '%s\n' "$held" | sed -n 's/^n//p' | awk -v w="$c" 'index($0, w"/")==1 || $0==w {f=1} END{exit !f}'; then
+        echo "  keep   chrome-clone  ${m}M  $c  (held open: the running Chrome's)"; continue; fi
+      if [ -n "$(find "$c" -maxdepth 0 -mmin -"$CLONE_FRESH_MIN" -print 2>/dev/null)" ]; then
+        echo "  keep   chrome-clone  ${m}M  $c  (made in the last ${CLONE_FRESH_MIN}m)"; continue; fi
+      if [ "$APPLY" = 0 ]; then echo "  would  chrome-clone  ${m}M  $c"; continue; fi
+      rm -rf "$c"
+      if [ -e "$c" ]; then echo "  !! chrome-clone $c still there after delete"; fails=$((fails + 1))
+      else echo "  freed  chrome-clone  ${m}M  $c"; fi
+    done
+  fi
+fi
+
 if [ "$APPLY" = 1 ]; then
   after=$(free_k)
   echo "free after: $((after / 1024))M (measured delta $(((after - before) / 1024))M; other writers move this too)"
@@ -357,4 +398,45 @@ done
 git -C "$HOME/Documents/code/idp" worktree list 2>/dev/null | awk 'NR>1 {print $1}' | while read -r wt; do
   [ -d "$wt" ] && echo "  $(size_m "$wt")M  worktree $wt"
 done
+
+# WHERE THE SPACE IS (2026-10-20). The list above is fixed, so on 2026-10-19 the log read "nothing
+# left to free" at 249M free while 6.3G of Chrome clones, an 8.6G staged macOS update and 0.8G of
+# ~/.estate logs and ledgers sat outside it -- the owner could not tell from the log what to decide
+# about. So whenever a run ends under the floor (and on every dry run) the log ends with a
+# measurement: the largest directories one and two levels under HOME, every file over BIG_FILE_MB under
+# HOME (a log or ledger with no rotation), and the system spots du can read. A du of HOME takes
+# minutes, so it is measured at most every SCAN_EVERY_MIN and the last measurement re-printed with
+# its time in between; nothing here deletes anything.
+scan() {
+  local out rc rel k p
+  echo "measured $(date -u +%Y-%m-%dT%H:%MZ)"
+  echo "  largest directories under HOME (one and two levels; a parent includes its children):"
+  out=$(tmo "$T_SCAN" du -xk -d 2 "$HOME" 2>/dev/null); rc=$?
+  [ "$rc" = 142 ] && echo "    BLIND  du of HOME did not finish in ${T_SCAN}s"
+  printf '%s\n' "$out" | sort -rn | while IFS=$'\t' read -r k p; do
+    rel=${p#"$HOME"/}
+    [ "$rel" != "$p" ] || continue
+    case "$rel" in */*/*) continue;; esac
+    echo "    $((k / 1024))M  $p"
+  done | head -"$SCAN_TOP"
+  echo "  files over ${BIG_FILE_MB}M under HOME (logs and ledgers grow until rotated):"
+  tmo "$T_SCAN" find "$HOME" -xdev \( -name node_modules -o -name .git \) -prune -o \
+      -type f -size +"$((BIG_FILE_MB * 2048))" -print 2>/dev/null | while IFS= read -r p; do
+    echo "    $(size_m "$p")M  $p"
+  done | sort -rn | head -"$SCAN_TOP"
+  for p in $SYSTEM_SPOTS; do
+    [ -e "$p" ] || continue
+    k=$(tmo 120 du -sk "$p" 2>/dev/null | awk '{print $1}')
+    if [ -n "$k" ]; then echo "  system  $((k / 1024))M  $p"; else echo "  system  unreadable  $p"; fi
+  done
+}
+if [ "$APPLY" = 0 ] || [ "$(($(free_k) / 1024))" -lt "$ONLY_BELOW_MB" ]; then
+  echo "where the space is (nothing here is deleted; owner decides):"
+  if [ -f "$SCAN_FILE" ] && [ -n "$(find "$SCAN_FILE" -mmin -"$SCAN_EVERY_MIN" -print 2>/dev/null)" ]; then
+    cat "$SCAN_FILE"
+  else
+    mkdir -p "$(dirname "$SCAN_FILE")"
+    scan | tee "$SCAN_FILE.tmp" && mv "$SCAN_FILE.tmp" "$SCAN_FILE"
+  fi
+fi
 [ "$fails" = 0 ] || exit 3
