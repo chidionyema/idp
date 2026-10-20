@@ -17,6 +17,9 @@ metadata:
   name: searxng
   namespace: searxng
   labels: { app.kubernetes.io/name: searxng, app.kubernetes.io/part-of: idp }
+  # The initContainer renders settings.yml only at pod start, so a settings change does nothing
+  # until the pod is replaced. Reloader replaces it when the ConfigMap changes.
+  annotations: { reloader.stakater.com/auto: "true" }
 spec:
   # One replica on purpose: a stateless query proxy with no session and no database, and the
   # cluster is tight. A second copy would double the outbound rate-limiting the public engines
