@@ -27,6 +27,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
+import hedge
 import ranking
 from security_core import (
     OWASPWriteGuard,
@@ -119,6 +120,14 @@ EMBED_DIM = int(os.environ.get("MEMORY_EMBED_DIM", "1536"))
 # Bounded well inside the request path: a store that hangs on its own embedding call is worse
 # than one that stores the fact unembedded, because the caller cannot even write the fact.
 EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
+# The brief's task embed is hedged, not waited on (hedge.py has the measurement: the NIM lane
+# drops about half its requests without a reply). A brief is read on the way INTO a model call
+# -- the router's Active Memory callback gives it 1.5 s -- so its embed gets BRIEF_EMBED_DEADLINE_S
+# across BRIEF_EMBED_ATTEMPTS staggered tries, and a miss returns the recent half in about a
+# second instead of 20. Stores keep EMBED_TIMEOUT_S: a write is not on anyone's critical path.
+BRIEF_EMBED_DEADLINE_S = float(os.environ.get("MEMORY_BRIEF_EMBED_DEADLINE_S", "1.0"))
+BRIEF_EMBED_ATTEMPTS = int(os.environ.get("MEMORY_BRIEF_EMBED_ATTEMPTS", "3"))
+BRIEF_EMBED_HEDGE_S = float(os.environ.get("MEMORY_BRIEF_EMBED_HEDGE_S", "0.3"))
 # The floor under /memories/recall: the least cosine similarity a fact may have to be returned.
 # MAPLE's retrieval gate cannot be that floor. Its score is sim + 0.3*rho + 0.4*tau - penalties,
 # so with the defaults (rho = tau = 1, no penalties) a fact scores sim + 0.7 and the gate
@@ -129,11 +138,14 @@ EMBED_TIMEOUT_S = float(os.environ.get("MEMORY_EMBED_TIMEOUT_S", "20"))
 RECALL_MIN_COSINE = float(os.environ.get("MEMORY_RECALL_MIN_COSINE", "0.2"))
 
 
-def _embed(text: str, model: Optional[str] = None) -> Optional[List[float]]:
+def _embed(
+    text: str, model: Optional[str] = None, timeout: Optional[float] = None
+) -> Optional[List[float]]:
     """The EMBED_DIM-wide vector for `text`, or None if the lane is unreachable.
 
     `model` is the router lane; EMBED_MODEL (a fact, as a passage) unless the caller is
-    embedding a search query, which passes EMBED_QUERY_MODEL.
+    embedding a search query, which passes EMBED_QUERY_MODEL. `timeout` defaults to
+    EMBED_TIMEOUT_S; a hedged caller passes what is left of its own deadline.
 
     None is not an error the caller raises: a fact whose vector could not be computed is
     still a fact worth keeping (the write must not fail because a model was briefly down),
@@ -168,7 +180,7 @@ def _embed(text: str, model: Optional[str] = None) -> Optional[List[float]]:
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=EMBED_TIMEOUT_S) as resp:  # noqa: S310
+        with urllib.request.urlopen(req, timeout=timeout or EMBED_TIMEOUT_S) as resp:  # noqa: S310
             vec = json.loads(resp.read())["data"][0]["embedding"]
     except (urllib.error.URLError, KeyError, IndexError, ValueError, OSError):
         return None
@@ -699,7 +711,13 @@ async def memory_brief(
     relevant: list = []
     vec = None
     if payload.task.strip():
-        vec = await asyncio.to_thread(_embed, payload.task, EMBED_QUERY_MODEL)
+        vec = await asyncio.to_thread(
+            hedge.first_answer,
+            lambda left: _embed(payload.task, EMBED_QUERY_MODEL, timeout=left),
+            BRIEF_EMBED_ATTEMPTS,
+            BRIEF_EMBED_HEDGE_S,
+            BRIEF_EMBED_DEADLINE_S,
+        )
     async with conn.cursor() as cur:
         if vec is not None:
             relevant = await _ranked(

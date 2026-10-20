@@ -4,7 +4,7 @@
 FROM docker.io/library/python:3.13-alpine
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
-COPY main.py security_core.py schema.sql harness.py ranking.py consolidation.py /app/
+COPY main.py security_core.py schema.sql harness.py ranking.py consolidation.py hedge.py /app/
 WORKDIR /app
 USER 10001:10001
 EXPOSE 8000
