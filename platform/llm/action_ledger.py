@@ -143,8 +143,23 @@ def _runtime(kwargs: dict) -> str:
 
 
 def _is_drain(kwargs: dict) -> bool:
+    # stdlib User-Agent AND no named identity: the UA alone also matched fleetview-voice
+    # (docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml)
     ua = str((_request(kwargs).get("headers") or {}).get("user-agent", ""))
-    return ua.startswith("Python-urllib")
+    if not ua.startswith("Python-urllib"):
+        return False
+    headers = {
+        str(k).lower(): v for k, v in (_request(kwargs).get("headers") or {}).items()
+    }
+    meta = (kwargs.get("litellm_params") or {}).get("metadata") or {}
+    return not any(
+        str(c or "").strip()
+        for c in (
+            headers.get("x-estate-agent"),
+            meta.get("agent"),
+            meta.get("user_api_key_alias"),
+        )
+    )
 
 
 def _result_hash(kwargs: dict, response_obj: Any) -> str:

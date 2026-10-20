@@ -94,20 +94,21 @@ def _session(kwargs: dict) -> str:
 
 
 def _is_drain(kwargs: dict) -> bool:
+    """The drain's own call: stdlib User-Agent AND no named identity.
+
+    The User-Agent alone is not the drain: every stdlib-Python caller sends it, and on the
+    cluster router fleetview-voice (urllib, keyed `fleetview-voice-*`) was dropped as the drain
+    (measured 2026-10-20, docs/diagnoses/2026-10-20-stdlib-callers-skipped-as-graph-drain.yaml).
+    growmos cannot set a header, and the laptop router has no virtual keys, so the drain is the
+    one urllib caller that names nobody.
+    """
     req = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
     ua = str((req.get("headers") or {}).get("user-agent", ""))
-    return ua.startswith("Python-urllib")
+    return ua.startswith("Python-urllib") and _named(kwargs) is None
 
 
-def _agent(kwargs: dict) -> str:
-    """The agent this exchange belongs to, by what the request itself carries.
-
-    Named identity wins: the x-estate-agent header, request metadata, or the caller's
-    virtual-key alias -- the same explicit identity rule bin/claim-open enforces since
-    #6407 (ESTATE_AGENT, no defaults). The harness User-Agent is the measured fallback
-    (which surface sent this), and "unknown" is the honest floor: attribution is never
-    invented, because a defaulted name is exactly the mis-attribution #6407 closed.
-    """
+def _named(kwargs: dict) -> str | None:
+    """The caller's named identity (header, metadata, virtual-key alias), or None."""
     lp = kwargs.get("litellm_params") or {}
     req = lp.get("proxy_server_request") or {}
     headers = {str(k).lower(): v for k, v in (req.get("headers") or {}).items()}
@@ -120,6 +121,23 @@ def _agent(kwargs: dict) -> str:
         c = str(candidate or "").strip()
         if c:
             return re.sub(r"[^A-Za-z0-9_.-]", "_", c)[:40]
+    return None
+
+
+def _agent(kwargs: dict) -> str:
+    """The agent this exchange belongs to, by what the request itself carries.
+
+    Named identity wins: the x-estate-agent header, request metadata, or the caller's
+    virtual-key alias -- the same explicit identity rule bin/claim-open enforces since
+    #6407 (ESTATE_AGENT, no defaults). The harness User-Agent is the measured fallback
+    (which surface sent this), and "unknown" is the honest floor: attribution is never
+    invented, because a defaulted name is exactly the mis-attribution #6407 closed.
+    """
+    named = _named(kwargs)
+    if named:
+        return named
+    req = (kwargs.get("litellm_params") or {}).get("proxy_server_request") or {}
+    headers = {str(k).lower(): v for k, v in (req.get("headers") or {}).items()}
     ua = str(headers.get("user-agent", ""))
     harness = re.split(r"[/\s]", ua, maxsplit=1)[0].strip().lower() if ua else ""
     return harness or "unknown"
