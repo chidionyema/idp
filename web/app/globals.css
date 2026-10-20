@@ -1,7 +1,12 @@
 /* === Design tokens === */
 :root {
-  --bg: #FAFAF8; --white: #FFFFFF; --ink: #0D0D0A; --ink-2: #2A2A28; --ink-3: #6B6B68;
-  --ink-muted: #6B6B68; --on-ink-muted: rgba(255,255,255,0.6); --on-ink-border: rgba(255,255,255,0.1);
+  --bg: #FAFAF8; --white: #FFFFFF; --ink: #0D0D0A; --ink-2: #2A2A28; --ink-3: #63635F;
+  --ink-muted: #63635F; --on-ink-muted: rgba(255,255,255,0.6); --on-ink-border: rgba(255,255,255,0.1);
+  /* Two whites on ink ground, not six. The footer and the ink sections had drifted to 0.75, 0.7,
+     0.65, 0.62, 0.6 and 0.55 in different files -- six values nobody could tell apart, chosen six
+     separate times (measured in the render audit, 2026-10-20). --on-ink is text, --on-ink-muted
+     is a label. */
+  --on-ink: rgba(255,255,255,0.72);
   --rule: #E2E2DC; --rule-2: #EDEDE8; --accent: #0E6E62; --accent-dk: #0A554B;
   /* One accent, and not the one every LLM-adjacent brand already uses: #1A56DB is Tailwind
      blue-600, which is what "AI company" looks like by default. This is a desaturated teal, and
@@ -9,7 +14,10 @@
      not used for decoration, for numbers, or for chips, because an accent that is everywhere
      stops reading as an accent (founder design review, 2026-10-20). */
   --accent-on-ink: #6FD3C2; /* the accent, lifted for ink ground: #0E6E62 goes to mud on #0D0D0A */
-  --signal: #DC2626; --ok: #059669; --panel: #F4F4F0;
+  --signal: #DC2626; --ok: #059669; --ok-text: #047857; --panel: #F4F4F0;
+  /* Two greens, for two jobs: --ok is a 6px dot and a 3px bar (a graphic, 3:1 is the bar it must
+     clear), --ok-text is the same green darkened so 11px text can carry it -- #059669 as text on
+     white is 3.77:1 and failed the render audit on four pages (2026-10-20). */
   --serif: 'Playfair Display', Georgia, serif; --sans: 'DM Sans', system-ui, sans-serif;
   --mono: 'DM Mono', 'Courier New', monospace;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-5: 20px;
@@ -45,8 +53,11 @@ code, pre { font-family: var(--mono); }
 pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; overflow-x: auto; font-size: 13px; line-height: 1.7; }
 /* === Layout === */
 .container { max-width: 1152px; margin: 0 auto; padding: 0 var(--space-6); }
-.section { padding: var(--space-24) 0; }
-.section-sm { padding: var(--space-16) 0; }
+/* padding-block, not padding: a section is often also a .container, and the shorthand silently
+   reset the container's 24px gutter, so the hero sat 24px left of every other section on the page
+   (measured in the render audit: h1 at x=144, section text at x=168, 2026-10-20). */
+.section { padding-block: var(--space-24); }
+.section-sm { padding-block: var(--space-16); }
 /* === Card === */
 .card { border: 1px solid var(--rule); background: var(--white); padding: var(--space-8); transition: border-color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out); }
 .card:hover { border-color: rgba(14,110,98,0.28); box-shadow: 0 4px 24px rgba(0,0,0,0.05); }
@@ -59,6 +70,9 @@ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; ove
 /* === Tags === */
 .tag { display: inline-flex; align-items: center; padding: 3px 10px; border: 1px solid var(--rule); background: var(--panel); font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); border-radius: 2px; }
 .tag-accent { background: rgba(14,110,98,0.07); border-color: rgba(14,110,98,0.22); color: var(--accent); }
+/* The accent on ink ground: #0E6E62 on #0D0D0A is 3.05:1, under the 4.5:1 a 10px label needs
+   (measured in the render audit, 2026-10-20). The lifted accent is the same colour, raised. */
+.tag-accent-ink { background: rgba(111,211,194,0.09); border-color: rgba(111,211,194,0.26); color: var(--accent-on-ink); }
 /* Status chips are monochrome on purpose. They used to be mint and amber, which put two colors
    into the palette that appear nowhere else -- the fastest way to make a palette look assembled
    rather than designed (founder design review, 2026-10-20). "stable" now reads as a quiet
@@ -71,6 +85,14 @@ pre { background: var(--panel); padding: var(--space-6); border-radius: 4px; ove
 /* === Status dot === */
 .status-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
 .status-dot-ok { background: var(--ok); }
+/* Trace explorer: the details panel sits beside the waterfall on a desktop and under it on a
+   phone. As an inline 2fr/1fr grid the min-content of the span table held it at 686px inside a
+   390px viewport and scrolled the whole page sideways (audit, 2026-10-20). */
+.trace-split { display: grid; gap: var(--space-6); grid-template-columns: 2fr 1fr; }
+/* A grid item's min-width is auto: without this the 520px span table sets the column's
+   min-content and the grid still overflows even on one column. */
+.trace-split > * { min-width: 0; }
+@media (max-width: 900px) { .trace-split { grid-template-columns: 1fr; } }
 .status-dot-beta { background: #B45309; }
 .pulse-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: pulse-dot 2s ease-in-out infinite; }
 @keyframes pulse-dot { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(0.85); } }
@@ -120,10 +142,10 @@ input[type="range"].cost-range::-webkit-slider-thumb { -webkit-appearance: none;
    2026-10-20, on the tooling cards). */
 .text-link { font-family: var(--mono); font-size: 11px; color: var(--ink); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
 .text-link:hover { color: var(--accent); }
-.footer-heading { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.62); }
-.footer-link { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.75); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+.footer-heading { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; color: var(--on-ink-muted); }
+.footer-link { font-family: var(--mono); font-size: 12px; color: var(--on-ink); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
 .footer-link:hover { color: #fff; }
-.footer-link-muted { font-family: var(--mono); font-size: 12px; color: rgba(255,255,255,0.62); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
+.footer-link-muted { font-family: var(--mono); font-size: 12px; color: var(--on-ink-muted); text-decoration: none; transition: color var(--duration-fast) var(--ease-out); }
 .footer-link-muted:hover { color: rgba(255,255,255,0.85); }
 /* === Print === */
 @media print { .no-print { display: none !important; } }

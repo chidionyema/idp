@@ -27,9 +27,9 @@ export default function ConsultingPage() {
       <div style={{ borderTop: "1px solid var(--rule)", paddingTop: "64px" }}>
         <Reveal>
           <div style={{ border: "1px solid var(--rule)", background: "var(--ink)", padding: "64px", textAlign: "center" }}>
-            <span className="tag tag-accent" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
+            <span className="tag tag-accent-ink" style={{ marginBottom: "24px", display: "inline-flex" }}>Talk to us</span>
             <h2 style={{ fontFamily: "var(--serif)", color: "#fff", maxWidth: "none" }}>We take on a small number of projects each quarter.</h2>
-            <p style={{ color: "rgba(255,255,255,0.75)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
+            <p style={{ color: "var(--on-ink)", marginTop: "20px", fontSize: "17px", maxWidth: "none" }}>If you’re working on production AI infrastructure and want people who’ve done it before, let’s talk.</p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "center", marginTop: "32px", flexWrap: "wrap" }}>
               <Link href="/contact" className="btn-primary">Book a call →</Link>
               <Link href="/case-studies" className="btn-secondary" style={{ color: "#fff", borderColor: "rgba(255,255,255,0.2)" }}>See our work</Link>
