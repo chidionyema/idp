@@ -109,3 +109,25 @@ input[type="range"].cost-range::-webkit-slider-thumb { -webkit-appearance: none;
   .nav-links { display: none !important; }
   .nav-mobile { display: block; }
 }
+/* === Responsive layout === */
+/* The hero was a hard-coded two-column grid in inline style, so nothing could collapse it and
+   the page overflowed a 390px viewport. Grid children also get min-width: 0 so long mono
+   strings and the playground cannot stretch their track. */
+.hero-grid { display: grid; gap: var(--space-16); grid-template-columns: 1fr 1fr; align-items: start; }
+.hero-grid > * { min-width: 0; }
+.hero-copy { display: flex; flex-direction: column; gap: var(--space-8); }
+.hero-copy > .tag { align-self: flex-start; }
+.hero-demo { border: 1px solid var(--rule); background: var(--white); padding: var(--space-6); }
+html, body { overflow-x: clip; }
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; gap: var(--space-10); }
+}
+@media (max-width: 600px) {
+  .section { padding: var(--space-16) 0; }
+  .section-sm { padding: var(--space-10) 0; }
+  .container { padding: 0 var(--space-5); }
+  .card { padding: var(--space-6); }
+  .hero-demo { padding: var(--space-4); }
+  h1 { font-size: clamp(2rem, 9vw, 2.4rem); }
+  .btn-primary, .btn-secondary { min-height: 44px; justify-content: center; }
+}
