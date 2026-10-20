@@ -1,96 +1,76 @@
 /**
- * greenlane, live: whether main is green on the commit it is actually at, and every lane's
- * verdict -- what the ~80s tick decided, and why. The backend (fleetview_backend/greenlane.py)
- * runs `bin/idp-greenlane status`; this renders the same JSON the engine itself acts on.
+ * greenlane, quietly: one dot. It is loud only when something needs a person -- the engine's
+ * alarm, a red lane, a conflict, a main that is not green, or a batch that has been under test too
+ * long -- and the detail opens by voice ("how's the lane?") or by touching the dot, then fades on
+ * its own a few seconds after the last touch.
  *
- * `main.green` is the engine's verdict, not this file's opinion, and the required-check
- * conclusions arrive with it -- so a founder looking at a red main can see WHICH check is red
- * instead of a colour they have to go and interrogate. The panel colours by the engine's own
- * rule (bin/idp-greenlane:278: green when every required conclusion is success, skipped or
- * neutral); a second opinion here would sooner or later contradict the verdict printed above it.
+ * Nothing here decides anything. The backend (fleetview_backend/greenlane.py) runs
+ * `bin/idp-greenlane status`; that JSON carries `brief` (greenlane/brief.py), which holds `loud`
+ * and the three answers the detail gives: what is landing and for how long, what is stuck and why,
+ * what is red and who owns it. The spoken answer is the same brief's `summary`. A second opinion
+ * here would sooner or later contradict the one the engine acts on.
  *
- * And a lane that cannot be read says so, never a green main. "I could not read this" and "this
- * did not run" are different facts and the founder acts differently on each.
+ * A lane that cannot be read says so, never a quiet dot: "I could not read this" and "nothing is
+ * wrong" are different facts and the founder acts differently on each.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
-export type Lane = { head?: string; reason?: string; status?: string };
+export type Brief = {
+  loud: boolean;
+  summary: string;
+  landing: { lanes: string[]; minutes: number | null } | null;
+  waiting: number;
+  stuck: Array<{ lane: string; why: string; status: string }>;
+  red: Array<{ lane: string; why: string; owner: string }>;
+  main_red: string[];
+  work_lost: number;
+};
 export type Greenlane = {
   available: boolean;
   error?: string;
   alarm?: boolean;
-  main?: { green?: boolean; sha?: string; required?: Record<string, string> };
-  open_prs?: Array<{ number: number; head: string; user: string }>;
-  state?: {
-    available?: boolean;
-    error?: string;
-    lanes?: Record<string, Lane>;
-    landed_total?: number;
-    candidates_total?: number;
-  };
-  invariants?: { work_lost?: number; open_prs_not_raised_by_engine?: number };
+  brief?: Brief;
   read_at?: string;
 };
 
-/** bin/idp-greenlane:278. Not a heuristic: the same three values the engine accepts. */
-export const GREEN = ['success', 'skipped', 'neutral'];
+/** How long the detail stays after the last touch. Touching it keeps it alive. */
+export const FADE_MS = 8_000;
 
-/** The required checks that are not green, in the engine's own vocabulary. */
-export function notGreen(required: Record<string, string> = {}): Array<[string, string]> {
-  return Object.entries(required).filter(([, v]) => !GREEN.includes(v));
+const short = (lane: string) => lane.replace(/^lane\//, '');
+
+/** Is the dot loud? An unreadable lane is loud: silence must mean "read, and fine". */
+export function isLoud(lane: Greenlane | null, err: string | null): boolean {
+  if (err || (lane && !lane.available)) return true;
+  if (!lane) return false;
+  return lane.brief ? lane.brief.loud : Boolean(lane.alarm);
 }
 
-/** Lane statuses counted, worst first, so the pill can lead with what is red. */
-export const LANE_ORDER = ['red', 'conflict', 'testing', 'pending', 'landed'];
+/** The words beside a loud dot; a quiet dot has none. */
+export function loudLabel(lane: Greenlane | null, err: string | null): string {
+  if (err) return 'lanes · unreachable';
+  if (lane && !lane.available) return 'lanes · unreadable';
+  const b = lane?.brief;
+  if (!b) return lane?.alarm ? 'lanes · alarm' : '';
+  const n = b.red.length + b.stuck.length;
+  if (b.main_red.length) return 'lanes · main red';
+  if (b.work_lost) return 'lanes · work lost';
+  if (n) return `lanes · ${n} need you`;
+  return 'lanes · alarm';
+}
 
-export function laneCounts(lanes: Record<string, Lane> = {}): Array<[string, number]> {
-  const c = new Map<string, number>();
-  for (const l of Object.values(lanes)) {
-    const s = l.status || 'unknown';
-    c.set(s, (c.get(s) || 0) + 1);
-  }
-  return [...c.entries()].sort(
-    (a, b) => LANE_ORDER.indexOf(a[0]) - LANE_ORDER.indexOf(b[0]),
+function Section({ title, empty, children }: { title: string; empty: string; children?: any }) {
+  const has = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  return (
+    <section className="mt-2 first:mt-0">
+      <div className="text-[12px] uppercase tracking-wider text-white/60">{title}</div>
+      {has ? children : <p className="text-white/60 text-[12px]">{empty}</p>}
+    </section>
   );
 }
 
-export function laneTone(status: string): string {
-  switch (status) {
-    case 'red':
-      return 'text-rose-300 border-rose-400/40';
-    case 'conflict':
-      return 'text-amber-200 border-amber-400/40';
-    case 'landed':
-      return 'text-emerald-300 border-emerald-400/40';
-    case 'testing':
-      return 'text-cyan-200 border-cyan-400/40';
-    default:
-      return 'text-white/60 border-white/15';
-  }
-}
-
-/** The pill's words. A green main is the only thing that says green, and it must have been read. */
-export function laneLabel(lane: Greenlane | null, err: string | null): string {
-  if (err) return 'lanes · unreachable';
-  if (!lane) return 'lanes · …';
-  if (!lane.available) return 'lanes · unreadable';
-  const red = laneCounts(lane.state?.lanes).find(([s]) => s === 'red')?.[1] ?? 0;
-  const main = `lanes · main ${lane.main?.green ? 'green' : 'red'}`;
-  const redPart = red ? ` · ${red} red` : '';
-  const alarmPart = lane.alarm && lane.main?.green ? ' · alarm' : '';
-  return `${main}${redPart}${alarmPart}`;
-}
-
-export function laneToneFor(lane: Greenlane | null, err: string | null): string {
-  if (err || (lane && !lane.available)) return 'text-rose-300 border-rose-400/40';
-  if (!lane) return 'text-white/80 border-white/15';
-  if (!lane.main?.green || lane.alarm) return 'text-rose-300 border-rose-400/40';
-  return 'text-white/80 border-white/15';
-}
-
-function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null }) {
+function Detail({ lane, err }: { lane: Greenlane | null; err: string | null }) {
   if (err || (lane && !lane.available)) {
     return (
       <p data-testid="greenlane-error" className="text-rose-300">
@@ -99,83 +79,49 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
     );
   }
   if (!lane) return <p className="text-white/60">reading the lane…</p>;
-
-  const counts = laneCounts(lane.state?.lanes);
-  const broken = notGreen(lane.main?.required);
-  const landed = lane.state?.landed_total;
-  const landedLine =
-    landed === undefined || landed === null
-      ? ''
-      : ` · ${landed} landed of ${lane.state?.candidates_total}`;
+  const b = lane.brief;
+  if (!b) return <p className="text-amber-200">the greenlane sent no brief; update the backend.</p>;
 
   return (
     <>
-      <p data-testid="greenlane-main" className={lane.main?.green ? '' : 'text-rose-300'}>
-        main {lane.main?.sha || 'unknown'} · {lane.main?.green ? 'green' : 'NOT green'}
-      </p>
-      {broken.length ? (
-        <ul data-testid="greenlane-checks" className="mt-1">
-          {broken.map(([name, v]) => (
-            <li key={name} className="font-mono text-[12px] text-rose-200/90">
-              {name} · {v}
-            </li>
-          ))}
-        </ul>
+      {b.main_red.length ? (
+        <p data-testid="greenlane-main" className="text-rose-300 mb-2">
+          main is not green: {b.main_red.join(', ')}
+        </p>
+      ) : null}
+      {b.work_lost ? (
+        <p data-testid="greenlane-work-lost" className="text-rose-300 mb-2">
+          {b.work_lost} PR(s) closed with their work in no branch and no main — work is lost
+        </p>
       ) : null}
 
-      {lane.invariants?.work_lost ? (
-        <p data-testid="greenlane-work-lost" className="mt-2 text-rose-300">
-          {lane.invariants.work_lost} PR(s) closed unmerged with their work in no branch and no
-          main — work is lost
-        </p>
-      ) : (
-        <p className="mt-2 text-white/60">work lost · 0</p>
-      )}
+      <Section title="landing" empty={b.waiting ? `nothing under test · ${b.waiting} waiting` : 'nothing landing'}>
+        {b.landing && b.landing.lanes.length ? (
+          <div data-testid="greenlane-landing">
+            <div className="text-white/85">
+              {b.landing.lanes.map(short).join(', ')}
+              {b.landing.minutes !== null ? ` · ${b.landing.minutes} min` : ''}
+            </div>
+            {b.waiting ? <div className="text-white/60">{b.waiting} waiting</div> : null}
+          </div>
+        ) : null}
+      </Section>
 
-      <div className="mt-2 text-[12px] uppercase tracking-wider text-white/60">
-        open pull requests
-        {lane.invariants?.open_prs_not_raised_by_engine
-          ? ` · ${lane.invariants.open_prs_not_raised_by_engine} not raised by the engine`
-          : ''}
-      </div>
-      {lane.open_prs?.length ? (
-        <ul data-testid="greenlane-open-prs">
-          {lane.open_prs.map(p => (
-            <li key={p.number} className="font-mono text-[12px] text-amber-200/90">
-              #{p.number} {p.head} ({p.user})
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-white/60 text-[12px]">none</p>
-      )}
-
-      <div className="mt-3 text-[12px] uppercase tracking-wider text-white/60">
-        lanes · {Object.keys(lane.state?.lanes || {}).length} held
-        {counts.length ? ` · ${counts.map(([s, n]) => `${n} ${s}`).join(' · ')}` : ''}
-      </div>
-      <ul data-testid="greenlane-lanes" className="mt-1">
-        {Object.entries(lane.state?.lanes || {}).map(([name, l]) => (
-          <li key={name} className="mb-1">
-            <span className={`font-mono text-[12px] ${laneTone(l.status || '')}`}>
-              {l.status}
-            </span>{' '}
-            <span className="font-mono text-[12px] text-white/80">{name}</span>
-            {l.reason ? (
-              <div className="text-[12px] text-white/60 truncate">{l.reason}</div>
-            ) : null}
-          </li>
+      <Section title="stuck" empty="nothing stuck">
+        {b.stuck.map(s => (
+          <div key={s.lane} data-testid="greenlane-stuck" className="text-amber-200/90">
+            {short(s.lane)} <span className="text-white/60">— {s.why}</span>
+          </div>
         ))}
-      </ul>
-      {lane.state?.available === false ? (
-        <p className="mt-2 text-amber-200 text-[12px]">
-          lane state unreadable: {lane.state.error}
-        </p>
-      ) : null}
-      <p className="mt-2 text-[12px] font-mono text-white/60">
-        {lane.read_at ? `read ${lane.read_at}` : ''}
-        {landedLine}
-      </p>
+      </Section>
+
+      <Section title="red" empty="nothing red">
+        {b.red.map(r => (
+          <div key={r.lane} data-testid="greenlane-red" className="text-rose-200/90">
+            {short(r.lane)} <span className="text-white/60">— {r.why} · {r.owner}</span>
+          </div>
+        ))}
+      </Section>
     </>
   );
 }
@@ -183,9 +129,14 @@ function LaneBody({ lane, err }: { lane: Greenlane | null; err: string | null })
 export default function GreenlaneHud({
   call,
   pollMs = 30_000,
+  summon = 0,
+  fadeMs = FADE_MS,
 }: {
   call: Call;
   pollMs?: number;
+  /** Bump this to open the detail (a spoken "how's the lane?"). It fades after `fadeMs`. */
+  summon?: number;
+  fadeMs?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [lane, setLane] = useState<Greenlane | null>(null);
@@ -193,6 +144,7 @@ export default function GreenlaneHud({
   const callRef = useRef(call);
   callRef.current = call;
   const inFlight = useRef(false);
+  const fade = useRef<any>(null);
 
   const refresh = useCallback(async () => {
     if (inFlight.current) return;
@@ -217,28 +169,65 @@ export default function GreenlaneHud({
     return () => clearInterval(id);
   }, [pollMs, refresh]);
 
-  const label = laneLabel(lane, err);
+  const arm = useCallback(() => {
+    clearTimeout(fade.current);
+    fade.current = setTimeout(() => setOpen(false), fadeMs);
+  }, [fadeMs]);
+  useEffect(() => () => clearTimeout(fade.current), []);
+
+  // A spoken question opens the detail on fresh data, then lets it go.
+  useEffect(() => {
+    if (!summon) return;
+    refresh();
+    setOpen(true);
+    arm();
+  }, [summon, arm, refresh]);
+
+  const toggle = () => {
+    if (open) {
+      clearTimeout(fade.current);
+      setOpen(false);
+      return;
+    }
+    setOpen(true);
+    arm();
+  };
+
+  const loud = isLoud(lane, err);
+  const label = loud ? loudLabel(lane, err) : '';
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">
       <button
         type="button"
-        onClick={() => setOpen(o => !o)}
+        onClick={toggle}
         aria-expanded={open}
-        className={`px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono hover:text-white ${laneToneFor(
-          lane,
-          err,
-        )}`}
+        aria-label={label || 'greenlane · all quiet'}
+        data-testid="greenlane-dot"
+        data-loud={loud ? 'true' : 'false'}
+        className={
+          loud
+            ? 'flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 border border-rose-400/40 backdrop-blur-md text-[12px] font-mono text-rose-300'
+            : 'p-2 rounded-full'
+        }
       >
+        <span
+          className={`block rounded-full ${
+            loud ? 'h-2 w-2 bg-rose-400 animate-pulse' : 'h-1.5 w-1.5 bg-white/25'
+          }`}
+        />
         {label}
       </button>
       {open ? (
         <div
           role="region"
           aria-label="greenlane"
+          onPointerDown={arm}
+          onPointerMove={arm}
+          onScroll={arm}
           className="w-[440px] max-w-[92vw] max-h-[70vh] overflow-y-auto p-3 rounded-xl bg-black/80 border border-white/10 backdrop-blur-md text-white/85 text-[12px]"
         >
-          <LaneBody lane={lane} err={err} />
+          <Detail lane={lane} err={err} />
         </div>
       ) : null}
     </div>

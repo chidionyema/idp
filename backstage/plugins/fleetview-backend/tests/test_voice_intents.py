@@ -174,6 +174,16 @@ def test_real_committed_catalog(env, monkeypatch):
     assert "git.branch" not in cat
 
 
+def test_how_is_the_lane_runs_the_lane_intent_but_never_steals_longer_names(
+    monkeypatch,
+):
+    monkeypatch.delenv("FLEETVIEW_INTENTS_DIR", raising=False)
+    cat = vi.load_catalog()
+    assert "lane" in cat and "lane" in vi.READ_ONLY
+    assert vi.match("How's the lane?", cat) == "lane"
+    assert vi.match("router lane health", cat) == "router-lane-health"
+
+
 @pytest.fixture
 def client():
     import sys
