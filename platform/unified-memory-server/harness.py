@@ -661,10 +661,31 @@ class PostgresScratchpadStore:
 
 
 class PostgresCortexAdapter:
-    """Adapter over the existing memories table. searchAssociativeFacts + bi-temporal writes."""
+    """Adapter over the existing memories table. searchAssociativeFacts + bi-temporal writes.
 
-    def __init__(self, conn) -> None:
+    Until 2026-10-19 this ignored `query_text` and ordered by `embedding <=> (SELECT embedding
+    FROM memories LIMIT 0)` -- a NULL distance, so the "associative" facts were 25 arbitrary
+    rows -- and filtered on a `status` column `memories` does not have. Every recall carries
+    this brief, so the search is now the one /memories/recall runs: the query embedded with
+    the same lane, nearest current facts in the caller's namespace, under a cosine floor.
+    """
+
+    # A fact's provenance kind -> the harness scope it plays. Everything else is a project fact.
+    _GLOBAL_KINDS = frozenset({"preference", "constraint"})
+
+    def __init__(
+        self,
+        conn,
+        embed: Optional[Any] = None,
+        namespace: str = "default",
+        min_cosine: float = 0.2,
+    ) -> None:
         self._conn = conn
+        # embed(text) -> list[float] | None: the query lane. None (or no embedder) falls back
+        # to word matching, so the brief degrades to "facts that say it", never to "any facts".
+        self._embed = embed
+        self._namespace = namespace
+        self._min_cosine = min_cosine
 
     def search_associative_facts(
         self,
@@ -674,34 +695,51 @@ class PostgresCortexAdapter:
         include_graph_one_hop: bool = False,
         limit: int = 25,
     ) -> list[BiTemporalFact]:
-        """Vector search + optional 1-hop neighbours. Falls back to text match if no embedder."""
+        """Facts nearest `query_text` by meaning, or by its words when no vector is available."""
+        vec = self._embed(query_text) if self._embed and query_text.strip() else None
+        columns = (
+            "SELECT id, tenant_id, namespace, key, content, trust_tier, provenance, "
+            "valid_from, updated_at, version"
+        )
+        scope = "FROM memories WHERE tenant_id = %s AND namespace = %s AND is_quarantined = false"
         with self._conn.cursor() as cur:
-            # Try vector search
+            if vec is not None:
+                literal = "[" + ",".join(map(str, vec)) + "]"
+                cur.execute(
+                    f"{columns}, 1 - (embedding <=> %s::vector) AS cosine_sim "  # noqa: S608 -- fixed SQL fragments, values bound
+                    f"{scope} AND embedding IS NOT NULL "
+                    "ORDER BY embedding <=> %s::vector LIMIT %s",
+                    (literal, tenant_id, self._namespace, literal, limit),
+                )
+                rows = [
+                    r
+                    for r in cur.fetchall()
+                    if (r["cosine_sim"] or 0.0) >= self._min_cosine
+                ]
+                return self._rows_to_facts(rows)
+            words = re.findall(r"[a-z0-9][a-z0-9_.#-]{2,}", query_text.lower())[:12]
+            if not words:
+                return []
             cur.execute(
-                "SELECT id, tenant_id, namespace, key, content, trust_tier, provenance, "
-                "valid_from, updated_at "
-                "FROM memories "
-                "WHERE tenant_id = %s AND is_quarantined = false "
-                "AND status = 'active' "
-                "ORDER BY embedding <=> (SELECT embedding FROM memories LIMIT 0) "  # dummy for type
-                "LIMIT %s",
-                (tenant_id, limit),
+                f"{columns} {scope} AND content ILIKE ANY(%s) "  # noqa: S608 -- fixed SQL fragments, values bound
+                "ORDER BY valid_from DESC LIMIT %s",
+                (tenant_id, self._namespace, [f"%{w}%" for w in words], limit),
             )
-            # NOTE: The above will fail if no embedding column type matches.
-            # In production the server calls _embed() before writing, so vectors exist.
-            # We do a simple fallback: rank by relevance score if no vector.
-            rows = cur.fetchall()
-            return self._rows_to_facts(rows)
+            return self._rows_to_facts(cur.fetchall())
 
     def _rows_to_facts(self, rows: list[dict]) -> list[BiTemporalFact]:
         facts = []
         for row in rows:
+            prov = row.get("provenance") or {}
+            global_scope = prov.get("kind") in self._GLOBAL_KINDS
             facts.append(
                 BiTemporalFact(
                     id=str(row["id"]),
                     tenant_id=str(row["tenant_id"]),
-                    scope="project_fact",  # inferred from memories table
-                    project_id=None,
+                    scope="global_preference" if global_scope else "project_fact",
+                    # remember's `subject` is the project a fact belongs to; recall's subject
+                    # filter arrives here as project_id, so the two must be the same field.
+                    project_id=None if global_scope else (prov.get("subject") or None),
                     subject=row.get("key", ""),
                     predicate="",
                     object=row.get("content", ""),
@@ -715,8 +753,10 @@ class PostgresCortexAdapter:
                         row.get("updated_at", datetime.now(timezone.utc)).timestamp()
                         * 1000
                     ),
-                    provenance=row.get("provenance", {}).get("source", "user_direct"),
-                    confidence=1.0,
+                    provenance=prov.get("source", "user_direct"),
+                    # How near the query the fact is; word matches have no distance and rank
+                    # below any fact admitted by meaning.
+                    confidence=float(row.get("cosine_sim") or 0.5),
                     recurrence_count=1,
                     version=int(row.get("version", 1)),
                     status="active",
@@ -1095,17 +1135,20 @@ class ActiveMemoryEngine:
         for fact in associative_facts:
             if fact.status != "active":
                 continue
-            # Filter: global preferences OR project facts matching current projectId
+            # Filter: global preferences OR project facts matching current projectId. A run
+            # with no project is scoped by the query alone: every project fact may answer it.
             if fact.scope == "global_preference":
                 pass
-            elif fact.scope == "project_fact" and fact.project_id == project_id:
+            elif fact.scope == "project_fact" and project_id in (None, fact.project_id):
                 pass
             else:
                 continue
 
             age_days = max(0.0, (now_ms - fact.source_event_at) / (1000 * 60 * 60 * 24))
             recency_weight = 2.0 ** (-age_days / 30)  # 30-day half-life
-            project_boost = 1.35 if fact.project_id == project_id else 1.0
+            project_boost = (
+                1.35 if project_id and fact.project_id == project_id else 1.0
+            )
             score = fact.confidence * recency_weight * project_boost
             ranked.append((score, fact))
 
