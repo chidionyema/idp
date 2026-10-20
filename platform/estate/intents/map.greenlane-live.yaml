@@ -1,0 +1,110 @@
+name: map.greenlane-live
+description: >
+  Where the code lives for showing Greenlane (the merge queue) and Flux (deploys) live on /face and
+  /fleet: data sources, backend routes, face and fleet components, voice intents, tests. Every entry
+  is re-found on origin/main by a string anchor, so it prints today's file:line and marks STALE what
+  has moved or gone. Run this instead of sending agents to map the area again.
+args:
+  root: {type: string, default: "~/Documents/code/idp"}
+  ref:  {type: string, default: "origin/main"}
+halt_on_failure: false
+steps:
+  - name: map
+    # WHY. 2026-10-20 two agents spent ~8 min and ~200k tokens each mapping this area before the
+    # live Greenlane/Flux view could be designed. A prose note goes stale silently; anchors do not:
+    # each one is a literal string `git grep`ped on the ref, so a moved function prints its new line
+    # and a deleted one prints STALE. Read from the ref, not the working tree, so it answers for main
+    # whatever branch the checkout is on. Exit 1 when anything is stale: update the anchor here.
+    cmd: |
+      git -C {{root}} fetch -q origin main 2>/dev/null || true
+      ROOT={{root}} REF={{ref}} python3 - <<'PY'
+      import os, subprocess, sys
+      root, ref = os.path.expanduser(os.environ["ROOT"]), os.environ["REF"]
+      F = "backstage/plugins/fleetview-backend/src/fleetview_backend/"
+      H = "backstage/packages/app/src/modules/home/"
+      MAP = [
+        ("GREENLANE STATE", [
+          ("state store: git ref, one state.json blob, rewritten every tick, no history; CAS save",
+           "greenlane/github.py", "def save_state_text"),
+          ("status reader: 4 serial gh api calls (ref, commit, tree, blob) -- ~30s, slow",
+           "bin/idp-greenlane", "refs/greenlane/state"),
+          ("lane fields: name head status reason attempts seq judged_on rejudged stamped arrived "
+           "(status exposes only status/reason/head12/owner)", "greenlane/engine.py", "class Lane"),
+          ("batch fields: id base tip members[(lane,pushed,rebased)] started (engine minutes)",
+           "greenlane/engine.py", "class Batch"),
+          ("per-batch history (#6624): id base members started verdict_at outcome action reason; "
+           "status returns recent=last 10", "greenlane/engine.py", "HISTORY_KEEP"),
+          ("latency summary: batch_cycle_min, queue_to_land_min, outcomes (landings not exposed)",
+           "greenlane/engine.py", "def latency"),
+          ("check progress: 'waiting on <ctx,..>' -- computed, not stored; red reason embeds run URL",
+           "greenlane/github.py", "def checks"),
+          ("spoken summary 'brief' riding in status JSON", "greenlane/brief.py", "def brief"),
+          ("cadence: push lane/** + flux/image-updates, cron */15, check_run on queue/*, re-arms "
+           "while busy (~80-90s ticks)", ".github/workflows/greenlane.yml", "cron:"),
+        ]),
+        ("FLUX", [
+          ("main -> cluster: GitRepository flux-system, 1m interval", "clusters/oke/flux-system/gotk-sync.yaml", "kind: GitRepository"),
+          ("GitHub push receiver (webhook reconcile)", "clusters/oke/flux-system/receiver.yaml", "kind: Receiver"),
+          ("image bumps -> branch flux/image-updates -> Greenlane", "platform/image-automation/backstage.yaml", "kind: ImageUpdateAutomation"),
+          ("portal SA RBAC: kustomizations/helmreleases readable; GitRepository + ImagePolicy NOT yet",
+           "platform/backstage/base/rbac.yaml", "kustomizations"),
+          ("browser reads Flux via the Kubernetes plugin proxy", H + "useClusterHealth.ts", "kustomizations"),
+          ("Go watcher of lastAppliedRevision (push-to-live join point)", "platform/voice-router/internal/newsroom/kube.go", "lastAppliedRevision"),
+          ("laptop snapshot intent", "platform/estate/intents/flux-status.yaml", "name: flux-status"),
+        ]),
+        ("BACKEND (fleetview-backend, FastAPI 127.0.0.1:18790, via /api/proxy/fleetview/*)", [
+          ("app + routes", F + "serve.py", "def build_app"),
+          ("SSE pattern to copy", F + "serve.py", "/efficiency/stream"),
+          ("greenlane: subprocess bin/idp-greenlane status, 30s cache", F + "greenlane.py", "def greenlane_status"),
+          ("greenlane non-blocking (used by /estate)", F + "greenlane.py", "def greenlane_status_nowait"),
+          ("path constants", F + "routes.py", "GREENLANE_PATH"),
+          ("envelope", F + "routes.py", "def greenlane_envelope"),
+          ("GitHub token (same App token as Backstage)", F + "agent_jobs.py", "FLEETVIEW_GITHUB_TOKEN_FILE"),
+          ("Backstage GitHub token mount", "backstage/app-config.container.yaml", "backstage-github/GITHUB_TOKEN"),
+          ("tests: pytest, HTTP via TestClient(serve.build_app())", F.replace("src/fleetview_backend/", "tests/") + "test_envelope_http.py", "TestClient"),
+        ]),
+        ("VOICE", [
+          ("intent matcher: fires when every token of an intent's file name is in the utterance",
+           F + "voice_intents.py", "def match"),
+          ("read-only intents run without a yes", F + "voice_intents.py", "READ_ONLY"),
+          ("entry point (legacy /voice/stream path production runs)", F + "voice_intents.py", "def handle"),
+          ("intent to copy: last stdout line is spoken", "platform/estate/intents/lane.yaml", "name: lane"),
+        ]),
+        ("FACE (/face, voice-first, inline styles, accent #7fd1b9)", [
+          ("page; overlay lines stack under the wordmark at +44/+68/+92px", H + "FacePage.tsx", "function FaceAgentJobs"),
+          ("estate line (reads /estate every 60s; has green.main, green.state.lanes)", H + "FacePage.tsx", "function FaceEstateLine"),
+          ("live-poll + spoken-completion wiring to copy", H + "FacePage.tsx", "useAgentJobs(voice.speak)"),
+          ("hook to copy: fast/slow poll, unavailable state, announce only watched transitions", H + "useAgentJobs.ts", "export function finishedSince"),
+          ("estate hook", H + "EstateStrip.tsx", "export const useEstateStrip"),
+          ("voice engine choice (legacy in production: no router)", H + "faceVoiceEngine.ts", "reachable"),
+          ("face tests: useApi mock has only getOptionalString -- mock any new fetch hook",
+           H + "FacePage.router.test.tsx", "reachable: true"),
+        ]),
+        ("FLEET (/fleet board)", [
+          ("panel list; add a <Section> beside GatesPanel", H + "Fleet.tsx", "<GatesPanel"),
+          ("SSE client (authenticated fetch, not EventSource)", H + "sse.ts", "export function openSse"),
+          ("reactor-view greenlane HUD (#6659)", "backstage/packages/app/src/modules/room/ui/GreenlaneHud.tsx", "export"),
+          ("fleet tests: TestApiProvider with fetchApiRef routed on url", H + "Fleet.test.tsx", "fetchApiRef"),
+        ]),
+      ]
+      stale = total = 0
+      for area, rows in MAP:
+          print(f"\n{area}")
+          for what, path, anchor in rows:
+              total += 1
+              r = subprocess.run(["git", "-C", root, "grep", "-n", "-F", "-e", anchor, ref, "--", path],
+                                 capture_output=True, text=True)
+              hit = r.stdout.splitlines()[0].split(":", 3) if r.stdout else None
+              if hit:
+                  print(f"  {hit[1]}:{hit[2]}  {what}")
+              else:
+                  stale += 1
+                  print(f"  STALE {path} (no '{anchor}')  {what}")
+      print("\nREAD LIVE: estate-execute lane (Greenlane brief) | estate-execute flux-status | "
+            "GET /api/proxy/fleetview/greenlane")
+      print("GAPS (2026-10-20): status hides landings + per-lane arrived/attempts; no stored per-check "
+            "progress; no push-to-live measure (join landings with Kustomization lastAppliedRevision); "
+            "claim #6605 holds greenlane/*.py and bin/idp-greenlane")
+      print(f"map.greenlane-live: {total - stale}/{total} anchors found on {ref}")
+      sys.exit(1 if stale else 0)
+      PY
