@@ -406,3 +406,49 @@ def test_a_vault_entry_is_opt_in_and_mounted_optionally(repo: Path) -> None:
     ][0]["spec"]["template"]["spec"]
     volumes = {v["name"]: v for v in spec["volumes"]}
     assert volumes["secrets"]["secret"] == {"secretName": "pulsera", "optional": True}
+
+
+def test_contact_telegram_reads_the_existing_otto_entries_and_mounts_optionally(
+    repo: Path,
+) -> None:
+    build(repo, "pulsera", "pulsera", "--contact", "telegram")
+    secret = load(repo / "platform/pulsera/vault-secret.yaml")
+    assert secret["spec"]["data"] == [
+        {
+            "secretKey": "TELEGRAM_BOT_TOKEN",
+            "remoteRef": {"key": "otto-staging-telegram", "property": "token"},
+        },
+        {
+            "secretKey": "TELEGRAM_CHAT_ID",
+            "remoteRef": {"key": "notify-apprise-founder-telegram", "property": "chat"},
+        },
+    ]
+    assert "dataFrom" not in secret["spec"]
+    spec = [
+        d
+        for d in yaml.safe_load_all(
+            (repo / "platform/pulsera/deployment.yaml").read_text()
+        )
+        if d["kind"] == "Deployment"
+    ][0]["spec"]["template"]["spec"]
+    volumes = {v["name"]: v for v in spec["volumes"]}
+    assert volumes["secrets"]["secret"] == {"secretName": "pulsera", "optional": True}
+
+
+def test_contact_rejects_unknown_values_and_a_second_secret(repo: Path) -> None:
+    assert cli("plan", *site(repo, "pulsera", "pulsera", "--contact", "email")) == 2
+    assert (
+        cli(
+            "plan",
+            *site(
+                repo,
+                "pulsera",
+                "pulsera",
+                "--contact",
+                "telegram",
+                "--secret-entry",
+                "x",
+            ),
+        )
+        == 2
+    )

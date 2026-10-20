@@ -200,6 +200,14 @@ def params(ns) -> dict:
     if secret_entry and not NAME_RE.match(secret_entry):
         refuse(f"--secret-entry {secret_entry!r}: a vault entry name (DNS-1123 label)")
 
+    contact = (ns.contact or "").strip()
+    if contact not in ("", "telegram"):
+        refuse(f"--contact {contact!r}: telegram, or omit for none")
+    if contact and secret_entry:
+        refuse(
+            "--contact telegram and --secret-entry both name the site's one Secret; pick one"
+        )
+
     return {
         "name": name,
         "hostname": hostname,
@@ -217,6 +225,8 @@ def params(ns) -> dict:
         "cpu_limit": ns.cpu_limit,
         "memory_limit": ns.memory_limit,
         "secret_entry": secret_entry,
+        "contact": contact,
+        "has_secret": bool(secret_entry or contact),
         "cert_secret": ns.cert_secret,
         "force": parse_bool(ns.force),
     }
@@ -258,7 +268,35 @@ metadata:
 {edge}"""
 
 
+def telegram_secret_manifest(p: dict) -> str:
+    return f"""# The contact form's destination is Telegram: Otto numun (@numun_bot) posting to the founder's chat.
+# Both values already live in the vault and are read by name, so there is nothing to seed and
+# nothing in git names a bot or a chat. They are mounted as the two files web/lib/contact.ts reads,
+# TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. If either entry is ever missing this object reports an
+# error and creates nothing; the Deployment mounts the Secret optionally, so the site serves every
+# page and the form answers 503 `delivery_not_configured` rather than accepting a lead it would drop.
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: {p["name"]}
+  namespace: {p["name"]}
+spec:
+  refreshInterval: 10m
+  secretStoreRef: {{kind: ClusterSecretStore, name: estate-vault}}
+  target:
+    name: {p["name"]}
+    creationPolicy: Owner
+  data:
+    - secretKey: TELEGRAM_BOT_TOKEN
+      remoteRef: {{key: otto-staging-telegram, property: token}}
+    - secretKey: TELEGRAM_CHAT_ID
+      remoteRef: {{key: notify-apprise-founder-telegram, property: chat}}
+"""
+
+
 def vault_secret_manifest(p: dict) -> str:
+    if p["contact"] == "telegram":
+        return telegram_secret_manifest(p)
     return f"""# The vault entry {p["secret_entry"]}, read by External Secrets Operator over the cluster store.
 #
 # `dataFrom: extract` takes the entry whole, so every property of {p["secret_entry"]} becomes one key
@@ -304,10 +342,10 @@ def deployment_manifest(p: dict) -> str:
         )
         mounts = "            - {name: cache, mountPath: /app/.next/cache}\n" + mounts
     secret_mount = secret_volume = secret_env = ""
-    if p["secret_entry"]:
+    if p["has_secret"]:
         upper = name.upper().replace("-", "_")
         secret_mount = (
-            f"            # Every property of vault entry {p['secret_entry']} is a file here.\n"
+            f"            # Every property of the site's Secret is a file here.\n"
             f"            - {{name: secrets, mountPath: /etc/{name}-secrets, readOnly: true}}\n"
         )
         secret_volume = (
@@ -321,7 +359,7 @@ def deployment_manifest(p: dict) -> str:
         )
     credential = (
         "a secret arrives as a mounted file (kyverno refuses it as an env var)"
-        if p["secret_entry"]
+        if p["has_secret"]
         else "this service needs no secret"
     )
     return f"""# {name}: the workload the route points at.
@@ -487,7 +525,7 @@ def kustomization_manifest(p: dict) -> str:
     resources = ["namespace.yaml"]
     if p["hostname"]:
         resources.append("public-door.yaml")
-    if p["secret_entry"]:
+    if p["has_secret"]:
         resources.append("vault-secret.yaml")
     resources += ["pull-secret.yaml", "deployment.yaml"]
     listed = "\n".join(f"  - {r}" for r in resources)
@@ -775,7 +813,7 @@ def site_files(p: dict) -> dict:
     }
     if p["hostname"]:
         files[f"platform/{name}/public-door.yaml"] = door_manifest(p)
-    if p["secret_entry"]:
+    if p["has_secret"]:
         files[f"platform/{name}/vault-secret.yaml"] = vault_secret_manifest(p)
     for rel, content in files.items():
         try:
@@ -1184,6 +1222,11 @@ def add_site_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--cpu-limit", default="300m")
     parser.add_argument("--memory-limit", default="384Mi")
     parser.add_argument("--secret-entry", default="")
+    parser.add_argument(
+        "--contact",
+        default="",
+        help="telegram: contact form delivers via Otto numun to the founder's chat",
+    )
     parser.add_argument("--cert-secret", default="prospector-edge-tls")
     parser.add_argument("--runtime", default="always-on")
     parser.add_argument("--repo", default="")

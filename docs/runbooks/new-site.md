@@ -93,7 +93,10 @@ plain-text `sendMessage`: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. A generic
 `CONTACT_WEBHOOK_URL` (+ `CONTACT_WEBHOOK_TOKEN`) still works and wins when set. With neither, the
 route answers 503 `delivery_not_configured` instead of accepting a lead it would drop.
 
-For a new site, pass `secret_entry=<name>` to `site-onboard` and seed the vault entry with the
+For a new site, pass `contact=telegram` to `site-onboard`: it writes the ExternalSecret that reads
+Otto numun's token and the founder's chat from the existing vault entries (nothing to seed) and mounts
+it optionally, exactly as meridian does. It cannot be combined with `secret_entry`, which names a
+site's own entry: pass `secret_entry=<name>` instead and seed the vault entry with the
 properties `bot_token` and `chat_id`, or point `data:` at entries that already exist, as
 `platform/meridian/deployment.yaml` does (Otto numun's token and the founder's chat, no new secret). A namespace with its own fence also
 needs `egress_internet: [443]` to reach `api.telegram.org`; meridian has no fence of its own.
