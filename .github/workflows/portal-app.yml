@@ -153,13 +153,26 @@ jobs:
         if: steps.touched.outputs.yes == 'true'
         with:
           node-version: "24"   # portal-build's runtime, for the same reason
-      - name: yarn, the version package.json pins
-        if: steps.touched.outputs.yes == 'true'
-        run: corepack enable && corepack prepare yarn@4.13.0 --activate
-      - name: install exactly what yarn.lock holds
+      # Only Playwright, not the app. Measured 2026-10-20 (queue/b3306): `yarn install --immutable`
+      # was 72s of this job's 241s, installing the whole Backstage workspace for specs that import
+      # nothing but `@playwright/test` (and node's fs/path) -- portal-build installs and tests the
+      # app. Proven before the change: with only @playwright/test@1.62.1 in backstage/node_modules,
+      # `playwright test --config playwright.mobile.config.ts --list` loads all 14 phone tests.
+      # The version is read from yarn.lock, so the phone runs exactly the Playwright the lockfile
+      # pins and the browser cache key below still rotates with it. Installed beside the checkout
+      # and moved in, because `npm install` inside backstage/ would read its package.json and
+      # install everything again.
+      - name: install only the Playwright that yarn.lock pins
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
-        run: yarn install --immutable
+        run: |
+          set -euo pipefail
+          v=$(awk '/^"@playwright\/test@/{f=1} f&&/^  version:/{print $2; exit}' yarn.lock)
+          [ -n "$v" ] || { echo "no @playwright/test in yarn.lock"; exit 1; }
+          mkdir -p "$RUNNER_TEMP/pw" && echo '{"private":true}' > "$RUNNER_TEMP/pw/package.json"
+          npm install --prefix "$RUNNER_TEMP/pw" --no-audit --no-fund --no-package-lock "@playwright/test@$v"
+          mv "$RUNNER_TEMP/pw/node_modules" node_modules
+          node_modules/.bin/playwright --version
 
       # The founder tests /face and /fleet from a phone, and the estate had no mobile browser check,
       # so every mobile claim was a desktop measurement wearing a phone's name. The defect, measured
@@ -190,13 +203,13 @@ jobs:
       - name: the browsers a phone runs (WebKit for iPhone, Chromium for Android)
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
-        run: yarn playwright install --with-deps webkit chromium
+        run: node_modules/.bin/playwright install --with-deps webkit chromium
       - name: a phone is served the app, reaches the microphone, and a spoken question is heard and answered
         if: steps.touched.outputs.yes == 'true'
         working-directory: backstage
         env:
           PLAYWRIGHT_URL: https://catalogue.mumchimp.com
-        run: yarn playwright test --config playwright.mobile.config.ts
+        run: node_modules/.bin/playwright test --config playwright.mobile.config.ts
       # A red phone run with no trace can only be guessed at: the runner's engine is not the one on a
       # laptop (2026-10-09: Pixel passed on macOS Chrome and failed on the runner's Linux Chromium).
       - name: the phone run's report and traces, when it fails
