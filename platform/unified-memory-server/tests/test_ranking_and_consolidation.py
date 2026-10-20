@@ -131,6 +131,7 @@ def test_the_image_ships_every_module_main_and_the_cronjob_import():
     for f in (
         "ranking.py",
         "consolidation.py",
+        "hedge.py",
         "harness.py",
         "security_core.py",
         "schema.sql",
