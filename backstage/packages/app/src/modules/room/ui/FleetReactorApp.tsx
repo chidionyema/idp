@@ -804,6 +804,8 @@ export default function FleetReactorApp() {
   // --- ADDED: voice -> intent. The result's cue becomes a ring (and, for burn/fire, a burst) from the fleet's centre, and its text holds the ticker for 4s. ---
   const [intentLine, setIntentLine] = useState('');
   const intentTimer = useRef<any>(null);
+  // "How's the lane?" opens the greenlane detail (GreenlaneHud fades it on its own).
+  const [laneSummon, setLaneSummon] = useState(0);
   // THE SUMMONED RUNDOWN (Zero-Chrome). The desk has no dock, no crawl and no persistent badge;
   // it is dark until asked for, then dissolves on its own. Every interaction with it -- a number
   // key, the 's' status key, a voice "status" -- re-arms the dissolve, so a person reading it
@@ -828,7 +830,8 @@ export default function FleetReactorApp() {
     // A spoken intent that reports estate state ('status', 'ci-status', 'router-status') summons
     // the rundown, the same way the number keys do. This is the voice door the Zero-Chrome shell
     // needs: the dock is gone, so asking by voice is how the telemetry is called up.
-    summonNews();
+    if (r.intent === 'lane') setLaneSummon(n => n + 1);
+    else summonNews();
     setIntentLine(r.text);
     clearTimeout(intentTimer.current);
     intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
@@ -2906,6 +2909,7 @@ export default function FleetReactorApp() {
         <ErrorBoundary componentName="GreenlaneHud">
         <GreenlaneHud
           call={fleetCall('greenlane')}
+          summon={laneSummon}
         />
         </ErrorBoundary>
 

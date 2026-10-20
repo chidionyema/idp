@@ -23,6 +23,7 @@ READ_ONLY = frozenset(
         "ci.errors",
         "cost-today",
         "git-log",
+        "lane",
         "router-status",
         "voice-turns",
         "ledger-verify",

@@ -1,0 +1,9 @@
+name: lane
+description: How the lane is doing -- what is landing and for how long, what is stuck and why, what is red and who owns it. Read from the Greenlane's own status; "how's the lane?" is enough.
+args: {}
+halt_on_failure: true
+steps:
+  - name: brief
+    # The three answers are computed once, in greenlane/brief.py, and ride in the status JSON as
+    # `brief`; the Fleet dot reads the same dict. The spoken answer is its `summary` sentence.
+    cmd: python3 ~/Documents/code/idp/bin/idp-greenlane status | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["brief"]))'

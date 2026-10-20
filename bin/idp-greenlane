@@ -21,12 +21,14 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from greenlane.brief import brief  # noqa: E402
 from greenlane.engine import LANDED, Engine, State, latency  # noqa: E402
 from greenlane.github import STATE_REF, GitHubBackend  # noqa: E402
 
@@ -259,6 +261,14 @@ def status() -> int:
         "latency": latency(st),
         "recent": st.history[-10:],
     }
+    for k, v in st.lanes.items():  # who pushed a red lane's head: the owner the founder asks for
+        if v.status == "red":
+            c = gh(f"commits/{v.head}") or {}
+            who = (c.get("author") or {}).get("login") or (
+                (c.get("commit") or {}).get("author") or {}
+            ).get("name")
+            if who:
+                out["state"]["lanes"][k]["owner"] = who
     prs = gh("pulls?state=open&per_page=100") or []
     out["open_prs"] = [
         {"number": p["number"], "user": p["user"]["login"], "head": p["head"]["ref"]}
@@ -332,6 +342,8 @@ def status() -> int:
         "work_lost": len(lost),
     }
     out["alarm"] = (not out["main"]["green"]) or bool(lost)
+    out["now_min"] = time.time() / 60.0  # the engine's own clock (github.py now()), for ages
+    out["brief"] = brief(out)  # the three answers the Fleet dot and the voice both read
     print(json.dumps(out, indent=1, sort_keys=True))
     return 0
 
