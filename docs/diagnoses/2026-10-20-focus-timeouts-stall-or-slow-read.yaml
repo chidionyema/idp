@@ -1,0 +1,51 @@
+description: 'Supersedes the framing of 2026-10-20-focus-read-waits-on-gh.yaml, whose
+  winner (router-wide stalls, 0.93) the router log contradicts: of 88 calls whose
+  focus read missed the 3.5 s deadline, 44 had the brief read -- started beside it,
+  in the same asyncio.wait window -- answer in time. A stall alone would hold both.
+  Those counts were seen before this record was written, so they are NOT evidence
+  here; they only show the earlier hypotheses were not exhaustive (the causes need
+  not be exclusive). Question: is a focus timeout on the laptop router (slot 4001,
+  door=mcp, main''s active_memory.py, pid 90157) caused by router-wide stalls alone,
+  by the focus read alone running past the deadline, or by both. Hypotheses and likelihoods
+  fixed and committed 2026-10-20 before the forward window opened; the window is measured
+  by stamping router and watchdog log lines with wall time as they are written.
+
+  '
+hypotheses:
+- name: S
+  description: router-wide stalls alone -- every focus timeout falls inside a stall
+    that holds the event loop or the default thread pool, which every read waits on
+  prior: 0.34
+- name: G
+  description: the focus read alone -- the gh claim search runs past the 3.5 s deadline
+    on its own (a latency tail; 3.63 s seen once), independent of router stalls
+  prior: 0.33
+- name: M
+  description: both -- some focus timeouts fall inside router stalls, others are the
+    focus read alone running long while the router is healthy
+  prior: 0.33
+evidence:
+- name: 'forward window, one count per focus timeout (`active_memory focus unreadable
+    ... no answer inside 3.5s`): whether the watchdog logged `probe slow` within 30
+    s of it (coincide) or not. Base rate p0 = 0.14: the share of the previous 3-6
+    h within 30 s of a probe-slow line (0.130 over 6 h, 0.145 over 3 h). S: 0.7 (the
+    15 s probe misses stalls shorter than its own timeout). G: p0. M: midway'
+  observed:
+    coincide: 9
+    apart: 22
+  likelihoods:
+    S:
+      coincide: 0.7
+      apart: 0.3
+    G:
+      coincide: 0.14
+      apart: 0.86
+    M:
+      coincide: 0.42
+      apart: 0.58
+posteriors:
+  S: 3.96873e-05
+  G: 0.2276430998
+  M: 0.7723172129
+winner: M
+computed_at: '2026-10-20T13:58:13Z'

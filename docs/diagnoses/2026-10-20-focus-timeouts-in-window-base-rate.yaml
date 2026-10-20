@@ -1,0 +1,47 @@
+description: 'Second forward window for the question in 2026-10-20-focus-timeouts-stall-or-slow-read.yaml.
+  That window ruled out stalls alone (S posterior 0.00004) but left G (the focus read
+  alone runs long) against M (both) at 0.23 / 0.77, and its G likelihood used a base
+  rate taken from the hours before the window (0.14) while the window itself ran nearer
+  0.21 -- an underestimate that favours M. Here the base rate is measured over this
+  window only. Procedure, fixed and committed before the window opened and run by
+  script: at close, p0 = share of 5 s ticks in [first timeout - 30 s, last timeout
+  + 30 s] that lie within 30 s of a watchdog `probe slow` line; the likelihoods below
+  are filled from p0 and committed; only then are coincidences counted into observed.
+  Laptop router slot 4001, door=mcp, main''s active_memory.py.
+
+  '
+hypotheses:
+- name: S
+  description: router-wide stalls alone -- every focus timeout falls inside a stall
+  prior: 0.34
+- name: G
+  description: the focus read alone runs past the 3.5 s deadline, independent of router
+    stalls; a timeout coincides with a stall only at the window's base rate
+  prior: 0.33
+- name: M
+  description: both -- some focus timeouts fall inside router stalls, others are the
+    focus read alone running long while the router is healthy
+  prior: 0.33
+evidence:
+- name: 'forward window 2, one count per focus timeout: watchdog `probe slow` within
+    30 s (coincide) or not (apart). S: 0.7. G: p0 measured in this window. M: (p0
+    + 0.7) / 2'
+  observed:
+    coincide: 0
+    apart: 30
+  likelihoods:
+    S:
+      coincide: 0.7
+      apart: 0.3
+    G:
+      coincide: 0.01
+      apart: 0.99
+    M:
+      coincide: 0.355
+      apart: 0.645
+posteriors:
+  S: 0.0
+  G: 0.9999973834
+  M: 2.6166e-06
+winner: G
+computed_at: '2026-10-20T14:38:46Z'

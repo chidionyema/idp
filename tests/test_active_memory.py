@@ -217,6 +217,70 @@ def test_unreadable_focus_is_said_not_shown_as_free(monkeypatch, tmp_path):
     assert "no live claims" not in out["messages"][-1]["content"]
 
 
+def _expire_focus(mod, age):
+    mod._focus_cache[0] -= age
+    mod._focus_tried[0] -= age
+
+
+def test_an_expired_focus_is_served_while_one_read_replaces_it(monkeypatch, tmp_path):
+    # The laptop door's gh search takes ~3.6 s, past the read deadline: a caller that waited
+    # for it at every expiry lost the focus (idp#6678).
+    mod = _load(monkeypatch, tmp_path)
+    seen = _wire(mod)
+    first = mod.fetch_focus()
+    release = __import__("threading").Event()
+    newer = dict(FOCUS, claims=[])
+
+    def slow(url, timeout):
+        seen["focus"] += 1
+        release.wait(5)
+        return newer
+
+    mod._get_json = slow
+    _expire_focus(mod, mod.FOCUS_TTL_S + 1)
+    started = time.monotonic()
+    assert mod.fetch_focus() is first, "the expired answer is served, not waited for"
+    assert mod.fetch_focus() is first
+    assert time.monotonic() - started < 1
+    release.set()
+    for _ in range(50):
+        if mod._focus_cache[1] is newer:
+            break
+        time.sleep(0.02)
+    assert mod.fetch_focus() is newer
+    assert seen["focus"] == 2, "one background read, however many callers"
+
+
+def test_an_unreadable_refresh_keeps_the_last_good_focus(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    seen = _wire(mod)
+    good = mod.fetch_focus()
+    mod._get_json = lambda url, timeout: {
+        "available": False,
+        "error": "gh",
+        "claims": [],
+    }
+    _expire_focus(mod, mod.FOCUS_TTL_S + 1)
+    mod._read_focus(time.time())
+    assert mod.fetch_focus() is good
+    assert seen["focus"] == 1
+
+
+def test_a_focus_too_old_to_show_is_waited_for(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    _wire(mod)
+    mod.fetch_focus()
+    mod._get_json = lambda url, timeout: {
+        "available": False,
+        "error": "gh",
+        "claims": [],
+    }
+    _expire_focus(mod, mod.FOCUS_STALE_S + 1)
+    assert mod.fetch_focus()["available"] is False, (
+        "past FOCUS_STALE_S it says unreadable"
+    )
+
+
 def test_calls_that_must_not_carry_memory_are_left_alone(monkeypatch, tmp_path):
     mod = _load(monkeypatch, tmp_path)
     seen = _wire(mod)

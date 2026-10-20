@@ -53,6 +53,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -84,6 +85,11 @@ MAX_CHARS = int(os.environ.get("ACTIVE_MEMORY_MAX_CHARS", "2400"))
 BRIEF_LIMIT = int(os.environ.get("ACTIVE_MEMORY_BRIEF_LIMIT", "5"))
 BRIEF_TTL_S = 300
 FOCUS_TTL_S = 30  # fleetview itself re-reads GitHub every 30 s (claims.CACHE_S)
+# Past FOCUS_TTL_S a good answer is still served while one background read replaces it: the
+# laptop door's gh search takes ~3.6 s, longer than the whole read deadline, so a caller that
+# waited for it lost the focus at every expiry (measured 2026-10-20: 3 of 40 calls). Past this
+# age the answer is too old to show and the caller waits again.
+FOCUS_STALE_S = 600
 MAX_FOCUS_ROWS = 8
 TASK_CHARS = 2000
 MARKER = "<estate-memory"
@@ -94,6 +100,8 @@ CHAT_CALLS = {"completion", "acompletion", "anthropic_messages", "text_completio
 
 _brief_cache: dict[str, tuple[float, dict | None]] = {}
 _focus_cache: list = [0.0, None]
+_focus_refresh = threading.Lock()  # held by the one read in flight
+_focus_tried: list = [0.0]
 _written: dict[str, float] = {}
 _door_key: list = [0.0, ""]
 
@@ -317,10 +325,50 @@ def fetch_brief(task: str, now: float | None = None) -> dict | None:
 
 def fetch_focus(now: float | None = None) -> dict | None:
     now = time.time() if now is None else now
-    if (FOCUS_URL or DOOR == "mcp") and now - _focus_cache[0] >= FOCUS_TTL_S:
-        body = _door_focus() if DOOR == "mcp" else _get_json(FOCUS_URL, BUDGET_S)
-        _focus_cache[:] = [now, body if isinstance(body, dict) else None]
+    if not (FOCUS_URL or DOOR == "mcp") or now - _focus_cache[0] < FOCUS_TTL_S:
+        return _focus_cache[1]
+    stamp, good = _focus_cache
+    if _usable(good) and now - stamp < FOCUS_STALE_S:
+        # one read in flight, and none again until FOCUS_TTL_S after the last try: a gh
+        # outage must not start a search on every chat call
+        if now - _focus_tried[0] >= FOCUS_TTL_S and _focus_refresh.acquire(
+            blocking=False
+        ):
+            threading.Thread(
+                target=_refresh_focus, args=(now,), daemon=True, name="focus-refresh"
+            ).start()
+        return good
+    with _focus_refresh:
+        if _focus_cache[0] != stamp:  # another caller read it while this one waited
+            return _focus_cache[1]
+        _read_focus(now)
     return _focus_cache[1]
+
+
+def _read_focus(now: float) -> None:
+    _focus_tried[0] = now
+    body = _door_focus() if DOOR == "mcp" else _get_json(FOCUS_URL, BUDGET_S)
+    body = body if isinstance(body, dict) else None
+    # an unreadable answer never replaces a good one young enough to show
+    if (
+        _usable(body)
+        or not _usable(_focus_cache[1])
+        or (now - _focus_cache[0] >= FOCUS_STALE_S)
+    ):
+        _focus_cache[:] = [now, body]
+
+
+def _usable(body: dict | None) -> bool:
+    return isinstance(body, dict) and body.get("available", True) is not False
+
+
+def _refresh_focus(now: float) -> None:
+    try:
+        _read_focus(now)
+    except Exception as exc:  # the stale answer stands; the next expiry tries again
+        log.warning("active_memory focus refresh failed: %s", exc)
+    finally:
+        _focus_refresh.release()
 
 
 # --------------------------------------------------------------------------- the block

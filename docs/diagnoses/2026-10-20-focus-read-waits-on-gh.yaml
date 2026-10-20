@@ -1,0 +1,147 @@
+description: 'On the laptop router (slot 4001, door=mcp), a warm window of 40 chat
+  calls logged 36 `active_memory injected` and 3 `active_memory focus unreadable ...
+  no answer inside 3.5s`: Active Focus missing from about one call in thirteen. Question:
+  why does the focus read miss the 3.5 s read deadline (ACTIVE_MEMORY_BUDGET_S=3 +
+  0.5) -- is the gh claim search itself slower than the deadline at each FOCUS_TTL_S
+  expiry, is gh not found under the launchd PATH, is the whole router stalling, or
+  is a slow door brief starving the focus read. Measured 2026-10-20 07:58-08:10 BST,
+  before any fix.
+
+  '
+hypotheses:
+- name: H1
+  description: the focus register is re-read from GitHub through one gh issue search
+    at every FOCUS_TTL_S (30 s) expiry, and that search takes longer than the read
+    deadline, so the caller that hits the expiry gets no focus
+  prior: 0.35
+- name: H2
+  description: gh is not on the PATH the launchd router runs with, so focus.live_focus
+    returns None (unknown) and the focus is unreadable
+  prior: 0.2
+- name: H3
+  description: the router itself stalls (event loop or worker threads), so every read
+    in flight misses the deadline, the focus among them
+  prior: 0.25
+- name: H4
+  description: the door brief is slow, and the brief read holds up the focus read
+    that runs beside it
+  prior: 0.2
+evidence:
+- name: the exact search live_focus runs (gh issue list --search "CLAIM agent= in:comments
+    updated:>=<now-2h> sort:updated-desc" --limit 50 --json number,title,comments)
+    took 3.63 s wall, past the 3.5 s deadline (does one uncached focus read exceed
+    the deadline on its own)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.5
+      absent: 0.5
+    H3:
+      present: 0.5
+      absent: 0.5
+    H4:
+      present: 0.5
+      absent: 0.5
+- name: the running router process (ps eww on the 4001 slot) has PATH starting ~/.rd/bin:~/.local/bin:~/bin,
+    and gh resolves to ~/.local/bin/gh; the wrapper exports that PATH (bin/litellm-local
+    line 142) although the launchd plist itself sets only /usr/bin:/bin:/usr/sbin:/sbin
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.9
+      absent: 0.1
+    H4:
+      present: 0.9
+      absent: 0.1
+- name: 'warm window of 40 router chat calls, outcome per call: injected vs focus
+    timed out (`focus unreadable ... no answer inside 3.5s`). A missing gh would fail
+    fast and render "unreadable" inside the block, not log a timeout'
+  observed:
+    injected: 36
+    focus_timeout: 3
+  likelihoods:
+    H1:
+      injected: 0.92
+      focus_timeout: 0.08
+    H2:
+      injected: 0.99
+      focus_timeout: 0.01
+    H3:
+      injected: 0.97
+      focus_timeout: 0.03
+    H4:
+      injected: 0.98
+      focus_timeout: 0.02
+- name: 'the door brief, called through door.call three times from the laptop: 2.84
+    s cold, then 0.24 s and 0.25 s warm, every one inside the 3.5 s deadline (is the
+    brief slow enough to hold up the read)'
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.3
+      absent: 0.7
+    H2:
+      present: 0.3
+      absent: 0.7
+    H3:
+      present: 0.4
+      absent: 0.6
+    H4:
+      present: 0.8
+      absent: 0.2
+- name: litellm-watchdog.log shows the router failing its liveliness probe ("probe
+    slow:curl=28 http=000 -- listening, not restarted") eleven times 06:42-07:34Z
+    the same morning (router-wide stalls do happen)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.4
+      absent: 0.6
+    H2:
+      present: 0.4
+      absent: 0.6
+    H3:
+      present: 0.9
+      absent: 0.1
+    H4:
+      present: 0.4
+      absent: 0.6
+- name: 'controlled: 5 cold focus.live_focus reads in a standalone python process
+    (fresh temp cache path, no router), 5 s apart, each counted over or under the
+    3.5 s deadline. Likelihoods fixed before running: P(over) H1 0.7, H2 0.2, H3 0.2,
+    H4 0.2. Measured 1.67, 1.44, 1.48, 1.72, 1.44 s, rows=5 each'
+  observed:
+    under_deadline: 5
+  likelihoods:
+    H1:
+      over_deadline: 0.7
+      under_deadline: 0.3
+    H2:
+      over_deadline: 0.2
+      under_deadline: 0.8
+    H3:
+      over_deadline: 0.2
+      under_deadline: 0.8
+    H4:
+      over_deadline: 0.2
+      under_deadline: 0.8
+posteriors:
+  H1: 0.0253171529
+  H2: 0.0016478236
+  H3: 0.9259939857
+  H4: 0.0470410378
+winner: H3
+computed_at: '2026-10-20T07:52:52Z'
