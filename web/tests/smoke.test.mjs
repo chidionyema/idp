@@ -101,6 +101,23 @@ test("content is readable without JavaScript", async () => {
   assert.match(html, /id="main"/, "main landmark needs an id for the skip link");
 });
 
+test("the logo lockup renders a mark, not just the word", async () => {
+  const html = await (await fetch(`${BASE}/`)).text();
+  // The mark is three primitives -- the ring, the meridian through it, and the bead where they
+  // meet -- drawn by components/Logo.tsx. A regression that drops it leaves the wordmark, which
+  // looks like a logo in a diff and does not in a header, so the test names the shapes: one
+  // lockup in the nav and one in the footer, each carrying a mark with a meridian in it.
+  assert.equal((html.match(/class="logo( |")/g) ?? []).length, 2, "expected the lockup in the header and the footer");
+  assert.equal((html.match(/<svg[^>]*class="logo-mark"/g) ?? []).length, 2, "missing the mark svg");
+  assert.equal((html.match(/<ellipse /g) ?? []).length, 2, "the mark is missing its meridian");
+
+  // The tab icon is the same drawing. It is generated here rather than fetched from a CDN, so
+  // the only defence against it silently vanishing is this fetch.
+  const favicon = await fetch(`${BASE}/favicon.svg`);
+  assert.equal(favicon.status, 200);
+  assert.match(await favicon.text(), /<ellipse /, "the favicon lost its meridian");
+});
+
 test("contact endpoint refuses malformed requests", async () => {
   const wrongType = await fetch(`${BASE}/api/contact`, { method: "POST", body: "not json", headers: { "content-type": "text/plain" } });
   assert.equal(wrongType.status, 415);

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { site } from "@/content/site";
+import { Logo } from "@/components/Logo";
 
 export function Footer() {
   const year = new Date().getFullYear();
@@ -8,7 +9,7 @@ export function Footer() {
       <div style={{ maxWidth: "1152px", margin: "0 auto", padding: "64px 24px 48px" }}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "48px" }}>
           <div style={{ gridColumn: "span 2", maxWidth: "280px" }}>
-            <Link href="/" className="footer-logo">Meridian<span style={{ color: "var(--accent)" }}>.</span></Link>
+            <Logo tone="light" />
             <p style={{ marginTop: "12px", fontSize: "13px", lineHeight: 1.65, color: "rgba(255,255,255,0.65)", maxWidth: "none" }}>{site.tagline}</p>
             <a href="mailto:hello@meridian.ai" className="footer-link-muted" style={{ display: "inline-block", marginTop: "20px" }}>hello@meridian.ai</a>
           </div>
