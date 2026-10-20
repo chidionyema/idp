@@ -134,7 +134,11 @@ backend:
     # 127.0.0.1:3100` return 000 while a browser on the same machine got 200.
     host: 0.0.0.0
   csp:
-    connect-src: ["'self'", 'http:', 'https:', 'blob:']
+    # The face's streaming voice (useVoiceRouter) opens a WebSocket (ws:/wss: are not covered by
+    # http:/https:) and loads its mic-capture AudioWorklet from a blob: URL, which script-src
+    # governs. Setting script-src replaces Backstage's default, so 'self' and 'unsafe-eval' stay.
+    connect-src: ["'self'", 'http:', 'https:', 'ws:', 'wss:', 'blob:']
+    script-src: ["'self'", "'unsafe-eval'", 'blob:']
     img-src: ["'self'", 'data:', 'blob:']
   database:
     # Postgres, not the in-memory sqlite of app-config.yaml. Two reasons, and
