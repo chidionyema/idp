@@ -10,8 +10,8 @@ export default function HomePage() {
     <>
       {/* Hero */}
       <section style={{ borderBottom: "1px solid var(--rule)" }}>
-        <div className="container section" style={{ display: "grid", gap: "64px", gridTemplateColumns: "1fr 1fr", alignItems: "start" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "32px" }}>
+        <div className="container section hero-grid">
+          <div className="hero-copy">
             <span className="tag tag-accent">AI Infrastructure Consulting</span>
             <h1 style={{ fontFamily: "var(--serif)" }}>AI infrastructure consulting for companies<br /><em style={{ fontStyle: "normal", color: "var(--accent)" }}>shipping production LLM systems</em>.</h1>
             <p style={{ fontSize: "18px", lineHeight: 1.7, color: "var(--ink-3)", maxWidth: "52ch" }}>
@@ -22,7 +22,7 @@ export default function HomePage() {
               <Link href="/case-studies" className="btn-secondary">See our work</Link>
             </div>
           </div>
-          <div style={{ border: "1px solid var(--rule)", background: "var(--white)", padding: "24px" }}>
+          <div className="hero-demo">
             <p style={{ fontFamily: "var(--mono)", fontSize: "11px", fontWeight: 500, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--ink-3)", marginBottom: "20px" }}>LLM routing demo</p>
             <HeroPlayground />
           </div>
@@ -48,7 +48,7 @@ export default function HomePage() {
       <section className="section">
         <div className="container">
           <Reveal><div style={{ marginBottom: "48px" }}><h2>Research</h2><p style={{ color: "var(--ink-3)", marginTop: "12px" }}>Written from engagements, not from conference talks.</p></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "24px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(300px, 100%), 1fr))", gap: "24px" }}>
             {site.research.map((r) => (
               <Reveal key={r.title}>
                 <div className="card" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -109,7 +109,7 @@ export default function HomePage() {
       <section className="section" style={{ background: "var(--ink)", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
         <div className="container">
           <Reveal><div style={{ marginBottom: "48px" }}><span className="tag tag-accent" style={{ marginBottom: "16px", display: "inline-flex" }}>Case studies</span><h2 style={{ color: "#fff", fontFamily: "var(--serif)" }}>What we’ve shipped</h2></div></Reveal>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "24px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))", gap: "24px" }}>
             {[
               { industry: "Fintech", result: "73% bill reduction", detail: "$1.1M a month down to $297K. LiteLLM routing and SPIFFE identity across three regions." },
               { industry: "SaaS", result: "6 weeks to production", detail: "A full AI platform for a 400-engineer company, built by eight of their own people." },
