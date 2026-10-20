@@ -13,6 +13,7 @@
  * never two polls at once, not while the tab is hidden, and not at all once unmounted.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -77,12 +78,29 @@ export function headline(t: Task): string {
   return t.summary || t.last || t.outcome;
 }
 
+/** The rail's view: a held task is the concierge waiting on the founder (a pay step). */
+export function conciergeSignal(tasks: Task[] | null, err: string | null): Signal {
+  if (err) return unreadable('concierge');
+  const held = (tasks || []).filter(t => t.state === 'held');
+  if (held.length) {
+    return { source: 'concierge', tier: 'warning', summary: `concierge · waiting on you: ${headline(held[0])}` };
+  }
+  const failed = (tasks || []).filter(t => t.state === 'failed');
+  if (failed.length) {
+    return { source: 'concierge', tier: 'advisory', summary: `concierge · failed: ${headline(failed[0])}` };
+  }
+  return clear('concierge');
+}
+
 export default function ConciergeTasks({
   call,
+  onSignal,
   pollMs = 3_000,
   idlePollMs = 30_000,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   idlePollMs?: number;
 }) {
@@ -174,6 +192,8 @@ export default function ConciergeTasks({
   };
 
   const newest = tasks && tasks.length ? tasks[0] : null;
+
+  useSignal(onSignal, conciergeSignal(tasks, boardError));
 
   return (
     // crew#1017: "'concierge' pill misalignment". This was `top-36` (144px) while the Harv

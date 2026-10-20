@@ -8,6 +8,7 @@
  * whether the harvester is running now.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -47,12 +48,26 @@ export function ageLine(runAt: number | null | undefined, nowS: number): string 
   return `last run ${Math.round(s / 86400)} d ago`;
 }
 
+/** The rail's view: a harvester that has not run in a day is worth knowing, not an emergency. */
+export function harvSignal(harv: Harv | null, err: string | null, nowS: number): Signal {
+  if (err) return unreadable('harv');
+  if (!harv) return clear('harv');
+  if (!harv.available) return unreadable('harv', 'unreadable');
+  if (harv.run_at && nowS - harv.run_at > STALE_S) {
+    return { source: 'harv', tier: 'advisory', summary: `harv · last run ${ageLine(harv.run_at, nowS)}` };
+  }
+  return clear('harv');
+}
+
 export default function HarvPanel({
   call,
+  onSignal,
   pollMs = 30_000,
   now = () => Date.now() / 1000,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   now?: () => number;
 }) {
@@ -103,6 +118,8 @@ export default function HarvPanel({
       : stale
         ? 'text-amber-200 border-amber-400/40'
         : 'text-white/80 border-white/15';
+
+  useSignal(onSignal, harvSignal(harv, err, now()));
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">

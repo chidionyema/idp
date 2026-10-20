@@ -12,6 +12,7 @@
  * and not at all once unmounted.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -98,12 +99,28 @@ function StageChips({ job }: { job: Job }) {
   );
 }
 
+/** The rail's view: a failed job needs a person; a running one is just work happening. */
+export function jobsSignal(jobs: Job[] | null, err: string | null): Signal {
+  if (err) return unreadable('jobs');
+  const failed = (jobs || []).filter(j => j.state === 'failed');
+  if (!failed.length) return clear('jobs');
+  const why = failed[0].reason ? ` — ${failed[0].reason}` : '';
+  return {
+    source: 'jobs',
+    tier: 'caution',
+    summary: `jobs · ${failed.length} failed${failed.length === 1 ? why : ''}`,
+  };
+}
+
 export default function AgentJobs({
   call,
+  onSignal,
   pollMs = 20_000,
   idlePollMs = 60_000,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   idlePollMs?: number;
 }) {
@@ -193,6 +210,8 @@ export default function AgentJobs({
   };
 
   const running = (jobs || []).filter(j => j.state === 'running').length;
+
+  useSignal(onSignal, jobsSignal(jobs, boardError));
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">

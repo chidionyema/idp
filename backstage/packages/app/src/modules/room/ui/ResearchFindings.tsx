@@ -8,6 +8,7 @@
 // department says so in its own words -- "research · unreachable" -- never as "no findings",
 // which would claim the engine has produced nothing when the truth is that nobody could look.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -43,12 +44,22 @@ export function toneOf(status: string): string {
   return 'border-amber-400/40 text-amber-200';
 }
 
+/** The rail's view: findings are content, summoned not alarmed; only an unreadable board asks. */
+export function researchSignal(b: Board | null, err: string | null): Signal {
+  if (err) return { source: 'research', tier: 'advisory', summary: 'research · unreachable' };
+  if (b && !b.available) return { source: 'research', tier: 'advisory', summary: 'research · unreadable' };
+  return clear('research');
+}
+
 export default function ResearchFindings({
   call,
+  onSignal,
   pollMs = 300_000,
   now = () => Date.now(),
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   now?: () => number;
 }) {
@@ -86,6 +97,8 @@ export default function ResearchFindings({
   const unavailable = !!err || (board !== null && !board.available);
   const tone =
     unavailable ? 'text-rose-300 border-rose-400/40' : 'text-white/80 border-white/15';
+
+  useSignal(onSignal, researchSignal(board, err));
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">

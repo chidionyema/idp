@@ -14,6 +14,7 @@
  * wrong" are different facts and the founder acts differently on each.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { clear, unreadable, useSignal, type Signal } from './attention';
 
 export type Call = (init?: RequestInit) => Promise<Response>;
 
@@ -58,6 +59,16 @@ export function loudLabel(lane: Greenlane | null, err: string | null): string {
   if (b.work_lost) return 'lanes · work lost';
   if (n) return `lanes · ${n} need you`;
   return 'lanes · alarm';
+}
+
+/** The rail's view: the brief already decided loud; main red and lost work are warnings. */
+export function laneSignal(lane: Greenlane | null, err: string | null): Signal {
+  if (err) return unreadable('lanes');
+  if (lane && !lane.available) return unreadable('lanes', 'unreadable');
+  if (!isLoud(lane, err)) return clear('lanes');
+  const b = lane?.brief;
+  const tier = b && (b.main_red.length || b.work_lost) ? 'warning' : 'caution';
+  return { source: 'lanes', tier, summary: loudLabel(lane, err) };
 }
 
 function Section({ title, empty, children }: { title: string; empty: string; children?: any }) {
@@ -128,11 +139,14 @@ function Detail({ lane, err }: { lane: Greenlane | null; err: string | null }) {
 
 export default function GreenlaneHud({
   call,
+  onSignal,
   pollMs = 30_000,
   summon = 0,
   fadeMs = FADE_MS,
 }: {
   call: Call;
+  /** Report this panel's attention tier to the rail (attention.ts). */
+  onSignal?: (s: Signal) => void;
   pollMs?: number;
   /** Bump this to open the detail (a spoken "how's the lane?"). It fades after `fadeMs`. */
   summon?: number;
@@ -195,6 +209,8 @@ export default function GreenlaneHud({
 
   const loud = isLoud(lane, err);
   const label = loud ? loudLabel(lane, err) : '';
+
+  useSignal(onSignal, laneSignal(lane, err));
 
   return (
     <div className="pointer-events-auto flex flex-col items-end gap-2 max-w-[92vw]">

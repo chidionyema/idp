@@ -66,6 +66,7 @@ import EfficiencyHud from './EfficiencyHud';
 // these two panels no fleet surface rendered either fact. ---
 import GreenlaneHud from './GreenlaneHud';
 import ClaimsPanel from './ClaimsPanel';
+import { board as attentionBoard, noteSeen, ADVISORY_TTL_MS, type Seen, type Signal } from './attention';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { emptyRundown, ingest, parseStoryFrame, shouldInterrupt, visualFor, type Rundown, type Story } from './newsRundown';
 import { useVoiceRouter } from '../../home/useVoiceRouter';
@@ -820,6 +821,38 @@ export default function FleetReactorApp() {
   }, []);
   useEffect(() => () => clearTimeout(newsDissolveTimer.current), []);
 
+  // THE ATTENTION RAIL (attention.ts). Every status panel reports a tier; a panel that is fine is
+  // not drawn, at most three that are not are, worst first, and the rest are counted. Asking --
+  // a tap on the rail's head, or a spoken "status" -- shows every panel, then they fade again.
+  const [signals, setSignals] = useState<Record<string, Signal>>({});
+  const seen = useRef<Seen>({});
+  const [railOpen, setRailOpen] = useState(false);
+  const [railTick, setRailTick] = useState(0);
+  const railFade = useRef<any>(null);
+  const onSignal = useCallback((sig: Signal) => {
+    setSignals(prev => ({ ...prev, [sig.source]: sig }));
+  }, []);
+  const summonRail = useCallback(() => {
+    setRailOpen(true);
+    clearTimeout(railFade.current);
+    railFade.current = setTimeout(() => setRailOpen(false), 8000);
+  }, []);
+  useEffect(() => () => clearTimeout(railFade.current), []);
+  // An advisory expires on a clock, not on a poll: re-read the board once its TTL can have passed.
+  useEffect(() => {
+    const id = setInterval(() => setRailTick(t => t + 1), ADVISORY_TTL_MS / 4);
+    return () => clearInterval(id);
+  }, []);
+  const rail = useMemo(() => {
+    const list = Object.values(signals);
+    const nowMs = Date.now();
+    seen.current = noteSeen(seen.current, list, nowMs);
+    return attentionBoard(list, seen.current, nowMs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signals, railTick]);
+  const shownSources = useMemo(() => new Set(rail.shown.map(x => x.source)), [rail]);
+  const drawn = (source: string) => railOpen || shownSources.has(source);
+
   const onIntentResult = useCallback((r: IntentResult) => {
     const c = cueToReactor(r);
     engineState.current.intentCue = { t: 0, kind: c.kind, color: c.color };
@@ -832,10 +865,11 @@ export default function FleetReactorApp() {
     // needs: the dock is gone, so asking by voice is how the telemetry is called up.
     if (r.intent === 'lane') setLaneSummon(n => n + 1);
     else summonNews();
+    if (r.intent === 'status') summonRail();
     setIntentLine(r.text);
     clearTimeout(intentTimer.current);
     intentTimer.current = setTimeout(() => setIntentLine(''), 4000);
-  }, [summonNews]);
+  }, [summonNews, summonRail]);
   useEffect(() => () => clearTimeout(intentTimer.current), []);
   onIntentRef.current = onIntentResult;
 
@@ -2858,68 +2892,124 @@ export default function FleetReactorApp() {
         className="absolute right-6 z-40 flex flex-col items-end gap-2 pointer-events-none"
         style={{ top: 128 }}
       >
+        {/* The rail's head: a faint dot when all is quiet, the worst line when not. */}
+        <button
+          type="button"
+          data-testid="attention-head"
+          data-worst={rail.worst}
+          aria-expanded={railOpen}
+          aria-label={rail.line}
+          onClick={() => (railOpen ? setRailOpen(false) : summonRail())}
+          className={
+            rail.worst === 'clear'
+              ? 'pointer-events-auto p-2 rounded-full'
+              : `pointer-events-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/70 border backdrop-blur-md text-[12px] font-mono ${
+                  rail.worst === 'warning'
+                    ? 'border-rose-400/50 text-rose-200'
+                    : rail.worst === 'caution'
+                      ? 'border-amber-400/40 text-amber-200'
+                      : 'border-white/15 text-white/70'
+                }`
+          }
+        >
+          <span
+            className={`block rounded-full ${
+              rail.worst === 'clear'
+                ? 'h-1.5 w-1.5 bg-white/25'
+                : rail.worst === 'warning'
+                  ? 'h-2 w-2 bg-rose-400 animate-pulse'
+                  : rail.worst === 'caution'
+                    ? 'h-2 w-2 bg-amber-300'
+                    : 'h-2 w-2 bg-white/50'
+            }`}
+          />
+          {rail.worst === 'clear' ? '' : rail.more ? `+${rail.more} more` : ''}
+        </button>
         {/* Merged -> operating on the laptop plane, and job health (docs/tickets/2026-09-27-merged-is-operating.md). */}
-        <ErrorBoundary componentName="Delivery">
-          <Delivery />
-        </ErrorBoundary>
+        <div hidden={!drawn('laptop')} data-testid="rail-laptop">
+          <ErrorBoundary componentName="Delivery">
+            <Delivery onSignal={onSignal} />
+          </ErrorBoundary>
+        </div>
 
         {/* Give an agent a job, watch it become a merged PR (fleetview_backend/agent_jobs.py). Through
             the discovery proxy like every remote-capable call here, so it works from the phone. */}
-        <ErrorBoundary componentName="AgentJobs">
-        <AgentJobs
-          call={fleetCall('agent-jobs')}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('jobs')} data-testid="rail-jobs">
+          <ErrorBoundary componentName="AgentJobs">
+          <AgentJobs
+            onSignal={onSignal}
+            call={fleetCall('agent-jobs')}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* The capability harvester's funnel, live (fleetview_backend/harv.py). */}
-        <ErrorBoundary componentName="HarvPanel">
-        <HarvPanel
-          call={fleetCall('harv')}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('harv')} data-testid="rail-harv">
+          <ErrorBoundary componentName="HarvPanel">
+          <HarvPanel
+            onSignal={onSignal}
+            call={fleetCall('harv')}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* Ask the concierge for a browser task, by voice or here, and watch it step by step
             (fleetview_backend/concierge_tasks.py). */}
-        <ErrorBoundary componentName="ConciergeTasks">
-        <ConciergeTasks
-          call={fleetCall('concierge-tasks')}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('concierge')} data-testid="rail-concierge">
+          <ErrorBoundary componentName="ConciergeTasks">
+          <ConciergeTasks
+            onSignal={onSignal}
+            call={fleetCall('concierge-tasks')}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* Is every key the estate expects arriving from Bitwarden (fleetview_backend/key_sync.py).
             Names and states only; a missing key shows the exact name to create. */}
-        <ErrorBoundary componentName="KeySync">
-        <KeySync
-          call={fleetCall('key-sync')}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('keys')} data-testid="rail-keys">
+          <ErrorBoundary componentName="KeySync">
+          <KeySync
+            onSignal={onSignal}
+            call={fleetCall('key-sync')}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* What the research department verified, newest first (idp#5714). This one is NOT behind
             the proxy: it is the catalogue's own backend plugin, so it goes through the discovery
             middleware's plugin:// translation directly. */}
-        <ErrorBoundary componentName="ResearchFindings">
-        <ResearchFindings
-          call={(init) => api.fetch('plugin://research-output/claims', init)}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('research')} data-testid="rail-research">
+          <ErrorBoundary componentName="ResearchFindings">
+          <ResearchFindings
+            onSignal={onSignal}
+            call={(init) => api.fetch('plugin://research-output/claims', init)}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* Is main green on the commit it is at, and what did the tick decide about every lane
             (fleetview_backend/greenlane.py -> bin/idp-greenlane status). The verdict is the
             engine's own; this only refuses to draw a green main it could not read. */}
-        <ErrorBoundary componentName="GreenlaneHud">
-        <GreenlaneHud
-          call={fleetCall('greenlane')}
-          summon={laneSummon}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('lanes')} data-testid="rail-lanes">
+          <ErrorBoundary componentName="GreenlaneHud">
+          <GreenlaneHud
+            onSignal={onSignal}
+            call={fleetCall('greenlane')}
+            summon={laneSummon}
+          />
+          </ErrorBoundary>
+        </div>
 
         {/* Who is holding which paths right now, and how stale their heartbeat is
             (fleetview_backend/claims.py, AGENTS.md section 5). */}
-        <ErrorBoundary componentName="ClaimsPanel">
-        <ClaimsPanel
-          call={fleetCall('claims')}
-        />
-        </ErrorBoundary>
+        <div hidden={!drawn('claims')} data-testid="rail-claims">
+          <ErrorBoundary componentName="ClaimsPanel">
+          <ClaimsPanel
+            onSignal={onSignal}
+            call={fleetCall('claims')}
+          />
+          </ErrorBoundary>
+        </div>
       </div>
 
       {/* 2100 Era Scanline Overlay (pure CSS) */}
