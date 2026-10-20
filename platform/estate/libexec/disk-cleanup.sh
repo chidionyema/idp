@@ -363,8 +363,15 @@ fi
 # launch and only ever opens its own, so a clone no process holds open is a leftover. Kept: any
 # clone a process has open, any touched in the last CLONE_FRESH_MIN (a launch mid-copy), and all of
 # them when lsof cannot answer (a guess is not a verdict).
+#
+# One listing of every open file, filtered by path here, never `lsof +D`: +D stats each file under
+# the tree, and 2026-10-20 ten clones (15G of Chrome.app copies) took it past the 60s cut-off on
+# nearly every run, so the step went BLIND, kept them all, and the volume refilled to 0G. The full
+# listing took 0.2s on the same laptop. lsof prints physical paths, so the tree is resolved first
+# ($TMPDIR says /var/folders, lsof says /private/var/folders).
 if [ -n "$CLONES" ] && [ -d "$CLONES" ]; then
-  held=$(tmo 60 lsof -Fn +D "$CLONES" 2>/dev/null); rc=$?
+  CLONES=$(cd "$CLONES" && pwd -P)
+  held=$(tmo 60 lsof -nPw -Fn 2>/dev/null); rc=$?
   if [ "$rc" -gt 1 ]; then
     echo "  BLIND  chrome-clones  lsof could not answer (exit $rc): all kept"; fails=$((fails + 1))
   else
