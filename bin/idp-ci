@@ -218,6 +218,19 @@ fi
     fi
   fi
 
+  # pinned image tags: every $imagepolicy newTag under platform/ must exist in ghcr. 55e276948
+  # (2026-10-20) pinned a never-published backstage tag and the catalogue sat in
+  # ImagePullBackOff while every render check passed. Needs network, so skipped in the fast
+  # gate like kubeconform. See bin/idp-image-pin-guard.
+  if [ "$FAST" != 1 ] && [ -x "$IDP/bin/idp-image-pin-guard" ]; then
+    if touched platform/; then
+      echo "  pinned image tags exist in the registry (platform/)..."
+      if ! (cd "$IDP" && python3 bin/idp-image-pin-guard); then
+        fail=1
+      fi
+    fi
+  fi
+
   # memory plane: the door, the store, the write schema and the spec invariants are present.
   # The live proof (a fact written with `remember` and read back with `recall`) needs the
   # cluster, so it runs on the schedule; this rung catches the offline half -- someone moving
