@@ -1,55 +1,65 @@
-description: 'pi agents send calls over the estate''s per-call input ceiling of 200,000 tokens
-  (idp#6675). Question: when a pi call is over the ceiling, how did it get there -- pi compacting
-  too late so a session grows past the line gradually, pi failing to recognise the router''s
-  refusal and re-sending the same history, a single large tool result jumping one turn over, or
-  the call going straight to a provider so the router''s ceiling never applied.
+description: 'pi agents send calls over the estate''s per-call input ceiling of 200,000
+  tokens (idp#6675). Question: when a pi call is over the ceiling, how did it get
+  there -- pi compacting too late so a session grows past the line gradually, pi failing
+  to recognise the router''s refusal and re-sending the same history, a single large
+  tool result jumping one turn over, or the call going straight to a provider so the
+  router''s ceiling never applied.
 
-  Replaces 2026-10-20-pi-sessions-exceed-router-ceiling.yaml, which asked a different question
-  (are the router''s errors mostly ceiling refusals) and was decided by 515 unrelated errors,
-  connectivity among them, so it says nothing about the calls that go over the line.
+  Replaces 2026-10-20-pi-sessions-exceed-router-ceiling.yaml, which asked a different
+  question (are the router''s errors mostly ceiling refusals) and was decided by 515
+  unrelated errors, connectivity among them, so it says nothing about the calls that
+  go over the line.
 
-  Written in this order, on purpose: hypotheses, priors, likelihoods and the counting method below
-  were committed BEFORE any count for this record was taken (see this file''s git history: the
-  commit that adds it carries no observed counts). Disclosed prior knowledge, all from earlier in
-  this session: one compaction seen at roughly 369k tokens; the old refusal wording did not match
-  pi''s OVERFLOW_PATTERNS; the superseded record''s counts (24 ceiling refusals in 10 session files,
-  followed by 2 compactions, 1 repeat refusal, 14 other entries, 7 ends of file; 83 compactions
-  under 200k and 27 over, provider not filtered); model_change entries name deepseek 92 times,
-  minimax 65, estate 50. The refusal counts overlap E1 and E3 below. Priors stay uniform for that
-  reason rather than leaning on what was already seen.
+  Written in this order, on purpose: hypotheses, priors, likelihoods and the counting
+  method below were committed BEFORE any count for this record was taken (see this
+  file''s git history: the commit that adds it carries no observed counts). Disclosed
+  prior knowledge, all from earlier in this session: one compaction seen at roughly
+  369k tokens; the old refusal wording did not match pi''s OVERFLOW_PATTERNS; the
+  superseded record''s counts (24 ceiling refusals in 10 session files, followed by
+  2 compactions, 1 repeat refusal, 14 other entries, 7 ends of file; 83 compactions
+  under 200k and 27 over, provider not filtered); model_change entries name deepseek
+  92 times, minimax 65, estate 50. The refusal counts overlap E1 and E3 below. Priors
+  stay uniform for that reason rather than leaning on what was already seen.
 
-  Method (source: every ~/.pi/agent/sessions/*/*.jsonl on the laptop, all sessions). A turn''s
-  input is usage.input + usage.cacheRead + usage.cacheWrite. An "over-ceiling call" is either an
-  assistant entry whose input is >= 200,000, or a ceiling refusal: an assistant entry with
-  provider=estate, stopReason=error and an errorMessage matching /estate.s ceiling|maximum context
-  length of [\d,]+ tokens the estate/. E1: every over-ceiling call, by route (estate_refusal;
-  estate_accepted = provider estate, not a refusal; direct = any other provider). E2: every
-  over-ceiling call that is not a refusal, by growth from the previous assistant entry in the same
-  file that has input > 0 (small = grew < 20,000; large = grew >= 20,000; no_prev = none). E3:
-  every over-ceiling call, by the next entry in the same file that is an assistant message or a
-  compaction (compaction; over_again = another over-ceiling call; under = an assistant entry that
-  is neither; none = end of file). n_eff_divisor 10 because over-ceiling calls come in runs within
-  one session; fixed before counting.
+  Method (source: every ~/.pi/agent/sessions/*/*.jsonl on the laptop, all sessions).
+  A turn''s input is usage.input + usage.cacheRead + usage.cacheWrite. An "over-ceiling
+  call" is either an assistant entry whose input is >= 200,000, or a ceiling refusal:
+  an assistant entry with provider=estate, stopReason=error and an errorMessage matching
+  /estate.s ceiling|maximum context length of [\d,]+ tokens the estate/. E1: every
+  over-ceiling call, by route (estate_refusal; estate_accepted = provider estate,
+  not a refusal; direct = any other provider). E2: every over-ceiling call that is
+  not a refusal, by growth from the previous assistant entry in the same file that
+  has input > 0 (small = grew < 20,000; large = grew >= 20,000; no_prev = none). E3:
+  every over-ceiling call, by the next entry in the same file that is an assistant
+  message or a compaction (compaction; over_again = another over-ceiling call; under
+  = an assistant entry that is neither; none = end of file). n_eff_divisor 10 because
+  over-ceiling calls come in runs within one session; fixed before counting.
+
+  Counted 2026-10-20 after the commit above, method unchanged: 7,936 over-ceiling
+  calls in 24 session files. 7,912 went straight to a provider (deepseek, minimax)
+  and were answered; 24 went through the router and were refused. The router never
+  answered a call over its ceiling.
 
   '
 n_eff_divisor: 10
 hypotheses:
 - name: H1
-  description: pi compacts too late -- its threshold for the model in use sits above 200,000 -- so
-    a session grows past the ceiling a little at a time, and through the router those calls are
-    refused
+  description: pi compacts too late -- its threshold for the model in use sits above
+    200,000 -- so a session grows past the ceiling a little at a time, and through
+    the router those calls are refused
   prior: 0.25
 - name: H2
-  description: pi does not recognise the router's refusal as overflow, so after one refusal it
-    re-sends the same oversized history instead of compacting
+  description: pi does not recognise the router's refusal as overflow, so after one
+    refusal it re-sends the same oversized history instead of compacting
   prior: 0.25
 - name: H3
-  description: single large tool results jump one turn from under the ceiling to over it, faster
-    than a threshold checked between turns can catch, after which pi compacts
+  description: single large tool results jump one turn from under the ceiling to over
+    it, faster than a threshold checked between turns can catch, after which pi compacts
   prior: 0.25
 - name: H4
-  description: over-ceiling calls go straight to a provider (deepseek, minimax), not through the
-    router, so the estate ceiling never applies to them and nothing stops them growing
+  description: over-ceiling calls go straight to a provider (deepseek, minimax), not
+    through the router, so the estate ceiling never applies to them and nothing stops
+    them growing
   prior: 0.25
 evidence:
 - name: over-ceiling calls, by route
@@ -70,6 +80,9 @@ evidence:
       estate_refusal: 0.15
       estate_accepted: 0.05
       direct: 0.8
+  observed:
+    direct: 7912
+    estate_refusal: 24
 - name: over-ceiling calls that were answered, by growth from the previous turn
   likelihoods:
     H1:
@@ -88,6 +101,9 @@ evidence:
       small: 0.7
       large: 0.25
       no_prev: 0.05
+  observed:
+    small: 7902
+    large: 10
 - name: next assistant or compaction entry after an over-ceiling call
   likelihoods:
     H1:
@@ -110,3 +126,15 @@ evidence:
       over_again: 0.75
       under: 0.05
       none: 0.1
+  observed:
+    over_again: 7792
+    under: 121
+    compaction: 7
+    none: 16
+posteriors:
+  H1: 0.0
+  H2: 0.0
+  H3: 0.0
+  H4: 1.0
+winner: H4
+computed_at: '2026-10-21T07:52:12Z'
