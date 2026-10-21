@@ -1,0 +1,96 @@
+description: 'On 2026-10-21 every agent on the founder''s laptop lost every model
+  twice: first while the machine was out of memory (load average 95, 3.3-4 GB of swap
+  in use), then while the router''s litellm-venv was missing. Question: why did the
+  front on 127.0.0.1:4000 (platform/llm/front.py) not keep any model answering, and
+  does a cloud leg to llm.mumchimp.com close the gap? Hypotheses and likelihoods were
+  fixed from the incident record (estate memory incident.laptop-router-outage-machine-overload)
+  before the cloud router was measured in this session (20:14 UTC).
+
+  '
+hypotheses:
+- name: H1
+  description: the front fell through only on a refused or timed-out CONNECT, so a
+    slot that accepts and never answers (starved), or both slots refusing with no
+    other route, cuts every caller while the OKE router is up and would answer the
+    same key; probing health and routing to the cloud when no slot answers keeps a
+    model answering
+  prior: 0.4
+- name: H2
+  description: the front's fallback was adequate, and the OKE router could not have
+    carried laptop traffic anyway (unreachable from the laptop, or refusing the laptop
+    key), so a cloud leg adds nothing
+  prior: 0.3
+- name: H3
+  description: the router path was not the cause; sessions stalled because the machine
+    could not schedule the agents themselves, and no change to the front would have
+    kept a model answering
+  prior: 0.3
+evidence:
+- name: 'front.py as it stood on main (aaa1c6844): handle() tries backends() in order
+    and moves on only on OSError or asyncio.TimeoutError from open_connection with
+    a 5 s bound; nothing after the connect is checked, and the only targets are 4001
+    and 4002'
+  observed:
+    fallback_on_connect_only: 1
+  likelihoods:
+    H1:
+      fallback_on_connect_only: 0.95
+      other: 0.05
+    H2:
+      fallback_on_connect_only: 0.5
+      other: 0.5
+    H3:
+      fallback_on_connect_only: 0.5
+      other: 0.5
+- name: 'incident, first window: slot 4001 was listening and accepted connections
+    while the machine swapped, and callers waited on it rather than being refused;
+    the twin fallback never fired'
+  observed:
+    accepted_never_answered: 1
+  likelihoods:
+    H1:
+      accepted_never_answered: 0.85
+      other: 0.15
+    H2:
+      accepted_never_answered: 0.2
+      other: 0.8
+    H3:
+      accepted_never_answered: 0.4
+      other: 0.6
+- name: 'incident, second window: litellm-venv was missing, nothing listened on 4001
+    or 4002, and every call through :4000 failed with a connection error while the
+    machine itself was responsive (the venv was rebuilt by hand and both ports then
+    answered)'
+  observed:
+    all_slots_refused_machine_responsive: 1
+  likelihoods:
+    H1:
+      all_slots_refused_machine_responsive: 0.85
+      other: 0.15
+    H2:
+      all_slots_refused_machine_responsive: 0.3
+      other: 0.7
+    H3:
+      all_slots_refused_machine_responsive: 0.05
+      other: 0.95
+- name: 'measured 2026-10-21 20:14 UTC from the laptop: https://llm.mumchimp.com/health/liveliness
+    answered 200 in 0.73 s, and /v1/models with the laptop''s LITELLM_API_KEY answered
+    200 in 0.26 s listing 29 models'
+  observed:
+    cloud_takes_laptop_key: 1
+  likelihoods:
+    H1:
+      cloud_takes_laptop_key: 0.9
+      other: 0.1
+    H2:
+      cloud_takes_laptop_key: 0.1
+      other: 0.9
+    H3:
+      cloud_takes_laptop_key: 0.6
+      other: 0.4
+posteriors:
+  H1: 0.9891911367
+  H2: 0.0036029544
+  H3: 0.0072059088
+winner: H1
+computed_at: '2026-10-21T19:16:08Z'
