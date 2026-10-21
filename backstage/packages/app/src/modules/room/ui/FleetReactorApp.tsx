@@ -824,13 +824,13 @@ export default function FleetReactorApp() {
   // THE ATTENTION RAIL (attention.ts). Every status panel reports a tier; a panel that is fine is
   // not drawn, at most three that are not are, worst first, and the rest are counted. Asking --
   // a tap on the rail's head, or a spoken "status" -- shows every panel, then they fade again.
-  const [signals, setSignals] = useState<Record<string, Signal>>({});
+  const [railSignals, setRailSignals] = useState<Record<string, Signal>>({});
   const seen = useRef<Seen>({});
   const [railOpen, setRailOpen] = useState(false);
   const [railTick, setRailTick] = useState(0);
   const railFade = useRef<any>(null);
   const onSignal = useCallback((sig: Signal) => {
-    setSignals(prev => ({ ...prev, [sig.source]: sig }));
+    setRailSignals(prev => ({ ...prev, [sig.source]: sig }));
   }, []);
   const summonRail = useCallback(() => {
     setRailOpen(true);
@@ -844,12 +844,12 @@ export default function FleetReactorApp() {
     return () => clearInterval(id);
   }, []);
   const rail = useMemo(() => {
-    const list = Object.values(signals);
+    const list = Object.values(railSignals);
     const nowMs = Date.now();
     seen.current = noteSeen(seen.current, list, nowMs);
     return attentionBoard(list, seen.current, nowMs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signals, railTick]);
+  }, [railSignals, railTick]);
   const shownSources = useMemo(() => new Set(rail.shown.map(x => x.source)), [rail]);
   const drawn = (source: string) => railOpen || shownSources.has(source);
 
