@@ -1,0 +1,121 @@
+description: 'MiniMax shipped M3.1 Flash on 2026-10-19 at a flat $0.15/M in, $0.60/M
+  out and $0.015/M cached input against MiniMax-M3''s $0.30/$1.20, on the same 1,000,000-token
+  window. Question: does the router take it as a sibling lane (`minimax_m31f`) that
+  `minimax` falls back to first, does it replace M3 under the existing `minimax` name,
+  or is no new lane needed at all? Decided 2026-10-21 from the vendor''s own launch
+  pricing table (minimax.io/blog/minimax-m31f) and API model table (platform.minimax.io/docs/guides/text-generation).
+  The only measurement taken in this session is the file-level state of the registry
+  and the render (bin/idp-vendor-render --check, clean); no production traffic has
+  run through the new row yet, so this record grades a DESIGN against documented vendor
+  facts, not an incident.
+
+  '
+hypotheses:
+- name: H1
+  description: the new model belongs beside M3 as its own lane, and `minimax` falls
+    back to it first -- same vendor, same key, a fifth of the price, so a window in
+    which only M3 is failing is answered inside MiniMax instead of paying a cross-vendor
+    hop, while every measured path that answers on M3 today keeps answering on M3
+  prior: 0.5
+- name: H2
+  description: M3.1 Flash supersedes M3, so the `minimax` row should carry the new
+    model id under the existing name and callers need not change
+  prior: 0.25
+- name: H3
+  description: no new lane is justified -- `minimax` plus the gemini and groq hops
+    already carry the cost and availability requirement, and another row is surface
+    without a caller
+  prior: 0.25
+evidence:
+- name: 'vendor pricing table: one flat rate per million tokens on the new model (0.15
+    in, 0.60 out, 0.015 cached) with no band, against M3 at 0.30/1.20 doubling above
+    512K input. Flat and a fifth of the price is a cost argument for routing to it;
+    it is not by itself an argument about which name carries it, so it separates the
+    design only weakly'
+  observed:
+    flat_and_cheaper: 1
+  likelihoods:
+    H1:
+      flat_and_cheaper: 0.9
+      other: 0.1
+    H2:
+      flat_and_cheaper: 0.5
+      other: 0.5
+    H3:
+      flat_and_cheaper: 0.5
+      other: 0.5
+- name: 'vendor API docs: thinking cannot be turned off on M3.1 Flash and `reasoning_effort`
+    defaults to `max` (the vendor 400s on `effort: none`), while M3 has no such lock.
+    A caller with a small max_tokens spends its budget thinking and answers with nothing
+    -- the exact defect this config file already records for the `narrate` block.
+    A model that cannot be told to stop thinking is a different capability, not a
+    drop-in'
+  observed:
+    capability_differs: 1
+  likelihoods:
+    H1:
+      capability_differs: 0.92
+      other: 0.08
+    H2:
+      capability_differs: 0.15
+      other: 0.85
+    H3:
+      capability_differs: 0.5
+      other: 0.5
+- name: 'the router''s own record: llm/config.yaml documents a prior incident in which
+    a lane silently changed the model under an existing name (#4063), which is why
+    the sibling lanes `minimax_json`, `minimax_m27` and `voice-tts-minimax` exist
+    as separate rows instead of edits to `minimax`. Both `voice` rows and every other
+    measured path in this file answer on M3 today'
+  observed:
+    prior_incident_on_swap: 1
+  likelihoods:
+    H1:
+      prior_incident_on_swap: 0.93
+      other: 0.07
+    H2:
+      prior_incident_on_swap: 0.06
+      other: 0.94
+    H3:
+      prior_incident_on_swap: 0.5
+      other: 0.5
+- name: 'the `minimax` fallback chain as it stands: [gemini, groq] -- both hops leave
+    the vendor, so an M3-specific failure pays a cross-vendor hop and a Gemma/Groq
+    answer where the same account could have answered. A same-vendor first hop is
+    a strictly better second attempt whenever the key is alive, and a dead key fails
+    both rows in one refusable call'
+  observed:
+    cross_vendor_first_hop: 1
+  likelihoods:
+    H1:
+      cross_vendor_first_hop: 0.9
+      other: 0.1
+    H2:
+      cross_vendor_first_hop: 0.5
+      other: 0.5
+    H3:
+      cross_vendor_first_hop: 0.15
+      other: 0.85
+- name: 'cost of being wrong, as the estate has already paid it: adding a row nothing
+    calls costs one unused lane and zero behaviour change, while swapping the model
+    under `minimax` changes what every caller that names `minimax` gets, including
+    both voice rows, on evidence that is a vendor table only -- no estate traffic
+    has run through M3.1 Flash yet'
+  observed:
+    asymmetric: 1
+  likelihoods:
+    H1:
+      asymmetric: 0.92
+      other: 0.08
+    H2:
+      asymmetric: 0.1
+      other: 0.9
+    H3:
+      asymmetric: 0.4
+      other: 0.6
+posteriors:
+  H1: 0.993978539
+  H2: 0.0001753824
+  H3: 0.0058460786
+winner: H1
+computed_at: '2026-10-21T09:33:00Z'
