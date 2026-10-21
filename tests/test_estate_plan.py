@@ -10,6 +10,7 @@ import importlib.machinery
 import importlib.util
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -135,7 +136,7 @@ def _transcript(tmp_path, calls):
     return str(p)
 
 
-def _hook(tmp_path, tool, calls, env=None):
+def _hook(tmp_path, tool, calls, env=None, tool_input=None):
     e = {
         **os.environ,
         "HOME": str(tmp_path),
@@ -146,7 +147,7 @@ def _hook(tmp_path, tool, calls, env=None):
     e.update(env or {})
     data = {
         "tool_name": tool,
-        "tool_input": {},
+        "tool_input": tool_input or {},
         "session_id": "s",
         "cwd": ROOT,
         "transcript_path": _transcript(tmp_path, calls),
@@ -186,6 +187,71 @@ def test_the_hook_never_blocks_the_plan_tools_or_loading_them(tmp_path):
         "mcp__estate-memory__brief",
     ):
         assert _hook(tmp_path, tool, []) is None, tool
+
+
+# --- the shell door: a session whose bridge did not load can still declare its plan ---------------
+
+
+def _sh(tool, args):
+    return "estate-plan " + tool + " " + shlex.quote(json.dumps(args))
+
+
+def test_the_shell_door_is_the_plan_tool_it_names():
+    assert plan.shell_plan_call(_sh("declare_plan", GOAL)) == ["declare_plan", GOAL]
+    assert plan.shell_plan_call("/x/bin/" + _sh("add_bdd", BDD)) == ["add_bdd", BDD]
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        _sh("declare_plan", GOAL) + " && rm -rf x",
+        _sh("declare_plan", GOAL) + "; ls",
+        _sh("declare_plan", GOAL) + " | tee f",
+        "estate-plan declare_plan $(cat plan.json)",
+        "estate-plan declare_plan `cat plan.json`",
+        _sh("declare_plan", GOAL) + "\nls",
+        "estate-plan rm_rf '{}'",
+        "estate-plan declare_plan 'not json'",
+        "estate-plan declare_plan '[1]'",
+        "echo estate-plan declare_plan '{}'",
+    ],
+)
+def test_anything_but_exactly_one_estate_plan_is_ordinary_work(command):
+    assert plan.shell_plan_call(command) is None
+    assert not plan.authorize("Bash", None, {"command": command})["ok"]
+
+
+def test_the_hook_lets_a_plan_be_declared_through_the_shell_and_then_honours_it(
+    tmp_path,
+):
+    cmd = _sh("declare_plan", GOAL)
+    assert "estate-plan" in _hook(tmp_path, "Bash", [])
+    assert _hook(tmp_path, "Bash", [], tool_input={"command": cmd}) is None
+    declared = [("Bash", {"command": cmd})]
+    assert "add_bdd" in _hook(tmp_path, "Edit", declared)
+    with_bdd = declared + [("Bash", {"command": _sh("add_bdd", BDD)})]
+    assert _hook(tmp_path, "Edit", with_bdd) is None
+
+
+def test_the_hook_refuses_a_shell_plan_call_that_does_not_apply_and_says_why(tmp_path):
+    bad = {"goal": "ship the feature", "subgoals": []}
+    assert "sub-goal" in _hook(
+        tmp_path, "Bash", [], tool_input={"command": _sh("declare_plan", bad)}
+    )
+    early = _hook(tmp_path, "Bash", [], tool_input={"command": _sh("add_bdd", BDD)})
+    assert "declare_plan" in early
+
+
+def test_the_estate_plan_command_checks_a_plan_and_acknowledges():
+    run = lambda *a: subprocess.run(  # noqa: E731
+        [sys.executable, os.path.join(ROOT, "bin", "estate-plan"), *a],
+        capture_output=True,
+        text=True,
+    )
+    ok = run("declare_plan", json.dumps(GOAL))
+    assert ok.returncode == 0 and "Plan declared" in ok.stdout
+    assert run("declare_plan", json.dumps({"goal": "x"})).returncode == 1
+    assert run("nope", "{}").returncode == 2
 
 
 def test_the_hook_honours_the_opt_out(tmp_path):
