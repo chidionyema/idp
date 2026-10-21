@@ -124,12 +124,25 @@ jobs:
             echo "image=${{ env.REGISTRY }}/${owner,,}/$n"   # registry paths are lowercase; the owner may not be (Mumchimp)
             echo "arch=$arch"
             echo "slug=$(echo "$n" | tr -c 'a-z0-9\n' '-')"
+            # The estate's zone, read from the one file that holds it (crew#269), never written
+            # as a literal. web/meridian.Dockerfile bakes it into the site's canonical and
+            # OpenGraph urls; a build that cannot read it must stop rather than ship localhost
+            # as the canonical on a client-facing page.
+            zone=$(sed -n 's/^  ESTATE_ZONE: *//p' clusters/oke/estate-config.yaml | head -1)
+            if [ -z "$zone" ]; then
+              echo "cannot read ESTATE_ZONE from clusters/oke/estate-config.yaml" >&2
+              exit 1
+            fi
+            echo "zone=$zone"
           } >> "$GITHUB_OUTPUT"
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ steps.name.outputs.context }}
           file: ${{ matrix.dockerfile.dockerfile }}
+          # Only web/meridian.Dockerfile declares this ARG; the rest ignore it.
+          build-args: |
+            MERIDIAN_SITE_URL=https://meridian.${{ steps.name.outputs.zone }}
           platforms: ${{ matrix.platform }}
           # On push: one untagged image per arch, joined by digest in `merge`.
           # TWO EXPORTERS, ONE BUILD. The first is unchanged: on a push each
