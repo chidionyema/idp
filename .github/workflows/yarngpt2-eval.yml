@@ -1,0 +1,36 @@
+# founder: Throwaway. Run 3: times YarnGPT2 speed-ups (quants, prompt lookup, per-sentence fan-out) on Modal CPUs and uploads sample audio. Runs only on branch eval/yarngpt2; deleting the branch removes it.
+#
+# Runs where the Modal root is (the same repository secrets concierge-deploy.yml uses), because the
+# root is never on a machine. `modal run` is ephemeral: app yarngpt2-eval stops when this job ends.
+name: yarngpt2-eval
+
+on:
+  push:
+    branches: [eval/yarngpt2]
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: time YarnGPT2 on Modal and fetch the audio
+        working-directory: eval
+        run: |
+          python -m pip install --quiet 'modal==1.5.5'
+          modal run yarngpt2_fast.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: yarngpt2-samples
+          path: eval/yarngpt2-samples
+          retention-days: 7
