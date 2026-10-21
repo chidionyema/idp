@@ -1,47 +1,50 @@
-description: 'pi agents keep sending calls over the router''s per-call input ceiling (idp#6675).
-  Question: is the dominant mechanism that pi never recognises the router''s refusal as a
-  context overflow (so it re-sends the same history instead of compacting), that pi compacts
-  but against a threshold above the router''s ceiling, that single huge tool results jump a
-  turn over the line before any threshold can fire, or that the refusals are mostly not the
-  router''s ceiling at all.
+description: 'pi agents keep sending calls over the router''s per-call input ceiling (idp#6675). Question:
+  is the dominant mechanism that pi never recognises the router''s refusal as a context overflow (so it
+  re-sends the same history instead of compacting), that pi compacts but against a threshold above the
+  router''s ceiling, that single huge tool results jump a turn over the line before any threshold can
+  fire, or that the refusals are mostly not the router''s ceiling at all.
 
-  Written in this order, on purpose: hypotheses, priors, likelihoods and the counting method
-  below were committed BEFORE any count was taken (see this file''s git history: the commit
-  that adds it carries no observed counts). Disclosed prior knowledge: earlier in this session
-  one compaction was seen at roughly 369k tokens, and the old refusal wording was checked
-  against pi''s OVERFLOW_PATTERNS and did not match. Both favour some hypotheses before the
-  count, which is why the priors below are not uniform in their favour -- they are uniform.
+  Written in this order, on purpose: hypotheses, priors, likelihoods and the counting method below were
+  committed BEFORE any count was taken (see this file''s git history: the commit that adds it carries
+  no observed counts). Disclosed prior knowledge: earlier in this session one compaction was seen at roughly
+  369k tokens, and the old refusal wording was checked against pi''s OVERFLOW_PATTERNS and did not match.
+  Both favour some hypotheses before the count, which is why the priors below are not uniform in their
+  favour -- they are uniform.
 
-  Method (source: every ~/.pi/agent/sessions/*/*.jsonl on the laptop, all sessions, read
-  2026-10-20). A "ceiling refusal" is an assistant entry with provider=estate,
-  stopReason=error and an errorMessage matching /estate.s ceiling|maximum context length of
-  [\d,]+ tokens the estate/ (old and new router wording). "Input" of a turn is
-  usage.input + usage.cacheRead. E1: for each ceiling refusal, the type of the next entry in
-  the same session file (compaction; another ceiling refusal; any other entry; none = end of
-  file). E2: every provider=estate error entry, classified ceiling_refusal or other. E3: for
-  each ceiling refusal whose preceding estate assistant entry was NOT a ceiling refusal, that
-  preceding entry''s input, bucketed under_128k / 128k_to_200k / over_200k. E4: every
-  compaction entry''s tokensBefore, bucketed under_200k / over_200k. n_eff_divisor 5 because
-  turns within one session are correlated; fixed before counting.
+  Method (source: every ~/.pi/agent/sessions/*/*.jsonl on the laptop, all sessions, read 2026-10-20).
+  A "ceiling refusal" is an assistant entry with provider=estate, stopReason=error and an errorMessage
+  matching /estate.s ceiling|maximum context length of [\d,]+ tokens the estate/ (old and new router wording).
+  "Input" of a turn is usage.input + usage.cacheRead. E1: for each ceiling refusal, the type of the next
+  entry in the same session file (compaction; another ceiling refusal; any other entry; none = end of
+  file). E2: every provider=estate error entry, classified ceiling_refusal or other. E3: for each ceiling
+  refusal whose preceding estate assistant entry was NOT a ceiling refusal, that preceding entry''s input,
+  bucketed under_128k / 128k_to_200k / over_200k. E4: every compaction entry''s tokensBefore, bucketed
+  under_200k / over_200k. n_eff_divisor 5 because turns within one session are correlated; fixed before
+  counting.
+
+  Counted 2026-10-20 after the commit above, method unchanged: 24 ceiling refusals in 10 session files.
+  Known flaw found while counting, left in rather than re-cut: for E3, 6 of the 9 preceding turns were
+  themselves non-ceiling errors, whose usage is zero, so they fall in under_128k by construction; 1 refusal
+  had no preceding estate turn and is excluded.
 
   '
 n_eff_divisor: 5
 hypotheses:
 - name: H1
-  description: pi does not recognise the router's refusal as overflow, so after one it does
-    not compact and re-sends the same oversized history, turn after turn
+  description: pi does not recognise the router's refusal as overflow, so after one it does not compact
+    and re-sends the same oversized history, turn after turn
   prior: 0.25
 - name: H2
-  description: pi recognises the refusal and compacts, but its own compaction threshold sits
-    above the router's ceiling, so sessions grow back over the line by gradual accumulation
+  description: pi recognises the refusal and compacts, but its own compaction threshold sits above the
+    router's ceiling, so sessions grow back over the line by gradual accumulation
   prior: 0.25
 - name: H3
-  description: compaction works, but single large tool results jump one turn from well under
-    the ceiling to over it, faster than any threshold checked between turns can catch
+  description: compaction works, but single large tool results jump one turn from well under the ceiling
+    to over it, faster than any threshold checked between turns can catch
   prior: 0.25
 - name: H4
-  description: the errors pi sessions hit are mostly not the router's ceiling (provider
-    limits, auth, transport); the ceiling is a minor contributor
+  description: the errors pi sessions hit are mostly not the router's ceiling (provider limits, auth,
+    transport); the ceiling is a minor contributor
   prior: 0.25
 evidence:
 - name: next entry in the session after a ceiling refusal
@@ -66,6 +69,11 @@ evidence:
       another_refusal: 0.25
       other: 0.25
       none: 0.25
+  observed:
+    other: 14
+    none: 7
+    compaction: 2
+    another_refusal: 1
 - name: provider=estate error entries, by kind
   likelihoods:
     H1:
@@ -80,6 +88,9 @@ evidence:
     H4:
       ceiling_refusal: 0.1
       other: 0.9
+  observed:
+    other: 515
+    ceiling_refusal: 24
 - name: input of the last estate turn before the first refusal of a run
   likelihoods:
     H1:
@@ -98,6 +109,8 @@ evidence:
       under_128k: 0.34
       128k_to_200k: 0.33
       over_200k: 0.33
+  observed:
+    under_128k: 9
 - name: compaction tokensBefore
   likelihoods:
     H1:
@@ -112,3 +125,6 @@ evidence:
     H4:
       under_200k: 0.5
       over_200k: 0.5
+  observed:
+    over_200k: 27
+    under_200k: 83
