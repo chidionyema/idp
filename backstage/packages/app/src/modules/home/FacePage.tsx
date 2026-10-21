@@ -28,6 +28,7 @@ import { useFaceVoiceEngine } from './faceVoiceEngine';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
 import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
+import FaceDeck from './FaceDeck';
 import { clampLevel, getLevel, setLevel, subscribeLevel } from './faceAudio';
 import {
   ageLabel,
@@ -304,6 +305,7 @@ export function FacePage() {
       <FaceFindingsStrip />
       <FaceEstateLine />
       <FaceAgentJobs loaded={agentJobs} />
+      <FaceDeck voice={voice} jobs={agentJobs} />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />

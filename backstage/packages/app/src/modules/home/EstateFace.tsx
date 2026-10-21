@@ -4,7 +4,7 @@
  * its mouth, lip-synced; unmounted, the voice speaks exactly as it did before.
  */
 import { useEffect, useRef, useState } from 'react';
-import { mountFace, type EstateFace as Face } from './faceEngine';
+import { mountFace, setActiveFace, type EstateFace as Face } from './faceEngine';
 import { setClauseSink } from './useEstateVoice';
 
 export default function EstateFace({ height = 360 }: { height?: number | string }) {
@@ -25,6 +25,7 @@ export default function EstateFace({ height = 360 }: { height?: number | string 
         if (gone) return f.dispose();
         face = f;
         setClauseSink(f);
+        setActiveFace(f);
         setGreet(f.greet());
         setStatus('ready');
         return undefined;
@@ -36,6 +37,7 @@ export default function EstateFace({ height = 360 }: { height?: number | string 
     return () => {
       gone = true;
       setClauseSink(null);
+      setActiveFace(null);
       face?.dispose();
     };
   }, []);
