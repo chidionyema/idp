@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import localFont from "next/font/local";
 import { Nav } from "@/components/Nav";
 import { Footer } from "@/components/Footer";
@@ -22,21 +21,19 @@ const dmMono = localFont({
   display: "swap",
 });
 
-// The host the site is actually served on (platform/meridian/public-door.yaml) is read off the
-// request, not written here: the estate writes its zone once (LAW 46 -- bin/estate-zone-gate
-// refuses a literal anywhere on main), and which zone this cluster answers on is a property of the
-// cluster row, not of the source. These URLs become the canonical link, the OpenGraph url and the
-// base every relative OG image resolves against, so a wrong host here is a wrong canonical on
-// every page; taking it from the request keeps it right on whatever host the edge routes.
-async function servedFrom(): Promise<URL> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
-  const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  return new URL(`${proto}://${host}`);
-}
+// The host the site is served on arrives in the environment (MERIDIAN_SITE_URL, set by
+// platform/meridian/deployment.yaml from the one ConfigMap that holds the zone), never as a
+// literal here: LAW 46 still holds -- bin/estate-zone-gate refuses a hostname on main.
+//
+// It is deliberately not read off the request. `await headers()` marks every route that renders
+// under this layout as dynamic, so the whole site was server-rendered per visit with no caching:
+// measured 9.1 s cold and 1.4-2.9 s on a repeat from the same laptop, on a 300m CPU pod. A value
+// known at build time keeps the pages static, which is what a brochure site wants; the canonical
+// link, the OpenGraph url and every relative OG image resolve against it.
+const SITE_URL = process.env.MERIDIAN_SITE_URL ?? "http://localhost:3000";
 
-export async function generateMetadata(): Promise<Metadata> {
-  const base = await servedFrom();
+export function generateMetadata(): Metadata {
+  const base = new URL(SITE_URL);
   return {
     metadataBase: base,
     title: { default: "Meridian Intelligence", template: "%s | Meridian Intelligence" },

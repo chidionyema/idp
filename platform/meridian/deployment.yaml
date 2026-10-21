@@ -106,6 +106,12 @@ spec:
             - {name: MERIDIAN_SECRETS_DIR, value: /etc/meridian-secrets}
             # The estate's one collector (LAW 50). Unset on a laptop, where there is none.
             - {name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://signoz-otel-collector.observability.svc:4318"}
+            # The hostname the layout bakes into the canonical link and every OpenGraph url.
+            # ${ESTATE_ZONE} is substituted by the Flux Kustomization (clusters/oke/meridian.yaml)
+            # from clusters/oke/estate-config.yaml, the one place the zone is written, so no
+            # hostname literal reaches this file. It is here rather than read off the request
+            # because reading request headers makes every page dynamic (see web/app/layout.tsx).
+            - {name: MERIDIAN_SITE_URL, value: "https://meridian.${ESTATE_ZONE}"}
             - name: POD_NAMESPACE
               valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
           # GET / is the homepage, server-rendered by this process. A probe on a page rather

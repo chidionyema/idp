@@ -18,6 +18,14 @@ RUN npm ci
 FROM node:22-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# The site's own hostname, which web/app/layout.tsx bakes into the canonical link and the
+# OpenGraph urls. The pages are static, so it has to be known at build time: the alternative,
+# reading the Host header per request, makes every route dynamic and costs 1.4-2.9 s of server
+# render on every visit. .github/workflows/build-multiarch.yml passes it from
+# clusters/oke/estate-config.yaml -- the one place the zone is written -- so no hostname literal
+# appears here. A build without it still works, but only as a laptop build (localhost).
+ARG MERIDIAN_SITE_URL
+ENV MERIDIAN_SITE_URL=$MERIDIAN_SITE_URL
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
