@@ -1,0 +1,57 @@
+{
+  "_": "The plan contract both copies must honour (idp#6675): extensions/pi-plan-lock/plan.ts and platform/estate/memory/plan.py replay every case and must agree with `expect`. Each case is a sequence of plan-tool calls, then one tool to authorize.",
+  "cases": [
+    {"name": "no plan refuses work", "calls": [], "tool": "bash", "expect": false, "reason": "declare_plan"},
+    {"name": "no plan allows the plan tools", "calls": [], "tool": "declare_plan", "expect": true},
+    {"name": "no plan allows escalate", "calls": [], "tool": "escalate", "expect": true},
+    {"name": "no plan allows a memory read through Claude Code's MCP prefix", "calls": [], "tool": "mcp__estate-memory__recall", "expect": true},
+    {"name": "no plan allows add_bdd through opencode's prefix", "calls": [], "tool": "estate-memory_add_bdd", "expect": true},
+    {"name": "no plan allows loading a deferred tool's schema", "calls": [], "tool": "ToolSearch", "expect": true},
+    {"name": "a stub goal is not a plan", "calls": [["declare_plan", {"goal": "x", "subgoals": [{"id": "g1", "text": "first step"}]}]], "tool": "Edit", "expect": false, "reason": "declare_plan"},
+    {"name": "a goal with no sub-goal is not a plan", "calls": [["declare_plan", {"goal": "ship the feature", "subgoals": []}]], "tool": "Edit", "expect": false, "reason": "declare_plan"},
+    {"name": "a plan without a BDD still refuses work", "calls": [["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}]], "tool": "Edit", "expect": false, "reason": "add_bdd"},
+    {"name": "a BDD for the active sub-goal unlocks work", "calls": [
+      ["mcp__estate-memory__declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["mcp__estate-memory__add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}]
+    ], "tool": "Edit", "expect": true},
+    {"name": "a BDD with an empty clause is refused, so work stays refused", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "", "then": "the button shows"}]
+    ], "tool": "Edit", "expect": false, "reason": "add_bdd"},
+    {"name": "a BDD for a sub-goal not on the plan does not unlock work", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["add_bdd", {"goal_id": "g9", "given": "no button", "when": "the page loads", "then": "the button shows"}]
+    ], "tool": "Edit", "expect": false, "reason": "add_bdd"},
+    {"name": "complete_goal without edge cases and effects is refused, so the next sub-goal is not reached", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}, {"id": "g2", "text": "second step"}]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
+      ["complete_goal", {"goal_id": "g1"}]
+    ], "tool": "Edit", "expect": true},
+    {"name": "after a sub-goal is done, the next one needs its own BDD", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}, {"id": "g2", "text": "second step"}]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
+      ["address_edgecases", {"goal_id": "g1", "edgecases": ["page loads with no user: button hidden"]}],
+      ["address_2nd_order_effects", {"goal_id": "g1", "effects": ["none, because nothing else reads it"]}],
+      ["complete_goal", {"goal_id": "g1"}]
+    ], "tool": "Edit", "expect": false, "reason": "g2"},
+    {"name": "edge cases before the BDD are refused and record nothing", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["address_edgecases", {"goal_id": "g1", "edgecases": ["page loads with no user"]}],
+      ["address_2nd_order_effects", {"goal_id": "g1", "effects": ["none, because nothing reads it"]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
+      ["complete_goal", {"goal_id": "g1"}]
+    ], "tool": "Edit", "expect": true},
+    {"name": "every sub-goal done refuses more work until revise_plan", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
+      ["address_edgecases", {"goal_id": "g1", "edgecases": ["page loads with no user: button hidden"]}],
+      ["address_2nd_order_effects", {"goal_id": "g1", "effects": ["none, because nothing else reads it"]}],
+      ["complete_goal", {"goal_id": "g1"}]
+    ], "tool": "Edit", "expect": false, "reason": "revise_plan"},
+    {"name": "revise_plan keeps the BDD of a sub-goal it keeps", "calls": [
+      ["declare_plan", {"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}],
+      ["add_bdd", {"goal_id": "g1", "given": "no button", "when": "the page loads", "then": "the button shows"}],
+      ["revise_plan", {"goal": "ship the feature properly", "subgoals": [{"id": "g1", "text": "first step"}, {"id": "g2", "text": "second step"}]}]
+    ], "tool": "Edit", "expect": true}
+  ]
+}

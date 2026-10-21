@@ -1,0 +1,61 @@
+#!/usr/bin/env python3
+"""Put the pi plan-lock extension where pi loads it (#6675).
+
+    bin/pi-plan-lock-install            copy what is missing or stale
+    bin/pi-plan-lock-install --check    write nothing; exit 1 when the installed copy has drifted
+
+pi loads ~/.pi/agent/extensions/<name>/index.ts. The extension is copied there, not linked: a
+checkout is somebody's working tree and a branch switch would take the plan lock out of every pi
+session at once (the same reason estate-memory-install runs a copy). plan.ts travels with
+index.ts because index.ts imports it. If pi has no extensions directory the tool is not installed
+here and nothing is created. Only the pi-plan-lock directory is touched.
+"""
+
+import argparse
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent.parent
+SOURCE = HERE / "extensions" / "pi-plan-lock"
+FILES = ["index.ts", "plan.ts"]
+
+
+def copy(source: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.")
+    with os.fdopen(fd, "wb") as f:
+        f.write(source.read_bytes())
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, dest)
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--check", action="store_true")
+    ap.add_argument(
+        "--extensions-dir",
+        default=os.environ.get("PI_EXTENSIONS_DIR", "~/.pi/agent/extensions"),
+    )
+    args = ap.parse_args(argv)
+    ext = Path(os.path.expanduser(args.extensions_dir))
+    if not ext.is_dir():
+        print(f"absent   pi has no extensions directory at {ext}; nothing installed")
+        return 0
+    drift = 0
+    for name in FILES:
+        source, dest = SOURCE / name, ext / "pi-plan-lock" / name
+        if dest.exists() and dest.read_bytes() == source.read_bytes():
+            print(f"ok       {dest}")
+        elif args.check:
+            drift += 1
+            print(f"DRIFT    {dest} is {'stale' if dest.exists() else 'missing'}")
+        else:
+            copy(source, dest)
+            print(f"wrote    {dest}")
+    return 1 if drift else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

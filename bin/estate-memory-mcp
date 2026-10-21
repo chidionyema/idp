@@ -8,6 +8,11 @@ is called, from MCP_GATEWAY_KEY or the vault, and forwards to the gateway with t
 It serves only the manifest's memory tools (brief, recall, remember). The gateway behind it holds
 execute_command and the rest; passing those through would make this a second execution surface,
 and execution is intents only (AGENTS.md section 7). A call to any other tool is refused here.
+
+It also serves the plan tools (platform/estate/memory/plan.py: declare_plan, revise_plan, add_bdd,
+address_edgecases, address_2nd_order_effects, complete_goal), answered here with no door and no
+key, so every MCP runtime has them even when the gateway is down (#6675). The bridge is one
+process per session, so the plan it holds is that session's plan.
 """
 
 from __future__ import annotations
@@ -28,6 +33,7 @@ sys.path.insert(
 )
 import door  # noqa: E402
 import focus  # noqa: E402
+import plan  # noqa: E402
 
 TOOLS = set(door.MANIFEST["tools"])
 TIMEOUT_S = 30
@@ -36,6 +42,14 @@ TIMEOUT_S = 30
 class Bridge:
     def __init__(self):
         self.secret = None
+        self.plan = None
+
+    def plan_call(self, mid, name: str, args) -> dict:
+        r = plan.apply(self.plan, name, args)
+        if not r["ok"]:
+            return refuse(mid, f"Refused: {r['reason']}")
+        self.plan = r["plan"]
+        return ok(mid, {"content": [{"type": "text", "text": r["message"]}]})
 
     def key(self) -> str:
         if self.secret is None:
@@ -56,7 +70,9 @@ class Bridge:
                     "capabilities": {"tools": {"listChanged": False}},
                     "serverInfo": {"name": door.MANIFEST["server"], "version": "1"},
                     "instructions": "Estate memory, shared by every agent and model. Call brief at the "
-                    "start of a task, recall before deciding, remember what a later session should know.",
+                    "start of a task, recall before deciding, remember what a later session should know. "
+                    "Call declare_plan before any work, then per sub-goal: add_bdd before working on it, "
+                    "address_edgecases and address_2nd_order_effects, complete_goal with proof.",
                 },
             )
         if method == "ping":
@@ -67,8 +83,32 @@ class Bridge:
                 "id": mid,
                 "error": {"code": -32601, "message": f"no method {method}"},
             }
-        if method == "tools/call" and msg.get("params", {}).get("name") not in TOOLS:
-            return refuse(mid, f"estate-memory serves {sorted(TOOLS)} only")
+        params = msg.get("params") or {}
+        if method == "tools/call" and params.get("name") in plan.PLAN_TOOLS:
+            return self.plan_call(mid, params["name"], params.get("arguments") or {})
+        if method == "tools/call" and params.get("name") not in TOOLS:
+            return refuse(
+                mid, f"estate-memory serves {sorted(TOOLS | set(plan.PLAN_TOOLS))} only"
+            )
+        # The plan tools are listed whatever the door says: a runtime with no key or no
+        # gateway must still be able to declare a plan, or the hook refuses it everything.
+        if method == "tools/list":
+            reply = self.forward(mid, msg)
+            if "result" not in reply or reply["result"].get("isError"):
+                reply = ok(mid, {"tools": []})
+            reply["result"]["tools"] = [
+                t for t in reply["result"].get("tools", []) if t["name"] in TOOLS
+            ] + plan.TOOL_SCHEMAS
+            return reply
+        reply = self.forward(mid, msg)
+        if "result" in reply and not reply["result"].get("isError"):
+            name = params.get("name")
+            if name in ("brief", "recall"):
+                self.retire_ghosts(name, reply["result"])
+        return reply
+
+    def forward(self, mid, msg: dict) -> dict:
+        """The door's reply to msg, or a refusal saying why there is none."""
         secret = self.key()
         if not secret:
             env = door.MANIFEST["door"]["key_env"]
@@ -84,14 +124,6 @@ class Bridge:
             )
         if reply is None:
             return refuse(mid, "memory door gave no reply")
-        if method == "tools/call" and "result" in reply:
-            name = msg.get("params", {}).get("name")
-            if name in ("brief", "recall"):
-                self.retire_ghosts(name, reply["result"])
-        if method == "tools/list" and "result" in reply:
-            reply["result"]["tools"] = [
-                t for t in reply["result"].get("tools", []) if t["name"] in TOOLS
-            ]
         return reply
 
     def retire_ghosts(self, tool: str, result: dict) -> None:

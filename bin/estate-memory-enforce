@@ -2,6 +2,7 @@
 """Enforce that an agent uses estate memory AND declares its focus (Claude Code hook).
 
     estate-memory-enforce pre     PreToolUse on Edit|Write|MultiEdit|NotebookEdit
+    estate-memory-enforce plan    PreToolUse on every tool
     estate-memory-enforce stop    Stop
 
 Why (idp#6543 follow-on, 2026-10-19). Memory and focus were advice in a CLAUDE.md: an agent that
@@ -15,6 +16,11 @@ duplicated change days later. AGENTS.md says enforcement is in the hooks, which 
                    open) covers that file's path, and is the agent's own when ESTATE_AGENT is set.
         This is claim-gate's rule moved from merge time to edit time: the overlap is stopped
         before the work is done, not after it is rejected.
+  plan  Refuse every tool but the plan tools, memory reads and the runtime's bookkeeping until
+        the transcript's plan allows it: a goal with >=1 sub-goal (declare_plan), and a BDD
+        scenario for the active sub-goal (add_bdd) before any work on it (#6675). The rules are
+        platform/estate/memory/plan.py, the same ones the bridge answers the plan tools with.
+        ESTATE_PLAN_LOCK=off opts out (a human-driven session).
   stop  Once per turn, if the session changed durable files and never wrote anything back
         (`remember`, or `growmos remember|journal`), refuse to stop and say what to write.
         A later session cannot use what this one did not record.
@@ -48,6 +54,7 @@ sys.path.insert(
     ),
 )
 import focus  # noqa: E402
+import plan  # noqa: E402
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 BRIEFED = re.compile(
@@ -232,6 +239,25 @@ def pre(data: dict) -> int:
     return 0
 
 
+def plan_gate(data: dict) -> int:
+    tool = data.get("tool_name", "")
+    sid = data.get("session_id", "")
+    if os.environ.get("ESTATE_PLAN_LOCK", "").lower() == "off":
+        record("plan", "optout", "ESTATE_PLAN_LOCK=off", session=sid, tool=tool)
+        return 0
+    text = transcript_text(data)
+    if text is None:
+        record("plan", "unknown", "transcript unreadable", session=sid, tool=tool)
+        return 0
+    # Passes are not ledgered: this runs on every tool call, and a refusal is what gets watched.
+    verdict = plan.authorize(tool, plan.replay(plan.transcript_calls(text)))
+    if verdict["ok"]:
+        return 0
+    record("plan", "refuse", verdict["reason"][:120], session=sid, tool=tool)
+    deny_pre(verdict["reason"])
+    return 0
+
+
 def stop(data: dict) -> int:
     sid = data.get("session_id", "")
     if data.get("stop_hook_active"):
@@ -264,7 +290,8 @@ def stop(data: dict) -> int:
 
 
 def main(argv: list) -> int:
-    if len(argv) != 1 or argv[0] not in ("pre", "stop"):
+    modes = {"pre": pre, "plan": plan_gate, "stop": stop}
+    if len(argv) != 1 or argv[0] not in modes:
         print(__doc__.split("\n")[0], file=sys.stderr)
         return 2
     if os.environ.get("ESTATE_MEMORY_ENFORCE") == "0":
@@ -274,7 +301,7 @@ def main(argv: list) -> int:
         data = json.load(sys.stdin)
         if not isinstance(data, dict):
             return 0
-        return pre(data) if argv[0] == "pre" else stop(data)
+        return modes[argv[0]](data)
     except Exception as e:  # a hook may refuse an agent; it may not take a session down
         record(argv[0], "unknown", f"{type(e).__name__}: {str(e)[:120]}")
         return 0
