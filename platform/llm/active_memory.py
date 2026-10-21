@@ -386,6 +386,19 @@ def _live(claim: dict) -> bool:
     return claim.get("live") is True
 
 
+def _fact_line(f: dict) -> str:
+    # The brief sends {text, metadata: {kind, subject, ...}} (as focus.drop_stale reads it). This
+    # read {content, provenance.kind, key}, a shape the server never sends, so from the day it
+    # shipped every fact reached every model as "- [fact]  (None)" (seen live 2026-10-21, #6789).
+    # The old names stay as a fallback; a fact with no text is dropped, not shown empty.
+    meta = f.get("metadata") or f.get("provenance") or {}
+    meta = meta if isinstance(meta, dict) else {}
+    kind = meta.get("kind") or "fact"
+    text = _clip(f.get("text") or f.get("content"), 280)
+    ref = meta.get("subject") or f.get("key")
+    return f"- [{kind}] {text}" + (f" ({ref})" if ref else "")
+
+
 def render(brief: dict | None, focus: dict | None, who: str) -> str:
     """The block the model reads. Empty when neither read said anything."""
     lines: list[str] = []
@@ -393,12 +406,13 @@ def render(brief: dict | None, focus: dict | None, who: str) -> str:
         *((brief or {}).get("relevant") or []),
         *((brief or {}).get("recent") or []),
     ]
-    facts = [f for f in facts if isinstance(f, dict)]
+    facts = [
+        f for f in facts if isinstance(f, dict) and (f.get("text") or f.get("content"))
+    ]
     if facts:
         lines.append("Active Memory -- what the estate already knows about this task:")
         for f in facts:
-            kind = (f.get("provenance") or {}).get("kind") or "fact"
-            lines.append(f"- [{kind}] {_clip(f.get('content'), 280)} ({f.get('key')})")
+            lines.append(_fact_line(f))
     if focus is not None:
         if focus.get("available") is False:
             lines.append(
