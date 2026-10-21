@@ -1304,6 +1304,27 @@ spec:
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
+  name: estate-bridge
+  title: "The phone's road to the cluster API"
+  description: 'A tagged tailnet proxy in the cluster, so the founder can debug from his phone without the Mac being awake. kubectl proxy behind a Service carrying tailscale.com/tags: tag:estate-bridge, which platform/tailscale/policy.hujson already admits group:founder to on port 8001 and which no machine ever carried before. Read-only: it binds the view ClusterRole, because a debugger that can delete things is a debugger that can cause an incident.'
+  annotations:
+    backstage.io/kubernetes-label-selector: 'app.kubernetes.io/name=estate-bridge'
+    estate/flux-kustomization: 'bridge'
+    estate/path: './platform/bridge'
+    estate/cluster: 'oke'
+  tags: [platform, identity]
+spec:
+  type: platform-layer
+  lifecycle: production
+  owner: group:default/platform
+  system: identity
+  dependsOn:
+    - component:default/layer-tailscale
+    - component:default/layer-jit
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
   name: layer-jit
   title: 'Just-in-time access'
   description: 'The only way a write reaches the cluster: an agent asks, the founder taps yes on his phone, and a token that expires in minutes is minted for that one verb. Nothing holds standing write access, including this.'

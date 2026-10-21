@@ -1,0 +1,18 @@
+# The phone's road to the cluster API (crew#841). Its own namespace, not `tailscale`: the
+# operator's namespace enforces privileged pod security because its proxies run a privileged
+# sysctl init container (platform/tailscale/namespace.yaml). Nothing here needs a privilege --
+# it is `kubectl proxy` holding a ServiceAccount token -- so it lands under `restricted` and
+# stays there. A door that needs no privilege does not get to live in the room that grants it.
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    # Never garbage-collected by Flux: a namespace dropped from a Kustomization row stays, with
+    # everything in it (portal 404, 2026-08-29 01:05Z, idp#648).
+    kustomize.toolkit.fluxcd.io/prune: disabled
+  name: estate-bridge
+  labels:
+    app.kubernetes.io/part-of: idp
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

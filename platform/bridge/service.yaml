@@ -1,0 +1,35 @@
+# The Service the operator turns into the tailnet node the phone talks to (crew#841).
+#
+# The three annotations are the whole mechanism, and they are the same three platform/jit uses
+# for its broker door:
+#   - `tailscale.com/expose` creates a tagged proxy for this Service.
+#   - `tailscale.com/hostname` is the MagicDNS name, so the phone's kubeconfig can name
+#     `estate-bridge` instead of an IP. A hardcoded tailnet IP is itself a restart defect: the
+#     address changes when the node is rebuilt, and the app then answers "authentication failed"
+#     while the road behind it is healthy.
+#   - `tailscale.com/tags: tag:estate-bridge` is the tag platform/tailscale/policy.hujson already
+#     owns and already admits `group:founder` to, on port 8001 and nothing else.
+apiVersion: v1
+kind: Service
+metadata:
+  name: estate-bridge
+  namespace: estate-bridge
+  annotations:
+    tailscale.com/expose: "true"
+    tailscale.com/hostname: estate-bridge
+    tailscale.com/tags: tag:estate-bridge
+  labels:
+    app.kubernetes.io/name: estate-bridge
+    app.kubernetes.io/part-of: idp
+    # platform/edge/require-catalogue-entity.yaml refuses a Service that names no entity
+    # (founder 2026-08-29: "if a surface is not registered in the inventory, the cluster must
+    # refuse to boot it"). The entity lives in backstage/platform/catalog-info.yaml.
+    backstage.io/kubernetes-id: estate-bridge
+spec:
+  selector:
+    app.kubernetes.io/name: estate-bridge
+  ports:
+    - name: kubeapi
+      port: 8001
+      targetPort: kubeapi
+      protocol: TCP
