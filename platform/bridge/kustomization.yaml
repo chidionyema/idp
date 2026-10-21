@@ -1,0 +1,8 @@
+# The phone's road to the cluster API (crew#841). Reconciled by clusters/oke/bridge.yaml.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - deployment.yaml
+  - service.yaml
