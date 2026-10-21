@@ -86,10 +86,14 @@ assert set(got)=={d['name'] for d in m.TOOL_DEFS}, got; \
 assert all(set(got[d['name']].get('required',[]))==set(d['inputSchema'].get('required',[])) for d in m.TOOL_DEFS); \
 print('estate-mcp tools register:', sorted(got))"
 # The build fails if the library did not arrive or the search cannot find a known intent in it.
+# The name is the canonical `ci.status` (#6590 renamed it from ci-status). This line still named
+# the old one, so from 2026-10-19 16:47Z every estate-mcp build failed here and none shipped --
+# the search was right (ci.status ranked first); the assertion was looking for a file now gone.
+# tests/test_estate_mcp_build_check_names_a_real_intent.py holds the name to the library.
 RUN cd /tmp && python -c "import importlib.util; \
 spec=importlib.util.spec_from_file_location('estate_mcp','/app/plugins/estate_mcp.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m); \
 n=len(m._load_intents()); assert n >= 50, 'only %d intents in /app/intents' % n; \
-hit=m._estate_list({'query': 'ci status'}); assert '## intent ci-status' in hit, hit[:300]; \
-print('estate-mcp intent library:', n, 'intents, search finds ci-status')"
+hit=m._estate_list({'query': 'ci status'}); assert '## intent ci.status' in hit, hit[:300]; \
+print('estate-mcp intent library:', n, 'intents, search finds ci.status')"
 USER datasette
 EXPOSE 8001
