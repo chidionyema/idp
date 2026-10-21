@@ -145,6 +145,11 @@ model_list:
       model: openai/MiniMax-M2.7
       api_base: https://api.minimax.io/v1
       api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: minimax_m31f
+    litellm_params:
+      model: openai/MiniMax-M3.1-Flash
+      api_base: https://api.minimax.io/v1
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
   - model_name: moonshot/kimi-k3
     litellm_params:
       model: moonshot/kimi-k3
