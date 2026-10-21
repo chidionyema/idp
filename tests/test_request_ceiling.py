@@ -90,9 +90,20 @@ def test_the_refusal_names_the_size_and_the_ceiling(ceiling):
     assert "compaction" in verdict.lower()
 
 
-def test_the_average_call_of_the_incident_is_refused(ceiling):
-    """197,098 was the incident's AVERAGE. The average was already over any working window."""
-    assert _call(ceiling, _request(197_098)) is not None
+def test_the_default_is_the_ceiling_the_router_runs_at(ceiling):
+    """The module default and bin/litellm-local's export are one number (idp#6675).
+
+    This test used to require the incident's AVERAGE call (197,098) to be refused. That held only
+    for the 128,000 default; the live router has run at 200,000 since litellm-local began
+    exporting it, so the assertion graded a value nothing ran. Pinning the two together is the
+    property that matters: router_catalog hands this module's number to pi as its window."""
+    launcher = (MODULE.parents[2] / "bin" / "litellm-local").read_text()
+    want = f'ESTATE_MAX_INPUT_TOKENS="${{ESTATE_MAX_INPUT_TOKENS:-{ceiling.MAX_INPUT_TOKENS}}}"'
+    assert want in launcher
+
+
+def test_a_call_just_over_the_ceiling_is_refused(ceiling):
+    assert _call(ceiling, _request(ceiling.MAX_INPUT_TOKENS + 1_000)) is not None
 
 
 def test_an_ordinary_working_turn_passes(ceiling):
@@ -129,3 +140,29 @@ def test_the_refusal_never_echoes_the_api_key(ceiling):
     verdict = _call(ceiling, _request(737_169), key=secret)
     assert "SECRETTAIL" not in verdict
     assert "961a3bcd" in verdict, "the refusal does not say which caller to go and fix"
+
+
+# pi-coding-agent's OVERFLOW_PATTERNS, the ones a 400 can match to be classed as "context too big"
+# (read from pi's bundle 2026-10-20, @earendil-works/pi-coding-agent). Only the ones a router
+# message could plausibly satisfy are copied; the point is the contract, not a full mirror.
+_PI_OVERFLOW_PATTERNS = [
+    r"exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))",
+    r"maximum context length is \d+ tokens",
+    r"context[_ ]length[_ ]exceeded",
+]
+
+
+def test_pi_classifies_the_refusal_as_a_context_overflow(ceiling):
+    """The refusal must be recoverable by the client, or the session is stuck for good.
+
+    Measured 2026-10-20: the old wording matched none of pi's overflow patterns, so pi never
+    compacted and every later turn re-sent the same oversized history and was refused again.
+    A pattern that matches makes pi compact once and retry with a smaller request.
+    """
+    import re
+
+    verdict = _call(ceiling, _request(257_537))
+    assert any(re.search(p, verdict, re.I) for p in _PI_OVERFLOW_PATTERNS), (
+        "no pi overflow pattern matches the refusal, so pi will not compact and retry:\n"
+        + verdict
+    )
