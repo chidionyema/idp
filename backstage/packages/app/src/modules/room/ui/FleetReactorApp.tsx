@@ -1966,7 +1966,9 @@ export default function FleetReactorApp() {
           <div className="flex items-center gap-3">
             <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_10px_rgba(0,240,255,0.8)]"></div>
             <h1 className="text-lg sm:text-2xl whitespace-nowrap font-bold tracking-[0.2em] text-white drop-shadow-md">FLEET REACTOR</h1>
-          </div>          <p className="text-[12px] text-white/60 uppercase font-mono tracking-widest pl-5">Native Spatial Topology • Active Stream</p>
+          </div>
+          {/* "Native Spatial Topology • Active Stream" lived here: a tagline, not information,
+              printed permanently over the instrument (idp#6794). Removed. */}
         </div>
 
         {/* Global Action Controls */}
@@ -2064,7 +2066,7 @@ export default function FleetReactorApp() {
           efficiency, safeguards) share one column between them, bottom-anchored just above the
           strip. Before this they were placed independently and landed on top of the strip and the
           sonar (founder 2026-09-29: "the clean layout is getting bastardised"). */}
-      <div className="absolute right-6 top-36 bottom-24 z-30 w-[280px] flex flex-col justify-end gap-2 pointer-events-none">
+      <div data-testid="live-column" className="absolute right-6 top-36 bottom-24 z-30 w-[280px] flex flex-col justify-end gap-2 pointer-events-none">
       {/* A crash in a live panel must not take the Reactor down: EfficiencyHud once threw on an
           absent field and unmounted the whole page, so the mic control never mounted and a phone
           read it as "microphone blocked". The boundary keeps one bad panel to its own corner. */}
@@ -2073,20 +2075,22 @@ export default function FleetReactorApp() {
       </ErrorBoundary>
 
       {/* SAFEGUARDS: every gate decision on a real turn, newest first, as it lands on
-          the bus. Nothing here is sampled or seeded; an empty panel says the bus has carried none. */}
+          the bus. Nothing here is sampled or seeded. An empty bus draws NO card (idp#6794: an
+          empty card reading "0 pass 0 refused · no gate decision yet" is furniture, not news),
+          and a count is shown only when it is not zero. */}
+      {gates.length ? (
       <div
         data-testid="safeguards"
         className="w-full rounded-xl bg-black/55 border border-white/10 backdrop-blur-md p-2 select-none pointer-events-none"
       >
         <div className="flex items-baseline gap-2 px-1 pb-1">
           <span className="text-[12px] font-mono uppercase tracking-widest text-white/60 flex-1">safeguards · live</span>
-          <span className="text-[12px] font-mono text-emerald-300/80">{gates.filter((g) => g.gate.verdict === 'pass').length} pass</span>
-          <span className="text-[12px] font-mono text-rose-400/90">{gates.filter((g) => g.gate.verdict === 'refuse').length} refused</span>
-          {gates.some((g) => g.gate.verdict === 'blind') ? (
-            <span className="text-[12px] font-mono text-amber-300/80">{gates.filter((g) => g.gate.verdict === 'blind').length} blind</span>
-          ) : null}
+          {([['pass', 'pass', 'text-emerald-300/80'], ['refuse', 'refused', 'text-rose-400/90'], ['blind', 'blind', 'text-amber-300/80']] as const).map(([v, label, cls]) => {
+            const n = gates.filter((g) => g.gate.verdict === v).length;
+            return n ? <span key={v} className={`text-[12px] font-mono ${cls}`}>{n} {label}</span> : null;
+          })}
         </div>
-        {gates.length ? gates.slice(0, 6).map((g, i) => (
+        {gates.slice(0, 6).map((g, i) => (
           <div key={`${g.session_id}-${g.at}-${i}`} className="px-1 py-0.5 flex flex-col">
             <div className="flex items-center gap-1.5">
               <span
@@ -2103,10 +2107,9 @@ export default function FleetReactorApp() {
               <div className="text-[12px] text-white/60 truncate pl-3">{g.gate.claim || g.gate.reason}</div>
             ) : null}
           </div>
-        )) : (
-          <div className="px-1 py-1 text-[12px] font-mono text-white/60">no gate decision on the bus yet</div>
-        )}
+        ))}
       </div>
+      ) : null}
       </div>
 
       {/* THE VOICE PICKER, top right under the burn bar (founder 2026-09-26: "move it to top right",
@@ -2488,19 +2491,17 @@ export default function FleetReactorApp() {
             {/* THE NUMBERS WERE LABELLED BY COLOUR ALONE (founder 2026-10-02: "a small chip
                 floats with no label"). Colour is not a label -- the three numbers now say what
                 they are, at 8px, once, under the counts they belong to. */}
-            <span className="flex flex-col items-start gap-0.5">
-              <span className="flex items-baseline gap-2">
-                {(['stuck', 'thinking', 'waiting'] as const).map((a) => {
-                  const n = rows.filter((r) => r.activity === a).length;
-                  return (
-                    <span key={a} className="text-[12px] font-mono" style={{ color: n ? COLORS[a] : 'rgba(255,255,255,.6)' }}>
-                      {n}
-                    </span>
-                  );
-                })}
-              </span>
-              <span className="text-[12px] font-mono text-white/60 tracking-wider">stuck · think · wait</span>
-            </span>
+            {/* ZERO IS NOT NEWS (idp#6794). A count is drawn only when it is not zero, each with
+                its own label beside it, so a quiet fleet is the glyph alone. */}
+            {(['stuck', 'thinking', 'waiting'] as const).map((a) => {
+              const n = rows.filter((r) => r.activity === a).length;
+              return n ? (
+                <span key={a} data-testid={`panel-count-${a}`} className="flex items-baseline gap-1 text-[12px] font-mono">
+                  <span style={{ color: COLORS[a] }}>{n}</span>
+                  <span className="text-white/60">{a === 'thinking' ? 'think' : a === 'waiting' ? 'wait' : a}</span>
+                </span>
+              ) : null;
+            })}
           </button>
         ) : (
         // THE PANEL NEEDS A SURFACE. It was fully transparent (`rgba(0,0,0,0)` measured), so the

@@ -903,6 +903,39 @@
 .fleet-reactor .z-40 { z-index:40; }
 .fleet-reactor .z-50 { z-index:50; }
 
+/* THE CLASSES THE REACTOR USED AND THIS FILE NEVER DEFINED (idp#6794). The page is styled by
+   this hand-written subset, not by Tailwind, so a class missing here is silently a no-op. Found by
+   diffing every className in FleetReactorApp.tsx against this file: `hidden` and every `sm:`
+   variant were absent, so BOTH sonar labels rendered side by side ("doubled sonar"), the disabled
+   sonar and Target Lock drew on a phone, and the rail's attention dot (bg-rose-400 / bg-amber-300)
+   had no colour at all. */
+.fleet-reactor .hidden { display:none; }
+.fleet-reactor .text-lg { font-size:1.125rem; }
+.fleet-reactor .underline { text-decoration:underline; }
+.fleet-reactor .text-cyan-300\/60 { color:rgba(103,232,249,0.60); }
+.fleet-reactor .w-\[60px\] { width:60px; }
+.fleet-reactor .h-\[60px\] { height:60px; }
+.fleet-reactor .bg-rose-400 { background-color:rgba(251,113,133,1); }
+.fleet-reactor .bg-amber-300 { background-color:rgba(252,211,77,1); }
+.fleet-reactor .bg-white\/25 { background-color:rgba(255,255,255,0.25); }
+.fleet-reactor .bg-white\/50 { background-color:rgba(255,255,255,0.50); }
+.fleet-reactor .self-end { align-self:flex-end; }
+@media (min-width: 640px) {
+  .fleet-reactor .sm\:hidden { display:none; }
+  .fleet-reactor .sm\:block { display:block; }
+  .fleet-reactor .sm\:flex { display:flex; }
+  .fleet-reactor .sm\:inline { display:inline; }
+  .fleet-reactor .sm\:px-6 { padding-left:1.5rem;padding-right:1.5rem; }
+  .fleet-reactor .sm\:py-3 { padding-top:0.75rem;padding-bottom:0.75rem; }
+  .fleet-reactor .sm\:text-2xl { font-size:1.5rem; }
+}
+
+/* The live column (token efficiency, safeguards) is 280px wide: at 390px it covered the room.
+   A phone asks for these by voice; the instrument stays uninterrupted. */
+@media (max-width: 639px) {
+  .fleet-reactor [data-testid="live-column"] { display:none; }
+}
+
 /* The laptop's delivery pill (Delivery.tsx) is not drawn on a phone (2026-10-09). At bottom-24
    right-6 z-40 it covers the voice controls at phone width: measured on live /fleet in WebKit
    (iPhone 13) and Chromium (Pixel 7), every tap on `fleet-mic` landed on this pill
