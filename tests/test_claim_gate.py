@@ -350,3 +350,40 @@ def test_a_failed_fetch_falls_back_to_the_snapshot(monkeypatch):
     g = _gate()
     monkeypatch.setattr(g.subprocess, "run", fake_run)
     assert "Claim: Mumchimp/idp#1" in g.live_body("Mumchimp/idp")
+
+
+def test_the_repo_comes_from_ci_else_from_the_checkout(monkeypatch):
+    # Off CI nothing exports GITHUB_REPOSITORY; the gate crashed with KeyError (#6791).
+    import subprocess as sp
+
+    g = _gate()
+    monkeypatch.setenv("GITHUB_REPOSITORY", "Mumchimp/idp")
+    assert g.repo_slug() == "Mumchimp/idp"
+
+    monkeypatch.delenv("GITHUB_REPOSITORY")
+    seen = []
+
+    def fake_run(argv, capture_output=False, text=False, timeout=None):
+        seen.append(argv)
+        return sp.CompletedProcess(argv, 0, "chidionyema/idp\n", "")
+
+    monkeypatch.setattr(g.subprocess, "run", fake_run)
+    assert g.repo_slug() == "chidionyema/idp"
+    assert seen[0][:3] == ["gh", "repo", "view"]
+
+
+def test_no_repo_anywhere_is_blind_not_a_traceback(monkeypatch):
+    import subprocess as sp
+
+    import pytest
+
+    g = _gate()
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    monkeypatch.setattr(
+        g.subprocess,
+        "run",
+        lambda argv, **kw: sp.CompletedProcess(argv, 1, "", "not a git repository"),
+    )
+    with pytest.raises(SystemExit) as e:
+        g.repo_slug()
+    assert str(e.value).startswith("BLIND claim-gate")

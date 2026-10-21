@@ -59,7 +59,9 @@ DEPENDABOT = "dependabot[bot]"
 MAX_AGE = timedelta(hours=2)
 HEAD_TRAILER = re.compile(r"^Greenlane-Head:\s*([0-9a-f]{7,40})\s*$", re.M)
 RUNNER_PIN = re.compile(r"^\s*runs-on:\s*ubuntu-\d{2}\.\d{2}\s*$", re.M)
-_PRS: dict[tuple[str, str], tuple[str, str]] = {}  # (repo, sha) -> (pull request number, author)
+_PRS: dict[
+    tuple[str, str], tuple[str, str]
+] = {}  # (repo, sha) -> (pull request number, author)
 CLAIM_REF = re.compile(r"^Claim:\s*(?:([\w.-]+/[\w.-]+))?#(\d+)\s*$", re.M)
 AGENT = re.compile(r"^Agent:\s*(\S+)\s*$", re.M)
 CLAIM = re.compile(
@@ -316,7 +318,8 @@ def pr_of_head(repo: str, head: str) -> tuple[str, str]:
     resolved = (
         subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
             ["git", "rev-parse", head],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         ).stdout.strip()
         if not re.match(r"^[0-9a-f]{7,40}$", head)
         else head
@@ -391,9 +394,34 @@ def live_body(repo: str, num: str = "") -> str:
     return os.environ.get("PR_BODY", "")
 
 
+def repo_slug() -> str:
+    """owner/repo: CI's GITHUB_REPOSITORY, else the checkout's own (as bin/claim-open finds it).
+
+    Read straight from the environment, the gate crashed `KeyError: 'GITHUB_REPOSITORY'` on the
+    laptop, where nothing exports it -- so `bin/claim-gate base HEAD` by hand, the command its own
+    refusals tell an agent to run, died with a traceback instead of a verdict (2026-10-21, #6791).
+    """
+    slug = os.environ.get("GITHUB_REPOSITORY", "").strip()
+    if slug:
+        return slug
+    p = subprocess.run(  # noqa: S603 -- fixed argv, no shell
+        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],  # noqa: S607
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    slug = (p.stdout or "").strip() if p.returncode == 0 else ""
+    if not slug:
+        raise SystemExit(
+            "BLIND claim-gate  no GITHUB_REPOSITORY and `gh repo view` could not name the repo: "
+            + (p.stderr or "").strip()[:200]
+        )
+    return slug
+
+
 def main(argv: list[str]) -> int:
     base, head = argv[1], argv[2]
-    repo = os.environ["GITHUB_REPOSITORY"]
+    repo = repo_slug()
     num, author = pr_context(repo, head)
 
     def fetch(r: str, n: int):
