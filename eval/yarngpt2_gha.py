@@ -80,7 +80,7 @@ class _Engine:
         t = time.perf_counter()
         self.llm = Llama(
             model_path=f"/w/yarn-{quant}.gguf", n_ctx=4096, n_threads=self.ncpu,
-            n_threads_batch=self.ncpu, n_batch=512, last_n_tokens_size=4096, verbose=False,
+            n_threads_batch=self.ncpu, n_batch=512, last_n_tokens_size=4096, logits_all=lookup, verbose=False,
             draft_model=LlamaPromptLookupDecoding(max_ngram_size=3, num_pred_tokens=10) if lookup else None,
         )
         self.loaded = (quant, lookup)
