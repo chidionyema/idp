@@ -62,6 +62,7 @@ import {
   storedBrowserKokoroVoice,
   synthesiseBrowserKokoro,
 } from './browserKokoro';
+import { applyLoudness } from './faceAudio';
 
 /**
  * The VAD and onnxruntime bundles, served by THIS APP at its own origin.
@@ -692,7 +693,7 @@ export function useEstateVoice(): EstateVoice {
     const f32 = new Float32Array(pcm);
     if (!f32.length) return;
     const buf = c.audio.createBuffer(1, f32.length, TTS_RATE);
-    buf.copyToChannel(f32, 0);
+    buf.copyToChannel(applyLoudness(f32), 0);
     const src = c.audio.createBufferSource();
     src.buffer = buf;
     src.connect(c.audio.destination);

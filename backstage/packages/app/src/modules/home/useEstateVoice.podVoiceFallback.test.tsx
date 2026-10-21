@@ -104,6 +104,7 @@ class FakeAudioContext {
 
 // eslint-disable-next-line import/first
 import { useEstateVoice } from './useEstateVoice';
+import { applyLoudness } from './faceAudio';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const says = () => calls.filter(u => u.endsWith('/voice/say')).length;
@@ -132,7 +133,10 @@ describe("the pod's cloud voice, chosen on a device with its own Kokoro", () => 
     expect(says()).toBe(1);
     expect(synthesised).toEqual([]);
     expect(played).toHaveLength(1);
-    expect([...played[0]]).toEqual([...podSamples]);
+    // The pod's own samples reach the clock -- raised to the founder's level by faceAudio, which is
+    // the only change the stage makes (same shape, scaled), so the expectation is the same clause
+    // run through it.
+    expect([...played[0]]).toEqual([...applyLoudness(podSamples)]);
   });
 
   it("is spoken by this device's Kokoro when the pod cannot, and the pod is then left alone", async () => {
@@ -146,7 +150,7 @@ describe("the pod's cloud voice, chosen on a device with its own Kokoro", () => 
     });
     expect(says()).toBe(1);
     expect(synthesised).toEqual([{ text: 'first clause', voice: 'af_heart' }]);
-    expect([...played[0]]).toEqual([...kokoroSamples]);
+    expect([...played[0]]).toEqual([...applyLoudness(kokoroSamples)]);
 
     await act(async () => {
       result.current.speak('second clause');

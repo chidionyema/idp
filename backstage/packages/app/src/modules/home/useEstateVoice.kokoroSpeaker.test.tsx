@@ -102,6 +102,7 @@ class FakeAudioContext {
 
 // eslint-disable-next-line import/first
 import { useEstateVoice } from './useEstateVoice';
+import { applyLoudness } from './faceAudio';
 
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 
@@ -144,7 +145,8 @@ describe('a Kokoro voice chosen on a device the pod cannot speak for', () => {
     expect(synthesised).toEqual([{ text: 'hello there', voice: 'af_bella' }]);
     expect(calls.some(u => u.endsWith('/voice/say'))).toBe(false);
     expect(played).toHaveLength(1);
-    expect([...played[0]]).toEqual([...samples]);
+    // Its own samples reach the clock, raised to the founder's level (faceAudio, idp#6784).
+    expect([...played[0]]).toEqual([...applyLoudness(samples)]);
   });
 
   it('survives a reload: the choice is remembered, not replaced by the pod\'s cloud voice', async () => {
