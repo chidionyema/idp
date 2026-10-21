@@ -5,8 +5,7 @@
 name: yarngpt2-eval
 
 on:
-  push:
-    branches: [eval/yarngpt2]
+  workflow_dispatch:
 
 permissions:
   contents: read
