@@ -13,15 +13,21 @@ is made and answers the agent; the hook (bin/estate-memory-enforce plan) replays
 calls it finds in the transcript through the same `apply`. The rules are deterministic, so a call
 the bridge refused is refused again on replay, and both reach the same plan.
 
-    python3 plan.py authorize <tool>   calls as JSON [[tool, args], ...] on stdin;
-                                       prints {"ok": bool, "reason": str}
+A runtime whose bridge did not load can still comply: `estate-plan <plan_tool> '<json>'` run as
+one shell command counts as that plan-tool call (shell_plan_call). pi needs no such door -- its
+extension registers the plan tools in-process -- so this part has no plan.ts twin.
+
+    python3 plan.py authorize <tool> [args-json]   calls as JSON [[tool, args], ...] on stdin;
+                                                   prints {"ok": bool, "reason": str}
 """
 
 from __future__ import annotations
 
 import copy
 import json
+import os
 import re
+import shlex
 import sys
 
 MIN_GOAL_CHARS = 8
@@ -52,6 +58,50 @@ HOUSEKEEPING = frozenset(
         "exitplanmode",
     }
 )
+
+
+# By absolute path in the refusal: bin/ is on no runtime's PATH, and the door must work anywhere.
+ESTATE_PLAN = os.path.join(
+    os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    ),
+    "bin",
+    "estate-plan",
+)
+
+
+def shell_plan_call(command) -> list | None:
+    """[tool, args] when a shell command is exactly `estate-plan <plan_tool> '<json object>'`, else
+    None. This is the door that never depends on the bridge: a session whose estate-memory tools
+    did not load can still declare its plan through the shell, so the lock can never trap an agent
+    with no way to comply. Exactly one command and nothing else -- a `;`, `&&`, pipe, newline or
+    substitution makes it ordinary work, refused like any other before a plan."""
+    if not isinstance(command, str) or re.search(r"[`\n]|\$\(", command):
+        return None
+    try:
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        tokens = list(lex)
+    except ValueError:
+        return None
+    if len(tokens) != 3 or os.path.basename(tokens[0]) != "estate-plan":
+        return None
+    if tokens[1] not in PLAN_TOOLS:
+        return None
+    try:
+        args = json.loads(tokens[2])
+    except ValueError:
+        return None
+    return [tokens[1], args] if isinstance(args, dict) else None
+
+
+def as_plan_call(tool: str, args) -> list | None:
+    """The plan-tool call a tool call makes, if any: the tool itself, or a shell estate-plan."""
+    if bare(tool) in PLAN_TOOLS:
+        return [tool, args]
+    if tool.lower() == "bash" and isinstance(args, dict):
+        return shell_plan_call(args.get("command"))
+    return None
 
 
 def bare(name: str) -> str:
@@ -210,22 +260,35 @@ def replay(calls) -> dict | None:
     it changed nothing when it was made."""
     plan = None
     for tool, args in calls:
-        if bare(tool) in PLAN_TOOLS:
-            r = apply(plan, tool, args)
+        call = as_plan_call(tool, args)
+        if call:
+            r = apply(plan, *call)
             if r["ok"]:
                 plan = r["plan"]
     return plan
 
 
-def authorize(tool: str, plan: dict | None) -> dict:
+def authorize(tool: str, plan: dict | None, args=None) -> dict:
     name = bare(tool)
     if name in NEVER_BLOCKED or name in MEMORY_READS or name.lower() in HOUSEKEEPING:
         return {"ok": True}
+    call = as_plan_call(tool, args)
+    if call and bare(call[0]) == bare(tool):
+        return {"ok": True}  # the plan tool itself: the bridge answers it
+    if call:
+        # The shell door: nothing else will check it, so check it here. A refused call would be
+        # skipped on replay anyway; refusing it now tells the agent why.
+        r = apply(plan, *call)
+        return {"ok": True} if r["ok"] else r
     if not plan:
         return _refuse(
             f"No plan declared, so {tool} is refused. Call declare_plan first with a goal and at "
             'least one sub-goal: declare_plan({goal: "<what done looks like>", subgoals: '
-            '[{id: "goal_1", text: "<first step>"}]}). Nothing else runs until you do.'
+            '[{id: "goal_1", text: "<first step>"}]}). Nothing else runs until you do. If the '
+            "plan tools are not in your tool list, run the same call as one shell command: "
+            + ESTATE_PLAN
+            + ' declare_plan \'{"goal": "...", "subgoals": [{"id": "goal_1", '
+            '"text": "..."}]}\' (every plan tool works this way).'
         )
     active = next((s for s in plan["subgoals"] if s["id"] not in plan["done"]), None)
     if active is None:
@@ -368,14 +431,17 @@ TOOL_SCHEMAS = [
 
 
 def main(argv: list) -> int:
-    if len(argv) != 2 or argv[0] != "authorize":
+    if len(argv) not in (2, 3) or argv[0] != "authorize":
         print(__doc__.split("\n\n")[-1], file=sys.stderr)
         return 2
     try:
         calls = json.load(sys.stdin)
+        args = json.loads(argv[2]) if len(argv) == 3 else None
         print(
             json.dumps(
-                authorize(argv[1], replay(calls if isinstance(calls, list) else []))
+                authorize(
+                    argv[1], replay(calls if isinstance(calls, list) else []), args
+                )
             )
         )
     except (

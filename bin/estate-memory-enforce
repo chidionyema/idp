@@ -250,7 +250,9 @@ def plan_gate(data: dict) -> int:
         record("plan", "unknown", "transcript unreadable", session=sid, tool=tool)
         return 0
     # Passes are not ledgered: this runs on every tool call, and a refusal is what gets watched.
-    verdict = plan.authorize(tool, plan.replay(plan.transcript_calls(text)))
+    verdict = plan.authorize(
+        tool, plan.replay(plan.transcript_calls(text)), data.get("tool_input")
+    )
     if verdict["ok"]:
         return 0
     record("plan", "refuse", verdict["reason"][:120], session=sid, tool=tool)

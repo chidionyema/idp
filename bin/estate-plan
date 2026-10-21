@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Make a plan-tool call through the shell (idp#6675).
+
+    estate-plan <declare_plan|revise_plan|add_bdd|address_edgecases|address_2nd_order_effects|complete_goal> '<json>'
+
+The plan lock refuses work until a plan is declared. The plan tools normally come from the
+estate-memory bridge; when a session's bridge did not load, this is the door that is always there,
+so the lock can never leave an agent with no way to comply.
+
+This command records nothing. The hook (bin/estate-memory-enforce plan) or the opencode plugin
+sees the call in the session, checks it against the session's plan before it runs -- refusing it
+with the reason if it does not apply -- and replays it as the plan tool it names. So by the time
+this runs, the call is already part of the plan; it only says so. Run it as exactly one command:
+anything chained to it makes it ordinary work.
+"""
+
+import json
+import os
+import sys
+
+sys.path.insert(
+    0,
+    os.path.join(
+        os.path.dirname(os.path.realpath(__file__)),
+        "..",
+        "platform",
+        "estate",
+        "memory",
+    ),
+)
+import plan  # noqa: E402
+
+
+def main(argv: list) -> int:
+    if len(argv) != 2 or argv[0] not in plan.PLAN_TOOLS:
+        print(__doc__.strip().split("\n\n")[0], file=sys.stderr)
+        print(__doc__.strip().split("\n\n")[1], file=sys.stderr)
+        return 2
+    try:
+        args = json.loads(argv[1])
+    except ValueError as e:
+        print(f"estate-plan: the arguments are not JSON: {e}", file=sys.stderr)
+        return 2
+    if not isinstance(args, dict):
+        print("estate-plan: the arguments must be a JSON object", file=sys.stderr)
+        return 2
+    if argv[0] in ("declare_plan", "revise_plan"):
+        r = plan.apply(None, argv[0], args)
+        if not r["ok"]:
+            print(f"estate-plan: {r['reason']}", file=sys.stderr)
+            return 1
+        print(r["message"])
+    else:
+        print(f"{argv[0]} recorded for {args.get('goal_id', '(no goal_id)')}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

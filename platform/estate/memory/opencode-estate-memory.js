@@ -25,9 +25,15 @@ function brief() {
   });
 }
 
-function authorize(tool, calls) {
+// `estate-plan <plan_tool> '<json>'` through bash is the door that works when the bridge did not
+// load; plan.py decides whether a command is exactly that, this only keeps the candidates.
+const isPlanCall = (tool, args) =>
+  PLAN_TOOL.test(tool) || (tool === "bash" && /estate-plan/.test(args?.command ?? ""));
+
+function authorize(tool, calls, args) {
   return new Promise((resolve) => {
-    const child = execFile("python3", [PLAN, "authorize", tool], { timeout: TIMEOUT_MS }, (err, stdout) => {
+    const argv = [PLAN, "authorize", tool, JSON.stringify(args ?? {})];
+    const child = execFile("python3", argv, { timeout: TIMEOUT_MS }, (err, stdout) => {
       try {
         resolve(JSON.parse(stdout));
       } catch {
@@ -49,18 +55,19 @@ export const EstateMemory = async () => {
       const text = await sessions.get(id);
       if (text) output.system.push(text);
     },
-    "tool.execute.before": async (input, _output) => {
+    "tool.execute.before": async (input, output) => {
       if ((process.env.ESTATE_PLAN_LOCK ?? "").toLowerCase() === "off") return;
       const tool = input?.tool ?? "";
-      const verdict = await authorize(tool, plans.get(input?.sessionID ?? "") ?? []);
+      const verdict = await authorize(tool, plans.get(input?.sessionID ?? "") ?? [], output?.args);
       if (verdict && verdict.ok === false) throw new Error(verdict.reason);
     },
     "tool.execute.after": async (input) => {
       const tool = input?.tool ?? "";
-      if (!PLAN_TOOL.test(tool)) return;
+      const args = input?.args ?? {};
+      if (!isPlanCall(tool, args)) return;
       const id = input?.sessionID ?? "";
       // A call the bridge refused is refused again on replay, so every call is kept as made.
-      plans.set(id, [...(plans.get(id) ?? []), [tool, input?.args ?? {}]]);
+      plans.set(id, [...(plans.get(id) ?? []), [tool, args]]);
     },
   };
 };
