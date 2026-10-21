@@ -64,8 +64,34 @@ data:
     # bing's junk was what the engine embedded and wrote claims from, so it is switched off: an
     # empty answer makes the researcher say "no context", a dictionary page makes it say something
     # false. duckduckgo, brave and mojeek are left at SearXNG's default rather than forced on.
+    #
+    # yandex, measured 2026-10-21 from inside this pod on four of the research engine's
+    # sub-queries (15 results each, 60 total): about half are primary or practitioner sources
+    # (uber, aviator, trunk.io, mergify, graphite, buildkite, llvm, hacker news); the rest is
+    # tutorial and SEO sites, Russian-language pages, and a few off-topic hits (smallpdf,
+    # a vercel staging page). It answers where google cse is rate-limited, so it is on, and the
+    # hostnames list below drops the hosts seen to be junk before the engine embeds anything.
+    # The engine's own 0.42 relevance floor and claim check still run after this.
     engines:
       - name: bing
         disabled: true
       - name: wikipedia
         disabled: false
+      - name: yandex
+        disabled: false
+
+    # Results from these hosts are removed by SearXNG's hostnames plugin (on by default).
+    hostnames:
+      remove:
+        - '(.*\.)?smallpdf\.com$'
+        - '(.*\.)?dev\.to$'
+        - '(.*\.)?devopsschool\.com$'
+        - '(.*\.)?pullnotifier\.com$'
+        - '(.*\.)?git-automation\.com$'
+        - '(.*\.)?findskills\.co$'
+        - '(.*\.)?qaskills\.sh$'
+        - '(.*\.)?linkedin\.com$'
+        - '(.*\.)?vercel\.app$'
+        - '(.*\.)?freetls\.fastly\.net$'
+        - '(.*\.)?proxy\.aviator\.co$'
+        - '(.*\.)?[a-z0-9-]+\.ru$'
