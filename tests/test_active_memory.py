@@ -131,6 +131,29 @@ def test_a_chat_call_carries_memory_and_only_live_focus(monkeypatch, tmp_path):
     assert out["metadata"]["active_memory"]["agent"] == "claude-cli"
 
 
+def test_facts_in_the_shape_the_brief_sends_are_shown(monkeypatch, tmp_path):
+    # The live brief sends {text, metadata}, not {content, provenance, key}: read only the
+    # latter, every fact reached the model as "- [fact]  (None)" (#6789).
+    mod = _load(monkeypatch, tmp_path)
+    live = {
+        "relevant": [
+            {
+                "text": "estate-mcp build check names ci.status",
+                "metadata": {"kind": "incident", "subject": "estate-mcp.build"},
+            },
+            {"text": "", "metadata": {"kind": "fact"}},
+        ],
+        "recent": [{"text": "router owns memory injection", "metadata": {}}],
+    }
+    out = mod.render(live, None, "claude-cli")
+    assert (
+        "- [incident] estate-mcp build check names ci.status (estate-mcp.build)" in out
+    )
+    assert "- [fact] router owns memory injection\n" in out + "\n"
+    assert "None" not in out
+    assert out.count("\n- [") == 2
+
+
 def test_a_tool_loop_asks_once_per_human_turn(monkeypatch, tmp_path):
     mod = _load(monkeypatch, tmp_path)
     seen = _wire(mod)
