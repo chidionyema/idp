@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""Refuses a tree that pins a ghcr image tag the registry does not have.
+
+THE INCIDENT. 55e276948 (2026-10-20, "roll backstage back to main-14676") pinned
+ghcr.io/chidionyema/backstage:main-14676-e403b8c0... in platform/backstage/overlays/oke. That
+tag was never published -- build-multiarch run 14676 failed -- so ghcr answered 404 manifest
+unknown, the catalogue pod sat in ImagePullBackOff, and /fleet and /face served 503 for hours.
+kustomize build, kubeconform and flux build all passed: none of them asks the registry whether
+the bytes exist.
+
+This walks every `newTag: <tag> # {"$imagepolicy": ...}` line under platform/, pairs it with
+the image name above it, and asks the registry for that manifest. A 404 is a refusal. A 401 or
+403 (a private package this anonymous token cannot read) and a network failure are reported and
+passed: a guard that refuses a working tree because the network blinked is worse than none.
+
+IDP_REGISTRY_URL overrides https://ghcr.io (the tests point it at a local fake).
+"""
+from __future__ import annotations
+
+import json
+import os
+import re
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+REGISTRY = os.environ.get("IDP_REGISTRY_URL", "https://ghcr.io").rstrip("/")
+ACCEPT = ", ".join(
+    [
+        "application/vnd.oci.image.index.v1+json",
+        "application/vnd.docker.distribution.manifest.list.v2+json",
+        "application/vnd.docker.distribution.manifest.v2+json",
+        "application/vnd.oci.image.manifest.v1+json",
+    ]
+)
+TAG = re.compile(r'newTag:\s*(\S+)\s*#\s*\{"\$imagepolicy"')
+NAME = re.compile(r"^\s*-?\s*(?:newName|name):\s*(\S+)")
+
+
+def pins(root: Path):
+    for f in sorted((root / "platform").rglob("*.yaml")):
+        lines = f.read_text(errors="replace").splitlines()
+        for i, line in enumerate(lines):
+            m = TAG.search(line)
+            if not m:
+                continue
+            name = None
+            for j in range(i - 1, max(i - 12, -1), -1):
+                n = NAME.match(lines[j])
+                if n:
+                    name = n.group(1)
+                    break
+            if name and name.startswith("ghcr.io/"):
+                yield f.relative_to(root), i + 1, name[len("ghcr.io/") :], m.group(1)
+
+
+def status(repo: str, tag: str) -> int | str:
+    try:
+        with urllib.request.urlopen(
+            f"{REGISTRY}/token?scope=repository:{repo}:pull", timeout=15
+        ) as r:
+            token = json.load(r)["token"]
+        req = urllib.request.Request(
+            f"{REGISTRY}/v2/{repo}/manifests/{tag}",
+            method="HEAD",
+            headers={"Authorization": f"Bearer {token}", "Accept": ACCEPT},
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception as e:  # network, DNS, bad token JSON
+        return f"unreachable ({e.__class__.__name__})"
+
+
+def main() -> int:
+    root = Path(os.environ.get("IDP_ROOT") or Path.cwd())
+    missing = 0
+    checked = 0
+    for path, line, repo, tag in pins(root):
+        checked += 1
+        s = status(repo, tag)
+        if s == 404:
+            missing += 1
+            print(f"FAIL  {path}:{line} pins ghcr.io/{repo}:{tag}, which the registry does not have")
+        elif s != 200:
+            print(f"warn  {path}:{line} ghcr.io/{repo}:{tag} not verifiable: {s}")
+    if missing:
+        print(f"{missing} pinned image tag(s) do not exist; the pod would sit in ImagePullBackOff")
+        return 1
+    print(f"ok    {checked} pinned image tag(s), none missing from the registry")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
