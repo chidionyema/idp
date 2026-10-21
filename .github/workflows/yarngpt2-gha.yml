@@ -1,0 +1,59 @@
+# founder: Throwaway. Run 3b: times YarnGPT2 speed-ups on a free GitHub runner (Modal is at its spend limit and stays on free credits). Runs only on branch eval/yarngpt2.
+name: yarngpt2-gha
+
+on:
+  push:
+    branches: [eval/yarngpt2]
+
+permissions:
+  contents: read
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      YARNGPT_SHA: 8bb0eb27d307f4b5903149e24ecc1bd3caa4af2d
+      LLAMA_CPP_SHA: c0159f9c1f874da15e94f371d136f5920b4b5335
+      CFG: wavtokenizer_mediumdata_frame75_3s_nq1_code4096_dim512_kmeans200_attn.yaml
+      CMAKE_ARGS: -DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - name: system packages
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg libportaudio2 libgomp1 cmake build-essential
+      - name: python packages (same pins as production's yarn_image)
+        run: |
+          pip install -q torch==2.5.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cpu
+          pip install -q transformers==4.47.1 outetts==0.2.3 uroman inflect gdown soundfile huggingface_hub sentencepiece protobuf faster-whisper==1.1.0 numpy
+          pip install -q llama-cpp-python==0.3.19
+      - name: model, codec, GGUFs
+        run: |
+          sudo mkdir -p /w /opt && sudo chown "$USER" /w /opt
+          git clone -q https://github.com/saheedniyi02/yarngpt.git /opt/yarngpt && git -C /opt/yarngpt checkout -q "$YARNGPT_SHA"
+          curl -fsSL -o "/w/$CFG" "https://huggingface.co/novateur/WavTokenizer-medium-speech-75token/resolve/main/$CFG"
+          gdown -q 1-ASeEkrn4HY49yZWHTASgfGFNXdVnLTt -O /w/wavtokenizer.ckpt
+          python -c "from huggingface_hub import snapshot_download as d; d('saheedniyi/YarnGPT2'); d('Systran/faster-whisper-tiny.en')"
+          git init -q /opt/llama.cpp && git -C /opt/llama.cpp fetch -q --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_SHA" && git -C /opt/llama.cpp checkout -q FETCH_HEAD
+          pip install -q /opt/llama.cpp/gguf-py
+          M=$(python -c "from huggingface_hub import snapshot_download as d; print(d('saheedniyi/YarnGPT2'))")
+          python /opt/llama.cpp/convert_hf_to_gguf.py "$M" --outtype f16 --outfile /w/yarn-f16.gguf
+          python /opt/llama.cpp/convert_hf_to_gguf.py "$M" --outtype q8_0 --outfile /w/yarn-q8_0.gguf
+          python - <<'PY'
+          import ctypes, llama_cpp as l
+          for name, ft in (("q6_k", l.LLAMA_FTYPE_MOSTLY_Q6_K), ("q5_k_m", l.LLAMA_FTYPE_MOSTLY_Q5_K_M)):
+              p = l.llama_model_quantize_default_params(); p.ftype = ft
+              assert l.llama_model_quantize(b"/w/yarn-f16.gguf", f"/w/yarn-{name}.gguf".encode(), ctypes.byref(p)) == 0
+          PY
+          ls -la /w
+      - name: time it
+        working-directory: eval
+        run: python yarngpt2_gha.py
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: yarngpt2-gha-samples
+          path: eval/yarngpt2-samples
+          retention-days: 7
