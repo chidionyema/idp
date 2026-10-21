@@ -1,0 +1,124 @@
+description: 'Every fact the router injects into a model call as Active Memory reaches
+  the model as "- [fact]  (None)": seen live 2026-10-21 in a Claude Code turn on the
+  laptop router (ten facts, every line identical, the Active Focus rows beside them
+  correct). Question: is render() reading field names the brief never sends, is the
+  memory server returning facts with no text, is the door losing the fields when it
+  parses the MCP result, or is the text stripped after it is read. Measured against
+  the live door (platform/estate/memory/door.py call "brief") and platform/llm/active_memory.py
+  on main 79593c007, before any fix (#6789).
+
+  '
+hypotheses:
+- name: H1
+  description: render() reads {content, provenance.kind, key}, a shape the brief does
+    not send; the brief sends {text, metadata}, so every lookup is empty and renders
+    as "[fact]  (None)"
+  prior: 0.3
+- name: H2
+  description: the memory server returns facts whose text is empty or null, so render()
+    has nothing to show whatever names it reads
+  prior: 0.25
+- name: H3
+  description: door.call parses the MCP result (structuredContent vs content text)
+    and loses the fact fields, so render() gets dicts without them
+  prior: 0.25
+- name: H4
+  description: the text arrives intact but _clip or a sanitiser strips it before the
+    line is built
+  prior: 0.2
+evidence:
+- name: the live brief, called through the door with the router's own arguments, returns
+    facts whose keys are exactly [metadata, text] with non-empty text and metadata.kind
+    set (no content, provenance or key field present)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.1
+      absent: 0.9
+    H4:
+      present: 0.9
+      absent: 0.1
+- name: the rendered key is "(None)" on every line as well as the text being empty
+    -- the reference field is missing too, not only the text
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.3
+      absent: 0.7
+    H3:
+      present: 0.8
+      absent: 0.2
+    H4:
+      present: 0.05
+      absent: 0.95
+- name: focus.drop_stale, run on the same brief items in the same function, reads
+    it.get("text") and works (ghost focus facts are dropped), so the items still carry
+    text after door.call
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.3
+      absent: 0.7
+    H3:
+      present: 0.05
+      absent: 0.95
+    H4:
+      present: 0.9
+      absent: 0.1
+- name: tests/test_active_memory.py's BRIEF fixture is written in the {content, provenance,
+    key} shape, so the suite passes while the live shape renders empty
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.9
+      absent: 0.1
+    H2:
+      present: 0.4
+      absent: 0.6
+    H3:
+      present: 0.4
+      absent: 0.6
+    H4:
+      present: 0.3
+      absent: 0.7
+- name: render() with only its field lookups changed to text/metadata.kind/metadata.subject,
+    given the live shape, shows the text and kind (new test passes; it fails on the
+    old render)
+  observed:
+    present: 1
+  likelihoods:
+    H1:
+      present: 0.95
+      absent: 0.05
+    H2:
+      present: 0.05
+      absent: 0.95
+    H3:
+      present: 0.05
+      absent: 0.95
+    H4:
+      present: 0.05
+      absent: 0.95
+posteriors:
+  H1: 0.9992134524
+  H2: 0.0001079105
+  H3: 9.59204e-05
+  H4: 0.0005827167
+winner: H1
+computed_at: '2026-10-21T10:15:30Z'
