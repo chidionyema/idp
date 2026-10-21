@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { EstateVoice, EstateVoiceState } from './useEstateVoice';
 import { getClauseSink, micBlocker } from './useEstateVoice';
+import { applyLoudness } from './faceAudio';
 import { parseIntentResult, type IntentResult } from './intentCue';
 
 // Where voice-router answers. Deployed, it is the page's own origin (the ingress routes /voice/).
@@ -236,7 +237,7 @@ export function useVoiceRouter(system = '', opts: VoiceRouterOptions = {}): Voic
       return;
     }
     const buf = l.audio.createBuffer(1, f.pcm.length, l.rate);
-    buf.copyToChannel(f.pcm, 0);
+    buf.copyToChannel(applyLoudness(f.pcm), 0);
     const src = l.audio.createBufferSource();
     src.buffer = buf;
     src.connect(l.audio.destination);

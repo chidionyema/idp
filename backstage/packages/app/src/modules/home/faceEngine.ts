@@ -11,6 +11,7 @@
  * words spread over its duration, and TalkingHead plays it, moving the lips to those words.
  */
 import type { ClauseSink } from './useEstateVoice';
+import { applyLoudness } from './faceAudio';
 
 export const FACE_ASSETS = '/face/';
 const TTS_RATE = 24000;
@@ -265,7 +266,10 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
       const ctx: AudioContext = head.audioCtx;
       if (ctx.state === 'suspended') ctx.resume().catch(() => undefined);
       const audio = ctx.createBuffer(1, f32.length, TTS_RATE);
-      audio.copyToChannel(f32, 0);
+      // The clause is raised to the founder's level here, and the voiced span below is read off
+      // the ORIGINAL samples: its silence threshold is relative to the model's own level, and
+      // measuring the boosted copy would move the mouth's timing (faceAudio.ts, idp#6784).
+      audio.copyToChannel(applyLoudness(f32), 0);
       const { startMs, endMs } = voicedSpan(f32, TTS_RATE);
       const t = wordTimings(text, endMs - startMs, 0);
       head.speakAudio(

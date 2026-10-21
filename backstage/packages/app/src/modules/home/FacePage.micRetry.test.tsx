@@ -62,6 +62,9 @@ function voiceIn(state: EstateVoiceState, micRecoveryUrl?: string) {
     heard: '',
     reply: '',
     available: true,
+    current: { engine: 'cloud', voice: 'hannah' },
+    catalogue: { cloud: [], say: [], kokoro: [], piper: [] },
+    selectVoice: jest.fn(),
     start: jest.fn(),
     stop: jest.fn(),
   };

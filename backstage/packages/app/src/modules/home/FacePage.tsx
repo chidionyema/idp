@@ -17,7 +17,7 @@
  * over it as a glass pill near the bottom, so the model is framed once by the camera, never by the
  * button.
  */
-import type { CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { configApiRef, useApi } from '@backstage/frontend-plugin-api';
 import EstateFace from './EstateFace';
 import FleetBackdrop from './FleetBackdrop';
@@ -28,6 +28,38 @@ import { useFaceVoiceEngine } from './faceVoiceEngine';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
 import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
+import { clampLevel, getLevel, setLevel, subscribeLevel } from './faceAudio';
+import {
+  ageLabel,
+  CLAIM_STALE_MS,
+  ESTATE_STALE_MS,
+  freshness,
+} from './faceFreshness';
+
+// One clock for every age on the page, re-read each 30s so "4 min ago" does not freeze at the
+// moment the data arrived (a frozen age is its own kind of stale).
+function useNow(): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  return now;
+}
+
+// The volume the face speaks at, as a live number (faceAudio.ts holds it and remembers it).
+function useFaceLevel(): number {
+  const [level, set] = useState(getLevel());
+  useEffect(() => subscribeLevel(() => set(getLevel())), []);
+  return level;
+}
+
+/** "Voice: <name> (engine)" -- which voice is actually speaking, so a switch is visible. */
+export function activeVoiceLabel(current: { engine: string; voice: string }): string {
+  return current.engine === 'voice-router'
+    ? `Voice: ${current.voice}`
+    : `Voice: ${current.voice} · ${current.engine}`;
+}
 
 // THE FACE'S VOICE PATH, BEHIND A FLAG (2026-10-16). The face now speaks through useVoiceRouter
 // -- the streaming socket (partials while you speak, first audio median 2.26s against the old
@@ -57,6 +89,9 @@ export function FaceFindingsStrip() {
   const loaded = useResearch(1);
   if (loaded.state !== 'ready' || loaded.claims.length === 0) return null;
   const claim = loaded.claims[0];
+  const now = useNow();
+  const age = ageLabel(claim.created_at, now);
+  const stale = freshness(claim.created_at, now, CLAIM_STALE_MS) === 'stale';
   const line =
     claim.statement.length > 140
       ? `${claim.statement.slice(0, 139)}…`
@@ -79,6 +114,10 @@ export function FaceFindingsStrip() {
       }}
     >
       {line}
+      {/* How old the finding is. A claim with no usable date says so rather than going unlabelled. */}
+      <span data-testid="face-research-age" data-freshness={freshness(claim.created_at, now, CLAIM_STALE_MS)} style={{ opacity: 0.7, color: stale ? '#e8b86d' : undefined }}>
+        {' '}· {age ?? 'age unknown'}
+      </span>
     </div>
   );
 }
@@ -89,8 +128,11 @@ export function FaceEstateLine() {
   // dashboard). Research already owns the line below; this line is the lane and the burn, from
   // the SAME /estate envelope /fleet reads, so the two surfaces can never disagree.
   const loaded = useEstateStrip();
+  const now = useNow();
   if (loaded.state !== 'ready') return null;
   const { green, burn } = loaded.body;
+  const asOf = loaded.body.generated_at;
+  const estateStale = freshness(asOf, now, ESTATE_STALE_MS);
   const bits: string[] = [];
   if (green?.available) {
     const lanes = green.state?.lanes ?? {};
@@ -113,6 +155,11 @@ export function FaceEstateLine() {
   }
   if (burn?.measured) bits.push(`$${(burn.total_usd ?? 0).toFixed(2)} burn`);
   if (bits.length === 0) return null;
+  bits.push(
+    estateStale === 'stale'
+      ? `STALE: as of ${ageLabel(asOf, now)}`
+      : `as of ${ageLabel(asOf, now) ?? 'an unknown time'}`,
+  );
   return (
     <div
       data-testid="face-estate-line"
@@ -206,6 +253,14 @@ export function FacePage() {
   const milestones = useMilestones(voice.speak);
   // The agents launched by voice, followed to their end and announced through the same mouth.
   const agentJobs = useAgentJobs(voice.speak);
+  const level = useFaceLevel();
+  // Voices a person can pick are the chosen engine's own catalogue, flattened to engine/voice
+  // pairs. voice-router has exactly one voice, so its list is one entry and the picker says so
+  // instead of offering a choice that does nothing.
+  const voiceOptions = Object.entries(voice.catalogue ?? {}).flatMap(
+    ([eng, names]) => (names as string[]).map(n => ({ engine: eng, voice: n })),
+  );
+  const [pickNote, setPickNote] = useState('');
   // A FAILED MICROPHONE MUST BE RE-ASKABLE -- and the tap must not depend on a state comparison
   // that has to be kept in step with the label below.
   //
@@ -328,6 +383,69 @@ export function FacePage() {
             Open in Safari to use the mic
           </a>
         )}
+        {/* WHICH VOICE IS SPEAKING, AND LOUD ENOUGH TO HEAR (idp#6784). The label names the live
+            voice so a switch is visible; the slider is the level faceAudio.ts applies to every
+            clause, remembered on this device. */}
+        <div
+          data-testid="face-voice-active"
+          style={{ fontSize: 12, opacity: 0.8, pointerEvents: 'none' }}
+        >
+          {activeVoiceLabel(voice.current)}
+          {voice.state === 'speaking' ? ' · speaking' : ''}
+        </div>
+        <label
+          style={{
+            pointerEvents: 'auto',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            justifyContent: 'center',
+            fontSize: 12,
+          }}
+        >
+          Volume
+          <input
+            type="range"
+            data-testid="face-volume"
+            aria-label="Voice volume"
+            min={0}
+            max={100}
+            value={Math.round(level * 100)}
+            onChange={e => setLevel(clampLevel(Number(e.target.value) / 100))}
+            style={{ width: 160 }}
+          />
+          <span style={{ width: 34, textAlign: 'right' }}>
+            {Math.round(level * 100)}%
+          </span>
+        </label>
+        {voiceOptions.length > 1 && (
+          <select
+            data-testid="face-voice-picker"
+            aria-label="Choose voice"
+            value={`${voice.current.engine}/${voice.current.voice}`}
+            onChange={async e => {
+              const [eng, ...rest] = e.target.value.split('/');
+              setPickNote(await voice.selectVoice(eng, rest.join('/')));
+            }}
+            style={{
+              pointerEvents: 'auto',
+              justifySelf: 'center',
+              background: 'rgba(11,14,20,0.7)',
+              color: '#e8edf5',
+              border: '1px solid rgba(232,237,245,0.25)',
+              borderRadius: 8,
+              padding: '4px 8px',
+              fontSize: 12,
+            }}
+          >
+            {voiceOptions.map(o => (
+              <option key={`${o.engine}/${o.voice}`} value={`${o.engine}/${o.voice}`}>
+                {o.voice} ({o.engine})
+              </option>
+            ))}
+          </select>
+        )}
+        {pickNote && <div style={{ fontSize: 11, opacity: 0.6 }}>{pickNote}</div>}
         {/* THE MILESTONE TOGGLE (idp#5737 item 3): the explicit switch the item asks for. It sits
             in the same pill as the mic so "does the face talk on its own?" is answerable in one
             glance, and it is a real control -- quiet hours and the rate cap are the gate's job, not
