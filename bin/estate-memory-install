@@ -95,6 +95,9 @@ def home_files() -> list[str]:
         MANIFEST["bridge"],
         MANIFEST["session_start"],
         MANIFEST["enforce"]["bin"],
+        # The plan lock's refusal names this copy by path: without it a session whose bridge did
+        # not load is told to run a file that is not there, and is locked out (#6675).
+        "bin/estate-plan",
         f"{memory}/door.py",
         f"{memory}/focus.py",
         f"{memory}/plan.py",
