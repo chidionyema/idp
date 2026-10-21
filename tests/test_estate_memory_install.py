@@ -102,6 +102,20 @@ def test_runtimes_run_a_copy_that_works_and_drifts_when_stale(home):
         timeout=30,
     )
     assert out.returncode == 0 and "Traceback" not in out.stderr, out.stderr
+    # the bridge and the hook import plan.py from the copy, so the copy must carry it (#6675)
+    for rel in ("bin/estate-memory-mcp", "bin/estate-memory-enforce"):
+        loaded = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                f"import runpy; runpy.run_path({installed(home, rel)!r}, run_name='x')",
+            ],
+            env={"HOME": str(home), "PATH": os.environ["PATH"]},
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert "ModuleNotFoundError" not in loaded.stderr, rel + loaded.stderr
     with open(brief, "a") as f:
         f.write("# stale\n")
     out = run(home, "--check", "--runtime", "cursor")
@@ -144,6 +158,34 @@ def test_a_commented_jsonc_is_refused_not_stripped(home):
     assert "keep me" in (oc / "opencode.jsonc").read_text()
 
 
+def test_every_runtime_names_how_it_is_held_to_a_plan():
+    runtimes = json.load(
+        open(os.path.join(ROOT, "platform", "estate", "memory", "runtimes.json"))
+    )["runtimes"]
+    for name, rt in runtimes.items():
+        assert rt["plan_lock"] in ("hook", "plugin", "extension", None), name
+        if rt["plan_lock"] is None:
+            assert rt["command"], (
+                f"{name} has no plan lock and no command to detect it by"
+            )
+
+
+def test_an_installed_runtime_with_no_plan_lock_fails_the_run(home, tmp_path_factory):
+    bin_dir = tmp_path_factory.mktemp("bin")
+    fake = bin_dir / "gemini"
+    fake.write_text("#!/bin/sh\n")
+    fake.chmod(0o755)
+    (home / ".gemini").mkdir()
+    path = {"PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}"}
+    out = run(home, "--runtime", "gemini", env=path)
+    assert out.returncode == 1 and "UNLOCKED gemini" in out.stdout, out.stdout
+    # memory is still written: an unlocked runtime is reported, not cut off
+    assert "estate-memory" in (home / ".gemini" / "settings.json").read_text()
+    assert (
+        run(home, "--runtime", "gemini").returncode == 0
+    )  # not on PATH: nothing to hold
+
+
 def test_opencode_gets_its_own_shape(home):
     oc = home / ".config" / "opencode"
     oc.mkdir(parents=True)
@@ -178,7 +220,7 @@ def test_every_script_loads_under_the_systems_python3(name):
 # --- the bridge: memory tools only, the key by name ----------------------------------------------
 
 
-def test_the_bridge_serves_memory_tools_only(monkeypatch):
+def test_the_bridge_serves_memory_and_plan_tools_only(monkeypatch):
     bridge = _script("estate-memory-mcp")
     sent = []
 
@@ -199,6 +241,7 @@ def test_the_bridge_serves_memory_tools_only(monkeypatch):
         "remember",
         "recall",
         "brief",
+        *bridge.plan.PLAN_TOOLS,
     }
     refused = b.handle(
         {

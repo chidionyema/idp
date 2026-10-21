@@ -143,6 +143,18 @@ def opencode(catalog: dict, home: Path) -> str:
     return f"{len(prov['models'])} models"
 
 
+def working_window() -> int:
+    """The router's per-call input ceiling: the one number a harness must compact against.
+
+    Read from request_ceiling so the two cannot drift. A harness told nothing assumes its own
+    default (pi: 128000), compacts against that, and meets the router's refusal at a different
+    size than it planned for."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import request_ceiling  # noqa: PLC0415 -- sibling module; importable without litellm
+
+    return request_ceiling.MAX_INPUT_TOKENS
+
+
 def pi(catalog: dict, home: Path) -> str:
     path = home / ".pi" / "agent" / "models.json"
     if not path.parent.exists():
@@ -150,7 +162,11 @@ def pi(catalog: dict, home: Path) -> str:
     data = _load_json(path)
     if data is None:
         return f"skipped: {path} is not plain JSON"
-    models = [{"id": m} for m in all_models(catalog)]
+    # Without contextWindow pi resolves every model to 128000 (provider-composer.js), measured
+    # 2026-10-20 with `pi --list-models`. It then compacts against 128000 while the router allows
+    # 200000, or, worse, against nothing it can see when a single turn is larger than either.
+    window = working_window()
+    models = [{"id": m, "contextWindow": window} for m in all_models(catalog)]
     data.setdefault("providers", {})["estate"] = {
         "baseUrl": ROUTER,
         "api": "openai-completions",

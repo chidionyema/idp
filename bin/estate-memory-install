@@ -20,12 +20,18 @@ and every config points there. A checkout is somebody's working tree: on 2026-10
 one sat on another lane's branch, 119 commits behind main, without these files at all, and a
 branch switch would have taken memory out of every runtime at once. --check reports a stale copy
 as drift, so a merged change reaches the runtimes by one rerun from an up-to-date checkout.
+
+Every runtime names its plan_lock: how it refuses work until a declared plan allows it (#6675).
+The bridge serves the plan tools everywhere but cannot refuse a runtime's own tools, so a runtime
+with no plan_lock would work unplanned and nothing would say so. When such a runtime's command is
+on PATH it is reported UNLOCKED and the run exits 1; memory is still written for it.
 """
 
 import argparse
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -91,6 +97,7 @@ def home_files() -> list[str]:
         MANIFEST["enforce"]["bin"],
         f"{memory}/door.py",
         f"{memory}/focus.py",
+        f"{memory}/plan.py",
         f"{memory}/runtimes.json",
         *links,
     ]
@@ -123,12 +130,16 @@ def enforce_command(root: Path, arg: str) -> str:
 def plan_enforce(path: Path, root: Path) -> list[tuple[str, Path, object]]:
     """The memory/focus enforcement hooks (PreToolUse, Stop) a settings runtime must carry.
 
-    Each is matched by its command, so a reinstall replaces the estate's own entry and leaves
-    every other hook in the file alone."""
+    Each is matched by its command, so a reinstall replaces the estate's own entries and leaves
+    every other hook in the file alone. One event may carry several (PreToolUse: pre and plan), so
+    an event's entries are compared and written together, never one overwriting the other."""
     marker = MANIFEST["enforce"]["bin"]
     changes = []
+    events: dict = {}
     for spec in MANIFEST["enforce"]["hooks"]:
-        event, cmd = spec["event"], enforce_command(root, spec["arg"])
+        events.setdefault(spec["event"], []).append(spec)
+    for event, specs in events.items():
+        want = [(s.get("matcher"), enforce_command(root, s["arg"])) for s in specs]
         groups = load(path).get("hooks", {}).get(event, [])
         mine = [
             (g.get("matcher"), h.get("command"))
@@ -136,24 +147,34 @@ def plan_enforce(path: Path, root: Path) -> list[tuple[str, Path, object]]:
             for h in g.get("hooks", [])
             if marker in h.get("command", "")
         ]
-        if mine == [(spec.get("matcher"), cmd)]:
+        if mine == want:
             continue
 
-        def put(path=path, event=event, cmd=cmd, spec=spec):
+        def put(path=path, event=event, want=want):
             data = load(path)
             kept = [
                 g
                 for g in data.setdefault("hooks", {}).get(event, [])
                 if not any(marker in h.get("command", "") for h in g.get("hooks", []))
             ]
-            group = {"hooks": [{"type": "command", "command": cmd, "timeout": 15}]}
-            if spec.get("matcher"):
-                group["matcher"] = spec["matcher"]
-            data["hooks"][event] = [*kept, group]
+            ours = []
+            for matcher, cmd in want:
+                group = {"hooks": [{"type": "command", "command": cmd, "timeout": 15}]}
+                if matcher:
+                    group["matcher"] = matcher
+                ours.append(group)
+            data["hooks"][event] = [*kept, *ours]
             save(path, data)
 
         changes.append(("hook", path, put))
     return changes
+
+
+def unlocked(rt: dict) -> "str | None":
+    """The installed command of a runtime that nothing holds to a plan, else None."""
+    if rt["plan_lock"]:
+        return None
+    return shutil.which(rt["command"])
 
 
 def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
@@ -258,6 +279,13 @@ def main(argv: list[str]) -> int:
             else:
                 apply()
                 print(f"wrote    {name:<12} {what} {where}")
+    for name in args.runtime or sorted(MANIFEST["runtimes"]):
+        found = unlocked(MANIFEST["runtimes"][name])
+        if found:
+            refused += 1
+            print(
+                f"UNLOCKED {name:<12} {found} is installed and nothing holds it to a plan (#6675)"
+            )
     return 1 if drift or refused else 0
 
 

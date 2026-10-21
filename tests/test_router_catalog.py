@@ -57,6 +57,28 @@ def test_pi_gets_an_estate_provider_and_keeps_others(tmp_path):
     assert data["providers"]["estate"]["apiKey"] == "$LITELLM_API_KEY"
 
 
+def test_pi_is_told_the_routers_working_window_not_its_own_default(
+    tmp_path, monkeypatch
+):
+    """pi falls back to contextWindow=128000 when the model omits it, so it compacted against a
+    number the router never set. Every model carries the router's ceiling instead."""
+    monkeypatch.setattr(rc, "working_window", lambda: 200_000)
+    cfg = tmp_path / ".pi/agent/models.json"
+    cfg.parent.mkdir(parents=True)
+    rc.pi(CATALOG, tmp_path)
+    models = json.loads(cfg.read_text())["providers"]["estate"]["models"]
+    assert models and all(m["contextWindow"] == 200_000 for m in models)
+
+
+def test_the_window_pi_is_given_is_the_ceiling_the_router_enforces():
+    s = importlib.util.spec_from_file_location(
+        "request_ceiling_src", ROOT / "platform/llm/request_ceiling.py"
+    )
+    ceiling = importlib.util.module_from_spec(s)
+    s.loader.exec_module(ceiling)
+    assert rc.working_window() == ceiling.MAX_INPUT_TOKENS == 200_000
+
+
 def test_a_config_with_comments_is_never_rewritten(tmp_path):
     cfg = tmp_path / ".config/opencode/opencode.jsonc"
     cfg.parent.mkdir(parents=True)

@@ -16,27 +16,36 @@
     "bin": "bin/estate-memory-enforce",
     "hooks": [
       {"event": "PreToolUse", "matcher": "Edit|Write|MultiEdit|NotebookEdit", "arg": "pre"},
+      {"event": "PreToolUse", "arg": "plan"},
       {"event": "Stop", "arg": "stop"}
     ]
   },
+  "plan_lock": "How each runtime refuses work until a plan allows it (#6675): hook (the enforce plan hook above), plugin (the opencode hook file), extension (bin/pi-plan-lock-install). null means nothing enforces it there yet; such a runtime names its command, and the installer fails while that command is on PATH.",
   "runtimes": {
     "claude-code": {
       "mcp": {"file": "$CLAUDE_CONFIG_DIR/.claude.json", "default_dir": "~/.claude", "key": "mcpServers", "shape": "stdio"},
-      "hook": {"kind": "settings", "file": "$CLAUDE_CONFIG_DIR/settings.json", "event": "SessionStart"}
+      "hook": {"kind": "settings", "file": "$CLAUDE_CONFIG_DIR/settings.json", "event": "SessionStart"},
+      "plan_lock": "hook"
     },
     "cursor": {
-      "mcp": {"file": "~/.cursor/mcp.json", "key": "mcpServers", "shape": "stdio"}
+      "mcp": {"file": "~/.cursor/mcp.json", "key": "mcpServers", "shape": "stdio"},
+      "plan_lock": null,
+      "command": "cursor-agent"
     },
     "gemini": {
-      "mcp": {"file": "~/.gemini/settings.json", "key": "mcpServers", "shape": "stdio"}
+      "mcp": {"file": "~/.gemini/settings.json", "key": "mcpServers", "shape": "stdio"},
+      "plan_lock": null,
+      "command": "gemini"
     },
     "opencode": {
       "mcp": {"file": "~/.config/opencode/opencode.jsonc", "key": "mcp", "shape": "opencode"},
-      "hook": {"kind": "link", "source": "platform/estate/memory/opencode-estate-memory.js", "dest": "~/.config/opencode/plugin/estate-memory.js"}
+      "hook": {"kind": "link", "source": "platform/estate/memory/opencode-estate-memory.js", "dest": "~/.config/opencode/plugin/estate-memory.js"},
+      "plan_lock": "plugin"
     },
     "pi": {
       "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio"},
-      "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"}
+      "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"},
+      "plan_lock": "extension"
     }
   }
 }
