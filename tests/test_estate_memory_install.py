@@ -116,6 +116,36 @@ def test_runtimes_run_a_copy_that_works_and_drifts_when_stale(home):
             timeout=30,
         )
         assert "ModuleNotFoundError" not in loaded.stderr, rel + loaded.stderr
+    # the plan lock's way out runs from the copy, and its refusal names that copy (#6675)
+    door = installed(home, "bin/estate-plan")
+    plan_tools = subprocess.run(
+        [
+            sys.executable,
+            door,
+            "declare_plan",
+            '{"goal": "ship the feature", "subgoals": [{"id": "g1", "text": "first step"}]}',
+        ],
+        env={"HOME": str(home), "PATH": os.environ["PATH"]},
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert plan_tools.returncode == 0 and "Plan declared" in plan_tools.stdout, (
+        plan_tools.stderr
+    )
+    refusal = subprocess.run(
+        [
+            sys.executable,
+            installed(home, "platform/estate/memory/plan.py"),
+            "authorize",
+            "Bash",
+        ],
+        input="[]",
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert door in json.loads(refusal.stdout)["reason"]
     with open(brief, "a") as f:
         f.write("# stale\n")
     out = run(home, "--check", "--runtime", "cursor")
