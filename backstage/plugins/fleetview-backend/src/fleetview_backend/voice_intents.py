@@ -254,6 +254,21 @@ def description(name: str, directory: str | Path | None = None) -> str:
     return ""
 
 
+def catalogue(directory: str | Path | None = None) -> list[dict]:
+    """What the estate can do by voice, for the Face's command deck: every arg-free intent with its
+    own one-line description and whether it runs on the first utterance (read-only) or waits for a
+    spoken yes. The same load_catalog() the matcher uses, so the deck can never offer a command the
+    voice would not run."""
+    return [
+        {
+            "name": name,
+            "description": description(name, directory),
+            "read_only": name in READ_ONLY,
+        }
+        for name in load_catalog(directory)
+    ]
+
+
 def match(text: str, catalog: list[str]) -> str | None:
     words = set(normalise(text).split())
     best = None

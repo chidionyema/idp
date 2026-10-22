@@ -28,6 +28,7 @@ import { useFaceVoiceEngine } from './faceVoiceEngine';
 import { useEstateStrip } from './EstateStrip';
 import { useMilestones } from './useMilestones';
 import { useAgentJobs, type LoadedJobs } from './useAgentJobs';
+import FaceDeck from './FaceDeck';
 import { clampLevel, getLevel, setLevel, subscribeLevel } from './faceAudio';
 import {
   ageLabel,
@@ -87,9 +88,12 @@ const LABEL: Record<string, string> = {
 
 export function FaceFindingsStrip() {
   const loaded = useResearch(1);
+  // Every hook before the first return: calling useNow after it rendered one hook while loading
+  // and two once ready, and React threw #310 -- the deployed /face showed "Error in home" and no
+  // mic (portal-phone, 2026-10-22, every queue lane).
+  const now = useNow();
   if (loaded.state !== 'ready' || loaded.claims.length === 0) return null;
   const claim = loaded.claims[0];
-  const now = useNow();
   const age = ageLabel(claim.created_at, now);
   const stale = freshness(claim.created_at, now, CLAIM_STALE_MS) === 'stale';
   const line =
@@ -304,6 +308,7 @@ export function FacePage() {
       <FaceFindingsStrip />
       <FaceEstateLine />
       <FaceAgentJobs loaded={agentJobs} />
+      <FaceDeck voice={voice} jobs={agentJobs} />
 
       {/* The face owns the whole viewport; everything else floats over it. */}
       <EstateFace height="100%" />

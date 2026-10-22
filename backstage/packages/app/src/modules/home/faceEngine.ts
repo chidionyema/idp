@@ -12,6 +12,7 @@
  */
 import type { ClauseSink } from './useEstateVoice';
 import { applyLoudness } from './faceAudio';
+import { DEFAULT_AVATAR, readAvatar, type Avatar } from './faceAvatars';
 
 export const FACE_ASSETS = '/face/';
 const TTS_RATE = 24000;
@@ -79,6 +80,8 @@ export interface EstateFace extends ClauseSink {
   mood(): string;
   /** The opening line this visit earns, from stored continuity. */
   greet(): string;
+  /** Swap the model in place. Rejects with a named reason and leaves the current avatar on screen. */
+  setAvatar(a: Pick<Avatar, 'url' | 'body'>): Promise<void>;
   dispose(): void;
 }
 
@@ -183,6 +186,16 @@ export function greeting(m: FaceMemory): string {
   return `Welcome back, visit ${m.visits}.`;
 }
 
+// The face currently on screen, so a control elsewhere on the page (the deck's Persona tab) can swap
+// its avatar without owning the mount. EstateFace sets it on mount and clears it on unmount.
+let activeFace: EstateFace | null = null;
+export function setActiveFace(f: EstateFace | null): void {
+  activeFace = f;
+}
+export function getActiveFace(): EstateFace | null {
+  return activeFace;
+}
+
 /** Mount the face into `el`. Resolves once the avatar is on screen; rejects with a named reason. */
 export async function mountFace(el: HTMLElement): Promise<EstateFace> {
   // webpackIgnore: the face ships as plain ES modules under /face/, loaded from our own origin at
@@ -204,15 +217,23 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
   // licensed or commissioned realistic avatar (spec
   // docs/specs/2026-10-03-face-experience-10x.md section 6) and delete the debt entry in the
   // same change.
-  await head.showAvatar({ url: `${FACE_ASSETS}brunette.glb`, body: 'F', lipsyncLang: 'en' });
-
-  // CONTINUITY: restore the mood this visitor left the face in, and count the visit. The store is
-  // localStorage on a real page; a browser that refuses it (private mode) still works, just
-  // without memory -- readMemory/recordVisit degrade to first-visit rather than throwing.
+  // The visitor's chosen avatar (faceAvatars.ts), brunette by default. A chosen model that fails to
+  // load falls back to the default so the face never mounts empty.
   const store =
     typeof localStorage !== 'undefined'
       ? localStorage
       : null;
+  const chosen = readAvatar(store, typeof location !== 'undefined' ? location.origin : undefined);
+  try {
+    await head.showAvatar({ url: chosen.url, body: chosen.body, lipsyncLang: 'en' });
+  } catch (e) {
+    if (chosen === DEFAULT_AVATAR) throw e;
+    await head.showAvatar({ url: DEFAULT_AVATAR.url, body: DEFAULT_AVATAR.body, lipsyncLang: 'en' });
+  }
+
+  // CONTINUITY: restore the mood this visitor left the face in, and count the visit. The store is
+  // localStorage on a real page; a browser that refuses it (private mode) still works, just
+  // without memory -- readMemory/recordVisit degrade to first-visit rather than throwing.
   let memory = recordVisit(store, Date.now(), readMemory(store).mood);
   let mood = memory.mood;
   const applyMood = (m: string) => {
@@ -258,6 +279,12 @@ export async function mountFace(el: HTMLElement): Promise<EstateFace> {
     },
     mood() {
       return mood;
+    },
+    async setAvatar(a) {
+      // showAvatar replaces the model inside the same renderer: no remount, the clause sink and the
+      // idle loop stay attached. If it throws the runtime keeps the previous model.
+      await head.showAvatar({ url: a.url, body: a.body, lipsyncLang: 'en' });
+      applyMood(mood);
     },
     speak(pcm: ArrayBuffer, text: string) {
       const f32 = new Float32Array(pcm);
