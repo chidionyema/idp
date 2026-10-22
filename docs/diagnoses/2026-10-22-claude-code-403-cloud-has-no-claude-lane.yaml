@@ -1,0 +1,159 @@
+description: 'Claude Code turns on the founder''s Mac failed through the router with
+  403 "key not allowed to access model. This key can only access models=[...]", which
+  the client surfaces as "Please run /login", and with an answer from DeepSeek for
+  a request that asked for Opus. Question: is the refusal the cloud router config
+  (a copy with no `claude-*` group, plus the #4063 aliases pointing at deepseek),
+  or a stale allowed-model list on the virtual key, or a misconfigured client, or
+  an id Claude Code sends that no router serves? Evidence was gathered in the session
+  that wrote this record; the priors and likelihoods are written per item as what
+  each hypothesis predicts about that item before the posterior is computed.
+
+  '
+hypotheses:
+- name: H1
+  description: "the cloud router config drifted: platform/llm/config.base.yaml carries\
+    \ two model_group_alias rows (`claude-opus`, `claude-opus-5-5` -> deepseek) and\
+    \ no claude group at all, while the laptop config has carried the `claude-*` wildcard\
+    \ row since 2026-09-23 \u2014 so a turn routed to llm.mumchimp.com is refused\
+    \ (dated ids) or answered by DeepSeek (aliased ids), and the client only goes\
+    \ there when the laptop slots miss health probes"
+  prior: 0.4
+- name: H2
+  description: "the virtual key's allowed-model list is stale in the key store, independent\
+    \ of the config file \u2014 a key minted before the Claude lane existed keeps\
+    \ refusing it"
+  prior: 0.3
+- name: H3
+  description: "the client is misconfigured \u2014 the 403 is real but the cause is\
+    \ on this Mac: the OAuth token has expired, or ANTHROPIC_BASE_URL points at something\
+    \ that does not carry the caller's own Authorization upstream, so \"/login\" is\
+    \ in fact the fix"
+  prior: 0.2
+- name: H4
+  description: Claude Code sends a model id the estate's routers never serve (a client-side
+    naming problem), so no config or key change would help
+  prior: 0.1
+evidence:
+- name: "the 403 body enumerates the allowed models and that list is exactly what\
+    \ the cloud reports as its model list: 29 names including `claude-opus` and `claude-opus-5-5`\
+    \ (the two alias names) and no dated sonnet id \u2014 a key store that had drifted\
+    \ from the config would show a list that differs from the live /v1/models"
+  observed:
+    allowlist_equals_live_model_list: 1
+  likelihoods:
+    H1:
+      allowlist_equals_live_model_list: 0.95
+      other: 0.05
+    H2:
+      allowlist_equals_live_model_list: 0.1
+      other: 0.9
+    H3:
+      allowlist_equals_live_model_list: 0.2
+      other: 0.8
+    H4:
+      allowlist_equals_live_model_list: 0.4
+      other: 0.6
+- name: 'the same key, the same headers and the same three ids succeed on the laptop
+    router (127.0.0.1:4000): claude-opus-5-5, claude-sonnet-5-5 and claude-sonnet-5
+    all pass the guard and reach Anthropic (401 authentication_error for the probe''s
+    missing OAuth token, never 403 "key not allowed"), and 65 MB of laptop router
+    log for the day holds zero such refusals'
+  observed:
+    laptop_serves_same_key_and_ids: 1
+  likelihoods:
+    H1:
+      laptop_serves_same_key_and_ids: 0.95
+      other: 0.05
+    H2:
+      laptop_serves_same_key_and_ids: 0.1
+      other: 0.9
+    H3:
+      laptop_serves_same_key_and_ids: 0.1
+      other: 0.9
+    H4:
+      laptop_serves_same_key_and_ids: 0.45
+      other: 0.55
+- name: the cloud's own /v1/models lists 29 groups and not one of them is a claude
+    group (no claude-sonnet-5-5, no claude-sonnet-5), so the id the client actually
+    sends has nothing to answer it
+  observed:
+    cloud_lists_no_claude_group: 1
+  likelihoods:
+    H1:
+      cloud_lists_no_claude_group: 0.97
+      other: 0.03
+    H2:
+      cloud_lists_no_claude_group: 0.2
+      other: 0.8
+    H3:
+      cloud_lists_no_claude_group: 0.3
+      other: 0.7
+    H4:
+      cloud_lists_no_claude_group: 0.5
+      other: 0.5
+- name: 'origin/main:platform/llm/config.yaml has zero lines matching "claude" in
+    its model_list and exactly two alias rows, while llm/config.base.yaml carries
+    `model_name: "claude-*"` -> `anthropic/claude-*` with no api_key; the two copies
+    render from two base files, which is how they drifted'
+  observed:
+    config_has_alias_and_no_lane: 1
+  likelihoods:
+    H1:
+      config_has_alias_and_no_lane: 0.98
+      other: 0.02
+    H2:
+      config_has_alias_and_no_lane: 0.3
+      other: 0.7
+    H3:
+      config_has_alias_and_no_lane: 0.2
+      other: 0.8
+    H4:
+      config_has_alias_and_no_lane: 0.5
+      other: 0.5
+- name: "the failures land in the windows where the front took the cloud leg: the\
+    \ router watchdog marked both laptop slots DOWN at 20:00:55, 20:11:53, 20:14:12,\
+    \ 20:16:23, 20:16:59, 20:37:32, 20:38:45 and 20:39:12Z \u2014 the same minutes\
+    \ the founder pasted the failure \u2014 so the failing path is the failover path,\
+    \ not the normal one"
+  observed:
+    failures_coincide_with_failover: 1
+  likelihoods:
+    H1:
+      failures_coincide_with_failover: 0.9
+      other: 0.1
+    H2:
+      failures_coincide_with_failover: 0.4
+      other: 0.6
+    H3:
+      failures_coincide_with_failover: 0.15
+      other: 0.85
+    H4:
+      failures_coincide_with_failover: 0.3
+      other: 0.7
+- name: 'the efficiency gateway rewrites a non-plan turn to its executor model: a
+    probe that asked the cloud for claude-opus with no plan marker came back "Invalid
+    model name passed in model=claude-sonnet-5-5", so the id refused on the cloud
+    is the gateway''s own rewrite target, and the refusal is not a client-side naming
+    choice'
+  observed:
+    gateway_rewrites_to_sonnet_5_5: 1
+  likelihoods:
+    H1:
+      gateway_rewrites_to_sonnet_5_5: 0.85
+      other: 0.15
+    H2:
+      gateway_rewrites_to_sonnet_5_5: 0.5
+      other: 0.5
+    H3:
+      gateway_rewrites_to_sonnet_5_5: 0.3
+      other: 0.7
+    H4:
+      gateway_rewrites_to_sonnet_5_5: 0.3
+      other: 0.7
+posteriors:
+  H1: 0.9982819611
+  H2: 0.0001368955
+  H3: 4.10687e-05
+  H4: 0.0015400747
+winner: H1
+computed_at: '2026-10-22T21:01:28Z'
