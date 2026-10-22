@@ -338,3 +338,13 @@ def test_the_brief_never_blocks_a_session(monkeypatch, capsys):
     assert brief.main([]) == 0
     out = capsys.readouterr()
     assert out.out == "" and "no brief" in out.err
+
+
+def test_a_check_from_a_stale_checkout_says_so(home, tmp_path):
+    """[drift] a checkout behind origin/main flags newer installed files; the check names the cause."""
+    assert run(home).returncode == 0
+    mod = _script("estate-memory-install")
+    mod.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 0, "40\n", "")
+    assert mod.commits_behind_main() == 40
+    mod.subprocess.run = lambda *a, **k: subprocess.CompletedProcess(a, 128, "", "no")
+    assert mod.commits_behind_main() == 0
