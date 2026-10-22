@@ -1,0 +1,195 @@
+#!/usr/bin/env python3
+"""Did the image build that main needs actually happen? (EPIC-IDP-090)
+
+WHY THIS EXISTS. On 2026-10-22 production had been running
+`fleetview-backend:main-14676-e403b8c0d` while every voice change since sat in code that no
+container carried -- and every instrument was green:
+
+  the lane's ci            green -- it grades the change, and it never builds an image
+  the merge                green -- the change landed on main
+  bin/idp-deploy-lag       green -- "main carries main-14676, the newest the policy picked"
+  the pod                  Running, Ready, 2/2 -- serving a build from before the feature
+
+The image build on main (`build-multiarch`, run 39764193569 for 9cc4f9ce3) had FAILED:
+`certifi 2025.8.3, fixed in 2026.10.19` out of Trivy. Nothing reads a red post-merge image build,
+so "landed" silently stood in for "built", and the Face's `GET /voice/intents` answered 404 from
+the live sidecar for a day.
+
+So this row asks the one question the others cannot: for every image the newest build on main broke,
+has a LATER build of that same image succeeded? A red build that nothing repaired is an image that
+is not being shipped, whatever tag main carries.
+
+WHAT IT DOES NOT GRADE, said plainly because the first draft of this file implied more. It does not
+open a cluster session: it says the newest build of an image ended red, not that a pod is running an
+old one -- bin/idp-deploy-lag and the pod's own image answer that. It reads run conclusions and job
+names from the Actions API, which is the same authority that ran the build. An image that broke
+before the window it reads is not reported at all, so this is a light over recent history, not a
+proof about the whole estate.
+
+Exit: 0 nothing broken in the window, 1 a red image build stands unrepaired, 2 BLIND (the API could
+not be read, and a check that measures nothing is not a check).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor
+
+WORKFLOW = "build-multiarch.yml"
+DEFAULT_WINDOW = 30
+BAD = ("failure", "timed_out", "cancelled", "startup_failure", "action_required")
+
+
+def gh_api(path: str) -> object:
+    """One GitHub API read, through the CLI the estate already authenticates."""
+    out = subprocess.run(
+        ["gh", "api", path], capture_output=True, text=True, check=False, timeout=60
+    )
+    if out.returncode != 0:
+        raise RuntimeError(f"gh api {path}: {out.stderr.strip()[:200]}")
+    return json.loads(out.stdout)
+
+
+def image_of(job_name: str) -> str | None:
+    """`build (fleetview-backend, fleetview-backend.Dockerfile, ., linux/amd64)` -> the image.
+
+    The matrix names each job after the image it builds, and this reads that name rather than
+    re-deriving the image list: the question is what the build tried to do.
+    """
+    if not job_name.startswith("build (") or not job_name.endswith(")"):
+        return None
+    first = job_name[len("build (") : -1].split(",")[0].strip()
+    return first or None
+
+
+def failed_step(job: dict) -> str:
+    """The first step of a failed job that did not pass, which is where the reason is."""
+    for step in job.get("steps") or []:
+        if step.get("conclusion") not in (None, "success", "skipped"):
+            return str(step.get("name") or "?")
+    return "?"
+
+
+def unrepaired(runs: list[dict], jobs_of) -> list[dict]:
+    """Every image whose newest build on main did not succeed.
+
+    `runs` is newest first. Within one run a single red architecture is a red build -- both arms
+    and the merge have to succeed before a tag exists -- and a run that builds the image green on
+    every arm is the repair for anything older.
+    """
+    newest: dict[str, dict] = {}
+    for run in runs:  # newest first, so the first run that mentions an image decides it
+        seen: dict[str, dict] = {}
+        for job in jobs_of(run):
+            image = image_of(str(job.get("name") or ""))
+            if image is None:
+                continue
+            conclusion = job.get("conclusion")
+            rec = seen.setdefault(image, {"failed": False, "step": "?", "conclusion": conclusion})
+            if conclusion in BAD:
+                rec["failed"] = True
+                rec["step"] = failed_step(job)
+                rec["conclusion"] = conclusion
+        for image, rec in seen.items():
+            if image in newest:
+                continue  # a newer run already answered for this image
+            newest[image] = {
+                "image": image,
+                "state": "FAIL" if rec["failed"] else "ok",
+                "run": run.get("id"),
+                "sha": run.get("head_sha"),
+                "url": run.get("html_url"),
+                "conclusion": rec["conclusion"],
+                "step": rec["step"],
+            }
+    return sorted((r for r in newest.values() if r["state"] == "FAIL"), key=lambda r: r["image"])
+
+
+def jobs_for(repo: str, runs: list[dict]) -> dict[object, list[dict]]:
+    """Every run's job list, read in parallel and keyed by run id.
+
+    Serially this is one API round trip per run, and a 30-run window walked past the estate's 100s
+    ceiling; the ceiling is not negotiable, so the reads are concurrent. A run whose jobs cannot be
+    read comes back empty rather than raising: it is not evidence in either direction, and the runs
+    around it still decide. BLIND is reserved for failing to read the listing itself.
+    """
+
+    def one(run: dict) -> tuple[object, list[dict]]:
+        rid = run.get("id")
+        try:
+            jobs = gh_api(f"repos/{repo}/actions/runs/{rid}/jobs?per_page=100")
+            return rid, list(jobs.get("jobs") or [])
+        except (RuntimeError, ValueError):
+            return rid, []
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        return dict(pool.map(one, runs))
+
+
+def repo_name() -> str:
+    repo = os.environ.get("GITHUB_REPOSITORY", "")
+    if repo:
+        return repo
+    out = subprocess.run(
+        ["gh", "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    return out.stdout.strip()
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--repo", default="")
+    ap.add_argument("--branch", default="main")
+    ap.add_argument("--window", type=int, default=DEFAULT_WINDOW)
+    ap.add_argument("--json", action="store_true")
+    a = ap.parse_args(argv)
+
+    repo = a.repo or repo_name()
+    if not repo:
+        print("BLIND   image-builds  no repository to read builds from")
+        return 2
+
+    try:
+        listing = gh_api(
+            f"repos/{repo}/actions/workflows/{WORKFLOW}/runs"
+            f"?branch={a.branch}&per_page={a.window}"
+        )
+        runs = list(listing.get("workflow_runs") or [])
+        if not runs:
+            print(
+                f"BLIND   image-builds  no {WORKFLOW} runs recorded for {a.branch}; a build light "
+                f"with nothing to read is not a light"
+            )
+            return 2
+        jobs = jobs_for(repo, runs)
+        rows = unrepaired(runs, lambda r: jobs.get(r.get("id"), []))
+    except (RuntimeError, ValueError) as e:
+        print(f"BLIND   image-builds  {e}")
+        return 2
+
+    for row in rows:
+        print(
+            f"FAIL    image-builds  {row['image']} has not been built since run {row['run']} "
+            f"({str(row['sha'])[:9]}) ended {row['conclusion']} at step \"{row['step']}\"; "
+            f"nothing on {a.branch} has rebuilt it -- {row['url']}"
+        )
+    if not rows:
+        print(
+            f"ok      image-builds  every image build that broke in the last {len(runs)} "
+            f"{WORKFLOW} runs on {a.branch} was rebuilt"
+        )
+    if a.json:
+        print(json.dumps({"rows": rows, "runs_read": len(runs)}, indent=2))
+    return 1 if rows else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
