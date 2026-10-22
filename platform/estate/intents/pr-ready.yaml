@@ -18,27 +18,33 @@ steps:
   - name: verdict
     cmd: |
       python3 -c "
-      import sys,json
+      import json, sys
       try:
-      d=json.load(sys.stdin)
-      ci=d.get('ci-status',{})
-      pr=d.get('pr-info',{})
-      ready = (
-      ci.get('merge_ready')==True and
-      not pr.get('isDraft',True) and
-      pr.get('mergeable',True)
-      )
-      blockers=[]
-      if ci.get('failed',0)>0:
-      blockers.append(f\"{ci['failed']} CI failures\")
-      if ci.get('running',0)>0:
-      blockers.append(f\"{ci['running']} checks running\")
-      if pr.get('isDraft'):
-      blockers.append('DRAFT PR')
-      if not pr.get('mergeable'):
-      blockers.append('not mergeable')
-      result={'pr':{{pr}},'ready':ready,'blockers':blockers,'ci':ci,'pr_title':pr.get('title')}
-      print(json.dumps(result,indent=2))
+          d = json.load(sys.stdin)
+          ci = d.get('ci-status', {})
+          pr = d.get('pr-info', {})
+          ready = (
+              ci.get('merge_ready') is True
+              and not pr.get('isDraft', True)
+              and pr.get('mergeable', True)
+          )
+          blockers = []
+          if ci.get('failed', 0) > 0:
+              blockers.append(f\"{ci['failed']} CI failures\")
+          if ci.get('running', 0) > 0:
+              blockers.append(f\"{ci['running']} checks running\")
+          if pr.get('isDraft'):
+              blockers.append('DRAFT PR')
+          if not pr.get('mergeable'):
+              blockers.append('not mergeable')
+          result = {
+              'pr': {{pr}},
+              'ready': ready,
+              'blockers': blockers,
+              'ci': ci,
+              'pr_title': pr.get('title'),
+          }
+          print(json.dumps(result, indent=2))
       except Exception as e:
-      print(json.dumps({'pr':{{pr}},'ready':False,'error':str(e)}))
+          print(json.dumps({'pr': {{pr}}, 'ready': False, 'error': str(e)}))
       "

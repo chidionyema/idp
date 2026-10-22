@@ -14,18 +14,22 @@ steps:
   - name: summary
     cmd: |
       python3 -c "
-      import sys,json
+      import json, sys
       try:
-      d=json.load(sys.stdin)
-      items=d.get('items',[])
-      ready=sum(1 for k in items if k.get('status','{}').get('conditions',[{}])[0].get('type')=='Ready')
-      print(f'{len(items)} Kustomizations | Ready: {ready}')
-      for k in items:
-      ns=k['metadata']['namespace']
-      name=k['metadata']['name']
-      conds=k.get('status',{}).get('conditions',[])
-      ready='READY' if any(c.get('type')=='Ready' and c.get('status')=='True' for c in conds) else 'NOT-READY'
-      print(f'  {ns}/{name} {ready}')
+          items = json.load(sys.stdin).get('items', [])
+          first_ready = sum(
+              1
+              for k in items
+              if (k.get('status') or {}).get('conditions', [{}])[0].get('type') == 'Ready'
+          )
+          print(f'{len(items)} Kustomizations | Ready: {first_ready}')
+          for k in items:
+              conds = (k.get('status') or {}).get('conditions', [])
+              ready = any(
+                  c.get('type') == 'Ready' and c.get('status') == 'True' for c in conds
+              )
+              label = 'READY' if ready else 'NOT-READY'
+              print(f\"  {k['metadata'].get('namespace')}/{k['metadata']['name']} {label}\")
       except Exception as e:
-      print(f'flux not installed or no kustomizations: {e}')
+          print(f'flux not installed or no kustomizations: {e}')
       "

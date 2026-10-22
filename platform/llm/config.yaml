@@ -729,6 +729,36 @@ model_list:
       timeout: 300
       keep_alive: 24h
 
+  # Claude Code on the founder's Max subscription, through the CLUSTER router too (idp#6872).
+  # NO api_key ON PURPOSE: the lane relays the caller's own `Authorization: Bearer
+  # sk-ant-oat01-...` OAuth token upstream (LiteLLM forwards the oat01 prefix, drops
+  # sk-ant-api03 keys), so the subscription pays and the estate holds no Anthropic key
+  # (2026-09-04 ruling). The client authenticates to the router with `x-litellm-api-key`,
+  # never `Authorization`, or the OAuth token is consumed here instead of upstream.
+  #
+  # The wildcard, not a list of dated ids: it carries whatever id Claude Code sends
+  # (claude-opus-5-5, claude-sonnet-5-5, claude-haiku-4-5-...) upstream unchanged, so a new
+  # model version needs no config change. Zero cost fields because Max has no per-token spend;
+  # without them LiteLLM prices Opus from its own table and the spend ceiling refuses calls.
+  #
+  # WHY THIS FILE, NOW: the laptop lane has carried this row since 2026-09-23
+  # (llm/config.base.yaml); this copy never did. A laptop slot that missed two health probes
+  # handed every Claude turn to a router with no `claude-*` group -- 403 "key not allowed to
+  # access model" for dated ids (claude-sonnet-5-5, the id the efficiency gateway rewrites
+  # executor turns to), and after #4063 aliased them, a silent DeepSeek answer for `claude-opus`.
+  # The alias removal and this lane are one fix, so they land together: `claude-opus` and
+  # `claude-opus-5-5` -> deepseek (added #4063 to keep calls answering while no Anthropic lane
+  # existed in this file) are deleted from model_group_alias above. Without the wildcard below,
+  # deleting the aliases only turns a 403 into a 400. Measured
+  # 2026-10-22 20:51Z: the same key on 127.0.0.1:4000 reaches Anthropic for all three ids,
+  # while llm.mumchimp.com lists 29 models and none of them matches `claude-sonnet-5-5`.
+  - model_name: "claude-*"
+    litellm_params:
+      model: "anthropic/claude-*"
+      timeout: 600
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
 router_settings:
   fallbacks:
     # crew#506 CP1 (2026-08-27): the first hop is the other funded direct vendor. OpenRouter sat

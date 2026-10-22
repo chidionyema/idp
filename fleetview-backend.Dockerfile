@@ -45,7 +45,7 @@ FROM docker.io/library/python:3.13-alpine
 # deploy_journeys.py are voice.py's two repo imports (stdlib only). This pip line and these COPYs
 # are read by backstage/plugins/fleetview-backend/tests/test_image_imports.py, which imports every
 # module against exactly them and fails the PR if one would not load in this image.
-RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 nats-py==2.16.0 jsonschema==4.23.0 pyyaml==6.0.2 certifi==2025.8.3 httpx==0.28.1
+RUN pip install --no-cache-dir fastapi==0.115.6 uvicorn==0.34.0 nats-py==2.16.0 jsonschema==4.23.0 pyyaml==6.0.2 certifi==2026.10.19 httpx==0.28.1
 COPY backstage/plugins/fleetview-backend/src /app/backstage/plugins/fleetview-backend/src
 COPY bin/estate-twin-runtime /app/bin/estate-twin-runtime
 COPY lib/estate_spatial.py /app/lib/estate_spatial.py
