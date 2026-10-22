@@ -1,42 +1,20 @@
-"""Throwaway: read-only. Is the live concierge web app still deployed, and does it answer?"""
+"""Throwaway: does Modal accept one 0.125-core job now? Prints the exact refusal if not."""
 
-import json
-import subprocess
-import urllib.request
+import datetime as dt
 
-out = subprocess.run(["modal", "app", "list", "--json"], capture_output=True, text=True)
-print("APPS", out.stdout[:3000] or out.stderr[:600])
+import modal
+
+app = modal.App("yarngpt2-probe")
+
+
+@app.function(cpu=0.125, memory=128, timeout=30)
+def ping() -> str:
+    return "pong"
+
+
+print("PROBE at", dt.datetime.now(dt.UTC).isoformat())
 try:
-    import modal
-
-    fn = modal.Cls.from_name("mums-concierge-web", "YarnVoice")
-    print("YARN lookup ok")
-except Exception as exc:  # noqa: BLE001
-    print("YARN lookup", type(exc).__name__, str(exc)[:300])
-for app in json.loads(out.stdout or "[]"):
-    if (
-        app.get("Description") == "mums-concierge-web"
-        or app.get("description") == "mums-concierge-web"
-    ):
-        print("WEB row", json.dumps(app))
-r = (
-    subprocess.run(
-        ["modal", "app", "logs", "mums-concierge-web", "--timestamps"],
-        capture_output=True,
-        text=True,
-        timeout=20,
-    )
-    if False
-    else None
-)
-ws = subprocess.run(
-    ["modal", "profile", "current"], capture_output=True, text=True
-).stdout.strip()
-print("WORKSPACE", ws)
-for path in ("/health", "/"):
-    url = f"https://{ws}--mums-concierge-web-web.modal.run{path}"
-    try:
-        with urllib.request.urlopen(url, timeout=20) as resp:
-            print("HTTP", url, resp.status, resp.read(200))
-    except Exception as exc:  # noqa: BLE001
-        print("HTTP", url, type(exc).__name__, str(exc)[:200])
+    with modal.enable_output(), app.run():
+        print("PROBE result", ping.remote())
+except Exception as exc:  # noqa: BLE001 -- a probe: say what happened
+    print("PROBE refused", type(exc).__name__, str(exc)[:600])

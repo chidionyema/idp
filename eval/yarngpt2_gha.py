@@ -45,9 +45,7 @@ def _say(wav, sr: int = 24000) -> str:
     from faster_whisper import WhisperModel
 
     global _WHISPER
-    try:
-        _WHISPER
-    except NameError:
+    if "_WHISPER" not in globals():
         _WHISPER = WhisperModel(
             "tiny.en", device="cpu", compute_type="int8", cpu_threads=1
         )
@@ -137,7 +135,9 @@ class _Engine:
             "decode_audio_s": round(dec_s, 2),
             "note_s": round(gen_s + dec_s, 2),
             "tok_per_s": round(len(gen) / max(gen_s, 1e-6), 1),
-            "codes_sha": hashlib.sha1(json.dumps(codes).encode()).hexdigest()[:10],
+            "codes_sha": hashlib.sha1(
+                json.dumps(codes).encode(), usedforsecurity=False
+            ).hexdigest()[:10],
         }
 
 
