@@ -2,10 +2,93 @@
 # The database is the source of truth (founder, 2026-09-12); this file is the
 # copy that survives losing it. Do not hand-edit -- the next change overwrites it.
 model_list:
-  - model_name: cerebras
+  - model_name: anthropic/claude-fable-5
     litellm_params:
-      model: openai/gpt-oss-120b
-      api_base: https://api.cerebras.ai/v1
+      model: anthropic/claude-fable-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-fable-5-1
+    litellm_params:
+      model: anthropic/claude-fable-5-1
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-haiku-4-5
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-haiku-4-5-20251001
+    litellm_params:
+      model: anthropic/claude-haiku-4-5-20251001
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-haiku-5-5
+    litellm_params:
+      model: anthropic/claude-haiku-5-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-mythos-5
+    litellm_params:
+      model: anthropic/claude-mythos-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-mythos-5-1
+    litellm_params:
+      model: anthropic/claude-mythos-5-1
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-mythos-preview
+    litellm_params:
+      model: anthropic/claude-mythos-preview
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-5
+    litellm_params:
+      model: anthropic/claude-opus-4-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-5-20251101
+    litellm_params:
+      model: anthropic/claude-opus-4-5-20251101
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-6
+    litellm_params:
+      model: anthropic/claude-opus-4-6
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-6-20260205
+    litellm_params:
+      model: anthropic/claude-opus-4-6-20260205
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-7-20260416
+    litellm_params:
+      model: anthropic/claude-opus-4-7-20260416
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-4-8
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-5
+    litellm_params:
+      model: anthropic/claude-opus-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-opus-5-5
+    litellm_params:
+      model: anthropic/claude-opus-5-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-sonnet-4-5
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-sonnet-4-5-20250929
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5-20250929
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-sonnet-5
+    litellm_params:
+      model: anthropic/claude-sonnet-5
+      api_key: os.environ/LITELLM_UPSTREAM_KEY
+  - model_name: anthropic/claude-sonnet-5-5
+    litellm_params:
+      model: anthropic/claude-sonnet-5-5
       api_key: os.environ/LITELLM_UPSTREAM_KEY
   - model_name: cerebras
     litellm_params:
@@ -17,21 +100,10 @@ model_list:
       model: openai/gpt-oss-120b
       api_base: https://api.cerebras.ai/v1
       api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: claude-opus
+  - model_name: cerebras
     litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: claude-opus
-    litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: claude-opus-5-5
-    litellm_params:
-      model: deepseek/deepseek-chat
-      api_key: os.environ/LITELLM_UPSTREAM_KEY
-  - model_name: claude-opus-5-5
-    litellm_params:
-      model: deepseek/deepseek-chat
+      model: openai/gpt-oss-120b
+      api_base: https://api.cerebras.ai/v1
       api_key: os.environ/LITELLM_UPSTREAM_KEY
   - model_name: deepseek
     litellm_params:
