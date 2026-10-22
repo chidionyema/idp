@@ -24,7 +24,9 @@ import time
 
 import modal
 
-YARNGPT_SHA = "8bb0eb27d307f4b5903149e24ecc1bd3caa4af2d"  # saheedniyi02/yarngpt, 2025-03-14
+YARNGPT_SHA = (
+    "8bb0eb27d307f4b5903149e24ecc1bd3caa4af2d"  # saheedniyi02/yarngpt, 2025-03-14
+)
 LLAMA_CPP_SHA = "c0159f9c1f874da15e94f371d136f5920b4b5335"  # the one llama-cpp-python 0.3.19 vendors
 CFG = "wavtokenizer_mediumdata_frame75_3s_nq1_code4096_dim512_kmeans200_attn.yaml"
 VOICES = ["idera", "chinenye"]
@@ -42,9 +44,18 @@ image = (
     # Unchanged from run 1, so Modal reuses these layers.
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "curl", "ffmpeg", "libportaudio2")
-    .pip_install("torch==2.5.1", "torchaudio==2.5.1", index_url="https://download.pytorch.org/whl/cpu")
     .pip_install(
-        "transformers==4.47.1", "outetts==0.2.3", "uroman", "inflect", "gdown", "soundfile",
+        "torch==2.5.1",
+        "torchaudio==2.5.1",
+        index_url="https://download.pytorch.org/whl/cpu",
+    )
+    .pip_install(
+        "transformers==4.47.1",
+        "outetts==0.2.3",
+        "uroman",
+        "inflect",
+        "gdown",
+        "soundfile",
         "huggingface_hub",
     )
     .run_commands(
@@ -63,7 +74,11 @@ image = (
     # prebuilt "cpu" wheel links musl and won't load on Debian. Not -march=native, since the build
     # machine needn't be the one that runs it; AVX2/FMA is safe on Modal's x86 fleet.
     .apt_install("libgomp1", "build-essential", "cmake")
-    .env({"CMAKE_ARGS": "-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"})
+    .env(
+        {
+            "CMAKE_ARGS": "-DGGML_NATIVE=OFF -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON"
+        }
+    )
     .pip_install("llama-cpp-python==0.3.19")
     .run_commands(
         f"git init -q /opt/llama.cpp && git -C /opt/llama.cpp fetch -q --depth 1"
@@ -74,7 +89,7 @@ image = (
         " && python /opt/llama.cpp/convert_hf_to_gguf.py $M --outtype f16 --outfile /w/yarn-f16.gguf"
         " && python /opt/llama.cpp/convert_hf_to_gguf.py $M --outtype q8_0 --outfile /w/yarn-q8_0.gguf",
         # q4_k_m through the library's own quantiser; 960-wide rows fall back to q5_0/q8_0 blocks.
-        "python -c \"import ctypes, llama_cpp as l; p = l.llama_model_quantize_default_params();"
+        'python -c "import ctypes, llama_cpp as l; p = l.llama_model_quantize_default_params();'
         " p.ftype = l.LLAMA_FTYPE_MOSTLY_Q4_K_M;"
         " assert l.llama_model_quantize(b'/w/yarn-f16.gguf', b'/w/yarn-q4_k_m.gguf', ctypes.byref(p)) == 0\"",
         "ls -la /w",
@@ -83,16 +98,13 @@ image = (
 
 # New in run 3, appended so the layers above stay cached: two more quants, and a small Whisper to
 # score what each quant actually says.
-image = (
-    image.pip_install("faster-whisper==1.1.0")
-    .run_commands(
-        "python -c \"import ctypes, llama_cpp as l\n"
-        "for name, ft in (('q6_k', l.LLAMA_FTYPE_MOSTLY_Q6_K), ('q5_k_m', l.LLAMA_FTYPE_MOSTLY_Q5_K_M)):\n"
-        "    p = l.llama_model_quantize_default_params(); p.ftype = ft\n"
-        "    assert l.llama_model_quantize(b'/w/yarn-f16.gguf', f'/w/yarn-{name}.gguf'.encode(), ctypes.byref(p)) == 0\"",
-        "python -c \"from huggingface_hub import snapshot_download as d; d('Systran/faster-whisper-tiny.en')\"",
-        "ls -la /w",
-    )
+image = image.pip_install("faster-whisper==1.1.0").run_commands(
+    'python -c "import ctypes, llama_cpp as l\n'
+    "for name, ft in (('q6_k', l.LLAMA_FTYPE_MOSTLY_Q6_K), ('q5_k_m', l.LLAMA_FTYPE_MOSTLY_Q5_K_M)):\n"
+    "    p = l.llama_model_quantize_default_params(); p.ftype = ft\n"
+    "    assert l.llama_model_quantize(b'/w/yarn-f16.gguf', f'/w/yarn-{name}.gguf'.encode(), ctypes.byref(p)) == 0\"",
+    "python -c \"from huggingface_hub import snapshot_download as d; d('Systran/faster-whisper-tiny.en')\"",
+    "ls -la /w",
 )
 
 app = modal.App("yarngpt2-eval-3")
@@ -123,8 +135,12 @@ def _say(wav, sr: int = 24000) -> str:
     try:
         _WHISPER
     except NameError:
-        _WHISPER = WhisperModel("tiny.en", device="cpu", compute_type="int8", cpu_threads=1)
-    x = F.resample(torch.as_tensor(np.asarray(wav, dtype="float32")).reshape(1, -1), sr, 16000)[0].numpy()
+        _WHISPER = WhisperModel(
+            "tiny.en", device="cpu", compute_type="int8", cpu_threads=1
+        )
+    x = F.resample(
+        torch.as_tensor(np.asarray(wav, dtype="float32")).reshape(1, -1), sr, 16000
+    )[0].numpy()
     segs, _ = _WHISPER.transcribe(x, language="en", beam_size=1, vad_filter=False)
     return " ".join(s.text.strip() for s in segs)
 
@@ -142,7 +158,9 @@ class _Engine:
         from yarngpt.audiotokenizer import AudioTokenizerV2
 
         self.ncpu = ncpu
-        self.tok = AudioTokenizerV2("saheedniyi/YarnGPT2", "/w/wavtokenizer.ckpt", f"/w/{CFG}")
+        self.tok = AudioTokenizerV2(
+            "saheedniyi/YarnGPT2", "/w/wavtokenizer.ckpt", f"/w/{CFG}"
+        )
         self.stop = {0, self.tok.tokenizer.convert_tokens_to_ids("<|audio_end|>")}
         self.llm = None
         self.loaded = None
@@ -153,9 +171,16 @@ class _Engine:
 
         t = time.perf_counter()
         self.llm = Llama(
-            model_path=f"/w/yarn-{quant}.gguf", n_ctx=4096, n_threads=self.ncpu,
-            n_threads_batch=self.ncpu, n_batch=512, last_n_tokens_size=4096, verbose=False,
-            draft_model=LlamaPromptLookupDecoding(max_ngram_size=3, num_pred_tokens=10) if lookup else None,
+            model_path=f"/w/yarn-{quant}.gguf",
+            n_ctx=4096,
+            n_threads=self.ncpu,
+            n_threads_batch=self.ncpu,
+            n_batch=512,
+            last_n_tokens_size=4096,
+            verbose=False,
+            draft_model=LlamaPromptLookupDecoding(max_ngram_size=3, num_pred_tokens=10)
+            if lookup
+            else None,
         )
         self.loaded = (quant, lookup)
         return time.perf_counter() - t
@@ -163,11 +188,15 @@ class _Engine:
     def speak(self, text: str, voice: str) -> dict:
         import torch
 
-        ids = self.tok.tokenize_prompt(self.tok.create_prompt(text, lang="english", speaker_name=voice))[0].tolist()
+        ids = self.tok.tokenize_prompt(
+            self.tok.create_prompt(text, lang="english", speaker_name=voice)
+        )[0].tolist()
         gen: list[int] = []
         first = None
         t0 = time.perf_counter()
-        for tid in self.llm.generate(ids, top_k=1, top_p=1.0, min_p=0.0, temp=0.0, repeat_penalty=1.1, reset=True):
+        for tid in self.llm.generate(
+            ids, top_k=1, top_p=1.0, min_p=0.0, temp=0.0, repeat_penalty=1.1, reset=True
+        ):
             if first is None:
                 first = time.perf_counter() - t0
             if tid in self.stop or len(ids) + len(gen) >= 4000:
@@ -182,9 +211,14 @@ class _Engine:
             wav = self.tok.get_audio(codes).squeeze().numpy()
         dec_s = time.perf_counter() - t
         return {
-            "wav": wav, "audio_s": round(len(wav) / 24000, 2), "prompt_tokens": len(ids),
-            "gen_tokens": len(gen), "first_token_s": round(first, 2), "generate_s": round(gen_s, 2),
-            "decode_audio_s": round(dec_s, 2), "note_s": round(gen_s + dec_s, 2),
+            "wav": wav,
+            "audio_s": round(len(wav) / 24000, 2),
+            "prompt_tokens": len(ids),
+            "gen_tokens": len(gen),
+            "first_token_s": round(first, 2),
+            "generate_s": round(gen_s, 2),
+            "decode_audio_s": round(dec_s, 2),
+            "note_s": round(gen_s + dec_s, 2),
             "tok_per_s": round(len(gen) / max(gen_s, 1e-6), 1),
             "codes_sha": hashlib.sha1(json.dumps(codes).encode()).hexdigest()[:10],
         }
@@ -208,18 +242,28 @@ def variants() -> dict:
         ("B llama-q6_k", "q6_k", False),
         ("B llama-q5_k_m", "q5_k_m", False),
         ("C llama-q8_0+lookup", "q8_0", True),
-        ("A llama-q8_0 (again)", "q8_0", False),  # the control twice: that gap is the noise floor
+        (
+            "A llama-q8_0 (again)",
+            "q8_0",
+            False,
+        ),  # the control twice: that gap is the noise floor
     ):
         load_s = eng.load(quant, lookup)
         for name, text in TEXTS.items():
             r = eng.speak(text, "idera")
             if "wav" in r:
                 heard = _say(r["wav"])
-                audio[f"{option.split()[0]}-{quant}{'-lookup' if lookup else ''}-{name}.wav"] = _wav_bytes(r.pop("wav"))
+                audio[
+                    f"{option.split()[0]}-{quant}{'-lookup' if lookup else ''}-{name}.wav"
+                ] = _wav_bytes(r.pop("wav"))
                 r.update(heard=heard, wer=_wer(text, heard))
             r.update(option=option, text=name, load_s=round(load_s, 1))
             rows.append(r)
-            print("BENCH", json.dumps({k: v for k, v in r.items() if k != "heard"}), flush=True)
+            print(
+                "BENCH",
+                json.dumps({k: v for k, v in r.items() if k != "heard"}),
+                flush=True,
+            )
     return {"rows": rows, "audio": audio}
 
 
@@ -264,8 +308,14 @@ def _fanout(text: str, label: str, outdir: pathlib.Path) -> dict:
         done_at.append(round(time.perf_counter() - t0, 1))
     wall = round(time.perf_counter() - t0, 1)
     bad = [r for r in results if "wav" not in r]
-    row = {"label": label, "sentences": len(sentences), "first_audio_s": done_at[0], "all_done_s": wall,
-           "per_sentence_done_s": done_at, "container_up_s": [r.get("container_up_s") for r in results]}
+    row = {
+        "label": label,
+        "sentences": len(sentences),
+        "first_audio_s": done_at[0],
+        "all_done_s": wall,
+        "per_sentence_done_s": done_at,
+        "container_up_s": [r.get("container_up_s") for r in results],
+    }
     if bad:
         row["error"] = f"{len(bad)} sentence(s) made no audio"
         return row
@@ -279,21 +329,33 @@ def _fanout(text: str, label: str, outdir: pathlib.Path) -> dict:
 def main():
     outdir = pathlib.Path("yarngpt2-samples")
     outdir.mkdir(exist_ok=True)
-    var = variants.spawn()  # its own container; the fan-out below never shares a CPU with it
+    var = (
+        variants.spawn()
+    )  # its own container; the fan-out below never shares a CPU with it
     text = TEXTS["typical"]
     fan = []
     # Whole note in ONE container (production today) vs one container per sentence. Each is run
     # cold (containers booting, model loading) then warm (the same containers, still up).
-    for label, body in (("one-container-cold", text), ("fanout-cold", text), ("one-container-warm", text),
-                        ("fanout-warm", text)):
+    for label, body in (
+        ("one-container-cold", text),
+        ("fanout-cold", text),
+        ("one-container-warm", text),
+        ("fanout-warm", text),
+    ):
         if label.startswith("one"):
             sentences_row = None
             t0 = time.perf_counter()
             r = Chunk().say.remote(body, "idera")
             wall = round(time.perf_counter() - t0, 1)
-            sentences_row = {"label": label, "sentences": 1, "first_audio_s": wall, "all_done_s": wall,
-                             "container_up_s": [r.get("container_up_s")], "audio_s": r.get("audio_s"),
-                             "gen_tokens": r.get("gen_tokens")}
+            sentences_row = {
+                "label": label,
+                "sentences": 1,
+                "first_audio_s": wall,
+                "all_done_s": wall,
+                "container_up_s": [r.get("container_up_s")],
+                "audio_s": r.get("audio_s"),
+                "gen_tokens": r.get("gen_tokens"),
+            }
             if "wav" in r:
                 (outdir / f"{label}.wav").write_bytes(_wav_bytes(r["wav"]))
             fan.append(sentences_row)
@@ -310,12 +372,18 @@ def main():
         rep["errors"]["variants"] = f"{type(exc).__name__}: {exc}"[:800]
         print("FAILED variants:", rep["errors"]["variants"], flush=True)
     (outdir / "report.json").write_text(json.dumps(rep, indent=2))
-    print("SUMMARY option                 text     note_s  tok/s  wer    codes_sha   load_s")
+    print(
+        "SUMMARY option                 text     note_s  tok/s  wer    codes_sha   load_s"
+    )
     for r in rep.get("variants", []):
         if "error" in r:
             print(f"SUMMARY {r['option']:<22} {r['text']:<8} ERROR {r['error']}")
             continue
-        print(f"SUMMARY {r['option']:<22} {r['text']:<8} {r['note_s']:<7} {r['tok_per_s']:<6} {r['wer']:<6} {r['codes_sha']}  {r['load_s']}")
+        print(
+            f"SUMMARY {r['option']:<22} {r['text']:<8} {r['note_s']:<7} {r['tok_per_s']:<6} {r['wer']:<6} {r['codes_sha']}  {r['load_s']}"
+        )
     print("SUMMARY fan-out label               first_audio_s  all_done_s")
     for r in fan:
-        print(f"SUMMARY {r['label']:<22} {r['first_audio_s']:<14} {r['all_done_s']}  {r.get('error', '')}")
+        print(
+            f"SUMMARY {r['label']:<22} {r['first_audio_s']:<14} {r['all_done_s']}  {r.get('error', '')}"
+        )

@@ -27,7 +27,6 @@ SILENCE_S = 0.12  # a breath between joined sentences
 
 
 def _wer(want: str, got: str) -> float:
-    import re
 
     norm = lambda s: re.sub(r"[^a-z0-9' ]+", " ", s.lower()).split()  # noqa: E731
     a, b = norm(want), norm(got)
@@ -49,8 +48,12 @@ def _say(wav, sr: int = 24000) -> str:
     try:
         _WHISPER
     except NameError:
-        _WHISPER = WhisperModel("tiny.en", device="cpu", compute_type="int8", cpu_threads=1)
-    x = F.resample(torch.as_tensor(np.asarray(wav, dtype="float32")).reshape(1, -1), sr, 16000)[0].numpy()
+        _WHISPER = WhisperModel(
+            "tiny.en", device="cpu", compute_type="int8", cpu_threads=1
+        )
+    x = F.resample(
+        torch.as_tensor(np.asarray(wav, dtype="float32")).reshape(1, -1), sr, 16000
+    )[0].numpy()
     segs, _ = _WHISPER.transcribe(x, language="en", beam_size=1, vad_filter=False)
     return " ".join(s.text.strip() for s in segs)
 
@@ -68,7 +71,9 @@ class _Engine:
         from yarngpt.audiotokenizer import AudioTokenizerV2
 
         self.ncpu = ncpu
-        self.tok = AudioTokenizerV2("saheedniyi/YarnGPT2", "/w/wavtokenizer.ckpt", f"/w/{CFG}")
+        self.tok = AudioTokenizerV2(
+            "saheedniyi/YarnGPT2", "/w/wavtokenizer.ckpt", f"/w/{CFG}"
+        )
         self.stop = {0, self.tok.tokenizer.convert_tokens_to_ids("<|audio_end|>")}
         self.llm = None
         self.loaded = None
@@ -79,15 +84,25 @@ class _Engine:
 
         t = time.perf_counter()
         self.llm = Llama(
-            model_path=f"/w/yarn-{quant}.gguf", n_ctx=4096, n_threads=self.ncpu,
-            n_threads_batch=self.ncpu, n_batch=512, last_n_tokens_size=4096, logits_all=lookup, verbose=False,
-            draft_model=LlamaPromptLookupDecoding(max_ngram_size=3, num_pred_tokens=10) if lookup else None,
+            model_path=f"/w/yarn-{quant}.gguf",
+            n_ctx=4096,
+            n_threads=self.ncpu,
+            n_threads_batch=self.ncpu,
+            n_batch=512,
+            last_n_tokens_size=4096,
+            logits_all=lookup,
+            verbose=False,
+            draft_model=LlamaPromptLookupDecoding(max_ngram_size=3, num_pred_tokens=10)
+            if lookup
+            else None,
         )
         self.loaded = (quant, lookup)
         return time.perf_counter() - t
 
     def ids(self, text: str, voice: str) -> list[int]:
-        return self.tok.tokenize_prompt(self.tok.create_prompt(text, lang="english", speaker_name=voice))[0].tolist()
+        return self.tok.tokenize_prompt(
+            self.tok.create_prompt(text, lang="english", speaker_name=voice)
+        )[0].tolist()
 
     def speak(self, text: str, voice: str) -> dict:
         import torch
@@ -96,7 +111,9 @@ class _Engine:
         gen: list[int] = []
         first = None
         t0 = time.perf_counter()
-        for tid in self.llm.generate(ids, top_k=1, top_p=1.0, min_p=0.0, temp=0.0, repeat_penalty=1.1, reset=True):
+        for tid in self.llm.generate(
+            ids, top_k=1, top_p=1.0, min_p=0.0, temp=0.0, repeat_penalty=1.1, reset=True
+        ):
             if first is None:
                 first = time.perf_counter() - t0
             if tid in self.stop or len(ids) + len(gen) >= 4000:
@@ -111,9 +128,14 @@ class _Engine:
             wav = self.tok.get_audio(codes).squeeze().numpy()
         dec_s = time.perf_counter() - t
         return {
-            "wav": wav, "audio_s": round(len(wav) / 24000, 2), "prompt_tokens": len(ids),
-            "gen_tokens": len(gen), "first_token_s": round(first, 2), "generate_s": round(gen_s, 2),
-            "decode_audio_s": round(dec_s, 2), "note_s": round(gen_s + dec_s, 2),
+            "wav": wav,
+            "audio_s": round(len(wav) / 24000, 2),
+            "prompt_tokens": len(ids),
+            "gen_tokens": len(gen),
+            "first_token_s": round(first, 2),
+            "generate_s": round(gen_s, 2),
+            "decode_audio_s": round(dec_s, 2),
+            "note_s": round(gen_s + dec_s, 2),
             "tok_per_s": round(len(gen) / max(gen_s, 1e-6), 1),
             "codes_sha": hashlib.sha1(json.dumps(codes).encode()).hexdigest()[:10],
         }
@@ -138,7 +160,11 @@ def main() -> None:
     eng = _Engine(2)
     ids = [eng.ids(s, "idera") for s in sents]
     shared = min(len(os.path.commonprefix([ids[0], x])) for x in ids[1:])
-    print("PREFIX", json.dumps({"prompt_tokens": [len(x) for x in ids], "shared_prefix": shared}), flush=True)
+    print(
+        "PREFIX",
+        json.dumps({"prompt_tokens": [len(x) for x in ids], "shared_prefix": shared}),
+        flush=True,
+    )
     rows = []
     for threads in sorted({2, 3, 4, ncpu}):
         if threads > ncpu:
@@ -146,7 +172,10 @@ def main() -> None:
         torch.set_num_threads(threads)
         eng.ncpu = threads
         eng.load("q8_0")
-        for mode in ("cold", "warm"):  # cold: KV cache emptied first; warm: follows the previous sentence
+        for mode in (
+            "cold",
+            "warm",
+        ):  # cold: KV cache emptied first; warm: follows the previous sentence
             for s in sents:
                 if mode == "cold":
                     eng.llm.reset()
@@ -155,17 +184,27 @@ def main() -> None:
                 r.update(threads=threads, mode=mode, sentence=s[:24])
                 rows.append(r)
                 print("RUN", json.dumps(r), flush=True)
-    base = {r["sentence"]: r.get("codes_sha") for r in rows if r["threads"] == 2 and r["mode"] == "cold"}
-    print("SUMMARY threads mode  one_container_s  fanout_bound_s  first_audio_s  mean_first_token_s  same_codes_as_2cold")
+    base = {
+        r["sentence"]: r.get("codes_sha")
+        for r in rows
+        if r["threads"] == 2 and r["mode"] == "cold"
+    }
+    print(
+        "SUMMARY threads mode  one_container_s  fanout_bound_s  first_audio_s  mean_first_token_s  same_codes_as_2cold"
+    )
     for threads in sorted({r["threads"] for r in rows}):
         for mode in ("cold", "warm"):
             g = [r for r in rows if r["threads"] == threads and r["mode"] == mode]
             ns = [r.get("note_s") or 0 for r in g]
             same = all(base.get(r["sentence"]) == r.get("codes_sha") for r in g)
             ft = sum(r.get("first_token_s") or 0 for r in g) / len(g)
-            print(f"SUMMARY {threads:<7} {mode:<5} {sum(ns):<16.1f} {max(ns):<15.1f} {ns[0]:<14.2f} {ft:<19.2f} {same}")
+            print(
+                f"SUMMARY {threads:<7} {mode:<5} {sum(ns):<16.1f} {max(ns):<15.1f} {ns[0]:<14.2f} {ft:<19.2f} {same}"
+            )
     pathlib.Path("yarngpt2-samples").mkdir(exist_ok=True)
-    pathlib.Path("yarngpt2-samples/report-3c.json").write_text(json.dumps(rows, indent=2))
+    pathlib.Path("yarngpt2-samples/report-3c.json").write_text(
+        json.dumps(rows, indent=2)
+    )
 
 
 if __name__ == "__main__":
