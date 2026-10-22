@@ -536,6 +536,18 @@ class SessionWorkflow:
                 self._decision_attestation = ""
                 continue
 
+            # A runner refusal is terminal, not a retry. Before 2026-10-22 an unknown runner
+            # came back `done: True` and the session terminated as a SUCCESS with an empty
+            # output (EPIC-IDP-090 lane D); with only `done: False` it would have looped the
+            # remaining cycles re-asking the same missing runner. `error` is the FSM's word
+            # for "this session cannot continue", and it is carried onto the receipt.
+            if result.get("error"):
+                self.status = "failed"
+                self.asking = None
+                self._fsm_terminate()
+                await self._receipt("failed", "engine", str(result["error"]))
+                return self._state()
+
             if result.get("done"):
                 self.status = "done"
                 self.asking = None

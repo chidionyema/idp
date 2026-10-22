@@ -165,6 +165,31 @@ REGISTRY: dict[str, RunnerFn] = {
 }
 
 
+def unavailable_runner(runner: str) -> dict[str, Any]:
+    """The one shape a runner refusal may take.
+
+    2026-10-22 (EPIC-IDP-090, lane D). `run()` used to answer an unregistered runner with
+    `done: True`, and `workflow.py` terminates the FSM on `done: True`. So "unknown runner:
+    claude" -- a request the estate could not execute at all -- ended the session as `done`,
+    with an empty output and no receipt saying anything went wrong. A refusal shaped like
+    success is worse than an error: nothing downstream can see it.
+
+    `done: False` alone is not enough either: workflow.py reads "neither ask nor done" as
+    "loop for another step", which would spend the remaining cycles re-asking the same
+    missing runner. So the refusal also carries `error`, which the FSM terminates on.
+    """
+    return {
+        "output": f"unknown runner: {runner}",
+        "done": False,
+        "ask": None,
+        "error": (
+            f"UNAVAILABLE_RUNNER: no runner named {runner!r} is registered "
+            f"({', '.join(sorted(REGISTRY))})"
+        ),
+        "tokens": 0,
+    }
+
+
 async def run(
     runner: str,
     task: str,
@@ -175,6 +200,5 @@ async def run(
 ) -> dict[str, Any]:
     fn = REGISTRY.get(runner)
     if fn is None:
-        output = f"unknown runner: {runner}"
-        return {"output": output, "done": True, "ask": None, "tokens": 0}
+        return unavailable_runner(runner)
     return await fn(task, repo, step, steer, session_id)
