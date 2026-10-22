@@ -112,7 +112,9 @@ def test_the_merge_and_gate_jobs_are_not_images():
     assert ib.image_of("merge (backstage, backstage/Dockerfile, backstage)") is None
     assert ib.image_of("fast-gate / fast-gate") is None
     assert ib.image_of("discover") is None
-    assert ib.image_of("build (factory, factory.Dockerfile, ., linux/amd64)") == "factory"
+    assert (
+        ib.image_of("build (factory, factory.Dockerfile, ., linux/amd64)") == "factory"
+    )
 
 
 def test_a_missing_measurement_is_blind_not_green(monkeypatch, capsys):
