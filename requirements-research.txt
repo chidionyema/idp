@@ -40,5 +40,5 @@ pytest-cov==5.0.0
 
 # --- linting / formatting ---
 ruff==0.4.9
-black==26.3.1
+black==26.10.1  # CVE-2026-114134 fixed in 26.10.1; 26.3.1 turned security-scan red for every lane
 isort==5.13.2
