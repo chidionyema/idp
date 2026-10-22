@@ -1,0 +1,97 @@
+description: 'Claude Code turns on 2026-10-22 failed three ways: 400 "Invalid schema
+  for function Artifact" with "No fallback model group found for original model_group=claude-opus-5-5",
+  400 refusals at a 128,000 ceiling, and 400 refusals at a 200,000 ceiling. Question:
+  are these caused by the cloud router config (claude-opus-5-5 aliased to deepseek,
+  and a different ceiling default from the laptop), or by laptop load alone, or by
+  the client not compacting regardless of router? NOTE: the evidence was gathered
+  in the session before this record was written; the priors and likelihoods below
+  are my statement of what each hypothesis predicts about each item, written down
+  per item, not tuned after computing.
+
+  '
+hypotheses:
+- name: H1
+  description: 'cloud config defect: #4063 aliased claude-opus and claude-opus-5-5
+    to deepseek (65,536-token window, rejects Claude Code tool schemas, no fallback
+    group), and the cloud ceiling default (128,000) differs from the laptop launcher
+    (200,000), so a failover changes the behaviour of the same model name'
+  prior: 0.4
+- name: H2
+  description: laptop overload alone explains the failures; the cloud config is equivalent
+    to the laptop's for claude-opus-5-5
+  prior: 0.3
+- name: H3
+  description: the client never compacts before a limit, and the router config is
+    irrelevant to the failures
+  prior: 0.3
+evidence:
+- name: 'live cloud config litellm-config-9292885d74 has model_group_alias claude-opus-5-5:
+    deepseek and no claude deployment (docs/diagnoses/2026-10-22-inline-tools-reach-the-alias-unfit.yaml,
+    read from the cluster); the laptop runtime config maps claude-* to anthropic/claude-*'
+  observed:
+    cloud_substitutes_model: 1
+  likelihoods:
+    H1:
+      cloud_substitutes_model: 0.95
+      other: 0.05
+    H2:
+      cloud_substitutes_model: 0.1
+      other: 0.9
+    H3:
+      cloud_substitutes_model: 0.5
+      other: 0.5
+- name: 'ceiling in force per router: cloud pod litellm-6465f77567-kzjdc refused claude-opus-5-5
+    with "ceiling is 128,000" (3 log lines, 13:14:10); the laptop log has 146 lines
+    "ceiling is 200,000" and none "ceiling is 128,000"; bin/litellm-local:118 exports
+    200000, no cloud manifest sets ESTATE_MAX_INPUT_TOKENS'
+  observed:
+    ceilings_differ_by_router: 1
+  likelihoods:
+    H1:
+      ceilings_differ_by_router: 0.95
+      other: 0.05
+    H2:
+      ceilings_differ_by_router: 0.2
+      other: 0.8
+    H3:
+      ceilings_differ_by_router: 0.5
+      other: 0.5
+- name: 'client compaction: transcripts show compaction at 108k-145k in most sessions
+    (so the client does compact below both ceilings) and provider-reported inputs
+    of 226,774, 306,338 and 316,669 in two long sessions before it did'
+  observed:
+    compacts_in_most_sessions: 1
+  likelihoods:
+    H1:
+      compacts_in_most_sessions: 0.6
+      other: 0.4
+    H2:
+      compacts_in_most_sessions: 0.6
+      other: 0.4
+    H3:
+      compacts_in_most_sessions: 0.2
+      other: 0.8
+- name: 'cloud gateway ledger, from docs/diagnoses/2026-10-22-inline-tools-reach-the-alias-unfit.yaml:
+    four claude-opus-5-5 turns on the cloud pods (09:19:50, 09:19:54, 09:22:37, 09:26:49)
+    each answered 422 from the aliased deepseek leg ("Selected deployment: deepseek"),
+    with no claude deployment to fall back on. Added after the first three items scored
+    0.92; it is a separate observation from a different log, written with likelihoods
+    fixed before computing'
+  observed:
+    opus_turns_failed_on_deepseek_leg: 4
+  likelihoods:
+    H1:
+      opus_turns_failed_on_deepseek_leg: 0.9
+      other: 0.1
+    H2:
+      opus_turns_failed_on_deepseek_leg: 0.5
+      other: 0.5
+    H3:
+      opus_turns_failed_on_deepseek_leg: 0.5
+      other: 0.5
+posteriors:
+  H1: 0.9918861625
+  H2: 0.0015704202
+  H3: 0.0065434173
+winner: H1
+computed_at: '2026-10-22T14:05:29Z'
