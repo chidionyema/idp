@@ -147,3 +147,17 @@ def test_a_turn_that_stays_on_opus_keeps_its_inline_definition():
     data["messages"][-1]["content"][0]["text"] = PLAN
     assert g._route_model(data) == "claude-opus-5-5"
     assert data["messages"][0]["content"][0]["tool"]["type"] == "tool_definition"
+
+
+def test_a_turn_too_large_to_route_still_reaches_any_leg_by_reference():
+    # 2026-10-22: 0.86-2.7 MB turns kept claude-opus-5-5, the cloud alias sent them to deepseek,
+    # and the inline `tool_definition` answered 422 with no fallback group to catch it.
+    g = _gw()
+    data = _late_tool_turn()
+    data["messages"].append(
+        {"role": "user", "content": "x" * (g.EXECUTOR_MAX_BYTES + 1)}
+    )
+    g.proxy_handler_instance._anthropic_call(data, "anthropic_messages", 0.0)
+    assert data["model"] == "claude-opus-5-5"
+    assert "tool_definition" not in repr(data["messages"])
+    assert [t["name"] for t in data["tools"]] == ["Bash", "WebFetch"]
