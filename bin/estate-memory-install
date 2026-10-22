@@ -32,6 +32,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -247,6 +248,20 @@ def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
     return changes
 
 
+def commits_behind_main() -> int:
+    """How far this checkout is behind origin/main; 0 when git cannot say."""
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(HERE), "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return int(out.stdout) if out.returncode == 0 else 0
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return 0
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--check", action="store_true")
@@ -290,6 +305,13 @@ def main(argv: list[str]) -> int:
             print(
                 f"UNLOCKED {name:<12} {found} is installed and nothing holds it to a plan (#6675)"
             )
+    behind = commits_behind_main() if args.check and drift else 0
+    if behind:
+        print(
+            f"NOTE     this checkout is {behind} commits behind origin/main; the DRIFT above"
+            " may be the checkout, not the install. Re-run from a current main checkout.",
+            file=sys.stderr,
+        )
     return 1 if drift or refused else 0
 
 
