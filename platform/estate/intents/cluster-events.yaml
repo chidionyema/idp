@@ -8,18 +8,19 @@ args:
 steps:
   - name: events
     cmd: |
-      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s
-      -n {{namespace}} get events
-      --field-selector type=Warning
-      --sort-by='.lastTimestamp'
-      -o json 2>/dev/null | python3 -c "
-      import sys,json
-      d=json.load(sys.stdin)
-      evs=d.get('items',[])
+      # `-n ""` is not a valid kubectl flag, so an empty namespace means every namespace.
+      # `get events` no longer accepts --field-selector/--sort-by (kubectl routes it to the
+      # `events` verb), so the Warning filter and the ordering happen here.
+      ns='{{namespace}}'
+      if [ -n "$ns" ]; then nsflag="-n $ns"; else nsflag=-A; fi
+      KUBECONFIG={{kubeconfig}} kubectl --request-timeout=30s \
+        $nsflag get events -o json 2>/dev/null | python3 -c "
+      import json, sys
+      evs = [e for e in json.load(sys.stdin).get('items', []) if e.get('type') == 'Warning']
+      evs.sort(key=lambda e: e.get('lastTimestamp') or '')
       print(f'{len(evs)} warning events:')
       for e in evs[-20:]:
-      ts=e.get('lastTimestamp','')
-      msg=e.get('message','')[:80]
-      obj=e.get('involvedObject',{})
-      print(f'  {ts} {obj.get(\"kind\")}/{obj.get(\"name\")} — {msg}')
+          obj = e.get('involvedObject', {})
+          msg = e.get('message', '')[:80]
+          print(f\"  {e.get('lastTimestamp', '')} {obj.get('kind')}/{obj.get('name')} — {msg}\")
       "
