@@ -1,9 +1,9 @@
-"""Throwaway, run 3b: the run-3 variants on a GitHub runner, because Modal refused the job (spend limit).
+"""Throwaway, run 3c: prompt reuse and thread count for q8_0, on a GitHub runner (Modal is at its spend limit).
 
-Same engine, texts and checks as eval/yarngpt2_fast.py, 2 threads to match production's cpu=2.0.
-Measures quants (WER via Whisper), prompt-lookup speculative decoding (codes hash must equal the
-control's), and per-sentence timing. Container fan-out and cold start need Modal and are not here.
-Absolute seconds are the runner's, not Modal's: read the DELTAS against the control run in the same job.
+Run 3b settled the quant (q8_0) and rejected prompt lookup. This run asks the next two questions:
+how much of the speaker prompt is a reusable prefix (llama-cpp-python reuses the longest matching
+prefix between generate() calls), and what more threads buy, since a Modal core is a physical core
+and production's cpu=2.0 may be four threads. Per sentence, so the fan-out bound falls out directly.
 """
 
 import hashlib
@@ -86,10 +86,13 @@ class _Engine:
         self.loaded = (quant, lookup)
         return time.perf_counter() - t
 
+    def ids(self, text: str, voice: str) -> list[int]:
+        return self.tok.tokenize_prompt(self.tok.create_prompt(text, lang="english", speaker_name=voice))[0].tolist()
+
     def speak(self, text: str, voice: str) -> dict:
         import torch
 
-        ids = self.tok.tokenize_prompt(self.tok.create_prompt(text, lang="english", speaker_name=voice))[0].tolist()
+        ids = self.ids(text, voice)
         gen: list[int] = []
         first = None
         t0 = time.perf_counter()
@@ -125,43 +128,44 @@ def _wav_bytes(wav) -> bytes:
 
 
 def main() -> None:
-    out = pathlib.Path("yarngpt2-samples")
-    out.mkdir(exist_ok=True)
+    import os
+
+    import torch
+
+    ncpu = len(os.sched_getaffinity(0))
+    print("ENV", json.dumps({"cpu_count": os.cpu_count(), "usable": ncpu}), flush=True)
+    sents = SENTENCE.split(TEXTS["typical"])
     eng = _Engine(2)
+    ids = [eng.ids(s, "idera") for s in sents]
+    shared = min(len(os.path.commonprefix([ids[0], x])) for x in ids[1:])
+    print("PREFIX", json.dumps({"prompt_tokens": [len(x) for x in ids], "shared_prefix": shared}), flush=True)
     rows = []
-    for option, quant, lookup in (
-        ("A llama-q8_0", "q8_0", False),
-        ("B llama-q6_k", "q6_k", False),
-        ("B llama-q5_k_m", "q5_k_m", False),
-        ("C llama-q8_0+lookup", "q8_0", True),
-        ("A llama-q8_0 (again)", "q8_0", False),
-    ):
-        load_s = eng.load(quant, lookup)
-        for name, text in TEXTS.items():
-            r = eng.speak(text, "idera")
-            if "wav" in r:
-                heard = _say(r["wav"])
-                (out / f"{option.split()[0]}-{quant}{'-lookup' if lookup else ''}-{name}.wav").write_bytes(_wav_bytes(r.pop("wav")))
-                r.update(heard=heard, wer=_wer(text, heard))
-            r.update(option=option, text=name, load_s=round(load_s, 1))
-            rows.append(r)
-            print("BENCH", json.dumps({k: v for k, v in r.items() if k != "heard"}), flush=True)
-    # Per-sentence cost with the control: fan-out wall-clock is bounded below by the slowest one.
-    eng.load("q8_0")
-    per = []
-    for s in SENTENCE.split(TEXTS["typical"]):
-        r = eng.speak(s, "idera")
-        per.append({"sentence": s, "note_s": r.get("note_s"), "audio_s": r.get("audio_s"), "first_token_s": r.get("first_token_s")})
-        print("SENTENCE", json.dumps(per[-1]), flush=True)
-    (out / "report.json").write_text(json.dumps({"rows": rows, "per_sentence": per}, indent=2))
-    print("SUMMARY option                 text     note_s  audio_s tok/s  wer    codes_sha   load_s")
-    for r in rows:
-        if "error" in r:
-            print(f"SUMMARY {r['option']:<22} {r['text']:<8} ERROR {r['error']}")
-        else:
-            print(f"SUMMARY {r['option']:<22} {r['text']:<8} {r['note_s']:<7} {r['audio_s']:<7} {r['tok_per_s']:<6} {r['wer']:<6} {r['codes_sha']}  {r['load_s']}")
-    tot = sum(p["note_s"] or 0 for p in per)
-    print(f"SUMMARY typical note: one container {tot:.1f}s; fan-out lower bound (slowest sentence) {max(p['note_s'] or 0 for p in per):.1f}s; first audio {per[0]['note_s']}s")
+    for threads in sorted({2, 3, 4, ncpu}):
+        if threads > ncpu:
+            continue
+        torch.set_num_threads(threads)
+        eng.ncpu = threads
+        eng.load("q8_0")
+        for mode in ("cold", "warm"):  # cold: KV cache emptied first; warm: follows the previous sentence
+            for s in sents:
+                if mode == "cold":
+                    eng.llm.reset()
+                r = eng.speak(s, "idera")
+                r.pop("wav", None)
+                r.update(threads=threads, mode=mode, sentence=s[:24])
+                rows.append(r)
+                print("RUN", json.dumps(r), flush=True)
+    base = {r["sentence"]: r.get("codes_sha") for r in rows if r["threads"] == 2 and r["mode"] == "cold"}
+    print("SUMMARY threads mode  one_container_s  fanout_bound_s  first_audio_s  mean_first_token_s  same_codes_as_2cold")
+    for threads in sorted({r["threads"] for r in rows}):
+        for mode in ("cold", "warm"):
+            g = [r for r in rows if r["threads"] == threads and r["mode"] == mode]
+            ns = [r.get("note_s") or 0 for r in g]
+            same = all(base.get(r["sentence"]) == r.get("codes_sha") for r in g)
+            ft = sum(r.get("first_token_s") or 0 for r in g) / len(g)
+            print(f"SUMMARY {threads:<7} {mode:<5} {sum(ns):<16.1f} {max(ns):<15.1f} {ns[0]:<14.2f} {ft:<19.2f} {same}")
+    pathlib.Path("yarngpt2-samples").mkdir(exist_ok=True)
+    pathlib.Path("yarngpt2-samples/report-3c.json").write_text(json.dumps(rows, indent=2))
 
 
 if __name__ == "__main__":
