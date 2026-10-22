@@ -133,7 +133,15 @@ spec:
                 - { name: RESEARCH_PRODUCER_MODEL, value: "minimax" }
                 - { name: RESEARCH_VERIFIER_MODEL, value: "gemini" }
                 - { name: RESEARCH_EMBEDDING_MODEL, value: "embed" }
-                - { name: RESEARCH_RETRIEVER, value: "searx" }
+                # gpt-researcher splits RETRIEVER on commas and queries every name, so this is
+                # Exa leading with SearXNG alongside as the retriever that needs no key. The
+                # engine only exports SEARX_URL when RETRIEVER is exactly "searx", so it is set
+                # here directly for the comma form.
+                - { name: RESEARCH_RETRIEVER, value: "exa,searx" }
+                - { name: SEARX_URL, value: "http://searxng.searxng.svc.cluster.local:8080" }
+                - name: EXA_API_KEY
+                  valueFrom:
+                    secretKeyRef: { name: human-exa, key: EXA_API_KEY }
                 - { name: RESEARCH_WORKER_TIMEOUT_S, value: "300" }
                 - { name: HOME, value: "/state" }
               volumeMounts:
