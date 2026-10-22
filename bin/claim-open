@@ -44,7 +44,40 @@ import sys
 from datetime import datetime, timezone
 
 IDP = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GATE = os.path.join(IDP, "bin", "claim-gate")
+
+
+def resolve_repo() -> str:
+    """The checkout to measure and claim: the one you are standing in, not this script's repo.
+
+    2026-10-22. Every git call here used to run with `cwd=IDP`, the checkout the script lives in.
+    From a worktree that is the wrong tree: `bin/claim-open` in
+    ~/.estate/worktrees/epic-090 reported "change touches 13 file(s): web/app/case-studies/page.tsx
+    ..." -- none of them in the branch -- and refused on an old commit's claim (#6698) belonging to
+    another agent, because it had read the dev checkout's HEAD instead of the lane's. So no worktree
+    lane could declare itself, and the workaround was to hand-post the CLAIM comment and run
+    bin/claim-gate with GITHUB_REPOSITORY exported.
+
+    A claim is about a tree and a range, so the tree is the question: a git worktree knows its own
+    top level, and that is the answer in both cases (a worktree's top level is the worktree).
+    ESTATE_CLAIM_REPO overrides it for the odd caller that is not in the tree at all. The last
+    resort is this script's own repo, which keeps the old single-checkout behaviour intact.
+    """
+    explicit = os.environ.get("ESTATE_CLAIM_REPO", "").strip()
+    if explicit:
+        return os.path.abspath(explicit)
+    p = subprocess.run(  # noqa: S603, S607 -- fixed argv, no shell
+        ["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True
+    )
+    root = p.stdout.strip()
+    # Only a tree that can prove a claim is usable: a cwd inside some other repository (or no
+    # repository) falls back rather than claiming against files this script cannot gate.
+    if p.returncode == 0 and root and os.path.exists(os.path.join(root, "bin", "claim-gate")):
+        return root
+    return IDP
+
+
+REPO = resolve_repo()
+GATE = os.path.join(REPO, "bin", "claim-gate")
 
 # The two trailer regexes are claim-gate's own, copied deliberately rather than imported: a gate
 # that imports its writer can be made to agree with it by editing one file, and then a green gate
@@ -59,7 +92,7 @@ def run(cmd: list[str], **kw: object) -> subprocess.CompletedProcess[str]:
         cmd,  # noqa: S607
         capture_output=True,
         text=True,
-        cwd=IDP,
+        cwd=REPO,
         **kw,  # type: ignore[arg-type]
     )
 
@@ -225,7 +258,7 @@ def main() -> int:
     env = {**os.environ, "GITHUB_REPOSITORY": repo_slug}
     p = subprocess.run(  # noqa: S603 -- fixed argv; GATE is a path in this repo
         [GATE, base, "HEAD"],  # noqa: S607
-        capture_output=True, text=True, cwd=IDP, env=env,
+        capture_output=True, text=True, cwd=REPO, env=env,
     )
     sys.stdout.write(p.stdout)
     sys.stderr.write(p.stderr)
