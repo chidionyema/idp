@@ -1,0 +1,103 @@
+description: 'After #6841 (fit inline `tool_definition` to `tool_reference` for the
+  executor) deployed to the cloud router at 09:00-09:01Z on 2026-10-22, Claude Code
+  turns there still failed with 422 "unknown variant `tool_definition`, expected `tool_reference`"
+  and "No fallback model group found for original model_group=claude-opus-5-5" (09:19:50,
+  09:19:54, 09:22:37, 09:26:49). Question: do these turns skip the fit because they
+  are never routed (over EXECUTOR_MAX_BYTES they keep claude-opus-5-5), and then reach
+  a leg that refuses inline tools through the cloud alias claude-opus-5-5 -> deepseek,
+  so that fitting every turn in _anthropic_call ends it? Hypotheses and priors were
+  fixed from the error text and the deploy time before the pods, the ledger and the
+  live config were read.
+
+  '
+hypotheses:
+- name: H1
+  description: the fit runs only when _route_model changes the model; turns over EXECUTOR_MAX_BYTES
+    keep claude-opus-5-5, the cloud config aliases that to deepseek, and deepseek
+    refuses the unfit `tool_definition`; fitting every turn ends it
+  prior: 0.5
+- name: H2
+  description: '#6841 never reached the cloud pods (stale ConfigMap or pods not restarted),
+    so every turn is still unfit there; a redeploy is the fix and the code needs no
+    change'
+  prior: 0.25
+- name: H3
+  description: the 422 comes from another path that carries the original body past
+    the gateway (a fallback hop, the shadow call or the read shunt), not from the
+    turn's own leg; fitting in _anthropic_call changes nothing
+  prior: 0.25
+evidence:
+- name: both cloud pods (litellm-544cf58f88-2f52p started 09:01:33Z, -72z9x 09:00:22Z)
+    mount /etc/litellm/ceilings/efficiency_gateway.py containing _inline_tools_to_references
+    (2 occurrences each); Flux llm kustomization Ready at main 6b75bf0e2, which includes
+    580c1f629
+  observed:
+    fix_loaded_in_pod: 2
+  likelihoods:
+    H1:
+      fix_loaded_in_pod: 0.9
+      other: 0.1
+    H2:
+      fix_loaded_in_pod: 0.05
+      other: 0.95
+    H3:
+      fix_loaded_in_pod: 0.9
+      other: 0.1
+- name: 'cloud gateway ledger (~/.estate/efficiency-ledger.jsonl in each pod): every
+    422 lands within 1s of a `pre` row with model_requested=model=claude-opus-5-5
+    (not rerouted) and bytes_before over the 600,000 cap -- 857,906 and 864,013 (72z9x,
+    422 at 09:19:50/54), 1,054,783 and 906,492 (2f52p, 422 at 09:22:37/09:26:49).
+    Two other over-cap turns (2,648,104 and 2,710,511) did not 422; whether they carried
+    an inline tool is not recorded'
+  observed:
+    failing_turn_unrouted_over_cap: 4
+  likelihoods:
+    H1:
+      failing_turn_unrouted_over_cap: 0.9
+      other: 0.1
+    H2:
+      failing_turn_unrouted_over_cap: 0.4
+      other: 0.6
+    H3:
+      failing_turn_unrouted_over_cap: 0.4
+      other: 0.6
+- name: 'live cloud config litellm-config-9292885d74 has no claude/anthropic deployment
+    and model_group_alias claude-opus-5-5: deepseek (platform/llm/config.base.yaml:46-47,
+    #4063); the router log at 09:26:48 reads "get_available_deployment for model:
+    claude-opus-5-5, Selected deployment: deepseek" and the 422 follows at 09:26:49
+    from ageneric_api_call_with_fallbacks(model=claude-opus-5-5) -- the turn''s own
+    leg, before "Trying to fallback"'
+  observed:
+    own_leg_is_aliased_deepseek: 1
+  likelihoods:
+    H1:
+      own_leg_is_aliased_deepseek: 0.9
+      other: 0.1
+    H2:
+      own_leg_is_aliased_deepseek: 0.8
+      other: 0.2
+    H3:
+      own_leg_is_aliased_deepseek: 0.15
+      other: 0.85
+- name: 'unit test tests/test_router_enforces_opusplan.py::test_a_turn_too_large_to_route_still_reaches_any_leg_by_reference
+    drives _anthropic_call with an over-cap late-tool turn: on main the model stays
+    claude-opus-5-5 and the `tool_definition` block is forwarded unchanged (test fails);
+    with the fit on every turn it passes'
+  observed:
+    main_forwards_unfit_when_unrouted: 1
+  likelihoods:
+    H1:
+      main_forwards_unfit_when_unrouted: 0.95
+      other: 0.05
+    H2:
+      main_forwards_unfit_when_unrouted: 0.5
+      other: 0.5
+    H3:
+      main_forwards_unfit_when_unrouted: 0.5
+      other: 0.5
+posteriors:
+  H1: 0.9982635153
+  H2: 2.81212e-05
+  H3: 0.0017083635
+winner: H1
+computed_at: '2026-10-22T10:43:56Z'

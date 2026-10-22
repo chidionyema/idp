@@ -1482,6 +1482,10 @@ class EstateEfficiencyGateway(CustomLogger):
         data["model"] = _route_model(data)
         if data["model"] != requested:
             _fit_executor(data)
+        # Every turn, not only a routed one: a turn that keeps its model can still be served by a
+        # leg that refuses inline tools -- the cloud router aliases claude-opus-5-5 to deepseek, and
+        # turns over EXECUTOR_MAX_BYTES reached it as `tool_definition` and answered 422 (2026-10-22).
+        _inline_tools_to_references(data)
         msgs = data.get("messages") or []
         before = pre.get("bytes_before") or _json_bytes(msgs)
         conv = pre.get("conv") or _conversation_key(data, session)
