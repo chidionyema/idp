@@ -155,7 +155,11 @@ def test_audit_line_per_run_and_refusal(env):
             "status",
             "rc",
             "duration_ms",
+            # EPIC-IDP-090 S1: a run may carry arguments, and the audit has to show that it did
+            # without recording a value (a value can be a token). No arguments, empty list.
+            "arg_names",
         }
+        assert rec["arg_names"] == []
     assert [r["status"] for r in records] == ["pending_confirmation", "ok"]
     assert [r["rc"] for r in records] == [None, 0]
     assert [r["utterance"] for r in records] == ["run flux reconcile", "Yes."]
