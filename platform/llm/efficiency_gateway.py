@@ -157,6 +157,50 @@ def _fit_executor(data: dict) -> None:
     for t in data.get("tools") or []:
         if isinstance(t, dict):
             t.pop("defer_loading", None)
+    _inline_tools_to_references(data)
+
+
+def _inline_tools_to_references(data: dict) -> None:
+    """Rewrite each `tool_addition` carrying an inline `tool_definition` to a `tool_reference`,
+    and declare the definition once in `tools[]`.
+
+    Claude Code 2.1.307 sends a late tool inline (inline-tools-2026-09-15) only to the model it
+    asked for. Routed down to the executor, the same body answered 422 "unknown variant
+    `tool_definition`, expected `tool_reference`" -- and with no claude-* fallback group, the turn
+    simply failed (2026-10-21). This is the client's own fallback for that refusal ("declaring late
+    tools in tools[] and showing them by reference"), done here because the client never sees the
+    refusal: it asked for Opus, which would have accepted the block.
+    """
+    tools = data.get("tools")
+    declared = {
+        t.get("name") for t in tools or [] if isinstance(t, dict) and t.get("name")
+    }
+    added: list[dict] = []
+
+    def fit(blocks: Any) -> None:
+        if not isinstance(blocks, list):
+            return
+        for b in blocks:
+            if not isinstance(b, dict) or b.get("type") != "tool_addition":
+                continue
+            tool = b.get("tool")
+            if not isinstance(tool, dict) or tool.get("type") != "tool_definition":
+                continue
+            defn = tool.get("definition")
+            name = defn.get("name") if isinstance(defn, dict) else None
+            if not name:
+                continue
+            b["tool"] = {"type": "tool_reference", "name": name}
+            if name not in declared:
+                declared.add(name)
+                added.append({k: v for k, v in defn.items() if k != "defer_loading"})
+
+    fit(data.get("system"))
+    for m in data.get("messages") or []:
+        if isinstance(m, dict):
+            fit(m.get("content"))
+    if added:
+        data["tools"] = list(tools or []) + added
 
 
 def _route_model(data: dict) -> str:
