@@ -1074,6 +1074,9 @@ vendors:
       field: EXA_API_KEY
       bw: EXA_API_KEY
       entry: dagster-env
+    - ns: research
+      field: EXA_API_KEY
+      bw: EXA_API_KEY
   cursor:
     kind: secret
     secret: SEED_CURSOR_API_KEY
