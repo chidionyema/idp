@@ -14,7 +14,7 @@ on:
     - cron: "*/15 * * * *"
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "platform/estate-state/**"]
+    paths: [".github/workflows/estate-state.yml", "bin/idp-estate-state-build", "bin/idp-router-lanes", "bin/idp-reports-render", "bin/idp-image-builds", "platform/estate-state/**"]
 permissions:
   contents: read
   id-token: write   # traded for the OCI session that reads the receipts bucket and the App key
@@ -232,6 +232,25 @@ jobs:
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             > /dev/null
           echo "ok      estate-state signed and verified ${ref%:*}@$digest" | tee -a "$GITHUB_STEP_SUMMARY"
+  # EPIC-IDP-090 (2026-10-22): production served a fleetview-backend image built before every
+  # voice change the estate had landed, and nothing read the fact that the image build on main had
+  # FAILED -- the lane's ci grades the change and never builds an image, idp-deploy-lag grades the
+  # tag that exists, and the pod is Ready on the old build. This is the only row that asks whether
+  # the image main asked for was ever produced. It is its own job, not a step of `build`, so a red
+  # image build cannot skip `publish-reports` (needs: build) and leave the portal stale exactly
+  # when something is wrong.
+  image-builds:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: prove no image build main needs is stuck red (bin/idp-image-builds)
+        run: |
+          set -euo pipefail
+          python3 bin/idp-image-builds | tee -a "$GITHUB_STEP_SUMMARY"
   # crew#684 (founder 2026-09-01: "can we automate all reports, need report tab in Backstage"): the
   # portal's /reports page reads docs/reports/index.json through the /estate-state proxy, which
   # serves the state/live-diagram branch. This job puts the Flux report there every run and folds
