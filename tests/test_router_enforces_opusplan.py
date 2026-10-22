@@ -69,3 +69,81 @@ def test_a_context_too_large_for_the_executor_keeps_its_model():
     g = _gw()
     data = _req("claude-opus-5-5", "big", pad=g.EXECUTOR_MAX_BYTES + 1)
     assert g._route_model(data) == "claude-opus-5-5"
+
+
+def _late_tool_turn(model="claude-opus-5-5"):
+    """A turn shaped like Claude Code 2.1.307's inline-tools message: a late tool sent inline."""
+    defn = {
+        "name": "WebFetch",
+        "description": "fetch a url",
+        "input_schema": {"type": "object"},
+        "defer_loading": True,
+    }
+    return {
+        "model": model,
+        "tools": [{"name": "Bash", "input_schema": {"type": "object"}}],
+        "messages": [
+            {
+                "role": "system",
+                "content": [
+                    {
+                        "type": "tool_addition",
+                        "tool": {"type": "tool_definition", "definition": defn},
+                    },
+                    {
+                        "type": "tool_addition",
+                        "tool": {"type": "tool_reference", "name": "Bash"},
+                    },
+                    {
+                        "type": "tool_removal",
+                        "tool": {"type": "tool_reference", "name": "Old"},
+                    },
+                ],
+            },
+            {"role": "user", "content": [{"type": "text", "text": "go"}]},
+        ],
+    }
+
+
+def test_the_executor_gets_inline_tools_by_reference_never_by_definition():
+    g = _gw()
+    data = _late_tool_turn()
+    g._fit_executor(data)
+    blocks = data["messages"][0]["content"]
+    assert blocks[0] == {
+        "type": "tool_addition",
+        "tool": {"type": "tool_reference", "name": "WebFetch"},
+    }
+    assert blocks[1]["tool"] == {"type": "tool_reference", "name": "Bash"}
+    assert blocks[2]["tool"] == {"type": "tool_reference", "name": "Old"}
+    assert "tool_definition" not in repr(data["messages"])
+    assert [t["name"] for t in data["tools"]] == ["Bash", "WebFetch"]
+    assert "defer_loading" not in data["tools"][1]
+
+
+def test_a_tool_already_declared_is_not_declared_twice():
+    g = _gw()
+    data = _late_tool_turn()
+    data["tools"].append({"name": "WebFetch", "input_schema": {"type": "object"}})
+    g._fit_executor(data)
+    assert [t["name"] for t in data["tools"]].count("WebFetch") == 1
+    assert data["messages"][0]["content"][0]["tool"]["type"] == "tool_reference"
+
+
+def test_a_turn_gets_a_tools_list_only_when_it_needs_one():
+    g = _gw()
+    plain = _req("claude-opus-5-5", "hi")
+    g._fit_executor(plain)
+    assert "tools" not in plain
+    data = _late_tool_turn()
+    del data["tools"]
+    g._fit_executor(data)
+    assert [t["name"] for t in data["tools"]] == ["WebFetch"]
+
+
+def test_a_turn_that_stays_on_opus_keeps_its_inline_definition():
+    g = _gw()
+    data = _late_tool_turn()
+    data["messages"][-1]["content"][0]["text"] = PLAN
+    assert g._route_model(data) == "claude-opus-5-5"
+    assert data["messages"][0]["content"][0]["tool"]["type"] == "tool_definition"

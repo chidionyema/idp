@@ -1,0 +1,112 @@
+description: 'On 2026-10-21 Claude Code turns through the router failed with 422 "unknown
+  variant `tool_definition`, expected `tool_reference`" followed by LiteLLM''s "No
+  fallback model group found for original model_group=claude-opus-5-5". Question:
+  is the refusal caused by the body the router forwards (inline-tools `tool_addition`
+  blocks carrying a `tool_definition`, which the routed leg does not accept), so that
+  rewriting them to `tool_reference` and declaring the definition in tools[] in _fit_executor
+  ends it? Hypotheses and likelihoods were fixed from the error text and the incident
+  record (estate memory incident.router-422-tool_definition) before the client binary
+  and LiteLLM were read.
+
+  '
+hypotheses:
+- name: H1
+  description: the routed leg refuses inline-tools blocks (the body schema knows only
+    `tool_reference`, and the inline-tools beta does not reach it), so the turn fails
+    on the body itself; fitting each `tool_definition` to a `tool_reference` with
+    the definition declared in tools[] makes the same turn acceptable
+  prior: 0.4
+- name: H2
+  description: the body is fine and the turn failed because claude-opus-5-5 has no
+    fallback group; adding an opus->sonnet fallback in config.runtime.yaml is the
+    fix and the body rewrite changes nothing
+  prior: 0.3
+- name: H3
+  description: the refusal is the client's own capability negotiation and never a
+    router matter; Claude Code recovers by itself and the router needs no change
+  prior: 0.3
+evidence:
+- name: 'the refusal text is a serde enum error, "unknown variant `tool_definition`,
+    expected `tool_reference`": a body-shape rejection at deserialisation, before
+    any model or fallback is consulted'
+  observed:
+    body_shape_rejection: 1
+  likelihoods:
+    H1:
+      body_shape_rejection: 0.9
+      other: 0.1
+    H2:
+      body_shape_rejection: 0.15
+      other: 0.85
+    H3:
+      body_shape_rejection: 0.6
+      other: 0.4
+- name: 'Claude Code 2.1.307 binary: late tools are sent as `tool_addition`/`tool_definition`
+    blocks only under anthropic-beta inline-tools-2026-09-15, and the client''s own
+    fallback for a 400/422 matching /Input tag ''tool_definition''/ is to declare
+    the tools in tools[] and show them by reference -- the rewrite _fit_executor now
+    does'
+  observed:
+    client_fallback_is_reference_rewrite: 1
+  likelihoods:
+    H1:
+      client_fallback_is_reference_rewrite: 0.85
+      other: 0.15
+    H2:
+      client_fallback_is_reference_rewrite: 0.3
+      other: 0.7
+    H3:
+      client_fallback_is_reference_rewrite: 0.7
+      other: 0.3
+- name: 'LiteLLM 1.98.0 anthropic_beta_headers_manager.filter_and_transform_beta_headers
+    drops inline-tools-2026-09-15 (not in its allow-list); measured 2026-09-26, request
+    req_011CfS9jvN3PuvMhUBVz8cnD answered 400 "tool_addition blocks require anthropic-beta:
+    inline-tools-2026-09-15" through the router'
+  observed:
+    router_strips_the_beta: 1
+  likelihoods:
+    H1:
+      router_strips_the_beta: 0.85
+      other: 0.15
+    H2:
+      router_strips_the_beta: 0.3
+      other: 0.7
+    H3:
+      router_strips_the_beta: 0.1
+      other: 0.9
+- name: 'the founder saw the failure end the turn: the client did not recover by itself
+    (it asked for Opus, so its negotiation never saw the refusal of the leg the router
+    chose)'
+  observed:
+    turn_ended_on_error: 1
+  likelihoods:
+    H1:
+      turn_ended_on_error: 0.8
+      other: 0.2
+    H2:
+      turn_ended_on_error: 0.8
+      other: 0.2
+    H3:
+      turn_ended_on_error: 0.1
+      other: 0.9
+- name: config.runtime.yaml has no fallbacks entry for any claude-* group, and "No
+    fallback model group found" is the suffix LiteLLM appends to every failed call
+    on such a group, whatever the first error was
+  observed:
+    suffix_is_generic: 1
+  likelihoods:
+    H1:
+      suffix_is_generic: 0.9
+      other: 0.1
+    H2:
+      suffix_is_generic: 0.3
+      other: 0.7
+    H3:
+      suffix_is_generic: 0.9
+      other: 0.1
+posteriors:
+  H1: 0.9888793841
+  H2: 0.005132592
+  H3: 0.005988024
+winner: H1
+computed_at: '2026-10-22T08:22:28Z'
