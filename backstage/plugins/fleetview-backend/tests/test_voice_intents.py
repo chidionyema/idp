@@ -271,3 +271,23 @@ def test_a_json_answer_is_spoken_by_its_summary(env):
     )
     r = vi.handle("check ci status", "s9")
     assert r["text"] == "CI on main: 38 passed, all green."
+
+
+def test_catalogue_lists_arg_free_intents_with_read_only_flag(env):
+    cat = {c["name"]: c for c in vi.catalogue()}
+    assert "ci-status" in cat and cat["ci-status"]["read_only"] is True
+    assert cat["flux-reconcile"]["read_only"] is False
+    # an intent that needs an argument, and a malformed file, are not offered
+    assert "git.branch" not in cat and "broken" not in cat
+    assert [c["name"] for c in vi.catalogue()] == sorted(cat)
+
+
+def test_catalogue_is_empty_not_an_error_when_the_directory_is_missing(env, tmp_path):
+    assert vi.catalogue(tmp_path / "nope") == []
+
+
+def test_catalogue_route(env, client):
+    r = client.get("/voice/intents")
+    assert r.status_code == 200
+    names = [i["name"] for i in r.json()["intents"]]
+    assert "ci-status" in names and "git.branch" not in names

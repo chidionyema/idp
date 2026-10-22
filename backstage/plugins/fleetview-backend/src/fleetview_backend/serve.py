@@ -737,6 +737,16 @@ def build_app() -> FastAPI:
         body, status = await loop.run_in_executor(None, routes.key_sync_envelope)
         return JSONResponse(content=body, status_code=status)
 
+    @app.get("/voice/intents")
+    async def voice_intents_catalogue():
+        """The intents the voice can run, for the Face's command deck."""
+        from fleetview_backend import voice_intents as vi
+
+        loop = asyncio.get_running_loop()
+        return JSONResponse(
+            content={"intents": await loop.run_in_executor(None, vi.catalogue)}
+        )
+
     @app.post("/voice/intent")
     async def voice_intent(request: Request):
         """Utterance -> committed estate intent. 204 when it names none: the brain answers."""
