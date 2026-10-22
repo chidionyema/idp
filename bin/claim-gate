@@ -32,10 +32,14 @@ agent claims, nobody else holds those files.
 Writing one of these is mechanical, so it is a command: bin/claim-open makes all of it true and
 then runs this gate. An agent should not have to rediscover the contract by being refused.
 
-Two exemptions, neither of which trusts a git author name (anyone can type one):
+Three exemptions, none of which trusts a git author name (anyone can type one):
   - a change whose every added and removed line carries a Flux `$imagepolicy` marker: it can only
     move image tags, the image-automation controller's job (it commits as the same
     estate-agents[bot] identity the agents use, so the name proves nothing);
+  - a change whose every changed path is a dependency manifest or lockfile (dependency_pin_only):
+    a bumped pin cannot carry product code, and this is judged from the diff itself, so it holds
+    on the Greenlane's lane path where no pull request exists to report an author (see
+    2026-10-22 below);
   - a pull request GitHub itself reports as opened by dependabot[bot] ($PR_AUTHOR).
 
 The Greenlane lands work by pushing queue/<batch>: one squashed commit per lane whose message keeps
@@ -134,6 +138,81 @@ def lane_text(base: str, lane_head: str, squash: str) -> str:
     if has_commit(lane_head):
         return git("log", "--format=%B", f"{base}..{lane_head}")
     return git("log", "-1", "--format=%B", squash)
+
+
+# Paths a dependency bot touches whose content cannot execute at all.
+DEPENDENCY_ONLY = re.compile(
+    r"^(?:.*/)?(?:requirements[^/]*\.txt|constraints[^/]*\.txt|"
+    r"[^/]*\.lock|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|"
+    r"go\.mod|go\.sum|uv\.lock|poetry\.lock|Pipfile\.lock|Cargo\.lock|composer\.lock)$"
+)
+
+# A manifest that can carry code, allowed only when the diff of it is a pin: a `"name": "range"`
+# line or a brace/comma. A `"scripts": {` line -- and any lifecycle hook -- is not allowed, so a
+# change that adds `"postinstall"` still needs a claim. `pyproject.toml`, `Cargo.toml`, `Gemfile`
+# and `Pipfile` are not listed: their pin syntax is not JSON and a mistake there is a code path, so
+# a lane touching one falls through to the claim check.
+MANIFESTS_WITH_HOOKS = re.compile(r"^(?:.*/)?package\.json$")
+MANIFEST_PIN_LINE = re.compile(r'^[+-]\s*"[^"]+"\s*:\s*"[^"]*"\s*,?\s*$')
+MANIFEST_HOOK_LINE = re.compile(
+    r'^[+-]\s*"(?:(?:pre|post)?(?:install|pack|publish|version)|prepare|prepublishOnly|'
+    r'scripts|dependencies|devDependencies|peerDependencies|optionalDependencies)"\s*:',
+    re.I,
+)
+STRUCTURAL_LINE = re.compile(r"^[+-]\s*[{}\[\],]*\s*$")
+
+
+def _lines_by_file(diff: str) -> dict[str, list[str]]:
+    """The changed (+) and removed (-) lines of a diff, attributed to the file they belong to."""
+    out: dict[str, list[str]] = {}
+    current = ""
+    for ln in diff.splitlines():
+        if ln.startswith("diff --git "):
+            current = ln.split(" b/", 1)[-1]
+            out.setdefault(current, [])
+            continue
+        if ln.startswith(("+++", "---")) or not current:
+            continue
+        if ln[:1] in "+-":
+            out[current].append(ln)
+    return out
+
+
+def _manifest_is_a_pin(lines: list[str]) -> bool:
+    if not lines or any(MANIFEST_HOOK_LINE.match(ln) for ln in lines):
+        return False
+    return all(MANIFEST_PIN_LINE.match(ln) or STRUCTURAL_LINE.match(ln) for ln in lines)
+
+
+def dependency_pin_only(files: list[str], diff: str = "") -> bool:
+    """Every changed path is a dependency pin: the bots' own work, which belongs to nobody's claim.
+
+    Measured 2026-10-22 on refs/greenlane/state: 156 of the last 200 queue batches were red, and
+    the failing rung was claim-gate on `lane/dependabot/...` lanes -- `lane b4fa355f7: no `Claim:
+    <owner>/<repo>#<n>` line` -- while their pull requests are open and authored by
+    dependabot[bot]. The exemption the gate already documents never fired there: it is keyed on
+    $PR_AUTHOR, CI's pull_request event, and the Greenlane judges a LANE, which carries no pull
+    request at all. One red batch costs a whole CI run plus a bisection, so four dependency lanes
+    were eating the queue and real work sat behind them.
+
+    This is the same shape as image_bump_only and runner_pin_only: decide it from the diff, so it
+    cannot depend on which event is running the gate and it cannot be wrong about who typed what.
+    Two kinds of path qualify: files whose content cannot execute at all (lockfiles, go.mod/go.sum,
+    requirements/constraints text), and `package.json` when its diff is nothing but a version pin --
+    dependabot's npm lanes change package.json next to yarn.lock, and refusing those keeps the
+    queue red forever. Everything else (a workflow, a Dockerfile, a source file, a manifest that
+    adds a script or a lifecycle hook) falls through to the claim check as before.
+    """
+    if not files:
+        return False
+    changed = _lines_by_file(diff) if diff else {}
+    for f in files:
+        if DEPENDENCY_ONLY.match(f):
+            continue
+        if MANIFESTS_WITH_HOOKS.match(f) and _manifest_is_a_pin(changed.get(f, [])):
+            continue
+        return False
+    return True
 
 
 def image_bump_only(diff: str) -> bool:
@@ -266,12 +345,11 @@ def judge(
     if commits and all(m for _, m in lanes):
         problems: list[str] = []
         for c, m in lanes:
-            if image_bump_only(git("show", "--format=", c)):
+            diff = git("show", "--format=", c)
+            if image_bump_only(diff):
                 continue
-            if runner_pin_only(git("show", "--format=", c)):
+            if runner_pin_only(diff):
                 continue
-            lane_head = m.group(1)
-            text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
             files = [
                 f
                 for f in git(
@@ -279,17 +357,24 @@ def judge(
                 ).split("\n")
                 if f
             ]
+            if dependency_pin_only(files, diff):
+                continue
+            lane_head = m.group(1)
+            text = lane_text(base, lane_head, c) + "\n" + lane_body(repo, lane_head, c)
             problems += [
                 f"lane {lane_head[:9]}: {p}"
                 for p in verdict(text, files, repo, fetch, now)
             ]
         return problems
-    if image_bump_only(git("diff", f"{base}...{head}")):
+    diff = git("diff", f"{base}...{head}")
+    if image_bump_only(diff):
         return []
-    if runner_pin_only(git("diff", f"{base}...{head}")):
+    if runner_pin_only(diff):
+        return []
+    files = [f for f in git("diff", "--name-only", f"{base}...{head}").split("\n") if f]
+    if dependency_pin_only(files, diff):
         return []
     text = git("log", "--format=%B", f"{base}..{head}") + "\n" + pr_body
-    files = [f for f in git("diff", "--name-only", f"{base}...{head}").split("\n") if f]
     return verdict(text, files, repo, fetch, now)
 
 
