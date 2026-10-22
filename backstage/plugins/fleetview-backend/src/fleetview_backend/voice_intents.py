@@ -1,6 +1,14 @@
-"""Voice to intent: an utterance that names a committed, arg-free estate intent
-runs it through estate-execute. Deterministic (no LLM). None = not an intent;
-the brain answers.
+"""Voice to intent: an utterance that names a committed estate intent runs it through
+estate-execute. Deterministic (no LLM). None = not an intent; the brain answers.
+
+ARGUMENTS (2026-10-22, EPIC-IDP-090 S1). Until this file knew about arguments, `execute()` called
+`[exe, intent]` and never anything else -- so an intent that declares `args` had those declarations
+read by nobody and passed by nothing, and the spoken path could only ever reach the 64 intents whose
+every argument has a default. Now the arguments are a schema: `intent_args()` reads them out of the
+intent YAML, `input_schema()` renders them as an MCP-shaped JSON Schema for the Face and for any
+speech brain that wants to fill them, and `execute()` turns supplied values into `--k=v` argv. The
+allow-list did not move: only an argument the intent itself declares can be passed, values must be
+scalars, the name must be a committed intent, and the READ_ONLY/confirmation rule is unchanged.
 """
 
 from __future__ import annotations
@@ -39,7 +47,7 @@ _CUES = {
     "pending_confirmation": ("shield_flash", "warn"),
     "cancelled": ("comet_spawn", "info"),
 }
-_PENDING: dict[str, tuple[str, float]] = {}
+_PENDING: dict[str, tuple[str, float, dict[str, str] | None]] = {}
 _PENDING_TASK: dict[str, str] = {}
 _LOCK = threading.Lock()
 
@@ -239,31 +247,113 @@ def load_catalog(directory: str | Path | None = None) -> list[str]:
     return sorted(names)
 
 
-def description(name: str, directory: str | Path | None = None) -> str:
-    """The intent's own `description`, one line, for the voice operator to speak."""
+def load_all(directory: str | Path | None = None) -> list[str]:
+    """Every committed intent, including the ones the spoken path cannot reach by name alone.
+
+    `load_catalog()` is what an utterance may name: arg-free, so speech never has to fill a value.
+    This is what a caller that *brings* the values may name. It is still only ever a name that
+    exists in the committed directory -- nothing here reads words out of an utterance.
+    """
+    directory = Path(directory) if directory is not None else default_dir()
+    if not directory.is_dir():
+        return []
+    names = []
+    for path in sorted(directory.glob("*.yaml")):
+        doc = intent_doc(path.stem, directory)
+        name = doc.get("name") or path.stem
+        if isinstance(name, str) and name:
+            names.append(name)
+    return sorted(set(names))
+
+
+def intent_path(name: str, directory: str | Path | None = None) -> Path | None:
+    """The committed YAML for one intent name, or None. One resolver, so `description`,
+    `intent_args` and `known` can never disagree about what this catalogue contains."""
     directory = Path(directory) if directory is not None else default_dir()
     for stem in (name, name.replace(".", "-")):
         path = directory / f"{stem}.yaml"
         if path.is_file():
-            try:
-                doc = yaml.safe_load(path.read_text())
-            except (OSError, yaml.YAMLError):
-                return ""
-            desc = doc.get("description") if isinstance(doc, dict) else None
-            return " ".join(str(desc).split())[:200] if desc else ""
-    return ""
+            return path
+    return None
+
+
+def intent_doc(name: str, directory: str | Path | None = None) -> dict:
+    path = intent_path(name, directory)
+    if path is None:
+        return {}
+    try:
+        doc = yaml.safe_load(path.read_text())
+    except (OSError, yaml.YAMLError):
+        return {}
+    return doc if isinstance(doc, dict) else {}
+
+
+def known(name: str, directory: str | Path | None = None) -> bool:
+    """Is this a committed intent? A name from speech or from a deck is only ever run when it is."""
+    return intent_path(name, directory) is not None
+
+
+def intent_args(name: str, directory: str | Path | None = None) -> dict[str, dict]:
+    """The arguments this intent declares, exactly as its YAML declares them.
+
+    `{arg: {type, description, default, ...}}`. This is the only source of truth for what may be
+    passed: `execute()` refuses anything not in here, so an argument cannot be smuggled in by an
+    utterance, a deck click or a caller of the API.
+    """
+    args = intent_doc(name, directory).get("args") or {}
+    if not isinstance(args, dict):
+        return {}
+    return {k: v for k, v in args.items() if isinstance(k, str) and isinstance(v, dict)}
+
+
+def input_schema(name: str, directory: str | Path | None = None) -> dict:
+    """The intent's arguments as an MCP-shaped JSON Schema (type object, properties, required).
+
+    Same shape a model already knows how to fill, so "run ci-status for repo idp" can be turned
+    into `{repo: idp}` by whatever is listening, and the Face's deck can render a field per
+    property without a second description of the same intent living in TypeScript.
+    """
+    props: dict[str, dict] = {}
+    required: list[str] = []
+    for arg, spec in intent_args(name, directory).items():
+        typ = spec.get("type") or "string"
+        prop: dict = {"type": typ if isinstance(typ, str) else "string"}
+        desc = spec.get("description")
+        if desc:
+            prop["description"] = " ".join(str(desc).split())[:200]
+        if "default" in spec:
+            prop["default"] = spec["default"]
+        else:
+            required.append(arg)
+        props[arg] = prop
+    return {"type": "object", "properties": props, "required": required}
+
+
+def description(name: str, directory: str | Path | None = None) -> str:
+    """The intent's own `description`, one line, for the voice operator to speak."""
+    desc = intent_doc(name, directory).get("description")
+    return " ".join(str(desc).split())[:200] if desc else ""
 
 
 def catalogue(directory: str | Path | None = None) -> list[dict]:
     """What the estate can do by voice, for the Face's command deck: every arg-free intent with its
-    own one-line description and whether it runs on the first utterance (read-only) or waits for a
-    spoken yes. The same load_catalog() the matcher uses, so the deck can never offer a command the
-    voice would not run."""
+    own one-line description, whether it runs on the first utterance (read-only) or waits for a
+    spoken yes, and the arguments it takes. The same load_catalog() the matcher uses, so the deck
+    can never offer a command the voice would not run by name alone.
+
+    `args` and `inputSchema` are what make the deck more than a list of buttons: an intent that
+    takes `repo` or `pr` says so here, in the intent's own words, instead of every caller carrying
+    a hardcoded idea of the shape. Intents whose arguments have no defaults are deliberately still
+    absent from this list -- they are reachable when a caller supplies the arguments, not by an
+    utterance that names them and nothing else.
+    """
     return [
         {
             "name": name,
             "description": description(name, directory),
             "read_only": name in READ_ONLY,
+            "args": intent_args(name, directory),
+            "inputSchema": input_schema(name, directory),
         }
         for name in load_catalog(directory)
     ]
@@ -384,15 +474,58 @@ def _on_laptop(
     return ran
 
 
-def execute(intent: str) -> tuple[str, str, int | None, int]:
+def arg_value(value: object) -> str | None:
+    """One argument, as the single argv word it will be, or None when it is not a scalar.
+
+    `--k=v` is one argv element handed to subprocess without a shell, so a value cannot become a
+    second command; the scalar rule is the second half of that: a dict or a list has no meaning to
+    an intent and is refused rather than stringified into something surprising.
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (str, int, float)):
+        return str(value)
+    return None
+
+
+def build_argv(
+    exe: str, intent: str, args: dict | None, directory: str | Path | None = None
+) -> list[str]:
+    """argv for one intent: `[exe, intent, --k=v ...]`, only for arguments the intent declares.
+
+    Raises ValueError for an undeclared argument or a non-scalar value. The caller reports that as
+    an intent error, so a bad argument is a spoken refusal, never a partially-run command.
+    """
+    declared = intent_args(intent, directory)
+    argv = [exe, intent]
+    for key in sorted(args or {}):
+        if key not in declared:
+            raise ValueError(f"{_spoken(intent)} takes no {key}")
+        value = arg_value(args[key])
+        if value is None:
+            raise ValueError(f"{key} has to be a single value")
+        argv.append(f"--{key}={value}")
+    return argv
+
+
+def execute(
+    intent: str,
+    args: dict | None = None,
+    directory: str | Path | None = None,
+) -> tuple[str, str, int | None, int]:
     exe = executor()
     if exe is None:
         return ("error", "Intents run on the laptop only.", None, 0)
+    try:
+        # argv list, no shell; intent is a name from the committed catalog, never words from
+        # speech, and each argument is one argv word only if the intent declares it.
+        argv = build_argv(exe, intent, args, directory)
+    except ValueError as exc:
+        return ("error", str(exc)[:160], 2, 0)
     t0 = time.monotonic()
     try:
-        # argv list, no shell; intent is a name from the committed catalog, never words from speech.
         proc = subprocess.run(  # noqa: S603
-            [exe, intent],
+            argv,
             capture_output=True,
             text=True,
             timeout=EXEC_TIMEOUT_S,
@@ -415,7 +548,9 @@ def execute(intent: str) -> tuple[str, str, int | None, int]:
     return ("error", text, proc.returncode, dur)
 
 
-def _audit(session_id, utterance, intent, status, rc, duration_ms) -> None:
+def _audit(session_id, utterance, intent, status, rc, duration_ms, args=None) -> None:
+    """One line per turn. Argument NAMES are recorded, never their values: what was asked for is
+    evidence, and a value can be a token."""
     path = Path(
         os.path.expanduser(
             os.environ.get("FLEETVIEW_INTENT_LOG") or "~/.estate/voice-intents.jsonl"
@@ -432,6 +567,7 @@ def _audit(session_id, utterance, intent, status, rc, duration_ms) -> None:
                 "status": status,
                 "rc": rc,
                 "duration_ms": duration_ms,
+                "arg_names": sorted(args or {}),
             }
         )
         with path.open("a") as f:
@@ -440,7 +576,15 @@ def _audit(session_id, utterance, intent, status, rc, duration_ms) -> None:
         pass
 
 
-def handle(text: str, session_id: str) -> dict | None:
+def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
+    """One utterance (or one deck command) to an intent result.
+
+    `args` is how a caller that is not speaking fills an intent's declared arguments -- the Face's
+    deck, or a controller. It never widens what may run: the name must still be a committed intent,
+    the intent must still declare each argument, and a non-read-only intent still waits for a
+    spoken yes, which is now read back with its arguments so the founder hears what they are
+    confirming.
+    """
     norm = normalise(text)
     now = time.monotonic()
     with _LOCK:
@@ -448,16 +592,17 @@ def handle(text: str, session_id: str) -> dict | None:
         pend_task = _PENDING_TASK.pop(session_id, "")
     if pend and now - pend[1] <= PENDING_TTL_S:
         name = pend[0]
+        pend_args = pend[2] if len(pend) > 2 else None
         if name == AGENT_JOB and norm in YES:
             return _send_agent_job(session_id, text, pend_task)
         if name == CONCIERGE and norm in YES:
             return _send_concierge(session_id, text, pend_task)
         if norm in YES:
-            status, msg, rc, dur = execute(name)
-            _audit(session_id, text, name, status, rc, dur)
+            status, msg, rc, dur = execute(name, pend_args)
+            _audit(session_id, text, name, status, rc, dur, pend_args)
             return result(name, status, msg)
         if norm in NO:
-            _audit(session_id, text, name, "cancelled", None, 0)
+            _audit(session_id, text, name, "cancelled", None, 0, pend_args)
             return result(name, "cancelled", f"Cancelled {_spoken(name)}.")
 
     url = laptop_url() if executor() is None else ""
@@ -474,18 +619,34 @@ def handle(text: str, session_id: str) -> dict | None:
     if task is not None:
         return _concierge(session_id, text, task, now)
 
-    name = match(text, load_catalog())
+    catalog = load_catalog()
+    name = match(text, catalog)
+    if name is None and args:
+        # a caller that brings the values may name an intent the spoken path cannot reach, because
+        # speech alone cannot supply a required argument. Still a committed name, never free words.
+        name = match(text, load_all())
     if name is None:
         return None
+    if args:
+        declared = intent_args(name)
+        bad = sorted(k for k in args if k not in declared)
+        if bad:
+            _audit(session_id, text, name, "error", 2, 0, args)
+            return result(name, "error", f"{_spoken(name)} takes no {bad[0]}.")
     if url:
         return _on_laptop(url, text, session_id, name, now)
 
     if name not in READ_ONLY:
         with _LOCK:
-            _PENDING[session_id] = (name, now)
-        _audit(session_id, text, name, "pending_confirmation", None, 0)
-        return result(name, "pending_confirmation", f"Run {name}? Say yes to confirm.")
+            _PENDING[session_id] = (name, now, args or None)
+        _audit(session_id, text, name, "pending_confirmation", None, 0, args)
+        with_what = ""
+        if args:
+            with_what = " with " + ", ".join(f"{k} {args[k]}" for k in sorted(args))
+        return result(
+            name, "pending_confirmation", f"Run {name}{with_what}? Say yes to confirm."
+        )
 
-    status, msg, rc, dur = execute(name)
-    _audit(session_id, text, name, status, rc, dur)
+    status, msg, rc, dur = execute(name, args)
+    _audit(session_id, text, name, status, rc, dur, args)
     return result(name, status, msg)

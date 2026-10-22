@@ -739,7 +739,9 @@ def build_app() -> FastAPI:
 
     @app.get("/voice/intents")
     async def voice_intents_catalogue():
-        """The intents the voice can run, for the Face's command deck."""
+        """The intents the voice can run, for the Face's command deck: each with its own
+        description, whether it is read-only, and the arguments it declares (`args` plus an
+        MCP-shaped `inputSchema`) so the deck can ask for values the intent itself describes."""
         from fleetview_backend import voice_intents as vi
 
         loop = asyncio.get_running_loop()
@@ -749,7 +751,12 @@ def build_app() -> FastAPI:
 
     @app.post("/voice/intent")
     async def voice_intent(request: Request):
-        """Utterance -> committed estate intent. 204 when it names none: the brain answers."""
+        """Utterance -> committed estate intent. 204 when it names none: the brain answers.
+
+        `intent` + `args` is the same door for a caller that is not speaking (the Face's deck, a
+        controller): the name is still resolved against the committed catalog and each argument
+        must be one the intent declares, so a deck click buys nothing an utterance could not.
+        """
         from fleetview_backend import voice_intents as vi
 
         try:
@@ -759,10 +766,15 @@ def build_app() -> FastAPI:
         if not isinstance(body, dict):
             body = {}
         text = str(body.get("text") or "")
+        intent = str(body.get("intent") or "").strip()
+        raw_args = body.get("args")
+        args = raw_args if isinstance(raw_args, dict) and raw_args else None
         session_id = str(body.get("session_id") or "")
         # handle() may run a subprocess for up to 120s: off the event loop, like /voice/stream.
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, vi.handle, text, session_id)
+        result = await loop.run_in_executor(
+            None, vi.handle, intent or text, session_id, args
+        )
         if result is None:
             return Response(status_code=204)
         return JSONResponse(content=result)
