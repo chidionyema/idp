@@ -54,6 +54,7 @@ sys.path.insert(
     ),
 )
 import focus  # noqa: E402
+import handback  # noqa: E402
 import plan  # noqa: E402
 
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
@@ -260,6 +261,25 @@ def plan_gate(data: dict) -> int:
     return 0
 
 
+def handback_gate(text: str, sid: str) -> bool:
+    """True when the turn ends by handing work back and a block decision was printed.
+
+    The founder wants workers that drive a feature to operational and proven, not narrators that
+    close with "still open" or "want me to...?" (platform/estate/memory/handback.py). Fails open:
+    a detector fault must never take a session down.
+    """
+    try:
+        verdict = handback.judge_transcript(text)
+    except Exception as e:
+        record("stop", "unknown", f"handback: {type(e).__name__}: {str(e)[:100]}", session=sid)
+        return False
+    if not verdict["block"]:
+        return False
+    record("stop", "refuse", "handed work back", session=sid, found=verdict["found"][:3])
+    print(json.dumps({"decision": "block", "reason": verdict["reason"]}))
+    return True
+
+
 def stop(data: dict) -> int:
     sid = data.get("session_id", "")
     if data.get("stop_hook_active"):
@@ -267,6 +287,8 @@ def stop(data: dict) -> int:
     text = transcript_text(data)
     if text is None:
         record("stop", "unknown", "transcript unreadable", session=sid)
+        return 0
+    if handback_gate(text, sid):
         return 0
     paths = edited_paths(text)
     if not paths:
