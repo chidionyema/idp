@@ -226,18 +226,29 @@ jobs:
   # leg is a pass -- it is skipped only when gate or verify failed, and those publish their own red
   # -- which is what the single job reported before the split. `!cancelled()`, not always(): a run
   # superseded on its branch stays cancelled, as before, instead of posting a red over it.
+  #
+  # PORTAL-PHONE IS ADVISORY HERE (2026-10-22, founder-approved, #6840). The phone suite drives the
+  # DEPLOYED portal (PLAYWRIGHT_URL above), not this change's code, so before merge it judges
+  # production, not the lane. Measured: live /face crashed with React #310 (FaceFindingsStrip
+  # called useNow() after an early return, #6790), and every lane touching backstage/ -- b3583,
+  # b3585, b3589, b3591, b3602, the last carrying the fix itself -- went red on that same live
+  # crash. The fix could not land while production lacked it. So a phone failure is printed as a
+  # warning and portal-phone keeps its own red check; only portal-build decides this context.
+  # Follow-up: run the phone suite after deploy, where its verdict is about the release.
   portal-app:
     needs: [portal-build, portal-phone]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     steps:
-      - name: the portal built, tested, and a phone was served it
+      - name: the portal built and tested (the phone run against the live portal is advisory)
         run: |
           set -euo pipefail
           build='${{ needs.portal-build.result }}'
           phone='${{ needs.portal-phone.result }}'
           echo "portal-build: $build"
           echo "portal-phone: $phone"
-          for r in "$build" "$phone"; do
-            case "$r" in success|skipped) ;; *) exit 1 ;; esac
-          done
+          case "$phone" in
+            success|skipped) ;;
+            *) echo "::warning title=portal-phone ${phone}::the phone suite against the deployed portal did not pass; it judges production, not this change" ;;
+          esac
+          case "$build" in success|skipped) ;; *) exit 1 ;; esac
