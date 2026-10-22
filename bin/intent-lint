@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""bin/intent-lint — every intent on disk can run its own script.
+
+WHAT THIS PROVES. Each YAML under platform/estate/intents declares steps the executor runs as
+shell. This reads each step the way the executor will see it — placeholders (`{{name}}`,
+`<<name>>`) replaced with a dummy word — and asks two questions that need no cluster, no network
+and no side effect:
+
+  1. does the step parse as shell (`bash -n`)?
+  2. does every `python3 -c "…"` body inside it compile?
+
+WHY IT EXISTS (2026-10-22, EPIC-IDP-090). Eight of the ninety-one intents on main died before
+doing any work: an inline `python3 -c "…"` written inside a YAML block scalar has its indentation
+stripped with the block, so every `for`/`if`/`try` body fell back to column 0 and the step raised
+IndentationError. `pr-list`, `pr-ready`, `cluster-events`, `cluster-storage` and four more were
+advertised in the catalogue the Face offers by name and failed every time they were asked for.
+Nothing caught it, because nothing ran them. A capability that cannot run its own script is not a
+capability, and a gate that cannot fail is not a gate: the two-way proof lives in
+tests/test_intent_lint.py and in bin/idp-ci.
+
+USAGE
+  bin/intent-lint                        # the working tree
+  bin/intent-lint --ref origin/main      # the catalogue as a ref has it
+  bin/intent-lint --intents <dir>        # a directory (fixtures, a lane's copy)
+  bin/intent-lint -q                     # one line: the count
+
+Exit status: 0 all intents runnable, 1 at least one cannot, 2 the catalogue could not be read.
+"""
+from __future__ import annotations
+
+import argparse
+import re
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+PREFIX = "platform/estate/intents"
+PLACEHOLDER = re.compile(r"\{\{[^}]+\}\}|<<[A-Za-z0-9_.-]+>>")
+PY_CALL = re.compile(r"python3\s+-c\s+(\"(?:[^\"\\]|\\.)*\"|'[^']*')", re.S)
+
+
+def shell_unquote(word: str) -> str:
+    """The argument the shell would hand to python3 for a quoted `-c` word."""
+    inner = word[1:-1]
+    if word[0] == '"':
+        return re.sub(r'\\(["\\$`])', r"\1", inner)
+    return inner.replace("'\\''", "'")
+
+
+def intent_files(directory: Path | None, ref: str | None, repo: Path) -> list[tuple[str, str]]:
+    """`[(name, text)]` for every intent, from a directory or from a ref."""
+    if directory is not None:
+        if not directory.is_dir():
+            raise SystemExit(f"intent-lint: no such directory: {directory}")
+        return [(p.name, p.read_text()) for p in sorted(directory.glob("*.y*ml"))]
+    listing = subprocess.run(
+        ["git", "-C", str(repo), "ls-tree", "--name-only", ref, PREFIX + "/"],
+        capture_output=True, text=True, check=False,
+    )
+    if listing.returncode != 0:
+        raise SystemExit(f"intent-lint: git could not list {ref}:{PREFIX}")
+    names = [f for f in listing.stdout.split() if f.endswith((".yaml", ".yml"))]
+    out = []
+    for name in names:
+        body = subprocess.run(
+            ["git", "-C", str(repo), "show", f"{ref}:{name}"], capture_output=True, text=True, check=False
+        )
+        out.append((name[len(PREFIX) + 1:], body.stdout))
+    return out
+
+
+def check(name: str, text: str) -> list[str]:
+    """Every reason this intent cannot run its own script. Empty means it can."""
+    import yaml
+
+    try:
+        doc = yaml.safe_load(text) or {}
+    except Exception as exc:  # noqa: BLE001 - an unparseable intent is exactly the finding
+        return [f"yaml: {type(exc).__name__}: {str(exc).splitlines()[0][:100]}"]
+    if not isinstance(doc, dict):
+        return ["yaml: the file is not a mapping"]
+    problems: list[str] = []
+    for index, step in enumerate(doc.get("steps") or []):
+        if not isinstance(step, dict):
+            continue
+        cmd = step.get("cmd")
+        if not isinstance(cmd, str) or not cmd.strip():
+            continue
+        where = f"step {step.get('name') or index!r}"
+        rendered = PLACEHOLDER.sub("X", cmd)
+        with tempfile.NamedTemporaryFile("w", suffix=".sh", delete=False) as fh:
+            fh.write(rendered + "\n")
+            script = fh.name
+        parsed = subprocess.run(["bash", "-n", script], capture_output=True, text=True, check=False)
+        if parsed.returncode != 0:
+            line = (parsed.stderr or "").strip().splitlines()[-1:]
+            problems.append(f"{where}: shell does not parse: {(line[0] if line else '')[:100]}")
+            continue
+        for word in PY_CALL.findall(cmd):
+            body = PLACEHOLDER.sub("X", shell_unquote(word))
+            try:
+                compile(body, f"{name}:{where}", "exec")
+            except SyntaxError as exc:
+                problems.append(f"{where}: python: {exc.msg} (line {exc.lineno})")
+    return problems
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(description="every intent can run its own script")
+    ap.add_argument("--intents", metavar="DIR", help="a directory of intent YAML (default: the tree)")
+    ap.add_argument("--ref", help="a git ref to lint instead of the working tree")
+    ap.add_argument("--repo", default=".", help="the checkout git runs in (default: .)")
+    ap.add_argument("-q", "--quiet", action="store_true", help="one line: the count")
+    opts = ap.parse_args(argv)
+
+    repo = Path(opts.repo).resolve()
+    directory = Path(opts.intents).resolve() if opts.intents else (None if opts.ref else repo / PREFIX)
+    try:
+        files = intent_files(directory, opts.ref, repo)
+    except SystemExit as exc:
+        print(exc, file=sys.stderr)
+        return 2
+    if not files:
+        print("intent-lint: no intents found", file=sys.stderr)
+        return 2
+
+    broken = [(name, problems) for name, text in files if (problems := check(name, text))]
+    where = opts.ref or str(directory)
+    if opts.quiet:
+        print(f"{len(files)} intents, {len(broken)} cannot run their own script")
+    else:
+        for name, problems in broken:
+            for problem in problems:
+                print(f"FAIL  {name}  {problem}")
+        print(f"{len(files)} intents in {where}; {len(broken)} cannot run their own script")
+    return 1 if broken else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

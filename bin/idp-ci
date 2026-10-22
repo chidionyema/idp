@@ -731,6 +731,44 @@ if ! python3 "$IDP/bin/intent-compile" --intents "$IDP/tests/fixtures/intent/bad
 else say "FAIL  intent   intent-compile is not discriminating or not deterministic"; fail=1; fi
 rm -rf "$ic_a" "$ic_b"
 
+# EPIC-IDP-090 (2026-10-22): a capability that cannot run its own script is not a capability.
+# Eight of the ninety-one intents on main died before doing any work -- an inline
+# `python3 -c "…"` written inside a YAML block scalar has its indentation stripped with the block,
+# so every `for`/`if`/`try` body fell back to column 0 and the step raised IndentationError.
+# pr-list, pr-ready, cluster-events, cluster-storage and four more were advertised in the catalogue
+# the Face offers by name and failed every time they were asked for. Nothing caught it because
+# nothing ran them. Linted both ways in one run, because a gate that cannot fail is not a gate:
+# the real catalogue must pass, and a copy holding one broken intent must be refused and named.
+if touched platform/estate/intents bin/intent-lint; then
+  il_dir=$(mktemp -d)
+  if python3 "$IDP/bin/intent-lint" -q >/dev/null 2>&1; then
+    cp "$IDP"/platform/estate/intents/*.yaml "$il_dir"/
+    cat > "$il_dir/fixture-broken.yaml" <<'ILFIX'
+name: lint-fixture-broken
+description: the shape that was on main -- the loop body lost its indentation to the block scalar
+steps:
+  - name: list
+    cmd: |
+      echo '[]' | python3 -c "
+      import json, sys
+      for item in json.load(sys.stdin):
+      print(item)
+      "
+ILFIX
+    if python3 "$IDP/bin/intent-lint" --intents "$il_dir" >/dev/null 2>&1; then
+      say "FAIL  intents  intent-lint passed a catalogue holding an intent that cannot run (a gate that cannot fail)"; fail=1
+    else
+      say "ok    intents  every intent runs its own script; a broken one is refused and named"
+    fi
+  else
+    python3 "$IDP/bin/intent-lint" 2>&1 | sed 's/^/         /'
+    say "FAIL  intents  an intent in the catalogue cannot run its own script"; fail=1
+  fi
+  rm -rf "$il_dir"
+else
+  say "SKIP  intents  no intent or intent-lint change in this diff"
+fi
+
 # Incident 2026-08-25: the hourly ai.estate.idp job exited non-zero for a day
 #     because bin/idp-verify curled 127.0.0.1:8001 after the one-renderer ruling
 #     (#22) deleted the thing that served it. The class is a surface removed in
