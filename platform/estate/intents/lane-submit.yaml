@@ -16,20 +16,29 @@ description: >
   repos/<owner>/<repo>/commits/<sha>/status` answers `pending` the moment the lane picks the branch
   up and then success or failure -- which is the exact command the last step prints for you.
 
-  It needs a 120s door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 5.8-8.4s, the
+  It needs a 130s door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 5.8-8.4s, the
   pre-push guard 32s of its own accord -- `timing 32s total; slowest rungs: 19s tsc backstage,
   12s ruff` -- plus the push itself, 37.4s once and past 40s the next time). That is 45-55s of
   unavoidable work whose variance crosses 60, which is why the shadow policy records 164 of 192
   runs not ok in 30d, p_fail 0.85: it is not a slow verb, it is a verb offered a door too small
-  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=120`, or the
+  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=130`, or the
   session plane. The default MCP door (55s) and the harness door (60s) kill it mid-push and tell
   you nothing.
+
+  2026-10-22: the door was only half of it. This intent declared a door larger than the default
+  while its own push step was capped at 60, so a caller passing a bigger timeout changed nothing --
+  the step died at 60036ms (exit 124) and `git ls-remote` showed the lane ref ABSENT, which is
+  worse than #5814 (where the push outlived the kill): a killed push that did not land, reported as
+  a timeout, and the bound-inside-the-step that exists to prevent it never reached. The identical
+  push through the executor door took 16.4s. The step now gets the largest cap a command may have
+  (100s, the estate's own ceiling) and the bound inside it is 80, so the measurement after the push
+  always runs.
 args:
   lane:    {type: string, default: "", description: "lane name; default lane/<current branch>"}
   cwd:     {type: string, default: "."}
 # the door this intent needs, so a caller can be told instead of guessing (and so the test below
 # can refuse a step that outlives the door it is run through).
-door_s: 120
+door_s: 130
 halt_on_failure: true
 steps:
   - name: the claim covers the change
@@ -53,7 +62,7 @@ steps:
     # the handover from its own exit code -- it bounds the push well inside the cap and then READS
     # THE REMOTE REF, which answers the only question that matters whether or not the local push
     # survived.
-    timeout: 60
+    timeout: 100
     cmd: |
       cd {{cwd}} || exit 2
       b=$(git rev-parse --abbrev-ref HEAD); lane={{lane}}; [ -n "$lane" ] || lane="$b"
@@ -67,11 +76,16 @@ steps:
       sha=$(git rev-parse HEAD)
       # The push is bounded INSIDE the step, not by the step's own cap, so the step always reaches
       # the measurement below: a push killed locally can still have landed on the remote (#5814),
-      # and a step killed by its own cap reports nothing at all. 50 of the step's 60 seconds go to
-      # the push; the remaining 10 always belong to the ls-remote that reports the outcome. The
+      # and a step killed by its own cap reports nothing at all. 80 of the step's 100 seconds go to
+      # the push; the remaining 20 always belong to the ls-remote that reports the outcome. The
       # bound is `timeout` when it exists (a shim on macOS, GNU on the runners) and no bound when
       # it does not -- never a hard dependency, or the push never happens at all.
-      BOUND=""; command -v timeout >/dev/null 2>&1 && BOUND="timeout 50"
+      #
+      # 2026-10-22: this bound was 50 inside a 60s step, and the step was killed at 60036ms with the
+      # lane ref absent from origin -- so the one thing the bound existed to prevent is what
+      # happened. Measured after: the same push, same guard, through the executor door, 16.4s.
+      # 100s is the largest cap a command in this estate may have, so this step cannot ask for more.
+      BOUND=""; command -v timeout >/dev/null 2>&1 && BOUND="timeout 80"
       out=$($BOUND git push -q origin "HEAD:refs/heads/$lane" 2>&1); rc=$?
       # The handover, measured. Not this process's exit code: a timeout can outlive the push.
       on=$(git ls-remote --heads origin "$lane" 2>/dev/null | awk '{print $1}')
