@@ -5,7 +5,8 @@ import json
 import modal
 
 now = dt.datetime.now(dt.timezone.utc)
-start = now - dt.timedelta(days=45)
+start = now - dt.timedelta(days=30)
+rows = []
 try:
     rows = modal.billing.workspace_billing_report(start=start, end=now, resolution="d")
     rows = list(rows) if not hasattr(rows, "__aiter__") else rows
