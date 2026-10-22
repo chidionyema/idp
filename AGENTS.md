@@ -245,6 +245,22 @@ without being chased, find the next blocker yourself and clear it, and do not st
 merge. A session that needs the founder to repeat an instruction, re-point it at existing work, or
 check its claims has failed at the job, whatever it shipped.
 
+**No hand-back** (founder 2026-10-22: "i need proactive workers not narrators and strikers ... once
+given a feature every model should drive it thru to fully operational and proven before contacting
+founder or pausing"; contacting the founder is a rare event and pausing is rarer). Every model, in
+every harness, drives a task to operational and proven before it stops. A turn never ends with a
+"still open" or "remaining" list, "want me to...?", "shall I...?", "let me know if...", "next steps
+for you" or "when you're ready": if something is undone, do it now; if a step failed, diagnose it
+and try another way. The only reason to stop short is an irrevocable blocker, reported with its
+evidence (section 3): the intent run (`estate-execute <intent>` / `estate_invoke`), its exit
+status and the line it printed. Enforced, not requested, by one definition
+(`platform/estate/memory/handback.py`): the Claude Code Stop hook (`bin/estate-memory-enforce`),
+the opencode plugin and the pi extension refuse such a closing once and send the agent back to
+work, and the router (`platform/llm/no_handback.py`) puts the directive in the system prompt of
+every model call. Cursor and Gemini have no end-of-turn hook installed, so for them this
+paragraph and the router are the only enforcement. `ESTATE_MEMORY_ENFORCE=0` opts a session out
+and the opt-out is ledgered.
+
 ## 10. Working style
 
 - Only make the change that was asked for. No unsolicited refactoring.

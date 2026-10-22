@@ -1,0 +1,74 @@
+description: 'Founder, 2026-10-22: agents end turns with "still open" lists and "want
+  me to...?" instead of driving a feature to operational and proven. #6857 refuses
+  such a closing at the Claude Code Stop hook, the opencode plugin and the pi extension,
+  and has the router put a directive in every model call. Question: do hand-back closings
+  occur often enough, and does the detector tell them from legitimate closings well
+  enough, that enforcing at every door is right? DISCLOSURE: the priors were fixed
+  first, but the counts below were read before the likelihoods were finalised, so
+  the likelihoods are not blind. Method: every turn closing (the last agent message
+  before the next human prompt) in the 252 Claude Code transcripts under ~/.estate/harness/cc/projects
+  was judged with platform/estate/memory/handback.py (judge on each closing), giving
+  3,520 closings, 542 flagged. 20 flagged closings were then drawn at random (python
+  random, seed 6857) and classified by hand from their last 400 characters: a real
+  hand-back is work the agent could have done itself and instead offered or asked
+  about; a legitimate closing is a decision that is the founder''s (price vs quality,
+  how a page should look, conflicts in a spec) or an irreversible action (a bulk delete
+  of about 2,500 objects). 16 were real and 4 legitimate. The classification is the
+  author''s judgement from excerpts, and transcripts overlap across sessions (some
+  blocks are duplicated), so no n_eff_divisor is applied to the flagged count; H2
+  is rejected by a wide margin at any divisor up to 100.
+
+  '
+hypotheses:
+- name: H1
+  description: hand-backs are a real share of closings and the detector flags mostly
+    real ones; enforcing at every door, with one retry and fail-open, is right
+  prior: 0.4
+- name: H2
+  description: hand-backs are negligible under the guidance agents already have; the
+    enforcement adds cost for no gain
+  prior: 0.2
+- name: H3
+  description: the detector mostly flags legitimate closings (a stated blocker, a
+    founder decision, an irreversible step), so enforcing it would stall sessions
+    on false positives
+  prior: 0.4
+evidence:
+- name: 'handback.judge over every turn closing in 252 transcripts: 2,978 clean, 542
+    flagged (15.4%)'
+  observed:
+    clean: 2978
+    hand_back: 542
+  likelihoods:
+    H1:
+      clean: 0.88
+      hand_back: 0.12
+    H2:
+      clean: 0.99
+      hand_back: 0.01
+    H3:
+      clean: 0.88
+      hand_back: 0.12
+- name: 'random sample of 20 flagged closings, classified by hand: 16 real hand-backs
+    (offers, "want me to", "should I fix", "shall I look into it"), 4 legitimate (a
+    price/quality choice, a page-design scope choice, spec conflicts for the founder,
+    a bulk delete of about 2,500 objects)'
+  observed:
+    real_handback: 16
+    legitimate_closing: 4
+  likelihoods:
+    H1:
+      real_handback: 0.7
+      legitimate_closing: 0.3
+    H2:
+      real_handback: 0.2
+      legitimate_closing: 0.8
+    H3:
+      real_handback: 0.2
+      legitimate_closing: 0.8
+posteriors:
+  H1: 0.9999999003
+  H2: 0.0
+  H3: 9.97e-08
+winner: H1
+computed_at: '2026-10-22T16:19:58Z'

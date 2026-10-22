@@ -38,6 +38,8 @@ configMapGenerator:
       - efficiency_gateway.py
       # Active Memory + Active Focus on every chat call, for every agent (active_memory.py).
       - active_memory.py
+      # Every model told to drive the work to done, not hand it back (no_handback.py).
+      - no_handback.py
   # PoBR enforcement callback: pobr_enforce.py + gate modules, mounted at /etc/litellm/callbacks.
   # PYTHONPATH is patched below to include this path so the router imports pobr_enforce.PoBREnforcer.
   # Keys are expected at /etc/litellm/keys/agent.pub.pem (mounted separately or baked into the image).

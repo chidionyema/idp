@@ -885,7 +885,7 @@ litellm_settings:
   # Active Focus and writes its turn to working memory -- one place for every agent, instead
   # of an adapter per runtime (platform/llm/active_memory.py). Last, so the ceiling above
   # judges the request as the client sent it and the brief rides only a call that passed.
-  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance"]
+  callbacks: ["otel", "efficiency_gateway.proxy_handler_instance", "request_ceiling.proxy_handler_instance", "active_memory.proxy_handler_instance", "no_handback.proxy_handler_instance"]
   # Every routed call lands in Langfuse (platform/observability) as a trace, whatever product made
   # it: tracing at the router is the one instrument, not one SDK per product (crew#325 showcase).
   # Keys arrive as env from the litellm-langfuse ExternalSecret; LANGFUSE_HOST is set in litellm.yaml.

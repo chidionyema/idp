@@ -47,7 +47,7 @@ VENV="${LITELLM_LOCAL_VENV:-$HOME/.cache/estate-tools/litellm-venv}"
 ESTATE_SECRETS="${ESTATE_SECRETS:-$HOME/Documents/code/estate-secrets}"
 export SOPS_AGE_KEY_FILE="${SOPS_AGE_KEY_FILE:-$HOME/.config/prospector/age-key.txt}"
 PORT="${LITELLM_LOCAL_PORT:-4001}"   # a slot's agent sets 4001 or 4002; a canary sets its own
-MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py active_memory.py"
+MODULES="local_caller_auth.py efficiency_gateway.py request_ceiling.py anthropic_beta_passthrough.py graph_capture.py action_ledger.py router_catalog.py lane_registry.py route_table.py active_memory.py no_handback.py"
 
 live() { curl -sf -m 5 "http://127.0.0.1:${1:-$FRONT_PORT}/health/liveliness" >/dev/null; }
 slot_label() { echo "com.estate.litellm-local-$1"; }
@@ -278,6 +278,9 @@ if "action_ledger.proxy_handler_instance" not in ls["callbacks"]:
 # cluster config names it in config.base.yaml, this one is rendered here.
 if "active_memory.proxy_handler_instance" not in ls["callbacks"]:
     ls["callbacks"].append("active_memory.proxy_handler_instance")
+# Every model is told to drive the work to done, not hand it back (platform/llm/no_handback.py).
+if "no_handback.proxy_handler_instance" not in ls["callbacks"]:
+    ls["callbacks"].append("no_handback.proxy_handler_instance")
 yaml.safe_dump(cfg, open(sys.argv[2], "w"), sort_keys=False)
 print(f"lanes  serving {len(kept)}: {sorted({m['model_name'] for m in kept})}")
 print(f"lanes  dropped {len(dropped)} with no key on this machine")
