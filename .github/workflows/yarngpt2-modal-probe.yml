@@ -1,0 +1,26 @@
+# founder: Throwaway. Asks Modal for one 0.125-core, 30-second job to see whether the workspace is back inside its free credits. Branch eval/yarngpt2 only, and only when eval/modal_probe.py changes.
+name: yarngpt2-modal-probe
+
+on:
+  push:
+    branches: [eval/yarngpt2]
+    paths: [eval/modal_probe.py]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      MODAL_TOKEN_ID: ${{ secrets.SEED_MODAL_TOKEN_ID }}
+      MODAL_TOKEN_SECRET: ${{ secrets.SEED_MODAL_TOKEN_SECRET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - run: pip install -q modal==1.5.5
+      - working-directory: eval
+        run: modal run modal_probe.py
