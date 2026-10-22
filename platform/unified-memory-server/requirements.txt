@@ -4,6 +4,9 @@ uvicorn==0.30.6
 psycopg[binary]==3.2.13
 psycopg-pool==3.2.8
 # OpenTelemetry — for active-runtime harness telemetry (net-new; no-op when OTEL_EXPORTER_OTLP_ENDPOINT unset)
-opentelemetry-api==1.29.0
-opentelemetry-sdk==1.29.0
-opentelemetry-exporter-otlp-proto-grpc==1.29.0
+# 1.45.1: 1.29.0 carries CVE-2026-114603 (unbounded tracestate parsing). The three move together --
+# opentelemetry-sdk 1.45.1 pins opentelemetry-api==1.45.1 exactly, so bumping the api alone does
+# not resolve.
+opentelemetry-api==1.45.1
+opentelemetry-sdk==1.45.1
+opentelemetry-exporter-otlp-proto-grpc==1.45.1
