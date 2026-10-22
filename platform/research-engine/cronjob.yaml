@@ -90,7 +90,10 @@ spec:
                   # platform/estate-db/cluster/databases.yaml, so nothing here creates either.
                   PG="postgresql://research:$(cat /secrets/db/POSTGRES_PASSWORD)@estate-rw.estate-db.svc.cluster.local:5432"
                   RESEARCH_PG_DSN="${PG}/research"
-                  export LITELLM_API_KEY RESEARCH_PG_DSN
+                  # Exa's key is bridged from the vault into human-exa and mounted as a file, for
+                  # the same reason: gpt-researcher's Exa retriever reads EXA_API_KEY from the env.
+                  EXA_API_KEY="$(cat /secrets/exa/EXA_API_KEY)"
+                  export LITELLM_API_KEY RESEARCH_PG_DSN EXA_API_KEY
                   # Which objective this hour researches. The adapter prints its issue number
                   # and research subject, or nothing: an objective is researched once and
                   # again only when its report has Continue ticked (founder, 2026-10-19), so
@@ -133,13 +136,19 @@ spec:
                 - { name: RESEARCH_PRODUCER_MODEL, value: "minimax" }
                 - { name: RESEARCH_VERIFIER_MODEL, value: "gemini" }
                 - { name: RESEARCH_EMBEDDING_MODEL, value: "embed" }
-                - { name: RESEARCH_RETRIEVER, value: "searx" }
+                # gpt-researcher splits RETRIEVER on commas and queries every name, so this is
+                # Exa leading with SearXNG alongside as the retriever that needs no key. The
+                # engine only exports SEARX_URL when RETRIEVER is exactly "searx", so it is set
+                # here directly for the comma form.
+                - { name: RESEARCH_RETRIEVER, value: "exa,searx" }
+                - { name: SEARX_URL, value: "http://searxng.searxng.svc.cluster.local:8080" }
                 - { name: RESEARCH_WORKER_TIMEOUT_S, value: "300" }
                 - { name: HOME, value: "/state" }
               volumeMounts:
                 - { name: router, mountPath: /secrets/router, readOnly: true }
                 - { name: db, mountPath: /secrets/db, readOnly: true }
                 - { name: github-app, mountPath: /secrets/github-app, readOnly: true }
+                - { name: exa, mountPath: /secrets/exa, readOnly: true }
                 - { name: adapter, mountPath: /adapter, readOnly: true }
                 - { name: state, mountPath: /state }
                 - { name: tmp, mountPath: /tmp }
@@ -157,6 +166,8 @@ spec:
               secret: { secretName: research-db }
             - name: github-app
               secret: { secretName: research-github-app }
+            - name: exa
+              secret: { secretName: human-exa }
             - name: adapter
               configMap: { name: research-objective-adapter }
             - name: state
