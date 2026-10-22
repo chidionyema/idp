@@ -52,6 +52,12 @@ spec:
     remediation: { retries: 3 }
   upgrade:
     remediation: { retries: 3 }
+  # #164: this Deployment sat at out-of-band replicas: 0 for 55 days, so the v1beta1.metrics.k8s.io
+  # APIService had no endpoints and `kubectl top` / the descheduler's usage feed were dead while the
+  # release read Ready. helm-controller diffs only against its own stored manifest unless
+  # driftDetection is enabled (same fix as platform/identity/oauth2-proxy.yaml).
+  driftDetection:
+    mode: enabled
   values:
     fullnameOverride: metrics-server
     replicas: 1
