@@ -433,10 +433,21 @@ def laptop_url() -> str:
     return os.environ.get("FLEETVIEW_INTENTS_URL", "").strip()
 
 
-def _forward(url: str, text: str, session_id: str) -> dict | None:
+def _forward(
+    url: str, text: str, session_id: str, args: dict | None = None
+) -> dict | None:
+    payload: dict[str, object] = {"text": text, "session_id": session_id}
+    # The arguments ride along (2026-10-23). Before this, the pod forwarded the intent's NAME and
+    # dropped everything the caller said about it: a deck click on `pr-list` with
+    # {"limit": 2, "state": "merged"} reached the laptop as the word "pr-list", was confirmed as
+    # "Run pr-list? Say yes to confirm." -- no repo, no limit -- and ran with the intent's defaults.
+    # Measured in production: the read-back never named an argument and state=merged still listed
+    # open PRs. An argument the founder cannot hear is one they cannot be said to have approved.
+    if args:
+        payload["args"] = args
     req = urllib.request.Request(  # noqa: S310 -- fixed, operator-supplied URL only
         url,
-        data=json.dumps({"text": text, "session_id": session_id}).encode(),
+        data=json.dumps(payload).encode(),
         headers={"Content-Type": "application/json"},
         method="POST",
     )
@@ -456,11 +467,16 @@ def _forward(url: str, text: str, session_id: str) -> dict | None:
 
 
 def _on_laptop(
-    url: str, text: str, session_id: str, name: str, now: float
+    url: str,
+    text: str,
+    session_id: str,
+    name: str,
+    now: float,
+    args: dict | None = None,
 ) -> dict | None:
     t0 = time.monotonic()
     try:
-        ran = _forward(url, text, session_id)
+        ran = _forward(url, text, session_id, args)
     except (OSError, ValueError):
         _audit(
             session_id, text, name, "error", None, int((time.monotonic() - t0) * 1000)
@@ -634,7 +650,7 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
             _audit(session_id, text, name, "error", 2, 0, args)
             return result(name, "error", f"{_spoken(name)} takes no {bad[0]}.")
     if url:
-        return _on_laptop(url, text, session_id, name, now)
+        return _on_laptop(url, text, session_id, name, now, args)
 
     if name not in READ_ONLY:
         with _LOCK:

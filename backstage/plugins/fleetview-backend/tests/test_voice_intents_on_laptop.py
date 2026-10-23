@@ -106,6 +106,44 @@ def test_the_laptop_naming_nothing_lets_the_model_answer(laptop, monkeypatch):
     assert vi.handle("check ci status", "s4") is None
 
 
+def test_the_arguments_reach_the_laptop_that_runs_them(laptop, monkeypatch, pod):
+    # Measured in production 2026-10-23T05:0xZ: POST /voice/intent with
+    # {intent: "pr-list", args: {limit: 2, state: "merged"}} was confirmed as "Run pr-list? Say yes
+    # to confirm." and answered with OPEN pull requests, because the pod forwarded the intent's
+    # name and dropped the values. The founder then approved something other than what they said.
+    (pod / "intents" / "pr-list.yaml").write_text(
+        "name: pr-list\nargs:\n  state: {type: string, default: open}\n  limit: {type: int, default: 10}\n"
+        "steps:\n  - cmd: echo\n"
+    )
+    monkeypatch.setenv("FLEETVIEW_INTENTS_URL", laptop.url)
+    laptop.answers.append(
+        (
+            200,
+            vi.result(
+                "pr-list",
+                "pending_confirmation",
+                "Run pr-list with limit 2, state merged? Say yes to confirm.",
+            ),
+        )
+    )
+    asked = vi.handle("pr-list", "s6", {"limit": 2, "state": "merged"})
+    assert laptop.heard == [
+        {"text": "pr-list", "session_id": "s6", "args": {"limit": 2, "state": "merged"}}
+    ]
+    assert (
+        asked["text"] == "Run pr-list with limit 2, state merged? Say yes to confirm."
+    )
+
+
+def test_no_arguments_means_no_args_key_on_the_wire(laptop, monkeypatch):
+    # The spoken path must look exactly as it did: an empty "args" would be a different request
+    # to every reader of the audit log, and the laptop's own route treats {} as nothing said.
+    monkeypatch.setenv("FLEETVIEW_INTENTS_URL", laptop.url)
+    laptop.answers.append((200, vi.result("ci-status", "ok", "all green")))
+    vi.handle("check ci status", "s7")
+    assert laptop.heard == [{"text": "check ci status", "session_id": "s7"}]
+
+
 def test_a_laptop_that_is_away_is_said_out_loud(monkeypatch):
     monkeypatch.setenv("FLEETVIEW_INTENTS_URL", "http://127.0.0.1:9/voice/intent")
     r = vi.handle("check ci status", "s5")
