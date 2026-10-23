@@ -1,0 +1,136 @@
+description: >
+  pi agents did not get the estate's unified memory. They read the session brief and nothing
+  else: no recall mid-session, no remember at all, while Claude Code agents had all three as
+  tools. The founder asked why the two runtimes behaved differently. Question: is the
+  divergence in pi's configuration, in the router, in the bridge, or in the memory extension
+  pi loads? Likelihoods written per item, probes run concurrently.
+
+
+hypotheses:
+- name: H1
+  description: pi has no MCP client, so the estate's mcpServers entry in ~/.pi/mcp.json is
+    never read and pi has no recall/remember tools at all
+  prior: 0.5
+- name: H2
+  description: pi's session-start brief is broken, so pi gets neither the brief nor the tools
+  prior: 0.2
+- name: H3
+  description: the router's Active Memory injection is claude-specific, so pi never receives
+    the brief
+  prior: 0.2
+- name: H4
+  description: the estate memory bridge itself is broken, so every runtime would lose the
+    tools equally
+  prior: 0.1
+evidence:
+- name: pi's own README says it has no MCP ("**No MCP.** Build CLI tools with READMEs (see
+    [Skills](#skills)), or build an extension that adds MCP support"), and ~/.pi/mcp.json
+    carried an estate-memory entry that pi never reads
+  observed:
+    pi_reads_no_mcp: 1
+  likelihoods:
+    H1:
+      pi_reads_no_mcp: 0.97
+      other: 0.03
+    H2:
+      pi_reads_no_mcp: 0.05
+      other: 0.95
+    H3:
+      pi_reads_no_mcp: 0.05
+      other: 0.95
+    H4:
+      pi_reads_no_mcp: 0.05
+      other: 0.95
+- name: the brief works for pi - ~/.pi/agent/extensions/estate-memory.ts is installed and
+    bin/estate-brief runs clean, and a live pi session's recall answer carried the active
+    context brief
+  observed:
+    brief_works_for_pi: 1
+  likelihoods:
+    H1:
+      brief_works_for_pi: 0.95
+      other: 0.05
+    H2:
+      brief_works_for_pi: 0.05
+      other: 0.95
+    H3:
+      brief_works_for_pi: 0.1
+      other: 0.9
+    H4:
+      brief_works_for_pi: 0.95
+      other: 0.05
+- name: the router injects Active Memory runtime-agnostically (platform/llm/config.yaml carries
+    the active_memory.proxy_handler_instance callback, and bin/litellm-local exports
+    ESTATE_MEMORY_DOOR=mcp), and pi's own sessions carry the estate-memory block
+  observed:
+    injection_is_runtime_agnostic: 1
+  likelihoods:
+    H1:
+      injection_is_runtime_agnostic: 0.95
+      other: 0.05
+    H2:
+      injection_is_runtime_agnostic: 0.9
+      other: 0.1
+    H3:
+      injection_is_runtime_agnostic: 0.05
+      other: 0.95
+    H4:
+      injection_is_runtime_agnostic: 0.9
+      other: 0.1
+- name: the bridge serves brief, recall and remember to anyone who asks it, so the store and
+    the door are sound
+  observed:
+    bridge_serves_the_tools: 1
+  likelihoods:
+    H1:
+      bridge_serves_the_tools: 0.95
+      other: 0.05
+    H2:
+      bridge_serves_the_tools: 0.9
+      other: 0.1
+    H3:
+      bridge_serves_the_tools: 0.9
+      other: 0.1
+    H4:
+      bridge_serves_the_tools: 0.05
+      other: 0.95
+posteriors:
+  H1: 0.9047619047619047
+  H2: 0.038095238095238085
+  H3: 0.038095238095238085
+  H4: 0.019047619047619042
+winner: H1
+computed_at: '2026-10-23T15:38:00Z'
+raced_by: 'bin/hypotheses-race via the hypotheses.race intent; evidence logged in
+  ~/.estate/logs/hypotheses-race.jsonl'
+
+resolution: >
+  pi has no MCP client, so the estate had been writing an integration pi could never read. The
+  fix is a transport, not a second implementation: extensions/estate-memory-tools spawns the same
+  bridge every other runtime runs (bin/estate-memory-mcp) and speaks MCP JSON-RPC to it, so
+  brief, recall and remember reach pi from the one store, with the bridge's own tool
+  descriptions. The manifest now says pi cannot read MCP ("reads": false), the installer
+  removes the estate's dead mcpServers entry from ~/.pi/mcp.json and links the extension into
+  ~/.pi/agent/extensions/ instead. One bridge, one store, one set of tools.
+
+
+proof: >
+  Live, on the real path, after bin/estate-memory-install --runtime pi: a plain `pi -p` session
+  called recall and got real memories back, then called remember and got {"written": true,
+  "namespace": "estate", "key": "fact.pi-memory-tools.418375df0113aa84", "metadata": {"subject":
+  "pi-memory-tools", "kind": "fact", "source": "pi", "runtime": "pi"}}. Reading the store
+  again from a separate process (the bridge itself) found the same memory:
+  {"text": "pi-memory-tools-probe-20261023T154210Z pi can reach the estate memory bridge",
+  "metadata": {"kind": "fact", "source": "pi", "runtime": "pi", "subject": "pi-memory-tools"}}.
+  Before the fix, ~/.pi/mcp.json carried an estate-memory entry that pi never read.
+
+
+trade_off: >
+  pi now starts one python process per session for the bridge, where an MCP client would have
+  started the same process itself - the cost is the same and it is bounded by the session. The
+  extension keeps its own client (extensions/estate-memory-tools/bridge.ts) rather than
+  depending on an MCP library, because pi ships none: that is a hundred lines to maintain
+  against a protocol that changes rarely, and it is tested against a stub bridge that speaks the
+  same framing. The manifest's "reads": false is a promise the installer has to keep: a runtime
+  that later grows an MCP client would have to set it back to true, or the estate would keep
+  removing an entry that now works.
