@@ -560,7 +560,6 @@ def render_provenance_block(pack: dict) -> List[str]:
     leaving a stale number in a hand-written file.
     """
     up = pack.get("upstream") or {}
-    pid = pack["id"]
     lines = [
         PROVENANCE_BEGIN,
         "## Upstream material",
