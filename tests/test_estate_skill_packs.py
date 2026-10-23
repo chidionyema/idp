@@ -187,6 +187,39 @@ def test_every_moved_file_keeps_its_upstream_path():
                 )
 
 
+def test_the_registry_keeps_its_digests_out_of_the_credential_shape():
+    """The digests are objects, not a {path: sha256} map.
+
+    gitleaks' generic-api-key rule reads `"<path>": "<64 hex>"` as a credential
+    whenever the path holds a word like "token", and the design packs' own upstream
+    file names do (`semantic-tokens.md`, `token-architecture.md`). The map form made
+    every lane carrying the registry red on security-scan, and nothing landed
+    (idp#6984). The shape is the gate's business, so it is a test now.
+    """
+    for pack in registry()["packs"]:
+        files = pack["files"]
+        assert isinstance(files, list), (
+            f"{pack['id']}: digests must be a list of objects"
+        )
+        for entry in files:
+            assert set(entry) == {"path", "sha256"}, f"{pack['id']}: {entry}"
+            assert re.fullmatch(r"[a-f0-9]{64}", entry["sha256"]), (
+                f"{pack['id']}: {entry['path']} is not a sha256"
+            )
+
+
+def test_a_registry_written_before_the_change_still_verifies(tmp_path: Path):
+    """The reader takes both forms, so an older registry is not a broken registry."""
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS, skills)
+    reg = json.loads((skills / "registry.json").read_text())
+    for pack in reg["packs"]:
+        pack["files"] = {e["path"]: e["sha256"] for e in pack["files"]}
+    (skills / "registry.json").write_text(json.dumps(reg, indent=2) + "\n")
+    result = run("verify", skills=skills)
+    assert result.returncode == 0, result.stderr
+
+
 def test_no_front_door_points_at_a_file_that_is_not_there():
     """A front door that names a missing file sends the agent nowhere."""
     missing = []
