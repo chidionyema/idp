@@ -109,7 +109,12 @@ spec:
                   fi
                   issue=$(printf '%s\n' "$picked" | sed -n 1p)
                   subject=$(printf '%s\n' "$picked" | sed -n 2p)
-                  echo "research-engine researching objective ${issue}: ${subject}"
+                  # The lane (engine profile) is the objective's own: a founder's product goal
+                  # goes to market-demand, a mined defect to objective. A hardcoded `objective`
+                  # asked crew#239 "which changes reduce Reimagine mumchimp ..." and admitted 0
+                  # claims (measured 2026-10-23, job research-engine-29879183).
+                  lane=$(printf '%s\n' "$picked" | sed -n 3p)
+                  echo "research-engine researching objective ${issue} in lane ${lane}: ${subject}"
                   # Tiktoken's estimator (costs.py) needs a writable cache dir: the image bakes the
                   # encoding files under /app/tiktoken_cache but the root fs is readOnlyRootFilesystem,
                   # and tiktoken writes a lazy-download .tmp file there -> [Errno 30] Read-only file
@@ -126,7 +131,7 @@ spec:
                   # dash has no pipefail, so the run's status is kept here rather than lost
                   # behind a pipe; a failed run posts no report and the job goes red.
                   rc=0
-                  python -m engine.cli run --profile objective --requester "${issue}" \
+                  python -m engine.cli run --profile "${lane}" --requester "${issue}" \
                     --subject "$subject" --out /state > /state/run.log 2>&1 || rc=$?
                   cat /state/run.log
                   [ "$rc" = 0 ] || exit "$rc"

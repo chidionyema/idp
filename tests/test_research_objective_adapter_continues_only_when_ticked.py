@@ -92,7 +92,8 @@ def test_report_lists_claims_with_sources_and_both_choices():
         }
     ]
     body = adapter.report_body(run, admitted, {"entailment_failed": 2}, 0.5, 5.0)
-    assert "<!-- research-report request=abc cost=0.2500 -->" in body
+    # A run result without profile_id predates lanes; every such run was the `objective` lane.
+    assert "<!-- research-report request=abc cost=0.2500 lane=objective -->" in body
     assert "**Q1**" in body and "- S1 _corroborated_ ([source](https://x))" in body
     assert "2 entailment_failed" in body and "spent $0.75 of the $5 cap" in body
     assert "- [ ] Continue researching" in body and "- [ ] Park this research" in body
