@@ -39,3 +39,26 @@ rules = [
 regexes = [
   '''sk-abcdef0123456789abcdef''',
 ]
+
+[[allowlists]]
+description = "platform/estate/skills/registry.json: sha256 digests of vendored upstream files, written in the map form the registry used before 2026-10-24. gitleaks' generic-api-key rule reads `\"<path>\": \"<64 hex>\"` as a credential whenever the path holds a word like `token`, and the design packs' own upstream file names do (`semantic-tokens.md`, `token-architecture.md`). A digest is not a credential, but the scan reads the shape and not the intent, and a red scan refuses every lane carrying the file. The registry stores the digests as path/sha256 objects now, so this only covers the committed history of the old shape; a credential of any other shape in this file is still reported."
+paths = [
+  '''^platform/estate/skills/registry\.json$''',
+]
+# Scoped to the one rule that fires on it. A credential of any other shape in this same file
+# is still reported.
+regexTarget = "match"
+rules = [
+  "generic-api-key",
+]
+# AND, not the default OR: gitleaks treats the fields of one allowlist as alternatives unless
+# the condition says otherwise, so with OR the path alone would exempt every generic-api-key
+# finding in this file -- the real key as well as the digest. With AND, the path, the rule and
+# the shape below must all hold.
+condition = "AND"
+# Only the shape of a checksum line: a path, then a 64-character lowercase hex digest.
+# A real key -- a token, a password, a private key -- does not have this shape and is
+# still reported, in this file and everywhere else.
+regexes = [
+  '''^[A-Za-z0-9._/-]+": "[a-f0-9]{64}"$''',
+]
