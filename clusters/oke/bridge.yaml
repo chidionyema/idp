@@ -1,0 +1,27 @@
+# The phone's road to the cluster API (crew#841). See platform/bridge/deployment.yaml for why
+# this is a workload and not the Always Free VM in platform/oci/bridge.tf: measured 2026-10-20,
+# a replacement bridge instance is accepted by the launch API and then TERMINATED within ~30s,
+# with CPU and storage quota both free and no reason recorded, and the original never joined the
+# tailnet at all (it booted without the NSG that lets it out).
+#
+# `always-on`: the founder's phone reads the cluster without his laptop, which is the one thing
+# this door must do -- so it may not be scaled to zero, and it may not depend on a machine that
+# sleeps.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    idp.estate.io/runtime: always-on
+  name: bridge
+  namespace: flux-system
+spec:
+  interval: 30s
+  dependsOn:
+    - name: tailscale
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./platform/bridge
+  prune: true
+  wait: true
+  timeout: 5m
