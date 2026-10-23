@@ -365,3 +365,24 @@ def test_the_signature_ignores_the_kubelet_pod_tail():
     a = msg("76dd6776cc", "vj4rm", "b9d9e82e-a133-47db-9674-535f1322837b")
     b = msg("5c76858dc9", "bmwxp", "a91a972b-b477-494e-81ab-de09a2b08032")
     assert shadow.signature(a) == shadow.signature(b)
+
+
+def test_a_key_read_from_a_mounted_file_is_laid(tmp_path, monkeypatch):
+    """Run 39948889099: litellm cats LITELLM_DB_PASSWORD from the mount; no secretKeyRef names it."""
+    shadow = load_shadow()
+    d = tmp_path / "platform" / "llm"
+    d.mkdir(parents=True)
+    (d / "x.yaml").write_text(
+        "metadata:\n  namespace: llm\n"
+        "          volumeMounts:\n"
+        "            - { name: upstream, mountPath: /run/secrets/litellm/upstream, readOnly: true }\n"
+        "      volumes:\n"
+        "        - name: upstream\n"
+        "          secret: { secretName: litellm-upstream }\n"
+        '          x: "$(cat /run/secrets/litellm/upstream/LITELLM_DB_PASSWORD)"\n'
+    )
+    monkeypatch.setattr(shadow, "REPO", str(tmp_path))
+    assert (
+        "LITELLM_DB_PASSWORD"
+        in shadow.consumer_secret_keys()[("llm", "litellm-upstream")]
+    )

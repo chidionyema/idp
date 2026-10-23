@@ -143,5 +143,8 @@ def test_spec_keys_still_win_and_consumer_keys_only_add():
 
 def test_a_consumer_that_names_no_key_invents_none():
     shadow = load_shadow()
-    # hindsight reads hindsight-env whole (chart ln -> envFrom): no named keys anywhere.
-    assert shadow.consumer_secret_keys().get(("hindsight", "hindsight-env")) == []
+    # hindsight reads hindsight-env whole (chart ln -> envFrom), which names no key. The only key
+    # any manifest reads from it is the one the migrate job cats from its mount; nothing is invented.
+    assert shadow.consumer_secret_keys().get(("hindsight", "hindsight-env")) == [
+        "postgres-password"
+    ]
