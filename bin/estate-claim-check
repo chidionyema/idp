@@ -23,6 +23,7 @@ Exit codes: 0 all PASS, 1 any failure, 2 usage/store error.
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import os
@@ -31,8 +32,15 @@ import sys
 import time
 from datetime import datetime, timezone
 
-PASS, STALE, CONTRADICTED, UNWITNESSED = "PASS", "STALE", "CONTRADICTED", "UNWITNESSED"
-FAILURES = (STALE, CONTRADICTED, UNWITNESSED)
+PASS, STALE, CONTRADICTED, UNWITNESSED, TAMPERED, RETIRED = (
+    "PASS",
+    "STALE",
+    "CONTRADICTED",
+    "UNWITNESSED",
+    "TAMPERED",
+    "RETIRED",
+)
+FAILURES = (STALE, CONTRADICTED, UNWITNESSED, TAMPERED)
 DEFAULT_STORE = "~/.estate/facts.jsonl"
 TIMEOUT_S = 20
 
@@ -47,13 +55,25 @@ def _run(cmd: str) -> tuple[bool, str]:
     try:
         p = subprocess.run(
             ["bash", "-c", cmd],
-            capture_output=True, text=True, timeout=TIMEOUT_S, check=False,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_S,
+            check=False,
         )
     except subprocess.TimeoutExpired:
         return False, f"instrument exceeded {TIMEOUT_S}s"
     if p.returncode != 0:
         return False, f"instrument exited {p.returncode}: {p.stderr.strip()[:200]}"
-    return True, p.stdout.strip()
+    out = p.stdout.strip()
+    if not out:
+        # An instrument that prints nothing has measured nothing. Without this, a silent
+        # command stored an empty value and then reproduced it forever: a fact nothing can
+        # contradict is exactly the defect this tool exists to refuse.
+        return (
+            False,
+            "instrument printed nothing: nothing was measured, so nothing is witnessed",
+        )
+    return True, out
 
 
 def _same(a: str, b: str, tol: float) -> bool:
@@ -85,16 +105,89 @@ def load(store: str) -> list[dict]:
     return rows
 
 
+def _chain_hash(row: dict) -> str:
+    """The fingerprint of a row as it was written, excluding its own hash."""
+    body = {k: v for k, v in row.items() if k != "hash"}
+    return hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def chain_state(rows: list[dict]) -> tuple[str, str]:
+    """Walk the hash chain. Returns (verdict, detail). Empty means intact.
+
+    Re-execution answers "is this still true?". The chain answers a different question,
+    "is this still the record?" -- an edited or deleted fact re-executes its instrument
+    happily against someone else's number, so without this the store could be made to
+    agree with any claim simply by rewriting its history.
+    """
+    prev = ""
+    for i, row in enumerate(rows, 1):
+        if row.get("prev") != prev:
+            return (
+                "TAMPERED",
+                f"line {i} ({row.get('id')}) follows {prev[:12] or 'nothing'!r} but records {str(row.get('prev'))[:12]!r}",
+            )
+        if row.get("hash") != _chain_hash(row):
+            return (
+                "TAMPERED",
+                f"line {i} ({row.get('id')}) does not hash to what it records: the row was edited",
+            )
+        prev = row["hash"]
+    return PASS, ""
+
+
+def _append(store: str, row: dict) -> dict:
+    """Append with the chain extended, under a lock so two agents cannot fork the history.
+
+    The lock is taken next to the store and removed again: a lockfile left behind is a file
+    git will happily commit, and it did exactly that on 2026-10-23 -- facts/estate.jsonl.lock
+    reached the branch and the claim gate refused the change, correctly. An unlocked store is
+    still safe against a torn append (one write, one flush, one fsync); the lock only stops two
+    writers computing the same prev from the same last row.
+    """
+    path = os.path.expanduser(store)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    lockpath = path + ".lock"
+    try:
+        lockfh = open(lockpath, "w", encoding="utf-8")
+    except OSError:
+        lockfh = None  # a read-only store still appends; it just cannot be locked
+    try:
+        if lockfh is not None:
+            fcntl.flock(lockfh, fcntl.LOCK_EX)
+        rows = load(path)
+        row["prev"] = rows[-1]["hash"] if rows else ""
+        row["hash"] = _chain_hash(row)
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, sort_keys=True) + "\n")
+            fh.flush()
+            os.fsync(fh.fileno())
+    finally:
+        if lockfh is not None:
+            lockfh.close()
+            try:
+                os.unlink(lockpath)
+            except OSError:
+                pass
+    return row
+
+
 def verify_row(row: dict, tol: float) -> tuple[str, str]:
     instrument = row.get("instrument")
     # A validity of 0 is a real window ("expires immediately"); only an absent
     # window is unwitnessed. `not row.get(...)` conflated the two and made an
     # expired fact report as unchecked, which the test suite caught.
     if not instrument or row.get("valid_for_s") is None:
-        return UNWITNESSED, "no instrument or no validity window: this fact cannot be checked"
+        return (
+            UNWITNESSED,
+            "no instrument or no validity window: this fact cannot be checked",
+        )
     measured = row.get("measured_at") or ""
     try:
-        at = datetime.strptime(measured, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        at = datetime.strptime(measured, "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc
+        )
     except ValueError:
         return UNWITNESSED, f"measured_at is not a timestamp: {measured!r}"
     age = time.time() - at.timestamp()
@@ -105,7 +198,10 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
     if not ok:
         return CONTRADICTED, out
     if not _same(out, str(row.get("value")), tol):
-        return CONTRADICTED, f"stored {row.get('value')!r}, instrument now prints {out!r}"
+        return (
+            CONTRADICTED,
+            f"stored {row.get('value')!r}, instrument now prints {out!r}",
+        )
     for alt in row.get("also") or []:
         ok2, out2 = _run(alt)
         if not ok2:
@@ -142,10 +238,50 @@ def cmd_add(a) -> int:
         "store_version": 1,
     }
     store = os.path.expanduser(a.store)
-    os.makedirs(os.path.dirname(store) or ".", exist_ok=True)
-    with open(store, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, sort_keys=True) + "\n")
-    print(f"STORED {row['id']}  {a.subject} = {out} {a.unit}  ({a.instrument})")
+    stored = _append(store, row)
+    print(f"STORED {stored['id']}  {a.subject} = {out} {a.unit}  ({a.instrument})")
+    return 0
+
+
+def cmd_retire(a) -> int:
+    """Retire a fact without deleting it.
+
+    The store is append-only because the history is the evidence, so a fact that is no longer
+    the right question (a row count of a ledger that appends continuously) is retired with its
+    reason rather than removed. verify then stops grading it and still proves nobody edited the
+    past. Retiring a fact that is not there is refused: a typo must not silently ungrade a live
+    fact.
+    """
+    store = os.path.expanduser(a.store)
+    rows = load(store)
+    # Retirement is ordered, not a set: the same subject and instrument measured again is the same
+    # fact id (the id is a hash of both), so a re-measurement after a retirement must be live. A
+    # set would retire the re-measurement too -- which it did, on 2026-10-23, hiding a live fact.
+    retired_now = set()
+    seen = set()
+    for r in rows:
+        if r.get("kind") == "retire":
+            retired_now.add(r["target"])
+        else:
+            seen.add(r["id"])
+            retired_now.discard(r["id"])
+    if a.id not in seen:
+        print(f"REFUSED: no fact {a.id!r} in {a.store}", file=sys.stderr)
+        return 2
+    if a.id in retired_now:
+        print(f"REFUSED: {a.id} is already retired", file=sys.stderr)
+        return 2
+    _append(
+        store,
+        {
+            "kind": "retire",
+            "target": a.id,
+            "reason": a.reason,
+            "retired_at": _now(),
+            "store_version": 1,
+        },
+    )
+    print(f"RETIRED {a.id}: {a.reason}")
     return 0
 
 
@@ -154,42 +290,122 @@ def cmd_verify(a) -> int:
     if not rows:
         print(f"no facts in {a.store}; nothing to verify (this is a pass, not a proof)")
         return 0
-    worst = 0
+    chain, why = chain_state(rows)
+    worst = 1 if chain != PASS else 0
+    retired = {}
     results = []
-    for row in rows:
+    if chain != PASS:
+        results.append(
+            {"id": "-", "subject": "the store itself", "verdict": chain, "detail": why}
+        )
+    # Only the newest row per fact id is graded: a re-measurement of the same subject and
+    # instrument is the same id, and it supersedes the row it replaces. Retirement is ordered and
+    # applies only to rows before it, so a re-measured fact is live again. As a plain set of
+    # retired ids this hid a live fact (verify said 0/0 active) on 2026-10-23.
+    last_seen = {}
+    for i, r in enumerate(rows):
+        if r.get("kind") != "retire":
+            last_seen[r.get("id")] = i
+    retired_after = {}
+    for i, r in enumerate(rows):
+        if r.get("kind") == "retire":
+            retired_after[r["target"]] = i
+    for i, row in enumerate(rows):
+        if row.get("kind") == "retire":
+            continue
+        detail = f"retired {row.get('retired_at')}: {row.get('reason')}"
+        if i < last_seen.get(row.get("id"), i):
+            results.append(
+                {
+                    "id": row.get("id"),
+                    "subject": row.get("subject"),
+                    "verdict": RETIRED,
+                    "detail": "superseded by a later measurement of the same fact",
+                }
+            )
+            continue
+        ridx = retired_after.get(row.get("id"), -1)
+        if ridx > i:
+            rrow = rows[ridx]
+            results.append(
+                {
+                    "id": row.get("id"),
+                    "subject": row.get("subject"),
+                    "verdict": RETIRED,
+                    "detail": f"retired {rrow.get('retired_at')}: {rrow.get('reason')}",
+                }
+            )
+            continue
         verdict, detail = verify_row(row, a.tolerance)
-        results.append({"id": row.get("id"), "subject": row.get("subject"), "verdict": verdict, "detail": detail})
+        results.append(
+            {
+                "id": row.get("id"),
+                "subject": row.get("subject"),
+                "verdict": verdict,
+                "detail": detail,
+            }
+        )
         if verdict in FAILURES:
             worst = 1
     if a.json:
-        print(json.dumps({"verdict": "PASS" if worst == 0 else "FAIL", "facts": results}, indent=2))
+        print(
+            json.dumps(
+                {"verdict": "PASS" if worst == 0 else "FAIL", "facts": results},
+                indent=2,
+            )
+        )
     else:
         for r in results:
             print(f"{r['verdict']:13} {r['id']:<14} {r['subject']}: {r['detail']}")
         n_pass = sum(1 for r in results if r["verdict"] == PASS)
-        print(f"\n{n_pass}/{len(results)} facts re-executed. verdict: {'PASS' if worst == 0 else 'FAIL'}")
+        n_ret = sum(1 for r in results if r["verdict"] == RETIRED)
+        print(
+            f"\n{n_pass}/{len(results) - n_ret} active facts re-executed"
+            f" ({n_ret} retired). verdict: {'PASS' if worst == 0 else 'FAIL'}"
+        )
     return worst
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     ap.add_argument("--store", default=DEFAULT_STORE)
     ap.add_argument("--tolerance", type=float, default=0.0)
     ap.add_argument("--json", action="store_true")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    ad = sub.add_parser("add", help="measure a fact and store it (there is no --value flag by design)")
+    ad = sub.add_parser(
+        "add", help="measure a fact and store it (there is no --value flag by design)"
+    )
     ad.add_argument("--subject", required=True)
     ad.add_argument("--unit", default="")
-    ad.add_argument("--instrument", required=True, help="the exact command that produces the value")
-    ad.add_argument("--also", action="append", help="an independent instrument that must agree (repeatable)")
+    ad.add_argument(
+        "--instrument", required=True, help="the exact command that produces the value"
+    )
+    ad.add_argument(
+        "--also",
+        action="append",
+        help="an independent instrument that must agree (repeatable)",
+    )
     ad.add_argument("--valid-for", type=int, default=86400, dest="valid_for")
-    ad.add_argument("--expect", help="pin the value; refuse to store if the instrument disagrees")
+    ad.add_argument(
+        "--expect", help="pin the value; refuse to store if the instrument disagrees"
+    )
     ad.add_argument("--id")
     ad.set_defaults(func=cmd_add)
 
-    ve = sub.add_parser("verify", help="re-execute every stored instrument and fail closed")
+    ve = sub.add_parser(
+        "verify", help="re-execute every stored instrument and fail closed"
+    )
     ve.set_defaults(func=cmd_verify)
+
+    re_ = sub.add_parser(
+        "retire", help="stop grading a fact, keeping it and its reason on record"
+    )
+    re_.add_argument("--id", required=True)
+    re_.add_argument("--reason", required=True)
+    re_.set_defaults(func=cmd_retire)
 
     a = ap.parse_args(argv)
     return a.func(a)

@@ -8,12 +8,22 @@ false.
 
 from __future__ import annotations
 
+import importlib.machinery
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[1] / "bin" / "estate-claim-check"
+
+
+def _tool_module():
+    loader = importlib.machinery.SourceFileLoader("estate_claim_check", str(TOOL))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    mod = importlib.util.module_from_spec(spec)
+    loader.exec_module(mod)
+    return mod
 
 
 def run(*args: str, store: Path) -> subprocess.CompletedProcess:
@@ -26,7 +36,11 @@ def run(*args: str, store: Path) -> subprocess.CompletedProcess:
 
 
 def write_rows(store: Path, rows: list[dict]) -> None:
-    store.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    """Write fixtures the way `add` would: through the tool's own append, so the hash
+    chain is valid and the test is about the verdicts, not about the fixture."""
+    tool = _tool_module()
+    for r in rows:
+        tool._append(str(store), dict(r))
 
 
 def ledger_fixture(tmp: Path, before: int, after: int) -> Path:
@@ -214,7 +228,135 @@ def test_an_expectation_that_disagrees_stores_nothing(tmp_path):
     assert not store.exists()
 
 
+def test_a_retired_fact_stops_being_graded_but_stays_on_record(tmp_path):
+    """A row count of a ledger that appends continuously is the wrong instrument: measured live,
+    the count moved from 587297 to 587397 while the session ran and the gate correctly refused it.
+    Retiring keeps the history (the chain still walks) and stops grading the dead question."""
+    store = tmp_path / "facts.jsonl"
+    assert (
+        run(
+            "add", "--subject", "rows", "--instrument", "echo 5", store=store
+        ).returncode
+        == 0
+    )
+    rid = [json.loads(x) for x in store.read_text().splitlines()][0]["id"]
+    assert (
+        run("retire", "--id", rid, "--reason", "target moves", store=store).returncode
+        == 0
+    )
+    # the instrument now disagrees, which would be CONTRADICTED if the fact were still live
+    rows = [json.loads(x) for x in store.read_text().splitlines()]
+    rows[0]["value"] = "9"
+    store.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    p = run("verify", store=store)
+    assert "TAMPERED" in p.stdout  # editing the past is still refused
+
+
+def test_retiring_an_unknown_fact_is_refused(tmp_path):
+    store = tmp_path / "facts.jsonl"
+    assert (
+        run(
+            "add", "--subject", "rows", "--instrument", "echo 5", store=store
+        ).returncode
+        == 0
+    )
+    p = run("retire", "--id", "nope", "--reason", "typo", store=store)
+    assert p.returncode == 2
+    assert "no fact" in p.stderr
+
+
 def test_an_empty_store_passes_but_says_it_is_not_a_proof(tmp_path):
     p = run("verify", store=tmp_path / "missing.jsonl")
     assert p.returncode == 0
     assert "not a proof" in p.stdout
+
+
+def test_an_edited_history_is_tampered(tmp_path):
+    """Change a stored value and leave the instrument alone: re-execution alone would
+    not notice, because the instrument still prints its own honest number. The chain is
+    what makes the record and the measurement the same object."""
+    store = tmp_path / "facts.jsonl"
+    assert (
+        run(
+            "add", "--subject", "rows", "--instrument", "echo 5", store=store
+        ).returncode
+        == 0
+    )
+    assert (
+        run(
+            "add", "--subject", "more", "--instrument", "echo 6", store=store
+        ).returncode
+        == 0
+    )
+    rows = [json.loads(x) for x in store.read_text().splitlines()]
+    rows[0]["value"] = "7"
+    store.write_text("".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8")
+    p = run("verify", store=store)
+    assert p.returncode == 1, p.stdout
+    assert "TAMPERED" in p.stdout
+    assert "edited" in p.stdout
+
+
+def test_a_deleted_fact_breaks_the_chain(tmp_path):
+    """Dropping the fact that disagrees is the other way to make a store agree with you."""
+    store = tmp_path / "facts.jsonl"
+    for v in ("5", "6"):
+        assert (
+            run(
+                "add", "--subject", f"rows{v}", "--instrument", f"echo {v}", store=store
+            ).returncode
+            == 0
+        )
+    lines = store.read_text().splitlines()
+    store.write_text(lines[1] + "\n", encoding="utf-8")
+    p = run("verify", store=store)
+    assert p.returncode == 1, p.stdout
+    assert "TAMPERED" in p.stdout
+    assert "follows" in p.stdout
+
+
+def test_an_instrument_that_measures_nothing_is_refused(tmp_path):
+    """`true` exits 0 and prints nothing. Nothing was measured, so nothing is witnessed.
+
+    Without this, an empty value reproduces itself forever and no second run can ever
+    contradict it: the precise shape of a gate that cannot fail.
+    """
+    store = tmp_path / "facts.jsonl"
+    p = run("add", "--subject", "nothing", "--instrument", "true", store=store)
+    assert p.returncode == 2, p.stdout
+    assert "printed nothing" in p.stderr
+    assert not store.exists()
+
+
+def test_appending_leaves_no_lockfile_behind(tmp_path):
+    """A crashed or unlucky append used to leave facts/estate.jsonl.lock on disk; git committed it
+    and the claim gate refused the whole change. The lock exists only while it is held."""
+    store = tmp_path / "facts.jsonl"
+    assert (
+        run(
+            "add", "--subject", "rows", "--instrument", "echo 5", store=store
+        ).returncode
+        == 0
+    )
+    assert not (tmp_path / "facts.jsonl.lock").exists()
+
+
+def test_re_measuring_after_a_retirement_is_live_not_retired(tmp_path):
+    """The id is a hash of subject+instrument, so a re-measurement reuses it. Retirement is
+    therefore ordered: a retire row only silences the rows before it. As a set it silenced the
+    re-measurement too and verify reported 0/0 active -- a live fact hidden, on 2026-10-23."""
+    store = tmp_path / "facts.jsonl"
+    inst = "echo 13"
+    assert (
+        run("add", "--subject", "tests", "--instrument", inst, store=store).returncode
+        == 0
+    )
+    rid = [json.loads(x) for x in store.read_text().splitlines()][0]["id"]
+    assert run("retire", "--id", rid, "--reason", "grew", store=store).returncode == 0
+    assert (
+        run("add", "--subject", "tests", "--instrument", inst, store=store).returncode
+        == 0
+    )
+    p = run("verify", store=store)
+    assert p.returncode == 0, p.stdout + p.stderr
+    assert "1/1 active facts" in p.stdout
