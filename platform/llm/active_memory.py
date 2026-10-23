@@ -104,6 +104,12 @@ _focus_refresh = threading.Lock()  # held by the one read in flight
 _focus_tried: list = [0.0]
 _written: dict[str, float] = {}
 _door_key: list = [0.0, ""]
+# The last answer each leg got right, kept past its TTL: when a read stalls or fails, an old fact
+# beats no fact (the router lost ~2,100 reads to "no answer inside 3.5s" on 2026-10-21/22).
+STALE_MAX_S = float(os.environ.get("ACTIVE_MEMORY_STALE_MAX_S", "1800"))
+_last_good: dict[str, tuple[float, dict]] = {}
+_started: dict[str, float] = {}  # leg -> when its latest read began
+_elapsed: dict[str, float] = {}  # leg -> how long its latest finished read took
 
 
 # --------------------------------------------------------------------------- request shape
@@ -281,6 +287,9 @@ def _door_brief(task: str) -> dict | None:
 
 def _door_focus() -> dict:
     _, focus = _lib()
+    # focus.py lets gh run 8 s for the hooks; the router gives up at BUDGET_S + 0.5, so a slower gh
+    # was abandoned but kept running, uncached, and the next call started another.
+    focus.FOCUS_TIMEOUT_S = min(getattr(focus, "FOCUS_TIMEOUT_S", BUDGET_S), BUDGET_S)
     rows = focus.live_focus()
     if rows is None:
         return {
@@ -302,9 +311,13 @@ def _door_focus() -> dict:
     }
 
 
+def _brief_key(task: str) -> str:
+    return hashlib.sha256(f"{NAMESPACE}\0{task}".encode()).hexdigest()
+
+
 def fetch_brief(task: str, now: float | None = None) -> dict | None:
     now = time.time() if now is None else now
-    key = hashlib.sha256(f"{NAMESPACE}\0{task}".encode()).hexdigest()
+    key = _brief_key(task)
     hit = _brief_cache.get(key)
     if hit and now - hit[0] < BRIEF_TTL_S:
         return hit[1]
@@ -317,9 +330,14 @@ def fetch_brief(task: str, now: float | None = None) -> dict | None:
             BUDGET_S,
         )
     _brief_cache[key] = (now, body if isinstance(body, dict) else None)
+    if isinstance(body, dict):
+        _last_good["brief:" + key] = (now, body)
     if len(_brief_cache) > 512:  # a router lives for days; the cache must not
         for k, _ in sorted(_brief_cache.items(), key=lambda kv: kv[1][0])[:256]:
             _brief_cache.pop(k, None)
+    if len(_last_good) > 512:
+        for k, _ in sorted(_last_good.items(), key=lambda kv: kv[1][0])[:256]:
+            _last_good.pop(k, None)
     return _brief_cache[key][1]
 
 
@@ -369,6 +387,26 @@ def _refresh_focus(now: float) -> None:
         log.warning("active_memory focus refresh failed: %s", exc)
     finally:
         _focus_refresh.release()
+
+
+def _timed(leg: str, fn: Any, *args: Any) -> Any:
+    """Run one read and record when it started and how long it took, so a read the router gave up
+    on can still be measured (the 2026-10-22 failures logged neither a time nor a duration)."""
+    t0 = time.time()
+    _started[leg] = t0
+    try:
+        return fn(*args)
+    finally:
+        _elapsed[leg] = time.time() - t0
+
+
+def stale(leg_key: str, now: float | None = None) -> tuple[dict, float] | None:
+    """(last good answer, its age in seconds) if one is younger than STALE_MAX_S, else None."""
+    hit = _last_good.get(leg_key)
+    now = time.time() if now is None else now
+    if hit and now - hit[0] <= STALE_MAX_S:
+        return hit[1], now - hit[0]
+    return None
 
 
 # --------------------------------------------------------------------------- the block
@@ -538,11 +576,15 @@ class ActiveMemory(CustomLogger):
             who = agent(data, user_api_key_dict)
             # A deadline each, not one over both: a slow brief must not cost the focus that
             # already answered (measured 2026-10-20: a 20 s brief dropped a 2 s focus read).
+            began = time.time()
             reads = [
-                asyncio.ensure_future(asyncio.to_thread(fetch_brief, task)),
-                asyncio.ensure_future(asyncio.to_thread(fetch_focus)),
+                asyncio.ensure_future(
+                    asyncio.to_thread(_timed, "brief", fetch_brief, task)
+                ),
+                asyncio.ensure_future(asyncio.to_thread(_timed, "focus", fetch_focus)),
             ]
             await asyncio.wait(reads, timeout=BUDGET_S + 0.5)
+            waited = time.time() - began
             for (
                 r
             ) in reads:  # a read left running still fills its cache for the next call
@@ -553,9 +595,37 @@ class ActiveMemory(CustomLogger):
                 else TimeoutError(f"no answer inside {BUDGET_S + 0.5:.1f}s")
                 for r in reads
             )
+            fallback = {
+                "brief": stale("brief:" + _brief_key(task)),
+                "focus": None,  # fetch_focus keeps its own last good register (FOCUS_STALE_S)
+            }
             for name, r in (("brief", brief), ("focus", focus)):
-                if isinstance(r, BaseException):
-                    log.warning("active_memory %s unreadable for %s: %s", name, who, r)
+                # A focus read that "answered" that the ledger is unreadable is a failure too.
+                failed = isinstance(r, BaseException) or (
+                    name == "focus"
+                    and isinstance(r, dict)
+                    and r.get("available") is False
+                )
+                if not failed:
+                    continue
+                old = fallback[name]
+                log.warning(
+                    "active_memory %s unreadable for %s: %s at=%s waited=%.2fs "
+                    "leg_elapsed=%s load1=%.1f %s",
+                    name,
+                    who,
+                    r if isinstance(r, BaseException) else r.get("error"),
+                    time.strftime("%H:%M:%SZ", time.gmtime(began)),
+                    waited,
+                    f"{_elapsed[name]:.2f}s" if name in _elapsed else "running",
+                    os.getloadavg()[0],
+                    f"serving stale age={old[1]:.0f}s" if old else "nothing to serve",
+                )
+                if old:
+                    if name == "brief":
+                        brief = old[0]
+                    else:
+                        focus = old[0]
             block = render(
                 None if isinstance(brief, BaseException) else brief,
                 None if isinstance(focus, BaseException) else focus,

@@ -1,0 +1,62 @@
+description: 'The router lost ~2,100 Active Memory reads on 2026-10-21/22 ("no answer
+  inside 3.5s" on 879 brief and 808 focus lines, 423 calls losing both legs) and neither
+  leg reproduces when timed alone (brief median 0.82 s; focus cold median 1.45 s,
+  max 2.73 s). Question: why can the cause not be found from what the router already
+  logged -- is it that a failed read is logged with no time of day and no duration
+  (so it cannot be set against load or against the other leg), that the lines carry
+  them and the analysis simply missed them, or that they were emitted and later lost
+  to rotation. Measured 2026-10-22 on ~/Library/Logs/litellm-local.log (61 MB) and
+  platform/llm/active_memory.py at origin/main. This record grades the logging defect
+  the change fixes, not the cause of the failed reads, which stays unproven.
+
+  '
+hypotheses:
+- name: H1
+  description: a failed read is logged with no time of day and no duration, so it
+    cannot be tied to load or to the other leg
+  prior: 0.34
+- name: H2
+  description: the lines carry a time and a duration and the earlier analysis missed
+    them
+  prior: 0.33
+- name: H3
+  description: the lines were emitted with a time and a duration and the log has since
+    rotated them away, so only undated survivors remain
+  prior: 0.33
+n_eff_divisor: 20
+evidence:
+- name: unreadable-read lines in the router log that carry a time of day or a duration,
+    counted before the new format shipped (2,138 of 2,140 lines; the other 2 were
+    written by the fixed router after the swap and are excluded)
+  observed:
+    absent: 2138
+  likelihoods:
+    H1:
+      present: 0.02
+      absent: 0.98
+    H2:
+      present: 0.95
+      absent: 0.05
+    H3:
+      present: 0.9
+      absent: 0.1
+- name: log.warning calls for an unreadable read in platform/llm/active_memory.py
+    at origin/main whose format string names a time of day or a duration (1 call site)
+  observed:
+    absent: 1
+  likelihoods:
+    H1:
+      present: 0.02
+      absent: 0.98
+    H2:
+      present: 0.95
+      absent: 0.05
+    H3:
+      present: 0.9
+      absent: 0.1
+posteriors:
+  H1: 1.0
+  H2: 0.0
+  H3: 0.0
+winner: H1
+computed_at: '2026-10-22T07:50:13Z'
