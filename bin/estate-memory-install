@@ -99,7 +99,7 @@ def home_files() -> list[str]:
     ]
     tools: list[str] = []
     for rt in MANIFEST["runtimes"].values():
-        for entry in rt.get("tools", []):
+        for entry in list(rt.get("tools", [])) + list(rt.get("enforce", [])):
             source = HERE / entry["source"]
             if source.is_dir():
                 tools += [
@@ -289,6 +289,13 @@ def plan(name: str, rt: dict, root: Path) -> list[tuple[str, Path, object]]:
         if entry.get("kind") == "link":
             changes += plan_link(
                 root / entry["source"], expand(entry["dest"], rt), "tools"
+            )
+    # The write-side gates, where the runtime has no hooks of its own: the same binary, reached
+    # through an extension (#6996).
+    for entry in rt.get("enforce", []):
+        if entry.get("kind") == "link":
+            changes += plan_link(
+                root / entry["source"], expand(entry["dest"], rt), "enforce"
             )
     return changes
 

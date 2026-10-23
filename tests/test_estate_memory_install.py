@@ -81,6 +81,13 @@ def test_install_writes_every_present_runtime_and_keeps_every_other_key(home):
     assert os.readlink(link) == installed(
         home, "platform/estate/memory/pi-estate-memory.ts"
     )
+    # pi has no hooks, so the write-side gates reach it as an extension (#7006): the same
+    # binary, through the same home copy every runtime runs.
+    enforce = home / ".pi" / "agent" / "extensions" / "pi-estate-enforce"
+    assert os.readlink(enforce) == installed(home, "extensions/pi-estate-enforce")
+    assert (
+        home / ".estate" / "memory" / "extensions" / "pi-estate-enforce" / "index.ts"
+    ).exists()
 
     assert run(home, "--check", env=cc).returncode == 0
     run(home, env=cc)  # a second run changes nothing
