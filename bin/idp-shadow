@@ -721,6 +721,23 @@ def consumer_secret_keys():
                         items_at = indent
                     elif what == "key" and items_at is not None and indent > items_at:
                         add(vol, value)
+                # A key read from a mounted file (`cat /run/secrets/x/KEY` in a command): the
+                # volume names the Secret, the mountPath names where, the path names the key.
+                # Measured, run 39948889099: litellm's LITELLM_DB_PASSWORD was never laid.
+                vols = dict(
+                    re.findall(
+                        r"-\s*name:\s*([\w.-]+)\s*\n\s*secret:\s*\{\s*secretName:\s*([\w.-]+)",
+                        doc,
+                    )
+                )
+                for vname, mpath in re.findall(
+                    r"name:\s*([\w.-]+)\s*,\s*mountPath:\s*([^,}\s]+)", doc
+                ):
+                    if vname in vols:
+                        for km in re.finditer(
+                            re.escape(mpath) + r"/([A-Za-z0-9_.-]+)", doc
+                        ):
+                            add(vols[vname], km.group(1))
                 for m in re.finditer(r"secretRef:\s*\{\s*name:\s*([^},\s]+)", doc):
                     add(m.group(1), None)
                 for m in re.finditer(r"secretRef:\s*\n\s+name:\s*(\S+)", doc):
