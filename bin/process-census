@@ -1,0 +1,73 @@
+#!/usr/bin/env python3
+"""process census -- the non-coding, process-shaped work agents do, and how each reinvents it.
+
+Reads the same 24h window pi-observe reads. Deterministic matchers only: a class is a regex over
+the command string, so a count here is a count of commands, not a model's impression.
+"""
+import glob
+import json
+import os
+import re
+import time
+
+WINDOW = 24 * 3600
+cut = time.time() - WINDOW
+
+CLS = [
+    ("ci-poll-loop",    lambda c: bool(re.search(r"\b(for|while)\b", c)) and "gh " in c),
+    ("ci-poll-gh-api",  lambda c: "gh api" in c and re.search(r"/(status|check-runs|jobs)", c)),
+    ("ci-poll-gh-run",  lambda c: re.search(r"gh (run|pr) (view|list|checks|watch)", c)),
+    ("bare-wait",       lambda c: re.match(r"^\s*(timeout \d+ )?(sleep|wait) \d+\s*$", c) is not None),
+    ("claim-post",      lambda c: "claim-open" in c or "gh issue comment" in c or "claim-gate" in c),
+    ("claim-heartbeat", lambda c: "heartbeat" in c),
+    ("lane-handover",   lambda c: "lane-submit" in c or "idp-greenlane" in c or "greenlane" in c),
+    ("worktree-op",     lambda c: re.search(r"git worktree (add|remove|list|prune)", c)),
+    ("abs-cd-prefix",   lambda c: re.match(r"^\s*cd /[A-Za-z0-9._/-]+ &&", c)),
+    ("git-sync",        lambda c: re.search(r"git (fetch|pull|checkout|switch|rebase)", c)),
+    ("push",            lambda c: re.search(r"git push", c)),
+    ("test-run",        lambda c: re.search(r"pytest|idp-ci|bin/verify|npm test|go test", c)),
+    ("inspect-fs",      lambda c: re.match(r"^\s*(ls|cat|sed -n|head|tail|wc -l|stat)\b", c) is not None),
+    ("python-inline",   lambda c: re.match(r"^\s*python3 -", c) is not None),
+    ("json-shape",      lambda c: "json.load" in c or "jq " in c),
+    ("date-clock",      lambda c: re.match(r"^\s*date -u", c) is not None),
+    ("kubectl",         lambda c: "kubectl" in c),
+    ("heredoc-script",  lambda c: re.search(r"<<'?(PY|EOF|SH)'?", c) is not None),
+]
+
+agg = {}
+variants = {}
+for p in glob.glob(os.path.expanduser("~/.pi/agent/sessions/*/*.jsonl")):
+    if os.stat(p).st_mtime < cut:
+        continue
+    for line in open(p, encoding="utf-8", errors="ignore"):
+        try:
+            o = json.loads(line)
+        except ValueError:
+            continue
+        if o.get("type") != "message":
+            continue
+        m = o.get("message") or {}
+        if m.get("role") != "assistant":
+            continue
+        for b in m.get("content") or []:
+            if not isinstance(b, dict) or b.get("type") != "toolCall":
+                continue
+            a = b.get("arguments") or {}
+            c = str(a.get("command") or a.get("intent") or "")
+            for name, f in CLS:
+                if f(c):
+                    k = (name, b.get("name"))
+                    agg[k] = agg.get(k, 0) + 1
+                    variants.setdefault(k, set()).add(re.sub(r"\d+", "<n>", c)[:70])
+
+print(f"{'calls':>6} {'variants':>8}  class / tool")
+for (name, tool), n in sorted(agg.items(), key=lambda x: -x[1]):
+    print(f"{n:>6} {len(variants[(name, tool)]):>8}  {name} / {tool}")
+
+print("\n-- most reinvented (>=6 distinct command forms) --")
+for (name, tool), vs in sorted(variants.items(), key=lambda x: -len(x[1])):
+    if len(vs) < 6:
+        continue
+    print(f"\n{name} / {tool}: {len(vs)} distinct forms, {agg[(name, tool)]} calls")
+    for v in list(sorted(vs))[:6]:
+        print("   ", v)
