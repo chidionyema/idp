@@ -113,9 +113,11 @@ run() {
   # local_caller_auth admits only its own Host; a canary on another port must admit that port,
   # or every keyed lane refuses it (measured 2026-09-29 on :4001).
   export ESTATE_ROUTER_HOSTS="${ESTATE_ROUTER_HOSTS:-127.0.0.1:$FRONT_PORT,localhost:$FRONT_PORT,127.0.0.1:$PORT,localhost:$PORT}"
-  # Claude Code compacts at CLAUDE_CODE_AUTO_COMPACT_WINDOW=200000; the ceiling's 128k default
-  # would refuse a long session before its own compaction ever fires.
-  export ESTATE_MAX_INPUT_TOKENS="${ESTATE_MAX_INPUT_TOKENS:-200000}"
+  # One ceiling for every router: request_ceiling.py's own default (128,000), the same value the
+  # cloud router runs on. This used to be 200000 here only, so a failover to the cloud silently
+  # lowered the limit mid-session. Claude Code's CLAUDE_CODE_AUTO_COMPACT_WINDOW must stay below
+  # it (100000 in ~/.estate/harness/cc/settings.json) so compaction fires before any refusal.
+  export ESTATE_MAX_INPUT_TOKENS="${ESTATE_MAX_INPUT_TOKENS:-128000}"
   # Export the OTEL_* settings only when a collector answers. Dropping the otel callback was not
   # enough: LiteLLM still built span and metric exporters from these variables alone, and retried
   # the dead :4318 on every batch (8,394 ConnectionErrors in litellm-local.log, 2026-10-10).
