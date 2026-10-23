@@ -1,0 +1,54 @@
+description: 'shadow-verify fails platform/llm with secrets "github-app" not found
+  on some runs and not others (39907078830, 39908064993, 39920521952 fail; 39908067512
+  passes the same step). Question: is the github-app-creds ExternalSecret applied
+  before the ESO CRD is established (a race), or is the row missing, or is the stand-in
+  unable to write the Secret? NOTE: evidence gathered before this record; likelihoods
+  written per item.
+
+  '
+hypotheses:
+- name: H1
+  description: the creds row is applied beside the floor rows, races the ESO CRD,
+    and is retried on a 5m interval, so vault_wait's 120s expires
+  prior: 0.4
+- name: H2
+  description: the creds row is absent from the shadow
+  prior: 0.3
+- name: H3
+  description: stand_in_vault cannot create the Secret from the ExternalSecret spec
+  prior: 0.3
+evidence:
+- name: the same step passes on some runs with an identical tree and fails on others,
+    and the floor lines show the ESO CRD row laid in the same pass
+  observed:
+    intermittent: 1
+  likelihoods:
+    H1:
+      intermittent: 0.9
+      other: 0.1
+    H2:
+      intermittent: 0.05
+      other: 0.95
+    H3:
+      intermittent: 0.2
+      other: 0.8
+- name: passing runs print "vault stand-in flux-system/github-app (5 placeholder key(s))",
+    so the stand-in can write it when the ExternalSecret exists
+  observed:
+    stand_in_works: 1
+  likelihoods:
+    H1:
+      stand_in_works: 0.9
+      other: 0.1
+    H2:
+      stand_in_works: 0.5
+      other: 0.5
+    H3:
+      stand_in_works: 0.02
+      other: 0.98
+posteriors:
+  H1: 0.9738503156
+  H2: 0.0225428314
+  H3: 0.003606853
+winner: H1
+computed_at: '2026-10-23T08:00:51Z'

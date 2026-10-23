@@ -569,7 +569,6 @@ def flux_floor(deadline):
     # 159) declare dependsOn github-app-creds for exactly this reason, so the shadow lays that
     # row like the rest of the floor. Applied, never waited on: ESO has no controller here, so
     # the ExternalSecret can never report Ready -- the stand-in writes its Secret from the spec.
-    flux_kustomization(CREDS_ROW_NAME, CREDS_ROW_PATH, "shadow")
     failed = []
     for name, path, _ in floor:
         ready, msg, _inv = wait_ks(name, deadline)
@@ -577,6 +576,14 @@ def flux_floor(deadline):
             print(f"ok      shadow  floor {name} laid by flux")
         else:
             failed.append(f"the shadow floor {name} did not converge -- {msg}")
+    # Applied only once the floor has converged: the ExternalSecret needs the ESO CRD
+    # established. Applied beside the floor rows it raced them, kustomize-controller answered
+    # "no matches for kind ExternalSecret" and retried on its 5m interval, so vault_wait's 120s
+    # expired with flux-system/github-app absent and platform/llm failed
+    # `secrets "github-app" not found` on some runs and not others (runs 39907078830,
+    # 39908064993, 39920521952 against 39908067512, where the same row converged).
+    if not failed:
+        flux_kustomization(CREDS_ROW_NAME, CREDS_ROW_PATH, "shadow")
     return failed
 
 
@@ -1226,7 +1233,33 @@ def pod_failures(ks=None):
                 f"pod {who} container {cs.get('name')} is {reason} "
                 f"(restarts {int(cs.get('restartCount') or 0)}): {detail}"
             )
+            _say_why_it_died(meta, cs.get("name"))
     return out
+
+
+_explained = set()
+
+
+def _say_why_it_died(meta, container):
+    """Print the dead container's last words once, to the run log and not into the failure message.
+
+    A CrashLoopBackOff line names the state and never the cause (run 39926636846: litellm
+    crashlooped and nothing in the log said why). The message stays free of it on purpose: it is
+    what `signature` compares between the head's run and the base's.
+    """
+    key = (meta.get("namespace"), meta.get("name"), container)
+    if key in _explained:
+        return
+    _explained.add(key)
+    p = kube(
+        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=150"],
+        check=False,
+        timeout=30,
+    )
+    text = re.sub(r"\x1b\[[0-9;]*m", "", (p.stdout or p.stderr or "")).strip()
+    if text:
+        print(f"note    shadow  last output of {key[0]}/{key[1]} {container}:")
+        print("\n".join("        | " + ln for ln in text.splitlines()))
 
 
 def wait_ks(name, deadline):

@@ -1,0 +1,51 @@
+description: 'shadow-verify fails platform/llm with litellm CrashLoopBackOff (run
+  39926636846) and the log never says why the container exits. Question: is the cause
+  visible in the run log today? NOTE: evidence gathered before this record; likelihoods
+  written per item.
+
+  '
+hypotheses:
+- name: H1
+  description: the shadow reports container state but never the dead container's output
+  prior: 0.5
+- name: H2
+  description: the output is printed elsewhere in the log and was missed
+  prior: 0.3
+- name: H3
+  description: the container produced no output
+  prior: 0.2
+evidence:
+- name: grep of the saved run log for Traceback, Error:, Exception, litellm finds
+    only the FAIL summary lines
+  observed:
+    no_output_in_log: 1
+  likelihoods:
+    H1:
+      no_output_in_log: 0.9
+      other: 0.1
+    H2:
+      no_output_in_log: 0.05
+      other: 0.95
+    H3:
+      no_output_in_log: 0.6
+      other: 0.4
+- name: pod_failures builds its line from containerStatuses only and never calls kubectl
+    logs
+  observed:
+    no_logs_call: 1
+  likelihoods:
+    H1:
+      no_logs_call: 0.95
+      other: 0.05
+    H2:
+      no_logs_call: 0.3
+      other: 0.7
+    H3:
+      no_logs_call: 0.3
+      other: 0.7
+posteriors:
+  H1: 0.9134615385
+  H2: 0.0096153846
+  H3: 0.0769230769
+winner: H1
+computed_at: '2026-10-23T08:58:23Z'

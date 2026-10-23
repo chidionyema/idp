@@ -17,7 +17,8 @@ laptop, of which two have actually done work**.
 **Claude Code** lives in `~/.estate/harness/cc` — that is its home directory, not a copy of it. It
 holds `settings.json`, its transcript folder, project state and shell snapshots. It starts by
 typing `claude`, and it has run: the session store carries **423 sessions** whose provider is
-`claude-code` (measured by reading `catalog/estate.db`, section 2).
+`claude-code` (measured by reading `catalog/estate.db`, section 2). That file is machine-local — it
+is gitignored (`.gitignore:12`) — so those are this laptop's sessions, not the repository's.
 
 **pi** lives in `~/.pi/agent` and has settings, npm packages and a `sessions/` folder. It also has
 run, **122 sessions**, and it is the harness this audit is being written in.
@@ -106,7 +107,8 @@ are measurable today:
 ## 4. The thing that is already the right shape
 
 One store is already harness-agnostic, and it is the one the founder already looks at. The session
-table in `catalog/estate.db` is:
+table in `catalog/estate.db` (machine-local and gitignored, but the exact table the deployed backend
+reads through `_estate_db_path`) is:
 
     id, provider, model, created_at, metadata_json
 

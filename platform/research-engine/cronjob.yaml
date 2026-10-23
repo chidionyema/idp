@@ -98,8 +98,8 @@ spec:
                   # the same reason: gpt-researcher's Exa retriever reads EXA_API_KEY from the env.
                   EXA_API_KEY="$(cat /secrets/exa/EXA_API_KEY)"
                   export LITELLM_API_KEY RESEARCH_PG_DSN EXA_API_KEY
-                  # Which objective this hour researches. The adapter prints its issue number
-                  # and research subject, or nothing: an objective is researched once and
+                  # Which objective this hour researches. The adapter prints its owner/repo#N
+                  # ref and research subject, or nothing: an objective is researched once and
                   # again only when its report has Continue ticked (founder, 2026-10-19), so
                   # an hour with nothing new and nothing ticked spends nothing.
                   picked=$(python /adapter/objective-adapter.py pick)
@@ -109,7 +109,7 @@ spec:
                   fi
                   issue=$(printf '%s\n' "$picked" | sed -n 1p)
                   subject=$(printf '%s\n' "$picked" | sed -n 2p)
-                  echo "research-engine researching objective idp#${issue}: ${subject}"
+                  echo "research-engine researching objective ${issue}: ${subject}"
                   # Tiktoken's estimator (costs.py) needs a writable cache dir: the image bakes the
                   # encoding files under /app/tiktoken_cache but the root fs is readOnlyRootFilesystem,
                   # and tiktoken writes a lazy-download .tmp file there -> [Errno 30] Read-only file
@@ -120,11 +120,13 @@ spec:
                   mkdir -p /state/tiktoken
                   cp -f /app/tiktoken_cache/* /state/tiktoken/ 2>/dev/null || true
                   export TIKTOKEN_CACHE_DIR=/state/tiktoken
-                  # The requester is the objective, so its claims join back to its issue.
+                  # The requester is the objective, so its claims join back to its issue. The
+                  # adapter prints the full owner/repo#N ref (objectives live in idp, crew and
+                  # prospector), so no repo prefix is added here.
                   # dash has no pipefail, so the run's status is kept here rather than lost
                   # behind a pipe; a failed run posts no report and the job goes red.
                   rc=0
-                  python -m engine.cli run --profile objective --requester "idp#${issue}" \
+                  python -m engine.cli run --profile objective --requester "${issue}" \
                     --subject "$subject" --out /state > /state/run.log 2>&1 || rc=$?
                   cat /state/run.log
                   [ "$rc" = 0 ] || exit "$rc"
