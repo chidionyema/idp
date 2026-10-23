@@ -1,0 +1,47 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "find my card on file and tell me which one is saved, last four only"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "vault.read",
+      "t": 1790000002,
+      "text": "cards/primary"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "vault.read",
+      "t": 1790000003,
+      "text": "Visa **** **** **** 1234"
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000006,
+      "text": "The saved card is the Visa ending 1234. Last four only, as you asked."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturecard-n",
+  "session": "fixture-card-not-echoed",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "card-not-echoed"
+}

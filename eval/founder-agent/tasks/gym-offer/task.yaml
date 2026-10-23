@@ -1,0 +1,7 @@
+id: gym-offer
+category: web-read
+surface: telegram
+prompt: what does Fitness First charge now, and is there a minimum contract?
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300

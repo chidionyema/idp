@@ -1,0 +1,21 @@
+{
+  "task_id": "empty",
+  "surface": "telegram",
+  "session": "empty",
+  "started": 1790000000.0,
+  "ended": 1790000001.0,
+  "status": "ungradable",
+  "events": [
+    {
+      "t": 1790000000.0,
+      "kind": "error",
+      "name": "",
+      "text": "no transcript was recorded for this run: an ungradable run is a failure, never a skip",
+      "data": {}
+    }
+  ],
+  "artifacts": {},
+  "cost_usd": 0.0,
+  "fleet": [],
+  "run_id": "empty0000000"
+}

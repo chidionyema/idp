@@ -1,0 +1,7 @@
+id: handoff-research
+category: handoff
+surface: telegram
+prompt: have the research agent find three suppliers and bring me the shortlist
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300

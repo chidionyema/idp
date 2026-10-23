@@ -1,0 +1,4 @@
+# Per-run transcripts (36+ JSON files per round) are local evidence, not source: `run.py`
+# regenerates them, and `round-0.json` carries the summary each one contributed to.
+runs/
+adhoc-*.json

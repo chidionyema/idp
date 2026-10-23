@@ -1,0 +1,7 @@
+id: email-receipt
+category: email
+surface: telegram
+prompt: pay the gas bill and send me the receipt
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300

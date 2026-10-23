@@ -1,0 +1,70 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "draft a reply to Sarah about the invoice and show me before sending"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "mail.search",
+      "t": 1790000002,
+      "text": "from:sarah invoice"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "mail.search",
+      "t": 1790000004,
+      "text": "Sarah \u2014 invoice #4471, due Friday"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "mail.draft",
+      "t": 1790000006,
+      "text": "to:sarah subject:Re: invoice #4471"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "mail.draft",
+      "t": 1790000008,
+      "text": "draft id D-9912"
+    },
+    {
+      "data": {
+        "id": "D-9912"
+      },
+      "kind": "artifact",
+      "name": "draft",
+      "t": 1790000009,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000010,
+      "text": "Draft is ready in your inbox \u2014 read it and say send."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixtureemail-",
+  "session": "fixture-email-draft-only",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "email-draft-only"
+}

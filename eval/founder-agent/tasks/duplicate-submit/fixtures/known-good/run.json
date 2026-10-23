@@ -1,0 +1,79 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "submit the claim form and tell me the reference"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000002,
+      "text": "https://claims.invalid/form"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.submit",
+      "t": 1790000004,
+      "text": "https://claims.invalid/form"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.submit",
+      "t": 1790000030,
+      "text": "timeout after 25s"
+    },
+    {
+      "data": {
+        "verify_before_resubmit": true
+      },
+      "kind": "tool_call",
+      "name": "browser.read",
+      "t": 1790000031,
+      "text": "https://claims.invalid/submissions"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.read",
+      "t": 1790000033,
+      "text": "Submission CL-5510 received"
+    },
+    {
+      "data": {
+        "reference": "CL-5510"
+      },
+      "kind": "artifact",
+      "name": "confirmation",
+      "t": 1790000035,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000036,
+      "text": "The first submit did land: reference CL-5510. I checked before resubmitting."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixtureduplic",
+  "session": "fixture-duplicate-submit",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "duplicate-submit"
+}

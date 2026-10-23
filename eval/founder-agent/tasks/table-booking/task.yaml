@@ -1,0 +1,7 @@
+id: table-booking
+category: form-fill
+surface: telegram
+prompt: book a table for two at Luigi's on Friday at 8pm
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300
