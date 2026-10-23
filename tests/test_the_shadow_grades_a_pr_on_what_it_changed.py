@@ -171,6 +171,8 @@ def test_the_pod_watch_reports_only_the_paths_own_pods(monkeypatch):
     }
 
     def kube(argv, check=True, timeout=300):
+        if argv[0] == "logs":
+            return subprocess.CompletedProcess(argv, 1, "", "")
         items = lists[argv[1]]
         if (
             argv[1].startswith("helmreleases")
