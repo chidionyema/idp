@@ -4,6 +4,8 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -58,6 +60,40 @@ def test_intent_key_falls_back_to_the_router_key_silently(
     assert (
         "not loaded" not in capsys.readouterr().err
     )  # an absent entry is expected, not an error
+
+
+def test_the_server_runs_the_tree_it_was_installed_from(tmp_path, monkeypatch):
+    # Measured 2026-10-23: the editable install pointed at ~/Documents/code/idp, a checkout stuck in
+    # October, so a restart staged main's intents and came back with last month's code -- production
+    # `pr-list` with args was confirmed without them and ran on defaults.
+    mod = load(monkeypatch, tmp_path / "secret-load")
+    src = mod.runtime_src()
+    assert src == (ROOT / "backstage" / "plugins" / "fleetview-backend" / "src")
+    assert (src / "fleetview_backend" / "serve.py").is_file()
+
+
+def test_the_tree_goes_on_pythonpath_ahead_of_the_install(tmp_path, monkeypatch):
+    (tmp_path / "secret-load").write_text("exit 1\n")
+    monkeypatch.setenv("PYTHONPATH", "/somewhere/else")
+    mod = load(monkeypatch, tmp_path / "secret-load")
+    monkeypatch.setattr(mod.os, "execv", lambda *_a: None)
+    monkeypatch.setattr(mod, "load_key", lambda *_a, **_k: "")
+    mod.main()
+    parts = mod.os.environ["PYTHONPATH"].split(mod.os.pathsep)
+    assert parts[0] == str(mod.runtime_src())
+    assert "/somewhere/else" in parts
+
+
+def test_a_tree_without_the_server_refuses_instead_of_borrowing_one(
+    tmp_path, monkeypatch, capsys
+):
+    (tmp_path / "secret-load").write_text("exit 1\n")
+    mod = load(monkeypatch, tmp_path / "secret-load")
+    monkeypatch.setattr(mod, "runtime_src", lambda: tmp_path / "gone")
+    with pytest.raises(SystemExit) as done:
+        mod.main()
+    assert done.value.code == 78
+    assert "refusing to start" in capsys.readouterr().err
 
 
 def test_intent_key_missing_says_so(tmp_path, monkeypatch):

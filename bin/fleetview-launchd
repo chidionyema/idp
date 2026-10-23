@@ -99,7 +99,38 @@ def agent_key(router_key: str) -> tuple[str, str]:
     return "", "MISSING -- router intents will answer 401"
 
 
+def runtime_src() -> Path:
+    """The tree's own `fleetview_backend`, ahead of anything pip installed.
+
+    WHY (2026-10-23). `python3 -m fleetview_backend.serve` resolved the package through an editable
+    install whose `.pth` points at ~/Documents/code/idp -- a checkout that had not moved since
+    October 18. So `ai.estate.runtime-sync` restaged main, restarted this job, and the process came
+    back on the old code: measured, `fleetview_backend.__file__` was
+    /Users/roseonyema/Documents/code/idp/backstage/plugins/fleetview-backend/src/..., whose
+    voice_intents had no `args` handling at all, so production `pr-list` with
+    {limit: 2, state: "merged"} was read back as "Run pr-list? Say yes to confirm." and listed open
+    PRs. A converger that restarts a service which imports last month's checkout has converged
+    nothing; this is the same defect runtime-sync exists to kill, one layer down.
+    """
+    return Path(__file__).resolve().parent.parent / "backstage" / "plugins" / "fleetview-backend" / "src"
+
+
 def main() -> None:
+    src = runtime_src()
+    # execv passes this environment to the server, and `-m` searches PYTHONPATH before site-packages,
+    # so the tree's code wins over the editable install whatever that install points at.
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        [str(src), *([os.environ["PYTHONPATH"]] if os.environ.get("PYTHONPATH") else [])]
+    )
+    if not (src / "fleetview_backend" / "serve.py").is_file():
+        # Louder than a fallback: an empty tree serves nothing, and answering 200 on a route nobody
+        # implemented is how the estate ends up believing a plane is up.
+        print(
+            f"fleetview-launchd: no fleetview_backend in {src}; refusing to start on an install "
+            "from another checkout",
+            file=sys.stderr,
+        )
+        sys.exit(78)
     key = load_key()
     if key:
         os.environ["LITELLM_API_KEY"] = key
