@@ -560,6 +560,125 @@ works.
 
 ---
 
+## 10. Superpowers delta — measured 2026-10-23 05:00–07:10Z
+
+This section is the same audit re-run after four lanes landed, so the reader can tell what is now
+*operating* from what is still designed. Every line here is a command and its output from this
+date, not a plan.
+
+### 10.1 Defect 2 (the laptop imported a dev checkout) — fixed and proven
+
+The old process came back from an editable install, not from the tree:
+
+```
+$ cd ~/.estate/runtime/idp && python3 -c 'import fleetview_backend as p; print(p.__file__)'
+/Users/roseonyema/Documents/code/idp/backstage/plugins/fleetview-backend/src/fleetview_backend/__init__.py
+$ ls /Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12/site-packages/*.pth
+.../site-packages/__editable__.fleetview_backend-0.1.0.pth
+```
+
+So `runtime-sync` restaged main and restarted `ai.estate.fleetview-backend`, and the process came
+back on a `~/Documents/code/idp` that had not moved since October. That is the same class of defect
+runtime-sync exists to kill, one layer below its diff: **a converger that restarts a service which
+imports last month's checkout has converged nothing.**
+
+`bin/fleetview-launchd` now names the tree's own package (`runtime_src()`), puts it first on
+`PYTHONPATH` before `exec`, and refuses to start (exit 78) when that tree has no server rather than
+borrowing another checkout's install (`#6904`, landed in b3824 as `062c4153`). Proof on the running
+process:
+
+```
+$ ps eww -p $(pgrep -f fleetview_backend.serve)
+PYTHONPATH=/Users/roseonyema/.estate/runtime/idp/backstage/plugins/fleetview-backend/src
+```
+
+### 10.2 Defect 4 (no arguments anywhere) — closed end to end
+
+Three doors had to agree for an argument to survive from a word to a `gh` flag, and only one of
+them did. The catalogue carried `args` (`#6882`), the pod's `/voice/intent` read `body['args']`,
+and the laptop's route passed them to `handle` — but the pod's own forward to the laptop was
+`_forward(url, text, session_id)`, text and session only (`#6902`, landed in b3824 as
+`2c5cc5d0`). What the founder heard, in production, on the laptop's own port, before the fix:
+
+```
+POST /voice/intent {"text":"pr-list","args":{"limit":2,"state":"merged"}}
+-> "Run pr-list? Say yes to confirm."        # no limit, no state, and an undeclared arg
+                                            # ({"nonsense":1}) got the same sentence
+```
+
+After: the read-back names the values and the executor receives them, which is the only reason the
+answer stops being open PRs:
+
+```
+POST /voice/intent {"text":"pr-list","args":{"limit":2,"state":"merged"},"session_id":"L11"}
+-> "Run pr-list with limit 2, state merged? Say yes to confirm."
+POST /voice/intent {"text":"yes","session_id":"L11"}
+-> status ok, "dependabot/npm_and_yarn/platform/active-runtime/vitest-4.1.11 -> main | +1/-1 ..."
+```
+
+A merged pull request can only be listed by `gh pr list --state merged`, so this line is evidence
+the values reached the executor, not just the sentence. No arguments still means no `args` key on
+the wire, so every existing caller is unchanged.
+
+### 10.3 Defect 10 (the converger is not installed) — narrowed to one founder step
+
+The laptop is not stale. `ai.estate.runtime-sync` (launchd, every 5 min) keeps
+`~/.estate/runtime/idp` detached at `origin/main` and stages `intents`/`libexec` into `~/.estate`;
+it advanced the tree during this session (`2026-10-23T05:30:02Z 6cd94a7e->e34eecdb changed=2`).
+What has never happened is the root-owned converger: `IDP-Estate.pkg` has never been installed, so
+every call still prints `[estate] UNCONVERGED` and runs off a copy instead of a release, and the
+laptop's own ledger records it honestly:
+
+```
+$ curl -s 127.0.0.1:18790/delivery
+{"state": null, "converges": [],
+ "unmerged_runs": [{"intent":"pr-list","harness":"unconverged","started_at":
+                   "2026-10-23T05:41:12Z","status":"ok"}, ...],
+ "alerts": [{"code":"converger-not-installed",
+             "text":"IDP-Estate.pkg has not installed the converger daemon"}, ...]}
+```
+
+`/fleet` renders exactly that payload (`room/ui/Delivery.tsx`, mounted in `FleetReactorApp`), and
+`/api/proxy/fleetview` targets the laptop, so the crimson line the founder sees there is the
+laptop's real state, not a cluster guess.
+
+The pkg is rebuilt from the current main so the installer and the converger cannot drift apart:
+
+```
+$ sh installer/build.sh           # in ~/.estate/runtime/idp at origin/main 8aaba01d
+Built: installer/IDP-Estate.pkg
+$ shasum <payload estate-converge> platform/estate/bin/estate-converge
+b786338b4f23  b786338b4f23
+```
+
+Installing it is the one step that needs the founder: `open installer/IDP-Estate.pkg`, admin
+password once. After that the root daemon cuts a release every 120 s, relinks `~/.estate` into it,
+and `/fleet`'s delivery card goes from `converger-not-installed` to a converge ledger. No agent can
+do this for them: `/Library/LaunchDaemons` and `/usr/local/estate` are root-owned by design, which
+is what makes a release impossible for an agent to edit.
+
+### 10.4 Still open after this session
+
+- **Defect 1** (two images two days apart) is fixed *by construction* now: both images come from the
+  same merge commit's build (`main-14831-8aaba01d…`), and the merge queue ships them together. What
+  is still missing is the post-deploy probe that asserts the frontend's own catalogue call, so the
+  next drift is caught rather than read about afterwards.
+- **Defect 11** (the hands are on the Mac) stands: `FLEETVIEW_INTENTS_URL` is
+  `http://fleetview-mac.backstage.svc.cluster.local:18790/voice/intent`. The Face speaks and thinks
+  in the cluster; it acts on the laptop, and a sleeping laptop is still a pending confirmation that
+  waits instead of a spoken refusal with a reason.
+- **Defect 3** (two Backstage dev servers on the same commit) stands.
+- **Defect 12** (`voice-router` runs the cinema narrator only) stands.
+- **Defects 5–9** (READ_ONLY frozenset, hardcoded `pi`, `claude` missing from the runner registry,
+  242 laptop-only intents, the `gh-api` door) stand: they were not touched today.
+
+One correction, measured: the two live servers are now `catalogue-…` plus whatever the operator has
+open, and the delivery card also reports seven failing launchd jobs and an orphaned
+`ai.estate.nats` — none of them the Face's own, all of them a founder-visible red on `/fleet` that
+nobody has fixed.
+
+---
+
 ## Appendix A — the commands that produced these facts
 
 ```
