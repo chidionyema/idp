@@ -1233,7 +1233,33 @@ def pod_failures(ks=None):
                 f"pod {who} container {cs.get('name')} is {reason} "
                 f"(restarts {int(cs.get('restartCount') or 0)}): {detail}"
             )
+            _say_why_it_died(meta, cs.get("name"))
     return out
+
+
+_explained = set()
+
+
+def _say_why_it_died(meta, container):
+    """Print the dead container's last words once, to the run log and not into the failure message.
+
+    A CrashLoopBackOff line names the state and never the cause (run 39926636846: litellm
+    crashlooped and nothing in the log said why). The message stays free of it on purpose: it is
+    what `signature` compares between the head's run and the base's.
+    """
+    key = (meta.get("namespace"), meta.get("name"), container)
+    if key in _explained:
+        return
+    _explained.add(key)
+    p = kube(
+        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=25"],
+        check=False,
+        timeout=30,
+    )
+    text = (p.stdout or p.stderr or "").strip()
+    if text:
+        print(f"note    shadow  last output of {key[0]}/{key[1]} {container}:")
+        print("\n".join("        | " + ln for ln in text.splitlines()))
 
 
 def wait_ks(name, deadline):
