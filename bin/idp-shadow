@@ -1252,14 +1252,22 @@ def _say_why_it_died(meta, container):
         return
     _explained.add(key)
     p = kube(
-        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=150"],
+        ["logs", "-n", key[0], key[1], "-c", container, "--previous"],
         check=False,
         timeout=30,
     )
     text = re.sub(r"\x1b\[[0-9;]*m", "", (p.stdout or p.stderr or "")).strip()
     if text:
-        print(f"note    shadow  last output of {key[0]}/{key[1]} {container}:")
-        print("\n".join("        | " + ln for ln in text.splitlines()))
+        lines = text.splitlines()
+        # The first lines are the cause (config, DB, env); the last are the traceback it ended in.
+        if len(lines) > 160:
+            lines = (
+                lines[:60]
+                + [f"[... {len(lines) - 120} lines elided ...]"]
+                + lines[-60:]
+            )
+        print(f"note    shadow  output of {key[0]}/{key[1]} {container}:")
+        print("\n".join("        | " + ln for ln in lines))
 
 
 def wait_ks(name, deadline):
