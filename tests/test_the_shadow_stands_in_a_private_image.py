@@ -56,3 +56,14 @@ def test_a_run_lays_the_stand_in_before_any_path_is_applied():
     assert src.index("stand_in_private_images(paths)") < src.index(
         "flux_kustomization(name, path, substitute=True)"
     )
+
+
+def test_the_creds_row_is_applied_only_after_the_floor_has_converged():
+    """The ExternalSecret needs the ESO CRD established; applied beside the floor rows it raced
+    them and flux-system/github-app never appeared (runs 39908064993, 39920521952)."""
+    src = (REPO / "bin" / "idp-shadow").read_text()
+    body = src[src.index("def flux_floor") :]
+    body = body[: body.index("\ndef ", 10)]
+    assert body.index("wait_ks(name, deadline)") < body.index(
+        "flux_kustomization(CREDS_ROW_NAME"
+    )
