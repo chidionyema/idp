@@ -185,3 +185,43 @@ def test_state_idle_when_live_and_no_commit_names_the_claim():
 )
 def test_age_rendering(seconds, expected):
     assert ews.age(seconds) == expected
+
+
+def test_estimate_refuses_a_number_when_nothing_has_closed():
+    e = ews.estimate(0, 5, 3.0)
+    assert e["hours_left"] is None
+    assert "no pace yet" in e["basis"]
+
+
+def test_estimate_refuses_a_number_when_nothing_was_written():
+    assert ews.estimate(0, 0, 3.0)["hours_left"] is None
+
+
+def test_estimate_from_the_claims_own_pace_is_a_band_not_a_point():
+    # 2 of 5 sub-goals closed in 4 hours = 0.5/h; 3 left = 6h, reported as 3h..9h.
+    e = ews.estimate(2, 5, 4.0)
+    assert e["pace_per_h"] == pytest.approx(0.5)
+    assert e["hours_left"] == pytest.approx(6.0)
+    assert (e["lo"], e["hi"]) == (pytest.approx(3.0), pytest.approx(9.0))
+
+
+def test_estimate_is_zero_when_everything_closed():
+    e = ews.estimate(5, 5, 4.0)
+    assert e["hours_left"] == 0.0
+
+
+def test_hours_phrase_covers_minutes_hours_and_days():
+    assert ews.hours_phrase(0.5) == "30m"
+    assert ews.hours_phrase(6) == "6.0h"
+    assert ews.hours_phrase(72) == "3.0d"
+
+
+def test_the_estimate_line_is_the_same_words_the_json_carries():
+    e = ews.estimate(2, 5, 4.0)
+    line = ews.estimate_line(e)
+    assert line.startswith("3.0h-9.0h")
+    assert "+/-50%" in line
+    assert ews.estimate_line(ews.estimate(0, 5, 2.0)).startswith(
+        "unknown -- no pace yet"
+    )
+    assert ews.estimate_line(ews.estimate(5, 5, 2.0)).startswith("none --")
