@@ -11,8 +11,10 @@ from __future__ import annotations
 import importlib.machinery
 import importlib.util
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 TOOL = Path(__file__).resolve().parents[1] / "bin" / "estate-claim-check"
@@ -450,3 +452,275 @@ def test_re_measuring_after_a_retirement_is_live_not_retired(tmp_path):
     p = run("verify", store=store)
     assert p.returncode == 0, p.stdout + p.stderr
     assert "1/1 active facts" in p.stdout
+
+
+# ---------------------------------------------------------------------------
+# Integration contract (2026-10-23): a candidate verification engine — a
+# consultant's build, or any future one — is admissible only if it passes five
+# properties. Measured on the submitted NSVEE v2 the day it arrived: it fails
+# all five. A minimal honest reference passes all five, so the gate is not an
+# impossible bar, it is a specific one.
+#
+# P1 never executes candidate-authored code in the grading process
+# P2 never returns VERIFIED for an artifact that is wrong and self-consistently
+#    tested (wrong add, tests asserting the wrong answer)
+# P3 any strength number is a BOUND with its sample size; VERIFIED needs
+#    epsilon <= 0.05, which zero survivors needs n >= 60 to establish
+# P4 the oracle's source is declared and is not the generator
+# P5 VERIFIED carries a re-executable claim row
+# ---------------------------------------------------------------------------
+_GATE_OPS = [
+    (" + ", " - "),
+    (" - ", " + "),
+    (" * ", " // "),
+    (" == ", " != "),
+    (" < ", " <= "),
+    (" <= ", " < "),
+    (" > ", " >= "),
+    (" >= ", " > "),
+    (" and ", " or "),
+    (" or ", " and "),
+]
+_ALLOWED_SOURCES = {"deployed-artifact", "human", "formal"}
+_PASS_BOUND = 0.05
+_MIN_N = 60  # 1 - 0.05**(1/60) = 0.049: the first n that proves epsilon <= 5%
+
+
+def _isolated(script: str, timeout: int = 10):
+    """Scrubbed child process with no inherited environment. The estate's real boundary is
+    estate-execute / gVisor; this keeps the gate itself stdlib-only."""
+    env = {
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "HOME": "/tmp",
+    }
+    p = subprocess.run(
+        [sys.executable, "-I", "-B", "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        env=env,
+    )
+    return p.returncode, p.stdout, p.stderr
+
+
+def _script(code: str, tests: list) -> str:
+    return code + "\n\n" + "\n".join(tests) + "\n"
+
+
+class _SubmittedV2:
+    """The submitted v2's decision path, transcribed: killed/total with no minimum n and a
+    hard 12-mutant cap (so epsilon 0.221 is the best it can ever prove), and Tier-1
+    invariants — authored by the same generator — executed with exec() in-process."""
+
+    max_mutants = 12
+    threshold = 1.0
+
+    def _mutants(self, code):
+        out, lines = [], code.split("\n")
+        for i, line in enumerate(lines):
+            for old, new in _GATE_OPS:
+                if old in line and line.count(old) == 1 and "import" not in line:
+                    out.append(
+                        "\n".join(
+                            lines[:i] + [line.replace(old, new, 1)] + lines[i + 1 :]
+                        )
+                    )
+        return out[: self.max_mutants]
+
+    def grade(self, code, tests, invariants, oracle_source="model"):
+        if _isolated(_script(code, tests))[0] != 0:
+            return {"status": "EXHAUSTED", "evidence": {"mutants_total": 0}}
+        muts = self._mutants(code)
+        if not muts:
+            return {"status": "EXHAUSTED", "evidence": {"mutants_total": 0}}
+        killed = sum(1 for m in muts if _isolated(_script(m, tests))[0] != 0)
+        score = killed / len(muts)
+        if score < self.threshold:
+            return {
+                "status": "EXHAUSTED",
+                "evidence": {"mutants_total": len(muts), "score": score},
+            }
+        env = {}
+        exec(code, env)  # P1: candidate code, this process
+        for inv in invariants:
+            if not eval(inv, dict(env)):  # P4: invariant from the generator
+                return {
+                    "status": "EXHAUSTED",
+                    "evidence": {"oracle": "violation: %s" % inv},
+                }
+        return {
+            "status": "VERIFIED",
+            "evidence": {
+                "mutants_total": len(muts),
+                "score": score,
+                "oracle_source": oracle_source,
+            },
+        }
+
+
+class _Reference:
+    """What the contract requires, minimally: a bound instead of a ratio, syntax-valid
+    mutants only, an n floor, invariants from a declared non-generator source executed in a
+    child process, and a claim row on VERIFIED."""
+
+    def _mutants(self, code):
+        out, lines = [], code.split("\n")
+        for i, line in enumerate(lines):
+            for old, new in _GATE_OPS:
+                if (
+                    old in line
+                    and line.count(old) == 1
+                    and not line.strip().startswith(("import", "from"))
+                ):
+                    cand = "\n".join(
+                        lines[:i] + [line.replace(old, new, 1)] + lines[i + 1 :]
+                    )
+                    try:
+                        compile(cand, "<mutant>", "exec")
+                    except SyntaxError:
+                        continue  # not a program: it cannot count as a killed mutant
+                    out.append(cand)
+        return out
+
+    def grade(self, code, tests, invariants, oracle_source="human", valid_for_s=3600):
+        if oracle_source not in _ALLOWED_SOURCES or not invariants:
+            return {
+                "status": "UNVERIFIABLE",
+                "evidence": {"reason": "no attributable invariant"},
+            }
+        if _isolated(_script(code, tests))[0] != 0:
+            return {"status": "FAIL", "evidence": {"reason": "tests do not pass"}}
+        muts = self._mutants(code)
+        alive = [m for m in muts if _isolated(_script(m, tests))[0] == 0]
+        n = len(muts)
+        ev = {"mutants_valid": n, "mutants_survived": len(alive)}
+        if not n:
+            return {"status": "UNVERIFIABLE", "evidence": ev}
+        if alive:
+            return {"status": "REFUSED_MUTANTS_ALIVE", "evidence": ev}
+        ev["epsilon_bound"] = 1 - 0.05 ** (1.0 / n)
+        if ev["epsilon_bound"] > _PASS_BOUND:
+            return {"status": "REFUSED_INSUFFICIENT_EVIDENCE", "evidence": ev}
+        for inv in invariants:
+            if _isolated(code + "\nassert eval(%r), %r\n" % (inv, inv))[0] != 0:
+                ev["oracle"] = inv
+                return {"status": "REFUSED_ORACLE_VIOLATION", "evidence": ev}
+        ev["oracle_source"] = oracle_source
+        ev["claim"] = {
+            "instrument": "python3 -c <engine replay>",
+            "measured_at": "2026-10-23T00:00:00Z",
+            "valid_for_s": valid_for_s,
+            "artifact_sha256": "0" * 64,
+        }
+        return {"status": "VERIFIED", "evidence": ev}
+
+
+_ADD_WRONG = "def add(a, b):\n    return a - b"
+_ADD_WRONG_TESTS = ["assert add(2, 3) == -1", "assert add(-1, 1) == -2"]
+_PROBE_CODE = (
+    "import os\n\n"
+    "def add(a, b):\n    return a + b\n\n"
+    "_p = os.environ.get('NSVEE_PROBE_PATH')\n"
+    "if _p:\n    open(_p, 'w').write('candidate code ran in the grading process')\n"
+)
+
+
+def _wide(k: int = 70):
+    """k one-operator functions with one killing test each: enough valid mutants for a bound."""
+    code = "\n\n".join("def f%d(x):\n    return x + %d" % (i, i + 1) for i in range(k))
+    tests = ["assert f%d(5) == %d" % (i, i + 6) for i in range(k)]
+    return code, tests
+
+
+def _conformance(adapter, name: str):
+    """One row per property. Returns [(property, ok)]."""
+    model_inv, human_inv = ["add(2, 3) == -1"], ["add(2, 3) == 5"]
+    r = adapter.grade(
+        _ADD_WRONG,
+        _ADD_WRONG_TESTS,
+        model_inv if name == "submitted-v2" else human_inv,
+        "model" if name == "submitted-v2" else "human",
+    )
+    rows = [("P2 wrong+wrong is not VERIFIED", r["status"] != "VERIFIED")]
+
+    fd, probe = tempfile.mkstemp(prefix="nsvee_probe_")
+    os.close(fd)
+    os.unlink(probe)
+    os.environ["NSVEE_PROBE_PATH"] = probe
+    try:
+        adapter.grade(
+            _PROBE_CODE, ["assert add(2, 3) == 5"], ["add(0, 0) == 0"], "human"
+        )
+    finally:
+        os.environ.pop("NSVEE_PROBE_PATH", None)
+    leaked = os.path.exists(probe)
+    if leaked:
+        os.unlink(probe)
+    rows.append(("P1 no in-process execution", not leaked))
+
+    ev = r.get("evidence", {})
+    n = ev.get("mutants_valid") or ev.get("mutants_total") or 0
+    reports = any(k in ev for k in ("score", "epsilon_bound"))
+    bound_ok = isinstance(ev.get("epsilon_bound"), float) and n > 0
+    earned = r["status"] != "VERIFIED" or (
+        n >= _MIN_N and ev.get("epsilon_bound", 1.0) <= _PASS_BOUND
+    )
+    rows.append(
+        ("P3 strength is a bound with n", (not reports) or (bound_ok and earned))
+    )
+
+    noinv = adapter.grade(_ADD_WRONG, _ADD_WRONG_TESTS, [], "human")
+    src = ev.get("oracle_source", "model" if name == "submitted-v2" else "human")
+    rows.append(
+        (
+            "P4 oracle is not the generator",
+            src in _ALLOWED_SOURCES and noinv["status"] != "VERIFIED",
+        )
+    )
+
+    wide_code, wide_tests = _wide()
+    ok = adapter.grade(wide_code, wide_tests, ["f0(0) == 1"], "human")
+    claim = ok.get("evidence", {}).get("claim") or {}
+    rows.append(
+        (
+            "P5 VERIFIED carries a claim row",
+            ok["status"] == "VERIFIED"
+            and {"instrument", "measured_at", "valid_for_s", "artifact_sha256"}
+            <= set(claim),
+        )
+    )
+    return rows
+
+
+def test_a_candidate_engine_is_admissible_only_if_it_passes_the_five_property_gate():
+    """The submitted build is refused on every property; the reference passes all five. If the
+    first half ever stops failing, the gate has stopped biting and the integration is theatre."""
+    sub = _conformance(_SubmittedV2(), "submitted-v2")
+    ref = _conformance(_Reference(), "reference")
+    assert [p for p, ok in sub if not ok] == [p for p, _ in sub], sub
+    assert all(ok for _, ok in ref), ref
+
+
+def test_a_candidates_verdict_is_only_a_claim_when_its_re_execution_agrees(tmp_path):
+    """An engine's own VERIFIED is a word, not evidence. The estate stores the command, re-runs
+    it, and the row goes false the moment the engine's answer moves — which is the only reason
+    a consultant's build can be integrated without auditing its internals."""
+    engine = tmp_path / "engine.py"
+    engine.write_text("print('VERIFIED epsilon=0')\n")
+    store = tmp_path / "facts.jsonl"
+    added = run(
+        "add",
+        "--subject",
+        "nsvee",
+        "--instrument",
+        "%s %s" % (sys.executable, engine),
+        store=store,
+    )
+    assert added.returncode == 0, added.stdout + added.stderr
+    first = run("verify", store=store)
+    assert first.returncode == 0 and "1/1 active facts" in first.stdout, first.stdout
+
+    engine.write_text("print('EXHAUSTED')\n")
+    second = run("verify", store=store)
+    assert second.returncode != 0, second.stdout + second.stderr
