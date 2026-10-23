@@ -1,0 +1,131 @@
+description: >
+  Measured 2026-10-23, over 24 hours of live pi transcripts (8 sessions, 4,677 tool calls, 74
+  errors) and 14 live pi processes. Question: which of the things agents do can stop being agent
+  work at all -- driven by the platform, deterministic, frictionless, invisible -- and which cannot.
+  The founder's framing is the target shape: "a nice educated mix between deterministic and
+  non-deterministic, push vs pull ... anything that can be automated deterministically,
+  frictionless and just works and reliable, almost invisible like electricity" and, on the
+  friction itself, "every agent does it their own way ... and it is friction and non optimised for
+  agent frictionlessness". Micro first: every repeated shape, counted. Then macro: one rung per
+  shape, and the doors that already exist versus the ones this changes.
+
+  The window is deliberately 24h. Older transcripts are a different harness with a different
+  toolset, so counting them would price friction the estate may already have removed (founder:
+  "going back into deep history will give misleading data").
+
+method:
+  census: bin/process-census -- deterministic regex classes over the same 24h window pi-observe reads
+  live: bin/pi-observe --live --sample 2 (two process-table samples, CPU delta, ESTABLISHED sockets)
+  shapes: bin/pi-observe --repetition --window-hours 24 (tool name + first tokens, placeholdered)
+  doors: bin/claim-open --check-only, ls platform/estate/intents (92), grep for is-ancestor/lane status
+
+micro:
+  # Calls, distinct command forms, and errors per class. "Forms" is the reinvention count: the same
+  # question asked in N different commands is N pieces of friction, not one capability.
+  source: job exec-1792784032-4447
+  table:
+    - {class: abs-cd-prefix,    calls: 971, forms: 643, what: "an absolute `cd <path> && ...` prefix hand-composed per call"}
+    - {class: json-shape,       calls: 814, forms: 431, what: "inline python/json shaping of a receipt an agent then narrates"}
+    - {class: lane-handover,    calls: 463, forms: 252, what: "is my branch in main / what did the lane say"}
+    - {class: ci-poll-gh-api,   calls: 418, forms: 155, what: "gh api commits/<sha>/status -- asked again and again"}
+    - {class: inspect-fs,       calls: 323, forms: 266, what: "ls/cat/sed -n/head/wc on files already partly known"}
+    - {class: ci-poll-gh-run,   calls: 261, forms: 155, what: "gh run view|list, gh pr checks"}
+    - {class: test-run,         calls: 255, forms: 182, what: "pytest/gate invocation composed by hand"}
+    - {class: claim-post,       calls: 200, forms: 168, what: "claim comment / issue comment / claim-gate"}
+    - {class: git-sync,         calls: 193, forms: 118, what: "git fetch|pull|checkout|switch|rebase"}
+    - {class: kubectl,          calls: 181, forms: 108, what: "pod lookup then log/exec, the POD=$(...) pattern"}
+    - {class: ci-poll-loop,     calls: 145, forms: 108, what: "for i in ...; do sleep; done -- bounded wait loops, invented per agent"}
+    - {class: heredoc-script,   calls: 134, forms:  95, what: "cat > /tmp/x.sh <<'SH' then run it"}
+    - {class: worktree-op,      calls:  51, forms:  45, what: "git worktree add/remove/list"}
+    - {class: claim-heartbeat,  calls:  43, forms:  37, what: "refreshing CLAIM ... heartbeat=<ISO> by hand"}
+    - {class: push,             calls:  23, forms:  20, what: "git push / push to refs/heads/lane/*"}
+  top_tool_shapes:
+    # bin/pi-observe --repetition, job exec-1792783615-4399
+    - {calls: 143, sessions: 5, shape: "read: *.py"}
+    - {calls: 126, sessions: 7, shape: add_bdd}
+    - {calls: 117, sessions: 5, shape: "edit: *.py"}
+    - {calls: 110, sessions: 6, shape: address_edgecases}
+    - {calls: 101, sessions: 6, shape: address_2nd_order_effects}
+    - {calls:  94, sessions: 5, shape: complete_goal}
+    - {calls:  85, sessions: 6, shape: "estate_execute: gh api repos/chidionyema/idp/commits/<id>/status"}
+    - {calls:  82, sessions: 6, shape: "estate_execute: git fetch -q"}
+    - {calls:  63, sessions: 2, shape: "estate_execute: date -u +%H:%M:%SZ;"}
+    - {calls:  59, sessions: 4, shape: "estate_execute: gh run view"}
+  friction_counters:
+    sessions_never_declared_a_plan: 1
+    tool_calls_writing_to_tmp: 532
+    model_switches: 11
+    errors: 74
+  largest_error_shape: {calls: 28, class: "estate_execute with an empty command", note: "the harness handed the executor nothing"}
+
+live_processes:
+  # The other half of the same finding: work that is *still running* long after it finished.
+  source: job exec-1792783615-4399
+  total: 14
+  resident_mb: 1839
+  headless_leaked: 7        # `pi -p --no-session` probes whose output ended hours ago: no tty, no CPU, no socket
+  leaked_oldest: 4h20m
+  interactive_long_lived: 1 # 1d08h, 275 MB, 404 CPU-minutes
+  interactive_busy: 5
+  interactive_idle: 1       # 2d02h, 518 MB, zero CPU for the whole sample window
+  note: >
+    Nothing in the estate could see this. `bin/estate-session-recorder` reads transcripts and a
+    `--no-session` probe writes none; the board derives liveness from transcript freshness, so a
+    finished-but-not-exited process reads as neither alive nor finished.
+
+macro:
+  # The rung for each class. PUSH = the platform does it and the agent never acts. PULL = the agent
+  # makes one call and gets a verdict, no composition. JUDGE = irreducible; the agent's own work.
+  # Anything moving down this list is friction removed; nothing moves back up.
+  rungs:
+    - rung: 1-PUSH
+      definition: no agent action at all; a daemon, a schedule or a gate does it and records the verdict
+      shapes:
+        - {class: live-process-hygiene, door: "bin/pi-observe --install (LaunchAgent, 300s, now built)", status: built}
+        - {class: claim-heartbeat, door: "claim-open --heartbeat, run by a schedule not an agent", status: proposed}
+        - {class: lane-status-for-everyone, door: "greenlane tick already publishes head status per lane", status: exists}
+        - {class: ci-verdict, door: "ci-success + merge-when-green + deploy-when-green", status: exists}
+    - rung: 2-PULL
+      definition: one command, deterministic, exit code is the verdict, nothing to compose or narrate
+      shapes:
+        - {class: "lane-handover + ci-poll-*", calls: 1277, door: "bin/lane-where <branch> (now built)", status: built}
+        - {class: lane-wide-question, door: "estate_invoke lane -> bin/idp-greenlane status brief", status: exists}
+        - {class: ci-failure-detail, door: "intents ci.status / ci.errors / gh-check-runs", status: exists}
+        - {class: claim-post, door: "bin/claim-open --title|--issue", status: exists}
+        - {class: test-run, door: "estate_run_tests / estate_run_gate (path, not a command line)", status: exists}
+        - {class: kubectl-pod-lookup, door: "intent k8s.debug (11 sections, one shot)", status: exists}
+        - {class: inspect-fs-abs-cd, door: "read/edit tools with an absolute path; no cd prefix needed", status: exists}
+        - {class: git-worktree-create, door: "intent worktree-add (name -> path), no hand-run git worktree", status: proposed}
+    - rung: 3-JUDGE
+      definition: irreducibly the agent's work -- design, spec, review, choosing what to build
+      shapes:
+        - {class: add_bdd / address_edgecases / address_2nd_order_effects, calls: 337, why: "the plan's shape is a judgement"}
+        - {class: "read/edit *.py|*.md", calls: 400, why: "the change itself"}
+        - {class: verify-claims, why: "grading the thing, not a proxy, is the agent's job"}
+  rule: >
+    A shape moves to rung 1 when a measurement shows it is (a) repeated, (b) answerable without
+    judgement, and (c) already covered by something that runs on its own. It moves to rung 2 when it
+    is repeated and deterministic but the agent must ask. Everything else stays at rung 3, and an
+    agent invented a fourth rung -- polling in a loop -- which this removes rather than endorses.
+
+doors_built_by_this:
+  - {path: bin/pi-observe, rung: 1, does: "grades every live pi process twice (CPU delta, tty, ESTABLISHED sockets, age) and reads only the bytes appended since the last pass", proves: "job exec-1792783615-4399: 14 procs, 1839 MB, 7 leaked named with pid+age, exit 1"}
+  - {path: bin/process-census, rung: 2, does: "counts the process-shaped work by class and by distinct command form, so reinvention is a number", proves: "job exec-1792784032-4447: 15 classes, 2,735 process-shaped calls in 24h"}
+  - {path: bin/lane-where, rung: 2, does: "where is this branch: LANDED/PENDING/GREEN/RED/GONE in one call, exit-coded, no sleep", proves: "lane/estate-as-movie-spec -> PENDING exit 3 with PR #7002; lane/skill-layer -> RED exit 4 with the failing context"}
+
+irreducible:
+  - "Choosing what to build, and the spec's shape: the plan, the BDD, the trade-off."
+  - "Grading the thing itself rather than a proxy."
+  - "Reading a red lane and deciding the fix."
+  - "Measured size of this part: the judgement shapes (add_bdd, address_*, complete_goal, read/edit) are 38% of calls; the process shapes the platform can own are 58%."
+
+second_order:
+  - "A poll loop is not just slow, it hides the loop's own failures: 145 calls of `for i in ...; do sleep` were bounded guesses at when to look, and each one costs a turn, a model call and a transcript line."
+  - "pi-observe reads only appended bytes (offsets in ~/.estate/pi-observe/state.json), because 361 MB of history cannot be re-read inside the executor's 100s ceiling -- measured: first pass 8.8s over 24 MB, incremental pass 3.0s."
+  - "The executor refuses a command whose text resembles a wait (`this command waits on something outside the process`), including a heredoc containing the word `sleep` in Python source -- measured this session. That refusal is correct and is why the answer is an observation door (lane-where), never a wait door."
+  - "A monitor that must be invoked is a tool; pi-observe --install makes it a 300s LaunchAgent so the reading happens whether or not an agent asks."
+
+open:
+  - "claim-open --heartbeat: 43 calls across 37 forms. The claim comment form is owned by claim-open, so the verb belongs there, not in a fourth script."
+  - "worktree-add intent: 51 calls, 45 forms; the worktree convention (lane name -> path) is estate-wide and hand-typed."
+  - "the 532 tool calls that write to /tmp are the same escape: a scratch file is a place a receipt goes to be forgotten."
