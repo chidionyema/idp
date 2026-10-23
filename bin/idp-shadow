@@ -1252,11 +1252,11 @@ def _say_why_it_died(meta, container):
         return
     _explained.add(key)
     p = kube(
-        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=25"],
+        ["logs", "-n", key[0], key[1], "-c", container, "--previous", "--tail=150"],
         check=False,
         timeout=30,
     )
-    text = (p.stdout or p.stderr or "").strip()
+    text = re.sub(r"\x1b\[[0-9;]*m", "", (p.stdout or p.stderr or "")).strip()
     if text:
         print(f"note    shadow  last output of {key[0]}/{key[1]} {container}:")
         print("\n".join("        | " + ln for ln in text.splitlines()))
