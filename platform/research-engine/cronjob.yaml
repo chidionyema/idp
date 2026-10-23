@@ -75,7 +75,11 @@ spec:
               # 2026-10-20: 6415760 cuts pages into 6,000-token pieces before embedding (#14).
               # At langchain's 8,191 the router's embed model counted 8,197 and refused with 400
               # "exceeds maximum allowed token size 8192", discarding that sub-query's context.
-              image: ghcr.io/chidionyema/research-engine:sha-64157601fe73ef9a06dc04ea8dee6124f2b416d1
+              # 2026-10-23: ecdd4b2 cuts a stalled embed call at 15s and stops joining executor
+              # threads at the worker deadline (94c278e), and caps arxiv below 4.0, which removed
+              # Search.results (92473eb). Verified in-cluster with RETRIEVER=exa,searx: one
+              # objective answered end to end in 20m43s, status complete, nothing unanswered.
+              image: ghcr.io/chidionyema/research-engine:sha-ecdd4b22ff053cf4c6549d9af65cc4f2841911a6
               command: ["/bin/sh", "-c"]
               args:
                 - |
