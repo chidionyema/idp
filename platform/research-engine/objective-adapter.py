@@ -4,9 +4,10 @@ The engine knows nothing about objectives (research-engine SPEC-v1 §2); a consu
 lives in the consumer's repository (§8). This is that adapter. It runs inside the engine's pod,
 before and after `python -m engine.cli run`, mounted from a ConfigMap like the subjects file was.
 
-  pick                 print the issue number and research subject of the objective to research
-                       now, or nothing when none is waiting. Highest rank (pain per USD) first.
-  report N RUN_LOG     post the run's admitted claims on objective issue N, ending with the
+  pick                 print the issue (owner/repo#N) and research subject of the objective to
+                       research now, or nothing when none is waiting. Highest rank first; an
+                       objective the founder wrote by hand outranks every mined one.
+  report REF RUN_LOG   post the run's admitted claims on objective issue REF, ending with the
                        two choices the founder makes in the report itself.
 
 Founder, 2026-10-19, on how often an objective is re-researched: "in the report provided, option
@@ -25,20 +26,39 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 
 API = "https://api.github.com"
 OWNER = os.environ.get("ESTATE_GITHUB_OWNER", "chidionyema")
 REPO = os.environ.get("OBJECTIVE_REPO", f"{OWNER}/idp")
+# Where objectives live. The miner files measured problems in idp; the founder states product
+# objectives (mumchimp, prospector) in crew and prospector issues. Reading only idp meant the
+# founder's own objectives were never researched. Repositories are listed, not discovered, so the
+# engine spends money only where the estate named.
+REPOS = [
+    r.strip()
+    for r in os.environ.get(
+        "OBJECTIVE_REPOS", f"{REPO},{OWNER}/crew,{OWNER}/prospector"
+    ).split(",")
+    if r.strip()
+]
 TOKEN_FILE = os.environ.get("GITHUB_TOKEN_FILE", "/secrets/github-app/token")
 LABEL = "objective"
+# An objective the founder wrote by hand carries no miner text (no rank, no cap). It outranks every
+# mined one (mined ranks are pain per USD) and gets the miner's default cap, so a hand-written
+# objective can neither starve behind mined ones nor run unbounded.
+FOUNDER_RANK = 1000.0
+DEFAULT_CAP_USD = 5.0
+REF = re.compile(r"^(?:([\w.-]+/[\w.-]+)#)?([0-9]+)$")
 REPORT = re.compile(r"<!-- research-report request=(\S+) cost=([0-9.]+) -->")
 CONTINUE = re.compile(r"^- \[[xX]\] Continue researching", re.M)
 PARK = re.compile(r"^- \[[xX]\] Park this research", re.M)
 
 
 def _call(method: str, path: str, token: str, data: dict | None = None):
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the fixed GitHub API base, never user input
         API + path,
         method=method,
         data=json.dumps(data).encode() if data is not None else None,
@@ -49,7 +69,7 @@ def _call(method: str, path: str, token: str, data: dict | None = None):
             "User-Agent": "research-engine-adapter",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 -- the URL is the fixed GitHub API base, never user input
         return json.load(r)
 
 
@@ -60,12 +80,28 @@ def installation_token() -> str:
 
 def rank(body: str) -> float:
     m = re.search(r"rank ([0-9.]+) min per USD", body or "")
-    return float(m.group(1)) if m else 0.0
+    return float(m.group(1)) if m else FOUNDER_RANK
 
 
 def cap_usd(body: str) -> float:
     m = re.search(r"\*\*cap:\*\* \$([0-9.]+)", body or "")
-    return float(m.group(1)) if m else 0.0
+    cap = float(m.group(1)) if m else 0.0
+    return cap if cap > 0 else DEFAULT_CAP_USD
+
+
+def ref(issue: dict) -> str:
+    """owner/repo#number: an issue number alone is ambiguous across repositories."""
+    return f"{issue.get('_repo') or REPO}#{int(issue['number'])}"
+
+
+def parse_ref(text: str) -> tuple[str, int]:
+    m = REF.match((text or "").strip())
+    if not m:
+        raise ValueError(f"not an objective reference: {text!r}")
+    repo = m.group(1) or REPO
+    if repo not in REPOS:
+        raise ValueError(f"{repo} is not one of the objective repositories {REPOS}")
+    return repo, int(m.group(2))
 
 
 def subject(issue: dict) -> str:
@@ -86,8 +122,7 @@ def decision(issue: dict, comments: list[dict]) -> tuple[str, float]:
         return "park", spent
     if not CONTINUE.search(last):
         return "waiting", spent
-    cap = cap_usd(issue.get("body") or "")
-    return ("cap" if cap and spent >= cap else "continue"), spent
+    return ("cap" if spent >= cap_usd(issue.get("body") or "") else "continue"), spent
 
 
 def choose(candidates: list[tuple[dict, list[dict]]]) -> dict | None:
@@ -95,29 +130,79 @@ def choose(candidates: list[tuple[dict, list[dict]]]) -> dict | None:
     ready = [i for i, cs in candidates if decision(i, cs)[0] in ("new", "continue")]
     return max(
         ready,
-        key=lambda i: (rank(i.get("body") or ""), -int(i["number"])),
+        key=lambda i: (rank(i.get("body") or ""), -int(i["number"]), ref(i)),
         default=None,
     )
 
 
-def pick(token: str) -> dict | None:
-    issues = _call(
-        "GET", f"/repos/{REPO}/issues?labels={LABEL}&state=open&per_page=100", token
-    )
-    issues = [i for i in issues if "pull_request" not in i]
-    return choose(
-        [
-            (
-                i,
-                _call(
-                    "GET",
-                    f"/repos/{REPO}/issues/{i['number']}/comments?per_page=100",
-                    token,
-                ),
+def _paged(path: str, token: str) -> list[dict]:
+    """Every page of a list endpoint: a short read of comments would lose a Park tick and respend."""
+    sep = "&" if "?" in path else "?"
+    out: list[dict] = []
+    for page in range(1, 31):
+        got = _call("GET", f"{path}{sep}per_page=100&page={page}", token)
+        out += got
+        if len(got) < 100:
+            return out
+    raise RuntimeError(f"{path} has more than 3000 entries")
+
+
+def _call_retry(method: str, path: str, token: str, data: dict | None = None):
+    """The report is written after the money is spent: a transient 5xx must not lose it."""
+    for attempt in range(4):
+        try:
+            return _call(method, path, token, data)
+        except urllib.error.HTTPError as e:
+            if e.code < 500 and e.code != 429:
+                raise
+        except (urllib.error.URLError, TimeoutError):
+            pass
+        if attempt < 3:
+            time.sleep(2**attempt)
+    raise RuntimeError(f"{method} {path} failed after 4 attempts")
+
+
+def candidates(token: str) -> list[tuple[dict, list[dict]]]:
+    """(issue, comments) for every open objective in every objective repository.
+
+    A repository that cannot be read (App not installed, 403, 404, rate limit) is named on stderr
+    and skipped, so one bad repository does not blind the others. An issue whose comments cannot
+    be read is skipped too: guessing it has no report would research it again and respend. When
+    no repository could be read at all this raises, so the job goes red instead of reporting
+    "no objective awaiting research".
+    """
+    out: list[tuple[dict, list[dict]]] = []
+    readable = 0
+    for repo in REPOS:
+        try:
+            issues = _paged(f"/repos/{repo}/issues?labels={LABEL}&state=open", token)
+        except (urllib.error.URLError, RuntimeError, TimeoutError) as e:
+            print(
+                f"research-engine: cannot read objectives in {repo}: {e}",
+                file=sys.stderr,
             )
-            for i in issues
-        ]
-    )
+            continue
+        readable += 1
+        for i in issues:
+            if "pull_request" in i:
+                continue
+            i["_repo"] = repo
+            try:
+                comments = _paged(f"/repos/{repo}/issues/{i['number']}/comments", token)
+            except (urllib.error.URLError, RuntimeError, TimeoutError) as e:
+                print(
+                    f"research-engine: skipping {ref(i)}, comments unreadable: {e}",
+                    file=sys.stderr,
+                )
+                continue
+            out.append((i, comments))
+    if not readable:
+        raise RuntimeError(f"no objective repository could be read: {REPOS}")
+    return out
+
+
+def pick(token: str) -> dict | None:
+    return choose(candidates(token))
 
 
 def claims_for(dsn: str, request_id: str) -> tuple[list[dict], dict[str, int]]:
@@ -201,17 +286,24 @@ def report_body(
     return "\n".join(lines)
 
 
-def report(token: str, number: int, run: dict, dsn: str) -> str:
-    issue = _call("GET", f"/repos/{REPO}/issues/{number}", token)
-    comments = _call(
-        "GET", f"/repos/{REPO}/issues/{number}/comments?per_page=100", token
-    )
+def report(token: str, target: str, run: dict, dsn: str) -> str:
+    repo, number = parse_ref(target)
+    issue = _call("GET", f"/repos/{repo}/issues/{number}", token)
+    comments = _paged(f"/repos/{repo}/issues/{number}/comments", token)
     _, spent = decision(issue, comments)
     admitted, rejected = claims_for(dsn, run["request_id"])
     body = report_body(run, admitted, rejected, spent, cap_usd(issue.get("body") or ""))
-    return _call(
-        "POST", f"/repos/{REPO}/issues/{number}/comments", token, data={"body": body}
-    )["html_url"]
+    try:
+        return _call_retry(
+            "POST",
+            f"/repos/{repo}/issues/{number}/comments",
+            token,
+            data={"body": body},
+        )["html_url"]
+    except Exception:
+        # The research is paid for: keep the report in the job log if it cannot be posted.
+        print(body, file=sys.stderr)
+        raise
 
 
 def load_run(text: str) -> dict:
@@ -229,17 +321,13 @@ def main(argv: list[str]) -> int:
     if argv[:1] == ["pick"]:
         chosen = pick(installation_token())
         if chosen:
-            print(chosen["number"])
+            print(ref(chosen))
             print(subject(chosen))
         return 0
     if len(argv) == 3 and argv[0] == "report":
         with open(argv[2], encoding="utf-8") as f:
             run = load_run(f.read())
-        print(
-            report(
-                installation_token(), int(argv[1]), run, os.environ["RESEARCH_PG_DSN"]
-            )
-        )
+        print(report(installation_token(), argv[1], run, os.environ["RESEARCH_PG_DSN"]))
         return 0
     print(__doc__, file=sys.stderr)
     return 2
