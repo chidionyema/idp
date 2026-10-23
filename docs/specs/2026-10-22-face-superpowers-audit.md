@@ -54,22 +54,25 @@ Nothing here is pushed. Nothing here is already shipped.
 >   are still hand-written in Python: `ci.status` is a *read* classified `W`, so a status query
 >   needs a "yes".
 > - **`pr-list` fails through the door.** The same two-step call ends
->   `error | pr list failed. [estate] status=halted`, because the installed intent still says
->   `--repo chidioniema/idp` (one letter short of `chidionyema`) and throws its stderr away. The
->   fix exists on `lane/fix/intents-name-a-real-repo` (f87791f77, 09d46f2fd) and is **not on
->   main**; `main` carries the typo.
-> - **Nothing delivers main to the laptop.** This is the blocker the document did not see.
->   `estate-execute` prints `[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger;
->   running the local copy`, and the filesystem agrees: `/usr/local/estate/releases` does not
->   exist, `/usr/local/estate/sbin` does not exist, `/Library/LaunchDaemons` has no
->   `ai.estate.converge.plist`, and `/usr/local/estate` was last written **2026-09-24**. The
->   executor falls back to `~/.estate/intents`, a hand copy from that date. So the Face executes a
->   month-old snapshot of the catalogue: an intent fixed on `main` never reaches it, and
->   `pr-list` above fails in production *for a typo that is fixed on a lane*. `sudo -n true`
->   answers `a password is required`, so this one step — `installer/build.sh` → install
->   `IDP-Estate.pkg` once, for the root-owned LaunchDaemon — is founder-gated by design
->   (`installer/README`: "You enter your password once, here"). Until it is done, **every**
->   intent fix in section 7 is invisible to the Face, however green its lane.
+>   `error | pr list failed. [estate] status=halted`, because the installed intent still said
+>   `--repo chidioniema/idp` (one letter short of `chidionyema`) and threw its stderr away.
+>   **Superseded 2026-10-23T05:00Z:** the fix landed (batch b3767, main 6cd94a7e9),
+>   `ai.estate.runtime-sync` staged it at 00:53:48Z, and the production call now answers
+>   `status:"ok"` with a real PR line — see section 4.1.
+> - **"Nothing delivers main to the laptop" was written here and was wrong.** The converger
+>   `estate-execute` prints `[estate] UNCONVERGED` about is still not installed —
+>   `/usr/local/estate/releases`, `/usr/local/estate/sbin` and
+>   `/Library/LaunchDaemons/ai.estate.converge.plist` are all absent, and `/usr/local/estate` was
+>   last written **2026-09-24** — but delivery runs on a different converger:
+>   `ai.estate.runtime-sync`, a LaunchAgent that restages `platform/estate/intents` and `libexec`
+>   from main's partial clone into `~/.estate` every five minutes (log 00:53:48Z: `intents +6
+>   (ci.run.yaml, gh-api.yaml, gh-check-runs.yaml, lane.yaml, pr-list.yaml, pr-ready.yaml)`).
+>   So the Face does see intent fixes on main, within five minutes, and the measurement above
+>   proves it on the real path. What the missing package costs is the *grade*: absent,
+>   `delivery.py:308` reports `converger-not-installed` and /fleet stays red for laptop-plane
+>   changes that work. One install of `installer/IDP-Estate.pkg` — `sudo -n true` answers
+>   `a password is required` — makes the plane gradeable, and that remains the founder's single
+>   step. Corrected rather than rewritten: the paragraph it replaces was measured, and wrong.
 >
 > What is still absent, measured from the same 64-intent catalogue: no `agent.*` verb (S3), no
 > `laptop.*` verb (S4), no `memory.*` or `audit.last` (S5). Section 7 stands as the remaining work;
@@ -278,7 +281,30 @@ Every intent invocation this session printed:
 [estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger; running the local copy
 ```
 
-The converger is not installed, so every recorded action runs off a local fallback copy.
+The converger is not installed. That was true at 00:14Z and still true at 00:57Z; by 05:00Z the
+conclusion drawn from it -- that nothing delivers main to this laptop -- was measurably false, so it
+is corrected here rather than left for the next agent to build against.
+
+Measured 2026-10-23T04:59Z:
+
+- **main does reach this laptop.** `ai.estate.runtime-sync` (LaunchAgent, every 5 minutes) stages
+  `platform/estate/intents` and `libexec` from its own partial clone of origin/main into `~/.estate`.
+  Its log:
+  `2026-10-23T00:53:48Z f5ac9cb8->b0935a02 changed=10 intents +6 (ci.run.yaml, gh-api.yaml,
+  gh-check-runs.yaml, lane.yaml, pr-list.yaml, pr-ready.yaml); restarted
+  ai.estate.fleetview-backend` -- those six files are exactly the lane that landed in batch b3767.
+  The consequence, through production rather than CI: `POST /voice/intent {intent:"pr-list",
+  args:{limit:1}}` answered `pending_confirmation`, the spoken `yes` answered `status:"ok"` with a
+  real PR line, where the identical call had answered `status=halted` at 00:14Z. `lane`, run with no
+  arguments from the home directory, answered `status:"ok"` and spoke the lane out loud.
+- **What the missing package costs is the grade, not the door.** `estate-converge` is the
+  root-owned, system-domain converger, and `fleetview-backend` grades the laptop plane on it:
+  absent, `delivery.py:308` reports `converger-not-installed` and /fleet stays red for laptop-plane
+  changes that are in fact working. The founder's one install is still owed -- it makes the plane
+  *gradeable*, not merely reachable.
+
+The fallback copy is therefore not a stale copy of the estate; it is main, restaged every five
+minutes.
 
 ### 4.2 The agent plane
 
@@ -497,7 +523,12 @@ works.
    `~/.estate/intents` name absent from `platform/estate/intents`, and deletes session debris.
 9. **`pr-list` has an `IndentationError`; `gh-api` fails 22/22** while `gh api` works. Fix both;
    they are the read doors the Face needs most.
-10. **The converger is not installed** — `[estate] UNCONVERGED` on every call.
+10. **The converger is not installed, so the laptop plane cannot be graded.** `[estate] UNCONVERGED`
+    still prints, but delivery is not what is blocked: `ai.estate.runtime-sync` restages main's
+    intents into `~/.estate` every five minutes (its 00:53:48Z line staged exactly the six files of
+    the lane that landed in b3767), and production `pr-list` then answered `ok` with arguments.
+    What is missing is `delivery.py`'s `converger-not-installed` grade -- /fleet's laptop-plane red.
+    One install of `installer/IDP-Estate.pkg` closes it.
 11. **The hands are on the Mac.** The Face page and its backend run in the cluster, but
     `FLEETVIEW_INTENTS_URL` points at `fleetview-mac` (Tailscale ExternalName), so execution stops
     when the laptop sleeps. Fix: add the in-cluster execution path (S6), and make a sleeping laptop
