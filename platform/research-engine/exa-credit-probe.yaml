@@ -1,0 +1,119 @@
+# Is Exa still answering the research engine's key? Twice a day, apart from the engine.
+#
+# The engine runs RESEARCH_RETRIEVER=exa,searx (idp#6603). When Exa's free $10 runs out it answers
+# HTTP 402, gpt-researcher logs "Error searching with ExaSearch" and carries on with SearXNG
+# alone, so the hourly job still goes green: a failed-job alert can never see an empty Exa
+# account. The key warden would (any non-2xx is a failed proof) but it is not deployed and the
+# pushgateway it reports to does not exist, so this probe makes the answer a Job status that
+# kube-state-metrics already exports, graded by ResearchExaUnusable in
+# platform/monitoring/rules/research-engine.yaml.
+#
+# It spends one one-result search per run: two a day is ~60 a month against ~2,500 the free tier
+# covers. It mounts the same human-exa secret the engine mounts, so a passing probe is a statement
+# about the key the engine uses, and it never prints the key.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: exa-credit-probe-script
+  namespace: research
+data:
+  probe.py: |
+    """Ask Exa one tiny search with the engine's key; fail the Job on anything but a 2xx."""
+    import json
+    import sys
+    import urllib.error
+    import urllib.request
+
+    KEY_FILE = "/secrets/exa/EXA_API_KEY"
+    URL = "https://api.exa.ai/search"
+
+
+    def main():
+        with open(KEY_FILE) as f:
+            key = f.read().strip()
+        if not key:
+            print("exa-credit-probe: FAIL key file is empty")
+            return 1
+        body = json.dumps({"query": "research engine status", "numResults": 1}).encode()
+        req = urllib.request.Request(
+            URL,
+            data=body,
+            method="POST",
+            headers={"x-api-key": key, "content-type": "application/json"},
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                n = len(json.load(resp).get("results", []))
+                print(f"exa-credit-probe: OK http={resp.status} results={n}")
+                return 0
+        except urllib.error.HTTPError as e:
+            # 402 is the out-of-credit answer; 401/403 is a revoked or wrong key. Both leave the
+            # engine on SearXNG alone, so both fail the Job; the line says which.
+            reason = "out of credit" if e.code == 402 else "refused"
+            print(f"exa-credit-probe: FAIL http={e.code} ({reason})")
+            return 1
+        except (urllib.error.URLError, TimeoutError) as e:
+            print(f"exa-credit-probe: FAIL unreachable ({type(e).__name__})")
+            return 1
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: exa-credit-probe
+  namespace: research
+  labels: { app.kubernetes.io/name: exa-credit-probe, app.kubernetes.io/part-of: idp }
+spec:
+  schedule: "41 5,17 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 120
+      # Kept past the next run (12h) so a failed probe stays visible to the alert until the next
+      # probe either passes or fails again.
+      ttlSecondsAfterFinished: 50400
+      template:
+        metadata:
+          labels: { app.kubernetes.io/name: exa-credit-probe, app.kubernetes.io/part-of: idp }
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          priorityClassName: platform-batch
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: probe
+              # Standard library only, the same interpreter tag otto-answer-probe runs.
+              image: docker.io/library/python:3.11-slim
+              command: ["python3", "/scripts/probe.py"]
+              volumeMounts:
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                # A file, not an env var: Kyverno's secrets-not-from-env-vars refuses the latter.
+                - { name: exa, mountPath: /secrets/exa, readOnly: true }
+                - { name: tmp, mountPath: /tmp }
+              securityContext:
+                allowPrivilegeEscalation: false
+                privileged: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities: { drop: ["ALL"] }
+                seccompProfile: { type: RuntimeDefault }
+              resources:
+                requests: { cpu: "0", memory: 64Mi }
+                limits: { cpu: 50m, memory: 64Mi }
+          volumes:
+            - name: scripts
+              configMap: { name: exa-credit-probe-script, defaultMode: 0o555 }
+            - name: exa
+              secret: { secretName: human-exa }
+            - name: tmp
+              emptyDir: {}

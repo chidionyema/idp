@@ -1,0 +1,43 @@
+# Alert rules for the research engine (idp#6908).
+#   1. ResearchEngineJobFailed - the hourly run failed, so no report was posted for its objective
+#   2. ResearchExaUnusable     - Exa refused the engine's key (402 = out of credit), so the engine
+#                                is quietly running on SearXNG alone; the hourly job stays green
+#                                in that case, which is why rule 1 cannot catch it
+# Both key off kube_job_failed{condition="true"}, which is set only once a Job has exhausted its
+# backoffLimit: kube_job_status_failed counts failed pods and would fire on a first attempt that
+# the retry then recovered.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: research-engine
+  namespace: monitoring
+spec:
+  groups:
+    - name: estate.research-engine
+      rules:
+        - alert: ResearchEngineJobFailed
+          expr: kube_job_failed{namespace="research", job_name=~"research-engine-.*", condition="true"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            owner: idp
+          annotations:
+            summary: "Research engine run {{ $labels.job_name }} failed"
+            description: >-
+              The hourly research-engine Job in namespace research failed after its retry, so the
+              objective it picked got no report. Read the pod log of {{ $labels.job_name }}; the
+              run's own output is printed there before the job exits.
+
+        - alert: ResearchExaUnusable
+          expr: kube_job_failed{namespace="research", job_name=~"exa-credit-probe-.*", condition="true"} > 0
+          for: 5m
+          labels:
+            severity: warning
+            owner: idp
+          annotations:
+            summary: "Exa refused the research engine's key"
+            description: >-
+              exa-credit-probe ({{ $labels.job_name }}) got a non-2xx from api.exa.ai with the
+              human-exa key. Its log line says which: http=402 means the free monthly credit is
+              spent (it resets on the 1st), 401/403 means the key is revoked or wrong. Until then
+              the engine researches with SearXNG alone.
