@@ -13,4 +13,5 @@ resources:
   - canary-servicemonitor.yaml
   - fleetview-voice-servicemonitor.yaml
   - api-key-warden.yaml
+  - research-engine.yaml
   - kyverno.yaml

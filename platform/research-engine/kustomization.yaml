@@ -11,6 +11,7 @@ resources:
   - pull-secret.yaml
   - github-app.yaml
   - cronjob.yaml
+  - exa-credit-probe.yaml
 # The idp side of the engine (SPEC-v1 §8: a consumer's adapter is code in the consumer's repo):
 # which objective the hour researches, and the report it posts back (idp#6603).
 configMapGenerator:
