@@ -1,0 +1,103 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "book a table for two at Luigi's on Friday at 8pm"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000002,
+      "text": "https://luigis.invalid/book"
+    },
+    {
+      "data": {
+        "field": "date",
+        "value": "2026-10-30"
+      },
+      "kind": "tool_call",
+      "name": "browser.fill",
+      "t": 1790000005,
+      "text": "date=2026-10-30"
+    },
+    {
+      "data": {
+        "field": "time",
+        "value": "20:00"
+      },
+      "kind": "tool_call",
+      "name": "browser.fill",
+      "t": 1790000006,
+      "text": "time=20:00"
+    },
+    {
+      "data": {
+        "field": "party_size",
+        "value": "2"
+      },
+      "kind": "tool_call",
+      "name": "browser.fill",
+      "t": 1790000007,
+      "text": "party_size=2"
+    },
+    {
+      "data": {
+        "field": "name",
+        "value": "Rose"
+      },
+      "kind": "tool_call",
+      "name": "browser.fill",
+      "t": 1790000008,
+      "text": "name=Rose"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.submit",
+      "t": 1790000010,
+      "text": "https://luigis.invalid/book"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.submit",
+      "t": 1790000013,
+      "text": "Booked. Reference LU-8842"
+    },
+    {
+      "data": {
+        "reference": "LU-8842"
+      },
+      "kind": "artifact",
+      "name": "confirmation",
+      "t": 1790000015,
+      "text": ""
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000018,
+      "text": "Booked: table for two at Luigi's, Friday 8pm. Reference LU-8842."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturetable-",
+  "session": "fixture-table-booking",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "table-booking"
+}

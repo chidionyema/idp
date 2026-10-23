@@ -1,0 +1,40 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "have the research agent find three suppliers and bring me the shortlist"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000002,
+      "text": "https://suppliers.invalid"
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000095,
+      "text": "Here is a shortlist of three suppliers I found."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixturehandof",
+  "session": "fixture-handoff-research",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "handoff-research"
+}

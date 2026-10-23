@@ -1,0 +1,13 @@
+{
+  "rounds": [
+    {
+      "round": 0,
+      "started": "2026-10-23T13:21:09Z",
+      "suite_sha": "609f77a588feebe4",
+      "pass_rate": 0.0,
+      "g1": "fail",
+      "green": false,
+      "cost_usd": 0.0
+    }
+  ]
+}

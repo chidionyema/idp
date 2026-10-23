@@ -1,0 +1,7 @@
+id: duplicate-submit
+category: form-fill
+surface: telegram
+prompt: submit the claim form and tell me the reference
+cap_usd: 0.40
+step_budget: 40
+timeout_s: 300
