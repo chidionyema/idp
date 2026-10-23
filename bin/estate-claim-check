@@ -17,6 +17,20 @@ about truth: an instrument can be the wrong instrument. The mitigation is
 `also` -- independent instruments that must agree, so a mis-typed instrument
 contradicts a second measurement instead of passing alone.
 
+THREE KINDS, THREE RUNGS (docs/research/2026-10-23-claims-carry-their-checker.md):
+
+    fact      R1-exec        an instrument re-runs and must print the same thing.
+    artefact  R2-evidence    a named file is digested; if it changes, the claim dies.
+    judgment  R3-attributed  no measurement exists; the row carries who said it, where.
+
+A judgment is not a fact with a softer check: it is a claim whose rung is visible,
+so "the founder prefers prose" can be stored *as an attributed statement* and never
+be mistaken for something a command proved. Anything that fits no rung is refused.
+
+What this store cannot do on its own: force every claim through it (closure).
+That is the memory path (issue #6857); until then this grades what is stored, it
+does not grade everything that is said.
+
 Exit codes: 0 all PASS, 1 any failure, 2 usage/store error.
 """
 
@@ -43,6 +57,10 @@ PASS, STALE, CONTRADICTED, UNWITNESSED, TAMPERED, RETIRED = (
 FAILURES = (STALE, CONTRADICTED, UNWITNESSED, TAMPERED)
 DEFAULT_STORE = "~/.estate/facts.jsonl"
 TIMEOUT_S = 20
+
+# claim_kind -> the rung of the ladder its evidence sits on. Absent on old rows, which
+# were all facts, so the default is the rung they were written at.
+RUNG = {"fact": "R1-exec", "artefact": "R2-evidence", "judgment": "R3-attributed"}
 
 
 def _now() -> str:
@@ -87,6 +105,25 @@ def _same(a: str, b: str, tol: float) -> bool:
 
 def _sha(s: str) -> str:
     return hashlib.sha256(s.encode()).hexdigest()[:12]
+
+
+def _digest(path: str) -> str | None:
+    """The digest of an artefact, or None if there is no artefact there.
+
+    Rung 2 exists because most claims an agent makes are about something that happened
+    rather than something a command recomputes: a deploy, a production log line, a
+    screenshot. Those cannot be re-executed, but they can be bound to bytes. A stored
+    digest dies the moment the artefact changes, so "it deployed" cannot outlive the
+    evidence for it.
+    """
+    p = os.path.expanduser(path)
+    if not os.path.isfile(p):
+        return None
+    h = hashlib.sha256()
+    with open(p, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
 
 
 def load(store: str) -> list[dict]:
@@ -173,16 +210,15 @@ def _append(store: str, row: dict) -> dict:
     return row
 
 
-def verify_row(row: dict, tol: float) -> tuple[str, str]:
-    instrument = row.get("instrument")
-    # A validity of 0 is a real window ("expires immediately"); only an absent
-    # window is unwitnessed. `not row.get(...)` conflated the two and made an
-    # expired fact report as unchecked, which the test suite caught.
-    if not instrument or row.get("valid_for_s") is None:
-        return (
-            UNWITNESSED,
-            "no instrument or no validity window: this fact cannot be checked",
-        )
+def _window(row: dict) -> tuple[str | None, str]:
+    """The expiry check every rung shares: a claim that has aged out is STALE, not checked.
+
+    A validity of 0 is a real window ("expires immediately"); only an absent window is
+    unwitnessed. `not row.get(...)` conflated the two and made an expired fact report as
+    unchecked, which the test suite caught.
+    """
+    if row.get("valid_for_s") is None:
+        return UNWITNESSED, "no validity window: this claim cannot be checked"
     measured = row.get("measured_at") or ""
     try:
         at = datetime.strptime(measured, "%Y-%m-%dT%H:%M:%SZ").replace(
@@ -193,6 +229,53 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
     age = time.time() - at.timestamp()
     if age > float(row["valid_for_s"]):
         return STALE, f"measured {int(age)}s ago, valid for {int(row['valid_for_s'])}s"
+    return None, ""
+
+
+def verify_row(row: dict, tol: float) -> tuple[str, str]:
+    kind = row.get("claim_kind") or "fact"
+
+    if kind == "judgment":
+        # Rung 3: never executed. The only thing checkable is that the row says who
+        # asserted it and where the assertion lives; the verdict says so out loud, so a
+        # judgment cannot ride into a report looking like a measurement.
+        authority = row.get("authority")
+        if not authority:
+            return UNWITNESSED, "judgment with no authority: nobody is named for it"
+        expired, why = _window(row)
+        if expired:
+            return expired, why
+        return PASS, f"attributed, not verified: {authority}"
+
+    if kind == "artefact":
+        # Rung 2: the claim is bound to bytes. Re-execution is impossible for an event, but
+        # silent replacement of the evidence is not.
+        evidence = row.get("evidence")
+        if not evidence:
+            return UNWITNESSED, "artefact claim with no evidence path: nothing is bound"
+        expired, why = _window(row)
+        if expired:
+            return expired, why
+        now = _digest(evidence)
+        if now is None:
+            return CONTRADICTED, f"the artefact is gone: {evidence}"
+        if now != str(row.get("value")):
+            return CONTRADICTED, (
+                f"the artefact changed: stored {row.get('value')!r}, now {now!r} ({evidence})"
+            )
+        return PASS, f"{evidence} is unchanged ({now})"
+
+    instrument = row.get("instrument")
+    # An absent witness is UNWITNESSED whatever the clock says: a claim with nothing to
+    # check must not be reported as merely expired, which would suggest it once had a check.
+    if not instrument:
+        return (
+            UNWITNESSED,
+            "no instrument or no validity window: this fact cannot be checked",
+        )
+    expired, why = _window(row)
+    if expired:
+        return expired, why
 
     ok, out = _run(instrument)
     if not ok:
@@ -215,31 +298,82 @@ def verify_row(row: dict, tol: float) -> tuple[str, str]:
 
 
 def cmd_add(a) -> int:
-    ok, out = _run(a.instrument)
-    if not ok:
-        print(f"REFUSED: {out}", file=sys.stderr)
-        return 2
-    if a.expect is not None and not _same(out, a.expect, a.tolerance):
-        print(
-            f"REFUSED: instrument prints {out!r} but you expect {a.expect!r}. "
-            "Fix the instrument or the expectation; nothing is stored.",
-            file=sys.stderr,
-        )
-        return 2
+    kind = a.kind
+    anchor = ""
+    if kind == "fact":
+        if not a.instrument:
+            print(
+                "REFUSED: a fact needs --instrument. A value with no command behind it is "
+                "the defect this tool exists to refuse.",
+                file=sys.stderr,
+            )
+            return 2
+        ok, out = _run(a.instrument)
+        if not ok:
+            print(f"REFUSED: {out}", file=sys.stderr)
+            return 2
+        if a.expect is not None and not _same(out, a.expect, a.tolerance):
+            print(
+                f"REFUSED: instrument prints {out!r} but you expect {a.expect!r}. "
+                "Fix the instrument or the expectation; nothing is stored.",
+                file=sys.stderr,
+            )
+            return 2
+        anchor = a.instrument
+    elif kind == "artefact":
+        if not a.evidence:
+            print(
+                "REFUSED: an artefact claim needs --evidence <path>. Without the bytes "
+                "there is nothing to bind the claim to.",
+                file=sys.stderr,
+            )
+            return 2
+        out = _digest(a.evidence)
+        if out is None:
+            print(
+                f"REFUSED: no artefact at {a.evidence}. Nothing was witnessed, so nothing "
+                "is stored.",
+                file=sys.stderr,
+            )
+            return 2
+        anchor = os.path.expanduser(a.evidence)
+    else:  # judgment
+        if not a.authority:
+            print(
+                "REFUSED: a judgment is stored only when attributed. Name who asserted it "
+                "and where (--authority 'founder, 2026-09-30, AGENTS.md section 5').",
+                file=sys.stderr,
+            )
+            return 2
+        if a.instrument:
+            print(
+                "REFUSED: a judgment is not measured. Store what the command proves as a "
+                "fact, and keep the judgment beside it as attributed.",
+                file=sys.stderr,
+            )
+            return 2
+        out = a.authority
+        anchor = a.authority
     row = {
-        "id": a.id or _sha(a.subject + a.instrument),
+        "id": a.id or _sha(a.subject + anchor),
         "subject": a.subject,
         "unit": a.unit,
         "value": out,
-        "instrument": a.instrument,
-        "also": a.also or [],
+        "claim_kind": kind,
+        "instrument": a.instrument if kind == "fact" else None,
+        "evidence": os.path.expanduser(a.evidence) if kind == "artefact" else None,
+        "authority": a.authority if kind == "judgment" else None,
+        "also": (a.also or []) if kind == "fact" else [],
         "measured_at": _now(),
         "valid_for_s": a.valid_for,
         "store_version": 1,
     }
     store = os.path.expanduser(a.store)
     stored = _append(store, row)
-    print(f"STORED {stored['id']}  {a.subject} = {out} {a.unit}  ({a.instrument})")
+    print(
+        f"STORED {stored['id']}  [{RUNG[kind]}] {a.subject} = {out} {a.unit}  "
+        f"({a.instrument or a.evidence or a.authority})"
+    )
     return 0
 
 
@@ -347,6 +481,13 @@ def cmd_verify(a) -> int:
         )
         if verdict in FAILURES:
             worst = 1
+    rungs = {
+        r.get("id"): RUNG.get(r.get("claim_kind") or "fact", "R1-exec")
+        for r in rows
+        if r.get("kind") != "retire"
+    }
+    for r in results:
+        r["rung"] = rungs.get(r["id"], "")
     if a.json:
         print(
             json.dumps(
@@ -356,7 +497,9 @@ def cmd_verify(a) -> int:
         )
     else:
         for r in results:
-            print(f"{r['verdict']:13} {r['id']:<14} {r['subject']}: {r['detail']}")
+            print(
+                f"{r['verdict']:13} {r['id']:<14} {r['rung']:<14} {r['subject']}: {r['detail']}"
+            )
         n_pass = sum(1 for r in results if r["verdict"] == PASS)
         n_ret = sum(1 for r in results if r["verdict"] == RETIRED)
         print(
@@ -376,12 +519,24 @@ def main(argv=None) -> int:
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     ad = sub.add_parser(
-        "add", help="measure a fact and store it (there is no --value flag by design)"
+        "add", help="measure or attest a claim and store it (there is no --value flag)"
     )
     ad.add_argument("--subject", required=True)
     ad.add_argument("--unit", default="")
     ad.add_argument(
-        "--instrument", required=True, help="the exact command that produces the value"
+        "--kind",
+        default="fact",
+        choices=("fact", "artefact", "judgment"),
+        help="fact=R1 exec, artefact=R2 evidence, judgment=R3 attributed",
+    )
+    ad.add_argument(
+        "--instrument", help="the exact command that produces the value (kind=fact)"
+    )
+    ad.add_argument(
+        "--evidence", help="the file the claim is about; its digest is stored"
+    )
+    ad.add_argument(
+        "--authority", help="who asserted it and where, for a judgment that cannot be measured"
     )
     ad.add_argument(
         "--also",
