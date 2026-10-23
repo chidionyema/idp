@@ -57,6 +57,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -856,6 +857,81 @@ def database_rows():
     return rows
 
 
+# Private images the shadow cannot pull: ghcr packages under this account are private and the
+# shadow holds no registry credential (it forges nothing and creates no estate credential), so a
+# row that runs one sat in ErrImagePull on every run, base and head alike, and platform/llm never
+# converged (runs 39908067512, 39908062442). The stand-in is the vault stand-in's move again: it
+# stands in for the ESTATE (an image the shadow is not entitled to), never for the change. It
+# answers the one probe the Deployment declares and runs nothing of the application, so the
+# manifests are proven (scheduling, security context, probes, wiring) and the code is not.
+# name -> (port, health path), read off the Deployment's own probe.
+PRIVATE_STAND_INS = {"ghcr.io/chidionyema/zeroedge": (8757, "/health")}
+
+STAND_IN_DOCKERFILE = """FROM python:3.12-alpine
+RUN mkdir -p /srv/www{dir} && echo ok > /srv/www{health}
+USER 10001:10001
+EXPOSE {port}
+CMD ["python", "-m", "http.server", "{port}", "--directory", "/srv/www"]
+"""
+
+
+def private_image_refs(paths):
+    """{ref} of every stood-in private image the manifests under test run, tag as Flux sets it.
+
+    A kustomization `images:` entry (name + newTag) overrides the tag in the Deployment, so it
+    wins; a bare `image:` line is the fallback only when no override names the image.
+    """
+    overrides, bare = {}, {}
+    for path in paths:
+        root = os.path.join(REPO, path.strip("/"))
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirs, files in os.walk(root):
+            for fname in files:
+                if not fname.endswith((".yaml", ".yml")):
+                    continue
+                with open(os.path.join(dirpath, fname), errors="replace") as f:
+                    text = f.read()
+                for name in PRIVATE_STAND_INS:
+                    esc = re.escape(name)
+                    overrides.setdefault(name, set()).update(
+                        re.findall(rf"-\s*name:\s*{esc}\s*\n\s*newTag:\s*(\S+)", text)
+                    )
+                    bare.setdefault(name, set()).update(
+                        re.findall(rf"image:\s*{esc}:(\S+)", text)
+                    )
+    return {
+        f"{name}:{tag}"
+        for name in PRIVATE_STAND_INS
+        for tag in (overrides.get(name) or bare.get(name) or ())
+    }
+
+
+def stand_in_private_images(paths):
+    """Build and load a stand-in for each private image the paths run. Returns the failures."""
+    failed = []
+    for ref in sorted(private_image_refs(paths)):
+        port, health = PRIVATE_STAND_INS[ref.rsplit(":", 1)[0]]
+        directory = os.path.dirname(health)
+        dockerfile = STAND_IN_DOCKERFILE.format(
+            port=port, health=health, dir=directory if directory != "/" else ""
+        )
+        try:
+            with tempfile.TemporaryDirectory() as ctx:
+                with open(os.path.join(ctx, "Dockerfile"), "w") as f:
+                    f.write(dockerfile)
+                sh(["docker", "build", "-t", ref, ctx], timeout=600)
+            sh(["k3d", "image", "import", ref, "-c", CLUSTER], timeout=600)
+        except (RuntimeError, OSError, subprocess.SubprocessError) as e:
+            detail = getattr(e, "stderr", None) or str(e)
+            failed.append(f"image stand-in {ref} could not be laid: {detail[-300:]}")
+            continue
+        print(
+            f"ok      shadow  image stand-in {ref} (private; answers {health} on {port})"
+        )
+    return failed
+
+
 def db_needs_standin(paths):
     """True when a manifest under test points a workload at the estate database."""
     for path in paths:
@@ -1410,6 +1486,9 @@ def _verify(head, paths):
             db_failed = stand_in_database()
             if db_failed:
                 return 1, [("database", db_failed)]
+        image_failed = stand_in_private_images(paths)
+        if image_failed:
+            return 1, [("image", image_failed)]
         names = []
         for path in paths:
             name = "shadow-" + path.strip("/").replace("/", "-")[:50]
