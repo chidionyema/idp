@@ -1,19 +1,32 @@
 name: pr-list
 description: >
-  List pull requests. Default: open PRs on chidioniema/idp.
+  List pull requests. Default: open PRs on chidionyema/idp.
   Use --state=open|closed|merged|all to filter.
 args:
   state:  {type: string, default: "open"}
-  repo:   {type: string, default: "chidioniema/idp"}
+  repo:   {type: string, default: "chidionyema/idp"}
   limit:  {type: int,    default: 10}
 steps:
   - name: list
+    # 2026-10-22: this door never once worked, for three separate reasons, and each hid the next.
+    # (1) the org name was one letter short of chidionyema, and `2>/dev/null` threw away
+    #     gh's "Could not resolve to a Repository", so the only trace was a JSONDecodeError on an
+    #     empty stdin, which is what the Face showed. (2) the state/repo values were interpolated
+    #     into a python f-string by the shell, so `repo=chidionyema/idp` was a SyntaxError even
+    #     when gh answered. (3) the pipe threw away gh's exit status.
+    # Now: gh writes a file, its stderr and exit status are the step's, and state/repo reach
+    # python as argv values instead of source text.
     cmd: |
-      gh pr list --state {{state}} --repo {{repo}} --limit {{limit}} --json number,title,headRefName,baseRefName,isDraft,additions,deletions,changedFiles,updatedAt 2>/dev/null |
+      out=$(mktemp)
+      if ! gh pr list --state {{state}} --repo {{repo}} --limit {{limit}} --json number,title,headRefName,baseRefName,isDraft,additions,deletions,changedFiles,updatedAt > "$out"; then
+        echo "pr-list: gh pr list failed for repo {{repo}}; gh's reason is on stderr above" >&2
+        exit 1
+      fi
       python3 -c "
       import json, sys
-      prs = json.load(sys.stdin)
-      print(f'PRs ({len(prs)}, state={{state}}, repo={{repo}}):')
+      prs = json.load(open(sys.argv[1]))
+      state, repo = sys.argv[2], sys.argv[3]
+      print(f'PRs ({len(prs)}, state={state}, repo={repo}):')
       for p in prs:
           draft = '[DRAFT] ' if p['isDraft'] else ''
           print(f\"  #{p['number']} {draft}{p['title'][:60]}\")
@@ -21,4 +34,5 @@ steps:
               f\"    {p['headRefName']} -> {p['baseRefName']} | \"
               f\"+{p['additions']}/-{p['deletions']} files={p['changedFiles']} | {p['updatedAt'][:10]}\"
           )
-      "
+      " "$out" '{{state}}' '{{repo}}'
+      rm -f "$out"

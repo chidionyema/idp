@@ -6,4 +6,9 @@ steps:
   - name: brief
     # The three answers are computed once, in greenlane/brief.py, and ride in the status JSON as
     # `brief`; the Fleet dot reads the same dict. The spoken answer is its `summary` sentence.
-    cmd: python3 ~/Documents/code/idp/bin/idp-greenlane status | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["brief"]))'
+    # GH_REPO (2026-10-23): without it `idp-greenlane` asks `gh repo view` with no `--repo`, which
+    # only answers inside a checkout. Asked from the director's home directory -- which is where the
+    # executor runs, and where the Face's call lands -- `gh` exits 1, the empty stdout becomes a
+    # JSONDecodeError, and "how's the lane?" halts instead of answering. The step names the repo it
+    # is asking about, exactly as pr-list does.
+    cmd: env GH_REPO=${GH_REPO:-chidionyema/idp} python3 ~/Documents/code/idp/bin/idp-greenlane status | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin)["brief"]))'

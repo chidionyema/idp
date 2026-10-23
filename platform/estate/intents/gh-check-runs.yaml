@@ -2,8 +2,9 @@ name: gh-check-runs
 description: All check runs for a SHA or PR. Returns JSON array.
 args:
   sha:  {type: string, description: "Commit SHA"}
-  repo: {type: string, default: "chidioniema/idp"}
+  repo: {type: string, default: "chidionyema/idp"}
 steps:
   - name: runs
+    # no `2>/dev/null`: a refusal from gh is the answer (2026-10-22)
     cmd: >
-      gh api repos/{{repo}}/commits/{{sha}}/check-runs --jq '.' 2>/dev/null
+      gh api repos/{{repo}}/commits/{{sha}}/check-runs --jq '.'
