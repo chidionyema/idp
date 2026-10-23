@@ -100,6 +100,62 @@ def test_a_yes_with_nothing_pending_is_not_forwarded(laptop, monkeypatch):
     assert laptop.heard == []
 
 
+class Clock:
+    """`time` for voice_intents, with monotonic() under the test's control.
+
+    The real module's other names (time(), strftime) still work, so audits write real timestamps;
+    only the clock this module measures pending confirmations with is moved.
+    """
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def __getattr__(self, name):
+        import time as real
+
+        return getattr(real, name)
+
+
+def test_a_yes_after_the_window_says_it_expired(laptop, monkeypatch):
+    # Measured 2026-10-23T07:47Z through the public proxy: intent+args asked, the founder's "yes"
+    # came two minutes later, and the answer was HTTP 204 with an empty body. PENDING_TTL_S is
+    # 60 s, so that silence is ordinary, not a fault -- and silence is the one thing a voice
+    # surface must never answer with.
+    clock = Clock()
+    monkeypatch.setattr(vi, "time", clock)
+    monkeypatch.setenv("FLEETVIEW_INTENTS_URL", laptop.url)
+    laptop.answers.append(
+        (
+            200,
+            vi.result("flux-reconcile", "pending_confirmation", "Run flux-reconcile?"),
+        )
+    )
+    vi.handle("run flux reconcile", "s8")
+    clock.now = vi.PENDING_TTL_S + 30
+    said = vi.handle("yes", "s8")
+    assert said["status"] == "expired"
+    assert "expired" in said["text"] and "Say" in said["text"]
+    assert [h["text"] for h in laptop.heard] == ["run flux reconcile"]
+
+
+def test_a_yes_to_a_confirmation_the_pod_holds_also_expires_out_loud(laptop, pod):
+    clock = Clock()
+    vi.time = clock  # noqa: SIM115 -- restored below
+    try:
+        vi._PENDING["s9"] = ("flux-reconcile", 0.0)
+        clock.now = vi.PENDING_TTL_S + 1
+        said = vi.handle("yes", "s9")
+        assert said["status"] == "expired"
+        assert "flux reconcile" in said["text"]
+    finally:
+        import time as real
+
+        vi.time = real
+
+
 def test_the_laptop_naming_nothing_lets_the_model_answer(laptop, monkeypatch):
     monkeypatch.setenv("FLEETVIEW_INTENTS_URL", laptop.url)
     laptop.answers.append((204, None))
