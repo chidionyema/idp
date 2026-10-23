@@ -341,3 +341,11 @@ def test_head_and_base_run_side_by_side_and_the_base_is_the_merge_base():
     verify = next(s for s in jobs["run"]["steps"] if s.get("id") == "verify")
     assert "--record" in verify["run"]
     assert "IDP_SHADOW_TREE" in verify["env"]
+
+
+def test_the_signature_ignores_how_many_containers_are_stuck():
+    """Run 39935488278: one stuck litellm pod on the base, two on the head, same crash."""
+    shadow = load_shadow()
+    one = "pods past rescue: pod llm/litellm-c955dc58-4pzhv container litellm is CrashLoopBackOff (restarts 3)"
+    two = "pods past rescue: 2 stuck container(s), first: pod llm/litellm-7c797c54f5-67nxb container litellm is CrashLoopBackOff (restarts 4)"
+    assert shadow.signature(one) == shadow.signature(two)
