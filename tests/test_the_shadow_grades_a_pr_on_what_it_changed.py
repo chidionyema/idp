@@ -349,3 +349,19 @@ def test_the_signature_ignores_how_many_containers_are_stuck():
     one = "pods past rescue: pod llm/litellm-c955dc58-4pzhv container litellm is CrashLoopBackOff (restarts 3)"
     two = "pods past rescue: 2 stuck container(s), first: pod llm/litellm-7c797c54f5-67nxb container litellm is CrashLoopBackOff (restarts 4)"
     assert shadow.signature(one) == shadow.signature(two)
+
+
+def test_the_signature_ignores_the_kubelet_pod_tail():
+    """Run 39940650771: same temporal crash on both sides, different pod suffix and uid."""
+    shadow = load_shadow()
+
+    def msg(rs, sfx, uid):
+        return (
+            f"pods past rescue: 4 stuck container(s), first: pod temporal/sovereign-worker-{rs}-{sfx} "
+            f"container worker is CrashLoopBackOff (restarts 3): back-off 40s restarting failed "
+            f"container=worker pod=sovereign-worker-{rs}-{sfx}_temporal({uid})"
+        )
+
+    a = msg("76dd6776cc", "vj4rm", "b9d9e82e-a133-47db-9674-535f1322837b")
+    b = msg("5c76858dc9", "bmwxp", "a91a972b-b477-494e-81ab-de09a2b08032")
+    assert shadow.signature(a) == shadow.signature(b)
