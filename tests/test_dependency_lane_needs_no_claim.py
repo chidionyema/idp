@@ -111,6 +111,7 @@ def test_a_pin_mixed_with_anything_else_is_not_exempt():
     assert not g.dependency_pin_only([".github/workflows/ci.yml", "yarn.lock"])
     assert not g.dependency_pin_only(["Dockerfile", "requirements.txt"])
 
+
 def test_an_empty_change_is_not_exempt():
     # Otherwise a batch carrying no files at all would read as the bots' work.
     assert not _gate().dependency_pin_only([])
@@ -147,7 +148,10 @@ def _lane(
 
 
 def _judge(
-    repo: Path, files: dict[str, str], monkeypatch, base_files: dict[str, str] | None = None
+    repo: Path,
+    files: dict[str, str],
+    monkeypatch,
+    base_files: dict[str, str] | None = None,
 ) -> list[str]:
     """judge() on the plain-branch path, with GitHub's answers stubbed out.
 
@@ -162,12 +166,19 @@ def _judge(
 
 
 def test_an_unclaimed_go_bump_passes_the_gate(tmp_path, monkeypatch):
-    assert _judge(tmp_path, {"go.mod": "module x\n", "go.sum": "h1:abc\n"}, monkeypatch) == []
+    assert (
+        _judge(tmp_path, {"go.mod": "module x\n", "go.sum": "h1:abc\n"}, monkeypatch)
+        == []
+    )
 
 
-def test_an_unclaimed_bump_that_also_touches_code_is_still_refused(tmp_path, monkeypatch):
+def test_an_unclaimed_bump_that_also_touches_code_is_still_refused(
+    tmp_path, monkeypatch
+):
     problems = _judge(
-        tmp_path, {"go.mod": "module x\n", "cmd/x/main.go": "package main\n"}, monkeypatch
+        tmp_path,
+        {"go.mod": "module x\n", "cmd/x/main.go": "package main\n"},
+        monkeypatch,
     )
     assert problems and "no `Claim:" in problems[0]
 
@@ -183,7 +194,10 @@ PKG_AFTER_WITH_HOOK = (
 def test_an_unclaimed_npm_bump_passes_the_gate(tmp_path, monkeypatch):
     problems = _judge(
         tmp_path,
-        {"backstage/package.json": PKG_AFTER, "backstage/yarn.lock": "dompurify@^3.4.17:\n"},
+        {
+            "backstage/package.json": PKG_AFTER,
+            "backstage/yarn.lock": "dompurify@^3.4.17:\n",
+        },
         monkeypatch,
         base_files={
             "backstage/package.json": PKG_BEFORE,
