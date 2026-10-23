@@ -26,6 +26,7 @@ resources:
   - quad-ledger-exception.yaml
   - quad-ledger.yaml
   - reloader.yaml
+  - metrics-server.yaml
 patches:
   - target:
       group: kustomize.toolkit.fluxcd.io
