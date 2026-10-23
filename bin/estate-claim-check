@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""estate-claim-check -- a fact is stored only if it can be re-executed.
+
+THE INVARIANT (this is the whole design, and it is inductive):
+
+    1. `add` has no way to accept a number. It accepts an instrument, runs it,
+       and stores what it printed. A value that was not produced by a command
+       cannot enter the store (write path is closed).
+    2. `verify` re-runs every stored instrument and refuses anything it cannot
+       reproduce now. So the store cannot drift away from its evidence
+       (read path fails closed).
+
+Base case: an empty store passes. Step: every write is filtered by (1), every
+read is filtered by (2). Therefore no served fact is one that nothing can
+re-derive. That is the guarantee. It is a guarantee about *verifiability*, not
+about truth: an instrument can be the wrong instrument. The mitigation is
+`also` -- independent instruments that must agree, so a mis-typed instrument
+contradicts a second measurement instead of passing alone.
+
+Exit codes: 0 all PASS, 1 any failure, 2 usage/store error.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+from datetime import datetime, timezone
+
+PASS, STALE, CONTRADICTED, UNWITNESSED = "PASS", "STALE", "CONTRADICTED", "UNWITNESSED"
+FAILURES = (STALE, CONTRADICTED, UNWITNESSED)
+DEFAULT_STORE = "~/.estate/facts.jsonl"
+TIMEOUT_S = 20
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _run(cmd: str) -> tuple[bool, str]:
+    """Run an instrument. Returns (ok, output-or-error). No value is parsed here:
+    the caller compares the literal text, so a command that prints a banner fails."""
+    try:
+        p = subprocess.run(
+            ["bash", "-c", cmd],
+            capture_output=True, text=True, timeout=TIMEOUT_S, check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return False, f"instrument exceeded {TIMEOUT_S}s"
+    if p.returncode != 0:
+        return False, f"instrument exited {p.returncode}: {p.stderr.strip()[:200]}"
+    return True, p.stdout.strip()
+
+
+def _same(a: str, b: str, tol: float) -> bool:
+    if a == b:
+        return True
+    try:
+        return abs(float(a) - float(b)) <= tol
+    except ValueError:
+        return False
+
+
+def _sha(s: str) -> str:
+    return hashlib.sha256(s.encode()).hexdigest()[:12]
+
+
+def load(store: str) -> list[dict]:
+    if not os.path.exists(store):
+        return []
+    rows = []
+    with open(store, encoding="utf-8") as fh:
+        for n, line in enumerate(fh, 1):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"store corrupt at line {n}: {exc}")
+    return rows
+
+
+def verify_row(row: dict, tol: float) -> tuple[str, str]:
+    instrument = row.get("instrument")
+    # A validity of 0 is a real window ("expires immediately"); only an absent
+    # window is unwitnessed. `not row.get(...)` conflated the two and made an
+    # expired fact report as unchecked, which the test suite caught.
+    if not instrument or row.get("valid_for_s") is None:
+        return UNWITNESSED, "no instrument or no validity window: this fact cannot be checked"
+    measured = row.get("measured_at") or ""
+    try:
+        at = datetime.strptime(measured, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return UNWITNESSED, f"measured_at is not a timestamp: {measured!r}"
+    age = time.time() - at.timestamp()
+    if age > float(row["valid_for_s"]):
+        return STALE, f"measured {int(age)}s ago, valid for {int(row['valid_for_s'])}s"
+
+    ok, out = _run(instrument)
+    if not ok:
+        return CONTRADICTED, out
+    if not _same(out, str(row.get("value")), tol):
+        return CONTRADICTED, f"stored {row.get('value')!r}, instrument now prints {out!r}"
+    for alt in row.get("also") or []:
+        ok2, out2 = _run(alt)
+        if not ok2:
+            return CONTRADICTED, f"independent instrument failed: {out2}"
+        if not _same(out2, str(row.get("value")), tol):
+            return CONTRADICTED, (
+                f"independent instrument disagrees: stored {row.get('value')!r}, {out2!r} "
+                f"from {alt!r} -- one of the two instruments is the wrong instrument"
+            )
+    return PASS, out
+
+
+def cmd_add(a) -> int:
+    ok, out = _run(a.instrument)
+    if not ok:
+        print(f"REFUSED: {out}", file=sys.stderr)
+        return 2
+    if a.expect is not None and not _same(out, a.expect, a.tolerance):
+        print(
+            f"REFUSED: instrument prints {out!r} but you expect {a.expect!r}. "
+            "Fix the instrument or the expectation; nothing is stored.",
+            file=sys.stderr,
+        )
+        return 2
+    row = {
+        "id": a.id or _sha(a.subject + a.instrument),
+        "subject": a.subject,
+        "unit": a.unit,
+        "value": out,
+        "instrument": a.instrument,
+        "also": a.also or [],
+        "measured_at": _now(),
+        "valid_for_s": a.valid_for,
+        "store_version": 1,
+    }
+    store = os.path.expanduser(a.store)
+    os.makedirs(os.path.dirname(store) or ".", exist_ok=True)
+    with open(store, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, sort_keys=True) + "\n")
+    print(f"STORED {row['id']}  {a.subject} = {out} {a.unit}  ({a.instrument})")
+    return 0
+
+
+def cmd_verify(a) -> int:
+    rows = load(os.path.expanduser(a.store))
+    if not rows:
+        print(f"no facts in {a.store}; nothing to verify (this is a pass, not a proof)")
+        return 0
+    worst = 0
+    results = []
+    for row in rows:
+        verdict, detail = verify_row(row, a.tolerance)
+        results.append({"id": row.get("id"), "subject": row.get("subject"), "verdict": verdict, "detail": detail})
+        if verdict in FAILURES:
+            worst = 1
+    if a.json:
+        print(json.dumps({"verdict": "PASS" if worst == 0 else "FAIL", "facts": results}, indent=2))
+    else:
+        for r in results:
+            print(f"{r['verdict']:13} {r['id']:<14} {r['subject']}: {r['detail']}")
+        n_pass = sum(1 for r in results if r["verdict"] == PASS)
+        print(f"\n{n_pass}/{len(results)} facts re-executed. verdict: {'PASS' if worst == 0 else 'FAIL'}")
+    return worst
+
+
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--store", default=DEFAULT_STORE)
+    ap.add_argument("--tolerance", type=float, default=0.0)
+    ap.add_argument("--json", action="store_true")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    ad = sub.add_parser("add", help="measure a fact and store it (there is no --value flag by design)")
+    ad.add_argument("--subject", required=True)
+    ad.add_argument("--unit", default="")
+    ad.add_argument("--instrument", required=True, help="the exact command that produces the value")
+    ad.add_argument("--also", action="append", help="an independent instrument that must agree (repeatable)")
+    ad.add_argument("--valid-for", type=int, default=86400, dest="valid_for")
+    ad.add_argument("--expect", help="pin the value; refuse to store if the instrument disagrees")
+    ad.add_argument("--id")
+    ad.set_defaults(func=cmd_add)
+
+    ve = sub.add_parser("verify", help="re-execute every stored instrument and fail closed")
+    ve.set_defaults(func=cmd_verify)
+
+    a = ap.parse_args(argv)
+    return a.func(a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
