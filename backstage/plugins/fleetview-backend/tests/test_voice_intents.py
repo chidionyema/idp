@@ -107,10 +107,15 @@ def test_other_speech_drops_pending(env):
 
 
 def test_pending_expires(env, monkeypatch):
+    # An expired yes used to fall through to the model, which answered with nothing (HTTP 204 and an
+    # empty body) -- measured on the public path 2026-10-23T07:47Z, two minutes after an
+    # intent+args confirmation. Silence is not an answer; the expiry is said out loud instead.
     monkeypatch.setattr(vi, "PENDING_TTL_S", -1.0)
     vi.handle("run flux reconcile", "s5")
     r = vi.handle("yes", "s5")
-    assert r is None
+    assert r["status"] == "expired"
+    assert "expired" in r["text"]
+    assert vi.handle("yes", "s5") is None
 
 
 def test_pending_is_per_session(env):
