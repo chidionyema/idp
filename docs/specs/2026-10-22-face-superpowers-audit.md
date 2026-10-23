@@ -28,10 +28,60 @@ Nothing here is pushed. Nothing here is already shipped.
 > *names* (`catalogue`, `rotation-canary`) and concluded there was no Backstage. The deployment is
 > named `catalogue` and runs the Backstage image. The corrected section 2 is measured from inside
 > the pod.
+>
+> **Status, 2026-10-23 00:37–00:47Z — measured against production, not a plan.** Two of the gaps
+> this document recorded are closed, and the real blocker is somewhere else entirely:
+>
+> 1. `GET https://catalogue.mumchimp.com/api/proxy/fleetview/voice/intents` → **200, 31 120 b,
+>    64 intents, 53 of them declaring arguments, 7 marked `read_only`**. It was 404. The Commands
+>    tab has a catalogue. `main` (63c632795, #6870) pins both `backstage` and
+>    `fleetview-backend` at `main-14799-fed2b447`, which is the image that serves this route — the
+>    old `main-14676` image answered `404` for `/voice/intents` and `405` for `/voice/intent`, and
+>    nothing else changed but the pin.
+> 2. `POST /voice/intent {"intent":"cost-today"}` → **200, `status: ok`, 4 s**. Named intent,
+>    no utterance, no fuzzy match.
+> 3. `POST {"intent":"ci.status","args":{"pr":6870},"session_id":"probe-6886"}` →
+>    `pending_confirmation` in 2 s; `{"text":"yes","session_id":"probe-6886"}` → **`ok` in 3 s**.
+>    S1 (intents carry arguments) is **operating**, for every intent whose YAML declares them,
+>    through the same door the voice uses.
+>
+> Three defects were measured in the same ten minutes, and they are the reason "arguments work"
+> is not yet the same sentence as "the founder can get anything done":
+>
+> - **The read-back drops the arguments.** `{"intent":"pr-list","args":{"limit":1}}` asks
+>   `Run pr-list? Say yes to confirm.` — not *which* repo, not *how many*. The founder confirms a
+>   name and never the thing that changes the blast radius. S2's ladder is the fix, and the rungs
+>   are still hand-written in Python: `ci.status` is a *read* classified `W`, so a status query
+>   needs a "yes".
+> - **`pr-list` fails through the door.** The same two-step call ends
+>   `error | pr list failed. [estate] status=halted`, because the installed intent still says
+>   `--repo chidioniema/idp` (one letter short of `chidionyema`) and throws its stderr away. The
+>   fix exists on `lane/fix/intents-name-a-real-repo` (f87791f77, 09d46f2fd) and is **not on
+>   main**; `main` carries the typo.
+> - **Nothing delivers main to the laptop.** This is the blocker the document did not see.
+>   `estate-execute` prints `[estate] UNCONVERGED: IDP-Estate.pkg has not installed the converger;
+>   running the local copy`, and the filesystem agrees: `/usr/local/estate/releases` does not
+>   exist, `/usr/local/estate/sbin` does not exist, `/Library/LaunchDaemons` has no
+>   `ai.estate.converge.plist`, and `/usr/local/estate` was last written **2026-09-24**. The
+>   executor falls back to `~/.estate/intents`, a hand copy from that date. So the Face executes a
+>   month-old snapshot of the catalogue: an intent fixed on `main` never reaches it, and
+>   `pr-list` above fails in production *for a typo that is fixed on a lane*. `sudo -n true`
+>   answers `a password is required`, so this one step — `installer/build.sh` → install
+>   `IDP-Estate.pkg` once, for the root-owned LaunchDaemon — is founder-gated by design
+>   (`installer/README`: "You enter your password once, here"). Until it is done, **every**
+>   intent fix in section 7 is invisible to the Face, however green its lane.
+>
+> What is still absent, measured from the same 64-intent catalogue: no `agent.*` verb (S3), no
+> `laptop.*` verb (S4), no `memory.*` or `audit.last` (S5). Section 7 stands as the remaining work;
+> it now has a delivery step in front of it that did not appear in the original audit.
 
 ---
 
 ## 1. Verdict
+
+*(Superseded in part 2026-10-23 00:45Z — see the status block above for what is now measured: the
+catalogue answers 200 with 64 intents, and arguments work. The paragraph below is the audit as it
+stood, kept unedited.)*
 
 The Face **can** answer out loud, **can** run 64 arg-free estate intents by name (after a spoken
 "yes" for 56 of them), **can** give one agent a job in a GitHub sandbox with the `pi` harness, and
