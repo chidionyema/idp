@@ -16,12 +16,12 @@ description: >
   repos/<owner>/<repo>/commits/<sha>/status` answers `pending` the moment the lane picks the branch
   up and then success or failure -- which is the exact command the last step prints for you.
 
-  It needs a 130s door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 5.8-8.4s, the
+  It needs a 170s door, not 55 (measured 2026-10-12: `git fetch` + claim-gate 5.8-8.4s, the
   pre-push guard 32s of its own accord -- `timing 32s total; slowest rungs: 19s tsc backstage,
   12s ruff` -- plus the push itself, 37.4s once and past 40s the next time). That is 45-55s of
   unavoidable work whose variance crosses 60, which is why the shadow policy records 164 of 192
   runs not ok in 30d, p_fail 0.85: it is not a slow verb, it is a verb offered a door too small
-  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=130`, or the
+  for it. So run it through a door that fits -- `estate_invoke lane-submit timeout=170`, or the
   session plane. The default MCP door (55s) and the harness door (60s) kill it mid-push and tell
   you nothing.
 
@@ -38,14 +38,23 @@ args:
   cwd:     {type: string, default: "."}
 # the door this intent needs, so a caller can be told instead of guessing (and so the test below
 # can refuse a step that outlives the door it is run through).
-door_s: 130
+door_s: 170
 halt_on_failure: true
 steps:
   - name: the claim covers the change
     # 2026-10-08, PR #5511: the claim missed three files the lane touched, and claim-gate said so
     # one CI round (~15 min) after the push, twice. The same gate, run here, says it in seconds.
     # Measured 2026-10-12: 5.8s and 8.4s on two runs, and a 10s cap timed out inside `git fetch`.
-    timeout: 20
+    #
+    # 2026-10-23: the cap was still 20s when GitHub got slower, and the step could no longer
+    # finish. Measured on this machine, same commands, same minute: `git fetch -q origin main`
+    # 3.5s, `gh repo view` 1.0s, `bin/claim-gate` 26.1s -- 30.6s of work inside a 20s cap, so
+    # the step was killed three times in a row (exit 124, `TIMEOUT (20s)`) before it ever
+    # reached the push. The estate's own shadow policy agrees: 325 of 511 lane-submit runs in
+    # 30d were not ok (p_fail 0.64). The cap is now 60s -- the measured work plus room for a
+    # slow API -- and the door moves with it (170 = 60 + 100 + 10), because one invocation runs
+    # every step inside one door (tests/test_lane_submit_fits_the_door.py).
+    timeout: 60
     cmd: |
       cd {{cwd}} || exit 2
       git fetch -q origin main || { echo "BLIND   lane-submit  cannot fetch origin/main to judge the claim" >&2; exit 2; }
