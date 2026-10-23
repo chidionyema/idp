@@ -297,7 +297,9 @@ def test_every_pack_has_a_valid_skill_front_door():
         try:
             data = yaml.safe_load(front)
         except yaml.YAMLError as exc:
-            raise AssertionError(f"{pid}'s frontmatter is not valid YAML: {exc}")
+            raise AssertionError(
+                f"{pid}'s frontmatter is not valid YAML: {exc}"
+            ) from exc
         assert isinstance(data, dict), f"{pid}'s frontmatter is not a mapping"
         assert data.get("name") == pid, "the skill's name must match its directory"
         assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", pid), (
