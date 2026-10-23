@@ -341,6 +341,96 @@ def test_appending_leaves_no_lockfile_behind(tmp_path):
     assert not (tmp_path / "facts.jsonl.lock").exists()
 
 
+# ------------------------------------------- the three rungs (research 2026-10-23)
+def test_a_fact_with_no_instrument_is_refused_at_write_time(tmp_path):
+    """Rung 1 needs a command. Without one the row would be a number nobody can re-derive,
+    which is the defect, so it is refused before it exists rather than flagged later."""
+    store = tmp_path / "facts.jsonl"
+    p = run("add", "--subject", "rows", "--kind", "fact", store=store)
+    assert p.returncode == 2, p.stdout
+    assert "needs --instrument" in p.stderr
+    assert not store.exists()
+
+
+def test_an_artefact_claim_is_bound_to_bytes_and_dies_when_they_change(tmp_path):
+    """Most claims are about something that happened, not something a command recomputes: a
+    deploy, a log line, a screenshot. Those cannot be re-executed, so rung 2 binds them to a
+    digest -- the claim cannot outlive its evidence."""
+    evidence = tmp_path / "deploy.log"
+    evidence.write_text("pod idp-api-7f9c Ready 1/1\n", encoding="utf-8")
+    store = tmp_path / "facts.jsonl"
+    p = run(
+        "add",
+        "--subject",
+        "idp-api deployed",
+        "--kind",
+        "artefact",
+        "--evidence",
+        str(evidence),
+        store=store,
+    )
+    assert p.returncode == 0, p.stderr
+    assert "R2-evidence" in p.stdout
+    assert run("verify", store=store).returncode == 0
+
+    evidence.write_text("CrashLoopBackOff\n", encoding="utf-8")
+    v = run("verify", store=store)
+    assert v.returncode == 1, v.stdout
+    assert "CONTRADICTED" in v.stdout
+    assert "artefact changed" in v.stdout
+
+
+def test_an_artefact_claim_with_no_bytes_is_refused(tmp_path):
+    store = tmp_path / "facts.jsonl"
+    p = run(
+        "add",
+        "--subject",
+        "deployed",
+        "--kind",
+        "artefact",
+        "--evidence",
+        str(tmp_path / "absent.log"),
+        store=store,
+    )
+    assert p.returncode == 2, p.stdout
+    assert "Nothing was witnessed" in p.stderr
+    assert not store.exists()
+
+
+def test_a_judgment_without_an_authority_is_refused(tmp_path):
+    """A judgment is legitimate, but only attributed. Stored unattributed it would look like
+    everything else in the ledger, which is how an opinion becomes a fact."""
+    store = tmp_path / "facts.jsonl"
+    p = run(
+        "add", "--subject", "the concierge is useful", "--kind", "judgment", store=store
+    )
+    assert p.returncode == 2, p.stdout
+    assert "only when attributed" in p.stderr
+    assert not store.exists()
+
+
+def test_an_attributed_judgment_is_stored_and_never_claimed_verified(tmp_path):
+    """Rung 3 must be visible as rung 3. The point is not to make judgments storable, it is to
+    make the difference between a measurement and an opinion readable in the record."""
+    store = tmp_path / "facts.jsonl"
+    p = run(
+        "add",
+        "--subject",
+        "the founder prefers prose to tables",
+        "--kind",
+        "judgment",
+        "--authority",
+        "founder, 2026-10-23, in session",
+        store=store,
+    )
+    assert p.returncode == 0, p.stderr
+    assert "R3-attributed" in p.stdout
+    v = run("verify", store=store)
+    assert v.returncode == 0, v.stdout
+    assert "attributed, not verified" in v.stdout
+    assert "founder, 2026-10-23" in v.stdout
+
+
 def test_re_measuring_after_a_retirement_is_live_not_retired(tmp_path):
     """The id is a hash of subject+instrument, so a re-measurement reuses it. Retirement is
     therefore ordered: a retire row only silences the rows before it. As a set it silenced the

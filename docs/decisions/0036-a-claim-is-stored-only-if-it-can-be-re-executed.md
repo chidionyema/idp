@@ -64,6 +64,36 @@ all of them reproduce now:
 | TAMPERED | the chain does not walk: a row was edited, reordered or removed |
 | RETIRED | a fact explicitly retired with its reason, or superseded by a later measurement; not graded, still on record |
 
+### Revision 2026-10-23: three rungs, because not every claim is a number
+
+The founder rejected the first shape of this record on a fair ground: hallucination is not confined to
+numbers, an agent can invent a file, a deploy, a behaviour, or an opinion while building a feature.
+Requiring an executable instrument for *everything* would have made the store useless for most real
+claims, and storing them unchecked is the original defect.
+
+So a claim carries the checker it can carry, and the rung is explicit in every row and every verdict.
+Full research and the five evidence families: `docs/research/2026-10-23-claims-carry-their-checker.md`.
+
+| rung | `--kind` | witness | `verify` does | honest limit |
+|---|---|---|---|---|
+| R1 | `fact` | the instrument, run at write time | re-runs it; value must reproduce | the instrument must measure the claim (see `also`) |
+| R2 | `artefact` | sha256 of a named file | re-hashes it; bytes must be identical | only as good as what the file is |
+| R3 | `judgment` | a named authority (`--authority`) | cannot execute; prints `attributed, not verified` | it is an opinion and says so |
+
+Write rule: a claim that fits no rung is refused at write time (`fact` with no `--instrument`,
+`artefact` with no readable `--evidence`, `judgment` with no `--authority`) -- exit 2, nothing stored.
+Read rule: `verify` grades every active row at its rung and fails closed. Rung 3 passes *as
+attributed*; it can never be quoted as a measurement, because the verdict line says what it is.
+
+Two operational facts learned by running it, both now documented rather than discovered later:
+
+- the fact id is a hash of **subject + instrument text**, so re-measuring with even one character of
+  quoting different creates a *new* fact and leaves the old one CONTRADICTED. Re-measure with the
+  same text, or `retire` the old row with its reason.
+- rung 1e of `bin/idp-ci` grades **two** stores: the repo's `facts/*.jsonl` and the operator's
+  `~/.estate/facts.jsonl`. A short TTL on this machine can therefore turn the repo gate red, which is
+  intended: the numbers an agent quotes here are graded here.
+
 ## The guarantee, stated honestly
 
 The invariant is inductive and short enough to audit:
