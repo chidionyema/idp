@@ -543,3 +543,51 @@ def test_a_stdlib_caller_that_names_itself_is_not_the_graph_drain(
         mod.skip_reason(_call("x", ua="Python-urllib/3.9"), "acompletion", None)
         == "graph drain"
     )
+
+
+def test_a_stalled_read_serves_the_last_good_answer_and_logs_its_time(
+    monkeypatch, tmp_path, caplog
+):
+    mod = _load(monkeypatch, tmp_path)
+    monkeypatch.setattr(mod, "BUDGET_S", 0.1)
+    _wire(mod)
+    task = "fix the meridian cert"
+    assert (
+        "meridian serves the Traefik default cert"
+        in _pre(mod, _call(task))["messages"][-1]["content"]
+    )
+
+    def stall(*_a, **_k):  # the 2026-10-21 failure: no answer inside the wait
+        time.sleep(1.0)
+
+    mod._brief_cache.clear()  # past its TTL
+    mod._focus_cache[:] = [0.0, None]
+    monkeypatch.setattr(mod, "fetch_brief", stall)
+    monkeypatch.setattr(mod, "fetch_focus", stall)
+    with caplog.at_level("WARNING"):
+        out = _pre(mod, _call(task))
+    last = out["messages"][-1]["content"]
+    assert "meridian serves the Traefik default cert" in last  # old fact, not nothing
+    lines = [r.getMessage() for r in caplog.records if "unreadable" in r.getMessage()]
+    assert len(lines) == 2
+    for line in lines:
+        assert "at=" in line and "load1=" in line
+        assert "waited=0." in line and "leg_elapsed=" in line
+    # the brief had an answer for this task; the stubbed-out focus leg has none to fall back on
+    assert any("brief unreadable" in l and "serving stale age=" in l for l in lines)
+    assert any("focus unreadable" in l and "nothing to serve" in l for l in lines)
+
+
+def test_a_stale_answer_is_not_served_past_its_age(monkeypatch, tmp_path):
+    mod = _load(monkeypatch, tmp_path)
+    mod._last_good["brief:x"] = (time.time() - mod.STALE_MAX_S - 5, {})
+    assert mod.stale("brief:x") is None
+    assert mod.stale("brief:never-seen") is None
+
+
+def test_the_door_focus_gh_wait_never_outlasts_the_router_budget(monkeypatch, tmp_path):
+    mod, _ = _door_mode(monkeypatch, tmp_path, rows=[])
+    focus = mod._lib()[1]
+    focus.FOCUS_TIMEOUT_S = 8.0
+    mod._door_focus()
+    assert focus.FOCUS_TIMEOUT_S <= mod.BUDGET_S
