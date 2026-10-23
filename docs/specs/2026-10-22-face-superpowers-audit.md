@@ -677,6 +677,42 @@ open, and the delivery card also reports seven failing launchd jobs and an orpha
 `ai.estate.nats` — none of them the Face's own, all of them a founder-visible red on `/fleet` that
 nobody has fixed.
 
+### 10.5 The public path, walked — 2026-10-23 07:42–07:52Z
+
+`#6910` (Flux's own image update) merged as `96f16beee`, Flux reconciled, and the deployment came
+up on the build that carries the args fix:
+
+```
+$ kubectl get deploy -n backstage catalogue -o jsonpath='{...containers[*].image}'
+ghcr.io/chidionyema/fleetview-backend:main-14830-de4b4219c…
+$ kubectl rollout status deploy/catalogue -n backstage
+deployment "catalogue" successfully rolled out
+$ kubectl exec -n backstage catalogue-78d9646b94-lzrsb -c fleetview-backend -- python3 -c \
+    'import fleetview_backend.voice_intents as v, inspect; print("args:", "payload[\"args\"]" in inspect.getsource(v._forward))'
+args on the wire: True
+```
+
+And then the founder's own path — the deployed hostname, a guest token, a sentence with values:
+
+```
+POST https://catalogue.mumchimp.com/api/proxy/fleetview/voice/intent
+{"intent":"pr-list","args":{"limit":3,"state":"merged"},"session_id":"PUB2"}
+200 {"status":"pending_confirmation","text":"Run pr-list with limit 3, state merged? Say yes to confirm."}
+{"text":"yes","session_id":"PUB2"}
+200 {"status":"ok","text":"dependabot/npm_and_yarn/platform/active-runtime/vitest-4.1.11 -> main | +1/-1 files=6 | 2026-10-18"}
+```
+
+So the read-back names the values it was given, and the run returns only merged pull requests — the
+arguments reached the executor, not just the pod. The Face has the verb; what it does not have is
+the hands (§10.4, defect 11: they are still on the laptop).
+
+**A defect this walk found, and this lane fixes.** The same call, made a second time by hand, went
+unanswered: the founder's `yes` arrived two minutes after the confirmation, `PENDING_TTL_S` is 60 s,
+and the answer was HTTP 204 with an empty body. Silence is the one thing a voice surface must never
+return — it reads as a broken microphone, not as an expiry. An expired yes is now spoken
+(`status: expired`: "That confirmation expired before I heard you. Say pr list again and I will ask
+once more."), for a confirmation the pod holds and one the laptop holds.
+
 ---
 
 ## Appendix A — the commands that produced these facts

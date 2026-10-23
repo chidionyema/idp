@@ -46,6 +46,8 @@ _CUES = {
     "error": ("burn", "danger"),
     "pending_confirmation": ("shield_flash", "warn"),
     "cancelled": ("comet_spawn", "info"),
+    # An utterance whose confirmation window closed: said out loud, never silence (2026-10-23).
+    "expired": ("comet_spawn", "warn"),
 }
 _PENDING: dict[str, tuple[str, float, dict[str, str] | None]] = {}
 _PENDING_TASK: dict[str, str] = {}
@@ -606,6 +608,23 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
     with _LOCK:
         pend = _PENDING.pop(session_id, None)
         pend_task = _PENDING_TASK.pop(session_id, "")
+    if pend and now - pend[1] > PENDING_TTL_S:
+        # A yes that arrives after the window is the founder answering something the estate has
+        # already forgotten. Falling through answered it with silence: measured 2026-10-23T07:47Z
+        # on the public path, an intent+args confirmation went unanswered for two minutes, then
+        # "yes" returned HTTP 204 and an empty body -- which reads as a broken microphone, not as
+        # an expiry. PENDING_TTL_S is 60 s, so this is easy to hit while speaking.
+        if norm in YES or norm in NO:
+            name = pend[0]
+            pend_args = pend[2] if len(pend) > 2 else None
+            _audit(session_id, text, name, "expired", None, 0, pend_args)
+            return result(
+                name,
+                "expired",
+                f"That confirmation expired before I heard you. Say {_spoken(name)} again and "
+                "I will ask once more.",
+            )
+        pend = None
     if pend and now - pend[1] <= PENDING_TTL_S:
         name = pend[0]
         pend_args = pend[2] if len(pend) > 2 else None
@@ -627,6 +646,14 @@ def handle(text: str, session_id: str, args: dict | None = None) -> dict | None:
     if url and remote_since is not None and now - remote_since <= PENDING_TTL_S:
         if norm in YES or norm in NO:
             return _on_laptop(url, text, session_id, "intent", now)
+    if url and remote_since is not None and (norm in YES or norm in NO):
+        # The laptop held the confirmation and has since dropped it; the pod still remembers asking.
+        return result(
+            "intent",
+            "expired",
+            "That confirmation expired before I heard you. Say the command again and I will ask "
+            "once more.",
+        )
 
     task = agent_job_task(text)
     if task is not None:
