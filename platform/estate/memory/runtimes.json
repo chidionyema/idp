@@ -1,5 +1,6 @@
 {
   "_": "The one source for estate memory in every agent runtime (#6156). bin/estate-memory-install renders this into each runtime's own config and --check reports drift. A new runtime is a new entry under runtimes, not a new integration.",
+  "mcp_reads": "Whether a runtime can read an MCP server at all. pi cannot: its own docs say 'No MCP' -- there is no client to register one with, so the mcp entry below is dead config that reads like a working integration. 'reads': false tells the installer to leave that file alone and to remove the estate's own entry from it; a runtime with no MCP client gets its tools from the 'tools' links instead, which point at the same bridge every other runtime runs.",
   "door": {
     "url": "https://mcp.mumchimp.com/estate/mcp",
     "header": "Authorization",
@@ -43,7 +44,10 @@
       "plan_lock": "plugin"
     },
     "pi": {
-      "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio"},
+      "mcp": {"file": "~/.pi/mcp.json", "key": "mcpServers", "shape": "stdio", "reads": false},
+      "tools": [
+        {"kind": "link", "source": "extensions/estate-memory-tools", "dest": "~/.pi/agent/extensions/estate-memory-tools"}
+      ],
       "hook": {"kind": "link", "source": "platform/estate/memory/pi-estate-memory.ts", "dest": "~/.pi/agent/extensions/estate-memory.ts"},
       "plan_lock": "extension"
     }
