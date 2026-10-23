@@ -273,3 +273,49 @@ It does not make a model honest, and it does not grade prose. It makes an unback
 detectable at the point it would otherwise be believed — and it currently only covers claims that
 somebody stored. Treating this as "hallucination solved" would be the exact error this document
 exists to prevent.
+## 11. Integrations: how a verification engine is admitted (2026-10-23)
+
+A consultant's engine can be integrated the same day it arrives, without auditing its internals,
+because admissibility here is a measurement and not a review. The engine is never trusted for its
+own `VERIFIED`; it is trusted as the *instrument* of an R1 row. The estate stores the command,
+re-executes it on every read, and the row goes false the moment the engine's answer moves.
+
+Five properties, executed by `tests/test_estate_claim_check.py`:
+
+| # | Property | Why it is the line |
+| --- | --- | --- |
+| P1 | never executes candidate-authored code in the grading process | an oracle that `exec()`s the artifact puts the untrusted code back in the trusted process, on the *pass* path |
+| P2 | never `VERIFIED` for wrong code with tests that agree with the wrongness | the ordinary failure; the generator writes both artifacts and its errors are correlated |
+| P3 | any strength number is a bound with its sample size | `killed/total` at n=1 is not a measurement (bound 0.95, i.e. no information); `epsilon <= 0.05` with zero survivors needs n >= 60 |
+| P4 | the oracle's source is declared and is not the generator | an invariant authored by the model grading the model is the self-graded exam with extra steps |
+| P5 | `VERIFIED` carries a re-executable claim row | a status word with no command behind it is what this whole tool exists to refuse |
+
+Measured on the submitted NSVEE v2 on arrival, by transcription of its decision path:
+
+```
+submitted-v2   0/5 satisfied ; max_mutants=12 -> best provable epsilon 0.221 (cannot reach 0.05)
+   [FAIL] P2 wrong+wrong is not VERIFIED   status=VERIFIED
+   [FAIL] P1 no in-process execution       probe file CREATED by grading process
+   [FAIL] P3 strength is a bound with n    score=1.0 n=1 bound=None
+   [FAIL] P4 oracle is not the generator   source=model ; no-invariant status=VERIFIED
+   [FAIL] P5 VERIFIED carries a claim row  status=VERIFIED keys=[]
+reference      5/5 satisfied
+```
+
+The single most useful number in that table is the 0.221: the submitted gate caps mutants at 12, so
+with zero survivors the tightest bound it can ever report is 22%. It cannot reach the 5% its own
+claim needs, at any input. A ratio with no sample size floors, and a cap nobody priced, are what
+separate "epsilon ~ 0" from a number.
+
+What a build must supply to be admitted, in the trust order that matters:
+
+1. **The invariant source** — this is the part no engine can supply for itself. Admissible sources:
+   the artefact already deployed on `main` (differential testing over recorded real inputs), a
+   human attribution (R3), or a formal contract (types, schema, SMT). Tier-1 model output is a
+   *candidate* invariant: it may propose, it may not gate.
+2. **A bound with its n**, excluding mutants that do not compile and mutants proven equivalent.
+3. **A claim row** — instrument command, `artifact_sha256`, `measured_at`, `valid_for_s` — so the
+   estate can falsify the claim without the engine's participation.
+
+Integrating an engine that passes all five is a merge. Integrating one that fails names the lines
+to fix, and nothing else has to be read.
