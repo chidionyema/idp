@@ -58,7 +58,7 @@ PARK = re.compile(r"^- \[[xX]\] Park this research", re.M)
 
 
 def _call(method: str, path: str, token: str, data: dict | None = None):
-    req = urllib.request.Request(
+    req = urllib.request.Request(  # noqa: S310 -- the URL is the fixed GitHub API base, never user input
         API + path,
         method=method,
         data=json.dumps(data).encode() if data is not None else None,
@@ -69,7 +69,7 @@ def _call(method: str, path: str, token: str, data: dict | None = None):
             "User-Agent": "research-engine-adapter",
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=30) as r:  # noqa: S310 -- the URL is the fixed GitHub API base, never user input
         return json.load(r)
 
 
