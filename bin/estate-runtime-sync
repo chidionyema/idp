@@ -174,9 +174,25 @@ def stage() -> list[str]:
     if (Path("/usr/local/estate/releases/current")).exists():
         return ["staging left to estate-converge"]
     notes = []
-    for sub in ("intents", "libexec"):
+    for sub in ("intents", "libexec", "skills"):
         src, dst = TREE / "platform/estate" / sub, STATE / sub
         dst.mkdir(parents=True, exist_ok=True)
+        if sub == "skills":
+            # A tree, not a file list: the skill packs. Copied only when a file differs, so
+            # an unchanged pack is not rewritten under a running agent.
+            changed = []
+            for f in sorted(src.rglob("*")):
+                if not f.is_file() or f.name == ".DS_Store":
+                    continue
+                rel = f.relative_to(src)
+                target = dst / rel
+                if not target.exists() or not filecmp.cmp(f, target, False):
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(f, target)
+                    changed.append(str(rel))
+            if changed:
+                notes.append(f"skills +{len(changed)} files")
+            continue
         changed = []
         for f in sorted(src.iterdir()):
             if not f.is_file():

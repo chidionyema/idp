@@ -1,0 +1,208 @@
+{
+  "why": "The twelve upstream capabilities the founder named, and the two estate-native ones that close research and architecture. Each entry pins the exact upstream files the estate vendors; nothing else is copied. `skill-packs.py vendor` reads this file, fetches those files through the GitHub CLI, and writes them under packs/<id>/upstream/ with the upstream commit pinned in registry.json.",
+  "packs": {
+    "ui-ux-pro-max": {
+      "title": "UI/UX Pro Max -- design system, tokens, brand, banners",
+      "category": "design",
+      "repo": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "license_file": "LICENSE",
+      "capability": "Turn a request into a token-backed design system: primitive and semantic tokens, a component spec, a brand kit, and a banner that matches the brand.",
+      "description": "Design-system and brand intelligence: primitive/semantic tokens, component specs and states, brand guidelines, banner design. Use when starting a front end, defining tokens, or writing a brand guideline.",
+      "include": [
+        ".claude/skills/ui-ux-pro-max/SKILL.md",
+        ".claude/skills/design/SKILL.md",
+        ".claude/skills/design-system/SKILL.md",
+        ".claude/skills/design-system/references/token-architecture.md",
+        ".claude/skills/design-system/references/primitive-tokens.md",
+        ".claude/skills/design-system/references/semantic-tokens.md",
+        ".claude/skills/brand/SKILL.md",
+        ".claude/skills/banner-design/SKILL.md"
+      ]
+    },
+    "awesome-design-md": {
+      "title": "Awesome DESIGN.md -- brand design specs as code",
+      "category": "architecture",
+      "repo": "VoltAgent/awesome-design-md",
+      "license_file": "LICENSE",
+      "capability": "Read and write DESIGN.md: the file that states a brand's colours, type, spacing, motion and components so an agent builds the brand instead of a generic page.",
+      "description": "A corpus of real DESIGN.md brand specifications (Vercel, Raycast, Meta and more) to read as precedent and to imitate in structure. Use when writing a DESIGN.md or judging whether one is complete.",
+      "include": [
+        "README.md",
+        "design-md/vercel/DESIGN.md",
+        "design-md/raycast/DESIGN.md",
+        "design-md/meta/DESIGN.md"
+      ]
+    },
+    "open-design": {
+      "title": "Open Design -- the design workspace skill set",
+      "category": "design",
+      "repo": "nexu-io/open-design",
+      "license_file": "LICENSE",
+      "capability": "The working skills of a design workspace: brand kit, design brief, creative direction, review, colour, copy.",
+      "description": "Design-workspace working skills: brand kit, design brief, creative direction, design review, colour and copy. Use when a piece of work needs a brief or a brand before any code is written.",
+      "include": [
+        "README.md",
+        "skills/brandkit/SKILL.md",
+        "skills/design-brief/SKILL.md",
+        "skills/creative-director/SKILL.md",
+        "skills/design-review/SKILL.md",
+        "skills/color-expert/SKILL.md",
+        "skills/copywriting/SKILL.md",
+        "skills/design-md/SKILL.md"
+      ]
+    },
+    "taste": {
+      "title": "Taste -- critique a design against real references",
+      "category": "design",
+      "repo": "Leonxlnx/taste-skill",
+      "license_file": "LICENSE",
+      "capability": "Critique a screen the way a designer does, against a reference library of real work, with the tells named.",
+      "description": "Design critique with a reference library: how to read type, layout, motion, colour and imagery, and the tells that mark a design as careless. Use when reviewing a screen, a page or a mock-up.",
+      "include": [
+        "skills/taste-skill/SKILL.md",
+        "skills/taste-skill/README.md",
+        "skills/taste-skill/references/critique.md",
+        "skills/taste-skill/references/tells.md",
+        "skills/taste-skill/references/type.md",
+        "skills/taste-skill/references/layout.md"
+      ]
+    },
+    "impeccable": {
+      "title": "Impeccable -- the design language a harness should speak",
+      "category": "design",
+      "repo": "pbakaus/impeccable",
+      "license_file": "LICENSE",
+      "capability": "A craft floor for an agent: audit, critique, refine and document a design, with the bar written down before the work starts.",
+      "description": "A design-language skill set for coding agents: audit and critique a design, refine it, and keep the craft floor explicit. Use when improving an existing interface or setting a quality bar for a new one.",
+      "include": [
+        ".agent/skills/impeccable/SKILL.md",
+        ".agent/skills/impeccable/reference/audit.md",
+        ".agent/skills/impeccable/reference/critique.md",
+        ".agent/skills/impeccable/reference/new-work.md",
+        ".agent/skills/impeccable/reference/craft-floor.md",
+        ".agent/skills/impeccable/reference/component-review.md"
+      ]
+    },
+    "react-bits": {
+      "title": "React Bits -- animated React components you can drop in",
+      "category": "ui",
+      "repo": "DavidHDev/react-bits",
+      "license_file": "LICENSE.md",
+      "capability": "Pick and adapt animated React components (text, backgrounds, buttons, containers) instead of writing a bespoke animation from scratch.",
+      "description": "A library of animated, copy-paste React components: text animations, gradient backgrounds, buttons, containers, and the shape/texture tools behind them. Use when building an interactive front end and animation is part of the brief.",
+      "include": [
+        "README.md",
+        "src/tools/shape-magic/README.md"
+      ]
+    },
+    "emil-design-skills": {
+      "title": "Design engineering skills -- craft, motion and native feel",
+      "category": "ui",
+      "repo": "emilkowalski/skills",
+      "license_file": "LICENSE",
+      "capability": "Design-engineering craft: animation vocabulary and performance, native-feeling mobile UI, Apple design language, and breaking the template look.",
+      "description": "Design-engineering skills for coding agents: animation vocabulary and performance, animation review, native mobile UI, Apple design language, and how to break the generic template look. Use when motion or platform feel is the problem.",
+      "include": [
+        "skills/emil-design-eng/SKILL.md",
+        "skills/apple-design/SKILL.md",
+        "skills/break-ui/SKILL.md",
+        "skills/animate/SKILL.md",
+        "skills/animation-vocabulary/SKILL.md",
+        "skills/animation-performance/SKILL.md",
+        "skills/review-animations/SKILL.md",
+        "skills/mobile-native/SKILL.md",
+        "skills/prototype/SKILL.md"
+      ]
+    },
+    "hallmark": {
+      "title": "Hallmark -- web design craft, macrostructures and gates",
+      "category": "design",
+      "repo": "Nutlope/hallmark",
+      "license_file": "LICENSE",
+      "capability": "The anatomy of a good page: macrostructures, layout, type, flow, interaction states, and the gates a design must pass before it ships.",
+      "description": "A web-design craft manual: page anatomy, macrostructures (hero, bento, long document, stat-led, workbench and more), layout, typography, interaction states and the gates that decide a design is ready. Use when designing or judging a page end to end.",
+      "include": [
+        "skills/hallmark/SKILL.md",
+        "skills/hallmark/references/anatomy.md",
+        "skills/hallmark/references/craft.md",
+        "skills/hallmark/references/flow.md",
+        "skills/hallmark/references/layout.md",
+        "skills/hallmark/references/macrostructures.md",
+        "skills/hallmark/references/gates.md",
+        "skills/hallmark/references/design-md.md"
+      ]
+    },
+    "design-md": {
+      "title": "Google DESIGN.md -- the specification and its linter",
+      "category": "architecture",
+      "repo": "google-labs-code/design.md",
+      "license_file": "LICENSE",
+      "capability": "The DESIGN.md specification itself, with worked examples and the linter that checks one, so a brand spec is a checkable artifact rather than prose.",
+      "description": "The DESIGN.md format: the specification, worked brand examples, and the agent skills that write and scale one. Use when authoring a DESIGN.md, or when a front end must answer to a written design system.",
+      "include": [
+        "README.md",
+        "docs/spec.md",
+        ".agents/skills/ink/SKILL.md",
+        ".agents/skills/agent-dx-cli-scale/SKILL.md",
+        "examples/totality-festival/DESIGN.md"
+      ]
+    },
+    "gsap-skills": {
+      "title": "GSAP skills -- motion that runs at 60fps",
+      "category": "ui",
+      "repo": "greensock/gsap-skills",
+      "license_file": "LICENSE",
+      "capability": "GSAP used correctly: core tweens and timelines, ScrollTrigger, plugins, React integration, and the performance rules that keep it smooth.",
+      "description": "Official GSAP skills for coding agents: core animation, timelines, ScrollTrigger, plugins, React and framework integration, and performance. Use when a page needs motion that is smooth and controllable.",
+      "include": [
+        "skills/gsap-core/SKILL.md",
+        "skills/gsap-timeline/SKILL.md",
+        "skills/gsap-scrolltrigger/SKILL.md",
+        "skills/gsap-plugins/SKILL.md",
+        "skills/gsap-utils/SKILL.md",
+        "skills/gsap-react/SKILL.md",
+        "skills/gsap-frameworks/SKILL.md",
+        "skills/gsap-performance/SKILL.md"
+      ]
+    },
+    "scroll-world": {
+      "title": "Scroll World -- a brand as a scrollable 3D world",
+      "category": "ui",
+      "repo": "oso95/scroll-world",
+      "license_file": "LICENSE",
+      "capability": "Turn a brand into a scroll-scrubbed 3D world landing page, with the scrub engine and the prompts that produce it.",
+      "description": "A skill for building scroll-scrubbed 3D world landing pages: the scrub engine, the pipeline, and the prompts. Use when a landing page needs to feel like a place rather than a page.",
+      "include": [
+        "skills/scroll-world/SKILL.md",
+        "skills/scroll-world/references/pipeline.md",
+        "skills/scroll-world/references/prompts.md"
+      ]
+    },
+    "canvas-ui": {
+      "title": "Canvas UI -- canvas and WebGL interface primitives",
+      "category": "ui",
+      "repo": "DavidHDev/canvas-ui",
+      "license_file": "LICENSE.md",
+      "capability": "Canvas/WebGL UI primitives for interfaces that cannot be DOM: 3D scenes, shaders, and interactive canvases inside a product.",
+      "description": "A canvas/WebGL UI kit for interfaces that DOM cannot express: interactive canvases, 3D scenes and shader-driven visuals inside a product. Use when a screen needs a canvas rather than a document.",
+      "include": [
+        "README.md",
+        "public/assets/models/LICENSE.md"
+      ]
+    },
+    "estate-research": {
+      "title": "Estate research -- how an agent finds out",
+      "category": "research",
+      "capability": "Research inside the estate: the harvest intent for capability, search-text and explore for the corpus, the knowledge graph for what is already known, and the rule that a claim needs a source.",
+      "description": "How to research inside the estate: harvest capabilities, search the corpus, query the knowledge graph, and cite a source for every claim. Use when a task needs facts the agent does not hold.",
+      "native": true
+    },
+    "estate-architecture": {
+      "title": "Estate architecture -- how a decision gets written down",
+      "category": "architecture",
+      "capability": "Architecture inside the estate: one of each layer, a spec before the build, a decision record for every fork, and the gates that prove the shape is right.",
+      "description": "How architecture is decided and recorded in the estate: one of each layer, spec before build, a decision doc for every fork, and the gates that prove a shape. Use when choosing a shape, not when writing the code.",
+      "native": true
+    }
+  }
+}
