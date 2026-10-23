@@ -1432,6 +1432,10 @@ def signature(message):
     same way exactly when their signatures are equal.
     """
     s = message.lower()
+    # How many containers are stuck is a count, not a cause: run 39935488278 failed platform/llm
+    # on litellm's CrashLoopBackOff on both sides, base with one stuck pod and head with two
+    # ("2 stuck container(s), first: pod ..."), and the judge called it introduced.
+    s = re.sub(r"\b\d+ stuck container\(s\), first: ", "", s)
     s = re.sub(r"\b[0-9a-f]{12,64}\b", "<sha>", s)
     # Kubernetes generates ReplicaSet and pod suffixes from this alphabet (apimachinery's
     # util/rand: no vowels, no 0, 1 or 3), so a hyphen-joined run of it is generated, not named:
