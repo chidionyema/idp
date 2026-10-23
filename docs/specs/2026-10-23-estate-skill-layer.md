@@ -129,6 +129,13 @@ so "what can this agent see?" is answerable from the estate's own records.
 The four roots are the Agent Skills standard: `<skills-dir>/<name>/SKILL.md` with YAML
 frontmatter (`name`, `description`).
 
+**One pack, one root.** pi reads two of them — `~/.pi/agent/skills` and `~/.agents/skills` — so
+installing the same pack in both makes pi warn about a name collision (the bytes are identical
+and the first found wins, so nothing breaks, but the signal is noise). Install a pack into the
+root of the tool that will use it, and use `~/.agents/skills` only for a tool that has no root
+of its own. The estate's own adoption installs into `pi`, `claude` and `codex`, and leaves
+`~/.agents/skills` for the shared case.
+
 ## 6. When something drifts
 
 1. `estate-execute skill.verify` — it names the pack and the file.
