@@ -1,0 +1,355 @@
+#!/usr/bin/env python3
+"""estate-work-status -- the one status block, computed from live state, never written by hand.
+
+WHY. Founder, 2026-10-23: "the fact that I'm having to ask shows a fundamental concerning gap in how
+we work and report updates to founder, this should be standardised... agents should be aware of where
+they are and their objectives and should only be reporting as such, not waffling and cryptic posts
+that require the founder to interrogate. This should be one time, consistent, easy to see at a
+glance -- else what exactly is agent doing?"
+
+The gap is not that agents hide things. It is that the estate has no *shape* for an update, so every
+agent writes prose, and prose has to be interrogated. Everything an update needs already exists,
+machine-readable, in places nobody joins up:
+
+    goal + sub-goals   the issue title and its `- [ ]` checklist (GitHub, already there)
+    who holds what     the `CLAIM agent= paths= heartbeat=` comment (AGENTS.md section 5)
+    what was attempted every commit carrying `Claim: owner/repo#<n>` (already a required trailer)
+    where it stands    the `greenlane` commit status on that commit's sha
+    what landed        the same commit's ancestors on origin/main
+
+So this command joins them and prints one fixed block per claim. It measures; it does not remember.
+An agent cannot flatter itself here, and it does not have to write a status at all: it keeps its
+issue checklist current and its commits carry the trailer, and the answer is already true.
+
+    bin/estate-work-status                  # every live claim, glance first
+    bin/estate-work-status --agent pi       # just mine
+    bin/estate-work-status --issue 6984     # one issue, in full
+    bin/estate-work-status --json           # the same facts, for /fleet
+
+Read-only: it writes nothing, changes no state, and needs only `git` and `gh`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+
+CLAIM_RE = re.compile(
+    r"CLAIM\s+agent=(\S+)\s+paths=(\S+)\s+heartbeat=(\S+)", re.IGNORECASE
+)
+TICK_RE = re.compile(r"^\s*(?:[-*]\s*)?\[( |x|X)\]\s+(.*\S)\s*$")
+STALE_S = 2 * 3600  # AGENTS.md section 5.4: no heartbeat for two hours releases the claim
+
+
+def run(argv: list[str], cwd: str, timeout: float = 60.0) -> str:
+    """Run a command and return stdout, or "" when it fails. Never raises: a missing source is
+    reported as missing by the caller, not as a crash."""
+    try:
+        p = subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True, timeout=timeout
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return p.stdout if p.returncode == 0 else ""
+
+
+def gh_json(args: list[str], cwd: str):
+    out = run(["gh"] + args, cwd)
+    if not out.strip():
+        return None
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return None
+
+
+def repo_slug(cwd: str) -> str:
+    out = run(["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"], cwd)
+    return out.strip() or "chidionyema/idp"
+
+
+def parse_claims(issue: dict) -> list[dict]:
+    """Every CLAIM comment on an issue, newest heartbeat per agent wins."""
+    best: dict[str, dict] = {}
+    for c in issue.get("comments") or []:
+        for m in CLAIM_RE.finditer(c.get("body") or ""):
+            agent = m.group(1)
+            row = {
+                "agent": agent,
+                "paths": m.group(2),
+                "heartbeat": m.group(3),
+                "issued": c.get("createdAt") or "",
+            }
+            prev = best.get(agent)
+            if parse_when(row["heartbeat"]) <= 0:
+                # A `CLAIM ...` that appears inside prose or a doc example carries a heartbeat no
+                # clock can read. It is not a claim, and rendering it (as "<name>", 20750d old) is
+                # how a status surface loses the founder's trust on its first run.
+                continue
+            if prev is None or row["issued"] > prev["issued"]:
+                best[agent] = row
+    return list(best.values())
+
+
+def parse_when(ts: str) -> float:
+    """GitHub hands back ISO-8601 with a Z; the claim's heartbeat is written by the agent and may
+    say `Z` or `+00:00`. Anything unparseable is 0, which reads as stale -- the safe direction,
+    because a heartbeat nobody can read is not a live claim."""
+    if not ts:
+        return 0.0
+    s = ts.strip().replace("Z", "+00:00")
+    try:
+        from datetime import datetime, timezone
+
+        return datetime.fromisoformat(s).astimezone(timezone.utc).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def checkboxes(body: str) -> tuple[int, int, list[str], list[str]]:
+    """Sub-goals, from the issue body's own checklist: (done, total, done_texts, open_texts)."""
+    done: list[str] = []
+    open_: list[str] = []
+    for line in (body or "").splitlines():
+        m = TICK_RE.match(line)
+        if not m:
+            continue
+        (open_ if m.group(1) == " " else done).append(m.group(2)[:110])
+    return len(done), len(done) + len(open_), done, open_
+
+
+def trailer_issues(body: str) -> list[int]:
+    """The issues a commit says it is for. A TRAILER, not any mention: `Claim:` must start a line.
+    15b872617 quotes claim lines mid-body and a substring match credited its work to issues it does
+    not belong to, which is exactly the kind of wrong answer that makes a status surface useless."""
+    return [int(n) for n in re.findall(r"(?m)^Claim:\s+\S*#(\d+)", body or "")]
+
+
+def all_cargo(cwd: str, window_days: int = 14) -> dict[int, list[dict]]:
+    """Every commit in the window whose message carries a `Claim: <slug>#<n>` trailer, grouped by
+    issue, newest first.
+
+    ONE pass over history, not one per claim: the first version ran this per claim and hit the
+    executor's 100 s ceiling on the estate's own history. `--since` is the honest bound -- a live
+    claim is about the last fortnight, and a commit older than the window was never what an agent
+    is doing now."""
+    out = run(
+        [
+            "git",
+            "log",
+            "--all",
+            f"--since={window_days}.days",
+            "--format=%H%x1f%ct%x1f%s%x1f%D%x1f%b%x1e",
+            "--grep=Claim:",
+        ],
+        cwd,
+        timeout=45.0,
+    )
+    by_issue: dict[int, list[dict]] = {}
+    for chunk in out.split("\x1e"):
+        parts = chunk.strip("\n").split("\x1f")
+        if len(parts) < 4:
+            continue
+        body = parts[4] if len(parts) > 4 else ""
+        nums = trailer_issues(body)
+        if not nums:
+            continue
+        refs = parts[3]
+        lane = ""
+        for r in refs.split(","):
+            r = r.strip()
+            if r.startswith("origin/lane/") or r.startswith("lane/"):
+                lane = r.replace("origin/", "")
+                break
+        row = {
+            "sha": parts[0],
+            "ts": int(parts[1] or 0),
+            "subject": parts[2],
+            "lane": lane,
+        }
+        for n in nums:
+            by_issue.setdefault(n, []).append(row)
+    for rows in by_issue.values():
+        rows.sort(key=lambda r: r["ts"], reverse=True)
+    return by_issue
+
+
+def on_main(cwd: str, sha: str) -> bool:
+    p = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", sha, "origin/main"], cwd=cwd
+    )
+    return p.returncode == 0
+
+
+def lane_status(cwd: str, slug: str, sha: str) -> str:
+    """The greenlane verdict on this sha, as the status description text."""
+    data = gh_json([f"repos/{slug}/commits/{sha}/status"], cwd)
+    if not data:
+        return ""
+    for s in data.get("statuses") or []:
+        if s.get("context") in ("greenlane", "merge-when-green"):
+            return f"{s.get('state')}: {(s.get('description') or '')[:90]}"
+    return ""
+
+
+def age(seconds: float) -> str:
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 5400:
+        return f"{int(seconds / 60)}m"
+    if seconds < 172800:
+        return f"{seconds / 3600:.0f}h"
+    return f"{seconds / 86400:.0f}d"
+
+
+def state_of(claim: dict, cargo: list[dict], now: float) -> tuple[str, dict]:
+    """One word, from the measurements, in this order: LANDED, BLOCKED, IN LANE, IDLE, STALE."""
+    live = now - parse_when(claim["heartbeat"]) < STALE_S
+    landed = next((c for c in cargo if on_main_for(c)), None)
+    latest = cargo[0] if cargo else None
+    info = {"live": live, "latest": latest, "landed": landed}
+    if landed:
+        return "LANDED", info
+    if not live:
+        return "STALE", info
+    if latest:
+        st = info.get("status", "")
+        if st.startswith(("failure", "error")):
+            return "BLOCKED", info
+        if not latest.get("lane"):
+            return "LOCAL", info
+        return "IN LANE", info
+    return "IDLE", info
+
+
+def on_main_for(c: dict) -> bool:
+    return bool(c.get("_on_main"))
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description="the one status block, from live state")
+    ap.add_argument("--repo", default=os.getcwd())
+    ap.add_argument("--agent")
+    ap.add_argument("--issue", type=int)
+    ap.add_argument("--json", action="store_true")
+    ap.add_argument("--limit", type=int, default=60)
+    a = ap.parse_args(argv)
+
+    cwd = os.path.abspath(a.repo)
+    slug = repo_slug(cwd)
+    now = time.time()
+    main_tip = run(["git", "rev-parse", "--short=9", "origin/main"], cwd).strip() or "?"
+
+    listing = gh_json(
+        [
+            "issue",
+            "list",
+            "--state",
+            "open",
+            "--limit",
+            str(a.limit),
+            "--json",
+            "number,title,body,comments",
+        ],
+        cwd,
+    )
+    if listing is None:
+        print("estate-work-status: gh issue list failed; is the network path up?", file=sys.stderr)
+        return 2
+
+    cargo_all = all_cargo(cwd)
+    rows = []
+    for issue in listing:
+        if a.issue and issue["number"] != a.issue:
+            continue
+        for claim in parse_claims(issue):
+            if a.agent and claim["agent"] != a.agent:
+                continue
+            cargo = cargo_all.get(issue["number"], [])
+            for c in cargo[:3]:
+                c["_on_main"] = on_main(cwd, c["sha"])
+            st, info = state_of(claim, cargo, now)
+            latest = info.get("latest")
+            if latest and st == "IN LANE":
+                info["status"] = lane_status(cwd, slug, latest["sha"])
+                if info["status"].startswith(("failure", "error")):
+                    st = "BLOCKED"
+            done, total, done_t, open_t = checkboxes(issue.get("body") or "")
+            rows.append(
+                {
+                    "issue": issue["number"],
+                    "agent": claim["agent"],
+                    "goal": (issue.get("title") or "").strip(),
+                    "state": st,
+                    "heartbeat_age_s": int(now - parse_when(claim["heartbeat"])),
+                    "subgoals_done": done,
+                    "subgoals_total": total,
+                    "subgoals_done_text": done_t,
+                    "subgoals_open_text": open_t,
+                    "paths": claim["paths"],
+                    "newest": latest,
+                    "status": info.get("status", ""),
+                    "landed": info.get("landed"),
+                    "commits": len(cargo),
+                }
+            )
+
+    rows.sort(key=lambda r: (r["state"] != "BLOCKED", r["heartbeat_age_s"]))
+
+    if a.json:
+        print(json.dumps({"main": main_tip, "claims": rows}, indent=1))
+        return 0
+
+    print(f"ESTATE WORK STATUS  {time.strftime('%Y-%m-%dT%H:%MZ', time.gmtime(now))}  main={main_tip}")
+    print()
+    if not rows:
+        print("  no live claims. Every open issue with a CLAIM comment and a fresh heartbeat shows here.")
+        return 0
+    print(f"  {'AGENT':<10} {'ISSUE':<7} {'STATE':<8} {'SUB-GOALS':<10} {'AGE':<5} WHAT")
+    for r in rows:
+        sg = f"{r['subgoals_done']}/{r['subgoals_total']}" if r["subgoals_total"] else "-"
+        print(
+            f"  {r['agent'][:10]:<10} #{r['issue']:<6} {r['state']:<8} {sg:<10} "
+            f"{age(r['heartbeat_age_s']):<5} {r['goal'][:64]}"
+        )
+    print()
+    for r in rows:
+        print(f"#{r['issue']}  {r['agent']}  [{r['state']}]  {r['goal']}")
+        paths = r["paths"].split(",")
+        shown = ", ".join(paths[:3]) + (f" (+{len(paths) - 3} more)" if len(paths) > 3 else "")
+        print(f"  paths      {shown}")
+        print(f"  heartbeat  {age(r['heartbeat_age_s'])} old ({'live' if r['heartbeat_age_s'] < STALE_S else 'STALE - releasable by the next agent'})")
+        if r["subgoals_total"]:
+            print(f"  sub-goals  {r['subgoals_done']}/{r['subgoals_total']} done")
+            for t in r["subgoals_done_text"][-4:]:
+                print(f"             [x] {t}")
+            for t in r["subgoals_open_text"][:4]:
+                print(f"             [ ] {t}")
+        else:
+            print("  sub-goals  none written - the issue body carries no '- [ ]' checklist")
+        n = r["newest"]
+        if r["landed"]:
+            c = r["landed"]
+            print(f"  landed     {c['sha'][:9]} {c['subject'][:70]}")
+        elif n:
+            print(f"  newest     {n['sha'][:9]} {('(' + n['lane'] + ') ') if n['lane'] else ''}{r['status'] or 'no greenlane status yet'}")
+        else:
+            print("  newest     no commit carries this claim's trailer yet")
+        print()
+
+    blocked = [r for r in rows if r["state"] == "BLOCKED"]
+    if blocked:
+        print("BLOCKED, with the evidence the lane printed:")
+        for r in blocked:
+            print(f"  #{r['issue']} {r['agent']}: {r['status']}")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
