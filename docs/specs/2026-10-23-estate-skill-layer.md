@@ -81,9 +81,15 @@ runtime would ignore; the test suite parses YAML rather than matching a regex.
 
 `registry.json` records, per pack:
 
-- `files` — every file under `packs/<id>/` with its sha256. A file on disk that is not
-  listed is drift; a listed file that is missing is drift; a listed file whose bytes changed
-  is drift.
+- `files` — every file under `packs/<id>/` with its sha256, as a list of
+  `{"path": ..., "sha256": ...}` objects. A file on disk that is not listed is drift; a listed
+  file that is missing is drift; a listed file whose bytes changed is drift. The digests are
+  objects and not a `{path: sha256}` map because gitleaks' `generic-api-key` rule reads
+  `"<path>": "<64 hex>"` as a credential whenever the path contains a word like `token` — and the
+  design packs' own upstream file names do (`semantic-tokens.md`, `token-architecture.md`). The map
+  form made `security-scan` red on every lane that carried the registry. The old map form is
+  still read, so a registry written before this change verifies instead of reporting every file
+  missing.
 - `tree_sha256` — one hash over the sorted (path, sha256) pairs: the pack's identity, copied
   into the install receipt.
 - `upstream` — repo, branch, pinned commit, licence, measured stars, and the list of paths

@@ -165,6 +165,36 @@ def tree_hash(files: Dict[str, str]) -> str:
     return sha256_bytes(blob.encode())
 
 
+def registered_files(pack: dict) -> Dict[str, str]:
+    """The pack's registered digests as {path: sha256}.
+
+    The registry stores them as a list of {"path", "sha256"} objects, not as a
+    {path: sha256} map. The map form is read as a credential by gitleaks'
+    generic-api-key rule whenever the path contains a word like "token" -- and
+    the design packs' own upstream file names contain one
+    (`semantic-tokens.md`, `token-architecture.md`). A sha256 digest is not a
+    secret, but the security scan reads the shape, not the intent, and a red
+    scan blocks every lane that carries the file. The list form keeps the path
+    and the digest apart, so the rule never sees a key followed by a secret.
+
+    The older map form is still read, so a registry written before this change
+    still verifies instead of failing as if every file were missing.
+    """
+    raw = pack.get("files", {})
+    if isinstance(raw, dict):
+        return {str(k): str(v) for k, v in raw.items()}
+    out: Dict[str, str] = {}
+    for entry in raw or []:
+        if isinstance(entry, dict) and entry.get("path"):
+            out[str(entry["path"])] = str(entry.get("sha256", ""))
+    return out
+
+
+def file_entries(files: Dict[str, str]) -> List[dict]:
+    """The registry's on-disk form for a pack's digests: sorted path/sha256 objects."""
+    return [{"path": path, "sha256": digest} for path, digest in sorted(files.items())]
+
+
 # --- the front door -------------------------------------------------------------
 def read_frontmatter(pack_id: str) -> Tuple[Optional[str], List[str]]:
     """The YAML block at the top of the pack's SKILL.md, or the reasons there is none."""
@@ -244,7 +274,7 @@ def verify_pack(pack: dict) -> Tuple[bool, List[str]]:
     """Compare the pack on disk with the registry. Returns (ok, problems)."""
     problems: List[str] = []
     pid = pack["id"]
-    registered = pack.get("files", {})
+    registered = registered_files(pack)
     on_disk = pack_files_on_disk(pid)
 
     for rel in sorted(registered):
@@ -324,7 +354,7 @@ def cmd_manifest(args: argparse.Namespace) -> int:
         pid = pack["id"]
         disk = pack_files_on_disk(pid)
         computed = {rel: sha256_file(p) for rel, p in disk.items()}
-        registered = pack.get("files", {})
+        registered = registered_files(pack)
         if computed != registered:
             if not allow_upstream:
                 forked = [
@@ -348,7 +378,7 @@ def cmd_manifest(args: argparse.Namespace) -> int:
                     f"skill-packs: {pid}: registry does not match disk", file=sys.stderr
                 )
                 continue
-            pack["files"] = computed
+            pack["files"] = file_entries(computed)
             pack["tree_sha256"] = tree_hash(computed)
         if not args.check:
             pack["tree_sha256"] = tree_hash(computed)
@@ -504,7 +534,7 @@ def cmd_install(args: argparse.Namespace) -> int:
                 "runtime": rt,
                 "installed_at": now(),
                 "tree_sha256": pack.get("tree_sha256")
-                or tree_hash(pack.get("files", {})),
+                or tree_hash(registered_files(pack)),
                 "upstream": pack.get("upstream", {}),
                 "path": str(dest),
             }
