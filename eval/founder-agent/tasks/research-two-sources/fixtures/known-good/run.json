@@ -1,0 +1,61 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "what changed in the UK e-bike rules this year, with sources"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000002,
+      "text": "https://gov.invalid/e-bike-rules"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.open",
+      "t": 1790000003,
+      "text": "throttle limit reduced from 2026"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000005,
+      "text": "https://cycling.invalid/analysis"
+    },
+    {
+      "data": {},
+      "kind": "tool_result",
+      "name": "browser.open",
+      "t": 1790000006,
+      "text": "the DfT guidance is however silent on retrofit kits"
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000020,
+      "text": "Two things: the throttle limit tightened (https://gov.invalid/e-bike-rules), and the guidance is however silent on retrofit kits (https://cycling.invalid/analysis). The second is unclear and worth a call before you buy."
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixtureresear",
+  "session": "fixture-research-two-sources",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "research-two-sources"
+}

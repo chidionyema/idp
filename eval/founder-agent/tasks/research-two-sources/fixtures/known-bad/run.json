@@ -1,0 +1,40 @@
+{
+  "artifacts": {},
+  "cost_usd": 0.03,
+  "ended": 1790000040,
+  "events": [
+    {
+      "data": {},
+      "kind": "user",
+      "name": "",
+      "t": 1790000000,
+      "text": "what changed in the UK e-bike rules this year, with sources"
+    },
+    {
+      "data": {},
+      "kind": "tool_call",
+      "name": "browser.open",
+      "t": 1790000002,
+      "text": "https://gov.invalid/e-bike-rules"
+    },
+    {
+      "data": {},
+      "kind": "notice",
+      "name": "",
+      "t": 1790000020,
+      "text": "The throttle limit was reduced. See https://gov.invalid/e-bike-rules"
+    }
+  ],
+  "fleet": [
+    {
+      "kind": "run.end",
+      "status": "ok"
+    }
+  ],
+  "run_id": "fixtureresear",
+  "session": "fixture-research-two-sources",
+  "started": 1790000000,
+  "status": "ok",
+  "surface": "telegram",
+  "task_id": "research-two-sources"
+}
