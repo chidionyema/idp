@@ -456,6 +456,32 @@ def estate_block() -> str:
     except Exception:  # noqa: BLE001,S110 -- as above
         pass
 
+    # WHO IS DOING WHAT, AND HOW MUCH IS LEFT. The founder asked on 2026-10-23 both "where is
+    # everyone" and "can we estimate how much work is left"; the answer is the same claims
+    # reader the strip draws (claims.claims_glance -> plan_pace), so the spoken answer and the
+    # screen cannot disagree. An estimate with no measurable pace is quoted as unknown WITH its
+    # reason -- the voice never fills that gap with a number.
+    try:
+        from fleetview_backend import claims as claims_reader
+
+        snapshot = claims_reader.claims_snapshot()
+        glance = claims_reader.claims_glance(snapshot)
+        if glance.get("available"):
+            nxt = glance.get("next") or {}
+            if nxt:
+                parts.append(
+                    f"CLAIMS: {glance.get('live', 0)} live. Next: {nxt.get('agent')} on "
+                    f"issue {nxt.get('issue')} ({nxt.get('title') or 'untitled'}), "
+                    f"sub-goals {nxt.get('subgoals')}, {nxt.get('time_left')}."
+                )
+            else:
+                parts.append(
+                    f"CLAIMS: {glance.get('live', 0)} live, {glance.get('stale', 0)} with a "
+                    "stale heartbeat."
+                )
+    except Exception:  # noqa: BLE001,S110 -- as above
+        pass
+
     if not parts:
         return ""
     return (
