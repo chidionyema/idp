@@ -1,6 +1,6 @@
 ---
 name: impeccable
-description: A craft floor for an agent: audit, critique, refine and document a design, with the bar written down before the work starts.
+description: "A craft floor for an agent: audit, critique, refine and document a design, with the bar written down before the work starts."
 license: Apache-2.0
 metadata:
   estate-category: design

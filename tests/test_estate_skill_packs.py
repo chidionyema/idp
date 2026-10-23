@@ -277,6 +277,16 @@ def test_an_existing_install_is_not_silently_replaced(tmp_path: Path):
 
 # --- the front doors ------------------------------------------------------------
 def test_every_pack_has_a_valid_skill_front_door():
+    """The front door must load the way a runtime loads it.
+
+    Regex proved the text was shaped right; it did not prove the frontmatter was
+    readable. An unquoted description containing ': ' parses as a nested mapping, so
+    the runtime refuses the whole block and never offers the skill to an agent --
+    which is how ten of the fourteen packs were invisible while every checksum
+    said they were fine. This test parses the YAML the way pi does.
+    """
+    import yaml
+
     for pack in registry()["packs"]:
         pid = pack["id"]
         path = SKILLS / "packs" / pid / "SKILL.md"
@@ -284,18 +294,47 @@ def test_every_pack_has_a_valid_skill_front_door():
         text = path.read_text()
         assert text.startswith("---\n"), f"{pid} has no frontmatter"
         front = text.split("---", 2)[1]
-        name = re.search(r"^name:\s*(\S+)\s*$", front, re.M)
-        assert name, f"{pid} has no name in its frontmatter"
-        assert name.group(1) == pid, "the skill's name must match its directory"
+        try:
+            data = yaml.safe_load(front)
+        except yaml.YAMLError as exc:
+            raise AssertionError(f"{pid}'s frontmatter is not valid YAML: {exc}")
+        assert isinstance(data, dict), f"{pid}'s frontmatter is not a mapping"
+        assert data.get("name") == pid, "the skill's name must match its directory"
         assert re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", pid), (
             f"{pid} is not a legal skill name"
         )
-        desc = re.search(r"^description:\s*(\S.*)$", front, re.M)
-        assert desc, f"{pid} has no description"
-        assert len(desc.group(1)) <= 1024, (
+        desc = data.get("description")
+        assert isinstance(desc, str) and desc.strip(), (
+            f"{pid} has no description a runtime can read"
+        )
+        assert len(desc) <= 1024, (
             f"{pid}'s description is longer than the standard allows"
         )
         assert "estate-category" in front, f"{pid} does not say which capability it is"
+
+
+def test_a_front_door_a_runtime_cannot_read_is_refused(tmp_path: Path):
+    """The gate catches it, not a human noticing the skill never appears."""
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS, skills)
+    victim = skills / "packs" / "taste" / "SKILL.md"
+    text = victim.read_text()
+    victim.write_text(text.replace('description: "', "description: Broken: ", 1))
+    result = run("verify", skills=skills)
+    assert result.returncode == 1, "a front door YAML cannot parse must be refused"
+    assert "not valid YAML" in result.stderr
+
+
+def test_the_manifest_cannot_bless_a_forked_upstream_file(tmp_path: Path):
+    """A hand edit to vendored upstream is a fork, not a version."""
+    skills = tmp_path / "skills"
+    shutil.copytree(SKILLS, skills)
+    forked = next((skills / "packs" / "taste" / "upstream").rglob("*.md"))
+    forked.write_text(forked.read_text() + "\n<!-- forked -->\n")
+    result = run("manifest", skills=skills)
+    assert result.returncode == 1, "manifest must refuse a forked upstream file"
+    assert "upstream bytes changed on disk" in result.stderr
+    assert "vendor" in result.stderr, "the refusal must name the door that can do it"
 
 
 def test_every_vendored_pack_carries_its_licence_and_provenance():

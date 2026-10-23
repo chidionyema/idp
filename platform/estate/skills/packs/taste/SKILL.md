@@ -1,6 +1,6 @@
 ---
 name: taste
-description: Critique a screen the way a designer does, against a reference library of real work, with the tells named.
+description: "Critique a screen the way a designer does, against a reference library of real work, with the tells named."
 license: MIT
 metadata:
   estate-category: design

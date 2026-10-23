@@ -11,7 +11,8 @@ put a pack in front of an agent is this tool, run through an intent.
 THE FOUR VERBS.
 
   list     what packs exist, where they came from, and whether they are installed
-  verify   recompute every sha256 in the registry and compare. Exit 1 on any drift.
+  verify   recompute every sha256 in the registry and compare, and lint every front
+           door as a real Agent Skill. Exit 1 on any drift or any broken front door.
   install  copy a verified pack into a runtime's skills directory
   vendor   re-fetch the upstream files a pack pins, and rewrite its provenance
   manifest rewrite the registry's checksums from what is on disk (authoring only)
@@ -27,6 +28,10 @@ WHAT "GOVERNED" MEANS HERE, concretely.
     running" has an answer that is not a guess.
   * The registry is the single source of truth. The packs directory is checked against
     it by `verify`, which the test suite and the CI gate both run.
+  * A pack that cannot be loaded is a pack that does not exist. `verify` parses each
+    front door's YAML frontmatter the way the runtimes do, so a description that
+    YAML cannot read (an unquoted ': ') is caught here and not by a human noticing
+    that the skill never shows up.
 
 Network use is confined to `vendor`, which needs GitHub. Everything else is offline.
 """
@@ -38,6 +43,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -66,6 +72,11 @@ MAX_FILE_BYTES = 64 * 1024
 
 # Files the registry never checksums.
 IGNORE_NAMES = {".DS_Store"}
+
+try:  # PyYAML is what the runtimes parse the frontmatter with.
+    import yaml  # type: ignore
+except ImportError:  # pragma: no cover - the estate's python3 ships PyYAML
+    yaml = None  # type: ignore
 
 
 def now() -> str:
@@ -154,6 +165,80 @@ def tree_hash(files: Dict[str, str]) -> str:
     return sha256_bytes(blob.encode())
 
 
+# --- the front door -------------------------------------------------------------
+def read_frontmatter(pack_id: str) -> Tuple[Optional[str], List[str]]:
+    """The YAML block at the top of the pack's SKILL.md, or the reasons there is none."""
+    path = pack_dir(pack_id) / "SKILL.md"
+    if not path.exists():
+        return None, [f"{pack_id}: no SKILL.md front door"]
+    text = path.read_text()
+    if not text.startswith("---\n"):
+        return None, [f"{pack_id}: SKILL.md has no frontmatter block"]
+    end = text.find("\n---", 3)
+    if end == -1:
+        return None, [f"{pack_id}: SKILL.md frontmatter is never closed"]
+    return text[4 : end + 1], []
+
+
+def frontmatter_problems(pack_id: str) -> List[str]:
+    """Problems that would make a runtime ignore this pack.
+
+    Measured, not assumed: pi's own loader (loadSkills) parses the frontmatter with
+    a YAML parser, and an unquoted description containing ': ' is read as a nested
+    mapping, so the whole block is refused and the skill is never offered to an
+    agent. Ten of the estate's fourteen packs were invisible for exactly that
+    reason, and no checksum said so. This is that check.
+    """
+    problems: List[str] = []
+    front, errs = read_frontmatter(pack_id)
+    if front is None:
+        return errs
+
+    data: Optional[dict] = None
+    if yaml is not None:
+        try:
+            data = yaml.safe_load(front)
+        except Exception as exc:  # yaml.YAMLError and friends
+            first = str(exc).splitlines()[0] if str(exc) else exc
+            return [f"{pack_id}: frontmatter is not valid YAML: {first}"]
+    else:
+        # No PyYAML here: check the thing that actually broke, by hand.
+        m = re.search(r"^description:\s*(.*)$", front, re.M)
+        if not m:
+            problems.append(f"{pack_id}: frontmatter has no description")
+        else:
+            raw = m.group(1).strip()
+            if not (raw.startswith('"') or raw.startswith("'")) and ": " in raw:
+                problems.append(
+                    f"{pack_id}: description is an unquoted scalar containing ': '; "
+                    "quote it or a YAML parser refuses the whole frontmatter"
+                )
+
+    if data is None:
+        return problems
+    if not isinstance(data, dict):
+        return [f"{pack_id}: frontmatter is not a mapping"]
+
+    name = data.get("name")
+    if not isinstance(name, str) or name != pack_id:
+        problems.append(
+            f"{pack_id}: frontmatter name is {name!r}, expected {pack_id!r}"
+        )
+    desc = data.get("description")
+    if not isinstance(desc, str) or not desc.strip():
+        problems.append(
+            f"{pack_id}: frontmatter description is missing or not a string"
+        )
+    elif len(desc) > 1024:
+        problems.append(
+            f"{pack_id}: frontmatter description is {len(desc)} chars, over the 1024 the standard allows"
+        )
+    meta = data.get("metadata")
+    if not isinstance(meta, dict) or "estate-category" not in meta:
+        problems.append(f"{pack_id}: frontmatter does not say which capability it is")
+    return problems
+
+
 # --- verify ---------------------------------------------------------------------
 def verify_pack(pack: dict) -> Tuple[bool, List[str]]:
     """Compare the pack on disk with the registry. Returns (ok, problems)."""
@@ -183,6 +268,10 @@ def verify_pack(pack: dict) -> Tuple[bool, List[str]]:
     for rel in sorted(on_disk):
         if any(part == ".claude" for part in rel.split("/")):
             problems.append(f"{pid}: harness folder in the pack: {rel}")
+
+    # A pack a runtime cannot load is a pack that does not exist, and no checksum
+    # says so. The front door is linted the way the runtimes read it.
+    problems.extend(frontmatter_problems(pid))
 
     return (not problems), problems
 
@@ -221,14 +310,38 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 # --- manifest ------------------------------------------------------------------
 def cmd_manifest(args: argparse.Namespace) -> int:
-    """Rewrite (or check) the registry's per-pack checksums from what is on disk."""
+    """Rewrite (or check) the registry's per-pack checksums from what is on disk.
+
+    Only the estate-authored front door and NOTICE.md may be re-pinned this way.
+    Upstream bytes are re-pinned by `vendor`, which fetched them from the pinned
+    commit: a hand edit to vendored upstream is not a new version of the upstream,
+    it is a fork, and the registry refuses to bless it here.
+    """
     reg = load_registry()
+    allow_upstream = getattr(args, "allow_upstream", False)
     changed = False
     for pack in reg["packs"]:
         pid = pack["id"]
         disk = pack_files_on_disk(pid)
         computed = {rel: sha256_file(p) for rel, p in disk.items()}
-        if computed != pack.get("files", {}):
+        registered = pack.get("files", {})
+        if computed != registered:
+            if not allow_upstream:
+                forked = [
+                    rel
+                    for rel in computed
+                    if rel.startswith("upstream/")
+                    and computed[rel] != registered.get(rel)
+                ]
+                if forked:
+                    print(
+                        f"skill-packs: {pid}: upstream bytes changed on disk; "
+                        "re-pin them with `vendor` (a hand edit is a fork, not a version)",
+                        file=sys.stderr,
+                    )
+                    for rel in sorted(forked):
+                        print(f"  {rel}", file=sys.stderr)
+                    return 1
             changed = True
             if args.check:
                 print(
@@ -508,7 +621,7 @@ def cmd_vendor(args: argparse.Namespace) -> int:
         save_registry(reg)
         # The vendored bytes changed the pack; rewrite the checksums to match, then
         # verify so the registry can never claim a hash the disk does not have.
-        cmd_manifest(argparse.Namespace(check=False, pack=[]))
+        cmd_manifest(argparse.Namespace(check=False, pack=[], allow_upstream=True))
     return 0
 
 
@@ -614,10 +727,15 @@ def write_skill_md(pack: dict, src: dict, out_root: Path) -> None:
     capability = src.get("capability", "")
     up = pack.get("upstream", {})
     body = src.get("skill_md_body", "")
+    description = src.get("description", capability)
+    # Quoted, always: an unquoted description that contains ': ' is read as a nested
+    # mapping by a YAML parser, and the runtime then refuses the whole frontmatter
+    # and never offers the skill to an agent.
+    quoted = '"' + description.replace("\\", "\\\\").replace('"', '\\"') + '"'
     front = [
         "---",
         f"name: {pid}",
-        f"description: {src.get('description', capability)}",
+        f"description: {quoted}",
         f"license: {up.get('license', 'see NOTICE.md')}",
         "metadata:",
         f"  estate-category: {src.get('category', 'design')}",

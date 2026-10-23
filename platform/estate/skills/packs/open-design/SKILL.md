@@ -1,6 +1,6 @@
 ---
 name: open-design
-description: The working skills of a design workspace: brand kit, design brief, creative direction, review, colour, copy.
+description: "The working skills of a design workspace: brand kit, design brief, creative direction, review, colour, copy."
 license: Apache-2.0
 metadata:
   estate-category: design

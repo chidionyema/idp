@@ -1,6 +1,6 @@
 ---
 name: gsap-skills
-description: GSAP used correctly: core tweens and timelines, ScrollTrigger, plugins, React integration, and the performance rules that keep it smooth.
+description: "GSAP used correctly: core tweens and timelines, ScrollTrigger, plugins, React integration, and the performance rules that keep it smooth."
 license: MIT
 metadata:
   estate-category: ui

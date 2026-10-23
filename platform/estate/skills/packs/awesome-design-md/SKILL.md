@@ -1,6 +1,6 @@
 ---
 name: awesome-design-md
-description: Read and write DESIGN.md: the file that states a brand's colours, type, spacing, motion and components so an agent builds the brand instead of a generic page.
+description: "Read and write DESIGN.md: the file that states a brand's colours, type, spacing, motion and components so an agent builds the brand instead of a generic page."
 license: MIT
 metadata:
   estate-category: architecture

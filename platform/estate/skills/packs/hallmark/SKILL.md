@@ -1,6 +1,6 @@
 ---
 name: hallmark
-description: The anatomy of a good page: macrostructures, layout, type, flow, interaction states, and the gates a design must pass before it ships.
+description: "The anatomy of a good page: macrostructures, layout, type, flow, interaction states, and the gates a design must pass before it ships."
 license: MIT
 metadata:
   estate-category: design

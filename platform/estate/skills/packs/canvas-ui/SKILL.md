@@ -1,6 +1,6 @@
 ---
 name: canvas-ui
-description: Canvas/WebGL UI primitives for interfaces that cannot be DOM: 3D scenes, shaders, and interactive canvases inside a product.
+description: "Canvas/WebGL UI primitives for interfaces that cannot be DOM: 3D scenes, shaders, and interactive canvases inside a product."
 license: NOASSERTION
 metadata:
   estate-category: ui

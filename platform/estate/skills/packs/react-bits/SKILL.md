@@ -1,6 +1,6 @@
 ---
 name: react-bits
-description: Pick and adapt animated React components (text, backgrounds, buttons, containers) instead of writing a bespoke animation from scratch.
+description: "Pick and adapt animated React components (text, backgrounds, buttons, containers) instead of writing a bespoke animation from scratch."
 license: NOASSERTION
 metadata:
   estate-category: ui

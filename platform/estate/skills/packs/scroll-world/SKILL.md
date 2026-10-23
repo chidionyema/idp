@@ -1,6 +1,6 @@
 ---
 name: scroll-world
-description: Turn a brand into a scroll-scrubbed 3D world landing page, with the scrub engine and the prompts that produce it.
+description: "Turn a brand into a scroll-scrubbed 3D world landing page, with the scrub engine and the prompts that produce it."
 license: MIT
 metadata:
   estate-category: ui

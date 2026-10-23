@@ -1,6 +1,6 @@
 ---
 name: emil-design-skills
-description: Design-engineering craft: animation vocabulary and performance, native-feeling mobile UI, Apple design language, and the breaking-the-template-look rules.
+description: "Design-engineering craft: animation vocabulary and performance, native-feeling mobile UI, Apple design language, and the breaking-the-template-look rules."
 license: MIT
 metadata:
   estate-category: ui

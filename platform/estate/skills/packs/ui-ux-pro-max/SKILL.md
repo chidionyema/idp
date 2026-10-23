@@ -1,6 +1,6 @@
 ---
 name: ui-ux-pro-max
-description: Turn a request into a token-backed design system: primitive and semantic tokens, a component spec, a brand kit, and a banner that matches the brand.
+description: "Turn a request into a token-backed design system: primitive and semantic tokens, a component spec, a brand kit, and a banner that matches the brand."
 license: MIT
 metadata:
   estate-category: design

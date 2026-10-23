@@ -1,6 +1,6 @@
 ---
 name: estate-research
-description: Research inside the estate: the harvest intent for capability, search-text and explore for the corpus, the knowledge graph for what is already known, and the rule that a claim needs a source.
+description: "Research inside the estate: the harvest intent for capability, search-text and explore for the corpus, the knowledge graph for what is already known, and the rule that a claim needs a source."
 license: see NOTICE.md
 metadata:
   estate-category: research

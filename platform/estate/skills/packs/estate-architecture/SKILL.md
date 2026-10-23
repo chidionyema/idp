@@ -1,6 +1,6 @@
 ---
 name: estate-architecture
-description: Architecture inside the estate: one of each layer, a spec before the build, a decision record for every fork, and the gates that prove the shape is right.
+description: "Architecture inside the estate: one of each layer, a spec before the build, a decision record for every fork, and the gates that prove the shape is right."
 license: see NOTICE.md
 metadata:
   estate-category: architecture

@@ -1,6 +1,6 @@
 ---
 name: design-md
-description: The DESIGN.md specification itself, with worked examples and the linter that checks one, so a brand spec is a checkable artifact rather than prose.
+description: "The DESIGN.md specification itself, with worked examples and the linter that checks one, so a brand spec is a checkable artifact rather than prose."
 license: Apache-2.0
 metadata:
   estate-category: architecture
