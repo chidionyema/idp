@@ -4,7 +4,7 @@ description: >
   Returns structured JSON.
 args:
   pr:   {type: int, default: 0}
-  repo: {type: string, default: "chidioniema/idp"}
+  repo: {type: string, default: "chidionyema/idp"}
 steps:
   - name: ci-status
     intent: ci.status

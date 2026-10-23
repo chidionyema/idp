@@ -373,10 +373,31 @@ if [ "$FAST" = 1 ]; then
   elif [ $rc = 0 ]; then say "ok    tsc      backstage"
   elif [ $rc = 3 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then say "skip  tsc      backstage (no node_modules in this job; portal-app is the required tsc)"
   else say "FAIL  tsc      backstage"; fail=1; fi
-  # 1d.3: ruff format --check on the whole repo. Same reason as tsc.
-  (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
-    && say "ok    ruff-fmt whole repo" \
-    || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
+  # 1d.3: ruff format --check. On a pull request (IDP_CI_BASE set) it checks the Python the diff
+  # touches; with no base, the whole repo -- the same shape as the yamllint rung above, for the
+  # same reason. Until 2026-10-22 it was whole-repo in every mode, and one unwrapped `assert`
+  # already sitting on main (tests/test_image_builds.py) turned every lane in the estate red for a
+  # file the lane never touched: the push hook refused, the Greenlane's run went red, and work
+  # stopped landing for a reason no author could see, let alone fix (the file was another agent's
+  # claim). "Grade what the push changes" is this repo's own rule -- py-strict below grades
+  # base...HEAD, and tests/test_prepush_grades_only_what_the_push_changes.py holds the hook to it.
+  # A gate that fails for code you did not write is not a stricter gate, it is a stopped pipeline.
+  if [ -n "${IDP_CI_BASE:-}" ]; then
+    pyf=$(cd "$IDP" && git diff --name-only --diff-filter=d "$IDP_CI_BASE...HEAD" -- '*.py')
+    pyn=$(printf '%s' "$pyf" | grep -c .)
+    if [ "$pyn" = 0 ]; then say "ok    ruff-fmt no Python in the diff against $IDP_CI_BASE"
+    else
+      _rf=$(cd "$IDP" && printf '%s\n' "$pyf" | tr '\n' '\0' | xargs -0 "${RUFF[@]}" format --check 2>&1)
+      if printf '%s' "$_rf" | grep -qE 'Would reformat|error'; then
+        say "FAIL  ruff-fmt  the Python this push touches; fix: ruff format <files>"
+        printf '%s\n' "$_rf" | head -20 | sed 's/^/      /'; fail=1
+      else say "ok    ruff-fmt $pyn file(s) in the diff against $IDP_CI_BASE"; fi
+    fi
+  else
+    (cd "$IDP" && "${RUFF[@]}" format --check --quiet .) \
+      && say "ok    ruff-fmt whole repo" \
+      || { say "FAIL  ruff-fmt  whole repo; fix: ruff format <files>"; fail=1; }
+  fi
   # 1d.4: python-strict (estate standard, one copy) on the range base...HEAD, the same rung
   # fast-gate.yml runs in CI. Mirrors .github/workflows/fast-gate.yml lines 41-45 verbatim so a
   # format-dirty or B/S-class Python file can never reach the remote CI round trip. Vendored copy

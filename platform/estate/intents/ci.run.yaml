@@ -11,7 +11,7 @@ steps:
   - cmd: >
       BRANCH="${branch}";
       git push origin "$BRANCH" 2>&1 | tail -3;
-      RUN=$(gh run list --repo {{repo}} --branch "$BRANCH" --status queued --limit 1 --json databaseId -q '.[0].databaseId' 2>/dev/null);
+      RUN=$(gh run list --repo {{repo}} --branch "$BRANCH" --status queued --limit 1 --json databaseId -q '.[0].databaseId');
       echo "run: $RUN";
       if [ -z "$RUN" ]; then echo "no queued run found"; exit 1; fi;
       gh run watch "$RUN" --repo {{repo}} --exit-status 2>&1 | tail -5
